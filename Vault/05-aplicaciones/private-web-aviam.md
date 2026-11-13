@@ -765,8 +765,9 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   mapa está listo al cargar su estilo. Solo un mapa que no puede arrancar, como
   en un navegador sin WebGL2, o cuyo contexto WebGL vuelve sin WebGL2, deja en
   su lugar la lista de respaldo, y ese mapa ya no vuelve; si el mapa base no
-  carga, un aviso dice «No se pudo cargar el mapa base. Se muestran las
-  posiciones y los datos de ELEVANT.», y las posiciones siguen en el mapa.
+  carga, un aviso dice «No se pudo cargar el mapa base. Los datos de ELEVANT
+  siguen en el mapa.», y lo que dibuja cada pantalla (posiciones, vuelos y el
+  punto de referencia de PUJ) sigue en el mapa.
   [`workerUrl.js`](../../frontend/private-web/src/features/maps/core/workerUrl.js)
   prepara una sola vez los workers de MapLibre (`prewarm`), que ya no se crean
   ni se terminan con cada mapa.
@@ -810,12 +811,13 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   «Leyenda»
   ([`MapLegend.jsx`](../../frontend/private-web/src/features/maps/ui/MapLegend.jsx)),
   que lista solo lo que hay en pantalla: el avión de los vuelos, que apunta
-  según su rumbo; los estados de las posiciones; «No oficial» cuando alguna está
-  en su ubicación de referencia interna, y qué es un grupo cuando se agrupan. En
-  Mapa de posiciones, Planificación y Monitoreo de vuelos es la única leyenda
-  del mapa: las páginas ya no muestran la suya, que explicaba con colores por
-  estado lo que el mapa ya no dibuja así. La plataforma de la consola conserva
-  su leyenda en línea hasta que U3 retire el dashboard actual.
+  según su rumbo; los estados de las posiciones, también los de las que el mapa
+  dibuja sueltas junto a sus grupos; «No oficial» cuando alguna está en su
+  ubicación de referencia interna, y qué es un grupo cuando hay uno en
+  pantalla. En Mapa de posiciones, Planificación y Monitoreo de vuelos es la
+  única leyenda del mapa: las páginas ya no muestran la suya, que explicaba con
+  colores por estado lo que el mapa ya no dibuja así. La plataforma de la
+  consola conserva su leyenda en línea hasta que U3 retire el dashboard actual.
 - **Relectura sin remontar el mapa.** Al releer la misma estación (por foco,
   sondeo u `occ_planning`), Mapa de posiciones y Monitoreo conservan sus datos
   en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y

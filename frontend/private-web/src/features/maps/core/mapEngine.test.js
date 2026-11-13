@@ -697,6 +697,56 @@ describe('map engine', () => {
     expect(onResize).toHaveBeenCalledOnce();
   });
 
+  it('renderedFeatures answers what is drawn of the given layers in the area the insets leave in sight', () => {
+    const early = setup();
+    expect(early.engine.renderedFeatures(['occ-stand-points'])).toEqual([]);
+    expect(early.map.calls.some(call => call.method === 'queryRenderedFeatures')).toBe(false);
+
+    const { engine, map, state } = ready(setup());
+    const queries = [];
+    const drawn = [{ id: 'A5', layer: { id: 'occ-stand-points' }, properties: { code: 'A5' } }];
+    state.setRenderedFeatures(map, (geometry, options) => {
+      queries.push({ geometry, options });
+      return drawn;
+    });
+    // Without insets the whole 1440 × 900 map; with them the rectangle between the panels.
+    expect(engine.renderedFeatures(['occ-stand-points', 'occ-stand-clusters'])).toBe(drawn);
+    expect(queries).toEqual([{ geometry: [[0, 0], [1440, 900]], options: { layers: ['occ-stand-points', 'occ-stand-clusters'] } }]);
+    engine.renderedFeatures(['occ-stand-points'], { top: 56, right: 320, bottom: 48, left: 0 });
+    expect(queries.at(-1).geometry).toEqual([[0, 56], [1120, 852]]);
+    // A layer the style lacks is not queried (MapLibre would answer nothing and fire an error).
+    engine.renderedFeatures(['occ-stand-points', 'occ-missing']);
+    expect(queries.at(-1).options.layers).toEqual(['occ-stand-points']);
+    // No layer of the style, or insets that leave no room: nothing to ask.
+    const asked = queries.length;
+    expect(engine.renderedFeatures(['occ-missing'])).toEqual([]);
+    expect(engine.renderedFeatures([])).toEqual([]);
+    expect(engine.renderedFeatures(['occ-stand-points'], { left: 800, right: 700 })).toEqual([]);
+    // Nothing while the WebGL context is lost, nor once the map is gone.
+    state.loseContext(map);
+    expect(engine.renderedFeatures(['occ-stand-points'])).toEqual([]);
+    engine.destroy();
+    expect(engine.renderedFeatures(['occ-stand-points'])).toEqual([]);
+    expect(queries).toHaveLength(asked);
+  });
+
+  it('reports every idle frame to onIdle, and listens to idle only with a handler', () => {
+    const onIdle = vi.fn();
+    const { engine, map, state } = ready(setup({ onIdle }));
+    state.emit(map, 'idle');
+    state.emit(map, 'idle');
+    expect(onIdle).toHaveBeenCalledTimes(2);
+    expect(onIdle.mock.calls[0]).toEqual([]);
+    // A wait for an idle frame goes on working beside it, and destroy removes both.
+    const idle = engine.whenIdle();
+    state.emit(map, 'idle');
+    expect(onIdle).toHaveBeenCalledTimes(3);
+    engine.destroy();
+    expect(map.listenerCount()).toBe(0);
+    expect(setup().map.listenerCount('idle')).toBe(0);
+    return expect(idle).resolves.toBe(true);
+  });
+
   it('getVisibleBounds is the part of the map the insets leave in sight, never more than getBounds', () => {
     const { engine, fake, map, state } = ready(setup({ camera: { center: [-68.3634, 18.5674], zoom: 15 } }));
     const [[west, south], [east, north]] = engine.getBounds();

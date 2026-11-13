@@ -121,6 +121,33 @@ describe('FlightMap', () => {
     expect(screen.getByTestId('map-legend')).toBeInTheDocument();
   });
 
+  it('says the base map did not load without naming stands it does not draw, and keeps its flights', () => {
+    const { map } = renderFlights({ flights: [flight({ id: 1 })] });
+    loadStyle(map);
+    act(() => fake.state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
+    // Monitoreo opens on the region and draws no stand: the notice speaks of the ELEVANT data, not of stands.
+    const root = screen.getByTestId('occ-map');
+    expect(root).toHaveAttribute('data-occ-view', 'region');
+    expect(root).toHaveAttribute('data-occ-basemap', 'degraded');
+    expect(map.options.style.sources['occ-stands']).toBeUndefined();
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.');
+    expect(notice.textContent).not.toMatch(/posici/i);
+    // It is a notice, not a fallback: the flight is still drawn and its legend still explains it.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(map.getSource('occ-flights').data.features).toHaveLength(1);
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem').map(item => item.textContent))
+      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
+    cleanup();
+
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><FlightMap flights={[flight({ id: 1 })]} selectedFlightId={null} onSelectFlight={() => {}} /></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    loadStyle(english);
+    act(() => fake.state.emit(english, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
+    expect(screen.getByRole('status')).toHaveTextContent('The base map could not be loaded. ELEVANT data is still on the map.');
+  });
+
   it('opens on approach when the linked flight is within 40 NM', () => {
     let view = renderFlights({ flights: [flight({ id: 7 })], selectedFlightId: 7 });
     expect(view.map.getZoom()).toBeCloseTo(fitWidth(TARGETS.approach.bounds), 6);

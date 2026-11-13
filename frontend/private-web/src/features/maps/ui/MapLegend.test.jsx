@@ -31,6 +31,16 @@ const UNOFFICIAL = `${TAGS.unofficial.es}Ubicación de referencia interna, sin v
 const legendItems = () => within(screen.getByRole('list', { name: /Leyenda|Legend/ })).getAllByRole('listitem')
   .map(item => item.textContent);
 
+// What MapLibre draws of the stands while it gathers them, as queryRenderedFeatures answers it: a cluster, and the
+// stands `alone` on their own.
+function drawStands(map, alone) {
+  const features = [
+    { id: 1, layer: { id: 'occ-stands-clusters' }, properties: { cluster: true, cluster_id: 1, point_count: 40 } },
+    ...alone.map(code => ({ id: code, layer: { id: 'occ-stands-frame' }, properties: { code } })),
+  ];
+  fake.state.setRenderedFeatures(map, (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
+}
+
 beforeEach(() => {
   fake.state.reset();
   window.history.replaceState({}, '', PAGE);
@@ -205,7 +215,7 @@ describe('MapLegend', () => {
     expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', unofficial]);
   });
 
-  it('explains clusters in the airfield view and has nothing to explain where the stands are not drawn', () => {
+  it('explains clusters in the airfield view with the stands it still draws on their own, and has nothing to explain where no stand is drawn', () => {
     render(
       <OccMap stands={STANDS}>
         <MapLegend />
@@ -213,13 +223,22 @@ describe('MapLegend', () => {
     );
     const map = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(map, 'style.load'));
+    // The ramp view draws every stand on its own: the legend does not ask the map what it draws.
+    drawStands(map, ['BN6']);
     expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
 
-    // The airfield view draws the stands as clusters, which carry no state: the legend says what a cluster is.
+    // The airfield view gathers the stands into clusters, which carry no state: the legend says what a cluster is, and
+    // explains BN6, with no neighbour close enough to join a cluster, which the map still draws on its own.
     fireEvent.keyDown(map.getCanvas(), { key: '3' });
-    expect(legendItems()).toEqual(['Grupo de posicionesAcerca el mapa para ver cada una']);
+    expect(legendItems()).toEqual([
+      'Grupo de posicionesAcerca el mapa para ver cada una', 'Sin verificar', `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`,
+    ]);
     const circle = screen.getByTestId('map-legend').querySelector('li svg circle');
     expect([circle.style.fill, circle.style.stroke]).toEqual(['var(--occ-panel-raised)', 'var(--occ-line-strong)']);
+    // When every stand in sight is in a cluster, as the map tells once it settles, only the cluster is explained.
+    drawStands(map, []);
+    act(() => fake.state.emit(map, 'idle'));
+    expect(legendItems()).toEqual(['Grupo de posicionesAcerca el mapa para ver cada una']);
 
     // Region and approach draw no stand at all.
     fireEvent.keyDown(map.getCanvas(), { key: '1' });
@@ -233,7 +252,12 @@ describe('MapLegend', () => {
     resetLanguageForTests('en');
     window.history.replaceState({}, '', `${PAGE}&view=airfield`);
     render(<LanguageScope><OccMap stands={STANDS}><MapLegend /></OccMap></LanguageScope>);
-    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    const english = fake.state.liveMaps().at(-1);
+    drawStands(english, []);
+    act(() => fake.state.emit(english, 'style.load'));
+    // Opened on a grouped view, the map has drawn nothing of the stands until it settles: its first idle frame tells.
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    act(() => fake.state.emit(english, 'idle'));
     expect(legendItems()).toEqual(['Group of standsZoom in to see each one']);
   });
 

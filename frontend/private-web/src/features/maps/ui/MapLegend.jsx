@@ -89,8 +89,9 @@ function GroupSwatch() {
 
 /**
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
- * the flights drawn on screen, the stands drawn one by one there and, when stands there are drawn as clusters, what a
- * cluster is; or the `stands` given (inside `bounds` when given). It folds through its own button, whose name stays
+ * the flights drawn on screen, the stands drawn one by one there (also those the map draws on their own next to its
+ * clusters) and, when a cluster of stands is drawn there, what a cluster is; or the `stands` given (inside `bounds`
+ * when given). It folds through its own button, whose name stays
  * «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to explain.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {

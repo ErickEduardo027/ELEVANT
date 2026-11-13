@@ -68,6 +68,8 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  *   `basemap: 'off'` and is the last status reported: the map never started, or the engine removed it when its WebGL
  *   context came back without WebGL2.
  * @param {(camera: object, details: { byUser: boolean }) => void} [options.onCamera] after every move.
+ * @param {() => void} [options.onIdle] after every frame MapLibre draws with nothing left to load, place or move (its
+ *   `idle` event): what renderedFeatures answers is then final, as the tiles of a new zoom have loaded.
  * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
  * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves, `null` when it
@@ -75,7 +77,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onResize, onClick, onPointerMove,
+  onStatus, onCamera, onIdle, onResize, onClick, onPointerMove,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -241,6 +243,17 @@ export function createMapEngine({
     return { center: [center.lng, center.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
   }
 
+  // The rectangle of the canvas that `insets` leave in sight, `[[left, top], [right, bottom]]` in pixels from its
+  // top-left corner, or null when they leave no room (or the map has no size).
+  function areaInSight(insets) {
+    const { top, right, bottom, left } = normalizeInsets(insets);
+    const canvas = map.getCanvas();
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (!(width - left - right > 0) || !(height - top - bottom > 0)) return null;
+    return [[left, top], [width - right, height - bottom]];
+  }
+
   function pickAt(point) {
     if (!live() || !styleReady || point == null) return null;
     const [x, y] = Array.isArray(point) ? point : [point.x, point.y];
@@ -344,6 +357,7 @@ export function createMapEngine({
     listen('moveend', event => {
       onCamera?.(readCamera(), { byUser: Boolean(event?.originalEvent) });
     });
+    if (onIdle) listen('idle', () => onIdle());
     if (onResize) listen('resize', () => onResize());
     if (onClick) listen('click', event => onClick(pointerEvent(event)));
     if (onPointerMove) {
@@ -516,13 +530,10 @@ export function createMapEngine({
      */
     getVisibleBounds(insets) {
       if (!live()) return null;
-      const { top, right, bottom, left } = normalizeInsets(insets);
-      const canvas = map.getCanvas();
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      if (!(width - left - right > 0) || !(height - top - bottom > 0)) return null;
-      const corners = [[left, top], [width - right, top], [width - right, height - bottom], [left, height - bottom]]
-        .map(point => map.unproject(point));
+      const area = areaInSight(insets);
+      if (area === null) return null;
+      const [[left, top], [right, bottom]] = area;
+      const corners = [[left, top], [right, top], [right, bottom], [left, bottom]].map(point => map.unproject(point));
       const lngs = corners.map(corner => corner.lng);
       const lats = corners.map(corner => corner.lat);
       if (![...lngs, ...lats].every(Number.isFinite)) return null;
@@ -531,6 +542,20 @@ export function createMapEngine({
         [Math.max(Math.min(...lngs), whole.getWest()), Math.max(Math.min(...lats), whole.getSouth())],
         [Math.min(Math.max(...lngs), whole.getEast()), Math.min(Math.max(...lats), whole.getNorth())],
       ];
+    },
+
+    /**
+     * What MapLibre draws of `layers` in the area that `insets` leave in sight, as queryRenderedFeatures answers it (a
+     * feature drawn in two tiles comes twice): `[]` without a map, before the style has loaded, when the insets leave
+     * no room or when the style has none of the layers. A layer the style lacks is not queried (MapLibre would answer
+     * nothing and fire an error). Right after a move the tiles of the new zoom may still be loading: the answer is final
+     * on the next idle (onIdle).
+     */
+    renderedFeatures(layers, insets) {
+      if (!live() || !styleReady) return [];
+      const ids = (layers ?? []).filter(id => map.getLayer(id));
+      const area = ids.length === 0 ? null : areaInSight(insets);
+      return area === null ? [] : map.queryRenderedFeatures(area, { layers: ids });
     },
 
     /** The top feature of a pickable layer under `point`: `{ kind, id, feature }` from `occ:pick` / `occ:pickId`. */

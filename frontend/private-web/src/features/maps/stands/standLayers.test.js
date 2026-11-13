@@ -11,7 +11,8 @@ import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { FONT_STACKS, buildOccStyle } from '../style/occStyle';
 import { SELECTION_SOURCE, selectionOverlay } from '../style/selectionLayers';
 import {
-  STAND_LABEL_MODES, STAND_SOURCE, standAppearance, standClusterOptions, standDisplayAt, standOverlay,
+  STAND_CLUSTER_LAYER, STAND_DRAWN_LAYERS, STAND_FRAME_LAYER, STAND_LABEL_MODES, STAND_SOURCE, drawnStands,
+  standAppearance, standClusterOptions, standDisplayAt, standOverlay,
 } from './standLayers';
 
 const MARK_LAYERS = ['occ-stands-fill', 'occ-stands-frame', 'occ-stands-glyph', 'occ-stands-clock'];
@@ -187,6 +188,34 @@ describe('standOverlay', () => {
         expect(layer.metadata['occ:minThreshold'], `${labels} ${layer.id}`).toBe(codes ? 'codes' : 'polygons');
       }
     }
+  });
+
+  it('reads what the map draws of the stands from the frame of each stand and the clusters', () => {
+    // The frame draws every stand MapLibre leaves out of a cluster, whatever its state; the circle draws the clusters.
+    expect(STAND_DRAWN_LAYERS).toEqual([STAND_FRAME_LAYER, STAND_CLUSTER_LAYER]);
+    const cluster = { cluster: true, cluster_id: 7, point_count: 12, point_count_abbreviated: '12' };
+    for (const labels of STAND_LABEL_MODES) {
+      const overlay = standOverlay({ labels });
+      const accepts = (id, properties) => featureFilter(layerOf(overlay, id).filter, id).filter({ zoom: 14 }, { type: 1, properties });
+      for (const status of STAND_STATE_KEYS) expect(accepts(STAND_FRAME_LAYER, { code: 'BN13', status }), `${labels} ${status}`).toBe(true);
+      expect(accepts(STAND_FRAME_LAYER, cluster), labels).toBe(false);
+      expect(accepts(STAND_CLUSTER_LAYER, cluster), labels).toBe(true);
+      expect(accepts(STAND_CLUSTER_LAYER, { code: 'BN13', status: 'occupied' }), labels).toBe(false);
+      expect(layerOf(overlay, STAND_FRAME_LAYER).metadata['occ:pickId']).toBe('code');
+    }
+
+    const frame = code => ({ id: code, layer: { id: STAND_FRAME_LAYER }, properties: { code, status: 'occupied' } });
+    const circle = { id: 7, layer: { id: STAND_CLUSTER_LAYER }, properties: cluster };
+    // A stand drawn in two tiles is answered twice and counts once; a feature of another layer is not a stand's.
+    const drawn = drawnStands([frame('BN13'), circle, frame('BN13'), frame('AN5'),
+      { id: 'A1', layer: { id: 'occ-stands-glyph' }, properties: { code: 'A1' } }, { layer: { id: STAND_FRAME_LAYER }, properties: {} }]);
+    expect([...drawn.codes]).toEqual(['BN13', 'AN5']);
+    expect(drawn.grouped).toBe(true);
+    // Every stand on its own (no cluster in sight), clusters only, or nothing drawn yet.
+    expect(drawnStands([frame('A1')])).toEqual({ codes: new Set(['A1']), grouped: false });
+    expect(drawnStands([circle])).toEqual({ codes: new Set(), grouped: true });
+    expect(drawnStands([])).toEqual({ codes: new Set(), grouped: false });
+    expect(drawnStands(undefined)).toEqual({ codes: new Set(), grouped: false });
   });
 
   it('outside the console keeps every code off the stand marks with an invisible copy placed before the codes', () => {

@@ -15,8 +15,10 @@ export const mapMessages = {
       flight: 'Vuelo',
       flightHint: 'Apunta según su rumbo; al norte si no se conoce',
     },
+    // Every map shows it, also those that draw no stand (Monitoreo) or a view that hides them (region, approach), so it
+    // does not name what is drawn.
     basemap: {
-      degraded: 'No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.',
+      degraded: 'No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.',
     },
     unavailable: {
       title: 'El mapa no está disponible',
@@ -48,7 +50,7 @@ export const mapMessages = {
       flightHint: 'Points along its heading; north when unknown',
     },
     basemap: {
-      degraded: 'The base map could not be loaded. The stands and ELEVANT data are shown.',
+      degraded: 'The base map could not be loaded. ELEVANT data is still on the map.',
     },
     unavailable: {
       title: 'The map is not available',

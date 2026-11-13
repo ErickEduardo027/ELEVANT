@@ -12,7 +12,9 @@ import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { mapMessages } from '../mapMessages';
 import { toStandFeatures } from '../stands/standFeatures';
-import { STAND_SOURCE, standClusterOptions, standDisplayAt, standOverlay } from '../stands/standLayers';
+import {
+  STAND_DRAWN_LAYERS, STAND_SOURCE, drawnStands, standClusterOptions, standDisplayAt, standOverlay,
+} from '../stands/standLayers';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
 import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
@@ -293,22 +295,29 @@ const OccMap = forwardRef(function OccMap({
   const whenIdle = useCallback(() => engineRef.current?.whenIdle() ?? Promise.resolve(false), []);
 
   // What is drawn in the area the insets leave in sight (the page's panels hide what lies under them), for the legend,
-  // which explains only what is on screen (contracts 2.4): the stands drawn one by one, whether stands there are drawn
-  // as clusters instead, and the flights drawn there. They change only when the camera, the insets, the thresholds, the
-  // stands or the flights do, and a list keeps its identity while what the legend reads of it stays the same.
+  // which explains only what is on screen (contracts 2.4): the stands drawn one by one, whether a cluster of stands is
+  // drawn there, and the flights drawn there. From the ramp view on every stand there is drawn on its own. While
+  // MapLibre gathers them into clusters, a stand with no neighbour within the cluster radius is still drawn on its own,
+  // with its state, so what the map draws there is read back; right after a move the tiles of the new zoom may still be
+  // loading, so it is read again when the map settles (onIdle). They change only when the camera, the insets, the
+  // thresholds, the stands, the flights or what the map draws do, and a list keeps its identity while what the legend
+  // reads of it stays the same.
   const updateOnScreen = useCallback(() => {
     const engine = engineRef.current;
-    const bounds = engine?.getVisibleBounds(latest.current.padding) ?? null;
-    const inView = bounds === null ? EMPTY : standsInView(latest.current.stands, bounds);
-    const { standLabels, drawsFlights } = appliedRef.current;
+    const { padding, stands: current } = latest.current;
+    const bounds = engine?.getVisibleBounds(padding) ?? null;
+    const inView = bounds === null ? EMPTY : standsInView(current, bounds);
+    const { standLabels, drawsStands, drawsFlights } = appliedRef.current;
     const display = standDisplayAt(engine?.getCamera()?.zoom, store.get().thresholds, { labels: standLabels ?? 'default' });
-    const next = display === 'points' ? inView : EMPTY;
+    const drawn = display === 'grouped' && drawsStands ? drawnStands(engine?.renderedFeatures(STAND_DRAWN_LAYERS, padding)) : null;
+    let next = display === 'points' ? inView : EMPTY;
+    if (drawn !== null) next = inView.filter(stand => drawn.codes.has(mapStandCode(standCodeOf(stand))));
     // Only a map that started with flights draws them.
     const flights = bounds === null || !drawsFlights ? EMPTY : flightsInView(latest.current.flights, bounds);
     const previous = store.get();
     store.set({
       ...(standsKey(next) === standsKey(previous.standsOnScreen) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
-      standsGrouped: display === 'grouped' && inView.length > 0,
+      standsGrouped: drawn?.grouped === true,
       ...(flightsKey(flights) === flightsKey(previous.flightsOnScreen)
         ? {}
         : { flightsOnScreen: flights.length === 0 ? EMPTY : flights }),
@@ -426,6 +435,8 @@ const OccMap = forwardRef(function OccMap({
       mapOptions: { ...props.mapOptions, locale: props.locale },
       onStatus: handleStatus,
       onCamera: handleCamera,
+      // What the map draws is final once it settles: the legend reads it again then.
+      onIdle: updateOnScreen,
       onResize: refit,
       onClick: handleClick,
       onPointerMove: handlePointer,
@@ -446,7 +457,7 @@ const OccMap = forwardRef(function OccMap({
       engine.destroy();
       if (engineRef.current === engine) engineRef.current = null;
     };
-  }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit]);
+  }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit, updateOnScreen]);
 
   // The URL view: fly only when it differs from the last view applied, so a view this map asked for flies once.
   useEffect(() => {

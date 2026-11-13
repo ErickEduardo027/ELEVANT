@@ -25,8 +25,18 @@ describe('map messages', () => {
       }
     }
     expect(createTranslator(mapMessages, 'es')('basemap.degraded'))
-      .toBe('No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.');
+      .toBe('No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.');
+    expect(createTranslator(mapMessages, 'en')('basemap.degraded'))
+      .toBe('The base map could not be loaded. ELEVANT data is still on the map.');
     expect(createTranslator(mapMessages, 'en')('view.group')).toBe('Map view');
+  });
+
+  it('the base-map notice names nothing that a map may not draw', () => {
+    // Every map shows it: Monitoreo draws no stand, and the region and approach views draw none either.
+    for (const language of ['es', 'en']) {
+      const notice = createTranslator(mapMessages, language)('basemap.degraded');
+      expect(notice, language).not.toMatch(/posici|stand|aer[oó]dromo|airfield|vuelo|flight|avi[oó]n|aircraft/i);
+    }
   });
 
   it('takes the view names from the key table instead of copying them', () => {

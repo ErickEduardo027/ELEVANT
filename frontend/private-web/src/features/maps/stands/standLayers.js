@@ -14,6 +14,11 @@ import { SELECTION_SOURCE, STAND_ICON_SIZE } from '../style/selectionLayers';
 
 export const STAND_SOURCE = 'occ-stands';
 export const STAND_GROUP = 'stands';
+/** The layer that draws each stand on its own (its frame, the pick target), and the one that draws the clusters. */
+export const STAND_FRAME_LAYER = 'occ-stands-frame';
+export const STAND_CLUSTER_LAYER = 'occ-stands-clusters';
+/** The layers whose rendered features say what the map draws of the stands (drawnStands). */
+export const STAND_DRAWN_LAYERS = Object.freeze([STAND_FRAME_LAYER, STAND_CLUSTER_LAYER]);
 /** `dashboard` is the console's apron map: codes from the airfield view on, planned and selected codes first. */
 export const STAND_LABEL_MODES = Object.freeze(['default', 'dashboard']);
 
@@ -244,7 +249,7 @@ export function standOverlay({ labels = 'default' } = {}) {
     layers: [
       {
         slot: 'stands',
-        id: 'occ-stands-clusters',
+        id: STAND_CLUSTER_LAYER,
         type: 'circle',
         source: STAND_SOURCE,
         filter: IS_CLUSTER,
@@ -257,7 +262,7 @@ export function standOverlay({ labels = 'default' } = {}) {
         metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD, 'occ:pick': 'cluster', 'occ:pickId': 'cluster_id' },
       },
       markLayer('occ-stands-fill', 'fill'),
-      markLayer('occ-stands-frame', 'frame', { metadata: { 'occ:pick': 'stand', 'occ:pickId': 'code' } }),
+      markLayer(STAND_FRAME_LAYER, 'frame', { metadata: { 'occ:pick': 'stand', 'occ:pickId': 'code' } }),
       markLayer('occ-stands-glyph', 'glyph'),
       markLayer('occ-stands-clock', 'badge', {
         layout: { 'icon-offset': [...BADGE_OFFSET] },
@@ -297,4 +302,21 @@ export function standDisplayAt(zoom, thresholds, { labels = 'default' } = {}) {
   if (!Number.isFinite(zoom) || clusters === null) return 'points';
   if (zoom < thresholds.polygons) return 'hidden';
   return Math.floor(zoom) <= clusters.clusterMaxZoom ? 'grouped' : 'points';
+}
+
+/**
+ * What the map draws of the stands, read from the features queryRenderedFeatures answers for STAND_DRAWN_LAYERS:
+ * `{ codes, grouped }`, the codes of the stands drawn on their own and whether a cluster is drawn. While MapLibre
+ * gathers the stands into clusters, a stand with no neighbour within the cluster radius is still drawn on its own,
+ * with its state, so the zoom alone cannot tell. A feature drawn in two tiles is answered twice and counts once. Pure.
+ */
+export function drawnStands(features) {
+  const codes = new Set();
+  let grouped = false;
+  for (const feature of features ?? []) {
+    const layer = feature?.layer?.id;
+    if (layer === STAND_CLUSTER_LAYER) grouped = true;
+    else if (layer === STAND_FRAME_LAYER && feature.properties?.code != null) codes.add(String(feature.properties.code));
+  }
+  return { codes, grouped };
 }

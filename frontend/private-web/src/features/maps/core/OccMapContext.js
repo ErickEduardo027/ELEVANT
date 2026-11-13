@@ -4,8 +4,9 @@ import { createContext, useContext } from 'react';
 // - state: `engineStatus` ('starting' | 'ready' | 'unavailable'), `basemapStatus` ('off' | 'loading' | 'ok' |
 //   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`;
 // - meta: `standsOnScreen`, the stands drawn one by one in the area the insets leave in sight (the legend lists only
-//   those), `standsGrouped`, whether stands there are drawn as clusters instead, and `flightsOnScreen`, the flights
-//   drawn in that area (the list changes when other flights come into sight, not when they move inside it);
+//   those; while the map gathers stands into clusters, the ones it still draws on their own), `standsGrouped`,
+//   whether a cluster of stands is drawn there, and `flightsOnScreen`, the flights drawn in that area (the list
+//   changes when other flights come into sight, not when they move inside it);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
 //   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight.
 // Outside an OccMap the value is a map that does nothing and shows nothing.

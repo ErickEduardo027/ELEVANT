@@ -10,6 +10,7 @@ import { readSource } from '../../../styles/occSourceScan';
 import { occColor } from '../../occ-ui/occPalette';
 import { referenceFeatures } from '../style/referenceLayers';
 import { createMapStands, standPoint } from '../testing/mapFixtures';
+import MapLegend from '../ui/MapLegend';
 import { boundsCenter, presetTargets } from './cameraPresets';
 import { liveEngineCount } from './mapEngine';
 import OccMap from './OccMap';
@@ -37,12 +38,14 @@ const FLIGHTS = [
 
 // What the map shares with its overlays, printed for the assertions (a plain element: <output> is a live region).
 function Probe() {
-  const { engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, flightsOnScreen } = useOccMap();
+  const {
+    engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, standsGrouped, flightsOnScreen,
+  } = useOccMap();
   return (
     <pre data-testid="probe">
       {JSON.stringify({
-        engineStatus, basemapStatus, activeView, fits, thresholds,
-        onScreen: standsOnScreen.map(stand => stand.id), flightsOnScreen: flightsOnScreen.map(flight => flight.id),
+        engineStatus, basemapStatus, activeView, fits, thresholds, onScreen: standsOnScreen.map(stand => stand.id),
+        grouped: standsGrouped, flightsOnScreen: flightsOnScreen.map(flight => flight.id),
       })}
     </pre>
   );
@@ -187,7 +190,7 @@ describe('OccMap', () => {
 
     act(() => fake.state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
     const chip = screen.getByRole('status');
-    expect(chip).toHaveTextContent('No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.');
+    expect(chip).toHaveTextContent('No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.');
     expect(chip).toHaveClass('occ-map-chip');
     expect(probe()).toMatchObject({ engineStatus: 'ready', basemapStatus: 'degraded' });
     // The same states on the root, where the visual suite waits for them.
@@ -426,6 +429,60 @@ describe('OccMap', () => {
     expect(probe().onScreen).toEqual([]);
     rerender({ insets: undefined });
     expect(probe().onScreen).toEqual(['A1', 'A2', 'A3', 'A4']);
+  });
+
+  it('while the map gathers the stands, counts on screen the ones it still draws on their own, read again when it settles', () => {
+    const { map } = renderMap({ children: <MapLegend /> });
+    loadStyle(map);
+    const legend = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
+      .map(item => item.textContent);
+    const group = 'Grupo de posicionesAcerca el mapa para ver cada una';
+    // What MapLibre draws of the stands, as queryRenderedFeatures answers it for the layers it is asked about.
+    const queries = [];
+    let drawn = [];
+    fake.state.setRenderedFeatures(map, (geometry, options) => {
+      queries.push({ geometry, options });
+      return drawn.filter(feature => options.layers.includes(feature.layer.id));
+    });
+    const cluster = { id: 4, layer: { id: 'occ-stands-clusters' }, properties: { cluster: true, cluster_id: 4, point_count: 39 } };
+    const alone = code => ({ id: code, layer: { id: 'occ-stands-frame' }, properties: { code } });
+
+    // The ramp view draws every stand on its own: those in sight count, and nothing is asked of the map.
+    expect(probe()).toMatchObject({ activeView: 'ramp', grouped: false });
+    expect(probe().onScreen).toHaveLength(41);
+    expect(queries).toEqual([]);
+
+    // The airfield view gathers them. Right after the move the tiles of its zoom are still loading: nothing drawn yet.
+    press(map.getCanvas(), '3');
+    expect(queries).toEqual([{ geometry: [[0, 0], [1440, 900]], options: { layers: ['occ-stands-frame', 'occ-stands-clusters'] } }]);
+    expect(probe()).toMatchObject({ activeView: 'airfield', onScreen: [], grouped: false });
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    // Once the map settles: clusters, and B21, with no neighbour close enough to join one, on its own (in two tiles).
+    drawn = [cluster, alone('B21'), alone('B21')];
+    act(() => fake.state.emit(map, 'idle'));
+    expect(probe()).toMatchObject({ onScreen: ['B21'], grouped: true });
+    expect(legend()).toEqual([group, 'Inhabilitada', 'No oficialUbicación de referencia interna, sin verificar']);
+
+    // Only a stand whose place lies in sight counts: east of the airport A1 is, BN13 is not.
+    drawn = [cluster, alone('A1'), alone('BN13')];
+    act(() => map.jumpTo({ center: [-68.335, 18.5642] }));
+    expect(probe()).toMatchObject({ activeView: 'airfield', onScreen: ['A1'], grouped: true });
+    expect(legend()).toEqual([group, 'Ocupada']);
+    // Every stand there drawn on its own: no cluster to explain.
+    drawn = [alone('A1')];
+    act(() => fake.state.emit(map, 'idle'));
+    expect(probe()).toMatchObject({ onScreen: ['A1'], grouped: false });
+    expect(legend()).toEqual(['Ocupada']);
+
+    // The ramp view counts the stands in sight whatever the map answers; the region view draws none. Neither asks.
+    const asked = queries.length;
+    press(map.getCanvas(), '4');
+    expect(probe().onScreen).toHaveLength(41);
+    expect(probe().grouped).toBe(false);
+    press(map.getCanvas(), '1');
+    act(() => fake.state.emit(map, 'idle'));
+    expect(probe()).toMatchObject({ activeView: 'region', onScreen: [], grouped: false });
+    expect(queries).toHaveLength(asked);
   });
 
   it('counts on screen the flights it draws in the area the insets leave in sight', () => {
