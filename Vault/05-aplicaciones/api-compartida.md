@@ -164,10 +164,11 @@ está desfasada frente a ese código. Detalle en el
 | Connection string y ambiente | Conectar al catálogo físico correcto. | Valor fuera de Git; identidad de aplicación de privilegio mínimo. |
 | `Authentication:*` | Emisor, audiencia, clave de firma y duración del access token. | La API no arranca sin una clave válida; nunca se versiona. |
 | CORS | Orígenes exactos de las dos webs. | Mobile nativo no depende de CORS; CORS no autentica. |
-| Rate limiting | Ventana fija por dirección de la conexión, con un límite menor para crear sesiones. | Protección técnica, no autorización. |
+| Rate limiting | Ventana fija por dirección de la conexión, con un límite menor para crear sesiones. | Protección técnica, no autorización. *Posterior al commit verificado (código de `e098ccde`):* `appsettings.Development.json` sube el límite general de 100 a 600 peticiones por minuto, porque en una presentación la consola, Superadministración y la tablet comparten la dirección; va en la imagen, sin variable en el VPS ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)). |
 | `CardPayments:Mode` | Pasarela de tarjeta. | `Disabled` por defecto; `Simulated` solo arranca en Development, Test o Testing. |
 | `DemoFlights:Mode` | Vuelos demo de Superadministración. | *Posterior al commit verificado (código de `cba00f73`):* `Disabled` por defecto y en `appsettings.Production.json`; `Enabled`, el valor de `appsettings.Development.json`, solo arranca en Development, Test o Testing ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)). |
 | `AeroDataBox:*` y `OpenSky:*` | Proveedores de vuelos y tráfico. | Apagados por defecto; la clave solo llega por configuración secreta. |
+| `AirTraffic:*` | Imagen aérea del mapa del OCC: adsb.fi y adsb.lol de relevo. | *Posterior al commit verificado (código de `77dff268` a `e098ccde`):* `Enabled` es `false` por defecto y en `appsettings.Production.json`, y `appsettings.Development.json` lo enciende con `Providers` `AdsbFi` y `AdsbLol`. Lee la red solo con demanda, cada 10 segundos como mínimo; la clave opcional, solo de adsb.lol, llega por configuración secreta. Un valor fuera de rango impide arrancar ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)). |
 | SMTP y almacenamiento S3 | Correo y bytes privados. | Secretos fuera de Git. |
 
 Los archivos `appsettings*.json` y `.env.example` contienen forma y
@@ -188,6 +189,15 @@ lease del propio sujeto JWT. El [registro](../../backend/Elevant.Application/Ope
 vive en memoria: 90 s de expiración, 5 min de actividad y 24 h de retención,
 más el estado elegido por la propia cuenta y un mensaje de hasta 80
 caracteres. Se pierde al reiniciar la API y presupone una sola instancia.
+
+*Posterior al commit verificado de esta nota (código de `77dff268` a
+`e098ccde`):* la imagen aérea del mapa del OCC también vive en memoria
+([servicio](../../backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs)):
+los aviones, sus estelas de hasta 3 horas, la demanda y el contador diario de
+adsb.lol. Un worker de la API lee la red solo mientras alguien pide la imagen,
+y nada se guarda en SQL. Un reinicio la vacía, y una segunda instancia tendría
+su propia imagen y duplicaría las lecturas de la red
+([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)).
 
 ## Validación local
 

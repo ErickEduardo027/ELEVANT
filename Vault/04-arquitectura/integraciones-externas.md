@@ -45,6 +45,12 @@ Solo el servidor llama al proveedor, y solo desde `FlightFeedSynchronizer` (el w
 
 Pendiente: enlazar OpenSky con los vuelos importados y mostrar el consumo en Superadministración.
 
+*Posterior al commit verificado de esta nota (PR A3,
+[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)):* la
+imagen aérea del mapa del OCC reconoce sus aviones (adsb.fi, con adsb.lol de
+relevo) como vuelos de ELEVANT por matrícula y por *callsign*; el tráfico de
+OpenSky sigue sin enlazar ([Tráfico aéreo en vivo](#tráfico-aéreo-en-vivo-adsbfi-y-adsblol)).
+
 ### Fase 2: feed ampliado y proveedor simulado
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
@@ -123,6 +129,55 @@ que esa verificación no cubre.
   `Test` o `Testing`
   ([guía de integraciones](../../docs/architecture/external-integrations.md)).
 
+### Tráfico aéreo en vivo: adsb.fi y adsb.lol
+
+Posterior al commit verificado de esta nota: esta sección describe el código
+del PR A3 «Imagen aérea y vuelos para el mapa» (`77dff268` a `e098ccde`), que
+esa verificación no cubre
+([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)).
+
+- **Por el servidor.** El puerto `IAirTrafficProvider` tiene un solo adaptador
+  para la familia readsb v2, con dos perfiles, adsb.fi y adsb.lol
+  ([perfiles](../../backend/Elevant.Infrastructure/Integrations/AirTraffic/ReadsbProfile.cs)
+  y [adaptador](../../backend/Elevant.Infrastructure/Integrations/AirTraffic/ReadsbAirTrafficProvider.cs)).
+  Solo el worker de la API llama a la red; los navegadores leen
+  `GET occ/map/air-picture`, y la CSP no cambia.
+- **Relevo.** `AirTraffic:Providers` es una lista ordenada. Tras tres fallos
+  seguidos de la red activa toma el turno la siguiente, y la primera se vuelve
+  a probar cada 10 minutos
+  ([relevo](../../backend/Elevant.Infrastructure/Integrations/AirTraffic/FailoverAirTrafficProvider.cs)).
+- **Licencias y crédito.** adsb.fi es de uso personal y no comercial y pide
+  citarla con un enlace a su página; adsb.lol publica bajo ODbL 1.0. Cada
+  respuesta lleva el crédito de la red en `source`, y cada mapa que dibuje
+  estos aviones mostrará «Datos de aeronaves: {source.name}» con su enlace.
+  Antes de un uso comercial de adsb.fi hace falta su permiso escrito, cambiar
+  a adsb.lol o un receptor ADS-B propio.
+- **Solo con demanda.** Sin nadie leyendo la imagen no hay ninguna llamada.
+  Mientras alguien la lee, y hasta 15 minutos después, hay una lectura de la
+  red cada 10 segundos para todas las pantallas, con esperas tras un rechazo o
+  un fallo y nunca un reintento en bucle
+  ([servicio](../../backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs)).
+  adsb.lol, además, se detiene en 450 lecturas por día UTC sin clave.
+- **Nada se guarda.** La imagen y las estelas viven en la memoria de la API:
+  no hay tabla, registro de uso ni migración.
+- **Vuelos de ELEVANT.** La imagen reconoce los vuelos de ELEVANT por
+  matrícula y por *callsign*, y nunca un vuelo demo. Eso cierra, para la red
+  nueva, el pendiente de enlazar el tráfico con los vuelos importados
+  ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
+- **Activación.** `AirTraffic:Enabled` es `false` por defecto y en
+  `appsettings.Production.json`, y `appsettings.Development.json` lo enciende
+  con `AdsbFi` y `AdsbLol`, sin variables nuevas en el VPS
+  ([registro](../../backend/Elevant.Infrastructure/DependencyInjection.cs)).
+  El overlay del arnés E2E lo apaga, y una lectura a mano contra la red real
+  es un paso aparte y deliberado
+  ([guía local](../../docs/workflows/local-development.md)). La clave opcional
+  de adsb.lol solo llega por configuración secreta.
+- **Comprobación del operador.** El VPS de Development tiene que alcanzar
+  `opendata.adsb.fi`, y `api.adsb.lol` para el relevo. La
+  [guía de integraciones](../../docs/architecture/external-integrations.md)
+  da la línea de curl que el operador corre a mano antes de desplegar, nunca
+  desde CI.
+
 Private Web sí descarga estilos/tiles cartográficos públicos directamente en el navegador. Esa dependencia visual es real y está limitada por CSP, pero no suministra información operacional canónica ni rompe la regla que prohíbe consultar proveedores de aviación desde los clientes.
 
 ## Inventario por estado
@@ -137,6 +192,8 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | Object storage S3-compatible | *Posterior al commit verificado:* implementado | La API escribe medios, PDF financieros y evidencias de rampa en un bucket privado y guarda metadatos y hash en SQL ([medios](medios-comerciales-privados.md)) | Que el bucket de un ambiente vivo esté configurado; la retención sigue abierta. |
 | Chat y notificaciones | *Posterior al commit verificado:* internos de ELEVANT | Chat, notificaciones y correo SMTP salen de la API; los hubs solo envían `ChangedV1` ([feed de cambios](feed-de-cambios-operativos.md)) | Que exista un proveedor externo de mensajería o notificaciones push con la app cerrada. |
 | Vuelos demo | *Posterior al commit verificado:* simulados por la propia API y apagados por defecto ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)) | Superadministración dispara dos propuestas del proveedor `Demo`; tras la importación de OCC, un worker marca el aterrizaje y el despegue como lo haría el feed | Que exista un proveedor externo, una llamada de red o un gasto de unidades de AeroDataBox. |
+| adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
+| adsb.lol (relevo) | *Posterior al commit verificado:* implementado como relevo, con la misma activación ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | Toma el turno tras tres fallos seguidos de adsb.fi y se detiene en 450 lecturas por día UTC sin clave | Que haya una clave configurada, trazas o un ritmo según su cuota. |
 | Pasarela de tarjeta | *Posterior al commit verificado:* simulada y apagada por defecto ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md), [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) | `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; `Simulated` solo arranca en Development, Test o Testing y aprueba o rechaza en memoria las tarjetas de prueba, sin red | Que exista una pasarela real o que un cobro mueva dinero. |
 | Proveedor fiscal (DGII) | *Posterior al commit verificado:* sin integración | La simulación fiscal de ADR-0018 (modos `LocalSimulation` y `ProviderSandbox`) salió del producto en la fase 4; la factura es un e-CF simulado que nada transmite ([Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md)) | Transmisión, firma o aceptación de la DGII. |
 

@@ -228,6 +228,41 @@ a `ff066d47`, también posterior al commit verificado;
   ([liberación](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.StandRelease.cs));
   del cliente compartido, y de private-web: panel, tarjeta, motivos y servicio.
 
+Desde la imagen aérea y los vuelos del mapa (PR A3 del mismo plan, código de
+`77dff268` a `e098ccde`, también posterior al commit verificado;
+[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)):
+
+- **Fixtures sintéticos.** Las respuestas de prueba del adaptador tienen la
+  forma real del JSON v2 de readsb, con direcciones, matrículas, *callsign* y
+  posiciones inventadas
+  ([adsb.fi](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/readsb-adsbfi-point.synthetic.json)
+  y [adsb.lol](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/readsb-adsblol-point.synthetic.json));
+  el proyecto de pruebas los copia a su salida. Ninguna respuesta real se
+  versiona, porque la licencia de adsb.fi no permite redistribuirla. El HTTP se
+  simula con un manejador de prueba, y ninguna prueba ni workflow de CI llama a
+  adsb.fi o a adsb.lol.
+- **Prueba en vivo opcional.**
+  [`AirTrafficLiveTests`](../../backend/tests/Elevant.UnitTests/Infrastructure/AirTrafficLiveTests.cs)
+  hace una sola lectura de 250 NM alrededor de Punta Cana, sin clave, y solo
+  corre con `ELEVANT_LIVE_AIR_TRAFFIC=1`: contra adsb.fi, o contra adsb.lol con
+  `ELEVANT_LIVE_AIR_TRAFFIC_PROVIDER=AdsbLol`. Informa cuántos aviones vio,
+  nunca la respuesta. Como la de AeroDataBox, CI nunca la activa.
+- **La E2E no activa el tráfico.** El overlay del arnés deja apagada la imagen
+  aérea salvo que `ELEVANT_E2E_AIR_TRAFFIC_ENABLED` la encienda, así que el
+  recorrido nunca lee una red real; la lectura a mano es un paso aparte y
+  deliberado ([guía local](../../docs/workflows/local-development.md)). El PR
+  no suma pasos al arnés porque no tiene pantallas.
+- **Pruebas automáticas.** Unitarias del adaptador y su parser, el relevo, la
+  configuración, el servicio de la imagen, las esperas, el emparejamiento, las
+  claves y las fases, y los manejadores de las tres lecturas. De la API,
+  montando el host sin SQL: el worker y los endpoints, entre ellos que la
+  imagen de Development enciende el tráfico y sube el límite a 600. De
+  arquitectura: contratos sin `long` y con ids públicos, tres lecturas bajo
+  `occ/map` y el worker, que solo depende de Application. Seis pruebas SQL de
+  los vuelos del mapa
+  ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.MapFlights.cs)),
+  y las del cliente compartido.
+
 ## Suite visual de los mapas del OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código del

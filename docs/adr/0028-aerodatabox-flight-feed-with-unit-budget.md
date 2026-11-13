@@ -133,3 +133,17 @@ una prueba unitaria que simula el día minuto a minuto.
 > restaura (`flight_proposal_passed`). La lista marca esos tramos con `isDemo`, que solo viaja
 > cuando es verdadero. Ver
 > [ADR-0041](0041-demo-flights-and-punta-cana-stands.md).
+
+> **Actualización (13 de noviembre de 2026).** Los vuelos del mapa del OCC
+> (`GET occ/map/flights`) leen también las propuestas abiertas del feed, con la
+> misma regla de visibilidad que la revisión, que ahora vive en un solo lugar
+> (`FlightFeedVisibility`): las aerolíneas con contrato en vigor ese día y las
+> candidatas a charter, nunca las de un contrato suspendido o vencido en la
+> estación. Las filas demo que nadie importó toman su estado, su hora de pista y
+> su reloj del `DemoFlightTimeline` al leerlas, sin escribir nada. La imagen
+> aérea del mapa (adsb.fi, con adsb.lol de relevo) reconoce los vuelos de ELEVANT
+> por matrícula y por *callsign*: eso cierra, para esa red, el pendiente de
+> enlazar el tráfico con los vuelos importados. El tráfico de OpenSky
+> (`occ/traffic/aircraft`) sigue sin enlazar. Ninguna de estas lecturas llama a
+> AeroDataBox ni gasta unidades. Ver
+> [ADR-0042](0042-occ-air-picture-and-map-flights.md).

@@ -64,6 +64,11 @@ sources:
   - frontend/private-web/src/features/governance/DemoFlightsPanel.jsx
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfDemoStationStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/StandAvailability.cs
+  - docs/adr/0042-occ-air-picture-and-map-flights.md
+  - backend/Elevant.Api/Controllers/OccMapController.cs
+  - backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfOccMapFlightStore.cs
+  - frontend/private-web/src/features/admin-occ/live/occRequestPlan.js
 tags:
   - arquitectura
   - tiempo-real
@@ -395,5 +400,41 @@ Las pistas siguen sin llevar datos.
 - El superadministrador sigue sin recibir `occ_planning`: su panel relee las
   opciones después de cargar posiciones, al cambiar la escala del formulario y
   al volver a la pestaña.
+
+Tampoco esto demuestra latencia en el VPS.
+
+## Imagen aérea y vuelos del mapa (OCC a nivel NOC, PR A3)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+`77dff268` a `e098ccde`
+([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)). No hay
+pistas nuevas, y nada de este PR escribe ni anuncia: sus tres lecturas
+([controlador](../../backend/Elevant.Api/Controllers/OccMapController.cs)) son
+de solo lectura.
+
+- `GET occ/map/flights` es una lectura SQL
+  ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfOccMapFlightStore.cs))
+  cuyos datos cambian con escrituras que ya anuncian `occ_planning`: la
+  importación y las lecturas del feed, la asignación, los hitos de la tablet, el
+  vuelo demo y su worker, entre otras. Lo que depende de la hora (la fase de
+  una llegada y el reloj de un vuelo demo sin importar) se calcula al leer, y
+  los instantes del vuelo demo ya vienen en la respuesta.
+- **Planificado (U3 y M5), no actual:** las pantallas del OCC releerán
+  `flights` con `occ_planning`, como mucho una vez cada 3 segundos, y con un
+  sondeo de seguridad de 60 segundos; un toque en la tablet solo relee esa
+  lectura. El [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  ya cuenta esas lecturas en su prueba de presupuesto. Hoy ninguna pantalla lee
+  `occ/map`.
+- `GET occ/map/air-picture` no depende del feed de cambios: se sirve desde
+  memoria
+  ([servicio](../../backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs))
+  y la pantalla la pide al ritmo que trae la respuesta (`refreshAfterSeconds`:
+  10 segundos, 2 mientras calienta), en pausa con la pestaña oculta. Ninguna
+  pista la anuncia. Las claves con las que reconoce los vuelos de ELEVANT se
+  guardan 20 segundos por estación, así que un vuelo importado o cambiado
+  puede tardar hasta 20 segundos en aparecer emparejado, y una
+  `matchedFlightKey` desconocida le dice a la pantalla que relea `flights`.
+- La estela de un avión (`GET occ/map/aircraft/{hex}/track`) se lee al
+  elegirlo, también desde memoria.
 
 Tampoco esto demuestra latencia en el VPS.
