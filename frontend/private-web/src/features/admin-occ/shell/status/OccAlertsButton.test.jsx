@@ -109,11 +109,25 @@ describe('OccAlertsButton', () => {
     const onOpen = vi.fn();
     const view = render(alerts({ onOpen }));
     const button = screen.getByRole('button', { name: 'Sin alertas' });
-    // In this step it opens a page, so it states no expanded panel.
+    // Without a panel to control it states none.
     expect(button).not.toHaveAttribute('aria-expanded');
+    expect(button).not.toHaveAttribute('aria-haspopup');
     await userEvent.click(button);
     expect(onOpen).toHaveBeenCalledTimes(1);
-    view.rerender(alerts({ onOpen, expanded: true }));
+
+    // The drawer it opens: the dialog it pops up, whether it is open and, while it is, its id.
+    view.rerender(alerts({ onOpen, expanded: false }));
+    expect(button).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(button).not.toHaveAttribute('aria-controls');
+    view.rerender(alerts({ onOpen, expanded: true, controls: 'occ-alerts-drawer' }));
     expect(screen.getByRole('button', { name: 'Sin alertas' })).toHaveAttribute('aria-expanded', 'true');
+    expect(button).toHaveAttribute('aria-controls', 'occ-alerts-drawer');
+  });
+
+  it('hands its button to a ref, so the drawer can give focus back to it', () => {
+    const ref = { current: null };
+    render(alerts({ ref, summary: { unreceivedCount: 2, highest: 'urgent' } }));
+    expect(ref.current).toBe(screen.getByRole('button', { name: '2 alertas' }));
   });
 });

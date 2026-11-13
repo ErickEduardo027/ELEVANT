@@ -12,8 +12,7 @@ import { NOTIFICATIONS_REFRESH_EVENT } from '../../notifications/useNotification
 import { useOccResource } from '../live/useOccResource';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import OccShellOverlays from './OccShellOverlays';
-import { arrivalToasts, OccShellProvider, useOccShell } from './OccShellProvider';
-import { occShellMessages } from './occShellMessages';
+import { OccShellProvider, useOccShell } from './OccShellProvider';
 import OccTopbar from './OccTopbar';
 import { OCC_TEST_ACCOUNT_ID } from './testing/occShellFixtures';
 
@@ -242,10 +241,12 @@ describe('OccShellProvider', () => {
     const message = notice('agent_message');
     const laterMessage = notice('agent_message');
     const laterDeviation = notice('deviation_reported');
+    const laterIncident = notice('incident_reported');
     loadOperationalNotifications
       .mockResolvedValueOnce({ notifications: [old], hasMore: false })
-      .mockResolvedValueOnce({ notifications: [incident, message, old], hasMore: false })
-      .mockResolvedValueOnce({ notifications: [laterDeviation, laterMessage, incident, message, old], hasMore: false });
+      .mockResolvedValueOnce({ notifications: [message, incident, old], hasMore: false })
+      .mockResolvedValueOnce({ notifications: [laterDeviation, laterMessage, laterIncident, message, incident, old],
+        hasMore: false });
     render(frame(null, { createObserver }));
     await flush();
     // Opening the OCC does not replay the unread notice it already had.
@@ -255,11 +256,17 @@ describe('OccShellProvider', () => {
     await flush(10_000);
     act(() => created[0].onChanges(['notifications']));
     await flush();
+    // An incident is urgent: an alert, with its word, «{tipo}, {código}», and the most pressing first.
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(`Incidencia reportada en rampa · ${incident.operationCode}`);
-    expect(screen.getByRole('status')).toHaveTextContent(`Nuevo mensaje del agente · ${message.operationCode}`);
-    // Portaled into the shell root, outside the screen.
+    expect(alert).toHaveTextContent('Urgente');
+    expect(alert).toHaveTextContent(`Incidencia reportada en rampa, ${incident.operationCode}`);
+    expect(alert).not.toHaveTextContent('·');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(`Nuevo mensaje del agente, ${message.operationCode}`);
+    expect(alert.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Portaled into the shell root, outside the screen, and drawn by the occ-ui stack.
     expect(alert.closest('[data-shell-root]')).not.toBeNull();
+    expect(alert.closest('[data-occ-toasts]')).not.toBeNull();
 
     // «Abrir» goes where the notice points and closes the toast.
     fireEvent.click(within(alert).getByRole('button', { name: 'Abrir' }));
@@ -267,16 +274,23 @@ describe('OccShellProvider', () => {
       .toBe(`/admin-occ/review?operationId=${incident.operationId}`);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
-    // With the chat open a new message gets no toast; a new deviation still does.
+    // With the chat open a new message gets no toast; a new incident and a new deviation still do.
     await flush(10_000);
     act(() => { window.history.pushState({}, '', '/admin-occ/chat'); window.dispatchEvent(new PopStateEvent('popstate')); });
     act(() => created[0].onChanges(['notifications']));
     await flush();
-    expect(screen.getByRole('alert')).toHaveTextContent(`Desviación reportada en rampa · ${laterDeviation.operationCode}`);
-    expect(screen.queryAllByRole('status')).toEqual([]);
+    expect(screen.getByRole('alert')).toHaveTextContent(`Incidencia reportada en rampa, ${laterIncident.operationCode}`);
+    // A deviation asks for attention: a status, not an alert.
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Atención');
+    expect(screen.getByRole('status')).toHaveTextContent(`Desviación reportada en rampa, ${laterDeviation.operationCode}`);
 
-    // An alert stays 15 s.
-    await flush(14_000);
+    // An attention toast stays 10 s, an urgent one 15 s.
+    await flush(9_000);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    await flush(1_000);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await flush(4_000);
     expect(screen.getByRole('alert')).toBeInTheDocument();
     await flush(1_000);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -314,13 +328,30 @@ describe('OccShellProvider', () => {
     expect(within(alerts).getByTestId('notifications-badge')).toHaveTextContent('1');
     // The bar mounts the overlays, which leave the header for the shell root.
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(`Incidencia reportada en rampa · ${incident.operationCode}`);
+    expect(alert).toHaveTextContent(`Incidencia reportada en rampa, ${incident.operationCode}`);
     expect(alert.closest('header')).toBeNull();
     expect(alert.closest('[data-shell-root]')).not.toBeNull();
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(2);
 
+    // The alerts open «Alertas y avisos» over the screen, in the shell root, from the notices already read: no new
+    // read, no navigation. The toasts give way to the drawer while it is open.
     fireEvent.click(alerts);
-    expect(window.location.pathname).toBe('/admin-occ/notifications');
+    const drawer = screen.getByRole('dialog', { name: 'Alertas y avisos' });
+    expect(drawer.closest('header')).toBeNull();
+    expect(drawer.closest('[data-shell-root]')).not.toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Recibido' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/admin-occ/dashboard');
     expect(onOpenNotifications).not.toHaveBeenCalled();
+    await flush(5_000);
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(2);
+
+    // «Recibido» is the server read receipt, through the shell: the bar counts it at once.
+    setOperationalNotificationRead.mockResolvedValueOnce({ ...incident, readAt: '2026-11-12T14:15:00Z' });
+    await act(async () => { fireEvent.click(within(drawer).getByRole('button', { name: 'Recibido' })); });
+    expect(setOperationalNotificationRead).toHaveBeenCalledExactlyOnceWith(incident.id, true);
+    expect(screen.getByRole('button', { name: 'Sin alertas' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(drawer).getByText('Recibida a las 10:15')).toBeInTheDocument();
     view.unmount();
 
     // Without the notices permission the bar has no alerts to count and no page to open.
@@ -332,25 +363,37 @@ describe('OccShellProvider', () => {
     expect(screen.getByRole('group', { name: 'Idioma' })).toBeInTheDocument();
   });
 
-  it('shows at most three arrival toasts, then one summary, in the account language', () => {
-    const arrived = ['incident_reported', 'agent_message', 'operation_submitted', 'flight_changed', 'operation_started']
-      .map(kind => notice(kind));
-    const t = (path, values) => {
-      const text = path.split('.').reduce((node, key) => node?.[key], occShellMessages.en);
-      return text.replace(/\{(\w+)\}/g, (_, name) => String(values?.[name] ?? ''));
-    };
-    const toasts = arrivalToasts(arrived, { pathname: '/admin-occ/dashboard', t, language: 'en' });
-    expect(toasts.map(toast => toast.message)).toEqual([
-      `Incident reported on the ramp · ${arrived[0].operationCode}`,
-      `New message from the agent · ${arrived[1].operationCode}`,
-      `Operation submitted for review · ${arrived[2].operationCode}`,
-      'You have 2 more new operational notices.',
-    ]);
-    expect(toasts[0]).toMatchObject({ tone: 'danger', durationMs: 15_000, action: { label: 'Open' } });
-    expect(toasts[1]).toMatchObject({ tone: 'info', durationMs: 8_000 });
-    expect(toasts[3].action).toEqual({ label: 'View', path: '/admin-occ/notifications' });
-    // Both languages carry the same texts.
-    expect(Object.keys(occShellMessages.en.arrivals)).toEqual(Object.keys(occShellMessages.es.arrivals));
+  it('a received alert takes its toast away, and opening the alerts clears the toasts', async () => {
+    const { created, createObserver } = fakeObservers();
+    const old = notice('operation_submitted');
+    const incident = notice('incident_reported');
+    const deviation = notice('deviation_reported');
+    const started = notice('operation_started');
+    loadOperationalNotifications
+      .mockResolvedValueOnce({ notifications: [old], hasMore: false })
+      .mockResolvedValue({ notifications: [incident, deviation, started, old], hasMore: false });
+    const bar = <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={{ name: 'Alex Operations', role: 'OCC' }} />;
+    render(frame(bar, { createObserver, overlays: false }));
+    await flush(10_000);
+    act(() => created[0].onChanges(['notifications']));
+    await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent(incident.operationCode);
+    expect(screen.getAllByRole('status')).toHaveLength(2);
+
+    // Received anywhere (the shell's markRead), the incident needs its toast no more; the others stay.
+    setOperationalNotificationRead.mockResolvedValueOnce({ ...incident, readAt: '2026-11-12T14:00:12Z' });
+    await act(async () => { await shell.notices.markRead(incident.id); });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(2);
+
+    // The drawer shows all of it, so opening it clears the toasts: closing it brings none back.
+    fireEvent.click(screen.getByRole('button', { name: '1 alerta' }));
+    const drawer = screen.getByRole('dialog', { name: 'Alertas y avisos' });
+    expect(within(drawer).getByRole('region', { name: 'Avisos recientes' })).toHaveTextContent(started.operationCode);
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('status')).toEqual([]);
+    expect(screen.queryAllByRole('alert')).toEqual([]);
   });
 
   it('derives the live state from the observer status', async () => {

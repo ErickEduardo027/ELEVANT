@@ -6,7 +6,7 @@ import { OccShellChannelContext, OccShellContext, OccShellToastContext } from '.
 
 export const OCC_TEST_ACCOUNT_ID = '30000000-0000-4000-8000-000000000001';
 
-const NO_TOASTS = Object.freeze({ toasts: Object.freeze([]), dismissToast: () => {} });
+const NO_TOASTS = Object.freeze({ toasts: Object.freeze([]), dismissToast: () => {}, dismissAllToasts: () => {} });
 
 /**
  * A shell value with a working `subscribe`, plus three test helpers: `announce(resources)` delivers an

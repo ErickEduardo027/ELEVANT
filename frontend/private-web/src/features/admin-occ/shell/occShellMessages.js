@@ -81,11 +81,16 @@ export const occShellMessages = {
       unconfigured: 'Sin configurar',
       idle: 'Sin consultar en esta pantalla',
     },
-    // Toasts for notices that arrive while the OCC is open (OccShellProvider).
+    // Toasts for notices that arrive while the OCC is open (shell/occToastQueue.js).
     arrivals: {
       open: 'Abrir',
       viewAll: 'Ver',
       more: 'Tienes {count} avisos operativos nuevos más.',
+    },
+    // The drawer the alerts of the status bar open (OccAlertsDrawer).
+    alertsDrawer: {
+      title: 'Alertas y avisos',
+      history: 'Ver historial de avisos',
     },
   },
   en: {
@@ -170,6 +175,10 @@ export const occShellMessages = {
       open: 'Open',
       viewAll: 'View',
       more: 'You have {count} more new operational notices.',
+    },
+    alertsDrawer: {
+      title: 'Alerts and notices',
+      history: 'View notice history',
     },
   },
 };

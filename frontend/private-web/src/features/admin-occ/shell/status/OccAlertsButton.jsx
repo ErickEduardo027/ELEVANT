@@ -37,11 +37,15 @@ function CountPhrase({ template, count, wordClassName }) {
 /**
  * «Sin alertas», «1 alerta» or «{count} alertas», from `summary` (alertSummary of dashboard/noc/alertModel.js) once
  * `status` (the shell's notices) says they were read. With unreceived alerts it shows the glyph of the highest priority,
- * whose word is the button's description: shape and word, never colour alone. `onOpen` opens the alerts; `expanded`
- * is passed on as `aria-expanded` when the button controls a panel. `labelClassName` goes on the words, never on the
- * count: below 640 px the bar shows the glyph and the number, and the words stay for screen readers.
+ * whose word is the button's description: shape and word, never colour alone. `onOpen` opens the alerts. When the
+ * button opens a panel, `expanded` is passed on as `aria-expanded` (with `aria-haspopup="dialog"`) and `controls`, the
+ * panel's id while it is open, as `aria-controls`; `ref` reaches the button, so the panel can give focus back to it.
+ * `labelClassName` goes on the words, never on the count: below 640 px the bar shows the glyph and the number, and the
+ * words stay for screen readers.
  */
-export default function OccAlertsButton({ summary, status, onOpen, expanded, className = '', labelClassName = '' }) {
+export default function OccAlertsButton({
+  ref, summary, status, onOpen, expanded, controls, className = '', labelClassName = '',
+}) {
   const { t, language } = useTranslation(occShellMessages);
   const wordId = useId();
   const read = READ_STATUSES.has(status);
@@ -56,7 +60,8 @@ export default function OccAlertsButton({ summary, status, onOpen, expanded, cla
   }
 
   return (
-    <button type="button" onClick={onOpen} aria-expanded={expanded} aria-describedby={highest ? wordId : undefined}
+    <button ref={ref} type="button" onClick={onOpen} aria-expanded={expanded} aria-controls={controls}
+      aria-haspopup={expanded === undefined ? undefined : 'dialog'} aria-describedby={highest ? wordId : undefined}
       data-alert-priority={highest ?? 'none'}
       className={`${STATUS_CONTROL} ${STATUS_TONE[highest] ?? STATUS_CONTROL_REST} ${className}`}>
       {highest ? <OccGlyph name={highest} /> : <BellIcon className="h-4 w-4 shrink-0 text-occ-muted" />}

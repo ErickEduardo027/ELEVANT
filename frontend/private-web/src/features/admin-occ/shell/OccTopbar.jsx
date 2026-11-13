@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { alertSummary } from '../../dashboard/noc/alertModel';
 import OccPlate from '../../occ-ui/OccPlate';
 import { MenuIcon } from '../../shell/components/icons';
-import { ADMIN_OCC_BASE_PATH } from '../navigation';
-import { useOccShell } from './occShellContext';
+import { useOccShell, useOptionalOccShellToasts } from './occShellContext';
 import { occNavLabel } from './occNavLabel';
 import OccShellOverlays from './OccShellOverlays';
 import { occShellMessages } from './occShellMessages';
@@ -20,8 +19,6 @@ import OccSourcesButton from './status/OccSourcesButton';
 import OccUserMenu from './status/OccUserMenu';
 import { COARSE_TARGET, STATUS_BAR_LAYOUT as LAYOUT } from './status/statusBarLayout';
 
-const NOTIFICATIONS_PATH = `${ADMIN_OCC_BASE_PATH}/notifications`;
-
 const isCurrent = (pathname, item) => pathname === item.path || pathname?.startsWith(`${item.path}/`);
 
 /**
@@ -30,17 +27,34 @@ const isCurrent = (pathname, item) => pathname === item.path || pathname?.starts
  * live link, the sources, the alerts, the two clocks, the language, «Leyenda» and the account. The OCC is dark only and
  * has no theme button, so the `theme` and `onToggleTheme` props that AppShell sends to every top bar go unread, as do
  * its notification props: the bar reads the notices of OccShellProvider (useOccShell). Which element shows at which
- * width comes from status/statusBarLayout.js.
+ * width comes from status/statusBarLayout.js. The alerts open «Alertas y avisos» (OccAlertsDrawer), whose open state
+ * lives here and which OccShellOverlays draws in the shell root.
  */
 export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout }) {
   const { t } = useTranslation(occShellMessages);
   const pathname = usePathname();
-  const router = useRouter();
   const { live, sources, notices } = useOccShell();
   const current = navigation.find(item => isCurrent(pathname, item));
   const summary = useMemo(() => alertSummary(notices.items), [notices.items]);
-  // Until the alerts drawer arrives, the alerts open the notifications page, as the bell did.
-  const openAlerts = useCallback(() => router.push(NOTIFICATIONS_PATH), [router]);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const alertsButton = useRef(null);
+  const drawerId = useId();
+  // The drawer shows every notice the toasts stand for: opening it takes them away.
+  const dismissAllToasts = useOptionalOccShellToasts()?.dismissAllToasts;
+  const openAlerts = useCallback(() => {
+    setAlertsOpen(true);
+    dismissAllToasts?.();
+  }, [dismissAllToasts]);
+  const closeAlerts = useCallback(() => setAlertsOpen(false), []);
+  const alerts = useMemo(() => ({ open: alertsOpen, id: drawerId, onClose: closeAlerts, returnFocusRef: alertsButton }),
+    [alertsOpen, closeAlerts, drawerId]);
+
+  // The browser's back and forward buttons leave the screen the drawer was opened on: they close it.
+  useEffect(() => {
+    if (!alertsOpen) return undefined;
+    window.addEventListener('popstate', closeAlerts);
+    return () => window.removeEventListener('popstate', closeAlerts);
+  }, [alertsOpen, closeAlerts]);
 
   return (
     <header className="relative z-nav flex h-12 shrink-0 items-center gap-1 border-b border-occ-line bg-occ-panel px-2 sm:gap-1.5 sm:px-3 xl:gap-2 xl:px-4">
@@ -66,14 +80,15 @@ export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout 
       {/* Without the notices permission there is nothing to count, and the notifications page is not open to the
           account either. */}
       {notices.status !== 'forbidden' && (
-        <OccAlertsButton summary={summary} status={notices.status} onOpen={openAlerts} className={LAYOUT.alerts.bar}
+        <OccAlertsButton ref={alertsButton} summary={summary} status={notices.status} onOpen={openAlerts}
+          expanded={alertsOpen} controls={alertsOpen ? drawerId : undefined} className={LAYOUT.alerts.bar}
           labelClassName={LAYOUT.alerts.label} />
       )}
       <OccClocks className={LAYOUT.localClock.bar} utcClassName={LAYOUT.utcClock.bar} />
       <OccLanguageToggle className={LAYOUT.language.bar} />
       <OccLegendButton className={LAYOUT.legend.bar} />
       <OccUserMenu user={user} onLogout={onLogout} className={LAYOUT.account.bar} />
-      <OccShellOverlays />
+      <OccShellOverlays alerts={alerts} />
     </header>
   );
 }

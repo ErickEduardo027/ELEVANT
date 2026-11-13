@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
+import { OCC_TOAST_PLACEMENT } from '../../occ-ui/OccToastStack';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import OccTopbar from './OccTopbar';
 import { occShellMessages } from './occShellMessages';
@@ -30,11 +31,14 @@ const DAY = () => [
   notice('operation_submitted'),
 ];
 
+// Inside a shell root, as ShellFrame draws it: the bar's overlays (the alerts drawer, the toasts) portal into it.
 function topbar(props, shell) {
   return (
     <LanguageScope>
       <OccShellTestProvider value={shell}>
-        <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={USER} onOpenMenu={vi.fn()} onLogout={vi.fn()} {...props} />
+        <div data-shell-root="" data-department="occ">
+          <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={USER} onOpenMenu={vi.fn()} onLogout={vi.fn()} {...props} />
+        </div>
       </OccShellTestProvider>
     </LanguageScope>
   );
@@ -108,10 +112,55 @@ it('keeps the language toggle, the clocks and the alerts count', async () => {
   expect(screen.queryByTestId('notifications-badge')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'No alerts' })).toBeInTheDocument();
 
-  // Until the alerts drawer arrives, the button opens the notifications page, as the bell did.
+  // The button opens the alerts drawer over the screen, in English too; the page stays where it was.
   await userEvent.click(screen.getByRole('button', { name: 'No alerts' }));
-  expect(window.location.pathname).toBe('/admin-occ/notifications');
-  expect(screen.getByText('Notifications')).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Alerts and notices' })).toBeInTheDocument();
+  expect(window.location.pathname).toBe('/admin-occ/planning');
+});
+
+it('the alerts button opens the drawer and reports aria-expanded', async () => {
+  window.history.replaceState({}, '', '/admin-occ/dashboard');
+  const markRead = vi.fn(async id => ({ id }));
+  const shell = createOccShellValue({ notices: { status: 'success', items: DAY(), markRead } });
+  render(topbar({}, shell));
+  const button = screen.getByRole('button', { name: '3 alertas', description: 'Urgente' });
+  expect(button).toHaveAttribute('aria-haspopup', 'dialog');
+  expect(button).toHaveAttribute('aria-expanded', 'false');
+  expect(button).not.toHaveAttribute('aria-controls');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+  await userEvent.click(button);
+  const drawer = screen.getByRole('dialog', { name: 'Alertas y avisos' });
+  expect(drawer).toHaveAttribute('aria-modal', 'true');
+  expect(button).toHaveAttribute('aria-expanded', 'true');
+  expect(button).toHaveAttribute('aria-controls', drawer.id);
+  // Drawn in the shell root, out of the bar, with the notices the shell already read.
+  expect(drawer.closest('header')).toBeNull();
+  expect(within(drawer).getAllByRole('button', { name: 'Recibido' })).toHaveLength(3);
+  expect(within(drawer).getByText(/^Recibida a las /)).toBeInTheDocument();
+  expect(markRead).not.toHaveBeenCalled();
+
+  // Esc closes it and gives focus back to the button.
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(button).toHaveAttribute('aria-expanded', 'false');
+  expect(button).not.toHaveAttribute('aria-controls');
+  expect(button).toHaveFocus();
+
+  // The browser's back button closes it too.
+  await userEvent.click(button);
+  expect(screen.getByRole('dialog', { name: 'Alertas y avisos' })).toBeInTheDocument();
+  act(() => { window.history.pushState({}, '', '/admin-occ/planning'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('the toast stack starts under the bar', () => {
+  render(topbar({}));
+  const bar = screen.getByRole('banner');
+  // The bar is 48 px high (h-12); the stack starts 8 px under it, so it never covers the clocks or the alert count.
+  expect(bar.className.split(/\s+/)).toContain('h-12');
+  expect(OCC_TOAST_PLACEMENT.statusBarPx).toBe(12 * 4);
+  expect(OCC_TOAST_PLACEMENT.topPx).toBeGreaterThan(OCC_TOAST_PLACEMENT.statusBarPx);
 });
 
 it('names Datos maestros and Tablets instead of their message keys', () => {

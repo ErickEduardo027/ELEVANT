@@ -14,7 +14,10 @@ export const OccShellContext = createContext(null);
  */
 export const OccShellChannelContext = createContext(null);
 
-/** Shown on screen through OccShellOverlays: `{ toasts, dismissToast }`. */
+/**
+ * Shown on screen through OccShellOverlays: `{ toasts, dismissToast(id), dismissAllToasts() }`, the visible toasts of
+ * shell/occToastQueue.js, each `{ id, priority, message, code, action: { label, path } }`.
+ */
 export const OccShellToastContext = createContext(null);
 
 export function useOccShell() {

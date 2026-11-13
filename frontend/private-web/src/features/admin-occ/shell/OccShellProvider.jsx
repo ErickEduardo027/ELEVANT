@@ -1,33 +1,30 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '../../auth/AuthContext';
 import { ACCESS_RESOURCES, useDepartmentAccess } from '../../access/DepartmentAccessContext';
-import { useToast } from '../../../hooks/useToast';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import {
   loadOperationalNotifications, setOperationalNotificationRead,
 } from '../../../services/operationalCommunicationService';
-import {
-  isAlertNotification, isMessageNotification, notificationKindLabel, notificationTargetPath,
-} from '../../notifications/notificationKinds';
 import { NOTIFICATIONS_REFRESH_EVENT } from '../../notifications/useNotificationBadge';
 import { LIVE_FRESH_MS } from '../live/occCadence';
 import { liveSourceReports, reduceLive, startLive } from '../live/occLive';
 import { createSourceHealthStore, summarizeSources } from '../live/sourceHealth';
 import { useOccResource } from '../live/useOccResource';
-import { ADMIN_OCC_BASE_PATH } from '../navigation';
 import { OccShellChannelContext, OccShellContext, OccShellToastContext } from './occShellContext';
 import { occShellMessages } from './occShellMessages';
+import {
+  arrivalToasts, EMPTY_TOAST_QUEUE, nextToastExpiry, noticeToastId, reduceToastQueue,
+} from './occToastQueue';
 
 export {
   useOccShell, useOptionalOccShell, useOccShellChannel, useOptionalOccShellChannel,
 } from './occShellContext';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const NOTIFICATIONS_PATH = `${ADMIN_OCC_BASE_PATH}/notifications`;
 const NOTICES_PERMISSION = 'operations.notifications.read';
 const NOTICE_RESOURCES = Object.freeze(['notifications']);
 // Without a live socket the state can change with time alone; this re-evaluates it.
@@ -44,23 +41,6 @@ const hasNoNotices = data => (data?.notifications ?? []).length === 0;
 export function arrivalsSince(seen, items) {
   const ids = new Set(items.map(item => item.id));
   return { seen: ids, arrived: seen ? items.filter(item => !item.readAt && !seen.has(item.id)) : [] };
-}
-
-/**
- * The toasts for new notices, as AppShell showed them before the shell owned them: no message toast while the chat
- * is open (it shows them itself), at most three, then one summary; an alert stays 15 s and its action is «Abrir».
- */
-export function arrivalToasts(arrived, { pathname = '', t, language = 'es' }) {
-  const fresh = pathname.includes('/chat') ? arrived.filter(item => !isMessageNotification(item.kind)) : arrived;
-  const toasts = fresh.slice(0, 3).map(item => {
-    const alert = isAlertNotification(item.kind);
-    return { message: `${notificationKindLabel(item.kind, language)} · ${item.operationCode}`,
-      tone: alert ? 'danger' : 'info', durationMs: alert ? 15_000 : 8_000,
-      action: { label: t('arrivals.open'), path: notificationTargetPath(item) } };
-  });
-  if (fresh.length > 3) toasts.push({ message: t('arrivals.more', { count: fresh.length - 3 }), tone: 'info',
-    durationMs: 8_000, action: { label: t('arrivals.viewAll'), path: NOTIFICATIONS_PATH } });
-  return toasts;
 }
 
 /**
@@ -168,14 +148,14 @@ function OccLiveLayer({ createObserver, observe, children }) {
 }
 
 /**
- * The operational notices, read once for the whole frame on the live layer's observer, and their arrival toasts.
+ * The operational notices, read once for the whole frame on the live layer's observer, and the toasts of the ones
+ * that arrive (shell/occToastQueue.js: at most three on screen, an urgent one at least 15 s).
  */
 function OccNoticesLayer({ live, children }) {
   const { session } = useAuth();
-  const router = useRouter();
   const pathname = usePathname();
   const { t, language } = useTranslation(occShellMessages);
-  const { toasts, showToast, dismissToast } = useToast();
+  const [toastQueue, dispatchToasts] = useReducer(reduceToastQueue, EMPTY_TOAST_QUEUE);
   const seen = useRef(null);
   const context = useRef({ pathname, t, language });
   useEffect(() => { context.current = { pathname, t, language }; }, [language, pathname, t]);
@@ -188,13 +168,22 @@ function OccNoticesLayer({ live, children }) {
     if (!signal.aborted) {
       const { seen: ids, arrived } = arrivalsSince(seen.current, data.notifications ?? []);
       seen.current = ids;
-      for (const toast of arrivalToasts(arrived, context.current)) {
-        showToast(toast.message, toast.tone, toast.durationMs,
-          { label: toast.action.label, onClick: () => router.push(toast.action.path) });
-      }
+      const toasts = arrivalToasts(arrived, context.current);
+      if (toasts.length > 0) dispatchToasts({ type: 'arrive', toasts, now: Date.now() });
     }
     return data;
-  }, [router, showToast]);
+  }, []);
+
+  // One timer, to the next toast whose time is over.
+  const expiry = nextToastExpiry(toastQueue);
+  useEffect(() => {
+    if (expiry === null) return undefined;
+    const timer = window.setTimeout(() => dispatchToasts({ type: 'expire', now: Date.now() }),
+      Math.max(0, expiry - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [expiry]);
+  const dismissToast = useCallback(id => dispatchToasts({ type: 'dismiss', id, now: Date.now() }), []);
+  const dismissAllToasts = useCallback(() => dispatchToasts({ type: 'clear' }), []);
 
   const notices = useOccResource({
     key: 'notices', load, permission: NOTICES_PERMISSION, resources: NOTICE_RESOURCES, scopeKey: accountId,
@@ -209,10 +198,12 @@ function OccNoticesLayer({ live, children }) {
     return () => window.removeEventListener(NOTIFICATIONS_REFRESH_EVENT, onRefresh);
   }, [refresh]);
 
-  // «Recibido» is the per-account read receipt; the server's answer replaces the notice.
+  // «Recibido» is the per-account read receipt; the server's answer replaces the notice, and a received alert needs no
+  // toast any more.
   const markRead = useCallback(async id => {
     const updated = await setOperationalNotificationRead(id, true);
     setData(data => ({ ...data, notifications: (data.notifications ?? []).map(item => (item.id === id ? updated : item)) }));
+    dispatchToasts({ type: 'dismiss', id: noticeToastId(id), now: Date.now() });
     return updated;
   }, [setData]);
 
@@ -224,7 +215,8 @@ function OccNoticesLayer({ live, children }) {
   }), [items, markRead, notices.data?.hasMore, notices.fetchedAt, notices.refreshFailed, notices.status, refresh, retry]);
 
   const value = useMemo(() => ({ ...live, notices: noticesValue }), [live, noticesValue]);
-  const toastValue = useMemo(() => ({ toasts, dismissToast }), [dismissToast, toasts]);
+  const toastValue = useMemo(() => ({ toasts: toastQueue.visible, dismissToast, dismissAllToasts }),
+    [dismissAllToasts, dismissToast, toastQueue.visible]);
 
   return (
     <OccShellContext.Provider value={value}>
