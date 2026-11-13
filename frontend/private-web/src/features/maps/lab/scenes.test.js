@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { legendEntries } from '../ui/legendEntries';
@@ -63,12 +64,14 @@ describe('map lab scenes', () => {
     expect(legendOf(ofTerminal('A'))).toEqual(['available', 'planned', 'arriving', 'occupied', 'releasing']);
     expect(legendOf(ofTerminal('B'))).toEqual(['available', 'planned', 'occupied', 'disabled']);
     expect(legendOf(ofTerminal('FBO'))).toEqual(['available', 'unverified']);
-    const targets = presetTargets({ stands });
-    for (const terminal of ['A', 'B', 'FBO']) {
-      const framed = legendEntries({ stands, bounds: targetFor(targets, 'ramp', terminal).bounds });
-      expect(framed.states, terminal).toEqual(legendOf(ofTerminal(terminal)));
-      // Every stand sits at its reference location: the legend says «No oficial».
-      expect(framed.tags, terminal).toEqual(['unofficial']);
+    // The terminal views the map frames from the airport layout, and those of the stand points without one.
+    for (const targets of [presetTargets({ stands, layout: MDPC_LAYOUT }), presetTargets({ stands })]) {
+      for (const terminal of ['A', 'B', 'FBO']) {
+        const framed = legendEntries({ stands, bounds: targetFor(targets, 'ramp', terminal).bounds });
+        expect(framed.states, terminal).toEqual(legendOf(ofTerminal(terminal)));
+        // Every stand sits at its reference location: the legend says «No oficial».
+        expect(framed.tags, terminal).toEqual(['unofficial']);
+      }
     }
   });
 

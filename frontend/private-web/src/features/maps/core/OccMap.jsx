@@ -10,20 +10,26 @@ import '../../../styles/occ-map.css';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
+import { airfieldFeatures } from '../airport/airfieldFeatures';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { mapMessages } from '../mapMessages';
 import { toStandFeatures } from '../stands/standFeatures';
 import {
   STAND_DRAWN_LAYERS, STAND_SOURCE, drawnStands, standClusterOptions, standDisplayAt, standOverlay,
 } from '../stands/standLayers';
+import {
+  AIRFIELD_LAYER_IDS, AIRFIELD_SOURCE, airfieldKindsOnScreen, airfieldOverlay, airfieldTooltip,
+} from '../style/airfieldLayers';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
 import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
+import MapTooltip from '../ui/MapTooltip';
 import { buildAttribution } from './attribution';
 import {
-  VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isRetired, lngLatOf, presetForZoom, presetTargets, sameFits,
-  standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
+  VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom, presetTargets,
+  sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
 import { createMapEngine } from './mapEngine';
 import { matchFlight } from './mapSelection';
@@ -34,15 +40,19 @@ import { useMapSelection } from './useMapSelection';
 // The one map component of the OCC (design A4). Client only: the pages load it through next/dynamic with ssr false.
 // It owns one engine (core/mapEngine.js) for its whole life, the four views of contracts 2.3 with thresholds derived
 // from the fitted zooms, the selection casing, the map keys of contracts 2.2 and the fallback list. DOM overlays come
-// as children and reach the map through OccMapContext. It always draws the references (the ARP of PUJ); given
-// `stands` it draws them as points in the stands slot, and given `flights` it draws those with a position. Their
-// overlays are part of the style from the start, so new data is one setData and the map is never re-created.
+// as children and reach the map through OccMapContext. It always draws the references (the ARP of PUJ) and, from the
+// derived airfield threshold, the airfield of its airport layout (PR M3: the MDPC dataset unless `layout` says
+// otherwise), whose box and stand polygons also frame the airport views; a runway or a taxiway under the pointer shows
+// the map tooltip, and a click holds it. Given `stands` it draws them as points in the stands slot, and given `flights`
+// it draws those with a position. Their overlays are part of the style from the start, so new data is one setData and
+// the map is never re-created.
 
 const EMPTY = Object.freeze([]);
 const NO_GROUPS = Object.freeze({});
 const INSET_SIDES = Object.freeze(['top', 'right', 'bottom', 'left']);
 const SELECTABLE_KINDS = new Set(['stand', 'flight', 'aircraft']);
-const POINTER_KINDS = new Set([...SELECTABLE_KINDS, 'cluster']);
+// What takes the pointer cursor: what can be selected, a cluster to open, and a runway or a taxiway with its tooltip.
+const POINTER_KINDS = new Set([...SELECTABLE_KINDS, 'cluster', 'runway', 'taxiway']);
 const PITCH_EASE_MS = 600;
 const NORTH_EASE_MS = 400;
 const BOUNDS_PADDING_PX = 70;
@@ -62,6 +72,21 @@ const standsKey = stands => stands
   .map(stand => `${standCodeOf(stand)}:${stand.status ?? ''}:${stand.locationSource ?? ''}`).join('|');
 // The legend shows one entry for every drawn flight, so which flights are on screen is all that counts.
 const flightsKey = flights => flights.map(flight => String(flight.id)).join('|');
+// Thresholds for a map without the airfield overlay: the tile aeroway then keeps every zoom.
+const withoutAirfield = ({ airfield, ...rest }) => rest;
+
+// Where the tooltip of the airfield sits: at the pixel it points at, on the side of the visible area's middle that has
+// room for it, so the card stays inside the map.
+function tooltipPlacement(engine, padding, point) {
+  const bounds = engine.getVisibleBounds(padding);
+  const middle = bounds === null ? null : engine.project(boundsCenter(bounds));
+  return {
+    x: point.x,
+    y: point.y,
+    alignX: middle !== null && point.x > middle.x ? 'end' : 'start',
+    alignY: middle !== null && point.y > middle.y ? 'end' : 'start',
+  };
+}
 
 const requestFrame = callback => (typeof globalThis.requestAnimationFrame === 'function'
   ? globalThis.requestAnimationFrame(callback)
@@ -79,6 +104,9 @@ const initialSnapshot = basemap => ({
   standsOnScreen: EMPTY,
   standsGrouped: false,
   flightsOnScreen: EMPTY,
+  airfieldOnScreen: EMPTY,
+  // The map tooltip of a runway or a taxiway: what it shows, where, and whether a click holds it.
+  tooltip: null,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -120,7 +148,10 @@ function findStand(stands, code) {
 
 /**
  * Props:
- * - `defaultView` ('ramp'), `presetStands` (the stands that frame the views; `stands` when absent), `stands` (the
+ * - `defaultView` ('ramp'), `layout` (the airport layout the map draws its airfield from and frames the airport views
+ *   with: the MDPC dataset by default; `null` draws no airfield of its own, keeps the tile aeroway at every zoom and
+ *   frames the views with the stand points; the airfield it draws is the one given at start, the views follow the
+ *   prop), `presetStands` (the stands that frame the views without a layout; `stands` when absent), `stands` (the
  *   stands of the screen, with `status`; given at start, the map draws them, with `standLabels` 'default' or
  *   'dashboard'), `flights` (given at start, the map draws those with a position);
  * - `overlays` for buildOccStyle and `basemap`, `interactive` and `mapOptions` (extra MapLibre options, such as the
@@ -135,6 +166,7 @@ function findStand(stands, code) {
  */
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
+  layout = MDPC_LAYOUT,
   presetStands,
   stands: standsProp,
   standLabels = 'default',
@@ -170,7 +202,7 @@ const OccMap = forwardRef(function OccMap({
   const paddingKey = insetsKey(normalizeInsets(insets));
   const padding = useMemo(() => insetsFromKey(paddingKey), [paddingKey]);
   const referenceStands = presetStands ?? stands;
-  const targets = useMemo(() => presetTargets({ stands: referenceStands }), [referenceStands]);
+  const targets = useMemo(() => presetTargets({ stands: referenceStands, layout }), [referenceStands, layout]);
   const groupsKey = JSON.stringify(groups ?? NO_GROUPS);
 
   const rootRef = useRef(null);
@@ -190,7 +222,7 @@ const OccMap = forwardRef(function OccMap({
     latest.current = {
       stands, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onMapClick, placing, onCameraChange,
       isShortcutBlocked, pitchMode, padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap,
-      overlays, interactive, mapOptions, locale: engineLocale(t, labels?.map),
+      overlays, interactive, mapOptions, layout, locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
     };
@@ -219,6 +251,8 @@ const OccMap = forwardRef(function OccMap({
   }, []);
 
   const applyView = useCallback((view, { terminal = null, animate = true } = {}) => {
+    // Another view closes the map tooltip, held or not.
+    store.set({ tooltip: null });
     const target = targetFor(latest.current.targets, view, terminal);
     const camera = cameraFor(target?.bounds);
     if (!camera) {
@@ -228,7 +262,7 @@ const OccMap = forwardRef(function OccMap({
     pendingViewRef.current = null;
     moveCamera({ ...camera, ...cameraAngles(view, latest.current.pitchMode) }, { animate });
     return true;
-  }, [cameraFor, moveCamera]);
+  }, [cameraFor, moveCamera, store]);
 
   const flyToPreset = useCallback((view, { terminal = null } = {}) => applyView(view, { terminal }), [applyView]);
 
@@ -296,24 +330,29 @@ const OccMap = forwardRef(function OccMap({
 
   // What is drawn in the area the insets leave in sight (the page's panels hide what lies under them), for the legend,
   // which explains only what is on screen (contracts 2.4): the stands drawn one by one, whether a cluster of stands is
-  // drawn there, and the flights drawn there. From the ramp view on every stand there is drawn on its own. While
-  // MapLibre gathers them into clusters, a stand with no neighbour within the cluster radius is still drawn on its own,
-  // with its state, so what the map draws there is read back; right after a move the tiles of the new zoom may still be
-  // loading, so it is read again when the map settles (onIdle). They change only when the camera, the insets, the
-  // thresholds, the stands, the flights or what the map draws do, and a list keeps its identity while what the legend
-  // reads of it stays the same.
+  // drawn there, the flights drawn there and the airfield items drawn there. From the ramp view on every stand there is
+  // drawn on its own. While MapLibre gathers them into clusters, a stand with no neighbour within the cluster radius is
+  // still drawn on its own, with its state, so what the map draws there is read back, as is the airfield from its
+  // threshold on; right after a move the tiles of the new zoom may still be loading, so both are read again when the
+  // map settles (onIdle). They change only when the camera, the insets, the thresholds, the stands, the flights or what
+  // the map draws do, and a list keeps its identity while what the legend reads of it stays the same.
   const updateOnScreen = useCallback(() => {
     const engine = engineRef.current;
     const { padding, stands: current } = latest.current;
     const bounds = engine?.getVisibleBounds(padding) ?? null;
     const inView = bounds === null ? EMPTY : standsInView(current, bounds);
-    const { standLabels, drawsStands, drawsFlights } = appliedRef.current;
-    const display = standDisplayAt(engine?.getCamera()?.zoom, store.get().thresholds, { labels: standLabels ?? 'default' });
+    const { standLabels, drawsStands, drawsFlights, drawsAirfield } = appliedRef.current;
+    const zoom = engine?.getCamera()?.zoom;
+    const { thresholds } = store.get();
+    const display = standDisplayAt(zoom, thresholds, { labels: standLabels ?? 'default' });
     const drawn = display === 'grouped' && drawsStands ? drawnStands(engine?.renderedFeatures(STAND_DRAWN_LAYERS, padding)) : null;
     let next = display === 'points' ? inView : EMPTY;
     if (drawn !== null) next = inView.filter(stand => drawn.codes.has(mapStandCode(standCodeOf(stand))));
     // Only a map that started with flights draws them.
     const flights = bounds === null || !drawsFlights ? EMPTY : flightsInView(latest.current.flights, bounds);
+    // Below its threshold the airfield is not drawn: nothing to ask the map.
+    const airfieldDrawn = drawsAirfield && bounds !== null && !(zoom < thresholds?.airfield);
+    const airfield = airfieldDrawn ? airfieldKindsOnScreen(engine.renderedFeatures(AIRFIELD_LAYER_IDS, padding)) : EMPTY;
     const previous = store.get();
     store.set({
       ...(standsKey(next) === standsKey(previous.standsOnScreen) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
@@ -321,6 +360,9 @@ const OccMap = forwardRef(function OccMap({
       ...(flightsKey(flights) === flightsKey(previous.flightsOnScreen)
         ? {}
         : { flightsOnScreen: flights.length === 0 ? EMPTY : flights }),
+      ...(airfield.join('|') === previous.airfieldOnScreen.join('|')
+        ? {}
+        : { airfieldOnScreen: airfield.length === 0 ? EMPTY : airfield }),
     });
   }, [store]);
 
@@ -334,9 +376,10 @@ const OccMap = forwardRef(function OccMap({
     }), current);
     if (sameFits(fits, store.get().fits)) return;
     const thresholds = thresholdsFromFits(fits);
-    if (thresholds) engine.applyThresholds(thresholds);
-    // The stand clusters end where the stands are drawn on their own: one call per new limit.
     const applied = appliedRef.current;
+    // Without its own airfield the map leaves the tile aeroway at every zoom.
+    if (thresholds) engine.applyThresholds(applied.drawsAirfield ? thresholds : withoutAirfield(thresholds));
+    // The stand clusters end where the stands are drawn on their own: one call per new limit.
     const clusters = applied.drawsStands ? standClusterOptions(thresholds, { labels: applied.standLabels }) : null;
     if (clusters && clusters.clusterMaxZoom !== applied.clusterMaxZoom) {
       applied.clusterMaxZoom = clusters.clusterMaxZoom;
@@ -349,6 +392,24 @@ const OccMap = forwardRef(function OccMap({
     if (fits && pending) applyView(pending.view, { terminal: pending.terminal, animate: false });
   }, [store, applyView, updateOnScreen]);
 
+  // The map tooltip after a move: a card that follows the pointer goes with the move (the pointer shows the next one);
+  // a held card moves with the point it was held at while that stays in sight, and closes when it leaves.
+  const followTooltip = useCallback(() => {
+    const tooltip = store.get().tooltip;
+    if (tooltip === null) return;
+    const engine = engineRef.current;
+    const { padding } = latest.current;
+    const bounds = tooltip.pinned ? engine?.getVisibleBounds(padding) ?? null : null;
+    const point = bounds !== null && isInBounds(tooltip.lngLat, bounds) ? engine.project(tooltip.lngLat) : null;
+    if (point === null) {
+      store.set({ tooltip: null });
+      return;
+    }
+    const placement = tooltipPlacement(engine, padding, point);
+    if (Object.entries(placement).every(([key, value]) => tooltip[key] === value)) return;
+    store.set({ tooltip: { ...tooltip, ...placement } });
+  }, [store]);
+
   const handleCamera = useCallback((camera, details) => {
     if (!camera) return;
     // A person moved the map: a view still waiting for room is no longer wanted.
@@ -356,20 +417,36 @@ const OccMap = forwardRef(function OccMap({
     // The zoom is written straight to the DOM, without a render: the visual suite reads it to see the camera move.
     rootRef.current?.setAttribute('data-occ-zoom', camera.zoom.toFixed(2));
     store.set({ activeView: presetForZoom(camera.zoom, store.get().fits) });
+    followTooltip();
     updateOnScreen();
     latest.current?.onCameraChange?.(camera, details);
-  }, [store, updateOnScreen]);
+  }, [store, followTooltip, updateOnScreen]);
 
   const handleStatus = useCallback(status => {
     store.set({ engineStatus: status.engine, basemapStatus: status.basemap });
   }, [store]);
 
-  const handleClick = useCallback(async ({ lngLat, hit }) => {
+  // Shows the tooltip of a runway or a taxiway picked at `point` (a pixel of the map) and `lngLat`.
+  const showTooltip = useCallback((info, point, lngLat, pinned) => {
+    const engine = engineRef.current;
+    if (!engine || !point || !lngLat) return;
+    store.set({ tooltip: { ...info, pinned, lngLat, ...tooltipPlacement(engine, latest.current.padding, point) } });
+  }, [store]);
+
+  const handleClick = useCallback(async ({ point, lngLat, hit }) => {
     const props = latest.current;
     if (props.placing) {
       if (lngLat) props.onMapClick?.({ latitude: lngLat[1], longitude: lngLat[0] });
       return;
     }
+    // A click on a runway or a taxiway holds its tooltip, so nothing depends on hovering alone; a click anywhere else
+    // closes it.
+    const info = airfieldTooltip(hit);
+    if (info !== null) {
+      showTooltip(info, point, lngLat, true);
+      return;
+    }
+    if (store.get().tooltip !== null) store.set({ tooltip: null });
     if (!hit || hit.id == null) return;
     if (hit.kind === 'cluster') {
       const source = hit.feature?.source ?? hit.feature?.layer?.source;
@@ -378,9 +455,23 @@ const OccMap = forwardRef(function OccMap({
       return;
     }
     if (SELECTABLE_KINDS.has(hit.kind)) props.onSelect?.({ kind: hit.kind, id: String(hit.id) });
-  }, []);
+  }, [store, showTooltip]);
 
-  // The cursor follows what is under the pointer, picked once per frame.
+  // The tooltip of what is under the pointer, unless a click holds one: written to the store only when the runway or
+  // the taxiway under the pointer changes, never on every frame. A drag (a button held down) shows none.
+  const hoverTooltip = useCallback((event, hit) => {
+    const current = store.get().tooltip;
+    if (current?.pinned) return;
+    const info = event && !event.originalEvent?.buttons ? airfieldTooltip(hit) : null;
+    if (info === null) {
+      if (current !== null) store.set({ tooltip: null });
+      return;
+    }
+    if (current?.kind === info.kind && current.id === info.id) return;
+    showTooltip(info, event.point, event.lngLat, false);
+  }, [store, showTooltip]);
+
+  // The cursor and the hover tooltip follow what is under the pointer, picked once per frame.
   const handlePointer = useCallback(event => {
     const pointer = pointerRef.current;
     pointer.event = event;
@@ -395,8 +486,9 @@ const OccMap = forwardRef(function OccMap({
       }
       const hit = pointer.event?.hit;
       engine.setCursor(hit && POINTER_KINDS.has(hit.kind) ? 'pointer' : '');
+      hoverTooltip(pointer.event, hit);
     });
-  }, []);
+  }, [hoverTooltip]);
 
   // One engine for the life of the component. A StrictMode remount destroys the first one before the second starts.
   useEffect(() => {
@@ -406,6 +498,7 @@ const OccMap = forwardRef(function OccMap({
     appliedRef.current = {
       padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null, stands: null, flights: null,
       clusterMaxZoom: null, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights, standLabels: props.standLabels,
+      drawsAirfield: Boolean(props.layout),
     };
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
@@ -417,8 +510,11 @@ const OccMap = forwardRef(function OccMap({
       ? { ...angles, ...props.initialCamera }
       : { ...angles, center: boundsCenter(targetFor(props.targets, initialView, initialTerminal)?.bounds) ?? undefined };
 
+    // The airfield goes before the references: they share the airfield slot, and the mark of PUJ stays above the
+    // pavement.
     const overlays = [
       selectionOverlay(),
+      ...(props.layout ? [airfieldOverlay()] : []),
       referenceOverlay(),
       ...(props.drawsStands ? [standOverlay({ labels: props.standLabels })] : []),
       ...(props.drawsFlights ? [flightOverlay()] : []),
@@ -443,6 +539,7 @@ const OccMap = forwardRef(function OccMap({
     });
     engineRef.current = engine;
     engine.setData(REFERENCE_SOURCE, referenceFeatures());
+    if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
     engine.setInsets(props.padding);
     refit();
     lastViewRef.current = props.urlView === null ? null : viewKey(props.urlView, props.urlTerminal);
@@ -543,9 +640,11 @@ const OccMap = forwardRef(function OccMap({
     appliedRef.current.groups = Object.fromEntries(Object.entries(next).map(([group, visible]) => [group, Boolean(visible)]));
   }, [groupsKey]);
 
+  // While a stand is being placed a click gives its point: no tooltip stays open over the map.
   useEffect(() => {
     engineRef.current?.setCursor(placing ? 'crosshair' : '');
-  }, [placing]);
+    if (placing) store.set({ tooltip: null });
+  }, [placing, store]);
 
   // The map keys (contracts 2.2) on keydown at the map's root, in the bubble phase, never on document. 1 to 4 are
   // the views while the map can draw; Esc clears a selection, after a drawer or dialog has closed on its own Esc.
@@ -577,20 +676,29 @@ const OccMap = forwardRef(function OccMap({
     flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, project, whenIdle,
   }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, project, whenIdle]);
 
+  // The overlays read only these: the tooltip, which changes with the pointer, renders here and re-renders none of them.
+  const {
+    engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, standsGrouped, flightsOnScreen,
+    airfieldOnScreen,
+  } = snapshot;
   const context = useMemo(() => ({
-    engineStatus: snapshot.engineStatus,
-    basemapStatus: snapshot.basemapStatus,
-    activeView: snapshot.activeView,
-    fits: snapshot.fits,
-    thresholds: snapshot.thresholds,
-    standsOnScreen: snapshot.standsOnScreen,
-    standsGrouped: snapshot.standsGrouped,
-    flightsOnScreen: snapshot.flightsOnScreen,
+    engineStatus,
+    basemapStatus,
+    activeView,
+    fits,
+    thresholds,
+    standsOnScreen,
+    standsGrouped,
+    flightsOnScreen,
+    airfieldOnScreen,
     requestView,
     flyToPreset,
     flyToStand,
     flyToFlight,
-  }), [snapshot, requestView, flyToPreset, flyToStand, flyToFlight]);
+  }), [
+    engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, standsGrouped, flightsOnScreen,
+    airfieldOnScreen, requestView, flyToPreset, flyToStand, flyToFlight,
+  ]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;
@@ -601,16 +709,16 @@ const OccMap = forwardRef(function OccMap({
     if (onFallbackSelect) onFallbackSelect(id, item);
     else onSelect?.({ kind: item?.kind ?? 'stand', id });
   };
-  const unavailable = snapshot.engineStatus === 'unavailable';
+  const unavailable = engineStatus === 'unavailable';
 
   return (
     <OccMapContext.Provider value={context}>
       <div
         ref={rootRef}
         data-testid="occ-map"
-        data-occ-engine={snapshot.engineStatus}
-        data-occ-basemap={snapshot.basemapStatus}
-        data-occ-view={snapshot.activeView ?? undefined}
+        data-occ-engine={engineStatus}
+        data-occ-basemap={basemapStatus}
+        data-occ-view={activeView ?? undefined}
         className={`occ-map absolute inset-0 overflow-hidden bg-occ-canvas ${className}`.trim()}
         style={insetVariables(padding)}
       >
@@ -625,12 +733,13 @@ const OccMap = forwardRef(function OccMap({
             onSelect={selectFallback}
           />
         )}
-        {!unavailable && snapshot.basemapStatus === 'degraded' && (
+        {!unavailable && basemapStatus === 'degraded' && (
           <p role="status" className="occ-map-chip rounded-md border border-occ-line bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
             {t('basemap.degraded')}
           </p>
         )}
         {children}
+        {!unavailable && <MapTooltip tooltip={snapshot.tooltip} />}
       </div>
     </OccMapContext.Provider>
   );

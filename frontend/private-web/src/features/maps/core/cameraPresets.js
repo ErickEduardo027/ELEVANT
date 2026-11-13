@@ -1,8 +1,13 @@
 import { PUJ_COORDINATES } from '../../flight-monitoring/flightMonitoringMappers';
+import { layoutBounds, standPolygonBounds } from '../airport/layoutBounds';
 
 // The camera presets of the OCC maps (contracts 2.3): four views of one canvas, Región, Aproximación, Aeródromo and
 // Rampa, plus one view per terminal. Pure: OccMap fits each target to the screen it has, and every zoom threshold
 // and every boundary between views is derived at run time from those fitted zooms, never from fixed numbers.
+// The airport views come from the airport layout (PR M3): Aeródromo frames the dataset's box plus 300 m, Rampa the
+// active stand polygons plus 120 m, and each terminal its own polygons. The layout arrives as a parameter (OccMap
+// passes the MDPC dataset): this module never imports the dataset, because core/mapSelection.js, which the services
+// use, imports it. Without a layout the views fall back to the stand points.
 // Coordinates are [longitude, latitude]; bounds are [[west, south], [east, north]], as MapLibre takes them.
 
 export const VIEW_NAMES = Object.freeze(['region', 'approach', 'airfield', 'ramp']);
@@ -13,10 +18,10 @@ export const PUJ_ARP = Object.freeze([PUJ_COORDINATES.longitude, PUJ_COORDINATES
 
 export const REGION_RADIUS_NM = 250;
 export const APPROACH_RADIUS_NM = 40;
-// Until PR M3 brings layout.meta.bbox, the airport box is this ring around the ARP joined with the stands.
-export const AIRFIELD_RADIUS_NM = 1.5;
 export const STAND_MARGIN_M = 120;
 export const AIRFIELD_MARGIN_M = 300;
+// Only without an airport layout: the airport box is then this ring around the ARP joined with the stand points.
+export const FALLBACK_AIRFIELD_RADIUS_NM = 1.5;
 // Only for a station without one located stand: the ramp then frames a small ring around the ARP.
 export const RAMP_FALLBACK_RADIUS_NM = 0.6;
 
@@ -29,7 +34,7 @@ export const CAMERA_3D = Object.freeze({
   ramp: Object.freeze({ pitch: 55, bearing: -17 }),
 });
 
-// How the derived thresholds sit against the fitted zooms (contracts 2.3).
+// How the derived stand thresholds sit against the fitted zooms (contracts 2.3).
 const THRESHOLD_OFFSET = Object.freeze({ polygons: -0.3, codes: -0.3, threeLine: 0.8 });
 
 // Camera transitions (design A5): a flight above this zoom change, an ease below it.
@@ -154,28 +159,41 @@ export function standBounds(stands = [], { terminal } = {}) {
 }
 
 /**
- * The airport box plus 300 m. Until PR M3 brings layout.meta.bbox it is the union of a 1.5 NM ring around the ARP
- * and the stand bounds.
+ * The bounds of the active stand polygons of an airport layout (of one terminal when given) plus 120 m, or `null`
+ * without a layout or a polygon.
  */
-export function airfieldBounds(stands = []) {
-  return padBounds(unionBounds(ringBounds(PUJ_ARP, AIRFIELD_RADIUS_NM), standBounds(stands)), AIRFIELD_MARGIN_M);
+export function standPolygonPresetBounds(layout, { terminal } = {}) {
+  return layout ? padBounds(standPolygonBounds(layout, { terminal }), STAND_MARGIN_M) : null;
+}
+
+/**
+ * The airport box plus 300 m: the box of the airport layout (`meta.bbox`), or without one the union of a 1.5 NM ring
+ * around the ARP and the stand bounds.
+ */
+export function airfieldBounds({ stands = [], layout = null } = {}) {
+  const box = layoutBounds(layout) ?? unionBounds(ringBounds(PUJ_ARP, FALLBACK_AIRFIELD_RADIUS_NM), standBounds(stands));
+  return padBounds(box, AIRFIELD_MARGIN_M);
 }
 
 const northUp = bounds => ({ bounds, pitch: 0, bearing: 0 });
 
 /**
  * What each view frames, 2D and north-up: `{ region, approach, airfield, ramp, terminals: { A, B, FBO } }`, each
- * `{ bounds, pitch: 0, bearing: 0 }`. A terminal without a located stand is `null` and falls back to the ramp.
+ * `{ bounds, pitch: 0, bearing: 0 }`. With an airport layout the airfield is its box plus 300 m, the ramp its active
+ * stand polygons plus 120 m and each terminal its own polygons plus 120 m; without one, the stand points frame them
+ * (each plus its margin). A terminal without a stand to frame is `null` and falls back to the ramp.
  */
-export function presetTargets({ stands = [] } = {}) {
-  const ramp = standBounds(stands) ?? padBounds(ringBounds(PUJ_ARP, RAMP_FALLBACK_RADIUS_NM), STAND_MARGIN_M);
+export function presetTargets({ stands = [], layout = null } = {}) {
+  const ramp = standPolygonPresetBounds(layout)
+    ?? standBounds(stands)
+    ?? padBounds(ringBounds(PUJ_ARP, RAMP_FALLBACK_RADIUS_NM), STAND_MARGIN_M);
   return {
     region: northUp(ringBounds(PUJ_ARP, REGION_RADIUS_NM)),
     approach: northUp(ringBounds(PUJ_ARP, APPROACH_RADIUS_NM)),
-    airfield: northUp(airfieldBounds(stands)),
+    airfield: northUp(airfieldBounds({ stands, layout })),
     ramp: northUp(ramp),
     terminals: Object.fromEntries(TERMINALS.map(code => {
-      const bounds = standBounds(stands, { terminal: code });
+      const bounds = layout ? standPolygonPresetBounds(layout, { terminal: code }) : standBounds(stands, { terminal: code });
       return [code, bounds && northUp(bounds)];
     })),
   };
@@ -213,14 +231,17 @@ export function sameFits(first, second) {
 
 /**
  * The zoom thresholds named in layer metadata: stand polygons from the airfield fit − 0.3, codes from the ramp fit
- * − 0.3, three-line labels from the ramp fit + 0.8. `null` before the fit.
+ * − 0.3, three-line labels from the ramp fit + 0.8, and `airfield`, where the airfield of the own dataset takes over
+ * from the tiles: half way between the approach and airfield fits, the very boundary presetForZoom draws between those
+ * views, so whenever the selector says «Aeródromo» the airfield comes from the dataset. `null` before the fit.
  */
 export function thresholdsFromFits(fits) {
-  if (!Number.isFinite(fits?.airfield) || !Number.isFinite(fits?.ramp)) return null;
+  if (!Number.isFinite(fits?.approach) || !Number.isFinite(fits?.airfield) || !Number.isFinite(fits?.ramp)) return null;
   return {
     polygons: fits.airfield + THRESHOLD_OFFSET.polygons,
     codes: fits.ramp + THRESHOLD_OFFSET.codes,
     threeLine: fits.ramp + THRESHOLD_OFFSET.threeLine,
+    airfield: (fits.approach + fits.airfield) / 2,
   };
 }
 

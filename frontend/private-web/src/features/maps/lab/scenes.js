@@ -62,7 +62,7 @@ function scene(id, { title, description, view, selection = null, basemap = 'on',
 export const SCENES = deepFreeze([
   scene('ramp-points', {
     title: 'Rampa: posiciones y estados',
-    description: 'Las 41 posiciones de referencia como puntos, con los siete estados mezclados.',
+    description: 'Las 41 posiciones de referencia como puntos sobre el plano propio del aeródromo, con los siete estados mezclados.',
     view: 'ramp',
   }),
   scene('ramp-selected', {
@@ -73,7 +73,8 @@ export const SCENES = deepFreeze([
   }),
   scene('airfield', {
     title: 'Aeródromo',
-    description: 'El aeropuerto entero, con las posiciones agrupadas y el punto de referencia de PUJ.',
+    description: 'El aeropuerto entero dibujado con su plano propio: pistas con sus marcas, calles de rodaje, plataformas, '
+      + 'terminales y puntos de espera, con las posiciones agrupadas y el punto de referencia de PUJ.',
     view: 'airfield',
   }),
   scene('approach', {

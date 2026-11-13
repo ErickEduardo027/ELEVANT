@@ -3,6 +3,8 @@ import { OPENFREEMAP_ATTRIBUTION } from '../style/occStyle';
 // The credit line of every OCC map (design A7, owner decision 6): the base map's data and tiles, always, then each
 // source the API names while it is active, as «Datos de aeronaves: {name}» linked to its home page and licence.
 // Text that comes from the API is escaped and only https links are emitted; MapLibre sanitizes the result again.
+// The airfield of the own dataset brings its credit on its own GeoJSON source (AIRFIELD_ATTRIBUTION): MapLibre lists
+// a source's credit only while one of its layers is drawn at the current zoom.
 
 const ATTRIBUTION_SELECTOR = 'details.maplibregl-ctrl-attrib';
 const HTML_ESCAPES = Object.freeze({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' });
@@ -18,6 +20,20 @@ export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => HTML_ESCAPES[character]);
 }
 
+const creditLink = (href, text) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
+
+/**
+ * The credit of the airfield drawn from mdpc.layout.json (PR M3): its pavement, taxiways and buildings come from an
+ * OpenStreetMap extract, offered under the ODbL (© OpenStreetMap contributors, linked to their copyright page and to
+ * the licence), and its runway ends from OurAirports (public domain). The airfield source carries it, so the map shows
+ * it only while the airfield is drawn.
+ */
+export const AIRFIELD_ATTRIBUTION = [
+  `${creditLink('https://www.openstreetmap.org/copyright', '© OpenStreetMap contributors')} `
+    + `(${creditLink('https://opendatacommons.org/licenses/odbl/', 'ODbL')})`,
+  creditLink('https://ourairports.com/', 'OurAirports'),
+].join(' · ');
+
 /** The URL normalized when it is an absolute https URL, otherwise `null` (http, javascript:, data:, relative…). */
 export function httpsUrl(value) {
   if (typeof value !== 'string' || value.trim() === '') return null;
@@ -29,8 +45,7 @@ export function httpsUrl(value) {
   }
 }
 
-const link = (href, text) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
-const linkOrText = (href, text) => (href === null ? escapeHtml(text) : link(href, text));
+const linkOrText = (href, text) => (href === null ? escapeHtml(text) : creditLink(href, text));
 const plain = value => (typeof value === 'string' ? value.trim() : '');
 
 function sourceCredit(source, label) {

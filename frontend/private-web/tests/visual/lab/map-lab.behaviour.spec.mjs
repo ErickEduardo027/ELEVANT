@@ -1,14 +1,48 @@
+import { readFileSync } from 'node:fs';
 import { NOON, VIEW_LABELS, clickStand, labIdle, mapReady, openLab, viewInUrl, zoomOf } from '../support/map.mjs';
 import { expect, production, test } from '../support/test.mjs';
 
 // What the map does in the lab, in Chrome: views, keys, selection, legend, fallback, camera moves, the StrictMode
-// double mount of `next dev`, re-reads and a base map that fails. Against a production build only the 404 is checked.
+// double mount of `next dev`, re-reads, a base map that fails, and the airfield drawn from the MDPC dataset (its views,
+// its credit and its tooltip). Against a production build only the 404 is checked.
 
 const STATE_LABELS = Object.freeze({
   available: 'Libre', planned: 'Planificada', arriving: 'Llegando', occupied: 'Ocupada', releasing: 'Por liberar',
   disabled: 'Inhabilitada', unverified: 'Sin verificar',
 });
+const AIRFIELD_LABELS = Object.freeze({
+  runway: 'Pista', taxiway: 'Calle de rodaje', holdBar: 'Punto de espera', apron: 'Plataforma', terminal: 'Terminal',
+});
 const legendOf = (...states) => [...states.map(state => STATE_LABELS[state]), /^No oficial/];
+const airfieldOf = (...items) => items.map(item => AIRFIELD_LABELS[item]);
+
+// The airport layout the map draws, read in Node as the generator wrote it.
+const LAYOUT = JSON.parse(readFileSync(new URL('../../../src/features/maps/airport/data/mdpc.layout.json', import.meta.url), 'utf8'));
+const ACTIVE_STANDS = LAYOUT.stands.filter(stand => !stand.retired);
+const METRES_PER_DEGREE_LAT = 111_195;
+
+const labCanvas = page => page.getByTestId('map-lab-map').locator('canvas.maplibregl-canvas');
+
+/** The pixels of `[lng, lat]` points inside the lab's map, as MapLibre projects them. */
+async function pixelsOf(page, points) {
+  return page.evaluate(list => list.map(point => window.__occMapLab.project(point)), points);
+}
+
+/** The points whose pixel falls outside the canvas, with their pixel. */
+async function outsideCanvas(page, points) {
+  const { width, height } = await labCanvas(page).boundingBox();
+  const pixels = await pixelsOf(page, points);
+  return points.map((point, at) => ({ point, pixel: pixels[at] }))
+    .filter(({ pixel }) => !(pixel && pixel.x >= 0 && pixel.x <= width && pixel.y >= 0 && pixel.y <= height));
+}
+
+/** Moves the mouse to, or clicks, the pixel of `[lng, lat]` on the lab's map. */
+async function pointAt(page, lngLat, { click = false } = {}) {
+  const [pixel] = await pixelsOf(page, [lngLat]);
+  const box = await labCanvas(page).boundingBox();
+  if (click) await page.mouse.click(box.x + pixel.x, box.y + pixel.y);
+  else await page.mouse.move(box.x + pixel.x, box.y + pixel.y);
+}
 
 test.describe('map lab', () => {
   test.skip(production, 'The map lab exists in development only.');
@@ -58,27 +92,43 @@ test.describe('map lab', () => {
     expect(new URL(page.url()).searchParams.get('terminal')).toBe('A');
   });
 
-  test('the legend lists only the states on screen', async ({ page }) => {
+  test('the legend lists only the states and the airfield items on screen', async ({ page }) => {
     await openLab(page, `scene=ramp-points&t=${NOON}`);
+    // What the map draws is read back once it settles: the legend is asserted after that.
+    const settleOn = async (view, terminal) => {
+      await page.evaluate(([name, code]) => window.__occMapLab.flyToPreset(name, { terminal: code }), [view, terminal ?? null]);
+      await labIdle(page);
+    };
     const legend = page.getByRole('list', { name: 'Leyenda' });
-    await expect(legend.getByRole('listitem')).toHaveText(legendOf(
-      'available', 'planned', 'arriving', 'occupied', 'releasing', 'disabled', 'unverified',
-    ));
+    const ALL_AIRFIELD = airfieldOf('runway', 'taxiway', 'holdBar', 'apron', 'terminal');
+    await labIdle(page);
+    await expect(legend.getByRole('listitem')).toHaveText([
+      ...legendOf('available', 'planned', 'arriving', 'occupied', 'releasing', 'disabled', 'unverified'), ...ALL_AIRFIELD,
+    ]);
 
-    await page.evaluate(() => window.__occMapLab.flyToPreset('ramp', { terminal: 'FBO' }));
-    await expect(legend.getByRole('listitem')).toHaveText(legendOf('available', 'unverified'));
-    await page.evaluate(() => window.__occMapLab.flyToPreset('ramp', { terminal: 'A' }));
-    await expect(legend.getByRole('listitem')).toHaveText(legendOf('available', 'planned', 'arriving', 'occupied', 'releasing'));
-    await page.evaluate(() => window.__occMapLab.flyToPreset('ramp', { terminal: 'B' }));
-    await expect(legend.getByRole('listitem')).toHaveText(legendOf('available', 'planned', 'occupied', 'disabled'));
+    await settleOn('ramp', 'FBO');
+    await expect(legend.getByRole('listitem')).toHaveText([
+      ...legendOf('available', 'unverified'), ...airfieldOf('taxiway', 'holdBar', 'apron'),
+    ]);
+    await settleOn('ramp', 'A');
+    await expect(legend.getByRole('listitem')).toHaveText([
+      ...legendOf('available', 'planned', 'arriving', 'occupied', 'releasing'), ...ALL_AIRFIELD,
+    ]);
+    await settleOn('ramp', 'B');
+    await expect(legend.getByRole('listitem')).toHaveText([
+      ...legendOf('available', 'planned', 'occupied', 'disabled'), ...airfieldOf('taxiway', 'apron', 'terminal'),
+    ]);
 
-    // The airfield view gathers the stands into clusters, which carry no state; region and approach draw no stand.
-    await page.evaluate(() => window.__occMapLab.flyToPreset('airfield'));
-    await expect(legend.getByRole('listitem')).toHaveText(['Grupo de posicionesAcerca el mapa para ver cada una']);
-    await page.evaluate(() => window.__occMapLab.flyToPreset('region'));
+    // The airfield view gathers the stands into clusters, which carry no state, over the whole airfield; region and
+    // approach draw neither stands nor the airfield of the dataset.
+    await settleOn('airfield');
+    await expect(legend.getByRole('listitem')).toHaveText(['Grupo de posicionesAcerca el mapa para ver cada una', ...ALL_AIRFIELD]);
+    await settleOn('region');
     await expect(page.getByTestId('map-legend')).toHaveCount(0);
-    await page.evaluate(() => window.__occMapLab.flyToPreset('ramp'));
-    await expect(legend.getByRole('listitem')).toHaveCount(8);
+    await settleOn('approach');
+    await expect(page.getByTestId('map-legend')).toHaveCount(0);
+    await settleOn('ramp');
+    await expect(legend.getByRole('listitem')).toHaveCount(13);
 
     // It folds through its own button, which keeps its name.
     const toggle = page.getByRole('button', { name: 'Leyenda', exact: true });
@@ -86,6 +136,92 @@ test.describe('map lab', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(legend).toBeHidden();
+  });
+
+  test('the airfield view frames the whole airport (every runway end inside the canvas)', async ({ page }) => {
+    const map = await openLab(page, `scene=airfield&t=${NOON}`);
+    await expect(map).toHaveAttribute('data-occ-view', 'airfield');
+    await labIdle(page);
+    const ends = LAYOUT.runways.flatMap(runway => runway.ends.map(end => end.threshold));
+    const [west, south, east, north] = LAYOUT.meta.bbox;
+    const corners = [[west, south], [east, south], [east, north], [west, north]];
+    expect(await outsideCanvas(page, [...ends, ...corners])).toEqual([]);
+    // Framed, not lost in the map: the runway ends span more than half its width.
+    const xs = (await pixelsOf(page, ends)).map(pixel => pixel.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan((await labCanvas(page).boundingBox()).width / 2);
+  });
+
+  test('the ramp view frames every active stand polygon', async ({ page }) => {
+    const map = await openLab(page, `scene=ramp-points&t=${NOON}`);
+    await expect(map).toHaveAttribute('data-occ-view', 'ramp');
+    await labIdle(page);
+    expect(ACTIVE_STANDS).toHaveLength(41);
+    expect(await outsideCanvas(page, ACTIVE_STANDS.flatMap(stand => stand.polygon))).toEqual([]);
+    // Each terminal view frames the polygons of its own stands.
+    for (const terminal of ['A', 'B', 'FBO']) {
+      await page.evaluate(code => window.__occMapLab.flyToPreset('ramp', { terminal: code }), terminal);
+      await labIdle(page);
+      const own = ACTIVE_STANDS.filter(stand => stand.terminal === terminal).flatMap(stand => stand.polygon);
+      expect(await outsideCanvas(page, own), terminal).toEqual([]);
+    }
+  });
+
+  test('the airfield credit (OpenStreetMap ODbL, OurAirports) appears with the airfield and not in the region view', async ({ page }) => {
+    await openLab(page, `scene=airfield&t=${NOON}`);
+    await labIdle(page);
+    // The compact credits stay folded; their text is in the page all the same.
+    const credits = page.locator('.maplibregl-ctrl-attrib-inner');
+    await expect(credits).toContainText('© OpenStreetMap contributors (ODbL) · OurAirports');
+    await expect(credits.locator('a', { hasText: 'ODbL' })).toHaveAttribute('href', 'https://opendatacommons.org/licenses/odbl/');
+    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveAttribute('href', 'https://ourairports.com/');
+    // The region view draws nothing of the dataset: its credit goes, the base map's stays.
+    await page.evaluate(() => window.__occMapLab.flyToPreset('region'));
+    await labIdle(page);
+    await expect(credits).not.toContainText('OurAirports');
+    await expect(credits).toContainText('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles');
+    // And it comes back with the airfield.
+    await page.evaluate(() => window.__occMapLab.flyToPreset('airfield'));
+    await labIdle(page);
+    await expect(credits).toContainText('OurAirports');
+  });
+
+  test('a runway or a taxiway under the pointer shows its tooltip; a click holds it and a click elsewhere or another view closes it', async ({ page }) => {
+    await openLab(page, `scene=airfield&t=${NOON}`);
+    await labIdle(page);
+    const [start, end] = LAYOUT.runways.find(runway => runway.id === '08/26').ends.map(item => item.threshold);
+    const runwayMiddle = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+    // 400 m north of that runway nothing of the airfield is drawn.
+    const grass = [runwayMiddle[0], runwayMiddle[1] + 400 / METRES_PER_DEGREE_LAT];
+    // Half way along the long straight of taxiway A, between the two runways.
+    const lineA = LAYOUT.taxiways.find(taxiway => taxiway.ref === 'A').line;
+    const straight = lineA.findIndex((point, at) => at > 0 && lineA[at - 1][1] - point[1] > 0.003);
+    const taxiwayA = [(lineA[straight - 1][0] + lineA[straight][0]) / 2, (lineA[straight - 1][1] + lineA[straight][1]) / 2];
+    const card = page.getByRole('tooltip');
+
+    await pointAt(page, runwayMiddle);
+    await expect(card).toHaveText('Pista 08/26 · 3100 m × 45 m');
+    await expect(card).toHaveAttribute('data-pinned', 'false');
+    await expect(labCanvas(page)).toHaveCSS('cursor', 'pointer');
+    await pointAt(page, taxiwayA);
+    await expect(card).toHaveText('Calle de rodaje A');
+    await pointAt(page, grass);
+    await expect(card).toHaveCount(0);
+
+    // A click holds it while the pointer goes elsewhere; a click on nothing closes it.
+    await pointAt(page, runwayMiddle, { click: true });
+    await expect(card).toHaveAttribute('data-pinned', 'true');
+    await pointAt(page, grass);
+    await expect(card).toHaveText('Pista 08/26 · 3100 m × 45 m');
+    await pointAt(page, grass, { click: true });
+    await expect(card).toHaveCount(0);
+    // Another view closes a held card too, and nothing was selected along the way.
+    await pointAt(page, taxiwayA, { click: true });
+    await expect(card).toHaveText('Calle de rodaje A');
+    await labCanvas(page).focus();
+    await page.keyboard.press('4');
+    await expect.poll(() => viewInUrl(page)).toBe('ramp');
+    await expect(card).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has('stand')).toBe(false);
   });
 
   test('the fallback list appears without WebGL', async ({ page }) => {

@@ -261,6 +261,82 @@ describe('MapLegend', () => {
     expect(legendItems()).toEqual(['Group of standsZoom in to see each one']);
   });
 
+  it('shows «Pista», «Calle de rodaje» and «Punto de espera» only when on screen, in Spanish and English', () => {
+    const drawn = (layer, kind) => ({ layer: { id: layer }, properties: { kind, id: `${kind}-1` } });
+    const AIRFIELD = [
+      drawn('occ-airfield-terminal', 'terminal'), drawn('occ-airfield-hold', 'holdBar'), drawn('occ-airfield-runway', 'runway'),
+      drawn('occ-airfield-taxiway', 'taxiway'), drawn('occ-airfield-apron', 'apron'),
+    ];
+    render(
+      <OccMap stands={STANDS}>
+        <MapLegend />
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    let airfield = [];
+    fake.state.setRenderedFeatures(map, (_geometry, options) => airfield.filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => fake.state.emit(map, 'style.load'));
+    // Nothing of the airfield drawn in sight: the stands only.
+    expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL]);
+
+    // The map draws a runway, a taxiway with a holding point, an apron and a terminal there: they follow the stands,
+    // set apart, each with a crop of the map as its swatch.
+    airfield = AIRFIELD;
+    act(() => fake.state.emit(map, 'idle'));
+    expect(legendItems()).toEqual([
+      ...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL,
+      'Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal',
+    ]);
+    const legend = screen.getByTestId('map-legend');
+    expect([...legend.querySelectorAll('li svg[data-swatch]')].map(svg => svg.dataset.swatch))
+      .toEqual(['runway', 'taxiway', 'holdBar', 'apron', 'terminal']);
+    // A rule across the legend sets the airfield apart; it is not an entry of the list.
+    const rule = legend.querySelector('[data-legend-rule]');
+    expect(rule).toHaveClass('col-span-2', 'border-t');
+    expect(rule).toHaveAttribute('aria-hidden', 'true');
+    expect(rule.nextElementSibling).toHaveTextContent('Pista');
+    // The short entries sit two to a row; the plate of «No oficial» takes the whole row.
+    expect(screen.getByRole('list', { name: 'Leyenda' })).toHaveClass('grid-cols-2');
+    const rows = within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem');
+    expect(rows.filter(row => row.classList.contains('col-span-2')).map(row => row.textContent)).toEqual([UNOFFICIAL]);
+    // The swatches paint what the map paints: the runway's centreline in --occ-text, the terminal's outline in
+    // --occ-line-strong.
+    expect(legend.querySelector('svg[data-swatch="runway"] path[style*="stroke-dasharray"]').style.stroke).toBe('var(--occ-text)');
+    expect(legend.querySelector('svg[data-swatch="terminal"] rect:last-child').style.stroke).toBe('var(--occ-line-strong)');
+
+    // Only what is drawn: with the runway alone, only «Pista».
+    airfield = [AIRFIELD[2]];
+    act(() => fake.state.emit(map, 'idle'));
+    expect(legendItems().slice(-2)).toEqual([UNOFFICIAL, 'Pista']);
+    // Away from the stands the airfield is the whole legend, and nothing sets it apart.
+    airfield = AIRFIELD;
+    act(() => map.jumpTo({ center: [-68.37, 18.59], zoom: 16 }));
+    expect(legendItems()).toEqual(['Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal']);
+    expect(screen.getByTestId('map-legend').querySelector('[data-legend-rule]')).toBeNull();
+    // The region view draws no airfield: nothing to explain.
+    fireEvent.keyDown(map.getCanvas(), { key: '1' });
+    act(() => fake.state.emit(map, 'idle'));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    // In English, back on the ramp view.
+    window.history.replaceState({}, '', PAGE);
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMap stands={STANDS}><MapLegend /></OccMap></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    fake.state.setRenderedFeatures(english, (_geometry, options) => AIRFIELD.slice(1, 4)
+      .filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => fake.state.emit(english, 'style.load'));
+    act(() => fake.state.emit(english, 'idle'));
+    expect(legendItems().slice(-3)).toEqual(['Runway', 'Taxiway', 'Holding point']);
+    cleanup();
+
+    // A legend given its own stands, outside a map, lists no airfield.
+    resetLanguageForTests('es');
+    render(<MapLegend stands={STANDS} />);
+    expect(legendItems()).not.toContain('Pista');
+  });
+
   it('renders nothing when no stand is on screen', async () => {
     // Nothing to explain: no stands, or none with a place on the map.
     const { rerender } = render(<MapLegend stands={[]} />);

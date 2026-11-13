@@ -32,8 +32,12 @@ export const SLOT_ORDER = Object.freeze([
 /** The group of the slot markers: never shown, never toggled. */
 export const SLOT_GROUP = 'slot';
 
-/** Zoom thresholds derived at run time from the fitted views (contracts 2.3), named in layer metadata. */
-export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine']);
+/**
+ * Zoom thresholds derived at run time from the fitted views (contracts 2.3), named in layer metadata: `polygons`,
+ * `codes` and `threeLine` for the stands, and `airfield`, the boundary of the Aeródromo view, where the airfield of the
+ * own dataset takes over from the tiles.
+ */
+export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 'airfield']);
 
 const THRESHOLD_KEYS = ['occ:minThreshold', 'occ:maxThreshold'];
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
