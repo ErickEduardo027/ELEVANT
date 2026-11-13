@@ -92,6 +92,8 @@ public static class DependencyInjection
             Elevant.Application.Abstractions.Operations.UnconfiguredAirTrafficProvider>(services);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
             Elevant.Application.Operations.AirPicture.AirTrafficSettings.Disabled);
+        // ADR-0042: one air picture in memory for every screen, read by AirTrafficPollWorker only while someone watches.
+        services.AddSingleton<Elevant.Application.Operations.AirPicture.AirPictureService>();
         return services;
     }
 }
