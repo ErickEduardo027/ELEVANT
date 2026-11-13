@@ -7117,7 +7117,7 @@
         "tags": [
           "DemoFlights"
         ],
-        "summary": "What the form «Disparar vuelo demo» offers at a station (the requested one, else Punta Cana, else the first):\nairlines with exactly one applicable contract today, airports, aircraft types, stands, limits and warnings.",
+        "summary": "What the form «Disparar vuelo demo» offers at a station (the requested one, else Punta Cana, else the first):\nairlines with exactly one applicable contract today, airports, aircraft types, the stands evaluated for the visit\nof the form (`minutesToOnBlock` 2 to 30, 8 by default; `groundMinutes` 20 to 240, 60 by default; the\nsize of `aircraftTypeId`, any size without it), limits, warnings and the station against the Punta Cana\ncatalogue. A visit outside the form's ranges answers `invalid_demo_flight`.",
         "operationId": "GetDemoFlightOptions",
         "parameters": [
           {
@@ -7126,6 +7126,30 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "aircraftTypeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "minutesToOnBlock",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "groundMinutes",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
             }
           }
         ],
@@ -7136,6 +7160,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DemoFlightOptionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -7227,7 +7261,7 @@
         "tags": [
           "DemoFlights"
         ],
-        "summary": "«Disparar vuelo demo»: 201 with the new flight, 200 when the Idempotency-Key replays it. The flight numbers and the\nregistration are generated; a taken or inactive stand answers `stand_unavailable` with its rules in\n`reasons`.",
+        "summary": "«Disparar vuelo demo»: 201 with the new flight, 200 when the Idempotency-Key replays it. The flight numbers and the\nregistration are generated. `Random` draws one of the eligible stands (none: `no_eligible_stand`);\n`Specific` needs an eligible stand (`stand_not_eligible`), and a taken or inactive one answers\n`stand_unavailable`. A refused stand names its rules in `reasons`.",
         "operationId": "CreateDemoFlight",
         "parameters": [
           {
@@ -7381,6 +7415,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DemoFlightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/demo-station": {
+      "post": {
+        "tags": [
+          "DemoFlights"
+        ],
+        "summary": "«Cargar posiciones de Punta Cana»: creates the catalogue's terminals and stands the station lacks, active and without\ncoordinates (the map draws them by their code), and never changes, deactivates or deletes what the station has. It\nanswers the station as it is afterwards with 200, the first time and when the Idempotency-Key replays it: the\nanswer is a state, not a new resource. Only Punta Cana has a catalogue (`demo_station_unsupported`).",
+        "operationId": "PrepareDemoStation",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PrepareDemoStationRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoStationLayoutResponse"
                 }
               }
             }
@@ -40278,6 +40413,14 @@
             "items": {
               "$ref": "#/components/schemas/DemoFlightWarningResponse"
             }
+          },
+          "layout": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DemoStationLayoutResponse"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -40427,7 +40570,12 @@
       "DemoStandOptionResponse": {
         "required": [
           "code",
+          "coveredBy",
+          "eligible",
+          "eligibleAgents",
           "free",
+          "located",
+          "reasons",
           "standId",
           "terminalCode"
         ],
@@ -40443,7 +40591,98 @@
           "terminalCode": {
             "type": "string"
           },
+          "located": {
+            "type": "boolean"
+          },
           "free": {
+            "type": "boolean"
+          },
+          "coveredBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "eligibleAgents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoStationLayoutResponse": {
+        "required": [
+          "activeStands",
+          "catalogStands",
+          "catalogTerminals",
+          "complete",
+          "locatedStands",
+          "missingStands",
+          "stands",
+          "stationCode",
+          "stationId",
+          "supported",
+          "terminals",
+          "unmatchedStands"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "catalogTerminals": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "terminals": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "catalogStands": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stands": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "activeStands": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "locatedStands": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "missingStands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unmatchedStands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "complete": {
             "type": "boolean"
           }
         },
@@ -51459,6 +51698,19 @@
             "items": {
               "$ref": "#/components/schemas/PermissionActionData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PrepareDemoStationRequest": {
+        "required": [
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "additionalProperties": false

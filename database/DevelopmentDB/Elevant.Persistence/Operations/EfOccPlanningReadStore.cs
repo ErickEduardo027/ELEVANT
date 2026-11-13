@@ -480,8 +480,9 @@ internal sealed class EfOccPlanningReadStore(
     /// (<see cref="OccAgentEligibilityPolicy"/>): account, scopes, documents and qualification on
     /// <paramref name="operationDate"/>, the shift and absences at <paramref name="referenceTime"/> in the station's
     /// calendar, the mentor a junior needs, and the simultaneous operations in [<paramref name="plannedStartAt"/>,
-    /// <paramref name="plannedEndAt"/>) (<see cref="AgentSimultaneity"/>; the operation itself never counts). The stand
-    /// reassignment and the handover evaluate only <paramref name="onlyAgentIds"/>, with the same rules as the manual
+    /// <paramref name="plannedEndAt"/>) (<see cref="AgentSimultaneity"/>; the operation itself never counts, and without
+    /// an operation every overlapping one does). The stand reassignment, the handover and the demo flight options
+    /// (ADR-0041, with no operation yet) evaluate only <paramref name="onlyAgentIds"/>, with the same rules as the manual
     /// assignment.
     /// </summary>
     internal async Task<AgentCandidate[]> BuildAgentCandidatesAsync(
@@ -713,9 +714,9 @@ internal sealed class EfOccPlanningReadStore(
                 .ToArrayAsync(cancellationToken);
 
         // 3-D: one rule of simultaneity (OperationOccupancyRules): up to three operations that hold the agent may
-        // overlap; approved, handed-over or cancelled ones do not count, and a holding one without a window does.
-        var overlaps = operationId.HasValue &&
-            plannedStartAt.HasValue &&
+        // overlap; approved, handed-over or cancelled ones do not count, and a holding one without a window does. A
+        // flight that has no operation yet (the demo flight options, ADR-0041) counts every one that overlaps it.
+        var overlaps = plannedStartAt.HasValue &&
             plannedEndAt.HasValue &&
             plannedStartAt.Value < plannedEndAt.Value
                 ? await AgentSimultaneity.CountOverlapsAsync(context, agentIds, operationId, plannedStartAt.Value,

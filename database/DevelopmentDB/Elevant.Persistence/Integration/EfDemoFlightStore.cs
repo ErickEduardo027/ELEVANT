@@ -6,6 +6,7 @@ using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Common;
 using Elevant.Application.Integration.DemoFlights;
 using Elevant.Application.Operations;
+using Elevant.Application.Operations.DemoStation;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
@@ -241,21 +242,33 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
 
     private sealed record StationRow(long Id, Guid PublicId, string Code, string Name, string IanaTimeZone, string AirportIata);
 
-    public async Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, Guid? stationId,
+    /// <summary>
+    /// What the form offers, with every stand evaluated for the visit the form asks about
+    /// (<see cref="EvaluateStandsAsync"/>): it parks <see cref="DemoFlightOptionsQuery.MinutesToOnBlock"/> from now for
+    /// <see cref="DemoFlightOptionsQuery.GroundMinutes"/>, with the size of the aircraft type when it is an active one.
+    /// The warnings are the form's (no OCC account, local midnight) and then the stands' (none located, none eligible).
+    /// </summary>
+    public async Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, DemoFlightOptionsQuery query,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         if (!await IsSuperAdministratorAsync(actorId, cancellationToken)) return null;
+        // The caller built the query with the rules; the store never trusts it.
+        if (DemoFlightRules.OptionsQuery(query.StationId, query.AircraftTypeId, query.MinutesToOnBlock,
+                query.GroundMinutes) is not { } visit)
+            throw new ArgumentOutOfRangeException(nameof(query), "The visit breaks the rules of the demo flight form.");
         var now = Now();
         var stations = await StationsAsync(cancellationToken);
-        var types = (await context.AircraftTypes.AsNoTracking().Where(type => type.IsActive)
-                .OrderBy(type => type.IcaoCode)
-                .Select(type => new { type.PublicId, type.IcaoCode, type.Manufacturer, type.Model, type.SizeCategory })
-                .ToArrayAsync(cancellationToken))
-            .Select(type => new DemoAircraftTypeOptionData(type.PublicId, type.IcaoCode, type.Manufacturer, type.Model,
-                type.SizeCategory?.ToString())).ToArray();
+        var activeTypes = await context.AircraftTypes.AsNoTracking().Where(type => type.IsActive)
+            .OrderBy(type => type.IcaoCode)
+            .Select(type => new { type.PublicId, type.IcaoCode, type.Manufacturer, type.Model, type.SizeCategory })
+            .ToArrayAsync(cancellationToken);
+        var types = activeTypes.Select(type => new DemoAircraftTypeOptionData(type.PublicId, type.IcaoCode,
+            type.Manufacturer, type.Model, type.SizeCategory?.ToString())).ToArray();
         var listed = stations.Select(item => new DemoStationOptionData(item.PublicId, item.Code, item.Name)).ToArray();
-        if (Choose(stations, stationId) is not { } station)
-            return new DemoFlightOptionsData(true, now, listed, null, null, [], [], types, [], DemoFlightLimitsData.For(0), []);
+        if (Choose(stations, visit.StationId) is not { } station)
+            return new DemoFlightOptionsData(true, now, listed, null, null, [], [], types, [], DemoFlightLimitsData.For(0), [],
+                null);
 
         var today = BusinessCalendar.Today(now, station.IanaTimeZone);
         var covered = await ApplicableContracts.For(context, null, station.Id, today).Select(row => row.AirlineId)
@@ -267,25 +280,13 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
             .ToArrayAsync(cancellationToken);
 
         var active = await ActiveAsync(station.Id, now, cancellationToken);
-        var demoStands = DemoStands(active);
-        // The form's defaults: the create checks the stand again with the window it is asked for.
-        var from = now.AddMinutes(DemoFlightRules.DefaultMinutesToOnBlock);
-        var occupied = (await StandAvailability.Occupying(context, station.Id, from,
-                from.AddMinutes(DemoFlightRules.DefaultGroundMinutes), null)
-            .Select(row => row.StandId).ToArrayAsync(cancellationToken)).ToHashSet();
-        var stands = (await (from stand in context.Stands.AsNoTracking()
-                             join terminal in context.Terminals.AsNoTracking() on stand.TerminalId equals (long?)terminal.Id
-                             where stand.StationId == station.Id && stand.IsActive && terminal.IsActive
-                             select new { stand.Id, stand.PublicId, stand.Code, Terminal = terminal.Code })
-                .ToArrayAsync(cancellationToken))
-            .Where(stand => stand.Code.Length <= GateLength)
-            .Select(stand => new { Stand = stand, Order = NaturalOrder(stand.Code) })
-            .OrderBy(item => item.Stand.Terminal, StringComparer.Ordinal)
-            .ThenBy(item => item.Order.Prefix, StringComparer.Ordinal).ThenBy(item => item.Order.Number)
-            .ThenBy(item => item.Order.Suffix, StringComparer.Ordinal)
-            .Select(item => new DemoStandOptionData(item.Stand.PublicId, item.Stand.Code, item.Stand.Terminal,
-                !occupied.Contains(item.Stand.Id) && !demoStands.Contains(StandCodes.Normalize(item.Stand.Code))))
-            .ToArray();
+        // The visit the form asks about: the create evaluates its stand again for the window it is asked for.
+        var onBlockAt = now.AddMinutes(visit.MinutesToOnBlock);
+        var offBlockAt = onBlockAt.AddMinutes(visit.GroundMinutes);
+        // Without an aircraft type, or with one that is no longer active, any stand size will do.
+        var size = activeTypes.FirstOrDefault(type => type.PublicId == visit.AircraftTypeId)?.SizeCategory;
+        var stands = (await EvaluateStandsAsync(station, onBlockAt, offBlockAt, size, DemoStands(active), cancellationToken))
+            .Select(item => item.Option).ToArray();
 
         var warnings = new List<DemoFlightWarningData>();
         if ((await OperationalNotificationWriter.OccRecipientsAsync(context, station.Id, now, null, cancellationToken)).Length == 0)
@@ -293,9 +294,11 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
         // The operation date is the local day of the arrival: a flight that parks after midnight is tomorrow's.
         if (BusinessCalendar.Today(now.AddMinutes(DemoFlightRules.MaxMinutesToOnBlock), station.IanaTimeZone) != today)
             warnings.Add(new DemoFlightWarningData(CrossesLocalMidnight, []));
+        warnings.AddRange(DemoStandEligibility.Warnings(stands));
         return new DemoFlightOptionsData(true, now, listed, station.PublicId, today, airlines,
             await AirportOptionsAsync(station.AirportIata, cancellationToken), types, stands,
-            DemoFlightLimitsData.For(active.Count), warnings);
+            DemoFlightLimitsData.For(active.Count), warnings,
+            await DemoStationLayoutReader.ReadAsync(context, station.Id, station.PublicId, station.Code, cancellationToken));
     }
 
     public async Task<DemoFlightListData?> ListAsync(Guid actorId, Guid? stationId,
@@ -366,8 +369,12 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
                 if (origin is null || destination is null) return Step.Fail(MasterDataFailure.Conflict, DemoFlightCodes.OriginUnknown);
 
                 var active = await ActiveAsync(station.Id, now, cancellationToken);
+                // The station's limit comes before the stand: with three demo aircraft on their way, no stand is drawn.
+                if (active.Count >= DemoFlightRules.MaxActivePerStation)
+                    return Step.Fail(MasterDataFailure.Conflict, DemoFlightCodes.LimitReached);
+                var demoStands = DemoStands(active);
                 (string Code, string Terminal)? stand = null;
-                if (request.StandId is { } standId)
+                if (request.StandChoice == DemoStandChoice.Specific && request.StandId is { } standId)
                 {
                     // Locked like every command that places a flight: two triggers for one stand wait for each other.
                     await StandAvailability.LockAsync(context, standId, cancellationToken);
@@ -380,12 +387,38 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
                                         select new { item.Code, Terminal = terminal.Code }).SingleAsync(cancellationToken);
                     if (chosen.Code.Length > GateLength) return Step.Fail(MasterDataFailure.Conflict, "stand_unavailable");
                     // Another demo aircraft is on its way to it, or still parked on it.
-                    if (DemoStands(active).Contains(StandCodes.Normalize(chosen.Code)))
+                    if (demoStands.Contains(StandCodes.Normalize(chosen.Code)))
                         return Step.Fail(MasterDataFailure.Conflict, "stand_unavailable", ["stand_taken"]);
+                    // A stand chosen by hand must be eligible too (owner decision 22): the map knows where it is, and an
+                    // agent who covers it when the aircraft parks may be assigned to the flight.
+                    var option = (await EvaluateStandsAsync(station, onBlockAt, offBlockAt, type.SizeCategory, demoStands,
+                        cancellationToken)).SingleOrDefault(item => item.Id == placement.StandId)?.Option;
+                    if (option is null) return Step.Fail(MasterDataFailure.Conflict, "stand_unavailable");
+                    if (!option.Located)
+                        return Step.Fail(MasterDataFailure.Conflict, DemoFlightCodes.StandNotEligible,
+                            [DemoFlightCodes.StandNotLocated]);
+                    if (!option.Eligible)
+                        return Step.Fail(MasterDataFailure.Conflict, DemoFlightCodes.StandNotEligible, option.Reasons);
                     stand = (chosen.Code, chosen.Terminal);
                 }
-                if (active.Count >= DemoFlightRules.MaxActivePerStation)
-                    return Step.Fail(MasterDataFailure.Conflict, DemoFlightCodes.LimitReached);
+                else if (request.StandChoice == DemoStandChoice.Random)
+                {
+                    // «Al azar» (owner decision 22): one of the eligible stands, with the key as the seed, so a retry of the
+                    // same command draws the same one.
+                    var options = (await EvaluateStandsAsync(station, onBlockAt, offBlockAt, type.SizeCategory, demoStands,
+                        cancellationToken)).Select(item => item.Option).ToArray();
+                    if (DemoStandDraw.Pick(options.Where(item => item.Eligible).Select(item => item.StandId).ToArray(),
+                            idempotencyKey) is not { } drawn)
+                        return Step.Fail(MasterDataFailure.Conflict, DemoFlightCodes.NoEligibleStand, DemoStandEligibility
+                            .Warnings(options).SingleOrDefault(item => item.Code == DemoFlightCodes.NoEligibleStand)?.Reasons);
+                    // Locked and checked again like a stand chosen by hand: a flight that took it meanwhile wins.
+                    await StandAvailability.LockAsync(context, drawn, cancellationToken);
+                    var placement = await StandAvailability.CheckAsync(context, station.Id, drawn, onBlockAt, offBlockAt,
+                        type.SizeCategory, null, cancellationToken);
+                    if (!placement.Available) return Step.Fail(MasterDataFailure.Conflict, "stand_unavailable", placement.Reasons);
+                    var chosen = options.Single(item => item.StandId == drawn);
+                    stand = (chosen.Code, chosen.TerminalCode);
+                }
 
                 // A number OCC already planned that day would make the import join the pair to that flight (3-N07).
                 var used = (await context.Set<ExternalFlightProposal>().AsNoTracking()
@@ -435,6 +468,7 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
                     new("demo_flight.registration", null, registration),
                     new("demo_flight.minutes_to_on_block", null, request.MinutesToOnBlock.ToString(CultureInfo.InvariantCulture)),
                     new("demo_flight.ground_minutes", null, request.GroundMinutes.ToString(CultureInfo.InvariantCulture)),
+                    new("demo_flight.stand_choice", null, request.StandChoice.ToString()),
                     new("demo_flight.stand", null, stand?.Code),
                     new(StateField, null, nameof(DemoFlightState.Active)));
                 // OCC's screens read the review again and see the flight coming.
@@ -694,12 +728,103 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
 
     /// <summary>
     /// The stands the active demo aircraft are heading to or parked on, as <see cref="StandCodes"/> compares them: the
-    /// stand the trigger suggested while nobody imported the flight, and afterwards the one OCC gave it. A demo
-    /// aircraft waits for its agent past its planned window, when the stand's own availability no longer counts it.
+    /// stand the trigger suggested while nobody imported the flight, and afterwards the one OCC gave it until the tablet
+    /// records the push-back (<see cref="OperationOccupancyRules.HasLeftStand"/>: the aircraft left it, although it is
+    /// still active while it taxis out and takes off). A demo aircraft waits for its agent past its planned window, when
+    /// the stand's own availability no longer counts it.
     /// </summary>
     private static HashSet<string> DemoStands(IEnumerable<DemoFlightGroup> active) =>
-        active.Select(group => group.Imported ? group.Link!.StandCode : group.Arrival.Gate).OfType<string>()
-            .Select(StandCodes.Normalize).ToHashSet(StringComparer.Ordinal);
+        active.Select(group => group.Imported
+                ? OperationOccupancyRules.HasLeftStand(group.Link!.PushbackAt) ? null : group.Link!.StandCode
+                : group.Arrival.Gate)
+            .OfType<string>().Select(StandCodes.Normalize).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>A stand of the station for one visit, with its key: what the options list and the trigger checks.</summary>
+    private sealed record EvaluatedStand(long Id, DemoStandOptionData Option);
+
+    /// <summary>
+    /// Every active stand of an active terminal of the station for a visit of [<paramref name="onBlockAt"/>,
+    /// <paramref name="offBlockAt"/>) by an aircraft of <paramref name="size"/> (ADR-0041, contracts 1.1), by terminal and
+    /// then as people count them (A9 before A10):
+    /// <list type="bullet">
+    /// <item>located: <see cref="PuntaCanaStationLayout.IsLocated"/>;</item>
+    /// <item>free: it breaks no rule of <see cref="StandAvailability.EvaluateAsync"/> (the flights that hold it, the
+    /// combined stands and the aircraft size) and no other active demo aircraft goes to it (<paramref name="demoStands"/>);</item>
+    /// <item>covered by: the agents of the station's coverages, not released, whose window contains the on-block instant,
+    /// primary ones first, named as the positions board names them;</item>
+    /// <item>eligible: <see cref="DemoStandEligibility.Evaluate"/>, each covering agent judged by OCC's real assignment
+    /// rule for the stand's terminal and this visit, as if the flight were already planned
+    /// (<see cref="EfOccPlanningReadStore.BuildAgentCandidatesAsync"/> without an operation, so every operation of the
+    /// agent that overlaps counts, then <see cref="OccAgentEligibilityPolicy"/>).</item>
+    /// </list>
+    /// </summary>
+    private async Task<IReadOnlyList<EvaluatedStand>> EvaluateStandsAsync(StationRow station, DateTimeOffset onBlockAt,
+        DateTimeOffset offBlockAt, AircraftSizeCategory? size, HashSet<string> demoStands,
+        CancellationToken cancellationToken)
+    {
+        var stands = (await (from stand in context.Stands.AsNoTracking()
+                             join terminal in context.Terminals.AsNoTracking() on stand.TerminalId equals (long?)terminal.Id
+                             where stand.StationId == station.Id && stand.IsActive && terminal.IsActive
+                             select new
+                             {
+                                 stand.Id, stand.PublicId, stand.Code, TerminalId = terminal.Id, Terminal = terminal.Code,
+                                 Placed = stand.Latitude != null,
+                             })
+                .ToArrayAsync(cancellationToken))
+            .Where(stand => stand.Code.Length <= GateLength)
+            .Select(stand => new { Stand = stand, Order = NaturalOrder(stand.Code) })
+            .OrderBy(item => item.Stand.Terminal, StringComparer.Ordinal)
+            .ThenBy(item => item.Order.Prefix, StringComparer.Ordinal).ThenBy(item => item.Order.Number)
+            .ThenBy(item => item.Order.Suffix, StringComparer.Ordinal)
+            .Select(item => item.Stand).ToArray();
+        if (stands.Length == 0) return [];
+        var availability = await StandAvailability.EvaluateAsync(context, station.Id, onBlockAt, offBlockAt, size, null,
+            cancellationToken);
+        var coverage = (await (from item in context.Set<PositionCoverage>().AsNoTracking()
+                               join covered in context.Set<PositionCoverageStand>().AsNoTracking()
+                                   on item.Id equals covered.PositionCoverageId
+                               join agent in context.RampAgents.AsNoTracking() on item.RampAgentId equals agent.Id
+                               join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+                               where item.StationId == station.Id && item.ReleasedAt == null && item.StartsAt <= onBlockAt &&
+                                     onBlockAt < item.EndsAt
+                               orderby item.IsReinforcement, item.CreatedAt, item.Id
+                               select new
+                               {
+                                   covered.StandId, item.RampAgentId, Agent = agent.PublicId, agent.EmployeeNumber,
+                                   Name = (person.FirstName + " " + person.LastName).Trim(),
+                               })
+                .ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.StandId);
+
+        // The agents who cover each terminal's stands, judged once for that terminal and this visit.
+        var operationDate = BusinessCalendar.Today(onBlockAt, station.IanaTimeZone);
+        var planning = new EfOccPlanningReadStore(context, timeProvider);
+        var verdicts = new Dictionary<(long Terminal, long Agent), OccAgentOptionData>();
+        foreach (var terminal in stands.GroupBy(stand => stand.TerminalId))
+        {
+            var agents = terminal.SelectMany(stand => coverage[stand.Id]).Select(item => item.RampAgentId).Distinct().ToArray();
+            if (agents.Length == 0) continue;
+            foreach (var candidate in await planning.BuildAgentCandidatesAsync(null, station.Id, terminal.Key, operationDate,
+                         onBlockAt, onBlockAt, offBlockAt, station.IanaTimeZone, agents, cancellationToken))
+                verdicts[(terminal.Key, candidate.AgentId)] = OccAgentEligibilityPolicy.Evaluate(candidate.Data);
+        }
+
+        return stands.Select(stand =>
+        {
+            var located = PuntaCanaStationLayout.IsLocated(station.Code, stand.Code, stand.Placed);
+            var free = availability.TryGetValue(stand.Id, out var broken) && broken.Count == 0 &&
+                !demoStands.Contains(StandCodes.Normalize(stand.Code));
+            var covering = coverage[stand.Id].DistinctBy(item => item.RampAgentId).ToArray();
+            // The rule lists every agent with a scope at the station that day or a shift in the terminal then: one it
+            // does not list has neither.
+            var judged = covering.Select(item => verdicts.GetValueOrDefault((stand.TerminalId, item.RampAgentId)) ??
+                new OccAgentOptionData(item.Agent, item.Name, item.EmployeeNumber, false,
+                    ["station_scope_missing", "shift_not_compatible"])).ToArray();
+            var (eligible, eligibleAgents, reasons) = DemoStandEligibility.Evaluate(located, free, judged);
+            return new EvaluatedStand(stand.Id, new DemoStandOptionData(stand.PublicId, stand.Code, stand.Terminal, located,
+                free, covering.Select(item => item.Name).ToArray(), eligibleAgents, eligible, reasons));
+        }).ToArray();
+    }
 
     /// <summary>
     /// The counterpart airport of a leg: the row the database already has, taking the time zone and the coordinates it

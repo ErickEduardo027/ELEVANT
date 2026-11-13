@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS, RETIRED_DASHBOARD_POSITIONS, unlocatedStandAssignments } from './dashboardPositions';
 import { RAMP_POSITIONS } from './positionsData';
@@ -12,6 +13,33 @@ describe('dashboard internal parking catalog', () => {
     for (const id of ['A1', 'AN1', 'BN13', 'B34', 'B35', 'B36', 'B37']) expect(ids.has(id)).toBe(true);
     expect(ids.has('B33')).toBe(false);
     for (const id of ['B23A', 'B23B', '1', '1A']) expect(ids.has(id)).toBe(false);
+  });
+
+  it('marks B33 retired in the data, not in the code', () => {
+    // ADR-0041: the flag is the rule. The API's Punta Cana catalogue holds the rows without it (DemoStationCatalogParityTests).
+    expect(RAMP_POSITIONS.filter(position => 'retired' in position).map(position => position.id)).toEqual(['B33']);
+    expect(RAMP_POSITIONS.find(position => position.id === 'B33').retired).toBe(true);
+    expect(RETIRED_DASHBOARD_POSITIONS).toEqual(RAMP_POSITIONS.filter(position => position.retired === true));
+    expect(DASHBOARD_POSITIONS).toEqual(RAMP_POSITIONS.filter(position => position.retired !== true));
+    // No stand code is written in the filter itself (the path is relative to this package, as in standCodes.test.js).
+    expect(readFileSync('src/features/dashboard/dashboardPositions.js', 'utf8')).not.toMatch(/['"]B33['"]/);
+  });
+
+  it('draws exactly the stands of the Punta Cana catalogue the API creates', () => {
+    // ADR-0041, contracts 1.2: PuntaCanaStationLayout.Stands (C#) as «terminal:code». DemoStationCatalogParityTests
+    // compares that catalogue with this data, but only Backend CI runs it, and a change to private-web alone runs only
+    // Web clients CI: this list is the web's half. A change here is a change to the catalogue, in the same PR.
+    const catalogue = [
+      'A:A1', 'A:A2', 'A:A3', 'A:A4', 'A:A5', 'A:A6', 'A:A7', 'A:A8', 'A:A9', 'A:A10', 'A:A11',
+      'A:AN1', 'A:AN2', 'A:AN3', 'A:AN4', 'A:AN5',
+      'B:B20', 'B:B21', 'B:B22', 'B:B23', 'B:B24', 'B:B25', 'B:B26', 'B:B27', 'B:B28', 'B:B29', 'B:B30', 'B:B31',
+      'B:B32', 'B:B34', 'B:B35', 'B:B36', 'B:B37',
+      'FBO:BN6', 'FBO:BN7', 'FBO:BN8', 'FBO:BN9', 'FBO:BN10', 'FBO:BN11', 'FBO:BN12', 'FBO:BN13',
+    ];
+    expect(catalogue).toHaveLength(41);
+    // Sorted as the C# test sorts its keys (ordinal), so a difference reads as the stand that differs.
+    const sorted = keys => [...keys].sort();
+    expect(sorted(DASHBOARD_POSITIONS.map(({ terminal, id }) => `${terminal}:${id}`))).toEqual(sorted(catalogue));
   });
 
   it('keeps the original internal coordinates for all thirteen B20–B32 entries', () => {

@@ -156,6 +156,21 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_RULE_REASONS).toContain(reason);
   });
 
+  it("keeps demo_station_unsupported, no_eligible_stand and stand_not_eligible", () => {
+    // PR A2: only Punta Cana has a catalogue to load; «Al azar» with nothing eligible to draw and a stand chosen by hand
+    // that is not eligible.
+    for (const code of ["demo_station_unsupported", "no_eligible_stand", "stand_not_eligible"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // Their reasons survive: the map cannot draw the stand, nobody covers it, or the covering agents fail OCC's rule.
+    for (const reason of ["stand_not_located", "stand_not_covered", "agent_inactive", "mobile_account_unavailable",
+      "station_scope_missing", "terminal_scope_missing", "operational_position_unavailable", "qualification_not_current",
+      "airport_id_not_current", "ramp_driver_license_not_current", "shift_not_compatible", "approved_absence",
+      "mentor_required", "assignment_conflict"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+    // Each reason is listed once.
+    expect(new Set(ELEVANT_RULE_REASONS).size).toBe(ELEVANT_RULE_REASONS.length);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

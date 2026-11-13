@@ -84,6 +84,8 @@ public static class DependencyInjection
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
             Elevant.Application.Integration.DemoFlights.DemoFlightAvailability.Disabled);
         services.AddScoped<Elevant.Application.Integration.DemoFlights.DemoFlightHandler>();
+        // ADR-0041: «Cargar posiciones de Punta Cana», under the same DemoFlights:Mode.
+        services.AddScoped<Elevant.Application.Operations.DemoStation.DemoStationHandler>();
         return services;
     }
 }

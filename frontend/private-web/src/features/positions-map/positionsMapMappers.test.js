@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   matchesTerminalFilter,
   mapOccupancyToRampPositions,
+  mapTurnaroundsToRampPositions,
   matchesPositionSearch,
   findPositionByQuery,
   computePositionsSummary,
   getCombinedConfigExplanation,
   buildDisabledToast,
 } from './positionsMapMappers';
+import { RAMP_POSITIONS } from '../dashboard/positionsData';
+import { DASHBOARD_POSITIONS } from '../dashboard/dashboardPositions';
 
 function position(overrides) {
   return {
@@ -147,6 +150,36 @@ describe('mapOccupancyToRampPositions with OCC locations (ADR-0027)', () => {
       positions: [stand('A01'), stand('C07', { latitude: 18.57, longitude: -68.37 }), stand('C08')] });
     expect(positions.map(item => item.id)).toEqual(['A1', 'C7']);
     expect(positions[1]).toMatchObject({ standId: 'id-C07', locationSource: 'occ' });
+  });
+});
+
+describe('the retired reference row on the maps (ADR-0041)', () => {
+  const stand = (code, extra = {}) => ({ standId: `id-${code}`, code, terminalCode: 'B', standType: 'Remote', status: 'available',
+    turnarounds: [], ...extra });
+  const drawnIds = DASHBOARD_POSITIONS.map(position => position.id);
+
+  it('never draws B33 from the reference: the map draws the 41 stands of the Punta Cana catalogue', () => {
+    const empty = mapOccupancyToRampPositions(RAMP_POSITIONS, { positions: [] });
+    expect(empty).toHaveLength(41);
+    expect(empty.map(item => item.id)).toEqual(drawnIds);
+    expect(empty.every(item => item.status === 'unverified')).toBe(true);
+    // A row with that code that OCC did not place is not drawn either: the catalogue does not locate it.
+    const unplaced = mapOccupancyToRampPositions(RAMP_POSITIONS, { positions: [stand('B033'), stand('B032')] });
+    expect(unplaced.map(item => item.id)).toEqual(drawnIds);
+    expect(unplaced.find(item => item.id === 'B32')).toMatchObject({ standId: 'id-B032', status: 'available' });
+  });
+
+  it('draws a B33 that OCC placed, once and where OCC put it', () => {
+    const positions = mapOccupancyToRampPositions(RAMP_POSITIONS, { positions: [
+      stand('B033', { latitude: 18.5643, longitude: -68.3727, status: 'planned' })] });
+    expect(positions).toHaveLength(42);
+    expect(positions.filter(item => item.id === 'B33')).toEqual([expect.objectContaining({ standId: 'id-B033', terminal: 'B',
+      latitude: 18.5643, longitude: -68.3727, locationSource: 'occ', status: 'planned' })]);
+  });
+
+  it('keeps it off the dashboard ramp map too, whatever list the caller passes', () => {
+    const turnarounds = [{ id: 't-1', operationCode: 'OP-1', stand: { code: 'B33' } }];
+    expect(mapTurnaroundsToRampPositions(RAMP_POSITIONS, turnarounds).map(item => item.id)).toEqual(drawnIds);
   });
 });
 

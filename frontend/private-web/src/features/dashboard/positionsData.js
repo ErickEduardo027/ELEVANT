@@ -31,7 +31,11 @@ export const RAMP_POSITIONS = [
   { id: 'B30', terminal: 'B', lat: 18.564167, lon: -68.370944 },
   { id: 'B31', terminal: 'B', lat: 18.564306, lon: -68.37175 },
   { id: 'B32', terminal: 'B', lat: 18.564278, lon: -68.372167 },
-  { id: 'B33', terminal: 'B', lat: 18.564167, lon: -68.372611 },
+  // Retired by the 2026 AIP amendment: kept as a historical record and not in the catalogue the API creates
+  // (PuntaCanaStationLayout, ADR-0041). No map draws it from here (dashboardPositions.js and the map mappers in
+  // positions-map/positionsMapMappers.js skip it); the maps that read the positions board draw a stand with this
+  // code that OCC placed, where OCC put it.
+  { id: 'B33', terminal: 'B', lat: 18.564167, lon: -68.372611, retired: true },
   { id: 'B34', terminal: 'B', lat: 18.564111, lon: -68.373222 },
   { id: 'B35', terminal: 'B', lat: 18.563722, lon: -68.373222 },
   { id: 'B36', terminal: 'B', lat: 18.563333, lon: -68.373139 },

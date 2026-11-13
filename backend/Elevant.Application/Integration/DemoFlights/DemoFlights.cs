@@ -1,4 +1,5 @@
 using Elevant.Application.Operations;
+using Elevant.Application.Operations.DemoStation;
 
 namespace Elevant.Application.Integration.DemoFlights;
 
@@ -56,16 +57,45 @@ public static class DemoFlightCodes
 
     /// <summary>The demo flight is already cancelled or finished.</summary>
     public const string Closed = "demo_flight_closed";
+
+    /// <summary>
+    /// «Cargar posiciones de Punta Cana» was asked for another station: only Punta Cana has a catalogue
+    /// (<see cref="PuntaCanaStationLayout"/>).
+    /// </summary>
+    public const string StationUnsupported = "demo_station_unsupported";
+
+    /// <summary>
+    /// No stand is eligible (<see cref="DemoStandEligibility"/>): a warning of the options, and the refusal of «Al
+    /// azar», which has nothing to draw.
+    /// </summary>
+    public const string NoEligibleStand = "no_eligible_stand";
+
+    /// <summary>The stand the request names is not eligible for the visit.</summary>
+    public const string StandNotEligible = "stand_not_eligible";
+
+    /// <summary>A warning of the options: the map knows where none of the station's stands is.</summary>
+    public const string NoLocatedStands = "no_located_stands";
+
+    /// <summary>A reason of a stand that is not eligible: no agent covers it at the on-block instant.</summary>
+    public const string StandNotCovered = "stand_not_covered";
+
+    /// <summary>
+    /// The reason of <see cref="StandNotEligible"/> for a stand the map does not know where to draw
+    /// (<see cref="PuntaCanaStationLayout.IsLocated"/>): the aircraft would have nowhere to taxi to.
+    /// </summary>
+    public const string StandNotLocated = "stand_not_located";
 }
 
 /// <summary>
-/// How the trigger chooses the stand the aircraft is suggested for: none (OCC assigns it when it imports the flight)
-/// or the one the request names.
+/// How the trigger chooses the stand the aircraft is suggested for: none (OCC assigns it when it imports the flight),
+/// the one the request names, or one drawn among the eligible stands with the Idempotency-Key as the seed
+/// (<see cref="DemoStandDraw"/>), so a retry gets the same stand.
 /// </summary>
 public enum DemoStandChoice
 {
     None,
     Specific,
+    Random,
 }
 
 /// <summary>What ends a demo flight: «Cancelar vuelo» before touchdown, «Terminar demo» after it.</summary>
@@ -101,8 +131,9 @@ public static class DemoFlightRules
     /// <summary>
     /// The request as the store takes it, or null when it breaks a rule (<c>invalid_demo_flight</c>): identifiers
     /// present, three-letter IATA codes (a null destination is the origin: the aircraft returns where it came from),
-    /// the stand choice by its exact name with a stand only when it was chosen, and both durations inside their
-    /// ranges. That the airports are not the station's own is <see cref="UsesStationAirport"/>, which needs the station.
+    /// the stand choice by its exact name with a stand only when it is «Specific» («Random» draws its own), and both
+    /// durations inside their ranges. That the airports are not the station's own is <see cref="UsesStationAirport"/>,
+    /// which needs the station.
     /// </summary>
     public static CreateDemoFlightInput? Normalize(CreateDemoFlightCommand raw)
     {
@@ -118,6 +149,22 @@ public static class DemoFlightRules
         if (standChoice == DemoStandChoice.Specific ? !namesStand : raw.StandId is not null) return null;
         return new CreateDemoFlightInput(raw.StationId, raw.AirlineId, origin, destination, raw.AircraftTypeId, standChoice,
             raw.StandId, raw.MinutesToOnBlock, raw.GroundMinutes);
+    }
+
+    /// <summary>
+    /// What the options are read for, or null when the query breaks a rule (<c>invalid_demo_flight</c>): no empty
+    /// identifier, and the minutes to the stand and on the ground inside the form's ranges. The window the form has not
+    /// sent yet is the form's default: <see cref="DefaultMinutesToOnBlock"/> and <see cref="DefaultGroundMinutes"/>.
+    /// </summary>
+    public static DemoFlightOptionsQuery? OptionsQuery(Guid? stationId, Guid? aircraftTypeId, int? minutesToOnBlock,
+        int? groundMinutes)
+    {
+        if (stationId == Guid.Empty || aircraftTypeId == Guid.Empty) return null;
+        var minutes = minutesToOnBlock ?? DefaultMinutesToOnBlock;
+        var ground = groundMinutes ?? DefaultGroundMinutes;
+        if (minutes is < MinMinutesToOnBlock or > MaxMinutesToOnBlock || ground is < MinGroundMinutes or > MaxGroundMinutes)
+            return null;
+        return new DemoFlightOptionsQuery(stationId, aircraftTypeId, minutes, ground);
     }
 
     /// <summary>The intent of a cancel command by its exact name; null for anything else.</summary>
