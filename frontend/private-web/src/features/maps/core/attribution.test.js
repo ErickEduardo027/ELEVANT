@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { AIRFIELD_SOURCE, airfieldOverlay } from '../style/airfieldLayers';
 import { BASEMAP_SOURCE_ID, buildOccStyle } from '../style/occStyle';
-import { FIXED_ATTRIBUTION, buildAttribution, collapseCompactAttribution, escapeHtml, httpsUrl } from './attribution';
+import {
+  AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, buildAttribution, collapseCompactAttribution, escapeHtml, httpsUrl,
+} from './attribution';
 
 // The attribution as the browser would build it, to read its links and text instead of matching strings.
 function parse(html) {
@@ -42,6 +45,24 @@ describe('map attribution', () => {
     // The vector source names the same text, so MapLibre (which drops a credit contained in another) shows it once.
     expect(buildOccStyle().sources[BASEMAP_SOURCE_ID].attribution).toBe(FIXED_ATTRIBUTION);
     expect(withSource.includes(buildOccStyle().sources[BASEMAP_SOURCE_ID].attribution)).toBe(true);
+  });
+
+  it('the airfield credit links OpenStreetMap copyright (ODbL) and OurAirports over https', () => {
+    expect(parse(AIRFIELD_ATTRIBUTION).textContent).toBe('© OpenStreetMap contributors (ODbL) · OurAirports');
+    expect(links(AIRFIELD_ATTRIBUTION)).toEqual([
+      { href: 'https://www.openstreetmap.org/copyright', text: '© OpenStreetMap contributors', rel: 'noopener noreferrer' },
+      { href: 'https://opendatacommons.org/licenses/odbl/', text: 'ODbL', rel: 'noopener noreferrer' },
+      { href: 'https://ourairports.com/', text: 'OurAirports', rel: 'noopener noreferrer' },
+    ]);
+    for (const anchor of parse(AIRFIELD_ATTRIBUTION).querySelectorAll('a')) {
+      expect(httpsUrl(anchor.getAttribute('href')), anchor.textContent).toBe(anchor.getAttribute('href'));
+      expect(anchor.getAttribute('target')).toBe('_blank');
+    }
+    // It travels on the airfield's own source, so MapLibre lists it only while the airfield is drawn; it is not in the
+    // fixed line. MapLibre drops a credit another one contains: neither contains the other, so both show together.
+    expect(buildOccStyle({ overlays: [airfieldOverlay()] }).sources[AIRFIELD_SOURCE].attribution).toBe(AIRFIELD_ATTRIBUTION);
+    expect(buildAttribution()).not.toContain('OurAirports');
+    expect(FIXED_ATTRIBUTION.includes(AIRFIELD_ATTRIBUTION) || AIRFIELD_ATTRIBUTION.includes(FIXED_ATTRIBUTION)).toBe(false);
   });
 
   it('escapes API-provided text and drops links that are not https', () => {

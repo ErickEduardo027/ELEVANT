@@ -2,9 +2,9 @@ import { occColor } from '../../occ-ui/occPalette';
 import { BASEMAP_COLORS } from './mapTheme';
 
 // The NOC base map on the OpenMapTiles schema of the OpenFreeMap vector tiles: water, land, coast, borders, the main
-// roads (dim, from zoom 8), buildings, a few labels and the airfield as the tiles draw it. No points of interest, no
-// road shields, no land cover. Every layer names its group in `metadata['occ:group']`; occStyle.js places the four
-// lists in their slots.
+// roads (dim, from zoom 8), buildings, a few labels and, as context below the airfield view, the airfield as the tiles
+// draw it. No points of interest, no road shields, no land cover. Every layer names its group in
+// `metadata['occ:group']`; occStyle.js places the four lists in their slots.
 
 /** The vector source of the base map (the id occStyle.js gives the OpenFreeMap TileJSON). */
 export const BASEMAP_SOURCE_ID = 'openmaptiles';
@@ -30,16 +30,22 @@ const LABEL_SIZE = 12;
 
 const ROAD_WIDTH = ['interpolate', ['exponential', 1.4], ['zoom'], 8, 0.5, 12, 1.2, 16, 4];
 const COAST_WIDTH = ['interpolate', ['linear'], ['zoom'], 4, 0.6, 12, 1.2];
-// Pavement drawn close to its real width from zoom 14 (a 45 m runway, a 23 m taxiway at 18.6° N).
-const RUNWAY_WIDTH = ['interpolate', ['exponential', 2], ['zoom'], 9, 1, 12, 3, 14, 6, 16, 20, 18, 80, 19.5, 226];
-const TAXIWAY_WIDTH = ['interpolate', ['exponential', 2], ['zoom'], 12, 1, 14, 2.5, 16, 10, 18, 40, 19.5, 113];
+// Pavement drawn close to its real width from zoom 14 (a 45 m runway, a 23 m taxiway at 18.6° N), and never thinner
+// than a line that still reads when the map is zoomed out. The airfield of the own dataset (airfieldLayers.js) draws
+// its runways and taxiways with the same widths, so the hand-over from the tiles shows no jump.
+export const RUNWAY_WIDTH = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 9, 1, 12, 3, 14, 6, 16, 20, 18, 80, 19.5, 226]);
+export const TAXIWAY_WIDTH = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 12, 1, 14, 2.5, 16, 10, 18, 40, 19.5, 113]);
+
+// The tile aeroway is context only: from the derived airfield threshold (the boundary of the Aeródromo view, contracts
+// 2.3) the own dataset draws the airfield instead.
+const UNTIL_AIRFIELD = Object.freeze({ 'occ:maxThreshold': 'airfield' });
 
 const fonts = stack => [...FONT_STACKS[stack]];
 const tileLayer = (sourceLayer, group, layer) => ({
   ...layer,
   source: BASEMAP_SOURCE_ID,
   'source-layer': sourceLayer,
-  metadata: { 'occ:group': group },
+  metadata: { 'occ:group': group, ...layer.metadata },
 });
 
 function labelPaint(colour, halo) {
@@ -49,7 +55,8 @@ function labelPaint(colour, halo) {
 /**
  * The base-map layers by slot: `base` (background, water, coast, borders, roads, flat buildings), `baseLabels`,
  * `airfield` (runways, taxiways and aprons of the tiles) and `extrusions` (3D buildings, hidden until 3D is on).
- * The airfield has no maximum zoom yet: until the own MDPC dataset arrives (PR M3) the tiles draw the ramp too.
+ * The tile airfield ends at the derived `airfield` threshold (`occ:maxThreshold`, never a fixed zoom): from there the
+ * airfield of the own MDPC dataset (airfieldLayers.js) takes over, so the two are never drawn together.
  */
 export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
   const base = [
@@ -164,6 +171,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       minzoom: 11,
       filter: ['all', IS_POLYGON, classIs('apron')],
       paint: { 'fill-color': colors.apron },
+      metadata: UNTIL_AIRFIELD,
     }),
     tileLayer('aeroway', 'airfield', {
       id: 'airfield-runway-area',
@@ -171,6 +179,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       minzoom: 11,
       filter: ['all', IS_POLYGON, classIs('runway')],
       paint: { 'fill-color': colors.runway },
+      metadata: UNTIL_AIRFIELD,
     }),
     tileLayer('aeroway', 'airfield', {
       id: 'airfield-taxiway',
@@ -179,6 +188,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       filter: ['all', IS_LINE, classIs('taxiway')],
       layout: { 'line-join': 'round' },
       paint: { 'line-color': colors.taxiway, 'line-width': TAXIWAY_WIDTH },
+      metadata: UNTIL_AIRFIELD,
     }),
     tileLayer('aeroway', 'airfield', {
       id: 'airfield-runway',
@@ -186,6 +196,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       minzoom: 9,
       filter: ['all', IS_LINE, classIs('runway')],
       paint: { 'line-color': colors.runway, 'line-width': RUNWAY_WIDTH },
+      metadata: UNTIL_AIRFIELD,
     }),
     // The designator the map publishes («08/26»); nothing here says whether a runway is in use.
     tileLayer('aeroway', 'airfield', {
@@ -200,6 +211,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
         'text-size': LABEL_SIZE,
       },
       paint: labelPaint(occColor('muted'), colors.labelHalo),
+      metadata: UNTIL_AIRFIELD,
     }),
   ];
 

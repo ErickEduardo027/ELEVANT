@@ -5,8 +5,8 @@ import { basemapLayers } from './basemapLayers';
 import { createImageResolver } from './mapImages';
 import { BASEMAP_COLORS } from './mapTheme';
 import {
-  BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, SLOT_GROUP, SLOT_ORDER, buildOccStyle,
-  groupLayerIds, nextSlot, slotMarkerId,
+  BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, SLOT_GROUP, SLOT_ORDER, THRESHOLD_NAMES,
+  buildOccStyle, groupLayerIds, nextSlot, slotMarkerId,
 } from './occStyle';
 
 // An overlay shaped like the point stands of the positions map: four layers in three slots, state colours from the
@@ -225,8 +225,27 @@ describe('OCC map style', () => {
     expect(withBasemap.layers.filter(layer => layer['source-layer'] === 'aeroway').map(layer => layer.id)).toEqual([
       'airfield-apron', 'airfield-runway-area', 'airfield-taxiway', 'airfield-runway', 'airfield-runway-ref',
     ]);
-    // Until the MDPC dataset arrives (PR M3) the tile aeroway also draws the ramp: no maximum zoom.
-    expect(withBasemap.layers.filter(layer => layer['source-layer'] === 'aeroway' && layer.maxzoom !== undefined)).toEqual([]);
+  });
+
+  it('the tile aeroway ends at the derived airfield threshold (metadata) and keeps no fixed maxzoom', () => {
+    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield']);
+    const style = buildOccStyle();
+    const aeroway = style.layers.filter(layer => layer['source-layer'] === 'aeroway');
+    expect(aeroway).toHaveLength(5);
+    for (const layer of aeroway) {
+      // The engine sets the range from the fitted views (contracts 2.3): no zoom is written in the style.
+      expect(layer.metadata, layer.id).toEqual({ 'occ:group': 'airfield', 'occ:maxThreshold': 'airfield', 'occ:slot': 'airfield' });
+      expect(layer, layer.id).not.toHaveProperty('maxzoom');
+    }
+    // Nothing else of the base map names a threshold: the land, the roads and the labels keep every zoom.
+    const others = style.layers.filter(layer => layer['source-layer'] !== 'aeroway' && !layer.id.startsWith('slot-'));
+    expect(others.filter(layer => layer.metadata['occ:minThreshold'] || layer.metadata['occ:maxThreshold'])).toEqual([]);
+    // An overlay may start at that threshold too.
+    const overlay = {
+      sources: { extra: { type: 'geojson' } },
+      layers: [{ slot: 'airfield', id: 'extra', type: 'line', source: 'extra', metadata: { 'occ:group': 'x', 'occ:minThreshold': 'airfield' } }],
+    };
+    expect(validateStyleMin(buildOccStyle({ overlays: [overlay] }))).toEqual([]);
   });
 
   it('overlay colours are OCC palette values and base-map colours come from mapTheme (parity)', () => {

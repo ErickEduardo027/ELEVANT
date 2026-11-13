@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
 import {
-  AIRFIELD_RADIUS_NM, APPROACH_RADIUS_NM, CAMERA_3D, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES, airfieldBounds,
-  boundsCenter, cameraAngles, defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds, presetForZoom,
-  presetTargets, ringBounds, sameFits, standBounds, targetFor, thresholdsFromFits, transitionFor, unionBounds,
+  APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
+  airfieldBounds, boundsCenter, cameraAngles, defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds,
+  presetForZoom, presetTargets, ringBounds, sameFits, standBounds, standPolygonPresetBounds, targetFor,
+  thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
 
 const METRES_PER_DEGREE = 6371008.8 * (Math.PI / 180);
@@ -24,6 +27,13 @@ const located = STANDS.filter(stand => stand.retired !== true && Number.isFinite
 function envelope(stands) {
   const lngs = stands.map(stand => stand.lon);
   const lats = stands.map(stand => stand.lat);
+  return [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]];
+}
+
+// The box around `[lng, lat]` points.
+function envelopeOf(points) {
+  const lngs = points.map(([lng]) => lng);
+  const lats = points.map(([, lat]) => lat);
   return [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]];
 }
 
@@ -56,7 +66,76 @@ describe('camera presets', () => {
     expect(ringBounds(PUJ_ARP, 40)).toEqual(targets.approach.bounds);
   });
 
-  it('ramp and terminal presets fit the non-retired stand points plus 120 m; airfield is the airport box plus 300 m', () => {
+  it('airfield is the dataset bbox plus 300 m; ramp the active stand polygons plus 120 m; each terminal its own polygons; without a layout the point fallback stays', () => {
+    const targets = presetTargets({ stands: STANDS, layout: MDPC_LAYOUT });
+    const active = MDPC_LAYOUT.stands.filter(stand => !stand.retired);
+    const polygonBox = stands => envelopeOf(stands.flatMap(stand => stand.polygon));
+
+    // Aeródromo: the box of the whole dataset, 300 m to spare on every side.
+    const [west, south, east, north] = MDPC_LAYOUT.meta.bbox;
+    const airfield = targets.airfield.bounds;
+    expect(airfield).toEqual(airfieldBounds({ layout: MDPC_LAYOUT }));
+    expect(northSouthMetres(airfield[0][1], south)).toBeCloseTo(300, 6);
+    expect(northSouthMetres(north, airfield[1][1])).toBeCloseTo(300, 6);
+    expect(eastWestMetres(airfield[0][0], west, south)).toBeGreaterThanOrEqual(299.99);
+    expect(eastWestMetres(airfield[0][0], west, south)).toBeLessThan(301);
+    expect(eastWestMetres(east, airfield[1][0], north)).toBeCloseTo(300, 0);
+    // Every runway end and every point of the pavement, buildings and stands is inside it.
+    const everything = [
+      ...MDPC_LAYOUT.runways.flatMap(runway => [...runway.polygon, ...runway.ends.map(end => end.threshold)]),
+      ...MDPC_LAYOUT.taxiways.flatMap(taxiway => taxiway.line), ...MDPC_LAYOUT.aprons.flatMap(apron => apron.polygon),
+      ...MDPC_LAYOUT.terminals.flatMap(terminal => terminal.polygon), ...active.flatMap(stand => stand.polygon),
+    ];
+    expect(everything.every(point => isInBounds(point, airfield))).toBe(true);
+
+    // Rampa: the active stand polygons (B33 is retired), 120 m to spare.
+    const [[pWest, pSouth], [pEast, pNorth]] = polygonBox(active);
+    const ramp = targets.ramp.bounds;
+    expect(northSouthMetres(ramp[0][1], pSouth)).toBeCloseTo(120, 6);
+    expect(northSouthMetres(pNorth, ramp[1][1])).toBeCloseTo(120, 6);
+    expect(eastWestMetres(ramp[0][0], pWest, pSouth)).toBeGreaterThanOrEqual(119.99);
+    expect(eastWestMetres(pEast, ramp[1][0], pNorth)).toBeCloseTo(120, 0);
+    expect(active.flatMap(stand => stand.polygon).every(point => isInBounds(point, ramp))).toBe(true);
+    expect(standPolygonPresetBounds(MDPC_LAYOUT)).toEqual(ramp);
+
+    // One view per terminal, from its own polygons only.
+    for (const terminal of TERMINALS) {
+      const own = active.filter(stand => stand.terminal === terminal);
+      const [[tWest, tSouth], [tEast, tNorth]] = polygonBox(own);
+      const bounds = targets.terminals[terminal].bounds;
+      expect(northSouthMetres(bounds[0][1], tSouth), terminal).toBeCloseTo(120, 6);
+      expect(northSouthMetres(tNorth, bounds[1][1]), terminal).toBeCloseTo(120, 6);
+      expect(eastWestMetres(bounds[0][0], tWest, tSouth), terminal).toBeGreaterThanOrEqual(119.99);
+      expect(eastWestMetres(tEast, bounds[1][0], tNorth), terminal).toBeGreaterThanOrEqual(119.99);
+      expect(own.flatMap(stand => stand.polygon).every(point => isInBounds(point, bounds)), terminal).toBe(true);
+      // No stand of another terminal has its centre in this terminal's view.
+      const others = active.filter(stand => stand.terminal !== terminal && isInBounds(stand.center, bounds));
+      expect(others.map(stand => stand.code), terminal).toEqual([]);
+    }
+    // The stand points of a screen change nothing once the dataset frames the views.
+    expect(presetTargets({ stands: [], layout: MDPC_LAYOUT })).toEqual(targets);
+    // A terminal the layout has no polygon for falls back to the whole ramp.
+    const withoutFbo = { ...MDPC_LAYOUT, stands: MDPC_LAYOUT.stands.filter(stand => stand.terminal !== 'FBO') };
+    const noFboTargets = presetTargets({ layout: withoutFbo });
+    expect(noFboTargets.terminals.FBO).toBeNull();
+    expect(targetFor(noFboTargets, 'ramp', 'FBO')).toBe(noFboTargets.ramp);
+    // Each view frames the next one.
+    for (const [outer, inner] of [['region', 'approach'], ['approach', 'airfield'], ['airfield', 'ramp']]) {
+      const [[iw, is], [ie, iN]] = targets[inner].bounds;
+      expect(isInBounds([iw, is], targets[outer].bounds) && isInBounds([ie, iN], targets[outer].bounds), outer).toBe(true);
+    }
+
+    // Without a layout (a station the dataset does not cover) the stand points frame the views, as before.
+    const fallback = presetTargets({ stands: STANDS });
+    expect(presetTargets({ stands: STANDS, layout: null })).toEqual(fallback);
+    expect(fallback.ramp.bounds).toEqual(standBounds(STANDS));
+    expect(fallback.airfield.bounds).toEqual(airfieldBounds({ stands: STANDS }));
+    expect(fallback.airfield.bounds).not.toEqual(airfield);
+    // The layout reaches this module as a parameter: it never imports the dataset (mapSelection.js imports it).
+    expect(readFileSync('src/features/maps/core/cameraPresets.js', 'utf8')).not.toMatch(/airportLayout|\.json['"]/);
+  });
+
+  it('without a layout, ramp and terminal presets fit the non-retired stand points plus 120 m; airfield is the ARP ring with the stands plus 300 m', () => {
     const targets = presetTargets({ stands: STANDS });
     const [[stWest, stSouth], [stEast, stNorth]] = envelope(located);
     const [[west, south], [east, north]] = targets.ramp.bounds;
@@ -92,9 +171,9 @@ describe('camera presets', () => {
     expect(targetFor(targets, 'moon')).toBeNull();
 
     // The airfield: a 1.5 NM ring around the ARP joined with the stand bounds, plus 300 m.
-    const box = unionBounds(ringBounds(PUJ_ARP, AIRFIELD_RADIUS_NM), standBounds(STANDS));
+    const box = unionBounds(ringBounds(PUJ_ARP, FALLBACK_AIRFIELD_RADIUS_NM), standBounds(STANDS));
     const airfield = targets.airfield.bounds;
-    expect(airfield).toEqual(airfieldBounds(STANDS));
+    expect(airfield).toEqual(airfieldBounds({ stands: STANDS }));
     expect(northSouthMetres(airfield[0][1], box[0][1])).toBeCloseTo(300, 6);
     expect(northSouthMetres(box[1][1], airfield[1][1])).toBeCloseTo(300, 6);
     expect(eastWestMetres(airfield[0][0], box[0][0], box[0][1])).toBeGreaterThanOrEqual(299.99);
@@ -147,6 +226,29 @@ describe('camera presets', () => {
     expect(fitZooms(null, targets)).toBeNull();
     expect(thresholdsFromFits(null)).toBeNull();
     expect(thresholdsFromFits({ airfield: 14 })).toBeNull();
+    expect(thresholdsFromFits({ airfield: 14, ramp: 15.5 })).toBeNull();
+  });
+
+  it('the airfield threshold is the approach/airfield boundary of presetForZoom', () => {
+    // With the views the dataset frames, on a wide and on a narrow screen.
+    const targets = presetTargets({ layout: MDPC_LAYOUT });
+    for (const width of [1440, 800]) {
+      const fits = fitZooms(cameraForWidth(width), targets);
+      const { airfield } = thresholdsFromFits(fits);
+      expect(airfield, String(width)).toBeCloseTo((fits.approach + fits.airfield) / 2, 12);
+      expect(airfield, String(width)).toBeGreaterThan(fits.approach);
+      expect(airfield, String(width)).toBeLessThan(fits.airfield);
+      // From that zoom the selector says Aeródromo, and just below it Aproximación: the own airfield is drawn exactly
+      // while the selector names the airfield or the ramp.
+      expect(presetForZoom(airfield, fits), String(width)).toBe('airfield');
+      expect(presetForZoom(airfield - 1e-9, fits), String(width)).toBe('approach');
+    }
+    // Panels that cover part of the screen move the threshold with the fits.
+    const wide = thresholdsFromFits(fitZooms(cameraForWidth(1440), targets)).airfield;
+    const narrow = thresholdsFromFits(fitZooms(cameraForWidth(800), targets)).airfield;
+    expect(narrow).toBeCloseTo(wide - Math.log2(1440 / 800), 9);
+    const fits = { region: 6, approach: 9, airfield: 14, ramp: 15.5 };
+    expect(thresholdsFromFits(fits)).toEqual({ polygons: 13.7, codes: 15.2, threeLine: 16.3, airfield: 11.5 });
   });
 
   it('presetForZoom keeps the selector truthful between fitted zooms and returns null before the fit', () => {

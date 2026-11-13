@@ -2,10 +2,12 @@ import { STAND_REFERENCE } from '../stands/standReference';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
 // catalogue of Punta Cana, the same on every run, so the visual suite (tests/visual) drives and photographs each one
-// without a session, the API or the network. Pure data. Later PRs add their scenes here (stand polygons, traffic,
-// the demo flight, 3D).
+// without a session, the API or the network; the layout review shows the generated MDPC dataset itself. Pure data.
+// Later PRs add their scenes here (stand polygons, traffic, the demo flight, 3D).
 //
-// A scene is `{ id, title, description, view, stands, selection, basemap, webgl }`:
+// A scene is `{ id, kind, title, description, view, stands, selection, basemap, webgl }`:
+// - `kind`: `map`, the OCC map with the scene's stands (MapLab.jsx), or `layout-qa`, the review screen of the MDPC
+//   airport layout (LayoutQaScene.jsx), which draws the layout itself and has no stands of its own;
 // - `view`: the view the map opens on when the URL names none (region · approach · airfield · ramp);
 // - `stands`: the stands of the screen, as a positions screen gives them to the map
 //   (`{ id, terminal, latitude, longitude, status, locationSource }`);
@@ -15,6 +17,7 @@ import { STAND_REFERENCE } from '../stands/standReference';
 // - `webgl`: `false` makes the browser refuse WebGL while the scene is open, so the map shows its fallback list.
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
+export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -54,15 +57,16 @@ export function labStands() {
 }
 
 const STANDS = deepFreeze(labStands());
+const NO_STANDS = Object.freeze([]);
 
-function scene(id, { title, description, view, selection = null, basemap = 'on', webgl = true }) {
-  return { id, title, description, view, stands: STANDS, selection, basemap, webgl };
+function scene(id, { kind = 'map', title, description, view, selection = null, basemap = 'on', webgl = true }) {
+  return { id, kind, title, description, view, stands: kind === 'map' ? STANDS : NO_STANDS, selection, basemap, webgl };
 }
 
 export const SCENES = deepFreeze([
   scene('ramp-points', {
     title: 'Rampa: posiciones y estados',
-    description: 'Las 41 posiciones de referencia como puntos, con los siete estados mezclados.',
+    description: 'Las 41 posiciones de referencia como puntos sobre el plano propio del aeródromo, con los siete estados mezclados.',
     view: 'ramp',
   }),
   scene('ramp-selected', {
@@ -73,7 +77,8 @@ export const SCENES = deepFreeze([
   }),
   scene('airfield', {
     title: 'Aeródromo',
-    description: 'El aeropuerto entero, con las posiciones agrupadas y el punto de referencia de PUJ.',
+    description: 'El aeropuerto entero dibujado con su plano propio: pistas con sus marcas, calles de rodaje, plataformas, '
+      + 'terminales y puntos de espera, con las posiciones agrupadas y el punto de referencia de PUJ.',
     view: 'airfield',
   }),
   scene('approach', {
@@ -97,6 +102,13 @@ export const SCENES = deepFreeze([
     description: 'El mapa base no carga: se ve el aviso y las posiciones siguen en el mapa.',
     view: 'ramp',
     basemap: 'cut',
+  }),
+  scene('layout-qa', {
+    kind: 'layout-qa',
+    title: 'Revisión del plano de MDPC',
+    description: 'El plano generado tal como sale de OpenStreetMap y los puntos de ELEVANT: cada posición con su código, '
+      + 'su rumbo y sus marcas, las puertas de OSM, el grafo de rodaje y una sonda de rutas entre dos nodos.',
+    view: 'airfield',
   }),
 ]);
 

@@ -170,10 +170,31 @@ describe('MapLab', () => {
     expect(fake.state.protocols.size).toBe(0);
   });
 
+  it('mounts the review screen of the airport layout for the layout-qa scene', () => {
+    const { map } = open(`?scene=layout-qa&t=${NOON}`, { strict: true });
+    expect(screen.getByRole('heading', { level: 1, name: 'Revisión del plano de MDPC' })).toBeInTheDocument();
+    expect(screen.getByText('Reloj fijo: 2026-11-13 15:00 UTC')).toBeInTheDocument();
+    expect(fnCalls('setNow')[0].args).toEqual([Date.parse(NOON)]);
+    // A screen of its own: the review overlay and its side list, no stand points and no re-read of positions.
+    expect(map.options.style.sources).toHaveProperty('occ-lab-qa');
+    expect(map.options.style.sources).not.toHaveProperty('occ-stands');
+    expect(screen.queryByRole('button', { name: 'Releer posiciones' })).toBeNull();
+    expect(screen.getByRole('complementary', { name: 'Revisión del plano' })).toBeInTheDocument();
+    loadStyle(map);
+    expect(fake.state.liveMaps()).toEqual([map]);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    expect(window.__occMapLab.scene).toBe('layout-qa');
+    expect(window.__occMapLab.qaFlagged().length).toBeGreaterThan(0);
+  });
+
   it('uses only occ-* classes', async () => {
     const { readSource } = await import('../../../styles/occSourceScan');
     const { findLegacyColourClasses } = await import('../../../styles/occLegacyBridge');
-    for (const file of ['src/features/maps/lab/MapLab.jsx', 'app/map-lab/MapLabLoader.jsx']) {
+    const files = [
+      'src/features/maps/lab/MapLab.jsx', 'src/features/maps/lab/LayoutQaScene.jsx', 'src/features/maps/lab/labChrome.jsx',
+      'app/map-lab/MapLabLoader.jsx',
+    ];
+    for (const file of files) {
       const source = readSource(file);
       expect(findLegacyColourClasses(source), file).toEqual([]);
       expect(source.match(/-occ-[a-z-]+\/(?:\d+|\[)/g), file).toBeNull();

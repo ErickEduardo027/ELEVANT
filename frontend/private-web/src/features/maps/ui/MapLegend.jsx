@@ -5,6 +5,7 @@ import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircra
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
 import { standAppearance } from '../stands/standLayers';
+import { BASEMAP_COLORS } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
 
 // The swatch is the map's stand at half its size: the 24 px stand square of mapImages.js is the 12 px square at 4–16.
@@ -87,30 +88,74 @@ function GroupSwatch() {
   );
 }
 
+// The airfield items, each a small crop of the map (style/airfieldLayers.js): on the land colour, the pavement in the
+// base-map colours and the markings in --occ-text. The map draws an apron without an outline; its swatch frames the
+// patch with a hairline so its tone, barely lighter than the land, reads at this size.
+const MARK = tokenColour('--occ-text');
+const AIRFIELD_SWATCHES = Object.freeze({
+  runway: (
+    <>
+      <rect x="1" y="6.5" width="18" height="7" style={{ fill: BASEMAP_COLORS.runway }} />
+      <path d="M2.5 7.8 V12.2 M17.5 7.8 V12.2" style={{ fill: 'none', stroke: MARK, strokeWidth: 1 }} />
+      <path d="M4.5 10 H15.5" style={{ fill: 'none', stroke: MARK, strokeWidth: 1, strokeDasharray: '2.5 2' }} />
+    </>
+  ),
+  taxiway: (
+    <path d="M2 15.5 C7.5 15.5 11 4.5 18 4.5" style={{ fill: 'none', stroke: BASEMAP_COLORS.taxiway, strokeWidth: 4, strokeLinecap: 'round' }} />
+  ),
+  holdBar: (
+    <>
+      <path d="M10 1 V19" style={{ fill: 'none', stroke: BASEMAP_COLORS.taxiway, strokeWidth: 4 }} />
+      <path d="M5 10 H15" style={{ fill: 'none', stroke: MARK, strokeWidth: 2 }} />
+    </>
+  ),
+  apron: (
+    <rect x="3.5" y="4.5" width="13" height="11" style={{ fill: BASEMAP_COLORS.apron, stroke: tokenColour('--occ-line'), strokeWidth: 1 }} />
+  ),
+  terminal: (
+    <rect x="4.5" y="5.5" width="11" height="9" style={{ fill: BASEMAP_COLORS.building, stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+  ),
+});
+const AIRFIELD_MESSAGES = Object.freeze({
+  runway: 'legend.runway', taxiway: 'legend.taxiway', holdBar: 'legend.hold', apron: 'legend.apron', terminal: 'legend.terminal',
+});
+
+function AirfieldSwatch({ kind }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0" data-swatch={kind}>
+      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: BASEMAP_COLORS.land }} />
+      {AIRFIELD_SWATCHES[kind]}
+    </svg>
+  );
+}
+
 /**
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
  * the flights drawn on screen, the stands drawn one by one there (also those the map draws on their own next to its
- * clusters) and, when a cluster of stands is drawn there, what a cluster is; or the `stands` given (inside `bounds`
- * when given). It folds through its own button, whose name stays
- * «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to explain.
+ * clusters), when a cluster of stands is drawn there what a cluster is, and the airfield items the map draws there
+ * (runway, taxiway, holding point, apron, terminal), apart below the rest; or the `stands` given (inside `bounds` when
+ * given). The short entries (the stand states and the airfield items) sit two to a row, so the open legend stays low
+ * over the stands it explains. It folds through its own button, whose name stays «Leyenda» while `aria-expanded`
+ * tells whether it is open, and it renders nothing when there is nothing to explain.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
-  const { standsOnScreen, standsGrouped, flightsOnScreen } = useOccMap();
+  const { standsOnScreen, standsGrouped, flightsOnScreen, airfieldOnScreen } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
-  const { flights, states, tags, grouped } = useMemo(() => (stands === undefined
-    ? legendEntries({ stands: standsOnScreen, flights: flightsOnScreen, grouped: standsGrouped })
-    : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, standsGrouped, flightsOnScreen]);
+  const { flights, states, tags, grouped, airfield } = useMemo(() => (stands === undefined
+    ? legendEntries({ stands: standsOnScreen, flights: flightsOnScreen, grouped: standsGrouped, airfield: airfieldOnScreen })
+    : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, standsGrouped, flightsOnScreen, airfieldOnScreen]);
 
-  if (!flights && states.length === 0 && tags.length === 0 && !grouped) return null;
+  const listsOthers = flights || grouped || states.length > 0 || tags.length > 0;
+  if (!listsOthers && airfield.length === 0) return null;
 
   return (
     <div data-testid="map-legend" className={`relative ${className}`.trim()}>
       <div id={panelId} hidden={!open} className="absolute bottom-full right-0 mb-2 w-max max-w-xs rounded-md border border-occ-line bg-occ-panel-float p-3">
-        <ul aria-label={t('legend.title')} className="grid gap-2 text-sm text-occ-text">
+        <ul aria-label={t('legend.title')} className="grid grid-cols-2 gap-y-2 text-sm text-occ-text">
           {flights && (
-            <li className="flex items-center gap-2">
+            <li className="col-span-2 flex items-center gap-2">
               <FlightSwatch />
               <span>
                 <span className="block">{t('legend.flight')}</span>
@@ -119,7 +164,7 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
             </li>
           )}
           {grouped && (
-            <li className="flex items-center gap-2">
+            <li className="col-span-2 flex items-center gap-2">
               <GroupSwatch />
               <span>
                 <span className="block">{t('legend.group')}</span>
@@ -128,17 +173,27 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
             </li>
           )}
           {states.map(state => (
-            <li key={state} className="flex items-center gap-2">
+            <li key={state} className="flex items-center gap-2 pr-3">
               <StateSwatch state={state} />
               <span>{STAND_STATES[state][language] ?? STAND_STATES[state].es}</span>
             </li>
           ))}
           {tags.map(tag => (
-            <li key={tag} className="flex items-center gap-2">
+            <li key={tag} className="col-span-2 flex items-center gap-2">
               <span className="shrink-0 rounded-sm border border-occ-line-strong px-1 text-xs font-semibold text-occ-muted">
                 {TAGS[tag][language] ?? TAGS[tag].es}
               </span>
               <span className="text-occ-muted">{t(`legend.${tag}`)}</span>
+            </li>
+          ))}
+          {/* The airfield, set apart from what moves and changes on it by a rule across the legend. */}
+          {airfield.length > 0 && listsOthers && (
+            <li role="presentation" aria-hidden="true" data-legend-rule className="col-span-2 border-t border-occ-line" />
+          )}
+          {airfield.map(kind => (
+            <li key={kind} className="flex items-center gap-2 pr-3">
+              <AirfieldSwatch kind={kind} />
+              <span>{t(AIRFIELD_MESSAGES[kind])}</span>
             </li>
           ))}
         </ul>

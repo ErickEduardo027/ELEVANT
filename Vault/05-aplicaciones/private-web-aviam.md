@@ -975,8 +975,9 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
   el mapa no se crea de nuevo. Un cambio de estación o de cuenta sí empieza
   vacío.
-- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: siete
-  escenas fijas del mapa, sin sesión ni API. La ruta lo importa solo en la rama
+- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: ocho
+  escenas fijas del mapa (la octava, la revisión del plano de MDPC, llegó con
+  el PR M3), sin sesión ni API. La ruta lo importa solo en la rama
   de desarrollo, y el build de producción comprueba que no lo incluye
   ([`verify-map-chunks.mjs`](../../frontend/private-web/scripts/verify-map-chunks.mjs)).
   La suite visual corre con Playwright en Chrome, fuera del CI: ver
@@ -1004,6 +1005,72 @@ rehace U5. El
 3D de M2 es la inclinación de cámara de siempre: los aviones 3D llegan con M7.
 En producción, `/map-lab` responde la página de no encontrada con el estado
 200. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+
+## Plano de MDPC y aeródromo (PR M3)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M3 «Datos de MDPC y aeródromo» (`152eb092`, `28640235` y `c14baf17`), que
+esa verificación no cubre. Las decisiones están en la actualización del 13 de
+noviembre de 2026 de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), y las fuentes, las
+licencias y cómo se regenera el plano, en el
+[README de los datos](../../frontend/private-web/src/features/maps/airport/data/README.md).
+Las posiciones siguen siendo los puntos de M2: sus polígonos, sus estados y su
+leyenda llegan con M4.
+
+- **Un plano propio del aeropuerto.**
+  [`mdpc.layout.json`](../../frontend/private-web/src/features/maps/airport/data/mdpc.layout.json),
+  que lee
+  [`airportLayout.js`](../../frontend/private-web/src/features/maps/airport/airportLayout.js),
+  guarda las dos pistas con sus umbrales, las calles de rodaje con su grafo,
+  los puntos de espera, las plataformas, las terminales y las 42 posiciones (41
+  activas y la B33 retirada), cada una con su caja, su rumbo y su entrada. Lo
+  escribe un
+  [generador](../../frontend/private-web/scripts/maps/build-mdpc-layout.mjs)
+  sin red desde un extracto de OpenStreetMap (ODbL), las filas de OurAirports
+  (dominio público), los puntos internos de `positionsData.js` y una tabla de
+  correcciones, y una prueba exige que el archivo versionado sea idéntico a lo
+  que genera. El centro de cada posición es su punto interno, que sigue sin ser
+  oficial. El plano va en el bundle: el navegador no pide nada nuevo.
+- **El aeródromo desde la vista Aeródromo.** Desde un umbral que sale del
+  encuadre real de las vistas, a medio camino entre Aproximación y Aeródromo,
+  Monitoreo de vuelos, Mapa de posiciones, Planificación y la plataforma de la
+  consola dibujan el aeropuerto con ese plano
+  ([capas](../../frontend/private-web/src/features/maps/style/airfieldLayers.js)):
+  las pistas con su designador, sus barras de umbral y su eje a trazos; las
+  calles de rodaje con su nombre tenue; las plataformas; las terminales; y los
+  puntos de espera como barras. Lo normal no lleva tono. Por debajo de ese
+  umbral, las teselas dibujan el aeródromo solo como contexto. Mientras se ve
+  el aeródromo, los créditos dicen «© OpenStreetMap contributors (ODbL) ·
+  OurAirports».
+- **Ficha de pista y de calle.** Al pasar el puntero por una pista o una calle
+  de rodaje aparece una ficha que no bloquea el mapa: «Pista 08/26 · 3100 m ×
+  45 m», «Calle de rodaje A» o «Calle de rodaje sin nombre». Un clic la fija,
+  y un clic en otra parte o un cambio de vista la cierra.
+- **Leyenda.** Suma pista, calle de rodaje, punto de espera, plataforma y
+  terminal, cada uno solo cuando está en pantalla, debajo de lo demás. Las
+  entradas cortas van de dos en dos, para que la leyenda abierta no tape las
+  posiciones.
+- **Vistas encuadradas por el plano.** Aeródromo encuadra la caja del plano
+  más 300 m; Rampa, el espacio de las posiciones activas según el plano, más
+  120 m; y la vista de cada terminal, el de las suyas.
+- **Escena de revisión.** `/map-lab?scene=layout-qa`, solo en desarrollo
+  ([escena](../../frontend/private-web/src/features/maps/lab/LayoutQaScene.jsx)),
+  dibuja cada caja con su código, una flecha hacia donde apunta la nariz y sus
+  marcas, los puntos internos, las puertas y las líneas de posición de OSM y el
+  grafo de rodaje, y mide la ruta por las calles de rodaje entre dos nodos. Una
+  lista lateral muestra las 42 posiciones, primero las marcadas, y encuadra la
+  que se elige. La suite visual guarda sus capturas para quien revisa el plano.
+
+Revisión firmada: el dueño del producto aprobó el plano el 13 de noviembre de
+2026 y decidió que su documento de coordenadas manda sobre OpenStreetMap, que
+está desactualizado en el aeropuerto; las 42 posiciones quedan revisadas
+(`provenance.qa: 'reviewed'`), con 14 marcas que se conservan como dato.
+Límites: la tabla de alias está vacía, así que un código como «9A» sigue sin
+ubicación. Ninguna pantalla usa todavía los aeropuertos de la región ni las
+radioayudas que trajo el extracto de OurAirports. Las capturas se revisaron en
+local, en el laboratorio; nada de esto acredita un despliegue ni una revisión
+visual en el VPS.
 
 ## Estado de integración
 
@@ -1063,7 +1130,8 @@ npm run build
 - pruebas de rutas Next, autenticación y manejo de sesión expirada;
 - smoke de creación del cliente OpenAPI compartido;
 - prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración;
-- *posterior al commit verificado (PR M2):* la suite visual de los mapas del OCC, con Playwright en Chrome y fuera del CI ([Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ)).
+- *posterior al commit verificado (PR M2):* la suite visual de los mapas del OCC, con Playwright en Chrome y fuera del CI ([Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ));
+- *posterior al commit verificado (PR M3):* las pruebas del plano de MDPC, que corren con `npm test`: el plano versionado tiene que ser idéntico a lo que genera el generador ([prueba de igualdad](../../frontend/private-web/src/features/maps/airport/mdpcLayout.generated.test.js)) y cumplir los criterios de aceptación ([criterios](../../frontend/private-web/src/features/maps/airport/airportLayout.test.js)).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
 
