@@ -15,7 +15,7 @@ versionados.
   fuentes con su fecha y 6 frecuencias;
 - las 2 pistas, 08/26 y 09/27 (3 100 × 45 m), con sus umbrales y sus marcas;
 - 52 calles de rodaje, 14 de ellas con nombre;
-- el grafo de rodaje: 166 nodos, 206 tramos y 18 salidas de pista;
+- el grafo de rodaje: 164 nodos, 204 tramos y 18 salidas de pista;
 - 13 puntos de espera, 3 esperas de plataforma (A, B y FBO), 8 plataformas y
   5 terminales;
 - las 42 posiciones (41 activas y la B33 retirada), cada una con su caja, su
@@ -142,6 +142,24 @@ El plano no se da por bueno hasta que una persona lo revisa y lo firma.
    mayor solape, cómo se trazó la entrada y las marcas. Después, las pistas
    (los extremos de OSM contra los umbrales de OurAirports), los puntos de
    espera, las esperas de plataforma y lo descartado.
+   - El rumbo sale de la tabla manual (`manual`), de la línea de OSM casada
+     (`osm`), de la vecina de su fila con rumbo de OSM a 150 m o menos
+     (`neighbour`) o del eje de su fila (`row`). De los dos sentidos del eje,
+     una posición de contacto mira a su puerta de OSM o a la terminal más
+     cercana. Una remota o de FBO deja detrás la calle de rodaje: toma el
+     sentido cuya cola mira en línea recta a una calle a 150 m o menos (la más
+     cercana, si las dos lo hacen); si ninguna, el que se aleja de la calle más
+     cercana a ella, siempre que esa calle no quede a lo largo de su fila (a
+     menos de 30° de su línea). Si nada cerca decide, la posición mira como la
+     más cercana de su fila que estaciona en paralelo y sí está decidida, y el
+     informe la nombra: `row (B36)`.
+   - La entrada siempre llega por detrás, a lo largo del rumbo: `ray`, recta
+     desde la calle que corta la cola a 150 m o menos; si no hay ninguna,
+     `lineUp`: el avión se alinea detrás de su caja, a media caja de fondo más
+     media de ancho del centro (63 m en una D, 45,5 m en una C), y la entrada
+     va desde la calle más cercana a ese punto, sin cruzar su fila; `nearest`,
+     cuando hasta esa calle queda delante de la posición: recta desde ella, y
+     marcada.
    - Marcas que piden a una persona:
      - `unmatched`: ninguna línea de posición de OSM a 40 m o menos;
      - `ambiguous`: otra línea casi igual de cerca, otra posición casi igual
@@ -151,6 +169,8 @@ El plano no se da por bueno hasta que una persona lo revisa y lo firma.
      - `overlap`: se solapa más del 15 % con otra caja;
      - `crossesTaxiway`: una calle de rodaje cruza la caja;
      - `leadInCrosses`: la entrada cruza la caja de otra posición;
+     - `leadInNotBehind`: la entrada sale de la calle a 90° o menos de la
+       nariz, así que el avión llegaría de lado o de frente;
      - `offNetwork`: a más de 300 m de la red de rodaje;
      - `noLeadIn`: ninguna calle desde la que trazar la entrada.
    - Marcas que solo explican la caja: `narrowed` (más estrecha que su letra,
@@ -232,6 +252,8 @@ corrida:
 - Cada posición activa llega a todas las salidas de pista por calles de rodaje
   y entradas, sin usar ningún tramo de pista. Su entrada empieza a 3 m o menos
   de una calle de rodaje y termina en su centro.
+- La entrada de cada posición activa sale de la calle por detrás de ella (a
+  más de 90° de la nariz) y no cruza la caja de ninguna otra posición activa.
 - El grafo de rodaje es una sola pieza; cada punto de espera es un nodo del
   grafo, y hay una espera de plataforma por terminal (A, B y FBO).
 - Ninguna posición activa se solapa más del 15 % con otra.
@@ -253,8 +275,14 @@ posiciones marcadas para una persona:
 
 - sin geometría de OSM (`unmatched`): B31, B32, B34 a B37 y BN6 a BN13;
 - dos candidatas (`ambiguous`): B29 y B30;
-- una calle de rodaje cruza la caja (`crossesTaxiway`): BN9;
-- su entrada cruza otra posición (`leadInCrosses`): B35, B37 y BN13.
+- una calle de rodaje cruza la caja (`crossesTaxiway`): BN9.
+
+Los rumbos de B34 a B37 y de BN6 a BN13 son supuestos por su fila
+(`headingAssumed`). B34 a B37 miran al este, con la cola al oeste: B36 y B37
+dejan detrás la calle F, la más cercana, y B34 y B35 siguen a B36, porque la
+calle E, al norte, corre a lo largo de su fila y no decide nada. BN6 a BN9
+miran al norte, con la calle F detrás, y BN10 a BN13 al sur, con la calle E
+detrás. Ninguna entrada cruza otra posición ni llega de lado o de frente.
 
 B31 y B32 llevan en la tabla un rumbo provisional de 175°, con su nota y sin
 firma. La tabla de alias está vacía.

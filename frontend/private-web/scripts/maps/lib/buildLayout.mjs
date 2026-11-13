@@ -3,6 +3,7 @@ import {
   destinationPoint,
   haversineM,
   initialBearing,
+  lineEntersPolygon,
   minimumBoundingRectangle,
   pointInPolygon,
   pointToPolylineM,
@@ -11,8 +12,12 @@ import {
   roundCoord,
   toLocal,
 } from '../../../src/features/maps/airport/geo.js';
-import { buildTaxiGraph, connectedComponents, nearestEdge } from '../../../src/features/maps/airport/taxiGraph.js';
-import { STAND_BOX, headingFromAxis, leadIn, standBox } from '../../../src/features/maps/airport/standGeometry.js';
+import {
+  buildTaxiGraph, connectedComponents, edgeLine, nearestEdge,
+} from '../../../src/features/maps/airport/taxiGraph.js';
+import {
+  STAND_BOX, headingFromAxis, leadIn, lineUpDistanceM, standBox,
+} from '../../../src/features/maps/airport/standGeometry.js';
 import { normalizeStandCode } from '../../../src/services/standCodes.js';
 
 // The generator of the Punta Cana airport layout (PR M3, design C2 as adjusted by the contracts page): a pure and
@@ -35,6 +40,11 @@ export const COMPONENT_RANGE_M = 300;
 const SNAP_TO_NODE_M = 1;
 const ROW_AXIS_NEIGHBOURS = 2;
 const PARALLEL_DEG = 20;
+// The nearest taxi edge tells which way a stand faces only when it lies this far or more off the stand's row line:
+// one beside the row, as taxiway E north of the column B34–B37, says nothing about it.
+const ROW_SIDE_DEG = 30;
+// Two back rays that meet the taxi network within a metre of each other do not tell a stand's direction either.
+const RAY_TIE_M = 1;
 const GATE_RANGE_M = 80;
 const HOLD_DEDUP_M = 15;
 const HOLD_REACH_M = 400;
@@ -44,13 +54,15 @@ const TAXI_KINDS = Object.freeze(['taxiway', 'taxilane']);
  * The QA flags of a stand, in the order the layout lists them: `unmatched` (no OSM stand way within 40 m), `ambiguous`
  * (another OSM candidate as good, or the one OSM ties to the stand's own gate), `far` (the OSM centroid or the gate of
  * the same code beyond 50 m), `overlap` (more than 15 % of another box), `crossesTaxiway` (a taxiway or taxilane runs
- * through the box), `leadInCrosses` (the lead-in runs through another box), `narrowed` (the box is narrower than its
- * code letter) and `headingAssumed` (the heading follows its row), which only explain how the box was drawn, and last
- * `offNetwork` (beyond 300 m of the taxi network) and `noLeadIn` (no taxi edge to draw a lead-in from).
+ * through the box), `leadInCrosses` (the lead-in runs through another box), `leadInNotBehind` (the lead-in leaves the
+ * taxi network 90° or less from the nose: the aircraft would come in from the side or the front), `narrowed` (the box
+ * is narrower than its code letter) and `headingAssumed` (the heading follows its row), which only explain how the box
+ * was drawn, and last `offNetwork` (beyond 300 m of the taxi network) and `noLeadIn` (no taxi edge to draw a lead-in
+ * from).
  */
 export const QA_FLAGS = Object.freeze([
-  'unmatched', 'ambiguous', 'far', 'overlap', 'crossesTaxiway', 'leadInCrosses', 'narrowed', 'headingAssumed',
-  'offNetwork', 'noLeadIn',
+  'unmatched', 'ambiguous', 'far', 'overlap', 'crossesTaxiway', 'leadInCrosses', 'leadInNotBehind', 'narrowed',
+  'headingAssumed', 'offNetwork', 'noLeadIn',
 ]);
 
 const range = (prefix, from, to) => Array.from({ length: to - from + 1 }, (_, at) => `${prefix}${from + at}`);
@@ -74,6 +86,9 @@ const round1 = value => Math.round(value * 10) / 10;
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const lineLength = line => line.slice(1).reduce((sum, point, at) => sum + haversineM(line[at], point), 0);
 const normalizeBearing = degrees => ((degrees % 360) + 360) % 360;
+const angleBetween = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+/** Whether `point` lies behind a stand at `center` whose nose points to `heading`: more than 90° from the nose. */
+const isBehind = (center, heading, point) => angleBetween(heading, initialBearing(center, point)) > 90;
 
 // ---------------------------------------------------------------------------------------------------------------
 // OSM input
@@ -326,22 +341,47 @@ function nearestPointOnPolygons(point, polygons) {
 }
 
 /**
- * The direction rule: contact stands face their own OSM gate, else the nearest terminal; remote and FBO stands face
- * away from the nearest taxiway. `from` is where the nearest terminal or taxiway is looked up (the stand, or the
- * middle of its row).
+ * The direction rule of a contact stand: the nose faces the OSM gate with the stand's own code (B20–B31: where the nose
+ * stops), else the terminal nearest to the stand. `null` when there is neither.
  */
-function orient(axisDeg, center, kind, context, from = center, code = null) {
-  if (kind === 'contact') {
-    // The OSM gate with the stand's own code (B20–B31) is where the nose stops; the terminal is the fallback.
-    const gate = code === null ? null : context.gates.find(candidate => normalizeStandCode(candidate.ref) === code
-      && haversineM(candidate.p, center) <= GATE_RANGE_M);
-    if (gate) return headingFromAxis(axisDeg, center, gate.p, { towards: true });
-    const terminal = nearestPointOnPolygons(from, context.terminals);
-    if (terminal) return headingFromAxis(axisDeg, center, terminal.point, { towards: true });
+function towardsTerminal(axisDeg, center, context, code) {
+  const gate = code === null ? null : context.gates.find(candidate => normalizeStandCode(candidate.ref) === code
+    && haversineM(candidate.p, center) <= GATE_RANGE_M);
+  if (gate) return headingFromAxis(axisDeg, center, gate.p, { towards: true });
+  const terminal = nearestPointOnPolygons(center, context.terminals);
+  return terminal ? headingFromAxis(axisDeg, center, terminal.point, { towards: true }) : null;
+}
+
+/**
+ * The direction rule of a stand that turns its tail to the taxi network (remote and FBO stands, or a contact stand with
+ * neither gate nor terminal), so that its lead-in comes from behind. Of the two directions of the axis: the one whose
+ * back ray meets a taxi edge within 150 m, the nearer meeting when both do; when neither does, the one facing away
+ * from the taxi edge nearest to the stand, looked up from the stand itself, if that edge lies 30° or more off the
+ * stand's row line. `null` when nothing near the stand decides.
+ */
+function awayFromTaxi(axisDeg, center, context) {
+  const options = [normalizeBearing(axisDeg), normalizeBearing(axisDeg + 180)];
+  const [first, second] = options.map(heading => rayHit(context.graph, center, heading));
+  if (first || second) {
+    if (!second || (first && first.t < second.t - RAY_TIE_M)) return options[0];
+    if (!first || second.t < first.t - RAY_TIE_M) return options[1];
+    return null;
   }
-  const taxi = nearestEdge(context.graph, from, { kinds: TAXI_KINDS });
-  if (taxi) return headingFromAxis(axisDeg, center, taxi.point, { towards: false });
-  return normalizeBearing(axisDeg);
+  const taxi = nearestEdge(context.graph, center, { kinds: TAXI_KINDS });
+  if (!taxi || Math.abs(angleBetween(options[0], initialBearing(center, taxi.point)) - 90) < ROW_SIDE_DEG) return null;
+  return headingFromAxis(axisDeg, center, taxi.point, { towards: false });
+}
+
+/** The last resort: away from the taxi edge nearest to the stand however little that decides, or the axis itself. */
+function awayFromNearestTaxi(axisDeg, center, context) {
+  const taxi = nearestEdge(context.graph, center, { kinds: TAXI_KINDS });
+  return taxi ? headingFromAxis(axisDeg, center, taxi.point, { towards: false }) : normalizeBearing(axisDeg);
+}
+
+/** The heading a stand takes on `axisDeg` (either direction of it), or `null` when nothing near the stand decides. */
+function orient(axisDeg, center, kind, context, code = null) {
+  return (kind === 'contact' ? towardsTerminal(axisDeg, center, context, code) : null)
+    ?? awayFromTaxi(axisDeg, center, context);
 }
 
 /**
@@ -428,8 +468,9 @@ function buildStands(osm, standPoints, overrides, context) {
       stand.headingTrue = normalizeBearing(stand.override.headingTrue);
       stand.headingSource = 'manual';
     } else if (match) {
-      stand.headingTrue = orient(wayAxis(match.way, stand.center, stand.osmRectangle), stand.center, stand.kind, context,
-        stand.center, stand.code);
+      const axis = wayAxis(match.way, stand.center, stand.osmRectangle);
+      stand.headingTrue = orient(axis, stand.center, stand.kind, context, stand.code)
+        ?? awayFromNearestTaxi(axis, stand.center, context);
       stand.headingSource = 'osm';
     }
   }
@@ -444,20 +485,39 @@ function buildStands(osm, standPoints, overrides, context) {
       stand.headingTrue = neighbours[0].other.headingTrue;
       stand.headingSource = 'neighbour';
       stand.headingFrom = neighbours[0].other.code;
-      continue;
     }
-    // The local axis of the row: the stand and its two nearest active row neighbours (rows can bend, as B32–B37).
+  }
+  // The rest stand across the local line of their row: the stand and its two nearest active row neighbours (rows can
+  // bend, as B32–B37). Each one takes the direction that the taxi network or the terminal near it decides (orient).
+  const derived = stands.filter(stand => !stand.headingSource);
+  for (const stand of derived) {
     const rowPoints = [stand.center, ...stands
       .filter(other => other !== stand && other.rowId === stand.rowId && !other.retired)
       .sort((a, b) => haversineM(stand.center, a.center) - haversineM(stand.center, b.center) || compare(a.code, b.code))
       .slice(0, ROW_AXIS_NEIGHBOURS)
       .map(other => other.center)];
-    const axis = rowPoints.length >= 2 ? principalAxis(rowPoints) : 0;
-    // One direction for the whole row: the terminal or taxiway is looked up from the middle of the row.
-    const row = stands.filter(other => other.rowId === stand.rowId && !other.retired);
-    const middle = [row.reduce((sum, other) => sum + other.center[0], 0) / row.length,
-      row.reduce((sum, other) => sum + other.center[1], 0) / row.length];
-    stand.headingTrue = orient(axis + 90, stand.center, stand.kind, context, row.length > 0 ? middle : stand.center);
+    stand.axisDeg = (rowPoints.length >= 2 ? principalAxis(rowPoints) : 0) + 90;
+    stand.headingTrue = orient(stand.axisDeg, stand.center, stand.kind, context);
+  }
+  // Where nothing near a stand decides, it faces as the nearest active stand of its row that parks parallel to it and
+  // whose direction is decided (B34 and B35, with taxiway E beside them, face as B36), else away from the nearest taxi.
+  const guides = stands.filter(stand => !stand.retired && stand.headingTrue != null);
+  for (const stand of derived) {
+    if (stand.headingTrue == null) {
+      const options = [normalizeBearing(stand.axisDeg), normalizeBearing(stand.axisDeg + 180)];
+      const guide = guides
+        .filter(other => other.rowId === stand.rowId
+          && Math.min(...options.map(option => angleBetween(option, other.headingTrue))) <= PARALLEL_DEG)
+        .map(other => ({ other, distanceM: haversineM(stand.center, other.center) }))
+        .sort((a, b) => a.distanceM - b.distanceM || compare(a.other.code, b.other.code))[0]?.other;
+      if (guide) {
+        stand.headingTrue = angleBetween(options[0], guide.headingTrue) <= angleBetween(options[1], guide.headingTrue)
+          ? options[0] : options[1];
+        stand.headingFrom = guide.code;
+      } else {
+        stand.headingTrue = awayFromNearestTaxi(stand.axisDeg, stand.center, context);
+      }
+    }
     stand.headingSource = 'row';
     stand.flags.push('headingAssumed');
   }
@@ -508,42 +568,21 @@ function overlapPct(a, b) {
   return smaller > 0 ? (shared / smaller) * 100 : 0;
 }
 
-/** Whether segments p–q and r–s of a local plane cross or touch (parallel segments never count). */
-function segmentsCross([px, py], [qx, qy], [rx, ry], [sx, sy]) {
-  const denominator = (qx - px) * (sy - ry) - (qy - py) * (sx - rx);
-  if (Math.abs(denominator) < 1e-12) return false;
-  const t = ((rx - px) * (sy - ry) - (ry - py) * (sx - rx)) / denominator;
-  const u = ((rx - px) * (qy - py) - (ry - py) * (qx - px)) / denominator;
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
-}
-
-/** Whether a line (`[lng, lat]` points) enters a stand box: a point of it inside, or a segment across its outline. */
-function lineEntersPolygon(line, polygon) {
-  if (line.some(point => pointInPolygon(point, polygon))) return true;
-  const plane = toLocal(polygon[0]);
-  const ring = polygon.map(plane.forward);
-  const path = line.map(plane.forward);
-  for (let at = 0; at < path.length - 1; at += 1) {
-    for (let side = 0; side < ring.length - 1; side += 1) {
-      if (segmentsCross(path[at], path[at + 1], ring[side], ring[side + 1])) return true;
-    }
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // 4. Lead-ins
 
-/** Where the ray from the stand centre, opposite to its heading, first crosses a taxi edge within range. */
-function rayHit(state, center, heading) {
+/**
+ * Where the ray from the stand centre, opposite to `heading`, first crosses a taxi edge of `graph` within range:
+ * `{ t (metres from the centre), point }`, or `null`.
+ */
+function rayHit(graph, center, heading) {
   const plane = toLocal(center);
   const back = ((heading + 180) * Math.PI) / 180;
   const direction = [Math.sin(back), Math.cos(back)];
   let best = null;
-  for (const edge of state.edges) {
+  for (const edge of graph.edges) {
     if (!TAXI_KINDS.includes(edge.kind)) continue;
-    const line = edge.line ?? [state.nodes.get(edge.a).p, state.nodes.get(edge.b).p];
-    const local = line.map(plane.forward);
+    const local = edgeLine(graph, edge).map(plane.forward);
     for (let at = 0; at < local.length - 1; at += 1) {
       const [px, py] = local[at];
       const [qx, qy] = local[at + 1];
@@ -560,11 +599,29 @@ function rayHit(state, center, heading) {
   return best;
 }
 
+/**
+ * Each active stand's lead-in, joined to the taxi network at a new graph node (design C2 step 4). The aircraft rolls
+ * in nose first along the stand axis, so the lead-in comes from behind: `ray`, straight from the taxi edge that the back
+ * ray meets within 150 m; otherwise `lineUp`, from the taxi edge nearest to the point where the aircraft lines up behind
+ * its box (lineUpDistanceM), then along the axis, so it never runs sideways through the stands beside it. When even
+ * that edge lies in front of the stand, the lead-in comes `nearest`: straight from it, and flagged leadInNotBehind.
+ */
 function addLeadIns(state, stands, report) {
   for (const stand of stands) {
     if (stand.retired) continue;
-    const ray = rayHit(state, stand.center, stand.headingTrue);
-    const target = ray ? ray.point : nearestEdge(currentGraph(state), stand.center, { kinds: TAXI_KINDS })?.point;
+    const graph = currentGraph(state);
+    const ray = rayHit(graph, stand.center, stand.headingTrue);
+    let target = ray?.point ?? null;
+    let method = 'ray';
+    let minAlignM = 0;
+    if (!ray) {
+      const lineUpM = lineUpDistanceM(stand.sizeLetter);
+      const lineUp = destinationPoint(stand.center, stand.headingTrue + 180, lineUpM);
+      target = nearestEdge(graph, lineUp, { kinds: TAXI_KINDS })?.point ?? null;
+      const behind = target !== null && isBehind(stand.center, stand.headingTrue, target);
+      method = behind ? 'lineUp' : 'nearest';
+      minAlignM = behind ? lineUpM : 0;
+    }
     if (!target) {
       stand.flags.push('noLeadIn');
       continue;
@@ -572,8 +629,8 @@ function addLeadIns(state, stands, report) {
     const snap = insertNode(state, target, `ls-${stand.code}`, 'junction');
     const nodeId = `st-${stand.code}`;
     state.nodes.set(nodeId, { id: nodeId, p: stand.center, kind: 'stand' });
-    stand.leadIn = leadIn(stand.center, stand.headingTrue, snap.point);
-    stand.leadInMethod = ray ? 'ray' : 'nearest';
+    stand.leadIn = leadIn(stand.center, stand.headingTrue, snap.point, { minAlignM });
+    stand.leadInMethod = method;
     stand.node = nodeId;
     state.edges.push(edgeFrom(snap.nodeId, nodeId, stand.leadIn, 'leadin', stand.code, null));
     report.leadIns.push({ code: stand.code, method: stand.leadInMethod, lengthM: round1(lineLength(stand.leadIn)) });
@@ -880,11 +937,14 @@ export function buildLayout({ osm: rawOsm, ourAirports, standPoints, overrides =
   }
 
   addLeadIns(state, stands, report);
-  // QA: a lead-in drawn where OSM maps no taxilane may run through a neighbour's box: no aircraft taxis through one.
+  // QA: a lead-in drawn where OSM maps no taxilane may run through a neighbour's box, or reach the stand from its side
+  // or its nose: no aircraft taxis through a box, and every aircraft rolls in nose first from behind.
   for (const stand of active) {
-    if (stand.leadIn && active.some(other => other !== stand && lineEntersPolygon(stand.leadIn, other.polygon))) {
+    if (!stand.leadIn) continue;
+    if (active.some(other => other !== stand && lineEntersPolygon(stand.leadIn, other.polygon))) {
       stand.flags.push('leadInCrosses');
     }
+    if (!isBehind(stand.center, stand.headingTrue, stand.leadIn[0])) stand.flags.push('leadInNotBehind');
   }
   const holdingPoints = addHoldingPoints(state, runways, osm, report);
   const apronHolds = addApronHolds(state, stands, report);
@@ -944,8 +1004,9 @@ export function buildLayout({ osm: rawOsm, ourAirports, standPoints, overrides =
       code: stand.code, terminal: stand.terminal, kind: stand.kind, retired: stand.retired,
       osmWay: entry.qa.osmWay, centroidDistanceM: entry.qa.centroidDistanceM,
       gateRef: stand.gate?.ref ?? null, gateDistanceM: stand.gate?.distanceM ?? null,
-      headingTrue: entry.headingTrue, headingSource: stand.headingSource, sizeLetter: stand.sizeLetter,
-      widthM: entry.widthM, overlapMaxPct: stand.overlapMaxPct, leadIn: stand.leadInMethod ?? null, flags,
+      headingTrue: entry.headingTrue, headingSource: stand.headingSource, headingFrom: stand.headingFrom ?? null,
+      sizeLetter: stand.sizeLetter, widthM: entry.widthM, overlapMaxPct: stand.overlapMaxPct,
+      leadIn: stand.leadInMethod ?? null, flags,
     });
     return entry;
   });
@@ -1037,7 +1098,8 @@ export function formatReport(report) {
   for (const stand of report.stands) {
     lines.push(`| ${stand.code}${stand.retired ? ' (retirada)' : ''} | ${stand.terminal} | ${stand.kind} | ${cell(stand.osmWay)} | `
       + `${cell(stand.centroidDistanceM)} | ${cell(stand.gateRef)} | ${cell(stand.gateDistanceM)} | ${stand.headingTrue} | `
-      + `${stand.headingSource} | ${stand.sizeLetter} | ${stand.widthM} | ${stand.overlapMaxPct} | ${cell(stand.leadIn)} | `
+      + `${stand.headingSource}${stand.headingFrom ? ` (${stand.headingFrom})` : ''} | ${stand.sizeLetter} | `
+      + `${stand.widthM} | ${stand.overlapMaxPct} | ${cell(stand.leadIn)} | `
       + `${stand.flags.join(', ') || '—'} |`);
   }
   lines.push('', '**Resumen de marcas**', '');

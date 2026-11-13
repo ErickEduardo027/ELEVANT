@@ -9,7 +9,7 @@ import {
   matchStand,
   standPolygonBounds,
 } from './airportLayout';
-import { convexIntersectionAreaM2, haversineM, polygonAreaM2 } from './geo';
+import { convexIntersectionAreaM2, haversineM, initialBearing, lineEntersPolygon, polygonAreaM2 } from './geo';
 import { connectedComponents, nearestEdge, reachableFrom } from './taxiGraph';
 
 // Acceptance of the generated layout (design C3): what the manual review relies on, checked on every run. The
@@ -63,6 +63,21 @@ describe('MDPC layout', () => {
     const retired = MDPC_LAYOUT.stands.find(stand => stand.code === 'B33');
     expect(retired.node).toBeNull();
     expect(retired.leadIn).toBeNull();
+  });
+
+  it('every lead-in leaves the taxi network behind its stand (more than 90° from the nose)', () => {
+    for (const stand of active) {
+      const bearing = initialBearing(stand.center, stand.leadIn[0]);
+      const fromNose = Math.abs(((bearing - stand.headingTrue + 540) % 360) - 180);
+      expect(fromNose, stand.code).toBeGreaterThan(90);
+    }
+  });
+
+  it('no lead-in runs through the box of another active stand', () => {
+    for (const stand of active) {
+      const crossed = active.filter(other => other !== stand && lineEntersPolygon(stand.leadIn, other.polygon));
+      expect(crossed.map(other => other.code), stand.code).toEqual([]);
+    }
   });
 
   it('the taxi graph is one connected component', () => {

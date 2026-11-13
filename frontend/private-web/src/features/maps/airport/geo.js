@@ -161,6 +161,33 @@ export function pointInPolygon([x, y], ring) {
   return inside;
 }
 
+/** Whether segments p–q and r–s of a local plane cross or touch (parallel segments never count). */
+function segmentsCross([px, py], [qx, qy], [rx, ry], [sx, sy]) {
+  const denominator = (qx - px) * (sy - ry) - (qy - py) * (sx - rx);
+  if (Math.abs(denominator) < 1e-12) return false;
+  const t = ((rx - px) * (sy - ry) - (ry - py) * (sx - rx)) / denominator;
+  const u = ((rx - px) * (qy - py) - (ry - py) * (qx - px)) / denominator;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+/**
+ * Whether a line (`[lng, lat]` points) enters a ring (closed or open): a point of the line inside it, or a segment that
+ * crosses or touches its outline (a segment parallel to an edge never crosses that edge).
+ */
+export function lineEntersPolygon(line, ring) {
+  if (line.some(point => pointInPolygon(point, ring))) return true;
+  const points = openRing(ring);
+  const plane = toLocal(points[0]);
+  const outline = points.map(plane.forward);
+  const path = line.map(plane.forward);
+  for (let at = 0; at < path.length - 1; at += 1) {
+    for (let side = 0; side < outline.length; side += 1) {
+      if (segmentsCross(path[at], path[at + 1], outline[side], outline[(side + 1) % outline.length])) return true;
+    }
+  }
+  return false;
+}
+
 const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
 
 /** Convex hull of planar points, counter-clockwise, without repeating the first point (monotone chain). */

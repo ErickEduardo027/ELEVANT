@@ -27,7 +27,8 @@ export const MISMATCH_M = 15;
 
 /** The flags that need a person. `narrowed` and `headingAssumed` only explain how the box was drawn. */
 export const QA_ATTENTION_FLAGS = Object.freeze([
-  'unmatched', 'ambiguous', 'far', 'overlap', 'crossesTaxiway', 'leadInCrosses', 'offNetwork', 'noLeadIn',
+  'unmatched', 'ambiguous', 'far', 'overlap', 'crossesTaxiway', 'leadInCrosses', 'leadInNotBehind', 'offNetwork',
+  'noLeadIn',
 ]);
 
 /** Every flag of the generator (QA_FLAGS of scripts/maps/lib/buildLayout.mjs) in plain Spanish, in its order. */
@@ -38,6 +39,7 @@ export const QA_FLAG_LABELS = Object.freeze({
   overlap: 'Se solapa con otra posición',
   crossesTaxiway: 'Una calle de rodaje pasa por la caja',
   leadInCrosses: 'Su entrada cruza otra posición',
+  leadInNotBehind: 'Su entrada no llega por detrás',
   narrowed: 'Caja recortada por la fila',
   headingAssumed: 'Rumbo supuesto por la fila',
   offNetwork: 'Lejos de la red de rodaje',

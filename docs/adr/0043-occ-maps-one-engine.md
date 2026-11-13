@@ -283,7 +283,8 @@ M3 «Datos de MDPC y aeródromo» trae el plano propio del aeropuerto de Punta C
 **3. El punto de cada posición es su centro (decisión 20 de Erick).**
 - Cada uno de los 42 puntos de `positionsData.js` es el centro de su posición. El plano lo copia en `center` (`provenance.center: 'elevant'`) y centra allí la caja, con el fondo a lo largo del rumbo hacia donde apunta la nariz. La entrada va de la calle de rodaje al centro.
 - La caja sale de la letra OACI del avión más grande: C 41 × 50 m, D 60 × 66 m, E 73 × 80 m y F 88 × 82 m, ancho por fondo. Con un polígono cerrado de OSM sería la letra más pequeña que lo contiene, pero en MDPC las marcas de posición de OSM son líneas abiertas, sin tamaño: es D, y C en FBO. La caja se estrecha donde la fila no deja sitio (`narrowed`).
-- El rumbo sale de la tabla manual; si no, de la línea de posición de OSM casada (a 40 m o menos); si no, de la vecina más cercana de su fila que lo tiene de OSM (a 150 m o menos); y si no, del eje de la fila (`headingAssumed`). La nariz de una posición de contacto mira a su puerta de OSM o a la terminal más cercana; la de una remota o de FBO, al lado contrario de la calle de rodaje más cercana.
+- El rumbo sale de la tabla manual; si no, de la línea de posición de OSM casada (a 40 m o menos); si no, de la vecina más cercana de su fila que lo tiene de OSM (a 150 m o menos); y si no, del eje de la fila (`headingAssumed`). La nariz de una posición de contacto mira a su puerta de OSM o a la terminal más cercana. Una remota o de FBO deja la calle de rodaje detrás: de los dos sentidos del eje toma aquel cuya cola mira en línea recta a una calle a 150 m o menos (la más cercana, si las dos lo hacen); si ninguna, el que se aleja de la calle más cercana a la propia posición, siempre que esa calle no corra a lo largo de su fila (a menos de 30° de su línea). Si nada cerca decide, una posición del eje de su fila mira como la más cercana de esa fila que estaciona en paralelo y sí está decidida (`provenance.headingFrom`): B34 y B35 siguen a B36.
+- La entrada llega siempre por detrás, a lo largo del rumbo: recta desde la calle que corta la cola a 150 m o menos; si no hay ninguna, el avión se alinea detrás de su caja, a media caja de fondo más media de ancho del centro (63 m en una D), y la entrada va desde la calle más cercana a ese punto, así que no cruza su fila. Si hasta esa calle queda delante de la posición, la entrada sale recta de ella y se marca `leadInNotBehind`.
 - `airport/airportLayout.test.js` comprueba que el centro de cada posición es su punto de `positionsData.js`. La lista corta `stands/standReference.js` lee el mismo archivo y no cambia: sus centros son los del plano. M4 decide si pasa a leer el plano.
 - *Por qué:* los puntos no dicen si son el centro o la parada de la rueda de nariz, y el centro deja una sola caja posible. La revisión manual lo comprueba.
 
@@ -301,15 +302,16 @@ M3 «Datos de MDPC y aeródromo» trae el plano propio del aeropuerto de Punta C
   - el informe de `node scripts/maps/build-mdpc-layout.mjs --report`, con una fila por posición: su línea de OSM, las distancias, el rumbo y de dónde sale, la letra, el solape, la entrada y las marcas;
   - la escena `/map-lab?scene=layout-qa` del laboratorio, solo en desarrollo (punto 8 de esta nota);
   - la tabla `stand-overrides.json`, donde va cada corrección con su nota. `reviewedBy` (un rol, nunca un nombre) y `reviewedOn` marcan la posición como revisada (`provenance.qa: 'reviewed'`).
-- Las marcas que piden a una persona son `unmatched`, `ambiguous`, `far` (a más de 50 m), `overlap` (más del 15 %), `crossesTaxiway`, `leadInCrosses`, `offNetwork` y `noLeadIn`; `narrowed` y `headingAssumed` solo explican la caja.
+- Las marcas que piden a una persona son `unmatched`, `ambiguous`, `far` (a más de 50 m), `overlap` (más del 15 %), `crossesTaxiway`, `leadInCrosses`, `leadInNotBehind`, `offNetwork` y `noLeadIn`; `narrowed` y `headingAssumed` solo explican la caja.
 - `airport/airportLayout.test.js` prueba en cada corrida los criterios de aceptación:
   - 42 posiciones: 41 activas con caja, rumbo y letra, y la B33 retirada; cada centro es su punto;
   - cada posición activa llega a todas las salidas de pista por calles de rodaje, sin tramos de pista, y su entrada empieza a 3 m o menos de una calle;
+  - cada entrada sale de la calle por detrás de su posición (a más de 90° de la nariz) y no cruza la caja de otra posición activa;
   - el grafo es una sola pieza, y ningún solape pasa del 15 %;
   - los umbrales quedan a 30 m o menos de los de OurAirports;
   - la pista habitual es la 08, como suposición (decisión 19 de Erick);
   - los códigos se normalizan y nada se infiere.
-- Estado al cerrar M3: el plano está sin firmar, con las 42 posiciones en `auto`, y quedan 16 marcadas. 14 no tienen geometría en OSM (B31, B32, B34 a B37 y BN6 a BN13); B29 y B30 son ambiguas; una calle de rodaje cruza BN9; y la entrada de B35, B37 y BN13 cruza otra posición. B31 y B32 llevan un rumbo provisional de 175°, con su nota y sin firma.
+- Estado al cerrar M3: el plano está sin firmar, con las 42 posiciones en `auto`, y quedan 16 marcadas. 14 no tienen geometría en OSM (B31, B32, B34 a B37 y BN6 a BN13); B29 y B30 son ambiguas; y una calle de rodaje cruza BN9. B31 y B32 llevan un rumbo provisional de 175°, con su nota y sin firma. Los rumbos de B34 a B37 (al este) y de BN6 a BN13 (BN6 a BN9 al norte, BN10 a BN13 al sur) salen de su fila.
 - *Por qué:* los datos abiertos no bastan. La revisión en el laboratorio no pudo resolver ninguna marca solo con OSM: le faltan 14 posiciones, y en B29, B30 y B31 contradice los puntos de ELEVANT.
 
 **7. El aeródromo se dibuja con el plano desde un umbral derivado, `airfield`.**
@@ -344,7 +346,8 @@ M3 «Datos de MDPC y aeródromo» trae el plano propio del aeropuerto de Punta C
 - Rampa encuadra los polígonos ya en M3, y no desde M4, como decía la decisión 8 de este ADR;
 - los códigos se comparan con `normalizeStandCode` de A1 (`src/services/standCodes.js`), no con un `airport/standCodes.js` nuevo;
 - el punto es el centro (decisión 20 de Erick) y la pista habitual es la 08 (decisión 19), que el diseño dejaba por confirmar;
-- seis marcas nuevas: `crossesTaxiway`, `leadInCrosses`, `narrowed`, `headingAssumed`, `offNetwork` y `noLeadIn`;
+- siete marcas nuevas: `crossesTaxiway`, `leadInCrosses`, `leadInNotBehind`, `narrowed`, `headingAssumed`, `offNetwork` y `noLeadIn`;
+- el sentido de una remota o de FBO sale primero de la calle que su cola corta en línea recta, y solo después de la calle más cercana, que el diseño usaba sola; una posición sin vecina de OSM a 150 m o menos toma el eje de su fila, y si nada cerca decide su sentido, el de la posición decidida más cercana de esa fila (el diseño solo decía «el rumbo de la posición más cercana de la fila»); y donde ninguna calle corta la cola a 150 m o menos, la entrada se alinea detrás de la caja, un caso que el diseño no trataba (decisión 3 de esta actualización);
 - la tabla manual pone los alias en un solo mapa, `aliases`; exige una `note` en cada entrada; y admite `kind` `contact`, `remote` o `fbo`, porque las combinadas siguen siendo de OCC ([ADR-0030](0030-position-coverage-per-shift-and-combined-stands.md));
 - el plano suma `qa` (las puertas y las líneas de posición de OSM) para la revisión, y `operations.basis: 'owner-decision-19'`;
 - el crédito del aeródromo va en su propia fuente, no en `buildAttribution`.

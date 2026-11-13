@@ -15,6 +15,17 @@ export const STAND_BOX = Object.freeze({
 
 export const SIZE_LETTERS = Object.freeze(Object.keys(STAND_BOX));
 
+/**
+ * How far behind a stand's centre an aircraft of its code letter lines up on the stand axis when no taxi edge lies
+ * straight behind it: half the box's depth plus half its width. Taxiing across the row there, its wingtips clear the
+ * tails of the stands beside it.
+ */
+export function lineUpDistanceM(sizeLetter) {
+  const size = STAND_BOX[sizeLetter];
+  if (!size) throw new Error(`Unknown stand size letter: ${sizeLetter}`);
+  return (size.depthM + size.widthM) / 2;
+}
+
 const normalizeBearing = degrees => ((degrees % 360) + 360) % 360;
 const angleBetween = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 
@@ -61,14 +72,15 @@ export function headingFromAxis(axisDeg, center, target, { towards = true } = {}
 /**
  * The lead-in line from the taxi network to the stand centre: `[snapPoint, center]` when the snap point lies on the
  * stand's tail axis, otherwise `[snapPoint, alignPoint, center]`, where the aircraft lines up behind the stand on its
- * axis before rolling in nose first.
+ * axis before rolling in nose first. The align point sits abreast of the snap point, and at least `minAlignM` metres
+ * behind the centre (`lineUpDistanceM`, so the aircraft lines up clear of its row instead of crossing it).
  */
-export function leadIn(center, headingTrue, snapPoint) {
+export function leadIn(center, headingTrue, snapPoint, { minAlignM = 0 } = {}) {
   const plane = toLocal(center);
   const [x, y] = plane.forward(snapPoint);
   const back = normalizeBearing(headingTrue + 180);
   const radians = (back * Math.PI) / 180;
-  const alongBack = Math.max(0, x * Math.sin(radians) + y * Math.cos(radians));
+  const alongBack = Math.max(minAlignM, x * Math.sin(radians) + y * Math.cos(radians));
   const align = destinationPoint(center, back, alongBack);
   const line = [snapPoint];
   if (haversineM(align, snapPoint) > 1 && haversineM(align, center) > 1) line.push(align);

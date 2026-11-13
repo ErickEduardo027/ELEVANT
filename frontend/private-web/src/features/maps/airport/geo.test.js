@@ -6,6 +6,7 @@ import {
   destinationPoint,
   haversineM,
   initialBearing,
+  lineEntersPolygon,
   minimumBoundingRectangle,
   pointInPolygon,
   pointToPolylineM,
@@ -118,6 +119,21 @@ describe('polygons', () => {
     expect(lineRectangle.lengthM).toBeCloseTo(40, 2);
     expect(lineRectangle.widthM).toBeCloseTo(0, 3);
     expect(lineRectangle.axisDeg).toBeCloseTo(175, 3);
+  });
+
+  it('a line enters a box through it, by ending inside or by clipping a corner, never by passing beside it', () => {
+    const plane = toLocal(ARP);
+    const at = (x, y) => plane.inverse([x, y]);
+    // 20 m wide (x from −10 to 10) and 40 m long (y from −20 to 20).
+    const ring = box(ARP, 0, 20, 40);
+    expect(lineEntersPolygon([at(-30, 0), at(30, 0)], ring)).toBe(true);
+    expect(lineEntersPolygon([at(0, 60), at(0, 5)], ring)).toBe(true);
+    // Both ends outside: in through the top edge, out through the right one.
+    expect(lineEntersPolygon([at(-3, 30), at(27, 0)], ring)).toBe(true);
+    expect(lineEntersPolygon([at(-30, 30), at(0, 35), at(30, 30)], ring)).toBe(false);
+    expect(lineEntersPolygon([at(15, -40), at(15, 40)], ring)).toBe(false);
+    // An open ring has the same outline.
+    expect(lineEntersPolygon([at(-3, 30), at(27, 0)], ring.slice(0, 4))).toBe(true);
   });
 
   it('convex intersection area of two half-overlapping squares is half of one', () => {

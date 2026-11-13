@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { destinationPoint, haversineM, initialBearing, polygonCentroid } from './geo.js';
-import { STAND_BOX, SIZE_LETTERS, headingFromAxis, leadIn, standBox } from './standGeometry.js';
+import { STAND_BOX, SIZE_LETTERS, headingFromAxis, leadIn, lineUpDistanceM, standBox } from './standGeometry.js';
 
 const CENTER = [-68.3625, 18.5642];
 
@@ -52,5 +52,23 @@ describe('standGeometry', () => {
     expect(bent[0]).toEqual(offset);
     expect(bent[2]).toEqual(CENTER);
     expect(initialBearing(bent[1], CENTER)).toBeCloseTo(175, 0);
+  });
+
+  it('lines the aircraft up at least minAlignM behind the centre, clear of its row', () => {
+    expect(lineUpDistanceM('D')).toBe(63);
+    expect(lineUpDistanceM('C')).toBe(45.5);
+    expect(() => lineUpDistanceM('X')).toThrow(/size letter/u);
+    // A taxi edge beside the stand, 70 m off its wing: without a minimum the line runs sideways into the box.
+    const beside = destinationPoint(CENTER, 85, 70);
+    expect(leadIn(CENTER, 175, beside)).toEqual([beside, CENTER]);
+    const lined = leadIn(CENTER, 175, beside, { minAlignM: 63 });
+    expect(lined).toHaveLength(3);
+    expect(lined[0]).toEqual(beside);
+    expect(lined[2]).toEqual(CENTER);
+    expect(haversineM(lined[1], CENTER)).toBeCloseTo(63, 1);
+    expect(initialBearing(CENTER, lined[1])).toBeCloseTo(355, 0);
+    // A snap point farther back than the minimum keeps the align point abreast of it.
+    const farBehind = destinationPoint(destinationPoint(CENTER, 355, 120), 85, 40);
+    expect(haversineM(leadIn(CENTER, 175, farBehind, { minAlignM: 63 })[1], CENTER)).toBeCloseTo(120, 0);
   });
 });
