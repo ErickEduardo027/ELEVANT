@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "aliases": {},
+  "stands": {
+    "B31": {
+      "headingTrue": 175,
+      "note": "Sin geometría OSM y a 44 m de B32 en la misma línea este-oeste: con el rumbo de B30 las dos cajas se solapan. Se asume de lado con B32, nariz al sur hacia la terminal. Pendiente de la revisión manual contra el plano del aeropuerto."
+    },
+    "B32": {
+      "headingTrue": 175,
+      "note": "Sin geometría OSM: de lado con B31 (44 m), nariz al sur. Pendiente de la revisión manual contra el plano del aeropuerto."
+    }
+  }
+}
