@@ -250,3 +250,109 @@ Cada uno amplía la nota del Vault de Private Web. Un cambio de estas decisiones
 - **`/map-lab` en producción** responde la página de no encontrada con el estado 200, no con un 404: el layout raíz transmite cada página dentro de un `Suspense`, así que Next manda esa página con el 200 ya enviado y la marca `noindex`. El laboratorio no está en el bundle.
 - **Los mapas viejos del dashboard** (`RegionalTrafficMap.jsx` y `GoesCloudMap.jsx`) conservan su ciclo de vida, `basemapStyles.js` con los estilos publicados de OpenFreeMap y `collapseCompactAttribution.js`, hasta que U3 borre el dashboard actual.
 - **El 3D de M2** es la inclinación de cámara de siempre, más los edificios con altura en la plataforma de la consola. Los aviones 3D, el 3D encendido por defecto en Aeródromo y Rampa, y recordar esa elección llegan con M7.
+
+## Actualización (13 de noviembre de 2026). PR M3: conjunto de datos de MDPC
+
+M3 «Datos de MDPC y aeródromo» trae el plano propio del aeropuerto de Punta Cana y dibuja con él el aeródromo. Las posiciones siguen siendo los puntos de M2: sus polígonos, sus estados y su leyenda llegan con M4. El código llegó en tres pasos: el generador con sus entradas y el plano (`152eb092`), el aeródromo dibujado con el plano (`28640235`) y la escena de revisión del laboratorio (`c14baf17`). Esta nota amplía las decisiones de arriba sin reescribirlas. Donde el diseño y la página de contratos del plan difieren, manda la página de contratos; las diferencias están al final de la nota.
+
+**1. Un JSON generado dentro del bundle.**
+- `src/features/maps/airport/data/mdpc.layout.json` (esquema 1; unos 157 KB, 20 KB comprimido) guarda:
+  - las dos pistas con sus umbrales y sus marcas, las calles de rodaje y el grafo de rodaje con sus salidas de pista;
+  - los puntos de espera, las esperas de plataforma, las plataformas y las terminales;
+  - las 42 posiciones (41 activas y la B33 retirada), cada una con su caja, su rumbo, su letra, su entrada, su procedencia y sus marcas de revisión;
+  - la pista habitual.
+- `airport/airportLayout.js` lo importa (`MDPC_LAYOUT`, congelado en profundidad, con `indexLayout` y `matchStand`), así que quien lo lee lo tiene de forma síncrona. Va con el código del mapa, que las pantallas cargan de forma diferida. `airport/data/region.context.json` guarda los aeropuertos de la región y las radioayudas PNA y PCA; ninguna pantalla lo lee todavía.
+- Lo escribe `scripts/maps/build-mdpc-layout.mjs`, con la función pura y determinista de `scripts/maps/lib/buildLayout.mjs`, a partir de cuatro entradas versionadas: el extracto de OpenStreetMap, las filas de OurAirports, los 42 puntos de `positionsData.js` y la tabla manual `stand-overrides.json`. No usa la red ni el reloj: dos corridas dan los mismos bytes. `airport/mdpcLayout.generated.test.js` reconstruye el plano y exige que sea idéntico al versionado, y `--check` hace lo mismo desde la consola. Los módulos que el generador comparte con el mapa (`geo.js`, `taxiGraph.js` y `standGeometry.js`) son puros y también se importan desde Node.
+- `core/cameraPresets.js` recibe el plano como parámetro y solo importa `airport/layoutBounds.js`, así que `core/mapSelection.js`, que lo importa, no arrastra el plano. La lista corta `stands/standReference.js` sigue saliendo de `positionsData.js`: los servicios nunca cargan el plano.
+- *Por qué:* la cinemática de M6, el modelo de posiciones de M4 y las pruebas lo necesitan de forma síncrona, y va versionado con el código. No pide nada a nadie: ni fetch, ni caché, ni un origen nuevo, ni un cambio de la CSP. El aeródromo se dibuja aunque OpenFreeMap no responda.
+- *Descartado:*
+  - un archivo en `public/` pedido en tiempo de ejecución, que da estado asíncrono y un fetch simulado en cada prueba;
+  - la base de datos: las migraciones no llevan datos de negocio, la geometría no es dato maestro y «Cargar posiciones de Punta Cana» no escribe coordenadas ([ADR-0041](0041-demo-flights-and-punta-cana-stands.md));
+  - un endpoint de la API, que no aporta nada del servidor;
+  - generarlo en cada build, que pediría red o un paso más del build.
+
+**2. Las fuentes se extraen a mano una vez, y nada las llama en tiempo de ejecución.**
+- `scripts/maps/fetch-mdpc-osm.mjs` manda una consulta a la API de Overpass: las vías `aeroway` de pista, calle de rodaje (`taxiway` y `taxilane`), plataforma, posición, terminal y punto de espera, y los nodos de puerta, posición y punto de espera, a 4 km del punto de referencia (18.5674, −68.3634). Usa un User-Agent genérico, respeta las respuestas 429 y 504, y guarda en `scripts/maps/input/mdpc.osm.json` solo las etiquetas que lee el generador. El extracto versionado es la base de OSM del 2026-11-13T17:33:17Z.
+- `scripts/maps/fetch-ourairports-mdpc.mjs` baja cuatro tablas del espejo de OurAirports en GitHub y guarda en `scripts/maps/input/ourairports.mdpc.json` las filas de MDPC (sus pistas con los umbrales y sus frecuencias), las radioayudas PNA (VOR-DME 112,7) y PCA (NDB 425) y los 32 aeropuertos grandes y medianos a 300 NM o menos. Se bajaron el 2026-11-13T17:35:18Z.
+- Los dos scripts se corren a mano: no los corren las pruebas, el CI ni `npm run build`, y `Dockerfile.dockerignore` deja `scripts/maps` fuera de la imagen, porque solo admite los scripts que lista. Las pruebas del generador usan entradas sintéticas, y la prueba de igualdad solo lee archivos versionados.
+- La fuente GeoJSON del aeródromo lleva el crédito «© OpenStreetMap contributors (ODbL) · OurAirports», con sus enlaces (`AIRFIELD_ATTRIBUTION`, en `core/attribution.js`), y MapLibre lo muestra solo mientras el aeródromo está en pantalla.
+- Las licencias, cómo se regenera el plano y su revisión están en `src/features/maps/airport/data/README.md`. El extracto y el plano se ofrecen bajo la ODbL 1.0, y la mezcla con los puntos propios puede hacer de todo el plano una base de datos derivada. OurAirports es de dominio público. Ninguna coordenada sale del AIP ni de las cartas del aeropuerto.
+- *Por qué:* el navegador no gana ningún origen, la CSP no cambia y el plano se reproduce desde lo versionado.
+- *Descartado:* consultar Overpass u OurAirports desde el navegador o desde la API en tiempo de ejecución, que suma un origen o una dependencia, con sus reglas de uso, por datos que cambian muy poco.
+
+**3. El punto de cada posición es su centro (decisión 20 de Erick).**
+- Cada uno de los 42 puntos de `positionsData.js` es el centro de su posición. El plano lo copia en `center` (`provenance.center: 'elevant'`) y centra allí la caja, con el fondo a lo largo del rumbo hacia donde apunta la nariz. La entrada va de la calle de rodaje al centro.
+- La caja sale de la letra OACI del avión más grande: C 41 × 50 m, D 60 × 66 m, E 73 × 80 m y F 88 × 82 m, ancho por fondo. Con un polígono cerrado de OSM sería la letra más pequeña que lo contiene, pero en MDPC las marcas de posición de OSM son líneas abiertas, sin tamaño: es D, y C en FBO. La caja se estrecha donde la fila no deja sitio (`narrowed`).
+- El rumbo sale de la tabla manual; si no, de la línea de posición de OSM casada (a 40 m o menos); si no, de la vecina más cercana de su fila que lo tiene de OSM (a 150 m o menos); y si no, del eje de la fila (`headingAssumed`). La nariz de una posición de contacto mira a su puerta de OSM o a la terminal más cercana; la de una remota o de FBO, al lado contrario de la calle de rodaje más cercana.
+- `airport/airportLayout.test.js` comprueba que el centro de cada posición es su punto de `positionsData.js`. La lista corta `stands/standReference.js` lee el mismo archivo y no cambia: sus centros son los del plano. M4 decide si pasa a leer el plano.
+- *Por qué:* los puntos no dicen si son el centro o la parada de la rueda de nariz, y el centro deja una sola caja posible. La revisión manual lo comprueba.
+
+**4. Las equivalencias nunca se infieren.**
+- `matchStand(code, index)` compara con `normalizeStandCode` ([ADR-0041](0041-demo-flights-and-punta-cana-stands.md)): `A01`, `a-1` y `A1` son la misma posición. «1», «9A», «23A» o «N1» solo casan con una posición o con un alias que liste el plano. Los alias salen de `aliases` en `stand-overrides.json`, que nace vacía y solo se llena con lo que confirme el dueño del producto. El alias de una posición nunca le quita su código a otra.
+- Las puertas «1» a «11» y «N1» a «N5» de OSM nunca se toman por A1–A11 ni por AN1–AN5: esas posiciones casan con OSM solo por geometría. Las puertas B20 a B31 sí llevan el código de su posición, y el generador las usa para orientar la nariz y para marcar `ambiguous`.
+- *Por qué:* «9A» es otra posición, no «A9». Es la regla que ya probaba `dashboardPositions.test.js`.
+- *Descartado:* una heurística «1 → A1».
+
+**5. La ubicación que guarda OCC trasladará la caja sin deformarla, con M4.**
+- La base sigue guardando solo la ubicación que OCC coloca (`PUT occ/stands/{standId}/location`, [ADR-0027](0027-occ-ready-contracts-and-stand-locations.md)). Con M4, una posición del plano que OCC ubicó se dibujará con su caja y su entrada trasladadas a ese punto, con la misma forma, el mismo rumbo y el mismo tamaño, y una posición que el plano no conoce, con una caja derivada de sus vecinas. En M3 las posiciones siguen siendo puntos y nada traslada ninguna caja.
+
+**6. La revisión manual y los criterios de aceptación.**
+- El plano no se da por bueno hasta que el dueño del producto, con el OCC, lo revisa y lo firma. Para revisarlo hay tres cosas:
+  - el informe de `node scripts/maps/build-mdpc-layout.mjs --report`, con una fila por posición: su línea de OSM, las distancias, el rumbo y de dónde sale, la letra, el solape, la entrada y las marcas;
+  - la escena `/map-lab?scene=layout-qa` del laboratorio, solo en desarrollo (punto 8 de esta nota);
+  - la tabla `stand-overrides.json`, donde va cada corrección con su nota. `reviewedBy` (un rol, nunca un nombre) y `reviewedOn` marcan la posición como revisada (`provenance.qa: 'reviewed'`).
+- Las marcas que piden a una persona son `unmatched`, `ambiguous`, `far` (a más de 50 m), `overlap` (más del 15 %), `crossesTaxiway`, `leadInCrosses`, `offNetwork` y `noLeadIn`; `narrowed` y `headingAssumed` solo explican la caja.
+- `airport/airportLayout.test.js` prueba en cada corrida los criterios de aceptación:
+  - 42 posiciones: 41 activas con caja, rumbo y letra, y la B33 retirada; cada centro es su punto;
+  - cada posición activa llega a todas las salidas de pista por calles de rodaje, sin tramos de pista, y su entrada empieza a 3 m o menos de una calle;
+  - el grafo es una sola pieza, y ningún solape pasa del 15 %;
+  - los umbrales quedan a 30 m o menos de los de OurAirports;
+  - la pista habitual es la 08, como suposición (decisión 19 de Erick);
+  - los códigos se normalizan y nada se infiere.
+- Estado al cerrar M3: el plano está sin firmar, con las 42 posiciones en `auto`, y quedan 16 marcadas. 14 no tienen geometría en OSM (B31, B32, B34 a B37 y BN6 a BN13); B29 y B30 son ambiguas; una calle de rodaje cruza BN9; y la entrada de B35, B37 y BN13 cruza otra posición. B31 y B32 llevan un rumbo provisional de 175°, con su nota y sin firma.
+- *Por qué:* los datos abiertos no bastan. La revisión en el laboratorio no pudo resolver ninguna marca solo con OSM: le faltan 14 posiciones, y en B29, B30 y B31 contradice los puntos de ELEVANT.
+
+**7. El aeródromo se dibuja con el plano desde un umbral derivado, `airfield`.**
+- `THRESHOLD_NAMES` suma `airfield`, el punto medio entre los encuadres de Aproximación y Aeródromo: la misma frontera que usa `presetForZoom` para el selector, así que siempre que el selector dice «Aeródromo» el aeródromo sale del plano. No es el zoom 12 fijo del diseño ni el de la tabla «Lo que añadirán M3 a M8»: cambia con la pantalla y los paneles, como los demás umbrales (decisión 8 de este ADR).
+- Desde ese umbral, `style/airfieldLayers.js` dibuja en el slot `airfield`, en el grupo `airfield` y desde la fuente `occ-airfield`, que `OccMap` llena una sola vez con `airport/airfieldFeatures.js`:
+  - las plataformas y las terminales, con su contorno;
+  - las calles de rodaje, con su nombre tenue;
+  - las pistas: su pavimento y una línea de umbral a umbral, con el eje a trazos, las barras de umbral y el designador;
+  - los puntos de espera, como barras de 30 m.
+
+  El pavimento usa los colores y los anchos del mapa base, así que el relevo con las teselas no salta. Las marcas van en `--occ-text` y los nombres en `--occ-faint`: ningún tono.
+- Por debajo del umbral, las capas `aeroway` de las teselas, con su designador, quedan como contexto: llevan `occ:maxThreshold: 'airfield'`, así que el aeródromo nunca se dibuja dos veces.
+- Al pasar el puntero por una pista o una calle de rodaje sale una ficha que no es modal (`ui/MapTooltip.jsx`): «Pista 08/26 · 3100 m × 45 m», «Calle de rodaje A» o «Calle de rodaje sin nombre». Un clic la fija, y un clic en otra parte o un cambio de vista la cierra, así que nada depende solo del puntero. La leyenda suma pista, calle de rodaje, punto de espera, plataforma y terminal, solo cuando están en pantalla (decisión 9 de este ADR).
+- Las vistas salen del plano: Aeródromo encuadra su caja más 300 m; Rampa, los polígonos de las posiciones activas más 120 m, ya en M3 y no con M4; y cada terminal, los suyos más 120 m. Sin plano, como en M2, las encuadran los puntos de las posiciones.
+- `OccMap` recibe el plano en la prop `layout`, que por omisión es el de MDPC. Con `null` no dibuja un aeródromo propio, deja las teselas a cualquier zoom y encuadra con los puntos. Lo dibujan todos los mapas sobre `OccMap`: Monitoreo de vuelos, Mapa de posiciones, Planificación y la plataforma de la consola. Los dos mapas auxiliares del dashboard no usan `OccMap` y no cambian. Para el laboratorio, `OccMap` suma `overlayData` (los datos de las capas propias de una pantalla, con un `setData` por cambio) y `onPick` (un clic en lo que una capa propia deja elegir).
+- *Por qué:* las posiciones, el grafo y el pavimento siempre coinciden, porque salen del mismo archivo. Un zoom fijo dejaría el relevo lejos del límite de la vista, según la pantalla.
+- *Descartado:* el zoom 12 del diseño, y dibujar a la vez el aeródromo de las teselas y el propio.
+
+**8. La escena de revisión del laboratorio.**
+- La octava escena, `layout-qa` («Revisión del plano de MDPC», solo en desarrollo; `lab/LayoutQaScene.jsx` con `lab/layoutQa.js`), dibuja sobre el aeródromo:
+  - cada caja con su código, una flecha hacia donde apunta la nariz y sus marcas;
+  - los puntos de ELEVANT, y las puertas y las líneas de posición de OSM (`qa.gates` y `qa.standLines` del plano);
+  - una línea al centroide de OSM cuando el punto queda a más de 15 m;
+  - el grafo de rodaje según hasta dónde se llega por él, los puntos de espera y las esperas de plataforma;
+  - una sonda de rutas: dos clics en nodos del grafo dan la ruta más corta por las calles de rodaje y su largo.
+
+  La lista lateral muestra las 42 posiciones, primero las marcadas, y un clic encuadra cada una con su entrada, su puerta y su centroide.
+- `tests/visual/lab/map-lab.layout-qa.spec.mjs` comprueba la sonda y escribe en `test-results/visual/` las capturas del aeródromo, de cada terminal, de cada posición marcada y de una ruta. `verify-map-chunks.mjs` sigue dejando el laboratorio fuera del build de producción.
+
+**Dónde M3 se aparta del diseño o de lo que anunciaba este ADR** (manda la página de contratos):
+- el umbral derivado `airfield`, en lugar del zoom 12 del diseño y de la tabla «Lo que añadirán M3 a M8», y las teselas sin un tramo fijo «z 9–12» (contratos 2.3);
+- Rampa encuadra los polígonos ya en M3, y no desde M4, como decía la decisión 8 de este ADR;
+- los códigos se comparan con `normalizeStandCode` de A1 (`src/services/standCodes.js`), no con un `airport/standCodes.js` nuevo;
+- el punto es el centro (decisión 20 de Erick) y la pista habitual es la 08 (decisión 19), que el diseño dejaba por confirmar;
+- seis marcas nuevas: `crossesTaxiway`, `leadInCrosses`, `narrowed`, `headingAssumed`, `offNetwork` y `noLeadIn`;
+- la tabla manual pone los alias en un solo mapa, `aliases`; exige una `note` en cada entrada; y admite `kind` `contact`, `remote` o `fbo`, porque las combinadas siguen siendo de OCC ([ADR-0030](0030-position-coverage-per-shift-and-combined-stands.md));
+- el plano suma `qa` (las puertas y las líneas de posición de OSM) para la revisión, y `operations.basis: 'owner-decision-19'`;
+- el crédito del aeródromo va en su propia fuente, no en `buildAttribution`.
+
+**Consecuencias.** No cambian la API, el OpenAPI, el cliente compartido ni la base; no hay migración, dependencia nueva ni origen nuevo, y la CSP no cambia. Solo se despliega AVIAM Web (`frontend/private-web`).
+
+**Queda pendiente**
+- **La firma del plano.** Revisar las 16 posiciones marcadas, el tamaño de cada posición (D por omisión, más estrecha en 27) y las tres esperas de plataforma derivadas, y firmar la tabla, con el dueño del producto y el OCC. La tabla de alias sigue vacía.
+- **M4.** Los polígonos con los siete estados y su leyenda, la caja trasladada a lo que OCC ubica, la caja derivada de una posición que el plano no conoce y el origen de la lista corta.
+- **La paridad del catálogo en C#** (`DemoStationCatalogParityTests`) sigue comparando con `positionsData.js`. Pasarla a `mdpc.layout.json` es un cambio del carril de la API.
+- **`region.context.json`** espera a M5 (los aeropuertos de la región) y a M8 (las radioayudas).

@@ -167,16 +167,21 @@ indica explícitamente. Otras estaciones no usan el centro de PUJ. Las variantes
 de Google Maps y su cargador se retiraron del código y de las dependencias;
 cualquier experimento futuro con ese proveedor requiere una decisión y una CSP
 revisadas por separado. Las decisiones de los mapas del OCC están en
-[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). El aeródromo de Punta
+Cana se dibuja con un plano propio que se genera a mano con `scripts/maps` y
+se versiona; nada de eso corre en el build. Sus fuentes, sus licencias y cómo
+se regenera están en el
+[README de los datos](src/features/maps/airport/data/README.md).
 
 El laboratorio de mapas (`/map-lab`) solo existe con `next dev`: dibuja el mapa
-del OCC con siete escenas fijas (los estados de rampa, una posición elegida,
-Aeródromo, Aproximación, Región, un navegador sin WebGL y el mapa base caído),
-sin sesión ni API. La URL elige la escena (`?scene=`), el mapa sin teselas
-(`?basemap=none`), un reloj del mapa congelado (`?t=` con un instante ISO 8601)
-y las claves de selección del mapa (`stand=`, `view=`, `terminal=`). La ruta
-importa el laboratorio solo dentro de la rama de desarrollo, y `npm run build`
-termina con `scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
+del OCC con ocho escenas fijas (los estados de rampa, una posición elegida,
+Aeródromo, Aproximación, Región, un navegador sin WebGL, el mapa base caído y
+la revisión del plano de MDPC), sin sesión ni API. La URL elige la escena
+(`?scene=`), el mapa sin teselas (`?basemap=none`), un reloj del mapa
+congelado (`?t=` con un instante ISO 8601) y las claves de selección del mapa
+(`stand=`, `view=`, `terminal=`). La ruta importa el laboratorio solo dentro de
+la rama de desarrollo, y `npm run build` termina con
+`scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
 al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`). En producción la ruta
 responde la página de no encontrada.
 

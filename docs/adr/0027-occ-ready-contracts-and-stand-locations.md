@@ -98,3 +98,17 @@ asignación.
 > normalizado, como referencia interna sin verificar, y la ubicación que OCC guarda con
 > `PUT occ/stands/{standId}/location` sigue reemplazándola. Para el vuelo demo, una posición está
 > «ubicada» si su código está en el catálogo de Punta Cana o si OCC la colocó.
+
+> **Actualización (13 de noviembre de 2026).** El mapa del OCC tiene un plano propio de Punta Cana,
+> `frontend/private-web/src/features/maps/airport/data/mdpc.layout.json` (PR M3,
+> [ADR-0043](0043-occ-maps-one-engine.md)), generado desde OpenStreetMap, OurAirports y los puntos
+> internos de `positionsData.js`. Desde la vista Aeródromo el mapa dibuja con él las pistas, las
+> calles de rodaje, las plataformas y las terminales. El plano guarda la geometría de cada posición
+> (su caja, su rumbo y su entrada) por el código normalizado: `A01`, `a-1` y `A1` son la misma
+> posición, y las equivalencias no se infieren. «1», «9A» o «23A» solo casan con una posición o con
+> un alias que liste el plano, y la tabla de alias nace vacía. El centro de cada caja es el punto de
+> `positionsData.js` (decisión 20 de Erick), así que la referencia interna sin verificar no se
+> mueve. La base sigue guardando solo la ubicación que OCC coloca con
+> `PUT occ/stands/{standId}/location`, que sigue reemplazando a la referencia. En M3 las posiciones
+> siguen dibujándose como puntos; con M4, el mapa dibujará la caja del plano y la trasladará sin
+> deformarla al punto que OCC guardó.
