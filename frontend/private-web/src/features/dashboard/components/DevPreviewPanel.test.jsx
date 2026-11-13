@@ -5,7 +5,7 @@ import DevPreviewPanel from './DevPreviewPanel';
 
 describe('DevPreviewPanel', () => {
   it('can start hidden and opens from the floating control', async () => {
-    render(<DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={() => {}} defaultOpen={false} />);
+    render(<DevPreviewPanel forceState="default" onSetForceState={() => {}} defaultOpen={false} />);
     expect(screen.queryByText(/vista previa.*solo desarrollo/i)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /mostrar herramientas/i }));
     expect(screen.getByText(/vista previa.*solo desarrollo/i)).toBeInTheDocument();
@@ -14,23 +14,30 @@ describe('DevPreviewPanel', () => {
   });
 
   it('is labeled clearly as a development-only tool', () => {
-    render(<DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={() => {}} />);
+    render(<DevPreviewPanel forceState="default" onSetForceState={() => {}} />);
     expect(screen.getByText(/vista previa.*solo desarrollo/i)).toBeInTheDocument();
   });
 
-  it('calls onToggleTheme when the theme button is clicked', async () => {
+  it('offers no theme toggle', async () => {
     const onToggleTheme = vi.fn();
+    const onSetForceState = vi.fn();
+    // The OCC is dark only: a caller that still sends the old props gets no button for them.
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={onToggleTheme} onSetForceState={() => {}} />
+      <DevPreviewPanel theme="dark" onToggleTheme={onToggleTheme} forceState="default" onSetForceState={onSetForceState} />
     );
-    await userEvent.click(screen.getByRole('button', { name: /tema/i }));
-    expect(onToggleTheme).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /tema|claro|oscuro/i })).not.toBeInTheDocument();
+
+    // Every button of the open panel forces a screen state; the floating control only folds it.
+    const stateButtons = screen.getAllByRole('button').filter(button => !button.hasAttribute('aria-expanded'));
+    for (const button of stateButtons) await userEvent.click(button);
+    expect(onSetForceState).toHaveBeenCalledTimes(stateButtons.length);
+    expect(onToggleTheme).not.toHaveBeenCalled();
   });
 
   it('calls onSetForceState with the matching state per button', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
     await userEvent.click(screen.getByRole('button', { name: /carga/i }));
     expect(onSetForceState).toHaveBeenCalledWith('loading');
@@ -48,7 +55,7 @@ describe('DevPreviewPanel', () => {
   it('exposes the Planning-module forced states', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
 
     await userEvent.click(screen.getByRole('button', { name: /planificación: sin vuelos/i }));
@@ -64,7 +71,7 @@ describe('DevPreviewPanel', () => {
   it('exposes the Flight Monitoring forced states', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
 
     await userEvent.click(screen.getByRole('button', { name: /monitoreo: sin vuelos/i }));
@@ -80,7 +87,7 @@ describe('DevPreviewPanel', () => {
   it('exposes the Review-module forced states', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
 
     await userEvent.click(screen.getByRole('button', { name: /revisión: sin operaciones/i }));
@@ -93,7 +100,7 @@ describe('DevPreviewPanel', () => {
   it('exposes the Reports-module forced states', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
 
     await userEvent.click(screen.getByRole('button', { name: /reportes: sin datos/i }));
@@ -106,7 +113,7 @@ describe('DevPreviewPanel', () => {
   it('exposes the Notifications-module forced states', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
 
     await userEvent.click(screen.getByRole('button', { name: /notificaciones: sin datos/i }));
@@ -119,7 +126,7 @@ describe('DevPreviewPanel', () => {
   it('exposes the Chat interno forced states', async () => {
     const onSetForceState = vi.fn();
     render(
-      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+      <DevPreviewPanel forceState="default" onSetForceState={onSetForceState} />
     );
 
     await userEvent.click(screen.getByRole('button', { name: /chat: sin conversaciones/i }));

@@ -10,11 +10,13 @@ import { useStackedTableLabels } from '../../components/StackedTable';
 // para apilarse como tarjetas en teléfono.
 // Un departamento puede aportar su propio sidebar/topbar y su identidad visual
 // (`department` → `data-department`, ver styles/occ.css) sin cambiar el marco
-// que usan los demás.
+// que usan los demás. `rootAttributes` añade atributos a la raíz (el OCC pone
+// `data-occ-bridge`, que enciende styles/occ-legacy-bridge.css); los del marco
+// mandan sobre ellos.
 const DEFAULT_ROOT_CLASS = 'bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark';
 
 export default function ShellFrame({
-  sidebarProps, topbarProps, mainKey, mainClassName = '', department,
+  sidebarProps, topbarProps, mainKey, mainClassName = '', department, rootAttributes,
   SidebarComponent = Sidebar, TopbarComponent = Topbar, rootClassName = DEFAULT_ROOT_CLASS, children,
 }) {
   const mainRef = useRef(null);
@@ -22,6 +24,7 @@ export default function ShellFrame({
 
   return (
     <div
+      {...rootAttributes}
       data-shell-root=""
       data-department={department}
       className={`flex h-dvh overflow-hidden ${rootClassName}`}

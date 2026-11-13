@@ -21,6 +21,12 @@ sources:
   - frontend/private-web/Dockerfile
   - frontend/private-web/src/features/auth/authService.js
   - frontend/private-web/src/features/admin-occ/navigation.js
+  - frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx
+  - frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx
+  - frontend/private-web/src/features/shell/ShellFrame.jsx
+  - frontend/private-web/src/features/shell/useTheme.jsx
+  - frontend/private-web/src/styles/occ.css
+  - frontend/private-web/tailwind.config.js
   - frontend/private-web/src/features/human-resources/navigation.js
   - frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx
   - frontend/private-web/src/config/elevantApiClient.js
@@ -129,7 +135,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
-En la rama `feat/adminocc-redesign`, el espacio OCC tiene marco propio: un riel de navegación navy colapsable agrupado en Monitoreo, Operación, Comunicación y Administración, con la marca oficial completa, y una barra contextual con el módulo activo, la hora UTC del reloj del equipo, el idioma (español/inglés), el tema y los avisos. Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
+En la rama `feat/adminocc-redesign`, el espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en Monitoreo, Operación, Comunicación y Administración, con la marca oficial completa, y una barra contextual con el módulo activo, la hora UTC del reloj del equipo, el idioma (español/inglés) y los avisos. Esa rama dibujaba el riel en azul marino y ofrecía el cambio de tema; desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
 En el árbol local posterior al commit verificado, «Operación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
 
@@ -169,13 +175,17 @@ Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estaci�
 En esta rama, las vistas de PUJ usan MapLibre sin cambiar a Google por una
 variable local. El mapa base de Monitoreo se monta aunque ningún vuelo tenga
 coordenadas verificadas, con un aviso que distingue cartografía de telemetría.
-El worker y su importación compartida se copian juntos desde la dependencia
-fijada antes de desarrollo y build; la certificación comprueba que la imagen
-sirve ambos módulos. Esta evidencia es local y de CI; la disponibilidad remota
-requiere la promoción y comprobación del operador. Fuentes: [vista de
+El worker y el módulo compartido del paquete se copian juntos desde la
+dependencia fijada antes de desarrollo y build; la certificación comprueba que
+la imagen sirve ambos archivos. Desde MapLibre 6.13 el worker es autocontenido
+y el módulo compartido llega vacío; la verificación del build exige que todo
+módulo que el worker importe esté entre los archivos copiados. Esta evidencia
+es local y de CI; la disponibilidad remota requiere la promoción y comprobación
+del operador. Fuentes: [vista de
 Monitoreo](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx),
 [mapa de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx),
-[script de copia](../../frontend/private-web/scripts/copy-maplibre-worker.mjs) y
+[script de copia](../../frontend/private-web/scripts/copy-maplibre-worker.mjs),
+[verificación del build](../../frontend/private-web/scripts/verify-maplibre-worker.mjs) y
 [certificación](../../frontend/private-web/scripts/certify-image.sh).
 
 En la rama de integración, Monitoreo y Mapa releen la estación autorizada
@@ -662,6 +672,96 @@ azar» (PR A2), ni el avión demo en los mapas. Fuentes:
 [servicio](../../frontend/private-web/src/services/demoFlightsService.js),
 [códigos de posición](../../frontend/private-web/src/services/standCodes.js) y
 [diálogo de importación](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx).
+
+## Sistema visual NOC del OCC (PR U1)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U1 «Fundaciones visuales» (`9a4360fa`, `91cc9675` y `aca575ff`), que esa
+verificación no cubre. Las decisiones, los valores de los tokens y lo que
+añadirán los PR siguientes están en
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U1 no cambia la
+estructura de ninguna pantalla: los textos, roles, nombres accesibles y
+`data-testid` del OCC son los mismos, salvo el botón de tema, que desaparece.
+
+- **Solo oscuro, sin botón de tema.** Bajo `/admin-occ` el tema es siempre
+  oscuro desde el primer pintado.
+  [`app/layout.jsx`](../../frontend/private-web/app/layout.jsx) pone en
+  `<head>` un script con el nonce de la petición que añade la clase `dark` solo
+  en rutas del OCC ([`occTheme.js`](../../frontend/private-web/src/features/shell/occTheme.js));
+  la CSP no cambia. Dentro del OCC,
+  [`ThemeProvider`](../../frontend/private-web/src/features/shell/useTheme.jsx)
+  ignora el tema guardado, `toggleTheme` no hace nada y `elevant-theme` no se
+  escribe. La [barra del OCC](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx)
+  y el panel de vista previa de desarrollo ya no tienen botón de tema, y el
+  mapa de Planificación ya no se dibuja en claro. Los demás departamentos
+  conservan el tema de la cuenta, que vuelve al salir del OCC.
+- **Un solo juego de tokens.**
+  [`occ.css`](../../frontend/private-web/src/styles/occ.css) define los
+  valores `--occ-*` una sola vez sobre `[data-department='occ']`, sin bloque
+  claro: pizarra neutra (fondo `#161E22`, paneles `#20282D`, riel `#0F161A`),
+  texto `#E8EEF1`, cian `#6FD4F5` para lo elegido o accionable, ámbar `#FDC14F`
+  para atención y rojo `#F5746D` para urgente; lo normal no lleva color.
+  Manrope con peso 500, que antes solo se aplicaba al dashboard, cubre todo el
+  OCC. Los seis nombres `--occ-ui-*` que el chat leía sin que nadie los
+  definiera son ahora alias de los tokens: el chat vuelve a tener fondos y
+  bordes. [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js)
+  suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`, y
+  retira `signal`. No todos los tokens tienen clase: `--occ-field`,
+  `--occ-primary`, `--occ-primary-hover`, los `--occ-on-*`, los `--occ-*-fill`
+  y `--occ-scrim` solo existen como variables CSS hasta que un PR añada su
+  llave, y una guarda falla si una clase de color `occ-*` nombra un color sin
+  llave. Una clase `occ-*` nunca lleva modificador de opacidad: Tailwind no la
+  genera.
+- **Puente de estilos heredados.** La mayoría de las pantallas del OCC todavía
+  usa clases heredadas (`bg-white`, `dark:bg-surface-dark-card`,
+  `text-text-secondary-*`…). La hoja
+  [`occ-legacy-bridge.css`](../../frontend/private-web/src/styles/occ-legacy-bridge.css),
+  generada desde su [manifiesto](../../frontend/private-web/src/styles/occLegacyBridgeMap.js)
+  por [`occLegacyBridge.js`](../../frontend/private-web/src/styles/occLegacyBridge.js),
+  las repinta con los tokens oscuros, quita sombras y desenfoque y ajusta los
+  radios, solo bajo `[data-department="occ"][data-occ-bridge]`.
+  `AdminOccLayout` pone ese atributo con `rootAttributes` de
+  [`ShellFrame`](../../frontend/private-web/src/features/shell/ShellFrame.jsx);
+  quitarlo apaga el puente entero. Los estados normales quedan sin color: el
+  ámbar solo pinta la atención, el rojo lo urgente y el cian lo elegido o
+  accionable. La franja de estado que las tarjetas de Planificación y las filas
+  de Monitoreo de vuelos y del mapa de posiciones pintan en línea pasa a junta,
+  con la única regla `!important` del puente. Fuera del puente, `occ.css`
+  repinta las tarjetas de
+  las tablas apiladas (`table-stack`, que
+  [`tokens.css`](../../frontend/private-web/src/styles/tokens.css) dibuja con
+  `@apply`) y el foco y la selección del chat. Las
+  [guardas](../../frontend/private-web/src/styles/occStyleGuard.test.js) fallan
+  si la hoja se desvía del manifiesto, si un archivo montado bajo
+  `/admin-occ` usa una clase de color heredada sin correspondencia o si una
+  hoja global copia con `@apply` un color heredado que el OCC no repinta; hoy
+  son 290 archivos, 106 de ellos con clases heredadas. Usuarios, Mis gastos y
+  los componentes de `src/components` se quedan en el puente porque los
+  comparten otros departamentos; fuera del OCC no cambian.
+- **Vocabulario.**
+  [`occPalette.js`](../../frontend/private-web/src/features/occ-ui/occPalette.js)
+  da los mismos colores a quien no lee variables CSS (mapas, iconos dibujados
+  en código), con una prueba de paridad contra `occ.css`.
+  [`statusVocabulary.js`](../../frontend/private-web/src/features/occ-ui/statusVocabulary.js)
+  fija los siete estados de posición (Libre, Planificada, Llegando, Ocupada,
+  Por liberar, Inhabilitada y Sin verificar), las marcas «Demo», «est.», «No
+  oficial» y «Sin actualizar desde las {hora}», las tres señales (Atención,
+  Urgente y Aviso) y cuándo una visita está «En operación».
+  [`occShortcuts.js`](../../frontend/private-web/src/features/occ-ui/occShortcuts.js)
+  fija las ocho teclas de los mapas (`1` a `4`, `D`, `S`, `L` y `Esc`) y sus
+  reglas. Ninguna pantalla los usa todavía.
+
+Límites: hasta que monta el marco se ve el fondo azul marino de `body`
+(`#0A1220`) y luego la pizarra del OCC; queda para la pantalla de arranque que
+planifica el ADR. El texto menor de 12 px y los rótulos en mayúsculas de las
+pantallas heredadas siguen hasta que cada una se migre. Las leyendas, el
+resumen y los marcadores de Monitoreo de vuelos y del mapa de posiciones aún
+pintan sus colores de estado en línea, y el tablero de escalas del dashboard
+marca en cian los estados planificados; los rehacen el carril de mapas, U3 y
+U5. El contraste se
+comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
+mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
+revisión visual en el VPS.
 
 ## Estado de integración
 

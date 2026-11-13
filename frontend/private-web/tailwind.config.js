@@ -35,21 +35,26 @@ export default {
           'primary-dark': '#F4F6F9',
           'secondary-dark': '#94A3B8',
         },
-        // Superficies del espacio OCC; valores en src/styles/occ.css por tema.
+        // OCC workspace colours: single values (dark only), defined once in src/styles/occ.css.
+        // Never put an opacity modifier on these classes: Tailwind generates none for a var() colour.
         occ: {
           canvas: 'var(--occ-canvas)',
           panel: 'var(--occ-panel)',
+          'panel-raised': 'var(--occ-panel-raised)',
+          'panel-float': 'var(--occ-panel-float)',
           'panel-muted': 'var(--occ-panel-muted)',
           line: 'var(--occ-line)',
           'line-strong': 'var(--occ-line-strong)',
           text: 'var(--occ-text)',
           muted: 'var(--occ-muted)',
+          faint: 'var(--occ-faint)',
           accent: 'var(--occ-accent)',
           'accent-soft': 'var(--occ-accent-soft)',
           ok: 'var(--occ-ok)',
           warn: 'var(--occ-warn)',
+          'warn-soft': 'var(--occ-warn-soft)',
           danger: 'var(--occ-danger)',
-          signal: 'var(--occ-signal)',
+          'danger-soft': 'var(--occ-danger-soft)',
           nav: 'var(--occ-nav)',
           'nav-line': 'var(--occ-nav-line)',
           'nav-text': 'var(--occ-nav-text)',
