@@ -224,7 +224,9 @@ describe('OCC shortcut handler', () => {
 
     rerender(drawer(true));
     expect(isOverlayOpen()).toBe(true);
-    expect(press('Escape').defaultPrevented).toBe(false);
+    // The open drawer uses the key to close itself (contracts 2.2: one Esc closes the drawer, the next one clears the
+    // selection), so the key arrives used; the map stands still and keeps its selection.
+    expect(press('Escape').defaultPrevented).toBe(true);
     expect(clearSelection).toHaveBeenCalledTimes(1);
 
     // The two marks of a closed drawer, each on its own.
