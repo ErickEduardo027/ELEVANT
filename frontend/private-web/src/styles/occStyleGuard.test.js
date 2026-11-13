@@ -17,6 +17,8 @@ import {
 import { globalStylesheets, occMountedFiles, readSource, sourceFilesUnder } from './occSourceScan';
 
 const BRIDGE_CSS = 'src/styles/occ-legacy-bridge.css';
+// The OCC boot screen (U4): it renders outside ShellFrame and paints only with the tokens of the scope it carries.
+const BOOT_FOLDER = 'src/features/admin-occ/boot';
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
@@ -665,16 +667,41 @@ describe('OCC legacy bridge', () => {
     expect(legacyClassesIn(sourceFilesUnder('src/features/admin-occ')).length).toBeGreaterThan(0);
   });
 
-  it('occ-ui uses no backdrop-filter, no gradient and no opacity modifier on an occ colour', () => {
-    const files = sourceFilesUnder('src/features/occ-ui');
-    expect(files.length).toBeGreaterThan(0);
-    // findLegacyColourClasses also reports an occ colour with an opacity modifier (`bg-occ-panel/90`).
-    expect(legacyClassesIn(files)).toEqual([]);
-    for (const file of files) {
-      const source = readSource(file);
-      expect(source, file).not.toMatch(/backdrop-filter|backdropFilter|backdrop-blur/);
-      expect(source, file).not.toMatch(/gradient/i);
+  it('occ-ui and the boot screen use no backdrop-filter, no gradient and no opacity modifier on an occ colour', () => {
+    for (const folder of ['src/features/occ-ui', BOOT_FOLDER]) {
+      const files = sourceFilesUnder(folder);
+      expect(files.length, folder).toBeGreaterThan(0);
+      // findLegacyColourClasses also reports an occ colour with an opacity modifier (`bg-occ-panel/90`).
+      expect(legacyClassesIn(files)).toEqual([]);
+      for (const file of files) {
+        const source = readSource(file);
+        expect(source, file).not.toMatch(/backdrop-filter|backdropFilter|backdrop-blur/);
+        expect(source, file).not.toMatch(/gradient/i);
+      }
     }
+    // The boot screen's stylesheet is among the files read.
+    expect(sourceFilesUnder(BOOT_FOLDER).filter(file => file.endsWith('.css')).length).toBeGreaterThan(0);
+  });
+
+  it('the boot screen styles use only occ tokens defined on the OCC scope', () => {
+    const stylesheets = sourceFilesUnder(BOOT_FOLDER).filter(file => file.endsWith('.css'));
+    expect(stylesheets).toEqual(['src/features/admin-occ/boot/OccBootScreen.module.css']);
+    for (const file of stylesheets) {
+      const css = stripComments(readSource(file));
+      // Its root carries data-department="occ", so every token it reads is one the OCC scope defines.
+      const read = readVariables(css);
+      expect(read.length, file).toBeGreaterThan(3);
+      expect(read.filter(name => !occScopeTokens.has(name)), file).toEqual([]);
+      // No colour of its own, no shadow, no gradient and no blur: the dark slab and its tokens.
+      expect(css, file).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+      expect(css, file).not.toMatch(/\brgba?\(|\bhsla?\(|\boklch\(|\bcolor-mix\(/i);
+      expect(css, file).not.toMatch(/box-shadow|drop-shadow|text-shadow|gradient|backdrop/i);
+    }
+    // The guard bites: a hex colour or a token the OCC scope does not define would fail it.
+    expect('.bar { color: #fff; }').toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(readVariables('fill: var(--occ-not-a-token)').filter(name => !occScopeTokens.has(name))).toEqual([
+      '--occ-not-a-token',
+    ]);
   });
 
   it('palette pairs keep their contrast', () => {

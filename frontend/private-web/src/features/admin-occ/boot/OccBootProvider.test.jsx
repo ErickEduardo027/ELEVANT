@@ -12,6 +12,7 @@ import { OCC_TEST_ACCOUNT_ID } from '../shell/testing/occShellFixtures';
 import { useOccBoot } from './occBootContext';
 import { occBootMessages } from './occBootMessages';
 import { OccBootAccessSignal, OccBootProvider } from './OccBootProvider';
+import { OCC_BOOT_ISOTYPE_SRC } from './OccBootScreen';
 import { hasSeenOccBoot, markOccBootSeen } from './occBootSession';
 
 // The session is synthetic and has no token, so the session gate starts no presence lease.
@@ -146,6 +147,9 @@ describe('OccBootProvider', () => {
     expect(container).not.toHaveTextContent('Preparando');
     expect(container.querySelector('[role="status"]')).toHaveTextContent('Comprobando sesión…');
     expect(hasSeenOccBoot(OCC_TEST_ACCOUNT_ID)).toBe(false);
+    // But the page already asks for the screen's isotype, so the screen never waits for it once it shows.
+    expect(container.querySelector('link[rel="preload"][as="image"]'))
+      .toHaveAttribute('href', OCC_BOOT_ISOTYPE_SRC);
 
     // It decides after hydration, without a hydration mismatch.
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -279,14 +283,44 @@ describe('OccBootProvider', () => {
     expect(hasSeenOccBoot(OCC_TEST_ACCOUNT_ID)).toBe(false);
   });
 
-  it('announces its progress in the stored language', async () => {
+  it('announces «Preparando el centro de operaciones…» then «Listo.» politely, outside the hidden overlay', async () => {
+    render(occEntry({ load: vi.fn().mockResolvedValue(ACCESS) }));
+    const cover = bootScreen();
+    // From the first frame, while the session is checked, and on while the access and the first screen load.
+    expect(announcer()).toHaveTextContent(/^Preparando el centro de operaciones…$/);
+    await flush();
+    expect(cover).toHaveAttribute('data-occ-boot-phase', 'waitingReady');
+    expect(announcer()).toHaveTextContent(/^Preparando el centro de operaciones…$/);
+    // A polite live region of its own, in Spanish, never a status or an alert...
+    expect(announcer()).toHaveAttribute('aria-live', 'polite');
+    expect(announcer()).toHaveAttribute('lang', 'es');
+    expect(announcer()).not.toHaveAttribute('role');
+    // ...outside the overlay, which hides itself and everything in it from assistive technology.
+    expect(cover).toHaveAttribute('aria-hidden', 'true');
+    expect(cover).not.toContainElement(announcer());
+    expect(announcer().closest('[aria-hidden="true"]')).toBeNull();
+    expect(cover.querySelector('[aria-live], [role]')).toBeNull();
+
+    act(() => boot.markReady('console'));
+    expect(cover).toHaveAttribute('data-occ-boot-phase', 'leaving');
+    expect(announcer()).toHaveTextContent(/^Listo\.$/);
+    // Once the screen is gone the region empties, and says nothing more for the rest of the visit.
+    await flush(400);
+    expect(bootScreen()).toBeNull();
+    expect(announcer()).toBeEmptyDOMElement();
+    expect(announcer()).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('announces «Preparing the operations center…» then «Ready.» in English when that is the stored language', async () => {
     expect(Object.keys(occBootMessages.en)).toEqual(Object.keys(occBootMessages.es));
     act(() => resetLanguageForTests('en'));
     await enterWithAccess();
-    expect(announcer()).toHaveTextContent('Preparing the operations centre…');
+    expect(announcer()).toHaveTextContent(/^Preparing the operations center…$/);
     expect(announcer()).toHaveAttribute('lang', 'en');
+    expect(announcer()).toHaveAttribute('aria-live', 'polite');
+    expect(bootScreen()).not.toContainElement(announcer());
     act(() => boot.markReady('map'));
-    expect(announcer()).toHaveTextContent('Ready.');
+    expect(announcer()).toHaveTextContent(/^Ready\.$/);
   });
 
   it('useOccBoot is a safe no-op outside the provider', () => {

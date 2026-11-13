@@ -12,7 +12,7 @@ import {
 } from './occBootMachine';
 import { occBootMessages } from './occBootMessages';
 import { hasSeenOccBoot, markOccBootSeen } from './occBootSession';
-import OccBootScreen from './OccBootScreen';
+import OccBootScreen, { preloadOccBootIsotype } from './OccBootScreen';
 
 // What OccBootAccessSignal may report through the internal channel.
 const SIGNAL_EVENTS = new Set(['sessionChecked', 'accessLoaded', 'accessFailed']);
@@ -25,6 +25,8 @@ const SIGNAL_EVENTS = new Set(['sessionChecked', 'accessLoaded', 'accessFailed']
  * `timeoutMs` pass, and leaves in `exitMs`. The AccessGate error ends it at once.
  */
 export function OccBootProvider({ children, timeoutMs = OCC_BOOT_READY_TIMEOUT_MS, exitMs = OCC_BOOT_EXIT_MS }) {
+  // The screen itself never renders on the server, but its isotype starts loading with the page.
+  preloadOccBootIsotype();
   const { session, ready } = useAuth();
   const [state, dispatch] = useReducer(reduceOccBoot, undefined, initialOccBoot);
   // Above AdminOccLayout's LanguageScope: the stored language, read as AccessGate reads it.
