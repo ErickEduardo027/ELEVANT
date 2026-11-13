@@ -188,7 +188,8 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   ([prueba](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
-  leyenda lista solo lo que hay en pantalla; sin WebGL aparece la lista de
+  leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
+  única; sin WebGL aparece la lista de
   respaldo, y se queda, sin lienzo debajo ni errores en la página, cuando un
   contexto WebGL perdido vuelve sin WebGL2; con el mapa base caído aparece su
   aviso. También que los botones de zoom

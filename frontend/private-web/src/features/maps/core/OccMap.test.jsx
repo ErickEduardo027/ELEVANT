@@ -37,10 +37,13 @@ const FLIGHTS = [
 
 // What the map shares with its overlays, printed for the assertions (a plain element: <output> is a live region).
 function Probe() {
-  const { engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen } = useOccMap();
+  const { engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, flightsOnScreen } = useOccMap();
   return (
     <pre data-testid="probe">
-      {JSON.stringify({ engineStatus, basemapStatus, activeView, fits, thresholds, onScreen: standsOnScreen.map(stand => stand.id) })}
+      {JSON.stringify({
+        engineStatus, basemapStatus, activeView, fits, thresholds,
+        onScreen: standsOnScreen.map(stand => stand.id), flightsOnScreen: flightsOnScreen.map(flight => flight.id),
+      })}
     </pre>
   );
 }
@@ -423,6 +426,40 @@ describe('OccMap', () => {
     expect(probe().onScreen).toEqual([]);
     rerender({ insets: undefined });
     expect(probe().onScreen).toEqual(['A1', 'A2', 'A3', 'A4']);
+  });
+
+  it('counts on screen the flights it draws in the area the insets leave in sight', () => {
+    const screenWith = (props = {}) => (
+      <OccMap flights={FLIGHTS} defaultView="region" {...props}>
+        <Probe />
+      </OccMap>
+    );
+    const { rerender } = render(screenWith());
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    // The region view holds the flight with a position; the one without a position is never drawn.
+    expect(probe().flightsOnScreen).toEqual(['l:leg-1']);
+
+    // Centred on the flight (x = 720 of the 1440 px map): a panel over the left half hides it, one over the right not.
+    act(() => map.jumpTo({ center: [-68.52, 18.71], zoom: 12 }));
+    rerender(screenWith({ insets: { left: 760 } }));
+    expect(probe().flightsOnScreen).toEqual([]);
+    rerender(screenWith({ insets: { right: 600 } }));
+    expect(probe().flightsOnScreen).toEqual(['l:leg-1']);
+    // The camera leaving the flight takes it off screen, and the flight coming into the view brings it back.
+    act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 12 }));
+    expect(probe().flightsOnScreen).toEqual([]);
+    rerender(screenWith({ insets: { right: 600 }, flights: [{ ...FLIGHTS[0], latitude: 19.45, longitude: -70.55 }, FLIGHTS[1]] }));
+    expect(probe().flightsOnScreen).toEqual(['l:leg-1']);
+    cleanup();
+
+    // A map that started without flights has no flight layer, so flights given later are never on screen.
+    const late = render(<OccMap defaultView="region"><Probe /></OccMap>);
+    const plain = fake.state.liveMaps().at(-1);
+    loadStyle(plain);
+    late.rerender(<OccMap defaultView="region" flights={FLIGHTS}><Probe /></OccMap>);
+    expect(plain.options.style.sources['occ-flights']).toBeUndefined();
+    expect(probe().flightsOnScreen).toEqual([]);
   });
 
   it('draws the selection in the selection slot with the accent colour', () => {

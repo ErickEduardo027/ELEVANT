@@ -5,7 +5,7 @@ import { expect, production, test } from '../support/test.mjs';
 // Mapa de posiciones on the one map engine, with a synthetic OCC session and a stubbed API (fixtures/occApi.mjs), in
 // `next dev` and against a production build (OCC_VISUAL_TARGET=production). Lessons 4 and 7 of PR M1: the zoom
 // buttons and the view presets really move the camera in both builds, and re-reading the positions keeps the same
-// map instead of starting a new one.
+// map instead of starting a new one. The page shows one legend, the map's.
 
 const PAGE = '/admin-occ/positions-map';
 const target = production ? 'production' : 'development';
@@ -73,5 +73,16 @@ test.describe('Mapa de posiciones on the map engine', () => {
     await expect(page.locator('canvas.maplibregl-canvas')).toHaveCount(1);
     await expect(page.locator('.occ-map-engine')).toHaveCount(1);
     expect(isolation.count('tilejson')).toBe(1);
+  });
+
+  test('the map\'s legend is the only one on the page and lists the states on screen', async ({ page, isolation }) => {
+    const { map } = await openPositionsMap(page, isolation);
+    // One «Leyenda», the map's: the page no longer adds its own squares in colours the map does not draw.
+    await expect(page.getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
+    await expect(map.getByRole('button', { name: 'Leyenda', exact: true })).toBeVisible();
+    // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial».
+    await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem'))
+      .toHaveText(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar', /^No oficial/]);
+    await expect(page.getByText('Configuración combinada')).toHaveCount(0);
   });
 });

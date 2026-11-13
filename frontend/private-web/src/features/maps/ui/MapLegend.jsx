@@ -53,6 +53,31 @@ function StateSwatch({ state }) {
   );
 }
 
+// A flight as the map draws it (traffic/flightLayers.js): the solid silhouette, nose up, in the text colour with a 1 px
+// halo of the nav colour, here 16 px long. The halo is a 2 px line drawn under the fill, so 1 px of it shows outside.
+const FLIGHT_SIZE_PX = 16;
+const FLIGHT_TRANSFORM = `translate(2 2) scale(${FLIGHT_SIZE_PX / AIRCRAFT_SILHOUETTE_VIEWBOX})`;
+const FLIGHT_HALO_UNITS = (2 * AIRCRAFT_SILHOUETTE_VIEWBOX) / FLIGHT_SIZE_PX;
+
+function FlightSwatch() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0">
+      <path
+        data-glyph="flight"
+        d={AIRCRAFT_SILHOUETTE_PATH}
+        transform={FLIGHT_TRANSFORM}
+        style={{
+          fill: tokenColour('--occ-text'),
+          stroke: tokenColour('--occ-nav'),
+          strokeWidth: FLIGHT_HALO_UNITS,
+          strokeLinejoin: 'round',
+          paintOrder: 'stroke',
+        }}
+      />
+    </svg>
+  );
+}
+
 // A cluster of stands as the map draws it: a circle on the raised slab with a strong line.
 function GroupSwatch() {
   return (
@@ -64,25 +89,34 @@ function GroupSwatch() {
 
 /**
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
- * the stands drawn one by one on screen and, when stands there are drawn as clusters, what a cluster is; or the
- * `stands` given (inside `bounds` when given). It folds through its own button, whose name stays «Leyenda» while
- * `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to explain.
+ * the flights drawn on screen, the stands drawn one by one there and, when stands there are drawn as clusters, what a
+ * cluster is; or the `stands` given (inside `bounds` when given). It folds through its own button, whose name stays
+ * «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to explain.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
-  const { standsOnScreen, standsGrouped } = useOccMap();
+  const { standsOnScreen, standsGrouped, flightsOnScreen } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
-  const { states, tags, grouped } = useMemo(() => (stands === undefined
-    ? legendEntries({ stands: standsOnScreen, grouped: standsGrouped })
-    : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, standsGrouped]);
+  const { flights, states, tags, grouped } = useMemo(() => (stands === undefined
+    ? legendEntries({ stands: standsOnScreen, flights: flightsOnScreen, grouped: standsGrouped })
+    : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, standsGrouped, flightsOnScreen]);
 
-  if (states.length === 0 && tags.length === 0 && !grouped) return null;
+  if (!flights && states.length === 0 && tags.length === 0 && !grouped) return null;
 
   return (
     <div data-testid="map-legend" className={`relative ${className}`.trim()}>
       <div id={panelId} hidden={!open} className="absolute bottom-full right-0 mb-2 w-max max-w-xs rounded-md border border-occ-line bg-occ-panel-float p-3">
         <ul aria-label={t('legend.title')} className="grid gap-2 text-sm text-occ-text">
+          {flights && (
+            <li className="flex items-center gap-2">
+              <FlightSwatch />
+              <span>
+                <span className="block">{t('legend.flight')}</span>
+                <span className="block text-occ-muted">{t('legend.flightHint')}</span>
+              </span>
+            </li>
+          )}
           {grouped && (
             <li className="flex items-center gap-2">
               <GroupSwatch />

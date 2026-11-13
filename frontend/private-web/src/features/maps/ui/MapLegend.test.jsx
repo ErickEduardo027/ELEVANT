@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
-import { STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
+import { STAND_STATES, STAND_STATE_KEYS, TAGS } from '../../occ-ui/statusVocabulary';
+import { AIRCRAFT_SILHOUETTE_PATH } from '../aircraftSilhouette';
 import OccMap from '../core/OccMap';
+import { standAppearance } from '../stands/standLayers';
+import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { createMapStands, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
 
@@ -16,6 +19,14 @@ const fake = sharedFakeMapLibre();
 const STANDS = createMapStands();
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
 const RAMP_ORDER = ['available', 'planned', 'occupied', 'disabled', 'unverified'];
+// Synthetic flights (invented keys): one over A1, one without a position.
+const FLIGHT_POINT = standPoint('A1');
+const FLIGHTS = [
+  { id: 'l:leg-1', heading: 90, latitude: FLIGHT_POINT[1], longitude: FLIGHT_POINT[0] },
+  { id: 'p:prop-2', heading: null, latitude: null, longitude: null },
+];
+const FLIGHT_ENTRY = 'VueloApunta según su rumbo; al norte si no se conoce';
+const UNOFFICIAL = `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`;
 
 const legendItems = () => within(screen.getByRole('list', { name: /Leyenda|Legend/ })).getAllByRole('listitem')
   .map(item => item.textContent);
@@ -89,6 +100,64 @@ describe('MapLegend', () => {
       `${TAGS.unofficial.en}Internal reference location, not verified`,
     ]);
     expect(legendItems().at(0)).toBe('Free');
+  });
+
+  it('outlines each state as wide and as dashed as the frame the map draws for it', () => {
+    for (const state of STAND_STATE_KEYS) {
+      const view = render(<MapLegend stands={[{ id: 'A1', latitude: FLIGHT_POINT[1], longitude: FLIGHT_POINT[0], status: state, locationSource: 'occ' }]} />);
+      const outline = screen.getByTestId('map-legend').querySelector('li svg rect');
+      // The one line of the frame image the map's frame layer draws for this state (stands/standLayers.js).
+      const [line] = MAP_IMAGE_SHAPES[standAppearance(state).frame.image].ops;
+      expect(Number(outline.style.strokeWidth), state).toBe(line.lineWidth);
+      expect(outline.style.strokeDasharray, state).toBe(line.dash ? line.dash.join(' ') : 'none');
+      view.unmount();
+    }
+    // The four widths of the vocabulary are all there: 1 px, 1.5 px, 2 px and 2.5 px.
+    const widths = STAND_STATE_KEYS.map(state => MAP_IMAGE_SHAPES[standAppearance(state).frame.image].ops[0].lineWidth);
+    expect([...new Set(widths)].sort((first, second) => first - second)).toEqual([1, 1.5, 2, 2.5]);
+  });
+
+  it('lists the flights drawn on screen first, with the aircraft the map draws for them', () => {
+    const screenWith = (props = {}) => (
+      <OccMap flights={FLIGHTS} defaultView="region" {...props}>
+        <MapLegend />
+      </OccMap>
+    );
+    const { rerender } = render(screenWith());
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    // The region view holds the flight with a position: its entry is the whole legend, behind one «Leyenda».
+    expect(legendItems()).toEqual([FLIGHT_ENTRY]);
+    expect(screen.getAllByRole('button', { name: 'Leyenda' })).toHaveLength(1);
+    // The solid silhouette, nose up, in the text colour with the nav halo, as traffic/flightLayers.js paints it.
+    const aircraft = screen.getByTestId('map-legend').querySelector('li svg [data-glyph="flight"]');
+    expect(aircraft.getAttribute('d')).toBe(AIRCRAFT_SILHOUETTE_PATH);
+    expect([aircraft.style.fill, aircraft.style.stroke]).toEqual(['var(--occ-text)', 'var(--occ-nav)']);
+
+    // Far from the flight, or with a panel over it, there is nothing to explain; it comes back with the flight.
+    act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 12 }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    act(() => map.jumpTo({ center: FLIGHT_POINT, zoom: 12 }));
+    expect(legendItems()).toEqual([FLIGHT_ENTRY]);
+    rerender(screenWith({ insets: { left: 760 } }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    // With the stands of a screen: the flight first, then the stand states and their tag.
+    render(
+      <OccMap stands={STANDS} flights={FLIGHTS}>
+        <MapLegend />
+      </OccMap>,
+    );
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(legendItems()).toEqual([FLIGHT_ENTRY, ...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL]);
+    cleanup();
+
+    // In English.
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMap flights={FLIGHTS} defaultView="region"><MapLegend /></OccMap></LanguageScope>);
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(legendItems()).toEqual(['FlightPoints along its heading; north when unknown']);
   });
 
   it('lists only the stands on the screen of its map', () => {

@@ -21,8 +21,9 @@ const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded bo
 
 // The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style. It opens on the
 // region, or on the approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
-// position as symbols, and keeps «Restablecer vista» and «Centrar PUJ». The detail card is docked by the page, so
-// nothing follows the aircraft on screen. `theme` is accepted and ignored: the OCC maps are dark only.
+// position as symbols, which its legend explains while one is on screen, and keeps «Restablecer vista» and «Centrar
+// PUJ». The detail card is docked by the page, so nothing follows the aircraft on screen. `theme` is accepted and
+// ignored: the OCC maps are dark only.
 export default function FlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFlight }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);

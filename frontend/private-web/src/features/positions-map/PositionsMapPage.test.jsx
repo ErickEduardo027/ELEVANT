@@ -193,7 +193,7 @@ describe('PositionsMapPage in English', () => {
     );
   }
 
-  it('renders the toolbar, controls, legend and summary in English', () => {
+  it('renders the toolbar, controls and summary in English', () => {
     renderEnglish();
     expect(screen.getByRole('heading', { name: 'Positions map' })).toBeInTheDocument();
     expect(screen.getByText('PUJ · Punta Cana International Airport')).toBeInTheDocument();
@@ -202,10 +202,12 @@ describe('PositionsMapPage in English', () => {
     expect(screen.getByRole('button', { name: 'Switch to 3D view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Center on PUJ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
-    expect(screen.getByText('Combined configuration')).toBeInTheDocument();
     expect(screen.getByText('Stands')).toBeInTheDocument();
     expect(screen.getAllByText('Available').length).toBeGreaterThan(0);
+    // The page has no legend of its own, nor its combined-stand drawing: the map's legend explains what the map
+    // draws (PositionsMapPage.legend.test.jsx).
+    expect(screen.queryByRole('button', { name: 'Legend' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Combined configuration')).not.toBeInTheDocument();
     expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
   });
 

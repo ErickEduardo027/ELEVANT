@@ -149,14 +149,16 @@ Decisiones de Erick del 12 de noviembre de 2026 que este ADR aplica:
 - *Descartado:* números fijos de zoom por vista (el diseño cortaba en 8, 12 y 15); una vista «Clima»: el clima es una capa (M8).
 
 **9. Una leyenda de lo que hay en pantalla.**
-- `ui/MapLegend.jsx`, con `ui/legendEntries.js`, lista solo lo que hay en pantalla:
-  - los estados de las posiciones dibujadas una a una en la parte del mapa que dejan a la vista los paneles (`insets`): lo que tapan no cuenta, y la leyenda cambia cuando un panel se abre o se pliega. Van en el orden del vocabulario;
+- `ui/MapLegend.jsx`, con `ui/legendEntries.js`, lista solo lo que hay en pantalla, en la parte del mapa que dejan a la vista los paneles (`insets`): lo que tapan no cuenta, y la leyenda cambia cuando un panel se abre o se pliega. Lista:
+  - primero, el avión de los vuelos dibujados ahí: «Vuelo», que apunta según su rumbo, o al norte si no se conoce (Monitoreo de vuelos);
+  - los estados de las posiciones dibujadas una a una, en el orden del vocabulario;
   - «No oficial», cuando una de ellas no la ubicó OCC y está en su ubicación de referencia interna;
   - qué es un grupo, cuando las posiciones en pantalla se agrupan.
-- Cada muestra dibuja la posición como la dibuja el mapa (relleno, contorno, trazo y el símbolo de dentro), así «Ocupada», «Llegando» y «Por liberar» se distinguen sin color.
+- Cada muestra dibuja lo que dibuja el mapa. La de una posición lleva su relleno, el contorno con el ancho y el trazo del marco de su estado, y el símbolo de dentro, así «Ocupada», «Llegando» y «Por liberar» se distinguen sin color. La de un vuelo es la silueta sólida en el color del texto, con su halo.
+- Es la única leyenda del mapa en Mapa de posiciones, Planificación y Monitoreo de vuelos. Mapa de posiciones y Monitoreo ya no montan la suya (`PositionLegend` y `FlightLegend`), que explicaba con colores por estado lo que el mapa ya no dibuja así. La plataforma de la consola conserva su leyenda en línea hasta que U3 retire el dashboard actual, que el carril de mapas no edita.
 - Se pliega con su propio botón, que siempre se llama «Leyenda» e indica con `aria-expanded` si está abierta, y no se muestra cuando no hay nada que explicar. Solo cambia cuando cambia lo que hay en pantalla, nunca por cuadro. Va abajo, en el centro, con el selector de vistas (`ui/MapDock.jsx` y `ui/MapPresetSwitcher.jsx`).
-- *Por qué:* lo pidió Erick: cada mapa muestra su leyenda. Una leyenda de todo explicaría lo que la pantalla no muestra.
-- *Descartado:* una leyenda fija con los siete estados; abrirla con una tecla, porque es un botón (contratos 2.2).
+- *Por qué:* lo pidió Erick: cada mapa muestra su leyenda. Una leyenda de todo explicaría lo que la pantalla no muestra, y dos leyendas con codificaciones distintas se contradirían.
+- *Descartado:* una leyenda fija con los siete estados; abrirla con una tecla, porque es un botón (contratos 2.2); conservar la leyenda de la página junto a la del mapa.
 
 **10. La atribución, escapada y solo con enlaces https.**
 - `core/attribution.js` (`buildAttribution(fuentesActivas, { aircraftDataLabel })`) arma los créditos de cada mapa:
@@ -190,7 +192,7 @@ Decisiones de Erick del 12 de noviembre de 2026 que este ADR aplica:
   Además, el Chrome de la suite no resuelve ningún nombre salvo `localhost`.
 - Qué comprueba:
   - los botones de vista y las teclas `1` a `4` escriben `view=`; un clic en una posición escribe `stand=`, y `Esc` lo limpia;
-  - la leyenda lista solo los estados en pantalla;
+  - la leyenda lista solo los estados en pantalla, y en Mapa de posiciones es la única;
   - la lista de respaldo sin WebGL, y el aviso del mapa base caído con las posiciones todavía clicables;
   - que los botones de zoom y las vistas mueven de verdad la cámara, en `next dev` y en un build de producción (lección 4 de M1);
   - que un doble montaje de Strict Mode deja un solo mapa y la página llega a `networkidle`, y que releer las posiciones conserva el mismo lienzo y pide la TileJSON una sola vez (lección 7);
@@ -231,7 +233,7 @@ Cada uno amplía la nota del Vault de Private Web. Un cambio de estas decisiones
   - las cuatro variables `NEXT_PUBLIC_*_MAP_STYLE_*`.
 
   Con ellos se van los `data-testid` `airfield-map-container`, `google-flight-map-container` y `google-position-map-container`, que ninguna prueba que quede usa. Entran `occ-map`, `occ-map-host`, `map-preset-switcher`, `map-legend` y `map-unavailable`.
-- Los marcadores de los mapas ya no pintan con `STATUS_COLORS`: para los mapas se cierra lo que ADR-0044 dejó pendiente. Las leyendas y el resumen de las páginas (`FlightLegend`, `PositionLegend` y `PositionSummary`) siguen hasta U5.
+- Los marcadores de los mapas ya no pintan con `STATUS_COLORS`: para los mapas se cierra lo que ADR-0044 dejó pendiente. Mapa de posiciones y Monitoreo de vuelos ya no montan su propia leyenda (`PositionLegend` y `FlightLegend`), que explicaba esos colores: la del mapa es la única (decisión 9). Los dos componentes quedan sin montar, y el resumen de Mapa de posiciones (`PositionSummary`) sigue pintando con `STATUS_COLORS`, hasta que U5 rehaga esas pantallas.
 - La consola actual conserva tres mapas (la plataforma, la región y la meteorología), y su vista ampliada monta otro mapa en un diálogo, hasta que U3 la rehaga como un solo `OccMap` a pantalla completa.
 - Sin cambios fuera de AVIAM Web:
   - no cambian la API, el OpenAPI, el cliente compartido ni la base, y no hay migración;
@@ -239,12 +241,12 @@ Cada uno amplía la nota del Vault de Private Web. Un cambio de estas decisiones
   - la CSP no cambia: la TileJSON, las teselas y los glifos siguen en `tiles.openfreemap.org`, que ya estaba permitido, y el worker sigue en el propio origen;
   - solo se despliega AVIAM Web (`frontend/private-web`).
 - El riesgo R7 del Vault («Dependencias cartográficas demo») sigue abierto: OpenFreeMap es un servicio público sin acuerdo de servicio. Cambiar de proveedor es ahora un cambio de código (`OPENFREEMAP_TILEJSON` y `GLYPHS_URL`, en `occStyle.js`) y de la CSP, no una variable.
-- Pruebas nuevas, junto a cada archivo: las del motor y de `OccMap` (con la de `Esc`), las vistas, la selección, la atribución, el estilo, la paleta, los íconos y el SDF; las capas de posiciones, de referencias, de selección y de vuelos; la leyenda y el selector de vistas; los mensajes en español e inglés; el laboratorio y sus escenas; `noSetStyle.test.js` y el mapa falso compartido. Además, la comprobación de `verify-map-chunks.mjs` en `test:delivery` y la suite visual. Se reescribieron las pruebas de `FlightMap.jsx` y `PositionMap.jsx`, y se borraron las de los archivos retirados.
+- Pruebas nuevas, junto a cada archivo: las del motor y de `OccMap` (con la de `Esc`), las vistas, la selección, la atribución, el estilo, la paleta, los íconos y el SDF; las capas de posiciones, de referencias, de selección y de vuelos; la leyenda y el selector de vistas; los mensajes en español e inglés; el laboratorio y sus escenas; `noSetStyle.test.js` y el mapa falso compartido. Además, la comprobación de `verify-map-chunks.mjs` en `test:delivery` y la suite visual. Se reescribieron las pruebas de `FlightMap.jsx` y `PositionMap.jsx`, y se borraron las de los archivos retirados. Mapa de posiciones y Monitoreo de vuelos tienen además una prueba con su mapa real, que exige un solo botón «Leyenda».
 
 **Queda pendiente**
 - **`demotiles.maplibre.org` en la CSP.** Ningún mapa lo usa desde M2, pero sigue permitido. Retirarlo cambia a la vez los tres archivos que afirman la CSP (`src/config/securityHeaders.mjs`, `scripts/test-development-delivery.mjs` y `frontend/scripts/deployment/csp-tool.mjs`), la prueba de este último (`frontend/tests/deployment/test-csp-tool.mjs`) y las dos notas del Vault que describen los orígenes (Private Web e Integraciones externas). Va en un cambio aparte.
 - **El anfitrión que conserva el motor entre rutas** (`core/engineHost.js`, con la cámara entre los módulos del OCC), que el plan aplaza. Hoy cada ruta crea su mapa, sobre el grupo de workers ya precalentado.
-- **Mapa de posiciones** muestra dos leyendas: la del mapa y la de la página (`PositionLegend`), que todavía pinta colores que el mapa ya no dibuja. A 1440×900 su resumen (`PositionSummary`) tapa la escala, el botón de los créditos y las posiciones A1 a A5. Lo rehace U5, que también le pasará al mapa la zona que tapan sus paneles (`insets`).
+- **Mapa de posiciones**: a 1440×900 su resumen (`PositionSummary`) tapa la escala, el botón de los créditos y las posiciones A1 a A5, y todavía pinta sus colores de estado. Lo rehace U5, que también le pasará al mapa la zona que tapan sus paneles (`insets`).
 - **`/map-lab` en producción** responde la página de no encontrada con el estado 200, no con un 404: el layout raíz transmite cada página dentro de un `Suspense`, así que Next manda esa página con el 200 ya enviado y la marca `noindex`. El laboratorio no está en el bundle.
 - **Los mapas viejos del dashboard** (`RegionalTrafficMap.jsx` y `GoesCloudMap.jsx`) conservan su ciclo de vida, `basemapStyles.js` con los estilos publicados de OpenFreeMap y `collapseCompactAttribution.js`, hasta que U3 borre el dashboard actual.
 - **El 3D de M2** es la inclinación de cámara de siempre, más los edificios con altura en la plataforma de la consola. Los aviones 3D, el 3D encendido por defecto en Aeródromo y Rampa, y recordar esa elección llegan con M7.

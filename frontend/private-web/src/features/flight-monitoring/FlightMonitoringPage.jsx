@@ -3,7 +3,6 @@ import FlightToolbar from './components/FlightToolbar';
 import FlightListPanel from './components/FlightListPanel';
 import FlightListDrawer from './components/FlightListDrawer';
 import FlightMap from './components/FlightMap';
-import FlightLegend from './components/FlightLegend';
 import FlightDetailPopover from './components/FlightDetailPopover';
 import FlightToastStack from './components/FlightToast';
 import FlightMonitoringSkeleton from './components/FlightMonitoringSkeleton';
@@ -31,7 +30,8 @@ function MonitoringMapArea({
   const { t } = useTranslation(flightMonitoringMessages);
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
-  // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
+  // Only PUJ has reviewed coordinates; do not center a different station on PUJ. The map's own legend explains what
+  // it draws.
   return (
     <div className="relative min-h-[420px] flex-1">
       {stationCode === 'PUJ' ? <>
@@ -41,7 +41,6 @@ function MonitoringMapArea({
           onSelectFlight={onSelectFlight}
           theme={theme}
         />
-        <FlightLegend />
         {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
           {t('page.noLivePositions')}
         </p>}

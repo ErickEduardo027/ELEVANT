@@ -806,11 +806,16 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   ([`mapSelection.js`](../../frontend/private-web/src/features/maps/core/mapSelection.js))
   ya existe, pero las pantallas siguen pasando al mapa su propia selección
   hasta que U3 y U5 lo adopten.
-- **Leyenda.** Un mapa con posiciones muestra el botón «Leyenda»
+- **Leyenda.** Un mapa con posiciones o vuelos en pantalla muestra el botón
+  «Leyenda»
   ([`MapLegend.jsx`](../../frontend/private-web/src/features/maps/ui/MapLegend.jsx)),
-  que lista solo los estados de las posiciones que hay en pantalla, «No
-  oficial» cuando alguna está en su ubicación de referencia interna y qué es un
-  grupo cuando se agrupan.
+  que lista solo lo que hay en pantalla: el avión de los vuelos, que apunta
+  según su rumbo; los estados de las posiciones; «No oficial» cuando alguna está
+  en su ubicación de referencia interna, y qué es un grupo cuando se agrupan. En
+  Mapa de posiciones, Planificación y Monitoreo de vuelos es la única leyenda
+  del mapa: las páginas ya no muestran la suya, que explicaba con colores por
+  estado lo que el mapa ya no dibuja así. La plataforma de la consola conserva
+  su leyenda en línea hasta que U3 retire el dashboard actual.
 - **Relectura sin remontar el mapa.** Al releer la misma estación (por foco,
   sondeo u `occ_planning`), Mapa de posiciones y Monitoreo conservan sus datos
   en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
@@ -839,9 +844,9 @@ en la API. Los dos mapas auxiliares del dashboard (región y meteorología)
 conservan su ciclo de vida y los estilos publicados de OpenFreeMap hasta que U3
 retire el dashboard actual.
 
-Límites: Mapa de posiciones muestra dos leyendas, la del mapa y la de la
-página, que todavía pinta colores que el mapa ya no dibuja, y a 1440×900 su
-resumen tapa la escala, los créditos y las posiciones A1 a A5; lo rehace U5. El
+Límites: a 1440×900 el resumen de Mapa de posiciones tapa la escala, los
+créditos y las posiciones A1 a A5, y todavía pinta sus colores de estado; lo
+rehace U5. El
 3D de M2 es la inclinación de cámara de siempre: los aviones 3D llegan con M7.
 En producción, `/map-lab` responde la página de no encontrada con el estado
 200. Nada de esto acredita un despliegue ni una revisión visual en el VPS.

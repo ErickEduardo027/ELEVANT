@@ -197,7 +197,7 @@ describe('FlightMonitoringPage in English', () => {
   beforeEach(() => act(() => resetLanguageForTests('en')));
   afterEach(() => act(() => resetLanguageForTests('es')));
 
-  it('renders the toolbar, list, legend and statuses in English', () => {
+  it('renders the toolbar, list and statuses in English', () => {
     render(
       <LanguageScope>
         <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt="2026-08-06T14:00:00-04:00" onRetry={() => {}} />
@@ -209,8 +209,9 @@ describe('FlightMonitoringPage in English', () => {
     expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
     expect(screen.getByText('Only flights related to PUJ')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delayed' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
     expect(screen.getAllByText('Approaching').length).toBeGreaterThan(0);
+    // The page has no legend of its own: the map's explains what the map draws (FlightMonitoringPage.legend.test.jsx).
+    expect(screen.queryByRole('button', { name: 'Legend' })).not.toBeInTheDocument();
     expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
   });
 

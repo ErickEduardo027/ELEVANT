@@ -12,6 +12,8 @@ export const mapMessages = {
       unofficial: 'Ubicación de referencia interna, sin verificar',
       group: 'Grupo de posiciones',
       groupHint: 'Acerca el mapa para ver cada una',
+      flight: 'Vuelo',
+      flightHint: 'Apunta según su rumbo; al norte si no se conoce',
     },
     basemap: {
       degraded: 'No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.',
@@ -42,6 +44,8 @@ export const mapMessages = {
       unofficial: 'Internal reference location, not verified',
       group: 'Group of stands',
       groupHint: 'Zoom in to see each one',
+      flight: 'Flight',
+      flightHint: 'Points along its heading; north when unknown',
     },
     basemap: {
       degraded: 'The base map could not be loaded. The stands and ELEVANT data are shown.',

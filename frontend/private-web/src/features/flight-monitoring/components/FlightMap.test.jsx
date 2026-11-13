@@ -102,8 +102,23 @@ describe('FlightMap', () => {
     expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
     expect(within(screen.getByTestId('map-preset-switcher')).getByRole('button', { name: /Región/ }))
       .toHaveAttribute('aria-pressed', 'true');
-    // Without stands the legend has nothing to explain yet.
+    // With no flight on screen the legend has nothing to explain.
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
+
+  it('shows its legend, the only «Leyenda» of the map, while a flight is on screen', () => {
+    const { map } = renderFlights({ flights: [flight({ id: 1 }), flight({ id: 2, latitude: null, longitude: null })] });
+    loadStyle(map);
+    // The region view holds the flight about 19 NM from PUJ: the legend explains its aircraft.
+    const legend = screen.getByTestId('map-legend');
+    expect(screen.getAllByRole('button', { name: 'Leyenda' })).toEqual([within(legend).getByRole('button', { name: 'Leyenda' })]);
+    expect(within(legend).getAllByRole('listitem').map(item => item.textContent))
+      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
+    // Away from the flight there is nothing to explain; the legend comes back with it.
+    act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 12 }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    act(() => map.jumpTo({ center: [-68.12, 18.78], zoom: 12 }));
+    expect(screen.getByTestId('map-legend')).toBeInTheDocument();
   });
 
   it('opens on approach when the linked flight is within 40 NM', () => {

@@ -1,5 +1,5 @@
 import { occColor } from '../../occ-ui/occPalette';
-import { lngLatOf } from '../core/cameraPresets';
+import { isInBounds, lngLatOf } from '../core/cameraPresets';
 
 // The flights of Monitoreo that carry a position, as one symbol layer of the traffic slot: the solid ELEVANT
 // silhouette turned to its heading on the map, in the text colour and without a colour per state («cabina oscura»:
@@ -36,19 +36,27 @@ export function flightOverlay() {
 }
 
 /**
- * One point per flight with a finite latitude and longitude, keyed by its id as text (`id`, the promoted id) and
- * turned by `heading`. A flight without a known heading points north: no direction is made up for it.
+ * The flights the map draws, those with an id and a finite latitude and longitude, inside `bounds` (`[[west, south],
+ * [east, north]]`); without bounds, every drawn flight. The legend reads them to explain only what is on screen.
+ */
+export function flightsInView(flights = [], bounds = null) {
+  return (flights ?? []).filter(flight => {
+    const point = flight?.id == null ? null : lngLatOf(flight);
+    return point !== null && (bounds === null || isInBounds(point, bounds));
+  });
+}
+
+/**
+ * One point per drawn flight (flightsInView), keyed by its id as text (`id`, the promoted id) and turned by
+ * `heading`. A flight without a known heading points north: no direction is made up for it.
  */
 export function toFlightFeatures(flights = []) {
-  const features = [];
-  for (const flight of flights ?? []) {
-    const point = lngLatOf(flight);
-    if (point === null || flight.id == null) continue;
-    features.push({
+  return {
+    type: 'FeatureCollection',
+    features: flightsInView(flights).map(flight => ({
       type: 'Feature',
       properties: { id: String(flight.id), heading: Number.isFinite(flight.heading) ? flight.heading : 0 },
-      geometry: { type: 'Point', coordinates: point },
-    });
-  }
-  return { type: 'FeatureCollection', features };
+      geometry: { type: 'Point', coordinates: lngLatOf(flight) },
+    })),
+  };
 }

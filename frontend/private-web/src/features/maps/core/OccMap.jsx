@@ -17,7 +17,7 @@ import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
 import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
-import { FLIGHT_SOURCE, flightOverlay, toFlightFeatures } from '../traffic/flightLayers';
+import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
 import { buildAttribution } from './attribution';
 import {
   VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isRetired, lngLatOf, presetForZoom, presetTargets, sameFits,
@@ -58,6 +58,8 @@ const addPadding = (insets, extra) => Object.fromEntries(INSET_SIDES.map(side =>
 const viewKey = (view, terminal) => `${view}:${terminal ?? ''}`;
 const standsKey = stands => stands
   .map(stand => `${standCodeOf(stand)}:${stand.status ?? ''}:${stand.locationSource ?? ''}`).join('|');
+// The legend shows one entry for every drawn flight, so which flights are on screen is all that counts.
+const flightsKey = flights => flights.map(flight => String(flight.id)).join('|');
 
 const requestFrame = callback => (typeof globalThis.requestAnimationFrame === 'function'
   ? globalThis.requestAnimationFrame(callback)
@@ -74,6 +76,7 @@ const initialSnapshot = basemap => ({
   thresholds: null,
   standsOnScreen: EMPTY,
   standsGrouped: false,
+  flightsOnScreen: EMPTY,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -289,20 +292,26 @@ const OccMap = forwardRef(function OccMap({
   // Resolves true once the map has drawn a frame with nothing left to load or move, false without a map.
   const whenIdle = useCallback(() => engineRef.current?.whenIdle() ?? Promise.resolve(false), []);
 
-  // The stands drawn one by one in the area the insets leave in sight (the page's panels hide what lies under them), and
-  // whether stands there are drawn as clusters instead: the legend explains only what is on screen (contracts 2.4).
-  // They change only when the camera, the insets, the thresholds or the stands do; the same list keeps its identity.
-  const updateStandsOnScreen = useCallback(() => {
+  // What is drawn in the area the insets leave in sight (the page's panels hide what lies under them), for the legend,
+  // which explains only what is on screen (contracts 2.4): the stands drawn one by one, whether stands there are drawn
+  // as clusters instead, and the flights drawn there. They change only when the camera, the insets, the thresholds, the
+  // stands or the flights do, and a list keeps its identity while what the legend reads of it stays the same.
+  const updateOnScreen = useCallback(() => {
     const engine = engineRef.current;
     const bounds = engine?.getVisibleBounds(latest.current.padding) ?? null;
     const inView = bounds === null ? EMPTY : standsInView(latest.current.stands, bounds);
-    const { standLabels } = appliedRef.current;
+    const { standLabels, drawsFlights } = appliedRef.current;
     const display = standDisplayAt(engine?.getCamera()?.zoom, store.get().thresholds, { labels: standLabels ?? 'default' });
     const next = display === 'points' ? inView : EMPTY;
-    const previous = store.get().standsOnScreen;
+    // Only a map that started with flights draws them.
+    const flights = bounds === null || !drawsFlights ? EMPTY : flightsInView(latest.current.flights, bounds);
+    const previous = store.get();
     store.set({
-      ...(standsKey(next) === standsKey(previous) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
+      ...(standsKey(next) === standsKey(previous.standsOnScreen) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
       standsGrouped: display === 'grouped' && inView.length > 0,
+      ...(flightsKey(flights) === flightsKey(previous.flightsOnScreen)
+        ? {}
+        : { flightsOnScreen: flights.length === 0 ? EMPTY : flights }),
     });
   }, [store]);
 
@@ -326,10 +335,10 @@ const OccMap = forwardRef(function OccMap({
     }
     store.set({ fits, thresholds, activeView: presetForZoom(engine.getCamera()?.zoom, fits) });
     // New thresholds may draw the stands on screen in another way (hidden, grouped or one by one).
-    updateStandsOnScreen();
+    updateOnScreen();
     const pending = pendingViewRef.current;
     if (fits && pending) applyView(pending.view, { terminal: pending.terminal, animate: false });
-  }, [store, applyView, updateStandsOnScreen]);
+  }, [store, applyView, updateOnScreen]);
 
   const handleCamera = useCallback((camera, details) => {
     if (!camera) return;
@@ -338,9 +347,9 @@ const OccMap = forwardRef(function OccMap({
     // The zoom is written straight to the DOM, without a render: the visual suite reads it to see the camera move.
     rootRef.current?.setAttribute('data-occ-zoom', camera.zoom.toFixed(2));
     store.set({ activeView: presetForZoom(camera.zoom, store.get().fits) });
-    updateStandsOnScreen();
+    updateOnScreen();
     latest.current?.onCameraChange?.(camera, details);
-  }, [store, updateStandsOnScreen]);
+  }, [store, updateOnScreen]);
 
   const handleStatus = useCallback(status => {
     store.set({ engineStatus: status.engine, basemapStatus: status.basemap });
@@ -458,17 +467,18 @@ const OccMap = forwardRef(function OccMap({
     appliedRef.current.padding = padding;
     engine.setInsets(padding);
     refit();
-    updateStandsOnScreen();
-  }, [padding, refit, updateStandsOnScreen]);
+    updateOnScreen();
+  }, [padding, refit, updateOnScreen]);
 
   // New stands may change what frames the views and what is on screen.
   useEffect(() => {
     refit();
   }, [targets, refit]);
 
+  // New stands or flights may change what is on screen: a flight that moves in or out of sight changes the legend.
   useEffect(() => {
-    updateStandsOnScreen();
-  }, [stands, updateStandsOnScreen]);
+    updateOnScreen();
+  }, [stands, flights, updateOnScreen]);
 
   // The drawn stands and flights: one setData when what they draw changes, never a new map. A re-read of the same
   // positions in new objects writes nothing.
@@ -564,6 +574,7 @@ const OccMap = forwardRef(function OccMap({
     thresholds: snapshot.thresholds,
     standsOnScreen: snapshot.standsOnScreen,
     standsGrouped: snapshot.standsGrouped,
+    flightsOnScreen: snapshot.flightsOnScreen,
     requestView,
     flyToPreset,
     flyToStand,
