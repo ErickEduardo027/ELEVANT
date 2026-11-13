@@ -216,7 +216,10 @@ a `ff066d47`, también posterior al commit verificado;
   de CI lo corre.
 - **Pruebas automáticas.** Unitarias del catálogo, el plan de la carga, el
   sorteo, la elegibilidad, el manejador de la carga y la regla del push-back; de
-  arquitectura, la paridad del catálogo con el conjunto de datos del mapa; de la
+  arquitectura, la paridad del catálogo con el conjunto de datos del mapa, que
+  solo corre Backend CI (un cambio solo en private-web corre solo Web clients
+  CI, y por eso la prueba del tablero de private-web fija la misma lista de 41
+  posiciones con su terminal); de la
   API, la carga y la consulta de las opciones; 8 pruebas SQL de la carga y de las
   posiciones elegibles
   ([carga](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.DemoStation.cs))

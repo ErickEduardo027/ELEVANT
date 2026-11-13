@@ -686,13 +686,17 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
 | OCC → Mapa de posiciones y mapa de Planificación | Leen el tablero de posiciones, que da libre una posición en cuanto la tablet registra el `PUSHBACK` de su vuelo: ya no lo lista en la posición ni entre los vuelos sin posición. Planificación, los documentos y la tablet siguen nombrando la posición del vuelo, y «Liberar» sigue cerrando la asignación a mano. |
 
 La B33, retirada por la enmienda AIP de 2026, lleva `retired: true` en el
-conjunto de datos del mapa, y el mapa de rampa del Panorama la filtra por esa
-marca, no por su código. Fuentes:
+conjunto de datos del mapa. El mapa de rampa del Panorama, el Mapa de
+posiciones y el mapa de Planificación la omiten por esa marca, no por su
+código: de la referencia dibujan las 41 posiciones que crea la carga. Los dos
+últimos leen el tablero de posiciones y dibujan además las que OCC colocó,
+también una B33, donde OCC la puso. Fuentes:
 [panel](../../frontend/private-web/src/features/governance/DemoFlightsPanel.jsx),
 [motivos de una posición](../../frontend/private-web/src/features/governance/demoStandReasons.js),
 [servicio](../../frontend/private-web/src/services/demoFlightsService.js),
-[datos del mapa](../../frontend/private-web/src/features/dashboard/positionsData.js) y
-[posiciones del tablero](../../frontend/private-web/src/features/dashboard/dashboardPositions.js).
+[datos del mapa](../../frontend/private-web/src/features/dashboard/positionsData.js),
+[posiciones del tablero](../../frontend/private-web/src/features/dashboard/dashboardPositions.js) y
+[mapeadores del mapa](../../frontend/private-web/src/features/positions-map/positionsMapMappers.js).
 
 ## Sistema visual NOC del OCC (PR U1)
 

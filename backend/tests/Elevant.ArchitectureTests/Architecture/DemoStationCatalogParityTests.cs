@@ -5,10 +5,13 @@ using Elevant.Application.Operations.DemoStation;
 namespace Elevant.ArchitectureTests.Architecture;
 
 /// <summary>
-/// ADR-0041, contracts 1.2: the Punta Cana stands the API creates and the stands the web's map draws are one list. The
-/// map's rows are <c>RAMP_POSITIONS</c> in <c>frontend/private-web/src/features/dashboard/positionsData.js</c>, matched
-/// by the normalized code; a row marked <c>retired: true</c> stays there as history, is never drawn and is not in the
-/// catalogue.
+/// ADR-0041, contracts 1.2: the Punta Cana stands the API creates and the reference stands the web's maps draw are one
+/// list. The map's rows are <c>RAMP_POSITIONS</c> in <c>frontend/private-web/src/features/dashboard/positionsData.js</c>,
+/// matched by the normalized code; a row marked <c>retired: true</c> stays there as history and is not in the catalogue,
+/// and no map draws it from the reference (<c>dashboardPositions.js</c> and the mappers in
+/// <c>positions-map/positionsMapMappers.js</c> skip it; the maps that read the positions board draw a stand with that
+/// code that OCC placed, where OCC put it). Only Backend CI runs this test: <c>dashboardPositions.test.js</c> pins the
+/// same list for a change to private-web alone, which runs only Web clients CI.
 /// </summary>
 public sealed partial class DemoStationCatalogParityTests
 {
