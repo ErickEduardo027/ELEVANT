@@ -415,7 +415,9 @@ public sealed class OccPlanningController(
             service.ContractedQuantity,
             service.ExecutedQuantity,
             service.BillingUnit,
-            service.Status)).ToArray());
+            service.Status)).ToArray(),
+        // ADR-0041: true or absent, never false, so a client deployed before the mark keeps validating.
+        turnaround.IsDemo == true ? true : null);
 
     private static OccFlightLegResponse? Map(OccFlightLegData? leg) => leg is null
         ? null

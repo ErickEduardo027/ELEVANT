@@ -79,6 +79,19 @@ describe("OCC flight feed client (ADR-0028)", () => {
       kind: "malformed-response" });
   });
 
+  it("accepts isDemo absent or true and rejects false, null and a non-boolean (ADR-0041)", async () => {
+    const read = (mark: Record<string, unknown>) => createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => Response.json({ ...feed, proposals: [proposal, { ...proposal, proposalId: departureId,
+        direction: "Departure", flightNumber: "ZZ9002", suggestedDepartureId: null, ...mark }] }) })
+      .getOccFlightFeed(stationId, "2026-11-03");
+    // A list without demo flights is what an older server sends: the key never appears.
+    await expect(read({})).resolves.toMatchObject({ proposals: [{ flightNumber: "ZZ161" }, { flightNumber: "ZZ9002" }] });
+    const demo = await read({ isDemo: true });
+    expect(demo.proposals.map(item => item.isDemo)).toEqual([undefined, true]);
+    for (const isDemo of [false, null, "true", 1, {}])
+      await expect(read({ isDemo })).rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("rejects unknown fields, statuses and an arrival paired with itself", async () => {
     const one = (body: unknown) => createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json(body) });

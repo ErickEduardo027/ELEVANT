@@ -11,6 +11,7 @@ using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Integration;
 using Elevant.Persistence.Realtime;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -470,7 +471,7 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                                         context.Set<StandAssignment>().Any(item => item.TurnaroundId == turnaround.Id && item.AssignedTo == null &&
                                             turnaround.OperationDate < operationDate && turnaround.CurrentStatus == TurnaroundStatus.InProgress))
                                  select new { turnaround.Id, turnaround.PublicId, turnaround.OperationCode, Airline = airline.Name,
-                                     turnaround.AircraftRegistration, turnaround.CurrentStatus })
+                                     turnaround.AircraftRegistration, turnaround.CurrentStatus, turnaround.ExternalProvider })
             .ToArrayAsync(cancellationToken);
         var ids = turnarounds.Select(item => item.Id).ToArray();
         var legs = (await context.FlightLegs.AsNoTracking().Where(item => ids.Contains(item.TurnaroundId))
@@ -490,7 +491,7 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             return new OccPositionTurnaroundData(turnaround.PublicId, turnaround.OperationCode, turnaround.Airline,
                 turnaround.AircraftRegistration, arrival?.FlightNumber, departure?.FlightNumber, arrival?.ScheduledAt,
                 arrival?.ActualAt, departure?.ScheduledAt, assignmentOf.GetValueOrDefault(id)?.AssignedFrom,
-                turnaround.CurrentStatus.ToString());
+                turnaround.CurrentStatus.ToString(), DemoFlightGroups.Mark(turnaround.ExternalProvider));
         }
 
         var occupiedNow = assignments.Select(item => new OccupiedStand(item.StandId,

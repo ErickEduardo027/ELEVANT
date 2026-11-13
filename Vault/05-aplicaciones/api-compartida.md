@@ -166,6 +166,7 @@ está desfasada frente a ese código. Detalle en el
 | CORS | Orígenes exactos de las dos webs. | Mobile nativo no depende de CORS; CORS no autentica. |
 | Rate limiting | Ventana fija por dirección de la conexión, con un límite menor para crear sesiones. | Protección técnica, no autorización. |
 | `CardPayments:Mode` | Pasarela de tarjeta. | `Disabled` por defecto; `Simulated` solo arranca en Development, Test o Testing. |
+| `DemoFlights:Mode` | Vuelos demo de Superadministración. | *Posterior al commit verificado (código de `cba00f73`):* `Disabled` por defecto y en `appsettings.Production.json`; `Enabled`, el valor de `appsettings.Development.json`, solo arranca en Development, Test o Testing ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)). |
 | `AeroDataBox:*` y `OpenSky:*` | Proveedores de vuelos y tráfico. | Apagados por defecto; la clave solo llega por configuración secreta. |
 | SMTP y almacenamiento S3 | Correo y bytes privados. | Secretos fuera de Git. |
 

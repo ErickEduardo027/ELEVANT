@@ -143,6 +143,19 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_RULE_REASONS).toContain(reason);
   });
 
+  it("keeps the demo flight codes (ADR-0041)", () => {
+    // Off in this environment, a request outside the form's rules, an unknown airport, the limit of active flights and
+    // a flight already ended; the station, airline, contract, aircraft type and stand keep the codes of their lists.
+    for (const code of ["demo_flights_unavailable", "invalid_demo_flight", "demo_origin_unknown", "demo_flight_limit_reached",
+      "demo_flight_closed", "station_unavailable", "airline_inactive", "contract_not_in_force", "contract_ambiguous",
+      "aircraft_type_unavailable", "stand_unavailable", "forbidden", "not_found", "version_conflict", "idempotency_conflict",
+      "idempotency_key_required"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A refused stand names the rule it breaks.
+    for (const reason of ["stand_taken", "stand_narrowbody_only", "neighbour_widebody"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

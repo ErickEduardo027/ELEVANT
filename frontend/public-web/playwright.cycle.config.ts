@@ -3,7 +3,9 @@ import { defineConfig } from "@playwright/test";
 // Full operating cycle (ADR-0037) against the real local stack: compose.local.yml plus
 // compose.local.e2e.yml (Garage, CORS, request limits) and Mailpit. Not part of CI.
 //   E2E_CYCLE_ENV_FILE=<stack .env> E2E_CYCLE_API=http://127.0.0.1:8080 npm run test:e2e:cycle
-// One project per cycle phase, chained: each phase continues the run the previous one started.
+// One project per cycle phase, chained: each phase continues the run the previous one started. The project «demo»
+// (the demo flight, ADR-0041) needs no phase: it uses the seeded airline «Demo Airlines» and its contract, and runs
+// alone with --project=demo.
 // Only the list reporter and no traces: traces and the HTML report would keep typed passwords.
 const publicPort = Number(process.env.E2E_CYCLE_PUBLIC_PORT ?? 4174);
 const privatePort = Number(process.env.E2E_CYCLE_PRIVATE_PORT ?? 4175);
@@ -34,6 +36,7 @@ export default defineConfig({
     { name: "fase2", testMatch: /fase2-.*\.spec\.ts/, dependencies: ["fase1"] },
     { name: "fase3", testMatch: /fase3-.*\.spec\.ts/, dependencies: ["fase2"] },
     { name: "fase4", testMatch: /fase4-.*\.spec\.ts/, dependencies: ["fase3"] },
+    { name: "demo", testMatch: /demo-.*\.spec\.ts/ },
   ],
   webServer: [
     {

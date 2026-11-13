@@ -1,5 +1,6 @@
 import { PUJ_COORDINATES } from '../flight-monitoring/flightMonitoringMappers';
 import { createTranslator } from '../../i18n/languageStore';
+import { normalizeStandCode } from '../../services/standCodes';
 import { positionsMapMessages } from './positionsMapMessages';
 
 const spanish = createTranslator(positionsMapMessages, 'es');
@@ -120,11 +121,11 @@ export function mapTurnaroundsToRampPositions(rampPositions, turnarounds = [], n
   });
 }
 
-/** Stand codes in the database pad the number (A01); the map uses A1. */
-export function mapStandCode(code) {
-  const match = /^([A-Z]+)0*(\d+)$/.exec(String(code ?? '').toUpperCase());
-  return match ? `${match[1]}${match[2]}` : String(code ?? '').toUpperCase();
-}
+/**
+ * Stand codes in the database pad the number (A01); the map uses A1. The rule is the one the API applies
+ * (ADR-0041): this name stays for the map's callers.
+ */
+export const mapStandCode = normalizeStandCode;
 
 function occupancyTurnaround(item) {
   return {
@@ -164,6 +165,8 @@ export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new D
       airline: current?.airlineName ?? null,
       aircraftRegistration: current?.aircraftRegistration ?? null,
       aircraftType: null,
+      // A demo flight the superadministrator triggered (ADR-0041): the drawer labels it «Demo».
+      isDemo: current?.isDemo === true,
       assignedAgent: stand?.coveredBy?.length ? stand.coveredBy.join(', ') : null,
       hasBoardingBridge: stand?.hasBoardingBridge ?? false,
       narrowbodyOnly: stand?.narrowbodyOnly ?? false,

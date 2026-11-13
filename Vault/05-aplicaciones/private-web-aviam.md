@@ -653,6 +653,26 @@ sesión no trae la zona de cada estación. Fuentes:
 [reportes](../../frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx) y
 [charters](../../frontend/private-web/src/features/finance/charters/ChartersPage.jsx).
 
+## Vuelo demo (OCC a nivel NOC, PR A1)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+`cba00f73`, que esa verificación no cubre
+([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)).
+
+| Pantalla | Comportamiento |
+| --- | --- |
+| Superadministración → Configuración | El panel «Vuelo demo», encima de «Correo del sistema», dice si el entorno lo permite. «Disparar vuelo demo» pide estación, aerolínea con contrato vigente hoy, origen, destino («El mismo aeropuerto» por defecto), tipo de avión, «Sin posición» o una posición libre, «Llega a la posición en (minutos)» (de 2 a 30, con atajos de 3, 5, 8 y 15) y «Tiempo en tierra (minutos)» (de 20 a 240, 60 por defecto). «Vuelos demo de hoy» muestra cada vuelo con su fase («En aproximación», «Aterrizó, rueda a la posición», «En posición», «Saliendo», «Despegó», «Terminado» o «Cancelado») y su cuenta regresiva, calculadas en el navegador con el reloj del servidor; si OCC ya lo importó, con qué código y en qué posición, y «Cancelar vuelo» antes de tocar pista o «Terminar demo» después, con su confirmación y su `Idempotency-Key`. Se relee cada 5 segundos mientras un avión se mueve y cada 20 si no, nunca con la pestaña oculta. Las opciones del formulario cambian con la hora (el aviso `crosses_local_midnight`, las aerolíneas con contrato vigente hoy y las posiciones libres): se releen con la lista cuando tienen 5 minutos, y al volver a la pestaña el panel relee las opciones y la lista enseguida. Cada código se explica en español; apagado, el panel dice que los vuelos demo solo funcionan en el entorno de desarrollo. |
+| OCC → Planificación → «Importar vuelos» | Los tramos de un vuelo demo llevan la etiqueta «Demo». El diálogo relee con `occ_planning` sin perder lo elegido; la posición cuyo código normalizado coincide con la puerta de la llegada demo viene preseleccionada («Posición (sugerida)»: `A01` es `A1`), y las posiciones van en orden natural (A1, A2, A10). Un vuelo demo no necesita «Actualizar ahora». |
+| OCC → Planificación, Mapa de posiciones y Panorama | La tarjeta del vuelo, el cajón de la posición y la fila del tablero muestran «Demo» cuando la API marca la escala con `isDemo`: la palabra sobre rayas a 45°, sin color ([etiqueta](../../frontend/private-web/src/features/occ-ui/DemoTag.jsx)). |
+
+Todavía no existen la tarjeta «Posiciones de Punta Cana» ni la posición «Al
+azar» (PR A2), ni el avión demo en los mapas. Fuentes:
+[panel](../../frontend/private-web/src/features/governance/DemoFlightsPanel.jsx),
+[estado del vuelo](../../frontend/private-web/src/features/governance/demoFlightStatus.js),
+[servicio](../../frontend/private-web/src/services/demoFlightsService.js),
+[códigos de posición](../../frontend/private-web/src/services/standCodes.js) y
+[diálogo de importación](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx).
+
 ## Sistema visual NOC del OCC (PR U1)
 
 Posterior al commit verificado de esta nota: esta sección describe el código del

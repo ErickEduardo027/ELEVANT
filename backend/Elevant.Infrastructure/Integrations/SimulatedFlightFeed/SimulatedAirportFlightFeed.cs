@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Integrations;
 using Elevant.Application.Common;
+using Elevant.Application.Integration.DemoFlights;
 using Elevant.Domain.Enumerations;
 
 namespace Elevant.Infrastructure.Integrations.SimulatedFlightFeed;
@@ -23,16 +24,11 @@ public sealed class SimulatedAirportFlightFeed(ISimulatedFlightFeedCatalog catal
 
     private static readonly string[] Models = ["Boeing 737-800", "Airbus A320", "Airbus A330-300", "Embraer 190"];
 
-    /// <summary>Real airports with their public reference data, so imported flights have known counterparts.</summary>
-    private static readonly FeedAirport[] Airports =
-    [
-        new("MIA", "KMIA", "Miami International Airport", "Miami", "US", "America/New_York", 25.7959m, -80.2870m),
-        new("JFK", "KJFK", "John F. Kennedy International Airport", "New York", "US", "America/New_York", 40.6413m, -73.7781m),
-        new("YYZ", "CYYZ", "Toronto Pearson International Airport", "Toronto", "CA", "America/Toronto", 43.6777m, -79.6248m),
-        new("MAD", "LEMD", "Adolfo Suárez Madrid-Barajas Airport", "Madrid", "ES", "Europe/Madrid", 40.4983m, -3.5676m),
-        new("BOG", "SKBO", "El Dorado International Airport", "Bogotá", "CO", "America/Bogota", 4.7016m, -74.1469m),
-        new("SDQ", "MDSD", "Las Américas International Airport", "Santo Domingo", "DO", "America/Santo_Domingo", 18.4297m, -69.6689m),
-    ];
+    /// <summary>
+    /// Real airports with their public reference data, so imported flights have known counterparts: the catalogue of
+    /// the demo flights (ADR-0041), in its order.
+    /// </summary>
+    private static readonly FeedAirport[] Airports = [.. DemoAirports.All];
 
     public string Provider => ProviderName;
 

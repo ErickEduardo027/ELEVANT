@@ -493,9 +493,12 @@ export default function PlanningDrawer({
             <ReleaseAgent flight={flight} onReleased={onAgentReleased} onStale={onStale} />
           </Section>
 
-          <HandoverAgent key={flight.turnaroundId} flight={flight} onHandedOver={onAgentHandedOver} onStale={onStale} />
+          {/* Each keyed by its flight, so its state resets when OCC opens another one; the prefixes keep the two
+              sibling keys apart (one shared key made React warn and could drop or duplicate a section). */}
+          <HandoverAgent key={`handover-${flight.turnaroundId}`} flight={flight} onHandedOver={onAgentHandedOver}
+            onStale={onStale} />
 
-          {flight.operation?.id && <AttendanceSection key={flight.turnaroundId} flight={flight}
+          {flight.operation?.id && <AttendanceSection key={`attendance-${flight.turnaroundId}`} flight={flight}
             dataRevision={dataRevision} />}
 
           {/* 3-G: OCC follows and manages the operation's live incidents from the flight too. */}
