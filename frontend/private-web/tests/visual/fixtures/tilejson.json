@@ -1,0 +1,23 @@
+{
+  "tilejson": "3.0.0",
+  "name": "OCC visual suite base map (synthetic)",
+  "description": "Synthetic TileJSON with the shape of the OpenFreeMap planet. The visual suite answers its tiles itself (the invented world of tests/visual/support/syntheticTiles.mjs, empty tiles, or failing ones), so no tile reaches the network.",
+  "attribution": "Mapa base sintético de las pruebas visuales",
+  "version": "1.0.0",
+  "scheme": "xyz",
+  "tiles": ["https://tiles.openfreemap.org/planet/20261101_000000_pt/{z}/{x}/{y}.pbf"],
+  "minzoom": 0,
+  "maxzoom": 14,
+  "bounds": [-180, -85.05113, 180, 85.05113],
+  "center": [-68.3634, 18.5674, 10],
+  "vector_layers": [
+    { "id": "aerodrome_label", "fields": { "iata": "String", "name": "String" } },
+    { "id": "aeroway", "fields": { "class": "String", "ref": "String" } },
+    { "id": "boundary", "fields": { "admin_level": "Number", "maritime": "Number" } },
+    { "id": "building", "fields": {} },
+    { "id": "place", "fields": { "capital": "Number", "class": "String", "name": "String" } },
+    { "id": "transportation", "fields": { "class": "String" } },
+    { "id": "water", "fields": { "class": "String" } },
+    { "id": "water_name", "fields": { "class": "String", "name": "String" } }
+  ]
+}

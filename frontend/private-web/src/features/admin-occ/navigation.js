@@ -49,11 +49,12 @@ export const ADMIN_OCC_NAVIGATION = [
   { id: ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS, administratorsOnly: true, label: 'Usuarios del departamento', path: `${ADMIN_OCC_BASE_PATH}/users`, icon: UsersIcon, description: 'Usuarios, agentes de rampa, plantillas y solicitudes de alta del Centro de Operaciones.' },
 ];
 
-// Agrupación visual del riel OCC. Solo ordena los módulos ya permitidos por
-// `allowedNavigation`; no concede ni oculta acceso.
-export const OCC_NAV_SECTIONS = [
-  { id: 'monitoring', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD, ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, ADMIN_OCC_MODULE_IDS.POSITIONS_MAP] },
-  { id: 'operations', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.COVERAGE, ADMIN_OCC_MODULE_IDS.MASTER_DATA, ADMIN_OCC_MODULE_IDS.DEVICES, ADMIN_OCC_MODULE_IDS.READY_CONTRACTS, ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS, ADMIN_OCC_MODULE_IDS.EXPENSES] },
-  { id: 'communication', items: [ADMIN_OCC_MODULE_IDS.NOTIFICATIONS, ADMIN_OCC_MODULE_IDS.CHAT] },
-  { id: 'administration', items: [ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS] },
-];
+// Agrupación visual del riel OCC según la jornada del controlador (diseño C.2):
+// vigilar, planificar, revisar y preparar la estación. Solo ordena los módulos
+// ya permitidos por `allowedNavigation`; no concede ni oculta acceso.
+export const OCC_NAV_SECTIONS = Object.freeze([
+  { id: 'live', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD, ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, ADMIN_OCC_MODULE_IDS.POSITIONS_MAP, ADMIN_OCC_MODULE_IDS.CHAT] },
+  { id: 'plan', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.COVERAGE, ADMIN_OCC_MODULE_IDS.READY_CONTRACTS] },
+  { id: 'review', items: [ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS, ADMIN_OCC_MODULE_IDS.NOTIFICATIONS] },
+  { id: 'station', items: [ADMIN_OCC_MODULE_IDS.MASTER_DATA, ADMIN_OCC_MODULE_IDS.DEVICES, ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS, ADMIN_OCC_MODULE_IDS.EXPENSES] },
+].map(section => Object.freeze({ ...section, items: Object.freeze(section.items) })));

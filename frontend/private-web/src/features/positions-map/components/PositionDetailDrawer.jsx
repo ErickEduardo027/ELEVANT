@@ -24,8 +24,11 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   const { t, language, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
+    // Escape closes the drawer first and is marked as used, so the map keys leave the selection for the next one.
     function handleKeyDown(event) {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);

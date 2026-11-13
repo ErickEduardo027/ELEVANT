@@ -95,7 +95,7 @@ La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 | Responsabilidad UI | Presentar vistas internas, capturar intenciones y manejar estados de interacción. |
 | Autoridad real | Debe residir en la API para identidad, roles, station scope, reglas y datos. |
 | Persistencia del cliente | La sesión del prototipo usa almacenamiento del navegador; no es una frontera de autorización. |
-| Integración externa | El navegador no conecta directamente a SQL Server, FlightAware ni proveedores de datos aeronáuticos. Como excepción visual verificable, los mapas cargan estilos y teselas cartográficas públicas de MapLibre/OpenFreeMap permitidas explícitamente por CSP. |
+| Integración externa | El navegador no conecta directamente a SQL Server, FlightAware ni proveedores de datos aeronáuticos. Como excepción visual verificable, los mapas cargan estilos y teselas cartográficas públicas de MapLibre/OpenFreeMap permitidas explícitamente por CSP. *Posterior al commit verificado (PR M2):* los mapas del OCC llevan su propio estilo en el bundle y de OpenFreeMap solo piden teselas y glifos; los dos mapas auxiliares del dashboard conservan los estilos publicados hasta U3. |
 | Madurez | Preview técnico ejecutable con cobertura de UI amplia e integración de negocio incompleta. |
 
 ## Stack actual
@@ -135,9 +135,9 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
-En la rama `feat/adminocc-redesign`, el espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en Monitoreo, Operación, Comunicación y Administración, con la marca oficial completa, y una barra contextual con el módulo activo, la hora UTC del reloj del equipo, el idioma (español/inglés) y los avisos. Esa rama dibujaba el riel en azul marino y ofrecía el cambio de tema; desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
+El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
-En el árbol local posterior al commit verificado, «Operación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
+En el árbol local posterior al commit verificado, «Estación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
 
 OCC opera solo Punta Cana: todas sus rutas toman el alcance `PUJ` que trae la sesión y ya no ofrecen selector de estación. Si la cuenta no tiene ese alcance, cada módulo muestra su estado sin estación autorizada y no consulta la API; la autorización sigue en el servidor. Fuente: [alcance PUJ](../../frontend/private-web/src/features/admin-occ/useOccStation.js).
 
@@ -167,13 +167,16 @@ En esta rama local, la certificación de la imagen AVIAM compara la CSP generada
 
 La CSP permite los orígenes GIBS e IEM; OpenSky solo se consulta desde el servidor. `GET /api/v1/occ/traffic/aircraft` exige personal AVIAM con `operations.planning.read` y alcance PUJ. El recuadro 17–21° N, 73–67° O es fijo, la caché por instancia impone 120 segundos entre consultas y permite hasta 10 minutos de copia desactualizada durante fallos. OAuth2 usa configuración privada, desactivada por defecto; no se han aportado credenciales ni se ha validado una conexión OpenSky real en esta rama. El acuerdo escrito para uso operacional y su alcance deben verificarse antes de activarla. La API sanitiza errores y no expone secretos. No cambia esquema ni permisos de negocio. Fuentes locales: [controlador](../../backend/Elevant.Api/Controllers/OccTrafficController.cs), [adaptador](../../backend/Elevant.Infrastructure/Integrations/OpenSky/OpenSkyAircraftTrafficSource.cs), [cliente](../../packages/api-client/src/client.ts) y [panel](../../frontend/private-web/src/features/dashboard/console/RegionalTrafficPanel.jsx).
 
-Fuentes de implementación local: [vista](../../frontend/private-web/src/features/dashboard/DashboardPage.jsx), [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js), [meteorología](../../frontend/private-web/src/features/dashboard/console/WeatherPanel.jsx), [teselas](../../frontend/private-web/src/services/satelliteService.js), [capas de posiciones](../../frontend/private-web/src/features/positions-map/components/positionMapLayers.js) y [CSP](../../frontend/private-web/src/config/securityHeaders.mjs).
+Fuentes de implementación local: [vista](../../frontend/private-web/src/features/dashboard/DashboardPage.jsx), [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js), [meteorología](../../frontend/private-web/src/features/dashboard/console/WeatherPanel.jsx), [teselas](../../frontend/private-web/src/services/satelliteService.js), [capas de posiciones](../../frontend/private-web/src/features/maps/stands/standLayers.js) y [CSP](../../frontend/private-web/src/config/securityHeaders.mjs).
 
 La validación del rediseño anterior (27/27 pruebas enfocadas, test:delivery 22/22, lint, typecheck y build; navegador 375–1440 px) precede a esta integración. Sus resultados no acreditan las pruebas ni una conexión OpenSky real de esta rama. Los controles nuevos se registran en el handoff; la metadata de verificación superior conserva su commit histórico. Ninguno de estos cambios locales se ha desplegado.
 Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estación. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
 
-En esta rama, las vistas de PUJ usan MapLibre sin cambiar a Google por una
-variable local. El mapa base de Monitoreo se monta aunque ningún vuelo tenga
+En esta rama, las vistas de PUJ usan MapLibre. *Posterior al commit verificado:*
+desde el PR M2 ya no existen las variantes de Google Maps ni su cargador, y los
+mapas de PUJ comparten un solo motor (ver
+[Mapas del OCC en un solo motor (PR M2)](#mapas-del-occ-en-un-solo-motor-pr-m2)).
+El mapa base de Monitoreo se monta aunque ningún vuelo tenga
 coordenadas verificadas, con un aviso que distingue cartografía de telemetría.
 El worker y el módulo compartido del paquete se copian juntos desde la
 dependencia fijada antes de desarrollo y build; la certificación comprueba que
@@ -602,9 +605,10 @@ el día UTC del navegador.
 | Gestión Humana → Empleados y perfiles de rampa | La baja y el traslado envían una clave y explican qué se libera; un agente con una operación en curso o devuelta no se da de baja ni sale de la rampa (`agent_has_operation_in_progress`). |
 
 La campana muestra los avisos nuevos con su título y destino: los del ciclo del
-contrato para Contratos, los vencimientos de documentos para Gestión Humana, y
-`agent_released` y `agent_document_not_current` para OCC, que abren
-Planificación. Fuentes:
+contrato para Contratos y los vencimientos de documentos para Gestión Humana.
+En OCC, `agent_released` y `agent_document_not_current` abren Planificación;
+desde el PR U2 no los muestra una campana, sino el cajón «Alertas y avisos» de
+la barra de estado ([Marco del OCC](#marco-del-occ-pr-u2)). Fuentes:
 [ciclo de vida](../../frontend/private-web/src/features/contracts/agreements/ContractLifecyclePanel.jsx),
 [permisos](../../frontend/private-web/src/features/contracts/permits/AirlinePermitsPage.jsx),
 [feed](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx),
@@ -639,10 +643,13 @@ las horas locales, de
 | Finanzas → Charters | «Reabrir cotización», con motivo, para un charter con el prepago confirmado. |
 | Finanzas → Por facturar | Explica el servicio que OCC excluyó en la revisión y el que lleva un cargo que su contrato excluye. Un servicio en excepción facturable que no está listo bloquea su operación, y al emitir la e-CF el rechazo por esos dos motivos se explica en español. «Servicios aprobados», que también lo explicaba, se retiró en la fase 4. |
 
-La campana de OCC muestra `flight_cancelled_by_provider`,
-`flight_diverted_by_provider`, `stand_change_unassigned` y
-`contract_not_in_force`, que abren Planificación, y Finanzas recibe
-`charter_cancelled`, que abre Charters. Donde la respuesta no trae la zona de la
+En OCC, `flight_cancelled_by_provider`, `flight_diverted_by_provider`,
+`stand_change_unassigned` y `contract_not_in_force` abren Planificación. Antes
+los mostraba la campana; desde el PR U2, posterior al commit verificado, el
+botón de alertas de la barra de estado los cuenta como «Atención» y abre el
+cajón «Alertas y avisos», donde cada uno ofrece «Recibido» y «Abrir»
+([Marco del OCC](#marco-del-occ-pr-u2)). Finanzas recibe `charter_cancelled`,
+que abre Charters. Donde la respuesta no trae la zona de la
 estación (por ejemplo, «Generado» de los reportes o la consulta de los reportes
 de personal), la web usa el calendario de `America/Santo_Domingo`, porque la
 sesión no trae la zona de cada estación. Fuentes:
@@ -788,6 +795,216 @@ comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
 mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
 revisión visual en el VPS.
 
+## Marco del OCC (PR U2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U2 «Marco del OCC» (`1afe6820`, `debecb1e`, `2d30d7fe` y `a7ef7a4f`), que esa
+verificación no cubre. Las decisiones, el presupuesto de peticiones y lo que
+queda aplazado están en la nota del 13 de noviembre de 2026 de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U2 cambia solo el
+marco: no reestructura ninguna pantalla, y cada una pasa al proveedor en el PR
+que la rehace (U3, U5 y U6).
+
+- **Un proveedor por pestaña.**
+  [`OccShellProvider`](../../frontend/private-web/src/features/admin-occ/shell/OccShellProvider.jsx)
+  abre el único observador de cambios del marco y lee una sola vez los avisos
+  operativos para la barra, el riel, el cajón y los toasts. En el OCC,
+  [`RoleLayout`](../../frontend/private-web/src/app/RoleLayout.jsx) apaga el
+  observador propio del acceso del departamento, que el marco relee con
+  `department_users` y `access_requests`, y `AppShell` ya no lee avisos ni
+  pinta toasts. Las lecturas del marco pasan por
+  [`useOccResource`](../../frontend/private-web/src/features/admin-occ/live/useOccResource.js):
+  solo leen con su permiso, se repiten como mucho una vez cada 3 s, esperan con
+  la pestaña oculta, tienen un sondeo de seguridad de 60 s y se detienen tras un
+  401, 403 o 404 hasta que cambia el acceso. La
+  [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  falla si el plan de peticiones de una pestaña pasa de 40 por minuto en reposo
+  o de 70 durante un minuto de vuelo demo, y exige que el
+  [inventario](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  nombre cada observador que queda bajo `/admin-occ`, con el PR que lo mueve.
+- **Barra de estado.** La
+  [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx)
+  mide 48 px en todas las pantallas del OCC. Muestra la placa «PUJ» (y «Punta
+  Cana» desde 1280 px), el nombre del módulo, el enlace en vivo («En vivo»,
+  «Reconectando», «Sin tiempo real» o «Sin conexión», cada uno con su forma y
+  una frase que lo explica), las fuentes («Fuentes al día» o cuántas van con
+  retraso, con su lista), las alertas, la hora local y la UTC del equipo, el
+  idioma, «Leyenda» y la cuenta. Ya no muestra las claves `nav.master-data` ni
+  `nav.devices`: dice «Datos maestros» y «Tablets». Por debajo de 1024 px, la
+  leyenda y el idioma pasan al menú de la cuenta; por debajo de 640 px quedan el
+  menú, la placa, los glifos del enlace y de las alertas (con su número), la
+  hora local y la cuenta
+  ([reglas de ancho](../../frontend/private-web/src/features/admin-occ/shell/status/statusBarLayout.js)).
+  «Leyenda» lee los estados de posición, las señales y las marcas de
+  [`statusVocabulary.js`](../../frontend/private-web/src/features/occ-ui/statusVocabulary.js).
+  No hay botón de tema, modo muro ni búsqueda.
+- **Alertas y avisos.** El
+  [modelo de alertas](../../frontend/private-web/src/features/dashboard/noc/alertModel.js)
+  da la prioridad: «Urgente», toda incidencia; «Atención», la desviación, el
+  vuelo cancelado o desviado por el proveedor, el agente liberado, la operación
+  sin agente elegible y el documento o el contrato no vigente; el resto,
+  «Aviso». El botón de alertas cuenta las urgentes y las de atención sin recibir
+  y abre el
+  [cajón «Alertas y avisos»](../../frontend/private-web/src/features/admin-occ/shell/OccAlertsDrawer.jsx),
+  con las alertas sin recibir primero, los avisos recientes y «Ver historial de
+  avisos». Si la primera lectura de los avisos falla, el botón dice «Alertas:
+  sin datos» con el triángulo ámbar; si falla una relectura, conserva el último
+  número atenuado, con «, sin actualizar», y su descripción accesible da la
+  hora de la última lectura buena. Por debajo de 1536 px, «: sin datos» y
+  «, sin actualizar» quedan para los lectores de pantalla. En los dos casos el
+  cajón ofrece «Reintentar».
+  «Recibido» es el recibo de lectura por cuenta que ya existía
+  (`PUT notifications/{id}/read`), así que el conteo es el mismo en todas las
+  pantallas y después de recargar. Los
+  [toasts](../../frontend/private-web/src/features/admin-occ/shell/occToastQueue.js)
+  salen arriba a la derecha, bajo la barra: tres como mucho, 15 s los urgentes,
+  10 s los de atención y 8 s los avisos. Con el cajón abierto no se dibujan: lo
+  que llega se anuncia dentro del cajón (el urgente, como alerta), y al cerrarlo
+  no reaparece. Solo parpadea el glifo de una alerta urgente sin recibir, y
+  nunca con movimiento reducido.
+- **Riel.** El
+  [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx)
+  agrupa los mismos 14 módulos en
+  [En vivo, Planificar, Revisar y Estación](../../frontend/private-web/src/features/admin-occ/navigation.js),
+  con las mismas rutas y permisos. Chat interno, Revisión y Notificaciones
+  llevan una placa neutra con sus avisos sin leer. Con el riel plegado, cada
+  módulo muestra su nombre al pasar el puntero o al recibir el foco. Ya no hay
+  tarjeta de identidad: la estación está en la barra.
+  [«Saltar al contenido»](../../frontend/private-web/src/features/admin-occ/shell/OccSkipLink.jsx)
+  es el primer elemento enfocable del marco.
+- **Primitivas y guardas.** U2 crea en `src/features/occ-ui` las primitivas que
+  necesita el marco (glifo de señal, placa, muestra de estado, panel emergente,
+  cajón, cola de alertas y pila de toasts), con sus textos en
+  [`occUiMessages.js`](../../frontend/private-web/src/features/occ-ui/occUiMessages.js).
+  [`ShellFrame`](../../frontend/private-web/src/features/shell/ShellFrame.jsx)
+  acepta `mainVariant`: `'scroll'`, por defecto e igual que antes, o `'fill'`,
+  que el OCC aún no usa.
+  [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js) suma las
+  llaves `primary`, `primary-hover`, `on-primary` y `scrim`. Las carpetas
+  `admin-occ/shell` y `admin-occ/live` entran en `MIGRATED_FOLDERS` del
+  [manifiesto del puente](../../frontend/private-web/src/styles/occLegacyBridgeMap.js):
+  allí no se admite ninguna clase de color heredada.
+
+Límites: la lista de avisos trae los 100 más recientes, así que, si hay más,
+los conteos son un mínimo. Un recibo no se anuncia por el feed. Lo que se marca
+como leído o no leído en Notificaciones llega al marco enseguida, porque la
+página le pide que relea los avisos, como mucho una vez cada 3 s. Lo que se
+marca en otra pestaña llega con el siguiente aviso o, como mucho, a los 60 s.
+Panorama, Monitoreo de vuelos, Mapa de posiciones, Planificación, Cobertura de
+posiciones, Datos maestros, Tablets, Chat interno y Notificaciones conservan su
+propio observador hasta U3, U5 o U6, y Usuarios y Mis gastos, el suyo. Quedan
+aplazados el modo muro, la búsqueda, los atajos con su diálogo, el aviso de
+desfase del reloj, la severidad de cada incidencia y el acuse compartido por
+estación. Las pruebas cubren el marco en jsdom; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
+
+## Mapas del OCC en un solo motor (PR M2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M2 «Motor único y estilo NOC» (`314c124b`, `323189b2`, `5d759557` y
+`c0b20127`), que esa verificación no cubre. Las decisiones y lo que añadirán
+los PR M3 a M8 están en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). Son las mismas
+pantallas sobre un solo motor: las posiciones siguen siendo puntos, y todavía
+no hay polígonos, tráfico en vivo ni aviones 3D.
+
+- **Un motor y un componente.**
+  [`mapEngine.js`](../../frontend/private-web/src/features/maps/core/mapEngine.js)
+  es el único módulo que crea un mapa de MapLibre, y
+  [`OccMap.jsx`](../../frontend/private-web/src/features/maps/core/OccMap.jsx),
+  el único componente de mapa: un lienzo por página, en el que Región,
+  Aproximación, Aeródromo y Rampa son posiciones de cámara del mismo mapa. El
+  mapa está listo al cargar su estilo. Solo un mapa que no puede arrancar, como
+  en un navegador sin WebGL2, o cuyo contexto WebGL vuelve sin WebGL2, deja en
+  su lugar la lista de respaldo, y ese mapa ya no vuelve; si el mapa base no
+  carga, un aviso dice «No se pudo cargar el mapa base. Los datos de ELEVANT
+  siguen en el mapa.», y lo que dibuja cada pantalla (posiciones, vuelos y el
+  punto de referencia de PUJ) sigue en el mapa.
+  [`workerUrl.js`](../../frontend/private-web/src/features/maps/core/workerUrl.js)
+  prepara una sola vez los workers de MapLibre (`prewarm`), que ya no se crean
+  ni se terminan con cada mapa.
+- **Adaptadores con las mismas props.**
+  [`PositionMap.jsx`](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx)
+  (Mapa de posiciones, Planificación y la plataforma de la consola) y
+  [`FlightMap.jsx`](../../frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx)
+  (Monitoreo de vuelos) son adaptadores finos de `OccMap`, con las mismas props,
+  el mismo manejador imperativo, los mismos `data-testid`
+  (`position-map-container` y `flight-map-container`) y los mismos textos de
+  respaldo: sus páginas no cambian. Las posiciones son puntos con el estado que
+  ya traían, dibujado con el vocabulario de `statusVocabulary.js` («Llegando» y
+  «Por liberar» llegan con M4), y se agrupan al alejar el mapa; los vuelos que
+  traen posición son siluetas sin un color por estado, y PUJ se marca con su
+  punto de referencia. La ficha del vuelo de Monitoreo queda fija en una
+  esquina del mapa y ya no sigue al avión.
+- **Estilo NOC propio.**
+  [`occStyle.js`](../../frontend/private-web/src/features/maps/style/occStyle.js)
+  construye el estilo en código sobre las teselas vectoriales de OpenFreeMap,
+  que pide por su TileJSON, y sus glifos Noto Sans, sin sprite: los íconos se
+  dibujan como imágenes SDF. Hay una sola paleta oscura, en pizarra:
+  [`mapTheme.js`](../../frontend/private-web/src/features/maps/style/mapTheme.js)
+  guarda solo los colores del mapa base, los de estado salen de `occPalette.js`
+  y lo elegido lleva el cian `--occ-accent`. El estilo nunca se cambia después
+  de arrancar, y una prueba lo comprueba. Las cuatro variables
+  `NEXT_PUBLIC_*_MAP_STYLE_*` se retiraron de
+  [`.env.example`](../../frontend/private-web/.env.example) y del código.
+- **Vistas, selección y teclas.** Cada vista se encuadra con el tamaño real del
+  mapa, y de esos encuadres salen los zooms en los que aparecen las posiciones y
+  sus códigos; el selector marca la vista que la cámara muestra de verdad. La vista elegida se escribe en la URL (`view=`), una URL con
+  `view=ramp&terminal=A` (o `B`, o `FBO`) abre la rampa de esa terminal, y con
+  el foco en el mapa las teclas `1` a `4` cambian de vista.
+  `Esc` cierra primero el cajón o el diálogo abierto y después limpia la
+  selección: el detalle de la posición, el diálogo de importación y
+  `useEscapeToClose` marcan la tecla como atendida. El almacén de la selección
+  en la URL
+  ([`mapSelection.js`](../../frontend/private-web/src/features/maps/core/mapSelection.js))
+  ya existe, pero las pantallas siguen pasando al mapa su propia selección
+  hasta que U3 y U5 lo adopten.
+- **Leyenda.** Un mapa con posiciones o vuelos en pantalla muestra el botón
+  «Leyenda»
+  ([`MapLegend.jsx`](../../frontend/private-web/src/features/maps/ui/MapLegend.jsx)),
+  que lista solo lo que hay en pantalla: el avión de los vuelos, que apunta
+  según su rumbo; los estados de las posiciones, también los de las que el mapa
+  dibuja sueltas junto a sus grupos; «No oficial» cuando alguna está en su
+  ubicación de referencia interna, y qué es un grupo cuando hay uno en
+  pantalla. En Mapa de posiciones, Planificación y Monitoreo de vuelos es la
+  única leyenda del mapa: las páginas ya no muestran la suya, que explicaba con
+  colores por estado lo que el mapa ya no dibuja así. La plataforma de la
+  consola conserva su leyenda en línea hasta que U3 retire el dashboard actual.
+- **Relectura sin remontar el mapa.** Al releer la misma estación (por foco,
+  sondeo u `occ_planning`), Mapa de posiciones y Monitoreo conservan sus datos
+  en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
+  el mapa no se crea de nuevo. Un cambio de estación o de cuenta sí empieza
+  vacío.
+- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: siete
+  escenas fijas del mapa, sin sesión ni API. La ruta lo importa solo en la rama
+  de desarrollo, y el build de producción comprueba que no lo incluye
+  ([`verify-map-chunks.mjs`](../../frontend/private-web/scripts/verify-map-chunks.mjs)).
+  La suite visual corre con Playwright en Chrome, fuera del CI: ver
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
+- **Lo que se retiró:** las variantes de Google Maps (`GoogleFlightMap.jsx`,
+  `GooglePositionMap.jsx` y su cargador) con la dependencia
+  `@googlemaps/js-api-loader`; los huérfanos `AirfieldMap.jsx` y
+  `AirfieldPanel.jsx`, con los mensajes `airfield.*` del dashboard; los
+  marcadores DOM de Monitoreo (`AircraftMarker.js` y `AirportMarker.js`); y
+  `positionMapLayers.js` y `positionMarkerIcons.js`, cuyo trabajo pasa a
+  [`standLayers.js`](../../frontend/private-web/src/features/maps/stands/standLayers.js)
+  y a los íconos del estilo.
+
+Lo que no cambia: la CSP, porque la TileJSON, las teselas y los glifos siguen en
+`tiles.openfreemap.org`, que ya estaba permitido; las ubicaciones de las
+posiciones, que siguen siendo una referencia interna no oficial salvo las que
+ubicó OCC; y los datos que leen las pantallas, sin endpoints nuevos ni cambios
+en la API. Los dos mapas auxiliares del dashboard (región y meteorología)
+conservan su ciclo de vida y los estilos publicados de OpenFreeMap hasta que U3
+retire el dashboard actual.
+
+Límites: a 1440×900 el resumen de Mapa de posiciones tapa la escala, los
+créditos y las posiciones A1 a A5, y todavía pinta sus colores de estado; lo
+rehace U5. El
+3D de M2 es la inclinación de cámara de siempre: los aviones 3D llegan con M7.
+En producción, `/map-lab` responde la página de no encontrada con el estado
+200. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |
@@ -845,7 +1062,8 @@ npm run build
 - pruebas Vitest de páginas, componentes, hooks, mappers y servicios;
 - pruebas de rutas Next, autenticación y manejo de sesión expirada;
 - smoke de creación del cliente OpenAPI compartido;
-- prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración.
+- prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración;
+- *posterior al commit verificado (PR M2):* la suite visual de los mapas del OCC, con Playwright en Chrome y fuera del CI ([Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ)).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
 

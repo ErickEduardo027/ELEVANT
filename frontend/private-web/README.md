@@ -90,7 +90,7 @@ paginación se aplica en la vista: el endpoint sigue entregando la lista complet
 
 Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente usa Next.js App Router, React 19 y Tailwind CSS. El enrutamiento y los guards viven en `app/`; las pantallas funcionales existentes permanecen en `src/features/`.
 
-En OCC, **Operación → Mis gastos** abre `/admin-occ/expenses`. El enlace se muestra en el riel lateral y su versión móvil; la API determina qué gastos y acciones puede ver cada cuenta.
+En OCC, **Estación → Mis gastos** abre `/admin-occ/expenses`. El enlace se muestra en el riel lateral y su versión móvil; la API determina qué gastos y acciones puede ver cada cuenta.
 
 ## Ejecutar y validar
 
@@ -142,8 +142,11 @@ sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
 sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
 
 Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
-de API al origen HTTPS privado de Development. Monitoreo y Mapa de posiciones
-usan MapLibre en local y en la imagen publicada; no requieren una clave de
+de API al origen HTTPS privado de Development. Monitoreo, Mapa de posiciones,
+Planificación y la plataforma de la consola dibujan sus mapas con un solo motor
+de MapLibre (`src/features/maps/core/mapEngine.js`) y un estilo NOC propio,
+construido en código (`src/features/maps/style/occStyle.js`) sobre las teselas
+vectoriales y los glifos de OpenFreeMap: no hay variables de estilo ni clave de
 Google. `predev` y `prebuild` copian el worker y su módulo compartido desde la
 versión instalada de MapLibre a `public/assets/maplibre/`. La verificación del
 build y la certificación de la imagen comprueban esos dos archivos. Desde
@@ -153,14 +156,55 @@ La verificación del build falla si el worker vuelve a importar un módulo que
 no se copia. `maplibre-gl` va con versión exacta en `package.json`: el worker
 servido y el bundle deben ser de la misma versión, así que cada subida es un
 cambio deliberado. Si cambias de versión de MapLibre, vuelve a ejecutar
-`npm ci` y el build; no edites los archivos generados. Los estilos públicos se
-cargan desde los orígenes permitidos por la CSP y necesitan conectividad del
-navegador a esos proveedores.
+`npm ci` y el build; no edites los archivos generados. El navegador necesita
+alcanzar `tiles.openfreemap.org`, que la CSP ya permite; si el mapa base no
+carga, el mapa sigue con las posiciones y lo avisa. Los dos mapas auxiliares del
+dashboard (región y meteorología) conservan los estilos publicados de
+OpenFreeMap hasta que se retire el dashboard actual.
 
 El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
-indica explícitamente. Otras estaciones no usan el centro de PUJ. La selección
-de una clave local de Google quedó desactivada; cualquier experimento futuro
-con ese proveedor requiere una decisión y una CSP revisadas por separado.
+indica explícitamente. Otras estaciones no usan el centro de PUJ. Las variantes
+de Google Maps y su cargador se retiraron del código y de las dependencias;
+cualquier experimento futuro con ese proveedor requiere una decisión y una CSP
+revisadas por separado. Las decisiones de los mapas del OCC están en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+El laboratorio de mapas (`/map-lab`) solo existe con `next dev`: dibuja el mapa
+del OCC con siete escenas fijas (los estados de rampa, una posición elegida,
+Aeródromo, Aproximación, Región, un navegador sin WebGL y el mapa base caído),
+sin sesión ni API. La URL elige la escena (`?scene=`), el mapa sin teselas
+(`?basemap=none`), un reloj del mapa congelado (`?t=` con un instante ISO 8601)
+y las claves de selección del mapa (`stand=`, `view=`, `terminal=`). La ruta
+importa el laboratorio solo dentro de la rama de desarrollo, y `npm run build`
+termina con `scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
+al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`). En producción la ruta
+responde la página de no encontrada.
+
+La suite visual del OCC (`tests/visual`, configurada en
+`playwright.occ.config.mjs`) corre con Playwright en el Google Chrome
+instalado, fuera del CI, antes de mergear un cambio de mapas. Tiene dos
+proyectos: `lab`, el laboratorio, y `occ`, Mapa de posiciones con una sesión
+sintética y la API simulada. Ninguna petición llega a otro origen: la suite
+responde la TileJSON, las teselas, los glifos (fixtures en
+`tests/visual/fixtures/glyphs`) y la API, aborta lo demás, y su Chrome no
+resuelve otro nombre que `localhost`. `npm test` no la recoge, porque
+`vitest.config.mjs` excluye `tests/visual/**`.
+
+```powershell
+npm run test:visual
+npm run build
+$env:OCC_VISUAL_TARGET = "production"
+npm run test:visual
+Remove-Item Env:OCC_VISUAL_TARGET
+```
+
+La primera corrida levanta su propio `next dev` en el puerto 4186
+(`OCC_VISUAL_PORT` lo cambia) con las tres variables `NEXT_PUBLIC_*` de
+Development; no puede haber otro `next dev` abierto en esta carpeta. La segunda
+usa el build de producción, compilado con las variables del bloque de arriba, y
+allí el laboratorio solo comprueba que `/map-lab` responde la página de no
+encontrada. Las capturas de cada escena quedan en `test-results/visual/`, que
+Git ignora, para revisarlas a mano: no hay líneas base de imagen.
 
 ## Layout responsive
 
@@ -180,7 +224,7 @@ la app en el puerto 5173 (`npm run dev -- -p 5173`) para no chocar con Public We
 
 ## Espacio OCC (PUJ)
 
-`AdminOccLayout` monta un marco propio sobre `ShellFrame`: riel agrupado (`OccSidebar`), barra contextual (`OccTopbar`) y tokens `occ-*` definidos en `src/styles/occ.css` bajo `[data-department="occ"]`. El OCC es solo oscuro, con un único juego de tokens y sin botón de tema; la paleta, los estados de posición y las teclas de los mapas viven en `src/features/occ-ui/`, y el puente generado `src/styles/occ-legacy-bridge.css` (manifiesto en `src/styles/occLegacyBridgeMap.js`) repinta con esos tokens las clases heredadas bajo `[data-occ-bridge]` ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)). Los demás departamentos siguen usando `Sidebar`/`Topbar`. Todas las rutas OCC leen el alcance `PUJ` con `useOccStation()`; sin él no consultan la API. El idioma (es/en) comparte el store del login (`src/i18n/languageStore.js`) y solo se aplica dentro de `LanguageScope`, que envuelve OCC; fuera de él la interfaz sigue en español.
+`AdminOccLayout` monta un marco propio sobre `ShellFrame`: el riel (`OccSidebar`), con los 14 módulos agrupados en «En vivo», «Planificar», «Revisar» y «Estación»; la barra de estado de 48 px (`OccTopbar`), con la estación, el módulo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC, el idioma, «Leyenda» y la cuenta; y tokens `occ-*` definidos en `src/styles/occ.css` bajo `[data-department="occ"]`. `OccShellProvider` (`src/features/admin-occ/shell/`) es el proveedor del marco: abre el único observador de cambios de la pestaña, lee una vez los avisos para la barra, el riel, el cajón «Alertas y avisos» y los toasts, y expone el enlace en vivo, los avisos y las fuentes con `useOccShell()`. Sus lecturas usan `useOccResource` (`src/features/admin-occ/live/`): cada una lee solo con su permiso, se repite como mucho una vez cada 3 s cuando llegan avisos, espera con la pestaña oculta y tiene un sondeo de seguridad de 60 s. `occRequestBudget.test.js` falla si el plan de peticiones de una pestaña pasa de 40 por minuto en reposo o de 70 durante un minuto de vuelo demo. Las pantallas que todavía abren su propio observador pasan al proveedor en el PR que las rehace. El OCC es solo oscuro, con un único juego de tokens y sin botón de tema; la paleta, los estados de posición y las teclas de los mapas viven en `src/features/occ-ui/`, y el puente generado `src/styles/occ-legacy-bridge.css` (manifiesto en `src/styles/occLegacyBridgeMap.js`) repinta con esos tokens las clases heredadas bajo `[data-occ-bridge]` ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)). Los demás departamentos siguen usando `Sidebar`/`Topbar`. Todas las rutas OCC leen el alcance `PUJ` con `useOccStation()`; sin él no consultan la API. El idioma (es/en) comparte el store del login (`src/i18n/languageStore.js`) y solo se aplica dentro de `LanguageScope`, que envuelve OCC; fuera de él la interfaz sigue en español.
 
 El dashboard (`src/features/dashboard`) deriva resumen, escalas y atención de planificación, revisión y avisos. Su superficie NOC integra una plataforma PUJ dominante, dos mapas auxiliares y una franja de cifras. La plataforma incorpora geometría OSM de pistas, rodajes y plataforma; las siluetas representan **asignaciones planificadas**, no ocupación confirmada. La vista nocturna inclina el mapa y extruye edificios solo si las teselas incluyen altura. `dashboardPositions.js` usa las 42 ubicaciones del catálogo **interno original**: 41 se muestran en el mapa y B33 se conserva como registro histórico retirado de la vista operativa por la [enmienda AIP de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf). B34–B37 siguen en el catálogo y B20–B32 mantienen sus 13 coordenadas internas originales. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) sirve para conciliación, pero sus coordenadas no se transcriben en la aplicación: no consta permiso de IDAC para procesarlas y la [política AIP](https://aip.sna.gob.do/Aip/CircularSerA) exige revisar ese uso. Las ubicaciones internas no están verificadas como oficiales; hay discrepancias de códigos y coordenadas, especialmente B20–B32. Los códigos planificados ausentes del catálogo activo, incluido B33, aparecen sin ubicación; no se equiparan A1 y 1 ni otros códigos parecidos. El mapa general de posiciones conserva el catálogo interno y requiere conciliación independiente.
 

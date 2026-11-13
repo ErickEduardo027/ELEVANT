@@ -1,0 +1,143 @@
+/* The OCC map (src/features/maps/core/OccMap.jsx imports this file). MapLibre's controls sit on the OCC tokens,
+   flat (no shadow, no blur, no gradient), inside the insets the page reports: OccMap writes --occ-map-inset-* on
+   its root and the map engine on its own container. Next keeps a global stylesheet loaded after a navigation, so
+   every rule is scoped under .occ-map and reaches no other map. */
+
+.occ-map {
+  --occ-map-gap: 12px;
+  isolation: isolate;
+}
+
+/* The four control corners, inside the insets. */
+.occ-map .maplibregl-ctrl-top-left {
+  top: var(--occ-map-inset-top, 0px);
+  left: var(--occ-map-inset-left, 0px);
+}
+
+.occ-map .maplibregl-ctrl-top-right {
+  top: var(--occ-map-inset-top, 0px);
+  right: var(--occ-map-inset-right, 0px);
+}
+
+.occ-map .maplibregl-ctrl-bottom-left {
+  bottom: var(--occ-map-inset-bottom, 0px);
+  left: var(--occ-map-inset-left, 0px);
+}
+
+.occ-map .maplibregl-ctrl-bottom-right {
+  bottom: var(--occ-map-inset-bottom, 0px);
+  right: var(--occ-map-inset-right, 0px);
+}
+
+/* Control groups: a flat panel slab with a 1 px joint. MapLibre draws its icons dark, so they are inverted. */
+.occ-map .maplibregl-ctrl-group {
+  border: 1px solid var(--occ-line);
+  border-radius: 4px;
+  background: var(--occ-panel);
+}
+
+.occ-map .maplibregl-ctrl-group:not(:empty) {
+  box-shadow: none;
+}
+
+.occ-map .maplibregl-ctrl-group button {
+  width: 36px;
+  height: 36px;
+}
+
+.occ-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--occ-line);
+}
+
+.occ-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+
+/* In forced colours MapLibre swaps its control icons for the system's own colours: they stay as they come. */
+@media (forced-colors: active) {
+  .occ-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
+    filter: none;
+  }
+}
+
+.occ-map .maplibregl-ctrl button:not(:disabled):hover,
+.occ-map .maplibregl-ctrl button:not(:disabled):active {
+  background-color: var(--occ-panel-raised);
+}
+
+/* Focus is a cyan outline, as everywhere in the OCC; MapLibre's blue glow is a shadow. */
+.occ-map .maplibregl-ctrl-group button:focus,
+.occ-map .maplibregl-ctrl-attrib-button:focus {
+  box-shadow: none;
+}
+
+.occ-map .maplibregl-ctrl-group button:focus:focus-visible,
+.occ-map .maplibregl-ctrl-attrib-button:focus:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--occ-accent);
+  outline-offset: -2px;
+}
+
+/* Credits: the near-opaque floating panel, muted text, cyan links. */
+.occ-map .maplibregl-ctrl.maplibregl-ctrl-attrib,
+.occ-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  border-radius: 4px;
+  background-color: var(--occ-panel-float);
+  color: var(--occ-muted);
+  font-size: 12px;
+}
+
+.occ-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  border: 1px solid var(--occ-line);
+}
+
+.occ-map .maplibregl-ctrl-attrib a {
+  color: var(--occ-accent);
+}
+
+.occ-map .maplibregl-ctrl-attrib-button,
+.occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  border-radius: 4px;
+  background-color: transparent;
+  filter: invert(1);
+}
+
+/* The nautical scale. */
+.occ-map .maplibregl-ctrl-scale {
+  border-color: var(--occ-line-strong);
+  background-color: var(--occ-panel-float);
+  color: var(--occ-muted);
+  font-size: 12px;
+}
+
+/* The group of map controls at the bottom centre of the visible area (contracts 2.5): the view selector and the
+   legend now, then 2D/3D, follow and layers. Only its children take the pointer. */
+.occ-map .occ-map-dock {
+  position: absolute;
+  z-index: 10;
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap));
+  left: calc(var(--occ-map-inset-left, 0px)
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
+  display: flex;
+  max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 2 * var(--occ-map-gap));
+  align-items: flex-end;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.occ-map .occ-map-dock > * {
+  pointer-events: auto;
+}
+
+/* A short state of the map itself, such as a base map that did not load, at the top centre of the visible area. */
+.occ-map .occ-map-chip {
+  position: absolute;
+  z-index: 11;
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap));
+  left: calc(var(--occ-map-inset-left, 0px)
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
+  max-width: min(36rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
+    - 2 * var(--occ-map-gap)));
+  transform: translateX(-50%);
+}

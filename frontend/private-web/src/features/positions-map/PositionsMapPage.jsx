@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import PositionsToolbar from './components/PositionsToolbar';
 import PositionMap from './components/PositionMap';
 import MapControls from './components/MapControls';
-import PositionLegend from './components/PositionLegend';
 import PositionSummary from './components/PositionSummary';
 import PositionsSidePanel from './components/PositionsSidePanel';
 import PositionsListDrawer from './components/PositionsListDrawer';
@@ -207,7 +206,7 @@ export default function PositionsMapPage({
         fullscreen={fullscreen}
         onToggleFullscreen={handleToggleFullscreen}
       />
-      <PositionLegend source={data?.source} />
+      {/* The map's own legend explains what it draws. */}
       <PositionSummary positions={positions} source={data?.source} />
     </div>
   );

@@ -147,3 +147,132 @@ describe('account change observer', () => {
     expect(f.onChanges).not.toHaveBeenCalled();
   });
 });
+
+// Hubs that move through SignalR's states and keep every lifecycle handler, for the status reports.
+function statusFixture({ onStatus = vi.fn(), withReconnecting = true } = {}) {
+  const api = { getAccountChanges: vi.fn().mockResolvedValue({ changes: [], nextCursor: null, hasMore: false }) };
+  const connections = [];
+  const createHubConnection = vi.fn(path => {
+    const handlers = {};
+    const connection = {
+      path, handlers, state: 'Disconnected',
+      start: vi.fn(async () => { connection.state = 'Connected'; }),
+      stop: vi.fn(async () => { connection.state = 'Disconnected'; }),
+      on: vi.fn((name, handler) => { handlers[name] = handler; }),
+      onreconnected: vi.fn(handler => { handlers.reconnected = handler; }),
+      onclose: vi.fn(handler => { handlers.closed = handler; }),
+      ...(withReconnecting ? { onreconnecting: vi.fn(handler => { handlers.reconnecting = handler; }) } : {}),
+    };
+    connections.push(connection);
+    return connection;
+  });
+  const observer = createAccountChangeObserver({ api, createHubConnection, onChanges: vi.fn(),
+    events: window, pollMs: 25_000, onStatus });
+  return { api, observer, connections, onStatus };
+}
+
+const lastStatus = onStatus => onStatus.mock.calls.at(-1)?.[0];
+const hubStates = status => status.hubs.map(hub => `${hub.path}:${hub.state}`);
+
+describe('account change observer status', () => {
+  it('reports connected hubs and the last successful reconcile through onStatus', async () => {
+    vi.setSystemTime(new Date('2026-11-12T14:00:00Z'));
+    const f = statusFixture();
+    await f.observer.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hubStates(lastStatus(f.onStatus))).toEqual(['/hubs/operations:Connected', '/hubs/notifications:Connected']);
+    expect(lastStatus(f.onStatus)).toMatchObject({
+      lastOkAt: Date.parse('2026-11-12T14:00:00Z'), lastErrorAt: null, failingSince: null,
+    });
+
+    // The bounded poll reconciles again and moves lastOkAt.
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(lastStatus(f.onStatus).lastOkAt).toBe(Date.parse('2026-11-12T14:00:25Z'));
+    await f.observer.stop();
+  });
+
+  it('reports reconnecting and closed hubs, and still reconciles once on reconnect', async () => {
+    const f = statusFixture();
+    await f.observer.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const [operations] = f.connections;
+    expect(operations.onreconnected).toHaveBeenCalledOnce();
+
+    operations.state = 'Reconnecting';
+    operations.handlers.reconnecting(new Error('socket dropped'));
+    expect(hubStates(lastStatus(f.onStatus))).toEqual(['/hubs/operations:Reconnecting', '/hubs/notifications:Connected']);
+
+    const reads = f.api.getAccountChanges.mock.calls.length;
+    operations.state = 'Connected';
+    operations.handlers.reconnected('connection-2');
+    expect(hubStates(lastStatus(f.onStatus))).toEqual(['/hubs/operations:Connected', '/hubs/notifications:Connected']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(reads + 1);
+
+    operations.state = 'Disconnected';
+    operations.handlers.closed(new Error('gave up'));
+    expect(hubStates(lastStatus(f.onStatus))).toEqual(['/hubs/operations:Disconnected', '/hubs/notifications:Connected']);
+    await f.observer.stop();
+  });
+
+  it('marks failingSince on a failed reconcile and clears it on the next success', async () => {
+    vi.setSystemTime(new Date('2026-11-12T14:00:00Z'));
+    const f = statusFixture();
+    f.api.getAccountChanges
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'));
+    await f.observer.start();
+    expect(lastStatus(f.onStatus)).toMatchObject({ lastOkAt: null,
+      lastErrorAt: Date.parse('2026-11-12T14:00:00Z'), failingSince: Date.parse('2026-11-12T14:00:00Z') });
+
+    // A second failure moves lastErrorAt and keeps the start of the streak.
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(lastStatus(f.onStatus)).toMatchObject({ lastOkAt: null,
+      lastErrorAt: Date.parse('2026-11-12T14:00:25Z'), failingSince: Date.parse('2026-11-12T14:00:00Z') });
+
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(lastStatus(f.onStatus)).toMatchObject({ lastOkAt: Date.parse('2026-11-12T14:00:50Z'),
+      lastErrorAt: Date.parse('2026-11-12T14:00:25Z'), failingSince: null });
+    await f.observer.stop();
+  });
+
+  it('reports nothing after stop', async () => {
+    const f = statusFixture();
+    let finishStart;
+    f.connections[1].start.mockImplementation(() => new Promise(resolve => { finishStart = () => {
+      f.connections[1].state = 'Connected';
+      resolve();
+    }; }));
+    let answer;
+    f.api.getAccountChanges.mockReturnValueOnce(new Promise(resolve => { answer = resolve; }));
+    const started = f.observer.start();
+    const calls = f.onStatus.mock.calls.length;
+
+    const stopped = f.observer.stop();
+    finishStart();
+    answer({ changes: [], nextCursor: null, hasMore: false });
+    await Promise.all([started, stopped]);
+    f.connections[0].handlers.reconnecting?.();
+    f.connections[0].handlers.reconnected?.();
+    f.connections[0].handlers.closed?.();
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(f.onStatus).toHaveBeenCalledTimes(calls);
+  });
+
+  it('works without onStatus and with hubs that lack onreconnecting', async () => {
+    const quiet = statusFixture({ onStatus: undefined, withReconnecting: false });
+    await quiet.observer.start();
+    quiet.connections[0].handlers.reconnected();
+    quiet.connections[1].handlers.closed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(quiet.api.getAccountChanges).toHaveBeenCalledTimes(2);
+    await quiet.observer.stop();
+
+    const reporting = statusFixture({ withReconnecting: false });
+    await reporting.observer.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reporting.connections[0].onreconnecting).toBeUndefined();
+    expect(hubStates(lastStatus(reporting.onStatus))).toEqual(['/hubs/operations:Connected', '/hubs/notifications:Connected']);
+    await reporting.observer.stop();
+  });
+});

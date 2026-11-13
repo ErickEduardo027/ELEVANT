@@ -32,7 +32,8 @@ export default function RoleLayout({ role, children }) {
   return (
     <ProtectedRole role={roleKeys[role]}>
       {({ user, onLogout }) => (
-        <DepartmentAccessProvider>
+        // The OCC shell owns the tab's only account-change observer and refreshes access from it.
+        <DepartmentAccessProvider observe={role !== 'adminOcc'}>
           <AccessGate>
             <Shell role={role} user={user} onLogout={onLogout}>{children}</Shell>
           </AccessGate>

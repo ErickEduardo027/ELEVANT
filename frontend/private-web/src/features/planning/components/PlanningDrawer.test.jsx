@@ -223,6 +223,18 @@ describe('PlanningDrawer', () => {
     expect(screen.queryByTestId('incidents-panel')).not.toBeInTheDocument();
   });
 
+  it('gives the handover and the attendance their own keys, so React never sees two siblings with one key', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      renderDrawer({ flight: ASSIGNED_FLIGHT });
+      expect(screen.getByTestId('incidents-panel')).toBeInTheDocument();
+      const duplicateKeys = errors.mock.calls.filter(args => args.map(String).join(' ').includes('same key'));
+      expect(duplicateKeys).toEqual([]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('renders nothing when no turnaround is selected', () => {
     const { container } = render(<PlanningDrawer flight={null} onClose={() => {}} />);
 

@@ -5,17 +5,11 @@ import FlightMonitoringPage from './FlightMonitoringPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 
-beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
-afterEach(() => vi.unstubAllEnvs());
-
 vi.mock('./components/FlightMap', () => ({
   default: function FlightMapStub(props) {
-    return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)} />;
+    return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)}
+      data-popover-position={typeof props.onPopoverPosition} />;
   },
-}));
-
-vi.mock('./components/GoogleFlightMap', () => ({
-  default: () => <div data-testid="google-flight-map-stub" />,
 }));
 
 function flight(overrides) {
@@ -99,16 +93,7 @@ describe('FlightMonitoringPage', () => {
     expect(screen.getByText(/Sin posición de aeronaves en vivo/)).toBeInTheDocument();
   });
 
-  it('keeps MapLibre when a local Google key is configured', () => {
-    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
-    render(<FlightMonitoringPage status="success" data={{ station: { code: 'PUJ' }, flights: [] }}
-      error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />);
-    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
-    expect(screen.queryByTestId('google-flight-map-stub')).not.toBeInTheDocument();
-  });
-
-  it('does not center another station on PUJ when a local Google key exists', () => {
-    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+  it('does not center another station on PUJ', () => {
     render(<FlightMonitoringPage status="success" data={{ station: { code: 'SDQ' },
       source: 'planning', flights: [] }} error={null} connection="connected"
       lastUpdatedAt={null} onRetry={() => {}} />);
@@ -123,6 +108,9 @@ describe('FlightMonitoringPage', () => {
     await userEvent.click(screen.getByText('DM161'));
     expect(screen.getByRole('dialog', { name: /DM161/ })).toBeInTheDocument();
     expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-selected', '1');
+    // The card is docked at the top left of the map: the map no longer reports a screen position for it.
+    expect(screen.getByRole('dialog', { name: /DM161/ })).toHaveStyle({ top: '12px', left: '12px' });
+    expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-popover-position', 'undefined');
   });
 
   it('honors the monitoringEmpty forceState override from the dev preview panel', () => {
@@ -209,7 +197,7 @@ describe('FlightMonitoringPage in English', () => {
   beforeEach(() => act(() => resetLanguageForTests('en')));
   afterEach(() => act(() => resetLanguageForTests('es')));
 
-  it('renders the toolbar, list, legend and statuses in English', () => {
+  it('renders the toolbar, list and statuses in English', () => {
     render(
       <LanguageScope>
         <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt="2026-08-06T14:00:00-04:00" onRetry={() => {}} />
@@ -221,8 +209,9 @@ describe('FlightMonitoringPage in English', () => {
     expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
     expect(screen.getByText('Only flights related to PUJ')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delayed' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
     expect(screen.getAllByText('Approaching').length).toBeGreaterThan(0);
+    // The page has no legend of its own: the map's explains what the map draws (FlightMonitoringPage.legend.test.jsx).
+    expect(screen.queryByRole('button', { name: 'Legend' })).not.toBeInTheDocument();
     expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
   });
 

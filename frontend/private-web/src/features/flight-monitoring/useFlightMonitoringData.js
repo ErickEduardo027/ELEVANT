@@ -19,7 +19,12 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0,
         error: new Error('No hay una estación OCC autorizada.'), scopeKey });
       return undefined;
     }
-    setState({ status: 'loading', data: null, error: null, scopeKey });
+    // A re-read of the station on screen (focus, the visible poll, occ_planning) keeps the flights on screen while it
+    // is in flight, so the page does not fall back to its skeleton and re-mount the map. The first read and a change
+    // of station or account start empty.
+    setState(current => (current.scopeKey === scopeKey && current.status === 'success' && current.data
+      ? current
+      : { status: 'loading', data: null, error: null, scopeKey }));
     setConnection('syncing');
 
     getFlightMonitoringSnapshot(stationCode)
