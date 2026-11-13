@@ -142,8 +142,11 @@ sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
 sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
 
 Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
-de API al origen HTTPS privado de Development. Monitoreo y Mapa de posiciones
-usan MapLibre en local y en la imagen publicada; no requieren una clave de
+de API al origen HTTPS privado de Development. Monitoreo, Mapa de posiciones,
+Planificación y la plataforma de la consola dibujan sus mapas con un solo motor
+de MapLibre (`src/features/maps/core/mapEngine.js`) y un estilo NOC propio,
+construido en código (`src/features/maps/style/occStyle.js`) sobre las teselas
+vectoriales y los glifos de OpenFreeMap: no hay variables de estilo ni clave de
 Google. `predev` y `prebuild` copian el worker y su módulo compartido desde la
 versión instalada de MapLibre a `public/assets/maplibre/`. La verificación del
 build y la certificación de la imagen comprueban esos dos archivos. Desde
@@ -153,14 +156,55 @@ La verificación del build falla si el worker vuelve a importar un módulo que
 no se copia. `maplibre-gl` va con versión exacta en `package.json`: el worker
 servido y el bundle deben ser de la misma versión, así que cada subida es un
 cambio deliberado. Si cambias de versión de MapLibre, vuelve a ejecutar
-`npm ci` y el build; no edites los archivos generados. Los estilos públicos se
-cargan desde los orígenes permitidos por la CSP y necesitan conectividad del
-navegador a esos proveedores.
+`npm ci` y el build; no edites los archivos generados. El navegador necesita
+alcanzar `tiles.openfreemap.org`, que la CSP ya permite; si el mapa base no
+carga, el mapa sigue con las posiciones y lo avisa. Los dos mapas auxiliares del
+dashboard (región y meteorología) conservan los estilos publicados de
+OpenFreeMap hasta que se retire el dashboard actual.
 
 El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
-indica explícitamente. Otras estaciones no usan el centro de PUJ. La selección
-de una clave local de Google quedó desactivada; cualquier experimento futuro
-con ese proveedor requiere una decisión y una CSP revisadas por separado.
+indica explícitamente. Otras estaciones no usan el centro de PUJ. Las variantes
+de Google Maps y su cargador se retiraron del código y de las dependencias;
+cualquier experimento futuro con ese proveedor requiere una decisión y una CSP
+revisadas por separado. Las decisiones de los mapas del OCC están en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+El laboratorio de mapas (`/map-lab`) solo existe con `next dev`: dibuja el mapa
+del OCC con siete escenas fijas (los estados de rampa, una posición elegida,
+Aeródromo, Aproximación, Región, un navegador sin WebGL y el mapa base caído),
+sin sesión ni API. La URL elige la escena (`?scene=`), el mapa sin teselas
+(`?basemap=none`), un reloj del mapa congelado (`?t=` con un instante ISO 8601)
+y las claves de selección del mapa (`stand=`, `view=`, `terminal=`). La ruta
+importa el laboratorio solo dentro de la rama de desarrollo, y `npm run build`
+termina con `scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
+al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`). En producción la ruta
+responde la página de no encontrada.
+
+La suite visual del OCC (`tests/visual`, configurada en
+`playwright.occ.config.mjs`) corre con Playwright en el Google Chrome
+instalado, fuera del CI, antes de mergear un cambio de mapas. Tiene dos
+proyectos: `lab`, el laboratorio, y `occ`, Mapa de posiciones con una sesión
+sintética y la API simulada. Ninguna petición llega a otro origen: la suite
+responde la TileJSON, las teselas, los glifos (fixtures en
+`tests/visual/fixtures/glyphs`) y la API, aborta lo demás, y su Chrome no
+resuelve otro nombre que `localhost`. `npm test` no la recoge, porque
+`vitest.config.mjs` excluye `tests/visual/**`.
+
+```powershell
+npm run test:visual
+npm run build
+$env:OCC_VISUAL_TARGET = "production"
+npm run test:visual
+Remove-Item Env:OCC_VISUAL_TARGET
+```
+
+La primera corrida levanta su propio `next dev` en el puerto 4186
+(`OCC_VISUAL_PORT` lo cambia) con las tres variables `NEXT_PUBLIC_*` de
+Development; no puede haber otro `next dev` abierto en esta carpeta. La segunda
+usa el build de producción, compilado con las variables del bloque de arriba, y
+allí el laboratorio solo comprueba que `/map-lab` responde la página de no
+encontrada. Las capturas de cada escena quedan en `test-results/visual/`, que
+Git ignora, para revisarlas a mano: no hay líneas base de imagen.
 
 ## Layout responsive
 

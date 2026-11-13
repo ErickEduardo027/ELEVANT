@@ -132,6 +132,41 @@ describe('useFlightMonitoringData', () => {
       expect.objectContaining({ onSnapshot: expect.any(Function), onError: expect.any(Function) }));
   });
 
+  it('keeps the current flights on screen while a same-station refresh is in flight', async () => {
+    const first = { station: { code: 'PUJ' }, flights: [{ id: 1, latitude: 18.7, longitude: -68.5 }] };
+    let finishRefresh;
+    const read = vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')
+      .mockResolvedValueOnce(first)
+      .mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; }))
+      .mockRejectedValueOnce(new Error('network down'));
+    vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates').mockReturnValue(() => {});
+    const renders = [];
+    const { result, rerender } = renderHook(({ token }) => {
+      const state = useFlightMonitoringData('PUJ', token, false, 'occ-one');
+      renders.push(state);
+      return state;
+    }, { initialProps: { token: 0 } });
+    await waitFor(() => expect(result.current.status).toBe('success'));
+
+    // A refresh of the same station (focus, the 25 s poll, occ_planning): the flights stay, only the connection syncs.
+    const from = renders.length;
+    rerender({ token: 1 });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(renders.slice(from).length).toBeGreaterThan(0);
+    expect(renders.slice(from).every(state => state.status === 'success' && state.data === first)).toBe(true);
+    expect(result.current.connection).toBe('syncing');
+
+    await act(async () => finishRefresh({ station: { code: 'PUJ' }, flights: [{ id: 2 }] }));
+    expect(result.current).toMatchObject({ status: 'success', connection: 'connected' });
+    expect(result.current.data.flights.map(item => item.id)).toEqual([2]);
+
+    // A refresh that fails still takes the old flights away.
+    rerender({ token: 2 });
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.data).toBeNull();
+    expect(result.current.connection).toBe('disconnected');
+  });
+
   it('drops stale flights on poll failure and replaces the collection after recovery', async () => {
     vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')
       .mockResolvedValue({ station: { code: 'PUJ' }, flights: [{ id: 1 }] });

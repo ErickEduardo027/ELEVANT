@@ -22,6 +22,7 @@
 !frontend/private-web/scripts/run-next.mjs
 !frontend/private-web/scripts/copy-maplibre-worker.mjs
 !frontend/private-web/scripts/verify-maplibre-worker.mjs
+!frontend/private-web/scripts/verify-map-chunks.mjs
 !frontend/private-web/scripts/healthcheck.mjs
 
 !packages/

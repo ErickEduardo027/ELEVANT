@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
@@ -10,5 +10,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setupTests.js'],
+    // The visual suite runs in Chrome through Playwright (npm run test:visual), never in vitest.
+    exclude: [...configDefaults.exclude, 'tests/visual/**'],
   },
 });

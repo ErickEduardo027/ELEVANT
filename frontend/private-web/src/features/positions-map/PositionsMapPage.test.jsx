@@ -6,9 +6,6 @@ import PositionsMapPage from './PositionsMapPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 
-beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
-afterEach(() => vi.unstubAllEnvs());
-
 vi.mock('./components/PositionMap', () => ({
   default: forwardRef(function PositionMapStub(props, ref) {
     useImperativeHandle(ref, () => ({
@@ -20,10 +17,6 @@ vi.mock('./components/PositionMap', () => ({
     }));
     return <div data-testid="position-map-stub" />;
   }),
-}));
-
-vi.mock('./components/GooglePositionMap', () => ({
-  default: () => <div data-testid="google-position-map-stub" />,
 }));
 
 function position(overrides) {
@@ -86,14 +79,6 @@ describe('PositionsMapPage', () => {
     expect(screen.getByRole('heading', { name: 'Mapa de posiciones' })).toBeInTheDocument();
     expect(screen.getByText('PUJ · Aeropuerto Internacional de Punta Cana')).toBeInTheDocument();
     expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
-  });
-
-  it('keeps MapLibre when a local Google key is configured', () => {
-    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
-    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null}
-      connection="connected" onRetry={() => {}} />);
-    expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
-    expect(screen.queryByTestId('google-position-map-stub')).not.toBeInTheDocument();
   });
 
   it('shows a real planned-stand list for another station without drawing PUJ', () => {
@@ -208,7 +193,7 @@ describe('PositionsMapPage in English', () => {
     );
   }
 
-  it('renders the toolbar, controls, legend and summary in English', () => {
+  it('renders the toolbar, controls and summary in English', () => {
     renderEnglish();
     expect(screen.getByRole('heading', { name: 'Positions map' })).toBeInTheDocument();
     expect(screen.getByText('PUJ · Punta Cana International Airport')).toBeInTheDocument();
@@ -217,10 +202,12 @@ describe('PositionsMapPage in English', () => {
     expect(screen.getByRole('button', { name: 'Switch to 3D view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Center on PUJ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
-    expect(screen.getByText('Combined configuration')).toBeInTheDocument();
     expect(screen.getByText('Stands')).toBeInTheDocument();
     expect(screen.getAllByText('Available').length).toBeGreaterThan(0);
+    // The page has no legend of its own, nor its combined-stand drawing: the map's legend explains what the map
+    // draws (PositionsMapPage.legend.test.jsx).
+    expect(screen.queryByRole('button', { name: 'Legend' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Combined configuration')).not.toBeInTheDocument();
     expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
   });
 

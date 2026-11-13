@@ -3,7 +3,6 @@ import FlightToolbar from './components/FlightToolbar';
 import FlightListPanel from './components/FlightListPanel';
 import FlightListDrawer from './components/FlightListDrawer';
 import FlightMap from './components/FlightMap';
-import FlightLegend from './components/FlightLegend';
 import FlightDetailPopover from './components/FlightDetailPopover';
 import FlightToastStack from './components/FlightToast';
 import FlightMonitoringSkeleton from './components/FlightMonitoringSkeleton';
@@ -14,14 +13,15 @@ import { getFilterOptions } from './flightMonitoringMappers';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
 
+// The detail card is docked at the top left of the map, so it never follows the aircraft on screen.
+const DOCKED_POPOVER_STYLE = Object.freeze({ top: 12, left: 12 });
+
 function MonitoringMapArea({
   stationCode,
   flights,
   selectedFlightId,
   onSelectFlight,
   theme,
-  onPopoverPosition,
-  popoverPosition,
   selectedFlight,
   now,
   onClosePopover,
@@ -30,7 +30,8 @@ function MonitoringMapArea({
   const { t } = useTranslation(flightMonitoringMessages);
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
-  // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
+  // Only PUJ has reviewed coordinates; do not center a different station on PUJ. The map's own legend explains what
+  // it draws.
   return (
     <div className="relative min-h-[420px] flex-1">
       {stationCode === 'PUJ' ? <>
@@ -39,16 +40,15 @@ function MonitoringMapArea({
           selectedFlightId={selectedFlightId}
           onSelectFlight={onSelectFlight}
           theme={theme}
-          onPopoverPosition={onPopoverPosition}
         />
-        <FlightLegend />
-        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
+        {/* Above the map's dock (views, «Restablecer vista», «Centrar PUJ»), which sits at the bottom of the map. */}
+        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-20 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
           {t('page.noLivePositions')}
         </p>}
       </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
         {t('page.noLiveSource')}
       </div>}
-      <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} onStatusChange={onStatusChange} />
+      <FlightDetailPopover flight={selectedFlight} now={now} style={DOCKED_POPOVER_STYLE} onClose={onClosePopover} onStatusChange={onStatusChange} />
     </div>
   );
 }
@@ -67,7 +67,6 @@ export default function FlightMonitoringPage({
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const [selectedFlightId, setSelectedFlightId] = useState(focusFlightId);
-  const [popoverPosition, setPopoverPosition] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [listDrawerOpen, setListDrawerOpen] = useState(false);
   const isTablet = useIsTabletBreakpoint();
@@ -149,8 +148,6 @@ export default function FlightMonitoringPage({
       selectedFlightId={selectedFlightId}
       onSelectFlight={setSelectedFlightId}
       theme={theme}
-      onPopoverPosition={setPopoverPosition}
-      popoverPosition={popoverPosition}
       selectedFlight={selectedFlight}
       now={now}
       onClosePopover={() => setSelectedFlightId(null)}
@@ -193,7 +190,10 @@ export default function FlightMonitoringPage({
           </FlightListDrawer>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,3fr)_7fr] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]">
+        // One bounded row on wide screens: an `auto` row grows with a long flight list and stretched the map to the
+        // list's height (3 000 px with 30 flights), which left PUJ and the map's dock below the fold. The list scrolls
+        // inside its own panel.
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,3fr)_7fr] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]">
           {listPanel}
           {mapArea}
         </div>

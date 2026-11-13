@@ -58,7 +58,7 @@ flowchart LR
 | Backend | locked restore, build Release, test Release |
 | Modelo EF | backend anterior + `has-pending-model-changes` + tooling DB |
 | API client | `npm ci`, `generate`, `check` y `check:openapi` contra API local |
-| Private Web | `npm ci`, `test`, `test:delivery`, validator y build configurado |
+| Private Web | `npm ci`, `test`, `test:delivery`, validator y build configurado; *posterior al commit verificado (PR M2):* `test:visual` antes de mergear un cambio de mapas ([suite visual](#suite-visual-de-los-mapas-del-occ)) |
 | Public Web local | `npm ci`, lint, typecheck, test y build configurado; el validator de release requiere metadatos y orígenes distintos del ejemplo local |
 | Mobile Agent | `npm ci`, lint, typecheck, bundle seam del API client y export Android completo con Metro |
 | Vault | secret scan, `vault:test`, `vault:generate`, `vault:check` |
@@ -197,6 +197,61 @@ también posterior al commit verificado;
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.DemoFlights.cs));
   del cliente compartido, y de private-web: panel, estado, servicio, diálogo de
   importación y etiquetas «Demo».
+
+## Suite visual de los mapas del OCC
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M2 «Motor único y estilo NOC» (`c0b20127`), que esa verificación no cubre
+([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)).
+
+Private Web tiene una suite de Playwright para los mapas del OCC
+([configuración](../../frontend/private-web/playwright.occ.config.mjs),
+[aislamiento de la red](../../frontend/private-web/tests/visual/support/isolate.mjs)
+y [comportamiento del laboratorio](../../frontend/private-web/tests/visual/lab/map-lab.behaviour.spec.mjs)).
+Usa la dependencia `playwright` que ya existía; sus pruebas importan de
+`playwright/test`.
+
+- **Qué recorre.** Dos proyectos. `lab` abre el laboratorio de mapas
+  (`/map-lab`, solo en desarrollo), con escenas fijas, sin sesión ni API. `occ`
+  abre las pantallas del OCC con una sesión sintética y la API simulada; hoy,
+  Mapa de posiciones
+  ([prueba](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)).
+- **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
+  `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
+  leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
+  única; sin WebGL aparece la lista de
+  respaldo, y se queda, sin lienzo debajo ni errores en la página, cuando un
+  contexto WebGL perdido vuelve sin WebGL2; con el mapa base caído aparece su
+  aviso. También que los botones de zoom
+  y las vistas mueven de verdad la cámara, en `next dev` y en un build de
+  producción; que el doble montaje de React Strict Mode deja un solo mapa y la
+  página llega a `networkidle`; y que releer las posiciones conserva el mismo
+  lienzo.
+- **Sin red.** Cada petición a otro origen se responde desde la suite o se
+  aborta, y la prueba falla si una salió hacia un origen que la suite no
+  responde. La TileJSON es sintética; las teselas son un mundo inventado
+  alrededor de Punta Cana; los glifos `0-255` de los tres Noto Sans son
+  fixtures con su licencia SIL OFL 1.1; y la API responde un stub con Problem
+  Details. Además, su Chrome no resuelve ningún nombre salvo `localhost`.
+  Ninguna prueba llama a OpenFreeMap, a la API real ni a un proveedor.
+- **Cómo corre.** `npm run test:visual`, desde `frontend/private-web`, levanta
+  `next dev` en el puerto 4186 con los tres `NEXT_PUBLIC_*` de Development y
+  usa el Google Chrome instalado. Con `OCC_VISUAL_TARGET=production`, después
+  de `npm run build`, corre contra el build de producción; allí el laboratorio
+  solo comprueba que `/map-lab` responde la página de no encontrada. Los pasos
+  exactos están en el [README de Private Web](../../frontend/private-web/README.md)
+  y en [Comandos locales por subárbol](comandos-locales-por-subarbol.md#private-web).
+- **Capturas.** Una por escena del laboratorio a 1440×900, más la terminal B de
+  cerca, la rampa sin mapa base, la rampa a 1920×1080 y Mapa de posiciones, en
+  `frontend/private-web/test-results/visual/`, que Git ignora. Las revisa una
+  persona: no hay líneas base de imagen, porque cambian con la máquina y la
+  GPU.
+- **Qué no es.** Ningún workflow de CI la ejecuta, y `npm test` no la recoge:
+  `vitest.config.mjs` excluye `tests/visual/**`. Se corre antes de mergear un
+  cambio de mapas, y una corrida verde es evidencia local, no de un despliegue.
+  Lo que sí corre en CI es el build, que termina comprobando que el
+  laboratorio no entra en el bundle de producción
+  (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`).
 
 ## Qué agrega cada workflow activo
 

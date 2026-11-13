@@ -13,13 +13,13 @@
     "validate:development-env": "node ./scripts/validate-development-env.mjs",
     "test:delivery": "node --test ./scripts/test-development-delivery.mjs",
     "prebuild": "node ./scripts/copy-maplibre-worker.mjs",
-    "build": "npm run validate:development-env && node ./scripts/run-next.mjs build && node ./scripts/verify-maplibre-worker.mjs",
+    "build": "npm run validate:development-env && node ./scripts/run-next.mjs build && node ./scripts/verify-maplibre-worker.mjs && node ./scripts/verify-map-chunks.mjs",
     "preview": "node ./scripts/run-next.mjs start",
-    "test": "vitest run --configLoader runner --config vitest.config.mjs"
+    "test": "vitest run --configLoader runner --config vitest.config.mjs",
+    "test:visual": "playwright test --config playwright.occ.config.mjs"
   },
   "dependencies": {
     "@elevant/api-client": "file:../../packages/api-client",
-    "@googlemaps/js-api-loader": "^2.1.3",
     "@microsoft/signalr": "^10.0.11",
     "maplibre-gl": "6.16.0",
     "next": "16.3.0",

@@ -147,6 +147,25 @@ Para una prueba Vitest enfocada:
 npm test -- tests/elevantApiClient.smoke.test.js
 ```
 
+Posterior al commit verificado de esta nota (PR M2): la suite visual de los
+mapas del OCC corre fuera del CI, con Google Chrome instalado y sin otro
+`next dev` abierto en esta carpeta (Next no admite dos a la vez). El build usa
+las tres variables del primer bloque:
+
+```powershell
+npm run test:visual
+npm run build
+$env:OCC_VISUAL_TARGET = "production"
+npm run test:visual
+Remove-Item Env:OCC_VISUAL_TARGET
+```
+
+La primera corrida levanta su propio `next dev` en el puerto 4186
+(`OCC_VISUAL_PORT` lo cambia); la segunda prueba el build de producción. Las
+capturas quedan en `test-results/visual/`, que Git ignora. Qué comprueba y por
+qué está fuera del CI:
+[Pruebas, calidad y frontera con CI](pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
+
 ## Public Web
 
 Desde `frontend/public-web`:
