@@ -72,8 +72,9 @@ public sealed class DemoFlightEndpointsTests(ElevantApiFactory factory) : IClass
     private static readonly DemoFlightOptionsData Options = new(true, Now, [new(StationId, "PUJ", "Punta Cana")], StationId,
         Today, [new(AirlineId, "Demo Airlines", "ZZ", "DZZ")],
         [new("MIA", "KMIA", "Miami International Airport", "Miami", "US")],
-        [new(AircraftTypeId, "A320", "Airbus", "A320", "Narrowbody")], [new(StandId, "A01", "A", true)],
-        new DemoFlightLimitsData(2, 30, 8, 20, 240, 60, 3, 1), [new("crosses_local_midnight", [])]);
+        [new(AircraftTypeId, "A320", "Airbus", "A320", "Narrowbody")],
+        [new(StandId, "A01", "A", true, true, ["Riley Ramp"], 1, true, [])],
+        new DemoFlightLimitsData(2, 30, 8, 20, 240, 60, 3, 1), [new("crosses_local_midnight", [])], null);
 
     private static object Create(string standChoice = "None", Guid? standId = null, int minutes = 8, int ground = 60,
         string origin = " mia ") => new
@@ -198,8 +199,8 @@ public sealed class DemoFlightEndpointsTests(ElevantApiFactory factory) : IClass
         foreach (var body in new[]
                  {
                      Create(minutes: 1), Create(minutes: 31), Create(ground: 19), Create(ground: 241), Create(origin: "MI"),
-                     Create(standChoice: "Random"), Create(standChoice: "Specific"), Create(standChoice: "none"),
-                     Create(standChoice: "None", standId: StandId),
+                     Create(standChoice: "Random", standId: StandId), Create(standChoice: "Specific"),
+                     Create(standChoice: "none"), Create(standChoice: "None", standId: StandId),
                  })
         {
             using var invalid = await SendAsync(client, "governance/demo-flights", Guid.NewGuid(), body);

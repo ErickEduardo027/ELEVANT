@@ -255,7 +255,8 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
                 type.SizeCategory?.ToString())).ToArray();
         var listed = stations.Select(item => new DemoStationOptionData(item.PublicId, item.Code, item.Name)).ToArray();
         if (Choose(stations, stationId) is not { } station)
-            return new DemoFlightOptionsData(true, now, listed, null, null, [], [], types, [], DemoFlightLimitsData.For(0), []);
+            return new DemoFlightOptionsData(true, now, listed, null, null, [], [], types, [], DemoFlightLimitsData.For(0), [],
+                null);
 
         var today = BusinessCalendar.Today(now, station.IanaTimeZone);
         var covered = await ApplicableContracts.For(context, null, station.Id, today).Select(row => row.AirlineId)
@@ -283,8 +284,9 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
             .OrderBy(item => item.Stand.Terminal, StringComparer.Ordinal)
             .ThenBy(item => item.Order.Prefix, StringComparer.Ordinal).ThenBy(item => item.Order.Number)
             .ThenBy(item => item.Order.Suffix, StringComparer.Ordinal)
-            .Select(item => new DemoStandOptionData(item.Stand.PublicId, item.Stand.Code, item.Stand.Terminal,
-                !occupied.Contains(item.Stand.Id) && !demoStands.Contains(StandCodes.Normalize(item.Stand.Code))))
+            .Select(item => new DemoStandOptionData(item.Stand.PublicId, item.Stand.Code, item.Stand.Terminal, Located: false,
+                Free: !occupied.Contains(item.Stand.Id) && !demoStands.Contains(StandCodes.Normalize(item.Stand.Code)),
+                CoveredBy: [], EligibleAgents: 0, Eligible: false, Reasons: []))
             .ToArray();
 
         var warnings = new List<DemoFlightWarningData>();
@@ -295,7 +297,7 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
             warnings.Add(new DemoFlightWarningData(CrossesLocalMidnight, []));
         return new DemoFlightOptionsData(true, now, listed, station.PublicId, today, airlines,
             await AirportOptionsAsync(station.AirportIata, cancellationToken), types, stands,
-            DemoFlightLimitsData.For(active.Count), warnings);
+            DemoFlightLimitsData.For(active.Count), warnings, null);
     }
 
     public async Task<DemoFlightListData?> ListAsync(Guid actorId, Guid? stationId,

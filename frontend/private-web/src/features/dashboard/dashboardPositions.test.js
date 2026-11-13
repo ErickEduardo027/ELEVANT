@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS, RETIRED_DASHBOARD_POSITIONS, unlocatedStandAssignments } from './dashboardPositions';
 import { RAMP_POSITIONS } from './positionsData';
@@ -12,6 +13,16 @@ describe('dashboard internal parking catalog', () => {
     for (const id of ['A1', 'AN1', 'BN13', 'B34', 'B35', 'B36', 'B37']) expect(ids.has(id)).toBe(true);
     expect(ids.has('B33')).toBe(false);
     for (const id of ['B23A', 'B23B', '1', '1A']) expect(ids.has(id)).toBe(false);
+  });
+
+  it('marks B33 retired in the data, not in the code', () => {
+    // ADR-0041: the flag is the rule. The API's Punta Cana catalogue holds the rows without it (DemoStationCatalogParityTests).
+    expect(RAMP_POSITIONS.filter(position => 'retired' in position).map(position => position.id)).toEqual(['B33']);
+    expect(RAMP_POSITIONS.find(position => position.id === 'B33').retired).toBe(true);
+    expect(RETIRED_DASHBOARD_POSITIONS).toEqual(RAMP_POSITIONS.filter(position => position.retired === true));
+    expect(DASHBOARD_POSITIONS).toEqual(RAMP_POSITIONS.filter(position => position.retired !== true));
+    // No stand code is written in the filter itself (the path is relative to this package, as in standCodes.test.js).
+    expect(readFileSync('src/features/dashboard/dashboardPositions.js', 'utf8')).not.toMatch(/['"]B33['"]/);
   });
 
   it('keeps the original internal coordinates for all thirteen B20–B32 entries', () => {

@@ -1133,8 +1133,8 @@ public sealed partial class SqlServerMigrationTests
                  {
                      demo.Command(minutes: 1), demo.Command(minutes: 31), demo.Command(ground: 19), demo.Command(ground: 241),
                      demo.Command(origin: "MIAM"), demo.Command(destination: "M1A"),
-                     demo.Command() with { StandChoice = "Random" }, demo.Command() with { StandChoice = "Specific" },
-                     demo.Command() with { StandId = demo.Stands["A03"] },
+                     demo.Command() with { StandChoice = "Random", StandId = demo.Stands["A03"] },
+                     demo.Command() with { StandChoice = "Specific" }, demo.Command() with { StandId = demo.Stands["A03"] },
                  })
             Assert.Equal((MasterDataFailure.Invalid, "invalid_demo_flight"), Refusal(await demo.Trigger(invalid)));
         Assert.Equal((MasterDataFailure.Invalid, "invalid_demo_flight"), Refusal(await demo.Run(services =>
