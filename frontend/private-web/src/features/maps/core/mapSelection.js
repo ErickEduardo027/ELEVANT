@@ -150,7 +150,12 @@ const visitOf = flight => flight.visitKey ?? flight;
 const pushedBack = flight => Array.isArray(flight.milestones)
   && flight.milestones.some(milestone => milestone?.code === 'PUSHBACK' && milestone.actualAt != null);
 
-function endsItsVisit(flight) {
+/**
+ * Whether a map flight (contracts 1.3) ends its visit on the stand: its PUSHBACK is recorded, it departed or diverted,
+ * its arrival is cancelled, or the demo timeline took the aircraft off the stand (TaxiOut, Departed, Gone). One leg is
+ * enough: the stand model (stands/standModel.js) drops a visit when any of its legs ends it.
+ */
+export function endsItsVisit(flight) {
   return LEFT_PHASES.has(flight.phase)
     || (flight.phase === 'cancelled' && flight.direction !== 'Departure')
     || pushedBack(flight)

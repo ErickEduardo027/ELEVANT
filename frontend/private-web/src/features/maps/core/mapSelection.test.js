@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SELECTION_KEYS, matchFlight, readSelection, relatedEntities, writeSelection } from './mapSelection';
+import { SELECTION_KEYS, endsItsVisit, matchFlight, readSelection, relatedEntities, writeSelection } from './mapSelection';
 
 const BASE = 'stationId=20000000-0000-7000-8000-000000000003&operationId=op-7&tab=plan';
 
@@ -189,5 +189,18 @@ describe('map selection in the URL', () => {
     expect(relatedA5(demoVisit('Parked'))).toBe('p:prop-arr');
     expect(relatedA5(demoVisit('TaxiOut'))).toBeNull();
     expect(relatedA5(demoVisit('Gone', { state: 'Cancelled', arrival: { phase: 'cancelled' } }))).toBeNull();
+  });
+
+  it('endsItsVisit is the one rule of a leg that ends its visit, shared with the stand model', () => {
+    const leg = (direction, extra = {}) => ({ direction, phase: 'scheduled', milestones: [], ...extra });
+    expect(endsItsVisit(leg('Arrival', { phase: 'arrived' }))).toBe(false);
+    expect(endsItsVisit(leg('Departure', { phase: 'departed' }))).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { phase: 'diverted' }))).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { phase: 'cancelled' }))).toBe(true);
+    expect(endsItsVisit(leg('Departure', { phase: 'cancelled' }))).toBe(false);
+    expect(endsItsVisit(leg('Arrival', { milestones: [{ code: 'PUSHBACK', actualAt: '2026-11-12T11:33:00Z' }] }))).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { milestones: [{ code: 'PUSHBACK', actualAt: null }] }))).toBe(false);
+    for (const phase of ['TaxiOut', 'Departed', 'Gone']) expect(endsItsVisit(leg('Arrival', { demo: { phase } })), phase).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { demo: { phase: 'Parked' } }))).toBe(false);
   });
 });

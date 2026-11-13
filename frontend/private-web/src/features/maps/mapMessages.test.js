@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { OCC_SHORTCUTS } from '../occ-ui/occShortcuts';
+import { STAND_STATES, TAGS } from '../occ-ui/statusVocabulary';
 import { mapMessages } from './mapMessages';
 
 // Every leaf of a message tree as `a.b.c`.
@@ -51,6 +52,34 @@ describe('map messages', () => {
     for (const language of ['es', 'en']) {
       const notice = createTranslator(mapMessages, language)('basemap.degraded');
       expect(notice, language).not.toMatch(/posici|stand|aer[oó]dromo|airfield|vuelo|flight|avi[oó]n|aircraft/i);
+    }
+  });
+
+  it('says what a stand says of itself in both languages: times, coverage, signals and where its location comes from', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect(es('stand.arrivesIn', { time: '14:20', minutes: 12 })).toBe('Llega 14:20 · en 12 min');
+    expect(es('stand.arrives', { time: '14:20' })).toBe('Llega 14:20');
+    expect(es('stand.departsIn', { time: '15:05', minutes: 8 })).toBe('Sale 15:05 · en 8 min');
+    expect(es('stand.departs', { time: '15:05' })).toBe('Sale 15:05');
+    expect(es('stand.coveredBy', { names: 'M. Castillo' })).toBe('Cubre M. Castillo');
+    expect(['uncovered', 'overdue', 'conflict'].map(key => es(`stand.${key}`)))
+      .toEqual(['Sin agente que la cubra', 'Pasó su hora de salida', 'Otra aeronave llega a esta posición']);
+    expect(es('stand.cancelledBy', { code: '9A' })).toBe('Anulada por 9A');
+    expect(['narrowbodyOnly', 'unlocated', 'located', 'reference'].map(key => es(`stand.${key}`)))
+      .toEqual(['Solo fuselaje estrecho', 'Sin ubicar', 'Ubicada por OCC', 'Referencia interna sin verificar']);
+    expect(en('stand.arrivesIn', { time: '14:20', minutes: 12 })).toBe('Arrives 14:20 · in 12 min');
+    expect(en('stand.departs', { time: '15:05' })).toBe('Departs 15:05');
+    expect(['uncovered', 'overdue', 'conflict', 'unlocated'].map(key => en(`stand.${key}`)))
+      .toEqual(['No agent covers it', 'Past its departure time', 'Another aircraft is arriving at this stand', 'Not placed']);
+  });
+
+  it('takes the stand states and the tags from the vocabulary instead of copying them', () => {
+    // «Libre», «Demo», «No oficial»… are the words of occ-ui/statusVocabulary.js on every screen.
+    for (const language of ['es', 'en']) {
+      const texts = leafPaths(mapMessages[language]).map(path => createTranslator(mapMessages, language)(path));
+      const vocabulary = [...Object.values(STAND_STATES), ...Object.values(TAGS)].map(entry => entry[language]);
+      for (const word of vocabulary) expect(texts, `${language} ${word}`).not.toContain(word);
     }
   });
 

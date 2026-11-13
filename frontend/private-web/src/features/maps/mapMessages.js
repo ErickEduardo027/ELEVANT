@@ -27,6 +27,23 @@ export const mapMessages = {
       taxiway: 'Calle de rodaje {ref}',
       unnamed: 'Calle de rodaje sin nombre',
     },
+    // What a stand says of itself: its times, who covers it, its signals and where its location comes from. The map
+    // draws some of these in its labels, so they keep to Latin-1 characters (no «…», «→» or «–»).
+    stand: {
+      arrives: 'Llega {time}',
+      arrivesIn: 'Llega {time} · en {minutes} min',
+      departs: 'Sale {time}',
+      departsIn: 'Sale {time} · en {minutes} min',
+      coveredBy: 'Cubre {names}',
+      uncovered: 'Sin agente que la cubra',
+      overdue: 'Pasó su hora de salida',
+      conflict: 'Otra aeronave llega a esta posición',
+      cancelledBy: 'Anulada por {code}',
+      narrowbodyOnly: 'Solo fuselaje estrecho',
+      unlocated: 'Sin ubicar',
+      located: 'Ubicada por OCC',
+      reference: 'Referencia interna sin verificar',
+    },
     // Every map shows it, also those that draw no stand (Monitoreo) or a view that hides them (region, approach), so it
     // does not name what is drawn.
     basemap: {
@@ -71,6 +88,21 @@ export const mapMessages = {
       size: '{length} m × {width} m',
       taxiway: 'Taxiway {ref}',
       unnamed: 'Unnamed taxiway',
+    },
+    stand: {
+      arrives: 'Arrives {time}',
+      arrivesIn: 'Arrives {time} · in {minutes} min',
+      departs: 'Departs {time}',
+      departsIn: 'Departs {time} · in {minutes} min',
+      coveredBy: 'Covered by {names}',
+      uncovered: 'No agent covers it',
+      overdue: 'Past its departure time',
+      conflict: 'Another aircraft is arriving at this stand',
+      cancelledBy: 'Cancelled by {code}',
+      narrowbodyOnly: 'Narrow-body aircraft only',
+      unlocated: 'Not placed',
+      located: 'Placed by OCC',
+      reference: 'Internal reference, not verified',
     },
     basemap: {
       degraded: 'The base map could not be loaded. ELEVANT data is still on the map.',
