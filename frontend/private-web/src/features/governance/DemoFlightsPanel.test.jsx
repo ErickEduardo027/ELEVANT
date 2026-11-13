@@ -36,6 +36,17 @@ const options = (extra = {}) => ({ enabled: true, serverTime: '2026-11-12T14:00:
   limits: LIMITS, warnings: [], ...extra });
 const DISABLED_OPTIONS = { enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stations: [], stationId: null,
   operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], limits: LIMITS, warnings: [] };
+const MIDNIGHT_WARNING =
+  'Falta poco para la medianoche en la estación: si el avión llega después, el vuelo queda en la planificación de mañana.';
+/** The day of an instant in Punta Cana (America/Santo_Domingo, UTC−4 all year). */
+const puntaCanaDay = ms => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
+/**
+ * The options as the server answers them at `ms` (EfDemoFlightStore.OptionsAsync): from 23:30 in Punta Cana the latest
+ * arrival it allows parks after midnight, so it warns crosses_local_midnight.
+ */
+const optionsAt = ms => options({ serverTime: iso(ms), operationDate: puntaCanaDay(ms),
+  warnings: puntaCanaDay(ms + LIMITS.maxMinutesToOnBlock * 60_000) === puntaCanaDay(ms) ? []
+    : [{ code: 'crosses_local_midnight', reasons: [] }] });
 
 // Triggered at 10:00 in Punta Cana (14:00Z) to park in 8 minutes: the wheels touch the runway at 10:04:24.
 const flight = (extra = {}) => ({ id: '70000000-0000-7000-8000-000000000001', stationId: STATION, stationCode: 'PUJ',
@@ -384,24 +395,93 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     await advance(5000);
     expect(listDemoFlights).toHaveBeenCalledTimes(3);
 
-    // Parked: nothing moves, so the list is read every 20 s.
+    // Parked: nothing moves, so the list is read every 20 s. The options, read at 10:01, are eight minutes old: they are
+    // read again with it.
     clock = at('2026-11-12T14:09:00Z');
     await advance(1000);
     await advance(19_999);
     expect(listDemoFlights).toHaveBeenCalledTimes(3);
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(1);
     await advance(1);
     expect(listDemoFlights).toHaveBeenCalledTimes(4);
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
 
-    // Hidden, nothing is read; back in sight, the list is read at once and the polling resumes.
+    // Hidden, nothing is read; back in sight, the options and the list are read at once and the polling resumes.
     visibility = 'hidden';
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     await advance(60_000);
     expect(listDemoFlights).toHaveBeenCalledTimes(4);
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
     visibility = 'visible';
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     expect(listDemoFlights).toHaveBeenCalledTimes(5);
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
     await advance(20_000);
     expect(listDemoFlights).toHaveBeenCalledTimes(6);
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads the options again once they are five minutes old, so a warning that comes with the time shows', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    // Opened at 23:26 in Punta Cana: nothing to warn about yet. The server warns from 23:30.
+    clock = at('2026-11-13T03:26:00Z');
+    /** How far the server's clock is ahead of this browser's. */
+    let skew = 0;
+    loadDemoFlightOptions.mockImplementation(async () => optionsAt(clock + skew));
+    listDemoFlights.mockImplementation(async () => list([], iso(clock + skew)));
+    // The browser's clock moves with the timers, one slow poll at a time.
+    const poll = () => act(async () => { clock += 20_000; await vi.advanceTimersByTimeAsync(20_000); });
+    render(<DemoFlightsPanel now={now} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole('form', { name: 'Disparar vuelo demo' })).toBeInTheDocument();
+    expect(screen.queryByText(MIDNIGHT_WARNING)).not.toBeInTheDocument();
+
+    // Nothing moves: the list is read every 20 s; the options are kept while they are under five minutes old, even
+    // past 23:30.
+    for (let read = 0; read < 14; read += 1) await poll();
+    expect(listDemoFlights).toHaveBeenCalledTimes(15);
     expect(loadDemoFlightOptions).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(MIDNIGHT_WARNING)).not.toBeInTheDocument();
+
+    // 23:31: five minutes old, they are read with the list and the warning shows without reloading the panel. It never
+    // blocks the trigger.
+    await poll();
+    expect(listDemoFlights).toHaveBeenCalledTimes(16);
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
+    expect(loadDemoFlightOptions).toHaveBeenLastCalledWith(STATION, expect.anything());
+    expect(screen.getByText(MIDNIGHT_WARNING)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disparar vuelo demo' })).toBeEnabled();
+    await poll();
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
+
+    // This browser's clock is set back an hour while the server's goes on: the age is no longer known, so the options are
+    // read again with the next poll.
+    clock -= 3_600_000;
+    skew += 3_600_000;
+    await poll();
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
+    expect(screen.getByText(MIDNIGHT_WARNING)).toBeInTheDocument();
+  });
+
+  it('reads the options and the list at once when the tab is back in sight', async () => {
+    let visibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    // Opened at 23:10 in Punta Cana and hidden; back at 23:45, when the server warns about midnight.
+    clock = at('2026-11-13T03:10:00Z');
+    loadDemoFlightOptions.mockImplementation(async () => optionsAt(clock));
+    listDemoFlights.mockImplementation(async () => list([], iso(clock)));
+    renderPanel();
+    expect(await screen.findByRole('form', { name: 'Disparar vuelo demo' })).toBeInTheDocument();
+    expect(screen.queryByText(MIDNIGHT_WARNING)).not.toBeInTheDocument();
+
+    visibility = 'hidden';
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    clock = at('2026-11-13T03:45:00Z');
+    visibility = 'visible';
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(await screen.findByText(MIDNIGHT_WARNING)).toBeInTheDocument();
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
+    expect(loadDemoFlightOptions).toHaveBeenLastCalledWith(STATION, expect.anything());
+    expect(listDemoFlights).toHaveBeenCalledTimes(2);
   });
 });

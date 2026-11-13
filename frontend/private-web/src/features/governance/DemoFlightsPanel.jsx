@@ -33,6 +33,11 @@ const PREFERRED_ORIGIN = 'MIA';
 const STAND_ORDER = new Intl.Collator('es', { numeric: true });
 const NO_FLIGHTS = [];
 const WHOLE_NUMBER = /^\s*\d+\s*$/;
+/**
+ * The options change with the time: the warnings (crosses_local_midnight comes once the longest arrival would park after
+ * midnight), today's airlines and the free stands. Once they are this old, the next read of the list reads them again.
+ */
+const OPTIONS_MAX_AGE_MS = 5 * 60_000;
 
 /** The warnings this panel explains (ADR-0041); they never block the trigger. Codes it does not know are not shown. */
 const WARNING_TEXT = Object.freeze({
@@ -249,7 +254,8 @@ function DemoFlightRow({ flight, serverNow, busy, onAction }) {
  * provider «Demo» that OCC sees coming, imports and operates like any other flight, and follows them in «Vuelos demo de
  * hoy». The phase and the countdowns are computed here each second from the server's instants and an estimate of the
  * server's clock; the list is read every `fastPollMs` while an aircraft moves (approach, taxi-in, taxi-out) and every
- * `slowPollMs` otherwise, never while the tab is hidden (contracts 2.7). Each command carries its intent's
+ * `slowPollMs` otherwise, never while the tab is hidden (contracts 2.7). The options go with the list once they are
+ * `OPTIONS_MAX_AGE_MS` old, and both are read at once when the tab is back in sight. Each command carries its intent's
  * Idempotency-Key; a 409 or a 404 reads the options and the list again before its message shows.
  */
 export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_000, now = Date.now }) {
@@ -266,6 +272,8 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
   const clockSource = useRef(now);
   const reads = useRef(null);
   const optionsRead = useRef(0);
+  /** This browser's clock when the options were last asked for. */
+  const optionsAskedAt = useRef(Number.NEGATIVE_INFINITY);
   const listRead = useRef(0);
   const handledMismatch = useRef('');
   const createKeys = useRef(createCommandKeyHolder());
@@ -276,6 +284,8 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
   const readOptions = useCallback(async station => {
     const read = ++optionsRead.current;
     const signal = reads.current?.signal;
+    // The age counts from the request: a re-read that fails is not repeated before the next one is due.
+    optionsAskedAt.current = clockSource.current();
     try {
       const data = await loadDemoFlightOptions(station, { signal });
       if (read === optionsRead.current && !signal?.aborted) setOptions({ status: 'success', data, error: null });
@@ -335,23 +345,28 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
     return () => clearInterval(timer);
   }, [hasActive]);
 
-  // One read at a time: the next one is scheduled once the last one settled.
+  // One read at a time: the next one is scheduled once the last one settled. Options that are OPTIONS_MAX_AGE_MS old go
+  // with it; so do they when this browser's clock went back, because their age is then unknown.
   useEffect(() => {
     if (!live || hidden) return undefined;
-    const timer = setTimeout(() => { void readList(station); }, moving ? fastPollMs : slowPollMs);
+    const timer = setTimeout(() => {
+      if (Math.abs(clockSource.current() - optionsAskedAt.current) >= OPTIONS_MAX_AGE_MS) void readOptions(station);
+      void readList(station);
+    }, moving ? fastPollMs : slowPollMs);
     return () => clearTimeout(timer);
-  }, [live, hidden, moving, list.version, station, fastPollMs, slowPollMs, readList]);
+  }, [live, hidden, moving, list.version, station, fastPollMs, slowPollMs, readOptions, readList]);
 
-  // Hidden, the panel reads nothing; back in sight it reads the list at once.
+  // Hidden, the panel reads nothing; back in sight it reads the options and the list at once: a warning such as
+  // crosses_local_midnight or today's airlines may have changed meanwhile.
   useEffect(() => {
     function onVisibility() {
       const nowHidden = document.visibilityState === 'hidden';
       setHidden(nowHidden);
-      if (!nowHidden && live) void readList(station);
+      if (!nowHidden && live) void refreshAll(station);
     }
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [live, station, readList]);
+  }, [live, station, refreshAll]);
 
   // A flight started or ended since the options were read: the free stands and the limit are read again, once.
   useEffect(() => {
