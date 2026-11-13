@@ -54,7 +54,8 @@ public sealed class AirTrafficPollWorkerTests
     [Fact]
     public async Task TheApiAlwaysRegistersItAndAirTrafficIsOffByDefault()
     {
-        // No AirTraffic section (the Testing host, like appsettings.json): the worker is there and returns at once.
+        // The Testing host keeps AirTraffic off (appsettings.json leaves it off and the Testing settings add nothing): the
+        // worker is there and returns at once.
         await using var factory = new ElevantApiFactory();
         var services = factory.Services;
 

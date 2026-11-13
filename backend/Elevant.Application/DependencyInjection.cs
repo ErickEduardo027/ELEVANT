@@ -94,6 +94,10 @@ public static class DependencyInjection
             Elevant.Application.Operations.AirPicture.AirTrafficSettings.Disabled);
         // ADR-0042: one air picture in memory for every screen, read by AirTrafficPollWorker only while someone watches.
         services.AddSingleton<Elevant.Application.Operations.AirPicture.AirPictureService>();
+        // ADR-0042: the three reads of the OCC map (occ/map): the air picture, an aircraft's track and the map flights.
+        services.AddScoped<Elevant.Application.Operations.AirPicture.GetOccAirPictureHandler>();
+        services.AddScoped<Elevant.Application.Operations.AirPicture.GetOccAircraftTrackHandler>();
+        services.AddScoped<Elevant.Application.Operations.MapFlights.GetOccMapFlightsHandler>();
         return services;
     }
 }

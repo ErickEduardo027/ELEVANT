@@ -171,6 +171,12 @@ describe("Problem Details codes", () => {
     expect(new Set(ELEVANT_RULE_REASONS).size).toBe(ELEVANT_RULE_REASONS.length);
   });
 
+  it("keeps invalid_map_query of the OCC map (ADR-0042)", () => {
+    // A malformed map query has its own code; a refused reader and a station or aircraft not found keep the common ones.
+    for (const code of ["invalid_map_query", "forbidden", "not_found"]) expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

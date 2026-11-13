@@ -12,6 +12,7 @@ export * from "./contractDocuments";
 export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./demoFlights";
+export * from "./occMap";
 export * from "./flightFeedReview";
 export * from "./occTurnarounds";
 export * from "./occIncidents";
@@ -68,6 +69,7 @@ export {
   type GetOccPlanningOptionsOptions,
   type GetOccPlanningSnapshotOptions,
   type GetOccAircraftTrafficOptions,
+  type GetOccMapOptions,
   type GetManualTurnaroundOptionsOptions,
   type CreateManualTurnaroundOptions,
   type ProgramOccShiftOptions,
@@ -381,6 +383,24 @@ export {
   type GetOccAircraftTrafficParams,
   type OccAircraftTrafficResponse,
   type OccAircraftStateResponse,
+  type GetOccAirPictureParams,
+  type GetOccAircraftTrackParams,
+  type GetOccMapFlightsParams,
+  type OccAirPictureResponse,
+  type OccAirTrafficSourceResponse,
+  type OccAirPictureCenterResponse,
+  type OccAirPictureAircraftResponse,
+  type OccAirTrailPointResponse,
+  type OccAircraftTrackResponse,
+  type OccMapFlightsResponse,
+  type OccMapFlightResponse,
+  type OccMapAirlineResponse,
+  type OccMapAirportResponse,
+  type OccMapAircraftResponse,
+  type OccMapTurnaroundResponse,
+  type OccMapStandResponse,
+  type OccMapMilestoneResponse,
+  type OccMapDemoResponse,
   type OccPlanningTurnaroundContextResponse,
   type OccServiceOptionResponse,
   type OccStandResponse,
