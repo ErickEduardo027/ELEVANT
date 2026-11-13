@@ -55,6 +55,8 @@ export default {
           'warn-soft': 'var(--occ-warn-soft)',
           danger: 'var(--occ-danger)',
           'danger-soft': 'var(--occ-danger-soft)',
+          // The veil under an overlay (the rail's menu below 1024 px).
+          scrim: 'var(--occ-scrim)',
           nav: 'var(--occ-nav)',
           'nav-line': 'var(--occ-nav-line)',
           'nav-text': 'var(--occ-nav-text)',

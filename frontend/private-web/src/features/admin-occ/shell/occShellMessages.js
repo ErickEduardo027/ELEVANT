@@ -2,15 +2,13 @@ export const occShellMessages = {
   es: {
     brand: 'ELEVANT',
     department: 'Centro de Operaciones',
-    departmentShort: 'OCC',
-    station: 'Punta Cana International Airport',
-    stationShort: 'Punta Cana Intl.',
     stationCity: 'Punta Cana',
+    // The rail's groups, in the order of the controller's day (design C.2).
     sections: {
-      monitoring: 'Monitoreo',
-      operations: 'Operación',
-      communication: 'Comunicación',
-      administration: 'Administración',
+      live: 'En vivo',
+      plan: 'Planificar',
+      review: 'Revisar',
+      station: 'Estación',
     },
     nav: {
       dashboard: 'Panorama',
@@ -33,6 +31,9 @@ export const occShellMessages = {
     expand: 'Expandir barra lateral',
     openMenu: 'Abrir menú de navegación',
     closeMenu: 'Cerrar menú de navegación',
+    skipToContent: 'Saltar al contenido',
+    // What a count plate of the rail says to screen readers.
+    unreadDescription: '{count} sin leer',
     logout: 'Cerrar sesión',
     language: 'Idioma',
     languageOption: { es: 'Español', en: 'English' },
@@ -90,15 +91,12 @@ export const occShellMessages = {
   en: {
     brand: 'ELEVANT',
     department: 'Operations Control Center',
-    departmentShort: 'OCC',
-    station: 'Punta Cana International Airport',
-    stationShort: 'Punta Cana Intl.',
     stationCity: 'Punta Cana',
     sections: {
-      monitoring: 'Monitoring',
-      operations: 'Operations',
-      communication: 'Communication',
-      administration: 'Administration',
+      live: 'Live',
+      plan: 'Plan',
+      review: 'Review',
+      station: 'Station',
     },
     nav: {
       dashboard: 'Overview',
@@ -121,6 +119,8 @@ export const occShellMessages = {
     expand: 'Expand sidebar',
     openMenu: 'Open navigation menu',
     closeMenu: 'Close navigation menu',
+    skipToContent: 'Skip to content',
+    unreadDescription: '{count} unread',
     logout: 'Sign out',
     language: 'Language',
     languageOption: { es: 'Español', en: 'English' },
