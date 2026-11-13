@@ -129,6 +129,14 @@ describe('tags and signals', () => {
     expect(new Set(Object.values(TAGS).map(tag => tag.texture)).size).toBe(4);
   });
 
+  it('the stale tag also has a short form, without its time, for a legend or a list of sources', () => {
+    expect(TAGS.stale.short).toEqual({ es: 'Sin actualizar', en: 'Not updated' });
+    // The long form is the short one followed by its time, in both languages.
+    expect(TAGS.stale.es.startsWith(`${TAGS.stale.short.es} `)).toBe(true);
+    expect(TAGS.stale.en.startsWith(`${TAGS.stale.short.en} `)).toBe(true);
+    expect(() => { TAGS.stale.short.es = 'Viejo'; }).toThrow(TypeError);
+  });
+
   it('signals pair one hue with one shape and the plain notice has no colour', () => {
     expect(SIGNALS).toEqual({
       attention: { colorToken: '--occ-warn', shape: 'triangle', es: 'Atención', en: 'Attention' },

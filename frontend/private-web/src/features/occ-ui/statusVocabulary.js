@@ -69,7 +69,8 @@ export const STAND_STATES = deepFreeze({
 
 /**
  * Provenance tags: the same words on every screen, told apart by texture and never by hue.
- * `stale` is a template: replace `{time}` with the local time of the last update («14:02»).
+ * `stale` is a template: replace `{time}` with the local time of the last update («14:02»). Where no time goes with
+ * it (a legend, a list of sources), `stale.short` is the tag alone.
  */
 export const TAGS = deepFreeze({
   demo: { es: 'Demo', en: 'Demo', texture: 'stripes-45' },
@@ -81,7 +82,10 @@ export const TAGS = deepFreeze({
     },
   },
   unofficial: { es: 'No oficial', en: 'Unofficial', texture: 'outline' },
-  stale: { es: 'Sin actualizar desde las {time}', en: 'Not updated since {time}', texture: 'dimmed' },
+  stale: {
+    es: 'Sin actualizar desde las {time}', en: 'Not updated since {time}', texture: 'dimmed',
+    short: { es: 'Sin actualizar', en: 'Not updated' },
+  },
 });
 
 /** The three signals: one hue and one shape each, always next to their word. A plain notice has no colour. */

@@ -282,7 +282,7 @@ describe('OccShellProvider', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('feeds the top bar bell from the shell and shows its toasts outside the bar', async () => {
+  it('feeds the status bar alerts and live link from the shell and shows its toasts outside the bar', async () => {
     const { created, createObserver } = fakeObservers();
     const old = notice('operation_submitted');
     const incident = notice('incident_reported');
@@ -294,31 +294,41 @@ describe('OccShellProvider', () => {
     const bar = <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={{ name: 'Alex Operations', role: 'OCC' }}
       notificationsEnabled={false} notificationsCount={0} onOpenNotifications={onOpenNotifications} />;
     const view = render(frame(bar, { createObserver, overlays: false }));
+    // While the notices load the bar counts nothing.
+    expect(screen.getByRole('button', { name: 'Alertas' })).toBeInTheDocument();
     await flush();
-    const bell = screen.getByRole('button', { name: 'Notificaciones, 1 sin leer' });
-    expect(within(bell).getByTestId('notifications-badge')).toHaveTextContent('1');
+    // A plain notice is not an alert.
+    expect(screen.getByRole('button', { name: 'Sin alertas' })).toBeInTheDocument();
+    expect(screen.queryByTestId('notifications-badge')).not.toBeInTheDocument();
+    // The live link is the shell's: connecting until the observer reports.
+    expect(screen.getByRole('button', { name: 'Reconectando' })).toBeInTheDocument();
+    act(() => created[0].onStatus({ hubs: hubs('Connected', 'Connected'), lastOkAt: Date.now(), lastErrorAt: null,
+      failingSince: null }));
+    expect(screen.getByRole('button', { name: 'En vivo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fuentes al día' })).toBeInTheDocument();
 
     await flush(10_000);
     act(() => created[0].onChanges(['notifications']));
     await flush();
-    expect(screen.getByRole('button', { name: 'Notificaciones, 2 sin leer' })).toBeInTheDocument();
+    const alerts = screen.getByRole('button', { name: '1 alerta', description: 'Urgente' });
+    expect(within(alerts).getByTestId('notifications-badge')).toHaveTextContent('1');
     // The bar mounts the overlays, which leave the header for the shell root.
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent(`Incidencia reportada en rampa · ${incident.operationCode}`);
     expect(alert.closest('header')).toBeNull();
     expect(alert.closest('[data-shell-root]')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Notificaciones, 2 sin leer' }));
+    fireEvent.click(alerts);
     expect(window.location.pathname).toBe('/admin-occ/notifications');
     expect(onOpenNotifications).not.toHaveBeenCalled();
     view.unmount();
 
-    // Without the notices permission the bar has no bell.
+    // Without the notices permission the bar has no alerts to count and no page to open.
     const access = { ...ACCESS, kind: 'Member',
       permissions: ACCESS.permissions.filter(code => code !== 'operations.notifications.read') };
     render(frame(bar, { createObserver, overlays: false, access }));
     await flush();
-    expect(screen.queryByRole('button', { name: /Notificaciones/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /alerta/i })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Idioma' })).toBeInTheDocument();
   });
 
