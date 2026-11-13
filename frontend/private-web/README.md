@@ -166,7 +166,45 @@ El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
 indica explícitamente. Otras estaciones no usan el centro de PUJ. Las variantes
 de Google Maps y su cargador se retiraron del código y de las dependencias;
 cualquier experimento futuro con ese proveedor requiere una decisión y una CSP
-revisadas por separado.
+revisadas por separado. Las decisiones de los mapas del OCC están en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+El laboratorio de mapas (`/map-lab`) solo existe con `next dev`: dibuja el mapa
+del OCC con siete escenas fijas (los estados de rampa, una posición elegida,
+Aeródromo, Aproximación, Región, un navegador sin WebGL y el mapa base caído),
+sin sesión ni API. La URL elige la escena (`?scene=`), el mapa sin teselas
+(`?basemap=none`), un reloj del mapa congelado (`?t=` con un instante ISO 8601)
+y las claves de selección del mapa (`stand=`, `view=`, `terminal=`). La ruta
+importa el laboratorio solo dentro de la rama de desarrollo, y `npm run build`
+termina con `scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
+al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`). En producción la ruta
+responde la página de no encontrada.
+
+La suite visual del OCC (`tests/visual`, configurada en
+`playwright.occ.config.mjs`) corre con Playwright en el Google Chrome
+instalado, fuera del CI, antes de mergear un cambio de mapas. Tiene dos
+proyectos: `lab`, el laboratorio, y `occ`, Mapa de posiciones con una sesión
+sintética y la API simulada. Ninguna petición llega a otro origen: la suite
+responde la TileJSON, las teselas, los glifos (fixtures en
+`tests/visual/fixtures/glyphs`) y la API, aborta lo demás, y su Chrome no
+resuelve otro nombre que `localhost`. `npm test` no la recoge, porque
+`vitest.config.mjs` excluye `tests/visual/**`.
+
+```powershell
+npm run test:visual
+npm run build
+$env:OCC_VISUAL_TARGET = "production"
+npm run test:visual
+Remove-Item Env:OCC_VISUAL_TARGET
+```
+
+La primera corrida levanta su propio `next dev` en el puerto 4186
+(`OCC_VISUAL_PORT` lo cambia) con las tres variables `NEXT_PUBLIC_*` de
+Development; no puede haber otro `next dev` abierto en esta carpeta. La segunda
+usa el build de producción, compilado con las variables del bloque de arriba, y
+allí el laboratorio solo comprueba que `/map-lab` responde la página de no
+encontrada. Las capturas de cada escena quedan en `test-results/visual/`, que
+Git ignora, para revisarlas a mano: no hay líneas base de imagen.
 
 ## Layout responsive
 

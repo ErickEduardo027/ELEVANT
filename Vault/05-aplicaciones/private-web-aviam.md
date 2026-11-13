@@ -95,7 +95,7 @@ La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 | Responsabilidad UI | Presentar vistas internas, capturar intenciones y manejar estados de interacción. |
 | Autoridad real | Debe residir en la API para identidad, roles, station scope, reglas y datos. |
 | Persistencia del cliente | La sesión del prototipo usa almacenamiento del navegador; no es una frontera de autorización. |
-| Integración externa | El navegador no conecta directamente a SQL Server, FlightAware ni proveedores de datos aeronáuticos. Como excepción visual verificable, los mapas cargan estilos y teselas cartográficas públicas de MapLibre/OpenFreeMap permitidas explícitamente por CSP. |
+| Integración externa | El navegador no conecta directamente a SQL Server, FlightAware ni proveedores de datos aeronáuticos. Como excepción visual verificable, los mapas cargan estilos y teselas cartográficas públicas de MapLibre/OpenFreeMap permitidas explícitamente por CSP. *Posterior al commit verificado (PR M2):* los mapas del OCC llevan su propio estilo en el bundle y de OpenFreeMap solo piden teselas y glifos; los dos mapas auxiliares del dashboard conservan los estilos publicados hasta U3. |
 | Madurez | Preview técnico ejecutable con cobertura de UI amplia e integración de negocio incompleta. |
 
 ## Stack actual
@@ -172,8 +172,11 @@ Fuentes de implementación local: [vista](../../frontend/private-web/src/feature
 La validación del rediseño anterior (27/27 pruebas enfocadas, test:delivery 22/22, lint, typecheck y build; navegador 375–1440 px) precede a esta integración. Sus resultados no acreditan las pruebas ni una conexión OpenSky real de esta rama. Los controles nuevos se registran en el handoff; la metadata de verificación superior conserva su commit histórico. Ninguno de estos cambios locales se ha desplegado.
 Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estación. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
 
-En esta rama, las vistas de PUJ usan MapLibre sin cambiar a Google por una
-variable local. El mapa base de Monitoreo se monta aunque ningún vuelo tenga
+En esta rama, las vistas de PUJ usan MapLibre. *Posterior al commit verificado:*
+desde el PR M2 ya no existen las variantes de Google Maps ni su cargador, y los
+mapas de PUJ comparten un solo motor (ver
+[Mapas del OCC en un solo motor (PR M2)](#mapas-del-occ-en-un-solo-motor-pr-m2)).
+El mapa base de Monitoreo se monta aunque ningún vuelo tenga
 coordenadas verificadas, con un aviso que distingue cartografía de telemetría.
 El worker y el módulo compartido del paquete se copian juntos desde la
 dependencia fijada antes de desarrollo y build; la certificación comprueba que
@@ -743,6 +746,105 @@ comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
 mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
 revisión visual en el VPS.
 
+## Mapas del OCC en un solo motor (PR M2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M2 «Motor único y estilo NOC» (`314c124b`, `323189b2`, `5d759557` y
+`c0b20127`), que esa verificación no cubre. Las decisiones y lo que añadirán
+los PR M3 a M8 están en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). Son las mismas
+pantallas sobre un solo motor: las posiciones siguen siendo puntos, y todavía
+no hay polígonos, tráfico en vivo ni aviones 3D.
+
+- **Un motor y un componente.**
+  [`mapEngine.js`](../../frontend/private-web/src/features/maps/core/mapEngine.js)
+  es el único módulo que crea un mapa de MapLibre, y
+  [`OccMap.jsx`](../../frontend/private-web/src/features/maps/core/OccMap.jsx),
+  el único componente de mapa: un lienzo por página, en el que Región,
+  Aproximación, Aeródromo y Rampa son posiciones de cámara del mismo mapa. El
+  mapa está listo al cargar su estilo. Solo un mapa que no puede arrancar, como
+  en un navegador sin WebGL2, deja su lista de respaldo; si el mapa base no
+  carga, un aviso dice «No se pudo cargar el mapa base. Se muestran las
+  posiciones y los datos de ELEVANT.», y las posiciones siguen en el mapa.
+  [`workerUrl.js`](../../frontend/private-web/src/features/maps/core/workerUrl.js)
+  prepara una sola vez los workers de MapLibre (`prewarm`), que ya no se crean
+  ni se terminan con cada mapa.
+- **Adaptadores con las mismas props.**
+  [`PositionMap.jsx`](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx)
+  (Mapa de posiciones, Planificación y la plataforma de la consola) y
+  [`FlightMap.jsx`](../../frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx)
+  (Monitoreo de vuelos) son adaptadores finos de `OccMap`, con las mismas props,
+  el mismo manejador imperativo, los mismos `data-testid`
+  (`position-map-container` y `flight-map-container`) y los mismos textos de
+  respaldo: sus páginas no cambian. Las posiciones son puntos con el estado que
+  ya traían, dibujado con el vocabulario de `statusVocabulary.js` («Llegando» y
+  «Por liberar» llegan con M4), y se agrupan al alejar el mapa; los vuelos que
+  traen posición son siluetas sin un color por estado, y PUJ se marca con su
+  punto de referencia. La ficha del vuelo de Monitoreo queda fija en una
+  esquina del mapa y ya no sigue al avión.
+- **Estilo NOC propio.**
+  [`occStyle.js`](../../frontend/private-web/src/features/maps/style/occStyle.js)
+  construye el estilo en código sobre las teselas vectoriales de OpenFreeMap,
+  que pide por su TileJSON, y sus glifos Noto Sans, sin sprite: los íconos se
+  dibujan como imágenes SDF. Hay una sola paleta oscura, en pizarra:
+  [`mapTheme.js`](../../frontend/private-web/src/features/maps/style/mapTheme.js)
+  guarda solo los colores del mapa base, los de estado salen de `occPalette.js`
+  y lo elegido lleva el cian `--occ-accent`. El estilo nunca se cambia después
+  de arrancar, y una prueba lo comprueba. Las cuatro variables
+  `NEXT_PUBLIC_*_MAP_STYLE_*` se retiraron de
+  [`.env.example`](../../frontend/private-web/.env.example) y del código.
+- **Vistas, selección y teclas.** Cada vista se encuadra con el tamaño real del
+  mapa, y de esos encuadres salen los zooms en los que aparecen las posiciones y
+  sus códigos; el selector marca la vista que la cámara muestra de verdad. La vista elegida se escribe en la URL (`view=`), una URL con
+  `view=ramp&terminal=A` (o `B`, o `FBO`) abre la rampa de esa terminal, y con
+  el foco en el mapa las teclas `1` a `4` cambian de vista.
+  `Esc` cierra primero el cajón o el diálogo abierto y después limpia la
+  selección: el detalle de la posición, el diálogo de importación y
+  `useEscapeToClose` marcan la tecla como atendida. El almacén de la selección
+  en la URL
+  ([`mapSelection.js`](../../frontend/private-web/src/features/maps/core/mapSelection.js))
+  ya existe, pero las pantallas siguen pasando al mapa su propia selección
+  hasta que U3 y U5 lo adopten.
+- **Leyenda.** Un mapa con posiciones muestra el botón «Leyenda»
+  ([`MapLegend.jsx`](../../frontend/private-web/src/features/maps/ui/MapLegend.jsx)),
+  que lista solo los estados de las posiciones que hay en pantalla, «No
+  oficial» cuando alguna está en su ubicación de referencia interna y qué es un
+  grupo cuando se agrupan.
+- **Relectura sin remontar el mapa.** Al releer la misma estación (por foco,
+  sondeo u `occ_planning`), Mapa de posiciones y Monitoreo conservan sus datos
+  en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
+  el mapa no se crea de nuevo. Un cambio de estación o de cuenta sí empieza
+  vacío.
+- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: siete
+  escenas fijas del mapa, sin sesión ni API. La ruta lo importa solo en la rama
+  de desarrollo, y el build de producción comprueba que no lo incluye
+  ([`verify-map-chunks.mjs`](../../frontend/private-web/scripts/verify-map-chunks.mjs)).
+  La suite visual corre con Playwright en Chrome, fuera del CI: ver
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
+- **Lo que se retiró:** las variantes de Google Maps (`GoogleFlightMap.jsx`,
+  `GooglePositionMap.jsx` y su cargador) con la dependencia
+  `@googlemaps/js-api-loader`; los huérfanos `AirfieldMap.jsx` y
+  `AirfieldPanel.jsx`, con los mensajes `airfield.*` del dashboard; los
+  marcadores DOM de Monitoreo (`AircraftMarker.js` y `AirportMarker.js`); y
+  `positionMapLayers.js` y `positionMarkerIcons.js`, cuyo trabajo pasa a
+  [`standLayers.js`](../../frontend/private-web/src/features/maps/stands/standLayers.js)
+  y a los íconos del estilo.
+
+Lo que no cambia: la CSP, porque la TileJSON, las teselas y los glifos siguen en
+`tiles.openfreemap.org`, que ya estaba permitido; las ubicaciones de las
+posiciones, que siguen siendo una referencia interna no oficial salvo las que
+ubicó OCC; y los datos que leen las pantallas, sin endpoints nuevos ni cambios
+en la API. Los dos mapas auxiliares del dashboard (región y meteorología)
+conservan su ciclo de vida y los estilos publicados de OpenFreeMap hasta que U3
+retire el dashboard actual.
+
+Límites: Mapa de posiciones muestra dos leyendas, la del mapa y la de la
+página, que todavía pinta colores que el mapa ya no dibuja, y a 1440×900 su
+resumen tapa la escala, los créditos y las posiciones A1 a A5; lo rehace U5. El
+3D de M2 es la inclinación de cámara de siempre: los aviones 3D llegan con M7.
+En producción, `/map-lab` responde la página de no encontrada con el estado
+200. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |
@@ -800,7 +902,8 @@ npm run build
 - pruebas Vitest de páginas, componentes, hooks, mappers y servicios;
 - pruebas de rutas Next, autenticación y manejo de sesión expirada;
 - smoke de creación del cliente OpenAPI compartido;
-- prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración.
+- prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración;
+- *posterior al commit verificado (PR M2):* la suite visual de los mapas del OCC, con Playwright en Chrome y fuera del CI ([Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ)).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
 
