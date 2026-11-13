@@ -290,10 +290,11 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   `frontend/private-web/test-results/visual/`, que Git ignora. Desde U4 se
   suman las de la pantalla de arranque: al empezar, mientras espera a Panorama
   y la consola después, a 1440×900 y a 1920×1080, y con movimiento reducido a
-  1440×900. La de Mapa de posiciones muestra la pantalla de arranque encima del
-  mapa: su prueba entra con una sesión nueva y toma la captura en cuanto el mapa
-  está listo. Las revisa una persona: no hay líneas base de imagen, porque cambian
-  con la máquina y la GPU.
+  1440×900. La de Mapa de posiciones muestra el mapa sin la pantalla de
+  arranque: sus pruebas entran como una entrada posterior de la misma pestaña,
+  con la marca de la cuenta ya puesta, y fallan si la pantalla sigue encima
+  cuando el mapa ya está listo. Las revisa una persona: no hay líneas base de
+  imagen, porque cambian con la máquina y la GPU.
 - **Qué no es.** Ningún workflow de CI la ejecuta, y `npm test` no la recoge:
   `vitest.config.mjs` excluye `tests/visual/**`. Se corre antes de mergear un
   cambio de mapas, y una corrida verde es evidencia local, no de un despliegue.

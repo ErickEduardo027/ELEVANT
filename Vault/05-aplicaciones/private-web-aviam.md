@@ -963,9 +963,8 @@ añadirá el PR M4, y la consola de U3 conservará el de Panorama. La pantalla n
 está en el HTML del servidor, así que el primer pintado sigue siendo
 «Comprobando sesión…» sobre el azul marino de `body`, y en las entradas
 siguientes no hay pantalla de arranque. Mientras espera, cubre la página y
-recibe los clics. La captura de Mapa de posiciones de la suite visual muestra
-la pantalla de arranque encima del mapa. Nada de esto acredita un despliegue ni
-una revisión visual en el VPS.
+recibe los clics. Nada de esto acredita un despliegue ni una revisión visual
+en el VPS.
 
 ## Mapas del OCC en un solo motor (PR M2)
 
