@@ -21,7 +21,8 @@ namespace Elevant.Persistence.Operations;
 
 /// <summary>
 /// Stand occupancy projected from the active stand assignments and the actual arrival time of each
-/// turnaround. OCC records (or corrects, with a reason) the arrival and assigns, reassigns or releases
+/// turnaround, until the tablet records its push-back (owner decision 23: the aircraft left, while its assignment
+/// stays open). OCC records (or corrects, with a reason) the arrival and assigns, reassigns or releases
 /// stands; every change is audited and announced to the station's OCC through <c>occ_planning</c>. The
 /// three commands run in one serializable transaction with the stand locked, take an optional
 /// Idempotency-Key and the turnaround version (3-N10), and fail with a stable code.
@@ -198,7 +199,8 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             var window = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
                 .Select(item => new { item.PlannedStartAt, item.PlannedEndAt }).FirstOrDefaultAsync(cancellationToken);
             // Combined stands (ADR-0030): an impossible combination is rejected with the rule it breaks. The flights that
-            // hold a stand are the one query of StandAvailability: an approved or closed flight no longer does (3-D).
+            // hold a stand are the one query of StandAvailability: an approved or closed flight no longer does (3-D), nor
+            // one whose aircraft pushed back (owner decision 23).
             var occupied = await StandAvailability.Occupying(context, current.StationId, window?.PlannedStartAt,
                     window?.PlannedEndAt, current.TurnaroundId)
                 .Select(item => new { Id = item.StandId, Code = item.StandCode, Size = item.AircraftSize })
@@ -482,6 +484,11 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             .Where(item => ids.Contains(item.TurnaroundId) && item.AssignedTo == null)
             .Select(item => new { item.TurnaroundId, item.StandId, item.AssignedFrom }).ToArrayAsync(cancellationToken);
         var assignmentOf = assignments.ToDictionary(item => item.TurnaroundId);
+        // Owner decision 23: the aircraft that pushed back left its stand. Its assignment stays open as the flight's stand
+        // of record, but it no longer occupies, limits or cancels a stand, nor waits for one among the flights without one.
+        var departed = (await StandAvailability.PushedBackTurnarounds(context).Where(id => ids.Contains(id))
+            .ToArrayAsync(cancellationToken)).ToHashSet();
+        var occupying = assignments.Where(item => !departed.Contains(item.TurnaroundId)).ToArray();
 
         OccPositionTurnaroundData Map(long id)
         {
@@ -494,13 +501,13 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 turnaround.CurrentStatus.ToString(), DemoFlightGroups.Mark(turnaround.ExternalProvider));
         }
 
-        var occupiedNow = assignments.Select(item => new OccupiedStand(item.StandId,
+        var occupiedNow = occupying.Select(item => new OccupiedStand(item.StandId,
             stands.FirstOrDefault(stand => stand.Id == item.StandId)?.Code ?? "", null)).ToArray();
         var cancelled = StandConstraintPolicy.CancelledStands(occupiedNow, rules);
         var limited = StandConstraintPolicy.NarrowbodyLimited(occupiedNow, rules);
         var positions = stands.Select(stand =>
         {
-            var parked = assignments.Where(item => item.StandId == stand.Id).Select(item => Map(item.TurnaroundId))
+            var parked = occupying.Where(item => item.StandId == stand.Id).Select(item => Map(item.TurnaroundId))
                 .OrderBy(item => item.ArrivalScheduledAt).ToArray();
             var status = parked.Any(item => item.ArrivedAt is not null) ? "occupied" : parked.Length > 0 ? "planned" : "available";
             return new OccPositionData(stand.PublicId, stand.Code, stand.Terminal, stand.StandType, status, parked,
@@ -509,7 +516,7 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 stand.MaxAircraftSize == AircraftSizeCategory.Narrowbody || limited.Contains(stand.Id),
                 coverage[stand.Id].Distinct().ToArray());
         }).ToArray();
-        var unassigned = turnarounds.Where(item => !assignmentOf.ContainsKey(item.Id) &&
+        var unassigned = turnarounds.Where(item => !assignmentOf.ContainsKey(item.Id) && !departed.Contains(item.Id) &&
                 item.CurrentStatus is not (TurnaroundStatus.Completed or TurnaroundStatus.Diverted))
             .Select(item => Map(item.Id)).OrderBy(item => item.ArrivalScheduledAt).ToArray();
         return new OccPositionBoardData(stationPublicId, stationCode, operationDate, timeProvider.GetUtcNow(), positions,

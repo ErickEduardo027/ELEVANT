@@ -19,9 +19,10 @@ internal sealed class OccupiedStandRow
 
 /// <summary>
 /// Whether a flight can take a stand for its window (2-B): an active stand of the station in an active
-/// terminal, not held by another unfinished flight in that window, and allowed by the combined-stand rules
-/// (ADR-0030). The same rules the positions map applies when OCC assigns a stand. Every command that places a
-/// flight on a stand locks the stand first (<see cref="LockAsync"/>), so two flights never take it at once (3-N10).
+/// terminal, not held by another unfinished flight in that window (one that has not pushed back), and allowed by the
+/// combined-stand rules (ADR-0030). The same rules the positions map applies when OCC assigns a stand. Every command
+/// that places a flight on a stand locks the stand first (<see cref="LockAsync"/>), so two flights never take it at
+/// once (3-N10).
 /// </summary>
 internal static class StandAvailability
 {
@@ -47,36 +48,59 @@ internal static class StandAvailability
         .SingleOrDefault();
 
     /// <summary>
+    /// The turnarounds whose aircraft left the stand (<see cref="OperationOccupancyRules.HasLeftStand"/>, owner decision
+    /// 23): their operation has the PUSHBACK milestone with an actual time. The one SQL form of that rule, which every
+    /// occupancy read composes: <see cref="Occupying"/>, the positions board and
+    /// <see cref="MasterDataUsage.StandInUseAsync"/>. It frees the occupancy only: the stand assignment stays open as the
+    /// flight's stand of record, so the readers of «the flight's stand» never use it.
+    /// </summary>
+    public static IQueryable<long> PushedBackTurnarounds(ElevantDbContext context) =>
+        from operation in context.GroundOperations.AsNoTracking()
+        join milestone in context.Set<OperationMilestone>().AsNoTracking()
+            on operation.Id equals milestone.GroundOperationId
+        where milestone.Code == RampEvidenceTimePolicy.Pushback && milestone.ActualAt != null
+        select operation.TurnaroundId;
+
+    /// <summary>
     /// The one query of «which flights hold a stand» (3-D): the active stand assignments of the station whose flight
     /// still holds its stand (<see cref="OperationOccupancyRules.HoldsStand"/>: the operation is neither cancelled nor
-    /// approved and the turnaround is neither completed, cancelled nor diverted) and whose planned window overlaps
-    /// [<paramref name="startsAt"/>, <paramref name="endsAt"/>). A holding flight without a planned window, or an unknown
-    /// window of the flight being placed, counts as overlapping (it fails closed). <paramref name="exceptTurnaroundId"/>
-    /// is the flight being placed, whose own assignment never blocks it.
+    /// approved and the turnaround is neither completed, cancelled nor diverted), whose aircraft has not pushed back
+    /// (<see cref="PushedBackTurnarounds"/>) and whose planned window overlaps [<paramref name="startsAt"/>,
+    /// <paramref name="endsAt"/>). A holding flight without a planned window, or an unknown window of the flight being
+    /// placed, counts as overlapping (it fails closed). <paramref name="exceptTurnaroundId"/> is the flight being placed,
+    /// whose own assignment never blocks it.
     /// </summary>
     public static IQueryable<OccupiedStandRow> Occupying(ElevantDbContext context, long stationId, DateTimeOffset? startsAt,
-        DateTimeOffset? endsAt, long? exceptTurnaroundId) =>
-        from assignment in context.Set<StandAssignment>().AsNoTracking()
-        join operation in context.GroundOperations.AsNoTracking() on assignment.TurnaroundId equals operation.TurnaroundId
-        join parked in context.Stands.AsNoTracking() on assignment.StandId equals parked.Id
-        join turnaround in context.Turnarounds.AsNoTracking() on assignment.TurnaroundId equals turnaround.Id
-        from type in context.AircraftTypes.AsNoTracking().Where(type => type.Id == turnaround.AircraftTypeId).DefaultIfEmpty()
-        where parked.StationId == stationId && assignment.AssignedTo == null &&
-              (exceptTurnaroundId == null || assignment.TurnaroundId != exceptTurnaroundId) &&
-              // OperationOccupancyRules.HoldsStand, with explicit comparisons of the enums stored as text.
-              operation.CurrentStatus != GroundOperationStatus.Cancelled &&
-              operation.CurrentStatus != GroundOperationStatus.Approved &&
-              turnaround.CurrentStatus != TurnaroundStatus.Completed &&
-              turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
-              turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
-              (startsAt == null || endsAt == null ||
-               operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
-               (operation.PlannedStartAt < endsAt && startsAt < operation.PlannedEndAt))
-        select new OccupiedStandRow
-        {
-            StandId = parked.Id, StandCode = parked.Code, TurnaroundId = assignment.TurnaroundId,
-            AircraftSize = type == null ? null : type.SizeCategory,
-        };
+        DateTimeOffset? endsAt, long? exceptTurnaroundId)
+    {
+        // A query variable: EF inlines it as a subquery of this one.
+        var departed = PushedBackTurnarounds(context);
+        return from assignment in context.Set<StandAssignment>().AsNoTracking()
+               join operation in context.GroundOperations.AsNoTracking()
+                   on assignment.TurnaroundId equals operation.TurnaroundId
+               join parked in context.Stands.AsNoTracking() on assignment.StandId equals parked.Id
+               join turnaround in context.Turnarounds.AsNoTracking() on assignment.TurnaroundId equals turnaround.Id
+               from type in context.AircraftTypes.AsNoTracking().Where(type => type.Id == turnaround.AircraftTypeId)
+                   .DefaultIfEmpty()
+               where parked.StationId == stationId && assignment.AssignedTo == null &&
+                     (exceptTurnaroundId == null || assignment.TurnaroundId != exceptTurnaroundId) &&
+                     // OperationOccupancyRules.HoldsStand, with explicit comparisons of the enums stored as text.
+                     operation.CurrentStatus != GroundOperationStatus.Cancelled &&
+                     operation.CurrentStatus != GroundOperationStatus.Approved &&
+                     turnaround.CurrentStatus != TurnaroundStatus.Completed &&
+                     turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
+                     turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
+                     // Owner decision 23: the aircraft that pushed back left the stand.
+                     !departed.Contains(assignment.TurnaroundId) &&
+                     (startsAt == null || endsAt == null ||
+                      operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
+                      (operation.PlannedStartAt < endsAt && startsAt < operation.PlannedEndAt))
+               select new OccupiedStandRow
+               {
+                   StandId = parked.Id, StandCode = parked.Code, TurnaroundId = assignment.TurnaroundId,
+                   AircraftSize = type == null ? null : type.SizeCategory,
+               };
+    }
 
     /// <summary>
     /// Where the flight can park in the window; <paramref name="excludeTurnaroundId"/> is the flight being moved or

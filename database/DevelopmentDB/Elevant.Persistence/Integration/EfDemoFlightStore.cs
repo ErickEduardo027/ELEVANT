@@ -696,12 +696,16 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
 
     /// <summary>
     /// The stands the active demo aircraft are heading to or parked on, as <see cref="StandCodes"/> compares them: the
-    /// stand the trigger suggested while nobody imported the flight, and afterwards the one OCC gave it. A demo
-    /// aircraft waits for its agent past its planned window, when the stand's own availability no longer counts it.
+    /// stand the trigger suggested while nobody imported the flight, and afterwards the one OCC gave it until the tablet
+    /// records the push-back (<see cref="OperationOccupancyRules.HasLeftStand"/>: the aircraft left it, although it is
+    /// still active while it taxis out and takes off). A demo aircraft waits for its agent past its planned window, when
+    /// the stand's own availability no longer counts it.
     /// </summary>
     private static HashSet<string> DemoStands(IEnumerable<DemoFlightGroup> active) =>
-        active.Select(group => group.Imported ? group.Link!.StandCode : group.Arrival.Gate).OfType<string>()
-            .Select(StandCodes.Normalize).ToHashSet(StringComparer.Ordinal);
+        active.Select(group => group.Imported
+                ? OperationOccupancyRules.HasLeftStand(group.Link!.PushbackAt) ? null : group.Link!.StandCode
+                : group.Arrival.Gate)
+            .OfType<string>().Select(StandCodes.Normalize).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
     /// The counterpart airport of a leg: the row the database already has, taking the time zone and the coordinates it
