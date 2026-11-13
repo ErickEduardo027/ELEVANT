@@ -46,7 +46,7 @@ public enum AirTrafficOutcome
 }
 
 /// <summary>
-/// The result of one read. <paramref name="Source"/> is the credit of the network that was asked (null only without a
+/// The result of one read. <paramref name="Source"/> is the credit of the network whose read it is (null only without a
 /// configured network); <paramref name="ObservedAt"/> is the instant the network's answer describes, and
 /// <paramref name="Aircraft"/> is empty unless the read succeeded.
 /// </summary>

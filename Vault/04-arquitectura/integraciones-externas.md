@@ -144,7 +144,9 @@ esa verificación no cubre
   `GET occ/map/air-picture`, y la CSP no cambia.
 - **Relevo.** `AirTraffic:Providers` es una lista ordenada. Tras tres fallos
   seguidos de la red activa toma el turno la siguiente, y la primera se vuelve
-  a probar cada 10 minutos
+  a probar cada 10 minutos, o cuando pase su `Retry-After` si pide más. Si esa
+  prueba falla, la red activa responde la misma lectura, así que la imagen no
+  espera ni cambia de estado por ella
   ([relevo](../../backend/Elevant.Infrastructure/Integrations/AirTraffic/FailoverAirTrafficProvider.cs)).
 - **Licencias y crédito.** adsb.fi es de uso personal y no comercial y pide
   citarla con un enlace a su página; adsb.lol publica bajo ODbL 1.0. Cada

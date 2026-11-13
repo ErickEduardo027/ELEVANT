@@ -1,13 +1,17 @@
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Operations.AirPicture;
 
 namespace Elevant.Infrastructure.Integrations.AirTraffic;
 
 /// <summary>
-/// The networks of <c>AirTraffic:Providers</c> in their order (ADR-0042, contracts 1.3). Each read asks exactly one of
-/// them: the active one, which is the first until it fails three times in a row; then the next one in the list takes
-/// over (after the last comes the first again). While another one is active, the first is asked again every ten minutes,
-/// in place of the active one for that read, and becomes active again as soon as it answers. The credit follows the
-/// active network, and every result carries the credit of the network that was asked.
+/// The networks of <c>AirTraffic:Providers</c> in their order (ADR-0042, contracts 1.3). Each read is answered by the
+/// active network: the first, until it fails three times in a row; then the next one in the list takes over (after the
+/// last comes the first again). While another one is active, every ten minutes a read asks the first one before the
+/// active one: when it answers, it is active again and its answer is the read's; when it does not, the active one
+/// answers that same read, as if the first had not been asked. So a failed retry never reaches the caller: neither its
+/// outcome nor its <c>Retry-After</c>, which only puts the next retry off when it asks for more than ten minutes. It is
+/// one more request every ten minutes, never a second pace. The credit follows the active network, and every result
+/// carries the credit of the network whose read it is.
 /// </summary>
 public sealed class FailoverAirTrafficProvider : IAirTrafficProvider, IDisposable
 {
@@ -49,40 +53,51 @@ public sealed class FailoverAirTrafficProvider : IAirTrafficProvider, IDisposabl
 
     public async Task<AirTrafficReadResult> ReadAsync(AirTrafficArea area, CancellationToken cancellationToken = default)
     {
-        int asked;
-        bool firstAgain;
+        int active;
+        bool retryFirst;
         lock (_gate)
         {
             var now = _time.GetUtcNow();
-            firstAgain = _active != 0 && now >= _nextFirstTry;
-            if (firstAgain) _nextFirstTry = now + FirstProviderRetry;
-            asked = firstAgain ? 0 : _active;
+            active = _active;
+            retryFirst = active != 0 && now >= _nextFirstTry;
+            // Set before the retry is sent, so the calls that arrive meanwhile ask the active network only.
+            if (retryFirst) _nextFirstTry = now + FirstProviderRetry;
         }
 
-        var result = await _chain[asked].ReadAsync(area, cancellationToken);
-
-        lock (_gate)
+        if (retryFirst)
         {
-            var succeeded = result.Outcome == AirTrafficOutcome.Succeeded;
-            if (firstAgain)
+            var retry = await _chain[0].ReadAsync(area, cancellationToken);
+            lock (_gate)
             {
-                // A failed retry of the first network leaves the active one and its count as they were.
-                if (succeeded && _active != 0)
+                if (retry.Outcome == AirTrafficOutcome.Succeeded)
                 {
                     _active = 0;
                     _failures = 0;
+                    return retry;
                 }
+                // It still fails: the active network and its count stay as they were, and that network answers this read.
+                PutOffFirstRetry(retry.RetryAfter);
             }
-            else if (asked == _active)
+        }
+
+        var result = await _chain[active].ReadAsync(area, cancellationToken);
+        lock (_gate)
+        {
+            // A read that began before another call changed the active network does not count.
+            if (active == _active)
             {
-                if (succeeded) _failures = 0;
+                if (result.Outcome == AirTrafficOutcome.Succeeded) _failures = 0;
                 else if (++_failures >= FailuresBeforeFailover)
                 {
                     _failures = 0;
                     // A list of one network keeps asking it; the caller's back-off decides how often.
                     if (_chain.Length > 1)
                     {
-                        if (_active == 0) _nextFirstTry = _time.GetUtcNow() + FirstProviderRetry;
+                        if (_active == 0)
+                        {
+                            _nextFirstTry = _time.GetUtcNow() + FirstProviderRetry;
+                            PutOffFirstRetry(result.RetryAfter);
+                        }
                         _active = (_active + 1) % _chain.Length;
                     }
                 }
@@ -94,5 +109,16 @@ public sealed class FailoverAirTrafficProvider : IAirTrafficProvider, IDisposabl
     public void Dispose()
     {
         foreach (var provider in _chain) (provider as IDisposable)?.Dispose();
+    }
+
+    /// <summary>
+    /// The first network asked to wait (<c>Retry-After</c>): it is not asked again before that, even when the ten minutes
+    /// end sooner, and never more than <see cref="AirTrafficBackOff.MaxWait"/> later. Called under the gate.
+    /// </summary>
+    private void PutOffFirstRetry(TimeSpan? retryAfter)
+    {
+        if (retryAfter is not { } wait) return;
+        var notBefore = _time.GetUtcNow() + (wait < AirTrafficBackOff.MaxWait ? wait : AirTrafficBackOff.MaxWait);
+        if (notBefore > _nextFirstTry) _nextFirstTry = notBefore;
     }
 }

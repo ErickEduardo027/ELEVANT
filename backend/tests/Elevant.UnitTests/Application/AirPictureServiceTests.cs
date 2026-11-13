@@ -468,6 +468,53 @@ public sealed class AirPictureServiceTests
     }
 
     [Fact]
+    public async Task AFailedRetryOfTheFirstNetworkKeepsThePictureLive()
+    {
+        var clock = new ManualClock(Start);
+        var first = new ScriptedNetwork(First, clock) { Outcome = AirTrafficOutcome.Failed };
+        var second = new ScriptedNetwork(Second, clock);
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
+        var service = new AirPictureService(failover, Settings(), clock);
+        service.NoteDemand();
+
+        // Three failures hand over to the second network after 15, 30 and 10 seconds.
+        foreach (var seconds in new[] { 15, 30, 10 })
+        {
+            var wait = await service.PollOnceAsync(Ct);
+            Assert.Equal(TimeSpan.FromSeconds(seconds), wait);
+            clock.Advance(wait);
+        }
+
+        // The second network answers every pass. Ten minutes after the hand-over the first one is asked again and asks to
+        // wait an hour; an hour later it refuses the address. Each time the second answers that same pass: the picture
+        // stays live with its aircraft and its credit, without a reason, and the pace stays the interval.
+        var retries = new (AirTrafficOutcome Outcome, TimeSpan? RetryAfter, DateTimeOffset At)[]
+        {
+            (AirTrafficOutcome.RateLimited, TimeSpan.FromHours(1), Start.AddSeconds(645)),
+            (AirTrafficOutcome.Unauthorized, null, Start.AddSeconds(645).AddHours(1)),
+        };
+        foreach (var (outcome, retryAfter, at) in retries)
+        {
+            (first.Outcome, first.RetryAfter) = (outcome, retryAfter);
+            var firstReads = first.Reads;
+            for (var pass = 0; first.Reads == firstReads; pass++)
+            {
+                Assert.True(pass < 1_000, "The first network was never asked again.");
+                second.Aircraft = [Plane("0c0002", clock.GetUtcNow())];
+                var secondReads = second.Reads;
+                Assert.Equal(TimeSpan.FromSeconds(10), await service.PollOnceAsync(Ct));
+                Assert.Equal(secondReads + 1, second.Reads);
+                var picture = service.Read(shortTrails: false);
+                Assert.Equal((AirPictureStatus.Live, (string?)null, Second, 10),
+                    (picture.Status, picture.Reason, picture.Source, picture.RefreshAfterSeconds));
+                Assert.Equal("0c0002", Assert.Single(picture.Aircraft).Aircraft.Hex);
+                clock.Advance(TimeSpan.FromSeconds(10));
+            }
+            Assert.Equal(at, first.LastReadAt);
+        }
+    }
+
+    [Fact]
     public async Task DisabledAnswersNotConfiguredWithoutCalls()
     {
         var clock = new ManualClock(Start);
