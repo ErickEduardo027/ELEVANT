@@ -14,6 +14,18 @@ export const mapMessages = {
       groupHint: 'Acerca el mapa para ver cada una',
       flight: 'Vuelo',
       flightHint: 'Apunta según su rumbo; al norte si no se conoce',
+      runway: 'Pista',
+      taxiway: 'Calle de rodaje',
+      hold: 'Punto de espera',
+      apron: 'Plataforma',
+      terminal: 'Terminal',
+    },
+    // The map tooltip of a runway or a taxiway: what the airport layout says of it.
+    airfield: {
+      runway: 'Pista {id}',
+      size: '{length} m × {width} m',
+      taxiway: 'Calle de rodaje {ref}',
+      unnamed: 'Calle de rodaje sin nombre',
     },
     // Every map shows it, also those that draw no stand (Monitoreo) or a view that hides them (region, approach), so it
     // does not name what is drawn.
@@ -48,6 +60,17 @@ export const mapMessages = {
       groupHint: 'Zoom in to see each one',
       flight: 'Flight',
       flightHint: 'Points along its heading; north when unknown',
+      runway: 'Runway',
+      taxiway: 'Taxiway',
+      hold: 'Holding point',
+      apron: 'Apron',
+      terminal: 'Terminal',
+    },
+    airfield: {
+      runway: 'Runway {id}',
+      size: '{length} m × {width} m',
+      taxiway: 'Taxiway {ref}',
+      unnamed: 'Unnamed taxiway',
     },
     basemap: {
       degraded: 'The base map could not be loaded. ELEVANT data is still on the map.',

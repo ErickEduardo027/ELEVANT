@@ -90,9 +90,12 @@ test.describe('Mapa de posiciones on the map engine', () => {
     await expect(page.locator('#main-content').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(page.getByRole('banner').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(map.getByRole('button', { name: 'Leyenda', exact: true })).toBeVisible();
-    // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial».
-    await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem'))
-      .toHaveText(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar', /^No oficial/]);
+    // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial»;
+    // then the airfield the map draws from the MDPC dataset in the ramp view (PR M3).
+    await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem')).toHaveText([
+      'Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar', /^No oficial/,
+      'Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal',
+    ]);
     await expect(page.getByText('Configuración combinada')).toHaveCount(0);
   });
 });

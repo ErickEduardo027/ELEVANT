@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { addProtocol, removeProtocol, restoreNow, setNow } from 'maplibre-gl';
+import { addProtocol, removeProtocol } from 'maplibre-gl';
 import { liveEngineCount } from '../core/mapEngine';
 import OccMap from '../core/OccMap';
 import { useMapSelection } from '../core/useMapSelection';
@@ -11,6 +11,8 @@ import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
 import MapDock from '../ui/MapDock';
 import MapLegend from '../ui/MapLegend';
 import MapPresetSwitcher from '../ui/MapPresetSwitcher';
+import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
+import LayoutQaScene from './LayoutQaScene';
 import { SCENES, readLabQuery } from './scenes';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
@@ -19,12 +21,11 @@ import { SCENES, readLabQuery } from './scenes';
 // setNow, with symbol fades off), and the selection keys of the OCC map (stand=, view=, terminal=). It exposes
 // `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code of the scene), flyToPreset,
 // whenIdle, liveMaps (the live engines: one after a StrictMode double mount) and refresh (the «Releer posiciones»
-// button).
+// button). The review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
 
-const LAB_PATH = '/map-lab';
 const WEBGL_CONTEXTS = new Set(['webgl', 'webgl2', 'experimental-webgl']);
 // The scene whose base map does not load: every request for the OpenFreeMap TileJSON or its tiles goes to this
 // protocol of the lab, which always fails, so the map shows its notice without a request leaving the browser.
@@ -38,20 +39,9 @@ function cutBasemap(url) {
 
 const copyStands = stands => stands.map(stand => ({ ...stand }));
 
-function frozenLabel(time) {
-  return `${new Date(time).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
-}
-
 // Layout effects run before the passive effect in which OccMap starts its engine (StrictMode re-runs them in the same
-// order), so each of these is in place before the map is created and is undone after it is gone.
-
-function useFrozenMapClock(frozenAt) {
-  useLayoutEffect(() => {
-    if (frozenAt === null) return undefined;
-    setNow(frozenAt);
-    return () => restoreNow();
-  }, [frozenAt]);
-}
+// order), so each of these, and the frozen clock of labChrome.jsx, is in place before the map is created and is undone
+// after it is gone.
 
 // A browser without WebGL: the canvas refuses the WebGL contexts while the scene is open (2D drawing still works).
 function useWebGlRefused(refused) {
@@ -77,14 +67,6 @@ function useBasemapCut(cut) {
     });
     return () => removeProtocol(CUT_PROTOCOL);
   }, [cut]);
-}
-
-function Plate({ children, className = '' }) {
-  return (
-    <span className={`shrink-0 rounded-sm border border-occ-line-strong px-1.5 py-0.5 text-xs font-semibold text-occ-muted ${className}`.trim()}>
-      {children}
-    </span>
-  );
 }
 
 function LabScene({ scene, basemap, frozenAt }) {
@@ -153,8 +135,8 @@ function LabScene({ scene, basemap, frozenAt }) {
         </Link>
         <span aria-hidden="true" className="text-occ-faint">/</span>
         <h1 className="text-sm font-semibold text-occ-text">{scene.title}</h1>
-        <Plate>Datos de prueba, no oficiales</Plate>
-        {basemap === 'none' && <Plate>Sin mapa base</Plate>}
+        <LabPlate>Datos de prueba, no oficiales</LabPlate>
+        {basemap === 'none' && <LabPlate>Sin mapa base</LabPlate>}
         {frozenAt !== null && (
           <span className="font-mono text-xs text-occ-muted">Reloj fijo: {frozenLabel(frozenAt)}</span>
         )}
@@ -222,6 +204,14 @@ function SceneIndex({ unknownId }) {
 export default function MapLab() {
   const searchParams = useSearchParams();
   const { sceneId, scene, basemap, frozenAt } = readLabQuery(searchParams);
+  const sceneKey = scene === null ? null : `${scene.id}|${basemap}|${frozenAt ?? ''}`;
+  // The review scene of the airport layout is a screen of its own; every other scene is the map with its stands.
+  let screen = <SceneIndex unknownId={sceneId} />;
+  if (scene?.kind === 'layout-qa') {
+    screen = <LayoutQaScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
+  } else if (scene !== null) {
+    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
+  }
 
   return (
     <div
@@ -229,9 +219,7 @@ export default function MapLab() {
       data-department="occ"
       className="dark flex h-screen flex-col overflow-hidden bg-occ-canvas text-occ-text"
     >
-      {scene === null
-        ? <SceneIndex unknownId={sceneId} />
-        : <LabScene key={`${scene.id}|${basemap}|${frozenAt ?? ''}`} scene={scene} basemap={basemap} frozenAt={frozenAt} />}
+      {screen}
     </div>
   );
 }

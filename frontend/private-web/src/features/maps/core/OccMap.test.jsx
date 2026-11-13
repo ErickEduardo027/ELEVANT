@@ -8,9 +8,13 @@ import tailwindConfig from '../../../../tailwind.config.js';
 import { findLegacyColourClasses } from '../../../styles/occLegacyBridge';
 import { readSource } from '../../../styles/occSourceScan';
 import { occColor } from '../../occ-ui/occPalette';
+import { airfieldFeatures } from '../airport/airfieldFeatures';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { AIRFIELD_LAYER_IDS } from '../style/airfieldLayers';
 import { referenceFeatures } from '../style/referenceLayers';
 import { createMapStands, standPoint } from '../testing/mapFixtures';
 import MapLegend from '../ui/MapLegend';
+import { AIRFIELD_ATTRIBUTION } from './attribution';
 import { boundsCenter, presetTargets } from './cameraPresets';
 import { liveEngineCount } from './mapEngine';
 import OccMap from './OccMap';
@@ -30,6 +34,19 @@ const EXTRA_OVERLAY = {
     metadata: { 'occ:group': 'notes' },
   }],
 };
+// A screen's own overlay with a pick of its own kind, as the map lab's layout review has.
+const PIN_OVERLAY = {
+  sources: { 'test-pins': { type: 'geojson' } },
+  layers: [{
+    slot: 'stands', id: 'test-pins', type: 'circle', source: 'test-pins',
+    paint: { 'circle-radius': 4 },
+    metadata: { 'occ:group': 'pins', 'occ:pick': 'pin', 'occ:pickId': 'id' },
+  }],
+};
+const pins = ids => ({
+  type: 'FeatureCollection',
+  features: ids.map(id => ({ type: 'Feature', properties: { id }, geometry: { type: 'Point', coordinates: [-68.36, 18.56] } })),
+});
 // Synthetic flights with and without a position, around Punta Cana.
 const FLIGHTS = [
   { id: 'l:leg-1', flightKey: 'l:leg-1', heading: 120, latitude: 18.71, longitude: -68.52 },
@@ -40,18 +57,27 @@ const FLIGHTS = [
 function Probe() {
   const {
     engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, standsGrouped, flightsOnScreen,
+    airfieldOnScreen,
   } = useOccMap();
   return (
     <pre data-testid="probe">
       {JSON.stringify({
         engineStatus, basemapStatus, activeView, fits, thresholds, onScreen: standsOnScreen.map(stand => stand.id),
-        grouped: standsGrouped, flightsOnScreen: flightsOnScreen.map(flight => flight.id),
+        grouped: standsGrouped, flightsOnScreen: flightsOnScreen.map(flight => flight.id), airfieldOnScreen,
       })}
     </pre>
   );
 }
 
 const probe = () => JSON.parse(screen.getByTestId('probe').textContent);
+// The views the map frames: the MDPC dataset unless a test says otherwise.
+const targetsOf = (layout = MDPC_LAYOUT) => presetTargets({ stands: STANDS, layout });
+// Features of the airfield as queryRenderedFeatures answers them for the layers it is asked about.
+const airfieldDrawn = (layer, properties) => ({ layer: { id: layer }, properties });
+const RUNWAY_08 = airfieldDrawn('occ-airfield-runway', { kind: 'runway', id: '08/26', ref: '08/26', lengthM: 3100.1, widthM: 45.1 });
+const TAXIWAY_A = airfieldDrawn('occ-airfield-taxiway', { kind: 'taxiway', id: 'tw-148936325', ref: 'A' });
+// A taxiway without a name: MapLibre drops a null property.
+const TAXIWAY_UNNAMED = airfieldDrawn('occ-airfield-taxiway', { kind: 'taxiway', id: 'tw-812822707' });
 // The style source a map started without the stands or flights prop has for them.
 function createMapWithout(kind) {
   const view = render(<OccMap />);
@@ -295,7 +321,7 @@ describe('OccMap', () => {
     // A terminal preset of the URL frames that terminal's stands.
     window.history.replaceState({}, '', `${PAGE}&view=ramp&terminal=FBO`);
     view = renderMap();
-    const fbo = presetTargets({ stands: STANDS }).terminals.FBO.bounds;
+    const fbo = targetsOf().terminals.FBO.bounds;
     const expectedFbo = Math.log2((1440 * 360) / (512 * (fbo[1][0] - fbo[0][0])));
     expect(view.map.getZoom()).toBeCloseTo(expectedFbo, 6);
     expect(view.map.getCenter().lng).toBeCloseTo((fbo[0][0] + fbo[1][0]) / 2, 9);
@@ -323,7 +349,7 @@ describe('OccMap', () => {
     expect(query().get('view')).toBe('airfield');
     expect(map.getZoom()).toBeCloseTo(fits.airfield, 6);
     // The URL already says airfield: after another free zoom the same key still flies.
-    act(() => map.jumpTo({ zoom: 17 }));
+    act(() => map.jumpTo({ zoom: 17.5 }));
     const calls = map.cameraCalls.length;
     press(map.getCanvas(), '3');
     expect(map.cameraCalls).toHaveLength(calls + 1);
@@ -340,7 +366,7 @@ describe('OccMap', () => {
     // A collapsed container: MapLibre cannot fit anything yet.
     fake.state.size.width = 0;
     let view = renderMap({ defaultView: 'airfield' });
-    const airfield = presetTargets({ stands: STANDS }).airfield.bounds;
+    const airfield = targetsOf().airfield.bounds;
     // It waits over the airfield, not at MapLibre's [0, 0], and moves nothing.
     expect(view.map.options.center).toEqual(boundsCenter(airfield));
     expect(probe()).toMatchObject({ fits: null, thresholds: null, activeView: null });
@@ -379,12 +405,13 @@ describe('OccMap', () => {
     }
 
     // The ramp fits the width the panels leave free; the code threshold sits 0.3 below that fit.
-    const ramp = presetTargets({ stands: STANDS }).ramp.bounds;
+    const ramp = targetsOf().ramp.bounds;
     const fitFor = width => Math.log2((width * 360) / (512 * (ramp[1][0] - ramp[0][0])));
     const narrow = probe();
     expect(narrow.fits.ramp).toBeCloseTo(fitFor(1440 - 320), 9);
     expect(narrow.thresholds).toEqual({
       polygons: narrow.fits.airfield - 0.3, codes: narrow.fits.ramp - 0.3, threeLine: narrow.fits.ramp + 0.8,
+      airfield: (narrow.fits.approach + narrow.fits.airfield) / 2,
     });
     expect(map.zoomRangeCalls.findLast(call => call.id === 'occ-stands-codes'))
       .toEqual({ id: 'occ-stands-codes', minzoom: narrow.thresholds.codes, maxzoom: 24 });
@@ -437,11 +464,12 @@ describe('OccMap', () => {
     const legend = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
       .map(item => item.textContent);
     const group = 'Grupo de posicionesAcerca el mapa para ver cada una';
-    // What MapLibre draws of the stands, as queryRenderedFeatures answers it for the layers it is asked about.
+    // What MapLibre draws of the stands, as queryRenderedFeatures answers it for the layers it is asked about; only the
+    // questions about the stands are counted (the airfield is asked about on its own).
     const queries = [];
     let drawn = [];
     fake.state.setRenderedFeatures(map, (geometry, options) => {
-      queries.push({ geometry, options });
+      if (options.layers.includes('occ-stands-frame')) queries.push({ geometry, options });
       return drawn.filter(feature => options.layers.includes(feature.layer.id));
     });
     const cluster = { id: 4, layer: { id: 'occ-stands-clusters' }, properties: { cluster: true, cluster_id: 4, point_count: 39 } };
@@ -465,7 +493,7 @@ describe('OccMap', () => {
 
     // Only a stand whose place lies in sight counts: east of the airport A1 is, BN13 is not.
     drawn = [cluster, alone('A1'), alone('BN13')];
-    act(() => map.jumpTo({ center: [-68.335, 18.5642] }));
+    act(() => map.jumpTo({ center: [-68.345, 18.5642] }));
     expect(probe()).toMatchObject({ activeView: 'airfield', onScreen: ['A1'], grouped: true });
     expect(legend()).toEqual([group, 'Ocupada']);
     // Every stand there drawn on its own: no cluster to explain.
@@ -785,6 +813,62 @@ describe('OccMap', () => {
     expect(createMapWithout('flights')).toBeUndefined();
   });
 
+  it('overlayData fills a custom overlay source with one setData per change; onPick hears hits that are not selections', async () => {
+    const onPick = vi.fn();
+    const onSelect = vi.fn();
+    const props = data => ({ overlays: [PIN_OVERLAY], overlayData: { 'test-pins': data }, onPick, onSelect });
+    const { map, rerender } = renderMap(props(pins(['p1'])));
+    // Given before the style loads, written once it has.
+    expect(map.getSource('test-pins')).toBeUndefined();
+    loadStyle(map);
+    const source = map.getSource('test-pins');
+    expect(source.setDataCalls).toHaveLength(1);
+    expect(source.data).toEqual(pins(['p1']));
+    // The same features in new objects write nothing; a change writes once, on the same map.
+    rerender(props(pins(['p1'])));
+    expect(source.setDataCalls).toHaveLength(1);
+    rerender(props(pins(['p1', 'p2'])));
+    expect(source.setDataCalls).toHaveLength(2);
+    expect(source.data.features).toHaveLength(2);
+    expect(fake.state.maps).toEqual([map]);
+
+    // A click on a pick of the screen's own kind reaches onPick as the engine answers it, and selects nothing.
+    const click = features => {
+      fake.state.setRenderedFeatures(map, () => features);
+      return act(async () => fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.56 } }));
+    };
+    await click([{ layer: { id: 'test-pins' }, properties: { id: 'p2' } }]);
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'pin', id: 'p2' }));
+    expect(onSelect).not.toHaveBeenCalled();
+    // A stand is still a selection, a runway still its card, and a pick without an id is nothing.
+    await click([{ layer: { id: 'occ-stands-frame' }, properties: { code: 'B21' } }]);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'B21' });
+    await click([RUNWAY_08]);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Pista 08/26');
+    await click([{ layer: { id: 'test-pins' }, properties: {} }]);
+    expect(onPick).toHaveBeenCalledOnce();
+
+    // The cursor says that a pick the screen hears can be clicked.
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    fake.state.setRenderedFeatures(map, () => [{ layer: { id: 'test-pins' }, properties: { id: 'p1' } }]);
+    fake.state.emit(map, 'mousemove', { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.56 } });
+    act(() => frames.shift()(0));
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    cleanup();
+
+    // Without onPick the same pick is not a thing to click, and a click on it does nothing.
+    fake.state.reset();
+    window.history.replaceState({}, '', PAGE);
+    const plain = renderMap({ overlays: [PIN_OVERLAY], overlayData: { 'test-pins': pins(['p1']), 'missing-source': pins([]) } });
+    loadStyle(plain.map);
+    expect(plain.map.getSource('test-pins').setDataCalls).toHaveLength(1);
+    fake.state.setRenderedFeatures(plain.map, () => [{ layer: { id: 'test-pins' }, properties: { id: 'p1' } }]);
+    fake.state.emit(plain.map, 'mousemove', { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.56 } });
+    act(() => frames.shift()(0));
+    expect(plain.map.getCanvas().style.cursor).toBe('');
+  });
+
   it('always marks PUJ with its reference point, up to the codes threshold', () => {
     const { map } = renderMap();
     loadStyle(map);
@@ -797,6 +881,176 @@ describe('OccMap', () => {
     expect(ids.indexOf('occ-reference-arp')).toBeGreaterThan(ids.indexOf('airfield-runway'));
   });
 
+  it('fills the airfield source from the dataset at start and applies the airfield threshold after the fit', () => {
+    const { map } = renderMap({ children: <MapLegend /> });
+    loadStyle(map);
+    // The dataset, written once, with the credit of its data on its source.
+    const source = map.getSource('occ-airfield');
+    expect(source.data).toEqual(airfieldFeatures(MDPC_LAYOUT));
+    expect(source.setDataCalls).toHaveLength(1);
+    expect(source.spec.attribution).toBe(AIRFIELD_ATTRIBUTION);
+    // In the airfield slot, above the tile aeroway and under the mark of PUJ.
+    const ids = map.layerIds();
+    expect(ids.slice(ids.indexOf('slot-airfield') + 1, ids.indexOf('slot-stands'))).toEqual([
+      'airfield-apron', 'airfield-runway-area', 'airfield-taxiway', 'airfield-runway', 'airfield-runway-ref',
+      ...AIRFIELD_LAYER_IDS, 'occ-reference-arp',
+    ]);
+
+    // From the derived threshold, the boundary of the Aeródromo view, the dataset draws the airfield; the tiles stop.
+    const { fits, thresholds } = probe();
+    expect(thresholds.airfield).toBeCloseTo((fits.approach + fits.airfield) / 2, 9);
+    const ranges = () => Object.fromEntries(map.zoomRangeCalls.map(call => [call.id, [call.minzoom, call.maxzoom]]));
+    for (const id of AIRFIELD_LAYER_IDS) expect(ranges()[id], id).toEqual([thresholds.airfield, 24]);
+    expect(ranges()['airfield-runway']).toEqual([9, thresholds.airfield]);
+    expect(ranges()['airfield-apron']).toEqual([11, thresholds.airfield]);
+    // The airfield view sits above the threshold and the approach view below it.
+    expect(fits.airfield).toBeGreaterThan(thresholds.airfield);
+    expect(fits.approach).toBeLessThan(thresholds.airfield);
+    // A narrower map lowers the fits and the threshold with them.
+    act(() => fake.state.resize(map, { width: 1000 }));
+    expect(probe().thresholds.airfield).toBeLessThan(thresholds.airfield);
+    expect(ranges()['occ-airfield-runway'][0]).toBeCloseTo(probe().thresholds.airfield, 9);
+    expect(ranges()['airfield-taxiway'][1]).toBeCloseTo(probe().thresholds.airfield, 9);
+
+    // What the map draws of the airfield in sight reaches the legend, read again when the map settles.
+    const asked = [];
+    const drawn = [RUNWAY_08, TAXIWAY_A, airfieldDrawn('occ-airfield-apron', { kind: 'apron', id: 'apron-1' })];
+    fake.state.setRenderedFeatures(map, (geometry, options) => {
+      if (options.layers.includes('occ-airfield-runway')) asked.push({ geometry, layers: options.layers });
+      return drawn.filter(feature => options.layers.includes(feature.layer.id));
+    });
+    act(() => fake.state.emit(map, 'idle'));
+    expect(asked.at(-1)).toEqual({ geometry: [[0, 0], [1000, 900]], layers: [...AIRFIELD_LAYER_IDS] });
+    expect(probe().airfieldOnScreen).toEqual(['runway', 'taxiway', 'apron']);
+    const legend = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem').map(item => item.textContent);
+    expect(legend().slice(-3)).toEqual(['Pista', 'Calle de rodaje', 'Plataforma']);
+    // Below the threshold (the region view) nothing of the airfield is drawn: the map is not asked and nothing is listed.
+    const questions = asked.length;
+    press(map.getCanvas(), '1');
+    act(() => fake.state.emit(map, 'idle'));
+    expect(probe().airfieldOnScreen).toEqual([]);
+    expect(asked).toHaveLength(questions);
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    // Without a layout: no airfield of its own, the tile aeroway keeps every zoom and the stand points frame the views.
+    fake.state.reset();
+    window.history.replaceState({}, '', PAGE);
+    const plain = renderMap({ layout: null });
+    loadStyle(plain.map);
+    expect(plain.map.getSource('occ-airfield')).toBeUndefined();
+    expect(plain.map.zoomRangeCalls.filter(call => call.id.startsWith('airfield-') || call.id.startsWith('occ-airfield'))).toEqual([]);
+    const pointRamp = presetTargets({ stands: STANDS }).ramp.bounds;
+    expect(probe().fits.ramp).toBeCloseTo(Math.log2((1440 * 360) / (512 * (pointRamp[1][0] - pointRamp[0][0]))), 9);
+    expect(probe().airfieldOnScreen).toEqual([]);
+  });
+
+  it('hovering or clicking a runway shows its designator, length and width; a taxiway its name; a click elsewhere closes it', async () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const onSelect = vi.fn();
+    const { map, rerender } = renderMap({ onSelect });
+    loadStyle(map);
+    let under = [];
+    fake.state.setRenderedFeatures(map, (_geometry, options) => under.filter(feature => options.layers.includes(feature.layer.id)));
+    const card = () => screen.queryByRole('tooltip');
+    const at = ({ x, y }) => ({ point: { x, y }, lngLat: map.unproject([x, y]) });
+    // The pointer over `features`, then the frame that reads what is under it.
+    const hover = (features, point = { x: 400, y: 300 }, originalEvent = undefined) => {
+      under = features;
+      act(() => {
+        fake.state.emit(map, 'mousemove', { ...at(point), originalEvent });
+        frames.shift()?.(0);
+      });
+    };
+    const click = async (features, point = { x: 400, y: 300 }) => {
+      under = features;
+      await act(async () => fake.state.emit(map, 'click', at(point)));
+    };
+
+    // A runway under the pointer: its designator, length and width from the dataset, next to the pointer.
+    hover([RUNWAY_08]);
+    expect(card()).toHaveTextContent('Pista 08/26 · 3100 m × 45 m');
+    expect(card()).toHaveAttribute('data-pinned', 'false');
+    expect(card()).toHaveStyle({ left: '400px', top: '300px', transform: 'translate(12px, 12px)' });
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    // A taxiway: its name, on the side with room (the lower right of the map puts the card above and to the left).
+    hover([TAXIWAY_A], { x: 1000, y: 700 });
+    expect(card()).toHaveTextContent('Calle de rodaje A');
+    expect(card()).toHaveStyle({ left: '1000px', top: '700px', transform: 'translate(calc(-100% - 12px), calc(-100% - 12px))' });
+    // The same taxiway further along keeps its card where it is: nothing is written on every frame.
+    hover([TAXIWAY_A], { x: 1010, y: 705 });
+    expect(card()).toHaveStyle({ left: '1000px' });
+    hover([TAXIWAY_UNNAMED]);
+    expect(card()).toHaveTextContent('Calle de rodaje sin nombre');
+    // Nothing of the airfield under the pointer, a drag, or the pointer leaving the map: no card.
+    hover([]);
+    expect(card()).toBeNull();
+    expect(map.getCanvas().style.cursor).toBe('');
+    hover([RUNWAY_08], { x: 400, y: 300 }, new MouseEvent('mousemove', { buttons: 1 }));
+    expect(card()).toBeNull();
+    hover([RUNWAY_08]);
+    act(() => {
+      fake.state.emit(map, 'mouseout');
+      frames.shift()?.(0);
+    });
+    expect(card()).toBeNull();
+
+    // A click holds it: the pointer leaving the runway or the map does not close it, and nothing is selected.
+    await click([RUNWAY_08]);
+    expect(card()).toHaveTextContent('Pista 08/26 · 3100 m × 45 m');
+    expect(card()).toHaveAttribute('data-pinned', 'true');
+    hover([]);
+    act(() => {
+      fake.state.emit(map, 'mouseout');
+      frames.shift()?.(0);
+    });
+    expect(card()).toHaveAttribute('data-pinned', 'true');
+    expect(onSelect).not.toHaveBeenCalled();
+    // It is a card on the map, not a modal: no dialog, and it never takes the pointer.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(card()).not.toHaveAttribute('aria-modal');
+    expect(card()).toHaveClass('pointer-events-none');
+    // Held, it follows its point when the map moves, and closes when the point leaves the map.
+    const held = at({ x: 400, y: 300 }).lngLat;
+    act(() => map.jumpTo({ center: map.unproject([600, 450]) }));
+    const moved = map.project(held);
+    expect(card()).toHaveStyle({ left: `${moved.x}px`, top: `${moved.y}px` });
+    act(() => map.jumpTo({ center: [-70.55, 19.45] }));
+    expect(card()).toBeNull();
+
+    // A click anywhere else closes it; so does another view; a click on a stand selects the stand and closes it.
+    act(() => map.jumpTo({ center: standPoint('A5'), zoom: 15 }));
+    await click([RUNWAY_08]);
+    await click([]);
+    expect(card()).toBeNull();
+    await click([TAXIWAY_A]);
+    expect(card()).toHaveTextContent('Calle de rodaje A');
+    press(map.getCanvas(), '1');
+    expect(card()).toBeNull();
+    press(map.getCanvas(), '4');
+    await click([RUNWAY_08]);
+    await click([{ id: 'B21', layer: { id: 'occ-stands-frame' }, properties: { code: 'B21' } }]);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'B21' });
+    expect(card()).toBeNull();
+    // While a stand is being placed, no card shows and a held one closes.
+    await click([RUNWAY_08]);
+    rerender({ onSelect, placing: true });
+    expect(card()).toBeNull();
+    hover([RUNWAY_08]);
+    expect(card()).toBeNull();
+    cleanup();
+
+    // In English.
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMap stands={STANDS} /></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    loadStyle(english);
+    fake.state.setRenderedFeatures(english, (_geometry, options) => (options.layers.includes('occ-airfield-runway') ? [RUNWAY_08] : []));
+    await act(async () => fake.state.emit(english, 'click', { point: { x: 400, y: 300 }, lngLat: english.unproject([400, 300]) }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Runway 08/26 · 3100 m × 45 m');
+  });
+
   it('imports occ-map.css and uses only occ-* classes (no opacity modifier)', () => {
     const component = readSource('src/features/maps/core/OccMap.jsx');
     expect(component).toMatch(/^import 'maplibre-gl\/dist\/maplibre-gl\.css';$/m);
@@ -804,6 +1058,7 @@ describe('OccMap', () => {
     const files = [
       'src/features/maps/core/OccMap.jsx', 'src/features/maps/core/MapUnavailable.jsx',
       'src/features/maps/ui/MapLegend.jsx', 'src/features/maps/ui/MapPresetSwitcher.jsx', 'src/features/maps/ui/MapDock.jsx',
+      'src/features/maps/ui/MapTooltip.jsx',
       'src/features/positions-map/components/PositionMap.jsx', 'src/features/flight-monitoring/components/FlightMap.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));

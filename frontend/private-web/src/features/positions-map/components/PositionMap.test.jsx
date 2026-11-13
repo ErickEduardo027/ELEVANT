@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
+import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
 import { presetTargets } from '../../maps/core/cameraPresets';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
@@ -22,7 +23,8 @@ const MARK_LAYERS = ['occ-stands-clusters', 'occ-stands-fill', 'occ-stands-frame
 
 // The zoom at which the fake map fits the width of `bounds` into `width` pixels.
 const fitWidth = (bounds, width = VIEWPORT_PX) => Math.log2((width * 360) / (512 * (bounds[1][0] - bounds[0][0])));
-const REFERENCE_TARGETS = presetTargets({ stands: STAND_REFERENCE });
+// The views the map frames: the polygons of the reference stands and the box of the MDPC airport layout (PR M3).
+const REFERENCE_TARGETS = presetTargets({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT });
 const RAMP_FIT = fitWidth(REFERENCE_TARGETS.ramp.bounds);
 const AIRFIELD_FIT = fitWidth(REFERENCE_TARGETS.airfield.bounds);
 
