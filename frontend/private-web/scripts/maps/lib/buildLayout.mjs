@@ -40,6 +40,19 @@ const HOLD_DEDUP_M = 15;
 const HOLD_REACH_M = 400;
 const TAXI_KINDS = Object.freeze(['taxiway', 'taxilane']);
 
+/**
+ * The QA flags of a stand, in the order the layout lists them: `unmatched` (no OSM stand way within 40 m), `ambiguous`
+ * (another OSM candidate as good, or the one OSM ties to the stand's own gate), `far` (the OSM centroid or the gate of
+ * the same code beyond 50 m), `overlap` (more than 15 % of another box), `crossesTaxiway` (a taxiway or taxilane runs
+ * through the box), `leadInCrosses` (the lead-in runs through another box), `narrowed` (the box is narrower than its
+ * code letter) and `headingAssumed` (the heading follows its row), which only explain how the box was drawn, and last
+ * `offNetwork` (beyond 300 m of the taxi network) and `noLeadIn` (no taxi edge to draw a lead-in from).
+ */
+export const QA_FLAGS = Object.freeze([
+  'unmatched', 'ambiguous', 'far', 'overlap', 'crossesTaxiway', 'leadInCrosses', 'narrowed', 'headingAssumed',
+  'offNetwork', 'noLeadIn',
+]);
+
 const range = (prefix, from, to) => Array.from({ length: to - from + 1 }, (_, at) => `${prefix}${from + at}`);
 
 /**
@@ -241,8 +254,19 @@ function distanceToWay(point, way) {
   return pointToPolylineM(point, way.line).distanceM;
 }
 
-/** Each stand's OSM way: a way matches one stand only; the nearest pairs are taken first. */
-function matchStandWays(stands, parkingWays, overrides) {
+/** The OSM stand ways that begin or end at one of `gates` (OSM gate nodes with their id). */
+function waysAtGates(parkingWays, gates) {
+  const ids = new Set(gates.map(gate => gate.id));
+  return parkingWays.filter(way => ids.has(way.nodeIds[0]) || ids.has(way.nodeIds[way.nodeIds.length - 1]));
+}
+
+/**
+ * Each stand's OSM way: a way matches one stand only; the nearest pairs are taken first. A match is ambiguous when
+ * another way is almost as near to the stand, when another stand is almost as near to its way, or when OSM ties another
+ * candidate way to the stand: the way that begins or ends at the OSM gate with the stand's own code (B20–B31 at MDPC;
+ * «1» or «N1» are never another stand's code). Nothing then decides between them from OSM alone.
+ */
+function matchStandWays(stands, parkingWays, overrides, gates = []) {
   const forced = new Map();
   for (const stand of stands) {
     const override = overrides[stand.code];
@@ -270,7 +294,8 @@ function matchStandWays(stands, parkingWays, overrides) {
     matches.set(pair.stand.code, { way: pair.way, distanceM: pair.distanceM, forced: false });
     takenWays.add(pair.way.id);
   }
-  // Ambiguous: another way almost as near to the stand, or another stand almost as near to its way.
+  // Ambiguous: another way almost as near to the stand, another stand almost as near to its way, or another candidate
+  // that OSM ties to the stand's own gate.
   const ambiguous = new Set();
   for (const [code, match] of matches) {
     if (!match || match.forced) continue;
@@ -282,6 +307,9 @@ function matchStandWays(stands, parkingWays, overrides) {
       const rival = candidates.get(other.code).find(candidate => candidate.way.id === match.way.id);
       if (rival && rival.distanceM - match.distanceM < AMBIGUOUS_MARGIN_M) ambiguous.add(code);
     }
+    const gateWays = waysAtGates(parkingWays, gates.filter(gate => normalizeStandCode(gate.ref) === code));
+    if (own.some(candidate => candidate.way.id !== match.way.id && gateWays.includes(candidate.way))
+      && !gateWays.includes(match.way)) ambiguous.add(code);
   }
   return { matches, ambiguous };
 }
@@ -382,7 +410,7 @@ function buildStands(osm, standPoints, overrides, context) {
     };
   });
   const parkingWays = waysOf(osm, 'parking_position');
-  const { matches, ambiguous } = matchStandWays(stands, parkingWays, overrides.stands ?? {});
+  const { matches, ambiguous } = matchStandWays(stands, parkingWays, overrides.stands ?? {}, context.gates);
 
   // Heading: manual, OSM, a row neighbour, or the row axis.
   for (const stand of stands) {
@@ -478,6 +506,29 @@ function overlapPct(a, b) {
   const shared = convexIntersectionAreaM2(a.polygon, b.polygon);
   const smaller = Math.min(polygonAreaM2(a.polygon), polygonAreaM2(b.polygon));
   return smaller > 0 ? (shared / smaller) * 100 : 0;
+}
+
+/** Whether segments p–q and r–s of a local plane cross or touch (parallel segments never count). */
+function segmentsCross([px, py], [qx, qy], [rx, ry], [sx, sy]) {
+  const denominator = (qx - px) * (sy - ry) - (qy - py) * (sx - rx);
+  if (Math.abs(denominator) < 1e-12) return false;
+  const t = ((rx - px) * (sy - ry) - (ry - py) * (sx - rx)) / denominator;
+  const u = ((rx - px) * (qy - py) - (ry - py) * (qx - px)) / denominator;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+/** Whether a line (`[lng, lat]` points) enters a stand box: a point of it inside, or a segment across its outline. */
+function lineEntersPolygon(line, polygon) {
+  if (line.some(point => pointInPolygon(point, polygon))) return true;
+  const plane = toLocal(polygon[0]);
+  const ring = polygon.map(plane.forward);
+  const path = line.map(plane.forward);
+  for (let at = 0; at < path.length - 1; at += 1) {
+    for (let side = 0; side < ring.length - 1; side += 1) {
+      if (segmentsCross(path[at], path[at + 1], ring[side], ring[side + 1])) return true;
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -783,9 +834,18 @@ export function buildLayout({ osm: rawOsm, ourAirports, standPoints, overrides =
   const aprons = waysOf(osm, 'apron').filter(way => way.closed && keepNear(way.line, 'apron', way.id))
     .map(way => ({ id: `apron-${way.id}`, name: way.tags.name ?? null, polygon: way.line }));
 
-  const gates = osm.nodes.filter(node => node.tags.aeroway === 'gate' && node.tags.ref)
-    .map(node => ({ ref: node.tags.ref, p: node.p }));
-  const context = { terminals, gates, graph: currentGraph(state) };
+  const gateNodes = osm.nodes.filter(node => node.tags.aeroway === 'gate' && node.tags.ref)
+    .map(node => ({ id: node.id, ref: node.tags.ref, p: node.p }));
+  const gates = gateNodes.map(({ ref, p }) => ({ ref, p }));
+  // The OSM stand lines, matched or not, with the ref of the gate at either end: what the review scene draws beside the
+  // generated boxes, so a person sees which line a point sits on and which one OSM ties to each gate.
+  const gateRefs = new Map(gateNodes.map(gate => [gate.id, gate.ref]));
+  const standLines = waysOf(osm, 'parking_position').map(way => ({
+    way: way.id,
+    gate: gateRefs.get(way.nodeIds[0]) ?? gateRefs.get(way.nodeIds[way.nodeIds.length - 1]) ?? null,
+    line: way.line,
+  }));
+  const context = { terminals, gates: gateNodes, graph: currentGraph(state) };
   const stands = buildStands(osm, standPoints, standOverrides, context);
   for (const stand of stands) {
     if (stand.retired) continue;
@@ -812,8 +872,20 @@ export function buildLayout({ osm: rawOsm, ourAirports, standPoints, overrides =
     stand.overlapMaxPct = round1(worst);
     if (worst > OVERLAP_PCT) stand.flags.push('overlap');
   }
+  // QA: a box that a taxiway or taxilane of OSM runs through is not a place to park (seen in the review scene: BN9).
+  const taxiLines = state.edges.filter(edge => TAXI_KINDS.includes(edge.kind))
+    .map(edge => edge.line ?? [state.nodes.get(edge.a).p, state.nodes.get(edge.b).p]);
+  for (const stand of active) {
+    if (taxiLines.some(line => lineEntersPolygon(line, stand.polygon))) stand.flags.push('crossesTaxiway');
+  }
 
   addLeadIns(state, stands, report);
+  // QA: a lead-in drawn where OSM maps no taxilane may run through a neighbour's box: no aircraft taxis through one.
+  for (const stand of active) {
+    if (stand.leadIn && active.some(other => other !== stand && lineEntersPolygon(stand.leadIn, other.polygon))) {
+      stand.flags.push('leadInCrosses');
+    }
+  }
   const holdingPoints = addHoldingPoints(state, runways, osm, report);
   const apronHolds = addApronHolds(state, stands, report);
 
@@ -827,7 +899,7 @@ export function buildLayout({ osm: rawOsm, ourAirports, standPoints, overrides =
     .filter(([, target]) => normalizeStandCode(target) === code)
     .map(([alias]) => alias)
     .sort(compare);
-  const flagOrder = ['unmatched', 'ambiguous', 'far', 'overlap', 'narrowed', 'headingAssumed', 'offNetwork', 'noLeadIn'];
+  const flagOrder = QA_FLAGS;
   const layoutStands = stands.map(stand => {
     const flags = flagOrder.filter(flag => stand.flags.includes(flag));
     const reviewed = typeof stand.override.reviewedBy === 'string' && stand.override.reviewedBy !== '';
@@ -926,7 +998,7 @@ export function buildLayout({ osm: rawOsm, ourAirports, standPoints, overrides =
     stands: layoutStands,
     markings: buildMarkings(runways),
     operations: { preferred: { arrival: '08', departure: '08' }, source: 'assumption', basis: 'owner-decision-19' },
-    qa: { gates },
+    qa: { gates, standLines },
   });
 
   const region = roundGeometry({

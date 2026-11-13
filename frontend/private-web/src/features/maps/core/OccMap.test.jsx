@@ -34,6 +34,19 @@ const EXTRA_OVERLAY = {
     metadata: { 'occ:group': 'notes' },
   }],
 };
+// A screen's own overlay with a pick of its own kind, as the map lab's layout review has.
+const PIN_OVERLAY = {
+  sources: { 'test-pins': { type: 'geojson' } },
+  layers: [{
+    slot: 'stands', id: 'test-pins', type: 'circle', source: 'test-pins',
+    paint: { 'circle-radius': 4 },
+    metadata: { 'occ:group': 'pins', 'occ:pick': 'pin', 'occ:pickId': 'id' },
+  }],
+};
+const pins = ids => ({
+  type: 'FeatureCollection',
+  features: ids.map(id => ({ type: 'Feature', properties: { id }, geometry: { type: 'Point', coordinates: [-68.36, 18.56] } })),
+});
 // Synthetic flights with and without a position, around Punta Cana.
 const FLIGHTS = [
   { id: 'l:leg-1', flightKey: 'l:leg-1', heading: 120, latitude: 18.71, longitude: -68.52 },
@@ -798,6 +811,62 @@ describe('OccMap', () => {
     expect(fake.state.maps).toEqual([map]);
     // A map given no flights has no flight layer.
     expect(createMapWithout('flights')).toBeUndefined();
+  });
+
+  it('overlayData fills a custom overlay source with one setData per change; onPick hears hits that are not selections', async () => {
+    const onPick = vi.fn();
+    const onSelect = vi.fn();
+    const props = data => ({ overlays: [PIN_OVERLAY], overlayData: { 'test-pins': data }, onPick, onSelect });
+    const { map, rerender } = renderMap(props(pins(['p1'])));
+    // Given before the style loads, written once it has.
+    expect(map.getSource('test-pins')).toBeUndefined();
+    loadStyle(map);
+    const source = map.getSource('test-pins');
+    expect(source.setDataCalls).toHaveLength(1);
+    expect(source.data).toEqual(pins(['p1']));
+    // The same features in new objects write nothing; a change writes once, on the same map.
+    rerender(props(pins(['p1'])));
+    expect(source.setDataCalls).toHaveLength(1);
+    rerender(props(pins(['p1', 'p2'])));
+    expect(source.setDataCalls).toHaveLength(2);
+    expect(source.data.features).toHaveLength(2);
+    expect(fake.state.maps).toEqual([map]);
+
+    // A click on a pick of the screen's own kind reaches onPick as the engine answers it, and selects nothing.
+    const click = features => {
+      fake.state.setRenderedFeatures(map, () => features);
+      return act(async () => fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.56 } }));
+    };
+    await click([{ layer: { id: 'test-pins' }, properties: { id: 'p2' } }]);
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'pin', id: 'p2' }));
+    expect(onSelect).not.toHaveBeenCalled();
+    // A stand is still a selection, a runway still its card, and a pick without an id is nothing.
+    await click([{ layer: { id: 'occ-stands-frame' }, properties: { code: 'B21' } }]);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'B21' });
+    await click([RUNWAY_08]);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Pista 08/26');
+    await click([{ layer: { id: 'test-pins' }, properties: {} }]);
+    expect(onPick).toHaveBeenCalledOnce();
+
+    // The cursor says that a pick the screen hears can be clicked.
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    fake.state.setRenderedFeatures(map, () => [{ layer: { id: 'test-pins' }, properties: { id: 'p1' } }]);
+    fake.state.emit(map, 'mousemove', { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.56 } });
+    act(() => frames.shift()(0));
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    cleanup();
+
+    // Without onPick the same pick is not a thing to click, and a click on it does nothing.
+    fake.state.reset();
+    window.history.replaceState({}, '', PAGE);
+    const plain = renderMap({ overlays: [PIN_OVERLAY], overlayData: { 'test-pins': pins(['p1']), 'missing-source': pins([]) } });
+    loadStyle(plain.map);
+    expect(plain.map.getSource('test-pins').setDataCalls).toHaveLength(1);
+    fake.state.setRenderedFeatures(plain.map, () => [{ layer: { id: 'test-pins' }, properties: { id: 'p1' } }]);
+    fake.state.emit(plain.map, 'mousemove', { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.56 } });
+    act(() => frames.shift()(0));
+    expect(plain.map.getCanvas().style.cursor).toBe('');
   });
 
   it('always marks PUJ with its reference point, up to the codes threshold', () => {

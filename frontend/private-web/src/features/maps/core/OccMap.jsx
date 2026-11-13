@@ -45,7 +45,7 @@ import { useMapSelection } from './useMapSelection';
 // otherwise), whose box and stand polygons also frame the airport views; a runway or a taxiway under the pointer shows
 // the map tooltip, and a click holds it. Given `stands` it draws them as points in the stands slot, and given `flights`
 // it draws those with a position. Their overlays are part of the style from the start, so new data is one setData and
-// the map is never re-created.
+// the map is never re-created; a screen's own overlays get their data the same way, through `overlayData`.
 
 const EMPTY = Object.freeze([]);
 const NO_GROUPS = Object.freeze({});
@@ -157,8 +157,12 @@ function findStand(stands, code) {
  * - `overlays` for buildOccStyle and `basemap`, `interactive` and `mapOptions` (extra MapLibre options, such as the
  *   map lab's `fadeDuration: 0`; the map keeps its own locale): read once, when the map starts, as are whether
  *   `stands` and `flights` are given and `standLabels`;
- * - `selection` (`{ kind, id }` or null) and `onSelect({ kind, id } | null)`; `onMapClick({ latitude, longitude })`
- *   while `placing`; `initialCamera` and `onCameraChange(camera)`;
+ * - `overlayData` (`{ [sourceId]: FeatureCollection }`): the data of the sources of `overlays`, one setData for each
+ *   source whose features change, as for the stands and the flights;
+ * - `selection` (`{ kind, id }` or null) and `onSelect({ kind, id } | null)`; `onPick(hit)` for a click on anything
+ *   else a layer lets pick (`{ kind, id, feature }` as the engine answers it: not a stand, a flight, an aircraft, a
+ *   cluster, a runway or a taxiway); `onMapClick({ latitude, longitude })` while `placing`; `initialCamera` and
+ *   `onCameraChange(camera)`;
  * - `pitchMode` ('2d' | '3d'), `groups` ({ 'buildings-3d': true }), `insets` ({ top, right, bottom, left } in px);
  * - `testId` of the host that holds the canvas, `labels` ({ unavailableTitle, unavailableDescription,
  *   unavailableList, map }), `fallbackItems` ([{ id, label, kind }]) and `onFallbackSelect(id, item)`;
@@ -172,8 +176,10 @@ const OccMap = forwardRef(function OccMap({
   standLabels = 'default',
   flights: flightsProp,
   overlays = EMPTY,
+  overlayData,
   selection = null,
   onSelect,
+  onPick,
   onMapClick,
   placing = false,
   initialCamera,
@@ -220,9 +226,9 @@ const OccMap = forwardRef(function OccMap({
   // The newest props for engine callbacks and imperative calls; assigned after each render, never during it.
   useLayoutEffect(() => {
     latest.current = {
-      stands, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onMapClick, placing, onCameraChange,
-      isShortcutBlocked, pitchMode, padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap,
-      overlays, interactive, mapOptions, layout, locale: engineLocale(t, labels?.map),
+      stands, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onPick, onMapClick, placing,
+      onCameraChange, isShortcutBlocked, pitchMode, padding, targets, urlView, urlTerminal, defaultView, initialCamera,
+      basemap, overlays, interactive, mapOptions, layout, locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
     };
@@ -455,6 +461,8 @@ const OccMap = forwardRef(function OccMap({
       return;
     }
     if (SELECTABLE_KINDS.has(hit.kind)) props.onSelect?.({ kind: hit.kind, id: String(hit.id) });
+    // Anything else a screen's own layer lets pick (the graph nodes of the map lab's layout review) is the screen's.
+    else props.onPick?.(hit);
   }, [store, showTooltip]);
 
   // The tooltip of what is under the pointer, unless a click holds one: written to the store only when the runway or
@@ -485,7 +493,9 @@ const OccMap = forwardRef(function OccMap({
         return;
       }
       const hit = pointer.event?.hit;
-      engine.setCursor(hit && POINTER_KINDS.has(hit.kind) ? 'pointer' : '');
+      // A pick the screen hears (onPick) is something to click as well.
+      const clickable = hit && (POINTER_KINDS.has(hit.kind) || (hit.id != null && latest.current.onPick));
+      engine.setCursor(clickable ? 'pointer' : '');
       hoverTooltip(pointer.event, hit);
     });
   }, [hoverTooltip]);
@@ -497,8 +507,8 @@ const OccMap = forwardRef(function OccMap({
     store.set(initialSnapshot(props.basemap));
     appliedRef.current = {
       padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null, stands: null, flights: null,
-      clusterMaxZoom: null, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights, standLabels: props.standLabels,
-      drawsAirfield: Boolean(props.layout),
+      overlayData: {}, clusterMaxZoom: null, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights,
+      standLabels: props.standLabels, drawsAirfield: Boolean(props.layout),
     };
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
@@ -609,6 +619,20 @@ const OccMap = forwardRef(function OccMap({
     appliedRef.current.flights = key;
     engine.setData(FLIGHT_SOURCE, data);
   }, [flights]);
+
+  // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !overlayData) return;
+    const applied = appliedRef.current.overlayData;
+    for (const [sourceId, data] of Object.entries(overlayData)) {
+      if (!data) continue;
+      const key = JSON.stringify(data.features ?? []);
+      if (applied[sourceId] === key) continue;
+      applied[sourceId] = key;
+      engine.setData(sourceId, data);
+    }
+  }, [overlayData]);
 
   // The selection casing: one feature in the selection source, written only when it changes.
   useEffect(() => {

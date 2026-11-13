@@ -1,23 +1,26 @@
 import { describe, expect, it } from 'vitest';
+import { importClosure } from '../../../styles/occSourceScan';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { legendEntries } from '../ui/legendEntries';
-import { BASEMAP_MODES, SCENES, findScene, labInstant, labStands, readLabQuery } from './scenes';
+import { BASEMAP_MODES, SCENES, SCENE_KINDS, findScene, labInstant, labStands, readLabQuery } from './scenes';
 
 const statusOf = (stands, code) => stands.find(stand => stand.id === code)?.status;
 const legendOf = stands => legendEntries({ stands }).states;
 
 describe('map lab scenes', () => {
-  it('every scene id is unique, names a known view and uses only the seven stand states', () => {
+  it('every scene id is unique, names a known view and kind and uses only the seven stand states', () => {
     const ids = SCENES.map(scene => scene.id);
     expect(ids).toEqual([
       'ramp-points', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
+      'layout-qa',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
       expect(VIEW_NAMES, scene.id).toContain(scene.view);
+      expect(SCENE_KINDS, scene.id).toContain(scene.kind);
       expect(BASEMAP_MODES, scene.id).toContain(scene.basemap);
       expect(typeof scene.webgl, scene.id).toBe('boolean');
       // Sentence case with a capital, and a full sentence below it.
@@ -53,9 +56,33 @@ describe('map lab scenes', () => {
       .toEqual(['available', 'occupied', 'disabled', 'planned', 'available', 'available', 'occupied']);
     expect(['BN6', 'BN7', 'BN8', 'BN13'].map(code => statusOf(stands, code)))
       .toEqual(['available', 'unverified', 'available', 'unverified']);
-    // Every state is on the ramp, and every scene draws these same stands.
+    // Every state is on the ramp, and every map scene draws these same stands.
     expect(legendOf(stands)).toEqual(STAND_STATE_KEYS);
-    for (const scene of SCENES) expect(scene.stands, scene.id).toEqual(stands);
+    for (const scene of SCENES.filter(item => item.kind === 'map')) expect(scene.stands, scene.id).toEqual(stands);
+  });
+
+  it('the layout-qa scene is development-only data with a known view', () => {
+    const review = findScene('layout-qa');
+    expect(review).toEqual({
+      id: 'layout-qa',
+      kind: 'layout-qa',
+      title: 'Revisión del plano de MDPC',
+      description: expect.stringMatching(/^El plano generado .*\.$/u),
+      view: 'airfield',
+      // It draws the airport layout itself, not stands with states.
+      stands: [],
+      selection: null,
+      basemap: 'on',
+      webgl: true,
+    });
+    expect(Object.isFrozen(review) && Object.isFrozen(review.stands)).toBe(true);
+    expect(SCENES.filter(scene => scene.kind !== 'map').map(scene => scene.id)).toEqual(['layout-qa']);
+    expect(readLabQuery('scene=layout-qa&basemap=none')).toMatchObject({ scene: review, basemap: 'none' });
+    // Only the lab's route reaches the lab: every other route of the app, followed through all its imports, never
+    // does, and app/map-lab/page.jsx imports the lab inside its development branch (scripts/verify-map-chunks.mjs).
+    const reached = importClosure(['app'], { stops: ['app/map-lab/page.jsx', 'app/map-lab/MapLabLoader.jsx'] });
+    expect(reached).toContain('app/map-lab/page.jsx');
+    expect(reached.filter(file => file.startsWith('src/features/maps/lab/'))).toEqual([]);
   });
 
   it('each terminal view frames its own stands and a part of the legend of its own', () => {

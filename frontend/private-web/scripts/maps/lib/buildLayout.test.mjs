@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { haversineM, pointToPolylineM, toLocal } from '../../../src/features/maps/airport/geo.js';
-import { HOLD_OFFSET_M, STAND_ROWS, buildLayout, formatReport, stringifyLayout } from './buildLayout.mjs';
+import { HOLD_OFFSET_M, QA_FLAGS, STAND_ROWS, buildLayout, formatReport, stringifyLayout } from './buildLayout.mjs';
 
 // A synthetic airport in a local plane (metres east and north of an invented origin): runway 09/27 along y = 300,
 // taxiway «A» from the runway south to an apron lane along y = 100, a terminal south of the stands at y = -100, and
@@ -19,7 +19,7 @@ function way(id, aeroway, points, { tags = {}, nodeIds } = {}) {
   return { type: 'way', id, tags: { aeroway, ...tags }, nodes: ids, geometry: points.map(([x, y]) => latLon(x, y)) };
 }
 
-function syntheticOsm({ withHold = false } = {}) {
+function syntheticOsm({ withHold = false, withGateLine = false } = {}) {
   const elements = [
     way(1, 'runway', [[-1000, 300], [0, 300], [1000, 300]], { tags: { ref: '09/27' }, nodeIds: [11, 12, 13] }),
     way(2, 'taxiway', [[0, 300], [0, 200], [0, 100]], { tags: { ref: 'A' }, nodeIds: [12, 21, 22] }),
@@ -36,6 +36,12 @@ function syntheticOsm({ withHold = false } = {}) {
   ];
   if (withHold) {
     elements.push({ type: 'node', id: 99, tags: { aeroway: 'holding_position' }, ...latLon(0, 215) });
+  }
+  if (withGateLine) {
+    // A second stand line 20 m west of A1's, which begins at the OSM gate «A1»: OSM ties it to A1, the point lies on
+    // the other one.
+    elements.push({ type: 'node', id: 77, tags: { aeroway: 'gate', ref: 'A1' }, ...latLon(-120, -40) });
+    elements.push(way(55, 'parking_position', [[-120, -40], [-120, 40]], { nodeIds: [77, 78] }));
   }
   return { version: 0.6, osm3s: { timestamp_osm_base: '2026-01-02T03:04:05Z', copyright: 'test' }, elements };
 }
@@ -164,6 +170,53 @@ describe('buildLayout', () => {
     expect(layout.meta.sources.map(source => source.id)).toEqual(['osm', 'ourairports', 'elevant']);
     expect(layout.meta.sources[0].extractedAt).toBe('2026-01-02T03:04:05Z');
     expect(layout.operations.preferred).toEqual({ arrival: '08', departure: '08' });
+  });
+
+  it('a stand is ambiguous when OSM ties another candidate line to the gate of its own code', () => {
+    const plain = build(OVERLAPPING).layout;
+    expect(standOf(plain, 'A1').qa.flags).not.toContain('ambiguous');
+    const { layout, report } = build(OVERLAPPING, { withGateLine: true });
+    // The point lies on line 51; the line that begins at gate «A1» (55) is 20 m away: nothing in OSM decides.
+    expect(standOf(layout, 'A1').qa).toMatchObject({ osmWay: 51, gate: { ref: 'A1' } });
+    expect(standOf(layout, 'A1').qa.flags).toContain('ambiguous');
+    expect(report.summary.ambiguous).toEqual(['A1', 'AN1']);
+    // The review scene draws every OSM stand line, with the gate at its end.
+    expect(layout.qa.standLines.map(line => [line.way, line.gate])).toEqual([[51, null], [52, null], [53, null], [54, null], [55, 'A1']]);
+    expect(layout.qa.standLines[4].line[0]).toEqual(layout.qa.gates[0].p);
+    // A person's choice in the manual table settles it, either way.
+    for (const osmWay of [51, 55]) {
+      const settled = build({ ...OVERLAPPING, stands: { ...OVERLAPPING.stands, A1: { osmWay, note: 'test' } } }, { withGateLine: true });
+      expect(standOf(settled.layout, 'A1').qa.osmWay, String(osmWay)).toBe(osmWay);
+      expect(standOf(settled.layout, 'A1').qa.flags, String(osmWay)).not.toContain('ambiguous');
+    }
+  });
+
+  it('flags a box that a taxiway runs through and a lead-in that runs through another box', () => {
+    const points = [
+      ...STAND_POINTS.filter(item => item.id !== 'A3'),
+      // Twenty metres south of the apron lane: the lane runs through its box.
+      point('A3', 'A', 200, 80),
+      // A column south of the lane: B35's lead-in from the lane runs through B34's box.
+      point('B34', 'B', 300, -60),
+      point('B35', 'B', 300, -150),
+    ];
+    const overrides = {
+      ...OVERLAPPING,
+      stands: { ...OVERLAPPING.stands, B34: { headingTrue: 180, note: 'test' }, B35: { headingTrue: 180, note: 'test' } },
+    };
+    const { layout, report } = buildLayout({ osm: syntheticOsm(), ourAirports: OUR_AIRPORTS, standPoints: points, overrides });
+    expect(standOf(layout, 'A3').qa.flags).toContain('crossesTaxiway');
+    expect(standOf(layout, 'B35').qa.flags).toContain('leadInCrosses');
+    expect(standOf(layout, 'B34').qa.flags).not.toContain('leadInCrosses');
+    expect(report.summary.crossesTaxiway).toEqual(['A3']);
+    // B31 and B32 overlap on purpose in this airport: each one's lead-in runs through the other's box too.
+    expect(report.summary.leadInCrosses).toEqual(['B31', 'B32', 'B35']);
+    expect(formatReport(report)).toContain('- leadInCrosses: 3 (B31, B32, B35)');
+    // The flags keep the generator's order: what needs a person first, then what only explains the box.
+    expect(Object.keys(report.summary)).toEqual([...QA_FLAGS]);
+    for (const stand of layout.stands) {
+      expect(stand.qa.flags, stand.code).toEqual(QA_FLAGS.filter(flag => stand.qa.flags.includes(flag)));
+    }
   });
 
   it('writes pairs on one line with 6 decimals and a final newline', () => {
