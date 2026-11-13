@@ -78,6 +78,12 @@ public static class DemoFlightCodes
 
     /// <summary>A reason of a stand that is not eligible: no agent covers it at the on-block instant.</summary>
     public const string StandNotCovered = "stand_not_covered";
+
+    /// <summary>
+    /// The reason of <see cref="StandNotEligible"/> for a stand the map does not know where to draw
+    /// (<see cref="PuntaCanaStationLayout.IsLocated"/>): the aircraft would have nowhere to taxi to.
+    /// </summary>
+    public const string StandNotLocated = "stand_not_located";
 }
 
 /// <summary>

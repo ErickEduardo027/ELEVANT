@@ -42,6 +42,10 @@ internal static class SafeAuditChanges
         "demo_flight.arrival", "demo_flight.departure", "demo_flight.airline", "demo_flight.origin",
         "demo_flight.destination", "demo_flight.registration", "demo_flight.minutes_to_on_block",
         "demo_flight.ground_minutes", "demo_flight.stand", "demo_flight.state",
+        // How the trigger chose the stand (None, Specific or Random), and what «Cargar posiciones de Punta Cana» created
+        // and adopted (ADR-0041, contracts 1.2).
+        "demo_flight.stand_choice",
+        "demo_station.terminals_created", "demo_station.stands_created", "demo_station.stands_adopted",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

@@ -126,6 +126,8 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Abstractions.Operations.IOccFlightFeedStore, Elevant.Persistence.Integration.EfOccFlightFeedStore>();
         // ADR-0041: the demo flights the superadministrator triggers; whether they run here is DemoFlights:Mode.
         services.AddScoped<IDemoFlightStore, EfDemoFlightStore>();
+        // ADR-0041: «Cargar posiciones de Punta Cana», which only creates the catalogue's terminals and stands.
+        services.AddScoped<IDemoStationStore, EfDemoStationStore>();
         // Defaults when Infrastructure is not composed (tests, database tool); its registrations win.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);

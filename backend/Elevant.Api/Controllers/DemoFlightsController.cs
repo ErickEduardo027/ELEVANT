@@ -35,7 +35,8 @@ public sealed class DemoFlightsController(DemoFlightHandler handler) : Controlle
     public async Task<IActionResult> Options([FromQuery] Guid? stationId, CancellationToken cancellationToken)
     {
         if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
-        var options = await handler.OptionsAsync(actorId, stationId, cancellationToken);
+        // The stands are evaluated for the form's default visit (8 minutes to the stand, 60 on the ground) and any size.
+        var options = await handler.OptionsAsync(actorId, DemoFlightOptionsQuery.Default(stationId), cancellationToken);
         return options is null ? MasterDataHttp.Coded(this, 403, ForbiddenTitle, "forbidden") : Ok(Map(options));
     }
 

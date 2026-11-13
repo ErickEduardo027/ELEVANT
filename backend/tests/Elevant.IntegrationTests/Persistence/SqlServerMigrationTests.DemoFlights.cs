@@ -6,6 +6,7 @@ using Elevant.Application.Common;
 using Elevant.Application.Integration;
 using Elevant.Application.Integration.DemoFlights;
 using Elevant.Application.Operations;
+using Elevant.Application.Operations.DemoStation;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Integration;
@@ -45,12 +46,15 @@ public sealed partial class SqlServerMigrationTests
 
     /// <summary>
     /// The seeded station with the demo flights on and a clock the test moves. <see cref="Day"/> is the station's local
-    /// day the clock starts on (two days after the seed, so nothing seeded is in the way).
+    /// day the clock starts on (two days after the seed, so nothing seeded is in the way). <see cref="Agent"/> is the key
+    /// of the seeded ramp agent, who works in Terminal A that day and covers the fixture's stands.
     /// </summary>
     private sealed class DemoFlights(ServiceProvider provider, MovableTimeProvider clock, string connection, Guid airline,
-        Guid aircraftType, PlanningStands stands, DateOnly day, CancellationToken ct) : IAsyncDisposable
+        Guid aircraftType, PlanningStands stands, DateOnly day, long agent, CancellationToken ct) : IAsyncDisposable
     {
         public ServiceProvider Provider => provider;
+
+        public long Agent => agent;
 
         public MovableTimeProvider Clock => clock;
 
@@ -107,9 +111,16 @@ public sealed partial class SqlServerMigrationTests
         /// <summary>The flight as the superadministrator's list shows it now.</summary>
         public async Task<DemoFlightData> Flight(Guid demoId) => (await Listed()).Single(flight => flight.Id == demoId);
 
-        public async Task<DemoFlightOptionsData> Options(Guid? station = null) =>
+        /// <summary>The options of the form's default visit: 8 minutes to the stand, 60 on the ground, any size.</summary>
+        public Task<DemoFlightOptionsData> Options(Guid? station = null) => Options(DemoFlightOptionsQuery.Default(station));
+
+        public async Task<DemoFlightOptionsData> Options(DemoFlightOptionsQuery query) =>
             (await Run(services => services.GetRequiredService<DemoFlightHandler>()
-                .OptionsAsync(SuperAdministratorAccount, station, ct)))!;
+                .OptionsAsync(SuperAdministratorAccount, query, ct)))!;
+
+        /// <summary>The stand of the options with that code.</summary>
+        public async Task<DemoStandOptionData> Stand(string code, DemoFlightOptionsQuery? query = null) =>
+            Assert.Single((await Options(query ?? DemoFlightOptionsQuery.Default(null))).Stands, item => item.Code == code);
 
         /// <summary>OCC's review of the flight's day.</summary>
         public async Task<IReadOnlyList<OccFlightProposalData>> Feed(OccFlightFeedView view = OccFlightFeedView.Contracted) =>
@@ -211,12 +222,41 @@ public sealed partial class SqlServerMigrationTests
         }
     }
 
+    /// <summary>The stands the seeded agent covers in the demo flight fixture, unless a test says otherwise.</summary>
+    private static readonly string[] DemoCoveredStands = ["A01", "A02", "A03"];
+
+    /// <summary>A stand of the demo flight options as the tests compare it, its lists joined with «|».</summary>
+    private static (string Code, bool Located, string CoveredBy, int EligibleAgents, bool Eligible, string Reasons)
+        DemoStandRow(DemoStandOptionData stand) =>
+        (stand.Code, stand.Located, string.Join('|', stand.CoveredBy), stand.EligibleAgents, stand.Eligible,
+            string.Join('|', stand.Reasons));
+
+    /// <summary>A warning of the demo flight options as the tests compare it, its reasons joined with «|».</summary>
+    private static (string Code, string Reasons) DemoWarningRow(DemoFlightWarningData warning) =>
+        (warning.Code, string.Join('|', warning.Reasons));
+
+    /// <summary>
+    /// The demo flight fixture: the seed, the planning stands (A03 and B03 added) and the seeded ramp agent on a 05:00 to
+    /// 21:00 shift in Terminal A on the demo day, covering <paramref name="covered"/> (A01, A02 and A03 by default) for
+    /// the same hours, so a stand chosen there has an eligible agent (ADR-0041). With no stand covered the agent still
+    /// works that shift.
+    /// </summary>
     private static async Task<DemoFlights> DemoFlightsAsync(TemporaryDatabase database, CancellationToken ct,
-        Func<DateOnly, DateTimeOffset>? start = null, IAirportFlightFeed? feed = null)
+        Func<DateOnly, DateTimeOffset>? start = null, IAirportFlightFeed? feed = null,
+        IReadOnlyCollection<string>? covered = null)
     {
         await using (await SeededFinanceProviderAsync(database, ct)) { }
         var (airline, stands) = await PlanningFixtureAsync(database.ConnectionString, ct);
         var day = BusinessCalendar.Today(DateTimeOffset.UtcNow, StationZone).AddDays(2);
+        long agent;
+        await using (var setup = CreateContext(database.ConnectionString))
+            agent = await (from item in setup.RampAgents
+                           join account in setup.Users on item.PersonId equals account.PersonId
+                           where account.PublicId == SeededRampAgentAccount
+                           select item.Id).SingleAsync(ct);
+        await AddRampShiftAsync(database.ConnectionString, agent, day, "A", 5, 21, ct);
+        await CoverStandsAsync(database.ConnectionString, agent, covered ?? DemoCoveredStands, LocalAt(day, 5),
+            LocalAt(day, 21), ct);
         var clock = new MovableTimeProvider(start?.Invoke(day) ?? LocalAt(day, 10));
         var services = new ServiceCollection().AddLogging()
             .AddSingleton<TimeProvider>(clock)
@@ -228,7 +268,37 @@ public sealed partial class SqlServerMigrationTests
             ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
         }).Build()).BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         return new DemoFlights(provider, clock, database.ConnectionString, airline,
-            await AircraftTypeAsync(database.ConnectionString, "A320", ct), stands, day, ct);
+            await AircraftTypeAsync(database.ConnectionString, "A320", ct), stands, day, agent, ct);
+    }
+
+    /// <summary>
+    /// A coverage OCC gave <paramref name="agentKey"/> on <paramref name="codes"/> of PUJ, in the terminal of those
+    /// stands, from <paramref name="startsAt"/> to <paramref name="endsAt"/> (ADR-0030). Written with the context: the
+    /// coverage commands and their rules have their own tests.
+    /// </summary>
+    private static async Task CoverStandsAsync(string connectionString, long agentKey, IReadOnlyCollection<string> codes,
+        DateTimeOffset startsAt, DateTimeOffset endsAt, CancellationToken ct, long? mentorKey = null)
+    {
+        if (codes.Count == 0) return;
+        var wanted = codes.ToArray();
+        await using var context = CreateContext(connectionString);
+        var station = await context.Stations.Where(item => item.PublicId == SeededPujStation).Select(item => item.Id)
+            .SingleAsync(ct);
+        var stands = await context.Stands.Where(item => item.StationId == station && wanted.Contains(item.Code))
+            .Select(item => new { item.Id, item.TerminalId }).ToArrayAsync(ct);
+        Assert.Equal(wanted.Length, stands.Length);
+        var occ = await context.Users.Where(user => user.PublicId == SeededOccAccount).Select(user => user.Id).SingleAsync(ct);
+        var coverage = new PositionCoverage
+        {
+            PublicId = Guid.CreateVersion7(), StationId = station, TerminalId = stands[0].TerminalId!.Value, RampAgentId = agentKey,
+            MentorRampAgentId = mentorKey, StartsAt = startsAt, EndsAt = endsAt, AssignedByAccountId = occ,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        context.Add(coverage);
+        await context.SaveChangesAsync(ct);
+        foreach (var stand in stands)
+            context.Add(new PositionCoverageStand { PositionCoverageId = coverage.Id, StandId = stand.Id });
+        await context.SaveChangesAsync(ct);
     }
 
     /// <summary>
@@ -911,7 +981,8 @@ public sealed partial class SqlServerMigrationTests
             ["demo_flight.airline"] = (null, "Demo Airlines"), ["demo_flight.origin"] = (null, "MIA"),
             ["demo_flight.destination"] = (null, "BOG"), ["demo_flight.registration"] = (null, "HIDM01"),
             ["demo_flight.minutes_to_on_block"] = (null, "8"), ["demo_flight.ground_minutes"] = (null, "45"),
-            ["demo_flight.stand"] = (null, "A03"), ["demo_flight.state"] = (null, "Active"),
+            ["demo_flight.stand_choice"] = (null, "Specific"), ["demo_flight.stand"] = (null, "A03"),
+            ["demo_flight.state"] = (null, "Active"),
         }, Changes(created));
         Assert.Null((await demo.End(cancelled.Id, "Cancel")).Failure);
         var cancellation = (await demo.Audits(cancelled.Id)).Last();
@@ -921,7 +992,9 @@ public sealed partial class SqlServerMigrationTests
 
         // Triggered without a stand (no stand to record), then ended after touchdown while nobody had imported it.
         var ended = await demo.Triggered(minutes: 2);
-        Assert.DoesNotContain("demo_flight.stand", Changes((await demo.Audits(ended.Id)).Single()).Keys);
+        var withoutStand = Changes((await demo.Audits(ended.Id)).Single());
+        Assert.DoesNotContain("demo_flight.stand", withoutStand.Keys);
+        Assert.Equal((null, "None"), withoutStand["demo_flight.stand_choice"]);
         var imported = await demo.Triggered(minutes: 2);
         var turnaroundId = await demo.Imported(imported);
         demo.Clock.Now = ended.TouchdownAt.AddSeconds(10);
@@ -1117,7 +1190,11 @@ public sealed partial class SqlServerMigrationTests
             DemoStandChoice.None, null, 8, 60);
 
         // Only the superadministrator: the store checks it by itself, whoever calls it.
-        Assert.Null(await demo.Run(services => store(services).OptionsAsync(SeededOccAccount, null, ct)));
+        Assert.Null(await demo.Run(services => store(services).OptionsAsync(SeededOccAccount,
+            DemoFlightOptionsQuery.Default(null), ct)));
+        // The visit the options are read for is checked again with the form's rules, whoever built it.
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => demo.Run(services => store(services)
+            .OptionsAsync(SuperAdministratorAccount, new DemoFlightOptionsQuery(null, null, 1, 60), ct)));
         Assert.Null(await demo.Run(services => store(services).ListAsync(SeededOccAccount, null, ct)));
         Assert.Equal((MasterDataFailure.Forbidden, "forbidden"),
             Refusal(await demo.Run(services => store(services).CreateAsync(SeededOccAccount, input, Guid.NewGuid(), ct))));
@@ -1374,8 +1451,28 @@ public sealed partial class SqlServerMigrationTests
                 ("B", "B01", true), ("B", "B02", true), ("B", "B03", true)],
             options.Stands.Select(item => (item.TerminalCode, item.Code, item.Free)));
         Assert.Equal(demo.Stands["A03"], options.Stands.Single(item => item.Code == "A03").StandId);
+        // The map knows the stands of the Punta Cana catalogue (A01 is its A1); the seeded agent covers A01 to A03 and
+        // passes the assignment rule, so the free one of them is eligible. A9 and A10 have nobody; B01 to B03 are no
+        // stands of the catalogue, and OCC placed none of them.
+        Assert.Equal(
+            [
+                ("A01", true, "Riley Ramp", 1, false, ""), ("A02", true, "Riley Ramp", 1, true, ""),
+                ("A03", true, "Riley Ramp", 1, false, ""), ("A9", true, "", 0, false, "stand_not_covered"),
+                ("A10", true, "", 0, false, "stand_not_covered"), ("B01", false, "", 0, false, ""),
+                ("B02", false, "", 0, false, ""), ("B03", false, "", 0, false, ""),
+            ],
+            options.Stands.Select(DemoStandRow));
         Assert.Equal(new DemoFlightLimitsData(2, 30, 8, 20, 240, 60, 3, 1), options.Limits);
         Assert.Empty(options.Warnings);
+        // The station against the catalogue: two of its three terminals and five of its stands (A20 is inactive and Z1
+        // in a closed terminal); B01 to B03 are outside it.
+        var layout = options.Layout!;
+        Assert.Equal((SeededPujStation, "PUJ", true, 3, 2, 41, 5, 8, 5, false),
+            (layout.StationId, layout.StationCode, layout.Supported, layout.CatalogTerminals, layout.Terminals,
+                layout.CatalogStands, layout.Stands, layout.ActiveStands, layout.LocatedStands, layout.Complete));
+        Assert.Equal(PuntaCanaStationLayout.Stands.Select(item => item.Code).Except(["A1", "A2", "A3", "A9", "A10"]),
+            layout.MissingStands);
+        Assert.Equal(["B01", "B02", "B03"], layout.UnmatchedStands);
 
         // A station that is not active (or unknown) falls back to Punta Cana.
         Assert.Equal(SeededPujStation, (await demo.Options(inactiveStation)).StationId);
@@ -1385,13 +1482,15 @@ public sealed partial class SqlServerMigrationTests
             .ListAsync(SuperAdministratorAccount, null, ct));
         Assert.Equal((true, demo.Now, (Guid?)SeededPujStation, 1), (listed!.Enabled, listed.ServerTime, listed.StationId, listed.Flights.Count));
 
-        // Within half an hour of local midnight the arrival may fall on tomorrow's operation date.
+        // Within half an hour of local midnight the arrival may fall on tomorrow's operation date. The agent's coverage
+        // ended at 21:00, so no stand has an eligible agent by then: the form says why, and still lets the flight go.
         demo.Clock.Now = LocalAt(demo.Day, 23, 29);
-        Assert.Empty((await demo.Options()).Warnings);
+        var night = await demo.Options();
+        Assert.Equal([("no_eligible_stand", "stand_not_covered")], night.Warnings.Select(DemoWarningRow));
         demo.Clock.Now = LocalAt(demo.Day, 23, 30);
         var late = await demo.Options();
-        Assert.Equal(["crosses_local_midnight"], late.Warnings.Select(item => item.Code));
-        Assert.All(late.Warnings, item => Assert.Empty(item.Reasons));
+        Assert.Equal([("crosses_local_midnight", ""), ("no_eligible_stand", "stand_not_covered")],
+            late.Warnings.Select(DemoWarningRow));
         Assert.Equal(demo.Day, late.OperationDate);
         // And the flight triggered then belongs to tomorrow: the review of that day lists it.
         var midnight = await demo.Triggered(minutes: 30);
@@ -1406,7 +1505,8 @@ public sealed partial class SqlServerMigrationTests
             await setup.AccountStationScopes.Where(item => item.StationId == puj && item.RevokedAt == null)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.RevokedAt, demo.Now), ct);
         }
-        Assert.Equal(["no_occ_accounts", "crosses_local_midnight"], (await demo.Options()).Warnings.Select(item => item.Code));
+        Assert.Equal(["no_occ_accounts", "crosses_local_midnight", "no_eligible_stand"],
+            (await demo.Options()).Warnings.Select(item => item.Code));
     }
 
     /// <summary>

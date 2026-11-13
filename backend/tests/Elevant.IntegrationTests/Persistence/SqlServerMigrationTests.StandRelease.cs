@@ -231,7 +231,8 @@ public sealed partial class SqlServerMigrationTests
         var master = ResolveMasterConnection();
         if (master is null) return;
         await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
-        await using var demo = await DemoFlightsAsync(database, ct);
+        // Nobody covers A03: an open coverage of a stand keeps it in use as well (MasterDataUsage).
+        await using var demo = await DemoFlightsAsync(database, ct, covered: ["A01", "A02"]);
         var operated = await OperatedOnStandAsync(demo, demo.Stands["A03"], ct);
         async Task<MasterDataResult<MasterStandData>> Deactivated()
         {

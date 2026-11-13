@@ -53,6 +53,13 @@ public static class PuntaCanaStationLayout
     private static readonly Dictionary<string, DemoLayoutStand> ByCode =
         Stands.ToDictionary(stand => StandCodes.Normalize(stand.Code), StringComparer.Ordinal);
 
+    /// <summary>
+    /// True for the station the catalogue belongs to, by its code in any case and without surrounding spaces: only
+    /// Punta Cana loads it, and only there does a catalogue code locate a stand.
+    /// </summary>
+    public static bool IsStation(string? stationCode) =>
+        string.Equals(stationCode?.Trim(), StationCode, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>True when the stand with that code, in any notation («A01», «a-1»), is in the catalogue.</summary>
     public static bool Contains(string? code) => Find(code) is not null;
 
@@ -65,8 +72,7 @@ public static class PuntaCanaStationLayout
     /// stand of another station.
     /// </summary>
     public static bool IsLocated(string? stationCode, string? standCode, bool placed) =>
-        placed ||
-        (string.Equals(stationCode?.Trim(), StationCode, StringComparison.OrdinalIgnoreCase) && Contains(standCode));
+        placed || (IsStation(stationCode) && Contains(standCode));
 
     private static IEnumerable<DemoLayoutStand> Range(string prefix, int first, int last, string terminal, bool bridge,
         bool remote, AircraftSizeCategory? size) =>

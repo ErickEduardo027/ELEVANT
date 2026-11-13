@@ -115,17 +115,54 @@ internal static class StandAvailability
                            where item.PublicId == standId && item.StationId == stationId && item.IsActive && terminal.IsActive
                            select new { item.Id, item.Code, item.MaxAircraftSize }).SingleOrDefaultAsync(cancellationToken);
         if (stand is null) return new Placement(null, []);
+        var (occupied, rules) = await SituationAsync(context, stationId, startsAt, endsAt, excludeTurnaroundId,
+            cancellationToken);
+        return new Placement(stand.Id,
+            Reasons(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize), occupied, rules));
+    }
+
+    /// <summary>
+    /// <see cref="CheckAsync"/> for every active stand of an active terminal of the station at once, with one read of
+    /// the flights that hold a stand in the window and one of the combined-stand rules: by the stand's key, the rules it
+    /// breaks for a flight of <paramref name="aircraftSize"/> in [<paramref name="startsAt"/>, <paramref name="endsAt"/>)
+    /// (empty: the flight can take it). The demo flight options evaluate the whole station this way.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<long, IReadOnlyList<string>>> EvaluateAsync(ElevantDbContext context,
+        long stationId, DateTimeOffset startsAt, DateTimeOffset endsAt, AircraftSizeCategory? aircraftSize,
+        long? excludeTurnaroundId, CancellationToken cancellationToken)
+    {
+        var stands = await (from item in context.Stands.AsNoTracking()
+                            join terminal in context.Terminals.AsNoTracking() on item.TerminalId equals (long?)terminal.Id
+                            where item.StationId == stationId && item.IsActive && terminal.IsActive
+                            select new { item.Id, item.Code, item.MaxAircraftSize }).ToArrayAsync(cancellationToken);
+        if (stands.Length == 0) return new Dictionary<long, IReadOnlyList<string>>();
+        var (occupied, rules) = await SituationAsync(context, stationId, startsAt, endsAt, excludeTurnaroundId,
+            cancellationToken);
+        return stands.ToDictionary(stand => stand.Id, stand => (IReadOnlyList<string>)
+            Reasons(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize), occupied, rules));
+    }
+
+    /// <summary>The stands held in the window and the station's active combined-stand rules.</summary>
+    private static async Task<(OccupiedStand[] Occupied, StandRule[] Rules)> SituationAsync(ElevantDbContext context,
+        long stationId, DateTimeOffset startsAt, DateTimeOffset endsAt, long? excludeTurnaroundId,
+        CancellationToken cancellationToken)
+    {
         var occupied = await Occupying(context, stationId, startsAt, endsAt, excludeTurnaroundId)
             .Select(item => new { item.StandId, item.StandCode, item.AircraftSize })
             .ToArrayAsync(cancellationToken);
         var rules = await context.Set<StandConstraint>().AsNoTracking()
             .Where(item => item.StationId == stationId && item.IsActive)
             .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken);
-        var reasons = StandConstraintPolicy.Evaluate(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize),
-            occupied.Select(item => new OccupiedStand(item.StandId, item.StandCode, item.AircraftSize)).ToArray(),
-            rules.Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray()).ToList();
-        if (occupied.Any(item => item.StandId == stand.Id)) reasons.Insert(0, "stand_taken");
-        return new Placement(stand.Id, reasons);
+        return (occupied.Select(item => new OccupiedStand(item.StandId, item.StandCode, item.AircraftSize)).ToArray(),
+            rules.Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray());
+    }
+
+    /// <summary>The combined-stand and size rules the placement breaks, after <c>stand_taken</c> when it is held.</summary>
+    private static List<string> Reasons(StandPlacement placement, OccupiedStand[] occupied, StandRule[] rules)
+    {
+        var reasons = StandConstraintPolicy.Evaluate(placement, occupied, rules).ToList();
+        if (occupied.Any(item => item.StandId == placement.StandId)) reasons.Insert(0, "stand_taken");
+        return reasons;
     }
 
     /// <summary>

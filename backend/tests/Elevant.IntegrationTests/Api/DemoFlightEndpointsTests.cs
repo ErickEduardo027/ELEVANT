@@ -397,7 +397,8 @@ public sealed class DemoFlightEndpointsTests(ElevantApiFactory factory) : IClass
             Assert.Equal(StationId, answer.RootElement.GetProperty("stationId").GetGuid());
             Assert.Equal(FlightNames, Names(answer.RootElement.GetProperty("flights")[0]));
         }
-        Assert.Equal([$"options {StationId}", "list any"], store.Calls);
+        // Until the form sends its visit, the stands are evaluated for its defaults: 8 minutes to the stand, 60 on the ground.
+        Assert.Equal([$"options {StationId} any 8 60", "list any"], store.Calls);
         // Only the names of the query are accepted: a malformed station is a 400 before the handler.
         using var malformed = await client.GetAsync("/api/v1/governance/demo-flights?stationId=PUJ", ct);
         Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
@@ -580,10 +581,11 @@ public sealed class DemoFlightEndpointsTests(ElevantApiFactory factory) : IClass
 
         public TaskCompletionSource Advanced { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, Guid? stationId,
+        public Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, DemoFlightOptionsQuery query,
             CancellationToken cancellationToken = default)
         {
-            Calls.Add($"options {stationId?.ToString() ?? "any"}");
+            Calls.Add($"options {query.StationId?.ToString() ?? "any"} {query.AircraftTypeId?.ToString() ?? "any"} " +
+                $"{query.MinutesToOnBlock} {query.GroundMinutes}");
             return Task.FromResult<DemoFlightOptionsData?>(Options);
         }
 

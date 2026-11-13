@@ -116,7 +116,7 @@ public sealed class DemoFlightProgressWorkerTests
             return outcome is Exception failure ? Task.FromException<int>(failure) : Task.FromResult((int)outcome);
         }
 
-        public Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, Guid? stationId,
+        public Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, DemoFlightOptionsQuery query,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<DemoFlightListData?> ListAsync(Guid actorId, Guid? stationId, CancellationToken cancellationToken = default) =>

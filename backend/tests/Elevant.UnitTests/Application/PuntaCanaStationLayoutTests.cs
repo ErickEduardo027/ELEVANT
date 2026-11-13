@@ -127,4 +127,15 @@ public sealed class PuntaCanaStationLayoutTests
         Assert.True(PuntaCanaStationLayout.IsLocated("SDQ", "A1", placed: true));
         Assert.False(PuntaCanaStationLayout.IsLocated(null, "A1", placed: false));
     }
+
+    [Fact]
+    public void OnlyPuntaCanaHasTheCatalogueWhateverTheCaseOfItsCode()
+    {
+        Assert.True(PuntaCanaStationLayout.IsStation("PUJ"));
+        Assert.True(PuntaCanaStationLayout.IsStation(" puj "));
+        Assert.False(PuntaCanaStationLayout.IsStation("SDQ"));
+        Assert.False(PuntaCanaStationLayout.IsStation("PUJ1"));
+        Assert.False(PuntaCanaStationLayout.IsStation(""));
+        Assert.False(PuntaCanaStationLayout.IsStation(null));
+    }
 }
