@@ -135,7 +135,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
-El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
+El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Desde el PR U4, también posterior al commit verificado, la primera entrada al OCC de cada pestaña después de iniciar sesión pasa por una pantalla de arranque: ver [Pantalla de arranque del OCC (PR U4)](#pantalla-de-arranque-del-occ-pr-u4). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
 En el árbol local posterior al commit verificado, «Estación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
 
@@ -785,8 +785,11 @@ estructura de ninguna pantalla: los textos, roles, nombres accesibles y
 
 Límites: hasta que monta el marco se ve el fondo azul marino de `body`
 (`#0A1220`) y luego la pizarra del OCC; queda para la pantalla de arranque que
-planifica el ADR. El texto menor de 12 px y los rótulos en mayúsculas de las
-pantallas heredadas siguen hasta que cada una se migre. Las leyendas, el
+planifica el ADR. Desde el PR U4, posterior al commit verificado, esa pantalla
+lo cubre solo en parte (ver
+[Pantalla de arranque del OCC (PR U4)](#pantalla-de-arranque-del-occ-pr-u4)).
+El texto menor de 12 px y los rótulos en mayúsculas de las pantallas heredadas
+siguen hasta que cada una se migre. Las leyendas, el
 resumen y los marcadores de Monitoreo de vuelos y del mapa de posiciones aún
 pintan sus colores de estado en línea, y el tablero de escalas del dashboard
 marca en cian los estados planificados; los rehacen el carril de mapas, U3 y
@@ -897,6 +900,71 @@ aplazados el modo muro, la búsqueda, los atajos con su diálogo, el aviso de
 desfase del reloj, la severidad de cada incidencia y el acuse compartido por
 estación. Las pruebas cubren el marco en jsdom; nada de esto acredita un
 despliegue ni una revisión visual en el VPS.
+
+## Pantalla de arranque del OCC (PR U4)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U4 «Pantalla de arranque del OCC» (`4eda1303` y `bcfd6fd7`), que esa
+verificación no cubre. Lo que espera, quién avisa y las diferencias con el plan
+y el diseño están en la nota del 13 de noviembre de 2026 sobre U4 de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U4 no reestructura
+ninguna pantalla: Panorama solo gana el aviso de que ya muestra sus datos.
+
+- **Qué se ve.** Sobre el fondo oscuro del OCC, el isotipo de ELEVANT y el logo
+  «ELEVANT · OCC» al centro, con una entrada corta, y debajo una línea de
+  progreso fina. Detrás, ocho rutas aéreas finas, de muy bajo contraste, se
+  trazan en arco alrededor del logo y se desvanecen. No hay listas, cifras ni
+  datos. Al salir, la pantalla se desvanece en menos de 400 ms y deja a la
+  vista la consola, que ya cargó debajo. Con «reducir movimiento», las rutas y
+  el logo quedan quietos y solo avanza la línea
+  ([pantalla](../../frontend/private-web/src/features/admin-occ/boot/OccBootScreen.jsx)
+  y [estilos](../../frontend/private-web/src/features/admin-occ/boot/OccBootScreen.module.css)).
+- **Cuándo aparece.** Solo en la primera entrada al OCC de cada pestaña
+  después de iniciar sesión, sea cual sea el módulo. Una
+  [marca](../../frontend/private-web/src/features/admin-occ/boot/occBootSession.js)
+  en `sessionStorage` (`elevant-occ-boot-seen`, con el id de la cuenta) evita
+  que vuelva al cambiar de módulo o al recargar, y
+  [`authService`](../../frontend/private-web/src/features/auth/authService.js)
+  la borra al iniciar y al cerrar sesión y cuando la sesión vence o recibe un
+  401 que no se renueva. Como la marca es de la pestaña, una pestaña nueva con
+  la sesión recordada la muestra una vez más. No aparece en el HTML del
+  servidor, en otros departamentos ni con una sesión de otro rol.
+- **Qué espera y cómo cede.**
+  [`RoleLayout`](../../frontend/private-web/src/app/RoleLayout.jsx) monta el
+  [proveedor](../../frontend/private-web/src/features/admin-occ/boot/OccBootProvider.jsx)
+  solo para el OCC, por encima de la comprobación de la sesión y de los
+  permisos: «Comprobando sesión…» y «Cargando permisos…» siguen debajo, con su
+  `role="status"`. El
+  [orquestador](../../frontend/private-web/src/features/admin-occ/boot/occBootMachine.js)
+  espera el acceso del departamento sin límite de tiempo y, después, el primer
+  aviso de una pantalla lista (`useOccBoot().markReady`) o 6 s, lo que llegue
+  antes. Si el acceso falla, cede al instante a su error. Hoy solo avisa
+  Panorama, cuando deja de cargar
+  ([ruta](../../frontend/private-web/src/features/dashboard/DashboardRoute.jsx)):
+  en los demás módulos la pantalla espera los 6 s. Desde que empieza a irse,
+  deja pasar los clics.
+- **Lectores de pantalla.** La pantalla está oculta para ellos y no añade un
+  segundo `role="status"`. Un texto aparte, con `aria-live="polite"`, dice
+  «Preparando el centro de operaciones…» y, al salir, «Listo.», en español o en
+  inglés según el idioma guardado.
+- **Pruebas.** Vitest cubre el orquestador, la marca, el proveedor, la
+  pantalla, el montaje en `RoleLayout`, el aviso de Panorama y la limpieza de
+  la marca. La carpeta `admin-occ/boot` entra en `MIGRATED_FOLDERS` del
+  [manifiesto del puente](../../frontend/private-web/src/styles/occLegacyBridgeMap.js),
+  y las [guardas](../../frontend/private-web/src/styles/occStyleGuard.test.js)
+  exigen que su hoja pinte solo con los tokens del OCC. La suite visual suma
+  una prueba en Chrome: ver
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
+
+Límites: la pantalla no precarga datos. La consola lee los suyos debajo, como
+siempre, y si tarda más de 6 s se abre con su estado de carga. Todavía no
+existe el aviso del motor de mapas (`markReady('map')`): según el plan, lo
+añadirá el PR M4, y la consola de U3 conservará el de Panorama. La pantalla no
+está en el HTML del servidor, así que el primer pintado sigue siendo
+«Comprobando sesión…» sobre el azul marino de `body`, y en las entradas
+siguientes no hay pantalla de arranque. Mientras espera, cubre la página y
+recibe los clics. Nada de esto acredita un despliegue ni una revisión visual
+en el VPS.
 
 ## Mapas del OCC en un solo motor (PR M2)
 

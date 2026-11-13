@@ -246,7 +246,10 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   (`/map-lab`, solo en desarrollo), con escenas fijas, sin sesión ni API. `occ`
   abre las pantallas del OCC con una sesión sintética y la API simulada; hoy,
   Mapa de posiciones
-  ([prueba](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)).
+  ([prueba](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs))
+  y, posterior al commit verificado (PR U4, `bcfd6fd7`), la pantalla de
+  arranque del OCC sobre Panorama
+  ([prueba](../../frontend/private-web/tests/visual/occ/boot-screen.spec.mjs)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
   leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
@@ -257,13 +260,23 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y las vistas mueven de verdad la cámara, en `next dev` y en un build de
   producción; que el doble montaje de React Strict Mode deja un solo mapa y la
   página llega a `networkidle`; y que releer las posiciones conserva el mismo
-  lienzo.
+  lienzo. De la pantalla de arranque comprueba que no está en el HTML del
+  servidor pero aparece en una sesión nueva, sobre la pantalla de carga; que se
+  va como mucho 6 s después del acceso aunque nadie avise; que deja pasar los
+  clics desde el primer instante de su salida; que una recarga de la misma
+  pestaña no la repite; y que con movimiento reducido solo se mueve la línea de
+  progreso.
 - **Sin red.** Cada petición a otro origen se responde desde la suite o se
   aborta, y la prueba falla si una salió hacia un origen que la suite no
   responde. La TileJSON es sintética; las teselas son un mundo inventado
   alrededor de Punta Cana; los glifos `0-255` de los tres Noto Sans son
   fixtures con su licencia SIL OFL 1.1; y la API responde un stub con Problem
-  Details. Además, su Chrome no resuelve ningún nombre salvo `localhost`.
+  Details. La prueba de la pantalla de arranque también responde el acceso y
+  las tres lecturas de Panorama, con datos sintéticos que pasan los validadores
+  estrictos del cliente compartido, y, sin salir del equipo, los tres orígenes
+  que todavía usa Panorama (los estilos publicados de OpenFreeMap, NASA GIBS e
+  IEM), con un estilo vacío, un 404 y un 503. Además, su Chrome no resuelve
+  ningún nombre salvo `localhost`.
   Ninguna prueba llama a OpenFreeMap, a la API real ni a un proveedor.
 - **Cómo corre.** `npm run test:visual`, desde `frontend/private-web`, levanta
   `next dev` en el puerto 4186 con los tres `NEXT_PUBLIC_*` de Development y
@@ -274,9 +287,14 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y en [Comandos locales por subárbol](comandos-locales-por-subarbol.md#private-web).
 - **Capturas.** Una por escena del laboratorio a 1440×900, más la terminal B de
   cerca, la rampa sin mapa base, la rampa a 1920×1080 y Mapa de posiciones, en
-  `frontend/private-web/test-results/visual/`, que Git ignora. Las revisa una
-  persona: no hay líneas base de imagen, porque cambian con la máquina y la
-  GPU.
+  `frontend/private-web/test-results/visual/`, que Git ignora. Desde U4 se
+  suman las de la pantalla de arranque: al empezar, mientras espera a Panorama
+  y la consola después, a 1440×900 y a 1920×1080, y con movimiento reducido a
+  1440×900. La de Mapa de posiciones muestra el mapa sin la pantalla de
+  arranque: sus pruebas entran como una entrada posterior de la misma pestaña,
+  con la marca de la cuenta ya puesta, y fallan si la pantalla sigue encima
+  cuando el mapa ya está listo. Las revisa una persona: no hay líneas base de
+  imagen, porque cambian con la máquina y la GPU.
 - **Qué no es.** Ningún workflow de CI la ejecuta, y `npm test` no la recoge:
   `vitest.config.mjs` excluye `tests/visual/**`. Se corre antes de mergear un
   cambio de mapas, y una corrida verde es evidencia local, no de un despliegue.

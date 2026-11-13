@@ -5,6 +5,7 @@ import { ROLE_KEYS } from '../features/auth/roleRouting';
 import { AccessGate, DepartmentAccessProvider } from '../features/access/DepartmentAccessContext';
 import AdminOccLayout from '../features/admin-occ/AdminOccLayout';
 import { AdminOccPreviewProvider } from '../features/admin-occ/AdminOccPreviewContext';
+import { OccBootAccessSignal, OccBootProvider } from '../features/admin-occ/boot/OccBootProvider';
 import HumanResourcesLayout from '../features/human-resources/HumanResourcesLayout';
 import ContractsShell from '../features/contracts/shell/ContractsShell';
 import FinanceShell from '../features/finance/shell/FinanceShell';
@@ -29,11 +30,12 @@ function Shell({ role, user, onLogout, children }) {
 }
 
 export default function RoleLayout({ role, children }) {
-  return (
+  const layout = (
     <ProtectedRole role={roleKeys[role]}>
       {({ user, onLogout }) => (
         // The OCC shell owns the tab's only account-change observer and refreshes access from it.
         <DepartmentAccessProvider observe={role !== 'adminOcc'}>
+          {role === 'adminOcc' ? <OccBootAccessSignal /> : null}
           <AccessGate>
             <Shell role={role} user={user} onLogout={onLogout}>{children}</Shell>
           </AccessGate>
@@ -41,4 +43,6 @@ export default function RoleLayout({ role, children }) {
       )}
     </ProtectedRole>
   );
+  // The OCC boot screen wraps both gates, so it stays over their two loading screens (contratos 2.6).
+  return role === 'adminOcc' ? <OccBootProvider>{layout}</OccBootProvider> : layout;
 }
