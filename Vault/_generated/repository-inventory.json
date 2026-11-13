@@ -1121,7 +1121,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "d8acb55455ea020f5f589c63e2878b856ce3bb4eecdbd68ddaeda1525841d557"
+        "sha256": "8946c02b535b15a6d2f5cc8252d12d29b9042e6299cbd90314e8936fdc2bb127"
       },
       {
         "path": ".github/workflows/development-delivery.yml",
