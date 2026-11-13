@@ -196,7 +196,8 @@ test("Superadmin dispara un vuelo demo hacia una posición libre de la Terminal 
   aircraftTypeId = type!.id;
 
   await openModule(superadminPage, "Configuración");
-  await expect(demoPanel().getByText("Disponible en este entorno")).toBeVisible();
+  // Exact: the badge of a stack where they are off, «No disponible en este entorno», contains these words too.
+  await expect(demoPanel().getByText("Disponible en este entorno", { exact: true })).toBeVisible();
   flight = await trigger(superadmin, { stand: stand!, minutes: 2, groundMinutes: 20 });
   // The server owns the clock: 2 minutes to the stand leave 90 s of taxi (the minimum), so the wheels touch the
   // runway 30 s after the trigger, and the departure is scheduled 20 minutes after the on-block.
