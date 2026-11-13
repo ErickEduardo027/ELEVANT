@@ -820,6 +820,10 @@ export interface CancelCommercialRequestInput {
   reason?: string | null;
 }
 
+export interface CancelDemoFlightRequest {
+  intent: string;
+}
+
 export interface CancelRequisitionInput {
   expectedVersion: string;
   reason: string;
@@ -1575,6 +1579,20 @@ export interface CreateContractAmendmentRequest {
   validFrom: string;
 }
 
+export interface CreateDemoFlightRequest {
+  stationId: string;
+  airlineId: string;
+  originIata: string;
+  /** @nullable */
+  destinationIata?: string | null;
+  aircraftTypeId: string;
+  standChoice: string;
+  /** @nullable */
+  standId?: string | null;
+  minutesToOnBlock: number;
+  groundMinutes: number;
+}
+
 export interface CreateDepartmentAccountInput {
   /** @nullable */
   firstName?: string | null;
@@ -1851,6 +1869,121 @@ export interface DecideUserAccessInput {
   temporaryPassword?: string | null;
   /** @nullable */
   reason?: string | null;
+}
+
+export interface DemoAircraftTypeOptionResponse {
+  id: string;
+  icaoCode: string;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  sizeCategory?: string | null;
+}
+
+export interface DemoAirlineOptionResponse {
+  id: string;
+  name: string;
+  /** @nullable */
+  iataCode?: string | null;
+  icaoCode: string;
+}
+
+export interface DemoAirportOptionResponse {
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+  city: string;
+  countryCode: string;
+}
+
+export interface DemoFlightLimitsResponse {
+  minMinutesToOnBlock: number;
+  maxMinutesToOnBlock: number;
+  defaultMinutesToOnBlock: number;
+  minGroundMinutes: number;
+  maxGroundMinutes: number;
+  defaultGroundMinutes: number;
+  maxActive: number;
+  active: number;
+}
+
+export interface DemoFlightResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  airlineId: string;
+  airlineName: string;
+  arrivalFlightNumber: string;
+  departureFlightNumber: string;
+  aircraftRegistration: string;
+  aircraftModel: string;
+  originIata: string;
+  destinationIata: string;
+  /** @nullable */
+  suggestedStandCode?: string | null;
+  state: string;
+  phase: string;
+  appearAt: string;
+  touchdownAt: string;
+  onBlockAt: string;
+  scheduledOffBlockAt: string;
+  /** @nullable */
+  offBlockAt?: string | null;
+  /** @nullable */
+  takeoffAt?: string | null;
+  /** @nullable */
+  vanishAt?: string | null;
+  imported: boolean;
+  /** @nullable */
+  turnaroundId?: string | null;
+  /** @nullable */
+  operationCode?: string | null;
+  /** @nullable */
+  standCode?: string | null;
+  /** @nullable */
+  operationStatus?: string | null;
+}
+
+export interface DemoFlightListResponse {
+  enabled: boolean;
+  serverTime: string;
+  /** @nullable */
+  stationId?: string | null;
+  flights: DemoFlightResponse[];
+}
+
+export interface DemoStationOptionResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface DemoStandOptionResponse {
+  standId: string;
+  code: string;
+  terminalCode: string;
+  free: boolean;
+}
+
+export interface DemoFlightWarningResponse {
+  code: string;
+  reasons: string[];
+}
+
+export interface DemoFlightOptionsResponse {
+  enabled: boolean;
+  serverTime: string;
+  stations: DemoStationOptionResponse[];
+  /** @nullable */
+  stationId?: string | null;
+  /** @nullable */
+  operationDate?: string | null;
+  airlines: DemoAirlineOptionResponse[];
+  airports: DemoAirportOptionResponse[];
+  aircraftTypes: DemoAircraftTypeOptionResponse[];
+  stands: DemoStandOptionResponse[];
+  limits: DemoFlightLimitsResponse;
+  warnings: DemoFlightWarningResponse[];
 }
 
 export interface PermissionActionData {
@@ -4150,6 +4283,8 @@ export interface OccFlightProposalResponse {
   version: string;
   /** @nullable */
   suggestedAircraftTypeId?: string | null;
+  /** @nullable */
+  isDemo?: boolean | null;
 }
 
 export interface OccFlightFeedResponse {
@@ -4328,6 +4463,8 @@ export interface OccTurnaroundResponse {
   agents: OccAssignedAgentResponse[];
   equipment: OccAssignedEquipmentResponse[];
   services: OccOperationServiceResponse[];
+  /** @nullable */
+  isDemo?: boolean | null;
 }
 
 export interface OccPlanningSnapshotResponse {
@@ -4355,6 +4492,8 @@ export interface OccPositionTurnaroundResponse {
   /** @nullable */
   assignedFrom?: string | null;
   status: string;
+  /** @nullable */
+  isDemo?: boolean | null;
 }
 
 export interface OccPositionResponse {
@@ -6398,6 +6537,14 @@ limit?: number;
 
 export type GetContractsAirlinePermitsParams = {
 review?: string;
+};
+
+export type GetDemoFlightOptionsParams = {
+stationId?: string;
+};
+
+export type ListDemoFlightsParams = {
+stationId?: string;
 };
 
 export type ListDepartmentAccessCandidatesParams = {
@@ -9881,6 +10028,162 @@ const res = await fetch(getApplyContractLifecycleUrl(versionId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ContractLifecycleResult = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDemoFlightOptionsUrl = (params?: GetDemoFlightOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/demo-flights/options?${stringifiedParams}` : `/api/v1/governance/demo-flights/options`
+}
+
+/**
+ * @summary What the form «Disparar vuelo demo» offers at a station (the requested one, else Punta Cana, else the first):
+airlines with exactly one applicable contract today, airports, aircraft types, stands, limits and warnings.
+ */
+export const getDemoFlightOptions = async (params?: GetDemoFlightOptionsParams, options?: RequestInit): Promise<DemoFlightOptionsResponse> => {
+
+  const res = await fetch(getGetDemoFlightOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DemoFlightOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListDemoFlightsUrl = (params?: ListDemoFlightsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/demo-flights?${stringifiedParams}` : `/api/v1/governance/demo-flights`
+}
+
+/**
+ * @summary The demo flights of the last 24 hours at a station, newest first (at most 50), with the server time.
+ */
+export const listDemoFlights = async (params?: ListDemoFlightsParams, options?: RequestInit): Promise<DemoFlightListResponse> => {
+
+  const res = await fetch(getListDemoFlightsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DemoFlightListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateDemoFlightUrl = () => {
+
+
+
+
+  return `/api/v1/governance/demo-flights`
+}
+
+/**
+ * @summary «Disparar vuelo demo»: 201 with the new flight, 200 when the Idempotency-Key replays it. The flight numbers and the
+registration are generated; a taken or inactive stand answers `stand_unavailable` with its rules in
+`reasons`.
+ */
+export const createDemoFlight = async (createDemoFlightRequest: CreateDemoFlightRequest, options?: RequestInit): Promise<DemoFlightResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateDemoFlightUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createDemoFlightRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DemoFlightResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCancelDemoFlightUrl = (demoFlightId: string,) => {
+
+
+
+
+  return `/api/v1/governance/demo-flights/${demoFlightId}/cancel`
+}
+
+/**
+ * @summary «Cancelar vuelo» (intent `Cancel`, before touchdown) or «Terminar demo» (intent `Finish`, after it). The
+intent is checked against the phase instead of a version: an intent of an earlier phase answers
+`version_conflict`, a flight already ended `demo_flight_closed`. Nothing is deleted.
+ */
+export const cancelDemoFlight = async (demoFlightId: string,
+    cancelDemoFlightRequest: CancelDemoFlightRequest, options?: RequestInit): Promise<DemoFlightResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCancelDemoFlightUrl(demoFlightId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(cancelDemoFlightRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DemoFlightResponse = body ? JSON.parse(body) : {}
   return data
 }
 

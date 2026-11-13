@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import DemoTag from '../../occ-ui/DemoTag';
 import {
   assignOccStand, isStalePosition, locateOccStand, positionVersionMessage, recordOccArrival, releaseOccStand,
 } from '../../../services/occPositionsService';
@@ -242,6 +243,8 @@ export default function PositionActions({ position, candidates = [], onChanged, 
         return (
           <div key={item.turnaroundId} className="space-y-2 border-b border-black/5 pb-3 last:border-0 dark:border-white/5">
             <p><strong>{item.arrivalFlightNumber ?? item.operationCode}</strong> · {item.airlineName}
+              {/* ADR-0041: a demo flight the superadministrator triggered is always labelled as such. */}
+              {item.isDemo === true && <>{' '}<DemoTag /></>}
               <span className="block text-text-secondary-light">Llegada prevista {formatTime(item.arrivalScheduledAt, zone)}
                 {item.arrivedAt ? ` · llegó ${formatTime(item.arrivedAt, zone)}` : ' · aún no ha llegado'}</span></p>
             <VersionNotice version={version} onRetry={reload} />
@@ -273,7 +276,8 @@ export default function PositionActions({ position, candidates = [], onChanged, 
             <select className={inputClass} value={turnaroundId} onChange={event => setTurnaroundId(event.target.value)}>
               <option value="">Selecciona un vuelo…</option>
               {movable.map(item => <option key={item.turnaroundId} value={item.turnaroundId}>
-                {(item.arrivalFlightNumber ?? item.operationCode)} · {item.airlineName} · {formatTime(item.arrivalScheduledAt, zone)}
+                {(item.arrivalFlightNumber ?? item.operationCode)} · {item.airlineName}{item.isDemo === true ? ' · Demo' : ''}
+                {' · '}{formatTime(item.arrivalScheduledAt, zone)}
                 {item.standCode ? ` (ahora en ${item.standCode})` : ''}</option>)}
             </select></label>
           {turnaroundId && <VersionNotice version={selected} onRetry={reload} />}

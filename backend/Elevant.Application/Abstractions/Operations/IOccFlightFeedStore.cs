@@ -8,12 +8,16 @@ public sealed record OccFlightFeedBudgetData(bool Configured, string Provider, i
 /// <param name="SuggestedDepartureId">For an arrival, the departure it most likely turns into.</param>
 /// <param name="Version">Rowversion in base64: the expected version of an import or a restore.</param>
 /// <param name="SuggestedAircraftTypeId">The active aircraft type the provider's model matches, if any.</param>
+/// <param name="IsDemo">
+/// True for a leg of a demo flight (ADR-0041); null for any other, never false. While nobody imported it, its
+/// <paramref name="ProviderStatus"/> and <paramref name="RunwayAt"/> come from the demo clock at the time of the read.
+/// </param>
 public sealed record OccFlightProposalData(Guid ProposalId, string Direction, string FlightNumber, Guid AirlineId,
     string AirlineName, string? AirlineIataCode, string? CounterpartIata, string? CounterpartName, bool CounterpartKnown,
     DateTimeOffset ScheduledAt, DateTimeOffset? RevisedAt, DateTimeOffset? RunwayAt, string ProviderStatus,
     string? AircraftRegistration, string? AircraftModel, string? Terminal, string? Gate, string Status,
     Guid? TurnaroundId, Guid? SuggestedDepartureId, DateTimeOffset LastSeenAt, string Version,
-    Guid? SuggestedAircraftTypeId);
+    Guid? SuggestedAircraftTypeId, bool? IsDemo = null);
 
 public sealed record OccFlightFeedData(Guid StationId, string StationCode, DateOnly Date, OccFlightFeedBudgetData Budget,
     DateTimeOffset? LastReadAt, DateTimeOffset? NextManualRefreshAt, bool CanImport,

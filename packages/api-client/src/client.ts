@@ -174,6 +174,15 @@ import {
   normalizedTerminalUpdate,
 } from "./masterData";
 import {
+  isDemoFlight,
+  isDemoFlightList,
+  isDemoFlightOptions,
+  normalizedDemoFlightCancel,
+  normalizedDemoFlightCreate,
+  type CreateDemoFlightCommand,
+  type DemoFlightIntent,
+} from "./demoFlights";
+import {
   isOccFlightFeedView,
   isRestoredFlightProposal,
   normalizedFlightImport,
@@ -373,6 +382,10 @@ import {
   getListGovernanceStationsUrl,
   getCreateGovernanceStationUrl,
   getUpdateGovernanceStationUrl,
+  getGetDemoFlightOptionsUrl,
+  getListDemoFlightsUrl,
+  getCreateDemoFlightUrl,
+  getCancelDemoFlightUrl,
   getGetOccMasterDataUrl,
   getCreateOccTerminalUrl,
   getUpdateOccTerminalUrl,
@@ -557,6 +570,9 @@ import {
   type StationCatalogItemData,
   type CreateStationInput,
   type UpdateStationInput,
+  type DemoFlightOptionsResponse,
+  type DemoFlightListResponse,
+  type DemoFlightResponse,
   type OccMasterData,
   type MasterTerminalData,
   type MasterStandData,
@@ -1476,6 +1492,26 @@ export interface ElevantApiClient {
   /** Renames, changes the time zone while it has no history, deactivates or reactivates a station. */
   updateGovernanceStation(stationId: string, input: UpdateStationInput, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<StationCatalogItemData>;
+  /**
+   * What the form «Disparar vuelo demo» offers at a station (the one asked for, else Punta Cana, else the first); only
+   * the superadministrator (ADR-0041). Where demo flights are off it answers `enabled: false` with nothing to choose.
+   */
+  getDemoFlightOptions(stationId?: string | null, options?: GetHumanResourcesReportOptions): Promise<DemoFlightOptionsResponse>;
+  /** The demo flights of the last 24 hours at a station, newest first, with the server time their countdowns use. */
+  listDemoFlights(stationId?: string | null, options?: GetHumanResourcesReportOptions): Promise<DemoFlightListResponse>;
+  /**
+   * «Disparar vuelo demo» with the intent's Idempotency-Key: 201 the first time, 200 when the key replays it. The request
+   * is checked locally first (minutes 2 to 30 and 20 to 240, a stand only when it is chosen).
+   */
+  createDemoFlight(input: CreateDemoFlightCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<DemoFlightResponse>;
+  /**
+   * «Cancelar vuelo» (`Cancel`, before touchdown) or «Terminar demo» (`Finish`, after it) with the intent's
+   * Idempotency-Key and no version: an intent of an earlier phase answers `version_conflict`, an ended flight
+   * `demo_flight_closed`.
+   */
+  cancelDemoFlight(demoFlightId: string, intent: DemoFlightIntent, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<DemoFlightResponse>;
   /** Terminals, stands and aircraft types of a station in scope (`operations.master_data.read`). */
   getOccMasterData(stationId: string, options?: GetHumanResourcesReportOptions): Promise<OccMasterData>;
   createOccTerminal(input: CreateTerminalInput, idempotencyKey: string,
@@ -2286,6 +2322,7 @@ function isOccTurnaroundResponse(value: unknown) {
       "agents",
       "equipment",
       "services",
+      "isDemo",
     ]) &&
     isUuid(value.id) &&
     isString(value.operationCode) &&
@@ -2302,8 +2339,17 @@ function isOccTurnaroundResponse(value: unknown) {
     Array.isArray(value.equipment) &&
     value.equipment.every(isOccAssignedEquipmentResponse) &&
     Array.isArray(value.services) &&
-    value.services.every(isOccOperationServiceResponse)
+    value.services.every(isOccOperationServiceResponse) &&
+    isDemoMark(value.isDemo)
   );
+}
+
+/**
+ * The mark of a demo flight (ADR-0041) on a proposal, a planned turnaround or a turnaround of the positions board: the
+ * server writes it only when true, so it is absent or true, never false or null.
+ */
+function isDemoMark(value: unknown) {
+  return value === undefined || value === true;
 }
 
 /** One turnaround as OCC edits it (3-A): the snapshot's turnaround, its station, version and allowed changes. */
@@ -3308,7 +3354,7 @@ const OCC_POSITION_STATUSES = new Set<string>(["available", "planned", "occupied
 function isOccPositionTurnaround(value: unknown): boolean {
   return isRecord(value) && hasOnlyKeys(value, ["turnaroundId", "operationCode", "airlineName", "aircraftRegistration",
       "arrivalFlightNumber", "departureFlightNumber", "arrivalScheduledAt", "arrivedAt", "departureScheduledAt",
-      "assignedFrom", "status"]) &&
+      "assignedFrom", "status", "isDemo"]) && isDemoMark(value.isDemo) &&
     isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) && isNonEmptyString(value.airlineName) &&
     isOptionalNullable(value.aircraftRegistration, isNonEmptyString) && isOptionalNullable(value.arrivalFlightNumber, isNonEmptyString) &&
     isOptionalNullable(value.departureFlightNumber, isNonEmptyString) && isOptionalNullable(value.arrivalScheduledAt, isDateTimeOffset) &&
@@ -3439,7 +3485,7 @@ function isOccFlightProposal(value: unknown): boolean {
   return isRecord(value) && hasOnlyKeys(value, ["proposalId", "direction", "flightNumber", "airlineId", "airlineName",
     "airlineIataCode", "counterpartIata", "counterpartName", "counterpartKnown", "scheduledAt", "revisedAt", "runwayAt",
     "providerStatus", "aircraftRegistration", "aircraftModel", "terminal", "gate", "status", "turnaroundId",
-    "suggestedDepartureId", "lastSeenAt", "version", "suggestedAircraftTypeId"]) &&
+    "suggestedDepartureId", "lastSeenAt", "version", "suggestedAircraftTypeId", "isDemo"]) && isDemoMark(value.isDemo) &&
     isUuid(value.proposalId) && (value.direction === "Arrival" || value.direction === "Departure") &&
     isNonEmptyString(value.flightNumber) && isUuid(value.airlineId) && isNonEmptyString(value.airlineName) &&
     isOptionalNullable(value.airlineIataCode, isNonEmptyString) && isOptionalNullable(value.counterpartIata, isNonEmptyString) &&
@@ -7778,6 +7824,34 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const station = validatedUuid(stationId, "stationId");
       return masterDataCommand("PUT", getUpdateGovernanceStationUrl(station), normalizedStationUpdate(input), idempotencyKey,
         options, (value): value is StationCatalogItemData => isStationCatalogItem(value, station));
+    },
+    async getDemoFlightOptions(stationId?: string | null, options?: GetHumanResourcesReportOptions) {
+      const station = stationId == null ? undefined : validatedUuid(stationId, "stationId");
+      const result = await execute(getGetDemoFlightOptionsUrl(station === undefined ? undefined : { stationId: station }),
+        { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isDemoFlightOptions(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async listDemoFlights(stationId?: string | null, options?: GetHumanResourcesReportOptions) {
+      const station = stationId == null ? undefined : validatedUuid(stationId, "stationId");
+      const result = await execute(getListDemoFlightsUrl(station === undefined ? undefined : { stationId: station }),
+        { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isDemoFlightList(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createDemoFlight(input: CreateDemoFlightCommand, idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const body = normalizedDemoFlightCreate(input);
+      // The new flight is the station's and the airline's of the request.
+      return masterDataCommand("POST", getCreateDemoFlightUrl(), body, idempotencyKey, options,
+        (value): value is DemoFlightResponse => isDemoFlight(value) &&
+          value.stationId.toLowerCase() === body.stationId.toLowerCase() &&
+          value.airlineId.toLowerCase() === body.airlineId.toLowerCase());
+    },
+    async cancelDemoFlight(demoFlightId: string, intent: DemoFlightIntent, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const flight = validatedUuid(demoFlightId, "demoFlightId");
+      return catalogCommand("POST", getCancelDemoFlightUrl(flight), normalizedDemoFlightCancel(intent), idempotencyKey,
+        options, (value): value is DemoFlightResponse => isDemoFlight(value, flight));
     },
     async getOccMasterData(stationId: string, options?: GetHumanResourcesReportOptions) {
       const station = validatedUuid(stationId, "stationId");

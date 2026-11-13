@@ -1,9 +1,16 @@
+using System.Text.Json.Serialization;
+
 namespace Elevant.Contracts.Operations;
 
+/// <summary>
+/// A turnaround on the positions board. <paramref name="IsDemo"/> is true for the turnaround of a demo flight OCC
+/// imported (ADR-0041) and absent otherwise: the key is written only when true.
+/// </summary>
 public sealed record OccPositionTurnaroundResponse(Guid TurnaroundId, string OperationCode, string AirlineName,
     string? AircraftRegistration, string? ArrivalFlightNumber, string? DepartureFlightNumber,
     DateTimeOffset? ArrivalScheduledAt, DateTimeOffset? ArrivedAt, DateTimeOffset? DepartureScheduledAt,
-    DateTimeOffset? AssignedFrom, string Status);
+    DateTimeOffset? AssignedFrom, string Status,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsDemo = null);
 
 /// <param name="Latitude">WGS84 location OCC placed on the map (ADR-0027); null until placed.</param>
 public sealed record OccPositionResponse(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,

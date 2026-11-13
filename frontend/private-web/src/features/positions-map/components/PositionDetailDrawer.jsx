@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import DemoTag from '../../occ-ui/DemoTag';
 import StatusBadge from '../../../components/StatusBadge';
 import { getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
@@ -58,6 +59,8 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
               <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
                 {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
               </span>
+              {/* ADR-0041: the flight the stand shows is a demo flight the superadministrator triggered. */}
+              {position.isDemo && <DemoTag />}
             </div>
           </div>
           <button

@@ -5,6 +5,7 @@ import GovernanceShell from './GovernanceShell';
 import { DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { getGovernance, getProvisioning, linkProvisioningAccount, provisionAirline } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
+import { loadDemoFlightOptions } from '../../services/demoFlightsService';
 
 vi.mock('../../services/commercialGovernanceApi', () => ({
   commercialApi: vi.fn(),
@@ -22,6 +23,16 @@ vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
   getDepartmentsOverview: vi.fn(),
   listLegacyRoles: vi.fn(),
   convertLegacyRole: vi.fn().mockResolvedValue({ id: 'profile-1' }),
+}));
+vi.mock('../../services/demoFlightsService', async importOriginal => ({
+  ...(await importOriginal()),
+  // Where demo flights are off the panel only says so (ADR-0041).
+  loadDemoFlightOptions: vi.fn().mockResolvedValue({ enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stations: [],
+    stationId: null, operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], warnings: [],
+    limits: { minMinutesToOnBlock: 2, maxMinutesToOnBlock: 30, defaultMinutesToOnBlock: 8, minGroundMinutes: 20,
+      maxGroundMinutes: 240, defaultGroundMinutes: 60, maxActive: 3, active: 0 } }),
+  listDemoFlights: vi.fn().mockResolvedValue({ enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stationId: null,
+    flights: [] }),
 }));
 vi.mock('../../hooks/useCommercialRevalidation', () => ({ useCommercialRevalidation: vi.fn() }));
 vi.mock('../../services/accountChangeObserver', () => ({
@@ -133,6 +144,17 @@ describe('GovernanceShell', () => {
     expect(first[1]).toEqual({ email: 'ana@demo-air.test', expectedVersion: 'AAAAAAAAB9E=' });
     // The uncertain attempt is retried with the same Idempotency-Key.
     expect(second[2]).toBe(first[2]);
+  });
+
+  it('Configuración shows «Vuelo demo» above «Correo del sistema» (ADR-0041)', async () => {
+    renderShell();
+    await userEvent.click(within(await screen.findByRole('navigation')).getByRole('button', { name: 'Configuración' }));
+    expect(screen.getByText('Vuelo demo, correo del sistema, políticas de acceso y auditoría.')).toBeInTheDocument();
+    const demo = await screen.findByRole('heading', { name: 'Vuelo demo' });
+    const email = screen.getByRole('heading', { name: 'Correo del sistema' });
+    expect(demo.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await screen.findByText(/Los vuelos demo solo funcionan en el entorno de desarrollo/)).toBeInTheDocument();
+    expect(loadDemoFlightOptions).toHaveBeenCalled();
   });
 
   it('describes the invitation by email as the credential delivery in the access policy (1-N21)', async () => {

@@ -2,6 +2,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Integrations;
 using Elevant.Application.Integration;
+using Elevant.Application.Integration.DemoFlights;
 using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
@@ -111,16 +112,22 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
         var today = LocalDate(now, station.TimeZoneId);
         var contractedAirlines = await ApplicableContracts.For(context, null, station.StationId, today)
             .Select(row => row.AirlineId).Distinct().ToArrayAsync(cancellationToken);
+        // A demo flight (ADR-0041) is not the provider's: its times never bring a paid read forward, neither while it is
+        // a proposal nor once OCC imported it.
         var proposalTimes = await context.Set<ExternalFlightProposal>().AsNoTracking()
             .Where(proposal => proposal.StationId == station.StationId && proposal.OperationDate == today &&
-                proposal.Status != ExternalFlightProposalStatus.Dismissed && contractedAirlines.Contains(proposal.AirlineId))
+                proposal.Status != ExternalFlightProposalStatus.Dismissed && contractedAirlines.Contains(proposal.AirlineId) &&
+                proposal.Provider != DemoFlightProvider.Name)
             .Select(proposal => proposal.RevisedAt ?? proposal.ScheduledAt).ToArrayAsync(cancellationToken);
         var legTimes = await (from turnaround in context.Turnarounds.AsNoTracking()
                               join leg in context.FlightLegs.AsNoTracking() on turnaround.Id equals leg.TurnaroundId
                               // A cancelled or diverted flight no longer drives paid reads (3-A).
                               where turnaround.StationId == station.StationId && turnaround.OperationDate == today &&
                                     turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
-                                    turnaround.CurrentStatus != TurnaroundStatus.Diverted
+                                    turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
+                                    // Written out: a flight typed by hand has no provider and still counts.
+                                    (turnaround.ExternalProvider == null ||
+                                     turnaround.ExternalProvider != DemoFlightProvider.Name)
                               select leg.EstimatedAt ?? leg.ScheduledAt).ToArrayAsync(cancellationToken);
         var since = now.AddHours(-48);
         var usage = await context.Set<ProviderUsageEntry>().AsNoTracking()
@@ -325,7 +332,7 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             proposal.RunwayAt = flight.RunwayUtc;
             proposal.ProviderStatus = Trim(flight.Status, 32)!;
             // 3-A: the provider cancelled or diverted a flight OCC already imported. OCC decides; nothing is cancelled
-            // by the feed. The alert goes when a leg's status changes, once per turnaround (AlertOccAsync).
+            // by the feed. The alert goes when a leg's status changes, once per turnaround (ProviderFlightAlerts).
             if (proposal.Status == ExternalFlightProposalStatus.Confirmed && proposal.TurnaroundId is { } importedId &&
                 ProviderAlertKind(proposal.ProviderStatus) is { } alertKind && ProviderAlertKind(previousStatus) != alertKind)
                 alerts.Add((importedId, alertKind));
@@ -353,7 +360,7 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
                 proposal.CounterpartAirportId = airport.Id;
         // Both legs of a turnaround usually change in the same read: one alert per turnaround and kind.
         foreach (var (turnaroundId, kind) in alerts.Distinct())
-            await AlertOccAsync(turnaroundId, kind, call.OccurredAt, cancellationToken);
+            await ProviderFlightAlerts.AlertOccAsync(context, turnaroundId, kind, call.OccurredAt, cancellationToken);
         return (contractedLegs, created, updatedLegs);
     }
 
@@ -364,30 +371,6 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
         "DIVERTED" => "flight_diverted_by_provider",
         _ => null,
     };
-
-    /// <summary>
-    /// Tells the station's OCC that the provider cancelled or diverted an imported flight still open. The turnaround is
-    /// the notice's source and a notice of that kind already on its operation counts, so it reaches each OCC account once
-    /// whichever leg the provider reports, in one read or in several.
-    /// </summary>
-    private async Task AlertOccAsync(long turnaroundId, string kind, DateTimeOffset occurredAt,
-        CancellationToken cancellationToken)
-    {
-        var target = await (from turnaround in context.Turnarounds.AsNoTracking()
-                            join operation in context.GroundOperations.AsNoTracking() on turnaround.Id equals operation.TurnaroundId
-                            where turnaround.Id == turnaroundId &&
-                                  turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
-                                  turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
-                                  turnaround.CurrentStatus != TurnaroundStatus.Completed
-                            select new { turnaround.StationId, turnaround.PublicId, OperationId = operation.Id })
-            .FirstOrDefaultAsync(cancellationToken);
-        // By operation, not by source: earlier notices named the leg's proposal as their source.
-        if (target is null || await context.OperationalNotifications.AsNoTracking()
-                .AnyAsync(notice => notice.GroundOperationId == target.OperationId && notice.Kind == kind, cancellationToken))
-            return;
-        await OperationalNotificationWriter.NotifyOccAsync(context, target.StationId, target.OperationId, target.PublicId,
-            kind, occurredAt, null, cancellationToken);
-    }
 
     /// <summary>Stable key of a leg at the provider: number, direction and scheduled UTC minute.</summary>
     public static string Reference(FeedFlight flight) =>

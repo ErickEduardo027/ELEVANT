@@ -34,6 +34,23 @@ describe("OCC positions client", () => {
     expect(JSON.parse(requests[2]!.body)).toEqual({ standId, reason: null });
   });
 
+  it("accepts isDemo absent or true and rejects false, null and a non-boolean (ADR-0041)", async () => {
+    const read = (mark: Record<string, unknown>, where: "positions" | "unassigned") => createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => Response.json(where === "positions"
+        ? { ...board, positions: [{ ...board.positions[0], turnarounds: [{ ...turnaround, ...mark }] }] }
+        : { ...board, unassigned: [{ ...turnaround, ...mark }] }),
+    }).getOccPositions(stationId, "2026-08-18");
+    for (const where of ["positions", "unassigned"] as const) {
+      await expect(read({}, where)).resolves.toMatchObject({ stationCode: "PUJ" });
+      const demo = await read({ isDemo: true }, where);
+      const marked = where === "positions" ? demo.positions[0]!.turnarounds[0]! : demo.unassigned[0]!;
+      expect(marked.isDemo).toBe(true);
+      for (const isDemo of [false, null, "true", 1])
+        await expect(read({ isDemo }, where)).rejects.toMatchObject({ kind: "malformed-response" });
+    }
+  });
+
   it("rejects invalid registrations and unknown stand states", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json({ ...board, positions: [{ ...board.positions[0], status: "parked" }] }) });

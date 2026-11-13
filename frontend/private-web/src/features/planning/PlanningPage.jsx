@@ -324,7 +324,7 @@ export default function PlanningPage({
       )}
       {showImport && selectedStationId && (data?.date ?? selectedDate) && (
         <ProviderFlightsDialog stationId={selectedStationId} date={data?.date ?? selectedDate} timeZone={data?.station?.ianaTimeZone}
-          onClose={() => setShowImport(false)} onImported={onRetry} />
+          revision={dataRevision} onClose={() => setShowImport(false)} onImported={onRetry} />
       )}
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>

@@ -168,6 +168,35 @@ verificado;
   en verde (14, 18, 20 y 11) y uno saltado por diseño, el del charter, en
   7,2 minutos.
 
+Desde el vuelo demo (PR A1 del plan «OCC a nivel NOC», código de `cba00f73`,
+también posterior al commit verificado;
+[ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)):
+
+- **Proyecto `demo`.** Un quinto proyecto del arnés, sin dependencias, que corre
+  con los demás o aparte (`--project=demo`)
+  ([prueba](../../frontend/public-web/tests/e2e-cycle/demo-vuelo.spec.ts) y
+  [ayudantes de operación](../../frontend/public-web/tests/e2e-cycle/support/operations.ts)).
+  Superadministración dispara un vuelo demo de la aerolínea sembrada «Demo
+  Airlines» hacia una posición libre de la Terminal A; OCC lo ve con «Demo» y
+  con la posición preseleccionada en «Importar vuelos», lo importa sin pulsar
+  «Actualizar ahora» y se lo asigna al agente sembrado, programando o ampliando
+  su turno del día si hace falta; la API marca el aterrizaje, la tablet
+  registra `BLOCK_ON` y `PUSHBACK`, la API marca el despegue y la lista de
+  Superadministración sigue cada fase; un segundo vuelo se cancela antes de
+  tocar pista y sale de los vuelos propuestos. Al final el agente entrega la
+  operación sin servicios y OCC libera la posición, que el push-back todavía no
+  libera.
+- **Sin corrida registrada.** El PR lo entregó escrito contra los selectores y
+  los textos reales, sin un stack local con el que ejecutarlo. Ningún workflow
+  de CI lo corre.
+- **Pruebas automáticas.** Unitarias del reloj, las reglas, la numeración, los
+  aeropuertos, la regla de códigos de posición (con un archivo de casos que
+  leen también las pruebas de JavaScript), el manejador y la configuración; de
+  la API (endpoints y worker) y de arquitectura; 16 pruebas SQL del almacén
+  ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.DemoFlights.cs));
+  del cliente compartido, y de private-web: panel, estado, servicio, diálogo de
+  importación y etiquetas «Demo».
+
 ## Suite visual de los mapas del OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código del

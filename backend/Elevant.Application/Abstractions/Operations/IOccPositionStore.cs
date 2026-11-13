@@ -4,11 +4,13 @@ namespace Elevant.Application.Abstractions.Operations;
 /// Real occupancy of a station's stands (teacher review, Phase 7). A stand is <c>occupied</c> when
 /// the aircraft of its active assignment has arrived (actual on-block time recorded), <c>planned</c>
 /// when the assignment exists but the aircraft has not arrived, and <c>available</c> otherwise.
+/// <see cref="IsDemo"/> is true for the turnaround of a demo flight OCC imported (ADR-0041) and null for any other,
+/// never false.
 /// </summary>
 public sealed record OccPositionTurnaroundData(Guid TurnaroundId, string OperationCode, string AirlineName,
     string? AircraftRegistration, string? ArrivalFlightNumber, string? DepartureFlightNumber,
     DateTimeOffset? ArrivalScheduledAt, DateTimeOffset? ArrivedAt, DateTimeOffset? DepartureScheduledAt,
-    DateTimeOffset? AssignedFrom, string Status);
+    DateTimeOffset? AssignedFrom, string Status, bool? IsDemo = null);
 
 /// <param name="Latitude">WGS84 location OCC placed (ADR-0027); null until placed.</param>
 /// <param name="CancelledBy">Code of the occupied stand that cancels this one right now (ADR-0030), an alert to OCC.</param>
