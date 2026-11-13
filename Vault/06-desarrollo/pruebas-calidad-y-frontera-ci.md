@@ -258,7 +258,7 @@ Desde la imagen aérea y los vuelos del mapa (PR A3 del mismo plan, código de
   montando el host sin SQL: el worker y los endpoints, entre ellos que la
   imagen de Development enciende el tráfico y sube el límite a 600. De
   arquitectura: contratos sin `long` y con ids públicos, tres lecturas bajo
-  `occ/map` y el worker, que solo depende de Application. Seis pruebas SQL de
+  `occ/map` y el worker, que solo depende de Application. Siete pruebas SQL de
   los vuelos del mapa
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.MapFlights.cs)),
   y las del cliente compartido.

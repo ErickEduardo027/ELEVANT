@@ -14,10 +14,11 @@ namespace Elevant.IntegrationTests.Persistence;
 
 /// <summary>
 /// ADR-0042 (contracts 1.3): the ELEVANT flights of the map, against SQL Server. One row per leg of the station's
-/// turnarounds and per open proposal of the feed; a flight keeps its key when OCC imports it; the phase follows the
-/// provider's words and the actual times; an aircraft on the ground stays on the map across midnight; and the live
-/// aircraft are matched against the same keys. Every answer of the feed here is synthetic, and every test runs on the
-/// demo flights' clock, two days ahead of the seed's flights.
+/// turnarounds and per open proposal of the feed; a flight keeps its key when OCC imports it, and an open departure joins
+/// the visit the review of its day suggests; the phase follows the provider's words and the actual times; an aircraft on
+/// the ground stays on the map across midnight until it pushes back; and the live aircraft are matched against the same
+/// keys. Every answer of the feed here is synthetic, and every test runs on the demo flights' clock, two days ahead of the
+/// seed's flights.
 /// </summary>
 public sealed partial class SqlServerMigrationTests
 {
@@ -383,6 +384,55 @@ public sealed partial class SqlServerMigrationTests
     }
 
     /// <summary>
+    /// An open departure joins the visit of the arrival OCC's review suggests for it, and the review pairs the proposals of
+    /// one day: a late arrival never takes the next day's departure from that day's arrivals, and two arrivals at the same
+    /// time compete in the review's order, by number. The pair OCC imports keeps the keys the map showed.
+    /// </summary>
+    [Fact]
+    public async Task AnOpenDepartureJoinsTheVisitTheReviewOfItsDaySuggests()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var demo = await DemoFlightsAsync(database, ct, start: day => LocalAt(day, 22));
+        var day = demo.Day;
+        var nextDay = day.AddDays(1);
+
+        // Nobody reports a registration, so the departure at one in the morning is a turn of any of the three arrivals: the
+        // day's last one at eleven, and the next day's two at half past midnight, the higher number reported first.
+        await MapFeedAsync(demo, ct,
+            MapLeg(FlightDirection.Arrival, "ZZ601", LocalAt(day, 23), null),
+            MapLeg(FlightDirection.Arrival, "ZZ631", LocalAt(nextDay, 0, 30), null),
+            MapLeg(FlightDirection.Arrival, "ZZ621", LocalAt(nextDay, 0, 30), null),
+            MapLeg(FlightDirection.Departure, "ZZ622", LocalAt(nextDay, 1), null));
+        var ids = await MapProposalIdsAsync(database.ConnectionString, ct, "ZZ601", "ZZ621", "ZZ631", "ZZ622");
+        string Key(string number) => MapFlightKeys.Proposal(ids[number]);
+
+        // OCC's review of each day: the next day's suggests the departure for its first arrival by number, and the late
+        // arrival of the day before has none.
+        async Task<IReadOnlyList<OccFlightProposalData>> Review(DateOnly date) =>
+            (await demo.Run(services => services.GetRequiredService<IOccFlightFeedStore>()
+                .ListAsync(SeededOccAccount, SeededPujStation, date, OccFlightFeedView.Contracted, ct)))!.Proposals;
+        Assert.Null(Assert.Single(await Review(day), item => item.FlightNumber == "ZZ601").SuggestedDepartureId);
+        var (arrival, departure) = Proposal(await Review(nextDay), "ZZ621");
+        Assert.Equal((ids["ZZ621"], ids["ZZ622"]), (arrival.ProposalId, departure.ProposalId));
+        Assert.Null(Assert.Single(await Review(nextDay), item => item.FlightNumber == "ZZ631").SuggestedDepartureId);
+
+        // The map joins the departure to the visit the review suggests.
+        (string, string)[] keys =
+            [(Key("ZZ601"), Key("ZZ601")), (Key("ZZ621"), Key("ZZ621")), (Key("ZZ631"), Key("ZZ631")), (Key("ZZ622"), Key("ZZ621"))];
+        Assert.Equal(keys, (await MapAsync(demo, ct)).Flights.Select(item => (item.FlightKey, item.VisitKey)));
+
+        // OCC imports that pair: neither key changes.
+        var imported = await demo.Import(new DemoPair(arrival, departure), demo.Stands["A01"]);
+        Assert.True(imported.Failure is null, imported.Code);
+        var after = await MapAsync(demo, ct);
+        Assert.Equal(keys, after.Flights.Select(item => (item.FlightKey, item.VisitKey)));
+        Assert.Equal([false, true, false, true], after.Flights.Select(item => item.Imported));
+    }
+
+    /// <summary>
     /// 3-N07: the feed's pair of a flight OCC planned by hand joins that turnaround. Its legs keep their own keys and name
     /// the proposal that joined them last, so a screen that followed the proposal finds the leg through it; the provider's
     /// words reach the leg, never its times.
@@ -538,8 +588,9 @@ public sealed partial class SqlServerMigrationTests
     }
 
     /// <summary>
-    /// An aircraft that landed and has not left stays on the map whatever its times, after midnight too, until it leaves,
-    /// its turnaround is completed or the visit is older than yesterday.
+    /// An aircraft that landed and has not left stays on the map whatever its times, after midnight too, until it leaves
+    /// (its departure has an actual time, or the tablet recorded its push-back), its turnaround is completed or the visit
+    /// is older than yesterday. A flight OCC typed never gets a departure time: its push-back says it left.
     /// </summary>
     [Fact]
     public async Task AnAircraftOnTheGroundAcrossMidnightStaysOnTheMap()
@@ -588,7 +639,9 @@ public sealed partial class SqlServerMigrationTests
                                      join turnaround in setup.Turnarounds on leg.TurnaroundId equals turnaround.Id
                                      where turnaround.PublicId == overnight.TurnaroundId && leg.Direction == FlightDirection.Departure
                                      select leg.Id).SingleAsync(ct);
-            // The aircraft left at 05:30: the arrival leaves the map, and the departure stays while that time is in the window.
+            // The departure has an actual time, 05:30: the aircraft left. The feed and the demo worker write it on the legs
+            // they own (here with the context). The arrival leaves the map, and the departure stays while that time is in
+            // the window.
             await setup.FlightLegs.Where(item => item.Id == departureId)
                 .ExecuteUpdateAsync(set => set.SetProperty(item => item.ActualAt, LocalAt(day.AddDays(1), 5, 30)), ct);
             Assert.Equal([("ZZ951D", MapFlightPhases.Departed)], await OnTheMap());
@@ -600,6 +653,32 @@ public sealed partial class SqlServerMigrationTests
         // Two mornings later the visit is older than yesterday: it is not on the map, whatever its rows say.
         demo.Clock.Now = LocalAt(day.AddDays(2), 6);
         Assert.Empty(await OnTheMap());
+
+        // Back at six the next morning, the tablet records the push-back at 05:30 (written with the context as the tablet
+        // writes it: its commands have their own tests). Nothing writes the actual time of the departure of a flight OCC
+        // typed, but the aircraft left its stand (owner decision 23): the visit is no longer on the ground, and neither
+        // leg's time is in the window.
+        demo.Clock.Now = LocalAt(day.AddDays(1), 6);
+        Assert.Equal(2, (await OnTheMap()).Count);
+        var pushback = new OccMapMilestoneData(RampEvidenceTimePolicy.Pushback, LocalAt(day.AddDays(1), 5, 30));
+        var operation = await MapOperationAsync(database.ConnectionString, overnight.TurnaroundId!.Value, ct);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            setup.Add(new OperationMilestone
+            {
+                PublicId = Guid.CreateVersion7(), GroundOperationId = operation.Id, Code = pushback.Code,
+                ActualAt = pushback.ActualAt, Status = MilestoneStatus.Actual, Source = OperationalDataSource.Manual,
+                CreatedAt = demo.Now, UpdatedAt = demo.Now,
+            });
+            await setup.SaveChangesAsync(ct);
+        }
+        Assert.Empty(await OnTheMap());
+        // The departure is on the map while its own time is: until two in the afternoon, its scheduled noon. It still
+        // waits for its time, with the push-back among its milestones.
+        var departing = Assert.Single((await MapAsync(demo, ct, hoursBack: 2, hoursAhead: 8)).Flights);
+        Assert.Equal(("ZZ951D", MapFlightPhases.Scheduled, (DateTimeOffset?)null),
+            (departing.FlightNumber, departing.Phase, departing.ActualAt));
+        Assert.Equal([pushback], departing.Milestones);
     }
 
     /// <summary>

@@ -21,11 +21,12 @@ namespace Elevant.Persistence.Operations;
 /// <list type="bullet">
 /// <item>Legs: those of the station's turnarounds that are neither cancelled nor diverted whose best time (actual, else
 /// estimated, else scheduled) is in the window, and both legs of a visit whose aircraft is on the ground (the arrival has
-/// its actual time, the departure has none, the turnaround is not completed and its day is not before yesterday). Their
-/// proposals are read by turnaround and matched to each leg by its key.</item>
+/// its actual time, the departure has none, the operation has no push-back, the turnaround is not completed and its day
+/// is not before yesterday). Their proposals are read by turnaround and matched to each leg by its key.</item>
 /// <item>Proposals: the open ones of the same days of airlines OCC's review shows (<see cref="FlightFeedVisibility"/>)
 /// whose best time (runway, else revised, else scheduled; a demo flight's from its clock) is in the window. They are
-/// paired over every open proposal of those days, so a visit's key does not depend on where the window cuts.</item>
+/// paired as the review pairs them, each day's open proposals on their own, so a visit's key does not depend on where
+/// the window cuts and stays when OCC imports the pair the review suggests.</item>
 /// </list>
 /// </summary>
 internal sealed class EfOccMapFlightStore(ElevantDbContext context) : IOccMapFlightStore, IOccMapFlightMatchKeyStore
@@ -143,9 +144,12 @@ internal sealed class EfOccMapFlightStore(ElevantDbContext context) : IOccMapFli
         var listed = open.Where(proposal => Within(
             (demoClock.TryGetValue(proposal.Id, out var shown) ? shown.RunwayAt : proposal.RunwayAt) ??
             proposal.RevisedAt ?? proposal.ScheduledAt, from, to)).ToArray();
-        // A departure joins the visit of the arrival the review suggests for it, over every open proposal of those days.
+        // A departure joins the visit of the arrival the review suggests for it. The review pairs the open proposals of one
+        // day, so each day is paired on its own: over several days a late arrival would take the next day's departure from
+        // that day's arrival, and the departure would change visit when OCC imports the pair the review suggested.
         var openKeys = open.ToDictionary(proposal => proposal.Id, proposal => proposal.PublicId);
-        var arrivalOfDeparture = EfOccFlightFeedStore.SuggestDepartures(open)
+        var arrivalOfDeparture = open.GroupBy(proposal => proposal.OperationDate)
+            .SelectMany(day => EfOccFlightFeedStore.SuggestDepartures(day.ToArray()))
             .ToDictionary(pair => pair.Value, pair => openKeys[pair.Key]);
 
         IReadOnlyList<DemoFlightGroup> groups = [];
@@ -304,26 +308,42 @@ internal sealed class EfOccMapFlightStore(ElevantDbContext context) : IOccMapFli
                                 turnaround.CurrentStatus != TurnaroundStatus.Diverted
                           select new { Turnaround = turnaround, Leg = leg })
             .ToArrayAsync(cancellationToken);
+        var visits = rows.Where(row => withDemo || row.Turnaround.ExternalProvider != DemoFlightProvider.Name)
+            .GroupBy(row => row.Turnaround.Id)
+            .Select(visit => (Turnaround: visit.First().Turnaround,
+                Legs: visit.Select(row => row.Leg).OrderBy(leg => leg.Direction).ToArray()))
+            .ToArray();
+        // The aircraft landed and its legs do not say it left: the arrival has its actual time and the departure none, the
+        // turnaround is not completed and its day is not before yesterday.
+        var landed = visits.Where(visit =>
+                visit.Legs.FirstOrDefault(leg => leg.Direction == FlightDirection.Arrival)?.ActualAt is not null &&
+                visit.Legs.FirstOrDefault(leg => leg.Direction == FlightDirection.Departure)?.ActualAt is null &&
+                visit.Turnaround.CurrentStatus != TurnaroundStatus.Completed && visit.Turnaround.OperationDate >= yesterday)
+            .Select(visit => visit.Turnaround.Id).ToArray();
+        // Nor did the tablet record its push-back, the rule that frees its stand (owner decision 23). Only the feed and the
+        // demo worker write a departure's actual time, never on a flight OCC planned (typed by hand, or joined by a feed
+        // pair under 3-N07), whose aircraft would otherwise stay on the ground until OCC approves its operation.
+        HashSet<long> pushedBack = landed.Length == 0
+            ? []
+            : (await StandAvailability.PushedBackTurnarounds(context).Where(id => landed.Contains(id))
+                .ToArrayAsync(cancellationToken)).ToHashSet();
+        var onGround = landed.Where(id => !pushedBack.Contains(id)).ToHashSet();
         var chosen = new List<(Turnaround Turnaround, FlightLeg Leg)>();
-        foreach (var visit in rows.GroupBy(row => row.Turnaround.Id))
+        foreach (var (turnaround, legs) in visits)
         {
-            var turnaround = visit.First().Turnaround;
-            if (!withDemo && turnaround.ExternalProvider == DemoFlightProvider.Name) continue;
-            var arrival = visit.FirstOrDefault(row => row.Leg.Direction == FlightDirection.Arrival)?.Leg;
-            var departure = visit.FirstOrDefault(row => row.Leg.Direction == FlightDirection.Departure)?.Leg;
-            // The aircraft landed and has not left: the visit stays on the map whatever its times, across midnight too.
-            var onGround = arrival?.ActualAt is not null && departure?.ActualAt is null &&
-                turnaround.CurrentStatus != TurnaroundStatus.Completed && turnaround.OperationDate >= yesterday;
-            foreach (var row in visit.OrderBy(row => row.Leg.Direction))
-                if (onGround || Within(row.Leg.ActualAt ?? row.Leg.EstimatedAt ?? row.Leg.ScheduledAt, from, to))
-                    chosen.Add((turnaround, row.Leg));
+            // The aircraft is on the ground: the visit stays on the map whatever its times, across midnight too.
+            var stays = onGround.Contains(turnaround.Id);
+            foreach (var leg in legs)
+                if (stays || Within(leg.ActualAt ?? leg.EstimatedAt ?? leg.ScheduledAt, from, to))
+                    chosen.Add((turnaround, leg));
         }
         return chosen;
     }
 
     /// <summary>
     /// The open proposals of the station's days (the station, day and status index) of airlines OCC's review shows those
-    /// days; with <paramref name="withDemo"/> false, without the demo flights'.
+    /// days; with <paramref name="withDemo"/> false, without the demo flights'. In the review's order, by scheduled time and
+    /// then number, which decides the ties when they are paired.
     /// </summary>
     private async Task<ExternalFlightProposal[]> OpenProposalsAsync(long stationId, DateOnly firstDate, DateOnly lastDate,
         bool withDemo, CancellationToken cancellationToken)
@@ -331,6 +351,7 @@ internal sealed class EfOccMapFlightStore(ElevantDbContext context) : IOccMapFli
         var open = await context.Set<ExternalFlightProposal>().AsNoTracking()
             .Where(proposal => proposal.StationId == stationId && proposal.OperationDate >= firstDate &&
                 proposal.OperationDate <= lastDate && proposal.Status == ExternalFlightProposalStatus.Proposed)
+            .OrderBy(proposal => proposal.ScheduledAt).ThenBy(proposal => proposal.FlightNumber)
             .ToArrayAsync(cancellationToken);
         if (!withDemo) open = open.Where(proposal => proposal.Provider != DemoFlightProvider.Name).ToArray();
         if (open.Length == 0) return open;
