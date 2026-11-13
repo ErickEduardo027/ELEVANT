@@ -142,6 +142,36 @@ describe('OccMap', () => {
     expect(await screen.findByRole('heading', { name: 'The map is not available' })).toBeInTheDocument();
   });
 
+  it('switches to the fallback for good when the WebGL context comes back without WebGL2', () => {
+    const { map } = renderMap();
+    loadStyle(map);
+    const root = screen.getByTestId('occ-map');
+    const host = screen.getByTestId('position-map-container');
+    expect(root).toHaveAttribute('data-occ-engine', 'ready');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(host.querySelector('.maplibregl-canvas')).not.toBeNull();
+
+    act(() => fake.state.loseContext(map));
+    act(() => fake.state.failContextRestore(map));
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveAttribute('data-testid', 'map-unavailable');
+    expect(root).toHaveAttribute('data-occ-engine', 'unavailable');
+    expect(within(within(alert).getByRole('group')).getAllByRole('button')).toHaveLength(41);
+    expect(probe()).toMatchObject({ engineStatus: 'unavailable', basemapStatus: 'off' });
+    // The map is gone, as when it cannot start: no canvas or control is left under the list.
+    expect(fake.state.liveMaps()).toEqual([]);
+    expect(host.querySelector('.maplibregl-canvas, .maplibregl-control-container')).toBeNull();
+
+    // The style MapLibre had rebuilt loading later brings nothing back.
+    loadStyle(map);
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(root).toHaveAttribute('data-occ-engine', 'unavailable');
+    expect(host.querySelector('.maplibregl-canvas')).toBeNull();
+    // The view keys do nothing without a map.
+    expect(press(alert, '2').defaultPrevented).toBe(false);
+    expect(query().has('view')).toBe(false);
+  });
+
   it('shows the degraded base-map chip and keeps the map usable', () => {
     const onSelect = vi.fn();
     const { map } = renderMap({ selection: { kind: 'stand', id: 'A5' }, onSelect });

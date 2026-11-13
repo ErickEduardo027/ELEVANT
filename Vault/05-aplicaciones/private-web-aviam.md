@@ -763,7 +763,8 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   el único componente de mapa: un lienzo por página, en el que Región,
   Aproximación, Aeródromo y Rampa son posiciones de cámara del mismo mapa. El
   mapa está listo al cargar su estilo. Solo un mapa que no puede arrancar, como
-  en un navegador sin WebGL2, deja su lista de respaldo; si el mapa base no
+  en un navegador sin WebGL2, o cuyo contexto WebGL vuelve sin WebGL2, deja en
+  su lugar la lista de respaldo, y ese mapa ya no vuelve; si el mapa base no
   carga, un aviso dice «No se pudo cargar el mapa base. Se muestran las
   posiciones y los datos de ELEVANT.», y las posiciones siguen en el mapa.
   [`workerUrl.js`](../../frontend/private-web/src/features/maps/core/workerUrl.js)

@@ -4,10 +4,10 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
-import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
+import { STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import { createMapEngine } from '../core/mapEngine';
-import { MAP_IMAGE_IDS } from '../style/mapImages';
+import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { FONT_STACKS, buildOccStyle } from '../style/occStyle';
 import { SELECTION_SOURCE, selectionOverlay } from '../style/selectionLayers';
 import {
@@ -68,6 +68,9 @@ describe('standOverlay', () => {
       // Every stand has a frame, and every image exists.
       expect(marks[state][1], state).not.toBeNull();
       for (const mark of marks[state].filter(Boolean)) expect(MAP_IMAGE_IDS, state).toContain(mark.image);
+      // The frame the layer draws has the width and the dash of the vocabulary's outline, which the legend draws too.
+      const [line] = MAP_IMAGE_SHAPES[marks[state][1].image].ops;
+      expect([line.lineWidth, line.dash ?? null], state).toEqual([STAND_STATES[state].outline.width, STAND_STATES[state].dash]);
     }
     const shapes = Object.fromEntries(STAND_STATE_KEYS.map(state => [state, marks[state].map(mark => mark?.image ?? 'none').join('|')]));
     for (const [index, first] of STAND_STATE_KEYS.entries()) {
@@ -81,6 +84,11 @@ describe('standOverlay', () => {
     expect(standAppearance('releasing')).toMatchObject({ fill: { image: 'stand-slab' }, badge: { image: 'glyph-clock' } });
     expect(standAppearance('disabled')).toMatchObject({ fill: { image: 'stand-hatch' }, frame: { image: 'stand-frame-dash-2-2' }, glyph: null });
     expect(standAppearance('unverified')).toMatchObject({ frame: { image: 'stand-frame-dot-1-3' }, glyph: { image: 'glyph-axis' } });
+    // The solid frames keep the widths of the vocabulary: 1 px free, 2 px while the aircraft is on the stand, 2.5 px
+    // while it arrives.
+    expect(['available', 'occupied', 'releasing', 'arriving'].map(state => standAppearance(state).frame.image)).toEqual([
+      'stand-frame-solid', 'stand-frame-solid-2px', 'stand-frame-solid-2px', 'stand-frame-solid-2-5px',
+    ]);
     expect(() => standAppearance('blocked')).toThrow(RangeError);
   });
 
@@ -195,7 +203,7 @@ describe('standOverlay', () => {
       'icon-image': 'stand-slab', 'icon-padding': 0, 'icon-allow-overlap': true, 'icon-ignore-placement': false,
     });
     expect(keepOut.paint).toEqual({ 'icon-opacity': 0 });
-    // At every zoom: the keep-out is the drawn square (24 px of the 32 px images, at the marks' size), and a code sits
+    // At every zoom: the keep-out is the drawn square (24 px of the 32 px slab image, at the marks' size), and a code sits
     // 7 px clear of it, its 2 px text padding included.
     const stand = { code: 'A1', status: 'available' };
     for (const zoom of [15, 15.8, 16, 16.7, 17, 18, 19.5]) {

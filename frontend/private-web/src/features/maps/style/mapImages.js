@@ -11,6 +11,8 @@ import { maskToSdf } from './sdf';
 /** The ids the style may name, in a stable order. */
 export const MAP_IMAGE_IDS = Object.freeze([
   'stand-frame-solid',
+  'stand-frame-solid-2px',
+  'stand-frame-solid-2-5px',
   'stand-frame-dash-4-3',
   'stand-frame-dash-2-2',
   'stand-frame-dot-1-3',
@@ -24,10 +26,26 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'airport-arp',
 ]);
 
-// A stand is a 24 px square centred in a 32 px image; its glyphs share that frame, so the layers of one stand line up.
+// A stand is a 24 px square centred in a 32 px image; its fill and glyphs share that image, so the layers of one stand
+// line up. Its frame outlines the same square centred in a 34 px image, so that the widest outline also keeps 3 px
+// clear; MapLibre centres every icon on its point, so the frame lines up with the rest.
 const STAND_IMAGE = 32;
 const STAND_SQUARE = 'M4 4 H28 V28 H4 Z';
-const STAND_OUTLINE = 1.5;
+const FRAME_IMAGE = 34;
+const FRAME_SQUARE = 'M5 5 H29 V29 H5 Z';
+
+// The frames of the stand states: one per outline of occ-ui/statusVocabulary.js, drawn at its width and dash. The
+// width belongs in the image: icon-size scales the whole stand, and a halo can only thicken a line and keeps its width
+// in screen pixels while the zoom and the tilt of the map resize the stand. The id names the pattern, and the width
+// where one pattern comes in several.
+const STAND_FRAMES = deepFreeze([
+  { id: 'stand-frame-solid', width: 1, dash: null },
+  { id: 'stand-frame-solid-2px', width: 2, dash: null },
+  { id: 'stand-frame-solid-2-5px', width: 2.5, dash: null },
+  { id: 'stand-frame-dash-4-3', width: 1.5, dash: [4, 3] },
+  { id: 'stand-frame-dash-2-2', width: 1.5, dash: [2, 2] },
+  { id: 'stand-frame-dot-1-3', width: 1, dash: [1, 3] },
+]);
 
 // Diagonal hatch inside the stand square: lines x + y = c every `step` pixels, clipped to the square.
 function hatchPath({ min = 4, max = 28, step = 4 } = {}) {
@@ -48,7 +66,23 @@ function deepFreeze(value) {
   return value;
 }
 
-const frame = dash => ({ width: STAND_IMAGE, height: STAND_IMAGE, ops: [{ stroke: STAND_SQUARE, lineWidth: STAND_OUTLINE, dash }] });
+const frameShape = ({ width, dash }) => ({
+  width: FRAME_IMAGE, height: FRAME_IMAGE, ops: [{ stroke: FRAME_SQUARE, lineWidth: width, dash }],
+});
+
+const sameDash = (first, second) => (first === null || second === null
+  ? first === second
+  : first.length === second.length && first.every((length, index) => length === second[index]));
+
+/**
+ * The frame image of a stand outline as occ-ui/statusVocabulary.js gives it: `width` in pixels and `dash`, `[dash,
+ * gap]` in pixels or `null` for a solid line. Throws a RangeError for an outline that no frame draws.
+ */
+export function standFrameImage(width, dash = null) {
+  const frame = STAND_FRAMES.find(item => item.width === width && sameDash(item.dash, dash ?? null));
+  if (!frame) throw new RangeError(`No stand frame is drawn ${width} px wide with the dash ${JSON.stringify(dash)}`);
+  return frame.id;
+}
 
 // The ELEVANT silhouette (nose up) scaled to `size` and placed at `offset`.
 const silhouette = (size, offset) => ({
@@ -63,10 +97,7 @@ const silhouette = (size, offset) => ({
  * `translate` place path data drawn in another unit, such as the 64-unit silhouette.
  */
 export const MAP_IMAGE_SHAPES = deepFreeze({
-  'stand-frame-solid': frame(null),
-  'stand-frame-dash-4-3': frame([4, 3]),
-  'stand-frame-dash-2-2': frame([2, 2]),
-  'stand-frame-dot-1-3': frame([1, 3]),
+  ...Object.fromEntries(STAND_FRAMES.map(frame => [frame.id, frameShape(frame)])),
   'stand-slab': { width: STAND_IMAGE, height: STAND_IMAGE, ops: [{ fill: STAND_SQUARE }] },
   'stand-hatch': { width: STAND_IMAGE, height: STAND_IMAGE, ops: [{ stroke: hatchPath(), lineWidth: 1 }] },
   'glyph-aircraft': { width: STAND_IMAGE, height: STAND_IMAGE, ops: [silhouette(20, 6)] },

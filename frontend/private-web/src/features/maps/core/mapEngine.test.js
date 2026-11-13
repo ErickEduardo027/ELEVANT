@@ -421,6 +421,104 @@ describe('map engine', () => {
     expect(map.featureStateOf('occ-stands', 'A2')).toEqual({ selected: true });
   });
 
+  it('stays unavailable when the context comes back without WebGL2 and removes the map at once', async () => {
+    vi.useFakeTimers();
+    const onStatus = vi.fn();
+    const { engine, map, state } = ready(setup({ onStatus }));
+    engine.addCustomLayer({ id: 'occ-aircraft-3d', type: 'custom', render() {} }, 'models');
+    engine.setFeatureState('occ-stands', 'A1', { selected: true });
+    const before = liveEngineCount();
+    state.loseContext(map);
+    // Calls made while the context is lost wait for the rebuilt style.
+    const update = engine.updateData('occ-flights', { add: [] });
+    const idle = engine.whenIdle();
+
+    // MapLibre 6.16 rebuilds the style, cannot create its painter and fires error instead of webglcontextrestored.
+    state.failContextRestore(map);
+    const unavailable = { engine: 'unavailable', basemap: 'off', reason: 'webgl' };
+    expect(engine.status()).toEqual(unavailable);
+    expect(onStatus).toHaveBeenLastCalledWith(unavailable);
+    expect(engine.isReady()).toBe(false);
+    expect(engine.map).toBeNull();
+    // The engine removed the map, as MapLibre's constructor cleans up after the same error: no canvas or control is
+    // left in the container under the screen's fallback, and no listener of the engine is left on the map.
+    expect(map.removed).toBe(true);
+    expect(map.listenerCount()).toBe(0);
+    expect(liveEngineCount()).toBe(before - 1);
+    expect(engine.container.isConnected).toBe(true);
+    expect(engine.container.childElementCount).toBe(0);
+    // What was waiting settles instead of hanging.
+    await expect(update).resolves.toBeUndefined();
+    await expect(idle).resolves.toBe(false);
+
+    // The style it rebuilt loading on a later frame, a tile of the base map, its timer or a worker restart change
+    // nothing: the map does not come back, nothing is put back on it, and later calls are dropped instead of waiting
+    // for a style that will never draw.
+    const calls = map.calls.length;
+    state.emit(map, 'style.load');
+    state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} });
+    vi.advanceTimersByTime(BASEMAP_TIMEOUT_MS * 2);
+    state.restartWorkers(map);
+    state.emit(map, 'style.load');
+    expect(engine.status()).toEqual(unavailable);
+    expect(engine.isReady()).toBe(false);
+    expect(map.getLayer('occ-aircraft-3d')).toBeUndefined();
+    expect(map.featureStateOf('occ-stands', 'A1')).toBeUndefined();
+    engine.setData('occ-stands', STANDS);
+    engine.setFeatureState('occ-stands', 'A2', { selected: true });
+    engine.setGroupVisibility('traffic', false);
+    engine.addCustomLayer({ id: 'occ-top', type: 'custom', render() {} }, 'selection');
+    engine.flyTo({ center: [-68.36, 18.57], zoom: 16 });
+    await expect(engine.updateData('occ-flights', { add: [] })).resolves.toBeUndefined();
+    expect(map.calls).toHaveLength(calls);
+    expect(engine.pickAt([10, 20])).toBeNull();
+    expect(engine.getCamera()).toBeNull();
+    await expect(engine.whenIdle()).resolves.toBe(false);
+    expect(onStatus.mock.calls.map(([status]) => status.engine)).toEqual(['ready', 'unavailable']);
+
+    // destroy has only the container left to take away.
+    engine.destroy();
+    expect(engine.container.isConnected).toBe(false);
+    expect(map.calls.filter(call => call.method === 'remove')).toHaveLength(1);
+    expect(liveEngineCount()).toBe(before - 1);
+  });
+
+  it('refuses to remove a key without a feature id, as MapLibre does, so a context loss puts back what the map shows', () => {
+    const { engine, map, state } = ready(setup());
+    const shown = () => [
+      map.featureStateOf('occ-flights', 'f:1'), map.featureStateOf('occ-flights', 'f:2'), map.featureStateOf('occ-stands', 'A1'),
+    ];
+    const loseAndRestore = () => {
+      state.loseContext(map);
+      state.restoreContext(map);
+      state.emit(map, 'style.load');
+    };
+    engine.setFeatureState('occ-flights', 'f:1', { hover: true, selected: true });
+    engine.setFeatureState('occ-flights', 'f:2', { hover: true });
+    const calls = map.calls.length;
+    expect(() => engine.removeFeatureState('occ-flights', undefined, 'hover')).toThrow(TypeError);
+    expect(() => engine.removeFeatureState('occ-flights', null, 'hover')).toThrow(TypeError);
+    // Nothing reached MapLibre, which refuses the combination and removes nothing (the fake throws on it).
+    expect(map.calls).toHaveLength(calls);
+    expect(shown()).toEqual([{ hover: true, selected: true }, { hover: true }, undefined]);
+    // Neither did the engine's memory: after a context loss it puts back what the map showed.
+    loseAndRestore();
+    expect(shown()).toEqual([{ hover: true, selected: true }, { hover: true }, undefined]);
+
+    // MapLibre's three forms stay in step through a context loss: one key, a feature's whole state (an empty key counts
+    // as none) and every state of the source.
+    engine.removeFeatureState('occ-flights', 'f:1', 'hover');
+    engine.removeFeatureState('occ-flights', 'f:2', '');
+    engine.setFeatureState('occ-stands', 'A1', { selected: true });
+    expect(shown()).toEqual([{ selected: true }, undefined, { selected: true }]);
+    loseAndRestore();
+    expect(shown()).toEqual([{ selected: true }, undefined, { selected: true }]);
+    engine.removeFeatureState('occ-flights');
+    expect(shown()).toEqual([undefined, undefined, { selected: true }]);
+    loseAndRestore();
+    expect(shown()).toEqual([undefined, undefined, { selected: true }]);
+  });
+
   it('destroy removes the map, its listeners and its container and is idempotent', async () => {
     vi.useFakeTimers();
     const onStatus = vi.fn();

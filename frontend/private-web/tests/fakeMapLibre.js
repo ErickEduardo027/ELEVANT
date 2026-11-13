@@ -478,15 +478,21 @@ function createModule(state) {
       return this;
     }
 
+    // As MapLibre 6.16 (Style.removeFeatureState): a key needs a string or number feature id, else MapLibre fires an
+    // error and removes nothing (the fake throws). Without a key, or with an empty one, the feature's whole state goes,
+    // and without an id every state of the source.
     removeFeatureState(target, key) {
       this._requireStyle();
       this._record('removeFeatureState', [target, key]);
+      if (key && typeof target.id !== 'string' && typeof target.id !== 'number') {
+        throw new Error('A feature id is required to remove its specific state property.');
+      }
       if (target.id === undefined) {
         const prefix = `${target.source}\u0000`;
         for (const stateKey of [...this.featureStates.keys()]) {
           if (stateKey.startsWith(prefix)) this.featureStates.delete(stateKey);
         }
-      } else if (key === undefined) this.featureStates.delete(featureKey(target));
+      } else if (!key) this.featureStates.delete(featureKey(target));
       else {
         const current = this.featureStates.get(featureKey(target));
         if (current) delete current[key];
@@ -797,6 +803,16 @@ function addHelpers(state) {
     restartWorkers(map) {
       state.loseContext(map);
       state.restoreContext(map);
+    },
+
+    // A restore after loseContext that gets no WebGL2 context back: MapLibre 6.16 rebuilds the style from the snapshot
+    // first (it loads on a later `style.load`), then fails to create its painter, fires `error` with the
+    // GPUInitializationError and never fires `webglcontextrestored`. The map keeps a style it can no longer draw until
+    // the app removes it.
+    failContextRestore(map, error = new GPUInitializationError()) {
+      map.contextLost = false;
+      map.pendingStyle = map.snapshot;
+      map._fire('error', { error });
     },
 
     // MapLibre after its container changed size: the viewport takes the new size (the fake has one size for all its

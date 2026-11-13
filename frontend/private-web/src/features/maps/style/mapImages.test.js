@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { AIRCRAFT_SILHOUETTE_PATH } from '../aircraftSilhouette';
-import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES, createImageResolver, rasterizeWithCanvas } from './mapImages';
+import {
+  MAP_IMAGE_IDS, MAP_IMAGE_SHAPES, createImageResolver, rasterizeWithCanvas, standFrameImage,
+} from './mapImages';
 import { maskToSdf } from './sdf';
 
 // jsdom has no canvas: this stand-in covers the middle half of every image.
@@ -61,6 +64,35 @@ describe('map images', () => {
     expect(again('stand-hatch').data).toEqual(resolve('stand-hatch').data);
     const single = createImageResolver({ rasterize: centreRasterizer(), pixelRatio: 1 })('airport-arp');
     expect(single).toMatchObject({ width: 28, height: 20, pixelRatio: 1, sdf: true });
+  });
+
+  it('draws each stand outline of the vocabulary on a frame of its own, at its width and dash, clear of the border', () => {
+    const frames = MAP_IMAGE_IDS.filter(id => id.startsWith('stand-frame-'));
+    const used = new Set();
+    for (const state of STAND_STATE_KEYS) {
+      const { outline, dash } = STAND_STATES[state];
+      const id = standFrameImage(outline.width, dash);
+      used.add(id);
+      const { width, height, ops } = MAP_IMAGE_SHAPES[id];
+      expect(ops, `${state}: ${id}`).toHaveLength(1);
+      const [{ stroke, lineWidth, dash: frameDash }] = ops;
+      // The outline of the contract (1 px solid «Libre», 1.5 px dashed 4-3 «Planificada», 2.5 px «Llegando»…) is the
+      // line the image draws: nothing in the style can make it thinner, and the stand's icon-size scales it.
+      expect(lineWidth, `${state}: ${id}`).toBe(outline.width);
+      expect(frameDash ?? null, `${state}: ${id}`).toEqual(dash);
+      // The 24 px stand square, centred like every stand image, its outer edge 3 px or more from the border.
+      const [left, top, right, bottom] = stroke.match(/^M(\d+) (\d+) H(\d+) V(\d+) H\1 Z$/).slice(1).map(Number);
+      expect([right - left, bottom - top], id).toEqual([24, 24]);
+      expect([left + right, top + bottom], id).toEqual([width, height]);
+      expect(left - lineWidth / 2, id).toBeGreaterThanOrEqual(3);
+    }
+    // One frame per outline: states with the same outline share its frame, and no frame is left over.
+    expect([...used].sort()).toEqual([...frames].sort());
+    expect(standFrameImage(1)).toBe('stand-frame-solid');
+    expect(standFrameImage(2.5, null)).toBe('stand-frame-solid-2-5px');
+    expect(() => standFrameImage(3, null)).toThrow(RangeError);
+    expect(() => standFrameImage(1.5, null)).toThrow(RangeError);
+    expect(() => standFrameImage(1, [4, 3])).toThrow(RangeError);
   });
 
   it('the aerodrome mark is a ring crossed by a nearly level bar that runs well past it, clear of the image border', () => {
@@ -137,9 +169,9 @@ describe('map images', () => {
 
     calls.length = 0;
     rasterizeWithCanvas(MAP_IMAGE_SHAPES['stand-frame-dash-4-3'], 1.5, { canvasFactory });
-    expect(sizes.at(-1)).toEqual([48, 48]);
+    expect(sizes.at(-1)).toEqual([51, 51]);
     expect(calls).toContainEqual(['dash', [4, 3]]);
-    expect(calls).toContainEqual(['stroke', 'M4 4 H28 V28 H4 Z', 1.5, 'butt']);
+    expect(calls).toContainEqual(['stroke', 'M5 5 H29 V29 H5 Z', 1.5, 'butt']);
 
     expect(rasterizeWithCanvas(MAP_IMAGE_SHAPES['stand-slab'], 2, { canvasFactory: () => ({ getContext: () => null }) }))
       .toBeNull();

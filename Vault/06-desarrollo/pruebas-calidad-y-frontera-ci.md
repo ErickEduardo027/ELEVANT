@@ -189,7 +189,9 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
   leyenda lista solo lo que hay en pantalla; sin WebGL aparece la lista de
-  respaldo, y con el mapa base caído, su aviso. También que los botones de zoom
+  respaldo, y se queda, sin lienzo debajo ni errores en la página, cuando un
+  contexto WebGL perdido vuelve sin WebGL2; con el mapa base caído aparece su
+  aviso. También que los botones de zoom
   y las vistas mueven de verdad la cámara, en `next dev` y en un build de
   producción; que el doble montaje de React Strict Mode deja un solo mapa y la
   página llega a `networkidle`; y que releer las posiciones conserva el mismo

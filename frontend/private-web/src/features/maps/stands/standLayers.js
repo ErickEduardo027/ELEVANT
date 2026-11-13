@@ -1,5 +1,6 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
+import { standFrameImage } from '../style/mapImages';
 import { FONT_STACKS } from '../style/occStyle';
 import { SELECTION_SOURCE, STAND_ICON_SIZE } from '../style/selectionLayers';
 
@@ -21,12 +22,6 @@ const CLUSTER_RADIUS_PX = Object.freeze({ default: 50, dashboard: 35 });
 const INITIAL_CLUSTER_MAX_ZOOM = Object.freeze({ default: 14, dashboard: 12 });
 
 const FILL_IMAGES = Object.freeze({ tint: 'stand-slab', solid: 'stand-slab', hatch: 'stand-hatch' });
-const FRAME_IMAGES = Object.freeze({
-  solid: 'stand-frame-solid',
-  '4-3': 'stand-frame-dash-4-3',
-  '2-2': 'stand-frame-dash-2-2',
-  '1-3': 'stand-frame-dot-1-3',
-});
 
 // What the markers meant before M2, in the vocabulary: an aircraft inside the stand while a visit holds it (planned,
 // occupied, releasing), the axis mark of an empty stand (free, unverified), and the clock that tells «Por liberar»
@@ -46,8 +41,8 @@ const BADGE_OFFSET = Object.freeze([9, -9]);
 
 /**
  * How a stand state is drawn: `{ fill, frame, glyph, badge }`, each `{ image, color }` or `null`. The images are ids
- * of style/mapImages.js and the colours the tokens the vocabulary names: the fill token, and the outline token for
- * the frame and its marks.
+ * of style/mapImages.js, the frame the one drawn at the width and dash of the state's outline, and the colours the
+ * tokens the vocabulary names: the fill token, and the outline token for the frame and its marks.
  */
 export function standAppearance(state) {
   if (!Object.hasOwn(STAND_STATES, state)) throw new RangeError(`Unknown stand state: ${String(state)}`);
@@ -55,7 +50,7 @@ export function standAppearance(state) {
   const mark = image => (image === null ? null : { image, color: occColor(outline.token) });
   return {
     fill: fill.kind === 'none' ? null : { image: FILL_IMAGES[fill.kind], color: occColor(fill.token) },
-    frame: { image: FRAME_IMAGES[dash === null ? 'solid' : dash.join('-')], color: occColor(outline.token) },
+    frame: { image: standFrameImage(outline.width, dash), color: occColor(outline.token) },
     glyph: mark(GLYPHS[state].centre),
     badge: mark(GLYPHS[state].badge),
   };
@@ -109,7 +104,7 @@ const codeLayout = ({ size, offset = null, priority }) => ({
 const CODE_ANCHORS = Object.freeze(['top', 'bottom', 'left', 'right']);
 const CODE_SIZE_PX = 12;
 const CODE_GAP_PX = 7;
-// The stand square is 24 px of its 32 px images (mapImages.js), drawn at STAND_ICON_SIZE.
+// The stand square is 24 px at STAND_ICON_SIZE, and 24 px of the 32 px slab image (mapImages.js) the keep-out draws.
 const SQUARE_HALF_PX = 12;
 const SQUARE_SHARE = 24 / 32;
 // The marks ignore placement (every stand is always drawn), so a code would never see them. This invisible copy of

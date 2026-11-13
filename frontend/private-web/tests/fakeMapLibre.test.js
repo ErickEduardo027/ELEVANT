@@ -176,6 +176,39 @@ describe('fake MapLibre', () => {
     expect(map.featureStateOf('points', 9)).toBeUndefined();
   });
 
+  it('a restore without WebGL2 rebuilds the style and fires error, never webglcontextrestored, like MapLibre 6.16', () => {
+    const { fake, map } = newMap();
+    fake.state.emit(map, 'style.load');
+    const events = [];
+    for (const type of ['error', 'webglcontextrestored', 'style.load']) map.on(type, event => events.push([type, event.error]));
+    fake.state.loseContext(map);
+    fake.state.failContextRestore(map);
+    expect(events).toEqual([['error', expect.any(GPUInitializationError)]]);
+    expect(map.isStyleLoaded()).toBe(false);
+    // The rebuilt style still loads afterwards.
+    fake.state.emit(map, 'style.load');
+    expect(events.map(([type]) => type)).toEqual(['error', 'style.load']);
+    expect(map.layerIds()).toEqual(['land', 'dots']);
+  });
+
+  it('removeFeatureState refuses a key without a feature id and removes nothing, like MapLibre 6.16', () => {
+    const { fake, map } = newMap();
+    fake.state.emit(map, 'style.load');
+    map.setFeatureState({ source: 'points', id: 1 }, { hover: true, selected: true });
+    map.setFeatureState({ source: 'points', id: 2 }, { hover: true });
+    expect(() => map.removeFeatureState({ source: 'points' }, 'hover'))
+      .toThrow('A feature id is required to remove its specific state property.');
+    expect(map.featureStateOf('points', 1)).toEqual({ hover: true, selected: true });
+    expect(map.featureStateOf('points', 2)).toEqual({ hover: true });
+    // One key of a feature, a feature's whole state (an empty key counts as none) and every state of the source.
+    map.removeFeatureState({ source: 'points', id: 1 }, 'hover');
+    expect(map.featureStateOf('points', 1)).toEqual({ selected: true });
+    map.removeFeatureState({ source: 'points', id: 1 }, '');
+    expect(map.featureStateOf('points', 1)).toBeUndefined();
+    map.removeFeatureState({ source: 'points' });
+    expect(map.featureStateOf('points', 2)).toBeUndefined();
+  });
+
   it('constructor errors, the shared fake and its reset', () => {
     const failing = createFakeMapLibre({ constructorError: new GPUInitializationError() });
     failing.module.setWorkerUrl(SERVED_WORKER_URL);

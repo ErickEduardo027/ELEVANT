@@ -118,6 +118,55 @@ test.describe('map lab', () => {
     expect(await page.evaluate(() => document.createElement('canvas').getContext('webgl2') !== null)).toBe(true);
   });
 
+  test('a WebGL context that comes back without WebGL2 leaves the fallback for good', async ({ page, isolation }) => {
+    const map = await openLab(page, `scene=ramp-points&t=${NOON}`);
+    await labIdle(page);
+    expect(isolation.count('tilejson')).toBe(1);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    // The browser takes the WebGL context away, then gives it back but refuses the WebGL2 context MapLibre asks for
+    // again. MapLibre 6.16 has rebuilt its style by then, and fires `error` with a GPUInitializationError instead of
+    // webglcontextrestored.
+    await page.getByTestId('map-lab-map').locator('canvas.maplibregl-canvas').evaluate(node => new Promise(resolve => {
+      const lose = node.getContext('webgl2').getExtension('WEBGL_lose_context');
+      node.addEventListener('webglcontextlost', () => {
+        const original = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function getContext(type, ...rest) {
+          return /webgl/i.test(String(type)) ? null : original.call(this, type, ...rest);
+        };
+        // Once MapLibre has handled the loss, which allows the restore.
+        setTimeout(() => {
+          lose.restoreContext();
+          resolve();
+        });
+      }, { once: true });
+      lose.loseContext();
+    }));
+    await expect(map).toHaveAttribute('data-occ-engine', 'unavailable');
+    await expect(page.getByTestId('map-unavailable').getByRole('group', { name: 'Lista del mapa' }).getByRole('button'))
+      .toHaveCount(41);
+    await expect(page.getByRole('group', { name: 'Vista del mapa' })).toHaveCount(0);
+    // The engine removed the map at once, as MapLibre's constructor cleans up after the same error: no canvas or
+    // control is left under the fallback, and no live map.
+    await expect(page.locator('canvas.maplibregl-canvas')).toHaveCount(0);
+    await expect(page.locator('.maplibregl-ctrl')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__occMapLab.liveMaps())).toBe(0);
+    // Half a second of frames later the style MapLibre had rebuilt has not loaded (it would ask for the TileJSON again),
+    // no frame was drawn with the painter MapLibre lost (each one threw a TypeError) and the fallback is still there.
+    await page.evaluate(() => new Promise(resolve => {
+      const step = left => (left === 0 ? resolve() : requestAnimationFrame(() => step(left - 1)));
+      step(30);
+    }));
+    await expect(map).toHaveAttribute('data-occ-engine', 'unavailable');
+    expect(isolation.count('tilejson')).toBe(1);
+    expect(errors).toEqual([]);
+
+    // Leaving the screen has nothing left to remove.
+    await page.getByRole('link', { name: 'Escenas' }).click();
+    await expect(page.getByRole('list', { name: 'Escenas' })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test.describe('without reduced motion', () => {
     test.use({ reducedMotion: 'no-preference' });
 

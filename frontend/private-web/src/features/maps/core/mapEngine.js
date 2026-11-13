@@ -5,8 +5,10 @@ import { ensureWorkerUrl } from './workerUrl';
 // The only module of the OCC maps that constructs a MapLibre Map (design A2). Everything a screen draws is declared in
 // the style document (style/occStyle.js); the engine is the thin imperative shell around it:
 // - it owns its container, created inside the host, so a StrictMode double mount never reuses a div;
-// - only a throwing constructor is fatal (`unavailable`); the map is `ready` on `style.load`, because the airfield
-//   and the stands are own data and work without the base map, whose health is reported apart (`degraded` is a chip);
+// - only a throwing constructor, or a WebGL context that comes back without WebGL2, is fatal (`unavailable`, which is
+//   terminal: the map is gone and the screen shows its fallback); the map is `ready` on `style.load`, because the
+//   airfield and the stands are own data and work without the base map, whose health is reported apart (`degraded`
+//   is a chip);
 // - calls that need the style (data, feature state, visibility, zoom ranges, clusters, custom layers) wait until it
 //   has loaded and then run in the order they were made;
 // - after a WebGL context loss or a worker restart MapLibre 6.16 rebuilds the style with its data and images, but not
@@ -59,7 +61,9 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(id: string) => object|null} [options.imageResolver] images the style names (style/mapImages.js).
  * @param {object} [options.mapOptions] extra MapLibre options, applied last (the map lab passes `fadeDuration: 0`).
  * @param {(status: object) => void} [options.onStatus] `{ engine: 'starting'|'ready'|'unavailable', basemap:
- *   'off'|'loading'|'ok'|'degraded', reason: null|'webgl'|'error' }`, on every change.
+ *   'off'|'loading'|'ok'|'degraded', reason: null|'webgl'|'error' }`, on every change. `unavailable` comes with
+ *   `basemap: 'off'` and is the last status reported: the map never started, or the engine removed it when its WebGL
+ *   context came back without WebGL2.
  * @param {(camera: object, details: { byUser: boolean }) => void} [options.onCamera] after every move.
  * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
@@ -100,7 +104,10 @@ export function createMapEngine({
   const featureStates = new Map();
   const idleWaiters = new Set();
 
+  // Every status change goes through here, and `unavailable` is terminal: once a map could not start or lost WebGL for
+  // good, nothing changes the status again or brings back `ready`.
   function report(patch) {
+    if (status.engine === 'unavailable') return;
     const next = { ...status, ...patch };
     if (next.engine === status.engine && next.basemap === status.basemap && next.reason === status.reason) return;
     status = next;
@@ -110,7 +117,7 @@ export function createMapEngine({
   const live = () => map !== null && !destroyed;
 
   // Runs a call that needs the style now, or keeps it for when the style has loaded. `drop` settles a caller that
-  // waits for the call when the engine is destroyed first.
+  // waits for the call when the map goes first (destroyed or unavailable).
   function whenStyleReady(run, drop) {
     if (!live()) {
       drop?.();
@@ -141,6 +148,39 @@ export function createMapEngine({
     basemapTimer = null;
   }
 
+  // Settles every call that waits for the style and every wait for an idle frame as never happening, then removes the
+  // map. The engine's listeners go first, so nothing the map fires while it goes reaches the engine.
+  function releaseMap() {
+    const dropped = pending;
+    pending = [];
+    for (const { drop } of dropped) drop?.();
+    if (map === null) return;
+    const removed = map;
+    map = null;
+    liveEngines -= 1;
+    for (const waiter of idleWaiters) {
+      removed.off('idle', waiter.onIdle);
+      waiter.settle(false);
+    }
+    idleWaiters.clear();
+    for (const [type, handler] of listeners) removed.off(type, handler);
+    listeners.length = 0;
+    removed.remove();
+  }
+
+  // MapLibre 6.16 rebuilds the style before it creates its painter again. When the WebGL context comes back without
+  // WebGL2 it fires `error` with a GPUInitializationError instead of `webglcontextrestored`, and the rebuilt style would
+  // still load on a later frame and then render with the painter it lost, which throws on every frame. Such a map can
+  // never draw again: the engine reports it unavailable, as it reports a constructor without WebGL2, and removes it at
+  // once, as MapLibre's constructor cleans up after the same error. The rebuilt style never loads, no canvas or control
+  // is left under the screen's fallback, and later calls are dropped as after destroy().
+  function becomeUnavailable(reason) {
+    if (!live()) return;
+    clearBasemapTimer();
+    report({ engine: 'unavailable', basemap: 'off', reason });
+    releaseMap();
+  }
+
   function beforeIdFor(slot) {
     const next = nextSlot(slot);
     if (next === null) return undefined;
@@ -165,6 +205,8 @@ export function createMapEngine({
   }
 
   function markStyleReady({ restore }) {
+    // A style that loads once the map is gone (unavailable or destroyed) puts nothing back and runs nothing.
+    if (!live()) return;
     styleReady = true;
     if (restore) restoreRuntimeState();
     flushPending();
@@ -283,7 +325,7 @@ export function createMapEngine({
         clearBasemapTimer();
         report({ basemap: 'degraded' });
       } else if (isGpuError(maplibre, event?.error)) {
-        report({ engine: 'unavailable', reason: 'webgl' });
+        becomeUnavailable('webgl');
       } else {
         console.error(event?.error ?? event);
       }
@@ -330,7 +372,7 @@ export function createMapEngine({
   return {
     container,
 
-    /** The MapLibre map, or `null` when it could not start or after destroy(). */
+    /** The MapLibre map, or `null` when it could not start, once it is unavailable and after destroy(). */
     get map() {
       return live() ? map : null;
     },
@@ -383,11 +425,19 @@ export function createMapEngine({
       whenStyleReady(() => applyFeatureState(sourceId, id, state));
     },
 
-    /** Removes one key, a feature's whole state (no key) or every state of the source (no id). */
+    /**
+     * Removes one key of a feature's state (`id` and `key`), a feature's whole state (no `key`) or every state of the
+     * source (neither). A key without a feature id throws a TypeError and changes nothing: MapLibre refuses that
+     * combination and removes nothing, and what the engine remembers, which it puts back after a context loss, must
+     * stay what the map shows. As in MapLibre, an empty key counts as no key.
+     */
     removeFeatureState(sourceId, id, key) {
+      if (key && typeof id !== 'string' && typeof id !== 'number') {
+        throw new TypeError(`removeFeatureState needs a feature id to remove the key "${key}", as MapLibre does`);
+      }
       for (const [entryKey, entry] of featureStates) {
         if (entry.source !== sourceId || (id !== undefined && entryKey !== stateKey(sourceId, id))) continue;
-        if (key === undefined) featureStates.delete(entryKey);
+        if (!key) featureStates.delete(entryKey);
         else {
           const rest = { ...entry.state };
           delete rest[key];
@@ -532,21 +582,7 @@ export function createMapEngine({
       if (destroyed) return;
       destroyed = true;
       clearBasemapTimer();
-      const dropped = pending;
-      pending = [];
-      for (const { drop } of dropped) drop?.();
-      if (map !== null) {
-        for (const [type, handler] of listeners) map.off(type, handler);
-        listeners.length = 0;
-        for (const waiter of idleWaiters) {
-          map.off('idle', waiter.onIdle);
-          waiter.settle(false);
-        }
-        idleWaiters.clear();
-        map.remove();
-        map = null;
-        liveEngines -= 1;
-      }
+      releaseMap();
       customLayers.clear();
       featureStates.clear();
       container.remove();
