@@ -79,6 +79,33 @@ describe('fake MapLibre', () => {
     expect(fake.state.size).toEqual({ width: 1440, height: 900 });
   });
 
+  it('unproject is the inverse of project, and the canvas reports the size of the viewport', () => {
+    const { fake, map } = newMap();
+    const canvasSize = () => [map.getCanvas().clientWidth, map.getCanvas().clientHeight];
+    expect(canvasSize()).toEqual([1440, 900]);
+
+    const centre = map.unproject([720, 450]);
+    expect(centre).toBeInstanceOf(fake.module.LngLat);
+    expect(centre.lng).toBeCloseTo(-68.3634, 9);
+    expect(centre.lat).toBeCloseTo(18.5674, 9);
+    // A pixel comes back where it was, given as [x, y] or as a Point; the corners are those of getBounds.
+    for (const [x, y] of [[0, 0], [1440, 900], [312.5, 77]]) {
+      const point = map.project(map.unproject([x, y]));
+      expect(point.x).toBeCloseTo(x, 6);
+      expect(point.y).toBeCloseTo(y, 6);
+    }
+    const northWest = map.unproject({ x: 0, y: 0 });
+    expect(northWest.lng).toBeCloseTo(map.getBounds().getWest(), 9);
+    expect(northWest.lat).toBeCloseTo(map.getBounds().getNorth(), 9);
+    expect(() => map.unproject({ lng: -68.36, lat: 18.56 })).toThrow(TypeError);
+
+    fake.state.resize(map, { width: 720, height: 450 });
+    expect(canvasSize()).toEqual([720, 450]);
+    expect(map.unproject([360, 225]).lng).toBeCloseTo(-68.3634, 9);
+    fake.state.reset();
+    expect(canvasSize()).toEqual([1440, 900]);
+  });
+
   it('cameraForBounds counts the map padding unless absolutePadding, and answers nothing without room, like MapLibre', () => {
     const { fake, map } = newMap();
     const bounds = [[-68.4, 18.55], [-68.33, 18.59]];

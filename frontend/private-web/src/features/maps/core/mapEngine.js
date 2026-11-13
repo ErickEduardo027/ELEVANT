@@ -46,6 +46,9 @@ function cameraOptions(camera) {
 const isGpuError = (maplibre, error) =>
   typeof maplibre.GPUInitializationError === 'function' && error instanceof maplibre.GPUInitializationError;
 
+const normalizeInsets = insets =>
+  Object.fromEntries(INSET_SIDES.map(side => [side, Math.max(0, Number(insets?.[side]) || 0)]));
+
 const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
 
 /**
@@ -383,7 +386,7 @@ export function createMapEngine({
 
     /** Pixels covered by the page around the map: camera padding, and --occ-map-inset-* for the controls. */
     setInsets(insets) {
-      const next = Object.fromEntries(INSET_SIDES.map(side => [side, Math.max(0, Number(insets?.[side]) || 0)]));
+      const next = normalizeInsets(insets);
       for (const side of INSET_SIDES) container.style.setProperty(`--occ-map-inset-${side}`, `${next[side]}px`);
       if (live()) map.setPadding(next);
     },
@@ -503,6 +506,31 @@ export function createMapEngine({
       if (!live()) return null;
       const bounds = map.getBounds();
       return [[bounds.getWest(), bounds.getSouth()], [bounds.getEast(), bounds.getNorth()]];
+    },
+
+    /**
+     * What the map shows in the area that `insets` (`{ top, right, bottom, left }` in px, as setInsets takes them)
+     * leave in sight: the box around the corners of that free rectangle, `[[west, south], [east, north]]`, or `null`
+     * without a map or when the insets leave no room. The page's panels hide what lies under them. It never reaches
+     * past getBounds(), which stops at the horizon of a tilted map, where unproject has no ground to answer.
+     */
+    getVisibleBounds(insets) {
+      if (!live()) return null;
+      const { top, right, bottom, left } = normalizeInsets(insets);
+      const canvas = map.getCanvas();
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (!(width - left - right > 0) || !(height - top - bottom > 0)) return null;
+      const corners = [[left, top], [width - right, top], [width - right, height - bottom], [left, height - bottom]]
+        .map(point => map.unproject(point));
+      const lngs = corners.map(corner => corner.lng);
+      const lats = corners.map(corner => corner.lat);
+      if (![...lngs, ...lats].every(Number.isFinite)) return null;
+      const whole = map.getBounds();
+      return [
+        [Math.max(Math.min(...lngs), whole.getWest()), Math.max(Math.min(...lats), whole.getSouth())],
+        [Math.min(Math.max(...lngs), whole.getEast()), Math.min(Math.max(...lats), whole.getNorth())],
+      ];
     },
 
     /** The top feature of a pickable layer under `point`: `{ kind, id, feature }` from `occ:pick` / `occ:pickId`. */

@@ -289,12 +289,12 @@ const OccMap = forwardRef(function OccMap({
   // Resolves true once the map has drawn a frame with nothing left to load or move, false without a map.
   const whenIdle = useCallback(() => engineRef.current?.whenIdle() ?? Promise.resolve(false), []);
 
-  // The stands drawn one by one inside the visible bounds, and whether stands there are drawn as clusters instead (the
-  // legend explains only what is drawn). They change only when the camera, the thresholds or the stands do; the same
-  // list keeps its identity.
+  // The stands drawn one by one in the area the insets leave in sight (the page's panels hide what lies under them), and
+  // whether stands there are drawn as clusters instead: the legend explains only what is on screen (contracts 2.4).
+  // They change only when the camera, the insets, the thresholds or the stands do; the same list keeps its identity.
   const updateStandsOnScreen = useCallback(() => {
     const engine = engineRef.current;
-    const bounds = engine?.getBounds() ?? null;
+    const bounds = engine?.getVisibleBounds(latest.current.padding) ?? null;
     const inView = bounds === null ? EMPTY : standsInView(latest.current.stands, bounds);
     const { standLabels } = appliedRef.current;
     const display = standDisplayAt(engine?.getCamera()?.zoom, store.get().thresholds, { labels: standLabels ?? 'default' });
@@ -451,14 +451,15 @@ const OccMap = forwardRef(function OccMap({
     applyView(urlView, { terminal: urlTerminal });
   }, [urlView, urlTerminal, applyView]);
 
-  // The insets: camera padding and control positions, and new fits and thresholds.
+  // The insets: camera padding and control positions, new fits and thresholds, and what is left on screen.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || appliedRef.current.padding === padding) return;
     appliedRef.current.padding = padding;
     engine.setInsets(padding);
     refit();
-  }, [padding, refit]);
+    updateStandsOnScreen();
+  }, [padding, refit, updateStandsOnScreen]);
 
   // New stands may change what frames the views and what is on screen.
   useEffect(() => {

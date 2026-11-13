@@ -136,13 +136,33 @@ const standCodeOfFlight = flight => {
 };
 
 const flightTime = flight => Date.parse(flight.actualAt ?? flight.estimatedAt ?? flight.scheduledAt ?? '') || Infinity;
-const FINISHED_PHASES = new Set(['departed', 'cancelled', 'diverted']);
+
+// A visit is judged whole (its legs share one visitKey): an arrival keeps `arrived` or `landed` after its aircraft has
+// gone, and the stand assignment stays open after the PUSHBACK (contracts 1.2), so a single leg cannot tell. A visit
+// stops counting on its stand (contracts 2.4) once its PUSHBACK is recorded, once a leg has departed or diverted, when
+// its arrival is cancelled (the aircraft is not coming), and, for a demo flight, once the server's timeline has taken
+// the aircraft off the stand (contracts 1.1: TaxiOut, Departed and Gone, the phase of a cancelled demo as well). A
+// cancelled departure alone leaves the aircraft where it is: that visit still counts, through its arrival.
+const LEFT_PHASES = new Set(['departed', 'diverted']);
+const DEMO_OFF_STAND_PHASES = new Set(['TaxiOut', 'Departed', 'Gone']);
+
+const visitOf = flight => flight.visitKey ?? flight;
+const pushedBack = flight => Array.isArray(flight.milestones)
+  && flight.milestones.some(milestone => milestone?.code === 'PUSHBACK' && milestone.actualAt != null);
+
+function endsItsVisit(flight) {
+  return LEFT_PHASES.has(flight.phase)
+    || (flight.phase === 'cancelled' && flight.direction !== 'Departure')
+    || pushedBack(flight)
+    || DEMO_OFF_STAND_PHASES.has(flight.demo?.phase);
+}
 
 /**
  * What a selection marks as related (contracts 2.1), kept minimal in M2: the second argument is `{ flights, stands }`
  * and only the map flights are read until the stands carry their visits (PR M4). A flight relates its stand (the
- * assigned one, or the suggestion of a demo flight not yet imported); a stand relates its current or next flight,
- * the earliest one on it that has not left. `{ standCode, flightKey }`, each `null` when there is none.
+ * assigned one, or the suggestion of a demo flight not yet imported); a stand relates its current or next flight:
+ * the earliest leg on it of a visit that still counts there (never a cancelled leg). `{ standCode, flightKey }`, each
+ * `null` when there is none.
  */
 export function relatedEntities(selection, { flights = [] } = {}) {
   if (selection?.kind === 'flight') {
@@ -151,8 +171,11 @@ export function relatedEntities(selection, { flights = [] } = {}) {
   }
   if (selection?.kind === 'stand') {
     const code = normalizeId('stand', selection.id);
-    const next = (flights ?? [])
-      .filter(flight => flight != null && standCodeOfFlight(flight) === code && !FINISHED_PHASES.has(flight.phase))
+    if (code === null) return { standCode: null, flightKey: null };
+    const legs = (Array.isArray(flights) ? flights : []).filter(flight => flight != null);
+    const ended = new Set(legs.filter(endsItsVisit).map(visitOf));
+    const next = legs
+      .filter(flight => standCodeOfFlight(flight) === code && flight.phase !== 'cancelled' && !ended.has(visitOf(flight)))
       .sort((first, second) => flightTime(first) - flightTime(second))[0];
     return { standCode: code, flightKey: next?.flightKey ?? null };
   }

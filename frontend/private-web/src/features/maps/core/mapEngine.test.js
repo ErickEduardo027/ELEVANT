@@ -697,6 +697,50 @@ describe('map engine', () => {
     expect(onResize).toHaveBeenCalledOnce();
   });
 
+  it('getVisibleBounds is the part of the map the insets leave in sight, never more than getBounds', () => {
+    const { engine, fake, map, state } = ready(setup({ camera: { center: [-68.3634, 18.5674], zoom: 15 } }));
+    const [[west, south], [east, north]] = engine.getBounds();
+    const expectBox = (box, expected) => box.flat().forEach((value, index) => expect(value).toBeCloseTo(expected.flat()[index], 9));
+
+    // No insets, or insets that are not lengths: the whole map.
+    expectBox(engine.getVisibleBounds(), [[west, south], [east, north]]);
+    expectBox(engine.getVisibleBounds({ top: -4, right: 'wide', bottom: null }), [[west, south], [east, north]]);
+
+    // Panels on three sides of the 1440 × 900 map: the box of the rectangle between them.
+    const insets = { top: 56, right: 320, bottom: 48, left: 0 };
+    const visible = engine.getVisibleBounds(insets);
+    expect(visible[0][0]).toBeCloseTo(west, 9);
+    expect(map.project([visible[1][0], 18.5674]).x).toBeCloseTo(1440 - 320, 6);
+    expect(map.project([-68.3634, visible[1][1]]).y).toBeCloseTo(56, 6);
+    expect(map.project([-68.3634, visible[0][1]]).y).toBeCloseTo(900 - 48, 6);
+    // What lies under the right panel is not in sight; what is next to it is.
+    const underPanel = map.unproject([1300, 450]);
+    const beside = map.unproject([1100, 450]);
+    expect(underPanel.lng > visible[1][0] && underPanel.lng < east).toBe(true);
+    expect(beside.lng < visible[1][0]).toBe(true);
+    // The insets are read as setInsets reads them and do not move the camera.
+    expect(map.cameraCalls).toEqual([]);
+
+    // Insets that cover the map, or a map without a size, leave nothing in sight.
+    expect(engine.getVisibleBounds({ left: 800, right: 700 })).toBeNull();
+    expect(engine.getVisibleBounds({ top: 450, bottom: 450 })).toBeNull();
+    state.resize(map, { width: 0 });
+    expect(engine.getVisibleBounds()).toBeNull();
+    state.resize(map, { width: 1440 });
+
+    // Tilted, a corner above the horizon has no ground: unproject answers a point far away, and the box stops at
+    // getBounds, which MapLibre cuts at the horizon.
+    const ground = map.unproject.bind(map);
+    vi.spyOn(map, 'unproject').mockImplementation(point => (point[1] < 100 ? new fake.module.LngLat(-60, 40) : ground(point)));
+    const tilted = engine.getVisibleBounds({ top: 10 });
+    expect(tilted[1][0]).toBeCloseTo(east, 9);
+    expect(tilted[1][1]).toBeCloseTo(north, 9);
+    expect(tilted[0][0]).toBeCloseTo(west, 9);
+
+    engine.destroy();
+    expect(engine.getVisibleBounds(insets)).toBeNull();
+  });
+
   it('setAttribution replaces the attribution and keeps it in the corner, closed', () => {
     const { engine, map } = setup({ attribution: 'OCC' });
     engine.setAttribution('OCC · Datos de aeronaves: adsb.fi');

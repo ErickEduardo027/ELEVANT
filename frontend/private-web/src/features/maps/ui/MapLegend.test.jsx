@@ -5,7 +5,7 @@ import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import OccMap from '../core/OccMap';
-import { createMapStands } from '../testing/mapFixtures';
+import { createMapStands, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -109,6 +109,31 @@ describe('MapLegend', () => {
     // Up close on A1 to A3, the stands OCC placed: their states and no «No oficial».
     act(() => map.jumpTo({ center: [-68.360889, 18.56418], zoom: 19.4 }));
     expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada']);
+  });
+
+  it('leaves out what the panels over its map hide', () => {
+    const screenWith = insets => (
+      <OccMap stands={STANDS} insets={insets}>
+        <MapLegend />
+      </OccMap>
+    );
+    const { rerender } = render(screenWith(undefined));
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    // Up close on A2: A1 (occupied) on its right, A3 (planned) and A4 (at its reference location) on its left.
+    act(() => map.jumpTo({ center: standPoint('A2'), zoom: 18 }));
+    const unofficial = `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`;
+    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', unofficial]);
+
+    // A panel over the right of the map hides A1, the only occupied stand: «Ocupada» leaves the legend.
+    rerender(screenWith({ top: 0, right: 540, bottom: 0, left: 0 }));
+    expect(legendItems()).toEqual(['Libre', 'Planificada', unofficial]);
+    // One over the left hides A4, the only stand at its reference location: «No oficial» goes with it.
+    rerender(screenWith({ left: 300 }));
+    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada']);
+    // Folded, the whole map is back.
+    rerender(screenWith(undefined));
+    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', unofficial]);
   });
 
   it('explains clusters in the airfield view and has nothing to explain where the stands are not drawn', () => {

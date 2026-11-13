@@ -132,14 +132,62 @@ describe('map selection in the URL', () => {
     // A demo flight not yet imported relates its suggested stand.
     expect(relatedEntities({ kind: 'flight', id: 'p:prop-arr' }, { flights: FLIGHTS }))
       .toEqual({ standCode: 'A5', flightKey: 'p:prop-arr' });
-    // The arrival on B21 has arrived, not left: it is the current flight of the stand.
+    // The arrival on B21 has arrived and its departure is still to come: it is the current flight of the stand.
     expect(relatedEntities({ kind: 'stand', id: 'b021' }, { flights: FLIGHTS, stands: [] }))
       .toEqual({ standCode: 'B21', flightKey: 'l:leg-arr' });
-    const departed = FLIGHTS.map(flight => (flight.flightKey === 'l:leg-arr' ? { ...flight, phase: 'departed' } : flight));
-    expect(relatedEntities({ kind: 'stand', id: 'B21' }, { flights: departed }).flightKey).toBe('l:leg-dep');
     expect(relatedEntities({ kind: 'stand', id: 'A5' }, { flights: FLIGHTS }).flightKey).toBe('p:prop-arr');
     expect(relatedEntities({ kind: 'stand', id: 'B30' }, { flights: FLIGHTS })).toEqual({ standCode: 'B30', flightKey: null });
     expect(relatedEntities({ kind: 'aircraft', id: 'a1b2c3' }, { flights: FLIGHTS })).toEqual({ standCode: null, flightKey: null });
+    expect(relatedEntities({ kind: 'stand', id: '  ' }, { flights: FLIGHTS })).toEqual({ standCode: null, flightKey: null });
     expect(relatedEntities(null)).toEqual({ standCode: null, flightKey: null });
+  });
+
+  it('a stand never relates a visit whose aircraft has left it or is not coming, judged by the whole visit', () => {
+    // B21 over a day, as the API sends it (contracts 1.3): visit 1 came at 10:02 and its departure took off at 11:41,
+    // and its arrival keeps the phase `arrived` (an arrival never takes `departed`); visit 2 is due at 13:05. The open
+    // assignment puts both visits on the stand (contracts 1.2).
+    const stand = { id: 'stand-b21', code: 'B21', terminalCode: 'B' };
+    const leg = (flightKey, visitKey, direction, phase, scheduledAt, extra = {}) => ({
+      flightKey, visitKey, direction, phase, scheduledAt, estimatedAt: null, actualAt: null, stand, milestones: [], ...extra,
+    });
+    const visitOne = (arrival = {}, departure = {}) => [
+      leg('l:v1-arr', 't:v1', 'Arrival', 'arrived', '2026-11-12T10:00:00Z', { actualAt: '2026-11-12T10:02:00Z', ...arrival }),
+      leg('l:v1-dep', 't:v1', 'Departure', 'scheduled', '2026-11-12T11:30:00Z', departure),
+    ];
+    const visitTwo = [
+      leg('l:v2-arr', 't:v2', 'Arrival', 'scheduled', '2026-11-12T13:05:00Z'),
+      leg('l:v2-dep', 't:v2', 'Departure', 'scheduled', '2026-11-12T14:20:00Z'),
+    ];
+    const related = flights => relatedEntities({ kind: 'stand', id: 'B21' }, { flights }).flightKey;
+    const blockOn = { code: 'BLOCK_ON', actualAt: '2026-11-12T10:04:00Z' };
+    const pushback = { code: 'PUSHBACK', actualAt: '2026-11-12T11:33:00Z' };
+
+    // Visit 1 on the stand, its departure to come: it is the current flight, ahead of visit 2.
+    expect(related([...visitOne({ milestones: [blockOn] }, { milestones: [blockOn] }), ...visitTwo])).toBe('l:v1-arr');
+    // Its departure took off: its arrival, still `arrived`, no longer counts; the next visit does.
+    expect(related([...visitOne({}, { phase: 'departed', actualAt: '2026-11-12T11:41:00Z' }), ...visitTwo])).toBe('l:v2-arr');
+    // The tablet recorded the PUSHBACK and the provider has not said `departed` yet: it left all the same.
+    const pushedBack = { milestones: [blockOn, pushback] };
+    expect(related([...visitOne(pushedBack, pushedBack), ...visitTwo])).toBe('l:v2-arr');
+    // An arrival that is cancelled or diverted is not coming: neither leg of its visit counts.
+    expect(related([...visitOne({ phase: 'cancelled', actualAt: null }), ...visitTwo])).toBe('l:v2-arr');
+    expect(related([...visitOne({ phase: 'diverted', actualAt: null }), ...visitTwo])).toBe('l:v2-arr');
+    // A cancelled departure alone leaves the aircraft on the stand: the visit counts, through its arrival.
+    expect(related([...visitOne({}, { phase: 'cancelled' }), ...visitTwo])).toBe('l:v1-arr');
+    // Nothing left on the stand.
+    expect(related(visitOne({}, { phase: 'departed' }))).toBeNull();
+    expect(related([])).toBeNull();
+
+    // A demo visit follows the server's timeline (contracts 1.1): it leaves the stand at TaxiOut, while its departure
+    // is still `scheduled` (the read-time phase turns `departed` at the take-off); a cancelled demo is Gone.
+    const [demoArrival, demoDeparture] = FLIGHTS;
+    const demoVisit = (phase, { state = 'Active', arrival = { phase: 'landed', actualAt: '2026-11-12T15:02:00Z' } } = {}) => [
+      { ...demoArrival, ...arrival, demo: { demoFlightId: 'demo-1', state, phase } },
+      { ...demoDeparture, demo: { demoFlightId: 'demo-1', state, phase } },
+    ];
+    const relatedA5 = flights => relatedEntities({ kind: 'stand', id: 'A5' }, { flights }).flightKey;
+    expect(relatedA5(demoVisit('Parked'))).toBe('p:prop-arr');
+    expect(relatedA5(demoVisit('TaxiOut'))).toBeNull();
+    expect(relatedA5(demoVisit('Gone', { state: 'Cancelled', arrival: { phase: 'cancelled' } }))).toBeNull();
   });
 });

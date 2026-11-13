@@ -277,6 +277,12 @@ function createModule(state) {
       this.canvasContainer.className = 'maplibregl-canvas-container';
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'maplibregl-canvas';
+      // MapLibre gives its canvas the CSS size of the viewport: the fake's canvas reports the fake viewport, as a laid
+      // out canvas does (jsdom lays nothing out).
+      Object.defineProperties(this.canvas, {
+        clientWidth: { configurable: true, get: () => state.size.width },
+        clientHeight: { configurable: true, get: () => state.size.height },
+      });
       this.canvasContainer.append(this.canvas);
       this.controlContainer = document.createElement('div');
       this.controlContainer.className = 'maplibregl-control-container';
@@ -637,12 +643,23 @@ function createModule(state) {
       return this.camera.pitch;
     }
 
-    // Web Mercator around the current centre, in pixels of the fake viewport.
+    // Web Mercator around the current centre, in pixels of the fake viewport. Pitch, bearing and padding are ignored:
+    // the centre is always the middle of the viewport (MapLibre puts it in the middle of the padded area).
     project(lngLat) {
       const scale = TILE_SIZE * 2 ** this.camera.zoom;
       const centre = worldPixels(this.camera.center, scale);
       const point = worldPixels(FakeLngLat.convert(lngLat), scale);
       return { x: point.x - centre.x + state.size.width / 2, y: point.y - centre.y + state.size.height / 2 };
+    }
+
+    // The inverse of project: a pixel of the fake viewport (a Point or [x, y], as MapLibre takes it) back to a LngLat.
+    unproject(point) {
+      const [x, y] = Array.isArray(point) ? point : [point?.x, point?.y];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new TypeError(`Not a PointLike: ${JSON.stringify(point)}`);
+      const scale = TILE_SIZE * 2 ** this.camera.zoom;
+      const centre = worldPixels(this.camera.center, scale);
+      const [lng, lat] = lngLatAt(centre.x + x - state.size.width / 2, centre.y + y - state.size.height / 2, scale);
+      return new FakeLngLat(lng, lat);
     }
 
     // The rectangle of the fake viewport around the centre, in Web Mercator; pitch and bearing are ignored.

@@ -406,6 +406,25 @@ describe('OccMap', () => {
     expect(map.cameraCalls.at(-1).options.padding).toEqual({ ...insets, right: 0 });
   });
 
+  it('counts on screen only the stands the insets leave in sight, again whenever the insets change', () => {
+    const { map, rerender } = renderMap();
+    loadStyle(map);
+    // Up close on A2 (a 1440 × 900 map at zoom 18): A1 at x ≈ 948, A3 at x ≈ 471 and A4 at x ≈ 213.
+    act(() => map.jumpTo({ center: standPoint('A2'), zoom: 18 }));
+    expect(probe().onScreen).toEqual(['A1', 'A2', 'A3', 'A4']);
+
+    // A panel 540 px wide over the right of the map hides A1, and the camera stays where it was.
+    rerender({ insets: { top: 56, right: 540, bottom: 0, left: 0 } });
+    expect(probe().onScreen).toEqual(['A2', 'A3', 'A4']);
+    expect(map.getCenter().toArray()).toEqual(standPoint('A2'));
+    expect(map.getZoom()).toBe(18);
+    // Panels that cover the whole map leave nothing on screen; folded, every stand is back.
+    rerender({ insets: { left: 720, right: 720 } });
+    expect(probe().onScreen).toEqual([]);
+    rerender({ insets: undefined });
+    expect(probe().onScreen).toEqual(['A1', 'A2', 'A3', 'A4']);
+  });
+
   it('draws the selection in the selection slot with the accent colour', () => {
     const { map, rerender } = renderMap({ selection: { kind: 'stand', id: 'a05' } });
     loadStyle(map);

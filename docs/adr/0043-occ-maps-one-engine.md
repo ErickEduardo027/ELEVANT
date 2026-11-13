@@ -117,7 +117,10 @@ Decisiones de Erick del 12 de noviembre de 2026 que este ADR aplica:
   | `focus` | `map` (el mapa maximizado) |
 
 - Una selección a la vez. Una URL escrita a mano con varias claves se lee como la primera de vuelo, posición y avión, y un valor fuera del contrato se lee como nada. Los dos tramos de una visita llevan a la llegada. Hasta que A1 traiga `normalizeStandCode`, los códigos pasan por `mapStandCode`.
-- `relatedEntities` queda mínima: un vuelo marca su posición (la asignada, o la sugerida de un vuelo demo sin importar), y una posición marca su vuelo actual o el siguiente. Lee los vuelos del mapa; las posiciones traerán sus visitas con M4.
+- `relatedEntities` queda mínima y lee los vuelos del mapa (las posiciones traerán sus visitas con M4):
+  - un vuelo marca su posición: la asignada, o la sugerida de un vuelo demo sin importar;
+  - una posición marca su vuelo actual o el siguiente: la primera pierna, por hora, de una visita que sigue contando en ella. La visita se juzga entera, por su `visitKey`, porque una llegada sigue en `arrived` o `landed` cuando el avión ya se fue y la asignación sigue abierta después del PUSHBACK;
+  - una visita deja de contar cuando se registra su PUSHBACK, cuando una de sus piernas despegó o se desvió, cuando se cancela su llegada y, en un vuelo demo, desde que el reloj del servidor saca el avión de la posición (`TaxiOut`, `Departed` o `Gone`). Una salida cancelada sola deja el avión donde está: la visita sigue contando por su llegada.
 - En M2, `OccMap` lee `view` y `terminal`, y escribe `view` cuando una persona elige una vista en el selector, que tiene las cuatro; la vista de una terminal se abre por ahora desde la URL. El laboratorio escribe la selección. Mapa de posiciones y Monitoreo siguen pasando al mapa su propia selección, hasta que U3 y U5 los lleven al almacén.
 - Teclas: el manejador de `occ-ui/occShortcuts.js` escucha `keydown` en la raíz del mapa, en fase de burbuja, nunca en `document`. M2 conecta `1` a `4`, las vistas, que no responden sin motor, y `Esc`, que limpia la selección cuando la hay. `D`, `S` y `L` siguen en la tabla, y las conectan los PR que traen el menú de capas (M5), el seguimiento (M6) y el 3D (M7).
 - `Esc` cierra primero el cajón o el diálogo abierto y solo después limpia la selección:
@@ -147,7 +150,7 @@ Decisiones de Erick del 12 de noviembre de 2026 que este ADR aplica:
 
 **9. Una leyenda de lo que hay en pantalla.**
 - `ui/MapLegend.jsx`, con `ui/legendEntries.js`, lista solo lo que hay en pantalla:
-  - los estados de las posiciones dibujadas una a una dentro de la vista, en el orden del vocabulario;
+  - los estados de las posiciones dibujadas una a una en la parte del mapa que dejan a la vista los paneles (`insets`): lo que tapan no cuenta, y la leyenda cambia cuando un panel se abre o se pliega. Van en el orden del vocabulario;
   - «No oficial», cuando una de ellas no la ubicó OCC y está en su ubicación de referencia interna;
   - qué es un grupo, cuando las posiciones en pantalla se agrupan.
 - Cada muestra dibuja la posición como la dibuja el mapa (relleno, contorno, trazo y el símbolo de dentro), así «Ocupada», «Llegando» y «Por liberar» se distinguen sin color.
