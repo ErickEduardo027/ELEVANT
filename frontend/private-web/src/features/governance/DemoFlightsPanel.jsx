@@ -41,8 +41,6 @@ const RANDOM_STAND = 'random';
 const NO_STAND = 'none';
 /** The fields of the form that change which stands are eligible: the aircraft's size and the window of the visit. */
 const WINDOW_FIELDS = new Set(['aircraftTypeId', 'minutes', 'groundMinutes']);
-/** «Crear cobertura»: OCC's «Cobertura de posiciones» (`app/admin-occ/position-coverage`), in another tab. */
-const COVERAGE_PATH = '/admin-occ/position-coverage';
 /**
  * The options change with the time: the warnings (crosses_local_midnight comes once the longest arrival would park after
  * midnight), today's airlines and the free stands. Once they are this old, the next read of the list reads them again.
@@ -75,6 +73,21 @@ function windowOf({ aircraftTypeId, minutes, groundMinutes }, limits) {
   if (!aircraftTypeId || !within(minutesToOnBlock, limits.minMinutesToOnBlock, limits.maxMinutesToOnBlock) ||
       !within(ground, limits.minGroundMinutes, limits.maxGroundMinutes)) return null;
   return { aircraftTypeId, minutesToOnBlock, groundMinutes: ground };
+}
+
+/** The aircraft type the form sends until one is chosen: the first narrow-body, otherwise the first type. */
+const defaultAircraftType = aircraftTypes => aircraftTypes.find(type => type.sizeCategory === 'Narrowbody') ?? aircraftTypes[0];
+
+/**
+ * The window the first read of a station must be evaluated for: the form's default type when it is a wide-body (the
+ * station has no narrow-body), with the default minutes. Null otherwise: the server's defaults evaluate any size, which
+ * admits a narrow-body or a type of unknown size at every stand.
+ */
+function defaultSizedWindow({ aircraftTypes, limits }) {
+  const type = defaultAircraftType(aircraftTypes);
+  if (type?.sizeCategory !== 'Widebody') return null;
+  return windowOf({ aircraftTypeId: type.id, minutes: String(limits.defaultMinutesToOnBlock),
+    groundMinutes: String(limits.defaultGroundMinutes) }, limits);
 }
 
 /** Who covers an eligible stand when the aircraft parks, by name, and how many of them OCC may assign when not all. */
@@ -172,7 +185,7 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
     : (airports.find(airport => airport.iataCode === PREFERRED_ORIGIN) ?? airports[0])?.iataCode ?? '';
   const destinationIata = airports.some(airport => airport.iataCode === draft.destinationIata) ? draft.destinationIata : '';
   const aircraftTypeId = aircraftTypes.some(type => type.id === draft.aircraftTypeId) ? draft.aircraftTypeId
-    : (aircraftTypes.find(type => type.sizeCategory === 'Narrowbody') ?? aircraftTypes[0])?.id ?? '';
+    : defaultAircraftType(aircraftTypes)?.id ?? '';
   // «Sin posición» is always there; a stand only while it is eligible; otherwise «Al azar» while there is one to draw.
   const stand = draft.stand === NO_STAND ? NO_STAND
     : stands.some(item => item.eligible && item.standId === draft.stand) ? draft.stand
@@ -222,9 +235,9 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
           <button type="button" disabled={busy || blockers.length > 0} onClick={() => send(NO_STAND)}
             className={secondaryButton}>Disparar sin posición</button>
-          <a href={COVERAGE_PATH} target="_blank" rel="noopener noreferrer" aria-describedby={`${id}-coverage`}
-            className="text-xs font-semibold text-accent-600 underline underline-offset-2">Crear cobertura</a>
-          <span id={`${id}-coverage`} className={`text-xs ${muted}`}>Se abre en el OCC, en otra pestaña.</span>
+          {/* An instruction, not a link: «Cobertura de posiciones» only opens for an OCC account, never for this one. */}
+          <p className="text-xs"><span className="font-semibold">Crear cobertura:</span> lo hace OCC en «Cobertura de
+            posiciones», con una cuenta de OCC (por ejemplo, en otro navegador o en una ventana privada).</p>
         </div>
       </div>
     );
@@ -321,6 +334,21 @@ const sameStands = (left, right) => left.terminals === right.terminals && left.s
   left.missingStands.join(',') === right.missingStands.join(',');
 
 /**
+ * The notice of a load, from the station before it (`before`) and the load's answer: all loaded, some of it loaded, or
+ * nothing when the load created nothing (the card's warning then says what is missing and why).
+ */
+function loadNotice(before, answer) {
+  if (answer.complete) return 'Se cargaron las posiciones de Punta Cana.';
+  const created = answer.stands - before.stands;
+  if (created > 0) {
+    return `Se ${created === 1 ? 'cargó 1 posición' : `cargaron ${created} posiciones`} de Punta Cana; no se pudieron ` +
+      'cargar todas.';
+  }
+  return answer.terminals > before.terminals
+    ? 'Se cargaron las terminales de Punta Cana que faltaban; no se pudieron cargar las posiciones.' : '';
+}
+
+/**
  * What a load could not create: the catalogue's stands that are still missing once «Cargar posiciones» answered this
  * same state, because their terminal or the stand itself is inactive (the command never reactivates a row).
  */
@@ -353,13 +381,14 @@ function PuntaCanaStandsCard({ layout, onLoaded, onStale }) {
   }, []);
 
   async function loadStands() {
-    const { stationId } = layout;
+    const before = layout;
+    const { stationId } = before;
     setLoad(current => ({ ...current, busy: true, error: '', notice: '' }));
     try {
       const answer = await keys.current.run('demo-station.prepare', { stationId }, key => prepareDemoStation(stationId, key));
       if (!shown.current) return;
       await onLoaded(answer);
-      setLoad({ busy: false, error: '', notice: 'Se cargaron las posiciones de Punta Cana.', answer });
+      setLoad({ busy: false, error: '', notice: loadNotice(before, answer), answer });
     } catch (failure) {
       if (!shown.current) return;
       // The station changed (409) or is gone (404): the options are read before the message shows.
@@ -499,6 +528,17 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
         : { status: 'error', data: null, error, offset: 0, stale: false, version: current.version + 1 }));
     }
   }, []);
+
+  // A station whose default aircraft type is a wide-body: its stands are read once more for it, so that the form never
+  // offers as eligible a stand the server refuses for the type it sends. A window the form chose stays.
+  useEffect(() => {
+    const data = options.data;
+    if (!data?.stationId || formWindow.current) return;
+    const sized = defaultSizedWindow(data);
+    if (!sized) return;
+    formWindow.current = sized;
+    void readOptions(data.stationId);
+  }, [options.data, readOptions]);
 
   const refreshAll = useCallback(station => Promise.all([readOptions(station), readList(station)]), [readOptions, readList]);
 

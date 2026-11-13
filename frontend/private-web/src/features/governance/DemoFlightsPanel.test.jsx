@@ -122,7 +122,7 @@ const standsCard = () => screen.findByRole('region', { name: 'Posiciones de Punt
 const standField = () => within(form()).getByLabelText('Posición');
 /** The options of the field «Posición»: their text and whether they can be chosen. */
 const offered = () => within(standField()).getAllByRole('option').map(option => [option.textContent, !option.disabled]);
-/** The tab goes to the background and comes back, as when OCC opens in another tab and the superadministrator returns. */
+/** The tab goes to the background and comes back, as when OCC works in another window and the superadministrator returns. */
 async function leaveAndReturn() {
   let visibility = 'hidden';
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
@@ -483,6 +483,10 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       'están desactivadas: OCC puede activarlas en «Datos maestros».')).toBeInTheDocument();
     expect(card).toHaveTextContent('Terminales: 2 de 3 · Posiciones: 33 de 41 · Ubicadas en el mapa: 33 de 35');
     expect(card).toHaveTextContent(outside);
+    // Some of it was loaded, not all of it.
+    expect(within(card).getByRole('status'))
+      .toHaveTextContent('Se cargaron 31 posiciones de Punta Cana; no se pudieron cargar todas.');
+    expect(card).not.toHaveTextContent('Se cargaron las posiciones de Punta Cana.');
     // Pressing it again would create nothing.
     expect(within(card).queryByRole('button', { name: 'Cargar posiciones' })).not.toBeInTheDocument();
 
@@ -491,6 +495,19 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     await leaveAndReturn();
     expect(await within(card).findByRole('button', { name: 'Cargar posiciones' })).toBeEnabled();
     expect(card).not.toHaveTextContent('Faltan');
+  });
+
+  it('says nothing was loaded when the load created nothing', async () => {
+    // The page was reloaded with the FBO terminal still inactive: the button is back, and the load creates nothing.
+    loadDemoFlightOptions.mockResolvedValue(options({ layout: FBO_INACTIVE }));
+    prepareDemoStation.mockResolvedValueOnce(FBO_INACTIVE);
+    renderPanel();
+    const card = await standsCard();
+    await userEvent.click(within(card).getByRole('button', { name: 'Cargar posiciones' }));
+    expect(await within(card).findByText(/^Faltan: BN6, BN7/)).toBeInTheDocument();
+    expect(within(card).queryByRole('status')).not.toBeInTheDocument();
+    expect(card).not.toHaveTextContent('Se cargaron');
+    expect(within(card).queryByRole('button', { name: 'Cargar posiciones' })).not.toBeInTheDocument();
   });
 
   it('explains a refused load by its code and never the server title', async () => {
@@ -649,19 +666,17 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     renderPanel();
     const warning = (await screen.findByText(NO_ELIGIBLE_WARNING)).closest('div');
     expect(within(warning).getByRole('button', { name: 'Disparar sin posición' })).toBeEnabled();
-    const coverage = within(warning).getByRole('link', { name: 'Crear cobertura' });
-    // OCC's «Cobertura de posiciones», in another tab.
-    expect(coverage).toHaveAttribute('href', '/admin-occ/position-coverage');
+    // «Cobertura de posiciones» only opens for an OCC account: the warning says so instead of linking to it.
+    expect(within(warning).queryByRole('link')).not.toBeInTheDocument();
+    expect(warning).toHaveTextContent('Crear cobertura: lo hace OCC en «Cobertura de posiciones», con una cuenta de OCC ' +
+      '(por ejemplo, en otro navegador o en una ventana privada).');
     expect(existsSync(resolve(process.cwd(), 'app/admin-occ/position-coverage/page.jsx'))).toBe(true);
-    expect(coverage).toHaveAttribute('target', '_blank');
-    expect(coverage.getAttribute('rel')).toMatch(/\bnoopener\b/);
-    expect(coverage).toHaveAccessibleDescription('Se abre en el OCC, en otra pestaña.');
     // «Al azar» has nothing to draw: the field says «Sin posición». The warning never blocks the trigger.
     expect(offered().slice(0, 2)).toEqual([['Al azar', false], ['Sin posición', true]]);
     expect(standField()).toHaveDisplayValue('Sin posición');
     expect(within(form()).getByRole('button', { name: 'Disparar vuelo demo' })).toBeEnabled();
 
-    // OCC covers A2 in the other tab: back in sight the options are read again and «Al azar» can draw it.
+    // OCC covers A2 with its account: back in sight the options are read again and «Al azar» can draw it.
     loadDemoFlightOptions.mockResolvedValue(options());
     await leaveAndReturn();
     await waitFor(() => expect(screen.queryByText(NO_ELIGIBLE_WARNING)).not.toBeInTheDocument());
@@ -729,6 +744,21 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     await leaveAndReturn();
     expect(loadDemoFlightOptions).toHaveBeenCalledTimes(4);
     expect(lastWindow()).toEqual({ aircraftTypeId: B77W, minutesToOnBlock: 15, groundMinutes: 90 });
+  });
+
+  it('reads the stands for the default type when the station has no narrow-body', async () => {
+    loadDemoFlightOptions.mockResolvedValue(options({ aircraftTypes: [{ id: B77W, icaoCode: 'B77W', manufacturer: 'Boeing',
+      model: '777-300ER', sizeCategory: 'Widebody' }] }));
+    renderPanel();
+    // BN6 to BN13 only take a narrow-body: the stands are read again for the wide-body the form sends.
+    await waitFor(() => expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2));
+    expect(loadDemoFlightOptions).toHaveBeenLastCalledWith(STATION, expect.objectContaining({
+      window: { aircraftTypeId: B77W, minutesToOnBlock: 8, groundMinutes: 60 } }));
+    // Once: that window stays the window of every later read.
+    await leaveAndReturn();
+    await waitFor(() => expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3));
+    expect(loadDemoFlightOptions.mock.lastCall[1].window)
+      .toEqual({ aircraftTypeId: B77W, minutesToOnBlock: 8, groundMinutes: 60 });
   });
 
   it('explains no_eligible_stand and stand_not_eligible and reads the options again', async () => {
