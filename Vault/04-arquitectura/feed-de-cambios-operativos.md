@@ -23,6 +23,9 @@ sources:
   - frontend/private-web/src/features/shell/AppShell.jsx
   - frontend/private-web/src/features/chat/CanonicalChatRoute.jsx
   - frontend/private-web/src/features/admin-occ/useOccReviewQueue.js
+  - frontend/private-web/src/features/admin-occ/shell/OccShellProvider.jsx
+  - frontend/private-web/src/features/admin-occ/live/useOccResource.js
+  - frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js
   - frontend/mobile-agent/src/app/chat.tsx
   - database/DevelopmentDB/Elevant.Persistence/Realtime/EfAccountChangeDispatcherStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Realtime/EfAccountChangeReadStore.cs
@@ -99,8 +102,11 @@ deduplicación, evento malformado y revocación de estación. El cliente
 TypeScript [expone](../../packages/api-client/src/client.ts) `getAccountChanges`.
 En la rama, [AVIAM Web](../../frontend/private-web/src/services/accountChangeObserver.js)
 conecta los hubs y reconcilia el cursor ante aviso, foco, conexión recuperada
-y sondeo de 25 segundos. Chat y Notificaciones OCC vuelven a consultar el
-recurso por REST; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
+y sondeo de 25 segundos. En el OCC, desde el PR U2, el marco abre un solo
+observador por pestaña para lo que comparten todas las pantallas
+([Un observador por pestaña del OCC](#un-observador-por-pestaña-del-occ-pr-u2)).
+Chat y Notificaciones OCC vuelven a consultar el recurso por REST con su propio
+observador, que U6 pasará al del marco; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
 y [pruebas del observador](../../frontend/private-web/src/services/accountChangeObserver.test.js)
 cubren invalidación, replay, fallos y cierre de sesión. [Mobile Agent](../../frontend/mobile-agent/src/services/mobile-change-feed.ts)
 reconcilia por REST al volver al primer plano y cada 25 segundos mientras
@@ -282,3 +288,53 @@ cubre a quién llegan `finance_invoices` y `finance_approved_services` según
 el permiso, y que la aerolínea recibe `airline_treasury` y nunca las pistas de
 Finanzas. Tampoco esto
 demuestra latencia en el VPS ni entrega con la aplicación cerrada.
+
+## Un observador por pestaña del OCC (PR U2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U2 «Marco del OCC» (`1afe6820`, `debecb1e`, `2d30d7fe` y `a7ef7a4f`), que esa
+verificación no cubre
+([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 13 de
+noviembre de 2026). Las pistas no cambian: siguen sin datos, y el marco relee
+por REST.
+
+Bajo `/admin-occ`,
+[`OccShellProvider`](../../frontend/private-web/src/features/admin-occ/shell/OccShellProvider.jsx)
+abre el único observador de cambios del marco en cada pestaña y avisa a cada
+suscriptor solo de los recursos que escucha. Antes, cada pantalla del OCC abría
+al menos dos, el del acceso del departamento y el de la campana, además del
+suyo si lo tenía, cada uno con sus dos hubs y su sondeo. Ahora escuchan en el
+del marco:
+
+- el acceso del departamento, con `department_users` y `access_requests`; en el
+  OCC, `RoleLayout` apaga el observador propio de `DepartmentAccessProvider`;
+- los avisos operativos, con `notifications`. Se leen una vez para la barra de
+  estado, el riel, el cajón «Alertas y avisos» y los toasts, y `AppShell` ya no
+  los lee en el OCC;
+- el contador de Revisión, con `occ_review` (`useOccReviewChangeVersion`).
+
+El observador conserva su sondeo de 25 segundos y su conciliación al recuperar
+el foco, la conexión o la visibilidad. Ahora también informa, con `onStatus`,
+del estado de los hubs y del resultado de cada conciliación: de ahí salen «En
+vivo», «Reconectando», «Sin tiempo real» y «Sin conexión» en la barra de
+estado. Las lecturas del marco pasan por
+[`useOccResource`](../../frontend/private-web/src/features/admin-occ/live/useOccResource.js):
+leen solo con su permiso, se repiten como mucho una vez cada 3 segundos, esperan
+con la pestaña oculta, tienen un sondeo de seguridad de 60 segundos y se
+detienen tras un 401, 403 o 404 hasta que cambia el acceso.
+
+Las pantallas que todavía abren su propio observador lo conservan hasta el PR
+que las rehace: Panorama (U3); Monitoreo de vuelos, Mapa de posiciones y
+Planificación (U5); y Cobertura de posiciones, Datos maestros, Tablets, Chat
+interno y Notificaciones (U6). Las páginas de otros departamentos que monta el
+OCC (Usuarios, Mis gastos y la pestaña de servicios de Notificaciones)
+conservan el suyo. La
+[prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+repite un minuto en reposo y otro de vuelo demo, y falla si el plan de
+peticiones de una pestaña pasa de 40 o de 70 por minuto. También falla si un
+archivo montado bajo `/admin-occ` abre un observador que su inventario no
+registra.
+
+Un recibo de lectura no genera pista: otra pestaña de la misma cuenta lo ve en
+su siguiente lectura de avisos, como mucho a los 60 segundos. Esto tampoco
+demuestra latencia en el VPS ni entrega entre navegadores.
