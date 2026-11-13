@@ -186,9 +186,10 @@ también posterior al commit verificado;
   tocar pista y sale de los vuelos propuestos. Al final el agente entrega la
   operación sin servicios y OCC libera la posición, que el push-back todavía no
   libera.
-- **Sin corrida registrada.** El PR lo entregó escrito contra los selectores y
-  los textos reales, sin un stack local con el que ejecutarlo. Ningún workflow
-  de CI lo corre.
+- **Corrida local.** El 13 de noviembre de 2026, antes de mergear el PR A1
+  (#176), el proyecto pasó 6 de 6 en 8,9 minutos contra el stack
+  `elevant-ciclo` recreado desde cero; las fases 1 a 4 pasaron igual. Es
+  evidencia local, no de un despliegue, y ningún workflow de CI lo corre.
 - **Pruebas automáticas.** Unitarias del reloj, las reglas, la numeración, los
   aeropuertos, la regla de códigos de posición (con un archivo de casos que
   leen también las pruebas de JavaScript), el manejador y la configuración; de

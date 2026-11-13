@@ -1,142 +1,101 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from '../../../i18n/LanguageScope';
-import { SUPPORTED_LANGUAGES } from '../../../i18n/languageStore';
-import { BellIcon, MenuIcon } from '../../shell/components/icons';
+import { alertSummary } from '../../dashboard/noc/alertModel';
+import OccPlate from '../../occ-ui/OccPlate';
+import { MenuIcon } from '../../shell/components/icons';
+import { useOccShell, useOptionalOccShellToasts } from './occShellContext';
+import { occNavLabel } from './occNavLabel';
+import OccShellOverlays from './OccShellOverlays';
 import { occShellMessages } from './occShellMessages';
+import OccAlertsButton from './status/OccAlertsButton';
+import OccClocks from './status/OccClocks';
+import OccLanguageToggle from './status/OccLanguageToggle';
+import OccLegendButton from './status/OccLegendButton';
+import OccLiveIndicator from './status/OccLiveIndicator';
+import OccSourcesButton from './status/OccSourcesButton';
+import OccUserMenu from './status/OccUserMenu';
+import { COARSE_TARGET, STATUS_BAR_LAYOUT as LAYOUT } from './status/statusBarLayout';
 
-function useUtcClock(locale) {
-  const [now, setNow] = useState(null);
-  useEffect(() => {
-    const tick = () => setNow(new Date());
-    tick();
-    const timer = window.setInterval(tick, 15_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  if (!now) return { iso: '', text: '--:--' };
-  return {
-    iso: now.toISOString(),
-    text: now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' }),
-  };
-}
+const isCurrent = (pathname, item) => pathname === item.path || pathname?.startsWith(`${item.path}/`);
 
-function LanguageToggle({ language, setLanguage, t }) {
-  return (
-    <div role="group" aria-label={t('language')}
-      className="flex h-8 items-center rounded-md border border-occ-line bg-occ-panel-muted p-0.5 text-[11px] font-semibold">
-      {SUPPORTED_LANGUAGES.map(code => (
-        <button key={code} type="button" aria-pressed={code === language} aria-label={t(`languageOption.${code}`)}
-          onClick={() => setLanguage(code)}
-          className={`h-full rounded px-2 transition-colors ${code === language
-            ? 'bg-occ-panel text-occ-text shadow-sm ring-1 ring-occ-line'
-            : 'text-occ-muted hover:text-occ-text'}`}>
-          {code.toUpperCase()}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function MobileUserMenu({ user, onLogout, t }) {
-  const [open, setOpen] = useState(false);
-  const buttonRef = useRef(null);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = event => {
-      if (event.key === 'Escape') { setOpen(false); buttonRef.current?.focus(); }
-    };
-    const onPointer = event => {
-      if (!menuRef.current?.contains(event.target) && !buttonRef.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('pointerdown', onPointer);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onPointer);
-    };
-  }, [open]);
-
-  const initials = (user?.name ?? '').split(' ').filter(Boolean).map(part => part[0]).slice(0, 2).join('').toUpperCase();
-  return (
-    <div className="relative sm:hidden">
-      <button ref={buttonRef} type="button" aria-haspopup="menu" aria-expanded={open}
-        aria-label={t('userMenu', { name: user?.name ?? '' })} onClick={() => setOpen(value => !value)}
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-600 text-xs font-semibold text-white">
-        {initials}
-      </button>
-      {open && (
-        <div ref={menuRef} role="menu"
-          className="absolute right-0 top-full z-overlay mt-2 w-60 rounded-lg border border-occ-line bg-occ-panel py-1 shadow-xl">
-          <div className="px-3 py-2 text-xs text-occ-muted">
-            <span className="block truncate text-sm font-semibold text-occ-text">{user?.name}</span>
-            {user?.role}
-          </div>
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onLogout?.(); }}
-            className="block min-h-10 w-full px-3 text-left text-sm font-medium text-occ-danger hover:bg-occ-panel-muted">
-            {t('logout')}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// The OCC is dark only, so this bar has no theme button: the `theme` and
-// `onToggleTheme` props that AppShell sends to every top bar are not read here.
-export default function OccTopbar({
-  navigation = [], notificationsCount = 0, notificationsEnabled = true,
-  user, onOpenMenu, onOpenNotifications, onLogout,
-}) {
-  const { t, language, locale, setLanguage } = useTranslation(occShellMessages);
+/**
+ * The OCC status bar (design C.3), 48 px high on every OCC screen. It answers what time it is, whether the picture is
+ * live, whether the sources can be trusted and whether anything needs the controller: the station, the module, the
+ * live link, the sources, the alerts, the two clocks, the language, «Leyenda» and the account. The OCC is dark only and
+ * has no theme button, so the `theme` and `onToggleTheme` props that AppShell sends to every top bar go unread, as do
+ * its notification props: the bar reads the notices of OccShellProvider (useOccShell). Which element shows at which
+ * width comes from status/statusBarLayout.js. The alerts open «Alertas y avisos» (OccAlertsDrawer), whose open state
+ * lives here and which OccShellOverlays draws in the shell root.
+ */
+export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout }) {
+  const { t } = useTranslation(occShellMessages);
   const pathname = usePathname();
-  const clock = useUtcClock(locale);
-  const current = navigation.find(item => pathname === item.path || pathname?.startsWith(`${item.path}/`));
+  const { live, sources, notices } = useOccShell();
+  const current = navigation.find(item => isCurrent(pathname, item));
+  const summary = useMemo(() => alertSummary(notices.items), [notices.items]);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const alertsButton = useRef(null);
+  const drawerId = useId();
+  // The drawer shows every notice the toasts stand for: opening it takes them away. What arrives while it is open is
+  // shown and read out inside it (OccShellOverlays), so closing it takes those toasts away too: none shows afterwards
+  // with its time cut short.
+  const dismissAllToasts = useOptionalOccShellToasts()?.dismissAllToasts;
+  const openAlerts = useCallback(() => {
+    setAlertsOpen(true);
+    dismissAllToasts?.();
+  }, [dismissAllToasts]);
+  const closeAlerts = useCallback(() => {
+    setAlertsOpen(false);
+    dismissAllToasts?.();
+  }, [dismissAllToasts]);
+  const alerts = useMemo(() => ({ open: alertsOpen, id: drawerId, onClose: closeAlerts, returnFocusRef: alertsButton }),
+    [alertsOpen, closeAlerts, drawerId]);
+
+  // The browser's back and forward buttons leave the screen the drawer was opened on: they close it.
+  useEffect(() => {
+    if (!alertsOpen) return undefined;
+    window.addEventListener('popstate', closeAlerts);
+    return () => window.removeEventListener('popstate', closeAlerts);
+  }, [alertsOpen, closeAlerts]);
 
   return (
-    <header className="relative z-nav flex h-14 shrink-0 items-center gap-3 border-b border-occ-line bg-occ-panel px-3 sm:px-5">
+    <header className="relative z-nav flex h-12 shrink-0 items-center gap-1 border-b border-occ-line bg-occ-panel px-2 sm:gap-1.5 sm:px-3 xl:gap-2 xl:px-4">
       {onOpenMenu && (
         <button type="button" onClick={onOpenMenu} aria-label={t('openMenu')}
-          className="flex h-9 w-9 items-center justify-center rounded-md text-occ-text hover:bg-occ-panel-muted sm:hidden">
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded text-occ-text hover:bg-occ-panel-raised ${COARSE_TARGET} ${LAYOUT.menu.bar}`}>
           <MenuIcon className="h-5 w-5" />
         </button>
       )}
 
       <p className="flex min-w-0 items-center gap-2 text-sm">
-        <span className="hidden font-mono text-xs font-semibold tracking-wider text-occ-accent sm:inline">OCC · PUJ</span>
-        <span aria-hidden="true" className="hidden text-occ-line-strong sm:inline">/</span>
-        <span className="truncate font-semibold text-occ-text">{current ? t(`nav.${current.id}`) : t('department')}</span>
+        <OccPlate kind="station">PUJ</OccPlate>
+        <span className={`shrink-0 text-occ-muted ${LAYOUT.stationCity.bar}`}>{t('stationCity')}</span>
+        <span className={`min-w-0 truncate font-semibold text-occ-text ${LAYOUT.module.bar}`}>
+          {current ? occNavLabel(t, current) : t('department')}
+        </span>
       </p>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-        <p className="hidden items-baseline gap-1.5 rounded-md px-2 font-mono text-xs text-occ-muted md:flex"
-          aria-label={`${t('utcClock')}: ${clock.text}`}>
-          <span className="text-[10px] font-semibold tracking-wider">UTC</span>
-          <time dateTime={clock.iso} className="text-sm font-medium text-occ-text">{clock.text}</time>
-        </p>
-        <span aria-hidden="true" className="hidden h-5 w-px bg-occ-line md:block" />
+      <span aria-hidden="true" className="min-w-0 flex-1" />
 
-        <LanguageToggle language={language} setLanguage={setLanguage} t={t} />
-
-        {notificationsEnabled && (
-          <button type="button" onClick={onOpenNotifications}
-            aria-label={notificationsCount > 0 ? t('notificationsUnread', { count: notificationsCount }) : t('notifications')}
-            className="relative flex h-9 w-9 items-center justify-center rounded-md text-occ-text hover:bg-occ-panel-muted">
-            <BellIcon className="h-[18px] w-[18px]" />
-            {notificationsCount > 0 && (
-              <span data-testid="notifications-badge" aria-hidden="true"
-                className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-500 px-1 font-mono text-[10px] font-semibold text-ink-900">
-                {notificationsCount > 99 ? '99+' : notificationsCount}
-              </span>
-            )}
-          </button>
-        )}
-
-        <MobileUserMenu user={user} onLogout={onLogout} t={t} />
-      </div>
+      <OccLiveIndicator live={live} className={LAYOUT.live.bar} labelClassName={LAYOUT.live.label} />
+      <OccSourcesButton sources={sources} className={LAYOUT.sources.bar} labelClassName={LAYOUT.sources.label} />
+      {/* Without the notices permission there is nothing to count, and the notifications page is not open to the
+          account either. A failed refresh keeps the last count, marked with the time of that read, as the drawer
+          does. */}
+      {notices.status !== 'forbidden' && (
+        <OccAlertsButton ref={alertsButton} summary={summary} status={notices.status}
+          staleSince={notices.refreshFailed ? notices.fetchedAt : null} onOpen={openAlerts} expanded={alertsOpen}
+          controls={alertsOpen ? drawerId : undefined} className={LAYOUT.alerts.bar}
+          labelClassName={LAYOUT.alerts.label} detailClassName={LAYOUT.alerts.detail} />
+      )}
+      <OccClocks className={LAYOUT.localClock.bar} utcClassName={LAYOUT.utcClock.bar} />
+      <OccLanguageToggle className={LAYOUT.language.bar} />
+      <OccLegendButton className={LAYOUT.legend.bar} />
+      <OccUserMenu user={user} onLogout={onLogout} className={LAYOUT.account.bar} />
+      <OccShellOverlays alerts={alerts} />
     </header>
   );
 }
