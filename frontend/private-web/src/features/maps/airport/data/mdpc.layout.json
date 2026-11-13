@@ -4467,7 +4467,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865691",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [],
@@ -4476,7 +4478,8 @@
         "centroidDistanceM": 24.7,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A2",
@@ -4506,7 +4509,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865692",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [],
@@ -4515,7 +4520,8 @@
         "centroidDistanceM": 18.8,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A3",
@@ -4545,7 +4551,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865693",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [],
@@ -4554,7 +4562,8 @@
         "centroidDistanceM": 15.6,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A4",
@@ -4584,7 +4593,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865694",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [],
@@ -4593,7 +4604,8 @@
         "centroidDistanceM": 15.4,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A5",
@@ -4623,7 +4635,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865695",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4634,7 +4648,8 @@
         "centroidDistanceM": 18.7,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A6",
@@ -4664,7 +4679,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865696",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4675,7 +4692,8 @@
         "centroidDistanceM": 22.7,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A7",
@@ -4705,7 +4723,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865697",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4716,7 +4736,8 @@
         "centroidDistanceM": 22.7,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A8",
@@ -4746,7 +4767,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865698",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4757,7 +4780,8 @@
         "centroidDistanceM": 21.3,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A9",
@@ -4787,7 +4811,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865699",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4798,7 +4824,8 @@
         "centroidDistanceM": 20.6,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A10",
@@ -4828,7 +4855,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865700",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4839,7 +4868,8 @@
         "centroidDistanceM": 32.1,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "A11",
@@ -4869,7 +4899,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865701",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4880,7 +4912,8 @@
         "centroidDistanceM": 49.1,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio."
     },
     {
       "code": "AN1",
@@ -4910,7 +4943,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865686",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4921,7 +4956,8 @@
         "centroidDistanceM": 23.7,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte."
     },
     {
       "code": "AN2",
@@ -4951,7 +4987,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865687",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -4962,7 +5000,8 @@
         "centroidDistanceM": 19.2,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte."
     },
     {
       "code": "AN3",
@@ -4992,7 +5031,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865688",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5003,7 +5044,8 @@
         "centroidDistanceM": 20.2,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte."
     },
     {
       "code": "AN4",
@@ -5035,7 +5077,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865689",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5046,7 +5090,8 @@
         "centroidDistanceM": 24.5,
         "gate": null,
         "overlapMaxPct": 0.1
-      }
+      },
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte."
     },
     {
       "code": "AN5",
@@ -5078,7 +5123,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865690",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5089,7 +5136,8 @@
         "centroidDistanceM": 21.8,
         "gate": null,
         "overlapMaxPct": 0.1
-      }
+      },
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte."
     },
     {
       "code": "B20",
@@ -5122,7 +5170,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865685",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5137,7 +5187,8 @@
           "distanceM": 17
         },
         "overlapMaxPct": 0.2
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B21",
@@ -5170,7 +5221,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865681",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5185,7 +5238,8 @@
           "distanceM": 47
         },
         "overlapMaxPct": 0.1
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B22",
@@ -5217,7 +5271,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865684",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5232,7 +5288,8 @@
           "distanceM": 19.2
         },
         "overlapMaxPct": 0.2
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B23",
@@ -5264,7 +5321,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865680",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5279,7 +5338,8 @@
           "distanceM": 35.9
         },
         "overlapMaxPct": 0.1
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B24",
@@ -5309,7 +5369,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865683",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5324,7 +5386,8 @@
           "distanceM": 15.1
         },
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B25",
@@ -5354,7 +5417,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865679",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [],
@@ -5367,7 +5432,8 @@
           "distanceM": 40
         },
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B26",
@@ -5397,7 +5463,9 @@
         "center": "elevant",
         "polygon": "osm:way/812865682",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5412,7 +5480,8 @@
           "distanceM": 18.4
         },
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B27",
@@ -5445,7 +5514,9 @@
         "center": "elevant",
         "polygon": "osm:way/812822723",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5460,7 +5531,8 @@
           "distanceM": 36.6
         },
         "overlapMaxPct": 0.3
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B28",
@@ -5493,7 +5565,9 @@
         "center": "elevant",
         "polygon": "osm:way/742027530",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5508,7 +5582,8 @@
           "distanceM": 40.8
         },
         "overlapMaxPct": 0.3
-      }
+      },
+      "note": "Terminal B: revisada por el dueño del producto."
     },
     {
       "code": "B29",
@@ -5538,11 +5613,12 @@
         "center": "elevant",
         "polygon": "osm:way/742027529",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
-          "ambiguous",
           "narrowed"
         ],
         "osmWay": 742027529,
@@ -5554,7 +5630,8 @@
           "distanceM": 48.2
         },
         "overlapMaxPct": 0
-      }
+      },
+      "note": "OSM trae dos líneas; el dueño del producto confirmó la que pasa por su coordenada (OpenStreetMap está desactualizado en el aeropuerto)."
     },
     {
       "code": "B30",
@@ -5584,12 +5661,12 @@
         "center": "elevant",
         "polygon": "osm:way/742027527",
         "heading": "osm",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
-        "flags": [
-          "ambiguous"
-        ],
+        "flags": [],
         "osmWay": 742027527,
         "osmCentroid": [-68.370668, 18.564191],
         "centroidDistanceM": 29.2,
@@ -5599,7 +5676,8 @@
           "distanceM": 48.1
         },
         "overlapMaxPct": 0
-      }
+      },
+      "note": "OSM trae dos líneas; el dueño del producto confirmó la que pasa por su coordenada (OpenStreetMap está desactualizado en el aeropuerto)."
     },
     {
       "code": "B31",
@@ -5629,7 +5707,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "manual",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5646,7 +5726,7 @@
         },
         "overlapMaxPct": 0
       },
-      "note": "Sin geometría OSM y a 44 m de B32 en la misma línea este-oeste: con el rumbo de B30 las dos cajas se solapan. Se asume de lado con B32, nariz al sur hacia la terminal. Pendiente de la revisión manual contra el plano del aeropuerto."
+      "note": "Sin geometría OSM: el dueño del producto confirmó su coordenada, al norte del edificio junto a B32, y la nariz al sur (OpenStreetMap está desactualizado en el aeropuerto)."
     },
     {
       "code": "B32",
@@ -5676,7 +5756,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "manual",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5689,7 +5771,7 @@
         "gate": null,
         "overlapMaxPct": 0
       },
-      "note": "Sin geometría OSM: de lado con B31 (44 m), nariz al sur. Pendiente de la revisión manual contra el plano del aeropuerto."
+      "note": "Sin geometría OSM: el dueño del producto confirmó la nariz al sur, de lado con B31."
     },
     {
       "code": "B33",
@@ -5716,7 +5798,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5727,7 +5811,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Retirada: fuera del catálogo de 41 posiciones activas."
     },
     {
       "code": "B34",
@@ -5758,8 +5843,10 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto",
-        "headingFrom": "B36"
+        "qa": "reviewed",
+        "headingFrom": "B36",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5772,7 +5859,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste."
     },
     {
       "code": "B35",
@@ -5805,8 +5893,10 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto",
-        "headingFrom": "B36"
+        "qa": "reviewed",
+        "headingFrom": "B36",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5819,7 +5909,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0.1
-      }
+      },
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste."
     },
     {
       "code": "B36",
@@ -5852,7 +5943,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5865,7 +5958,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0.1
-      }
+      },
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste."
     },
     {
       "code": "B37",
@@ -5896,7 +5990,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5909,7 +6005,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste."
     },
     {
       "code": "BN6",
@@ -5939,7 +6036,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5951,7 +6050,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al norte."
     },
     {
       "code": "BN7",
@@ -5981,7 +6081,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -5993,7 +6095,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al norte."
     },
     {
       "code": "BN8",
@@ -6023,7 +6126,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -6035,7 +6140,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al norte."
     },
     {
       "code": "BN9",
@@ -6065,7 +6171,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -6078,7 +6186,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto mantiene su coordenada aunque la calle F de OSM cruce la caja (OpenStreetMap está desactualizado en el aeropuerto); nariz al norte."
     },
     {
       "code": "BN10",
@@ -6108,7 +6217,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -6120,7 +6231,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur."
     },
     {
       "code": "BN11",
@@ -6150,7 +6262,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -6162,7 +6276,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur."
     },
     {
       "code": "BN12",
@@ -6193,7 +6308,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -6205,7 +6322,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur."
     },
     {
       "code": "BN13",
@@ -6236,7 +6354,9 @@
         "center": "elevant",
         "polygon": "derived",
         "heading": "row",
-        "qa": "auto"
+        "qa": "reviewed",
+        "reviewedBy": "Dueño del producto",
+        "reviewedOn": "2026-11-13"
       },
       "qa": {
         "flags": [
@@ -6248,7 +6368,8 @@
         "centroidDistanceM": null,
         "gate": null,
         "overlapMaxPct": 0
-      }
+      },
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur."
     }
   ],
   "markings": [

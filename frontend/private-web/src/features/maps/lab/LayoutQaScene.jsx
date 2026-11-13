@@ -176,14 +176,16 @@ function StandRow({ row, focused, onFrame }) {
   );
 }
 
-function StandList({ rows, focus, onFrame }) {
+function StandList({ rows, focus, onFrame, reviewed }) {
   const flagged = rows.filter(row => row.flagged).length;
   return (
     <section aria-labelledby="layout-qa-stands" className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-4 pb-2 pt-3">
         <h2 id="layout-qa-stands" className="text-sm font-semibold text-occ-text">Posiciones</h2>
         <p className="text-sm text-occ-muted">
-          {`${flagged} de ${rows.length} con marcas que piden revisión. Haz clic en una para encuadrarla.`}
+          {reviewed
+            ? `${flagged} de ${rows.length} con marcas, ya revisadas por el dueño del producto. Haz clic en una para encuadrarla.`
+            : `${flagged} de ${rows.length} con marcas que piden revisión. Haz clic en una para encuadrarla.`}
         </p>
       </div>
       <ul aria-label="Posiciones del plano" className="min-h-0 flex-1 overflow-y-auto border-t border-occ-line">
@@ -292,7 +294,7 @@ export default function LayoutQaScene({ scene, basemap, frozenAt, layout = MDPC_
         <aside aria-label="Revisión del plano" className="flex w-96 shrink-0 flex-col border-l border-occ-line bg-occ-panel">
           <ProbePanel probe={probe} layout={layout} onClear={clearProbe} />
           <QaKey />
-          <StandList rows={rows} focus={focus} onFrame={frameStand} />
+          <StandList rows={rows} focus={focus} onFrame={frameStand} reviewed={reviewed} />
         </aside>
       </div>
     </>

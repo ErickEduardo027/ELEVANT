@@ -1062,10 +1062,12 @@ leyenda llegan con M4.
   lista lateral muestra las 42 posiciones, primero las marcadas, y encuadra la
   que se elige. La suite visual guarda sus capturas para quien revisa el plano.
 
-Límites: el plano no está firmado. Quedan 16 posiciones marcadas para revisar
-con el OCC (B29 a B32, B34 a B37 y BN6 a BN13), B31 y B32 llevan un rumbo
-provisional, y la tabla de alias está vacía, así que un código como «9A» sigue
-sin ubicación. Ninguna pantalla usa todavía los aeropuertos de la región ni las
+Revisión firmada: el dueño del producto aprobó el plano el 13 de noviembre de
+2026 y decidió que su documento de coordenadas manda sobre OpenStreetMap, que
+está desactualizado en el aeropuerto; las 42 posiciones quedan revisadas
+(`provenance.qa: 'reviewed'`), con 14 marcas que se conservan como dato.
+Límites: la tabla de alias está vacía, así que un código como «9A» sigue sin
+ubicación. Ninguna pantalla usa todavía los aeropuertos de la región ni las
 radioayudas que trajo el extracto de OurAirports. Las capturas se revisaron en
 local, en el laboratorio; nada de esto acredita un despliegue ni una revisión
 visual en el VPS.

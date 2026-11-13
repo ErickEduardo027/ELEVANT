@@ -270,19 +270,24 @@ La revisión firmada es el único criterio que no se prueba solo.
 
 ## Estado al 13 de noviembre de 2026
 
-Sin firmar: las 42 posiciones tienen `provenance.qa: 'auto'`. Quedan 16
-posiciones marcadas para una persona:
+Firmado. El dueño del producto revisó el plano el 13 de noviembre de 2026, con
+el informe y las capturas de la escena de revisión, y lo aprobó tal como estaba.
+Las 42 posiciones llevan `reviewedBy` y `reviewedOn` en la tabla manual y
+`provenance.qa: 'reviewed'` en el plano.
 
-- sin geometría de OSM (`unmatched`): B31, B32, B34 a B37 y BN6 a BN13;
-- dos candidatas (`ambiguous`): B29 y B30;
-- una calle de rodaje cruza la caja (`crossesTaxiway`): BN9.
+Su decisión manda sobre los datos abiertos: **su documento de coordenadas manda
+sobre OpenStreetMap, que está desactualizado en el aeropuerto.** Por eso no se
+espera que las posiciones coincidan con OSM, y ninguna se corrige hacia OSM:
+una posición solo se mueve cuando OCC la ubica en el mapa. En concreto:
 
-Los rumbos de B34 a B37 y de BN6 a BN13 son supuestos por su fila
-(`headingAssumed`). B34 a B37 miran al este, con la cola al oeste: B36 y B37
-dejan detrás la calle F, la más cercana, y B34 y B35 siguen a B36, porque la
-calle E, al norte, corre a lo largo de su fila y no decide nada. BN6 a BN9
-miran al norte, con la calle F detrás, y BN10 a BN13 al sur, con la calle E
-detrás. Ninguna entrada cruza otra posición ni llega de lado o de frente.
+- B31 queda donde la pone su documento, al norte del edificio junto a B32, y no
+  en la columna de B27 a B30, donde OSM pone su puerta;
+- B29 y B30 toman la línea de OSM que pasa por su punto (`osmWay` en la tabla),
+  así que dejan de ser ambiguas;
+- BN9 conserva su punto aunque la calle F de OSM cruce su caja.
 
-B31 y B32 llevan en la tabla un rumbo provisional de 175°, con su nota y sin
-firma. La tabla de alias está vacía.
+Siguen marcadas, como dato y ya revisadas, 14 posiciones: sin geometría de OSM
+(`unmatched`) B31, B32, B34 a B37 y BN6 a BN13, y BN9 además con
+`crossesTaxiway`. B31 y B32 llevan su rumbo de 175° en la tabla; B34 a B37
+miran al este y BN6 a BN9 al norte y BN10 a BN13 al sur, por su fila. La tabla
+de alias sigue vacía.
