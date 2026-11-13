@@ -4,20 +4,39 @@ import { readSession } from '../features/auth/authService';
 
 const HUB_PATHS = ['/hubs/operations', '/hubs/notifications'];
 
-/** The HTTP cursor, not a socket delivery, is the acknowledgement boundary. */
+/**
+ * The HTTP cursor, not a socket delivery, is the acknowledgement boundary.
+ *
+ * `onStatus` (optional) receives `{ hubs: [{ path, state }], lastOkAt, lastErrorAt, failingSince }` whenever a hub
+ * start settles, a hub reconnects or closes, and after each reconcile; `state` is SignalR's `HubConnection.state`.
+ * A reconcile that does not finish (the request or the consumer failed) sets `lastErrorAt` and, from the first
+ * failure of a streak, `failingSince`; the next one that finishes sets `lastOkAt` and clears `failingSince`.
+ * Nothing is reported after `stop()`.
+ */
 export function createAccountChangeObserver({ api, createHubConnection, onChanges,
-  events = window, pollMs = 25_000 }) {
+  events = window, pollMs = 25_000, onStatus, now = () => Date.now() }) {
   let cursor;
   let running = false;
   let poll;
   let active;
   let dirty = false;
+  let lastOkAt = null;
+  let lastErrorAt = null;
+  let failingSince = null;
   const hubs = HUB_PATHS.map(createHubConnection);
   const starting = new Map();
 
+  function emit() {
+    if (!running || !onStatus) return;
+    onStatus({
+      hubs: hubs.map((hub, index) => ({ path: HUB_PATHS[index], state: hub.state })),
+      lastOkAt, lastErrorAt, failingSince,
+    });
+  }
+
   function ensureHubStarted(hub) {
     if (!running || starting.has(hub) || hub.state !== 'Disconnected') return;
-    const task = hub.start().catch(() => {}).finally(() => starting.delete(hub));
+    const task = hub.start().catch(() => {}).finally(() => { starting.delete(hub); emit(); });
     starting.set(hub, task);
   }
 
@@ -28,9 +47,9 @@ export function createAccountChangeObserver({ api, createHubConnection, onChange
       return active;
     }
     active = (async () => {
-      do {
-        dirty = false;
-        try {
+      try {
+        do {
+          dirty = false;
           let page;
           do {
             page = await api.getAccountChanges({ ...(cursor ? { after: cursor } : {}), limit: 100 });
@@ -41,16 +60,22 @@ export function createAccountChangeObserver({ api, createHubConnection, onChange
               cursor = page.nextCursor;
             }
           } while (page.hasMore && running);
-        } catch {
-          // Connectivity and authorization failures are retried by the next focus/poll.
-          return;
-        }
-      } while (dirty && running);
+        } while (dirty && running);
+        lastOkAt = now();
+        failingSince = null;
+      } catch {
+        // Connectivity and authorization failures are retried by the next focus/poll.
+        lastErrorAt = now();
+        failingSince ??= lastErrorAt;
+      }
+      emit();
     })();
     try { await active; } finally { active = undefined; }
   }
 
   const onFocus = () => { void reconcile(); };
+  // The only reconnected handler: report the hub, then reconcile what the socket may have missed.
+  const onReconnected = () => { emit(); onFocus(); };
   const onVisibility = () => {
     if (events.document?.visibilityState === 'visible') void reconcile();
   };
@@ -69,7 +94,9 @@ export function createAccountChangeObserver({ api, createHubConnection, onChange
       }, pollMs);
       for (const hub of hubs) {
         hub.on('ChangedV1', onFocus);
-        hub.onreconnected(onFocus);
+        hub.onreconnecting?.(emit);
+        hub.onreconnected(onReconnected);
+        hub.onclose?.(emit);
         ensureHubStarted(hub);
       }
       await reconcile();
@@ -87,10 +114,10 @@ export function createAccountChangeObserver({ api, createHubConnection, onChange
   };
 }
 
-export function createPrivateWebAccountChangeObserver(onChanges) {
+export function createPrivateWebAccountChangeObserver(onChanges, { onStatus } = {}) {
   const baseUrl = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, '');
   const api = createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
-  return createAccountChangeObserver({ api, onChanges,
+  return createAccountChangeObserver({ api, onChanges, onStatus,
     createHubConnection: path => new HubConnectionBuilder()
       .withUrl(`${baseUrl}${path}`, { accessTokenFactory: () => readSession()?.token ?? '' })
       .configureLogging(LogLevel.None)

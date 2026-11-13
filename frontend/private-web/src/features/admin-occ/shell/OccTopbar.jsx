@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { SUPPORTED_LANGUAGES } from '../../../i18n/languageStore';
 import { BellIcon, MenuIcon } from '../../shell/components/icons';
+import { ADMIN_OCC_BASE_PATH } from '../navigation';
+import { useOptionalOccShell } from './occShellContext';
+import OccShellOverlays from './OccShellOverlays';
 import { occShellMessages } from './occShellMessages';
 
 function useUtcClock(locale) {
@@ -87,14 +90,21 @@ function MobileUserMenu({ user, onLogout, t }) {
 
 // The OCC is dark only, so this bar has no theme button: the `theme` and
 // `onToggleTheme` props that AppShell sends to every top bar are not read here.
+// Inside OccShellProvider the bell reads the shell's notices (AppShell reads none in
+// the OCC); on its own, as in its tests, it keeps the props AppShell sends.
 export default function OccTopbar({
   navigation = [], notificationsCount = 0, notificationsEnabled = true,
   user, onOpenMenu, onOpenNotifications, onLogout,
 }) {
   const { t, language, locale, setLanguage } = useTranslation(occShellMessages);
   const pathname = usePathname();
+  const router = useRouter();
+  const shell = useOptionalOccShell();
   const clock = useUtcClock(locale);
   const current = navigation.find(item => pathname === item.path || pathname?.startsWith(`${item.path}/`));
+  const bellCount = shell ? shell.notices.unreadCount : notificationsCount;
+  const bellEnabled = shell ? shell.notices.status !== 'forbidden' : notificationsEnabled;
+  const openNotifications = shell ? () => router.push(`${ADMIN_OCC_BASE_PATH}/notifications`) : onOpenNotifications;
 
   return (
     <header className="relative z-nav flex h-14 shrink-0 items-center gap-3 border-b border-occ-line bg-occ-panel px-3 sm:px-5">
@@ -121,15 +131,15 @@ export default function OccTopbar({
 
         <LanguageToggle language={language} setLanguage={setLanguage} t={t} />
 
-        {notificationsEnabled && (
-          <button type="button" onClick={onOpenNotifications}
-            aria-label={notificationsCount > 0 ? t('notificationsUnread', { count: notificationsCount }) : t('notifications')}
+        {bellEnabled && (
+          <button type="button" onClick={openNotifications}
+            aria-label={bellCount > 0 ? t('notificationsUnread', { count: bellCount }) : t('notifications')}
             className="relative flex h-9 w-9 items-center justify-center rounded-md text-occ-text hover:bg-occ-panel-muted">
             <BellIcon className="h-[18px] w-[18px]" />
-            {notificationsCount > 0 && (
+            {bellCount > 0 && (
               <span data-testid="notifications-badge" aria-hidden="true"
                 className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-500 px-1 font-mono text-[10px] font-semibold text-ink-900">
-                {notificationsCount > 99 ? '99+' : notificationsCount}
+                {bellCount > 99 ? '99+' : bellCount}
               </span>
             )}
           </button>
@@ -137,6 +147,7 @@ export default function OccTopbar({
 
         <MobileUserMenu user={user} onLogout={onLogout} t={t} />
       </div>
+      <OccShellOverlays />
     </header>
   );
 }

@@ -37,6 +37,12 @@ export const occShellMessages = {
     languageOption: { es: 'Español', en: 'English' },
     utcClock: 'Hora UTC según el reloj de este equipo',
     userMenu: 'Menú de {name}',
+    // Toasts for notices that arrive while the OCC is open (OccShellProvider).
+    arrivals: {
+      open: 'Abrir',
+      viewAll: 'Ver',
+      more: 'Tienes {count} avisos operativos nuevos más.',
+    },
   },
   en: {
     brand: 'ELEVANT',
@@ -76,5 +82,10 @@ export const occShellMessages = {
     languageOption: { es: 'Español', en: 'English' },
     utcClock: 'UTC time from this device clock',
     userMenu: '{name} menu',
+    arrivals: {
+      open: 'Open',
+      viewAll: 'View',
+      more: 'You have {count} more new operational notices.',
+    },
   },
 };
