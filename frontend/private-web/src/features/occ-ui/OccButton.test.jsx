@@ -48,28 +48,49 @@ describe('OccButton', () => {
     }
   });
 
-  it('busy disables, sets aria-busy and shows its busy label', async () => {
+  it('busy holds the button without disabling it: aria-disabled, aria-busy, its busy label and its focus', async () => {
+    const user = userEvent.setup();
     const onClick = vi.fn();
-    const { rerender } = render(
-      <OccButton variant="primary" busy busyLabel="Confirmando…" onClick={onClick}>Confirmar decisión</OccButton>,
-    );
-    const button = screen.getByRole('button', { name: 'Confirmando…' });
-    expect(button).toBeDisabled();
+    const { rerender } = render(<OccButton variant="primary" onClick={onClick}>Confirmar decisión</OccButton>);
+    const button = screen.getByRole('button', { name: 'Confirmar decisión' });
+    button.focus();
+    rerender(<OccButton variant="primary" busy busyLabel="Confirmando…" onClick={onClick}>Confirmar decisión</OccButton>);
+    // A browser moves the focus off a control that gets disabled, to the page, and the keyboard loses its place (the
+    // Esc and the Tab of a dialog with it). So a busy button is disabled for assistive technology only, and stays
+    // focused and focusable.
+    expect(button).toHaveAccessibleName('Confirmando…');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
     expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveFocus();
     // It keeps its look, with a waiting cursor and no hover.
     expect(classesOf(button)).toEqual(expect.arrayContaining(['bg-occ-primary', 'cursor-wait']));
     expect(classesOf(button)).not.toContain('hover:bg-occ-primary-hover');
-    await userEvent.click(button);
+    // A press, Enter or Space does nothing.
+    await user.click(button);
+    await user.keyboard('{Enter}');
+    await user.keyboard(' ');
     expect(onClick).not.toHaveBeenCalled();
+    expect(button).toHaveFocus();
 
     // Without a busy label the children stay.
     rerender(<OccButton busy onClick={onClick}>Guardar</OccButton>);
     expect(screen.getByRole('button', { name: 'Guardar' })).toHaveAttribute('aria-busy', 'true');
-    // Back at rest it acts, and aria-busy is gone.
+    // Back at rest it acts, and aria-busy and aria-disabled are gone.
     rerender(<OccButton onClick={onClick}>Guardar</OccButton>);
     const idle = screen.getByRole('button', { name: 'Guardar' });
     expect(idle).not.toHaveAttribute('aria-busy');
-    await userEvent.click(idle);
+    expect(idle).not.toHaveAttribute('aria-disabled');
+    await user.click(idle);
+    expect(onClick).toHaveBeenCalledOnce();
+
+    // Busy wins over disabled: still held, never natively disabled, so it keeps the focus too.
+    rerender(<OccButton busy disabled busyLabel="Exportando…" onClick={onClick}>Exportar CSV</OccButton>);
+    const exporting = screen.getByRole('button', { name: 'Exportando…' });
+    expect(exporting).toHaveAttribute('aria-disabled', 'true');
+    expect(exporting).not.toBeDisabled();
+    expect(exporting).toHaveFocus();
+    await user.click(exporting);
     expect(onClick).toHaveBeenCalledOnce();
 
     // Disabled is the faint look, without hover.
@@ -79,6 +100,31 @@ describe('OccButton', () => {
     expect(disabled).not.toHaveAttribute('aria-busy');
     expect(classesOf(disabled)).toEqual(expect.arrayContaining(['text-occ-faint', 'cursor-not-allowed']));
     expect(classesOf(disabled).filter(name => name.startsWith('hover:') || name === 'text-occ-danger')).toEqual([]);
+  });
+
+  it('a busy submit button sends no form, neither from a press nor from Enter in a field', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(event => event.preventDefault());
+    const form = button => (
+      <form aria-label="Nueva terminal" onSubmit={onSubmit}>
+        <label>Código <input /></label>
+        {button}
+      </form>
+    );
+    const { rerender } = render(form(
+      <OccButton type="submit" variant="primary" busy busyLabel="Creando…">Crear terminal</OccButton>,
+    ));
+    const submit = screen.getByRole('button', { name: 'Creando…' });
+    expect(submit).toHaveAttribute('type', 'submit');
+    await user.click(submit);
+    // Enter in a field presses the form's submit button, which cancels that press too.
+    await user.type(screen.getByRole('textbox', { name: 'Código' }), 'C{Enter}');
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    // At rest the same button sends the form.
+    rerender(form(<OccButton type="submit" variant="primary">Crear terminal</OccButton>));
+    await user.click(screen.getByRole('button', { name: 'Crear terminal' }));
+    expect(onSubmit).toHaveBeenCalledOnce();
   });
 
   it('occButtonClass gives a link the same look', () => {

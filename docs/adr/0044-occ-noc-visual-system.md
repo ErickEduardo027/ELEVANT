@@ -581,8 +581,12 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
   En los dos, `mono` pone en IBM Plex Mono los identificadores y las horas y `align: 'end'` pone los números a la derecha; una fila encendida (`rowTone`: `attention` o `urgent`) lleva la losa tenue, la barra de 3 px y el glifo de su señal; una fila desplegable (`renderExpanded`) está siempre montada y oculta mientras está plegada; los cinco estados son los de `OccRemoteView`; y por debajo de 40 rem cada fila es una tarjeta apilada (`table-stack`).
 - `OccToolbar`: el `h1` de la página, con un resumen opcional en su línea y, debajo, una barra con nombre (`role="toolbar"`), con los controles al inicio y las acciones al final. Sin controles no hay barra. `titleId`, opcional, da un id al `h1`, para que una sección se nombre con él.
 - `OccButton` y `occButtonClass`: la tecla clara (`primary`, una por vista), `secondary`, `ghost` (texto cian) y `danger`, de 32 px con ratón (28 px en el tamaño `sm`) y 44 px con puntero táctil; ocupado, con `aria-busy` y su texto. `occButtonClass` viste como botón un enlace a otra pantalla.
-- `OccField`, con `OccTextField`, `OccSelectField`, `OccTextareaField` y `occControlClass`: la etiqueta con el texto exacto (sin asterisco, porque las pruebas y el E2E buscan los campos por su nombre), una pista opcional y el error como `form-validation-message` con `role="alert"`. El pozo del control es `--occ-field`, que gana la llave `field` en `tailwind.config.js` (nota de U2, punto 10).
-- `OccDialog`: `dialog`, o `alertdialog` con `tone="danger"`, que empieza en «Cancelar». Se dibuja donde se monta, nunca en un portal: así una región como «Detalle de entrega» sigue conteniendo los botones que el E2E del ciclo busca en ella. Atrapa el foco y lo devuelve al cerrar; se cierra con su botón, con el velo o con Esc, que marca con `preventDefault` (contratos 2.2), y no se cierra mientras trabaja. Por debajo de 640 px es una hoja inferior.
+  - Ocupado no se deshabilita: queda `aria-disabled`, conserva el foco e ignora el clic, Enter y Espacio. Un botón de envío tampoco envía su formulario, ni con Enter en uno de sus campos. *Por qué:* el navegador saca el foco de un control que se deshabilita y lo deja en la página. El teclado perdería su lugar y, en un `OccDialog`, Esc y la trampa del foco dejarían de funcionar si el comando falla y el diálogo sigue abierto.
+  - Si recibe a la vez `busy` y `disabled`, manda `busy`.
+- `OccField`, con `OccTextField`, `OccSelectField`, `OccTextareaField` y `occControlClass`: la etiqueta con el texto exacto (sin asterisco, porque las pruebas y el E2E buscan los campos por su nombre), una pista opcional y el error. El pozo del control es `--occ-field` (abajo, «`tailwind.config.js`»).
+  - El error es un párrafo propio con `role="alert"` (`data-occ-field-error`), en el rojo del OCC.
+  - No lleva la clase `form-validation-message`. *Por qué:* `app/layout.jsx` monta en todas las rutas el observador de `src/components/formValidation.js`, que borra cada mensaje de esa clase cuyo id no nombra ninguno de sus propios campos. Borraría el error de React, y React fallaría después al quitarlo.
+- `OccDialog`: `dialog`, o `alertdialog` con `tone="danger"`, que empieza en «Cancelar». Se dibuja donde se monta, nunca en un portal: así una región como «Detalle de entrega» sigue conteniendo los botones que el E2E del ciclo busca en ella. Atrapa el foco y lo devuelve al cerrar; se cierra con su botón, con el velo o con Esc, que marca con `preventDefault` (contratos 2.2), y no se cierra mientras trabaja. Mientras trabaja, el foco sigue en su botón de confirmar ocupado (`OccButton`). Por debajo de 640 px es una hoja inferior.
 - `OccStatusPill`: el estado de una fila, con su glifo y su palabra, en uno de los seis tonos de `STATUS_TONES` (`statusVocabulary.js`, que también exporta `OCC_STATUS_TONE_KEYS`):
   - `neutral`, un círculo hueco (planificado, programado, libre);
   - `active`, un círculo lleno (en operación, en uso);
@@ -592,7 +596,14 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
 
   Admite las marcas «Demo» y «est.».
 - `classes.js` (`OCC_CLASSES`): las cadenas de clases que Cobertura, Datos maestros, Tablets, Contratos listos y Reportes definían por su cuenta, dibujadas con los tokens. Fueron el primer paso, mecánico, de su migración (diseño E.2).
-- `occ.css` suma lo que la tabla necesita fuera de su JSX: en las tarjetas apiladas, rótulos de 12 px en frase normal, altura libre, valores a la izquierda, el detalle plegado oculto y la señal de una fila encendida; el anillo de foco de una fila hacia adentro, para que no lo recorten el desplazamiento ni la cabecera fija; y el mensaje de un campo inválido en el rojo del OCC.
+- `occ.css` suma lo que la tabla necesita fuera de su JSX:
+  - en las tarjetas apiladas, rótulos de 12 px en frase normal, altura libre, valores a la izquierda, el detalle plegado oculto y la señal de una fila encendida;
+  - también en las tarjetas, la fila elegida, que si no perdería la losa de la tabla: su tarjeta y la de su detalle llevan la losa cian tenue y la junta cian. Como en la tabla, la losa de la elección gana a la de una señal, y una fila elegida y encendida conserva a la izquierda la barra de su señal;
+  - el anillo de foco de una fila hacia adentro, para que no lo recorten el desplazamiento ni la cabecera fija;
+  - y el mensaje de validación del sistema (`form-validation-message`) en el rojo del OCC.
+- `tailwind.config.js`: `colors.occ` suma la llave `field`, para el pozo de `OccField`.
+  - Esto corrige la sección «Decisión» de arriba, que cuenta `--occ-field` entre los tokens sin clase, y el punto 10 de la nota de U2.
+  - Siguen sin llave, y por tanto sin clase, `--occ-arriving-fill`, `--occ-on-accent`, `--occ-on-warn`, `--occ-on-danger`, `--occ-warn-fill` y `--occ-danger-fill`.
 - *No llegan* `OccTag` ni `OccToast` del diseño F, porque estas pantallas no los usan: «Demo» y «est.» ya son `DemoTag` y `EstimatedTag`, y los toasts del OCC los dibuja el marco (`OccToastStack`, nota de U2, punto 7).
 
 **9. Las lecturas, los comandos y los textos no cambian de contrato.**
@@ -614,6 +625,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
 - *El corte a 1280 px.* El diseño (H.3) apila la lista y el detalle entre 1024 y 1279 px y los separa en dos vistas por debajo de 1024. El chat muestra una vista a la vez por debajo de 1280 px; Revisión y Cobertura apilan el detalle bajo la lista a cualquier ancho menor.
 - *`OccStatusPill`* recibe `tone` y `label`, no `domain` y `status`: cada pantalla traduce sus estados a un tono (`review/reviewStatusTone.js`, o `DEVICE_STATUS_TONES` en Tablets). El tono que el diseño B.4 llama `critical` es `urgent`, como en `SIGNALS` y en `OccStatTile`.
 - *`OccDataTable`* suma el modo lista, la fila desplegable y los estados remotos, y no tiene `density`: las filas miden 32 px con ratón y 44 px con puntero táctil (H.2). Contratos listos no es una tabla con una fila desplegable (E.2), sino una lista con un botón que despliega los servicios de cada contrato, porque las pruebas y el E2E del ciclo la leen como lista.
+- *La fila elegida* de `OccDataTable`, en la tabla y en la tarjeta, lleva la losa cian tenue (`--occ-accent-soft`), como la conversación abierta del chat: cian es lo elegido (contratos 2.4). No lleva `--occ-panel-raised`, que la tabla de tokens de la sección «Decisión» y el diseño (B.2) le daban.
 - *`OccDialog`* se dibuja en su sitio y no en un portal (punto 8).
 - *Las alturas* no usan `--occ-control-h` ni una variante `coarse:` (B.5): son `h-8` y `[@media(pointer:coarse)]:h-11`.
 - *Una quinta forma de presencia,* a trazos, para la falta de información; D28 tenía cuatro.
@@ -645,7 +657,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
   - `OperationCloseSection.test.jsx`: el hito «Bloqueo · {hora}» pasa a la tira de hitos, con «Bloqueo», su hora y «1 de 6», y el exceso del paquete se lee en su pastilla de atención;
   - `review/components/icons.test.jsx` prueba solo `XIcon`;
   - `occUiMessages.test.js` suma las secciones `table` y `dialog`, y `statusVocabulary.test.js`, los tonos de estado;
-  - `occStyleGuard.test.js` cambia la guarda del azul del chat por la de sus hojas, y suma las de las tarjetas apiladas, del foco de fila y el error de campo, de `MIGRATED_FILES` y de las pantallas rehechas;
+  - `occStyleGuard.test.js` cambia la guarda del azul del chat por la de sus hojas, y suma las de las tarjetas apiladas (con la fila elegida), del foco de fila y del mensaje de validación, de `MIGRATED_FILES` y de las pantallas rehechas;
   - las pruebas de las ocho rutas suman casos de la disposición, del inglés y de los estados; fuera de los cambios de esta lista, conservan los que ya tenían;
   - se borra `ExportButton.test.jsx`.
 - Pruebas nuevas:

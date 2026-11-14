@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { installFormValidation } from '../../components/formValidation';
 import { findLegacyColourClasses } from '../../styles/occLegacyBridge';
 import OccField, {
   OCC_CONTROL_KINDS, OccSelectField, OccTextField, OccTextareaField, occControlClass,
@@ -12,6 +13,8 @@ afterEach(cleanup);
 const classesOf = element => element.className.split(/\s+/).filter(Boolean);
 const describedBy = element => (element.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean)
   .map(id => document.getElementById(id)?.textContent);
+// A task later, every mutation observer has been called.
+const observersDone = () => new Promise(resolve => { setTimeout(resolve, 0); });
 
 describe('OccField', () => {
   it('names the control by its exact label and describes it with its hint', () => {
@@ -43,7 +46,7 @@ describe('OccField', () => {
     expect(agent.id).not.toBe(vehicle.id);
   });
 
-  it('an error is a form-validation-message alert and marks the control invalid', () => {
+  it('an error is an alert of its own, in the red of the OCC, and marks the control invalid', () => {
     const { rerender } = render(
       <OccField label="Motivo" hint="Queda en la auditoría." error="Escribe al menos 8 caracteres.">
         {control => <textarea {...control} />}
@@ -52,8 +55,11 @@ describe('OccField', () => {
     const reason = screen.getByRole('textbox', { name: 'Motivo' });
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('Escribe al menos 8 caracteres.');
-    expect(alert).toHaveClass('form-validation-message');
     expect(alert.tagName).toBe('P');
+    expect(alert).toHaveAttribute('data-occ-field-error');
+    expect(classesOf(alert)).toEqual(['text-xs', 'font-medium', 'text-occ-danger']);
+    // Never the class of the system's own messages, whose observer would take it away (see the next case).
+    expect(alert).not.toHaveClass('form-validation-message');
     expect(reason).toHaveAttribute('aria-invalid', 'true');
     // The hint and the error both describe the control, the hint first.
     expect(describedBy(reason)).toEqual(['Queda en la auditoría.', 'Escribe al menos 8 caracteres.']);
@@ -66,6 +72,42 @@ describe('OccField', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(reason).not.toHaveAttribute('aria-invalid');
     expect(describedBy(reason)).toEqual(['Queda en la auditoría.']);
+  });
+
+  it('keeps its error next to the system validation of app/layout.jsx, and takes it away itself', async () => {
+    // FormValidationMessages runs this on every route: its observer removes each `form-validation-message` that none
+    // of its own fields names.
+    const uninstall = installFormValidation(document);
+    try {
+      // The observer is at work: a message no field names goes away.
+      const orphan = document.createElement('p');
+      orphan.id = 'orphan-message';
+      orphan.className = 'form-validation-message';
+      document.body.append(orphan);
+      await observersDone();
+      expect(document.getElementById('orphan-message')).toBeNull();
+
+      const { rerender } = render(
+        <OccField label="Motivo" error="Escribe al menos 8 caracteres.">{control => <textarea {...control} />}</OccField>,
+      );
+      await observersDone();
+      // Another change of the page calls the observer again.
+      document.body.append(document.createElement('div'));
+      await observersDone();
+      const reason = screen.getByRole('textbox', { name: 'Motivo' });
+      expect(screen.getByRole('alert')).toHaveTextContent('Escribe al menos 8 caracteres.');
+      expect(reason).toHaveAttribute('aria-invalid', 'true');
+      expect(reason).toHaveAccessibleDescription('Escribe al menos 8 caracteres.');
+
+      // Fixed, React removes its own message: nobody took it before, so nothing throws.
+      expect(() => rerender(
+        <OccField label="Motivo">{control => <textarea {...control} />}</OccField>,
+      )).not.toThrow();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(reason).not.toHaveAttribute('aria-describedby');
+    } finally {
+      uninstall();
+    }
   });
 
   it('the text, select and textarea helpers forward value, onChange and constraints', async () => {

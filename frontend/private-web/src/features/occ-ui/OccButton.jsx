@@ -34,6 +34,10 @@ function check(variant, size) {
   if (!OCC_BUTTON_SIZES.includes(size)) throw new RangeError(`Unknown OCC button size: ${String(size)}`);
 }
 
+// A busy button cancels its own press: the caller's handler does not run and a submit button sends no form, also when
+// Enter in a field of that form presses it.
+const holdPress = event => { event.preventDefault(); };
+
 /**
  * The classes of an OCC button at rest, for anything that has to look like one: a `Link` to another screen, or a
  * class string of a register route (classes.js). An unknown variant or size throws.
@@ -47,20 +51,24 @@ export function occButtonClass({ variant = 'secondary', size = 'md' } = {}) {
  * A button of the OCC (design F): `variant` `primary` (the light key), `secondary` (default), `ghost` or `danger`;
  * `size` `md` or `sm`; `type` is `button` unless the caller says `submit`.
  * - `disabled` draws the faint look without hover.
- * - `busy` is a command on its way: the button is disabled and `aria-busy`, keeps its look without hover, and shows
- *   `busyLabel` («Confirmando…») in place of its children when one is given. Nothing spins.
+ * - `busy` is a command on its way: the button is `aria-busy`, keeps its look without hover, and shows `busyLabel`
+ *   («Confirmando…») in place of its children when one is given. Nothing spins. It is not disabled but held: a
+ *   browser moves the focus off a control that gets disabled, to the page, so the keyboard would lose its place, and
+ *   in an OccDialog its Esc and its Tab. A held button is `aria-disabled`, stays focused, and ignores a press, Enter
+ *   and Space. Busy wins over `disabled`, so a button that is both is held too.
  * Every other prop (`onClick`, `aria-*`, `data-*`, `form`) reaches the `button`; `className` goes last.
  */
 export default function OccButton({
   variant = 'secondary', size = 'md', busy = false, busyLabel, type = 'button', disabled = false, className = '',
-  children, ...rest
+  onClick, children, ...rest
 }) {
   check(variant, size);
   let look = `${LOOK[variant].rest} ${LOOK[variant].hover}`;
   if (busy) look = `${LOOK[variant].rest} cursor-wait`;
   else if (disabled) look = DISABLED_LOOK[variant];
   return (
-    <button type={type} {...rest} disabled={disabled || busy} aria-busy={busy || undefined}
+    <button type={type} {...rest} disabled={!busy && disabled} aria-disabled={busy ? 'true' : rest['aria-disabled']}
+      aria-busy={busy || undefined} onClick={busy ? holdPress : onClick}
       className={`${BASE} ${SIZE[size]} ${look} ${className}`}>
       {busy && busyLabel ? busyLabel : children}
     </button>

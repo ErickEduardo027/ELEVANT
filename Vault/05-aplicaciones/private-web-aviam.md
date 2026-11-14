@@ -755,12 +755,13 @@ estructura de ninguna pantalla: los textos, roles, nombres accesibles y
   definiera son ahora alias de los tokens: el chat vuelve a tener fondos y
   bordes. [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js)
   suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`, y
-  retira `signal`. No todos los tokens tienen clase: `--occ-field`,
-  `--occ-primary`, `--occ-primary-hover`, los `--occ-on-*`, los `--occ-*-fill`
-  y `--occ-scrim` solo existen como variables CSS hasta que un PR añada su
-  llave, y una guarda falla si una clase de color `occ-*` nombra un color sin
-  llave. Una clase `occ-*` nunca lleva modificador de opacidad: Tailwind no la
-  genera.
+  retira `signal`. No todos los tokens tienen clase: después de U1, U2 sumó
+  las llaves `primary`, `primary-hover`, `on-primary` y `scrim`, y U6, `field`.
+  `--occ-arriving-fill`, `--occ-on-accent`, `--occ-on-warn`, `--occ-on-danger`,
+  `--occ-warn-fill` y `--occ-danger-fill` siguen existiendo solo como
+  variables CSS hasta que un PR añada su llave, y una guarda falla si una clase
+  de color `occ-*` nombra un color sin llave. Una clase `occ-*` nunca lleva
+  modificador de opacidad: Tailwind no la genera.
 - **Puente de estilos heredados.** La mayoría de las pantallas del OCC todavía
   usa clases heredadas (`bg-white`, `dark:bg-surface-dark-card`,
   `text-text-secondary-*`…). La hoja
@@ -1073,9 +1074,14 @@ escriben.
 - **Primitivas y guardas.** U6 suma a `src/features/occ-ui` la
   [tabla densa](../../frontend/private-web/src/features/occ-ui/OccDataTable.jsx),
   que se dibuja como tabla o como lista, con filas encendidas, filas
-  desplegables y tarjetas apiladas en pantallas estrechas; la barra; el
-  [botón](../../frontend/private-web/src/features/occ-ui/OccButton.jsx); el
-  [campo](../../frontend/private-web/src/features/occ-ui/OccField.jsx); el
+  desplegables y tarjetas apiladas en pantallas estrechas, donde la fila
+  elegida sigue en cian; la barra; el
+  [botón](../../frontend/private-web/src/features/occ-ui/OccButton.jsx), que
+  conserva el foco mientras su comando está en camino; el
+  [campo](../../frontend/private-web/src/features/occ-ui/OccField.jsx), que
+  dibuja su propio mensaje de error y cuyo pozo es `--occ-field`, con la llave
+  `field` nueva en
+  [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js); el
   diálogo; la
   [pastilla de estado](../../frontend/private-web/src/features/occ-ui/OccStatusPill.jsx),
   con los tonos de

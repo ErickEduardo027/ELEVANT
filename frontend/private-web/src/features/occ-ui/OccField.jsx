@@ -13,6 +13,8 @@ const CONTROL = 'min-w-0 rounded border border-occ-line-strong bg-occ-field px-2
   + 'aria-[invalid=true]:border-occ-danger';
 const ONE_LINE = 'h-8 [@media(pointer:coarse)]:h-11';
 const MULTI_LINE = 'py-1.5';
+// The error under a control: secondary size, in the red of the OCC (4.5:1 on every surface a field sits on).
+const ERROR = 'text-xs font-medium text-occ-danger';
 
 /**
  * The classes of an OCC control of a `kind` (`input`, `select` or `textarea`), for a control that is not inside an
@@ -33,8 +35,11 @@ const joinIds = (...ids) => ids.filter(Boolean).join(' ') || undefined;
  * - `children(control)` draws the control: `control` is `{ id, 'aria-describedby', 'aria-invalid' }`, to spread on
  *   it. `id` is the caller's or a generated one.
  * - `hint` is secondary text under the control, and describes it.
- * - `error` is a `form-validation-message` with `role="alert"`, as the system's own validation messages are
- *   (src/components/formValidation.js): it describes the control and marks it `aria-invalid`.
+ * - `error` is a message of its own with `role="alert"` (`data-occ-field-error`): it describes the control and marks
+ *   it `aria-invalid`. It never takes the class of the system's validation messages, `form-validation-message`: the
+ *   observer that app/layout.jsx installs on every route (src/components/formValidation.js) removes each message of
+ *   that class that none of its own fields names, so it would take this one away, and React would then fail to remove
+ *   it when the error clears.
  * `className` goes on the field.
  */
 export default function OccField({ id, label, hint, error, className = '', children }) {
@@ -48,7 +53,7 @@ export default function OccField({ id, label, hint, error, className = '', child
       <label htmlFor={controlId} className="text-xs font-medium text-occ-muted">{label}</label>
       {children(control)}
       {hint ? <p id={hintId} className="text-xs text-occ-muted">{hint}</p> : null}
-      {error ? <p id={errorId} role="alert" className="form-validation-message">{error}</p> : null}
+      {error ? <p id={errorId} role="alert" data-occ-field-error="" className={ERROR}>{error}</p> : null}
     </div>
   );
 }

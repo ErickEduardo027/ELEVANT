@@ -16,6 +16,17 @@ afterEach(() => {
 const classesOf = element => element.className.split(/\s+/).filter(Boolean);
 const cancelMark = { [OCC_DIALOG_CANCEL]: '' };
 
+// What a browser does when the focused control can no longer take the focus, at its next frame (the focus fixup rule
+// of HTML, which jsdom does not apply): the focus goes to the page, and so do the keys. jsdom will not blur a disabled
+// control, so the page takes the focus for a moment.
+function applyFocusFixup() {
+  const active = document.activeElement;
+  if (!active || active === document.body || !active.matches(':disabled')) return;
+  document.body.tabIndex = -1;
+  document.body.focus();
+  document.body.removeAttribute('tabindex');
+}
+
 // A dialog with a cancel and a confirm in its footer, as Tablets and Revisión build theirs.
 function confirmFooter({ onCancel = () => {}, onConfirm = () => {}, busy = false } = {}) {
   return <>
@@ -183,6 +194,70 @@ describe('OccDialog', () => {
     expect(screen.getByRole('alertdialog')).not.toHaveAttribute('aria-busy');
     fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the focus on its busy confirm, so Tab and Esc still work after a failed command', async () => {
+    const user = userEvent.setup();
+    let reject;
+    const command = vi.fn(() => new Promise((resolve, fail) => { reject = fail; }));
+    function Revoke() {
+      const [open, setOpen] = useState(true);
+      const [busy, setBusy] = useState(false);
+      const [error, setError] = useState(null);
+      async function confirm() {
+        setBusy(true);
+        try {
+          await command();
+        } catch {
+          setError('No se pudo revocar la tablet. Vuelve a intentarlo.');
+        } finally {
+          setBusy(false);
+        }
+      }
+      return (
+        <LanguageScope>
+          <OccDialog open={open} onClose={() => setOpen(false)} title="Revocar la tablet TAB-07" tone="danger" busy={busy}
+            footer={confirmFooter({ onCancel: () => setOpen(false), onConfirm: () => void confirm(), busy })}>
+            {error ? <p role="alert">{error}</p> : <p>La tablet deja de poder iniciar sesión.</p>}
+          </OccDialog>
+        </LanguageScope>
+      );
+    }
+    render(<Revoke />);
+    const dialog = screen.getByRole('alertdialog', { name: 'Revocar la tablet TAB-07' });
+    // From «Cancelar», where a danger dialog starts, Tab reaches «Revocar», and Enter sends the command.
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(command).toHaveBeenCalledOnce();
+
+    // On its way, the confirm keeps the focus: Esc reaches the dialog, which stays open while it is busy.
+    applyFocusFixup();
+    const confirm = within(dialog).getByRole('button', { name: 'Revocando…' });
+    expect(confirm).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(dialog).toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    expect(command).toHaveBeenCalledOnce();
+
+    // It fails: the dialog stays with its message and the focus is still inside it.
+    await act(async () => { reject(new TypeError('Failed to fetch')); });
+    applyFocusFixup();
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('No se pudo revocar la tablet. Vuelve a intentarlo.');
+    expect(within(dialog).getByRole('button', { name: 'Revocar' })).toHaveFocus();
+    for (let step = 0; step < 4; step += 1) {
+      await user.tab();
+      expect(dialog.contains(document.activeElement), String(step)).toBe(true);
+    }
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    // A disabled confirm would have lost it: the fixup moves the focus off a control that gets disabled.
+    render(<button type="button">Probar</button>);
+    const probe = screen.getByRole('button', { name: 'Probar' });
+    probe.focus();
+    probe.disabled = true;
+    applyFocusFixup();
+    expect(document.body).toHaveFocus();
   });
 
   it('renders in place, so the region around it contains its buttons', () => {

@@ -603,6 +603,65 @@ describe('OCC legacy bridge', () => {
     document.body.replaceChildren();
   });
 
+  it('the chosen row of OccDataTable stays chosen in a stacked card, over a lit one, together with its detail', () => {
+    const OCC_CARD = "[data-department='occ'] table.table-stack tbody > tr";
+    const CHOSEN = `${OCC_CARD}[aria-selected='true']`;
+    const CHOSEN_DETAIL = `${CHOSEN} + tr[data-occ-row-detail]`;
+    const UNLIT = ':not([data-occ-tone])';
+    const order = [];
+    const bySelector = new Map();
+    postcss.parse(occCss).walkRules(rule => {
+      order.push(rule);
+      for (const selector of rule.selectors) bySelector.set(selector.replace(/\s+/g, ' '), rule);
+    });
+    const declarationsOf = rule => Object.fromEntries((rule?.nodes ?? [])
+      .filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
+
+    // In a card the cells lose their borders, and the card's own slab outweighs `bg-occ-accent-soft`: the card of the
+    // chosen row, and the card of its detail, take the cyan slab and a cyan joint at the top, the right and the bottom.
+    const slab = bySelector.get(CHOSEN);
+    expect(slab, CHOSEN).toBeDefined();
+    expect(bySelector.get(CHOSEN_DETAIL), CHOSEN_DETAIL).toBe(slab);
+    expect(declarationsOf(slab)).toEqual({
+      'border-top-color': 'var(--occ-accent)', 'border-right-color': 'var(--occ-accent)',
+      'border-bottom-color': 'var(--occ-accent)', 'background-color': 'var(--occ-accent-soft)',
+    });
+    // The left joint too, unless the row is lit: then it keeps the 3 px bar of its signal, as in the table.
+    const left = bySelector.get(`${CHOSEN}${UNLIT}`);
+    expect(left, `${CHOSEN}${UNLIT}`).toBeDefined();
+    expect(bySelector.get(`${CHOSEN_DETAIL}${UNLIT}`)).toBe(left);
+    expect(declarationsOf(left)).toEqual({ 'border-left-color': 'var(--occ-accent)' });
+    for (const rule of [slab, left]) expect(atRulesAround(rule)).toEqual(['@container (max-width: 39.98rem)']);
+
+    // Heavier than the card. As heavy as a lit row and written after every one, so the cyan slab wins over the slab of
+    // a signal as it does in the table; the detail's selector is heavier than a lit row's outright.
+    expect(compareSpecificity(specificity(CHOSEN), specificity(OCC_CARD))).toBeGreaterThan(0);
+    for (const tone of OCC_ROW_TONES) {
+      const lit = `${OCC_CARD}[data-occ-tone='${tone}']`;
+      expect(bySelector.get(lit), lit).toBeDefined();
+      expect(compareSpecificity(specificity(CHOSEN), specificity(lit)), lit).toBe(0);
+      expect(order.indexOf(slab), lit).toBeGreaterThan(order.indexOf(bySelector.get(lit)));
+      expect(compareSpecificity(specificity(CHOSEN_DETAIL), specificity(lit)), lit).toBeGreaterThan(0);
+    }
+    expect(compareSpecificity(specificity(`${CHOSEN}${UNLIT}`), specificity(CHOSEN))).toBeGreaterThan(0);
+    expect(compareSpecificity(specificity(`${CHOSEN_DETAIL}${UNLIT}`), specificity(CHOSEN_DETAIL))).toBeGreaterThan(0);
+
+    // They select the chosen row and the detail under it, never another row or its detail, and inside the OCC only.
+    document.body.innerHTML = ['<div data-department="occ">', '<div>'].map(open => `${open}<table class="table-stack"><tbody>`
+      + '<tr aria-selected="false"><td>AA904</td></tr><tr data-occ-row-detail hidden><td>Servicios</td></tr>'
+      + '<tr aria-selected="true"><td>DL611</td></tr><tr data-occ-row-detail><td>Servicios</td></tr>'
+      + '<tr aria-selected="true" data-occ-tone="attention"><td>UA120</td></tr>'
+      + '<tr data-occ-row-detail data-occ-tone="attention"><td>Servicios</td></tr></tbody></table></div>').join('');
+    const [inside, outside] = document.querySelectorAll('table');
+    const slabSelectors = [CHOSEN, CHOSEN_DETAIL].join(', ');
+    const leftSelectors = [`${CHOSEN}${UNLIT}`, `${CHOSEN_DETAIL}${UNLIT}`].join(', ');
+    const cards = table => [...table.querySelectorAll('tr')];
+    expect(cards(inside).map(row => row.matches(slabSelectors))).toEqual([false, false, true, true, true, true]);
+    expect(cards(inside).map(row => row.matches(leftSelectors))).toEqual([false, false, true, true, false, false]);
+    expect(cards(outside).some(row => row.matches(slabSelectors) || row.matches(leftSelectors))).toBe(false);
+    document.body.replaceChildren();
+  });
+
   it('a focused row of OccDataTable draws its ring inside, and a field error reads in the red of the OCC', () => {
     const rules = parseRules(occCss);
     const at = selector => rules.find(rule => rule.selectors.includes(selector));
