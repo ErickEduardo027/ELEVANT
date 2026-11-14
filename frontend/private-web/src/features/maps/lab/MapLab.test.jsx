@@ -2,9 +2,10 @@ import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
+import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { standPoint } from '../testing/mapFixtures';
 import MapLab, { MAP_LAB_MARKER } from './MapLab';
-import { SCENES } from './scenes';
+import { SCENES, findScene } from './scenes';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
 
@@ -51,7 +52,7 @@ describe('MapLab', () => {
   });
 
   it('mounts the map with the scene, its title and the test-data notice, and freezes the map clock with t=', () => {
-    const { map, unmount } = open(`?scene=ramp-points&t=${NOON}`);
+    const { map, unmount } = open(`?scene=ramp-states&t=${NOON}`);
     expect(screen.getByRole('heading', { level: 1, name: 'Rampa: posiciones y estados' })).toBeInTheDocument();
     expect(screen.getByText('Datos de prueba, no oficiales')).toBeInTheDocument();
     expect(screen.getByText('Reloj fijo: 2026-11-13 15:00 UTC')).toBeInTheDocument();
@@ -65,7 +66,14 @@ describe('MapLab', () => {
     expect(screen.getByTestId('map-lab-map').querySelector('.maplibregl-canvas')).not.toBeNull();
 
     loadStyle(map);
-    expect(map.getSource('occ-stands').data.features).toHaveLength(41);
+    // The 41 stands as polygons, read at the frozen instant: the seven states of the scene.
+    const polygons = map.getSource('occ-stands').data.features;
+    expect(polygons).toHaveLength(41);
+    expect(new Set(polygons.map(feature => feature.properties.state))).toEqual(new Set(STAND_STATE_KEYS));
+    expect(polygons.find(feature => feature.id === 'A3').properties.state).toBe('arriving');
+    // The countdowns too: A3's flight is due ten minutes after noon.
+    expect(map.getSource('occ-stand-labels').data.features.find(feature => feature.id === 'A3').properties.label3)
+      .toBe('A3\nDM203\nLlega 11:10 · en 10 min\nSin agente que la cubra');
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'ramp');
     expect(screen.getByRole('group', { name: 'Vista del mapa' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Leyenda' })).toBeInTheDocument();
@@ -91,19 +99,49 @@ describe('MapLab', () => {
     expect(query().get('stand')).toBe('A5');
     expect(query().get('stationId')).toBe('s-1');
     loadStyle(map);
-    expect(map.getSource('occ-selection').data.features[0].properties).toEqual({ kind: 'stand', id: 'A5' });
+    expect(map.getSource('occ-selection').data.features[0].properties).toMatchObject({ kind: 'stand', id: 'A5', label1: 'A5' });
+    expect(map.featureStateOf('occ-stands', 'A5')).toEqual({ selected: true });
     // Esc clears it, and the scene does not select it again.
     fireEvent.keyDown(map.getCanvas(), { key: 'Escape' });
     expect(query().has('stand')).toBe(false);
     expect(map.getSource('occ-selection').data.features).toEqual([]);
     // A stand clicked on the map is the selection.
-    fake.state.setRenderedFeatures(map, () => [{ layer: { id: 'occ-stands-frame' }, properties: { code: 'B21' } }]);
+    fake.state.setRenderedFeatures(map, () => [{ layer: { id: 'occ-stands-fill' }, properties: { code: 'B21' } }]);
     act(() => fake.state.emit(map, 'click', { point: { x: 10, y: 10 }, lngLat: { lng: -68.369, lat: 18.563 } }));
     expect(query().get('stand')).toBe('B21');
   });
 
+  it('places the stand of the placing scene: its pending box, a click moves it and Esc stops the placing first', () => {
+    const scene = findScene('ramp-placing-ghost');
+    const { map } = open(`?scene=ramp-placing-ghost&t=${NOON}`);
+    loadStyle(map);
+    // The stand is selected while it is placed, and the header says what to do.
+    expect(query().get('stand')).toBe(scene.placing.code);
+    expect(screen.getByText(`Ubicando ${scene.placing.code}: haz clic en el mapa; Esc lo deja`)).toBeInTheDocument();
+    expect(map.getCanvas().style.cursor).toBe('crosshair');
+    const boxes = map.getSource('occ-stand-ghost');
+    expect(boxes.data.features.map(feature => feature.id)).toEqual(['pending', 'pending-centre']);
+    expect(boxes.data.features[1].geometry.coordinates).toEqual([scene.placing.pending.longitude, scene.placing.pending.latitude]);
+    expect(window.__occMapLab.placing()).toEqual(scene.placing);
+
+    // A click at the stand's reference point (its centre in the layout) snaps the pending location there.
+    const [longitude, latitude] = standPoint(scene.placing.code);
+    act(() => fake.state.emit(map, 'click', { point: { x: 10, y: 10 }, lngLat: { lng: longitude, lat: latitude } }));
+    expect(window.__occMapLab.placing().pending).toEqual({ latitude, longitude, snapped: true });
+    expect(boxes.data.features[0].properties).toMatchObject({ kind: 'pending', snapped: true });
+
+    // Esc stops the placing and keeps the selection; the next one clears it.
+    fireEvent.keyDown(map.getCanvas(), { key: 'Escape' });
+    expect(window.__occMapLab.placing()).toBeNull();
+    expect(boxes.data.features).toEqual([]);
+    expect(map.getCanvas().style.cursor).toBe('');
+    expect(query().get('stand')).toBe(scene.placing.code);
+    fireEvent.keyDown(map.getCanvas(), { key: 'Escape' });
+    expect(query().has('stand')).toBe(false);
+  });
+
   it('re-reads the same stands without a new map or a new write, and exposes the lab handle', async () => {
-    const { map, unmount } = open('?scene=ramp-points', { strict: true });
+    const { map, unmount } = open('?scene=ramp-states', { strict: true });
     loadStyle(map);
     expect(fake.state.liveMaps()).toEqual([map]);
     const source = map.getSource('occ-stands');
@@ -113,9 +151,13 @@ describe('MapLab', () => {
     act(() => window.__occMapLab.refresh());
     expect(fake.state.liveMaps()).toEqual([map]);
     expect(source.setDataCalls).toHaveLength(1);
+    expect(source.updateDataCalls).toEqual([]);
+    // Without t= the stands read at the scene's own instant, which the header says.
+    expect(screen.getByText('Hora de la escena: 2026-11-13 15:00 UTC')).toBeInTheDocument();
+    expect(source.data.features.find(feature => feature.id === 'A3').properties.state).toBe('arriving');
 
     const lab = window.__occMapLab;
-    expect(lab.scene).toBe('ramp-points');
+    expect(lab.scene).toBe('ramp-states');
     expect(lab.liveMaps()).toBe(1);
     expect(lab.getCamera()).toMatchObject({ zoom: map.getZoom() });
     act(() => lab.flyToPreset('ramp', { terminal: 'FBO' }));
@@ -205,7 +247,7 @@ describe('MapLab', () => {
     cleanup();
 
     // A scene without traffic has no traffic layers.
-    const plain = open(`?scene=ramp-points&t=${NOON}`);
+    const plain = open(`?scene=ramp-states&t=${NOON}`);
     expect(plain.map.options.style.sources['occ-traffic']).toBeUndefined();
     expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
   });
@@ -235,7 +277,7 @@ describe('MapLab', () => {
       .toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('group', { name: 'Tráfico' })).toBeInTheDocument();
     cleanup();
-    open(`?scene=ramp-points&t=${NOON}`);
+    open(`?scene=ramp-states&t=${NOON}`);
     expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
   });
 

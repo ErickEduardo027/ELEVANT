@@ -1,10 +1,12 @@
 import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS, getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { mapMessages } from '../../maps/mapMessages';
 import { positionsMapMessages } from '../positionsMapMessages';
 
 export default function PositionListItem({ position, selected, onSelect }) {
   const { t, language } = useTranslation(positionsMapMessages);
+  const { t: tMap } = useTranslation(mapMessages);
   const meta = getStatusMeta('position', position.status);
   const accentColor = STATUS_COLORS[meta.color];
 
@@ -27,6 +29,12 @@ export default function PositionListItem({ position, selected, onSelect }) {
         <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
           {position.terminal === 'FBO' ? 'FBO' : t('list.terminal', { terminal: position.terminal })}
         </span>
+        {/* A stand of the board the map does not draw: «Ubicar en el mapa» in its drawer places it. */}
+        {position.locationSource === 'none' && (
+          <span data-location="none" className="rounded-sm border border-occ-line-strong px-1 text-xs font-semibold text-occ-muted">
+            {tMap('stand.unlocated')}
+          </span>
+        )}
         <span className="ml-auto">
           <StatusBadge tone={meta.color} label={getStatusLabel('position', position.status, language)} />
         </span>

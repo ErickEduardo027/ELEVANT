@@ -1,13 +1,12 @@
 import { useEffect } from 'react';
 import DemoTag from '../../occ-ui/DemoTag';
-import StatusBadge from '../../../components/StatusBadge';
-import { getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { XIcon } from '../../flight-monitoring/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
 import PositionActions from './PositionActions';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import { positionsMapMessages } from '../positionsMapMessages';
 
 function Field({ label, children }) {
@@ -21,7 +20,7 @@ function Field({ label, children }) {
 
 export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged,
   onStartPlacing, operationDate }) {
-  const { t, language, locale } = useTranslation(positionsMapMessages);
+  const { t, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
     // Escape closes the drawer first and is marked as used, so the map keys leave the selection for the next one.
@@ -37,7 +36,6 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   if (!position) return null;
 
   const hasFlight = Boolean(position.flightId || position.flightNumber);
-  const meta = getStatusMeta('position', position.status);
 
   return (
     <>
@@ -54,8 +52,10 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
             <p id="position-drawer-title" className="font-mono text-base font-semibold text-ink-900 dark:text-text-primary-dark">
               {position.id}
             </p>
+            {/* No state here: «Estado en el mapa» below says it once, in the words of the map (contracts 2.4). The
+                board's words (dashboard/statusMeta.js) differ and have no «Llegando», so a second state would
+                contradict it. */}
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone={meta.color} label={getStatusLabel('position', position.status, language)} />
               <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
                 {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
               </span>
@@ -74,6 +74,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <StandDetailFacts position={position} />
           <CombinedPositionBanner position={position} />
 
           {hasFlight ? (
