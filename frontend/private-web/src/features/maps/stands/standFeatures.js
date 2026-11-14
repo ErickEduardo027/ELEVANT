@@ -31,6 +31,9 @@ const SORT_KEYS = Object.freeze({
   default: Object.freeze({ disabled: 1, arriving: 1, occupied: 2, releasing: 2, planned: 3, available: 4, unverified: 5 }),
   dashboard: Object.freeze({ planned: 0, disabled: 1, arriving: 1, occupied: 2, releasing: 2, available: 4, unverified: 5 }),
 });
+// A stand with a signal places its label before every other (MapLibre places the lower key first): urgent, then
+// attention, then the order of its state.
+const SIGNAL_SORT = Object.freeze({ urgent: -20, attention: -10 });
 const SEPARATOR = ' · ';
 // The code-C box of a stand limited to narrow-body aircraft sits inside the stand, at least a metre from each side.
 const NARROW_MARGIN_M = 2;
@@ -201,14 +204,15 @@ export function buildStandFeatures(stands = [], {
       }));
     }
 
+    const signal = standSignalOf(position);
     labelPoints.push(feature(code, {
       code,
       state,
-      signal: standSignalOf(position),
+      signal,
       glyph: paint.glyph,
       clock: paint.clock,
       heading: Number.isFinite(geometry.headingTrue) ? geometry.headingTrue : 0,
-      sortKey: SORT_KEYS[labels][state],
+      sortKey: (SIGNAL_SORT[signal] ?? 0) + SORT_KEYS[labels][state],
       ...labelTexts(stand, context),
     }, { type: 'Point', coordinates: lineOf([geometry.center])[0] }));
   }

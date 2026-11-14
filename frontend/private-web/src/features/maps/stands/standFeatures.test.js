@@ -98,11 +98,11 @@ describe('buildStandFeatures', () => {
       label1: 'A2', label2: 'A2\nDM201', label3: 'A2\nDM201\nLlega 15:37 · en 90 min · MC', sortKey: 3,
     });
     expect(label('A3')).toMatchObject({
-      label2: 'A3\nDM203', label3: 'A3\nDM203\nLlega 14:17 · en 10 min\nSin agente que la cubra', sortKey: 1, signal: 'attention',
+      label2: 'A3\nDM203', label3: 'A3\nDM203\nLlega 14:17 · en 10 min\nSin agente que la cubra', sortKey: -9, signal: 'attention',
       glyph: null,
     });
     expect(label('A4')).toMatchObject({
-      label2: 'A4\nDM206', label3: 'A4\nDM206\nSale 15:07 · en 60 min · LP\nOtra aeronave llega a esta posición', sortKey: 2,
+      label2: 'A4\nDM206', label3: 'A4\nDM206\nSale 15:07 · en 60 min · LP\nOtra aeronave llega a esta posición', sortKey: -18,
       signal: 'urgent', glyph: 'aircraft', clock: false,
     });
     expect(label('A5')).toMatchObject({ label3: 'A5\nDM210\nSale 14:17 · en 10 min · LP', glyph: 'aircraft', clock: true });
@@ -114,6 +114,14 @@ describe('buildStandFeatures', () => {
     expect(label('B22')).toMatchObject({ label2: 'B22', label3: 'B22\nLP\nSolo fuselaje estrecho' });
     expect(label('BN6').label3).toBe('BN6\nSolo fuselaje estrecho');
     expect(label('A7')).toMatchObject({ label1: 'A7', label2: 'A7', label3: 'A7', sortKey: 5 });
+    // A stand with a signal places its label first (MapLibre places the lower key first): urgent, then attention, then
+    // the order of the states, so its code is never the one that gives way to a neighbour's.
+    const keyed = features.labels.features.map(point => point.properties);
+    const keysWith = signal => keyed.filter(item => item.signal === signal).map(item => item.sortKey);
+    expect(keysWith('urgent').length).toBeGreaterThan(0);
+    expect(keysWith('attention').length).toBeGreaterThan(0);
+    expect(Math.max(...keysWith('urgent'))).toBeLessThan(Math.min(...keysWith('attention')));
+    expect(Math.max(...keysWith('attention'))).toBeLessThan(Math.min(...keysWith(null)));
     for (const point of features.labels.features) {
       expect(point.geometry).toEqual({ type: 'Point', coordinates: [...positions.find(item => item.id === point.id).geometry.center] });
     }

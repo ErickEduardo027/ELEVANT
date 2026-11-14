@@ -50,8 +50,14 @@ const HOVER_OPACITY = 0.55;
 export const STAND_GLYPH_SIZE = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 13, 0.17, 16, 1.32, 19.5, 14.93]);
 // Where the signal and the clock sit: the upper corners of the stand around its centre, about 15 m out on the ground
 // (8 px when the stands are small), so they keep clear of the label in the middle as the map grows.
-const cornerOffset = side => ['interpolate', ['exponential', 2], ['zoom'],
-  14, ['literal', [8 * side, -8]], 16, ['literal', [13 * side, -13]], 19.5, ['literal', [147.08 * side, -147.08]]];
+// The signal sits above the stand's box and the clock of «Por liberar» below it, on the stand's axis on screen: outside
+// the label in the middle of the box, whatever the length of its code. From the codes on, the gap clears a two-line
+// label (2 × 13.8 px) and, from the three lines on, a four-line one, with the 20 px image; both grow with the stand
+// (about 13 px from its centre to its edge at zoom 16, twice as far for each zoom step). Below 15, where no label shows,
+// they stay close to the small box.
+const ICON_GAP_STOPS = Object.freeze([[14, 8], [15, 10], [15.5, 24], [16, 25], [17, 42], [18, 64], [19, 116], [20, 220]]);
+const outsideOffset = side => ['interpolate', ['linear'], ['zoom'],
+  ...ICON_GAP_STOPS.flatMap(([zoom, gap]) => [zoom, ['literal', [0, gap * side]]])];
 // A label moves above or below the stand's centre when its neighbours leave no room in the middle.
 const LABEL_ANCHORS = Object.freeze(['center', 'bottom', 'top']);
 const LABEL_OFFSET_EM = 1.2;
@@ -329,14 +335,16 @@ function labelLayers(labels) {
       },
       paint: { 'icon-color': byState(aircraft, state => standPaint(state).outline.color) },
     }),
-    // The clock of «Por liberar», at the upper right corner of the stand, on the slab's colour.
+    // The clock of «Por liberar», below the stand's box, on the slab's colour. Always drawn, and the labels give way to
+    // it (MapLibre places the upper layers first).
     labelLayer('occ-stand-clock', {
       filter: ['==', ['get', 'clock'], true],
       layout: {
         'icon-image': 'glyph-clock',
-        'icon-offset': cornerOffset(1),
+        'icon-offset': outsideOffset(1),
         'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
+        'icon-ignore-placement': false,
+        'icon-padding': 0,
       },
       paint: { 'icon-color': occColor('text'), 'icon-halo-color': occColor('panel-raised'), 'icon-halo-width': 1.5 },
     }),
@@ -373,15 +381,17 @@ function labelLayers(labels) {
       paint: selectedPaint,
       meta: { 'occ:minThreshold': 'threeLine' },
     }),
-    // The signals, on top of everything of the stands: amber triangle (attention) or red octagon (urgent), at the upper
-    // left corner of the stand with a dark halo that fills their «!».
+    // The signals, on top of everything of the stands: amber triangle (attention) or red octagon (urgent), above the
+    // stand's box with a dark halo that fills their «!». Always drawn, never over the stand's code: the labels are
+    // placed after them and give way.
     labelLayer('occ-stand-signal', {
       filter: ['to-boolean', ['get', 'signal']],
       layout: {
         'icon-image': ['match', ['get', 'signal'], 'urgent', 'signal-urgent', 'signal-attention'],
-        'icon-offset': cornerOffset(-1),
+        'icon-offset': outsideOffset(-1),
         'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
+        'icon-ignore-placement': false,
+        'icon-padding': 0,
       },
       paint: {
         'icon-color': ['match', ['get', 'signal'], 'urgent', occColor(SIGNALS.urgent.colorToken), occColor(SIGNALS.attention.colorToken)],

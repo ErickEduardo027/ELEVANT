@@ -318,13 +318,35 @@ describe('standOverlay', () => {
     expect(evaluate(label, 'layout', 'text-field', { state: 'planned', label1: 'A2', label2: 'A2\nDM201' }, { type: 1 }).toString()).toBe('A2\nDM201');
   });
 
-  it('the signal and the clock sit at the upper corners of the stand as the map grows, and the aircraft with the map', () => {
+  it('the signal sits above the stand and the clock below it, clear of the label in the middle, and the aircraft grows with the map', () => {
     const layers = standLayers();
     const offset = (id, zoom) => evaluate(layerOf({ layers }, id), 'layout', 'icon-offset', { signal: 'attention', clock: true }, { zoom, type: 1 });
-    expect([14, 16, 19.5].map(zoom => offset('occ-stand-signal', zoom))).toEqual([[-8, -8], [-13, -13], [-147.08, -147.08]]);
-    expect([14, 16, 19.5].map(zoom => offset('occ-stand-clock', zoom))).toEqual([[8, -8], [13, -13], [147.08, -147.08]]);
-    // Twice as far for each zoom step past the ramp, as the stand doubles on screen.
-    expect(offset('occ-stand-signal', 18)[0] / offset('occ-stand-signal', 17)[0]).toBeCloseTo(2, 3);
+    // On the stand's axis on screen: the signal above (a negative y), the clock as far below.
+    for (const zoom of [14, 15.5, 16, 17, 18.5, 20]) {
+      expect(offset('occ-stand-signal', zoom)[0], `signal x at ${zoom}`).toBe(0);
+      expect(offset('occ-stand-signal', zoom)[1], `signal y at ${zoom}`).toBeLessThan(0);
+      expect(offset('occ-stand-clock', zoom), `clock at ${zoom}`).toEqual([0, -offset('occ-stand-signal', zoom)[1]]);
+    }
+    // Clear of the label in the middle of the box: the 20 px image (10 px to its edge) ends past a two-line label from
+    // the codes on, and past a four-line one from the three lines on (12 px lines at a line height of 1.15).
+    const label = layerOf({ layers }, 'occ-stand-labels');
+    const line = label.layout['text-size'] * label.layout['text-line-height'];
+    const clears = (zoom, lines) => Math.abs(offset('occ-stand-signal', zoom)[1]) - 10 >= (lines * line) / 2;
+    for (const zoom of [15.5, 16, 16.5]) expect(clears(zoom, 2), `two lines at ${zoom}`).toBe(true);
+    for (const zoom of [17, 17.5, 18, 19, 20]) expect(clears(zoom, 4), `four lines at ${zoom}`).toBe(true);
+    // Past the stand's edge as the stand grows on screen (about 13 px from its centre at zoom 16, twice as far for each
+    // zoom step), and close to the small box below 15, where no label shows.
+    for (const zoom of [16, 17, 18, 19, 20]) {
+      expect(Math.abs(offset('occ-stand-signal', zoom)[1]), `past the edge at ${zoom}`).toBeGreaterThan(13 * 2 ** (zoom - 16) + 9);
+    }
+    expect(Math.abs(offset('occ-stand-signal', 14)[1])).toBeLessThanOrEqual(8);
+    // Always drawn, and the labels give way to them instead of running under them: MapLibre places the upper layers
+    // first, and the signal is above every label of the stands.
+    for (const id of ['occ-stand-signal', 'occ-stand-clock']) {
+      expect(layerOf({ layers }, id).layout, id).toMatchObject({ 'icon-allow-overlap': true, 'icon-ignore-placement': false, 'icon-padding': 0 });
+    }
+    const ids = layers.map(layer => layer.id);
+    expect(ids.indexOf('occ-stand-signal')).toBeGreaterThan(ids.indexOf('occ-stand-labels-3'));
     const glyph = zoom => evaluate(layerOf({ layers }, 'occ-stand-glyph'), 'layout', 'icon-size', { glyph: 'aircraft' }, { zoom, type: 1 });
     expect(glyph(17) / glyph(16)).toBeCloseTo(2, 3);
     // The aircraft is never drawn at a fixed screen size and turns with the stand.
