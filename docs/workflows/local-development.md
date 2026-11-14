@@ -93,7 +93,7 @@ Para probar a mano la red real, como una lectura deliberada y fuera de las prueb
 
 El clima del aeródromo del OCC por la API ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del PR M8) está apagado por defecto (`AviationWeather:Enabled=false`) y lo enciende `appsettings.Development.json`. Trae el METAR y el TAF de la Data API de aviationweather.gov, sin clave ([integraciones externas](../architecture/external-integrations.md)).
 
-**Aviso.** `compose.local.yml` ejecuta la API como `Development`, así que el stack local **sin** el overlay llama a aviationweather.gov cada vez que alguien lee `GET occ/weather` y la API no tiene guardado un informe vigente: como mucho 2 consultas cada 5 minutos por aeropuerto. Hasta la segunda parte de M8 ninguna pantalla hace esa lectura (Private Web sigue con el METAR de Iowa Mesonet), así que sin una lectura a mano no llama a nadie.
+**Aviso.** `compose.local.yml` ejecuta la API como `Development`, así que el stack local **sin** el overlay llama a aviationweather.gov cuando alguien lee `GET occ/weather` y la API no tiene guardado un informe vigente. Con el servicio respondiendo, son como mucho 2 consultas cada 5 minutos por aeropuerto; tras un fallo, la API espera 1, 2, 4, 8 y luego 15 minutos antes de volver a preguntar, o lo que pida un `Retry-After` más largo, hasta una hora. Hasta la segunda parte de M8 ninguna pantalla hace esa lectura (Private Web sigue con el METAR de Iowa Mesonet), así que sin una lectura a mano no llama a nadie.
 
 El overlay del arnés lo apaga con `AviationWeather__Enabled: "${ELEVANT_E2E_AVIATION_WEATHER_ENABLED:-false}"`: el recorrido E2E nunca lee el servicio real. Ninguna prueba ni workflow de CI llama a aviationweather.gov.
 

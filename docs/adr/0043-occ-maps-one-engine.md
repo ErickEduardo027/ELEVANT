@@ -421,6 +421,7 @@ M8 «Capas aeronáuticas y clima» se entrega en dos partes. Esta nota recoge la
 - el `User-Agent` es el genérico de la imagen aérea, `air-traffic-reader/1.0`, y no `ELEVANT/1.0`, que nombraba el proyecto (contratos 1.3);
 - la nota va en este ADR, como todo M2 a M8 (contratos 4), y no en un ADR-0041 nuevo que juntara las secciones A a E del diseño;
 - el plan, la página de contratos (1.4) y la tabla «Lo que añadirán M3 a M8» nombran el TAF en bruto; la respuesta lo lleva en bruto y también por periodos, como el diseño. Es aditivo: una pantalla puede quedarse con el texto en bruto;
+- la página de contratos (1.4) da a toda la lectura una caché de 5 minutos; la fuente guarda el METAR 5 minutos y el TAF 30, como el diseño. Guardar el TAF más tiempo solo quita llamadas: con el servicio respondiendo siguen siendo como mucho 2 cada 5 minutos por aeropuerto;
 - un `Retry-After` más largo que la espera manda, hasta una hora, y el diseño solo decía 1, 2, 4… 15 minutos; `Unavailable` cubre también un fallo inesperado de la fuente, y un TAF nunca se sirve pasada su validez, casos que el diseño no trataba;
 - `appsettings.Production.json` apaga el clima de forma explícita, y el overlay del arnés lo apaga con una variable que permite la lectura a mano, como en A3 ([ADR-0042](0042-occ-air-picture-and-map-flights.md), sección 12);
 - el código de error es uno nuevo, `invalid_weather_query`, y no el `invalid_map_query` de los mapas, y el aeropuerto de la estación lo lee un almacén propio, `IOccStationAirportStore`;
