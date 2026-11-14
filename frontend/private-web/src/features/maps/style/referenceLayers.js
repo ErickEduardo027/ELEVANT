@@ -1,8 +1,9 @@
 import { occColor } from '../../occ-ui/occPalette';
+import { OURAIRPORTS_ATTRIBUTION } from '../core/attribution';
 import { NAVAID_IMAGES } from './referenceImages';
 import { FONT_STACKS } from './basemapLayers';
 
-export { referenceFeatures } from '../traffic/referenceFeatures';
+export { ourAirportsFeatures, referenceFeatures } from '../traffic/referenceFeatures';
 
 // The fixed references of every OCC map: the aerodrome reference point of Punta Cana with its «PUJ» label (it replaces
 // the airport marker of Monitoreo), and from PR M8 (design E6) the range rings, the extended runway centrelines with the
@@ -10,7 +11,10 @@ export { referenceFeatures } from '../traffic/referenceFeatures';
 // the mark of PUJ hides behind the derived `codes` threshold. Its label sits above the mark: the stands lie south of the
 // reference point, so in the airfield view it stays clear of them. The tile label of the same airport, and those of the
 // region's airports, are left out of the base map (basemapLayers.js), so each is written once. Pure: OccMap adds the
-// overlay and fills its two sources (traffic/referenceFeatures.js and traffic/nightShade.js).
+// overlay and fills its three sources (traffic/referenceFeatures.js and traffic/nightShade.js). What is drawn from
+// OurAirports data (the extended centrelines, from the thresholds and headings of the runway ends, the region's
+// airports and the navaids) has a source of its own that carries the credit of OurAirports, so MapLibre lists it only
+// while one of those layers is drawn (design A7), as the airfield source does with its own.
 //
 // The mark of the home airport lies in the `airfield` slot, above the pavement and the base-map labels: in the
 // `reference` slot a runway drawn over it, or a place name placed before it, hid the airport the map is about (seen
@@ -20,6 +24,11 @@ export { referenceFeatures } from '../traffic/referenceFeatures';
 // in the neutral tokens, no hue (contracts 2.4); the runway in use is the one line drawn wider and lighter.
 
 export const REFERENCE_SOURCE = 'occ-reference';
+/**
+ * The source of the references drawn from OurAirports data (traffic/referenceFeatures.js: ourAirportsFeatures), with
+ * its credit (core/attribution.js: OURAIRPORTS_ATTRIBUTION).
+ */
+export const OURAIRPORTS_SOURCE = 'occ-reference-ourairports';
 /** The source of the night shade (traffic/nightShade.js), rewritten on the minute. */
 export const NIGHT_SOURCE = 'occ-night';
 /** The group of the mark of PUJ: never a key of the layers menu, so it always shows. */
@@ -85,22 +94,28 @@ function ringLayers(scope, thresholds) {
 }
 
 /**
- * The overlay of the references for buildOccStyle: the sources `occ-reference` and `occ-night`, born empty, and their
- * layers. In the airfield slot, the codes of today's counterparts and the mark of PUJ up to the codes threshold. In the
- * reference slot: the rings of the Región view below the `approach` threshold and those of Aproximación from it up to
- * the airfield one, each with its label; the extended centrelines, their ticks (from the `approach` threshold) and the
- * label of the runway in use; the region's airports, a hollow ring each and a filled one, with its code in the text
- * colour, for today's counterparts; and the navaids, with their chart symbol and their ident and frequency, from the
- * `approach` threshold until the stands turn into polygons. In the shade slot, the night, the line of its edge and its
- * word, up to the airfield threshold.
+ * The overlay of the references for buildOccStyle: the sources `occ-reference`, `occ-reference-ourairports` (with the
+ * credit of OurAirports) and `occ-night`, born empty, and their layers. In the airfield slot, the codes of today's
+ * counterparts and the mark of PUJ up to the codes threshold. In the reference slot: the rings of the Región view below
+ * the `approach` threshold and those of Aproximación from it up to the airfield one, each with its label; the extended
+ * centrelines, their ticks (from the `approach` threshold) and the label of the runway in use; the region's airports, a
+ * hollow ring each and a filled one, with its code in the text colour, for today's counterparts; and the navaids, with
+ * their chart symbol and their ident and frequency, from the `approach` threshold until the stands turn into polygons.
+ * In the shade slot, the night, the line of its edge and its word, up to the airfield threshold. The centrelines, the
+ * airports and the navaids read the OurAirports source; the mark of PUJ and the rings, the reference source.
  */
 export function referenceOverlay() {
   return {
-    sources: { [REFERENCE_SOURCE]: { type: 'geojson' }, [NIGHT_SOURCE]: { type: 'geojson' } },
+    sources: {
+      [REFERENCE_SOURCE]: { type: 'geojson' },
+      [OURAIRPORTS_SOURCE]: { type: 'geojson', attribution: OURAIRPORTS_ATTRIBUTION },
+      [NIGHT_SOURCE]: { type: 'geojson' },
+    },
     layers: [
       // The codes of today's counterparts, under the mark of PUJ in the airfield slot, so the mark keeps its place first.
       referenceLayer('occ-reference-counterpart-labels', 'symbol', REFERENCE_GROUPS.airports, {
         slot: ARP_SLOT,
+        source: OURAIRPORTS_SOURCE,
         filter: ['all', kindIs('airport'), COUNTERPART],
         layout: AIRPORT_LABEL_LAYOUT,
         paint: { 'text-color': occColor('text'), ...HALO },
@@ -135,6 +150,7 @@ export function referenceOverlay() {
       ...ringLayers('approach', { 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }),
       // The runway in use wider and in the text colour; every other end a thin line in line-strong.
       referenceLayer('occ-reference-centrelines', 'line', REFERENCE_GROUPS.centrelines, {
+        source: OURAIRPORTS_SOURCE,
         filter: kindIs('centreline'),
         layout: { 'line-cap': 'butt' },
         paint: {
@@ -143,6 +159,7 @@ export function referenceOverlay() {
         },
       }),
       referenceLayer('occ-reference-centreline-ticks', 'line', REFERENCE_GROUPS.centrelines, {
+        source: OURAIRPORTS_SOURCE,
         filter: kindIs('tick'),
         paint: {
           'line-color': ['case', IN_USE, occColor('text'), occColor('line-strong')],
@@ -151,6 +168,7 @@ export function referenceOverlay() {
         thresholds: { 'occ:minThreshold': 'approach' },
       }),
       referenceLayer('occ-reference-centreline-label', 'symbol', REFERENCE_GROUPS.centrelines, {
+        source: OURAIRPORTS_SOURCE,
         filter: kindIs('centrelineLabel'),
         layout: {
           'text-field': ['get', 'label'],
@@ -166,6 +184,7 @@ export function referenceOverlay() {
       // An airport of the region is a ring; the airport of a flight of today a filled dot, and its code in the text
       // colour: the shape tells them apart, not the colour alone.
       referenceLayer('occ-reference-airports', 'circle', REFERENCE_GROUPS.airports, {
+        source: OURAIRPORTS_SOURCE,
         filter: kindIs('airport'),
         paint: {
           'circle-radius': ['case', COUNTERPART, 3.5, 3],
@@ -178,6 +197,7 @@ export function referenceOverlay() {
       // (their layer, first in this list, is in the airfield slot, placed before the base-map labels, as the mark of PUJ
       // is). Each tries the four sides of its mark before it gives way.
       referenceLayer('occ-reference-airport-labels', 'symbol', REFERENCE_GROUPS.airports, {
+        source: OURAIRPORTS_SOURCE,
         filter: ['all', kindIs('airport'), ['!', COUNTERPART]],
         layout: AIRPORT_LABEL_LAYOUT,
         paint: { 'text-color': occColor('faint'), ...HALO },
@@ -186,6 +206,7 @@ export function referenceOverlay() {
       // always drawn, under the mark, and their ident and frequency where there is room. They end where the stands turn
       // into polygons (PCA lies by terminal A), so nothing of them sits over the stands.
       referenceLayer('occ-reference-navaids', 'symbol', REFERENCE_GROUPS.navaids, {
+        source: OURAIRPORTS_SOURCE,
         filter: ['all', kindIs('navaid'), ['match', ['get', 'type'], Object.keys(NAVAID_IMAGES), true, false]],
         layout: {
           'icon-image': ['match', ['get', 'type'], 'NDB', NAVAID_IMAGES.NDB, NAVAID_IMAGES['VOR-DME']],

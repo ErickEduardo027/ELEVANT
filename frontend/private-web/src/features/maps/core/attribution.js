@@ -5,7 +5,8 @@ import { OPENFREEMAP_ATTRIBUTION } from '../style/occStyle';
 // Text that comes from the API is escaped and only https links are emitted; MapLibre sanitizes the result again.
 // The airfield of the own dataset brings its credit on its own GeoJSON source (AIRFIELD_ATTRIBUTION): MapLibre lists
 // a source's credit only while one of its layers is drawn at the current zoom. The satellite images of PR M8 do the
-// same on their raster sources (GIBS_ATTRIBUTION), and the aerodrome weather is a source with its own label.
+// same on their raster sources (GIBS_ATTRIBUTION), the references drawn from OurAirports on theirs
+// (OURAIRPORTS_ATTRIBUTION), and the aerodrome weather is a source with its own label.
 
 const ATTRIBUTION_SELECTOR = 'details.maplibregl-ctrl-attrib';
 const HTML_ESCAPES = Object.freeze({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' });
@@ -24,6 +25,15 @@ export function escapeHtml(value) {
 const creditLink = (href, text) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
 
 /**
+ * The credit of OurAirports (public domain, which asks for none: the map gives it all the same), linked to its home
+ * page. From PR M8 the references drawn from its data carry it on their own source (style/referenceLayers.js:
+ * OURAIRPORTS_SOURCE: the extended centrelines, the airports of the region and the navaids), so the map shows it only
+ * while one of them is drawn. The airfield credit ends with the same text, so with both on screen MapLibre, which drops
+ * a credit another one contains, shows it once.
+ */
+export const OURAIRPORTS_ATTRIBUTION = creditLink('https://ourairports.com/', 'OurAirports');
+
+/**
  * The credit of the airfield drawn from mdpc.layout.json (PR M3): its pavement, taxiways and buildings come from an
  * OpenStreetMap extract, offered under the ODbL (© OpenStreetMap contributors, linked to their copyright page and to
  * the licence), and its runway ends from OurAirports (public domain). The airfield source carries it, so the map shows
@@ -32,7 +42,7 @@ const creditLink = (href, text) => `<a href="${escapeHtml(href)}" target="_blank
 export const AIRFIELD_ATTRIBUTION = [
   `${creditLink('https://www.openstreetmap.org/copyright', '© OpenStreetMap contributors')} `
     + `(${creditLink('https://opendatacommons.org/licenses/odbl/', 'ODbL')})`,
-  creditLink('https://ourairports.com/', 'OurAirports'),
+  OURAIRPORTS_ATTRIBUTION,
 ].join(' · ');
 
 /** The home of NASA's Global Imagery Browse Services: the documentation of the GIBS API. */

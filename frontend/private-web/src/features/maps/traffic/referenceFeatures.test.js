@@ -10,9 +10,11 @@ import { PUJ_ARP } from '../core/cameraPresets';
 import { createAerodromeWeather, WEATHER_NOON } from '../testing/weatherFixtures';
 import { createMapFlights } from '../testing/trafficFixtures';
 import {
-  CENTRELINE_NM, NAVAID_KINDS, RANGE_RINGS_NM, REFERENCE_LEGEND_KINDS, RING_LABEL_BEARING, WIND_MAX_AGE_MINUTES,
-  counterpartCodes, extendedCentrelines, mapRunwayInUse, navaidFeatures, rangeRing, recentLiveArrivals,
-  referenceFeatures, referenceKindsOnScreen, referencesOnScreen, regionAirportFeatures, runwayInUseLabel, runwayWindOf,
+  ARRIVAL_VOTE_MINUTES, CENTRELINE_NM, FINAL_LATERAL_NM, FINAL_MAX_ALT_M, FINAL_NM, NAVAID_KINDS, RANGE_RINGS_NM,
+  REFERENCE_LEGEND_KINDS, RING_LABEL_BEARING, WIND_MAX_AGE_MINUTES, arrivalsOnFinal, counterpartCodes,
+  extendedCentrelines, finalApproachEnd, mapRunwayInUse, navaidFeatures, ourAirportsFeatures, rangeRing,
+  referenceFeatures, referenceKindsOnScreen, referencesOnScreen, regionAirportFeatures, rememberArrivals,
+  runwayInUseLabel, runwayWindOf,
 } from './referenceFeatures';
 
 // The reference overlays of PR M8 (design E6, contracts 2.3): rings, extended centrelines, the runway in use, the
@@ -29,13 +31,21 @@ function weatherOf(options = {}) {
   return { status: reading.observation ? 'success' : 'empty', data: reading.observation, apiStatus: reading.apiStatus };
 }
 
-// A live aircraft `nm` out on final of the runway end `ident`, flying its heading down to the threshold.
-function onFinal(ident, nm = 6, extra = {}) {
+// A live aircraft `nm` out on final of the runway end `ident`, `acrossNm` to the right of its extended centreline as
+// seen from the threshold, flying its heading down to the threshold.
+function onFinal(ident, nm = 6, extra = {}, acrossNm = 0) {
   const runway = end(ident);
-  const [lon, lat] = destinationPoint(runway.threshold, (runway.headingTrue + 180) % 360, nm * METRES_PER_NM);
+  const outward = (runway.headingTrue + 180) % 360;
+  const onLine = destinationPoint(runway.threshold, outward, nm * METRES_PER_NM);
+  const [lon, lat] = acrossNm === 0 ? onLine : destinationPoint(onLine, (outward + 90) % 360, acrossNm * METRES_PER_NM);
   return { id: `h:${ident}-${nm}`, quality: 'live', onGround: false, altM: nm * 100, trackDeg: runway.headingTrue,
     vrateMs: -3.5, lon, lat, ...extra };
 }
+// A live aircraft at `point`, level at 600 m.
+const liveAt = ([lon, lat], extra = {}) => ({ id: 'h:other', quality: 'live', onGround: false, altM: 600, vrateMs: 0,
+  lon, lat, ...extra });
+// The votes of `aircraft` on final at noon, as the map passes them to mapRunwayInUse.
+const votesOf = aircraft => arrivalsOnFinal(aircraft, { nowMs: NOON_MS });
 
 describe('reference features', () => {
   it('range rings of 5, 10, 20 and 40 NM in approach and 50 to 250 NM in region, closed, at their radius and labelled «20 NM»', () => {
@@ -105,7 +115,7 @@ describe('reference features', () => {
     // Nothing known: the usual 08 (owner decision 19).
     const usual = mapRunwayInUse({ nowMs: NOON_MS });
     expect(usual).toEqual({ arrival: '08', departure: '08', source: 'default' });
-    const plain = referenceFeatures({ runway: usual });
+    const plain = ourAirportsFeatures({ runway: usual });
     expect(inUse(plain)).toEqual([['08', 'default']]);
     expect(labelOf(plain)).toEqual(['Pista 08 (habitual)']);
     // Its label sits past the end of its centreline, its text running on to the west, away from the airport.
@@ -121,11 +131,11 @@ describe('reference features', () => {
     expect(runwayWindOf(live, NOON_MS)).toEqual({ directionDeg: 100, speedMs: expect.closeTo(6.69, 2) });
     const byWind = mapRunwayInUse({ weather: live, nowMs: NOON_MS });
     expect(byWind).toEqual({ arrival: '08', departure: '08', source: 'wind' });
-    expect(labelOf(referenceFeatures({ runway: byWind }))).toEqual(['Pista 08 (estimada por el viento)']);
+    expect(labelOf(ourAirportsFeatures({ runway: byWind }))).toEqual(['Pista 08 (estimada por el viento)']);
     // A westerly wind lands on 26.
     const westerly = mapRunwayInUse({ weather: weatherOf({ wind: { directionDeg: 270, speedKt: 15 } }), nowMs: NOON_MS });
     expect(westerly).toEqual({ arrival: '26', departure: '26', source: 'wind' });
-    const fromWest = referenceFeatures({ runway: westerly });
+    const fromWest = ourAirportsFeatures({ runway: westerly });
     expect(inUse(fromWest)).toEqual([['26', 'wind']]);
     expect(labelOf(fromWest)).toEqual(['Pista 26 (estimada por el viento)']);
     expect(ofKind(fromWest, 'centrelineLabel')[0].properties.anchor).toBe('left');
@@ -143,10 +153,10 @@ describe('reference features', () => {
     expect(mapRunwayInUse({ weather: weatherOf({ wind: { directionDeg: 0, speedKt: 0 } }), nowMs: NOON_MS }).source).toBe('default');
 
     // Live arrivals on final win over the wind: two on 26 against a wind for 08.
-    const arrivals = [onFinal('26', 6), onFinal('26', 3)];
-    const byArrivals = mapRunwayInUse({ aircraft: arrivals, weather: live, nowMs: NOON_MS });
+    const arrivals = [onFinal('26', 6, { id: 'h:a' }), onFinal('26', 3, { id: 'h:b' })];
+    const byArrivals = mapRunwayInUse({ arrivals: votesOf(arrivals), weather: live, nowMs: NOON_MS });
     expect(byArrivals).toEqual({ arrival: '26', departure: '26', source: 'live' });
-    expect(labelOf(referenceFeatures({ runway: byArrivals }))).toEqual(['Pista 26 (según las llegadas)']);
+    expect(labelOf(ourAirportsFeatures({ runway: byArrivals }))).toEqual(['Pista 26 (según las llegadas)']);
 
     // In English.
     expect(runwayInUseLabel(byArrivals, 'en')).toBe('Runway 26 (from the arrivals)');
@@ -154,29 +164,133 @@ describe('reference features', () => {
     expect(runwayInUseLabel(usual, 'en')).toBe('Runway 08 (usual)');
     expect(runwayInUseLabel({ arrival: '08', source: 'flight' })).toBe('Pista 08');
     expect(runwayInUseLabel({ arrival: null, source: 'default' })).toBeNull();
-    expect(referenceFeatures({ runway: { arrival: null, departure: null, source: 'default' } }).features
+    expect(ourAirportsFeatures({ runway: { arrival: null, departure: null, source: 'default' } }).features
       .filter(item => item.properties.inUse || item.properties.kind === 'centrelineLabel')).toEqual([]);
   });
 
-  it('recentLiveArrivals keeps live airborne aircraft low and close to PUJ', () => {
+  it('a live arrival counts only on final: on the extended centreline of a runway end, flying its course', () => {
+    expect([FINAL_NM, FINAL_LATERAL_NM, FINAL_MAX_ALT_M]).toEqual([12, 1, 1000]);
+    // On final for each runway end, from 12 NM out down to short final.
+    for (const ident of ['08', '26', '09', '27']) {
+      for (const nm of [0.5, 6, 11.9]) expect(finalApproachEnd(onFinal(ident, nm, { altM: 300 }))?.ident, `${ident} ${nm}`).toBe(ident);
+    }
+    // Up to 1 NM either side of the centreline and 10° off its course (airport/runwayInUse.js: ALIGNED_DEG).
+    expect(finalApproachEnd(onFinal('08', 6, {}, 0.9))?.ident).toBe('08');
+    expect(finalApproachEnd(onFinal('08', 6, {}, -0.9))?.ident).toBe('08');
+    expect(finalApproachEnd(onFinal('08', 6, {}, 1.1))).toBeNull();
+    expect(finalApproachEnd(onFinal('08', 6, {}, -1.1))).toBeNull();
+    expect(finalApproachEnd(onFinal('26', 6, { trackDeg: end('26').headingTrue + 9 }))?.ident).toBe('26');
+    expect(finalApproachEnd(onFinal('26', 6, { trackDeg: end('26').headingTrue + 11 }))).toBeNull();
+    // Not beyond 12 NM, nor past the threshold over the runway.
+    expect(finalApproachEnd(onFinal('08', 12.5))).toBeNull();
+    expect(finalApproachEnd(onFinal('08', -0.5, { altM: 30 }))).toBeNull();
+
+    // 08 in use, and an aircraft joining its downwind from the east: westbound at 262°, level at 600 m, 6 NM out along
+    // 26 and 3 NM north of it. It flies towards PUJ and within 10° of 26 and 27, but on neither final: no vote, and the
+    // wind still lands on 08 (the review of PR M8).
+    const thresholdOf26 = end('26').threshold;
+    const downwind = liveAt(destinationPoint(destinationPoint(thresholdOf26, 73.8, 6 * METRES_PER_NM), 343.8, 3 * METRES_PER_NM),
+      { trackDeg: 262 });
+    expect(finalApproachEnd(downwind)).toBeNull();
+    expect(mapRunwayInUse({ arrivals: votesOf([downwind]), weather: weatherOf(), nowMs: NOON_MS }))
+      .toEqual({ arrival: '08', departure: '08', source: 'wind' });
+    // The same downwind further on, at 460 m and 900 m, 5 to 10 NM east of the field: never a vote.
+    for (const nm of [5, 7.5, 10]) {
+      for (const altM of [460, 900]) {
+        const point = destinationPoint(destinationPoint(thresholdOf26, 73.8, nm * METRES_PER_NM), 343.8, 3 * METRES_PER_NM);
+        expect(finalApproachEnd(liveAt(point, { altM, trackDeg: 258 })), `${nm} NM ${altM} m`).toBeNull();
+      }
+    }
+    // An aircraft from the south-east flying west, towards PUJ and within 10° of 27's course but 4 NM south of its
+    // centreline; and one on a base leg for 08.
+    const southEast = liveAt(destinationPoint(PUJ_ARP, 115, 8 * METRES_PER_NM), { trackDeg: 270 });
+    expect(finalApproachEnd(southEast)).toBeNull();
+    expect(mapRunwayInUse({ arrivals: votesOf([southEast]), nowMs: NOON_MS }).source).toBe('default');
+    expect(finalApproachEnd(onFinal('08', 5, { trackDeg: (end('08').headingTrue + 90) % 360 }))).toBeNull();
+    // One on final for 08: it votes, and lands the flow on 08 against a westerly wind.
+    const westerly = weatherOf({ wind: { directionDeg: 270, speedKt: 15 } });
+    expect(mapRunwayInUse({ arrivals: votesOf([onFinal('08', 6)]), weather: westerly, nowMs: NOON_MS }))
+      .toEqual({ arrival: '08', departure: '08', source: 'live' });
+
+    // Each of these is left out: estimated, stale, demo, on the ground, too high, climbing, without a track, an altitude
+    // or a position, and flying away from the airport.
     const final = onFinal('08', 6);
-    expect(recentLiveArrivals([final])).toEqual([{ trackDeg: end('08').headingTrue }]);
-    // Each of these is left out: estimated, stale, on the ground, too high, too far, climbing, without a track or an
-    // altitude, and flying away from the airport or across it.
-    const away = { ...final, trackDeg: (end('08').headingTrue + 180) % 360 };
-    const across = { ...final, trackDeg: (end('08').headingTrue + 90) % 360 };
     const others = [
-      { ...final, quality: 'estimated' }, { ...final, quality: 'stale' }, { ...final, onGround: true },
-      { ...final, altM: 1200 }, onFinal('08', 13), { ...final, vrateMs: 4 }, { ...final, trackDeg: null },
-      { ...final, altM: null }, away, across,
+      { ...final, quality: 'estimated' }, { ...final, quality: 'stale' }, { ...final, isDemo: true },
+      { ...final, onGround: true }, { ...final, altM: 1200 }, { ...final, vrateMs: 4 }, { ...final, trackDeg: null },
+      { ...final, altM: null }, { ...final, lon: null }, { ...final, trackDeg: (end('08').headingTrue + 180) % 360 },
     ];
-    for (const item of others) expect(recentLiveArrivals([item]), JSON.stringify(item)).toEqual([]);
-    // A level aircraft and one whose climb is unknown still count, as does one on short final.
-    expect(recentLiveArrivals([{ ...final, vrateMs: 0 }, { ...final, vrateMs: null }, onFinal('08', 0.5)])).toHaveLength(3);
-    // The limits are options: farther and higher with them.
-    expect(recentLiveArrivals([onFinal('08', 13)], { maxNm: 15, maxAltM: 2000 })).toHaveLength(1);
-    expect(recentLiveArrivals(null)).toEqual([]);
-    expect(Object.isFrozen(recentLiveArrivals([final])[0])).toBe(true);
+    for (const item of others) expect(finalApproachEnd(item), JSON.stringify(item)).toBeNull();
+    // A level aircraft and one whose climb is unknown still count.
+    expect(finalApproachEnd({ ...final, vrateMs: 0 })?.ident).toBe('08');
+    expect(finalApproachEnd({ ...final, vrateMs: null })?.ident).toBe('08');
+    expect(finalApproachEnd(null)).toBeNull();
+    // A layout without runways has no final.
+    expect(finalApproachEnd(final, { runways: [] })).toBeNull();
+  });
+
+  it('arrivalsOnFinal gives each arrival on final its vote: its address, its runway end, that course and its instant', () => {
+    const votes = arrivalsOnFinal([
+      onFinal('26', 6, { hex: 'aa0001', id: 'f:p:1', positionAt: NOON_MS - 5_000 }),
+      onFinal('27', 4, { hex: null, id: 'h:bb0002' }),
+      // Off the centreline, or without an address or an id: no vote.
+      onFinal('26', 6, { hex: 'cc0003' }, 2),
+      onFinal('08', 6, { hex: null, id: null }),
+    ], { nowMs: NOON_MS });
+    expect(votes).toEqual([
+      { key: 'aa0001', ident: '26', trackDeg: end('26').headingTrue, at: NOON_MS - 5_000 },
+      { key: 'h:bb0002', ident: '27', trackDeg: end('27').headingTrue, at: NOON_MS },
+    ]);
+    expect(Object.isFrozen(votes) && votes.every(vote => Object.isFrozen(vote))).toBe(true);
+    // Each votes for its own end: the course of its final, whatever its track within 10° of it.
+    expect(mapRunwayInUse({ arrivals: arrivalsOnFinal([onFinal('27', 4, { trackDeg: 258 })], { nowMs: NOON_MS }) }).arrival)
+      .toBe('27');
+    // Without an instant, a position without its own time has none.
+    expect(arrivalsOnFinal([onFinal('08', 6)])[0].at).toBeNull();
+    expect(arrivalsOnFinal(null)).toEqual([]);
+  });
+
+  it('the vote of an arrival lasts ten minutes of the server clock: through its landing and until the next arrival', () => {
+    expect(ARRIVAL_VOTE_MINUTES).toBe(10);
+    const live = weatherOf();
+    const runwayAt = (votes, nowMs) => mapRunwayInUse({ arrivals: votes, weather: live, nowMs });
+    // 12:00: an arrival on final for 26 against the METAR's wind for 08.
+    const arrival = onFinal('26', 4, { hex: 'aa0001', id: 'h:aa0001', positionAt: NOON_MS });
+    const first = rememberArrivals([], [arrival], { nowMs: NOON_MS });
+    expect(first).toEqual([{ key: 'aa0001', ident: '26', trackDeg: end('26').headingTrue, at: NOON_MS }]);
+    expect(runwayAt(first, NOON_MS)).toEqual({ arrival: '26', departure: '26', source: 'live' });
+    // 12:03: it has landed, so it votes no more, and its vote stays.
+    const landed = rememberArrivals(first, [{ ...arrival, onGround: true, altM: 0, positionAt: NOON_MS + 3 * MINUTE }],
+      { nowMs: NOON_MS + 3 * MINUTE });
+    expect(landed).toEqual(first);
+    // 12:06: it is no longer in the picture; the runway is still 26 by the arrivals.
+    const gone = rememberArrivals(landed, [], { nowMs: NOON_MS + 6 * MINUTE });
+    expect(gone).toEqual(first);
+    expect(runwayAt(gone, NOON_MS + 6 * MINUTE).source).toBe('live');
+    // Ten minutes after its last position on final the vote still counts; a moment later the wind decides again.
+    expect(runwayAt(gone, NOON_MS + 10 * MINUTE)).toEqual({ arrival: '26', departure: '26', source: 'live' });
+    expect(runwayAt(gone, NOON_MS + 10 * MINUTE + 1)).toEqual({ arrival: '08', departure: '08', source: 'wind' });
+    expect(rememberArrivals(gone, [], { nowMs: NOON_MS + 11 * MINUTE })).toEqual([]);
+
+    // The next arrival keeps the runway from the arrivals: at 12:08 another one on final for 26.
+    const next = onFinal('26', 6, { hex: 'aa0002', positionAt: NOON_MS + 8 * MINUTE });
+    const both = rememberArrivals(gone, [next], { nowMs: NOON_MS + 8 * MINUTE });
+    expect(both.map(vote => vote.key)).toEqual(['aa0001', 'aa0002']);
+    const later = rememberArrivals(both, [], { nowMs: NOON_MS + 15 * MINUTE });
+    expect(later.map(vote => vote.key)).toEqual(['aa0002']);
+    expect(runwayAt(later, NOON_MS + 15 * MINUTE).source).toBe('live');
+    // One vote per aircraft, its newest: the same aircraft on final for 27 at 12:09 votes for 27 alone; an older
+    // position of it changes nothing.
+    const moved = rememberArrivals(both, [onFinal('27', 3, { hex: 'aa0002', positionAt: NOON_MS + 9 * MINUTE })],
+      { nowMs: NOON_MS + 9 * MINUTE });
+    expect(moved.map(vote => [vote.key, vote.ident])).toEqual([['aa0001', '26'], ['aa0002', '27']]);
+    expect(rememberArrivals(moved, [onFinal('26', 8, { hex: 'aa0002', positionAt: NOON_MS + 7 * MINUTE })],
+      { nowMs: NOON_MS + 9 * MINUTE })).toEqual(moved);
+    // Frozen; anything that is not a vote is dropped.
+    expect(Object.isFrozen(moved)).toBe(true);
+    expect(rememberArrivals([null, { key: 'x' }, ...first], null, { nowMs: NOON_MS })).toEqual(first);
+    expect(mapRunwayInUse({ arrivals: [{ trackDeg: end('26').headingTrue }], weather: live, nowMs: NOON_MS }).source)
+      .toBe('wind');
   });
 
   it('regional airports from region.context.json without PUJ, labelled ICAO and IATA, counterparts of today\'s flights emphasised', () => {
@@ -221,17 +335,29 @@ describe('reference features', () => {
     expect(navaidFeatures({ navaids: [{ ident: 'XYZ', type: 'TACAN', frequencyKhz: 1, p: [-68, 18] }] })).toEqual([]);
   });
 
+  it('splits the references by source: the reference point and the rings, and what is drawn from OurAirports', () => {
+    const kindsOf = collection => [...new Set(collection.features.map(item => item.properties.kind))];
+    // The reference point of PUJ and the rings around it: the same at every instant and in every language.
+    expect(kindsOf(referenceFeatures())).toEqual(['arp', 'ring', 'ringLabel']);
+    expect(referenceFeatures()).toEqual(referenceFeatures());
+    // From OurAirports: the centrelines, drawn from the thresholds and headings of the runway ends (its rows, in the
+    // layout's sources), the airports of the region and the navaids (region.context.json).
+    expect(kindsOf(ourAirportsFeatures())).toEqual(['centreline', 'tick', 'centrelineLabel', 'airport', 'navaid']);
+    expect(MDPC_LAYOUT.meta.sources.map(source => source.id)).toContain('ourairports');
+    expect(REGION_CONTEXT.meta.source).toBe('OurAirports');
+  });
+
   it('draws no FIR: without an extract of its boundary there is none to invent', () => {
     // The VATSpy file the plan allowed was not available (PR M8 notes), so the map has no FIR layer, key or data.
     expect(existsSync('src/features/maps/airport/data/fir.mdcs.json')).toBe(false);
-    const kinds = new Set(referenceFeatures().features.map(item => item.properties.kind));
+    const kinds = new Set([...referenceFeatures().features, ...ourAirportsFeatures().features].map(item => item.properties.kind));
     expect([...kinds]).toEqual(['arp', 'ring', 'ringLabel', 'centreline', 'tick', 'centrelineLabel', 'airport', 'navaid']);
     expect(REFERENCE_LEGEND_KINDS).not.toContain('fir');
   });
 
   it('referenceKindsOnScreen reads back the kinds in order', () => {
-    const collection = referenceFeatures({ runway: { arrival: '08', departure: '08', source: 'wind' },
-      counterparts: ['SDQ'], language: 'es' });
+    const collection = { features: [...referenceFeatures().features, ...ourAirportsFeatures({
+      runway: { arrival: '08', departure: '08', source: 'wind' }, counterparts: ['SDQ'], language: 'es' }).features] };
     // As queryRenderedFeatures answers them: in any order, some twice (a feature drawn in two tiles), with other kinds.
     const drawn = [...collection.features].reverse().map(item => ({ properties: item.properties }));
     const night = { properties: { kind: 'night' } };

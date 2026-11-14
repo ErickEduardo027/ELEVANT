@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AIRFIELD_SOURCE, airfieldOverlay } from '../style/airfieldLayers';
 import { BASEMAP_SOURCE_ID, buildOccStyle } from '../style/occStyle';
+import { OURAIRPORTS_SOURCE, referenceOverlay } from '../style/referenceLayers';
 import {
-  AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, GIBS_ATTRIBUTION, GIBS_URL, buildAttribution, collapseCompactAttribution,
-  escapeHtml, httpsUrl,
+  AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, GIBS_ATTRIBUTION, GIBS_URL, OURAIRPORTS_ATTRIBUTION, buildAttribution,
+  collapseCompactAttribution, escapeHtml, httpsUrl,
 } from './attribution';
 
 // The attribution as the browser would build it, to read its links and text instead of matching strings.
@@ -64,6 +65,14 @@ describe('map attribution', () => {
     expect(buildOccStyle({ overlays: [airfieldOverlay()] }).sources[AIRFIELD_SOURCE].attribution).toBe(AIRFIELD_ATTRIBUTION);
     expect(buildAttribution()).not.toContain('OurAirports');
     expect(FIXED_ATTRIBUTION.includes(AIRFIELD_ATTRIBUTION) || AIRFIELD_ATTRIBUTION.includes(FIXED_ATTRIBUTION)).toBe(false);
+
+    // The references drawn from OurAirports (PR M8) credit it on their own source, so it shows while they are drawn,
+    // also without the airfield. The airfield credit contains it: with both on screen MapLibre shows it once.
+    expect(links(OURAIRPORTS_ATTRIBUTION)).toEqual([{ href: 'https://ourairports.com/', text: 'OurAirports', rel: 'noopener noreferrer' }]);
+    expect(parse(OURAIRPORTS_ATTRIBUTION).querySelector('a').getAttribute('target')).toBe('_blank');
+    expect(buildOccStyle({ overlays: [referenceOverlay()] }).sources[OURAIRPORTS_SOURCE].attribution).toBe(OURAIRPORTS_ATTRIBUTION);
+    expect(AIRFIELD_ATTRIBUTION.includes(OURAIRPORTS_ATTRIBUTION)).toBe(true);
+    expect(FIXED_ATTRIBUTION.includes(OURAIRPORTS_ATTRIBUTION)).toBe(false);
   });
 
   it('each source may bring its own label; NOAA as «Clima»', () => {

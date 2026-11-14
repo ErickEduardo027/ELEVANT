@@ -291,15 +291,18 @@ test.describe('map lab', () => {
     await expect(credits).toContainText('© OpenStreetMap contributors (ODbL) · OurAirports');
     await expect(credits.locator('a', { hasText: 'ODbL' })).toHaveAttribute('href', 'https://opendatacommons.org/licenses/odbl/');
     await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveAttribute('href', 'https://ourairports.com/');
-    // The region view draws nothing of the dataset: its credit goes, the base map's stays.
+    // The region view draws nothing of the dataset: its credit goes, the base map's stays. The airports of the region
+    // (PR M8) keep OurAirports alone, once (map-lab.references.spec.mjs).
     await page.evaluate(() => window.__occMapLab.flyToPreset('region'));
     await labIdle(page);
-    await expect(credits).not.toContainText('OurAirports');
+    await expect(credits).not.toContainText('(ODbL)');
     await expect(credits).toContainText('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles');
-    // And it comes back with the airfield.
+    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveCount(1);
+    // And it comes back with the airfield, with OurAirports once.
     await page.evaluate(() => window.__occMapLab.flyToPreset('airfield'));
     await labIdle(page);
-    await expect(credits).toContainText('OurAirports');
+    await expect(credits).toContainText('© OpenStreetMap contributors (ODbL) · OurAirports');
+    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveCount(1);
   });
 
   test('a runway or a taxiway under the pointer shows its tooltip; a click holds it and a click elsewhere or another view closes it', async ({ page }) => {

@@ -498,7 +498,14 @@ llama a aviationweather.gov, a Iowa Mesonet ni a NASA GIBS.
   con sus marcas, la pista en uso con su origen (las llegadas, el viento de un
   METAR en vivo o la 08), los aeropuertos de la región sin PUJ y con las
   contrapartes resaltadas, las radioayudas en español y en inglés, y que no hay
-  FIR.
+  FIR. Una llegada vota solo en final, sobre el eje prolongado de una cabecera:
+  un avión en el tramo de viento en cola al este del campo no vota, y el voto
+  de una llegada sigue contando después del aterrizaje, hasta 10 minutos.
+  [`useRecentArrivals.test.js`](../../frontend/private-web/src/features/maps/core/useRecentArrivals.test.js)
+  comprueba que el mapa guarda esos votos de una lectura a otra.
+  [`referenceLayers.test.js`](../../frontend/private-web/src/features/maps/style/referenceLayers.test.js)
+  comprueba que lo que sale de OurAirports va en su propia fuente, con su
+  crédito.
   [`nightShade.test.js`](../../frontend/private-web/src/features/maps/traffic/nightShade.test.js)
   comprueba que en cada vértice del borde de la noche el sol está a −6°, con
   una tolerancia de 0,05° según `sunPosition` del módulo solar; que el anillo
@@ -527,7 +534,9 @@ llama a aviationweather.gov, a Iowa Mesonet ni a NASA GIBS.
     en Aproximación, a 1440×900 y a 1920×1080. Comprueba que la leyenda lista
     cada referencia solo mientras está en pantalla, y que el grupo
     «Referencias» del menú las muestra y las oculta, sin guardar nada al volver
-    al valor por omisión.
+    al valor por omisión. También fotografía los créditos abiertos en Región y
+    comprueba que «OurAirports» sale una vez mientras se dibujan los ejes, los
+    aeropuertos o las radioayudas, y que se va con el último.
   - [`map-lab.weather.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.weather.spec.mjs)
     fotografía el satélite en Región y el viento en vivo, su ficha y el viento
     sin actualizar, a los mismos dos tamaños. Comprueba que cada tesela de GIBS

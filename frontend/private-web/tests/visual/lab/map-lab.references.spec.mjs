@@ -5,7 +5,8 @@ import { expect, production, test } from '../support/test.mjs';
 // today's counterpart, the extended centrelines with the runway in use, the navaids and the night, photographed in the
 // reference scenes of the lab (synthetic weather and traffic, no provider) at the laptop sizes of the presentation,
 // 1440 × 900 and 1920 × 1080, for a person to review in test-results/visual. Beside the pictures it checks what must hold
-// on every one: the legend lists each reference only while it is on screen, and the layers menu shows and hides them.
+// on every one: the legend lists each reference only while it is on screen, the layers menu shows and hides them, and
+// the credit of OurAirports shows only while something drawn from its data is on screen (design A7).
 
 const SIZES = Object.freeze([[1440, 900], [1920, 1080]]);
 // 18:15 in Punta Cana: dusk, the edge of the civil twilight inside the Región view (lab/scenes.js).
@@ -116,5 +117,55 @@ test.describe('map lab references', () => {
     await openLab(page, `scene=region-references-night&t=${NOON}`);
     await labIdle(page);
     await expect(legendEntry(page, NIGHT)).toHaveCount(0);
+  });
+
+  test('credits OurAirports while its airports, navaids or centrelines are drawn, and only then', async ({ page }, testInfo) => {
+    // The compact credits stay folded; their text is in the page all the same.
+    const credits = page.locator('.maplibregl-ctrl-attrib-inner');
+    const ourAirports = credits.locator('a', { hasText: 'OurAirports' });
+    const references = page.getByRole('group', { name: 'Referencias' });
+    const toggle = async (names, on) => {
+      for (const name of names) await references.getByRole('checkbox', { name }).setChecked(on);
+      await labIdle(page);
+    };
+
+    // Región draws the airports of the region and not the airfield: OurAirports is credited alone, once, with its link.
+    // Opened, the credits are photographed at both laptop sizes for review.
+    for (const [width, height] of SIZES) {
+      await page.setViewportSize({ width, height });
+      await openLab(page, `scene=region-references&t=${NOON}`);
+      await labIdle(page);
+      await expect(legendEntry(page, AIRPORT)).toHaveCount(1);
+      await expect(ourAirports).toHaveCount(1);
+      await expect(ourAirports).toHaveAttribute('href', 'https://ourairports.com/');
+      await expect(credits).not.toContainText('(ODbL)');
+      await page.getByTestId('map-lab-map').locator('summary.maplibregl-ctrl-attrib-button').click();
+      await expect(credits).toBeVisible();
+      await labIdle(page);
+      await shoot(page, testInfo, `region-references-credits-${width}`);
+    }
+    // Without the airports and the navaids nothing of OurAirports is on screen (Región draws no navaid and no
+    // centreline): its credit goes, the base map's stays. Back with the airports.
+    await page.getByRole('button', { name: 'Capas' }).click();
+    await toggle(['Aeropuertos de la región', 'Radioayudas'], false);
+    await expect(legendEntry(page, AIRPORT)).toHaveCount(0);
+    await expect(ourAirports).toHaveCount(0);
+    await expect(credits).toContainText('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles');
+    await toggle(['Aeropuertos de la región'], true);
+    await expect(ourAirports).toHaveCount(1);
+
+    // Aproximación draws the centrelines too, from the runway ends of OurAirports: the credit stays while any of the
+    // three is drawn, and goes with the last.
+    await openLab(page, `scene=approach-references&t=${NOON}`);
+    await labIdle(page);
+    await expect(ourAirports).toHaveCount(1);
+    await page.getByRole('button', { name: 'Capas' }).click();
+    await toggle(['Aeropuertos de la región', 'Radioayudas'], false);
+    await expect(legendEntry(page, CENTRELINES)).toHaveCount(1);
+    await expect(ourAirports).toHaveCount(1);
+    await toggle(['Ejes de pista'], false);
+    await expect(ourAirports).toHaveCount(0);
+    await toggle(['Aeropuertos de la región', 'Radioayudas', 'Ejes de pista'], true);
+    await expect(ourAirports).toHaveCount(1);
   });
 });

@@ -2,14 +2,16 @@ import { featureFilter, validateStyleMin } from '@maplibre/maplibre-gl-style-spe
 import { describe, expect, it } from 'vitest';
 import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
 import { REGION_CONTEXT } from '../airport/regionContext';
+import { AIRFIELD_ATTRIBUTION, OURAIRPORTS_ATTRIBUTION } from '../core/attribution';
 import { PUJ_ARP } from '../core/cameraPresets';
+import { airfieldOverlay } from './airfieldLayers';
 import { HOME_AIRPORT_IATA, OWN_AIRPORT_IATAS, basemapLayers } from './basemapLayers';
 import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES, isSdfImage } from './mapImages';
 import { FONT_STACKS, THRESHOLD_NAMES, buildOccStyle } from './occStyle';
 import { NAVAID_IMAGES, REFERENCE_IMAGE_SHAPES } from './referenceImages';
 import {
-  NIGHT_SOURCE, REFERENCE_GROUPS, REFERENCE_LAYER_IDS, REFERENCE_SOURCE, referenceFeatures, referenceLayersShown,
-  referenceOverlay,
+  NIGHT_SOURCE, OURAIRPORTS_SOURCE, REFERENCE_GROUPS, REFERENCE_LAYER_IDS, REFERENCE_SOURCE, ourAirportsFeatures,
+  referenceFeatures, referenceLayersShown, referenceOverlay,
 } from './referenceLayers';
 
 const layerOf = id => referenceOverlay().layers.find(layer => layer.id === id);
@@ -86,11 +88,12 @@ describe('reference layers', () => {
 
   it('draws each reference in its group with its derived thresholds, in the reference and shade slots', () => {
     const overlay = referenceOverlay();
-    expect(Object.keys(overlay.sources)).toEqual([REFERENCE_SOURCE, NIGHT_SOURCE]);
-    expect(Object.values(overlay.sources)).toEqual([{ type: 'geojson' }, { type: 'geojson' }]);
+    expect(Object.keys(overlay.sources)).toEqual([REFERENCE_SOURCE, OURAIRPORTS_SOURCE, NIGHT_SOURCE]);
+    expect(Object.values(overlay.sources)).toEqual([{ type: 'geojson' }, { type: 'geojson', attribution: OURAIRPORTS_ATTRIBUTION },
+      { type: 'geojson' }]);
     const summary = overlay.layers.map(layer => [layer.id, layer.slot, layer.type, layer.source, layer.metadata]);
     expect(summary).toEqual([
-      ['occ-reference-counterpart-labels', 'airfield', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'airports' }],
+      ['occ-reference-counterpart-labels', 'airfield', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'airports' }],
       ['occ-reference-arp', 'airfield', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'reference', 'occ:maxThreshold': 'codes' }],
       ['occ-reference-rings-region', 'reference', 'line', REFERENCE_SOURCE, { 'occ:group': 'rings', 'occ:maxThreshold': 'approach' }],
       ['occ-reference-ring-labels-region', 'reference', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'rings', 'occ:maxThreshold': 'approach' }],
@@ -98,12 +101,12 @@ describe('reference layers', () => {
         { 'occ:group': 'rings', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }],
       ['occ-reference-ring-labels-approach', 'reference', 'symbol', REFERENCE_SOURCE,
         { 'occ:group': 'rings', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }],
-      ['occ-reference-centrelines', 'reference', 'line', REFERENCE_SOURCE, { 'occ:group': 'centrelines' }],
-      ['occ-reference-centreline-ticks', 'reference', 'line', REFERENCE_SOURCE, { 'occ:group': 'centrelines', 'occ:minThreshold': 'approach' }],
-      ['occ-reference-centreline-label', 'reference', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'centrelines' }],
-      ['occ-reference-airports', 'reference', 'circle', REFERENCE_SOURCE, { 'occ:group': 'airports' }],
-      ['occ-reference-airport-labels', 'reference', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'airports' }],
-      ['occ-reference-navaids', 'reference', 'symbol', REFERENCE_SOURCE,
+      ['occ-reference-centrelines', 'reference', 'line', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines' }],
+      ['occ-reference-centreline-ticks', 'reference', 'line', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines', 'occ:minThreshold': 'approach' }],
+      ['occ-reference-centreline-label', 'reference', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines' }],
+      ['occ-reference-airports', 'reference', 'circle', OURAIRPORTS_SOURCE, { 'occ:group': 'airports' }],
+      ['occ-reference-airport-labels', 'reference', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'airports' }],
+      ['occ-reference-navaids', 'reference', 'symbol', OURAIRPORTS_SOURCE,
         { 'occ:group': 'navaids', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'polygons' }],
       ['occ-night', 'shade', 'fill', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
       ['occ-night-edge', 'shade', 'line', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
@@ -140,6 +143,33 @@ describe('reference layers', () => {
     expect(referenceLayersShown({ rings: true, centrelines: false, airports: true, navaids: false, daynight: false }))
       .toEqual(['occ-reference-rings-region', 'occ-reference-rings-approach', 'occ-reference-airports']);
     expect(referenceLayersShown({})).toEqual(REFERENCE_LAYER_IDS);
+  });
+
+  it('credits OurAirports on the source of what is drawn from its data, so the credit shows only while that is drawn', () => {
+    const overlay = referenceOverlay();
+    // The source of the centrelines, the airports and the navaids carries the credit; the others carry none.
+    expect(overlay.sources[OURAIRPORTS_SOURCE].attribution).toBe(OURAIRPORTS_ATTRIBUTION);
+    expect(overlay.sources[REFERENCE_SOURCE].attribution).toBeUndefined();
+    expect(overlay.sources[NIGHT_SOURCE].attribution).toBeUndefined();
+    expect(OURAIRPORTS_ATTRIBUTION).toBe('<a href="https://ourairports.com/" target="_blank" rel="noopener noreferrer">OurAirports</a>');
+    // The airfield credit ends with the same text: with both on screen, MapLibre drops the shorter one and shows it once.
+    expect(AIRFIELD_ATTRIBUTION.endsWith(` · ${OURAIRPORTS_ATTRIBUTION}`)).toBe(true);
+    // Every layer draws only data of its own source: what comes from OurAirports never from the reference source, and
+    // the reference point and the rings never from the OurAirports one. Each draws something of its source.
+    const data = { [REFERENCE_SOURCE]: referenceFeatures(), [OURAIRPORTS_SOURCE]: ourAirportsFeatures({ counterparts: ['SDQ'] }) };
+    const drawnBy = (layer, collection) => collection.features.filter(item => featureFilter(layer.filter, `layers.${layer.id}.filter`)
+      .filter({ zoom: 10 }, { type: item.geometry.type === 'Point' ? 1 : 2, properties: item.properties }));
+    for (const layer of overlay.layers.filter(item => item.source !== NIGHT_SOURCE)) {
+      const other = layer.source === REFERENCE_SOURCE ? OURAIRPORTS_SOURCE : REFERENCE_SOURCE;
+      expect(drawnBy(layer, data[layer.source]).length, layer.id).toBeGreaterThan(0);
+      expect(drawnBy(layer, data[other]), layer.id).toEqual([]);
+    }
+    expect(overlay.layers.filter(layer => layer.source === OURAIRPORTS_SOURCE).map(layer => layer.id)).toEqual([
+      'occ-reference-counterpart-labels', 'occ-reference-centrelines', 'occ-reference-centreline-ticks',
+      'occ-reference-centreline-label', 'occ-reference-airports', 'occ-reference-airport-labels', 'occ-reference-navaids',
+    ]);
+    // A style with the airfield and the references is valid, each source once.
+    expect(validateStyleMin(buildOccStyle({ overlays: [airfieldOverlay(), overlay] }))).toEqual([]);
   });
 
   it('stays quiet: thin lines and dim words in the neutral tokens, the runway in use the one line drawn wider', () => {

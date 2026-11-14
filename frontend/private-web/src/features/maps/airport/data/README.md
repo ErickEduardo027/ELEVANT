@@ -36,7 +36,9 @@ los mapas del OCC dibujan con él los aeropuertos de la región, con sus código
 OACI e IATA, y las dos radioayudas
 ([`referenceFeatures.js`](../../traffic/referenceFeatures.js)). El mapa base
 deja fuera la etiqueta de las teselas de esos aeropuertos, así que cada uno se
-escribe una sola vez.
+escribe una sola vez. Van en una fuente propia, con los ejes de pista
+extendidos, que salen de los umbrales y rumbos de OurAirports del plano, y esa
+fuente lleva el crédito «OurAirports» (abajo, en Licencias).
 
 **El límite de la FIR Santo Domingo (MDCS) no está en esta carpeta.** El plan
 permitía extraerlo una sola vez del proyecto VATSpy (`FIRBoundaries.dat`,
@@ -81,7 +83,15 @@ Se extrajeron a mano el 13 de noviembre de 2026. Las mismas fechas van en
     `ref`, `name`, `width`, `surface`, `length`, `building` y `terminal`), sin
     el usuario, la versión ni la fecha de edición de cada elemento.
 - **OurAirports: dominio público**, sin garantía de exactitud. No exige
-  crédito; el mapa lo da igual.
+  crédito; el mapa lo da igual, enlazado a su página:
+  - el crédito del aeródromo lo nombra mientras el aeródromo está en pantalla;
+  - desde el PR M8, lo que se dibuja con sus datos fuera del aeródromo (los
+    ejes de pista extendidos, los aeropuertos de la región y las radioayudas)
+    va en su propia fuente, que lleva el crédito «OurAirports»
+    (`OURAIRPORTS_ATTRIBUTION`, en [`attribution.js`](../../core/attribution.js)).
+    MapLibre lo muestra solo mientras alguna de esas capas está en pantalla,
+    como en Región y Aproximación, y una sola vez cuando el aeródromo también
+    se ve.
 - **AIP y cartas del aeropuerto.** Nunca se copian sus coordenadas, ni a la
   tabla manual ni a ningún otro archivo: no consta permiso del IDAC para
   procesarlas. En la revisión, la carta de estacionamiento solo se mira para

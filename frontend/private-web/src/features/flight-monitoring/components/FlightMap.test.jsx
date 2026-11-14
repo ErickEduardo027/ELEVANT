@@ -380,7 +380,8 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
   });
 
   it('passes the weather and the map flights to the map', async () => {
-    const features = map => map.getSource('occ-reference').data.features;
+    // The centrelines with the runway in use and the airports of the region, on the source of what comes from OurAirports.
+    const features = map => map.getSource('occ-reference-ourairports').data.features;
     const runwayOf = map => features(map).filter(item => item.properties.kind === 'centrelineLabel')
       .map(item => item.properties.label);
     // The synthetic picture has ZZ161 live on final for 08: the recent live arrivals decide the runway first.
@@ -403,10 +404,11 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not.
     const airports = features(map).filter(item => item.properties.kind === 'airport');
     expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.label)).toEqual(['MDSD SDQ']);
-    // The reference source is written when what it draws changes, not on every read of the traffic or the flights.
-    const writes = map.getSource('occ-reference').setDataCalls.length;
+    // The reference sources are written when what they draw changes, not on every read of the traffic or the flights.
+    const writesOf = () => ['occ-reference', 'occ-reference-ourairports'].map(id => map.getSource(id).setDataCalls.length);
+    const writes = writesOf();
     await flush(30_000);
-    expect(map.getSource('occ-reference').setDataCalls).toHaveLength(writes);
+    expect(writesOf()).toEqual(writes);
   });
 
   it('keeps the traffic chip on the air picture when the AVIAM flights fail, and says that apart', async () => {

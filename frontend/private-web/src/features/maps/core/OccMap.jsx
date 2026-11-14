@@ -31,7 +31,8 @@ import {
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
 import {
-  NIGHT_SOURCE, REFERENCE_SOURCE, referenceFeatures, referenceLayersShown, referenceOverlay,
+  NIGHT_SOURCE, OURAIRPORTS_SOURCE, REFERENCE_SOURCE, ourAirportsFeatures, referenceFeatures, referenceLayersShown,
+  referenceOverlay,
 } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
@@ -64,6 +65,7 @@ import MapUnavailable from './MapUnavailable';
 import { OccMapContext } from './OccMapContext';
 import { useMapSelection } from './useMapSelection';
 import { useMinuteClock } from './useMinuteClock';
+import { useRecentArrivals } from './useRecentArrivals';
 
 // The one map component of the OCC (design A4). Client only: the pages load it through next/dynamic with ssr false.
 // It owns one engine (core/mapEngine.js) for its whole life, the four views of contracts 2.3 with thresholds derived
@@ -301,10 +303,13 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   a group the page sets in `groups`, which wins. The menu reads them from OccMapContext; L opens and closes a menu on
  *   screen and Esc closes an open one before it clears the selection.
  * - The references (PR M8, style/referenceLayers.js): `weather` (what useMdpcWeather answers, or null) gives the wind of
- *   a live METAR for the runway in use, after the recent live arrivals of `traffic` and before the usual 08 (contracts
- *   2.3); `traffic.flights` the counterparts of today's flights. The reference source is written again only when the
- *   runway in use, the counterparts or the language change, and the night shade on the minute of the server's clock
- *   (`frozenAt` holds it in the map lab). The legend lists the references on screen, read back from the map.
+ *   a live METAR for the runway in use, after the recent live arrivals of `traffic` (the aircraft seen on final in the
+ *   last ten minutes of the server's clock) and before the usual 08 (contracts 2.3); `traffic.flights` the counterparts
+ *   of today's flights. The reference point and the rings are written once; the source of what is drawn from
+ *   OurAirports (the centrelines with the runway in use, the airports and the navaids), which carries its credit, again
+ *   only when the runway in use, the counterparts or the language change; and the night shade on the minute of the
+ *   server's clock (`frozenAt` holds it in the map lab). The legend lists the references on screen, read back from the
+ *   map.
  * - The weather (PR M8, traffic/weatherLayers.js). Whether `weather` is given (null while there is no reading) is read at
  *   start, as for the traffic: the map then draws the wind of its METAR at the airfield, written again only when what it
  *   draws changes, with its tooltip and, while it is on screen, the credit «Clima: NOAA Aviation Weather Center»; and
@@ -364,20 +369,24 @@ const OccMap = forwardRef(function OccMap({
   const clock = useMinuteClock({ frozenAt: standsProp === undefined ? NO_CLOCK : frozenAt });
   const standFeatures = useMemo(() => buildStandFeatures(attached, { nowMs: clock, language, labels: standLabels }),
     [attached, clock, language, standLabels]);
-  // The references (PR M8): the runway in use from the recent live arrivals of the traffic, then the wind of a live
-  // METAR (no older than the API's live limit at the server's minute), then the usual 08; the counterparts of today's
-  // flights; and the night shade at the server's minute (the map lab's frozen instant when it has one). The reference
-  // features are built again only when the runway in use, the counterparts or the language change.
+  // The references (PR M8): the runway in use from the recent live arrivals of the traffic (the aircraft seen on final
+  // in the last ten minutes of the server's clock, useRecentArrivals), then the wind of a live METAR (no older than the
+  // API's live limit at the server's minute), then the usual 08; the counterparts of today's flights; and the night
+  // shade at the server's minute (the map lab's frozen instant when it has one). The reference point and the rings are
+  // built once; what is drawn from OurAirports again only when the runway in use, the counterparts or the language
+  // change.
   const referenceMinute = useMinuteClock({ frozenAt, clock: serverClock });
   const referenceAircraft = traffic?.aircraft ?? EMPTY;
+  const arrivals = useRecentArrivals(referenceAircraft, { layout, nowMs: referenceMinute });
   // The weather (PR M8): whether the map draws it is read at start; a map without it still takes no wind for the runway.
   const [drawsWeather] = useState(() => weather !== undefined);
   const weatherNow = weather ?? null;
-  const runway = useMemo(() => mapRunwayInUse({ layout, aircraft: referenceAircraft, weather: weatherNow,
-    nowMs: referenceMinute }), [layout, referenceAircraft, weatherNow, referenceMinute]);
+  const runway = useMemo(() => mapRunwayInUse({ layout, arrivals, weather: weatherNow, nowMs: referenceMinute }),
+    [layout, arrivals, weatherNow, referenceMinute]);
   const { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource } = runway;
   const counterpartsKey = counterpartCodes(traffic?.flights).join('|');
-  const referenceData = useMemo(() => referenceFeatures({
+  const referenceData = useMemo(() => referenceFeatures(), []);
+  const ourAirportsData = useMemo(() => ourAirportsFeatures({
     layout,
     runway: { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource },
     counterparts: counterpartsKey === '' ? EMPTY : counterpartsKey.split('|'),
@@ -1113,8 +1122,9 @@ const OccMap = forwardRef(function OccMap({
     markSettled(rootRef.current, false);
   }, [flights]);
 
-  // The references (PR M8): one setData of their source when the map starts, and again only when the runway in use,
-  // the counterparts or the language change what they draw; the night shade once a minute. Never a new map.
+  // The references (PR M8): one setData of their source when the map starts; one of the OurAirports source then, and
+  // again only when the runway in use, the counterparts or the language change what it draws; the night shade once a
+  // minute. Never a new map.
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
@@ -1123,6 +1133,14 @@ const OccMap = forwardRef(function OccMap({
     engine.setData(REFERENCE_SOURCE, referenceData);
     markSettled(rootRef.current, false);
   }, [referenceData]);
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || applied.ourAirports === ourAirportsData) return;
+    applied.ourAirports = ourAirportsData;
+    engine.setData(OURAIRPORTS_SOURCE, ourAirportsData);
+    markSettled(rootRef.current, false);
+  }, [ourAirportsData]);
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;

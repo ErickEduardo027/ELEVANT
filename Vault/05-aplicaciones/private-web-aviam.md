@@ -1479,10 +1479,18 @@ de noviembre de 2026 sobre M8 (mapas) de
     llegadas)», «Pista 08 (estimada por el viento)» o «Pista 08 (habitual)».
     La deciden las llegadas en vivo recientes, después el viento de un METAR en
     vivo y, si no, es la 08; sin tráfico en el mapa, como en Mapa de posiciones
-    y Planificación, la deciden el viento o la 08;
+    y Planificación, la deciden el viento o la 08. Una llegada cuenta solo en
+    final: a 1 NM o menos del eje prolongado de una cabecera, a 12 NM o menos
+    del umbral, a 1000 m o menos y volando su rumbo. Un avión en el tramo de
+    viento en cola o en un tramo base no cuenta. Su voto dura 10 minutos del
+    reloj del servidor, así que la pista sigue «según las llegadas» después del
+    aterrizaje y entre dos llegadas;
   - los aeropuertos de la región, con sus códigos OACI e IATA, y el origen o el
     destino de los vuelos de hoy resaltados por su forma;
-  - las radioayudas PNA (VOR-DME 112,7) y PCA (NDB 425), en Aproximación.
+  - las radioayudas PNA (VOR-DME 112,7) y PCA (NDB 425), en Aproximación;
+  - el crédito «OurAirports», mientras se dibuja alguno de los ejes, los
+    aeropuertos o las radioayudas, que salen de sus datos: en Región y en
+    Aproximación con sus valores por omisión.
 - **Día y noche.** En Región y Aproximación, la noche, pasado el crepúsculo
   civil, oscurece un poco el mapa, con la línea de su borde y la palabra
   «Noche»
@@ -1537,8 +1545,8 @@ permiso, deja la franja del METAR en blanco, sin mensaje ni «Reintentar», y su
 aviso de METAR desactualizado mira solo la edad, no el estado `Stale` de la
 API. El carril de mapas no edita ese panel, así que es una dependencia con U3;
 *planificado (U3):* la consola nueva lo reemplaza, con la pastilla del clima y
-el TAF. La pista según las llegadas cuenta solo los aviones que llegan en ese
-momento: entre dos llegadas vuelve al viento o a la 08. No hay SIGMET ni NOTAM.
+el TAF. La pista según las llegadas vuelve al viento o a la 08 cuando pasan 10
+minutos sin una llegada en final. No hay SIGMET ni NOTAM.
 Desde este PR, con el clima encendido (como en Development), abrir esas
 pantallas hace que la API lea aviationweather.gov, como mucho dos veces cada 5
 minutos por aeropuerto. Las capturas se revisaron en local, en el laboratorio;

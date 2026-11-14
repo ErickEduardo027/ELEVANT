@@ -13,7 +13,7 @@ import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { WEATHER_STATION_ID } from '../testing/weatherFixtures';
-import { counterpartCodes, mapRunwayInUse, regionAirportFeatures } from '../traffic/referenceFeatures';
+import { counterpartCodes, mapRunwayInUse, regionAirportFeatures, rememberArrivals } from '../traffic/referenceFeatures';
 import { CIVIL_TWILIGHT_DEG, sunPosition } from '../traffic/solar';
 import { legendEntries } from '../ui/legendEntries';
 import { labTraffic } from './trafficScenes';
@@ -236,10 +236,13 @@ describe('map lab scenes', () => {
     // Its METAR was observed ten minutes before the scene, so it is live at that instant.
     expect(Date.parse(night.weather.metar.observedAt)).toBe(night.at - 10 * 60_000);
 
-    // On the approach, the demo traffic has no live arrival on final: the METAR's wind sets the runway in use, 08.
+    // On the approach, the demo traffic has no live arrival on final (the demo is estimated, the live arrival is on base):
+    // the METAR's wind sets the runway in use, 08.
     const approach = findScene('approach-references');
     const { situation } = labTraffic(approach.traffic, { nowMs: SCENE_INSTANT });
-    expect(mapRunwayInUse({ aircraft: situation.aircraft, weather: labWeather(approach.weather), nowMs: SCENE_INSTANT }))
+    const arrivals = rememberArrivals([], situation.aircraft, { nowMs: SCENE_INSTANT });
+    expect(arrivals).toEqual([]);
+    expect(mapRunwayInUse({ arrivals, weather: labWeather(approach.weather), nowMs: SCENE_INSTANT }))
       .toEqual({ arrival: '08', departure: '08', source: 'wind' });
   });
 

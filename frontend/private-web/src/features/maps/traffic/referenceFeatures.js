@@ -1,8 +1,8 @@
 import { createTranslator } from '../../../i18n/languageStore';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
-import { destinationPoint, haversineM, initialBearing, METRES_PER_NM, roundCoord } from '../airport/geo';
+import { destinationPoint, METRES_PER_NM, roundCoord, toEnu } from '../airport/geo';
 import { REGION_CONTEXT } from '../airport/regionContext';
-import { runwayEnds, runwayInUse } from '../airport/runwayInUse';
+import { ALIGNED_DEG, runwayEnds, runwayInUse } from '../airport/runwayInUse';
 import { metarWindForRunway } from '../airport/runwayWind';
 import { PUJ_ARP } from '../core/cameraPresets';
 import { mapMessages } from '../mapMessages';
@@ -11,13 +11,18 @@ import { HOME_AIRPORT_IATA } from '../style/basemapLayers';
 // The reference overlays of the OCC maps (design E6, PR M8), the one owner of their features: the aerodrome reference
 // point of Punta Cana, the range rings around it, the extended runway centrelines with a tick per nautical mile and the
 // runway in use, the airports of the region (airport/regionContext.js) with the counterparts of today's flights
-// emphasised, and the navaids PNA and PCA. style/referenceLayers.js draws them from one source, where `kind` says what
-// each feature is, and re-exports referenceFeatures. The night shade is traffic/nightShade.js, on a source of its own.
-// Pure: the runway in use, the counterparts and the language are parameters, and nothing here reads a clock.
+// emphasised, and the navaids PNA and PCA. style/referenceLayers.js draws them from two sources, where `kind` says what
+// each feature is, and re-exports their builders: the reference point and the rings (referenceFeatures), and what is
+// drawn from OurAirports data, the centrelines (from the thresholds and headings of the layout's runway ends), the
+// airports and the navaids (ourAirportsFeatures), on a source that carries the credit of OurAirports, so the map shows
+// it only while one of them is drawn (design A7). The night shade is traffic/nightShade.js, on a source of its own.
+// Pure: the runway in use, the counterparts, the language and the instant are parameters, and nothing here reads a clock.
 //
 // The runway in use follows contracts 2.3 (owner decision 19): the recent live arrivals, then the wind of a live METAR,
-// then the usual 08 (airport/runwayInUse.js). Its centreline is drawn wider and labelled with where it comes from:
-// «Pista 08 (según las llegadas)», «Pista 08 (estimada por el viento)» or «Pista 08 (habitual)».
+// then the usual 08 (airport/runwayInUse.js). An arrival counts only on final, on the extended centreline of a runway
+// end and flying its course (finalApproachEnd), and its vote lasts ten minutes of the server's clock
+// (rememberArrivals), so the runway holds between two arrivals. Its centreline is drawn wider and labelled with where
+// it comes from: «Pista 08 (según las llegadas)», «Pista 08 (estimada por el viento)» or «Pista 08 (habitual)».
 
 /** The range rings, in nautical miles, of the Región and Aproximación views. */
 export const RANGE_RINGS_NM = Object.freeze({
@@ -40,10 +45,17 @@ const MAJOR_TICKS = new Set([5, 10]);
 // The in-use label sits a little past the end of its centreline, clear of the last tick.
 const LABEL_PAST_NM = 0.4;
 
-/** A live arrival counts for the runway in use only this close to PUJ and this low, flying towards it. */
-export const RECENT_ARRIVAL_NM = 12;
-export const RECENT_ARRIVAL_MAX_ALT_M = 1000;
-const TOWARDS_DEG = 45;
+/**
+ * A live arrival is on final for a runway end, and counts for the runway in use, between its threshold and this far
+ * out along the end's extended centreline…
+ */
+export const FINAL_NM = 12;
+/** …this far across that centreline at most… */
+export const FINAL_LATERAL_NM = 1;
+/** …and this high at most, flying the end's course (airport/runwayInUse.js: ALIGNED_DEG) and not climbing. */
+export const FINAL_MAX_ALT_M = 1000;
+/** How long the vote of a live arrival seen on final lasts, on the server's clock: the recent arrivals of contracts 2.3. */
+export const ARRIVAL_VOTE_MINUTES = 10;
 
 /**
  * The oldest METAR whose wind still decides the runway: the API's own limit for a live one
@@ -61,6 +73,7 @@ export const NAVAID_KINDS = Object.freeze({ 'VOR-DME': 'vor', NDB: 'ndb' });
 
 const DIGITS = 5;
 const MINUTE_MS = 60_000;
+const VOTE_MS = ARRIVAL_VOTE_MINUTES * MINUTE_MS;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const isPoint = point => Array.isArray(point) && finite(point[0]) && finite(point[1]);
 const angleBetween = (a, b) => Math.abs((((a - b) % 360) + 540) % 360 - 180);
@@ -141,22 +154,84 @@ export function extendedCentrelines(layout, { runway = null, language = 'es' } =
   });
 }
 
+// Where `position` is from the threshold of a runway end, in metres: out along its extended centreline (positive on the
+// approach side, away from the runway) and across it, in the threshold's local plane (geo.js: toEnu, exact for
+// distances and bearings from it).
+function fromThreshold(end, position) {
+  const [east, north] = toEnu(end.threshold, position);
+  const outward = (((end.headingTrue + 180) % 360) * Math.PI) / 180;
+  return {
+    alongM: east * Math.sin(outward) + north * Math.cos(outward),
+    acrossM: Math.abs(east * Math.cos(outward) - north * Math.sin(outward)),
+  };
+}
+
 /**
- * The live aircraft that tell the runway in use (contracts 2.3, airport/runwayInUse.js): `quality: 'live'`, in the air,
- * not climbing, at `maxAltM` or lower, within `maxNm` of `center` and flying towards it (within 45°), with a known
- * track; as `[{ trackDeg }]`. Estimated, stale and demo positions never vote: a demo flight always uses 08.
+ * The runway end a live aircraft is on final for (contracts 2.3: the arrivals runwayInUse counts are on final), or
+ * `null`. It is `quality: 'live'` (an estimated, stale or demo position never votes: a demo flight always uses 08), in
+ * the air, not climbing, at FINAL_MAX_ALT_M or lower and flying within ALIGNED_DEG of the end's heading, on its extended
+ * centreline: between the threshold and FINAL_NM out, FINAL_LATERAL_NM or less across it. Of two such ends, the one
+ * whose centreline is nearer. So a downwind or a base leg, an aircraft heading for the airport from off the centreline
+ * and a departure never say which runway is in use.
  */
-export function recentLiveArrivals(aircraft, { center = PUJ_ARP, maxNm = RECENT_ARRIVAL_NM, maxAltM = RECENT_ARRIVAL_MAX_ALT_M } = {}) {
-  const reach = maxNm * METRES_PER_NM;
-  return Object.freeze((Array.isArray(aircraft) ? aircraft : [])
-    .filter(item => item?.quality === 'live' && item.onGround !== true && finite(item.altM) && item.altM <= maxAltM
-      && finite(item.trackDeg) && !(finite(item.vrateMs) && item.vrateMs > 0) && isPoint([item.lon, item.lat]))
-    .filter(item => {
-      const position = [item.lon, item.lat];
-      if (haversineM(position, center) > reach) return false;
-      return angleBetween(item.trackDeg, initialBearing(position, center)) <= TOWARDS_DEG;
-    })
-    .map(item => Object.freeze({ trackDeg: item.trackDeg })));
+export function finalApproachEnd(item, layout = MDPC_LAYOUT) {
+  if (item?.quality !== 'live' || item.isDemo === true || item.onGround === true) return null;
+  if (!finite(item.altM) || item.altM > FINAL_MAX_ALT_M || !finite(item.trackDeg)) return null;
+  if (finite(item.vrateMs) && item.vrateMs > 0) return null;
+  const position = [item.lon, item.lat];
+  if (!isPoint(position)) return null;
+  let best = null;
+  for (const end of runwayEnds(layout)) {
+    if (angleBetween(item.trackDeg, end.headingTrue) > ALIGNED_DEG) continue;
+    const { alongM, acrossM } = fromThreshold(end, position);
+    if (alongM < 0 || alongM > FINAL_NM * METRES_PER_NM || acrossM > FINAL_LATERAL_NM * METRES_PER_NM) continue;
+    if (best === null || acrossM < best.acrossM) best = { end, acrossM };
+  }
+  return best === null ? null : best.end;
+}
+
+// An aircraft's vote is kept under its ADS-B address, else its id.
+const voteKey = item => [item?.hex, item?.id].find(value => typeof value === 'string' && value.trim() !== '') ?? null;
+const isVote = vote => typeof vote?.key === 'string' && typeof vote.ident === 'string' && finite(vote.trackDeg);
+// A vote counts at `nowMs` up to ARRIVAL_VOTE_MINUTES after its position; without an instant to judge by, it counts.
+const isRecent = (vote, nowMs) => !finite(nowMs) || (finite(vote.at) && nowMs - vote.at <= VOTE_MS);
+
+/**
+ * The live arrivals of `aircraft` on final now (finalApproachEnd), each as its vote for the runway in use, frozen:
+ * `{ key, ident, trackDeg, at }`. `key` is the aircraft's ADS-B address, else its id (an aircraft with neither is not
+ * counted); `ident` the runway end it flies to; `trackDeg` the course of that final, the end's heading, so runwayInUse
+ * counts the vote for that end; and `at` the instant of the position (`positionAt`, else `nowMs`).
+ */
+export function arrivalsOnFinal(aircraft, { layout = MDPC_LAYOUT, nowMs = null } = {}) {
+  const votes = [];
+  for (const item of Array.isArray(aircraft) ? aircraft : []) {
+    const key = voteKey(item);
+    const end = key === null ? null : finalApproachEnd(item, layout);
+    if (end === null) continue;
+    const at = finite(item.positionAt) ? item.positionAt : (finite(nowMs) ? nowMs : null);
+    votes.push(Object.freeze({ key, ident: end.ident, trackDeg: end.headingTrue, at }));
+  }
+  return Object.freeze(votes);
+}
+
+/**
+ * The recent live arrivals at `nowMs`, the server's time (contracts 2.3): the votes of `previous` cast at most
+ * ARRIVAL_VOTE_MINUTES before it, and those of the aircraft of `aircraft` on final now (arrivalsOnFinal), one per
+ * aircraft, its newest. A vote outlives its aircraft's final, so the runway in use stays «según las llegadas» after the
+ * landing and between two arrivals, until ten minutes pass without one. Frozen and sorted by key: the same votes give
+ * the same list.
+ */
+export function rememberArrivals(previous, aircraft, { layout = MDPC_LAYOUT, nowMs = null } = {}) {
+  const byKey = new Map();
+  const keep = vote => {
+    if (!isVote(vote) || !isRecent(vote, nowMs)) return;
+    const held = byKey.get(vote.key);
+    if (held && finite(held.at) && finite(vote.at) && held.at > vote.at) return;
+    byKey.set(vote.key, vote);
+  };
+  (Array.isArray(previous) ? previous : []).forEach(keep);
+  arrivalsOnFinal(aircraft, { layout, nowMs }).forEach(keep);
+  return Object.freeze([...byKey.values()].sort((a, b) => (a.key < b.key ? -1 : Number(a.key > b.key))));
 }
 
 /**
@@ -172,11 +247,15 @@ export function runwayWindOf(weather, nowMs) {
 }
 
 /**
- * The runway in use on the map at `nowMs`: the recent live arrivals of `aircraft`, then the wind of a live `weather`,
- * then the layout's usual runway (08 at Punta Cana).
+ * The runway in use on the map at `nowMs` (the server's time): the recent live arrivals, `arrivals` (their votes, as
+ * rememberArrivals keeps them or arrivalsOnFinal gives them; one cast more than ARRIVAL_VOTE_MINUTES before `nowMs` no
+ * longer counts), then the wind of a live `weather`, then the layout's usual runway (08 at Punta Cana).
  */
-export function mapRunwayInUse({ layout = MDPC_LAYOUT, aircraft = [], weather = null, nowMs = null } = {}) {
-  return runwayInUse({ layout, recentLiveArrivals: recentLiveArrivals(aircraft), wind: runwayWindOf(weather, nowMs) });
+export function mapRunwayInUse({ layout = MDPC_LAYOUT, arrivals = [], weather = null, nowMs = null } = {}) {
+  const recent = (Array.isArray(arrivals) ? arrivals : [])
+    .filter(vote => isVote(vote) && isRecent(vote, nowMs))
+    .map(vote => ({ trackDeg: vote.trackDeg }));
+  return runwayInUse({ layout, recentLiveArrivals: recent, wind: runwayWindOf(weather, nowMs) });
 }
 
 /**
@@ -239,20 +318,31 @@ export function navaidFeatures(region = REGION_CONTEXT, language = 'es') {
 }
 
 /**
- * The data of the reference source: the reference point of PUJ (`arp`, first), the range rings and their labels
- * (`ring` and `ringLabel`, with `scope` region or approach), the extended centrelines (`centreline`, `tick`,
- * `centrelineLabel`), the airports of the region (`airport`) and the navaids (`navaid`). `runway` is the runway in use
- * (airport/runwayInUse.js; the layout's usual one by default) and `counterparts` the codes of today's counterparts.
+ * The data of the reference source (style/referenceLayers.js: REFERENCE_SOURCE): the reference point of PUJ (`arp`,
+ * first) and the range rings with their labels (`ring` and `ringLabel`, with `scope` region or approach). The same at
+ * every instant and in every language.
  */
-export function referenceFeatures({
+export function referenceFeatures() {
+  return {
+    type: 'FeatureCollection',
+    features: [feature({ kind: 'arp', label: HOME_AIRPORT_IATA }, point([...PUJ_ARP])), ...ringFeatures(PUJ_ARP)],
+  };
+}
+
+/**
+ * The data of the OurAirports source (style/referenceLayers.js: OURAIRPORTS_SOURCE, which carries its credit): what the
+ * map draws from OurAirports data. The extended centrelines of the layout's runway ends, whose thresholds and headings
+ * come from it (`centreline`, `tick`, `centrelineLabel`), and the airports of the region (`airport`) and the navaids
+ * (`navaid`) of region.context.json. `runway` is the runway in use (airport/runwayInUse.js; the layout's usual one by
+ * default) and `counterparts` the codes of today's counterparts.
+ */
+export function ourAirportsFeatures({
   layout = MDPC_LAYOUT, region = REGION_CONTEXT, runway = null, counterparts = [], language = 'es',
 } = {}) {
   const inUse = runway ?? runwayInUse({ layout });
   return {
     type: 'FeatureCollection',
     features: [
-      feature({ kind: 'arp', label: HOME_AIRPORT_IATA }, point([...PUJ_ARP])),
-      ...ringFeatures(PUJ_ARP),
       ...extendedCentrelines(layout, { runway: inUse, language }),
       ...regionAirportFeatures(region, { counterparts }),
       ...navaidFeatures(region, language),
