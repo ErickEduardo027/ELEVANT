@@ -187,8 +187,6 @@ describe('OCC request budget', () => {
       'src/features/positions-map/PositionsMapRoute.jsx → U5',
       'src/features/planning/PlanningRoute.jsx → U5',
       'src/features/planning/attendance/useAttendanceDraft.js → U5',
-      'src/features/position-coverage/CoverageRoute.jsx → U6',
-      'src/features/notifications/CanonicalNotificationsRoute.jsx → U6',
     ]);
 
     // The table describes the code: its modes and screens exist, and every resource and pace is in the file it names.
@@ -207,15 +205,19 @@ describe('OCC request budget', () => {
   });
 
   it('counts the screens that listen on the shell channel: no observer of their own, their re-reads in the budget', () => {
+    // The five screens of U6 that had an observer of their own (contratos 2.7): none is left among the observers.
     expect(LISTENERS.map(([file, listener]) => `${file} → ${listener.movedIn}`)).toEqual([
+      'src/features/position-coverage/CoverageRoute.jsx → U6',
       'src/features/master-data/MasterDataRoute.jsx → U6',
       'src/features/devices/DevicesRoute.jsx → U6',
       'src/features/chat/CanonicalChatRoute.jsx → U6',
+      'src/features/notifications/CanonicalNotificationsRoute.jsx → U6',
     ]);
+    expect(SITES.filter(([, site]) => site.movesIn === 'U6')).toEqual([]);
     const mounted = occMountedFiles();
     for (const [file, listener] of LISTENERS) {
       // The table describes the code: a screen of /admin-occ that takes the frame's channel and listens there to its
-      // resources, with no observer of its own and no entry among the observers.
+      // resources, with no observer of its own and no entry among the observers, and polls at the pace it names.
       expect(mounted, file).toContain(file);
       expect(SCREEN_IDS, file).toContain(listener.screen);
       expect(OCC_OBSERVER_SITES, file).not.toHaveProperty([file]);
@@ -223,12 +225,20 @@ describe('OCC request budget', () => {
       expect(source, file).toMatch(/\buseOccShellChannel\(\)/);
       expect(source, file).not.toMatch(/\bcreatePrivateWebAccountChangeObserver\b/);
       for (const resource of listener.resources) expect(source, `${file}: ${resource}`).toContain(`'${resource}'`);
+      if (listener.pollMs) expect(digits(source), `${file}: ${listener.pollMs} ms`).toMatch(new RegExp(`\\b${listener.pollMs}\\b`));
 
-      // A minute with one announcement of each of its resources: the shell's observer is still the tab's only one,
-      // and the screen's re-reads are counted.
+      // A minute with one announcement of each of its resources: the screen reads no cursor (only the shell's observer
+      // does, and those of the pages of other departments the screen mounts), and its re-reads are counted on top of
+      // its own poll.
+      const shared = SITES.filter(([, site]) => site.screen === listener.screen && site.mode === 'shared-page')
+        .map(([page]) => `${fileLabel(page)}:cursor`);
+      const label = `${fileLabel(file)}:read`;
+      const quiet = screenToday(listener.screen, []);
       const minute = screenToday(listener.screen, listener.resources.map(resource => ({ at: 10, resource })));
-      expect(Object.keys(minute.byKey).filter(key => key.endsWith(':cursor')), file).toEqual(['shell:cursor']);
-      expect(minute.byKey[`${fileLabel(file)}:read`], file).toBe(listener.readsPerRefresh * listener.resources.length);
+      expect(Object.keys(minute.byKey).filter(key => key.endsWith(':cursor')).sort(), file)
+        .toEqual(['shell:cursor', ...shared].sort());
+      expect((minute.byKey[label] ?? 0) - (quiet.byKey[label] ?? 0), file)
+        .toBe(listener.readsPerRefresh * listener.resources.length);
     }
   });
 

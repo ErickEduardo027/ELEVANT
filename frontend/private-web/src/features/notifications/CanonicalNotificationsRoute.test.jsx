@@ -1,5 +1,5 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(), load: vi.fn(), setRead: vi.fn(), observer: vi.fn(),
@@ -26,6 +26,7 @@ import { ADMIN_OCC_NAVIGATION } from '../admin-occ/navigation';
 import OccSidebar from '../admin-occ/shell/OccSidebar';
 import { OccShellProvider } from '../admin-occ/shell/OccShellProvider';
 import OccTopbar from '../admin-occ/shell/OccTopbar';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 
 function deferred() {
   let resolve;
@@ -39,13 +40,25 @@ const notice = (id, operationCode) => ({
   readAt: null,
 });
 
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7). The
+// observer is a spy: the page must not open one of its own.
+let shell;
+beforeEach(() => {
+  shell = createOccShellValue();
+  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
+  mocks.observer.mockReset()
+    .mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
+});
 afterEach(() => vi.useRealTimers());
+
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
 
 it('ignores AbortError and keeps the latest result when periodic reads finish out of order', async () => {
   const first = deferred();
   const second = deferred();
-  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
   vi.useFakeTimers();
 
@@ -62,8 +75,6 @@ it('ignores AbortError and keeps the latest result when periodic reads finish ou
 });
 
 it('does not turn an AbortError into an operational error state', async () => {
-  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockRejectedValue(new DOMException('aborted', 'AbortError'));
 
   render(<CanonicalNotificationsRoute />);
@@ -73,8 +84,6 @@ it('does not turn an AbortError into an operational error state', async () => {
 });
 
 it('renders notices in English with the shared kind labels and target links inside the OCC scope', async () => {
-  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockResolvedValue({ notifications: [
     notice('submitted', 'SUBMITTED'),
     { ...notice('message', 'MESSAGE'), kind: 'agent_message', readAt: '2026-09-01T12:05:00Z' },
@@ -107,8 +116,6 @@ it('a receipt saved here reaches the OCC frame at once, not with its 60 s poll',
     { ...notice('91000000-0000-4000-8000-000000000002', 'OP-202'), kind: 'agent_message' },
   ];
   const [incident] = rows;
-  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockImplementation(async () => ({ notifications: rows, hasMore: false }));
   mocks.setRead.mockReset().mockImplementation(async (id, read) => {
     rows = rows.map(item => (item.id === id ? { ...item, readAt: read ? new Date().toISOString() : null } : item));
@@ -123,7 +130,8 @@ it('a receipt saved here reaches the OCC frame at once, not with its 60 s poll',
   };
   const railPlate = count => screen.getByRole('link', { name: 'Notificaciones', description: `${count} sin leer` });
 
-  render(
+  // The real frame: its provider gives the page the channel, and the test wrapper is not needed.
+  renderView(
     <LanguageScope>
       <DepartmentAccessProvider initialAccess={access} load={vi.fn().mockResolvedValue(access)} observe={false}>
         <OccShellProvider observe={false}>
@@ -181,8 +189,6 @@ const history = [
 const codesOf = list => within(list).queryAllByRole('listitem').map(item => item.querySelector('[data-occ-plate]').textContent);
 
 function renderHistory(notifications = history) {
-  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockResolvedValue({ notifications, hasMore: false });
   return render(<CanonicalNotificationsRoute />);
 }
@@ -269,8 +275,6 @@ it('says what is missing when a filter leaves no notice', async () => {
 });
 
 it('says when the account cannot read its notices, without a retry, and offers one after any other failure', async () => {
-  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockRejectedValue(Object.assign(new Error('No tienes acceso a esta conversación o notificación.'),
     { status: 403 }));
   const view = render(<CanonicalNotificationsRoute />);
@@ -287,6 +291,30 @@ it('says when the account cannot read its notices, without a retry, and offers o
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText('Incidencia reportada en rampa')).toBeInTheDocument();
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('reads the history again when the frame announces notifications, without an observer of its own', async () => {
+  // The first read, then the history with the notice that just arrived, newest first.
+  mocks.load.mockReset().mockResolvedValue({ notifications: history.slice(0, 2), hasMore: false })
+    .mockResolvedValueOnce({ notifications: history.slice(1, 2), hasMore: false });
+  const view = render(<CanonicalNotificationsRoute />);
+  expect(codesOf(await screen.findByRole('list', { name: 'Avisos' }))).toEqual(['OP-302']);
+  // It listens on the shell's channel, to notifications only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['notifications']);
+  expect(mocks.observer).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['occ_planning', 'operation_messages', 'mobile_devices']));
+  expect(mocks.load).toHaveBeenCalledTimes(1);
+
+  // A new notice for the account: the page reads its history again at once and shows it first.
+  act(() => shell.announce(['notifications']));
+  await waitFor(() => expect(codesOf(screen.getByRole('list', { name: 'Avisos' }))).toEqual(['OP-301', 'OP-302']));
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+
+  // Leaving the page stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
 });
 
 it('keeps es and en with the same keys and placeholders, and no subtitle', () => {

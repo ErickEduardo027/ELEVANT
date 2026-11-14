@@ -116,9 +116,10 @@ conecta los hubs y reconcilia el cursor ante aviso, foco, conexión recuperada
 y sondeo de 25 segundos. En el OCC, desde el PR U2, el marco abre un solo
 observador por pestaña para lo que comparten todas las pantallas
 ([Un observador por pestaña del OCC](#un-observador-por-pestaña-del-occ-pr-u2)).
-Chat y Notificaciones OCC vuelven a consultar el recurso por REST: desde U6 el
-chat escucha en el observador del marco, y Notificaciones conserva el suyo,
-que U6 todavía debe pasar al del marco; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
+Chat y Notificaciones OCC vuelven a consultar el recurso por REST: desde U6 los
+dos escuchan en el observador del marco y ya no abren uno propio
+([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 14 de
+noviembre de 2026 sobre U6); sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
 y [pruebas del observador](../../frontend/private-web/src/services/accountChangeObserver.test.js)
 cubren invalidación, replay, fallos y cierre de sesión. [Mobile Agent](../../frontend/mobile-agent/src/services/mobile-change-feed.ts)
 reconcilia por REST al volver al primer plano y cada 25 segundos mientras
@@ -384,14 +385,15 @@ navegadores.
 
 Desde el PR U6, también posterior, Cobertura de posiciones, Datos maestros,
 Tablets, Chat interno y Notificaciones ya se dibujan con las primitivas del
-OCC, con las mismas lecturas y ritmos. Datos maestros (`occ_planning`), Tablets
-(`mobile_devices`) y Chat interno (`operation_messages`) ya no abren observador:
+OCC, con las mismas lecturas y ritmos, y ninguna abre ya su propio observador:
 escuchan sus recursos en el canal del marco y releen como antes, en el acto.
-Cobertura de posiciones y Notificaciones conservan el suyo; pasarlas al
-observador del marco queda pendiente. El
+Cobertura de posiciones y Datos maestros escuchan `occ_planning`; Tablets,
+`mobile_devices`; Chat interno, `operation_messages`; y Notificaciones,
+`notifications`, con su sondeo de 20 segundos. La pestaña de servicios de
+Notificaciones, que es de Contratos, conserva el suyo. El
 [inventario del plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
-cuenta aparte los observadores que quedan y las pantallas que escuchan en el
-canal, cuyas relecturas siguen en el presupuesto
+ya no espera que U6 mueva ningún observador, y cuenta aparte las pantallas que
+escuchan en el canal, cuyas relecturas siguen en el presupuesto
 ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 14 de
 noviembre de 2026 sobre U6).
 

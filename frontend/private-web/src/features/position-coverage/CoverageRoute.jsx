@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import AppLink from '../../components/AppLink';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { OCC_CLASSES } from '../occ-ui/classes';
 import OccButton from '../occ-ui/OccButton';
@@ -16,7 +17,6 @@ import OccStatusLegend from '../occ-ui/OccStatusLegend';
 import OccStatusPill from '../occ-ui/OccStatusPill';
 import OccToolbar from '../occ-ui/OccToolbar';
 import { formatClock } from '../occ-ui/occTime';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict } from '../../services/problemMessages';
@@ -496,6 +496,8 @@ function Configuration({ board, terminal, date, onChange, onStale }) {
 export default function CoverageRoute() {
   const { t } = useTranslation(coverageMessages);
   const station = useOccStation();
+  // The frame's stable channel: listening on it does not re-render the page when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [date, setDate] = useState(() => stationDate());
   const [state, setState] = useState({ status: 'loading' });
   const [terminalCode, setTerminalCode] = useState('A');
@@ -519,14 +521,9 @@ export default function CoverageRoute() {
     return () => controller.abort();
   }, [station.stationId, date, attempt]);
 
-  // Another OCC seat, HR or the airport changes something: re-read under current permissions.
-  useEffect(() => {
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('occ_planning')) void live.current();
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, []);
+  // Another OCC seat, HR or the airport changes something: re-read under current permissions. The announcement comes
+  // from the tab's single account-change observer, the OCC frame's (contratos 2.7): the page opens none of its own.
+  useEffect(() => subscribe(['occ_planning'], () => { void live.current(); }), [subscribe]);
 
   const board = state.board;
   const terminal = useMemo(() => board?.terminals.find(item => item.code === terminalCode) ?? board?.terminals[0],

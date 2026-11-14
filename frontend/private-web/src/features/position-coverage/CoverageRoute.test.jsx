@@ -1,16 +1,21 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
 import CoverageRoute from './CoverageRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { createOccCoverage, loadOccCoverage, releaseOccCoverage, updateOccStandAttributes } from '../../services/occCoverageService';
 
 const stationId = '20000000-0000-0000-0000-000000000003';
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: { stationScopes: [{ stationId, stationCode: 'PUJ' }] } }) }));
+// A spy: the page must not open an observer of its own (contratos 2.7).
 vi.mock('../../services/accountChangeObserver', () => ({
-  createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
+  createPrivateWebAccountChangeObserver: vi.fn(() => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 vi.mock('../../services/occCoverageService', async importOriginal => ({
   ...(await importOriginal()),
@@ -28,7 +33,15 @@ const board = { stationId, stationCode: 'PUJ', date: '2026-08-19', canAssign: tr
   terminals: [terminalA, terminalB], stands: [stand('A01', 't-a'), stand('A02', 't-a'), stand('B01', 't-b', { hasBoardingBridge: true })],
   constraints: [], agents: [agent], coverages: [] };
 
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7).
+let shell;
+beforeEach(() => { shell = createOccShellValue(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
 
 it('assigns stands to an agent and explains every broken rule in Spanish', async () => {
   loadOccCoverage.mockResolvedValue(board);
@@ -342,6 +355,36 @@ it('shows in the header of each board the legend of the marks it draws (contrato
   const items = within(within(day).getByRole('list', { name: 'Coberturas del día' })).getAllByRole('listitem');
   expect(items).toHaveLength(1);
   expect(shapeOf(within(items[0]).getByText('Refuerzo').closest('[data-occ-status]'))).toBe('hollow-circle');
+});
+
+it('reads the board again when the frame announces occ_planning, without an observer of its own', async () => {
+  // The first read, then the board after another OCC seat covered A01.
+  const covered = { ...board, stands: [stand('A01', 't-a', { coveredBy: ['Riley Ramp'] }), ...board.stands.slice(1)] };
+  loadOccCoverage.mockResolvedValue(covered).mockResolvedValueOnce(board);
+  const view = render(<CoverageRoute />);
+  await screen.findByRole('region', { name: 'Posiciones de la terminal' });
+  const rowOf = code => within(screen.getByRole('table', { name: 'Posiciones de la terminal' })).getByText(code).closest('tr');
+  expect(rowOf('A01')).toHaveTextContent('Sin agente');
+  // It listens on the shell's channel, to occ_planning only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['occ_planning']);
+  expect(createPrivateWebAccountChangeObserver).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['mobile_devices', 'operation_messages', 'notifications']));
+  expect(loadOccCoverage).toHaveBeenCalledTimes(1);
+
+  // Another OCC seat covered A01: the page reads the day's board again and shows who covers it.
+  act(() => shell.announce(['occ_planning']));
+  await waitFor(() => expect(rowOf('A01')).toHaveTextContent('Riley Ramp'));
+  expect(loadOccCoverage).toHaveBeenCalledTimes(2);
+  // The same station and day, read once more.
+  const [first, second] = loadOccCoverage.mock.calls;
+  expect(first[0]).toBe(stationId);
+  expect(second.slice(0, 2)).toEqual(first.slice(0, 2));
+
+  // Leaving the page stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
 });
 
 describe('CoverageRoute in English', () => {

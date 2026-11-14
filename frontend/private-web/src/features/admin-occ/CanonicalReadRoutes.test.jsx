@@ -66,18 +66,25 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('OCC canonical read surfaces', () => {
+  // Notificaciones lives in the OCC frame and hears the feed on its shell channel (contratos 2.7).
+  const renderNotifications = ({ shell = createOccShellValue() } = {}) => render(
+    <OccShellTestProvider value={shell}><MemoryRouter><CanonicalNotificationsRoute /></MemoryRouter></OccShellTestProvider>,
+  );
+
   it('invalidates the notification list when the authorized feed reports a change', async () => {
     mocks.session.mockReturnValue({ accountId: 'b0000000-0000-0000-0000-000000000001',
       stationScopes: [{ stationId, stationCode: 'PUJ' }] });
-    render(<MemoryRouter><CanonicalNotificationsRoute /></MemoryRouter>);
+    const shell = createOccShellValue();
+    renderNotifications({ shell });
     await waitFor(() => expect(mocks.loadNotifications).toHaveBeenCalledTimes(1));
-    expect(mocks.observe).toHaveBeenCalledOnce();
-    mocks.observe.mock.calls[0][0](['notifications']);
+    // The frame's observer announces it: the page opens none of its own.
+    expect(mocks.observe).not.toHaveBeenCalled();
+    act(() => shell.announce(['notifications']));
     await waitFor(() => expect(mocks.loadNotifications).toHaveBeenCalledTimes(2));
   });
 
   it('shows durable account notifications and stores the read receipt', async () => {
-    render(<MemoryRouter><CanonicalNotificationsRoute /></MemoryRouter>);
+    renderNotifications();
     await waitFor(() => expect(screen.getByText('Nuevo mensaje del agente')).toBeInTheDocument());
     expect(screen.getByRole('link', { name: 'Abrir' })).toHaveAttribute('href', `/admin-occ/chat?operationId=${operationId}`);
     fireEvent.click(screen.getByRole('button', { name: 'Marcar leída' }));
