@@ -905,8 +905,10 @@ PR M2 «Motor único y estilo NOC» (`314c124b`, `323189b2`, `5d759557` y
 `c0b20127`), que esa verificación no cubre. Las decisiones y lo que añadirán
 los PR M3 a M8 están en
 [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). Son las mismas
-pantallas sobre un solo motor: las posiciones siguen siendo puntos, y todavía
-no hay polígonos, tráfico en vivo ni aviones 3D.
+pantallas sobre un solo motor. En M2 las posiciones eran puntos; desde el PR M4
+son polígonos con su estado (ver
+[Posiciones en rampa (PR M4)](#posiciones-en-rampa-pr-m4)). Todavía no hay
+tráfico en vivo ni aviones 3D.
 
 - **Un motor y un componente.**
   [`mapEngine.js`](../../frontend/private-web/src/features/maps/core/mapEngine.js)
@@ -930,12 +932,13 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   (Monitoreo de vuelos) son adaptadores finos de `OccMap`, con las mismas props,
   el mismo manejador imperativo, los mismos `data-testid`
   (`position-map-container` y `flight-map-container`) y los mismos textos de
-  respaldo: sus páginas no cambian. Las posiciones son puntos con el estado que
-  ya traían, dibujado con el vocabulario de `statusVocabulary.js` («Llegando» y
-  «Por liberar» llegan con M4), y se agrupan al alejar el mapa; los vuelos que
-  traen posición son siluetas sin un color por estado, y PUJ se marca con su
-  punto de referencia. La ficha del vuelo de Monitoreo queda fija en una
-  esquina del mapa y ya no sigue al avión.
+  respaldo: sus páginas no cambian. En M2 las posiciones eran puntos con el
+  estado que ya traían, dibujado con el vocabulario de `statusVocabulary.js`, y
+  se agrupaban al alejar el mapa; el PR M4 los cambió por polígonos con los
+  siete estados, «Llegando» y «Por liberar» incluidos, y por una pastilla por
+  terminal. Los vuelos que traen posición son siluetas sin un color por estado,
+  y PUJ se marca con su punto de referencia. La ficha del vuelo de Monitoreo
+  queda fija en una esquina del mapa y ya no sigue al avión.
 - **Estilo NOC propio.**
   [`occStyle.js`](../../frontend/private-web/src/features/maps/style/occStyle.js)
   construye el estilo en código sobre las teselas vectoriales de OpenFreeMap,
@@ -957,16 +960,19 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   `useEscapeToClose` marcan la tecla como atendida. El almacén de la selección
   en la URL
   ([`mapSelection.js`](../../frontend/private-web/src/features/maps/core/mapSelection.js))
-  ya existe, pero las pantallas siguen pasando al mapa su propia selección
-  hasta que U3 y U5 lo adopten.
+  ya existe. En M2 las pantallas seguían pasando al mapa su propia selección;
+  desde el PR M4, Mapa de posiciones y Planificación escriben en él la posición
+  elegida (`stand=`), y Monitoreo de vuelos sigue con la suya hasta que U3 y U5
+  lo adopten.
 - **Leyenda.** Un mapa con posiciones o vuelos en pantalla muestra el botón
   «Leyenda»
   ([`MapLegend.jsx`](../../frontend/private-web/src/features/maps/ui/MapLegend.jsx)),
   que lista solo lo que hay en pantalla: el avión de los vuelos, que apunta
-  según su rumbo; los estados de las posiciones, también los de las que el mapa
-  dibuja sueltas junto a sus grupos; «No oficial» cuando alguna está en su
-  ubicación de referencia interna, y qué es un grupo cuando hay uno en
-  pantalla. En Mapa de posiciones, Planificación y Monitoreo de vuelos es la
+  según su rumbo; los estados de las posiciones; y «No oficial» cuando alguna
+  está en su ubicación de referencia interna. En M2 explicaba también los
+  grupos de posiciones; desde el PR M4 explica la pastilla de cada terminal,
+  las señales y las marcas de las posiciones. En Mapa de posiciones,
+  Planificación y Monitoreo de vuelos es la
   única leyenda del mapa: las páginas ya no muestran la suya, que explicaba con
   colores por estado lo que el mapa ya no dibuja así. La plataforma de la
   consola conserva su leyenda en línea hasta que U3 retire el dashboard actual.
@@ -975,9 +981,11 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
   el mapa no se crea de nuevo. Un cambio de estación o de cuenta sí empieza
   vacío.
-- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: ocho
-  escenas fijas del mapa (la octava, la revisión del plano de MDPC, llegó con
-  el PR M3), sin sesión ni API. La ruta lo importa solo en la rama
+- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: diez
+  escenas fijas del mapa (la revisión del plano de MDPC llegó con el PR M3; con
+  el PR M4, la de los estados de rampa reemplazó a la de los puntos y llegaron
+  la pareja combinada elegida y la ubicación de una posición), sin sesión ni
+  API. La ruta lo importa solo en la rama
   de desarrollo, y el build de producción comprueba que no lo incluye
   ([`verify-map-chunks.mjs`](../../frontend/private-web/scripts/verify-map-chunks.mjs)).
   La suite visual corre con Playwright en Chrome, fuera del CI: ver
@@ -1015,8 +1023,9 @@ noviembre de 2026 de
 [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), y las fuentes, las
 licencias y cómo se regenera el plano, en el
 [README de los datos](../../frontend/private-web/src/features/maps/airport/data/README.md).
-Las posiciones siguen siendo los puntos de M2: sus polígonos, sus estados y su
-leyenda llegan con M4.
+En M3 las posiciones seguían siendo los puntos de M2; sus polígonos, sus
+estados y su leyenda llegaron con el PR M4 (ver
+[Posiciones en rampa (PR M4)](#posiciones-en-rampa-pr-m4)).
 
 - **Un plano propio del aeropuerto.**
   [`mdpc.layout.json`](../../frontend/private-web/src/features/maps/airport/data/mdpc.layout.json),
@@ -1069,6 +1078,110 @@ sin ubicación. Ninguna pantalla usa todavía los aeropuertos de la región ni l
 radioayudas que trajo el extracto de OurAirports. Las capturas se revisaron en
 local, en el laboratorio; nada de esto acredita un despliegue ni una revisión
 visual en el VPS.
+
+## Posiciones en rampa (PR M4)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M4 «Posiciones en rampa» (`40597917`, `3ef22988` y `714dc4a3`), que esa
+verificación no cubre. Las decisiones, lo que pasa a M5 y las diferencias con el
+diseño están en la actualización del 13 de noviembre de 2026 sobre M4 de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), y la ubicación que
+guarda OCC, en la nota de esa fecha de
+[ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md).
+Mapa de posiciones y la vista «Mapa» de Planificación dibujan cada posición
+como un polígono con su estado, con las mismas lecturas de antes: la API no
+cambia.
+
+- **Siete estados que se leen sin color.**
+  [`standModel.js`](../../frontend/private-web/src/features/maps/stands/standModel.js)
+  decide cómo se lee cada posición, y
+  [`standLayers.js`](../../frontend/private-web/src/features/maps/stands/standLayers.js)
+  la dibuja con el vocabulario de `statusVocabulary.js`: «Libre» (contorno
+  sólido de 1 px), «Planificada» (a trazos 4-3, de 1,5 px), «Llegando» (un
+  velo, 2,5 px y la entrada resaltada), «Ocupada» (la losa, 2 px y un avión),
+  «Por liberar» (además, un reloj), «Inhabilitada» (rayas y trazos 2-2) y «Sin
+  verificar» (punteado 1-3). Lo normal no lleva tono: el cian marca lo elegido y
+  lo que se está ubicando, y el ámbar y el rojo, las señales «Sin agente que la
+  cubra», «Pasó su hora de salida» y «Otra aeronave llega a esta posición».
+  Una posición sigue «Llegando» mientras el avión no esté en ella y queda libre
+  al registrarse el `PUSHBACK`. Con lo que las pantallas leen hoy, el tablero de
+  posiciones, «en la posición» es la hora de llegada del tablero: un vuelo demo
+  importado pasa a «Ocupada» al tocar pista, como antes, hasta que el PR M5 le
+  pase al mapa los vuelos con sus hitos y los instantes demo. Los estados y las
+  cuentas regresivas cambian al minuto
+  ([`useStandDisplay.js`](../../frontend/private-web/src/features/maps/stands/useStandDisplay.js)
+  con
+  [`useMinuteClock.js`](../../frontend/private-web/src/features/maps/core/useMinuteClock.js)),
+  sin ninguna petición nueva.
+- **Según el zoom, nunca a un zoom fijo.** Entre Aproximación y Aeródromo, una
+  pastilla por terminal: «A · 3/16» (las posiciones con un avión sobre las que
+  se dibujan), con una flecha cuando llega un vuelo; un clic abre la vista de
+  esa terminal, y los grupos de posiciones desaparecen. Desde poco antes de
+  Aeródromo, los polígonos con su estado; desde poco antes de Rampa, los
+  códigos, los vuelos y las entradas; y más cerca, el rótulo completo, con la
+  hora, las iniciales de quien la cubre y el motivo de su señal. Cada umbral
+  sale del encuadre real de las vistas.
+  [`standFeatures.js`](../../frontend/private-web/src/features/maps/stands/standFeatures.js)
+  arma los datos del mapa, y una relectura del tablero solo le manda las
+  posiciones que cambiaron.
+- **Ficha, selección y cobertura.** Al pasar el puntero, una ficha dice el
+  código, el estado, el vuelo, quién la cubre y los motivos de sus señales, y se
+  coloca debajo o encima de la caja; un anillo marca las demás posiciones que
+  cubre el mismo agente
+  ([`standInteractions.js`](../../frontend/private-web/src/features/maps/stands/standInteractions.js)).
+  Un clic escribe `stand=` en la URL, en Mapa de posiciones y en Planificación,
+  y abre el cajón, que suma «Estado en el mapa»: el estado, quién la cubre, las
+  señales, la combinada que la anula, el límite de fuselaje estrecho y de dónde
+  sale su ubicación
+  ([`StandDetailFacts.jsx`](../../frontend/private-web/src/features/maps/ui/StandDetailFacts.jsx));
+  Planificación lo muestra en el panel junto a su mapa. La cámara solo se mueve
+  si la posición elegida queda fuera de la vista. Una `Esc` cierra el cajón y la
+  siguiente limpia la selección.
+- **Combinadas.** La posición que una combinada anula se dibuja «Inhabilitada»,
+  con «Anulada por A9» y un enlace a trazos hasta la que la anula. «Solo
+  fuselaje estrecho» suma una caja punteada de letra C dentro de una posición
+  más ancha.
+- **Ubicar con confirmación.** «Ubicar en el mapa» pide «Haz clic en el centro
+  de la posición …» y muestra la caja de la posición, a tamaño real, siguiendo
+  al puntero; a 15 m o menos de su centro en el plano se ajusta a su contorno.
+  Un clic deja la ubicación pendiente, y solo «Guardar ubicación» la envía, con
+  el mismo `PUT occ/stands/{standId}/location` de siempre; «Cancelar» o `Esc`
+  la descartan
+  ([`placing.js`](../../frontend/private-web/src/features/maps/stands/placing.js)).
+  La ubicación guardada traslada sin deformarla la caja del plano si queda a
+  80 m o menos de su centro; más lejos, o en una posición que el plano no
+  conoce, el mapa dibuja una caja propia
+  ([`standGeometry.js`](../../frontend/private-web/src/features/maps/airport/standGeometry.js)).
+  Las posiciones del tablero que el mapa no dibuja salen en la lista como «Sin
+  ubicar» y se ubican desde su cajón.
+- **Leyenda.** Lista solo lo que hay en pantalla: los estados, como recortes
+  del mapa y con las palabras del vocabulario; las señales, con su forma; la
+  pastilla de las terminales; «No oficial»; el enlace de las combinadas; la caja
+  de fuselaje estrecho; el anillo del mismo agente; y, al ubicar, la caja y la
+  ubicación sin guardar.
+- **Laboratorio y suite visual.** La escena `ramp-states`, con los siete
+  estados, reemplaza a `ramp-points`, y llegan `ramp-combined-selected` y
+  `ramp-placing-ghost`. La suite visual suma los
+  [estados de rampa](../../frontend/private-web/tests/visual/lab/map-lab.ramp-states.spec.mjs)
+  y las
+  [interacciones de Mapa de posiciones](../../frontend/private-web/tests/visual/occ/positions-map.interactions.spec.mjs).
+
+El 13 de noviembre de 2026 el dueño del producto decidió que su documento de
+coordenadas manda sobre OpenStreetMap, que está desactualizado en el
+aeropuerto: el mapa dibuja cada posición como la tiene el plano, centrada en el
+punto de ese documento, ninguna se mueve ni se gira hacia OSM, y solo OCC mueve
+una al ubicarla.
+
+Límites: la plataforma de la consola recibe los polígonos con el estado que ya
+traía, sin «Llegando», «Por liberar» ni señales, hasta que U3 la rehaga. Las
+huellas de los aviones a escala, la barra de avance de los hitos, «El avión ya
+está en la posición. Registra la llegada.», el tipo de avión en el rótulo y el
+reloj del servidor llegan con M5; hasta entonces, un avión marca las posiciones
+ocupadas y las por liberar. Elegir una posición todavía no marca su vuelo en el
+mapa, porque ninguna pantalla dibuja a la vez vuelos y posiciones. Pasar de
+posición en posición con `[` y `]` y girar una posición al ubicarla quedan
+aplazados. Las capturas se revisaron en local; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
 
 ## Estado de integración
 
@@ -1129,7 +1242,8 @@ npm run build
 - smoke de creación del cliente OpenAPI compartido;
 - prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración;
 - *posterior al commit verificado (PR M2):* la suite visual de los mapas del OCC, con Playwright en Chrome y fuera del CI ([Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ));
-- *posterior al commit verificado (PR M3):* las pruebas del plano de MDPC, que corren con `npm test`: el plano versionado tiene que ser idéntico a lo que genera el generador ([prueba de igualdad](../../frontend/private-web/src/features/maps/airport/mdpcLayout.generated.test.js)) y cumplir los criterios de aceptación ([criterios](../../frontend/private-web/src/features/maps/airport/airportLayout.test.js)).
+- *posterior al commit verificado (PR M3):* las pruebas del plano de MDPC, que corren con `npm test`: el plano versionado tiene que ser idéntico a lo que genera el generador ([prueba de igualdad](../../frontend/private-web/src/features/maps/airport/mdpcLayout.generated.test.js)) y cumplir los criterios de aceptación ([criterios](../../frontend/private-web/src/features/maps/airport/airportLayout.test.js));
+- *posterior al commit verificado (PR M4):* las pruebas de las posiciones en rampa, junto a cada módulo, entre ellas la que exige que cada par de estados se distinga por algo que no es el color ([capas de las posiciones](../../frontend/private-web/src/features/maps/stands/standLayers.test.js)).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
 
