@@ -9,6 +9,7 @@ import { createKinematicsLayout } from './kinematicsFixtures.js';
 import {
   AIR_ARC_STEP_DEG,
   GATE_NM,
+  HOLD_LEG_S,
   TOUCHDOWN_ALONG_M,
   approachPath,
   arrivalAirPath,
@@ -16,6 +17,7 @@ import {
   climbPath,
   defaultLandingExit,
   finalPath,
+  holdingPatternPath,
   landingExitCandidates,
   landingRollPath,
   takeoffPath,
@@ -151,6 +153,47 @@ describe('approach and departure paths', () => {
     const steep = finalPath(end08, { gateNm: 5, glideDeg: 3.5, thresholdCrossFt: 60 });
     expect(steep.alt1M).toBeCloseTo(ftToM(43 + 60), 9);
     expect(steep.lengthM).toBe(5 * NM);
+  });
+
+  it('a holding pattern turns right at the 25° bank radius and comes back over its fix on the inbound course', () => {
+    // Over the 08 gate, on the course the final leaves it on.
+    const fix = centrelinePoint(end08, -GATE_NM * NM);
+    const inboundDeg = initialBearing(fix, end08.threshold);
+    const radius = turnRadiusM(APPROACH_MS);
+    const legM = APPROACH_MS * HOLD_LEG_S;
+    const hold = holdingPatternPath({ fix, inboundDeg, speedMs: APPROACH_MS });
+    expect(hold.radiusM).toBe(radius);
+    // It begins and ends exactly over the fix, on the inbound course: two half circles and two one-minute legs.
+    const last = hold.coords.length - 1;
+    expect(hold.coords[0]).toEqual(fix);
+    expect(hold.coords[last]).toEqual(fix);
+    expect(angleBetween(initialBearing(hold.coords[0], hold.coords[1]), inboundDeg)).toBeLessThanOrEqual(AIR_ARC_STEP_DEG);
+    expect(angleBetween(initialBearing(hold.coords[last], hold.coords[last - 1]) + 180, inboundDeg)).toBeLessThan(1e-6);
+    expect(hold.lengthM).toBeCloseTo(2 * Math.PI * radius + 2 * legM, -1);
+    expect(hold.lapM).toBe(hold.lengthM);
+    // Right turns: all of it lies right of the inbound course (south of the 08 final), out to two radii abeam, and
+    // reaches back along the course one leg and one radius behind the fix.
+    const offsets = hold.coords.map(point => offCentreline(end08, point));
+    expect(Math.max(...offsets)).toBeLessThan(1e-6);
+    expect(Math.min(...offsets)).toBeCloseTo(-2 * radius, -1);
+    const plane = toLocal(fix);
+    const course = [Math.sin((inboundDeg * Math.PI) / 180), Math.cos((inboundDeg * Math.PI) / 180)];
+    const behind = Math.max(...hold.coords.map(point => {
+      const [x, y] = plane.forward(point);
+      return -(x * course[0] + y * course[1]);
+    }));
+    expect(behind).toBeCloseTo(legM + radius, 3);
+    // The heading turns by the arc step at most from one point to the next.
+    const bearings = hold.coords.slice(1).map((point, at) => initialBearing(hold.coords[at], point));
+    bearings.slice(1).forEach((bearing, at) => expect(angleBetween(bearing, bearings[at])).toBeLessThanOrEqual(AIR_ARC_STEP_DEG + 1e-3));
+    // Without legs it is a circle; laps fly the same lap again, back over the fix after each.
+    const circle = holdingPatternPath({ fix, inboundDeg, speedMs: APPROACH_MS, legM: 0 });
+    expect(circle.lengthM).toBeCloseTo(2 * Math.PI * radius, -1);
+    expect(circle.coords[circle.coords.length - 1]).toEqual(fix);
+    const three = holdingPatternPath({ fix, inboundDeg, speedMs: APPROACH_MS, laps: 3 });
+    expect(three.lapM).toBeCloseTo(hold.lengthM, 6);
+    expect(three.lengthM).toBeCloseTo(3 * hold.lengthM, 6);
+    expect(three.coords.filter(point => point[0] === fix[0] && point[1] === fix[1])).toHaveLength(4);
   });
 
   it('the rollout on 08 starts 300 m past the threshold and ends at the exit on the centreline', () => {

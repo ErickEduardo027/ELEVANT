@@ -45,6 +45,8 @@ export const DOWNWIND_JOIN_NM = 4;
 export const STRAIGHT_IN_LEAD_NM = 3;
 /** An arrival without an origin starts this far out on the extended centreline. */
 export const NO_ORIGIN_START_NM = 40;
+/** The straight legs of a holding pattern last this long at its speed (ICAO: one minute at or below FL140). */
+export const HOLD_LEG_S = 60;
 /** The last metres of the great circle that are rounded into the approach. */
 export const ARRIVAL_JOIN_M = 60_000;
 /** A departure is drawn this far at most. */
@@ -136,6 +138,42 @@ export function finalPath(runwayEnd, { gateNm = GATE_NM, glideDeg = GLIDE_DEG, t
     alt1M,
     lengthM: gateNm * NM,
   });
+}
+
+/**
+ * A holding pattern over `fix` (`[lng, lat]`) on the inbound course `inboundDeg`, flown `laps` times at `speedMs`
+ * with right turns (the ICAO standard): over the fix a right turn of 180° at the 25° bank radius, the outbound leg
+ * `legM` metres, a second right turn of 180° and the inbound leg back over the fix, on the inbound course again; with
+ * legs of 0 m it is a full circle. `{ coords, radiusM, lapM, lengthM }`, frozen: `coords` begins and ends exactly at
+ * the fix and passes over it after each lap; the arcs are drawn every 0.5° of turn in the east-north plane of the fix.
+ */
+export function holdingPatternPath({ fix, inboundDeg, speedMs, legM = speedMs * HOLD_LEG_S, laps = 1 }) {
+  const radius = turnRadiusM(speedMs);
+  const leg = Math.max(0, legM);
+  const count = Math.max(1, Math.round(laps));
+  const along = unitOf(inboundDeg);
+  const right = unitOf(inboundDeg + 90);
+  const steps = Math.ceil(180 / AIR_ARC_STEP_DEG);
+  const lap = [];
+  // The first turn, round a centre `radius` to the right of the fix, ends abeam it on the outbound course.
+  for (let at = 1; at <= steps; at += 1) {
+    const theta = (Math.PI * at) / steps;
+    lap.push(plus(plus([0, 0], right, radius * (1 - Math.cos(theta))), along, radius * Math.sin(theta)));
+  }
+  // The outbound leg, then the second turn, round a centre `leg` metres behind the first one, back onto the inbound
+  // course `leg` metres before the fix.
+  for (let at = leg > 0 ? 0 : 1; at <= steps; at += 1) {
+    const theta = (Math.PI * at) / steps;
+    lap.push(plus(plus([0, 0], right, radius * (1 + Math.cos(theta))), along, -(leg + radius * Math.sin(theta))));
+  }
+  if (leg > 0) lap.push([0, 0]);
+  else lap[lap.length - 1] = [0, 0];
+  const plane = toLocal(fix);
+  const onEarth = lap.map(point => (point[0] === 0 && point[1] === 0 ? freezePoint(fix) : freezePoint(plane.inverse(point))));
+  const coords = [freezePoint(fix)];
+  for (let at = 0; at < count; at += 1) coords.push(...onEarth);
+  const lapM = measurePolyline([freezePoint(fix), ...onEarth]).lengthM;
+  return Object.freeze({ coords: Object.freeze(coords), radiusM: radius, lapM, lengthM: measurePolyline(coords).lengthM });
 }
 
 /**

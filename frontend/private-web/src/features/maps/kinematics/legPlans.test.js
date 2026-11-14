@@ -6,6 +6,7 @@ import { legDurationS } from './legs.js';
 import {
   MIN_START_M, arrivalAirLegs, backOutAir, climbLegs, departureGroundLegs, groundLegs,
 } from './legPlans.js';
+import { GATE_NM, HOLD_LEG_S, centrelinePoint, holdingPatternPath } from './pathBuilder.js';
 import { perfFor } from './perfProfiles.js';
 import { routeLandingTaxi } from './taxiRoute.js';
 import { NM, ftToM, ktToMs, msToKt } from './units.js';
@@ -16,6 +17,7 @@ const MIA = [-80.287, 25.7959];
 const SDQ = [-69.6689, 18.4297];
 const A5 = MDPC_LAYOUT.stands.find(stand => stand.code === 'A5');
 const seconds = legs => legs.reduce((sum, leg) => sum + legDurationS(leg), 0);
+const angleBetween = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 
 /** Each leg begins where the one before ends, at its speed and height. */
 function expectJoined(legs, label) {
@@ -87,11 +89,60 @@ describe('leg plans', () => {
     expect(two.limit).toBe('minimum');
     expect(air.thresholdAlongM - two.startAlongM).toBeCloseTo(MIN_START_M, 3);
     expect(seconds(two.legs)).toBeGreaterThan(30);
-    // More time than the whole flight from the origin takes: it starts at the origin.
-    const long = backOutAir(arrivalAirLegs({ origin: SDQ, runwayEnd: END_08, perf: PERF }), 3 * 3_600_000);
+    expect(eight.hold).toBeNull();
+    expect(two.hold).toBeNull();
+  });
+
+  it('with more time than the whole flight from the origin takes, the time over is flown in a hold over the gate at its own speed', () => {
+    const gate = centrelinePoint(END_08, -GATE_NM * NM);
+    const gateAlt = ftToM(END_08.elevationFt + 50) + GATE_NM * NM * Math.tan((3 * Math.PI) / 180);
+    const circleS = holdingPatternPath({ fix: gate, inboundDeg: END_08.headingTrue, speedMs: PERF.approach.speedMs, legM: 0 }).lengthM
+      / PERF.approach.speedMs;
+    const sdq = arrivalAirLegs({ origin: SDQ, runwayEnd: END_08, perf: PERF });
+    const wholeS = seconds(sdq.legs);
+    // Santo Domingo is 17 minutes away at these speeds; a 30-minute demo has 25 in the air.
+    expect(wholeS / 60).toBeCloseTo(17.1, 1);
+    const long = backOutAir(sdq, 1_500_000);
     expect(long.limit).toBe('origin');
     expect(long.startAlongM).toBe(0);
     expect(long.originPath).toHaveLength(2);
+    expectJoined(long.legs, 'SDQ 25 min');
+    expect(seconds(long.legs)).toBeCloseTo(1_500, 6);
+    // Every leg but one is the arrival's own; that one is the hold: over the gate, 10 NM out on the 08 final, at the
+    // approach speed and the gate's height, two standard laps whose legs make it last exactly the time over.
+    const added = long.legs.filter(leg => !sdq.legs.includes(leg));
+    expect(added).toHaveLength(1);
+    const [holding] = added;
+    expect(long.legs.indexOf(holding)).toBe(sdq.legs.findIndex(leg => leg.phase === 'final'));
+    expect(holding.phase).toBe('approach');
+    expect(holding.part).toBe('air');
+    expect(haversineM(holding.path.coords[0], gate)).toBeLessThan(0.01);
+    expect(haversineM(holding.path.coords[holding.path.coords.length - 1], gate)).toBeLessThan(0.01);
+    expect(msToKt(holding.v0)).toBeCloseTo(180, 9);
+    expect(holding.v1).toBe(holding.v0);
+    expect(holding.alt0).toBeCloseTo(gateAlt, 6);
+    expect(holding.alt1).toBe(holding.alt0);
+    expect(legDurationS(holding)).toBeCloseTo(1_500 - wholeS, 6);
+    expect(long.hold).toMatchObject({ laps: 2, speedMs: holding.v0, altM: holding.alt0 });
+    expect(long.hold.legM).toBeGreaterThan(0);
+    expect(long.hold.durationS).toBeCloseTo(1_500 - wholeS, 6);
+    expect(angleBetween(long.hold.inboundDeg, END_08.headingTrue)).toBeLessThan(0.1);
+    // 30 s over: less than one circle lasts, so it flies one circle and starts that much further along the path.
+    const short = backOutAir(sdq, (wholeS + 30) * 1000);
+    expect(short.limit).toBe('origin');
+    expect(short.hold).toMatchObject({ laps: 1, legM: 0 });
+    expect(short.hold.durationS).toBeCloseTo(circleS, 6);
+    expect(seconds(short.legs)).toBeCloseTo(wholeS + 30, 6);
+    expect(short.startAlongM).toBeGreaterThan(0);
+    expect(haversineM(short.originPath[short.originPath.length - 1], short.legs[0].path.coords[0])).toBeLessThan(0.01);
+    // Without an origin (40 NM out) it is the same, at the approach speed all the way.
+    const none = arrivalAirLegs({ origin: null, runwayEnd: END_08, perf: PERF });
+    const fromNowhere = backOutAir(none, 1_200_000);
+    expect(fromNowhere.limit).toBe('origin');
+    expect(fromNowhere.startAlongM).toBe(0);
+    expect(seconds(fromNowhere.legs)).toBeCloseTo(1_200, 6);
+    expect(fromNowhere.hold.laps).toBe(1);
+    expect(fromNowhere.hold.legM).toBeGreaterThan(PERF.approach.speedMs * HOLD_LEG_S);
   });
 
   it('a far exit brakes at the nominal rate and rolls on, a near one brakes harder, and one out of reach gives nothing', () => {

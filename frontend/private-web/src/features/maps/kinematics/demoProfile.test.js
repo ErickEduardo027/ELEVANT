@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import { MDPC_LAYOUT } from '../airport/airportLayout.js';
-import { haversineM, initialBearing, measurePolyline, pointToPolylineM } from '../airport/geo.js';
+import { destinationPoint, haversineM, initialBearing, measurePolyline, pointToPolylineM } from '../airport/geo.js';
 import { demoRunway, runwayEnd, runwayInUse } from '../airport/runwayInUse.js';
 import { DEMO_FADE_MS, demoClock, fitDemoTrajectory } from './demoProfile.js';
 import { buildArrivalTrajectory, sampleTrajectory } from './estimator.js';
-import { STATUS_MESSAGES, formatTimeScale, kinematicsMessages } from './kinematicsMessages.js';
+import { STATUS_MESSAGES, formatTimeScale, kinematicsMessages, timeScaleMessage } from './kinematicsMessages.js';
 import { MIN_START_M } from './legPlans.js';
-import { landingExitCandidates } from './pathBuilder.js';
+import { GATE_NM, centrelinePoint, landingExitCandidates } from './pathBuilder.js';
 import { perfFor } from './perfProfiles.js';
 import { routeLandingTaxi } from './taxiRoute.js';
 import { ftToM, ktToMs, msToKt, nmToM } from './units.js';
@@ -18,6 +18,8 @@ const parseInstant = value => (typeof value === 'string' ? Date.parse(value) : n
 const T0 = Date.parse('2026-11-14T15:00:00Z');
 const iso = ms => (ms === null ? null : new Date(ms).toISOString());
 const MIA = [-80.287, 25.7959];
+// Santo Domingo, the nearest origin of the server's catalogue (DemoAirports): 74 NM from the 08 threshold.
+const SDQ = [-69.6689, 18.4297];
 const PERF = perfFor({ typeIcao: 'A320' });
 const ACTIVE = MDPC_LAYOUT.stands.filter(stand => !stand.retired);
 const END_08 = runwayEnd(MDPC_LAYOUT, '08');
@@ -25,6 +27,7 @@ const standOf = code => MDPC_LAYOUT.stands.find(stand => stand.code === code);
 const holdOf = id => MDPC_LAYOUT.apronHolds.find(hold => hold.id === id);
 const angleBetween = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 const KT25 = ktToMs(25);
+const NM_M = nmToM(1);
 
 /**
  * The demo block the API sends for a flight triggered at T0 to reach its stand `minutes` later (DemoFlightTimeline):
@@ -60,10 +63,15 @@ function demoBlock(minutes, { imported = true, offBlockAfterMin = null, cancelAt
 
 const clockOf = (minutes, options) => demoClock(demoBlock(minutes, options), parseInstant);
 
-function demo(minutes, { code = 'A5', imported = true, layout = MDPC_LAYOUT, ...options } = {}) {
+function demo(minutes, { code = 'A5', imported = true, layout = MDPC_LAYOUT, counterpart = MIA, ...options } = {}) {
   const clock = clockOf(minutes, { imported, ...options });
   const stand = code === null ? null : layout.stands.find(item => item.code === code);
-  return { clock, trajectory: fitDemoTrajectory({ demo: clock, imported, stand, counterpart: MIA, destination: MIA, perf: PERF, layout, ...options.fit }) };
+  return {
+    clock,
+    trajectory: fitDemoTrajectory({
+      demo: clock, imported, stand, counterpart, destination: counterpart, perf: PERF, layout, ...options.fit,
+    }),
+  };
 }
 
 /** The first leg of a phase, or of a kind and phase. */
@@ -115,12 +123,16 @@ describe('demo flight profile', () => {
       cases.push([`${minutes} min, not imported`, demo(minutes, { imported: false })]);
     }
     cases.push(['8 min, imported, B37 (its taxi compressed)', demo(8, { code: 'B37', offBlockAfterMin: 20 })]);
+    // With time over in the air: two laps of the hold over the gate, and one circle with the start moved on.
+    cases.push(['30 min from SDQ (a hold over the gate)', demo(30, { counterpart: SDQ, offBlockAfterMin: 20 })]);
+    cases.push(['20 min without an origin (one circle)', demo(20, { counterpart: null, offBlockAfterMin: 20 })]);
     const seen = new Set();
     for (const [label, { trajectory }] of cases) {
       expectContinuous(trajectory, label).forEach(phase => seen.add(phase));
     }
-    // Every phase a demo flight goes through was sampled (from MIA even 30 minutes begin in the descent).
-    expect([...seen].sort()).toEqual(['approach', 'climb', 'descent', 'final', 'holding', 'landing', 'parked',
+    // Every phase a demo flight goes through was sampled (from MIA even 30 minutes begin in the descent; from SDQ the
+    // 30-minute demo begins en route, over the origin).
+    expect([...seen].sort()).toEqual(['approach', 'climb', 'descent', 'enroute', 'final', 'holding', 'landing', 'parked',
       'pushback', 'taxiIn', 'taxiOut', 'takeoff'].sort());
   });
 
@@ -206,25 +218,43 @@ describe('demo flight profile', () => {
         expect(shown, label).toBeLessThanOrEqual(KT25 + 1e-9);
       }
     }
-    // Every stand but B36 and B37 is reached at real speeds. Those two cannot be: from both exits, even braking straight
-    // down to 25 kt at the exit and taxiing at 25 kt the whole way, the ground path takes longer than the server's
-    // 216 s, so the map compresses that part by under 2 % and the data block says «Demo acelerada ×1,1». (B36 kept real
-    // speeds only by turning back through n7592209929, a hairpin at the end of the roll.)
+    // Every stand but B36 and B37 is reached at real speeds. Those two are not: the server's 216 s taxi-in is too
+    // short for them, so the map compresses their ground part by under 2 % and the data block says «Demo acelerada
+    // ×1,1». This is the exception contracts 2.3 does not grant, pinned here until the owner decides: a longer TaxiIn
+    // in the server's DemoFlightTimeline (from 222 s every stand fits at 8 minutes), or the exception written into the
+    // contract.
     expect(compressed.map(item => item.code)).toEqual(['B36', 'B37']);
+    const brake = PERF.landing.brakingMaxMs2;
+    const brakeM = (vref * vref - KT25 * KT25) / (2 * brake);
+    const stopM = (KT25 * KT25) / (2 * brake);
     for (const { code, scale, shownKt } of compressed) {
       expect(scale, code).toBeLessThan(1.02);
       expect(shownKt, code).toBeLessThan(25.5);
       expect(formatTimeScale(scale, 'es'), code).toBe('×1,1');
       for (const exit of exits) {
+        const label = `${code} ${exit.nodeId}`;
         const path = routeLandingTaxi(MDPC_LAYOUT, {
           runwayEnd: END_08, fromAlongM: 300, exitNodeId: exit.nodeId, stand: standOf(code), activeRunwayIds: ['08/26'],
         });
         const rollM = exit.alongM - 300;
-        // The fastest roll ends at 25 kt at the exit; the fastest taxi runs at 25 kt from there.
-        const fastestS = (2 * rollM) / (vref + KT25) + (path.lengthM - rollM) / KT25;
-        expect(fastestS, `${code} ${exit.nodeId}`).toBeGreaterThan(216);
+        const taxiM = path.lengthM - rollM;
+        // The fastest ground run this profile can be fitted to: its roll is one deceleration from Vref, at best down to
+        // 25 kt at the exit, and at best every taxi leg runs at 25 kt.
+        const profileS = (2 * rollM) / (vref + KT25) + taxiM / KT25;
+        expect(profileS, label).toBeGreaterThan(216);
+        // Nor could any roll on that route within the profile's limits: Vref held after the touchdown and the maximum
+        // braking (2.5 m/s²) down to 25 kt at the exit, 25 kt from there, and the same braking to stop at the centre.
+        expect(rollM, label).toBeGreaterThanOrEqual(brakeM);
+        const fastestS = (rollM - brakeM) / vref + (vref - KT25) / brake + (taxiM - stopM) / KT25 + KT25 / brake;
+        expect(fastestS, label).toBeGreaterThan(216);
       }
     }
+    // With 222 s of taxi-in (46.25 % of the 8 minutes) every active stand is reached at real speeds.
+    const longer = demoClock({ ...demoBlock(8), touchdownAt: iso(clock.onBlockAtMs - 222_000) }, parseInstant);
+    const stillScaled = ACTIVE.filter(stand => fitDemoTrajectory({
+      demo: longer, imported: true, stand, counterpart: MIA, perf: PERF, layout: MDPC_LAYOUT,
+    }).scaledParts.length > 0);
+    expect(stillScaled.map(stand => stand.code)).toEqual([]);
   });
 
   it('for 8, 15 and 30 minutes the approach starts as far back as real speeds need and timeScale is 1', { timeout: 30_000 }, () => {
@@ -235,6 +265,8 @@ describe('demo flight profile', () => {
       expect(trajectory.scaledParts, String(minutes)).toEqual([]);
       expect(trajectory.meta.parts.air.timeScale).toBe(1);
       expect(trajectory.meta.airLimit).toBeNull();
+      expect(trajectory.meta.airHold).toBeNull();
+      expect(timeScaleMessage(trajectory.timeScale)).toBeNull();
       // The nominal arrival from MIA that lands at the same instant is exactly there when the demo appears: the demo
       // flies the same legs at the same speeds, only cut where its time begins.
       const nominal = buildArrivalTrajectory({
@@ -263,6 +295,89 @@ describe('demo flight profile', () => {
     expect(starts[2].first.altM).toBeGreaterThan(ftToM(10_000));
   });
 
+  it('when even the whole path from the origin is shorter, the time over is flown in a hold over the gate at real speeds', { timeout: 60_000 }, () => {
+    const gate = centrelinePoint(END_08, -GATE_NM * NM_M);
+    // From Santo Domingo the whole flight takes 17 minutes at these speeds, without an origin (40 NM out) 14: a demo of
+    // 25 or 30 minutes has more time than that in the air (its taxi-in is 5 minutes). 22.5 minutes from SDQ and 20
+    // without an origin leave less time over than one circle of the hold lasts.
+    for (const [label, counterpart, minutes, laps] of [
+      ['SDQ 30 min', SDQ, 30, 2], ['SDQ 25 min', SDQ, 25, 1], ['SDQ 22.5 min', SDQ, 22.5, 1],
+      ['no origin 30 min', null, 30, 3], ['no origin 20 min', null, 20, 1],
+    ]) {
+      const { clock, trajectory } = demo(minutes, { counterpart, offBlockAfterMin: 20 });
+      // Every part in real time: nothing is scaled and the data block says nothing of it.
+      expect(trajectory.meta.airLimit, label).toBe('origin');
+      expect(trajectory.meta.parts.air, label).toEqual({ timeScale: 1, factor: 1 });
+      expect(trajectory.scaledParts, label).toEqual([]);
+      expect(trajectory.timeScale, label).toBe(1);
+      expect(timeScaleMessage(trajectory.timeScale), label).toBeNull();
+      // On time, on the 08 final at the reference speed, and wheels on the runway at touchdownAt.
+      expect(msToKt(sampleTrajectory(trajectory, clock.touchdownAtMs - 1).gsMs), label).toBeCloseTo(137, 0);
+      expect(Math.abs(firstLeg(trajectory, 'landing').t0Ms - clock.touchdownAtMs), label).toBeLessThan(1_000);
+      // The hold: laps over the gate at the approach speed, level at the gate's height, in phase 'approach'.
+      const hold = trajectory.meta.airHold;
+      expect(hold.laps, label).toBe(laps);
+      expect(haversineM(hold.fix, gate), label).toBeLessThan(0.01);
+      expect(msToKt(hold.speedMs), label).toBeCloseTo(180, 6);
+      const holding = trajectory.legs.find(leg => leg.part === 'air' && Math.abs(leg.lengthM - hold.lengthM) < 1e-6);
+      expect(holding.durationMs / 1000, label).toBeCloseTo(hold.durationS, 6);
+      for (const share of [0.01, 0.37, 0.5, 0.99]) {
+        const state = sampleTrajectory(trajectory, holding.t0Ms + share * holding.durationMs);
+        expect(state.phase, label).toBe('approach');
+        expect(msToKt(state.gsMs), label).toBeCloseTo(180, 3);
+        expect(state.altM, label).toBeCloseTo(hold.altM, 6);
+        expect(haversineM([state.lon, state.lat], gate), label).toBeLessThan(hold.legM + 2 * hold.radiusM + 1);
+      }
+      // Everything else flies as the arrival without a hold does: the hold's time later before it, at the same instant
+      // after it.
+      const nominal = buildArrivalTrajectory({
+        times: { actualAtMs: clock.touchdownAtMs, actualKind: 'Runway', estimatedAtMs: clock.onBlockAtMs },
+        origin: counterpart, layout: MDPC_LAYOUT, runwayEnd: END_08, stand: standOf('A5'), perf: PERF,
+      });
+      const before = [clock.appearAtMs, (clock.appearAtMs + holding.t0Ms) / 2, holding.t0Ms - 1_000].map(t => [t, t + holding.durationMs]);
+      const after = [holding.t1Ms + 1_000, (holding.t1Ms + clock.touchdownAtMs) / 2, clock.touchdownAtMs - 1_000].map(t => [t, t]);
+      for (const [t, at] of [...before, ...after]) {
+        const shown = sampleTrajectory(trajectory, t);
+        const real = sampleTrajectory(nominal, at);
+        expect(haversineM([shown.lon, shown.lat], [real.lon, real.lat]), `${label} at ${t - T0} ms`).toBeLessThan(1);
+        expect(shown.gsMs, label).toBeCloseTo(real.gsMs, 3);
+        expect(shown.altM, label).toBeCloseTo(real.altM, 2);
+      }
+      // It appears at the origin, or a little along its path when one circle is more than the time over.
+      const first = sampleTrajectory(trajectory, clock.appearAtMs);
+      const origin = counterpart ?? centrelinePoint(END_08, -40 * NM_M);
+      if (hold.legM > 0) expect(haversineM([first.lon, first.lat], origin), label).toBeLessThan(1);
+      else expect(haversineM([first.lon, first.lat], origin), label).toBeGreaterThan(NM_M);
+      const originPath = trajectory.meta.originPath;
+      expect(haversineM(originPath[originPath.length - 1], [first.lon, first.lat]), label).toBeLessThan(1);
+    }
+    // Santo Domingo appears at its cruise level and speed.
+    const { clock, trajectory } = demo(30, { counterpart: SDQ });
+    expect(msToKt(sampleTrajectory(trajectory, clock.appearAtMs).gsMs)).toBeCloseTo(450, 3);
+  });
+
+  it('a part that has to run slower than real time is named and says so', () => {
+    // A made-up origin 15.5 NM out, just off the extended centreline, and 10.6 minutes to the stand: the whole path
+    // lasts less than the 350 s in the air, and the time over is less than one circle of the hold, which there is no
+    // room to fly before the gate.
+    const near = destinationPoint(END_08.threshold, END_08.headingTrue + 182, 15.5 * NM_M);
+    const { clock, trajectory } = demo(10.6, { counterpart: near });
+    expect(clock.touchdownAtMs - clock.appearAtMs).toBe(349_800);
+    expect(trajectory.meta.airLimit).toBe('origin');
+    expect(trajectory.meta.airHold).toBeNull();
+    const scale = trajectory.meta.parts.air.timeScale;
+    expect(scale).toBeLessThan(1);
+    expect(trajectory.scaledParts).toEqual(['air']);
+    expect(trajectory.timeScale).toBe(scale);
+    expect(trajectory.legs.filter(leg => leg.part === 'air').every(leg => leg.timeScale === scale)).toBe(true);
+    // Still on time, at its real speeds times the scale, and the data block names it.
+    expect(Math.abs(firstLeg(trajectory, 'landing').t0Ms - clock.touchdownAtMs)).toBeLessThan(1_000);
+    expect(msToKt(sampleTrajectory(trajectory, clock.touchdownAtMs - 1).gsMs) / scale).toBeCloseTo(137, 0);
+    const es = createTranslator(kinematicsMessages, 'es');
+    expect(es(timeScaleMessage(trajectory.timeScale), { factor: formatTimeScale(trajectory.timeScale, 'es') }))
+      .toMatch(/^Demo ralentizada ×0,\d$/u);
+  });
+
   it('for 2 and 3 minutes the approach starts 5 NM out and timeScale is above 1', () => {
     for (const minutes of [2, 3]) {
       const { clock, trajectory } = demo(minutes);
@@ -277,6 +392,7 @@ describe('demo flight profile', () => {
       const scale = trajectory.meta.parts.air.timeScale;
       expect(scale).toBeGreaterThan(1);
       expect(trajectory.timeScale).toBeGreaterThanOrEqual(scale);
+      expect(timeScaleMessage(trajectory.timeScale)).toBe('demo.accelerated');
       expect(trajectory.legs.filter(leg => leg.part === 'air').every(leg => leg.timeScale === scale)).toBe(true);
       // Still on time: it touches down at touchdownAt, so its speeds on the map are the real ones times the scale.
       expect(Math.abs(firstLeg(trajectory, 'landing').t0Ms - clock.touchdownAtMs)).toBeLessThan(1_000);
@@ -447,6 +563,56 @@ describe('demo flight profile', () => {
     expect(b.onGround).toBe(false);
     // A cancel instant before the flight appeared is not a clock.
     expect(demoClock({ ...demoBlock(8, { cancelAtMs: T0 + 120_000 }), vanishAt: iso(T0 - 1) }, parseInstant)).toBeNull();
+  });
+
+  it('cancelled after it left, a demo nobody imported fades out where it is, not back at the apron hold', { timeout: 30_000 }, () => {
+    const hold = holdOf('ah-a');
+    const fit = (clock, continueFrom = null) => fitDemoTrajectory({
+      demo: clock, imported: false, apronHold: hold, counterpart: MIA, destination: MIA, perf: PERF, layout: MDPC_LAYOUT,
+      continueFrom,
+    });
+    // Nobody imported it: it left the hold at its scheduled off-block and took off 5 minutes later.
+    const active = clockOf(8, { imported: false });
+    const old = fit(active);
+    for (const [label, cancelAtMs, phase] of [
+      ['taxiing to the runway', active.scheduledOffBlockAtMs + 120_000, 'taxiOut'],
+      ['climbing', active.takeoffAtMs + 120_000, 'climb'],
+    ]) {
+      // OCC dismissed its proposal then: the server's clock has no departure any more and vanishes at that instant.
+      const clock = clockOf(8, { imported: false, cancelAtMs });
+      expect(clock.state, label).toBe('Cancelled');
+      expect([clock.offBlockAtMs, clock.takeoffAtMs, clock.vanishAtMs], label).toEqual([null, null, cancelAtMs]);
+      // The map reads it 3 s later and goes on from the trajectory it was drawing.
+      const cancelled = fit(clock, { trajectory: old, atMs: cancelAtMs + 3_000 });
+      expect(cancelled.meta.statusKey, label).toBe('cancelledByProvider');
+      expect(cancelled.meta.fade, label).toEqual({ startMs: cancelAtMs, endMs: cancelAtMs + DEMO_FADE_MS });
+      expect(cancelled.endMs, label).toBe(cancelAtMs + DEMO_FADE_MS);
+      // No jump: until it is gone it is where the old trajectory has it, at its height, heading and speed.
+      for (const t of [old.startMs + 1_000, cancelAtMs - 1_000, cancelAtMs, cancelAtMs + 3_000, cancelAtMs + DEMO_FADE_MS - 1]) {
+        const before = sampleTrajectory(old, t);
+        const now = sampleTrajectory(cancelled, t);
+        const at = `${label} at ${t - cancelAtMs} ms`;
+        expect(haversineM([before.lon, before.lat], [now.lon, now.lat]), at).toBeLessThan(0.01);
+        expect(Math.abs(before.altM - now.altM), at).toBeLessThan(0.01);
+        expect(angleBetween(before.trackDeg, now.trackDeg), at).toBeLessThan(0.01);
+        expect(Math.abs(before.gsMs - now.gsMs), at).toBeLessThan(0.01);
+        expect(now.phase, at).toBe(before.phase);
+      }
+      const fading = sampleTrajectory(cancelled, cancelAtMs + 2_000);
+      expect(fading.phase, label).toBe(phase);
+      expect(fading.opacity, label).toBeCloseTo(0.75, 6);
+      expect(fading.statusKey, label).toBe('cancelledByProvider');
+      expect(haversineM([fading.lon, fading.lat], hold.p), label).toBeGreaterThan(100);
+      expect(sampleTrajectory(cancelled, cancelAtMs + DEMO_FADE_MS), label).toBeNull();
+      expectContinuous(cancelled, label);
+      // Read again, it stays the same.
+      expect(JSON.stringify(fit(clock, { trajectory: cancelled, atMs: cancelAtMs + 6_000 })), label).toBe(JSON.stringify(cancelled));
+      // Rebuilt from the cancelled clock alone (a screen opened during the fade), the aircraft could only be at the
+      // apron hold: the trajectory the map was drawing is what keeps it where it was.
+      const rebuilt = sampleTrajectory(fit(clock), cancelAtMs + 2_000);
+      expect(rebuilt.phase, label).toBe('holding');
+      expect(haversineM([rebuilt.lon, rebuilt.lat], hold.p), label).toBeLessThan(0.5);
+    }
   });
 
   it('the route from the origin airport to the start point is carried as flown estimated', () => {

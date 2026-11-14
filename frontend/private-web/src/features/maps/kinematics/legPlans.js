@@ -4,13 +4,14 @@ import {
 import { centrelineBetween } from '../airport/runwayInUse.js';
 import { nearestNode } from '../airport/taxiGraph.js';
 import { cutLeg, fitLegs, legDurationS, moveLeg, speedAt, timeToDistanceS, waitLeg } from './legs.js';
-import { GATE_NM, arrivalAirPath, climbPath, takeoffPath } from './pathBuilder.js';
+import { GATE_NM, HOLD_LEG_S, arrivalAirPath, climbPath, holdingPatternPath, takeoffPath } from './pathBuilder.js';
 import { graphFor, routeFromApronHold, routeFromPoint, routeStandToHold } from './taxiRoute.js';
 import { NM, degToRad, ftToM, normalizeDeg } from './units.js';
 
 // The legs of each part of a flight (PR M6, design F2 as adjusted by contracts 2.3), built from the geometry of
 // pathBuilder.js and taxiRoute.js and the numbers of perfProfiles.js: the arrival in the air from the counterpart
-// airport to the touchdown point, the landing roll and the taxi to a stand or an apron hold, the pushback and the taxi
+// airport to the touchdown point (cut to a demo flight's time, with a holding pattern over the approach gate when the
+// whole of it is shorter), the landing roll and the taxi to a stand or an apron hold, the pushback and the taxi
 // to the runway, the take-off roll and the climb. A ground path is driven with a speed profile: each 5 m segment has
 // a target speed by what it is (straight, turn, apron, docking), and the speed ramps between targets at the taxi
 // acceleration and braking. Nothing here is timed: estimator.js and demoProfile.js fit these legs to their instants.
@@ -163,21 +164,11 @@ function legStarts(legs) {
 }
 
 /**
- * The air legs cut to last `airMs` at their own speeds, as contracts 2.3 asks of a demo flight: walking back from the
- * touchdown, the aircraft starts where the time runs out. `{ legs, startAlongM, originPath, limit }`, frozen:
- * `originPath` is the arrival path from the origin to the start point (flown, estimated). `limit` is 'minimum' when
- * the start was held `minStartM` (5 NM) out along the path, so the legs last longer than `airMs`, and 'origin' when
- * the whole path from the origin is shorter in time; otherwise `null`.
+ * The metres along an arrival's line from which its legs last `seconds` to the touchdown at their own speeds, or `null`
+ * when the whole line lasts less.
  */
-export function backOutAir(air, airMs, { minStartM = MIN_START_M } = {}) {
-  const legs = air.legs;
-  const starts = legStarts(legs);
-  const target = Math.max(0, airMs) / 1000;
-  const limitAlong = Math.max(0, air.thresholdAlongM - minStartM);
-  let startAlong = 0;
-  let limit = null;
-  let remaining = target;
-  let found = false;
+function startFor(legs, starts, seconds) {
+  let remaining = seconds;
   for (let at = legs.length - 1; at >= 0; at -= 1) {
     const leg = legs[at];
     const duration = legDurationS(leg);
@@ -190,13 +181,105 @@ export function backOutAir(air, airMs, { minStartM = MIN_START_M } = {}) {
         if (duration - timeToDistanceS(leg, middle) > remaining) low = middle;
         else high = middle;
       }
-      startAlong = starts[at] + (low + high) / 2;
-      found = true;
-      break;
+      return starts[at] + (low + high) / 2;
     }
     remaining -= duration;
   }
-  if (!found) limit = 'origin';
+  return null;
+}
+
+// A leg ends at the gate when it ends within this of it; a hold's length is solved to within HOLD_MATCH_M; a hold
+// lasting more than the time over by HOLD_OVER_S or less is taken as lasting exactly that.
+const GATE_MATCH_M = 0.01;
+const HOLD_MATCH_M = 1e-7;
+const HOLD_OVER_S = 1e-6;
+
+/**
+ * Where an arrival's legs pass the approach gate, to hold over it: `{ index, fix, inboundDeg, speedMs, altM, afterS }`
+ * (the leg that ends there, the gate, the course the final leaves it on, the speed and height the aircraft has there
+ * and the seconds from it to the touchdown), or `null` when no leg ends at the gate before another one.
+ */
+function gateOf(air, legs, starts) {
+  for (let at = 0; at < legs.length - 1; at += 1) {
+    const leg = legs[at];
+    if (Math.abs(starts[at] + leg.lengthM - air.gateAlongM) > GATE_MATCH_M) continue;
+    const next = legs[at + 1];
+    if (!(leg.v1 > 0) || next.path.coords.length < 2) return null;
+    return {
+      index: at,
+      fix: leg.path.coords[leg.path.coords.length - 1],
+      inboundDeg: initialBearing(next.path.coords[0], next.path.coords[1]),
+      speedMs: leg.v1,
+      altM: leg.alt1,
+      afterS: legs.slice(at + 1).reduce((sum, item) => sum + legDurationS(item), 0),
+    };
+  }
+  return null;
+}
+
+/**
+ * The holding pattern over the gate that takes up `spareS` at the gate's speed (pathBuilder.js: holdingPatternPath):
+ * as many standard laps (two one-minute legs each) as fit best, with the leg length that makes its measured length
+ * last exactly `spareS`; or one circle when `spareS` is less than a circle lasts (it then lasts longer). `{ path, laps,
+ * legM, durationS }`.
+ */
+function holdOver(gate, spareS) {
+  const { fix, inboundDeg, speedMs } = gate;
+  const build = (legM, laps) => holdingPatternPath({ fix, inboundDeg, speedMs, legM, laps });
+  const circle = build(0, 1);
+  const circleS = circle.lengthM / speedMs;
+  if (!(spareS > circleS)) return { path: circle, laps: 1, legM: 0, durationS: circleS };
+  const laps = Math.max(1, Math.round(spareS / (circleS + 2 * HOLD_LEG_S)));
+  const wantedM = spareS * speedMs;
+  const missM = legM => build(legM, laps).lengthM - wantedM;
+  // The measured length grows with the legs almost linearly: a few secant steps make it exact.
+  let a = Math.max(0, (wantedM / laps - circle.lengthM) / 2);
+  let fa = missM(a);
+  let b = a + 1;
+  let fb = missM(b);
+  for (let step = 0; step < 30 && Math.abs(fb) > HOLD_MATCH_M && fb !== fa; step += 1) {
+    const next = Math.max(0, b - (fb * (b - a)) / (fb - fa));
+    a = b;
+    fa = fb;
+    b = next;
+    fb = missM(b);
+  }
+  const path = build(b, laps);
+  return { path, laps, legM: b, durationS: path.lengthM / speedMs };
+}
+
+/**
+ * The air legs cut to last `airMs` at their own speeds, as contracts 2.3 asks of a demo flight: walking back from the
+ * touchdown, the aircraft starts where the time runs out. `{ legs, startAlongM, originPath, limit, hold }`, frozen:
+ * `originPath` is the arrival path from the origin to the start point (flown, estimated).
+ * - `limit` 'minimum': the start was held `minStartM` (5 NM) out along the path, so the legs last longer than `airMs`.
+ * - `limit` 'origin': the whole path from the origin is shorter in time. The time over is flown at real speed in a
+ *   holding pattern over the approach gate, at the speed and height the aircraft has there (`hold`: `{ laps, legM,
+ *   lengthM, durationS, fix, inboundDeg, speedMs, altM, radiusM }`), and the aircraft starts at the origin, or on its
+ *   path a little after it when the time over is less than one circle of the hold lasts. Without a gate to hold over,
+ *   or with the start less than one circle before it, the legs are the whole path and last less than `airMs`.
+ * - Otherwise `limit` and `hold` are `null`.
+ */
+export function backOutAir(air, airMs, { minStartM = MIN_START_M } = {}) {
+  const legs = air.legs;
+  const starts = legStarts(legs);
+  const target = Math.max(0, airMs) / 1000;
+  const limitAlong = Math.max(0, air.thresholdAlongM - minStartM);
+  const totalS = legs.reduce((sum, leg) => sum + legDurationS(leg), 0);
+  const gate = target > totalS ? gateOf(air, legs, starts) : null;
+  let hold = gate === null ? null : holdOver(gate, target - totalS);
+  // A circle that lasts longer than the time over moves the start on along the path; it must still be before the gate.
+  if (hold !== null && target - hold.durationS <= gate.afterS + HOLD_OVER_S) hold = null;
+  let startAlong = 0;
+  let limit = null;
+  if (hold !== null) {
+    limit = 'origin';
+    if (hold.durationS > target - totalS + HOLD_OVER_S) startAlong = startFor(legs, starts, target - hold.durationS) ?? 0;
+  } else {
+    const found = startFor(legs, starts, target);
+    if (found === null) limit = 'origin';
+    else startAlong = found;
+  }
   if (startAlong > limitAlong) {
     startAlong = limitAlong;
     limit = 'minimum';
@@ -204,14 +287,30 @@ export function backOutAir(air, airMs, { minStartM = MIN_START_M } = {}) {
   const cut = [];
   legs.forEach((leg, at) => {
     const end = starts[at] + leg.lengthM;
-    if (end <= startAlong + 1e-6) return;
-    cut.push(starts[at] >= startAlong - 1e-6 ? leg : cutLeg(leg, startAlong - starts[at], leg.lengthM));
+    if (end > startAlong + 1e-6) cut.push(starts[at] >= startAlong - 1e-6 ? leg : cutLeg(leg, startAlong - starts[at], leg.lengthM));
+    if (hold !== null && at === gate.index) {
+      cut.push(moveLeg({
+        phase: leg.phase, path: hold.path.coords, v0: gate.speedMs, v1: gate.speedMs, alt0: gate.altM, alt1: gate.altM,
+        part: leg.part,
+      }));
+    }
   });
   return Object.freeze({
     legs: Object.freeze(cut),
     startAlongM: startAlong,
     originPath: slicePolyline(air.line, 0, startAlong),
     limit,
+    hold: hold === null ? null : Object.freeze({
+      laps: hold.laps,
+      legM: hold.legM,
+      lengthM: hold.path.lengthM,
+      durationS: hold.durationS,
+      fix: gate.fix,
+      inboundDeg: gate.inboundDeg,
+      speedMs: gate.speedMs,
+      altM: gate.altM,
+      radiusM: hold.path.radiusM,
+    }),
   });
 }
 

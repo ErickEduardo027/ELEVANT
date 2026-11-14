@@ -9,18 +9,24 @@ import { ftToM } from './units.js';
 // The demo flight on the map (PR M6, contracts 1.1 and 2.3, plan «Ajustes» 2 to 4). The server owns every instant of
 // a demo flight (DemoFlightTimeline): appearAt, touchdownAt, onBlockAt, offBlockAt, takeoffAt and vanishAt. The map
 // fits its legs to them and never derives one of its own: the aircraft appears backed out along its arrival path far
-// enough for real speeds to fit (5 NM at least), lands and departs on the layout's preferred runway (08 at Punta
+// enough for real speeds to fit (5 NM at least; time over, when even the whole path from the origin is shorter, is
+// flown in a holding pattern over the approach gate), lands and departs on the layout's preferred runway (08 at Punta
 // Cana) whatever the wind or the live traffic, taxis to its stand once OCC imported it (to the apron hold before, where
 // it waits «Esperando posición · sin importar»), waits at its stand while its off-block is unknown, and fades out at
-// vanishAt. A part that cannot be flown at real speeds is compressed in time and named in `scaledParts`, so the data
-// block can say «Demo acelerada ×N». SI units inside, instants as epoch milliseconds. Pure: explicit '.js' imports,
-// no clock, no randomness, no JSON; every result is frozen.
+// vanishAt. A part that cannot be flown at real speeds is scaled in time and named in `scaledParts`, so the data
+// block can say «Demo acelerada ×N» (kinematicsMessages.js: timeScaleMessage, also for a part that ever had to run
+// slower). SI units inside, instants as epoch milliseconds. Pure: explicit '.js' imports, no clock, no randomness, no
+// JSON; every result is frozen.
 
 /** How long a demo aircraft takes to fade out from its vanishing instant. */
 export const DEMO_FADE_MS = 8000;
 
 const STATES = new Set(['Active', 'Cancelled', 'Finished']);
+const PARTS = Object.freeze(['air', 'taxiIn', 'taxiOut']);
 const SCALED = 1 + 1e-6;
+// A part runs in real time unless its scale is off 1 by more than a millionth, either way.
+const isScaled = scale => scale > SCALED || scale < 1 / SCALED;
+const offBy = scale => Math.abs(Math.log(scale));
 
 /**
  * The demo block of a map flight (contracts 1.3) as epoch milliseconds through `parseInstant`: `{ state, phase,
@@ -80,7 +86,7 @@ const lastHeading = legs => {
  * The landing of a demo flight between its touchdown and its on-block (contracts 2.3): among the exits a landing can
  * take (landingExitCandidates: those that turn 90° at most from the runway heading) and reach braking at most at the
  * profile's maximum, nearest first, the first whose taxi fits at real speeds (5 to 25 kt, no wait but the one before
- * the lead-in); when none does, the one that needs the smallest time scale. `{ fit, path }` or `null`.
+ * the lead-in); when none does, the one whose time scale is nearest 1. `{ fit, path }` or `null`.
  */
 function demoLanding({ layout, runwayEnd, stand, apronHold, perf, activeRunwayIds, requiredMs, statusKey, groundAltM }) {
   const vref = perf.final.vrefMs;
@@ -96,8 +102,8 @@ function demoLanding({ layout, runwayEnd, stand, apronHold, perf, activeRunwayId
     });
     const fit = path && fitGround(path, requiredMs, options);
     if (!fit) continue;
-    if (fit.timeScale <= SCALED) return { fit, path };
-    if (best === null || fit.timeScale < best.fit.timeScale - 1e-9) best = { fit, path };
+    if (!isScaled(fit.timeScale)) return { fit, path };
+    if (best === null || offBy(fit.timeScale) < offBy(best.fit.timeScale) - 1e-9) best = { fit, path };
   }
   return best;
 }
@@ -158,8 +164,9 @@ function legsUntil(trajectory, cutMs) {
  * preferred runway (demoRunway: 08 at Punta Cana), whatever the wind or the live arrivals.
  * - (a) [appearAt, touchdownAt]: the arrival backed out along its path at real speeds until the time is used up; when
  *   that is less than 5 NM out it starts 5 NM out and the part is compressed ('air' in `scaledParts`); when the whole
- *   path from the origin is shorter in time it starts at the origin, stretched. `meta.originPath` is the path from the
- *   origin to the start point, flown and estimated.
+ *   path from the origin takes less time (a near origin, or none: 40 NM out) it starts at the origin and flies the time
+ *   over at real speed in a holding pattern over the approach gate (`meta.airHold`; legPlans.js: backOutAir).
+ *   `meta.originPath` is the path from the origin to the start point, flown and estimated.
  * - (b) [touchdownAt, onBlockAt]: the roll, the exit and the taxi to the stand (the time over spent before the
  *   lead-in), or to the apron hold. The stand counts only once OCC `imported` the flight (contracts 2.3); before, or
  *   without one, the aircraft goes to `apronHold` (else the one the cheapest taxi reaches) and holds there:
@@ -169,11 +176,17 @@ function legsUntil(trajectory, cutMs) {
  *   no engine start or hold ('taxiOut' when compressed).
  * - (e) [takeoffAt, vanishAt]: the climb at real speed, fading out over DEMO_FADE_MS from vanishAt.
  * - Cancelled: the same parts, fading out from vanishAt (the cancel instant), `meta.statusKey` 'cancelledByProvider'.
+ *   With `continueFrom` (the trajectory drawn until the cancellation came; `atMs` is not needed) its legs stay exactly
+ *   as they were and only the fade and the status change, so the aircraft fades out where it is: a cancelled clock has
+ *   no departure, and rebuilt from it alone an aircraft nobody imported that was taxiing to the runway or climbing
+ *   would be back at its apron hold.
  * - `continueFrom: { trajectory, atMs }` (a stand given later): the old legs up to `atMs` stay as they were (a landing
  *   roll in progress is finished first) and the taxi to the stand starts from where the old trajectory has the
  *   aircraft at that instant, at its speed and heading; it arrives at onBlockAt when there is time, else at nominal
  *   speed. Before the touchdown the trajectory is the fresh one, whose air part is the same.
- * `timeScale` is the largest of the parts' scales (1 when none had to be compressed) and each leg carries its part's.
+ * Each leg carries its part's time scale. Every part whose scale is not 1 is named in `scaledParts`, above 1 (faster
+ * than real time) or below (slower), and `timeScale` is the scale farthest from 1 (1 when every part runs in real
+ * time).
  */
 export function fitDemoTrajectory({
   demo, imported = false, stand = null, apronHold = null, counterpart = null, destination = null, perf, layout,
@@ -192,6 +205,10 @@ export function fitDemoTrajectory({
   const groundAltM = ftToM(arrivalEnd.elevationFt);
   const cancelled = clock.state === 'Cancelled';
 
+  if (cancelled && continueFrom?.trajectory) {
+    const faded = cancelledFrom(continueFrom.trajectory, clock);
+    if (faded !== null) return faded;
+  }
   if (continueFrom?.trajectory && Number.isFinite(continueFrom.atMs) && target
     && continueFrom.atMs >= clock.touchdownAtMs) {
     return continued({
@@ -230,6 +247,7 @@ export function fitDemoTrajectory({
       originPath: backed.originPath,
       startAlongM: backed.startAlongM,
       airLimit: backed.limit,
+      airHold: backed.hold,
       anchor: { kind: 'demo' },
     },
   });
@@ -285,28 +303,77 @@ function continued({ clock, old, atMs, stand, layout, perf, departureEnd, destin
       originPath: old.meta.originPath,
       startAlongM: old.meta.startAlongM ?? null,
       airLimit: old.meta.airLimit ?? null,
+      airHold: old.meta.airHold ?? null,
       anchor: { kind: 'demo', continuedAtMs: cutMs },
+    },
+  });
+}
+
+/**
+ * The time scales of a demo trajectory's parts (`fits`: `{ air, taxiIn, taxiOut }`, each a fit or `{ timeScale,
+ * factor }`, or `null`): `{ parts, scaledParts, timeScale }`. Every part whose scale is not 1 is named in
+ * `scaledParts`, whichever way it goes, and `timeScale` is the scale farthest from 1, or 1 when every part runs in real
+ * time.
+ */
+function timeScales(fits) {
+  const parts = {};
+  const scaledParts = [];
+  let timeScale = 1;
+  for (const name of PARTS) {
+    const fit = fits[name];
+    if (!fit) continue;
+    const scale = scaleOf(fit);
+    parts[name] = { timeScale: scale, factor: fit.factor ?? null };
+    if (!isScaled(scale)) continue;
+    scaledParts.push(name);
+    if (offBy(scale) > offBy(timeScale)) timeScale = scale;
+  }
+  return { parts, scaledParts, timeScale };
+}
+
+/**
+ * A cancelled demo flight continued from the trajectory drawn until then (`old`): its legs exactly as they were,
+ * fading out from the cancel instant (or from its own fade, when that began first), with the status
+ * 'cancelledByProvider'. The parts still drawn keep their time scales. `null` when `old` is not a demo trajectory or
+ * begins after the cancel instant.
+ */
+function cancelledFrom(old, clock) {
+  const cancelAtMs = clock.vanishAtMs;
+  if (old?.kind !== 'demo' || !Array.isArray(old.legs) || !Number.isFinite(cancelAtMs) || !(old.startMs <= cancelAtMs)) {
+    return null;
+  }
+  const own = old.meta?.fade ?? null;
+  const fade = own !== null && own.startMs <= cancelAtMs ? own : { startMs: cancelAtMs, endMs: cancelAtMs + DEMO_FADE_MS };
+  const kept = old.legs.filter(leg => leg.t0Ms < fade.endMs);
+  const drawn = new Set(kept.map(leg => leg.part));
+  const before = old.meta?.parts ?? {};
+  const scales = timeScales(Object.fromEntries(PARTS.map(name => [name, drawn.has(name) ? (before[name] ?? null) : null])));
+  return assembleTrajectory({
+    kind: 'demo',
+    // Each leg at its own instant, so nothing before the fade moves.
+    parts: kept.map(leg => ({ startMs: leg.t0Ms, legs: [leg] })),
+    timeScale: scales.timeScale,
+    scaledParts: scales.scaledParts,
+    meta: {
+      ...old.meta,
+      statusKey: 'cancelledByProvider',
+      fade,
+      parts: scales.parts,
+      anchor: { ...(old.meta?.anchor ?? { kind: 'demo' }), cancelledAtMs: cancelAtMs },
     },
   });
 }
 
 /** The trajectory's time scales, fade and status, and its assembly. */
 function finish({ clock, cancelled, fits, holdStatus, arrivalEnd, departureEnd, destination, target, parts, meta }) {
-  const parted = {};
-  const scaledParts = [];
-  for (const name of ['air', 'taxiIn', 'taxiOut']) {
-    const fit = fits[name];
-    if (!fit) continue;
-    parted[name] = { timeScale: scaleOf(fit), factor: fit.factor ?? null };
-    if (scaleOf(fit) > SCALED) scaledParts.push(name);
-  }
+  const scales = timeScales(fits);
   const vanishMs = clock.vanishAtMs;
   const fade = vanishMs === null ? null : { startMs: vanishMs, endMs: vanishMs + DEMO_FADE_MS };
   return assembleTrajectory({
     kind: 'demo',
     parts,
-    timeScale: Math.max(1, ...Object.values(parted).map(part => part.timeScale)),
-    scaledParts,
+    timeScale: scales.timeScale,
+    scaledParts: scales.scaledParts,
     meta: {
       ...meta,
       runwayIdent: arrivalEnd.ident,
@@ -315,7 +382,7 @@ function finish({ clock, cancelled, fits, holdStatus, arrivalEnd, departureEnd, 
       statusKey: cancelled ? 'cancelledByProvider' : holdStatus,
       destination,
       fade,
-      parts: parted,
+      parts: scales.parts,
     },
   });
 }

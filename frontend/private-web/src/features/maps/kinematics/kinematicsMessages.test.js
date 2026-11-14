@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import { TAGS } from '../../occ-ui/statusVocabulary';
-import { ROUTE_LABELS, STATUS_MESSAGES, formatTimeScale, kinematicsMessages } from './kinematicsMessages.js';
+import { ROUTE_LABELS, STATUS_MESSAGES, formatTimeScale, kinematicsMessages, timeScaleMessage } from './kinematicsMessages.js';
 
 // Every leaf of a message tree as `a.b.c`.
 function leafPaths(tree, prefix = '') {
@@ -55,15 +55,25 @@ describe('kinematics messages', () => {
     expect(formatTimeScale(1.94, 'es')).toBe('×1,9');
     expect(formatTimeScale(4.18, 'es')).toBe('×4,2');
     expect(formatTimeScale(2, 'es')).toBe('×2,0');
-    // Spanish by default; a speed-up never reads ×1,0.
+    // Spanish by default; a scale off 1 never reads ×1,0, either way, and a slow-down never reads ×0,0.
     expect(formatTimeScale(1.39)).toBe('×1,4');
     expect(formatTimeScale(1.012, 'es')).toBe('×1,1');
     expect(formatTimeScale(1.012, 'en')).toBe('×1.1');
+    expect(formatTimeScale(0.685, 'es')).toBe('×0,7');
+    expect(formatTimeScale(0.97, 'es')).toBe('×0,9');
+    expect(formatTimeScale(0.97, 'en')).toBe('×0.9');
+    expect(formatTimeScale(0.02, 'es')).toBe('×0,1');
+    expect(formatTimeScale(1, 'es')).toBe('×1,0');
     for (const value of [0, -1, Number.NaN, Infinity, null, '1.9']) expect(formatTimeScale(value, 'es'), String(value)).toBe('');
-    // The label the data block shows.
+    // The label the data block shows, faster or slower than real time; nothing in real time.
     const es = createTranslator(kinematicsMessages, 'es');
     const en = createTranslator(kinematicsMessages, 'en');
-    expect(es('demo.accelerated', { factor: formatTimeScale(1.9, 'es') })).toBe('Demo acelerada ×1,9');
-    expect(en('demo.accelerated', { factor: formatTimeScale(1.9, 'en') })).toBe('Accelerated demo ×1.9');
+    expect(timeScaleMessage(1.9)).toBe('demo.accelerated');
+    expect(timeScaleMessage(0.685)).toBe('demo.slowed');
+    for (const value of [1, 0, -1, Number.NaN, Infinity, null, '1.9']) expect(timeScaleMessage(value), String(value)).toBeNull();
+    expect(es(timeScaleMessage(1.9), { factor: formatTimeScale(1.9, 'es') })).toBe('Demo acelerada ×1,9');
+    expect(en(timeScaleMessage(1.9), { factor: formatTimeScale(1.9, 'en') })).toBe('Accelerated demo ×1.9');
+    expect(es(timeScaleMessage(0.685), { factor: formatTimeScale(0.685, 'es') })).toBe('Demo ralentizada ×0,7');
+    expect(en(timeScaleMessage(0.685), { factor: formatTimeScale(0.685, 'en') })).toBe('Slowed-down demo ×0.7');
   });
 });
