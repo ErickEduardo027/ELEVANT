@@ -1,7 +1,10 @@
 // The words the OCC primitives and every legend share, in Spanish and English. The words of the stand states, the
 // signals and the tags themselves live in statusVocabulary.js; these are the names of a legend's sections and what each
 // tag means, so the status bar's «Leyenda» and the legends that maps and boards add later (contratos 2.4) read alike.
-// `alerts` belongs to OccAlertQueue, `drawer` to OccDrawer and `toasts` to OccToastStack.
+// `alerts` belongs to OccAlertQueue, `drawer` to OccDrawer and `toasts` to OccToastStack; `panel` to OccPanel and its
+// OccRemoteView, `skeleton` to OccSkeleton, `stat` to OccStatTile, `time` to occTime.js, `flightStrip` to
+// OccFlightStrip, `timeline` to OccTimeline and occTimelineModel.js, and `milestones` to OccMilestoneStrip and
+// milestonePhases.js. The stale notice and the relative words are the ones the dashboard and the maps' data block use.
 export const occUiMessages = {
   es: {
     legend: {
@@ -36,6 +39,80 @@ export const occUiMessages = {
     toasts: {
       dismiss: 'Cerrar notificación',
     },
+    panel: {
+      loading: 'Cargando…',
+      empty: 'No hay datos para mostrar.',
+      error: 'No se pudo cargar esta información.',
+      timeout: 'La consulta tardó demasiado. Comprueba la conexión y vuelve a intentarlo.',
+      forbidden: 'No tienes permiso para ver esta información.',
+      retry: 'Reintentar',
+      stale: 'La última actualización falló; se muestran los datos consultados a las {time}.',
+    },
+    skeleton: {
+      loading: 'Cargando…',
+    },
+    stat: {
+      loading: 'Cargando',
+      lowerBound: 'al menos {value}',
+    },
+    time: {
+      now: 'ahora',
+      in: 'en {duration}',
+      ago: 'hace {duration}',
+      minutes: '{count} min',
+      hours: '{hours} h',
+      hoursMinutes: '{hours} h {minutes} min',
+    },
+    flightStrip: {
+      arrival: 'Llegada',
+      departure: 'Salida',
+      from: 'desde {code}',
+      to: 'hacia {code}',
+      stand: 'posición {code}',
+      noStand: 'Sin posición',
+      noTime: 'Sin hora',
+      estimated: 'posición estimada',
+      timeKind: {
+        actual: 'real',
+        estimated: 'estimada',
+        scheduled: 'programada',
+      },
+      timeKindShort: {
+        actual: 'real',
+        estimated: 'est.',
+        scheduled: 'prog.',
+      },
+    },
+    timeline: {
+      nowAt: 'ahora {time}',
+      flights: '{arrival} a {departure}',
+      stand: 'posición {code}',
+      arrives: 'llega {time} {kind}',
+      departs: 'sale {time} {kind}',
+      noArrival: 'sin llegada',
+      noDeparture: 'sin salida',
+      state: {
+        planned: 'planificada',
+        onStand: 'en posición',
+        departed: 'salió',
+      },
+      inOperation: 'en operación',
+      demo: 'demo',
+      estimated: 'posición estimada',
+      selected: 'elegida',
+    },
+    milestones: {
+      label: 'Hitos de la escala',
+      count: '{done} de {total}',
+      pending: 'Pendiente',
+      empty: 'Los hitos aparecen cuando la escala tiene una operación.',
+      phases: {
+        arrival: 'Llegada',
+        on_stand: 'En posición',
+        departure: 'Salida',
+        pushback: 'Retroempuje',
+      },
+    },
   },
   en: {
     legend: {
@@ -69,6 +146,80 @@ export const occUiMessages = {
     },
     toasts: {
       dismiss: 'Close notification',
+    },
+    panel: {
+      loading: 'Loading…',
+      empty: 'There is no data to show.',
+      error: 'This information could not be loaded.',
+      timeout: 'The request took too long. Check the connection and try again.',
+      forbidden: 'You do not have permission to see this information.',
+      retry: 'Retry',
+      stale: 'The last refresh failed; showing data retrieved at {time}.',
+    },
+    skeleton: {
+      loading: 'Loading…',
+    },
+    stat: {
+      loading: 'Loading',
+      lowerBound: 'at least {value}',
+    },
+    time: {
+      now: 'now',
+      in: 'in {duration}',
+      ago: '{duration} ago',
+      minutes: '{count} min',
+      hours: '{hours} h',
+      hoursMinutes: '{hours} h {minutes} min',
+    },
+    flightStrip: {
+      arrival: 'Arrival',
+      departure: 'Departure',
+      from: 'from {code}',
+      to: 'to {code}',
+      stand: 'stand {code}',
+      noStand: 'No stand',
+      noTime: 'No time',
+      estimated: 'estimated position',
+      timeKind: {
+        actual: 'actual',
+        estimated: 'estimated',
+        scheduled: 'scheduled',
+      },
+      timeKindShort: {
+        actual: 'actual',
+        estimated: 'est.',
+        scheduled: 'sched.',
+      },
+    },
+    timeline: {
+      nowAt: 'now {time}',
+      flights: '{arrival} to {departure}',
+      stand: 'stand {code}',
+      arrives: 'arrives {time} {kind}',
+      departs: 'departs {time} {kind}',
+      noArrival: 'no arrival',
+      noDeparture: 'no departure',
+      state: {
+        planned: 'planned',
+        onStand: 'on stand',
+        departed: 'departed',
+      },
+      inOperation: 'in operation',
+      demo: 'demo',
+      estimated: 'estimated position',
+      selected: 'selected',
+    },
+    milestones: {
+      label: 'Turnaround milestones',
+      count: '{done} of {total}',
+      pending: 'Pending',
+      empty: 'Milestones appear when the turnaround has an operation.',
+      phases: {
+        arrival: 'Arrival',
+        on_stand: 'On stand',
+        departure: 'Departure',
+        pushback: 'Pushback',
+      },
     },
   },
 };
