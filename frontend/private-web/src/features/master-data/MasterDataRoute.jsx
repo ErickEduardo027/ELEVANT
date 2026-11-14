@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import AppLink from '../../components/AppLink';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { writeSelection } from '../maps/core/mapSelection';
 import { OCC_CLASSES } from '../occ-ui/classes';
@@ -14,7 +15,6 @@ import OccPlate from '../occ-ui/OccPlate';
 import OccSkeleton from '../occ-ui/OccSkeleton';
 import OccStatusPill from '../occ-ui/OccStatusPill';
 import OccToolbar from '../occ-ui/OccToolbar';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict, isForbidden } from '../../services/problemMessages';
 import {
@@ -527,6 +527,8 @@ export default function MasterDataRoute() {
   const { t } = useTranslation(masterDataMessages);
   const station = useOccStation();
   const access = useOptionalDepartmentAccess();
+  // The frame's stable channel: listening on it does not re-render the page when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [state, setState] = useState({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [feedback, setFeedback] = useState({ tone: '', text: '' });
@@ -546,14 +548,9 @@ export default function MasterDataRoute() {
     return () => controller.abort();
   }, [station.stationId, attempt]);
 
-  // Another OCC seat changed the station's layout: re-read under current permissions.
-  useEffect(() => {
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('occ_planning')) void live.current();
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, []);
+  // Another OCC seat changed the station's layout: re-read under current permissions. The announcement comes from the
+  // tab's single account-change observer, the OCC frame's (contratos 2.7): the page opens none of its own.
+  useEffect(() => subscribe(['occ_planning'], () => { void live.current(); }), [subscribe]);
 
   const reread = useCallback(text => { setFeedback({ tone: 'danger', text }); void live.current(); }, []);
   const done = useCallback(text => { setFeedback({ tone: 'success', text }); void live.current(); }, []);

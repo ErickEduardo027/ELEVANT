@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n/LanguageScope';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { OCC_CLASSES } from '../occ-ui/classes';
 import OccButton from '../occ-ui/OccButton';
@@ -13,7 +14,6 @@ import OccSkeleton from '../occ-ui/OccSkeleton';
 import OccStatusPill from '../occ-ui/OccStatusPill';
 import OccToolbar from '../occ-ui/OccToolbar';
 import { formatClock } from '../occ-ui/occTime';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { deviceProblemMessage } from '../../services/deviceProblemMessages';
@@ -86,6 +86,8 @@ function DeviceStatus({ device }) {
 export default function DevicesRoute() {
   const { t, locale } = useTranslation(devicesMessages);
   const station = useOccStation();
+  // The frame's stable channel: listening on it does not re-render the page when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [state, setState] = useState({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [feedback, setFeedback] = useState({ tone: '', text: '' });
@@ -112,14 +114,9 @@ export default function DevicesRoute() {
     return () => controller.abort();
   }, [station.stationId, attempt]);
 
-  // A tablet changed hands somewhere (sign-in, sign-out, another OCC seat): re-read under current permissions.
-  useEffect(() => {
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('mobile_devices')) void live.current();
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, []);
+  // A tablet changed hands somewhere (sign-in, sign-out, another OCC seat): re-read under current permissions. The
+  // announcement comes from the tab's single account-change observer, the OCC frame's (contratos 2.7).
+  useEffect(() => subscribe(['mobile_devices'], () => { void live.current(); }), [subscribe]);
 
   const nameOf = device => device.deviceName || t('unnamed', { platform: PLATFORMS[device.platform] ?? device.platform });
   const agentOf = device => device.agent?.name || t('commands.lastAgent');

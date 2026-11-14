@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from '../../../tests/MemoryRouter.jsx';
+import { createOccShellValue, OccShellTestProvider } from './shell/testing/occShellFixtures';
 
 const mocks = vi.hoisted(() => ({ session: vi.fn(), loadQueue: vi.fn(),
   loadConversations: vi.fn(), loadMessages: vi.fn(), sendMessage: vi.fn(),
@@ -84,8 +85,13 @@ describe('OCC canonical read surfaces', () => {
     expect(await screen.findByRole('button', { name: 'Marcar no leída' })).toBeInTheDocument();
   });
 
+  // The chat lives in the OCC frame and hears the feed on its shell channel (contratos 2.7).
+  const renderChat = ({ entries, shell = createOccShellValue() } = {}) => render(
+    <OccShellTestProvider value={shell}><MemoryRouter initialEntries={entries}><CanonicalChatRoute /></MemoryRouter></OccShellTestProvider>,
+  );
+
   it('loads messages and sends one idempotent OCC message', async () => {
-    render(<MemoryRouter initialEntries={[`/admin-occ/chat?operationId=${operationId}`]}><CanonicalChatRoute /></MemoryRouter>);
+    renderChat({ entries: [`/admin-occ/chat?operationId=${operationId}`] });
     await waitFor(() => expect(screen.getAllByText('Puente listo').length).toBeGreaterThan(0));
     fireEvent.change(screen.getByLabelText('Mensaje'), { target: { value: 'Llegaré en dos minutos' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
@@ -96,9 +102,12 @@ describe('OCC canonical read surfaces', () => {
   it('refreshes the selected conversation when the feed reports a message', async () => {
     mocks.session.mockReturnValue({ accountId: 'b0000000-0000-0000-0000-000000000001',
       stationScopes: [{ stationId, stationCode: 'PUJ' }] });
-    render(<MemoryRouter initialEntries={[`/admin-occ/chat?operationId=${operationId}`]}><CanonicalChatRoute /></MemoryRouter>);
+    const shell = createOccShellValue();
+    renderChat({ entries: [`/admin-occ/chat?operationId=${operationId}`], shell });
     await waitFor(() => expect(mocks.loadMessages).toHaveBeenCalledTimes(1));
-    mocks.observe.mock.calls[0][0](['operation_messages']);
+    // The frame's observer announces it: the chat opens none of its own.
+    expect(mocks.observe).not.toHaveBeenCalled();
+    act(() => shell.announce(['operation_messages']));
     await waitFor(() => expect(mocks.loadMessages).toHaveBeenCalledTimes(2));
     // Initial read, the feed refresh and the refresh after marking the open thread read (ADR-0029).
     await waitFor(() => expect(mocks.loadConversations).toHaveBeenCalledTimes(3));
@@ -106,7 +115,7 @@ describe('OCC canonical read surfaces', () => {
 
   it('never requests a station outside the authenticated scope', async () => {
     mocks.session.mockReturnValue({ stationScopes: [] });
-    render(<MemoryRouter><CanonicalChatRoute /></MemoryRouter>);
+    renderChat();
     await waitFor(() => expect(screen.getByText(/no tiene una estación OCC autorizada/)).toBeInTheDocument());
     expect(mocks.loadConversations).not.toHaveBeenCalled();
   });

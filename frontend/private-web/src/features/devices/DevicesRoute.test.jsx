@@ -1,15 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
 import DevicesRoute, { DEVICE_STATUS_TONES } from './DevicesRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { loadOccDevices, revokeOccDevice, unbindOccDevice } from '../../services/occDevicesService';
 
 const stationId = '20000000-0000-7000-8000-000000000003';
 const auth = vi.hoisted(() => ({ scopes: [] }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: { stationScopes: auth.scopes } }) }));
+// A spy: the page must not open an observer of its own (contratos 2.7).
 vi.mock('../../services/accountChangeObserver', () => ({
-  createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
+  createPrivateWebAccountChangeObserver: vi.fn(() => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 vi.mock('../../services/occDevicesService', async importOriginal => ({
   ...(await importOriginal()),
@@ -25,7 +30,15 @@ const free = { ...busy, id: 'dev-2', deviceName: 'Tablet T-08', status: 'Unbound
 const data = (extra = {}) => ({ stationId, stationCode: 'PUJ', canUnbind: true, canRevoke: true, devices: [busy, free], ...extra });
 const failure = (status, code) => Object.assign(new Error('Raw server title'), { status, code, title: 'Raw server title' });
 
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7).
+let shell;
+beforeEach(() => { shell = createOccShellValue(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); auth.scopes = []; });
+
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
 
 // The register writes the year of an instant only when it is not this one: these cases read the clock of a fixed day.
 function onFixedDay() {
@@ -212,6 +225,35 @@ it('revoking opens an alertdialog with the first focus on Cancelar', async () =>
   const unbind = screen.getByRole('dialog', { name: 'Liberar Tablet T-07' });
   await waitFor(() => expect(within(unbind).getByLabelText('Motivo (opcional)')).toHaveFocus());
   expect(within(unbind).getByRole('button', { name: 'Liberar tablet' })).toBeEnabled();
+});
+
+it('reads the tablets again when the frame announces mobile_devices, without an observer of its own', async () => {
+  signedIn();
+  const signedOut = { ...busy, status: 'Unbound', unboundAt: '2026-11-06T14:00:00.000Z', agentHasOperationInProgress: false,
+    version: 'tok-9' };
+  // The first read, then the register after the agent signed out.
+  loadOccDevices.mockResolvedValue(data({ devices: [signedOut, free] })).mockResolvedValueOnce(data());
+  const view = render(<DevicesRoute />);
+  await screen.findByRole('region', { name: 'Tablets de la estación' });
+  const statusOf = name => within(screen.getByRole('table', { name: 'Tablets de la estación' })).getByText(name)
+    .closest('tr').querySelector('[data-occ-status]');
+  expect(statusOf('Tablet T-07')).toHaveTextContent('Operación en curso');
+  // It listens on the shell's channel, to mobile_devices only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['mobile_devices']);
+  expect(createPrivateWebAccountChangeObserver).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['occ_planning', 'operation_messages']));
+  expect(loadOccDevices).toHaveBeenCalledTimes(1);
+
+  // The agent signed out at the tablet: the register reads the station's tablets again and shows it free.
+  act(() => shell.announce(['mobile_devices']));
+  await waitFor(() => expect(statusOf('Tablet T-07')).toHaveTextContent('Libre'));
+  expect(loadOccDevices.mock.calls.map(([id]) => id)).toEqual([stationId, stationId]);
+
+  // Leaving the page stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
 });
 
 describe('DevicesRoute in English', () => {

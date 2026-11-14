@@ -921,8 +921,9 @@ despliegue ni una revisión visual en el VPS.
 
 Desde el PR U6, posterior al commit verificado, Cobertura de posiciones, Datos
 maestros, Tablets, Chat interno y Notificaciones ya se dibujan con las
-primitivas del OCC, pero conservan su propio observador: U6 no cambió sus
-lecturas
+primitivas del OCC, y U6 no cambió sus lecturas. Datos maestros, Tablets y Chat
+interno escuchan ya en el observador del marco; Cobertura de posiciones y
+Notificaciones conservan el suyo
 ([Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6)).
 
 ## Pantalla de arranque del OCC (PR U4)
@@ -1100,6 +1101,14 @@ escriben.
   [guardas](../../frontend/private-web/src/styles/occStyleGuard.test.js)
   exigen que esas pantallas dibujen como `occ-ui` y que las hojas del chat usen
   solo tokens.
+- **El observador del marco.** Datos maestros, Tablets y Chat interno ya no
+  abren su propio observador de cambios: escuchan `occ_planning`,
+  `mobile_devices` y `operation_messages` en el canal del marco y releen en el
+  acto, como antes. El
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  las cuenta aparte de los observadores que quedan, y la
+  [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  falla si una vuelve a abrir el suyo.
 - **Lo que sigue en el puente.** Usuarios, Mis gastos, el panel de servicios de
   Contratos, el panel de incidencias que Revisión comparte con Planificación y
   los componentes de avisos que usan Gestión Humana, Finanzas y Contratos no se
@@ -1112,14 +1121,14 @@ escriben.
   cómo corre está en
   [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
 
-Límites: Cobertura de posiciones, Datos maestros, Tablets, Chat interno y
-Notificaciones conservan su propio observador de cambios, con su sondeo,
-mientras están abiertas; pasarlas al observador del marco queda para un PR
-posterior. Chat interno conserva el margen de las demás pantallas y no llena
-el alto. La insignia de la estación (`OccStationBadge`) queda sin uso, y los
-alias `--occ-ui-*` del chat, definidos sin que nadie los lea, hasta su
-limpieza. Las capturas se revisaron en local, con una API simulada; nada de
-esto acredita un despliegue ni una revisión visual en el VPS.
+Límites: Cobertura de posiciones y Notificaciones conservan su propio
+observador de cambios, con su sondeo, mientras están abiertas; pasarlas al
+observador del marco queda pendiente. Chat interno conserva el margen de las
+demás pantallas y no llena el alto. La insignia de la estación
+(`OccStationBadge`) queda sin uso, y los alias `--occ-ui-*` del chat,
+definidos sin que nadie los lea, hasta su limpieza. Las capturas se revisaron
+en local, con una API simulada; nada de esto acredita un despliegue ni una
+revisión visual en el VPS.
 
 ## Mapas del OCC en un solo motor (PR M2)
 

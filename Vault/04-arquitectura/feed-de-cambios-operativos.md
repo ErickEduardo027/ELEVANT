@@ -116,8 +116,9 @@ conecta los hubs y reconcilia el cursor ante aviso, foco, conexión recuperada
 y sondeo de 25 segundos. En el OCC, desde el PR U2, el marco abre un solo
 observador por pestaña para lo que comparten todas las pantallas
 ([Un observador por pestaña del OCC](#un-observador-por-pestaña-del-occ-pr-u2)).
-Chat y Notificaciones OCC vuelven a consultar el recurso por REST con su propio
-observador, que U6 pasará al del marco; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
+Chat y Notificaciones OCC vuelven a consultar el recurso por REST: desde U6 el
+chat escucha en el observador del marco, y Notificaciones conserva el suyo,
+que U6 todavía debe pasar al del marco; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
 y [pruebas del observador](../../frontend/private-web/src/services/accountChangeObserver.test.js)
 cubren invalidación, replay, fallos y cierre de sesión. [Mobile Agent](../../frontend/mobile-agent/src/services/mobile-change-feed.ts)
 reconcilia por REST al volver al primer plano y cada 25 segundos mientras
@@ -383,10 +384,14 @@ navegadores.
 
 Desde el PR U6, también posterior, Cobertura de posiciones, Datos maestros,
 Tablets, Chat interno y Notificaciones ya se dibujan con las primitivas del
-OCC, pero conservan su propio observador, con los mismos recursos y ritmos: U6
-cambió su aspecto y no sus lecturas, y el
+OCC, con las mismas lecturas y ritmos. Datos maestros (`occ_planning`), Tablets
+(`mobile_devices`) y Chat interno (`operation_messages`) ya no abren observador:
+escuchan sus recursos en el canal del marco y releen como antes, en el acto.
+Cobertura de posiciones y Notificaciones conservan el suyo; pasarlas al
+observador del marco queda pendiente. El
 [inventario del plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
-los sigue contando. Pasarlos al observador del marco queda para un PR posterior
+cuenta aparte los observadores que quedan y las pantallas que escuchan en el
+canal, cuyas relecturas siguen en el presupuesto
 ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 14 de
 noviembre de 2026 sobre U6).
 
