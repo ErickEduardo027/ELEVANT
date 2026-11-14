@@ -139,11 +139,12 @@ const flightTime = flight => Date.parse(flight.actualAt ?? flight.estimatedAt ??
 
 // A visit is judged whole (its legs share one visitKey): an arrival keeps `arrived` or `landed` after its aircraft has
 // gone, and the stand assignment stays open after the PUSHBACK (contracts 1.2), so a single leg cannot tell. A visit
-// stops counting on its stand (contracts 2.4) once its PUSHBACK is recorded, once a leg has departed or diverted, when
-// its arrival is cancelled (the aircraft is not coming), and, for a demo flight, once the server's timeline has taken
-// the aircraft off the stand (contracts 1.1: TaxiOut, Departed and Gone, the phase of a cancelled demo as well). A
-// cancelled departure alone leaves the aircraft where it is: that visit still counts, through its arrival.
-const LEFT_PHASES = new Set(['departed', 'diverted']);
+// stops counting on its stand (contracts 2.4) once its PUSHBACK is recorded, once its departure has departed, once a leg
+// diverted, when its arrival is cancelled (the aircraft is not coming), and, for a demo flight, once the server's
+// timeline has taken the aircraft off the stand (contracts 1.1: TaxiOut, Departed and Gone, the phase of a cancelled
+// demo as well). Two legs leave the aircraft where it is, so their visit still counts: an arrival that reads
+// `departed`, which took off from its origin and is flying in (contracts 1.3 turns the provider's «Departed» into
+// `departed` on either leg), and a cancelled departure alone, through its arrival.
 const DEMO_OFF_STAND_PHASES = new Set(['TaxiOut', 'Departed', 'Gone']);
 
 const visitOf = flight => flight.visitKey ?? flight;
@@ -151,12 +152,14 @@ const pushedBack = flight => Array.isArray(flight.milestones)
   && flight.milestones.some(milestone => milestone?.code === 'PUSHBACK' && milestone.actualAt != null);
 
 /**
- * Whether a map flight (contracts 1.3) ends its visit on the stand: its PUSHBACK is recorded, it departed or diverted,
- * its arrival is cancelled, or the demo timeline took the aircraft off the stand (TaxiOut, Departed, Gone). One leg is
- * enough: the stand model (stands/standModel.js) drops a visit when any of its legs ends it.
+ * Whether a map flight (contracts 1.3) ends its visit on the stand: its PUSHBACK is recorded, it is a departure that
+ * departed, it diverted, it is a cancelled arrival, or the demo timeline took the aircraft off the stand (TaxiOut,
+ * Departed, Gone). An arrival that departed is still on its way in. One leg is enough: the stand model
+ * (stands/standModel.js) drops a visit when any of its legs ends it.
  */
 export function endsItsVisit(flight) {
-  return LEFT_PHASES.has(flight.phase)
+  return (flight.phase === 'departed' && flight.direction === 'Departure')
+    || flight.phase === 'diverted'
     || (flight.phase === 'cancelled' && flight.direction !== 'Departure')
     || pushedBack(flight)
     || DEMO_OFF_STAND_PHASES.has(flight.demo?.phase);

@@ -85,12 +85,15 @@ function describeVisit(turnaround, legs, aircraft, polygon, now) {
   const touchdownAt = timeOf(demo?.touchdownAt);
   const point = locationPoint(aircraft?.position ?? aircraft);
   // The aircraft is on the stand (contracts 2.4 and «Ajustes» 3), by the first evidence there is: the server's demo
-  // instant; a recorded BLOCK_ON; the aircraft (live or estimated) inside the stand box; and with none of them, which
-  // is what today's reads give, the arrival time of the board.
+  // instant; a recorded BLOCK_ON; the aircraft (live or estimated) inside the stand box; and with none of them, the
+  // actual time of the arrival leg when it is the on-block (`actualKind: 'OnBlock'`, contracts 1.3: OCC's «Registrar
+  // llegada»), since a runway time only says that the aircraft landed. Without the arrival leg, which is what today's
+  // reads give, the arrival time of the board decides: that is the leg's actual time, whichever kind it is.
   let onStand;
   if (onBlockAt !== null) onStand = now >= onBlockAt;
   else if (hasMilestone(legs, 'BLOCK_ON')) onStand = true;
   else if (point !== null && Array.isArray(polygon)) onStand = pointInPolygon(point, polygon);
+  else if (arrival !== null) onStand = arrival.actualAt != null && arrival.actualKind === 'OnBlock';
   else onStand = turnaround.arrivedAt != null;
   const landed = turnaround.arrivedAt != null || arrival?.actualAt != null
     || arrival?.phase === 'landed' || arrival?.phase === 'arrived' || (touchdownAt !== null && now >= touchdownAt);
@@ -121,6 +124,16 @@ function byArrival(first, second) {
 }
 
 const isArriving = (visit, now) => visit.landed || (visit.arrivalAt !== null && visit.arrivalAt - now <= ARRIVING_WINDOW_MS);
+
+// When the aircraft on a stand frees it: at its departure time while that is still ahead. `null` means nobody knows,
+// without a departure time or once that time is past and the aircraft is still there (the `overdue` signal).
+const freesAt = (visit, now) => (visit.departureAt !== null && visit.departureAt >= now ? visit.departureAt : null);
+
+// Another visit comes onto an occupied stand before it frees: its aircraft landed already, or it is due within
+// 15 minutes and before the stand frees. A turnover due once the aircraft on the stand has left is no conflict.
+const comesBeforeItFrees = (visit, freeAt, now) => visit.landed || (visit.arrivalAt !== null
+  && visit.arrivalAt - now <= ARRIVING_WINDOW_MS && (freeAt === null || visit.arrivalAt < freeAt));
+
 const cancellerOf = position => normalizeStandCode(position?.cancelledBy ?? position?.linkedPositionId) || null;
 
 function display(state, extra = {}) {
@@ -168,8 +181,10 @@ export function displayFromStatus(position) {
  * 5. with an aircraft on the stand: `releasing` when its departure is due within 15 minutes, else `occupied`;
  * 6. otherwise, for the next visit: `arriving` when it landed and its aircraft is not on the stand yet, or it is due
  *    within 15 minutes; else `planned`; 7. no visit: `available`.
- * Signals, the most urgent first: `urgent` `conflict` (an aircraft is on the stand and another visit is arriving, or
- * two aircraft are on it); `attention` `uncovered` (the coverage list is empty, never just absent, and a flight is on
+ * Signals, the most urgent first: `urgent` `conflict` (two aircraft are on the stand, or another visit comes onto it
+ * before its aircraft leaves: that visit landed already, or it is due within 15 minutes and before the departure of the
+ * aircraft on the stand, a departure nobody knows without a time or once it is past; a turnover due once that aircraft
+ * has left is no conflict); `attention` `uncovered` (the coverage list is empty, never just absent, and a flight is on
  * the stand or due within 60 minutes) and `overdue` (the aircraft is still on the stand after its departure time).
  *
  * Returns `{ state, signals: [{ kind, reason }], visit (the board turnaround the stand shows, or null), arrivalAt,
@@ -201,7 +216,8 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
   }
 
   const signals = [];
-  if (current !== null && (onStand.length > 1 || waiting.some(visit => isArriving(visit, now)))) {
+  const freeAt = current === null ? null : freesAt(current, now);
+  if (current !== null && (onStand.length > 1 || waiting.some(visit => comesBeforeItFrees(visit, freeAt, now)))) {
     signals.push({ kind: 'urgent', reason: 'conflict' });
   }
   const due = current !== null

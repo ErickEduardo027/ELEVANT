@@ -90,14 +90,38 @@ describe('deriveDisplayStatus', () => {
       .state).toBe('arriving');
   });
 
-  it('without milestones or an aircraft position the board\'s arrival time puts the aircraft on the stand', () => {
+  it('without milestones or an aircraft position, an on-block time puts the aircraft on the stand, a runway time does not', () => {
+    // Today's reads: the board alone, whose arrival time decides.
     const position = positionOf('A5', onA5([visit({ arrivalInMin: -4, departureInMin: 80, arrived: true })]));
     expect(deriveDisplayStatus(position, { nowMs: NOW })).toMatchObject({
       state: 'occupied', departureAt: NOW + 80 * MINUTE, minutesToDeparture: 80, flightNumber: 'DM162', signals: [],
     });
-    // Known milestones without BLOCK_ON say nothing by themselves: with no aircraft position the board still decides.
-    const flights = { 'turn-DM161': [{ direction: 'Arrival', phase: 'landed', milestones: [] }] };
-    expect(deriveDisplayStatus(position, { nowMs: NOW, flightsByTurnaround: flights }).state).toBe('occupied');
+    // With the arrival leg (PR A3), its actual time counts only when it is the on-block (`actualKind`, contracts 1.3:
+    // OCC's «Registrar llegada»). The feed and the demo worker write the runway time, which the board shows as its
+    // arrival time too: that aircraft landed and is arriving until a BLOCK_ON or its position puts it on the stand.
+    const arrivalLeg = extra => ({
+      'turn-DM161': [{
+        direction: 'Arrival', flightNumber: 'DM161', scheduledAt: iso(NOW - 4 * MINUTE), milestones: [], ...extra,
+      }],
+    });
+    const landedAt = iso(NOW - 4 * MINUTE);
+    expect(deriveDisplayStatus(position, {
+      nowMs: NOW, flightsByTurnaround: arrivalLeg({ phase: 'landed', actualAt: landedAt, actualKind: 'Runway' }),
+    })).toMatchObject({ state: 'arriving', flightNumber: 'DM161', minutesToArrival: -4, signals: [] });
+    expect(deriveDisplayStatus(position, {
+      nowMs: NOW, flightsByTurnaround: arrivalLeg({ phase: 'arrived', actualAt: landedAt, actualKind: 'OnBlock' }),
+    })).toMatchObject({ state: 'occupied', flightNumber: 'DM162', minutesToDeparture: 80, signals: [] });
+    // An arrival leg without an actual time, or of an unknown kind, does not put it there either.
+    expect(deriveDisplayStatus(position, { nowMs: NOW, flightsByTurnaround: arrivalLeg({ phase: 'landed' }) }).state)
+      .toBe('arriving');
+    expect(deriveDisplayStatus(position, {
+      nowMs: NOW, flightsByTurnaround: arrivalLeg({ phase: 'landed', actualAt: landedAt, actualKind: null }),
+    }).state).toBe('arriving');
+    // The departure leg alone says nothing about the arrival: the board's arrival time decides.
+    const departureOnly = {
+      'turn-DM161': { direction: 'Departure', flightNumber: 'DM162', phase: 'scheduled', milestones: [] },
+    };
+    expect(deriveDisplayStatus(position, { nowMs: NOW, flightsByTurnaround: departureOnly }).state).toBe('occupied');
     // A position without a geometry cannot place the aircraft either.
     const outside = destinationPoint(position.geometry.center, 0, 500);
     expect(deriveDisplayStatus({ ...position, geometry: null }, {
@@ -152,6 +176,31 @@ describe('deriveDisplayStatus', () => {
     }).state).toBe('releasing');
   });
 
+  it('an arrival that took off from its origin is on its way: its visit still counts, planned and then arriving', () => {
+    // The provider's «Departed» reads `departed` on an arrival too (contracts 1.3): that aircraft is flying in.
+    const inbound = arrivalInMin => ({
+      'turn-DM301': [
+        {
+          direction: 'Arrival', flightNumber: 'DM301', phase: 'departed', scheduledAt: iso(NOW + arrivalInMin * MINUTE),
+          actualAt: null, actualKind: null, milestones: [],
+        },
+        {
+          direction: 'Departure', flightNumber: 'DM302', phase: 'scheduled',
+          scheduledAt: iso(NOW + (arrivalInMin + 60) * MINUTE), milestones: [],
+        },
+      ],
+    });
+    const due = arrivalInMin => visit({ flight: 'DM301', arrivalInMin });
+    const at = (turnarounds, arrivalInMin) => statusAt(onA5(turnarounds), { flightsByTurnaround: inbound(arrivalInMin) });
+    expect(at([due(40)], 40)).toMatchObject({ state: 'planned', flightNumber: 'DM301', minutesToArrival: 40, signals: [] });
+    expect(at([due(10)], 10)).toMatchObject({ state: 'arriving', flightNumber: 'DM301', minutesToArrival: 10, signals: [] });
+    // It still comes onto a stand with an aircraft on it.
+    const parked = visit({ flight: 'DM205', arrivalInMin: -30, departureInMin: 60, arrived: true });
+    expect(at([parked, due(10)], 10)).toMatchObject({
+      state: 'occupied', flightNumber: 'DM206', signals: [{ kind: 'urgent', reason: 'conflict' }],
+    });
+  });
+
   it('a free stand cancelled by a combined stand is disabled and names the stand that cancels it', () => {
     const positions = positionsOf(createRampScenario(NOW).board);
     const a10 = positions.find(position => position.id === 'A10');
@@ -190,7 +239,7 @@ describe('deriveDisplayStatus', () => {
     expect(statusAt(onA5([visit({ arrivalInMin: -20, departureInMin: -5 })])).signals).toEqual([]);
   });
 
-  it('raises «Otra aeronave llega a esta posición» when another visit arrives while the stand is occupied', () => {
+  it('raises «Otra aeronave llega a esta posición» when another visit comes onto the stand before its aircraft leaves', () => {
     const conflict = { kind: 'urgent', reason: 'conflict' };
     const a4 = positionsOf(createRampScenario(NOW).board).find(position => position.id === 'A4');
     expect(deriveDisplayStatus(a4, { nowMs: NOW })).toMatchObject({ state: 'occupied', flightNumber: 'DM206', signals: [conflict] });
@@ -206,6 +255,41 @@ describe('deriveDisplayStatus', () => {
     // The urgent signal comes first.
     expect(at(visit({ flight: 'DM207', arrivalInMin: 5, departureInMin: 120 }), []).signals)
       .toEqual([conflict, { kind: 'attention', reason: 'uncovered' }]);
+
+    // A turnover is no conflict: the next aircraft is due once the one on the stand has left (it leaves in 5 minutes,
+    // the next is due in 14), or as it leaves.
+    const leaving = (departureInMin, extra = {}) => visit({
+      flight: 'DM205', arrivalInMin: -30, departureInMin, arrived: true, ...extra,
+    });
+    const turnover = (first, second) => statusAt(onA5([first, second], { coveredBy: [luis] }));
+    const next = arrivalInMin => visit({ flight: 'DM207', arrivalInMin });
+    expect(turnover(leaving(5), next(14))).toMatchObject({
+      state: 'releasing', flightNumber: 'DM206', minutesToDeparture: 5, signals: [],
+    });
+    expect(turnover(leaving(5), next(5)).signals).toEqual([]);
+    // Due before it leaves.
+    expect(turnover(leaving(10), next(5)).signals).toEqual([conflict]);
+    // Nobody knows when it leaves: the aircraft is still there after its departure time, or it has no departure time.
+    expect(turnover(leaving(-5), next(5))).toMatchObject({
+      state: 'releasing', signals: [conflict, { kind: 'attention', reason: 'overdue' }],
+    });
+    expect(turnover(leaving(0, { departureScheduledAt: null }), next(14)))
+      .toMatchObject({ state: 'occupied', signals: [conflict] });
+    // An aircraft that landed already comes onto the stand within minutes, whatever its time: with the map flights
+    // (PR A3), a runway time without BLOCK_ON, due on the stand in 6 minutes while the one on it leaves in 5; on the
+    // board alone, whose arrival time is that runway time, a second aircraft on the stand.
+    const landedNext = visit({ flight: 'DM207', arrivalInMin: 6, arrivedAt: iso(NOW - MINUTE) });
+    const touchdown = {
+      'turn-DM207': [{
+        direction: 'Arrival', flightNumber: 'DM207', phase: 'landed', scheduledAt: iso(NOW + 6 * MINUTE),
+        actualAt: iso(NOW - MINUTE), actualKind: 'Runway', milestones: [],
+      }],
+    };
+    const withLanded = onA5([leaving(5), landedNext], { coveredBy: [luis] });
+    expect(statusAt(withLanded, { flightsByTurnaround: touchdown })).toMatchObject({
+      state: 'releasing', flightNumber: 'DM206', signals: [conflict],
+    });
+    expect(statusAt(withLanded).signals).toEqual([conflict]);
   });
 
   it('positions without board visits keep their own state', () => {
