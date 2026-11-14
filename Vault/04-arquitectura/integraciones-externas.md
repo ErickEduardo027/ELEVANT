@@ -182,6 +182,47 @@ esa verificación no cubre
   da la línea de curl que el operador corre a mano antes de desplegar, nunca
   desde CI.
 
+### Clima del aeródromo: aviationweather.gov
+
+Posterior al commit verificado de esta nota: esta sección describe el código
+del PR M8 (API) «Clima del aeródromo por la API (METAR y TAF)» (`65f9446f` y
+`eeac6d1e`), que esa verificación no cubre
+([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)).
+
+- **Por el servidor.** El puerto `IAerodromeWeatherSource` tiene un adaptador
+  para la Data API de aviationweather.gov, del Aviation Weather Center de NOAA
+  ([adaptador](../../backend/Elevant.Infrastructure/Integrations/AviationWeather/AviationWeatherSource.cs)),
+  que lee el METAR y el TAF del aeropuerto de una estación. El servicio no
+  admite CORS, así que solo lo llama la API; un navegador lo leerá solo a
+  través de `GET occ/weather`, y la CSP no cambia.
+- **Ninguna pantalla lo usa todavía.** Hasta la segunda parte de M8, Private
+  Web sigue leyendo el METAR de Iowa Environmental Mesonet desde el navegador
+  ([Private Web](../05-aplicaciones/private-web-aviam.md)).
+- **Solo cuando alguien lo pide.** La API llama al servicio solo cuando alguien
+  lee el clima y guarda lo que responde, por aeropuerto: el METAR 5 minutos y
+  el TAF 30. Con el servicio respondiendo son como mucho 2 llamadas cada 5
+  minutos por aeropuerto, muy por debajo del límite de 100 consultas por minuto
+  de la Data API. Tras un fallo sirve lo guardado y espera de 1 a 15 minutos
+  antes de volver a preguntar, nunca en bucle.
+- **Estado y crédito.** El estado (`Live`, `Stale`, `Unavailable` o
+  `Disabled`) viaja en un 200, y cada respuesta lleva el crédito «NOAA Aviation
+  Weather Center» con su enlace, también con el clima apagado.
+- **Nada se guarda.** Lo que responde el servicio vive en la memoria de la API:
+  no hay tabla, registro de uso ni migración. Las pruebas usan respuestas
+  sintéticas y nunca llaman al servicio.
+- **Activación.** `AviationWeather:Enabled` es `false` por defecto y en
+  `appsettings.Production.json`, y `appsettings.Development.json` lo enciende,
+  sin variables nuevas en el VPS
+  ([registro](../../backend/Elevant.Infrastructure/DependencyInjection.cs)).
+  El overlay del arnés E2E lo apaga, y una lectura a mano contra el servicio
+  real es un paso aparte y deliberado
+  ([guía local](../../docs/workflows/local-development.md)). No hay clave.
+- **Comprobación del operador.** El VPS de Development tiene que alcanzar
+  `aviationweather.gov`. La
+  [guía de integraciones](../../docs/architecture/external-integrations.md)
+  da la línea de curl que el operador corre a mano antes de desplegar, nunca
+  desde CI.
+
 Private Web sí descarga estilos/tiles cartográficos públicos directamente en el navegador. Esa dependencia visual es real y está limitada por CSP, pero no suministra información operacional canónica ni rompe la regla que prohíbe consultar proveedores de aviación desde los clientes.
 
 ## Inventario por estado
@@ -199,6 +240,7 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | Vuelos demo | *Posterior al commit verificado:* simulados por la propia API y apagados por defecto ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)) | Superadministración dispara dos propuestas del proveedor `Demo`; tras la importación de OCC, un worker marca el aterrizaje y el despegue como lo haría el feed | Que exista un proveedor externo, una llamada de red o un gasto de unidades de AeroDataBox. |
 | adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
 | adsb.lol (relevo) | *Posterior al commit verificado:* implementado como relevo, con la misma activación ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | Toma el turno tras tres fallos seguidos de adsb.fi y se detiene en 450 lecturas por día UTC sin clave | Que haya una clave configurada, trazas o un ritmo según su cuota. |
+| aviationweather.gov (METAR y TAF) | *Posterior al commit verificado:* implementado en la API; apagado por defecto y encendido en Development ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)) | La API lee el METAR y el TAF del aeropuerto de la estación solo cuando alguien pide `occ/weather`, los guarda unos minutos en memoria y los sirve con el crédito de NOAA y su estado en un 200 | Que una pantalla ya lo muestre (el navegador sigue con Iowa Mesonet), que sea apto para despacho o que se guarde. |
 | Pasarela de tarjeta | *Posterior al commit verificado:* simulada y apagada por defecto ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md), [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) | `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; `Simulated` solo arranca en Development, Test o Testing y aprueba o rechaza en memoria las tarjetas de prueba, sin red | Que exista una pasarela real o que un cobro mueva dinero. |
 | Proveedor fiscal (DGII) | *Posterior al commit verificado:* sin integración | La simulación fiscal de ADR-0018 (modos `LocalSimulation` y `ProviderSandbox`) salió del producto en la fase 4; la factura es un e-CF simulado que nada transmite ([Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md)) | Transmisión, firma o aceptación de la DGII. |
 
