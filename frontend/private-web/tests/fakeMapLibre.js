@@ -8,7 +8,9 @@
 // - a layer-scoped listener (`map.on(type, layerId, fn)`) throws: MapLibre 6.16 does not restore those after a context
 //   loss or a worker restart, so the OCC maps listen on the map and read features with queryRenderedFeatures;
 // - adding a layer twice or before a missing layer, querying a missing layer, and passing the query point as a plain
-//   object (MapLibre would read it as the options) throw.
+//   object (MapLibre would read it as the options) throw;
+// - `updateData` applies its diff to the source's `data` as MapLibre 6.16 does, `removeAllProperties` dropping the
+//   properties that come with it.
 // Camera moves are applied at once and fire `moveend` synchronously.
 //
 // Engine tests create one fake per test and inject `module`. Component tests share one fake through vi.mock:
@@ -186,6 +188,40 @@ function createState({ constructorError = null, width = 1440, height = 900, expa
   };
 }
 
+// As MapLibre 6.16 (applyPropertyUpdates of its geojson-vt): `removeAllProperties` empties the properties and the
+// `removeProperties` and `addOrUpdateProperties` that come with it are dropped.
+function updatedProperties(properties, update) {
+  if (update.removeAllProperties) return {};
+  const next = { ...properties };
+  for (const key of update.removeProperties ?? []) delete next[key];
+  for (const { key, value } of update.addOrUpdateProperties ?? []) next[key] = value;
+  return next;
+}
+
+// A GeoJSONSourceDiff applied to a FeatureCollection as MapLibre 6.16 does: everything goes with `removeAll`; a feature
+// in `remove` or `add` goes, then those of `add` join; an update replaces the geometry and changes the properties of
+// the feature with its id (the `promoteId` property when the source has one). Anything else is left as it is.
+function applySourceDiff(data, diff, promoteId) {
+  if (data?.type !== 'FeatureCollection' || !diff) return data;
+  const idOf = feature => (promoteId ? feature?.properties?.[promoteId] : feature?.id);
+  let features = diff.removeAll ? [] : [...data.features];
+  const leaving = new Set([...(diff.remove ?? []), ...(diff.add ?? []).map(idOf)]);
+  features = features.filter(feature => !leaving.has(idOf(feature))).concat(diff.add ?? []);
+  const updates = new Map((diff.update ?? []).map(update => [update.id, update]));
+  features = features.map(feature => {
+    const update = updates.get(idOf(feature));
+    if (!update) return feature;
+    const changesProperties = Boolean(update.removeAllProperties || update.removeProperties?.length
+      || update.addOrUpdateProperties?.length);
+    return {
+      ...feature,
+      geometry: update.newGeometry ?? feature.geometry,
+      properties: changesProperties ? updatedProperties(feature.properties ?? {}, update) : feature.properties,
+    };
+  });
+  return { ...data, features };
+}
+
 function createModule(state) {
   function createSource(map, id, spec) {
     return {
@@ -207,9 +243,12 @@ function createModule(state) {
         this.setDataCalls.push(data);
         return Promise.resolve();
       },
+      // The diff is applied to `data` as MapLibre 6.16 applies it in its worker (applySourceDiff of its geojson-vt), so a
+      // test reads what the map would draw after it.
       updateData(diff) {
         map._record('updateData', [id, diff]);
         this.updateDataCalls.push(diff);
+        this.data = applySourceDiff(this.data, diff, spec.promoteId);
         return Promise.resolve();
       },
       // As MapLibre 6.16: `cluster` is taken from every call (leaving it out turns clustering off), the radius and the

@@ -1,5 +1,6 @@
+import { normalizeStandCode } from '../../../services/standCodes';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
-import { haversineM, roundCoord, toLocal } from '../airport/geo';
+import { destinationPoint, haversineM, roundCoord, toLocal } from '../airport/geo';
 import { standBox } from '../airport/standGeometry';
 
 // Synthetic data for the map tests, over the internal reference catalogue of Punta Cana (41 stand points, B33 out).
@@ -125,6 +126,145 @@ export function createQaLayout() {
       standLines: [
         { way: 1, gate: '2', line: [qaPoint(-160, 0), qaPoint(-160, 100)] },
         { way: 2, gate: null, line: [qaPoint(-260, 0), qaPoint(-260, 100)] },
+      ],
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The positions board of the ramp (PR M4), synthetic: invented flights, registrations and agents, every time relative
+// to the `nowMs` a test chooses, and no coordinate written by hand (a stand OCC placed sits relative to a reference
+// point of the internal catalogue).
+
+const MINUTE_MS = 60 * 1000;
+const isoAt = ms => new Date(ms).toISOString();
+
+/** The terminal a stand code belongs to at Punta Cana: BN… is the FBO, A… and AN… terminal A, B… terminal B. */
+function terminalOfCode(code) {
+  const letters = /^[A-Z]+/u.exec(normalizeStandCode(code))?.[0] ?? '';
+  if (letters === 'BN') return 'FBO';
+  if (letters.startsWith('A')) return 'A';
+  return letters.startsWith('B') ? 'B' : null;
+}
+
+/**
+ * A stand of the positions board, in the shape the API sends (`OccPositionResponse`): free, not placed by OCC, covered
+ * by nobody, with the board's status derived from its visits as the API derives it (an arrival time makes it
+ * `occupied`, a visit `planned`). `code` is written as the database writes it («A05»); `overrides` replace any field.
+ */
+export function boardStand(code, overrides = {}) {
+  const turnarounds = overrides.turnarounds ?? [];
+  const status = turnarounds.some(visit => visit.arrivedAt != null) ? 'occupied' : turnarounds.length > 0 ? 'planned' : 'available';
+  return {
+    standId: `stand-${normalizeStandCode(code)}`,
+    code,
+    terminalCode: terminalOfCode(code),
+    standType: 'Contact',
+    status,
+    turnarounds,
+    latitude: null,
+    longitude: null,
+    hasBoardingBridge: false,
+    isRemote: false,
+    maxAircraftSize: null,
+    cancelledBy: null,
+    narrowbodyOnly: false,
+    coveredBy: [],
+    ...overrides,
+  };
+}
+
+/**
+ * A visit of the positions board (`OccPositionTurnaroundResponse`): flight `flight` due on the stand `arrivalInMin`
+ * minutes from `nowMs` (negative: in the past), leaving `departureInMin` minutes from it as the next flight number.
+ * `arrived` records its arrival (at its time, or now when that is still ahead). `overrides` replace any field.
+ */
+export function boardVisit({ nowMs, flight = 'DM161', arrivalInMin = 60, departureInMin = arrivalInMin + 60,
+  arrived = false, ...overrides } = {}) {
+  if (!Number.isFinite(nowMs)) throw new TypeError('boardVisit needs nowMs');
+  const [, prefix = 'DM', digits = '0'] = /^([A-Z]+)(\d+)$/u.exec(flight) ?? [];
+  const arrivalAt = nowMs + arrivalInMin * MINUTE_MS;
+  return {
+    turnaroundId: `turn-${flight}`,
+    operationCode: `PUJ-${flight}`,
+    airlineName: 'Aerolínea de prueba',
+    aircraftRegistration: `HI${digits.padStart(4, '0')}`,
+    arrivalFlightNumber: flight,
+    departureFlightNumber: `${prefix}${Number(digits) + 1}`,
+    arrivalScheduledAt: isoAt(arrivalAt),
+    arrivedAt: arrived ? isoAt(Math.min(arrivalAt, nowMs)) : null,
+    departureScheduledAt: isoAt(nowMs + departureInMin * MINUTE_MS),
+    assignedFrom: isoAt(nowMs - 120 * MINUTE_MS),
+    status: arrived ? 'InProgress' : 'Confirmed',
+    ...overrides,
+  };
+}
+
+/** The agents of the scenario: invented names. */
+export const SCENARIO_AGENTS = Object.freeze({ marta: 'Marta Castillo', luis: 'Luis Peña', ana: 'Ana Ruiz' });
+
+/**
+ * A ramp at `nowMs` with every stand state, as the positions board and the map flights (contracts 1.3) give it:
+ * - A1 free; A2 planned (due in 90 min); A3 arriving (due in 10 min) and covered by nobody;
+ * - A4 occupied while another flight arrives in 5 min (a conflict); A5 releasing (leaves in 10 min);
+ * - A6 the demo flight ZZ9001: it landed 2 min ago, so the board already says `occupied`, and the server parks it in
+ *   3 min (`demo.onBlockAt`): with the map flights it is still arriving;
+ * - A9 occupied, and it cancels A10, free and so disabled (a combined pair); B21 past its departure time;
+ * - B22 free and limited to narrow-body aircraft; BN6 free, covered by nobody, with no flight due;
+ * - C7 a stand the layout does not know, placed by OCC 120 m west of BN13; Z1 unknown and not placed;
+ * - every other stand of the catalogue has no database row (`unverified`).
+ * Returns `{ nowMs, board, flightsByTurnaround }`.
+ */
+export function createRampScenario(nowMs) {
+  const visit = (flight, options) => boardVisit({ nowMs, flight, ...options });
+  const at = minutes => isoAt(nowMs + minutes * MINUTE_MS);
+  const { marta, luis, ana } = SCENARIO_AGENTS;
+  const [placedLongitude, placedLatitude] = destinationPoint(standPoint('BN13'), 270, 120);
+  const positions = [
+    boardStand('A01', { coveredBy: [marta] }),
+    boardStand('A02', { coveredBy: [marta], turnarounds: [visit('DM201', { arrivalInMin: 90 })] }),
+    boardStand('A03', { turnarounds: [visit('DM203', { arrivalInMin: 10 })] }),
+    boardStand('A04', { coveredBy: [luis], turnarounds: [
+      visit('DM205', { arrivalInMin: -30, departureInMin: 60, arrived: true }),
+      visit('DM207', { arrivalInMin: 5, departureInMin: 120 }),
+    ] }),
+    boardStand('A05', { coveredBy: [luis], turnarounds: [visit('DM209', { arrivalInMin: -45, departureInMin: 10, arrived: true })] }),
+    boardStand('A06', { coveredBy: [marta], turnarounds: [visit('ZZ9001', {
+      arrivalInMin: 3, departureInMin: 63, arrivedAt: at(-2), status: 'Confirmed', isDemo: true,
+    })] }),
+    boardStand('A09', { coveredBy: [ana], turnarounds: [visit('DM211', { arrivalInMin: -20, departureInMin: 120, arrived: true })] }),
+    boardStand('A10', { coveredBy: [ana], cancelledBy: 'A09' }),
+    boardStand('B21', { coveredBy: [ana], turnarounds: [visit('DM213', { arrivalInMin: -90, departureInMin: -5, arrived: true })] }),
+    boardStand('B22', { coveredBy: [luis], narrowbodyOnly: true }),
+    boardStand('BN06', { standType: 'Remote', isRemote: true, maxAircraftSize: 'Narrowbody', narrowbodyOnly: true }),
+    boardStand('C07', { terminalCode: 'FBO', coveredBy: [ana], latitude: placedLatitude, longitude: placedLongitude }),
+    boardStand('Z01', { terminalCode: null }),
+  ];
+  const demo = {
+    demoFlightId: 'demo-1', state: 'Active', phase: 'TaxiIn', appearAt: at(-8), touchdownAt: at(-2), onBlockAt: at(3),
+    scheduledOffBlockAt: at(63), offBlockAt: null, takeoffAt: null, vanishAt: null,
+  };
+  const demoLeg = (direction, flightNumber, extra) => ({
+    flightKey: `p:demo-${direction === 'Arrival' ? 'arr' : 'dep'}`, visitKey: 'p:demo-arr', turnaroundId: 'turn-ZZ9001',
+    direction, flightNumber, estimatedAt: null, actualAt: null, actualKind: null, isDemo: true, demo, milestones: [],
+    aircraft: { registration: 'HI9001', typeIcaoCode: 'B38M', model: 'Boeing 737 MAX 8', sizeCategory: 'Narrowbody' },
+    ...extra,
+  });
+  return {
+    nowMs,
+    board: {
+      stationId: '20000000-0000-7000-8000-000000000003',
+      stationCode: 'PUJ',
+      operationDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(nowMs),
+      asOf: isoAt(nowMs),
+      positions,
+      unassigned: [],
+      canAssign: true,
+    },
+    flightsByTurnaround: {
+      'turn-ZZ9001': [
+        demoLeg('Arrival', 'ZZ9001', { phase: 'landed', scheduledAt: at(3), actualAt: at(-2), actualKind: 'Runway' }),
+        demoLeg('Departure', 'ZZ9002', { phase: 'scheduled', scheduledAt: at(63) }),
       ],
     },
   };

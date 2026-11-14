@@ -618,7 +618,7 @@ describe('map engine', () => {
     expect(map.calls.filter(call => call.method === 'setStyle')).toEqual([]);
   });
 
-  it('hands the images the style names to MapLibre as SDF images from the resolver', () => {
+  it('hands the images the style names to MapLibre with what the resolver says of them', () => {
     const { map, state } = ready(setup({ imageResolver: createImageResolver({ rasterize: squareRasterizer }) }));
     const added = state.requestImage(map, 'airport-arp');
     expect(added.options).toEqual({ pixelRatio: 2, sdf: true });
@@ -627,6 +627,11 @@ describe('map engine', () => {
     // Asking again adds nothing (the fake would throw on a second addImage); an unknown id adds nothing.
     expect(state.requestImage(map, 'airport-arp')).toBe(added);
     expect(state.requestImage(map, 'not-an-icon')).toBeNull();
+    // A pattern is painted, not an SDF; an image stretched around a text says where it stretches, in image pixels.
+    expect(state.requestImage(map, 'stand-hatch-pattern').options).toEqual({ pixelRatio: 2, sdf: false });
+    expect(state.requestImage(map, 'stand-chip').options).toEqual({
+      pixelRatio: 2, sdf: true, stretchX: [[12, 28]], stretchY: [[12, 20]], content: [10, 10, 30, 22],
+    });
   });
 
   it('reports camera moves, clicks and pointer moves with what is under the pointer', () => {

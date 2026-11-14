@@ -31,6 +31,23 @@ function PositionsScreen() {
   );
 }
 
+// The same screen while A5 is placed (Decision D-2): the selection stays, and Esc first cancels the placing.
+function PlacingScreen({ onCancel }) {
+  const { selection, selectStand, clear } = useMapSelection();
+  const [placing, setPlacing] = useState(true);
+  return (
+    <div className="relative h-96">
+      <OccMap stands={STANDS} selection={selection} onSelect={next => (next ? selectStand(next.id) : clear())}
+        placingStand={placing ? { code: 'A5', sizeHint: null } : null} onMapClick={() => {}}
+        onCancelPlacing={() => {
+          onCancel();
+          setPlacing(false);
+        }}
+        testId="position-map-container" />
+    </div>
+  );
+}
+
 const pressEscape = target => {
   const event = createEvent.keyDown(target, { key: 'Escape' });
   fireEvent(target, event);
@@ -68,5 +85,29 @@ it('one Esc closes only the open PositionDetailDrawer and a second Esc clears th
   expect(map.getSource('occ-selection').data.features).toEqual([]);
 
   // A third Esc has nothing left to close or clear, and is left to the page.
+  expect(pressEscape(canvas).defaultPrevented).toBe(false);
+});
+
+it('Esc cancels the placing before it clears the selection', () => {
+  const onCancel = vi.fn();
+  render(<PlacingScreen onCancel={onCancel} />);
+  const map = fake.state.liveMaps().at(-1);
+  act(() => fake.state.emit(map, 'style.load'));
+  const canvas = map.getCanvas();
+  expect(canvas.style.cursor).toBe('crosshair');
+
+  // The first Esc cancels the placing only: the selection stays in the URL and on the map.
+  const first = pressEscape(canvas);
+  expect(first.defaultPrevented).toBe(true);
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(new URLSearchParams(window.location.search).get('stand')).toBe('A5');
+  expect(map.featureStateOf('occ-stands', 'A5')).toEqual({ selected: true });
+  expect(canvas.style.cursor).toBe('');
+
+  // The second clears the selection, as with nothing being placed.
+  const second = pressEscape(canvas);
+  expect(second.defaultPrevented).toBe(true);
+  expect(window.location.search).toBe('?stationId=s-1');
+  expect(onCancel).toHaveBeenCalledOnce();
   expect(pressEscape(canvas).defaultPrevented).toBe(false);
 });

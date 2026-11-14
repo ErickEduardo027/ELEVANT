@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SELECTION_KEYS, matchFlight, readSelection, relatedEntities, writeSelection } from './mapSelection';
+import { SELECTION_KEYS, endsItsVisit, matchFlight, readSelection, relatedEntities, writeSelection } from './mapSelection';
 
 const BASE = 'stationId=20000000-0000-7000-8000-000000000003&operationId=op-7&tab=plan';
 
@@ -144,8 +144,9 @@ describe('map selection in the URL', () => {
 
   it('a stand never relates a visit whose aircraft has left it or is not coming, judged by the whole visit', () => {
     // B21 over a day, as the API sends it (contracts 1.3): visit 1 came at 10:02 and its departure took off at 11:41,
-    // and its arrival keeps the phase `arrived` (an arrival never takes `departed`); visit 2 is due at 13:05. The open
-    // assignment puts both visits on the stand (contracts 1.2).
+    // and its arrival keeps the phase `arrived` after its aircraft has gone (an arrival reads `departed` only before it
+    // lands, while it flies in from its origin); visit 2 is due at 13:05. The open assignment puts both visits on the
+    // stand (contracts 1.2).
     const stand = { id: 'stand-b21', code: 'B21', terminalCode: 'B' };
     const leg = (flightKey, visitKey, direction, phase, scheduledAt, extra = {}) => ({
       flightKey, visitKey, direction, phase, scheduledAt, estimatedAt: null, actualAt: null, stand, milestones: [], ...extra,
@@ -164,6 +165,9 @@ describe('map selection in the URL', () => {
 
     // Visit 1 on the stand, its departure to come: it is the current flight, ahead of visit 2.
     expect(related([...visitOne({ milestones: [blockOn] }, { milestones: [blockOn] }), ...visitTwo])).toBe('l:v1-arr');
+    // Before that, its arrival took off from its origin: the provider's «Departed» reads `departed` on an arrival too
+    // (contracts 1.3), and the aircraft is on its way to the stand, so visit 1 is still the stand's next flight.
+    expect(related([...visitOne({ phase: 'departed', actualAt: null }), ...visitTwo])).toBe('l:v1-arr');
     // Its departure took off: its arrival, still `arrived`, no longer counts; the next visit does.
     expect(related([...visitOne({}, { phase: 'departed', actualAt: '2026-11-12T11:41:00Z' }), ...visitTwo])).toBe('l:v2-arr');
     // The tablet recorded the PUSHBACK and the provider has not said `departed` yet: it left all the same.
@@ -189,5 +193,21 @@ describe('map selection in the URL', () => {
     expect(relatedA5(demoVisit('Parked'))).toBe('p:prop-arr');
     expect(relatedA5(demoVisit('TaxiOut'))).toBeNull();
     expect(relatedA5(demoVisit('Gone', { state: 'Cancelled', arrival: { phase: 'cancelled' } }))).toBeNull();
+  });
+
+  it('endsItsVisit is the one rule of a leg that ends its visit, shared with the stand model', () => {
+    const leg = (direction, extra = {}) => ({ direction, phase: 'scheduled', milestones: [], ...extra });
+    expect(endsItsVisit(leg('Arrival', { phase: 'arrived' }))).toBe(false);
+    expect(endsItsVisit(leg('Departure', { phase: 'departed' }))).toBe(true);
+    // An arrival that departed took off from its origin and is flying in.
+    expect(endsItsVisit(leg('Arrival', { phase: 'departed' }))).toBe(false);
+    expect(endsItsVisit(leg('Arrival', { phase: 'diverted' }))).toBe(true);
+    expect(endsItsVisit(leg('Departure', { phase: 'diverted' }))).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { phase: 'cancelled' }))).toBe(true);
+    expect(endsItsVisit(leg('Departure', { phase: 'cancelled' }))).toBe(false);
+    expect(endsItsVisit(leg('Arrival', { milestones: [{ code: 'PUSHBACK', actualAt: '2026-11-12T11:33:00Z' }] }))).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { milestones: [{ code: 'PUSHBACK', actualAt: null }] }))).toBe(false);
+    for (const phase of ['TaxiOut', 'Departed', 'Gone']) expect(endsItsVisit(leg('Arrival', { demo: { phase } })), phase).toBe(true);
+    expect(endsItsVisit(leg('Arrival', { demo: { phase: 'Parked' } }))).toBe(false);
   });
 });

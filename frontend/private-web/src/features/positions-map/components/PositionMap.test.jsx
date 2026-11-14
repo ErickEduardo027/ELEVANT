@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
@@ -7,6 +7,7 @@ import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
 import { presetTargets } from '../../maps/core/cameraPresets';
+import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
 import PositionMap from './PositionMap';
@@ -19,7 +20,14 @@ const fake = sharedFakeMapLibre();
 const STANDS = createMapStands();
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
 const VIEWPORT_PX = 1440;
-const MARK_LAYERS = ['occ-stands-clusters', 'occ-stands-fill', 'occ-stands-frame', 'occ-stands-glyph', 'occ-stands-clock'];
+// The stands slot: the polygons with their fill, hatch, outlines, lines and casings.
+const STAND_LAYERS = [
+  'occ-stands-fill', 'occ-stands-hatch', 'occ-stands-outline-solid', 'occ-stands-outline-dash-4-3',
+  'occ-stands-outline-dash-2-2', 'occ-stands-outline-dot-1-3', 'occ-stands-leadin', 'occ-stands-leadin-arriving',
+  'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-selection', 'occ-stands-related', 'occ-stands-same-agent',
+];
+// The stands as the map draws them: the layout's polygons, moved where OCC placed a stand.
+const DRAWN = attachStandGeometry(STANDS, MDPC_LAYOUT);
 
 // The zoom at which the fake map fits the width of `bounds` into `width` pixels.
 const fitWidth = (bounds, width = VIEWPORT_PX) => Math.log2((width * 360) / (512 * (bounds[1][0] - bounds[0][0])));
@@ -46,9 +54,9 @@ function renderPositions(props = {}, ref = createRef()) {
 }
 
 const loadStyle = map => act(() => fake.state.emit(map, 'style.load'));
-const standFeature = (code, status = 'available') => ({
-  id: code, source: 'occ-stands', layer: { id: 'occ-stands-frame' }, properties: { code, status },
-  geometry: { type: 'Point', coordinates: standPoint(code) },
+const standFeature = (code, state = 'available') => ({
+  id: code, source: 'occ-stands', layer: { id: 'occ-stands-fill' }, properties: { code, state },
+  geometry: { type: 'Polygon', coordinates: [DRAWN.find(stand => stand.id === code).geometry.polygon] },
 });
 const click = (map, features, lngLat = { lng: -68.36, lat: 18.564 }) => {
   fake.state.setRenderedFeatures(map, (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
@@ -131,76 +139,74 @@ describe('PositionMap on the map engine', () => {
     expect(window.location.search).toBe('?stationId=s-1');
     view.unmount();
 
-    // The console's apron opens on the ramp too, tilted when its 3D is on.
+    // The console's apron opens on the ramp too, tilted when its 3D is on, with its codes from the stand polygons on.
     view = renderPositions({ dashboardLabels: true, viewMode: '3d', allowBuildingExtrusion: true });
     expect(view.map.getZoom()).toBeCloseTo(RAMP_FIT, 6);
     expect([view.map.getPitch(), view.map.getBearing()]).toEqual([55, -17]);
     loadStyle(view.map);
-    expect(view.map.layerIds()).toContain('occ-stands-codes-planned');
-    expect(view.map.options.style.sources['occ-stands']).toMatchObject({ cluster: true, clusterRadius: 35 });
+    const codes = view.map.zoomRangeCalls.findLast(call => call.id === 'occ-stand-labels');
+    expect(codes.minzoom).toBeCloseTo(AIRFIELD_FIT - 0.3, 6);
+    expect(view.map.options.style.sources['occ-stands']).toEqual({
+      type: 'geojson', promoteId: 'code', data: { type: 'FeatureCollection', features: [] },
+    });
   });
 
-  it('draws the stands through the stands slot with one setData per positions change and never re-creates the map', () => {
+  it('draws the stands as polygons with one setData per source, then only what changed, and never re-creates the map', () => {
     const { map, rerender } = renderPositions();
     loadStyle(map);
     const ids = map.layerIds();
-    expect(ids.slice(ids.indexOf('slot-stands') + 1, ids.indexOf('slot-routes'))).toEqual(MARK_LAYERS);
-    expect(ids.slice(ids.indexOf('slot-standLabels') + 1, ids.indexOf('slot-traffic')))
-      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'occ-stands-keep-out']);
+    expect(ids.slice(ids.indexOf('slot-stands') + 1, ids.indexOf('slot-routes'))).toEqual(STAND_LAYERS);
     const source = map.getSource('occ-stands');
-    expect(source.spec).toMatchObject({ type: 'geojson', promoteId: 'code', cluster: true, clusterRadius: 50 });
+    expect(source.spec).toMatchObject({ type: 'geojson', promoteId: 'code' });
+    expect(source.spec).not.toHaveProperty('cluster');
     expect(source.setDataCalls).toHaveLength(1);
     expect(source.data.features).toHaveLength(41);
-    expect(source.data.features.find(feature => feature.properties.code === 'A1')).toEqual({
+    // A1, placed by OCC at its reference point: the layout's polygon moved rigidly onto it.
+    expect(source.data.features.find(feature => feature.id === 'A1')).toEqual({
       type: 'Feature',
-      properties: { code: 'A1', terminal: 'A', status: 'occupied', unofficial: false },
-      geometry: { type: 'Point', coordinates: standPoint('A1') },
+      id: 'A1',
+      properties: { code: 'A1', terminal: 'A', state: 'occupied', unofficial: false },
+      geometry: { type: 'Polygon', coordinates: [DRAWN.find(stand => stand.id === 'A1').geometry.polygon] },
     });
-    // The clusters end one zoom below the codes threshold of this screen; PUJ is marked by its reference point.
-    expect(source.getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: Math.floor(RAMP_FIT - 0.3) - 1 });
+    // PUJ is marked by its reference point.
     expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
 
-    // The same positions read again in new objects write nothing; a changed state writes once more.
+    // The same positions read again in new objects write nothing; a changed state is one update of that stand.
     rerender({ positions: createMapStands() });
-    expect(source.setDataCalls).toHaveLength(1);
+    expect([source.setDataCalls.length, source.updateDataCalls.length]).toEqual([1, 0]);
     rerender({ positions: createMapStands({ A2: { status: 'planned' } }) });
-    expect(source.setDataCalls).toHaveLength(2);
-    expect(source.data.features.find(feature => feature.properties.code === 'A2').properties.status).toBe('planned');
-    // A filter that leaves fewer stands is one more write.
+    expect(source.setDataCalls).toHaveLength(1);
+    expect(source.updateDataCalls.map(diff => diff.update.map(item => item.id))).toEqual([['A2']]);
+    expect(source.updateDataCalls[0].update[0].addOrUpdateProperties).toContainEqual({ key: 'state', value: 'planned' });
+    // A filter that leaves fewer stands removes the others.
     rerender({ positions: createMapStands().filter(stand => stand.terminal === 'B') });
-    expect(source.setDataCalls).toHaveLength(3);
-    expect(source.data.features.every(feature => feature.properties.terminal === 'B')).toBe(true);
+    expect(source.updateDataCalls).toHaveLength(2);
+    expect(source.updateDataCalls[1].remove).toEqual(expect.arrayContaining(['A1', 'BN6']));
+    expect(source.updateDataCalls[1].remove).not.toContain('B21');
     expect(fake.state.maps).toEqual([map]);
     expect(map.calls.filter(call => call.method === 'setStyle')).toEqual([]);
   });
 
-  it('a stand click selects it; a cluster click awaits the expansion zoom', async () => {
+  it('a stand click selects it by its polygon; a terminal chip opens that terminal and selects nothing', async () => {
     const onSelectPosition = vi.fn();
     // A page id that the database padded: the map speaks of B21, the page gets its own id back.
     const positions = createMapStands().map(stand => (stand.id === 'B21' ? { ...stand, id: 'B021' } : stand));
-    const { map } = renderPositions({ positions, onSelectPosition });
+    const { map, rerender } = renderPositions({ positions, onSelectPosition });
     loadStyle(map);
     await click(map, [standFeature('A5')]);
     expect(onSelectPosition).toHaveBeenCalledExactlyOnceWith('A5');
     await click(map, [standFeature('B21', 'disabled')]);
     expect(onSelectPosition).toHaveBeenLastCalledWith('B021');
+    // The page's selected stand is cased through its polygon's feature state, under the map's code.
+    rerender({ selectedPositionId: 'B021' });
+    expect(map.featureStateOf('occ-stands', 'B21')).toEqual({ selected: true });
 
-    // MapLibre 6 answers the expansion zoom with a promise: the camera moves once it is there.
-    const source = map.getSource('occ-stands');
-    let answer;
-    source.getClusterExpansionZoom = vi.fn(() => new Promise(resolve => { answer = resolve; }));
-    const before = map.cameraCalls.length;
-    await click(map, [{
-      id: 9, source: 'occ-stands', layer: { id: 'occ-stands-clusters' },
-      properties: { cluster_id: 42, point_count: 16, point_count_abbreviated: '16' },
-      geometry: { type: 'Point', coordinates: [-68.364, 18.5641] },
-    }]);
-    expect(source.getClusterExpansionZoom).toHaveBeenCalledWith(42);
-    expect(map.cameraCalls).toHaveLength(before);
-    act(() => answer(15.2));
-    await waitFor(() => expect(map.cameraCalls).toHaveLength(before + 1));
-    expect(map.cameraCalls.at(-1)).toEqual({ method: 'easeTo', options: { center: [-68.364, 18.5641], zoom: 15.2, duration: 500 } });
-    // A cluster is not a stand: nothing more was selected.
+    // Below the stand polygons a chip stands for each terminal: a click opens that terminal's view.
+    await click(map, [{ id: 'FBO', source: 'occ-stand-groups', layer: { id: 'occ-stand-groups' }, properties: { terminal: 'FBO', text: 'FBO · 0/8' } }]);
+    const query = new URLSearchParams(window.location.search);
+    expect([query.get('view'), query.get('terminal')]).toEqual(['ramp', 'FBO']);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'ramp');
+    // A chip is not a stand: nothing more was selected.
     expect(onSelectPosition).toHaveBeenCalledTimes(2);
   });
 

@@ -1,0 +1,198 @@
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
+import { LanguageScope } from '../../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../../i18n/languageStore';
+import { LAYERS_STORAGE_KEY } from '../core/layersMenu';
+import OccMap from '../core/OccMap';
+import {
+  createAirPicture, createEstimates, createMapFlights, TRAFFIC_HEX as HEX, TRAFFIC_NOON,
+} from '../testing/trafficFixtures';
+import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
+import MapDock from './MapDock';
+import MapLayersMenu from './MapLayersMenu';
+import MapLegend from './MapLegend';
+
+vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+
+const fake = sharedFakeMapLibre();
+const PAGE = '/admin-occ/flight-monitoring?stationId=s-1';
+
+// The synthetic traffic of the lab's noon, as useMapSituation gives it to the map.
+function noonTraffic() {
+  const situation = buildSituation({ picture: toPictureModel(createAirPicture()), flights: toFlightsModel(createMapFlights()),
+    nowMs: Date.parse(TRAFFIC_NOON), estimates: createEstimates() });
+  return { aircraft: situation.aircraft, trails: null, route: null, source: null };
+}
+
+function renderMap({ selection = null, onSelect = vi.fn(), traffic = noonTraffic(), menu = true } = {}) {
+  const view = render(
+    <OccMap defaultView="region" traffic={traffic} selection={selection} onSelect={onSelect}>
+      <MapDock>
+        {menu && <MapLayersMenu />}
+        <MapLegend />
+      </MapDock>
+    </OccMap>,
+  );
+  const map = fake.state.liveMaps().at(-1);
+  act(() => fake.state.emit(map, 'style.load'));
+  return { ...view, map, onSelect };
+}
+
+const press = (target, key, init = {}) => {
+  const event = createEvent.keyDown(target, { key, ...init });
+  fireEvent(target, event);
+  return event;
+};
+const layersButton = () => within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' });
+const trafficGroup = () => screen.queryByRole('group', { name: 'Tráfico' });
+const checkbox = name => within(trafficGroup()).getByRole('checkbox', { name });
+const visibilityOf = (map, id) => map.getLayoutProperty(id, 'visibility');
+const legendTraffic = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
+  .map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
+
+beforeEach(() => {
+  fake.state.reset();
+  window.localStorage.clear();
+  window.history.replaceState({}, '', PAGE);
+});
+
+afterEach(() => {
+  cleanup();
+  act(() => resetLanguageForTests('es'));
+  window.localStorage.clear();
+  window.history.replaceState({}, '', '/');
+});
+
+describe('MapLayersMenu', () => {
+  it('L opens and closes the menu from the map', () => {
+    const { map } = renderMap();
+    const canvas = map.getCanvas();
+    expect(layersButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(layersButton()).toHaveAttribute('aria-keyshortcuts', 'L');
+    expect(trafficGroup()).toBeNull();
+
+    const open = press(canvas, 'l');
+    expect(open.defaultPrevented).toBe(true);
+    expect(layersButton()).toHaveAttribute('aria-expanded', 'true');
+    // The Tráfico group of design E7, in its order, with its defaults; Vuelos de AVIAM is always on.
+    const boxes = within(trafficGroup()).getAllByRole('checkbox');
+    expect(boxes.map(box => box.labels[0].textContent)).toEqual(['Vuelos de AVIAM', 'Otro tráfico',
+      'Etiquetas de todo el tráfico', 'Estelas de todo el tráfico', 'Ruta del vuelo elegido']);
+    expect(boxes.map(box => box.checked)).toEqual([true, true, false, false, true]);
+    expect(checkbox('Vuelos de AVIAM')).toBeDisabled();
+    expect(checkbox('Vuelos de AVIAM')).toHaveAccessibleDescription('Siempre visible');
+    expect(screen.getByRole('group', { name: 'Capas del mapa' })).toContainElement(trafficGroup());
+
+    // The same key closes it, in any case; with Ctrl it is the browser's.
+    expect(press(canvas, 'L').defaultPrevented).toBe(true);
+    expect(trafficGroup()).toBeNull();
+    expect(press(canvas, 'l', { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(layersButton()).toHaveAttribute('aria-expanded', 'false');
+    cleanup();
+
+    // A map that shows no menu leaves L alone, and so does a map without traffic, which has no layers to offer.
+    const plain = renderMap({ menu: false });
+    expect(press(plain.map.getCanvas(), 'l').defaultPrevented).toBe(false);
+    cleanup();
+    const empty = render(<OccMap defaultView="region"><MapDock><MapLayersMenu /></MapDock></OccMap>);
+    const bare = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(bare, 'style.load'));
+    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    expect(press(bare.getCanvas(), 'l').defaultPrevented).toBe(false);
+    empty.unmount();
+
+    // A map that cannot draw shows its fallback list, without the menu.
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    render(<OccMap defaultView="region" traffic={noonTraffic()}><MapDock><MapLayersMenu /></MapDock></OccMap>);
+    return screen.findByRole('alert').then(() => {
+      expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    });
+  });
+
+  it('one Esc closes only the menu', async () => {
+    const user = userEvent.setup();
+    const { map, onSelect } = renderMap({ selection: { kind: 'aircraft', id: HEX.overflight } });
+    const canvas = map.getCanvas();
+
+    // Opened from the map: the first Esc closes the menu, marked as used; the second clears the selection.
+    press(canvas, 'l');
+    const first = press(canvas, 'Escape');
+    expect(first.defaultPrevented).toBe(true);
+    expect(trafficGroup()).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(press(canvas, 'Escape').defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+
+    // Opened with its button, Esc on one of its checkboxes closes it and gives the focus back to the button.
+    await user.click(layersButton());
+    expect(layersButton()).toHaveAttribute('aria-expanded', 'true');
+    const box = checkbox('Otro tráfico');
+    box.focus();
+    const inside = press(box, 'Escape');
+    expect(inside.defaultPrevented).toBe(true);
+    expect(trafficGroup()).toBeNull();
+    expect(layersButton()).toHaveFocus();
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    // And on its own button.
+    await user.click(layersButton());
+    expect(press(layersButton(), 'Escape').defaultPrevented).toBe(true);
+    expect(trafficGroup()).toBeNull();
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('turning Otro tráfico off hides its layers and survives a remount', async () => {
+    const user = userEvent.setup();
+    const first = renderMap();
+    expect(legendTraffic()).toContain('other');
+    await user.click(layersButton());
+    // Vuelos de AVIAM cannot be turned off.
+    await user.click(checkbox('Vuelos de AVIAM'));
+    expect(checkbox('Vuelos de AVIAM')).toBeChecked();
+    expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBeNull();
+
+    await user.click(checkbox('Otro tráfico'));
+    expect(checkbox('Otro tráfico')).not.toBeChecked();
+    for (const id of ['occ-traffic-other', 'occ-traffic-other-ground', 'occ-traffic-tags-other', 'occ-trails-other']) {
+      expect(visibilityOf(first.map, id), id).toBe('none');
+    }
+    expect(visibilityOf(first.map, 'occ-traffic-aviam')).toBe('visible');
+    // Only the difference from the defaults is kept, and the legend no longer lists what the map no longer shows.
+    expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBe('{"traffic.other":false}');
+    expect(legendTraffic()).not.toContain('other');
+    first.unmount();
+
+    // A new map in this browser starts with the choice: the box unchecked and the layers hidden from its first frame.
+    const second = renderMap();
+    expect(visibilityOf(second.map, 'occ-traffic-other')).toBe('none');
+    await user.click(layersButton());
+    expect(checkbox('Otro tráfico')).not.toBeChecked();
+    // Labels for all the traffic need the other traffic on: they show once both are.
+    await user.click(checkbox('Etiquetas de todo el tráfico'));
+    expect(visibilityOf(second.map, 'occ-traffic-tags-other')).toBe('none');
+    await user.click(checkbox('Otro tráfico'));
+    expect(visibilityOf(second.map, 'occ-traffic-other')).toBe('visible');
+    expect(visibilityOf(second.map, 'occ-traffic-tags-other')).toBe('visible');
+    // Back to the default, the entry goes; the labels stay as the one difference.
+    expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBe('{"traffic.labels":true}');
+    // The route of the chosen flight hides with its key.
+    await user.click(checkbox('Ruta del vuelo elegido'));
+    expect([visibilityOf(second.map, 'occ-route-flown'), visibilityOf(second.map, 'occ-route-next')]).toEqual(['none', 'none']);
+  });
+
+  it('speaks English inside a translated scope', async () => {
+    act(() => resetLanguageForTests('en'));
+    render(
+      <LanguageScope>
+        <OccMap defaultView="region" traffic={noonTraffic()}><MapDock><MapLayersMenu /></MapDock></OccMap>
+      </LanguageScope>,
+    );
+    const button = within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Layers' });
+    await userEvent.click(button);
+    const group = screen.getByRole('group', { name: 'Traffic' });
+    expect(within(group).getAllByRole('checkbox').map(box => box.labels[0].textContent)).toEqual(['AVIAM flights',
+      'Other traffic', 'Labels for all traffic', 'Trails for all traffic', 'Route of the selected flight']);
+    expect(within(group).getByRole('checkbox', { name: 'AVIAM flights' })).toHaveAccessibleDescription('Always shown');
+  });
+});

@@ -1,10 +1,21 @@
 import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ElevantApiError } from '@elevant/api-client';
 import PositionsMapPage from './PositionsMapPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
+import { destinationPoint } from '../maps/airport/geo';
+import { boardStand, standPoint } from '../maps/testing/mapFixtures';
+
+// The map is a stub that shows what the page gives it and clicks where a test says (`map.next`); the API client is a
+// stub too, so the real positions service translates its errors.
+const map = vi.hoisted(() => ({ next: null }));
+const api = vi.hoisted(() => ({ locateOccStand: null }));
+vi.mock('../../config/elevantApiClient', async importOriginal => ({
+  ...(await importOriginal()), createPrivateWebApiClient: () => api,
+}));
 
 vi.mock('./components/PositionMap', () => ({
   default: forwardRef(function PositionMapStub(props, ref) {
@@ -15,7 +26,13 @@ vi.mock('./components/PositionMap', () => ({
       flyToPuj: vi.fn(),
       resetNorth: vi.fn(),
     }));
-    return <div data-testid="position-map-stub" />;
+    const pending = props.pendingLocation;
+    return (
+      <div data-testid="position-map-stub" data-placing={props.placingCode ?? ''} data-selected={props.selectedPositionId ?? ''}
+        data-pending={pending ? `${pending.latitude},${pending.longitude}` : ''}>
+        {props.onMapClick && <button type="button" onClick={() => props.onMapClick(map.next)}>Clic en el mapa</button>}
+      </div>
+    );
   }),
 }));
 
@@ -57,6 +74,47 @@ const POSITIONS = [
 ];
 
 const SNAPSHOT = { station: { code: 'PUJ' }, positions: POSITIONS };
+const PAGE = '/admin-occ/positions-map?stationId=s-1';
+
+// A positions board the page can act on: OCC may assign, A1 and A5 have a stand row, and C7 is a stand of the board no
+// map position shows. Synthetic: invented ids and an operation date.
+const OPERATION_DATE = '2026-11-13';
+const BOARD_SNAPSHOT = {
+  station: { code: 'PUJ' },
+  source: 'occupancy',
+  operationDate: OPERATION_DATE,
+  canAssign: true,
+  unassigned: [],
+  asOf: '2026-11-13T15:00:00Z',
+  stands: [boardStand('A01'), boardStand('A05'), boardStand('C07', { terminalCode: 'B', maxAircraftSize: 'Narrowbody' })],
+  positions: [
+    position({ id: 'A1', standId: 'stand-A1', locationSource: 'reference', coveredBy: [] }),
+    position({ id: 'A5', standId: 'stand-A5', locationSource: 'reference', coveredBy: [] }),
+  ],
+};
+// Where a test clicks on the map: 20 m east of A1's reference point, with more decimals than the API keeps.
+const CLICK = destinationPoint(standPoint('A1'), 90, 20);
+const sixDecimals = value => Number(value.toFixed(6));
+const query = () => new URLSearchParams(window.location.search);
+
+beforeEach(() => {
+  window.history.replaceState({}, '', PAGE);
+  map.next = { latitude: CLICK[1], longitude: CLICK[0], snapped: false };
+  api.locateOccStand = vi.fn();
+});
+
+afterEach(() => {
+  window.history.replaceState({}, '', '/');
+});
+
+// Opens the list (unless it is open), the drawer of `code` and «Ubicar en el mapa».
+async function startPlacing(user, code) {
+  if (!screen.queryByTestId('positions-side-panel')) await user.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+  await user.click(within(screen.getByTestId('positions-side-panel')).getByText(code));
+  await user.click(within(screen.getByTestId('position-detail-drawer')).getByRole('button', { name: 'Ubicar en el mapa' }));
+}
+
+const placingNotice = code => screen.getByRole('group', { name: `Ubicar ${code} en el mapa` });
 
 describe('PositionsMapPage', () => {
   it('shows the skeleton while loading', () => {
@@ -178,6 +236,155 @@ describe('PositionsMapPage', () => {
     );
     // Summary panel still renders with all-zero totals; the side panel empty state only shows once opened.
     expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+  });
+
+  it('a list click writes stand= and opens the drawer; Esc closes only the drawer', async () => {
+    const user = userEvent.setup();
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+    await user.click(within(screen.getByTestId('positions-side-panel')).getByText('A5'));
+    // The selection is in the URL, next to every other key; the map and the list mark it.
+    expect(query().get('stand')).toBe('A5');
+    expect(query().get('stationId')).toBe('s-1');
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-selected', 'A5');
+    const drawer = screen.getByTestId('position-detail-drawer');
+    expect(within(drawer).getByRole('list', { name: 'Estado en el mapa' })).toHaveTextContent('Ocupada');
+
+    // Esc closes the drawer and is used up; the stand stays selected for the map's own Esc.
+    const escape = createEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent(document.body, escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(screen.queryByTestId('position-detail-drawer')).not.toBeInTheDocument();
+    expect(query().get('stand')).toBe('A5');
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-selected', 'A5');
+    // A click on the same stand opens its drawer again.
+    await user.click(within(screen.getByTestId('positions-side-panel')).getByText('A5'));
+    expect(screen.getByTestId('position-detail-drawer')).toBeInTheDocument();
+  });
+
+  it('a link with stand= opens that stand\'s drawer', () => {
+    window.history.replaceState({}, '', `${PAGE}&stand=a-10`);
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    expect(within(screen.getByTestId('position-detail-drawer')).getByText('A10')).toBeInTheDocument();
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-selected', 'A10');
+  });
+
+  it('a click sets a pending position and nothing is saved until «Guardar ubicación»; «Cancelar» and Esc cancel without a request', async () => {
+    const user = userEvent.setup();
+    render(<PositionsMapPage status="success" data={BOARD_SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await startPlacing(user, 'A1');
+    // The drawer gives way to the notice over the map, which takes the focus; the stand stays selected.
+    expect(screen.queryByTestId('position-detail-drawer')).not.toBeInTheDocument();
+    const notice = placingNotice('A1');
+    expect(notice).toHaveFocus();
+    expect(within(notice).getByRole('status')).toHaveTextContent('Haz clic en el centro de la posición A1.');
+    expect(within(notice).getByRole('button', { name: 'Guardar ubicación' })).toBeDisabled();
+    const stub = screen.getByTestId('position-map-stub');
+    expect(stub).toHaveAttribute('data-placing', 'A1');
+    expect(query().get('stand')).toBe('A1');
+
+    // A click on the map sets the pending location; nothing is sent.
+    await user.click(screen.getByRole('button', { name: 'Clic en el mapa' }));
+    expect(stub).toHaveAttribute('data-pending', `${CLICK[1]},${CLICK[0]}`);
+    expect(within(notice).getByRole('button', { name: 'Guardar ubicación' })).toBeEnabled();
+    expect(api.locateOccStand).not.toHaveBeenCalled();
+    // Another click moves it.
+    map.next = { latitude: standPoint('A1')[1], longitude: standPoint('A1')[0], snapped: true };
+    await user.click(screen.getByRole('button', { name: 'Clic en el mapa' }));
+    expect(stub).toHaveAttribute('data-pending', `${standPoint('A1')[1]},${standPoint('A1')[0]}`);
+
+    // «Cancelar» drops it without a request.
+    await user.click(within(notice).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('group', { name: 'Ubicar A1 en el mapa' })).toBeNull();
+    expect(stub).toHaveAttribute('data-placing', '');
+    expect(stub).toHaveAttribute('data-pending', '');
+    expect(screen.queryByRole('button', { name: 'Clic en el mapa' })).toBeNull();
+
+    // So does Esc in the notice, which is used up there.
+    await startPlacing(user, 'A1');
+    await user.click(screen.getByRole('button', { name: 'Clic en el mapa' }));
+    const escape = createEvent.keyDown(placingNotice('A1'), { key: 'Escape' });
+    fireEvent(placingNotice('A1'), escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('group', { name: 'Ubicar A1 en el mapa' })).toBeNull();
+    expect(api.locateOccStand).not.toHaveBeenCalled();
+    expect(query().get('stand')).toBe('A1');
+  });
+
+  it('saving shows «Guardando la ubicación de A1…», then «A1 quedó ubicada en el mapa.», and reads the board again', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    let answer;
+    api.locateOccStand.mockReturnValueOnce(new Promise(resolve => { answer = resolve; }));
+    render(<PositionsMapPage status="success" data={BOARD_SNAPSHOT} error={null} connection="connected" onRetry={onRetry} />);
+    await startPlacing(user, 'A1');
+    await user.click(screen.getByRole('button', { name: 'Clic en el mapa' }));
+    await user.click(within(placingNotice('A1')).getByRole('button', { name: 'Guardar ubicación' }));
+
+    // The same command as always (ADR-0027): the stand, the point to six decimals and the operation date.
+    expect(api.locateOccStand).toHaveBeenCalledExactlyOnceWith('stand-A1', {
+      latitude: sixDecimals(CLICK[1]), longitude: sixDecimals(CLICK[0]), operationDate: OPERATION_DATE,
+    });
+    const notice = placingNotice('A1');
+    expect(within(notice).getByRole('status')).toHaveTextContent('Guardando la ubicación de A1…');
+    expect(within(notice).getByRole('button', { name: 'Guardar ubicación' })).toBeDisabled();
+    expect(within(notice).getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    // Esc waits for the answer while it is sent.
+    fireEvent.keyDown(notice, { key: 'Escape' });
+    expect(placingNotice('A1')).toBeInTheDocument();
+    expect(onRetry).not.toHaveBeenCalled();
+
+    await act(async () => answer({ positions: [] }));
+    expect(screen.queryByRole('group', { name: 'Ubicar A1 en el mapa' })).toBeNull();
+    expect(screen.getByText('A1 quedó ubicada en el mapa.')).toHaveAttribute('role', 'status');
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-placing', '');
+  });
+
+  it('an error shows the service\'s Spanish message, never the server title', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    api.locateOccStand.mockRejectedValueOnce(new ElevantApiError({
+      kind: 'http', status: 409, title: 'The stand cannot take this location.', code: 'stand_unavailable', reasons: [],
+    }));
+    render(<PositionsMapPage status="success" data={BOARD_SNAPSHOT} error={null} connection="connected" onRetry={onRetry} />);
+    await startPlacing(user, 'A1');
+    await user.click(screen.getByRole('button', { name: 'Clic en el mapa' }));
+    await user.click(within(placingNotice('A1')).getByRole('button', { name: 'Guardar ubicación' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La posición está ocupada o reservada en ese horario. Elige otra o libérala primero.');
+    expect(screen.queryByText(/The stand cannot take this location/)).toBeNull();
+    // The pending location is kept for another try; nothing was read again.
+    expect(within(placingNotice('A1')).getByRole('button', { name: 'Guardar ubicación' })).toBeEnabled();
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-pending', `${CLICK[1]},${CLICK[0]}`);
+    expect(onRetry).not.toHaveBeenCalled();
+
+    // An account that may not place stands is told so, in Spanish.
+    api.locateOccStand.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 403, title: 'Forbidden', code: 'forbidden' }));
+    await user.click(within(placingNotice('A1')).getByRole('button', { name: 'Guardar ubicación' }));
+    expect(await screen.findByText('Tu acceso no permite ubicar posiciones en el mapa.')).toHaveAttribute('role', 'alert');
+    expect(screen.queryByText('Forbidden')).toBeNull();
+  });
+
+  it('stands with no location are listed «Sin ubicar» and can be placed', async () => {
+    const user = userEvent.setup();
+    render(<PositionsMapPage status="success" data={BOARD_SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+    const items = within(screen.getByTestId('positions-side-panel')).getAllByTestId('position-list-item');
+    expect(items.map(item => item.querySelector('.font-mono').textContent)).toEqual(['A1', 'A5', 'C7']);
+    // Only C7, which no map position shows, is «Sin ubicar».
+    expect(items.filter(item => within(item).queryByText('Sin ubicar')).map(item => item.querySelector('.font-mono').textContent))
+      .toEqual(['C7']);
+
+    await user.click(within(items[2]).getByText('C7'));
+    const drawer = screen.getByTestId('position-detail-drawer');
+    expect(within(drawer).getByRole('list', { name: 'Estado en el mapa' })).toHaveTextContent('Sin ubicar');
+    await user.click(within(drawer).getByRole('button', { name: 'Ubicar en el mapa' }));
+    expect(within(placingNotice('C7')).getByRole('status')).toHaveTextContent('Haz clic en el centro de la posición C7.');
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-placing', 'C7');
+    await user.click(screen.getByRole('button', { name: 'Clic en el mapa' }));
+    await user.click(within(placingNotice('C7')).getByRole('button', { name: 'Guardar ubicación' }));
+    expect(api.locateOccStand).toHaveBeenCalledExactlyOnceWith('stand-C7', expect.objectContaining({ operationDate: OPERATION_DATE }));
   });
 });
 

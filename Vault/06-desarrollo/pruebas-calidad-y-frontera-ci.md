@@ -369,6 +369,84 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   laboratorio no entra en el bundle de producción
   (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`).
 
+## Tráfico real en los mapas del OCC (PR M5)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M5 «Tráfico real en el mapa» (`48ae657e` a `03dda909`), que esa verificación
+no cubre ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Las pruebas
+de vitest corren con `npm test`; la spec visual, con la suite visual.
+
+- **Presupuesto de un minuto demo.**
+  [`useMapSituation.budget.test.jsx`](../../frontend/private-web/src/features/maps/useMapSituation.budget.test.jsx)
+  monta el hook real del mapa con el adaptador simulado, que responde cada
+  lectura a los 200 ms, y repite con relojes falsos el minuto demo del
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  (ocho `occ_planning`, dos avisos y una revisión). Comprueba que el mapa pide
+  6 imágenes aéreas, cada una al menos 10 segundos después de la anterior por
+  mucho que se anuncie, como mucho 9 lecturas de vuelos, un ping y ninguna
+  estela; y que Monitoreo de vuelos como está hoy (el marco, el observador
+  propio de la ruta, sus relecturas y su sondeo), más el mapa, no pasa de las
+  70 peticiones de un minuto con vuelo demo. En la corrida del PR sumaron 62.
+- **Ritmo y estados.**
+  [`useMapSituation.test.jsx`](../../frontend/private-web/src/features/maps/useMapSituation.test.jsx)
+  comprueba con el mismo adaptador que la imagen se pide con `trails=short` una
+  vez y `none` después, nunca más rápido que `refreshAfterSeconds`; que las dos
+  lecturas esperan con la pestaña oculta y leen una vez al volver; que los
+  vuelos se releen con `occ_planning` como mucho una vez cada 3 segundos, y
+  cada 60 si no; que `Disabled`, `Unavailable`, `Stale` y `Warming` son datos y
+  no errores; los cinco estados de la vista, con el no autorizado sin ninguna
+  petición; que una imagen aérea que falla, o el 404 de una estación sin
+  tráfico en vivo, deja el mapa con sus vuelos y la fuente «Sin conexión» o
+  «Sin configurar»; que el reloj se alimenta del `serverTime` y del ping; y
+  que la estela del avión elegido se lee una sola vez. Las pruebas del
+  [reloj](../../frontend/private-web/src/services/serverClock.test.js), del
+  [servicio](../../frontend/private-web/src/services/occMapService.test.js),
+  del [modelo](../../frontend/private-web/src/features/maps/traffic/situationModel.test.js)
+  y de las [estelas](../../frontend/private-web/src/features/maps/traffic/trailStore.test.js)
+  prueban cada pieza sola: la muestra de menor ida y vuelta, el 401 que cierra
+  la sesión, un vuelo para un avión (también por la clave vieja de una visita
+  enlazada con 3-N07), una visita o una escala elegidas que nombran el tramo
+  que vuela su avión, el umbral derivado de «sin actualizar», el tráfico
+  oculto solo dentro de una posición en la que ya está un avión de AVIAM o
+  demo (nunca en la de un vuelo que todavía llega) y las estelas cortadas a
+  `max(60 s, 3 × refreshAfterSeconds)`, con sus topes de 600 y 60 puntos.
+- **Tráfico sintético.**
+  [`trafficFixtures.js`](../../frontend/private-web/src/features/maps/testing/trafficFixtures.js)
+  arma, con la forma de las tres lecturas de A3, una imagen aérea, vuelos y
+  estelas alrededor de Punta Cana, con direcciones, matrículas, *callsign*,
+  aerolínea e identificadores inventados; nada sale de un proveedor. Su
+  [prueba](../../frontend/private-web/src/features/maps/testing/trafficFixtures.test.js)
+  y la de las
+  [escenas del laboratorio](../../frontend/private-web/src/features/maps/lab/trafficScenes.test.js)
+  pasan cada respuesta por los validadores estrictos del cliente compartido
+  (`isOccAirPicture`, `isOccMapFlights` e `isOccAircraftTrack`), en los cinco
+  estados de la imagen y con estelas y sin ellas. El adaptador simulado
+  también valida cada respuesta que da, como el cliente valida las de la API.
+  Ninguna prueba llama a la API ni a una red de tráfico.
+- **Escenas del laboratorio.** Siete escenas nuevas
+  ([escenas](../../frontend/private-web/src/features/maps/lab/trafficScenes.js)),
+  con la red sintética «Red ADS-B de prueba»: `region-traffic-mixed`,
+  `approach-traffic-demo`, `ramp-traffic-ground`,
+  `approach-traffic-estimated-stale`, `region-traffic-selected`,
+  `approach-traffic-hex-selected` y `region-layers-menu`. Sus posiciones
+  estimadas (la llegada demo en final y un vuelo de AVIAM sin señal) se pasan a
+  mano, como las calculará M6: las pantallas no estiman ninguna.
+- **Spec visual del tráfico.**
+  [`map-lab.traffic.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.traffic.spec.mjs),
+  del proyecto `lab` de la [suite visual](#suite-visual-de-los-mapas-del-occ),
+  fotografía las siete escenas a 1440×900 y a 1920×1080, y en las cuatro
+  primeras comprueba que el crédito de la red está a la vista como enlace y que
+  la leyenda lista el tráfico. Comprueba también que la atribución abierta
+  nombra la red; que otro avión muestra su etiqueta bajo el puntero; que cada
+  vista explica su tráfico («Otro tráfico en tierra» en la rampa, «Demo»,
+  «est.» y «Estela estimada» en la llegada demo) y que la imagen con retraso lo
+  dice; el bloque de datos del vuelo elegido y el de otro avión, sin enlaces; y
+  que un clic elige un avión (`hex=` o `flightId=`), `L` abre el menú de capas,
+  la primera `Esc` lo cierra y conserva lo elegido, la segunda suelta el vuelo,
+  y «Etiquetas de todo el tráfico» sobrevive a una recarga, con
+  `elevant-occ-map-layers:v1` vacío al volver al valor por omisión. Como el
+  resto de la suite, corre fuera del CI y una persona revisa sus capturas.
+
 ## Qué agrega cada workflow activo
 
 ### Backend CI
