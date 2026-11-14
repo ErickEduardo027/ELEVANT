@@ -4,6 +4,7 @@ import { RAMP_POSITIONS } from '../../dashboard/positionsData';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { loadOccPositions } from '../../../services/occPositionsService';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { useStandDisplay } from '../../maps/stands/useStandDisplay';
 import { planningMessages } from '../planningMessages';
 
 // MapLibre needs the browser: the map loads only on the client.
@@ -42,6 +43,8 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
   const plannedIds = useMemo(() => new Set(flights.map(flight => flight.id)), [flights]);
   const positions = useMemo(() => state.board ? mapOccupancyToRampPositions(RAMP_POSITIONS, state.board) : [],
     [state.board]);
+  // The map draws each stand as it reads now; the lists beside it keep the board.
+  const mapPositions = useStandDisplay(positions);
   const withFlights = positions.filter(position => position.turnarounds.length > 0);
   const selected = positions.find(position => position.id === selectedId) ?? null;
   const unassigned = (state.board?.unassigned ?? []).filter(item => plannedIds.has(item.turnaroundId));
@@ -63,7 +66,7 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
   return (
     <section aria-label={t('map.label')} className="grid gap-4 lg:grid-cols-[7fr_minmax(16rem,3fr)]">
       <div className={`${panelClass} relative min-h-[460px] overflow-hidden`}>
-        <PositionMap ref={mapRef} positions={positions} selectedPositionId={selectedId} onSelectPosition={setSelectedId}
+        <PositionMap ref={mapRef} positions={mapPositions} selectedPositionId={selectedId} onSelectPosition={setSelectedId}
           theme="dark" viewMode="2d" />
       </div>
       <aside className={`${panelClass} space-y-3 p-4 text-sm`}>

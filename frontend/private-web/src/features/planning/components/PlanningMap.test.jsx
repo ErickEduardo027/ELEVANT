@@ -1,11 +1,12 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import PlanningMap from './PlanningMap';
+import { standPoint } from '../../maps/testing/mapFixtures';
 import { loadOccPositions } from '../../../services/occPositionsService';
 
 vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, onSelectPosition }) {
   return <div data-testid="map">{positions.map(position => <button key={position.id} type="button"
-    onClick={() => onSelectPosition(position.id)}>{`pin ${position.id}`}</button>)}</div>;
+    data-state={position.displayStatus} onClick={() => onSelectPosition(position.id)}>{`pin ${position.id}`}</button>)}</div>;
 } }));
 vi.mock('../../../services/occPositionsService', () => ({ loadOccPositions: vi.fn() }));
 
@@ -16,7 +17,7 @@ const parked = { turnaroundId: 't1', operationCode: 'OP-1', airlineName: 'Arajet
 const waiting = { ...parked, turnaroundId: 't2', operationCode: 'OP-2', arrivalFlightNumber: 'DM300' };
 const board = { stationId, stationCode: 'PUJ', operationDate: '2026-11-03', asOf: '2026-11-03T12:00:00Z', canAssign: true,
   positions: [{ standId: 's1', code: 'A01', terminalCode: 'A', standType: 'Contact', status: 'planned', turnarounds: [parked],
-    latitude: 18.5674, longitude: -68.3634 }],
+    latitude: standPoint('A1')[1], longitude: standPoint('A1')[0] }],
   unassigned: [waiting] };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -30,6 +31,9 @@ it('shows the stands with flights and opens a flight in planning', async () => {
   expect(screen.getByText('Posiciones con vuelos (1)')).toBeInTheDocument();
   expect(screen.getByText('Vuelos sin posición (1)')).toBeInTheDocument();
 
+  // The map draws each stand as it reads now: A1's flight is past its arrival time and has not arrived.
+  expect(screen.getByRole('button', { name: 'pin A1' })).toHaveAttribute('data-state', 'arriving');
+  expect(screen.getByRole('button', { name: 'pin A2' })).toHaveAttribute('data-state', 'unverified');
   fireEvent.click(screen.getByRole('button', { name: 'pin A1' }));
   expect(screen.getByText('Posición A1')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /DM161/ }));

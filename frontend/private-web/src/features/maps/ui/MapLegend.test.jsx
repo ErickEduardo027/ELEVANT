@@ -3,12 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
-import { STAND_STATES, STAND_STATE_KEYS, TAGS } from '../../occ-ui/statusVocabulary';
+import { SIGNALS, STAND_STATES, STAND_STATE_KEYS, TAGS } from '../../occ-ui/statusVocabulary';
+import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { AIRCRAFT_SILHOUETTE_PATH } from '../aircraftSilhouette';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { boundsCenter, presetTargets } from '../core/cameraPresets';
 import OccMap from '../core/OccMap';
-import { standAppearance } from '../stands/standLayers';
+import { standPaint } from '../stands/standLayers';
+import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
+import { STAND_REFERENCE } from '../stands/standReference';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
-import { createMapStands, standPoint } from '../testing/mapFixtures';
+import { createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -17,6 +22,7 @@ const fake = sharedFakeMapLibre();
 // Synthetic states over the reference points: A1 occupied, A3 planned, B21 disabled and BN6 unverified, the rest free;
 // only A1 to A3 were placed by OCC.
 const STANDS = createMapStands();
+const DRAWN = attachStandGeometry(STANDS, MDPC_LAYOUT);
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
 const RAMP_ORDER = ['available', 'planned', 'occupied', 'disabled', 'unverified'];
 // Synthetic flights (invented keys): one over A1, one without a position.
@@ -27,19 +33,29 @@ const FLIGHTS = [
 ];
 const FLIGHT_ENTRY = 'VueloApunta según su rumbo; al norte si no se conoce';
 const UNOFFICIAL = `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`;
+const CHIP = 'Posiciones de una terminalOcupadas del total; acerca el mapa para ver cada una';
+const ATTENTION = SIGNALS.attention.es;
+const URGENT = SIGNALS.urgent.es;
+const COMBINED = 'Enlace con la posición que la anula';
+// 14:07 in Punta Cana: the ramp scenario read as the positions map reads it, with its signals.
+const NOW = Date.parse('2026-11-13T18:07:00Z');
+const REFERENCES = STAND_REFERENCE.map(stand => ({ id: stand.code, terminal: stand.terminal, lat: stand.latitude, lon: stand.longitude }));
+function scenarioStands() {
+  const { board, flightsByTurnaround } = createRampScenario(NOW);
+  return withStandDisplay(mapOccupancyToRampPositions(REFERENCES, board, board.asOf), { nowMs: NOW, flightsByTurnaround });
+}
 
 const legendItems = () => within(screen.getByRole('list', { name: /Leyenda|Legend/ })).getAllByRole('listitem')
   .map(item => item.textContent);
-
-// What MapLibre draws of the stands while it gathers them, as queryRenderedFeatures answers it: a cluster, and the
-// stands `alone` on their own.
-function drawStands(map, alone) {
-  const features = [
-    { id: 1, layer: { id: 'occ-stands-clusters' }, properties: { cluster: true, cluster_id: 1, point_count: 40 } },
-    ...alone.map(code => ({ id: code, layer: { id: 'occ-stands-frame' }, properties: { code } })),
-  ];
-  fake.state.setRenderedFeatures(map, (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
-}
+const stateSwatches = () => [...screen.getByTestId('map-legend').querySelectorAll('li[data-state] svg')];
+const glyphsOf = svg => [...svg.querySelectorAll('[data-glyph]')].map(node => node.dataset.glyph).join('+');
+// The pixel box of a drawn stand's polygon on the fake map.
+const pixelBox = (map, code) => {
+  const points = DRAWN.find(stand => stand.id === code).geometry.polygon.map(point => map.project(point));
+  return {
+    left: Math.min(...points.map(p => p.x)), right: Math.max(...points.map(p => p.x)), bottom: Math.max(...points.map(p => p.y)),
+  };
+};
 
 beforeEach(() => {
   fake.state.reset();
@@ -57,25 +73,18 @@ describe('MapLegend', () => {
     const { unmount } = render(<MapLegend stands={STANDS} />);
     const legend = screen.getByTestId('map-legend');
     // The words of the vocabulary, in its order, and the «No oficial» plate with what it means.
-    expect(legendItems()).toEqual([
-      ...RAMP_ORDER.map(state => STAND_STATES[state].es),
-      `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`,
-    ]);
+    expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL]);
     expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
-    // Each state is drawn as the map draws it: its outline token and its dash.
-    const swatches = [...legend.querySelectorAll('li svg rect')];
-    expect(swatches.map(rect => rect.style.stroke)).toEqual([
+    // Each state is drawn as the map draws it: its outline token and its dash, the slab of «Ocupada», the hatch of
+    // «Inhabilitada» and the aircraft of a stand with an aircraft on it.
+    const outlines = stateSwatches().map(svg => svg.querySelector('rect'));
+    expect(outlines.map(rect => rect.style.stroke)).toEqual([
       'var(--occ-line-strong)', 'var(--occ-muted)', 'var(--occ-text)', 'var(--occ-line-strong)', 'var(--occ-faint)',
     ]);
-    expect(swatches.map(rect => rect.style.strokeDasharray)).toEqual(['none', '4 3', 'none', '2 2', '1 3']);
-    expect(swatches[2].style.fill).toBe('var(--occ-panel-raised)');
-    // The glyph inside each stand, as the map draws it: the axis of an empty stand, the aircraft of a held one; the
-    // only other path is the hatch of «Inhabilitada».
-    const glyphs = () => [...screen.getByTestId('map-legend').querySelectorAll('li svg')]
-      .map(svg => [...svg.querySelectorAll('[data-glyph]')].map(node => node.dataset.glyph).join('+'));
-    expect(glyphs()).toEqual(['axis', 'aircraft', 'aircraft', '', 'axis']);
-    expect(legend.querySelectorAll('li svg path:not([data-glyph])')).toHaveLength(1);
-    expect(legend.querySelector('[data-glyph="aircraft"]').style.fill).toBe('var(--occ-muted)');
+    expect(outlines.map(rect => rect.style.strokeDasharray)).toEqual(['none', '4 3', 'none', '2 2', '1 3']);
+    expect(outlines[2].style.fill).toBe('var(--occ-panel-raised)');
+    expect(stateSwatches().map(glyphsOf)).toEqual(['', '', 'aircraft', 'hatch', '']);
+    expect(legend.querySelector('[data-glyph="aircraft"]').style.fill).toBe('var(--occ-text)');
 
     // One button folds it; its name stays «Leyenda» and aria-expanded says whether it is open.
     const toggle = within(legend).getByRole('button', { name: 'Leyenda' });
@@ -92,12 +101,6 @@ describe('MapLegend', () => {
     expect(list).toBeVisible();
     unmount();
 
-    // «Llegando» has no aircraft yet and «Por liberar» carries the clock on its corner: neither depends on colour.
-    const view = render(<MapLegend stands={createMapStands({ A2: { status: 'releasing' }, A4: { status: 'arriving' } })} />);
-    expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Llegando', 'Ocupada', 'Por liberar']);
-    expect(glyphs().slice(0, 5)).toEqual(['axis', 'aircraft', '', 'aircraft', 'aircraft+clock']);
-    view.unmount();
-
     // English, from the same vocabulary; it can start folded.
     resetLanguageForTests('en');
     render(<LanguageScope><MapLegend stands={STANDS} defaultOpen={false} /></LanguageScope>);
@@ -105,26 +108,48 @@ describe('MapLegend', () => {
     expect(english).toHaveAttribute('aria-expanded', 'false');
     expect(english).toHaveAttribute('title', 'Show legend');
     fireEvent.click(english);
-    expect(legendItems()).toEqual([
-      ...RAMP_ORDER.map(state => STAND_STATES[state].en),
-      `${TAGS.unofficial.en}Internal reference location, not verified`,
-    ]);
+    expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].en), `${TAGS.unofficial.en}Internal reference location, not verified`]);
     expect(legendItems().at(0)).toBe('Free');
   });
 
-  it('outlines each state as wide and as dashed as the frame the map draws for it', () => {
+  it('every state swatch differs from every other without colour and uses the STAND_STATES word', () => {
+    // One stand of each state, as a screen derived it.
+    const stands = STAND_STATE_KEYS.map((state, index) => ({ ...DRAWN[index], displayStatus: state, locationSource: 'occ' }));
+    const view = render(<MapLegend stands={stands} />);
+    expect(legendItems()).toEqual(STAND_STATE_KEYS.map(state => STAND_STATES[state].es));
+    // What each swatch shows without colour: its fill kind, its outline's width and dash, and its marks.
+    const swatches = Object.fromEntries(stateSwatches().map(svg => [svg.closest('li').dataset.state, svg]));
+    const channels = state => {
+      const svg = swatches[state];
+      const outline = svg.querySelector('rect');
+      return JSON.stringify([svg.dataset.fill, outline.style.strokeWidth, outline.style.strokeDasharray, glyphsOf(svg)]);
+    };
     for (const state of STAND_STATE_KEYS) {
-      const view = render(<MapLegend stands={[{ id: 'A1', latitude: FLIGHT_POINT[1], longitude: FLIGHT_POINT[0], status: state, locationSource: 'occ' }]} />);
-      const outline = screen.getByTestId('map-legend').querySelector('li svg rect');
-      // The one line of the frame image the map's frame layer draws for this state (stands/standLayers.js).
-      const [line] = MAP_IMAGE_SHAPES[standAppearance(state).frame.image].ops;
-      expect(Number(outline.style.strokeWidth), state).toBe(line.lineWidth);
-      expect(outline.style.strokeDasharray, state).toBe(line.dash ? line.dash.join(' ') : 'none');
-      view.unmount();
+      const { fill, outline, dash } = STAND_STATES[state];
+      const svg = swatches[state];
+      // The vocabulary's fill kind, outline width and dash, as the map's layers draw them (standPaint).
+      expect(svg.dataset.fill, state).toBe(fill.kind);
+      expect(Number(svg.querySelector('rect').style.strokeWidth), state).toBe(outline.width);
+      expect(svg.querySelector('rect').style.strokeDasharray, state).toBe(dash ? dash.join(' ') : 'none');
+      expect(svg.querySelector('rect').style.stroke, state).toBe(`var(${standPaint(state).outline.token})`);
     }
-    // The four widths of the vocabulary are all there: 1 px, 1.5 px, 2 px and 2.5 px.
-    const widths = STAND_STATE_KEYS.map(state => MAP_IMAGE_SHAPES[standAppearance(state).frame.image].ops[0].lineWidth);
-    expect([...new Set(widths)].sort((first, second) => first - second)).toEqual([1, 1.5, 2, 2.5]);
+    // The marks: the aircraft on «Ocupada» and «Por liberar», the clock of «Por liberar», the lead-in of «Llegando»
+    // and the hatch of «Inhabilitada».
+    expect(Object.fromEntries(STAND_STATE_KEYS.map(state => [state, glyphsOf(swatches[state])]))).toEqual({
+      available: '', planned: '', arriving: 'leadin', occupied: 'aircraft', releasing: 'aircraft+clock',
+      disabled: 'hatch', unverified: '',
+    });
+    for (const [index, first] of STAND_STATE_KEYS.entries()) {
+      for (const second of STAND_STATE_KEYS.slice(index + 1)) {
+        expect(channels(first), `${first} and ${second} differ only in colour`).not.toBe(channels(second));
+      }
+    }
+    expect(swatches.occupied.querySelector('[data-glyph="aircraft"]').getAttribute('d')).toBe(AIRCRAFT_SILHOUETTE_PATH);
+    view.unmount();
+
+    resetLanguageForTests('en');
+    render(<LanguageScope><MapLegend stands={stands} /></LanguageScope>);
+    expect(legendItems()).toEqual(STAND_STATE_KEYS.map(state => STAND_STATES[state].en));
   });
 
   it('lists the flights drawn on screen first, with the aircraft the map draws for them', () => {
@@ -180,13 +205,13 @@ describe('MapLegend', () => {
     const map = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(map, 'style.load'));
     // The FBO view: free stands and BN6 without a database row, all at their reference location.
-    expect(legendItems()).toEqual(['Libre', 'Sin verificar', `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`]);
+    expect(legendItems()).toEqual(['Libre', 'Sin verificar', UNOFFICIAL]);
 
     fireEvent.keyDown(map.getCanvas(), { key: '4' });
     expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
 
     // Up close on A1 to A3, the stands OCC placed: their states and no «No oficial».
-    act(() => map.jumpTo({ center: [-68.360889, 18.56418], zoom: 19.4 }));
+    act(() => map.jumpTo({ center: standPoint('A2'), zoom: 19.4 }));
     expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada']);
   });
 
@@ -199,66 +224,59 @@ describe('MapLegend', () => {
     const { rerender } = render(screenWith(undefined));
     const map = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(map, 'style.load'));
-    // Up close on A2: A1 (occupied) on its right, A3 (planned) and A4 (at its reference location) on its left.
+    // Up close on A2: A1 (occupied) on its right, A3 (planned) on its left, then A4 and A5 at their reference location,
+    // and the tails of the remote stands AN1 to AN4 along the top edge.
     act(() => map.jumpTo({ center: standPoint('A2'), zoom: 18 }));
-    const unofficial = `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`;
-    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', unofficial]);
+    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', UNOFFICIAL]);
 
-    // A panel over the right of the map hides A1, the only occupied stand: «Ocupada» leaves the legend.
-    rerender(screenWith({ top: 0, right: 540, bottom: 0, left: 0 }));
-    expect(legendItems()).toEqual(['Libre', 'Planificada', unofficial]);
-    // One over the left hides A4, the only stand at its reference location: «No oficial» goes with it.
-    rerender(screenWith({ left: 300 }));
+    // A panel over the right of the map that covers A1, the only occupied stand: «Ocupada» leaves the legend.
+    const right = Math.ceil(1440 - pixelBox(map, 'A1').left) + 4;
+    rerender(screenWith({ top: 0, right, bottom: 0, left: 0 }));
+    expect(legendItems()).toEqual(['Libre', 'Planificada', UNOFFICIAL]);
+    // Panels over the left and the top that cover A4, A5 and the remote stands, the stands at their reference location:
+    // «No oficial» goes with them.
+    const left = Math.ceil(Math.max(pixelBox(map, 'A4').right, pixelBox(map, 'A5').right)) + 4;
+    const top = Math.ceil(Math.max(...['AN1', 'AN2', 'AN3', 'AN4'].map(code => pixelBox(map, code).bottom))) + 4;
+    expect(left).toBeLessThan(pixelBox(map, 'A3').left);
+    rerender(screenWith({ left, top }));
     expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada']);
     // Folded, the whole map is back.
     rerender(screenWith(undefined));
-    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', unofficial]);
+    expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada', UNOFFICIAL]);
   });
 
-  it('explains clusters in the airfield view with the stands it still draws on their own, and has nothing to explain where no stand is drawn', () => {
+  it('lists the terminal chip and the signals only when they are on screen', () => {
     render(
-      <OccMap stands={STANDS}>
+      <OccMap stands={scenarioStands()} frozenAt={NOW}>
         <MapLegend />
       </OccMap>,
     );
     const map = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(map, 'style.load'));
-    // The ramp view draws every stand on its own: the legend does not ask the map what it draws.
-    drawStands(map, ['BN6']);
-    expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
-
-    // The airfield view gathers the stands into clusters, which carry no state: the legend says what a cluster is, and
-    // explains BN6, with no neighbour close enough to join a cluster, which the map still draws on its own.
-    fireEvent.keyDown(map.getCanvas(), { key: '3' });
+    // The ramp view: the seven states, the attention signal (A3 covered by nobody, B21 past its departure) and the
+    // urgent one (A4, another flight arriving), the link of A10 to A9 and the tag.
     expect(legendItems()).toEqual([
-      'Grupo de posicionesAcerca el mapa para ver cada una', 'Sin verificar', `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`,
+      ...STAND_STATE_KEYS.map(state => STAND_STATES[state].es), ATTENTION, URGENT, COMBINED, UNOFFICIAL,
     ]);
-    const circle = screen.getByTestId('map-legend').querySelector('li svg circle');
-    expect([circle.style.fill, circle.style.stroke]).toEqual(['var(--occ-panel-raised)', 'var(--occ-line-strong)']);
-    // When every stand in sight is in a cluster, as the map tells once it settles, only the cluster is explained.
-    drawStands(map, []);
-    act(() => fake.state.emit(map, 'idle'));
-    expect(legendItems()).toEqual(['Grupo de posicionesAcerca el mapa para ver cada una']);
+    const shapes = [...screen.getByTestId('map-legend').querySelectorAll('svg[data-swatch="signal"]')];
+    expect(shapes.map(svg => svg.dataset.shape)).toEqual(['triangle', 'octagon']);
+    // Each in its colour, with the shape of the map's image and a dark «!».
+    const [triangle, octagon] = shapes.map(svg => svg.querySelector('path'));
+    expect([triangle.style.fill, octagon.style.fill]).toEqual(['var(--occ-warn)', 'var(--occ-danger)']);
+    expect(triangle.getAttribute('d')).toBe(MAP_IMAGE_SHAPES['signal-attention'].ops[0].fill);
+    expect(shapes[1].querySelector('[data-glyph="exclamation"]').style.fill).toBe('var(--occ-nav)');
+    expect(screen.queryByText('Posiciones de una terminal')).not.toBeInTheDocument();
 
-    // Region and approach draw no stand at all.
-    fireEvent.keyDown(map.getCanvas(), { key: '1' });
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
-    fireEvent.keyDown(map.getCanvas(), { key: '2' });
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
-    fireEvent.keyDown(map.getCanvas(), { key: '4' });
-    expect(legendItems().at(-1)).toBe(`${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`);
-    cleanup();
+    // The FBO, where nothing carries a signal: no signal entry.
+    act(() => map.jumpTo({ center: standPoint('BN9'), zoom: 18 }));
+    expect(legendItems().some(item => item.startsWith(SIGNALS.attention.es) || item.startsWith(SIGNALS.urgent.es))).toBe(false);
 
-    resetLanguageForTests('en');
-    window.history.replaceState({}, '', `${PAGE}&view=airfield`);
-    render(<LanguageScope><OccMap stands={STANDS}><MapLegend /></OccMap></LanguageScope>);
-    const english = fake.state.liveMaps().at(-1);
-    drawStands(english, []);
-    act(() => fake.state.emit(english, 'style.load'));
-    // Opened on a grouped view, the map has drawn nothing of the stands until it settles: its first idle frame tells.
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
-    act(() => fake.state.emit(english, 'idle'));
-    expect(legendItems()).toEqual(['Group of standsZoom in to see each one']);
+    // Below the polygon threshold the chips stand for the stands: only the chip is explained.
+    const { airfield } = presetTargets({ stands: STANDS, layout: MDPC_LAYOUT });
+    act(() => map.jumpTo({ center: boundsCenter(airfield.bounds), zoom: 12.5 }));
+    expect(legendItems()).toEqual([CHIP]);
+    const chip = screen.getByTestId('map-legend').querySelector('svg[data-swatch="chip"] rect');
+    expect([chip.style.fill, chip.style.stroke]).toEqual(['var(--occ-panel-raised)', 'var(--occ-line-strong)']);
   });
 
   it('shows «Pista», «Calle de rodaje» and «Punto de espera» only when on screen, in Spanish and English', () => {
@@ -288,7 +306,7 @@ describe('MapLegend', () => {
       'Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal',
     ]);
     const legend = screen.getByTestId('map-legend');
-    expect([...legend.querySelectorAll('li svg[data-swatch]')].map(svg => svg.dataset.swatch))
+    expect([...legend.querySelectorAll('li svg[data-swatch]')].map(svg => svg.dataset.swatch).filter(kind => kind !== 'state'))
       .toEqual(['runway', 'taxiway', 'holdBar', 'apron', 'terminal']);
     // A rule across the legend sets the airfield apart; it is not an entry of the list.
     const rule = legend.querySelector('[data-legend-rule]');
@@ -359,7 +377,7 @@ describe('MapLegend', () => {
     expect(screen.getByTestId('map-legend')).toBeInTheDocument();
     act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 14 }));
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
-    act(() => map.jumpTo({ center: [-68.3634, 18.5674], zoom: 15 }));
+    act(() => map.jumpTo({ center: standPoint('A5'), zoom: 15 }));
     expect(screen.getByTestId('map-legend')).toBeInTheDocument();
     cleanup();
 

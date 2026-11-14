@@ -47,6 +47,24 @@ describe('map messages', () => {
       en('airfield.unnamed')]).toEqual(['Runway 09/27', '3100 m × 45 m', 'Taxiway B', 'Unnamed taxiway']);
   });
 
+  it('names the stand marks of the legend in both languages: the terminal chip, the combined link and the narrow-body box', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    const keys = ['chip', 'chipHint', 'combined', 'narrowbody'];
+    expect(keys.map(key => es(`legend.${key}`))).toEqual([
+      'Posiciones de una terminal', 'Ocupadas del total; acerca el mapa para ver cada una',
+      'Enlace con la posición que la anula', 'Caja de fuselaje estrecho',
+    ]);
+    expect(keys.map(key => en(`legend.${key}`))).toEqual([
+      'Stands of a terminal', 'Occupied of the total; zoom in to see each one', 'Link to the stand that cancels it', 'Narrow-body box',
+    ]);
+    // The signals take their words from the vocabulary (SIGNALS), so no message repeats them.
+    expect(Object.keys(mapMessages.es.legend).filter(key => /attention|urgent/i.test(key))).toEqual([]);
+    // The clusters of M2 are gone with their words.
+    expect(Object.keys(mapMessages.es.legend)).not.toContain('group');
+    expect(Object.keys(mapMessages.en.legend)).not.toContain('groupHint');
+  });
+
   it('the base-map notice names nothing that a map may not draw', () => {
     // Every map shows it: Monitoreo draws no stand, and the region and approach views draw none either.
     for (const language of ['es', 'en']) {

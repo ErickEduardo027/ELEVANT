@@ -1,6 +1,7 @@
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
 import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
+import { qaPoint } from '../testing/mapFixtures';
 import { basemapLayers } from './basemapLayers';
 import { createImageResolver } from './mapImages';
 import { BASEMAP_COLORS } from './mapTheme';
@@ -9,41 +10,50 @@ import {
   buildOccStyle, groupLayerIds, nextSlot, slotMarkerId,
 } from './occStyle';
 
-// An overlay shaped like the point stands of the positions map: four layers in three slots, state colours from the
-// OCC palette (one of them see-through), icons from mapImages.js, a pick target and a derived threshold.
+// An overlay shaped like the stand polygons of the positions map: layers in three slots, state colours from the OCC
+// palette (one of them see-through), an icon and a pattern from mapImages.js, a pick target and a derived threshold.
+// A stand box of the invented airport of the fixtures: no stand of Punta Cana is written by hand.
+const STAND_BOX = [qaPoint(0, 0), qaPoint(40, 0), qaPoint(40, 50), qaPoint(0, 50), qaPoint(0, 0)];
 const STAND_OVERLAY = {
   sources: {
     'occ-stands': {
       type: 'geojson',
       promoteId: 'code',
-      data: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { code: 'A1' }, geometry: { type: 'Point', coordinates: [-68.36, 18.57] } }] },
+      data: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { code: 'A1' }, geometry: { type: 'Polygon', coordinates: [STAND_BOX] } }] },
     },
   },
   layers: [
     {
       slot: 'stands',
       id: 'occ-stands-slab',
-      type: 'symbol',
+      type: 'fill',
       source: 'occ-stands',
       filter: ['match', ['get', 'state'], ['arriving', 'occupied', 'releasing'], true, false],
-      layout: { 'icon-image': 'stand-slab', 'icon-allow-overlap': true },
       paint: {
-        'icon-color': ['match', ['get', 'state'], 'arriving', occColor('arriving-fill'), occColor('panel-raised')],
+        'fill-color': ['match', ['get', 'state'], 'arriving', occColor('arriving-fill'), occColor('panel-raised')],
+      },
+      metadata: { 'occ:group': 'stands', 'occ:pick': 'stand', 'occ:pickId': 'code' },
+    },
+    {
+      slot: 'stands',
+      id: 'occ-stands-frame',
+      type: 'line',
+      source: 'occ-stands',
+      paint: {
+        'line-color': ['match', ['get', 'state'], 'planned', occColor('muted'), occColor('line-strong')],
+        'line-width': 1.5,
+        'line-dasharray': [2, 2],
       },
       metadata: { 'occ:group': 'stands' },
     },
     {
       slot: 'stands',
-      id: 'occ-stands-frame',
-      type: 'symbol',
+      id: 'occ-stands-hatch',
+      type: 'fill',
       source: 'occ-stands',
-      layout: {
-        'icon-image': ['match', ['get', 'dash'], '4-3', 'stand-frame-dash-4-3', '2-2', 'stand-frame-dash-2-2', '1-3',
-          'stand-frame-dot-1-3', 'stand-frame-solid'],
-        'icon-allow-overlap': true,
-      },
-      paint: { 'icon-color': ['match', ['get', 'state'], 'planned', occColor('muted'), occColor('line-strong')] },
-      metadata: { 'occ:group': 'stands', 'occ:pick': 'stand', 'occ:pickId': 'code' },
+      filter: ['==', ['get', 'state'], 'disabled'],
+      paint: { 'fill-pattern': 'stand-hatch-pattern' },
+      metadata: { 'occ:group': 'stands' },
     },
     {
       slot: 'standLabels',
@@ -60,7 +70,7 @@ const STAND_OVERLAY = {
       type: 'symbol',
       source: 'occ-stands',
       filter: ['==', ['get', 'code'], ''],
-      layout: { 'icon-image': 'stand-selected', 'icon-allow-overlap': true },
+      layout: { 'icon-image': 'glyph-aircraft', 'icon-allow-overlap': true },
       paint: { 'icon-color': occColor('accent') },
       metadata: { 'occ:group': 'selection' },
     },
@@ -189,7 +199,7 @@ describe('OCC map style', () => {
     for (const layer of style.layers) expect(typeof layer.metadata?.['occ:group'], layer.id).toBe('string');
     const ids = style.layers.map(layer => layer.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(groupLayerIds(style, 'stands')).toEqual(['occ-stands-slab', 'occ-stands-frame', 'occ-stand-codes']);
+    expect(groupLayerIds(style, 'stands')).toEqual(['occ-stands-slab', 'occ-stands-frame', 'occ-stands-hatch', 'occ-stand-codes']);
     expect(groupLayerIds(style, 'buildings-3d')).toEqual(['building-3d']);
     expect(style.layers.find(layer => layer.id === 'building-3d').layout.visibility).toBe('none');
     // Overlay sources are born empty; the engine fills them.
@@ -286,20 +296,19 @@ describe('OCC map style', () => {
     expect(drawn.filter(colour => !markedValues.has(colour))).toEqual([occColor('muted')]);
   });
 
-  it('every icon-image the style names resolves through createImageResolver', () => {
+  it('every icon-image and fill-pattern the style names resolves through createImageResolver', () => {
     const style = buildOccStyle({ overlays: [STAND_OVERLAY] });
     const named = [...new Set(style.layers.flatMap(layer => {
       const value = layer.layout?.['icon-image'];
       return value === undefined ? [] : imageIdsIn(value);
     }))];
-    expect(named).toEqual([
-      'airport-arp', 'stand-slab', 'stand-frame-dash-4-3', 'stand-frame-dash-2-2', 'stand-frame-dot-1-3',
-      'stand-frame-solid', 'stand-selected',
-    ]);
+    expect(named).toEqual(['airport-arp', 'glyph-aircraft']);
     const resolve = createImageResolver({ rasterize: squareRasterizer });
     for (const id of named) expect(resolve(id), id).toMatchObject({ sdf: true });
-    // SDF images cannot be patterns, so the style uses none.
-    const patterns = style.layers.flatMap(layer => Object.keys(layer.paint ?? {}).filter(property => property.endsWith('-pattern')));
-    expect(patterns).toEqual([]);
+    // An SDF cannot be a pattern: a pattern the style names is an image painted in its token.
+    const patterns = style.layers.flatMap(layer => Object.entries(layer.paint ?? {})
+      .filter(([property]) => property.endsWith('-pattern')).map(([, value]) => value));
+    expect(patterns).toEqual(['stand-hatch-pattern']);
+    for (const id of patterns) expect(resolve(id), id).toMatchObject({ sdf: false });
   });
 });

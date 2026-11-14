@@ -5,19 +5,21 @@ import { expect, production, test } from '../support/test.mjs';
 // Mapa de posiciones on the one map engine, with a synthetic OCC session and a stubbed API (fixtures/occApi.mjs), in
 // `next dev` and against a production build (OCC_VISUAL_TARGET=production). Lessons 4 and 7 of PR M1: the zoom
 // buttons and the view presets really move the camera in both builds, and re-reading the positions keeps the same
-// map instead of starting a new one. The page shows one legend, the map's.
+// map instead of starting a new one. The page shows one legend, the map's, and the map draws the stands as polygons
+// with the state of now (PR M4): Rampa, a terminal and Aeródromo are photographed at 1440 × 900 and 1920 × 1080.
 
 const PAGE = '/admin-occ/positions-map';
 const target = production ? 'production' : 'development';
+const SIZES = Object.freeze([{ width: 1440, height: 900 }, { width: 1920, height: 1080 }]);
 
-async function openPositionsMap(page, isolation) {
+async function openPositionsMap(page, isolation, query = '') {
   const api = createOccApi();
   isolation.setApi(api.handle);
   await page.addInitScript(([key, session]) => {
     window.localStorage.setItem(key, JSON.stringify(session));
   }, [AUTH_STORAGE_KEY, occSession()]);
-  const response = await page.goto(PAGE);
-  expect(response?.status(), `GET ${PAGE}`).toBe(200);
+  const response = await page.goto(`${PAGE}${query}`);
+  expect(response?.status(), `GET ${PAGE}${query}`).toBe(200);
   const container = page.getByTestId('position-map-container');
   // What the cycle E2E waits for: the positions map container and its canvas.
   await expect(container.locator('.maplibregl-canvas')).toBeVisible();
@@ -25,6 +27,14 @@ async function openPositionsMap(page, isolation) {
   await mapReady(map);
   await expect.poll(() => api.reads, { message: 'the positions board was read' }).toBeGreaterThan(0);
   return { api, map, container };
+}
+
+// Resolves once the map of the page has drawn the positions with nothing left to load, place or fade: the legend
+// says the stands are on screen, and OccMap marks its root settled after the idle frame that follows its last write.
+async function settled(page) {
+  await expect(page.getByTestId('positions-map-skeleton')).toHaveCount(0);
+  await expect(page.getByTestId('map-legend')).toBeVisible();
+  await expect(page.getByTestId('occ-map')).toHaveAttribute('data-occ-settled', 'true');
 }
 
 test.describe('Mapa de posiciones on the map engine', () => {
@@ -82,12 +92,36 @@ test.describe('Mapa de posiciones on the map engine', () => {
     await expect(page.locator('#main-content').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(page.getByRole('banner').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(map.getByRole('button', { name: 'Leyenda', exact: true })).toBeVisible();
-    // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial»;
-    // then the airfield the map draws from the MDPC dataset in the ramp view (PR M3).
+    // The stub board read now: every state of the vocabulary in its order, the attention signal of the two stands with a
+    // flight due and nobody covering them, the link of A10 to A9 and «No oficial»; then the airfield the map draws from
+    // the MDPC dataset in the ramp view (PR M3).
     await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem')).toHaveText([
-      'Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar', /^No oficial/,
-      'Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal',
+      'Libre', 'Planificada', 'Llegando', 'Ocupada', 'Por liberar', 'Inhabilitada', 'Sin verificar', /^Atención/, /^Enlace con/,
+      /^No oficial/, 'Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal',
     ]);
     await expect(page.getByText('Configuración combinada')).toHaveCount(0);
   });
+
+  for (const size of SIZES) {
+    test(`Mapa de posiciones at Rampa, one terminal and Aeródromo, ${size.width}×${size.height}`, async ({ page, isolation }, testInfo) => {
+      await page.setViewportSize(size);
+      const { map } = await openPositionsMap(page, isolation);
+      await expect(map).toHaveAttribute('data-occ-view', 'ramp');
+      await settled(page);
+      await shoot(page, testInfo, `positions-map-ramp-${size.width}`);
+
+      // Terminal A through the URL, as a link to it opens it.
+      await page.goto(`${PAGE}?view=ramp&terminal=A`);
+      await mapReady(map);
+      await expect(map).toHaveAttribute('data-occ-view', 'ramp');
+      await settled(page);
+      await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem')).toContainText(['Llegando', 'Por liberar', 'Inhabilitada']);
+      await shoot(page, testInfo, `positions-map-terminal-a-${size.width}`);
+
+      await map.getByRole('group', { name: 'Vista del mapa' }).getByRole('button', { name: VIEW_LABELS.airfield, exact: true }).click();
+      await expect(map).toHaveAttribute('data-occ-view', 'airfield');
+      await settled(page);
+      await shoot(page, testInfo, `positions-map-airfield-${size.width}`);
+    });
+  }
 });

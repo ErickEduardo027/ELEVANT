@@ -50,15 +50,22 @@ const STANDS = [
   // BN13 is left out: a map stand with no database row reads as «Sin verificar».
   ...['BN6', 'BN7', 'BN8', 'BN9', 'BN10', 'BN11', 'BN12'].map(code => [code, 'FBO', 'Remote']),
 ];
-// Synthetic visits: on the stand, due on it, and a free stand cancelled by its combined neighbour.
+// Synthetic visits: on the stand, due on it, and a free stand cancelled by its combined neighbour; then a flight due
+// within 15 minutes («Llegando» on the map) and an aircraft leaving within 15 («Por liberar»). Two stands with a flight
+// due within the hour have nobody covering them («Sin agente que la cubra»).
 const OCCUPIED = new Map([['A2', 1], ['A6', 2], ['B21', 3], ['B31', 4], ['BN8', 5]]);
 const PLANNED = new Map([['A4', 6], ['A9', 7], ['B25', 8], ['AN2', 9]]);
+const ARRIVING = new Map([['A3', [10, 8]], ['B24', [11, 12]]]);
+const RELEASING = new Map([['A7', 12]]);
+const UNCOVERED = new Set(['B24', 'AN2']);
 const CANCELLED_BY = new Map([['A10', 'A9']]);
 
 const uuid = (group, index) => `${group}-0000-4000-8000-${String(index).padStart(12, '0')}`;
 const minutes = (base, delta) => new Date(base + delta * 60 * 1000).toISOString();
 
-function turnaround(index, now, { arrived }) {
+// A visit of the board: its arrival `arrivalInMin` minutes from `now` (recorded 5 minutes later when `arrived`) and
+// its departure `departureInMin` minutes from it.
+function turnaround(index, now, { arrived, arrivalInMin = arrived ? -40 : 50, departureInMin = arrived ? 45 : 140 }) {
   return {
     turnaroundId: uuid('7a1b2c3d', index),
     operationCode: `VIS-TAT-${String(index).padStart(4, '0')}`,
@@ -66,9 +73,9 @@ function turnaround(index, now, { arrived }) {
     aircraftRegistration: `HI${1000 + index}`,
     arrivalFlightNumber: `ZZ${100 + index}`,
     departureFlightNumber: `ZZ${200 + index}`,
-    arrivalScheduledAt: minutes(now, arrived ? -40 : 50),
-    arrivedAt: arrived ? minutes(now, -35) : null,
-    departureScheduledAt: minutes(now, arrived ? 45 : 140),
+    arrivalScheduledAt: minutes(now, arrivalInMin),
+    arrivedAt: arrived ? minutes(now, arrivalInMin + 5) : null,
+    departureScheduledAt: minutes(now, departureInMin),
     assignedFrom: minutes(now, -120),
     status: arrived ? 'InProgress' : 'Planned',
   };
@@ -82,14 +89,19 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
     operationDate: date,
     asOf: new Date(now).toISOString(),
     positions: STANDS.map(([code, terminalCode, standType], index) => {
-      const visit = OCCUPIED.has(code) ? turnaround(OCCUPIED.get(code), now, { arrived: true })
-        : PLANNED.has(code) ? turnaround(PLANNED.get(code), now, { arrived: false }) : null;
+      let visit = null;
+      if (OCCUPIED.has(code)) visit = turnaround(OCCUPIED.get(code), now, { arrived: true });
+      else if (RELEASING.has(code)) visit = turnaround(RELEASING.get(code), now, { arrived: true, arrivalInMin: -50, departureInMin: 10 });
+      else if (ARRIVING.has(code)) {
+        const [visitIndex, arrivalInMin] = ARRIVING.get(code);
+        visit = turnaround(visitIndex, now, { arrived: false, arrivalInMin, departureInMin: arrivalInMin + 60 });
+      } else if (PLANNED.has(code)) visit = turnaround(PLANNED.get(code), now, { arrived: false });
       return {
         standId: uuid('5e4d3c2b', index + 1),
         code,
         terminalCode,
         standType,
-        status: OCCUPIED.has(code) ? 'occupied' : PLANNED.has(code) ? 'planned' : 'available',
+        status: visit === null ? 'available' : visit.arrivedAt ? 'occupied' : 'planned',
         turnarounds: visit ? [visit] : [],
         latitude: null,
         longitude: null,
@@ -98,7 +110,7 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
         maxAircraftSize: null,
         cancelledBy: CANCELLED_BY.get(code) ?? null,
         narrowbodyOnly: false,
-        coveredBy: visit ? ['Agente de prueba'] : [],
+        coveredBy: visit && !UNCOVERED.has(code) ? ['Agente de prueba'] : [],
       };
     }),
     unassigned: [],

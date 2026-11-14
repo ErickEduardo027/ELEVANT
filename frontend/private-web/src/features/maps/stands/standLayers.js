@@ -1,226 +1,382 @@
 import { occColor } from '../../occ-ui/occPalette';
-import { STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
-import { standFrameImage } from '../style/mapImages';
+import { SIGNALS, STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { FONT_STACKS } from '../style/occStyle';
-import { SELECTION_SOURCE, STAND_ICON_SIZE } from '../style/selectionLayers';
+import { SELECTION_SOURCE } from '../style/selectionLayers';
 
-// The stands of the OCC maps as points (until PR M4 brings their polygons), drawn in the vocabulary of
-// occ-ui/statusVocabulary.js: each state is a fill, a frame and a glyph made of the SDF images of style/mapImages.js,
-// painted in OCC tokens. Normal states carry no hue; the selection casing is the selection overlay's. The stands
-// belong to the Aeródromo and Rampa views: below the derived `polygons` threshold nothing of them is drawn, so the
-// region and approach views show the airport's reference point. Clusters gather them until they can be told apart
-// (below the ramp view; on the console's apron, below the airfield view) and carry no hue either. Pure: OccMap adds
-// the overlay and fills the source with stands/standFeatures.js.
+// The stands of the OCC maps as polygons with their state (PR M4, design D2), drawn in the vocabulary of
+// occ-ui/statusVocabulary.js: each state is a fill (none, a see-through tint, the raised slab or the hatch), an outline
+// with its width and dash, and the marks that go with it (the aircraft of a stand with an aircraft on it, the clock of
+// «Por liberar», the emphasised lead-in of «Llegando», the link of a stand a combined stand cancels). Normal states
+// carry no hue; cyan is the selection, amber and red the signals. What the map draws depends on the zoom, through the
+// thresholds derived from the fitted views (contracts 2.3, never a fixed zoom): one chip per terminal from the airfield
+// threshold up to the stand polygons; the polygons, their marks and signals from `polygons` (the airfield fit − 0.3);
+// codes, flights and lead-ins from `codes` (the ramp fit − 0.3; the console's apron shows its codes from `polygons`);
+// the three-line labels from `threeLine` (the ramp fit + 0.8). Hover, selection, related and same-agent marks are
+// feature-state, so a pointer or a selection never rewrites the data. Pure: OccMap adds the overlay and fills the four
+// sources with stands/standFeatures.js.
 
 export const STAND_SOURCE = 'occ-stands';
-export const STAND_GROUP = 'stands';
-/** The layer that draws each stand on its own (its frame, the pick target), and the one that draws the clusters. */
-export const STAND_FRAME_LAYER = 'occ-stands-frame';
-export const STAND_CLUSTER_LAYER = 'occ-stands-clusters';
-/** The layers whose rendered features say what the map draws of the stands (drawnStands). */
-export const STAND_DRAWN_LAYERS = Object.freeze([STAND_FRAME_LAYER, STAND_CLUSTER_LAYER]);
-/** `dashboard` is the console's apron map: codes from the airfield view on, planned and selected codes first. */
-export const STAND_LABEL_MODES = Object.freeze(['default', 'dashboard']);
-
-const CLUSTER_RADIUS_PX = Object.freeze({ default: 50, dashboard: 35 });
-// Where the clusters stopped before M2, until the fitted zooms of the screen give their limit (standClusterOptions).
-const INITIAL_CLUSTER_MAX_ZOOM = Object.freeze({ default: 14, dashboard: 12 });
-
-const FILL_IMAGES = Object.freeze({ tint: 'stand-slab', solid: 'stand-slab', hatch: 'stand-hatch' });
-
-// What the markers meant before M2, in the vocabulary: an aircraft inside the stand while a visit holds it (planned,
-// occupied, releasing), the axis mark of an empty stand (free, unverified), and the clock that tells «Por liberar»
-// from «Ocupada». «Llegando» stays empty, its aircraft is not there yet; «Inhabilitada» shows its hatch.
-const GLYPHS = Object.freeze({
-  available: { centre: 'glyph-axis', badge: null },
-  planned: { centre: 'glyph-aircraft', badge: null },
-  arriving: { centre: null, badge: null },
-  occupied: { centre: 'glyph-aircraft', badge: null },
-  releasing: { centre: 'glyph-aircraft', badge: 'glyph-clock' },
-  disabled: { centre: null, badge: null },
-  unverified: { centre: 'glyph-axis', badge: null },
+export const STAND_AUX_SOURCE = 'occ-stand-aux';
+export const STAND_LABEL_SOURCE = 'occ-stand-labels';
+export const STAND_GROUP_SOURCE = 'occ-stand-groups';
+/** The source of each collection of buildStandFeatures (stands/standFeatures.js). */
+export const STAND_SOURCES = Object.freeze({
+  polygons: STAND_SOURCE, aux: STAND_AUX_SOURCE, labels: STAND_LABEL_SOURCE, groups: STAND_GROUP_SOURCE,
 });
+export const STAND_GROUP = 'stands';
+/** The layer that paints every stand's polygon: the pick target of a stand. */
+export const STAND_FILL_LAYER = 'occ-stands-fill';
+/** The layer of the terminal chips: the pick target of a terminal. */
+export const STAND_CHIP_LAYER = 'occ-stand-groups';
+/** `dashboard` is the console's apron map: codes from the stand polygons on, planned stands placed first. */
+export const STAND_LABEL_MODES = Object.freeze(['default', 'dashboard']);
+/** The feature-state keys of a stand polygon: hover, selection, the stand of the selected flight, the same agent. */
+export const STAND_FEATURE_STATES = Object.freeze(['hover', 'selected', 'related', 'sameAgent']);
 
-// The clock sits on the top right corner of the stand square, clear of the aircraft (icon units, scaled by size).
-const BADGE_OFFSET = Object.freeze([9, -9]);
+const STATE = ['get', 'state'];
+const KIND = ['get', 'kind'];
+const fonts = () => [...FONT_STACKS.bold];
+const LABEL_SIZE = 12;
+const CHIP_TEXT_SIZE = 13;
+// The selection casing hugs the outline: 0.5 px clear of it on both sides, 2 px of cyan beyond.
+const CASING_CLEARANCE = 1;
+const SAME_AGENT_CLEARANCE = 6;
+const HOVER_OPACITY = 0.55;
+// The aircraft of a stand stays inside its box at every zoom: a silhouette about 30 m across on the ground, sized with
+// the map (twice as large for each zoom step). It is a stand-in until the footprints to scale of PR M5.
+export const STAND_GLYPH_SIZE = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 13, 0.17, 16, 1.32, 19.5, 14.93]);
+// Where the signal and the clock sit: the upper corners of the stand around its centre, about 15 m out on the ground
+// (8 px when the stands are small), so they keep clear of the label in the middle as the map grows.
+const cornerOffset = side => ['interpolate', ['exponential', 2], ['zoom'],
+  14, ['literal', [8 * side, -8]], 16, ['literal', [13 * side, -13]], 19.5, ['literal', [147.08 * side, -147.08]]];
+// A label moves above or below the stand's centre when its neighbours leave no room in the middle.
+const LABEL_ANCHORS = Object.freeze(['center', 'bottom', 'top']);
+const LABEL_OFFSET_EM = 1.2;
+// The selected stand's label clears this much around itself, so the same stand's label below it never shows next to it.
+const SELECTED_LABEL_PADDING = 44;
+
+// The marks the vocabulary's `extra` of a state asks the polygon layers for.
+const AIRCRAFT_EXTRAS = new Set(['footprint-progress', 'clock']);
+
+function dashName(dash) {
+  if (dash === null) return 'solid';
+  return `${dash[0] <= 1 ? 'dot' : 'dash'}-${dash.join('-')}`;
+}
 
 /**
- * How a stand state is drawn: `{ fill, frame, glyph, badge }`, each `{ image, color }` or `null`. The images are ids
- * of style/mapImages.js, the frame the one drawn at the width and dash of the state's outline, and the colours the
- * tokens the vocabulary names: the fill token, and the outline token for the frame and its marks.
+ * How a stand state is drawn, from the vocabulary: `{ fill, outline, glyph, clock, leadIn, link, mutedCode }`.
+ * - `fill`: `{ kind ('none' | 'tint' | 'solid' | 'hatch'), token, color, opacity }`, the colour of the token or `null`;
+ * - `outline`: `{ token, color, width, dash, layer }`, the width and dash in pixels and the outline layer that draws it
+ *   (one layer per dash of the vocabulary, Decision D-1);
+ * - `glyph`: `aircraft` for a stand with an aircraft on it (Ocupada, Por liberar), else `null`;
+ * - `clock` (Por liberar), `leadIn` (Llegando: the lead-in emphasised), `link` (Inhabilitada: the link to the stand that
+ *   cancels it) and `mutedCode` (Sin verificar: its code in the faint token). A RangeError for any other state.
  */
-export function standAppearance(state) {
+export function standPaint(state) {
   if (!Object.hasOwn(STAND_STATES, state)) throw new RangeError(`Unknown stand state: ${String(state)}`);
-  const { fill, outline, dash } = STAND_STATES[state];
-  const mark = image => (image === null ? null : { image, color: occColor(outline.token) });
+  const { fill, outline, dash, extra } = STAND_STATES[state];
   return {
-    fill: fill.kind === 'none' ? null : { image: FILL_IMAGES[fill.kind], color: occColor(fill.token) },
-    frame: { image: standFrameImage(outline.width, dash), color: occColor(outline.token) },
-    glyph: mark(GLYPHS[state].centre),
-    badge: mark(GLYPHS[state].badge),
+    fill: { kind: fill.kind, token: fill.token, color: fill.token ? occColor(fill.token) : null, opacity: fill.opacity },
+    outline: {
+      token: outline.token,
+      color: occColor(outline.token),
+      width: outline.width,
+      dash: dash === null ? null : [...dash],
+      layer: `occ-stands-outline-${dashName(dash)}`,
+    },
+    glyph: AIRCRAFT_EXTRAS.has(extra) ? 'aircraft' : null,
+    clock: extra === 'clock',
+    leadIn: extra === 'lead-in',
+    link: extra === 'combined-link',
+    mutedCode: extra === 'muted-code',
   };
 }
 
-const STATUS = ['get', 'status'];
-const IS_POINT = ['!', ['has', 'point_count']];
-const IS_CLUSTER = ['has', 'point_count'];
-const fonts = () => [...FONT_STACKS.bold];
-// Every layer of the stands starts at the derived stand threshold (airfield fit − 0.3, contracts 2.3).
-const FROM_AIRFIELD = Object.freeze({ 'occ:minThreshold': 'polygons' });
-// The threshold the clusters end below, by label mode: the stand codes outside the console, the stands on its apron.
-const CLUSTER_END = Object.freeze({ default: 'codes', dashboard: 'polygons' });
+const statesWhere = predicate => STAND_STATE_KEYS.filter(state => predicate(standPaint(state)));
+// A `match` on the stand state over `states`, with `value(state)` for each; the fallback is the first state's value.
+const byState = (states, value) => ['match', STATE, ...states.flatMap(state => [state, value(state)]), value(states[0])];
+const inStates = states => ['match', STATE, [...states], true, false];
+const featureState = key => ['boolean', ['feature-state', key], false];
+const metadata = (extra = {}) => ({ 'occ:group': STAND_GROUP, 'occ:minThreshold': 'polygons', ...extra });
 
-const statesWith = part => STAND_STATE_KEYS.filter(state => standAppearance(state)[part] !== null);
-// A `match` on the stand state over `states`; the fallback is never reached when the layer filters on those states.
-const byState = (states, value) => ['match', STATUS, ...states.flatMap(state => [state, value(state)]), value(states[0])];
-const onStates = states => ['all', IS_POINT, ['match', STATUS, [...states], true, false]];
-
-function markLayer(id, part, extra = {}) {
-  const states = statesWith(part);
+function standLayer(id, type, { source = STAND_SOURCE, filter, layout, paint, meta } = {}) {
   return {
     slot: 'stands',
     id,
-    type: 'symbol',
-    source: STAND_SOURCE,
-    filter: onStates(states),
-    layout: {
-      'icon-image': byState(states, state => standAppearance(state)[part].image),
-      'icon-size': [...STAND_ICON_SIZE],
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
-      ...extra.layout,
-    },
-    paint: { 'icon-color': byState(states, state => standAppearance(state)[part].color), ...extra.paint },
-    metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD, ...extra.metadata },
+    type,
+    source,
+    ...(filter ? { filter } : {}),
+    ...(layout ? { layout } : {}),
+    paint,
+    metadata: metadata(meta),
   };
 }
 
-const codeLayout = ({ size, offset = null, priority }) => ({
-  'text-field': ['get', 'code'],
-  'text-font': fonts(),
-  'text-size': size,
-  ...(offset === null ? {} : { 'text-offset': offset }),
-  'text-allow-overlap': priority,
-  'text-optional': !priority,
-});
-
-// Outside the console a code goes below its stand, and where a close neighbour's mark or code already sits there,
-// above it or beside it, so the stands of a tight row or column keep readable codes instead of hiding one another.
-const CODE_ANCHORS = Object.freeze(['top', 'bottom', 'left', 'right']);
-const CODE_SIZE_PX = 12;
-const CODE_GAP_PX = 7;
-// The stand square is 24 px at STAND_ICON_SIZE, and 24 px of the 32 px slab image (mapImages.js) the keep-out draws.
-const SQUARE_HALF_PX = 12;
-const SQUARE_SHARE = 24 / 32;
-// The marks ignore placement (every stand is always drawn), so a code would never see them. This invisible copy of
-// the stand square sits above the codes and is placed before them (MapLibre places the upper layer first): the codes
-// then keep off every stand.
-const KEEP_OUT_LAYER = 'occ-stands-keep-out';
-
-// An expression on the zoom stops of STAND_ICON_SIZE whose value follows the mark's size at every zoom.
-function withMarkSize(value) {
-  const stops = [];
-  for (let index = 3; index < STAND_ICON_SIZE.length; index += 2) {
-    stops.push(STAND_ICON_SIZE[index], Math.round(value(STAND_ICON_SIZE[index + 1]) * 1000) / 1000);
+// One outline layer per dash of the vocabulary, its dash constant (in line widths, as MapLibre counts it). States that
+// share a dash but not a width get a layer each, so the dash stays the vocabulary's in pixels.
+function outlineLayers() {
+  const groups = new Map();
+  for (const state of STAND_STATE_KEYS) {
+    const { outline } = standPaint(state);
+    const key = outline.dash === null ? outline.layer : `${outline.layer}|${outline.width}`;
+    if (!groups.has(key)) groups.set(key, { outline, states: [] });
+    groups.get(key).states.push(state);
   }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
+  const ids = [...groups.values()].map(group => group.outline.layer);
+  return [...groups.values()].map(({ outline, states }) => {
+    const shared = ids.filter(id => id === outline.layer).length > 1;
+    const id = shared ? `${outline.layer}-${String(outline.width).replace('.', '-')}px` : outline.layer;
+    return standLayer(id, 'line', {
+      filter: inStates(states),
+      layout: { 'line-join': 'miter' },
+      paint: {
+        'line-color': byState(states, state => standPaint(state).outline.color),
+        'line-width': byState(states, state => standPaint(state).outline.width),
+        ...(outline.dash === null ? {} : { 'line-dasharray': outline.dash.map(length => length / outline.width) }),
+      },
+    });
+  });
 }
 
-/** How far a code sits from its stand's centre, in ems of the code: half the mark plus a 7 px gap, at every zoom. */
-export const CODE_OFFSET = withMarkSize(size => (SQUARE_HALF_PX * size + CODE_GAP_PX) / CODE_SIZE_PX);
-/** The size of the invisible keep-out: the stand square only, without the image's clear margin. */
-export const KEEP_OUT_SIZE = withMarkSize(size => size * SQUARE_SHARE);
+// A casing around every stand outline, as wide as the outline plus `clearance`, shown by feature-state.
+function casingLayer(id, { color, width, clearance, opacity, dash }) {
+  return standLayer(id, 'line', {
+    layout: { 'line-join': 'miter' },
+    paint: {
+      'line-color': color,
+      'line-width': width,
+      'line-gap-width': byState(STAND_STATE_KEYS, state => standPaint(state).outline.width + clearance),
+      ...(dash ? { 'line-dasharray': dash.map(length => length / width) } : {}),
+      'line-opacity': opacity,
+    },
+  });
+}
 
-const codePaint = haloWidth => ({
-  // «Sin verificar» keeps its code muted (the vocabulary's muted code); every other code reads in the text colour.
-  'text-color': ['match', STATUS, 'unverified', occColor('faint'), occColor('text')],
-  'text-halo-color': occColor('nav'),
-  'text-halo-width': haloWidth,
+function polygonLayers() {
+  const hatched = statesWhere(paint => paint.fill.kind === 'hatch');
+  const emphasised = statesWhere(paint => paint.leadIn);
+  const linked = statesWhere(paint => paint.link);
+  const lead = standPaint(emphasised[0]).outline;
+  const link = standPaint(linked[0]).outline;
+  return [
+    // Every state, so every stand is a pick target; only a tint or the slab paints (a hatch has a layer of its own).
+    standLayer(STAND_FILL_LAYER, 'fill', {
+      paint: {
+        'fill-color': byState(STAND_STATE_KEYS, state => {
+          const paint = standPaint(state);
+          return paint.fill.color ?? paint.outline.color;
+        }),
+        'fill-opacity': byState(STAND_STATE_KEYS, state => {
+          const { fill } = standPaint(state);
+          return fill.kind === 'tint' || fill.kind === 'solid' ? fill.opacity : 0;
+        }),
+      },
+      meta: { 'occ:pick': 'stand', 'occ:pickId': 'code' },
+    }),
+    standLayer('occ-stands-hatch', 'fill', { filter: inStates(hatched), paint: { 'fill-pattern': 'stand-hatch-pattern' } }),
+    ...outlineLayers(),
+    // Where the aircraft taxis in: a hairline from the codes on, and the arriving stand's, as wide as its outline, from
+    // the polygons on. It never moves.
+    standLayer('occ-stands-leadin', 'line', {
+      source: STAND_AUX_SOURCE,
+      filter: ['==', KIND, 'leadIn'],
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': occColor('line-strong'), 'line-width': 1 },
+      meta: { 'occ:minThreshold': 'codes' },
+    }),
+    standLayer('occ-stands-leadin-arriving', 'line', {
+      source: STAND_AUX_SOURCE,
+      filter: ['all', ['==', KIND, 'leadIn'], inStates(emphasised)],
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': lead.color, 'line-width': lead.width },
+    }),
+    // The link from a stand a combined stand cancels to the stand that cancels it, in the cancelled stand's outline.
+    standLayer('occ-stands-combined-link', 'line', {
+      source: STAND_AUX_SOURCE,
+      filter: ['==', KIND, 'combinedLink'],
+      paint: {
+        'line-color': link.color,
+        'line-width': link.width,
+        'line-dasharray': link.dash.map(length => length / link.width),
+      },
+    }),
+    // The code-C box inside a larger stand limited to narrow-body aircraft, dotted.
+    standLayer('occ-stands-narrow-inner', 'line', {
+      source: STAND_AUX_SOURCE,
+      filter: ['==', KIND, 'narrowInner'],
+      paint: { 'line-color': occColor('line-strong'), 'line-width': 1, 'line-dasharray': [1, 2] },
+      meta: { 'occ:minThreshold': 'codes' },
+    }),
+    // The selection: a 2 px cyan casing; the stand under the pointer gets it lighter.
+    casingLayer('occ-stands-selection', {
+      color: occColor('accent'),
+      width: 2,
+      clearance: CASING_CLEARANCE,
+      opacity: ['case', featureState('selected'), 1, featureState('hover'), HOVER_OPACITY, 0],
+    }),
+    // The stand of the selected flight: a dashed cyan casing (never on the selected stand itself).
+    casingLayer('occ-stands-related', {
+      color: occColor('accent'),
+      width: 1.5,
+      clearance: CASING_CLEARANCE,
+      dash: [3, 2],
+      opacity: ['case', ['all', featureState('related'), ['!', featureState('selected')]], 1, 0],
+    }),
+    // Stands covered by the same agent as the selected or hovered one: a neutral line set off from the outline.
+    casingLayer('occ-stands-same-agent', {
+      color: occColor('muted'),
+      width: 1,
+      clearance: SAME_AGENT_CLEARANCE,
+      opacity: ['case', featureState('sameAgent'), 1, 0],
+    }),
+  ];
+}
+
+function labelLayer(id, { source = STAND_LABEL_SOURCE, filter, layout, paint, meta }) {
+  return {
+    slot: 'standLabels',
+    id,
+    type: 'symbol',
+    source,
+    ...(filter ? { filter } : {}),
+    layout,
+    paint,
+    metadata: metadata(meta),
+  };
+}
+
+const textLayout = (field, { placed = 'centre' } = {}) => ({
+  'text-field': field,
+  'text-font': fonts(),
+  'text-size': LABEL_SIZE,
+  'text-line-height': 1.15,
+  'text-max-width': 30,
+  'text-justify': 'center',
+  ...(placed === 'variable'
+    ? { 'text-variable-anchor': [...LABEL_ANCHORS], 'text-radial-offset': LABEL_OFFSET_EM }
+    : { 'text-anchor': 'center' }),
+  'text-padding': 1,
 });
+
+const codeColour = () => byState(STAND_STATE_KEYS, state => occColor(standPaint(state).mutedCode ? 'faint' : 'text'));
 
 function labelLayers(labels) {
-  const count = {
-    slot: 'standLabels',
-    id: 'occ-stands-cluster-count',
-    type: 'symbol',
-    source: STAND_SOURCE,
-    filter: IS_CLUSTER,
-    layout: {
-      'text-field': ['get', 'point_count_abbreviated'],
-      'text-font': fonts(),
-      'text-size': 12,
-      'text-allow-overlap': true,
-    },
-    paint: { 'text-color': occColor('text') },
-    metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD },
-  };
-  if (labels === 'default') {
-    return [count, {
-      slot: 'standLabels',
-      id: 'occ-stands-codes',
-      type: 'symbol',
-      source: STAND_SOURCE,
-      filter: IS_POINT,
+  const aircraft = statesWhere(paint => paint.glyph === 'aircraft');
+  const textPaint = { 'text-color': codeColour(), 'text-halo-color': occColor('nav'), 'text-halo-width': 1.5 };
+  const selectedPaint = { 'text-color': occColor('accent'), 'text-halo-color': occColor('nav'), 'text-halo-width': 2 };
+  const isStand = ['==', KIND, 'stand'];
+  return [
+    // One chip per terminal while the stands are too small to draw: «A · 3/16», on the raised slab with a 1 px joint.
+    // A click on it opens the terminal's view.
+    labelLayer(STAND_CHIP_LAYER, {
+      source: STAND_GROUP_SOURCE,
       layout: {
-        ...codeLayout({ size: CODE_SIZE_PX, priority: false }),
-        'text-variable-anchor': [...CODE_ANCHORS],
-        'text-radial-offset': [...CODE_OFFSET],
-      },
-      paint: codePaint(1.2),
-      metadata: { 'occ:group': STAND_GROUP, 'occ:minThreshold': 'codes' },
-    }, {
-      slot: 'standLabels',
-      id: KEEP_OUT_LAYER,
-      type: 'symbol',
-      source: STAND_SOURCE,
-      filter: IS_POINT,
-      layout: {
-        'icon-image': 'stand-slab',
-        'icon-size': [...KEEP_OUT_SIZE],
-        'icon-padding': 0,
+        'text-field': ['get', 'text'],
+        'text-font': fonts(),
+        'text-size': CHIP_TEXT_SIZE,
+        'icon-image': 'stand-chip',
+        'icon-text-fit': 'both',
+        'icon-text-fit-padding': [2, 6, 2, 6],
         'icon-allow-overlap': true,
-        'icon-ignore-placement': false,
+        'text-allow-overlap': true,
       },
-      paint: { 'icon-opacity': 0 },
-      metadata: { 'occ:group': STAND_GROUP, 'occ:minThreshold': 'codes' },
-    }];
-  }
-  // The console keeps its codes on from the airfield view, with planned stands placed before the others and the
-  // selected stand above everything. Layers higher in the slot are placed first.
-  return [count, {
-    slot: 'standLabels',
-    id: 'occ-stands-codes',
-    type: 'symbol',
-    source: STAND_SOURCE,
-    filter: ['all', IS_POINT, ['!=', STATUS, 'planned']],
-    layout: codeLayout({ size: ['interpolate', ['linear'], ['zoom'], 14, 12, 17, 13], offset: [0, 1.9], priority: false }),
-    paint: codePaint(2),
-    metadata: { 'occ:group': STAND_GROUP, 'occ:minThreshold': 'polygons' },
-  }, {
-    slot: 'standLabels',
-    id: 'occ-stands-codes-planned',
-    type: 'symbol',
-    source: STAND_SOURCE,
-    filter: ['all', IS_POINT, ['==', STATUS, 'planned']],
-    layout: codeLayout({ size: ['interpolate', ['linear'], ['zoom'], 14, 12, 17, 14], offset: [0, 2], priority: true }),
-    paint: codePaint(2.3),
-    metadata: { 'occ:group': STAND_GROUP, 'occ:minThreshold': 'polygons' },
-  }, {
-    slot: 'standLabels',
-    id: 'occ-stands-code-selected',
-    type: 'symbol',
-    source: SELECTION_SOURCE,
-    filter: ['==', ['get', 'kind'], 'stand'],
-    layout: {
-      'text-field': ['get', 'id'],
-      'text-font': fonts(),
-      'text-size': 14,
-      'text-offset': [0, 2.1],
-      'text-allow-overlap': true,
-    },
-    paint: { 'text-color': occColor('accent'), 'text-halo-color': occColor('nav'), 'text-halo-width': 2.5 },
-    metadata: { 'occ:group': STAND_GROUP },
-  }];
+      paint: {
+        'text-color': occColor('text'),
+        'icon-color': occColor('panel-raised'),
+        'icon-halo-color': occColor('line-strong'),
+        'icon-halo-width': 1,
+      },
+      meta: { 'occ:minThreshold': 'airfield', 'occ:maxThreshold': 'polygons', 'occ:pick': 'terminal', 'occ:pickId': 'terminal' },
+    }),
+    // A flight arriving at one of the terminal's stands: an arrow down at the chip.
+    labelLayer('occ-stand-groups-arriving', {
+      source: STAND_GROUP_SOURCE,
+      filter: ['==', ['get', 'arriving'], true],
+      layout: {
+        'icon-image': 'glyph-arriving',
+        'icon-anchor': 'bottom',
+        'icon-offset': [0, -10],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: { 'icon-color': occColor('text'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1 },
+      meta: { 'occ:minThreshold': 'airfield', 'occ:maxThreshold': 'polygons' },
+    }),
+    // The aircraft on a stand, its nose along the stand's heading, in the outline's token.
+    labelLayer('occ-stand-glyph', {
+      filter: ['==', ['get', 'glyph'], 'aircraft'],
+      layout: {
+        'icon-image': 'glyph-aircraft',
+        'icon-size': [...STAND_GLYPH_SIZE],
+        'icon-rotate': ['get', 'heading'],
+        'icon-rotation-alignment': 'map',
+        'icon-pitch-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: { 'icon-color': byState(aircraft, state => standPaint(state).outline.color) },
+    }),
+    // The clock of «Por liberar», at the upper right corner of the stand, on the slab's colour.
+    labelLayer('occ-stand-clock', {
+      filter: ['==', ['get', 'clock'], true],
+      layout: {
+        'icon-image': 'glyph-clock',
+        'icon-offset': cornerOffset(1),
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: { 'icon-color': occColor('text'), 'icon-halo-color': occColor('panel-raised'), 'icon-halo-width': 1.5 },
+    }),
+    // Code, or code and flight («Anulada por 9A» for a cancelled stand), from the codes on and up to the three lines.
+    labelLayer('occ-stand-labels', {
+      layout: {
+        ...textLayout(['case', ['==', STATE, 'available'], ['get', 'label1'], ['get', 'label2']], { placed: 'variable' }),
+        'symbol-sort-key': ['get', 'sortKey'],
+      },
+      paint: textPaint,
+      meta: {
+        'occ:minThreshold': labels === 'dashboard' ? 'polygons' : 'codes',
+        'occ:maxThreshold': 'threeLine',
+      },
+    }),
+    labelLayer('occ-stand-labels-3', {
+      layout: { ...textLayout(['get', 'label3'], { placed: 'variable' }), 'symbol-sort-key': ['get', 'sortKey'] },
+      paint: textPaint,
+      meta: { 'occ:minThreshold': 'threeLine' },
+    }),
+    // The selected stand's label, from the selection source: above the others, so MapLibre places it first and the
+    // same stand's label below it gives way. From the polygons on, whatever the codes threshold.
+    labelLayer('occ-stand-label-selected', {
+      source: SELECTION_SOURCE,
+      filter: isStand,
+      layout: { ...textLayout(['get', 'label2']), 'text-allow-overlap': true, 'text-padding': SELECTED_LABEL_PADDING },
+      paint: selectedPaint,
+      meta: { 'occ:maxThreshold': 'threeLine' },
+    }),
+    labelLayer('occ-stand-label-selected-3', {
+      source: SELECTION_SOURCE,
+      filter: isStand,
+      layout: { ...textLayout(['get', 'label3']), 'text-allow-overlap': true, 'text-padding': SELECTED_LABEL_PADDING },
+      paint: selectedPaint,
+      meta: { 'occ:minThreshold': 'threeLine' },
+    }),
+    // The signals, on top of everything of the stands: amber triangle (attention) or red octagon (urgent), at the upper
+    // left corner of the stand with a dark halo that fills their «!».
+    labelLayer('occ-stand-signal', {
+      filter: ['to-boolean', ['get', 'signal']],
+      layout: {
+        'icon-image': ['match', ['get', 'signal'], 'urgent', 'signal-urgent', 'signal-attention'],
+        'icon-offset': cornerOffset(-1),
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: {
+        'icon-color': ['match', ['get', 'signal'], 'urgent', occColor(SIGNALS.urgent.colorToken), occColor(SIGNALS.attention.colorToken)],
+        'icon-halo-color': occColor('nav'),
+        'icon-halo-width': 1.5,
+      },
+    }),
+  ];
 }
 
 function assertLabels(labels) {
@@ -228,95 +384,32 @@ function assertLabels(labels) {
 }
 
 /**
- * The overlay of the stands for buildOccStyle: the clustered point source `occ-stands` and its layers. In the
- * `stands` slot the clusters (a circle on the raised slab with a strong line), then the fill, the frame (the pick
- * target, `occ:pick: 'stand'`), the glyph and the clock of each stand; in the `standLabels` slot the cluster count
- * and the codes, behind the derived `codes` threshold (`polygons` on the console), and outside the console the
- * invisible keep-out that keeps the codes off the marks. Every other layer starts at the derived `polygons` threshold.
+ * The overlay of the stands for buildOccStyle: the four sources (the polygons `occ-stands`, their lines
+ * `occ-stand-aux`, the label points `occ-stand-labels` and the terminal chips `occ-stand-groups`, each keyed by the
+ * property buildStandFeatures promotes) and their layers. In the `stands` slot: the fill (the pick target), the hatch,
+ * one outline per dash, the lead-ins, the combined links, the narrow-body boxes and the three casings of the feature
+ * state. In the `standLabels` slot: the chips, the aircraft, the clock, the labels in two variants, the selected
+ * stand's label (from the selection source) and the signals. `labels: 'dashboard'` starts the codes at the polygons.
  */
 export function standOverlay({ labels = 'default' } = {}) {
   assertLabels(labels);
   return {
     sources: {
-      [STAND_SOURCE]: {
-        type: 'geojson',
-        promoteId: 'code',
-        cluster: true,
-        clusterRadius: CLUSTER_RADIUS_PX[labels],
-        clusterMaxZoom: INITIAL_CLUSTER_MAX_ZOOM[labels],
-      },
+      [STAND_SOURCE]: { type: 'geojson', promoteId: 'code' },
+      [STAND_AUX_SOURCE]: { type: 'geojson', promoteId: 'id' },
+      [STAND_LABEL_SOURCE]: { type: 'geojson', promoteId: 'code' },
+      [STAND_GROUP_SOURCE]: { type: 'geojson', promoteId: 'terminal' },
     },
-    layers: [
-      {
-        slot: 'stands',
-        id: STAND_CLUSTER_LAYER,
-        type: 'circle',
-        source: STAND_SOURCE,
-        filter: IS_CLUSTER,
-        paint: {
-          'circle-radius': ['step', ['get', 'point_count'], 16, 5, 20, 15, 26],
-          'circle-color': occColor('panel-raised'),
-          'circle-stroke-color': occColor('line-strong'),
-          'circle-stroke-width': 1,
-        },
-        metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD, 'occ:pick': 'cluster', 'occ:pickId': 'cluster_id' },
-      },
-      markLayer('occ-stands-fill', 'fill'),
-      markLayer(STAND_FRAME_LAYER, 'frame', { metadata: { 'occ:pick': 'stand', 'occ:pickId': 'code' } }),
-      markLayer('occ-stands-glyph', 'glyph'),
-      markLayer('occ-stands-clock', 'badge', {
-        layout: { 'icon-offset': [...BADGE_OFFSET] },
-        paint: { 'icon-halo-color': occColor('panel-raised'), 'icon-halo-width': 1.5 },
-      }),
-      ...labelLayers(labels),
-    ],
+    layers: [...polygonLayers(), ...labelLayers(labels)],
   };
 }
 
 /**
- * The cluster options once the screen's thresholds are known: clusters stop one zoom below the threshold of the label
- * mode (`floor(codes) − 1` outside the console, `floor(polygons) − 1` on its apron, never below 1). The stand points
- * are fixed-size marks a few metres apart, so outside the console they are gathered through the airfield view and
- * drawn one by one from the ramp view on, as before M2. MapLibre 6.16 sets `cluster` from every call, so the call
- * always carries `cluster: true`. `null` before the thresholds.
+ * How the stands are drawn at `zoom` with the screen's thresholds: `hidden` below the airfield threshold (the region
+ * and approach views), `chips` from there up to the polygon threshold (one chip per terminal) and `polygons` from it
+ * on. Before the thresholds are known the layers have no zoom range yet: the polygons are drawn.
  */
-export function standClusterOptions(thresholds, { labels = 'default' } = {}) {
-  assertLabels(labels);
-  const end = thresholds?.[CLUSTER_END[labels]];
-  if (!Number.isFinite(end) || !Number.isFinite(thresholds?.polygons)) return null;
-  return {
-    cluster: true,
-    clusterRadius: CLUSTER_RADIUS_PX[labels],
-    clusterMaxZoom: Math.max(1, Math.floor(end) - 1),
-  };
-}
-
-/**
- * How the stands are drawn at `zoom` with the screen's thresholds: `hidden` below the stand threshold (the region and
- * approach views), `grouped` while MapLibre still gathers them into clusters (a GeoJSON source clusters by the whole
- * zoom of its tiles, up to clusterMaxZoom) and `points` from there on. Before the thresholds are known the layers have
- * no zoom range yet and every stand counts as a point.
- */
-export function standDisplayAt(zoom, thresholds, { labels = 'default' } = {}) {
-  const clusters = standClusterOptions(thresholds, { labels });
-  if (!Number.isFinite(zoom) || clusters === null) return 'points';
-  if (zoom < thresholds.polygons) return 'hidden';
-  return Math.floor(zoom) <= clusters.clusterMaxZoom ? 'grouped' : 'points';
-}
-
-/**
- * What the map draws of the stands, read from the features queryRenderedFeatures answers for STAND_DRAWN_LAYERS:
- * `{ codes, grouped }`, the codes of the stands drawn on their own and whether a cluster is drawn. While MapLibre
- * gathers the stands into clusters, a stand with no neighbour within the cluster radius is still drawn on its own,
- * with its state, so the zoom alone cannot tell. A feature drawn in two tiles is answered twice and counts once. Pure.
- */
-export function drawnStands(features) {
-  const codes = new Set();
-  let grouped = false;
-  for (const feature of features ?? []) {
-    const layer = feature?.layer?.id;
-    if (layer === STAND_CLUSTER_LAYER) grouped = true;
-    else if (layer === STAND_FRAME_LAYER && feature.properties?.code != null) codes.add(String(feature.properties.code));
-  }
-  return { codes, grouped };
+export function standDisplayAt(zoom, thresholds) {
+  if (!Number.isFinite(zoom) || !Number.isFinite(thresholds?.polygons) || zoom >= thresholds.polygons) return 'polygons';
+  return Number.isFinite(thresholds.airfield) && zoom >= thresholds.airfield ? 'chips' : 'hidden';
 }

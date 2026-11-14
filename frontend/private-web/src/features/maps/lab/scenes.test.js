@@ -3,18 +3,25 @@ import { importClosure } from '../../../styles/occSourceScan';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
+import { buildStandFeatures } from '../stands/standFeatures';
+import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
+import { SCENARIO_AGENTS } from '../testing/mapFixtures';
 import { legendEntries } from '../ui/legendEntries';
-import { BASEMAP_MODES, SCENES, SCENE_KINDS, findScene, labInstant, labStands, readLabQuery } from './scenes';
+import {
+  BASEMAP_MODES, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant, labStands, readLabQuery,
+} from './scenes';
 
-const statusOf = (stands, code) => stands.find(stand => stand.id === code)?.status;
+// The lab's stands as the map lab shows them: read at the scene's instant (useStandDisplay).
+const shown = () => withStandDisplay(labStands(), { nowMs: SCENE_INSTANT });
+const byId = (stands, code) => stands.find(stand => stand.id === code);
 const legendOf = stands => legendEntries({ stands }).states;
 
 describe('map lab scenes', () => {
-  it('every scene id is unique, names a known view and kind and uses only the seven stand states', () => {
+  it('every scene id is unique, names a known view and kind and reads at a fixed instant', () => {
     const ids = SCENES.map(scene => scene.id);
     expect(ids).toEqual([
-      'ramp-points', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
+      'ramp-states', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
       'layout-qa',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
@@ -27,38 +34,67 @@ describe('map lab scenes', () => {
       expect(scene.title, scene.id).toMatch(/^\p{Lu}/u);
       expect(scene.title, scene.id).not.toMatch(/^\p{Lu}{2,}/u);
       expect(scene.description, scene.id).toMatch(/^\p{Lu}.*\.$/u);
-      expect(scene.stands.every(stand => STAND_STATE_KEYS.includes(stand.status)), scene.id).toBe(true);
-      expect(Object.isFrozen(scene) && Object.isFrozen(scene.stands[0]), scene.id).toBe(true);
+      expect(scene.at, scene.id).toBe(scene.kind === 'map' ? SCENE_INSTANT : null);
+      expect(Object.isFrozen(scene), scene.id).toBe(true);
     }
+    // 11:00 in Punta Cana, the frozen clock of the visual suite.
+    expect(new Date(SCENE_INSTANT).toISOString()).toBe('2026-11-13T15:00:00.000Z');
     expect(findScene('ramp-selected').selection).toEqual({ kind: 'stand', id: 'A5' });
     expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual(['ramp-selected']);
     expect(findScene('unavailable-fallback').webgl).toBe(false);
     expect(SCENES.filter(scene => !scene.webgl).map(scene => scene.id)).toEqual(['unavailable-fallback']);
     expect(findScene('basemap-degraded').basemap).toBe('cut');
-    expect(findScene('region').view).toBe('region');
+    expect(findScene('ramp-points')).toBeNull();
     expect(findScene('nope')).toBeNull();
   });
 
-  it('scene stands are the 41 reference stands with deterministic states', () => {
-    const stands = labStands();
-    expect(stands).toHaveLength(41);
+  it('ramp-states has all seven states, a combined pair, covered and uncovered stands, all synthetic', () => {
+    const stands = shown();
+    // The 41 reference stands in catalogue order, at their reference location (no coordinate of their own).
     expect(stands.map(stand => stand.id)).toEqual(STAND_REFERENCE.map(stand => stand.code));
-    expect(stands.map(stand => stand.id)).not.toContain('B33');
-    expect(stands[0]).toEqual({
-      id: 'A1', terminal: 'A', latitude: STAND_REFERENCE[0].latitude, longitude: STAND_REFERENCE[0].longitude,
-      status: 'occupied', locationSource: 'reference',
-    });
-    // The same states on every call, by the place of the stand inside its terminal.
-    expect(labStands()).toEqual(stands);
-    expect(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A9', 'AN1'].map(code => statusOf(stands, code)))
-      .toEqual(['occupied', 'available', 'planned', 'arriving', 'occupied', 'releasing', 'occupied', 'arriving']);
-    expect(['B20', 'B21', 'B22', 'B23', 'B26', 'B32', 'B34'].map(code => statusOf(stands, code)))
-      .toEqual(['available', 'occupied', 'disabled', 'planned', 'available', 'available', 'occupied']);
-    expect(['BN6', 'BN7', 'BN8', 'BN13'].map(code => statusOf(stands, code)))
-      .toEqual(['available', 'unverified', 'available', 'unverified']);
-    // Every state is on the ramp, and every map scene draws these same stands.
+    for (const stand of stands) {
+      const reference = STAND_REFERENCE.find(item => item.code === stand.id);
+      expect([stand.longitude, stand.latitude], stand.id).toEqual([reference.longitude, reference.latitude]);
+      expect(stand.locationSource, stand.id).toBe('reference');
+    }
+    // Every map scene draws these same stands, frozen.
+    for (const scene of SCENES.filter(item => item.kind === 'map')) {
+      expect(scene.stands, scene.id).toEqual(labStands());
+      expect(Object.isFrozen(scene.stands[0]), scene.id).toBe(true);
+    }
+    // The seven states, read at the scene's instant.
+    const state = code => byId(stands, code).displayStatus;
+    expect(new Set(stands.map(stand => stand.displayStatus))).toEqual(new Set(STAND_STATE_KEYS));
+    expect(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A10', 'B21', 'B25', 'BN13'].map(state)).toEqual([
+      'available', 'planned', 'arriving', 'occupied', 'releasing', 'arriving', 'disabled', 'releasing', 'arriving', 'unverified',
+    ]);
     expect(legendOf(stands)).toEqual(STAND_STATE_KEYS);
-    for (const scene of SCENES.filter(item => item.kind === 'map')) expect(scene.stands, scene.id).toEqual(stands);
+    // A combined pair: A10 cancelled by A9, linked on the map.
+    expect(byId(stands, 'A10').display.cancelledBy).toBe('A9');
+    const features = buildStandFeatures(attachStandGeometry(stands, MDPC_LAYOUT), { nowMs: SCENE_INSTANT });
+    expect(features.aux.features.filter(line => line.properties.kind === 'combinedLink').map(line => line.id)).toEqual(['combinedLink:A10']);
+    // A8 limited to narrow-body aircraft, with its code-C box inside it.
+    expect(features.aux.features.filter(line => line.properties.kind === 'narrowInner').map(line => line.id)).toEqual(['narrowInner:A8']);
+    // Covered and uncovered stands: A3 and B35 have a flight due within the hour and nobody covering them.
+    const signals = Object.fromEntries(stands.filter(stand => stand.signals.length > 0)
+      .map(stand => [stand.id, stand.signals.map(signal => `${signal.kind}:${signal.reason}`)]));
+    expect(signals).toEqual({
+      A3: ['attention:uncovered'], A4: ['urgent:conflict'], B21: ['attention:overdue'], B35: ['attention:uncovered'],
+    });
+    expect(byId(stands, 'A1').coveredBy).toEqual([SCENARIO_AGENTS.marta]);
+    expect(byId(stands, 'AN1').coveredBy).toEqual([]);
+    // The demo flight is labelled «Demo».
+    expect(features.labels.features.find(label => label.id === 'A6').properties.label2).toBe('A6\nZZ9001 · Demo');
+    // Synthetic: invented flights, registrations, airline and agents.
+    const visits = stands.flatMap(stand => stand.turnarounds);
+    expect(visits.length).toBeGreaterThan(15);
+    for (const visit of visits) {
+      expect(visit.arrivalFlightNumber, visit.turnaroundId).toMatch(/^(?:DM2\d\d|ZZ9001)$/);
+      expect(visit.aircraftRegistration, visit.turnaroundId).toMatch(/^HI\d{4}$/);
+      expect(visit.airlineName).toBe('Aerolínea de prueba');
+    }
+    const agents = new Set(Object.values(SCENARIO_AGENTS));
+    expect(stands.flatMap(stand => stand.coveredBy ?? []).every(name => agents.has(name))).toBe(true);
   });
 
   it('the layout-qa scene is development-only data with a known view', () => {
@@ -71,6 +107,7 @@ describe('map lab scenes', () => {
       view: 'airfield',
       // It draws the airport layout itself, not stands with states.
       stands: [],
+      at: null,
       selection: null,
       basemap: 'on',
       webgl: true,
@@ -83,29 +120,30 @@ describe('map lab scenes', () => {
     const reached = importClosure(['app'], { stops: ['app/map-lab/page.jsx', 'app/map-lab/MapLabLoader.jsx'] });
     expect(reached).toContain('app/map-lab/page.jsx');
     expect(reached.filter(file => file.startsWith('src/features/maps/lab/'))).toEqual([]);
+    // Nor the fixtures the lab builds its board with.
+    expect(reached).not.toContain('src/features/maps/testing/mapFixtures.js');
   });
 
   it('each terminal view frames its own stands and a part of the legend of its own', () => {
-    const stands = labStands();
+    const stands = shown();
     const ofTerminal = terminal => stands.filter(stand => stand.terminal === terminal);
-    expect(legendOf(ofTerminal('A'))).toEqual(['available', 'planned', 'arriving', 'occupied', 'releasing']);
-    expect(legendOf(ofTerminal('B'))).toEqual(['available', 'planned', 'occupied', 'disabled']);
-    expect(legendOf(ofTerminal('FBO'))).toEqual(['available', 'unverified']);
-    // The terminal views the map frames from the airport layout, and those of the stand points without one.
-    for (const targets of [presetTargets({ stands, layout: MDPC_LAYOUT }), presetTargets({ stands })]) {
-      for (const terminal of ['A', 'B', 'FBO']) {
-        const framed = legendEntries({ stands, bounds: targetFor(targets, 'ramp', terminal).bounds });
-        expect(framed.states, terminal).toEqual(legendOf(ofTerminal(terminal)));
-        // Every stand sits at its reference location: the legend says «No oficial».
-        expect(framed.tags, terminal).toEqual(['unofficial']);
-      }
+    expect(legendOf(ofTerminal('A'))).toEqual(['available', 'planned', 'arriving', 'occupied', 'releasing', 'disabled']);
+    expect(legendOf(ofTerminal('B'))).toEqual(['available', 'planned', 'arriving', 'occupied', 'releasing']);
+    expect(legendOf(ofTerminal('FBO'))).toEqual(['available', 'planned', 'occupied', 'unverified']);
+    // The terminal views the map frames from the airport layout.
+    const targets = presetTargets({ stands, layout: MDPC_LAYOUT });
+    for (const terminal of ['A', 'B', 'FBO']) {
+      const framed = legendEntries({ stands: attachStandGeometry(ofTerminal(terminal), MDPC_LAYOUT), bounds: targetFor(targets, 'ramp', terminal).bounds });
+      expect(framed.states, terminal).toEqual(legendOf(ofTerminal(terminal)));
+      // Every stand sits at its reference location: the legend says «No oficial».
+      expect(framed.tags, terminal).toEqual(['unofficial']);
     }
   });
 
   it('reads the scene, the base map and the frozen clock from the URL', () => {
     const noon = Date.UTC(2026, 10, 13, 15);
-    expect(readLabQuery('scene=ramp-points&t=2026-11-13T15:00:00Z')).toEqual({
-      sceneId: 'ramp-points', scene: findScene('ramp-points'), basemap: 'on', frozenAt: noon,
+    expect(readLabQuery('scene=ramp-states&t=2026-11-13T15:00:00Z')).toEqual({
+      sceneId: 'ramp-states', scene: findScene('ramp-states'), basemap: 'on', frozenAt: noon,
     });
     expect(readLabQuery(new URLSearchParams('scene=airfield&basemap=none')).basemap).toBe('none');
     expect(readLabQuery('scene=basemap-degraded').basemap).toBe('cut');

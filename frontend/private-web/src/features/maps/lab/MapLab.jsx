@@ -7,6 +7,7 @@ import { addProtocol, removeProtocol } from 'maplibre-gl';
 import { liveEngineCount } from '../core/mapEngine';
 import OccMap from '../core/OccMap';
 import { useMapSelection } from '../core/useMapSelection';
+import { useStandDisplay } from '../stands/useStandDisplay';
 import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
 import MapDock from '../ui/MapDock';
 import MapLegend from '../ui/MapLegend';
@@ -18,8 +19,9 @@ import { SCENES, readLabQuery } from './scenes';
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
 // the API, for the visual suite (tests/visual) and for a person checking the map by eye. The URL says what to show:
 // `?scene=` the scene, `?basemap=none` the style without the vector tiles, `?t=<ISO>` a frozen map clock (MapLibre's
-// setNow, with symbol fades off), and the selection keys of the OCC map (stand=, view=, terminal=). It exposes
-// `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code of the scene), flyToPreset,
+// setNow, with symbol fades off, and the instant the stands read at; without it they read at the scene's own instant),
+// and the selection keys of the OCC map (stand=, view=, terminal=). It exposes
+// `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code of the scene), flyToPreset, jumpTo,
 // whenIdle, liveMaps (the live engines: one after a StrictMode double mount) and refresh (the «Releer posiciones»
 // button). The review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
 
@@ -73,6 +75,9 @@ function LabScene({ scene, basemap, frozenAt }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
+  // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
+  const standClock = frozenAt ?? scene.at ?? null;
+  const displayed = useStandDisplay(stands, { nowMs: standClock });
   const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
 
   useFrozenMapClock(frozenAt);
@@ -111,6 +116,7 @@ function LabScene({ scene, basemap, frozenAt }) {
         return point ? mapRef.current?.project(point) ?? null : null;
       },
       flyToPreset: (view, options) => mapRef.current?.flyToPreset(view, options) ?? false,
+      jumpTo: camera => mapRef.current?.jumpTo(camera) ?? false,
       whenIdle: () => mapRef.current?.whenIdle() ?? Promise.resolve(false),
       liveMaps: liveEngineCount,
       refresh: reread,
@@ -140,6 +146,9 @@ function LabScene({ scene, basemap, frozenAt }) {
         {frozenAt !== null && (
           <span className="font-mono text-xs text-occ-muted">Reloj fijo: {frozenLabel(frozenAt)}</span>
         )}
+        {frozenAt === null && scene.at !== null && (
+          <span className="font-mono text-xs text-occ-muted">Hora de la escena: {frozenLabel(scene.at)}</span>
+        )}
         <button
           type="button"
           onClick={reread}
@@ -153,7 +162,8 @@ function LabScene({ scene, basemap, frozenAt }) {
           ref={mapRef}
           testId="map-lab-map"
           defaultView={scene.view}
-          stands={stands}
+          stands={displayed}
+          frozenAt={standClock}
           selection={selection}
           onSelect={select}
           basemap={basemap !== 'none'}

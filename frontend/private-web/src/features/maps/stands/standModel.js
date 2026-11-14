@@ -31,17 +31,30 @@ export function standDrawState(status) {
   return STAND_STATE_KEYS.includes(status) ? status : 'available';
 }
 
+/**
+ * The state a map draws a stand of a screen with: the display status the screen derived (useStandDisplay), else its
+ * board status (standDrawState). A screen that derives nothing, such as the console's apron until PR U3 adopts the
+ * display, draws the board's state.
+ */
+export function standStateOf(stand) {
+  return STAND_STATE_KEYS.includes(stand?.displayStatus) ? stand.displayStatus : standDrawState(stand?.status);
+}
+
 const codeOf = position => normalizeStandCode(position?.id ?? position?.code);
 const timeOf = value => {
   const ms = typeof value === 'number' ? value : Date.parse(value ?? '');
   return Number.isFinite(ms) ? ms : null;
 };
-// Whole minutes until `at`, rounded up («en 12 min» means within twelve minutes); 0 or less once it is due.
-const minutesUntil = (at, now) => {
-  if (at === null) return null;
+
+/**
+ * Whole minutes from `now` until `at` (epoch ms), rounded up («en 12 min» means within twelve minutes); 0 or less once
+ * it is due, and `null` without a time.
+ */
+export function minutesUntil(at, now) {
+  if (!Number.isFinite(at) || !Number.isFinite(now)) return null;
   const minutes = Math.ceil((at - now) / MINUTE_MS);
   return minutes === 0 ? 0 : minutes;
-};
+}
 
 // A per-turnaround input, given as a Map or as a plain object keyed by turnaround id.
 function lookup(collection, key) {
@@ -128,6 +141,20 @@ function display(state, extra = {}) {
 }
 
 /**
+ * How a stand reads from its own fields alone, without the board's visits: its board status (standDrawState), its
+ * flight, type and demo mark, the stand that cancels it, and no visit, times or signals. A stand of a screen that gives
+ * no `turnarounds` (the console's apron) reads this way, and so does any stand the map is given without a display.
+ */
+export function displayFromStatus(position) {
+  return display(standDrawState(position?.status), {
+    flightNumber: position?.flightNumber ?? null,
+    aircraftType: position?.aircraftType ?? null,
+    isDemo: position?.isDemo === true,
+    cancelledBy: cancellerOf(position),
+  });
+}
+
+/**
  * How a stand reads at `nowMs` (rounded down to the minute; the current time when it is not given). `position` is a
  * stand of a positions screen (positionsMapMappers.js), with `geometry` when attachStandGeometry gave it one.
  * `flightsByTurnaround` (the map flights of PR A3, one or both legs per turnaround id) and `aircraftByTurnaround`
@@ -152,14 +179,7 @@ function display(state, extra = {}) {
 export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, aircraftByTurnaround } = {}) {
   const now = floorToMinute(Number.isFinite(nowMs) ? nowMs : Date.now());
   const cancelledBy = cancellerOf(position);
-  if (!Array.isArray(position?.turnarounds)) {
-    return display(standDrawState(position?.status), {
-      flightNumber: position?.flightNumber ?? null,
-      aircraftType: position?.aircraftType ?? null,
-      isDemo: position?.isDemo === true,
-      cancelledBy,
-    });
-  }
+  if (!Array.isArray(position?.turnarounds)) return displayFromStatus(position);
   if (position.status === 'unverified' || position.standId == null) return display('unverified', { cancelledBy });
   if (position.status === 'disabled') return display('disabled', { cancelledBy });
 
@@ -208,6 +228,22 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
     isDemo: shown.isDemo,
     cancelledBy,
   });
+}
+
+/**
+ * Copies of `positions` (the stands of a screen) with how each reads at `nowMs` (deriveDisplayStatus, with the same
+ * optional inputs): `displayStatus` (the state the maps draw), `signals` and `display` (the visit the stand shows, its
+ * times, flight, type and demo mark). The screen's own `status` stays as it is, for its lists, summary and alerts.
+ * Anything that is not an object is left out. Pure: stands/useStandDisplay.js keeps the result per minute.
+ */
+export function withStandDisplay(positions = [], { nowMs, flightsByTurnaround, aircraftByTurnaround } = {}) {
+  const now = floorToMinute(Number.isFinite(nowMs) ? nowMs : Date.now());
+  return (positions ?? [])
+    .filter(position => position !== null && typeof position === 'object')
+    .map(position => {
+      const shown = deriveDisplayStatus(position, { nowMs: now, flightsByTurnaround, aircraftByTurnaround });
+      return { ...position, displayStatus: shown.state, signals: shown.signals, display: shown };
+    });
 }
 
 // The index of each layout, built once per layout object.

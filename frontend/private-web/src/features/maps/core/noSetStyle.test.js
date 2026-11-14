@@ -89,7 +89,8 @@ describe('one style for the whole map lifetime', () => {
   it('no module of the engine, style, ui, lab or the two adapters calls setStyle (the frozen RegionalTrafficMap and GoesCloudMap are excluded)', () => {
     const files = mapStackFiles();
     for (const file of ['core/mapEngine.js', 'core/workerUrl.js', 'style/occStyle.js', 'style/basemapLayers.js', 'style/mapImages.js',
-      'stands/standLayers.js', 'traffic/flightLayers.js', 'style/referenceLayers.js']) {
+      'stands/standLayers.js', 'stands/standFeatures.js', 'stands/useStandDisplay.js', 'core/useMinuteClock.js',
+      'traffic/flightLayers.js', 'style/referenceLayers.js']) {
       expect(files).toContain(`src/features/maps/${file}`);
     }
     for (const file of [...OLD_MAPS, ...ADAPTERS]) {

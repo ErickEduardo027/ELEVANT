@@ -13,7 +13,14 @@ const STATE_LABELS = Object.freeze({
 const AIRFIELD_LABELS = Object.freeze({
   runway: 'Pista', taxiway: 'Calle de rodaje', holdBar: 'Punto de espera', apron: 'Plataforma', terminal: 'Terminal',
 });
-const legendOf = (...states) => [...states.map(state => STATE_LABELS[state]), /^No oficial/];
+// The words of the legend for the signals and the marks of the stands (their hints follow the word).
+const EXTRA_LABELS = Object.freeze({ attention: /^Atención/, urgent: /^Urgente/, combined: /^Enlace con/, narrowbody: /^Caja de fuselaje/ });
+// The states on screen, then the signals and marks, then «No oficial» (the lab's stands sit at their reference place).
+const legendOf = (states, extras = []) => [
+  ...states.map(state => STATE_LABELS[state]), ...extras.map(extra => EXTRA_LABELS[extra]), /^No oficial/,
+];
+const ALL_STATES = Object.freeze(Object.keys(STATE_LABELS));
+const CHIP = /^Posiciones de una terminal/;
 const airfieldOf = (...items) => items.map(item => AIRFIELD_LABELS[item]);
 
 // The airport layout the map draws, read in Node as the generator wrote it.
@@ -36,6 +43,13 @@ async function outsideCanvas(page, points) {
     .filter(({ pixel }) => !(pixel && pixel.x >= 0 && pixel.x <= width && pixel.y >= 0 && pixel.y <= height));
 }
 
+/** Folds the map's legend, which opens over the middle of the map, so a click reaches the stands under it. */
+async function foldLegend(page) {
+  const toggle = page.getByRole('button', { name: 'Leyenda', exact: true });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+}
+
 /** Moves the mouse to, or clicks, the pixel of `[lng, lat]` on the lab's map. */
 async function pointAt(page, lngLat, { click = false } = {}) {
   const [pixel] = await pixelsOf(page, [lngLat]);
@@ -48,7 +62,7 @@ test.describe('map lab', () => {
   test.skip(production, 'The map lab exists in development only.');
 
   test('the view buttons set view= and keys 1 to 4 change the view', async ({ page }) => {
-    const map = await openLab(page, `scene=ramp-points&t=${NOON}`);
+    const map = await openLab(page, `scene=ramp-states&t=${NOON}`);
     const switcher = page.getByRole('group', { name: 'Vista del mapa' });
     await expect(map).toHaveAttribute('data-occ-view', 'ramp');
     expect(viewInUrl(page)).toBeNull();
@@ -69,14 +83,15 @@ test.describe('map lab', () => {
     }
     // Only the map's keys changed: the scene and the frozen clock stay in the URL.
     const query = new URL(page.url()).searchParams;
-    expect([query.get('scene'), query.get('t')]).toEqual(['ramp-points', NOON]);
+    expect([query.get('scene'), query.get('t')]).toEqual(['ramp-states', NOON]);
   });
 
   test('a stand click sets stand= and Esc clears it', async ({ page }) => {
-    await openLab(page, `scene=ramp-points&view=ramp&terminal=A&t=${NOON}`);
+    await openLab(page, `scene=ramp-states&view=ramp&terminal=A&t=${NOON}`);
     await labIdle(page);
     const canvas = page.getByTestId('map-lab-map').locator('canvas.maplibregl-canvas');
     const drawn = await canvas.elementHandle();
+    await foldLegend(page);
 
     await clickStand(page, 'A5');
     await expect.poll(() => new URL(page.url()).searchParams.get('stand')).toBe('A5');
@@ -92,8 +107,8 @@ test.describe('map lab', () => {
     expect(new URL(page.url()).searchParams.get('terminal')).toBe('A');
   });
 
-  test('the legend lists only the states and the airfield items on screen', async ({ page }) => {
-    await openLab(page, `scene=ramp-points&t=${NOON}`);
+  test('the legend lists the states, signals and marks on screen, the chips below the polygons and the airfield items', async ({ page }) => {
+    const map = await openLab(page, `scene=ramp-states&t=${NOON}`);
     // What the map draws is read back once it settles: the legend is asserted after that.
     const settleOn = async (view, terminal) => {
       await page.evaluate(([name, code]) => window.__occMapLab.flyToPreset(name, { terminal: code }), [view, terminal ?? null]);
@@ -102,33 +117,45 @@ test.describe('map lab', () => {
     const legend = page.getByRole('list', { name: 'Leyenda' });
     const ALL_AIRFIELD = airfieldOf('runway', 'taxiway', 'holdBar', 'apron', 'terminal');
     await labIdle(page);
+    // The whole ramp: the seven states, both signals (A3 and B35 with nobody covering them, B21 past its departure; A4
+    // with another flight arriving), the link of A10 to A9 and the narrow-body box of A8.
     await expect(legend.getByRole('listitem')).toHaveText([
-      ...legendOf('available', 'planned', 'arriving', 'occupied', 'releasing', 'disabled', 'unverified'), ...ALL_AIRFIELD,
+      ...legendOf(ALL_STATES, ['attention', 'urgent', 'combined', 'narrowbody']), ...ALL_AIRFIELD,
     ]);
 
+    // The FBO view reaches B35, planned within the hour with nobody covering it.
     await settleOn('ramp', 'FBO');
     await expect(legend.getByRole('listitem')).toHaveText([
-      ...legendOf('available', 'unverified'), ...airfieldOf('taxiway', 'holdBar', 'apron'),
+      ...legendOf(['available', 'planned', 'occupied', 'unverified'], ['attention']), ...airfieldOf('taxiway', 'holdBar', 'apron'),
     ]);
     await settleOn('ramp', 'A');
     await expect(legend.getByRole('listitem')).toHaveText([
-      ...legendOf('available', 'planned', 'arriving', 'occupied', 'releasing'), ...ALL_AIRFIELD,
+      ...legendOf(['available', 'planned', 'arriving', 'occupied', 'releasing', 'disabled'], ['attention', 'urgent', 'combined', 'narrowbody']),
+      ...ALL_AIRFIELD,
     ]);
     await settleOn('ramp', 'B');
     await expect(legend.getByRole('listitem')).toHaveText([
-      ...legendOf('available', 'planned', 'occupied', 'disabled'), ...airfieldOf('taxiway', 'apron', 'terminal'),
+      ...legendOf(['available', 'planned', 'arriving', 'occupied', 'releasing'], ['attention']), ...airfieldOf('taxiway', 'apron', 'terminal'),
     ]);
 
-    // The airfield view gathers the stands into clusters, which carry no state, over the whole airfield; region and
-    // approach draw neither stands nor the airfield of the dataset.
+    // The airfield view draws every stand as a polygon too (the polygons start at its fit − 0.3), without the codes and
+    // so without the narrow-body boxes.
     await settleOn('airfield');
-    await expect(legend.getByRole('listitem')).toHaveText(['Grupo de posicionesAcerca el mapa para ver cada una', ...ALL_AIRFIELD]);
+    const airfieldFit = await zoomOf(map);
+    await expect(legend.getByRole('listitem')).toHaveText([
+      ...legendOf(ALL_STATES, ['attention', 'urgent', 'combined']), ...ALL_AIRFIELD,
+    ]);
+    // Below the polygon threshold (the airfield fit − 0.6) one chip per terminal stands for its stands.
+    await page.evaluate(zoom => window.__occMapLab.jumpTo({ zoom }), airfieldFit - 0.6);
+    await labIdle(page);
+    await expect(legend.getByRole('listitem')).toHaveText([CHIP, ...ALL_AIRFIELD]);
+    // Region and approach draw neither stands nor the airfield of the dataset.
     await settleOn('region');
     await expect(page.getByTestId('map-legend')).toHaveCount(0);
     await settleOn('approach');
     await expect(page.getByTestId('map-legend')).toHaveCount(0);
     await settleOn('ramp');
-    await expect(legend.getByRole('listitem')).toHaveCount(13);
+    await expect(legend.getByRole('listitem')).toHaveCount(17);
 
     // It folds through its own button, which keeps its name.
     const toggle = page.getByRole('button', { name: 'Leyenda', exact: true });
@@ -136,6 +163,23 @@ test.describe('map lab', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(legend).toBeHidden();
+  });
+
+  test('a terminal chip opens that terminal\'s view', async ({ page }) => {
+    const map = await openLab(page, `scene=ramp-states&view=airfield&t=${NOON}`);
+    await labIdle(page);
+    const airfieldFit = await zoomOf(map);
+    await page.evaluate(zoom => window.__occMapLab.jumpTo({ zoom }), airfieldFit - 0.6);
+    await labIdle(page);
+    // The chip of terminal B sits at the middle of the box around its stands.
+    const own = ACTIVE_STANDS.filter(stand => stand.terminal === 'B').flatMap(stand => stand.polygon);
+    const lngs = own.map(point => point[0]);
+    const lats = own.map(point => point[1]);
+    await pointAt(page, [(Math.min(...lngs) + Math.max(...lngs)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2], { click: true });
+    await expect.poll(() => viewInUrl(page)).toBe('ramp');
+    await expect.poll(() => new URL(page.url()).searchParams.get('terminal')).toBe('B');
+    await expect(map).toHaveAttribute('data-occ-view', 'ramp');
+    expect(new URL(page.url()).searchParams.has('stand')).toBe(false);
   });
 
   test('the airfield view frames the whole airport (every runway end inside the canvas)', async ({ page }) => {
@@ -152,7 +196,7 @@ test.describe('map lab', () => {
   });
 
   test('the ramp view frames every active stand polygon', async ({ page }) => {
-    const map = await openLab(page, `scene=ramp-points&t=${NOON}`);
+    const map = await openLab(page, `scene=ramp-states&t=${NOON}`);
     await expect(map).toHaveAttribute('data-occ-view', 'ramp');
     await labIdle(page);
     expect(ACTIVE_STANDS).toHaveLength(41);
@@ -232,7 +276,7 @@ test.describe('map lab', () => {
         return /webgl/i.test(String(type)) ? null : original.call(this, type, ...rest);
       };
     });
-    await openLab(page, 'scene=ramp-points', { drawn: false });
+    await openLab(page, 'scene=ramp-states', { drawn: false });
     const fallback = page.getByTestId('map-unavailable');
     await expect(fallback.getByRole('heading', { name: 'El mapa no está disponible' })).toBeVisible();
     const list = fallback.getByRole('group', { name: 'Lista del mapa' });
@@ -255,7 +299,7 @@ test.describe('map lab', () => {
   });
 
   test('a WebGL context that comes back without WebGL2 leaves the fallback for good', async ({ page, isolation }) => {
-    const map = await openLab(page, `scene=ramp-points&t=${NOON}`);
+    const map = await openLab(page, `scene=ramp-states&t=${NOON}`);
     await labIdle(page);
     expect(isolation.count('tilejson')).toBe(1);
     const errors = [];
@@ -307,7 +351,7 @@ test.describe('map lab', () => {
     test.use({ reducedMotion: 'no-preference' });
 
     test('the zoom buttons and the view presets really move the camera', async ({ page }) => {
-      const map = await openLab(page, 'scene=ramp-points');
+      const map = await openLab(page, 'scene=ramp-states');
       const start = await zoomOf(map);
       await page.getByRole('button', { name: 'Acercar' }).click();
       await expect.poll(() => zoomOf(map)).toBeGreaterThan(start + 0.9);
@@ -330,7 +374,7 @@ test.describe('map lab', () => {
   });
 
   test('a StrictMode double mount leaves one live map and the page reaches networkidle', async ({ page }) => {
-    const response = await page.goto('/map-lab?scene=ramp-points', { waitUntil: 'networkidle' });
+    const response = await page.goto('/map-lab?scene=ramp-states', { waitUntil: 'networkidle' });
     expect(response?.status()).toBe(200);
     const map = page.getByTestId('occ-map');
     await mapReady(map);
@@ -340,7 +384,7 @@ test.describe('map lab', () => {
   });
 
   test('re-reading the stands keeps the same canvas and requests the TileJSON once', async ({ page, isolation }) => {
-    await openLab(page, `scene=ramp-points&t=${NOON}`);
+    await openLab(page, `scene=ramp-states&t=${NOON}`);
     await labIdle(page);
     const canvas = await page.locator('canvas.maplibregl-canvas').elementHandle();
     expect(isolation.count('tilejson')).toBe(1);
@@ -358,7 +402,7 @@ test.describe('map lab', () => {
 
   test('a failing base map shows the degraded chip and keeps the stands', async ({ page, isolation }) => {
     isolation.setTiles('fail');
-    const map = await openLab(page, `scene=ramp-points&view=ramp&terminal=A&t=${NOON}`);
+    const map = await openLab(page, `scene=ramp-states&view=ramp&terminal=A&t=${NOON}`);
     await expect(map).toHaveAttribute('data-occ-basemap', 'degraded');
     await expect(page.locator('.occ-map-chip')).toHaveText(
       'No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.',
@@ -366,6 +410,7 @@ test.describe('map lab', () => {
     expect(isolation.count('tile')).toBeGreaterThan(0);
     // The stands are still drawn and still answer a click.
     await labIdle(page);
+    await foldLegend(page);
     await clickStand(page, 'A5');
     await expect.poll(() => new URL(page.url()).searchParams.get('stand')).toBe('A5');
   });
@@ -386,7 +431,7 @@ test.describe('map lab', () => {
     await expect(links.first()).toBeVisible();
     const scenes = (await links.evaluateAll(nodes => nodes.map(node => new URL(node.href).searchParams.get('scene'))));
     expect(scenes).toEqual(expect.arrayContaining([
-      'ramp-points', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
+      'ramp-states', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
     ]));
     for (const scene of scenes) {
       const drawn = scene !== 'unavailable-fallback';
@@ -406,7 +451,7 @@ test.describe('map lab in a production build', () => {
   test.skip(!production, 'Only against a production build (OCC_VISUAL_TARGET=production).');
 
   test('/map-lab answers the 404 page and draws no lab', async ({ page }) => {
-    const response = await page.goto('/map-lab?scene=ramp-points');
+    const response = await page.goto('/map-lab?scene=ramp-states');
     await expect(page.getByRole('heading', { level: 1, name: 'Página no encontrada' })).toBeVisible();
     // app/layout.jsx streams every page inside a Suspense boundary, so Next sends this not-found page with the 200 it
     // had already committed and marks it noindex (node_modules/next/dist/docs/01-app/02-guides/streaming.md, «Status

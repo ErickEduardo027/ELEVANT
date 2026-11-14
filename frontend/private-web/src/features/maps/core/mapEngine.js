@@ -365,13 +365,15 @@ export function createMapEngine({
       listen('mouseout', () => onPointerMove(null));
     }
 
+    // An icon or a pattern the style names: the pixels go to MapLibre with what the resolver says of them (the pixel
+    // ratio, whether it is an SDF, and where an image stretched around a text may stretch).
     if (imageResolver) {
       map.setMissingStyleImageResolver(id => {
         if (map === null || map.hasImage(id)) return;
         const image = imageResolver(id);
         if (!image) return;
-        map.addImage(id, { width: image.width, height: image.height, data: image.data },
-          { pixelRatio: image.pixelRatio, sdf: image.sdf });
+        const { width, height, data, ...metadata } = image;
+        map.addImage(id, { width, height, data }, metadata);
       });
     }
 

@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sharedFakeMapLibre } from '../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
-import { standPoint } from '../maps/testing/mapFixtures';
+import { STAND_REFERENCE } from '../maps/stands/standReference';
+import { boardStand, boardVisit, standPoint } from '../maps/testing/mapFixtures';
 import PositionsMapPage from './PositionsMapPage';
+import { mapOccupancyToRampPositions } from './positionsMapMappers';
 
 // Mapa de posiciones with its real map (PositionMap over OccMap, on the shared fake MapLibre): the page has one
 // legend, the map's, with the states of the stands on screen. The other page tests stub the map.
@@ -93,6 +95,23 @@ describe('PositionsMapPage with its map', () => {
     });
     expect(screen.getAllByRole('button', { name: 'Leyenda' })).toHaveLength(1);
     expect(legendItems()).toEqual(['Planificada', 'Sin verificar', UNOFFICIAL]);
+  });
+
+  it('draws each stand as it reads now: a planned flight due within 15 minutes is «Llegando» on the map, «Planificada» on the board', () => {
+    const now = Date.now();
+    const board = {
+      positions: [boardStand('A05', { coveredBy: ['Ana Ruiz'], turnarounds: [boardVisit({ nowMs: now, flight: 'DM301', arrivalInMin: 8 })] })],
+      asOf: new Date(now).toISOString(),
+    };
+    const references = STAND_REFERENCE.map(stand => ({ id: stand.code, terminal: stand.terminal, lat: stand.latitude, lon: stand.longitude }));
+    const positions = mapOccupancyToRampPositions(references, board, board.asOf).filter(position => position.id === 'A5');
+    const { map } = renderPage({ station: { code: 'PUJ' }, positions });
+    // The page's own data keeps the board's status for its list, summary and alerts.
+    expect(positions[0]).toMatchObject({ status: 'planned' });
+    expect(positions[0]).not.toHaveProperty('displayStatus');
+    // The map draws the state of now, and its legend explains it.
+    expect(map.getSource('occ-stands').data.features.map(feature => feature.properties.state)).toEqual(['arriving']);
+    expect(legendItems()).toEqual(['Llegando', UNOFFICIAL]);
   });
 
   it('shows the map\'s legend in English', () => {

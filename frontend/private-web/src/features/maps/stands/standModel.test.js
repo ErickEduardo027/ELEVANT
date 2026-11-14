@@ -9,7 +9,8 @@ import { layoutStandReferences } from '../airport/layoutIndex';
 import { SCENARIO_AGENTS, boardStand, boardVisit, createQaLayout, createRampScenario } from '../testing/mapFixtures';
 import {
   ARRIVING_WINDOW_MS, COVERAGE_WINDOW_MS, RELEASING_WINDOW_MS, attachStandGeometry, coverageInitials,
-  deriveDisplayStatus, floorToMinute, sameAgentCodes, standDrawState, unlocatedStands,
+  deriveDisplayStatus, displayFromStatus, floorToMinute, minutesUntil, sameAgentCodes, standDrawState, standStateOf,
+  unlocatedStands, withStandDisplay,
 } from './standModel';
 
 // 14:07 in Punta Cana (UTC−4). Every time of the fixtures is relative to it.
@@ -223,6 +224,31 @@ describe('deriveDisplayStatus', () => {
     }
     expect(deriveDisplayStatus(null).state).toBe('available');
     expect(deriveDisplayStatus({ id: 'A10', status: 'disabled', linkedPositionId: 'A9' }).cancelledBy).toBe('A9');
+  });
+
+  it('withStandDisplay copies each position with how it reads; a map draws the display status, else the board status', () => {
+    const { board, flightsByTurnaround } = createRampScenario(NOW);
+    const positions = positionsOf(board);
+    const shown = withStandDisplay([...positions, null, 'A1'], { nowMs: NOW + 30 * 1000, flightsByTurnaround });
+    // Anything that is not a position is left out; the positions themselves are copies, never changed.
+    expect(shown).toHaveLength(positions.length);
+    expect(positions.every(position => !Object.hasOwn(position, 'displayStatus'))).toBe(true);
+    const a6 = shown.find(position => position.id === 'A6');
+    expect(a6).toMatchObject({ status: 'occupied', displayStatus: 'arriving', signals: [] });
+    expect(a6.display).toEqual(deriveDisplayStatus(a6, { nowMs: NOW, flightsByTurnaround }));
+    expect(a6.geometry).toBe(positions.find(position => position.id === 'A6').geometry);
+    // The drawn state: the display status the screen derived, else the board status (anything else reads free).
+    expect(standStateOf(a6)).toBe('arriving');
+    expect(standStateOf(positions.find(position => position.id === 'A6'))).toBe('occupied');
+    expect(standStateOf({ status: 'disabled' })).toBe('disabled');
+    expect(standStateOf({ status: 'disabled', displayStatus: 'parked' })).toBe('disabled');
+    expect(standStateOf({ status: 'mystery' })).toBe('available');
+    expect(standStateOf(null)).toBe('available');
+    // Without the board's visits a stand reads from its own fields.
+    expect(displayFromStatus({ id: 'A5', status: 'occupied', flightNumber: 'DM161', isDemo: true, linkedPositionId: 'A9' }))
+      .toMatchObject({ state: 'occupied', visit: null, signals: [], flightNumber: 'DM161', isDemo: true, cancelledBy: 'A9' });
+    // Whole minutes to go, rounded up; nothing without a time.
+    expect([minutesUntil(NOW + 40.5 * MINUTE, NOW), minutesUntil(NOW - 0.5 * MINUTE, NOW), minutesUntil(null, NOW)]).toEqual([41, 0, null]);
   });
 
   it('the state changes only at minute boundaries', () => {

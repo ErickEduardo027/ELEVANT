@@ -1,47 +1,18 @@
 import { createTranslator, localeFor } from '../../../i18n/languageStore';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
-import { standBox } from '../airport/standGeometry';
-import { TERMINALS, isRetired, lngLatOf, standCodeOf, standTerminalOf } from '../core/cameraPresets';
+import { haversineM } from '../airport/geo';
+import { STAND_BOX, standBox } from '../airport/standGeometry';
+import { TERMINALS, isRetired, standCodeOf, standTerminalOf } from '../core/cameraPresets';
 import { mapMessages } from '../mapMessages';
-import { coverageInitials, deriveDisplayStatus, standDrawState } from './standModel';
+import { standPaint } from './standLayers';
+import { coverageInitials, displayFromStatus, floorToMinute, minutesUntil, standStateOf } from './standModel';
 
-// The stands of a screen as GeoJSON. Until the stand layers move to polygons (PR M4, step b) the stands source draws
-// points (toStandFeatures); buildStandFeatures gives the four collections of the polygon layers, and
-// diffStandFeatures the part of them a board refresh changes, so the map sends updateData only for the stands that
-// changed. Pure.
-
-export { standDrawState };
-
-/**
- * `positions` are the stands of a positions screen (`{ id | code, terminal | terminalCode, latitude, longitude,
- * status, locationSource }`). Each one with finite coordinates becomes a point keyed by its normalized code
- * (mapStandCode: `A01` is `A1`), with `code`, `terminal`, `status` and `unofficial` (true unless OCC placed the stand:
- * it then sits at an internal reference location). Stands without coordinates and retired stands are left out, and a
- * code seen twice keeps its first stand, so every feature id is unique.
- */
-export function toStandFeatures(positions = []) {
-  const features = [];
-  const codes = new Set();
-  for (const position of positions ?? []) {
-    if (position == null || isRetired(position)) continue;
-    const point = lngLatOf(position);
-    const code = mapStandCode(standCodeOf(position));
-    if (point === null || code === '' || codes.has(code)) continue;
-    codes.add(code);
-    features.push({
-      type: 'Feature',
-      properties: {
-        code,
-        terminal: standTerminalOf(position),
-        status: standDrawState(position.status),
-        unofficial: position.locationSource !== 'occ',
-      },
-      geometry: { type: 'Point', coordinates: point },
-    });
-  }
-  return { type: 'FeatureCollection', features };
-}
+// The stands of a screen as the GeoJSON of the stand layers (stands/standLayers.js): the polygons with their state,
+// their lines (lead-ins, combined links, narrow-body boxes), a label point per stand and a chip per terminal.
+// diffStandFeatures gives the part of them a refresh changes, so the map sends updateData only for the stands that
+// changed. A stand reads as the screen derived it (useStandDisplay: `displayStatus`, `signals` and `display`); without
+// that, as its board status says (standModel.js: standStateOf). Pure.
 
 /**
  * The property that keys the features of each collection of buildStandFeatures: the `promoteId` of its source. It
@@ -53,16 +24,16 @@ export const STAND_FEATURE_COLLECTIONS = Object.freeze(Object.keys(STAND_FEATURE
 export const STAND_FEATURE_LABEL_MODES = Object.freeze(['default', 'dashboard']);
 export const DEFAULT_TIME_ZONE = 'America/Santo_Domingo';
 
-// Which labels win a place first (MapLibre places the lower symbol-sort-key first). The console's apron puts its
-// planned stands first, as its codes did before (standLayers.js, `dashboard`).
+// Which labels win a place first (MapLibre places the lower symbol-sort-key first): disabled and arriving, then the
+// stands with an aircraft on them, then planned, then free. The console's apron puts its planned stands first, as its
+// codes did before.
 const SORT_KEYS = Object.freeze({
   default: Object.freeze({ disabled: 1, arriving: 1, occupied: 2, releasing: 2, planned: 3, available: 4, unverified: 5 }),
   dashboard: Object.freeze({ planned: 0, disabled: 1, arriving: 1, occupied: 2, releasing: 2, available: 4, unverified: 5 }),
 });
-// The states with an aircraft on the stand: they show its glyph (until the footprint to scale of PR M5), count in the
-// terminal chip and give the departure time; the others give the arrival time of the flight to come.
-const ON_STAND_STATES = new Set(['occupied', 'releasing']);
 const SEPARATOR = ' · ';
+// The code-C box of a stand limited to narrow-body aircraft sits inside the stand, at least a metre from each side.
+const NARROW_MARGIN_M = 2;
 
 const clockFormatters = new Map();
 
@@ -79,80 +50,63 @@ function clockOf(language, timeZone) {
 }
 
 function strongestSignal(signals) {
-  if (signals.some(signal => signal.kind === 'urgent')) return 'urgent';
-  return signals.some(signal => signal.kind === 'attention') ? 'attention' : null;
+  if (signals.some(signal => signal?.kind === 'urgent')) return 'urgent';
+  return signals.some(signal => signal?.kind === 'attention') ? 'attention' : null;
 }
 
 const feature = (id, properties, geometry) => ({ type: 'Feature', id, properties, geometry });
 const collection = features => ({ type: 'FeatureCollection', features });
+const hasAircraft = state => standPaint(state).glyph === 'aircraft';
 
 // «Llega 14:20 · en 12 min», «Llega 14:20», «Sale 15:05 · en 8 min» or «Sale 15:05», and the covering agents'
-// initials: the departure of an aircraft on the stand, the arrival of one to come. Only for a visit of the board.
-function timeLine(display, t, clock, initials) {
-  if (display.visit === null) return null;
-  const onStand = ON_STAND_STATES.has(display.state);
-  const at = onStand ? display.departureAt : display.arrivalAt;
-  const minutes = onStand ? display.minutesToDeparture : display.minutesToArrival;
+// initials: the departure of an aircraft on the stand, the arrival of one to come, counted down at `now`. Only for a
+// visit of the board.
+function timeLine(stand, { t, clock, now }) {
+  if (stand.display.visit == null) return null;
+  const onStand = hasAircraft(stand.state);
+  const at = onStand ? stand.display.departureAt : stand.display.arrivalAt;
+  const minutes = minutesUntil(at, now);
   const verb = onStand ? 'departs' : 'arrives';
   let time = null;
-  if (at !== null) time = minutes > 0 ? t(`stand.${verb}In`, { time: clock(at), minutes }) : t(`stand.${verb}`, { time: clock(at) });
-  const line = [time, initials].filter(Boolean).join(SEPARATOR);
+  if (Number.isFinite(at)) time = minutes > 0 ? t(`stand.${verb}In`, { time: clock(at), minutes }) : t(`stand.${verb}`, { time: clock(at) });
+  const line = [time, coverageInitials(stand.position.coveredBy)].filter(Boolean).join(SEPARATOR);
   return line === '' ? null : line;
 }
 
 // The three label variants of a stand: the code; the code and the flight (or «Anulada por …»); and up to the full
 // label: code; flight, type and «Demo»; times and initials; then «Anulada por …», the reason of the strongest signal
 // and «Solo fuselaje estrecho» where they apply. Lines are separated by «\n».
-function labelTexts(code, position, display, { t, clock, language }) {
+function labelTexts(stand, context) {
+  const { code, display, state, signals, position } = stand;
+  const { t, language } = context;
   const demo = display.isDemo ? TAGS.demo[language] ?? TAGS.demo.es : null;
   const flight = display.flightNumber;
-  const cancelled = display.state === 'disabled' && display.cancelledBy !== null
-    ? t('stand.cancelledBy', { code: display.cancelledBy }) : null;
+  const cancelled = state === 'disabled' && display.cancelledBy != null ? t('stand.cancelledBy', { code: display.cancelledBy }) : null;
   const flightShort = flight ? [flight, demo].filter(Boolean).join(SEPARATOR) : null;
   const flightLong = flight ? [flight, display.aircraftType, demo].filter(Boolean).join(SEPARATOR) : null;
   const second = cancelled ?? flightShort;
-  const reason = display.signals.length > 0 ? t(`stand.${display.signals[0].reason}`) : null;
+  const reason = signals.length > 0 && signals[0]?.reason ? t(`stand.${signals[0].reason}`) : null;
   const narrow = position.narrowbodyOnly === true ? t('stand.narrowbodyOnly') : null;
   return {
     label1: code,
     label2: second === null ? code : `${code}\n${second}`,
-    label3: [code, flightLong, timeLine(display, t, clock, coverageInitials(position.coveredBy)), cancelled, reason, narrow]
-      .filter(Boolean).join('\n'),
+    label3: [code, flightLong, timeLine(stand, context), cancelled, reason, narrow].filter(Boolean).join('\n'),
   };
 }
 
 const lineOf = points => points.map(point => [point[0], point[1]]);
+// The width of a stand's box: its nose side, the first two corners of the ring as standBox and the layout write it.
+const boxWidthM = polygon => (Array.isArray(polygon) && polygon.length >= 2 ? haversineM(polygon[0], polygon[1]) : 0);
+// A narrow-body box fits inside a stand only when the stand is wider than code C.
+const takesNarrowBox = (position, geometry) => position.narrowbodyOnly === true && geometry.sizeLetter !== 'C'
+  && boxWidthM(geometry.polygon) >= STAND_BOX.C.widthM + NARROW_MARGIN_M;
 const terminalOrder = terminal => {
   const at = TERMINALS.indexOf(terminal);
   return at === -1 ? TERMINALS.length : at;
 };
 
-/**
- * The four collections the stand layers draw, from the stands of a screen with their geometry
- * (stand model: attachStandGeometry); a stand without one, a retired stand or a code seen twice is left out:
- * - `polygons`: each stand's box, id the normalized code (`code` is the promoteId), with `code`, `terminal`, `state`
- *   (deriveDisplayStatus at `nowMs`), `unofficial` (not placed by OCC), `signal` (`urgent`, `attention` or `null`),
- *   `glyph` (`aircraft` where an aircraft is on the stand, until the footprints to scale of PR M5) and `clock`
- *   (`releasing`);
- * - `aux`: lines by `kind`: `leadIn` (with the stand's `state`), `combinedLink` (from the centre of a cancelled stand
- *   to the centre of the stand that cancels it, when both are drawn) and `narrowInner` (the code-C box inside a
- *   larger stand limited to narrow-body aircraft);
- * - `labels`: a point at each centre with the label variants `label1` (code), `label2` (code and flight) and `label3`
- *   (the full label), its `state`, `signal` and `sortKey` (`labels: 'dashboard'` puts planned stands first);
- * - `groups`: one point per terminal at the centre of its boxes, `text` «A · 3/16» (aircraft on the stands over the
- *   stands drawn) and `arriving` (a flight is arriving at one of them).
- * The countdowns change only on the minute: `nowMs` (the current time when it is not given) is rounded down to it.
- * Texts follow `language` (es, en) and the clock times `timeZone`. `flightsByTurnaround` and `aircraftByTurnaround`
- * go to deriveDisplayStatus.
- */
-export function buildStandFeatures(stands = [], {
-  nowMs, language = 'es', timeZone = DEFAULT_TIME_ZONE, labels = 'default', flightsByTurnaround, aircraftByTurnaround,
-} = {}) {
-  if (!STAND_FEATURE_LABEL_MODES.includes(labels)) throw new RangeError(`Unknown stand label mode: ${String(labels)}`);
-  const t = createTranslator(mapMessages, language);
-  const clock = clockOf(language, timeZone);
-  // One instant for the whole build, so no two stands are read on either side of a minute.
-  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+// The stands a screen gives that the map draws: with a geometry, not retired, each code once, as they will be drawn.
+function drawnStands(stands) {
   const drawn = [];
   const codes = new Set();
   for (const position of stands ?? []) {
@@ -160,30 +114,59 @@ export function buildStandFeatures(stands = [], {
     const code = mapStandCode(standCodeOf(position));
     if (code === '' || codes.has(code)) continue;
     codes.add(code);
+    const display = position.display ?? displayFromStatus(position);
     drawn.push({
       code,
       position,
       geometry: position.geometry,
       terminal: standTerminalOf(position),
-      display: deriveDisplayStatus(position, { nowMs: now, flightsByTurnaround, aircraftByTurnaround }),
+      state: standStateOf(position),
+      signals: Array.isArray(position.signals) ? position.signals : display.signals ?? [],
+      display,
     });
   }
+  return drawn;
+}
+
+/**
+ * The four collections the stand layers draw, from the stands of a screen with their geometry (stand model:
+ * attachStandGeometry) and, when the screen derived it, their display (withStandDisplay); a stand without a geometry, a
+ * retired stand or a code seen twice is left out:
+ * - `polygons`: each stand's box, id the normalized code (`code` is the promoteId), with `code`, `terminal`, `state`
+ *   (standStateOf) and `unofficial` (not placed by OCC);
+ * - `aux`: lines by `kind`: `leadIn` (with the stand's `state`), `combinedLink` (from the centre of a cancelled stand
+ *   to the centre of the stand that cancels it, when both are drawn) and `narrowInner` (the code-C box inside a stand
+ *   wider than code C limited to narrow-body aircraft; a narrower stand is already that box);
+ * - `labels`: a point at each centre with the label variants `label1` (code), `label2` (code and flight, or «Anulada
+ *   por …») and `label3` (the full label), its `state`, `signal` (`urgent`, `attention` or `null`), `glyph` (`aircraft`
+ *   while an aircraft is on the stand, until the footprints to scale of PR M5), `clock` (Por liberar), `heading` (the
+ *   stand's, for the aircraft) and `sortKey` (`labels: 'dashboard'` puts planned stands first);
+ * - `groups`: one point per terminal at the centre of its boxes, `text` «A · 3/16» (aircraft on the stands over the
+ *   stands drawn) and `arriving` (a stand of the terminal reads «Llegando»).
+ * The countdowns are counted at `nowMs` rounded down to the minute (the current time when it is not given), so they
+ * change only on the minute. Texts follow `language` (es, en) and the clock times `timeZone`.
+ */
+export function buildStandFeatures(stands = [], {
+  nowMs, language = 'es', timeZone = DEFAULT_TIME_ZONE, labels = 'default',
+} = {}) {
+  if (!STAND_FEATURE_LABEL_MODES.includes(labels)) throw new RangeError(`Unknown stand label mode: ${String(labels)}`);
+  // One instant for the whole build, so no two stands are read on either side of a minute.
+  const now = floorToMinute(Number.isFinite(nowMs) ? nowMs : Date.now());
+  const context = { t: createTranslator(mapMessages, language), clock: clockOf(language, timeZone), now, language };
+  const drawn = drawnStands(stands);
 
   const polygons = [];
   const aux = [];
   const labelPoints = [];
   const centres = new Map(drawn.map(stand => [stand.code, stand.geometry.center]));
-  for (const { code, position, geometry, terminal, display } of drawn) {
-    const { state } = display;
-    const signal = strongestSignal(display.signals);
+  for (const stand of drawn) {
+    const { code, position, geometry, terminal, state, signals, display } = stand;
+    const paint = standPaint(state);
     polygons.push(feature(code, {
       code,
       terminal,
       state,
       unofficial: geometry.locationSource !== 'occ',
-      signal,
-      glyph: ON_STAND_STATES.has(state) ? 'aircraft' : null,
-      clock: state === 'releasing',
     }, { type: 'Polygon', coordinates: [lineOf(geometry.polygon)] }));
 
     if (Array.isArray(geometry.leadIn) && geometry.leadIn.length >= 2) {
@@ -191,13 +174,13 @@ export function buildStandFeatures(stands = [], {
       aux.push(feature(id, { id, kind: 'leadIn', code, state }, { type: 'LineString', coordinates: lineOf(geometry.leadIn) }));
     }
     const canceller = display.cancelledBy;
-    if (canceller !== null && canceller !== code && centres.has(canceller)) {
+    if (canceller != null && canceller !== code && centres.has(canceller)) {
       const id = `combinedLink:${code}`;
       aux.push(feature(id, { id, kind: 'combinedLink', code, target: canceller }, {
         type: 'LineString', coordinates: lineOf([geometry.center, centres.get(canceller)]),
       }));
     }
-    if (position.narrowbodyOnly === true && geometry.sizeLetter !== 'C') {
+    if (takesNarrowBox(position, geometry)) {
       const id = `narrowInner:${code}`;
       aux.push(feature(id, { id, kind: 'narrowInner', code }, {
         type: 'LineString', coordinates: lineOf(standBox(geometry.center, geometry.headingTrue, 'C')),
@@ -207,9 +190,12 @@ export function buildStandFeatures(stands = [], {
     labelPoints.push(feature(code, {
       code,
       state,
-      signal,
+      signal: strongestSignal(signals),
+      glyph: paint.glyph,
+      clock: paint.clock,
+      heading: Number.isFinite(geometry.headingTrue) ? geometry.headingTrue : 0,
       sortKey: SORT_KEYS[labels][state],
-      ...labelTexts(code, position, display, { t, clock, language }),
+      ...labelTexts(stand, context),
     }, { type: 'Point', coordinates: lineOf([geometry.center])[0] }));
   }
 
@@ -228,8 +214,8 @@ function terminalGroups(drawn) {
     if (stand.terminal === null || stand.terminal === undefined || stand.terminal === '') continue;
     const group = byTerminal.get(stand.terminal) ?? { total: 0, busy: 0, arriving: false, points: [] };
     group.total += 1;
-    if (ON_STAND_STATES.has(stand.display.state)) group.busy += 1;
-    if (stand.display.state === 'arriving') group.arriving = true;
+    if (hasAircraft(stand.state)) group.busy += 1;
+    if (stand.state === 'arriving') group.arriving = true;
     group.points.push(...stand.geometry.polygon);
     byTerminal.set(stand.terminal, group);
   }
@@ -247,6 +233,53 @@ function terminalGroups(drawn) {
         arriving: group.arriving,
       }, { type: 'Point', coordinates: centre });
     });
+}
+
+const isFiniteNumber = value => typeof value === 'number' && Number.isFinite(value);
+
+/** The box `[[west, south], [east, north]]` around `[lng, lat]` points, or `null` without a finite one. */
+export function boxOfPoints(points) {
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const point of points ?? []) {
+    if (!Array.isArray(point) || !isFiniteNumber(point[0]) || !isFiniteNumber(point[1])) continue;
+    west = Math.min(west, point[0]);
+    south = Math.min(south, point[1]);
+    east = Math.max(east, point[0]);
+    north = Math.max(north, point[1]);
+  }
+  return west === Infinity ? null : [[west, south], [east, north]];
+}
+
+/** Whether two boxes `[[west, south], [east, north]]` share a point (edges included). */
+export function boxesMeet(first, second) {
+  if (!first || !second) return false;
+  return first[0][0] <= second[1][0] && second[0][0] <= first[1][0] && first[0][1] <= second[1][1] && second[0][1] <= first[1][1];
+}
+
+/**
+ * The stands of a screen the map draws whose box meets `bounds` (`[[west, south], [east, north]]`, the area the
+ * panels leave in sight): with a geometry and not retired; without bounds, every drawn stand. A polygon that only
+ * reaches into the view counts, as the map shows that part of it.
+ */
+export function standsDrawnIn(stands = [], bounds = null) {
+  return (stands ?? []).filter(stand => stand != null && !isRetired(stand) && Array.isArray(stand.geometry?.polygon)
+    && (bounds === null || boxesMeet(boxOfPoints(stand.geometry.polygon), bounds)));
+}
+
+/**
+ * The features of a collection of buildStandFeatures that meet `bounds`: points inside it, lines and polygons whose box
+ * meets it. `kind` keeps those of one kind (an `aux` line's `kind`).
+ */
+export function featuresIn(featureCollection, bounds, { kind } = {}) {
+  return (featureCollection?.features ?? []).filter(item => {
+    if (kind !== undefined && item.properties?.kind !== kind) return false;
+    const { type, coordinates } = item.geometry ?? {};
+    const points = type === 'Point' ? [coordinates] : type === 'Polygon' ? coordinates?.[0] : coordinates;
+    return bounds === null || boxesMeet(boxOfPoints(points), bounds);
+  });
 }
 
 function sameProperties(first = {}, second = {}) {

@@ -16,6 +16,7 @@ import { ADMIN_OCC_MODULE_IDS } from '../admin-occ/navigation';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { positionsMapMessages } from './positionsMapMessages';
 import { locateOccStand } from '../../services/occPositionsService';
+import { useStandDisplay } from '../maps/stands/useStandDisplay';
 
 // Flights that can be brought to a stand: the unassigned ones and those parked elsewhere.
 export function assignCandidates(data) {
@@ -63,6 +64,9 @@ export default function PositionsMapPage({
 
   const { search, setSearch, terminalFilter, setTerminalFilter, filteredPositions } = usePositionsMapFilters(positions);
   const { toasts, dismissToast } = usePositionAlerts(positions, displayConnection);
+  // The map draws each stand as it reads now (the seven states, recomputed on the minute); the list, the summary and
+  // the alerts keep the board's status.
+  const mapPositions = useStandDisplay(filteredPositions);
 
   const selectedPosition = positions.find(position => position.id === selectedPositionId) ?? null;
   const emptyReason = positions.length === 0 ? 'no-positions' : filteredPositions.length === 0 ? 'no-results' : null;
@@ -186,7 +190,7 @@ export default function PositionsMapPage({
     <div ref={mapAreaRef} className="relative min-h-[420px] flex-1 bg-surface-light dark:bg-surface-dark">
       <PositionMap
         ref={mapRef}
-        positions={filteredPositions}
+        positions={mapPositions}
         selectedPositionId={selectedPositionId}
         onSelectPosition={setSelectedPositionId}
         theme={theme}
