@@ -63,6 +63,32 @@ La pasarela de tarjeta simulada también está apagada por defecto (`CardPayment
 
 Los vuelos demo de Superadministración ([ADR-0041](../adr/0041-demo-flights-and-punta-cana-stands.md)) también están apagados por defecto (`DemoFlights:Mode=Disabled`): los enciende `appsettings.Development.json` y la API se niega a arrancar con ellos fuera de los entornos `Development`, `Test` o `Testing`. Como `compose.local.yml` y la plantilla del VPS Development ejecutan la API como `Development`, el overlay no necesita ninguna variable y en el VPS quedan encendidos al desplegar la API que los trae. El arnés tiene para ellos un quinto proyecto, `demo` (`tests/e2e-cycle/demo-vuelo.spec.ts`), que no depende de las fases: usa la aerolínea sembrada «Demo Airlines» con su contrato y el agente sembrado. Carga las posiciones de Punta Cana, programa o amplía el turno del día del agente para que cubra la hora actual, le da una cobertura de una posición libre de la Terminal A (liberando antes las que el agente tenga ese día) y dispara el vuelo «Al azar», así que el servidor lo envía a esa posición; al final libera esa cobertura. Corre con el resto en `npm run test:e2e:cycle` o aparte con `npx playwright test --config playwright.cycle.config.ts --project=demo`, en la misma franja de 08:30 a 22:30, y tarda unos 10 minutos porque espera el aterrizaje y el despegue que marca la API. Antes de empezar termina los vuelos demo activos que nadie importó, como los que deja un intento fallido; se salta si la API los tiene apagados o si la estación ya tiene tres vuelos demo activos que OCC importó. Ni este recorrido ni una demostración pulsan «Actualizar ahora» en «Importar vuelos»: un vuelo demo no necesita una lectura del proveedor, y en el VPS esa lectura gasta unidades de AeroDataBox.
 
+## Tráfico aéreo en vivo: adsb.fi y adsb.lol
+
+La imagen aérea del mapa del OCC ([ADR-0042](../adr/0042-occ-air-picture-and-map-flights.md)) está apagada por defecto (`AirTraffic:Enabled=false`) y la enciende `appsettings.Development.json`, con adsb.fi y adsb.lol de relevo ([integraciones externas](../architecture/external-integrations.md)).
+
+**Aviso.** `compose.local.yml` ejecuta la API como `Development`, así que el stack local **sin** el overlay lee adsb.fi cada 10 segundos mientras una pantalla lea la imagen aérea (desde el PR M5, cualquier mapa del OCC abierto) y hasta 15 minutos después de la última lectura. Sin nadie mirando no llama a nadie.
+
+El overlay del arnés la apaga con `AirTraffic__Enabled: "${ELEVANT_E2E_AIR_TRAFFIC_ENABLED:-false}"` y no toca la lista de redes: el recorrido E2E nunca lee una red real. Ninguna prueba ni workflow de CI llama a adsb.fi o a adsb.lol.
+
+Para probar a mano la red real, como una lectura deliberada y fuera de las pruebas, hay dos caminos:
+
+- **Sin stack.** La prueba opcional del adaptador hace una sola lectura de 250 NM alrededor de Punta Cana, contra adsb.fi y sin clave, y solo informa cuántos aviones vio. Con `$env:ELEVANT_LIVE_AIR_TRAFFIC_PROVIDER = "AdsbLol"` lee adsb.lol.
+
+  ```powershell
+  $env:ELEVANT_LIVE_AIR_TRAFFIC = "1"
+  dotnet test backend/tests/Elevant.UnitTests --configuration Release --filter "FullyQualifiedName~AirTrafficLiveTests"
+  ```
+
+- **Con el stack.** Se levanta con el overlay y la variable en `true`:
+
+  ```powershell
+  $env:ELEVANT_E2E_AIR_TRAFFIC_ENABLED = "true"
+  docker compose --env-file database/DevelopmentDB/.env -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
+  ```
+
+  Después se abre un mapa del OCC con una cuenta de OCC que tenga PUJ en su alcance. Hasta que el PR M5 dibuje los aviones, la misma lectura se hace con `GET /api/v1/occ/map/air-picture?stationId=<id de PUJ>` desde el Swagger de la API local, autorizado con el token de una sesión de esa cuenta. La primera respuesta dice `Warming` y, unos segundos después, `Live`, con los aviones y `source.name` «adsb.fi». Al terminar se quita la variable (`Remove-Item Env:ELEVANT_E2E_AIR_TRAFFIC_ENABLED`) y se vuelve a levantar el stack, para que el arnés no lea la red real.
+
 ## Frontends
 
 Entre a `frontend/private-web`, `frontend/public-web` o `frontend/mobile-agent`, lea su README y ejecute solo los scripts declarados en su `package.json`. Una tablet no puede alcanzar el `localhost` de la PC; use una URL de red autorizada/Tailscale según el ambiente.

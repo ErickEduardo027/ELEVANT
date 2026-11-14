@@ -1140,6 +1140,48 @@ radioayudas que trajo el extracto de OurAirports. Las capturas se revisaron en
 local, en el laboratorio; nada de esto acredita un despliegue ni una revisión
 visual en el VPS.
 
+## Imagen aérea y vuelos para el mapa (PR A3, lo que consumirá M5)
+
+Posterior al commit verificado de esta nota: esta sección describe la API y el
+cliente compartido del PR A3 «Imagen aérea y vuelos para el mapa» (código de
+`77dff268` a `e098ccde`;
+[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)).
+**Private Web todavía no los usa:** ninguna pantalla cambió con ese PR, y lo
+que sigue sobre las pantallas es el plan de los PR M5, M6 y U3, no
+comportamiento actual.
+
+- **Lo que ya existe.** El cliente compartido ofrece `getOccAirPicture`,
+  `getOccAircraftTrack` y `getOccMapFlights`, con validadores estrictos y el
+  código `invalid_map_query`
+  ([`occMap.ts`](../../packages/api-client/src/occMap.ts)). Los lee el personal
+  interno con la estación en su alcance y un permiso de Panorama, Monitoreo de
+  vuelos, Mapa de posiciones o Planificación; la imagen aérea solo existe para
+  PUJ.
+- **Planificado (M5): aviones y crédito.** El mapa dibujará los aviones de
+  `air-picture` con su estela, unirá cada uno a su fila de `flights` por
+  `matchedFlightKey` y mostrará en la atribución de cada mapa «Datos de
+  aeronaves: {source.name}», con el enlace a la red y a su licencia. El estado
+  (`Live`, `Stale`, `Warming`, `Unavailable` o `Disabled`), los motivos y el
+  crédito se traducirán en los archivos de mensajes del OCC, en español y en
+  inglés, sin mostrar nunca el título de un error.
+- **Planificado: ritmo.** La imagen se pedirá al ritmo de
+  `refreshAfterSeconds` (10 segundos, 2 mientras calienta), con
+  `trails=short` una vez y `none` después, y en pausa con la pestaña oculta;
+  `flights`, con `occ_planning` (como mucho una vez cada 3 segundos) y un
+  sondeo de seguridad de 60; la estela completa, al elegir un avión. El
+  [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  ya cuenta la imagen y los vuelos de la consola en la prueba de presupuesto.
+- **Planificado: seguir un vuelo.** La selección `flightId` aceptará una
+  `flightKey` o una `visitKey`. La clave de un vuelo no cambia con una
+  importación normal, así que «Seguir» no se suelta al importar; tras un
+  enlace 3-N07, la clave vieja se resuelve por `proposalId`.
+- **Planificado: hitos y vuelo demo (M5 y M6).** La barra de avance de cada
+  posición y la tira de hitos saldrán de `milestones`, y el avión demo se
+  ajustará a los instantes del bloque `demo`, sin derivar los suyos.
+- **El panel regional actual** del Panorama sigue con
+  `GET occ/traffic/aircraft` (OpenSky, apagado sin credenciales) y sin
+  reconocer vuelos de ELEVANT hasta que U3 lo retire.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |

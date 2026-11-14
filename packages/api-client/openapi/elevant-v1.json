@@ -24196,6 +24196,268 @@
         ]
       }
     },
+    "/api/v1/occ/map/air-picture": {
+      "get": {
+        "tags": [
+          "OccMap"
+        ],
+        "summary": "The live aircraft around the station, each with the ELEVANT flight it is. `trails` is `short` (default:\nup to eight points of each trail) or `none`. The state of the picture (`Live`, `Stale`,\n`Warming`, `Unavailable`, `Disabled`) and the credit of the network come in the 200; screens ask\nagain after `refreshAfterSeconds`. Only the station with live traffic has a picture.",
+        "operationId": "GetOccAirPicture",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "trails",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAirPictureResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/map/aircraft/{hex}/track": {
+      "get": {
+        "tags": [
+          "OccMap"
+        ],
+        "summary": "The trail of one live aircraft from memory: its last segment, at most 600 points, oldest first. `hex` is its\nICAO 24-bit address, six hexadecimal digits; an address no read saw lately is not found.",
+        "operationId": "GetOccAircraftTrack",
+        "parameters": [
+          {
+            "name": "hex",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAircraftTrackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/map/flights": {
+      "get": {
+        "tags": [
+          "OccMap"
+        ],
+        "summary": "The ELEVANT flights of the station from `hoursBack` hours before now (0 to 24, default 2) to\n`hoursAhead` hours after it (1 to 36, default 12), and the legs of every aircraft on the ground now: one row\nper leg of a turnaround and per open proposal of the feed, with stable keys, phase, stand, recorded milestones and\nthe demo clock. It changes only when OCC's planning does (`occ_planning`).",
+        "operationId": "GetOccMapFlights",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "hoursBack",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "hoursAhead",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccMapFlightsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/master-data": {
       "get": {
         "tags": [
@@ -47998,6 +48260,235 @@
         },
         "additionalProperties": false
       },
+      "OccAirPictureAircraftResponse": {
+        "required": [
+          "hex",
+          "latitude",
+          "longitude",
+          "onGround",
+          "positionAt",
+          "trail"
+        ],
+        "type": "object",
+        "properties": {
+          "hex": {
+            "type": "string"
+          },
+          "callsign": {
+            "type": "string",
+            "nullable": true
+          },
+          "registration": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeIcaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "altitudeFeet": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "onGround": {
+            "type": "boolean"
+          },
+          "groundSpeedKnots": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "trackDegrees": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "verticalRateFeetPerMinute": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "squawk": {
+            "type": "string",
+            "nullable": true
+          },
+          "positionAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "matchedFlightKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "matchedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "trail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAirTrailPointResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirPictureCenterResponse": {
+        "required": [
+          "latitude",
+          "longitude",
+          "radiusNm"
+        ],
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "radiusNm": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirPictureResponse": {
+        "required": [
+          "aircraft",
+          "center",
+          "refreshAfterSeconds",
+          "serverTime",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ageSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "refreshAfterSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirTrafficSourceResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "center": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirPictureCenterResponse"
+              }
+            ]
+          },
+          "aircraft": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAirPictureAircraftResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirTrafficSourceResponse": {
+        "required": [
+          "homeUrl",
+          "licenseName",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "homeUrl": {
+            "type": "string"
+          },
+          "licenseName": {
+            "type": "string"
+          },
+          "licenseUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirTrailPointResponse": {
+        "required": [
+          "at",
+          "latitude",
+          "longitude",
+          "onGround"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "altitudeFeet": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "onGround": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAircraftResponse": {
         "required": [
           "icaoCode",
@@ -48110,6 +48601,38 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAircraftTrackResponse": {
+        "required": [
+          "hex",
+          "points",
+          "serverTime"
+        ],
+        "type": "object",
+        "properties": {
+          "hex": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirTrafficSourceResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAirTrailPointResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -49249,6 +49772,391 @@
             "items": {
               "$ref": "#/components/schemas/OccIncidentEventResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapAircraftResponse": {
+        "type": "object",
+        "properties": {
+          "registration": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeIcaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "sizeCategory": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapAirlineResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapAirportResponse": {
+        "required": [
+          "iataCode",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapDemoResponse": {
+        "required": [
+          "appearAt",
+          "demoFlightId",
+          "onBlockAt",
+          "phase",
+          "scheduledOffBlockAt",
+          "state",
+          "touchdownAt"
+        ],
+        "type": "object",
+        "properties": {
+          "demoFlightId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "appearAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "touchdownAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "onBlockAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scheduledOffBlockAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "offBlockAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "takeoffAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vanishAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapFlightResponse": {
+        "required": [
+          "airline",
+          "direction",
+          "flightKey",
+          "flightNumber",
+          "imported",
+          "isDemo",
+          "milestones",
+          "phase",
+          "scheduledAt",
+          "visitKey"
+        ],
+        "type": "object",
+        "properties": {
+          "flightKey": {
+            "type": "string"
+          },
+          "visitKey": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "legId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "direction": {
+            "type": "string"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "callsign": {
+            "type": "string",
+            "nullable": true
+          },
+          "airline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapAirlineResponse"
+              }
+            ]
+          },
+          "counterpart": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapAirportResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "estimatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "phase": {
+            "type": "string"
+          },
+          "providerStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "aircraft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapAircraftResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "imported": {
+            "type": "boolean"
+          },
+          "turnaround": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapTurnaroundResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "stand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapStandResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "suggestedStandCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccMapMilestoneResponse"
+            }
+          },
+          "isDemo": {
+            "type": "boolean"
+          },
+          "demo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapDemoResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapFlightsResponse": {
+        "required": [
+          "flights",
+          "serverTime",
+          "stationAirport",
+          "stationCode",
+          "stationId",
+          "windowFrom",
+          "windowTo"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationAirport": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMapAirportResponse"
+              }
+            ]
+          },
+          "flights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccMapFlightResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapMilestoneResponse": {
+        "required": [
+          "actualAt",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "actualAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapStandResponse": {
+        "required": [
+          "code",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "terminalCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMapTurnaroundResponse": {
+        "required": [
+          "id",
+          "operationCode",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operationStatus": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -57236,6 +58144,9 @@
     },
     {
       "name": "OccIncidents"
+    },
+    {
+      "name": "OccMap"
     },
     {
       "name": "OccMasterData"

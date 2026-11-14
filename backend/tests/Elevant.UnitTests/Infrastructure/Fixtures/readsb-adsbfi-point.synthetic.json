@@ -1,0 +1,101 @@
+{
+  "now": 1794582000.5,
+  "messages": 812345,
+  "resultCount": 7,
+  "ptime": 3,
+  "aircraft": [
+    {
+      "hex": "f0a001",
+      "type": "adsb_icao",
+      "flight": "ZZA901  ",
+      "r": "ZZ-SYA",
+      "t": "B738",
+      "category": "A3",
+      "alt_baro": 3500,
+      "alt_geom": 3650,
+      "gs": 182.4,
+      "track": 82.5,
+      "true_heading": 80.1,
+      "baro_rate": -768,
+      "geom_rate": -736,
+      "squawk": "4521",
+      "emergency": "none",
+      "nav_qnh": 1013.6,
+      "lat": 18.512345,
+      "lon": -68.501234,
+      "nic": 8,
+      "rc": 186,
+      "seen_pos": 0.4,
+      "version": 2,
+      "mlat": [],
+      "tisb": [],
+      "messages": 4211,
+      "seen": 0.2,
+      "rssi": -21.4
+    },
+    {
+      "hex": "f0a002",
+      "type": "adsb_icao",
+      "flight": "ZZA902",
+      "r": "ZZ-SYB",
+      "t": "A320",
+      "category": "A3",
+      "alt_baro": "ground",
+      "gs": 12.3,
+      "true_heading": 264.0,
+      "squawk": "2000",
+      "lat": 18.567123,
+      "lon": -68.362901,
+      "seen_pos": 1.1,
+      "messages": 988,
+      "seen": 0.6,
+      "rssi": -18.2
+    },
+    {
+      "hex": "~2f0a03",
+      "type": "tisb_other",
+      "alt_baro": 1200,
+      "lat": 18.6,
+      "lon": -68.4,
+      "seen_pos": 2.0,
+      "seen": 2.0
+    },
+    {
+      "hex": "f0a004",
+      "type": "mode_s",
+      "alt_baro": 37000,
+      "squawk": "1000",
+      "messages": 41,
+      "seen": 4.2
+    },
+    {
+      "hex": "f0a005",
+      "type": "adsb_icao",
+      "flight": "ZZA905",
+      "alt_baro": 24000,
+      "lat": 19.1,
+      "lon": -69.2,
+      "seen_pos": 150.0,
+      "seen": 1.0
+    },
+    {
+      "hex": "F0A006",
+      "type": "mlat",
+      "flight": "    ",
+      "alt_geom": 12025,
+      "gs": 401.7,
+      "track": 359.9,
+      "geom_rate": 1024,
+      "lat": 18.9,
+      "lon": -67.95,
+      "seen": 3.0
+    },
+    {
+      "hex": "f0a07",
+      "alt_baro": 5000,
+      "lat": 18.4,
+      "lon": -68.2,
+      "seen_pos": 1.0
+    }
+  ]
+}

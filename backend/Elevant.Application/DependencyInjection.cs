@@ -86,6 +86,18 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Integration.DemoFlights.DemoFlightHandler>();
         // ADR-0041: «Cargar posiciones de Punta Cana», under the same DemoFlights:Mode.
         services.AddScoped<Elevant.Application.Operations.DemoStation.DemoStationHandler>();
+        // ADR-0042: without Infrastructure (tools, tests) there is no AirTraffic section: no network is ever read.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IAirTrafficProvider,
+            Elevant.Application.Abstractions.Operations.UnconfiguredAirTrafficProvider>(services);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
+            Elevant.Application.Operations.AirPicture.AirTrafficSettings.Disabled);
+        // ADR-0042: one air picture in memory for every screen, read by AirTrafficPollWorker only while someone watches.
+        services.AddSingleton<Elevant.Application.Operations.AirPicture.AirPictureService>();
+        // ADR-0042: the three reads of the OCC map (occ/map): the air picture, an aircraft's track and the map flights.
+        services.AddScoped<Elevant.Application.Operations.AirPicture.GetOccAirPictureHandler>();
+        services.AddScoped<Elevant.Application.Operations.AirPicture.GetOccAircraftTrackHandler>();
+        services.AddScoped<Elevant.Application.Operations.MapFlights.GetOccMapFlightsHandler>();
         return services;
     }
 }
