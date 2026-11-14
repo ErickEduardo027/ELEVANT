@@ -514,11 +514,15 @@ llama a aviationweather.gov, a Iowa Mesonet ni a NASA GIBS.
 - **Meteorología en el mapa.**
   [`weatherLayers.test.js`](../../frontend/private-web/src/features/maps/traffic/weatherLayers.test.js)
   comprueba que las imágenes del satélite solo se dibujan en Región y
-  Aproximación, apagadas por omisión, con el crédito de GIBS en sus fuentes y
-  las teselas fijadas a la hora de su imagen, y que el estilo sigue pasando
-  `validateStyleMin`; el viento, con «100° 13 kt R08», «VRB», la ráfaga y la
-  calma, oculto sin METAR y atenuado con «Sin actualizar desde las 14:02»; su
-  ficha por cabecera; y lo que dicen la leyenda y el menú.
+  Aproximación, apagadas por omisión, en grises (`raster-saturation` −1), con
+  el crédito de GIBS en sus fuentes y las teselas fijadas a la hora de su
+  imagen, y que el estilo sigue pasando `validateStyleMin`; el viento, con
+  «100° 13 kt R08», «VRB», la ráfaga y la calma, oculto sin METAR y atenuado
+  con «Sin actualizar desde las 14:02»; su ficha por cabecera; y lo que dicen
+  la leyenda y el menú. La leyenda del viento sin actualizar dice «Sin
+  actualizar» y también «No oficial»
+  ([entradas](../../frontend/private-web/src/features/maps/ui/referenceLegend.test.js)
+  y [leyenda](../../frontend/private-web/src/features/maps/ui/MapLegend.test.jsx)).
   [`useSatelliteImagery.test.jsx`](../../frontend/private-web/src/features/maps/useSatelliteImagery.test.jsx)
   comprueba que la hora de una imagen se lee solo mientras se pide, cada 10
   minutos con la pestaña a la vista, y que el adaptador simulado no usa la red.
@@ -546,8 +550,10 @@ llama a aviationweather.gov, a Iowa Mesonet ni a NASA GIBS.
 
   El aislamiento responde las teselas de GIBS fijadas a una hora con una
   imagen inventada, y no responde una sin hora, así que la spec falla si el
-  mapa la pide. En el proyecto `occ`, el stub de la API responde `occ/weather`
-  con un clima sintético, que
+  mapa la pide. La lluvia inventada lleva los tonos de una escala, como la de
+  IMERG, para que las capturas muestren que el mapa la dibuja en grises. En el
+  proyecto `occ`, el stub de la API responde `occ/weather` con un clima
+  sintético, que
   [su prueba](../../frontend/private-web/tests/visualOccFixtures.test.js) pasa
   por el validador estricto. Como el resto de la suite, corre fuera del CI y
   una persona revisa sus capturas.

@@ -642,9 +642,13 @@ describe('MapLegend', () => {
       .toHaveClass('text-occ-muted');
     expect(swatch('goes')).not.toBeNull();
     expect(swatch('imerg')).not.toBeNull();
-    // Stale: the arrow dimmed and «Sin actualizar»; nothing of the weather on screen, nothing listed.
+    // Stale: the arrow dimmed and «Sin actualizar» muted below its name, and still the «No oficial» plate (contracts 2.4:
+    // the map's label never says it, and nothing depends on hover); nothing of the weather on screen, nothing listed.
     rerender(withWeather({ kinds: ['windStale'], runway: null }));
-    expect(legendItems()).toEqual([`Viento en pista${TAGS.stale.short.es}`]);
+    expect(legendItems()).toEqual([`Viento en pista${TAGS.stale.short.es}${TAGS.unofficial.es}`]);
+    const stale = within(screen.getByTestId('map-legend').querySelector('[data-legend-reference="windStale"]'));
+    expect(stale.getByText(TAGS.unofficial.es)).toHaveClass('rounded-sm', 'border-occ-line-strong');
+    expect(stale.getByText(TAGS.stale.short.es)).toHaveClass('text-occ-muted');
     expect(screen.getByTestId('map-legend').querySelector('[data-glyph="wind"]').style.opacity).toBe('0.75');
     rerender(withWeather({ kinds: [], runway: null }));
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();

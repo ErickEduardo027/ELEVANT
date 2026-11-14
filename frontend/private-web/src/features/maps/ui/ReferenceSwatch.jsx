@@ -73,7 +73,8 @@ const DRAWINGS = Object.freeze({
     </>
   ),
   // The weather (PR M8): the wind's arrow; the satellite clouds, a soft white patch at the opacity the map draws them;
-  // the estimated rain, a patch with its streaks. GIBS paints the images themselves, so these only say what they are.
+  // the estimated rain, a patch with its streaks. The map draws GIBS's images in greys, without the hues of their colour
+  // scales (traffic/weatherLayers.js: SATELLITE_SATURATION), so these marks without hue only say what they are.
   wind: <WindArrow />,
   windStale: <WindArrow stale />,
   goes: (

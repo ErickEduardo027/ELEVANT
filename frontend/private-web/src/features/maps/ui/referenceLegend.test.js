@@ -37,7 +37,7 @@ describe('reference legend entries', () => {
       'Night (after civil twilight)',
     ]);
   });
-  it('lists the weather after the references: the wind with «No oficial» or «Sin actualizar», each image with its time', () => {
+  it('lists the weather after the references: the wind with «No oficial», also «Sin actualizar» when stale, each image with its time', () => {
     const imagery = { goes: { time: '2026-11-13T14:50:00Z', precision: 'instant' }, imerg: { time: '2026-11-13', precision: 'day' } };
     const entries = referenceLegendEntries({ kinds: ['imerg', 'wind', 'rings', 'goes'], runway: null, imagery });
     expect(entries).toEqual([
@@ -46,14 +46,17 @@ describe('reference legend entries', () => {
       { key: 'goes', swatch: 'goes', label: 'Nubes por satélite (GOES-East, infrarrojo)', tag: null, hint: 'Imagen de las 10:50' },
       { key: 'imerg', swatch: 'imerg', label: 'Lluvia estimada (IMERG)', tag: null, hint: 'Imagen del 13 nov' },
     ]);
-    // A stale wind is dimmed and says it, with the vocabulary's word; in English too.
+    // A stale wind is dimmed and says it with the vocabulary's word, and it is still not official: a late METAR is no
+    // more official, and the map's label never says it (contracts 2.4: nothing depends on hover). In English too.
     expect(referenceLegendEntries({ kinds: ['windStale'] })).toEqual([
-      { key: 'windStale', swatch: 'windStale', label: 'Viento en pista', tag: TAGS.stale.short.es, hint: null },
+      { key: 'windStale', swatch: 'windStale', label: 'Viento en pista', tag: TAGS.unofficial.es, hint: TAGS.stale.short.es },
     ]);
     expect(referenceLegendEntries({ kinds: ['wind', 'goes'], imagery }, { language: 'en' }).map(entry => [entry.label,
       entry.tag, entry.hint])).toEqual([
       ['Runway wind', 'Unofficial', null], ['Satellite clouds (GOES-East, infrared)', null, 'Image of 10:50'],
     ]);
+    expect(referenceLegendEntries({ kinds: ['windStale'] }, { language: 'en' }).map(entry => [entry.label, entry.tag,
+      entry.hint])).toEqual([['Runway wind', 'Unofficial', 'Not updated']]);
     // An image without its time is still listed, without a hint.
     expect(referenceLegendEntries({ kinds: ['goes'] })[0].hint).toBeNull();
   });

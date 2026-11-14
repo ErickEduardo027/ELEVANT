@@ -5,8 +5,9 @@ import { expect, production, test } from '../support/test.mjs';
 // NASA GIBS on the one canvas, pinned to the time of their image, and the wind at the airfield, live, stale and missing,
 // photographed in the weather scenes of the lab (synthetic weather, a simulated GIBS whose tiles the suite answers with
 // an invented picture, no provider) at the laptop sizes of the presentation, 1440 × 900 and 1920 × 1080, for a person
-// to review in test-results/visual. Beside the pictures it checks what must hold on every one: the legend lists the
-// weather only while it is on screen, each credit shows only with what it credits, and the wind's tooltip says it.
+// to review in test-results/visual, the satellite images in greys. Beside the pictures it checks what must hold on every
+// one: the legend lists the weather only while it is on screen, each credit shows only with what it credits, and the
+// wind's tooltip says it.
 
 const SIZES = Object.freeze([[1440, 900], [1920, 1080]]);
 const CLOUDS = 'Nubes por satélite (GOES-East, infrarrojo)';
@@ -79,10 +80,11 @@ test.describe('map lab weather', () => {
       await expect(tooltip(page)).toContainText('R27: 13 kt de cola · 3 kt de la izquierda');
       await shoot(page, testInfo, `airfield-wind-tooltip-${width}`);
 
-      // A stale METAR: the wind dimmed, «Sin actualizar» in the legend and the time of its METAR in the tooltip.
+      // A stale METAR: the wind dimmed, «Sin actualizar» and still «No oficial» in the legend, and the time of its METAR
+      // in the tooltip.
       await openLab(page, `scene=airfield-wind-stale&t=${NOON}`);
       await labIdle(page);
-      await expect(legendEntry(page, WIND)).toHaveText(`${WIND}Sin actualizar`);
+      await expect(legendEntry(page, WIND)).toHaveText(`${WIND}Sin actualizarNo oficial`);
       await shoot(page, testInfo, `airfield-wind-stale-${width}`);
       await hoverWind(page);
       await expect(tooltip(page)).toContainText('Sin actualizar desde las 08:00');

@@ -3,7 +3,7 @@
 // show the base map's colours (land, sea, coast, borders, roads, labels, buildings and pavement) without a tile
 // server. Nothing here is map data: the coast, the borders, the roads, the names, the runway and the aprons are made
 // up and only roughly placed. Node built-ins only; support/isolate.mjs serves the tiles. From PR M8 it also invents the
-// satellite images of NASA GIBS (syntheticSatelliteTile), PNG tiles of soft clouds and rain.
+// satellite images of NASA GIBS (syntheticSatelliteTile), PNG tiles of soft clouds and of rain in a colour scale.
 
 import { deflateSync } from 'node:zlib';
 
@@ -309,7 +309,7 @@ export function syntheticTile(z, x, y) {
 // --- The satellite images (PR M8) ---------------------------------------------------------------------------------
 // The GOES-East clouds and the IMERG rain that NASA GIBS would serve, invented the same way: soft clouds over the
 // region and a few cores of rain inside them, placed in longitude and latitude so they run on across tiles. Nothing here
-// is weather data. The map draws them as GIBS's own PNG tiles, at their opacity, under the references.
+// is weather data. The map draws them as GIBS's own PNG tiles, at their opacity and in greys, under the references.
 
 const SATELLITE_TILE_PX = 256;
 // [longitude, latitude, radius in degrees, strength] of each blob.
@@ -321,10 +321,17 @@ const CLOUDS = Object.freeze([
 const RAIN = Object.freeze([
   [-66.3, 20.6, 0.32, 1], [-72.2, 19.1, 0.3, 0.9], [-69.6, 16.9, 0.18, 0.8], [-67.7, 16.3, 0.22, 0.9],
 ]);
-// What each layer paints: GOES's clouds white, IMERG's rain a muted blue, as their palettes roughly do.
+// The colour of the rain by its strength, `[from, rgb]`, an invented scale with the hues of GIBS's IMERG palette (blue
+// for the lightest rain, then green, yellow, orange, red and, for the heaviest, violet): the map takes the hue out
+// (src/features/maps/traffic/weatherLayers.js: SATELLITE_SATURATION), and a screenshot in colour would show it did not.
+const RAIN_SCALE = Object.freeze([
+  [0, [77, 166, 255]], [0.25, [38, 191, 89]], [0.45, [245, 222, 41]], [0.6, [252, 145, 28]], [0.75, [222, 41, 41]],
+  [0.92, [166, 51, 199]],
+]);
+// What each layer paints for a cover from 0 to 1: GOES's clouds white, IMERG's rain in the colours of RAIN_SCALE.
 const SATELLITE_LOOKS = Object.freeze({
-  goes: { blobs: CLOUDS, colour: [236, 240, 242], maxAlpha: 225 },
-  imerg: { blobs: RAIN, colour: [86, 140, 214], maxAlpha: 235 },
+  goes: { blobs: CLOUDS, colour: () => [236, 240, 242], maxAlpha: 225 },
+  imerg: { blobs: RAIN, colour: cover => RAIN_SCALE.findLast(([from]) => cover >= from)[1], maxAlpha: 235 },
 });
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
@@ -400,7 +407,7 @@ export function syntheticSatelliteTile(layer, z, x, y) {
       const alpha = Math.round(Math.min(1, cover) * look.maxAlpha);
       if (alpha === 0) continue;
       const at = (py * SATELLITE_TILE_PX + px) * 4;
-      rgba.set([...look.colour, alpha], at);
+      rgba.set([...look.colour(Math.min(1, cover)), alpha], at);
     }
   }
   const png = encodePng(SATELLITE_TILE_PX, SATELLITE_TILE_PX, rgba);

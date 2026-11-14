@@ -250,7 +250,7 @@ function WideEntry({ swatch, name, hint }) {
  * est., Sin actualizar) and their trails. The references it draws there (PR M8, ui/referenceLegend.js: rings,
  * centrelines and the runway in use, the region's airports, the navaids and the night) go with the airfield, below the
  * rule and before it: what frames the map, apart from what moves and changes on it. The weather drawn there follows them
- * (the wind with «No oficial», or «Sin actualizar» when stale, and each satellite image with the time of its image).
+ * (the wind with «No oficial», plus «Sin actualizar» when stale, and each satellite image with the time of its image).
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const {
@@ -324,8 +324,8 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
           {references.map(entry => (
             <li key={entry.key} data-legend-reference={entry.key} className="col-span-2 flex items-center gap-2">
               <ReferenceSwatch kind={entry.swatch} />
-              {/* The weather (PR M8): the time of a satellite image below its name, and its tag of the vocabulary as a
-                  plate after it. */}
+              {/* The weather (PR M8): the time of a satellite image, or «Sin actualizar» of a stale wind, below its name,
+                  and its tag of the vocabulary as a plate after it. */}
               {entry.hint ? (
                 <span>
                   <span className="block">{entry.label}</span>

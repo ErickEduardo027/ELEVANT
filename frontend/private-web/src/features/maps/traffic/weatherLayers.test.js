@@ -56,6 +56,9 @@ describe('weather layers: the satellite images', () => {
     ]);
     for (const layer of rasters) expect(layer.layout, layer.id).toEqual({ visibility: 'none' });
     expect(rasters.map(layer => layer.paint['raster-opacity'])).toEqual([SATELLITE_OPACITY.goes, SATELLITE_OPACITY.imerg]);
+    // In greys, both: GIBS paints the images with its own colour scales (IMERG's rain up to orange, red and violet), and
+    // normal things carry no hue (contracts 2.4), so the map draws them without saturation, as the legend's white marks.
+    expect(rasters.map(layer => layer.paint['raster-saturation'])).toEqual([-1, -1]);
     // Without a fade: under a frozen clock (the map lab's setNow) a fade would never end and the map never settle.
     expect(rasters.map(layer => layer.paint['raster-fade-duration'])).toEqual([0, 0]);
     // Under the references and the base-map labels, over the night shade.
@@ -107,8 +110,10 @@ describe('weather layers: the satellite images', () => {
       expect(ids.indexOf(SATELLITE_LAYER_IDS.imerg)).toBeLessThan(ids.indexOf('slot-reference'));
       expect(ids.indexOf(WIND_LAYER_IDS[0])).toBeGreaterThan(ids.indexOf('slot-standLabels'));
       expect(ids.indexOf(WIND_LAYER_IDS[2])).toBeLessThan(ids.indexOf('slot-traffic'));
-      // The raster sources keep their own https tiles; nothing gives them data.
+      // The raster sources keep their own https tiles; nothing gives them data. Their layers reach MapLibre in greys.
       expect(style.sources[SATELLITE_SOURCES.goes]).not.toHaveProperty('data');
+      expect(style.layers.filter(layer => layer.type === 'raster').map(layer => [layer.id, layer.paint['raster-saturation']]))
+        .toEqual([[SATELLITE_LAYER_IDS.goes, -1], [SATELLITE_LAYER_IDS.imerg, -1]]);
     }
     // The wind's icons are images of the map (style/mapImages.js); its colours are the text tokens, no hue.
     const arrow = weatherOverlay().layers.find(layer => layer.id === WIND_LAYER_IDS[0]);

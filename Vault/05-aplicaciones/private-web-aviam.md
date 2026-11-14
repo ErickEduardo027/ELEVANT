@@ -1508,7 +1508,9 @@ de noviembre de 2026 sobre M8 (mapas) de
   ([capas](../../frontend/private-web/src/features/maps/traffic/weatherLayers.js)
   y [hora de las imágenes](../../frontend/private-web/src/features/maps/useSatelliteImagery.js)).
   Mientras se piden, la barra de estado recibe la fuente «Satélite», y mientras
-  se dibujan, la atribución suma «NASA GIBS».
+  se dibujan, la atribución suma «NASA GIBS». Se dibujan en grises, sin los
+  colores de las escalas de GIBS: lo normal no lleva tono, y el ámbar y el rojo
+  significan «Atención» y «Urgente».
 - **Viento en pista.** Junto al aeródromo, una flecha y «100° 13 kt R08»: la
   dirección, la velocidad, la ráfaga y la pista en uso. Un METAR sin actualizar
   se atenúa y dice «Sin actualizar desde las 08:00», y sin METAR no se dibuja.
@@ -1525,8 +1527,8 @@ de noviembre de 2026 sobre M8 (mapas) de
   dice por qué: «Se ve en Región y Aproximación» o «No hay clima del aeródromo
   en este momento.». Mapa de posiciones y Planificación no tienen menú de capas:
   muestran lo que trae cada vista. La leyenda suma cada referencia, el viento
-  con «No oficial» o «Sin actualizar» y cada imagen con su hora, solo mientras
-  están en pantalla.
+  con «No oficial» (y también «Sin actualizar» si su METAR está atrasado) y
+  cada imagen con su hora, solo mientras están en pantalla.
 - **Laboratorio.** Tres escenas de referencias y cuatro de clima, con clima
   sintético y la hora simulada de las imágenes
   ([escenas](../../frontend/private-web/src/features/maps/lab/scenes.js)). Las

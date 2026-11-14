@@ -118,13 +118,22 @@ describe('synthetic satellite images of the visual suite (PR M8)', () => {
     const alphas = Array.from({ length: width * height }, (_, index) => pixels[index * 4 + 3]);
     expect(Math.max(...alphas)).toBeGreaterThan(150);
     expect(alphas.filter(alpha => alpha === 0).length).toBeGreaterThan(0);
-    // White clouds; the rain a muted blue, inside the clouds and smaller.
+    // White clouds; the rain inside the clouds and smaller.
     const cloudy = alphas.indexOf(Math.max(...alphas));
     expect([...pixels.subarray(cloudy * 4, cloudy * 4 + 3)]).toEqual([236, 240, 242]);
     const rain = readPng(syntheticSatelliteTile('imerg', tile.z, tile.x, tile.y));
-    const rainy = Array.from({ length: width * height }, (_, index) => rain.pixels[index * 4 + 3]).filter(alpha => alpha > 0);
+    const rainAlphas = Array.from({ length: width * height }, (_, index) => rain.pixels[index * 4 + 3]);
+    const rainy = rainAlphas.filter(alpha => alpha > 0);
     expect(rainy.length).toBeGreaterThan(0);
     expect(rainy.length).toBeLessThan(alphas.filter(alpha => alpha > 0).length);
+    // The rain in the hues of a colour scale, as GIBS paints IMERG's, so the screenshots show the map drawing it in greys
+    // (traffic/weatherLayers.js: SATELLITE_SATURATION): blue where it is lightest, red at the heaviest core of this tile,
+    // and the colours of the scale between them.
+    const colourAt = index => [...rain.pixels.subarray(index * 4, index * 4 + 3)];
+    expect(colourAt(rainAlphas.indexOf(Math.min(...rainy)))).toEqual([77, 166, 255]);
+    expect(colourAt(rainAlphas.indexOf(Math.max(...rainy)))).toEqual([222, 41, 41]);
+    const colours = new Set(rainAlphas.flatMap((alpha, index) => (alpha > 0 ? [colourAt(index).join(',')] : [])));
+    expect(colours.size).toBeGreaterThanOrEqual(5);
     // Made once, the same every time; nothing for another image.
     expect(syntheticSatelliteTile('goes', tile.z, tile.x, tile.y)).toBe(png);
     expect(syntheticSatelliteTile('radar', 5, 9, 14)).toBeNull();

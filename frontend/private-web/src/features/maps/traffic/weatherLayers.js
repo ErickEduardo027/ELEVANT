@@ -26,8 +26,8 @@ import { staleWords, stationTime } from './stationTime';
 //   between the runways, clear of the stands, from the airfield threshold on; below it the words alone, under the mark
 //   of PUJ. A stale METAR is dimmed and says «Sin actualizar desde las 14:02»; an unavailable or disabled one draws
 //   nothing. Its tooltip gives the head and cross wind of every runway end (airport/runwayWind.js).
-// Quiet, like the references: no hue, the text tokens only (contracts 2.4). Pure: the reading, the runway in use, the
-// layout, the language and the instant are parameters.
+// Quiet, like the references: no hue, the text tokens only and the satellite images in greys (contracts 2.4). Pure: the
+// reading, the runway in use, the layout, the language and the instant are parameters.
 
 export const SATELLITE_KEYS = Object.freeze(['goes', 'imerg']);
 /** The raster sources of the satellite images. */
@@ -43,6 +43,12 @@ export const RASTER_VIEWS = Object.freeze(['region', 'approach']);
 /** GIBS serves the regional images in 256 px tiles up to level 6; MapLibre stretches them past it. */
 export const SATELLITE_TILE_SIZE = 256;
 export const SATELLITE_MAX_ZOOM = 6;
+/**
+ * The saturation of the satellite images on the map: none, so they are drawn in greys (contracts 2.4: normal things
+ * carry no hue). GIBS paints them with colour scales of its own, IMERG's rain in blues, greens, yellows, oranges, reds
+ * and violets, and the OCC keeps amber and red for attention and urgent. The legend marks them in white.
+ */
+export const SATELLITE_SATURATION = -1;
 /**
  * Where the wind stands in the airport's box, as fractions of its width from the west and of its height from the south:
  * in the open ground between the two runways at Punta Cana, east of the taxiways and far from the stands, which lie
@@ -89,9 +95,12 @@ function rasterLayer(key) {
     type: 'raster',
     source: SATELLITE_SOURCES[key],
     layout: { visibility: 'none' },
-    // No fade: a new image replaces the old one at once (its tiles reload anyway), and a fade never ends under the map
-    // lab's frozen clock (MapLibre's setNow), where the map would never settle.
-    paint: { 'raster-opacity': SATELLITE_OPACITY[key], 'raster-fade-duration': 0 },
+    // In greys, without the colours of GIBS (SATELLITE_SATURATION). No fade: a new image replaces the old one at once
+    // (its tiles reload anyway), and a fade never ends under the map lab's frozen clock (MapLibre's setNow), where the
+    // map would never settle.
+    paint: {
+      'raster-opacity': SATELLITE_OPACITY[key], 'raster-saturation': SATELLITE_SATURATION, 'raster-fade-duration': 0,
+    },
     metadata: { 'occ:group': WEATHER_GROUPS[key], 'occ:maxThreshold': 'airfield' },
   };
 }
@@ -128,10 +137,11 @@ function windWordsLayer(id, { filter, place, thresholds }) {
 /**
  * The overlay of the weather for buildOccStyle: the raster sources of the GOES-East clouds and the IMERG rain (their
  * tiles the latest image until OccMap pins them, their credit NASA GIBS) and the GeoJSON source of the wind, born empty.
- * The images lie in the weather slot, born hidden, up to the airfield threshold (Región and Aproximación); the rain over
- * the clouds. The wind lies in the slot of the stand labels, over the airfield and the stands: from the airfield
- * threshold on, its arrow (turned on the map to where the wind blows, a ring for a calm or variable wind) and its words
- * beside it; below that threshold, its words alone under the mark of PUJ. Each layer of the wind picks the kind `wind`.
+ * The images lie in the weather slot, born hidden, up to the airfield threshold (Región and Aproximación), in greys
+ * (SATELLITE_SATURATION); the rain over the clouds. The wind lies in the slot of the stand labels, over the airfield and
+ * the stands: from the airfield threshold on, its arrow (turned on the map to where the wind blows, a ring for a calm or
+ * variable wind) and its words beside it; below that threshold, its words alone under the mark of PUJ. Each layer of the
+ * wind picks the kind `wind`.
  */
 export function weatherOverlay() {
   return {

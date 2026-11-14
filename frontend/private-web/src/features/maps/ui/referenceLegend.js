@@ -25,11 +25,12 @@ const LABELS = Object.freeze({
 
 const word = (entry, language) => entry?.[language] ?? entry?.es ?? null;
 
-// The tag and the hint of a weather entry: the wind is «No oficial» (dimmed and «Sin actualizar» when stale), and a
-// satellite image says the time of its image.
+// The tag and the hint of a weather entry: the wind is «No oficial», and when stale it is still «No oficial» and is also
+// dimmed and «Sin actualizar» (contracts 2.4 and 2.5: a late METAR is no more official, and nothing depends on hover);
+// a satellite image says the time of its image.
 function weatherExtras(kind, imagery, language) {
   if (kind === 'wind') return { tag: word(TAGS.unofficial, language), hint: null };
-  if (kind === 'windStale') return { tag: word(TAGS.stale.short, language), hint: null };
+  if (kind === 'windStale') return { tag: word(TAGS.unofficial, language), hint: word(TAGS.stale.short, language) };
   return { tag: null, hint: imageTimeWords(imagery?.[kind] ?? null, language) };
 }
 
@@ -39,8 +40,8 @@ function weatherExtras(kind, imagery, language) {
  * the swatch naming what ui/ReferenceSwatch.jsx draws; a weather entry also has `tag`, a word of the vocabulary shown as
  * a plate, and `hint`, a few muted words after the label (null when there is none). The runway in use says where it comes from
  * («Pista 08 (estimada por el viento)»); without its runway it is not listed. The wind at the airfield is «Viento en
- * pista» with «No oficial», or «Sin actualizar» when its METAR is stale; a satellite image says the time of its image
- * («Imagen de las 10:50»). Nothing on screen, no entry.
+ * pista» with «No oficial», and also «Sin actualizar» as its hint when its METAR is stale; a satellite image says the
+ * time of its image («Imagen de las 10:50»). Nothing on screen, no entry.
  */
 export function referenceLegendEntries({ kinds = [], runway = null, imagery = null } = {}, { language = 'es' } = {}) {
   const t = createTranslator(mapMessages, language);
