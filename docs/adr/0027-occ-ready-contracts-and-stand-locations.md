@@ -122,7 +122,8 @@ asignación.
 >   colocó, porque el plano la tiene retirada), el mapa dibuja allí una caja propia: con el rumbo de
 >   la posición activa del plano más cercana a 150 m o menos o, si no hay ninguna, perpendicular a la
 >   calle de rodaje más cercana; con la letra del avión más grande que admite (E con fuselaje ancho,
->   C con estrecho, D si no se sabe); y con la entrada pegada al grafo de rodaje;
+>   C con estrecho, D si no se sabe); y con la entrada pegada al grafo de rodaje. Lejos del
+>   aeródromo (sin calle de rodaje a 300 m o menos) la caja mira al norte y no tiene entrada;
 > - sin plano ni ubicación, la posición no se dibuja: Mapa de posiciones la lista «Sin ubicar», con
 >   «Ubicar en el mapa» en su cajón.
 >

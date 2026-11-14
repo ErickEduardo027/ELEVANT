@@ -99,6 +99,12 @@ export function leadIn(center, headingTrue, snapPoint, { minAlignM = 0 } = {}) {
 export const MAX_TRANSLATION_M = 80;
 /** A box of its own takes the heading of the nearest active stand of the layout within this distance. */
 export const NEIGHBOUR_HEADING_RADIUS_M = 150;
+/**
+ * A box of its own takes its heading and its lead-in from a taxiway or taxilane only within this distance: a location
+ * saved far from the airfield (another station, or a slip of the pointer in the regional view) faces north with no
+ * lead-in, instead of a line of tens of kilometres to the nearest taxi edge of MDPC.
+ */
+export const MAX_TAXI_SNAP_M = 300;
 /** The code letter of a box of its own by the largest aircraft the stand takes; D when that is unknown. */
 export const SIZE_FROM_AIRCRAFT = Object.freeze({ Widebody: 'E', Narrowbody: 'C' });
 
@@ -151,10 +157,10 @@ function neighbourHeading(layout, center) {
 }
 
 // Perpendicular to the taxiway or taxilane nearest to `center`, the nose away from it (the tail to the taxi edge, as
-// a remote stand parks), or null when the graph has no taxi edge.
+// a remote stand parks), or null when the graph has no taxi edge within MAX_TAXI_SNAP_M.
 function awayFromTaxiEdge(graph, center) {
   const hit = nearestEdge(graph, center, { kinds: TAXI_KINDS });
-  if (hit === null) return null;
+  if (hit === null || hit.distanceM > MAX_TAXI_SNAP_M) return null;
   const line = edgeLine(graph, hit.edge);
   const along = initialBearing(line[hit.index], line[Math.min(hit.index + 1, line.length - 1)]);
   const options = [normalizeBearing(along + 90), normalizeBearing(along + 270)];
@@ -191,13 +197,15 @@ function backRayHit(graph, center, headingTrue) {
 
 // The lead-in of a box of its own, snapped to the taxi graph as the generator snaps the layout's: straight in from the
 // taxi edge behind the stand; otherwise from the taxi edge nearest to where the aircraft lines up behind its box, then
-// along the axis (or straight from that edge when it lies in front of the stand). Null without a taxi edge.
+// along the axis (or straight from that edge when it lies in front of the stand). Null without a taxi edge within
+// MAX_TAXI_SNAP_M of where the aircraft lines up.
 function derivedLeadIn(graph, center, headingTrue, sizeLetter) {
   const ray = backRayHit(graph, center, headingTrue);
   if (ray !== null) return leadIn(center, headingTrue, ray.point);
   const lineUpM = lineUpDistanceM(sizeLetter);
   const lineUp = destinationPoint(center, normalizeBearing(headingTrue + 180), lineUpM);
-  const target = nearestEdge(graph, lineUp, { kinds: TAXI_KINDS })?.point ?? null;
+  const hit = nearestEdge(graph, lineUp, { kinds: TAXI_KINDS });
+  const target = hit !== null && hit.distanceM <= MAX_TAXI_SNAP_M ? hit.point : null;
   if (target === null) return null;
   const behind = angleBetween(headingTrue, initialBearing(center, target)) > 90;
   return leadIn(center, headingTrue, target, { minAlignM: behind ? lineUpM : 0 });
@@ -212,9 +220,10 @@ function derivedLeadIn(graph, center, headingTrue, sizeLetter) {
  *    so the centre is the saved point, with the same heading and code letter (`occ`, `translated`);
  * 3. a saved location farther away, or a stand the layout does not know: a box of its own at the saved point
  *    (`occ`, `derived`) with the heading of the nearest active stand of the layout within
- *    NEIGHBOUR_HEADING_RADIUS_M, else perpendicular to the nearest taxiway or taxilane with the nose away from it
- *    (north without either); the code letter of `sizeHint`, the stand's largest aircraft (SIZE_FROM_AIRCRAFT, D when
- *    unknown); and a lead-in snapped to the taxi graph (`null` without one);
+ *    NEIGHBOUR_HEADING_RADIUS_M, else perpendicular to the nearest taxiway or taxilane within MAX_TAXI_SNAP_M with the
+ *    nose away from it (north without either); the code letter of `sizeHint`, the stand's largest aircraft
+ *    (SIZE_FROM_AIRCRAFT, D when unknown); and a lead-in snapped to the taxi graph (`null` without a taxi edge within
+ *    MAX_TAXI_SNAP_M);
  * 4. neither: `null`, the stand is not drawn and is listed as «Sin ubicar».
  * `index` (layoutIndex.js: indexLayout) saves building the taxi graph of `layout` on every call. The result is
  * `{ center, headingTrue, sizeLetter, polygon (closed ring), leadIn, locationSource, geometrySource }`.

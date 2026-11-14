@@ -4,7 +4,7 @@ import { MDPC_LAYOUT } from './airportLayout';
 import { destinationPoint, haversineM, initialBearing, polygonCentroid } from './geo.js';
 import { indexLayout } from './layoutIndex';
 import {
-  MAX_TRANSLATION_M, NEIGHBOUR_HEADING_RADIUS_M, SIZE_FROM_AIRCRAFT, STAND_BOX, SIZE_LETTERS, headingFromAxis, leadIn,
+  MAX_TAXI_SNAP_M, MAX_TRANSLATION_M, NEIGHBOUR_HEADING_RADIUS_M, SIZE_FROM_AIRCRAFT, STAND_BOX, SIZE_LETTERS, headingFromAxis, leadIn,
   lineUpDistanceM, locationPoint, resolveStandGeometry, standBox, translateRigid,
 } from './standGeometry.js';
 import { nearestEdge } from './taxiGraph.js';
@@ -215,6 +215,25 @@ describe('resolveStandGeometry', () => {
     expect(resolveStandGeometry({ dbLocation: saved, sizeHint: 'Narrowbody' })).toMatchObject({
       headingTrue: 0, sizeLetter: 'C', leadIn: null, geometrySource: 'derived',
     });
+  });
+
+  it('a location saved far from every taxi edge faces north with no lead-in, never a line to the airfield', () => {
+    expect(MAX_TAXI_SNAP_M).toBe(300);
+    // 140 km east of the made-up airport (a slip of the pointer in the regional view, or another station).
+    const far = destinationPoint(qaPoint(880, 200), 90, 140_000);
+    expect(onGraph(far)).toBeGreaterThan(100_000);
+    expect(resolveStandGeometry({ layoutStand: null, dbLocation: far, sizeHint: 'Narrowbody', layout, index })).toMatchObject({
+      center: far, headingTrue: 0, sizeLetter: 'C', leadIn: null, locationSource: 'occ', geometrySource: 'derived',
+    });
+    // A known stand moved that far keeps its box size class but loses its lead-in as well.
+    const moved = resolveStandGeometry({ layoutStand: standOf('A2'), dbLocation: far, sizeHint: 'Widebody', layout, index });
+    expect(moved).toMatchObject({ headingTrue: 0, leadIn: null, geometrySource: 'derived' });
+    // Just inside the limit the box still snaps: 250 m west of taxiway X it faces west with a lead-in on the graph.
+    const near = qaPoint(750, 200);
+    const snapped = resolveStandGeometry({ layoutStand: null, dbLocation: near, sizeHint: 'Narrowbody', layout, index });
+    expect(onGraph(near)).toBeLessThan(MAX_TAXI_SNAP_M);
+    expect(snapped.leadIn).not.toBeNull();
+    expect(onGraph(snapped.leadIn[0])).toBeLessThan(0.5);
   });
 
   it('with neither a dataset stand nor a saved location there is no geometry', () => {
