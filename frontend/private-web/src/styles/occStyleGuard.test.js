@@ -13,7 +13,7 @@ import { createPlanningFlight } from '../features/planning/testing/planningFixtu
 import PositionListItem from '../features/positions-map/components/PositionListItem';
 import { bridgeSelector, findLegacyColourClasses, generateOccLegacyBridgeCss } from './occLegacyBridge';
 import {
-  MIGRATED_FOLDERS, OCC_BRIDGE_DEFAULTS, OCC_BRIDGE_SCOPE, OCC_BRIDGE_UNMAPPED, OCC_LEGACY_BRIDGE,
+  MIGRATED_FILES, MIGRATED_FOLDERS, OCC_BRIDGE_DEFAULTS, OCC_BRIDGE_SCOPE, OCC_BRIDGE_UNMAPPED, OCC_LEGACY_BRIDGE,
 } from './occLegacyBridgeMap';
 import { globalStylesheets, occMountedFiles, readSource, sourceFilesUnder } from './occSourceScan';
 
@@ -21,8 +21,9 @@ const BRIDGE_CSS = 'src/styles/occ-legacy-bridge.css';
 // The OCC boot screen (U4): it renders outside ShellFrame and paints only with the tokens of the scope it carries.
 const BOOT_FOLDER = 'src/features/admin-occ/boot';
 // The OCC screens U6 rebuilt with occ-ui, one per step: they draw as occ-ui does (contratos 2.4). Each also enters
-// MIGRATED_FOLDERS, which forbids its legacy colour classes.
-const REBUILT_SCREEN_FOLDERS = Object.freeze(['src/features/review']);
+// MIGRATED_FOLDERS, which forbids its legacy colour classes; a route rebuilt inside a folder other departments share
+// enters MIGRATED_FILES instead.
+const REBUILT_SCREEN_FOLDERS = Object.freeze(['src/features/review', 'src/features/position-coverage']);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
@@ -823,6 +824,20 @@ describe('OCC legacy bridge', () => {
     expect(legacyClassesIn(sourceFilesUnder('src/features/admin-occ')).length).toBeGreaterThan(0);
   });
 
+  it('migrated files of a folder still on the bridge use no legacy colour class', () => {
+    expect(Object.isFrozen(MIGRATED_FILES)).toBe(true);
+    expect(MIGRATED_FILES).toEqual(['src/features/notifications/CanonicalNotificationsRoute.jsx']);
+    for (const file of MIGRATED_FILES) {
+      expect(existsSync(file), `${file} does not exist`).toBe(true);
+      // A file of a migrated folder is that folder's; this list is for the folders that stay on the bridge.
+      expect(MIGRATED_FOLDERS.some(folder => file.startsWith(`${folder}/`)), file).toBe(false);
+      expect(occMountedFiles(), file).toContain(file);
+      expect(legacyClassesIn([file]), file).toEqual([]);
+    }
+    // Its folder stays on the bridge: the components other departments draw still use legacy classes.
+    expect(legacyClassesIn(sourceFilesUnder('src/features/notifications')).length).toBeGreaterThan(0);
+  });
+
   it('occ-ui and the boot screen use no backdrop-filter, no gradient and no opacity modifier on an occ colour', () => {
     for (const folder of ['src/features/occ-ui', BOOT_FOLDER]) {
       const files = sourceFilesUnder(folder);
@@ -875,19 +890,23 @@ describe('OCC legacy bridge', () => {
   });
 
   it('rebuilt OCC screens draw no shadow, upper case, tracking, text under 12 px or literal colour', () => {
+    const rebuiltFiles = [];
     for (const folder of REBUILT_SCREEN_FOLDERS) {
       expect(MIGRATED_FOLDERS, folder).toContain(folder);
       const files = sourceFilesUnder(folder).filter(file => SCRIPT_FILE.test(file));
       expect(files.length, folder).toBeGreaterThan(0);
-      const found = files.flatMap(file => occUiStyleFindings(stripScriptComments(readSource(file)))
-        .map(finding => `${file}: ${finding}`));
-      expect(found, folder).toEqual([]);
-      for (const file of files) {
-        const source = readSource(file);
-        expect(source, file).not.toMatch(/backdrop-filter|backdropFilter|backdrop-blur/);
-        expect(source, file).not.toMatch(/gradient/i);
-      }
+      rebuiltFiles.push(...files);
     }
+    for (const file of [...rebuiltFiles, ...MIGRATED_FILES]) {
+      expect(occUiStyleFindings(stripScriptComments(readSource(file))), file).toEqual([]);
+      const source = readSource(file);
+      expect(source, file).not.toMatch(/backdrop-filter|backdropFilter|backdrop-blur/);
+      expect(source, file).not.toMatch(/gradient/i);
+    }
+    // Cobertura's route and its message file are among the files read.
+    expect(sourceFilesUnder('src/features/position-coverage')).toEqual(expect.arrayContaining([
+      'src/features/position-coverage/CoverageRoute.jsx', 'src/features/position-coverage/coverageMessages.js',
+    ]));
     // The review's route and the sections it restyled are among the files read.
     expect(sourceFilesUnder('src/features/review')).toEqual(expect.arrayContaining([
       'src/features/review/CanonicalReviewRoute.jsx', 'src/features/review/components/OperationCloseSection.jsx',

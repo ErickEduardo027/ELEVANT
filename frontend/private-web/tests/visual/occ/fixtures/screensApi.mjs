@@ -1,12 +1,13 @@
 import { OCC_ACCESS, STATION, createOccApi } from './occApi.mjs';
 
 // Synthetic answers of the ELEVANT API for the OCC work screens of the visual suite (PR U6), one screen at a time:
-// today Revisión. On top of occApi.mjs (the OCC session's access and the positions board) it answers the reads every
-// OCC screen makes through its frame (the notices and the account-change feed, both empty and valid) and the reads of
-// each screen, in one of three scenarios: `data`, `empty` and `error`. Every answer passes the strict validators of
-// @elevant/api-client (tests/visualScreensFixtures.test.js checks them). Every id, code, name and time is invented.
+// Revisión, Cobertura de posiciones and Notificaciones. On top of occApi.mjs (the OCC session's access and the
+// positions board) it answers the reads every OCC screen makes through its frame (the notices and the account-change
+// feed, both empty and valid) and the reads of each screen, in one of four scenarios: `data`, `empty`, `error` (a
+// 500) and `forbidden` (a 403). Every answer passes the strict validators of @elevant/api-client
+// (tests/visualScreensFixtures.test.js checks them). Every id, code, name and time is invented.
 
-export const SCREEN_SCENARIOS = Object.freeze(['data', 'empty', 'error']);
+export const SCREEN_SCENARIOS = Object.freeze(['data', 'empty', 'error', 'forbidden']);
 
 export const STATION_TIME_ZONE = 'America/Santo_Domingo';
 const STATION_NAME = 'Aeropuerto de prueba de Punta Cana';
@@ -28,6 +29,7 @@ export const API_PATHS = Object.freeze({
   notices: '/api/v1/notifications',
   changes: '/api/v1/changes',
   reviewQueue: '/api/v1/occ/review/queue',
+  coverage: '/api/v1/occ/coverage',
 });
 
 /** The ids of the review's hand-offs: the one the spec opens, and the rest of the queue. */
@@ -211,6 +213,142 @@ export const SERVER_ERROR = Object.freeze({
   code: 'internal_error',
 });
 
+/** The Problem Details of an account without access to a read (the `forbidden` scenario). */
+export const FORBIDDEN = Object.freeze({
+  type: 'https://tools.ietf.org/html/rfc9110#section-15.5.4', title: 'Forbidden', status: 403, code: 'forbidden',
+});
+
+// ── Cobertura de posiciones ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** The terminals of the board, as Punta Cana has them. */
+export const COVERAGE_TERMINALS = Object.freeze({
+  A: Object.freeze({ terminalId: uuid('c0a1b2c3', 1), code: 'A', name: 'Terminal A', maxStandsPerAgent: 3,
+    requiresBridgeQualification: false }),
+  B: Object.freeze({ terminalId: uuid('c0a1b2c3', 2), code: 'B', name: 'Terminal B', maxStandsPerAgent: 2,
+    requiresBridgeQualification: true }),
+  FBO: Object.freeze({ terminalId: uuid('c0a1b2c3', 3), code: 'FBO', name: 'FBO / Aviación local', maxStandsPerAgent: 4,
+    requiresBridgeQualification: false }),
+});
+
+// The stands of the board: the reference codes of Punta Cana with their terminal and attributes. AN4 and AN5 take
+// narrowbody aircraft only and A11 is deactivated, so terminal A shows every attribute and state of the board.
+const COVERAGE_STANDS = [
+  ...['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11'].map(code => ({ code, terminal: 'A' })),
+  ...['AN1', 'AN2', 'AN3', 'AN4', 'AN5'].map(code => ({ code, terminal: 'A', isRemote: true })),
+  ...['B20', 'B21', 'B22', 'B23', 'B24', 'B25', 'B26'].map(code => ({ code, terminal: 'B', hasBoardingBridge: true })),
+  ...['B27', 'B28', 'B29', 'B30', 'B31'].map(code => ({ code, terminal: 'B' })),
+  ...['B32', 'B34', 'B35', 'B36', 'B37'].map(code => ({ code, terminal: 'B', isRemote: true })),
+  ...['BN6', 'BN7', 'BN8', 'BN9', 'BN10', 'BN11', 'BN12', 'BN13'].map(code => ({ code, terminal: 'FBO', isRemote: true,
+    maxAircraftSize: 'Narrowbody' })),
+].map((stand, index) => ({
+  standId: uuid('c1a1b2c3', index + 1), terminalId: COVERAGE_TERMINALS[stand.terminal].terminalId,
+  isActive: stand.code !== 'A11', hasBoardingBridge: stand.hasBoardingBridge ?? false, isRemote: stand.isRemote ?? false,
+  maxAircraftSize: ['AN4', 'AN5'].includes(stand.code) ? 'Narrowbody' : stand.maxAircraftSize ?? null,
+  code: stand.code, version: `AAAAAAAA${String(index + 1).padStart(3, '0')}=`,
+}));
+const standOf = code => COVERAGE_STANDS.find(stand => stand.code === code);
+
+/** The agents with a shift at the station that day: their terminal, shift and the conditions the form shows. */
+export const COVERAGE_AGENTS = Object.freeze({
+  uno: { agentId: uuid('c2a1b2c3', 1), name: 'Agente de prueba Uno', terminal: 'A', shift: ['10:00', '18:00'] },
+  dos: { agentId: uuid('c2a1b2c3', 2), name: 'Agente de prueba Dos', terminal: 'A', shift: ['10:00', '18:00'],
+    isJunior: true, hasDriverLicense: false, hasBridgeQualification: false },
+  tres: { agentId: uuid('c2a1b2c3', 3), name: 'Agente de prueba Tres', terminal: 'B', shift: ['10:00', '18:00'] },
+  cuatro: { agentId: uuid('c2a1b2c3', 4), name: 'Agente de prueba Cuatro', terminal: 'A', shift: ['10:00', '18:00'],
+    hasAirportPermit: false, hasBridgeQualification: false },
+  cinco: { agentId: uuid('c2a1b2c3', 5), name: 'Agente de prueba Cinco', terminal: 'A', shift: ['18:00', '23:00'],
+    isAbsent: true },
+  seis: { agentId: uuid('c2a1b2c3', 6), name: 'Agente de prueba Seis', terminal: 'A', shift: ['10:00', '22:00'] },
+});
+
+// The coverages of the day: Uno covers three stands of A with a vehicle, Dos (under three months) two with Seis as
+// mentor, Seis reinforces A1 at noon, and Tres covers two bridge stands of B. Times are UTC: 10:00Z is 06:00 local.
+const COVERAGES = [
+  { index: 1, agent: 'uno', stands: ['A1', 'A2', 'A3'], window: ['10:00', '18:00'], vehicleCode: 'VH-07' },
+  { index: 2, agent: 'dos', stands: ['A5', 'A6'], window: ['10:00', '18:00'], mentor: 'seis' },
+  { index: 3, agent: 'seis', stands: ['A1'], window: ['16:00', '21:00'], isReinforcement: true },
+  { index: 4, agent: 'tres', stands: ['B20', 'B21'], window: ['10:00', '18:00'] },
+];
+
+function coverageAgent({ agentId, name, terminal, shift, ...conditions }, index, date) {
+  return {
+    agentId, name, employeeNumber: `VIS-RA-${String(index + 1).padStart(3, '0')}`,
+    terminalId: COVERAGE_TERMINALS[terminal].terminalId, terminalCode: terminal,
+    shiftStartsAt: `${date}T${shift[0]}:00Z`, shiftEndsAt: `${date}T${shift[1]}:00Z`,
+    isJunior: false, hasAirportPermit: true, hasDriverLicense: true, hasBridgeQualification: true, isAbsent: false,
+    ...conditions,
+  };
+}
+
+/**
+ * GET occ/coverage?stationId=&date=: the board of the station for that date (the page asks for today's), or a station
+ * without terminals in the `empty` scenario. The account may assign and configure.
+ */
+export function coverageBoard(scenario = 'data', { stationId = STATION.stationId, date = OPERATION_DATE } = {}) {
+  const base = { stationId, stationCode: STATION.stationCode, date, canAssign: true, canConfigure: true };
+  if (scenario === 'empty') return { ...base, terminals: [], stands: [], constraints: [], agents: [], coverages: [] };
+  const coverages = COVERAGES.map(({ index, agent, stands, window, mentor, vehicleCode, isReinforcement }) => {
+    const owner = COVERAGE_AGENTS[agent];
+    return {
+      id: uuid('c3a1b2c3', index), agentId: owner.agentId, agentName: owner.name,
+      terminalId: COVERAGE_TERMINALS[owner.terminal].terminalId, terminalCode: owner.terminal,
+      stands: stands.map(code => ({ standId: standOf(code).standId, code })),
+      startsAt: `${date}T${window[0]}:00Z`, endsAt: `${date}T${window[1]}:00Z`,
+      mentorAgentId: mentor ? COVERAGE_AGENTS[mentor].agentId : null, mentorName: mentor ? COVERAGE_AGENTS[mentor].name : null,
+      vehicleCode: vehicleCode ?? null, isReinforcement: isReinforcement ?? false,
+    };
+  });
+  const coveredBy = code => coverages.filter(item => item.stands.some(stand => stand.code === code)).map(item => item.agentName);
+  return {
+    ...base,
+    terminals: Object.values(COVERAGE_TERMINALS).map(terminal => ({ ...terminal })),
+    stands: COVERAGE_STANDS.map(stand => ({ ...stand, coveredBy: coveredBy(stand.code) })),
+    constraints: [
+      { id: uuid('c4a1b2c3', 1), standId: standOf('A9').standId, standCode: 'A9', affectedStandId: standOf('A10').standId,
+        affectedStandCode: 'A10', kind: 'Cancels' },
+      { id: uuid('c4a1b2c3', 2), standId: standOf('B24').standId, standCode: 'B24', affectedStandId: standOf('B25').standId,
+        affectedStandCode: 'B25', kind: 'NarrowbodyOnly' },
+    ],
+    agents: Object.values(COVERAGE_AGENTS).map((agent, index) => coverageAgent(agent, index, date)),
+    coverages,
+  };
+}
+
+/**
+ * What the stub answers every new coverage: the server's refusal with the rules it breaks (a 422), so a spec can show
+ * a refused assignment and nothing is ever written. The page explains each rule with its own words.
+ */
+export const COVERAGE_REFUSAL = Object.freeze({
+  type: 'https://tools.ietf.org/html/rfc4918#section-11.2', title: 'Unprocessable Entity', status: 422,
+  code: 'coverage_rejected',
+  reasons: Object.freeze(['mentor_required', 'driver_license_required', 'vehicle_required', 'agent_overlap']),
+});
+
+// ── Notificaciones ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+// The notices of the account, newest first: an unread and a read notice of each priority (contratos 2.4) and one more
+// unread attention notice, so the filters, the lit rows and the frame's alerts all have something to show.
+const NOTICES = [
+  { index: 1, kind: 'incident_reported', code: 'PUJ-20261113-004', operation: 4, at: '15:20', read: false },
+  { index: 2, kind: 'flight_cancelled_by_provider', code: 'PUJ-20261113-007', operation: 7, at: '15:05', read: false },
+  { index: 3, kind: 'operation_submitted', code: 'PUJ-20261113-004', operation: 4, at: '14:42', read: false },
+  { index: 4, kind: 'stand_change_unassigned', code: 'PUJ-20261113-006', operation: 6, at: '14:10', read: '14:15' },
+  { index: 5, kind: 'agent_message', code: 'PUJ-20261113-005', operation: 5, at: '13:55', read: '14:01' },
+  { index: 6, kind: 'incident_reported', code: 'PUJ-20261113-002', operation: 2, at: '12:30', read: '12:34' },
+  { index: 7, kind: 'operation_approved', code: 'PUJ-20261113-002', operation: 2, at: '12:05', read: '12:20' },
+  { index: 8, kind: 'contract_not_in_force', code: 'PUJ-20261113-008', operation: 8, at: '11:40', read: false },
+];
+
+/** GET notifications: the account's notices in the `data` scenario, none in `empty`. */
+export function operationalNotices(scenario = 'data') {
+  const notifications = scenario === 'empty' ? [] : NOTICES.map(item => ({
+    id: uuid('9b1c2d3e', item.index), operationId: uuid('7e1a2b3c', item.operation), operationCode: item.code,
+    stationCode: STATION.stationCode, kind: item.kind, sourceId: uuid('9c1c2d3e', item.index), occurredAt: at(item.at),
+    readAt: item.read ? at(item.read) : null,
+  }));
+  return { notifications, hasMore: false };
+}
+
 const REVIEW_OPERATION = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})$/;
 const REVIEW_HISTORY = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})\/submissions$/;
 const OPERATION_DOCUMENTS = /^\/api\/v1\/occ\/operations\/([0-9a-f-]{36})\/documents$/;
@@ -221,6 +359,7 @@ const OPERATION_INCIDENTS = /^\/api\/v1\/occ\/operations\/([0-9a-f-]{36})\/incid
 function reviewAnswer(url, scenario) {
   if (url.pathname === API_PATHS.reviewQueue) {
     if (scenario === 'error') return { status: 500, json: SERVER_ERROR };
+    if (scenario === 'forbidden') return { status: 403, json: FORBIDDEN };
     return { status: 200, json: reviewQueue(scenario, url.searchParams.get('stationId') ?? undefined) };
   }
   const known = path => path.exec(url.pathname)?.[1] === REVIEW_IDS.pending;
@@ -234,24 +373,42 @@ function reviewAnswer(url, scenario) {
   return null;
 }
 
+// A read of the screen under review in the `error` and `forbidden` scenarios, or `null` in the others.
+const failed = scenario => (scenario === 'error' ? { status: 500, json: SERVER_ERROR }
+  : scenario === 'forbidden' ? { status: 403, json: FORBIDDEN } : null);
+
 /**
  * The API handler for support/isolate.mjs in a `scenario` of SCREEN_SCENARIOS: the access of SCREENS_ACCESS, the
- * frame's empty notices and change feed, and the review's reads; every other path is occApi.mjs's, then the isolation's
- * Problem Details 404. It answers no command. `reads` counts the answers by path.
+ * frame's change feed, and the reads of Revisión and Cobertura in that scenario; every other path is occApi.mjs's, then
+ * the isolation's Problem Details 404. The notices are the frame's empty list, or with `{ notices: true }` the reads of
+ * Notificaciones in the scenario (the page and the frame read the same list). It accepts no command: a new coverage is
+ * refused with COVERAGE_REFUSAL, and any other command gets the 404. `reads` counts the answers by path.
  */
-export function createScreensApi(scenario = 'data') {
+export function createScreensApi(scenario = 'data', { notices = false } = {}) {
   if (!SCREEN_SCENARIOS.includes(scenario)) throw new RangeError(`Unknown screens scenario: ${scenario}`);
   const base = createOccApi();
-  const api = { scenario, reads: new Map() };
+  const api = { scenario, reads: new Map(), commands: [] };
   const served = (url, answer) => {
     api.reads.set(url.pathname, (api.reads.get(url.pathname) ?? 0) + 1);
     return answer;
   };
   api.readsOf = path => api.reads.get(path) ?? 0;
   api.handle = (request, url) => {
+    if (request.method() === 'POST' && url.pathname === API_PATHS.coverage) {
+      api.commands.push(url.pathname);
+      return { status: 422, json: COVERAGE_REFUSAL };
+    }
     if (request.method() !== 'GET') return null;
     if (url.pathname === API_PATHS.access) return served(url, { status: 200, json: SCREENS_ACCESS });
-    if (url.pathname === API_PATHS.notices) return served(url, { status: 200, json: { notifications: [], hasMore: false } });
+    if (url.pathname === API_PATHS.notices) {
+      if (!notices) return served(url, { status: 200, json: { notifications: [], hasMore: false } });
+      return served(url, failed(scenario) ?? { status: 200, json: operationalNotices(scenario) });
+    }
+    if (url.pathname === API_PATHS.coverage) {
+      return served(url, failed(scenario) ?? { status: 200, json: coverageBoard(scenario, {
+        stationId: url.searchParams.get('stationId') ?? undefined, date: url.searchParams.get('date') ?? undefined,
+      }) });
+    }
     if (url.pathname === API_PATHS.changes) {
       return served(url, { status: 200, json: { changes: [], nextCursor: null, hasMore: false } });
     }
