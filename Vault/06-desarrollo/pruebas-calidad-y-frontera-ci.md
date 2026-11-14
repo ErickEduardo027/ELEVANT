@@ -333,8 +333,9 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y la consola después, a 1440×900 y a 1920×1080, y con movimiento reducido a
   1440×900. Desde U3 se suman las de la consola: al abrir, con los paneles
   plegados y abiertos, con un vuelo y una posición elegidos y sin motor de
-  mapa, a 1440×900 y a 1920×1080, y una llegada demo antes y después de «Ver y
-  seguir», a 1920×1080. La de Mapa de posiciones muestra el mapa sin la pantalla de
+  mapa, a 1440×900 y a 1920×1080, una llegada demo antes y después de «Ver y
+  seguir», a 1920×1080, y una tira elegida con «Alertas» plegada, a 1440×900.
+  La de Mapa de posiciones muestra el mapa sin la pantalla de
   arranque: sus pruebas entran como una entrada posterior de la misma pestaña,
   con la marca de la cuenta ya puesta, y fallan si la pantalla sigue encima
   cuando el mapa ya está listo. Las revisa una persona: no hay líneas base de
@@ -464,8 +465,18 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   rechazada o con la cola caída; que un panel sin su permiso lo dice sin
   culpar a la estación; que la leyenda del tablero nombra lo que dibuja cada
   pestaña; que el sondeo de la planificación no relee las opciones del panel
-  de asignación abierto, y el aviso de agente liberado en los dos idiomas. El
-  mapa se simula con el MapLibre falso de `tests/fakeMapLibre.js`, y jsdom
+  de asignación abierto, y el aviso de agente liberado en los dos idiomas.
+  Comprueba además que los paneles no tapan lo elegido: una posición elegida
+  en el mapa donde se abre el inspector vuelve al centro de lo que queda a la
+  vista, con el mismo acercamiento, y una que sigue a la vista no mueve la
+  cámara; un panel desplegado sobre lo elegido lo trae de vuelta, pero no lo
+  que la persona sacó de la vista; una tira elegida junto a «Alertas» plegada
+  vuela a su vuelo solo después de medir el inspector; y «Ver y seguir»
+  encuadra la vista que sigue el vuelo y después centra su avión, salvo que la
+  persona mueva la cámara antes
+  ([cámara](../../frontend/private-web/src/features/dashboard/noc/consoleCamera.test.js)
+  y [última medida de los paneles](../../frontend/private-web/src/features/dashboard/noc/useConsoleInsets.test.jsx)).
+  El mapa se simula con el MapLibre falso de `tests/fakeMapLibre.js`, y jsdom
   recibe un `ResizeObserver` falso.
 - **Datos sintéticos validados.**
   [`visualConsoleFixtures.test.js`](../../frontend/private-web/tests/visualConsoleFixtures.test.js)
@@ -486,8 +497,11 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   demo que ya venía al abrir muestra «Llegada nueva» y la leyenda del tablero;
   y, a 1920×1080, que «Recibido» envía el recibo, que un vuelo demo nuevo
   muestra «Llegada nueva» y que «Ver y seguir» escribe `flightId` y `follow=1`
-  y lleva el mapa a Aproximación. Como el resto de la suite, corre fuera del CI
-  y una persona revisa sus capturas.
+  y lleva el mapa a Aproximación. Con movimiento y a 1440×900, comprueba
+  también que una tira elegida con «Alertas» plegada deja su avión a la vista
+  junto al inspector que se abre: la leyenda del mapa, que solo nombra lo que
+  queda a la vista, nombra el vuelo de AVIAM que llega. Como el resto de la
+  suite, corre fuera del CI y una persona revisa sus capturas.
 
 ## Qué agrega cada workflow activo
 

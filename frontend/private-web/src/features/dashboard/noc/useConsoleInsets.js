@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { CONSOLE_PANEL_EDGES, insetsFromPanels, sameInsets } from './consoleInsets';
 
 const ZERO = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
+const NOTHING_MEASURED = Object.freeze({ insets: ZERO, width: 0, height: 0 });
 
 // The browser's ResizeObserver, or null (jsdom has none: the tests pass one of their own).
 const browserObserver = () => (typeof globalThis.ResizeObserver === 'function' ? globalThis.ResizeObserver : null);
@@ -16,7 +17,10 @@ const browserObserver = () => (typeof globalThis.ResizeObserver === 'function' ?
  *   are measured again; the insets are measured after every render too, so a panel that comes or goes counts at once.
  *   Without a ResizeObserver (`ResizeObserverImpl` null) only the renders measure.
  * - `enabled: false` (the grid of the fallback, the maximised map) measures nothing: the insets are 0.
- * Returns `{ insets, rootRef, measure }`; `insets` keeps its identity while it measures the same.
+ * Returns `{ insets, rootRef, measure, measured }`; `insets` keeps its identity while it measures the same.
+ * `measured()` (a stable function) answers the last measurement, `{ insets, width, height }`, with the size of the box
+ * in pixels: right after a render that measured new insets they differ from `insets` until the next render has them,
+ * so a caller can tell that the map is about to take another room.
  */
 export function useConsoleInsets({ edges = CONSOLE_PANEL_EDGES, enabled = true, ResizeObserverImpl = browserObserver() }
   = {}) {
@@ -25,18 +29,28 @@ export function useConsoleInsets({ edges = CONSOLE_PANEL_EDGES, enabled = true, 
   const panels = useRef(new Map());
   const refs = useRef(new Map());
   const observer = useRef(null);
+  const last = useRef(NOTHING_MEASURED);
   const latest = useRef({ edges, enabled });
   useLayoutEffect(() => { latest.current = { edges, enabled }; });
 
   const recompute = useCallback(() => {
     const { edges: sides, enabled: on } = latest.current;
     const box = root.current;
-    const next = !on || !box ? ZERO : insetsFromPanels(box.getBoundingClientRect(), [...panels.current]
-      .map(([panelId, element]) => ({
-        side: sides[panelId], rect: element.getBoundingClientRect(), folded: element.dataset.folded === 'true',
-      })));
+    if (!on || !box) {
+      last.current = NOTHING_MEASURED;
+      setInsets(current => (sameInsets(current, ZERO) ? current : ZERO));
+      return;
+    }
+    const rect = box.getBoundingClientRect();
+    const next = insetsFromPanels(rect, [...panels.current].map(([panelId, element]) => ({
+      side: sides[panelId], rect: element.getBoundingClientRect(), folded: element.dataset.folded === 'true',
+    })));
+    last.current = {
+      insets: next, width: Math.max(0, rect.right - rect.left), height: Math.max(0, rect.bottom - rect.top),
+    };
     setInsets(current => (sameInsets(current, next) ? current : next));
   }, []);
+  const measured = useCallback(() => last.current, []);
 
   // One observer for the life of the console, created on first use.
   const observe = useCallback(element => {
@@ -79,5 +93,5 @@ export function useConsoleInsets({ edges = CONSOLE_PANEL_EDGES, enabled = true, 
     observer.current = null;
   }, []);
 
-  return { insets: enabled ? insets : ZERO, rootRef, measure };
+  return { insets: enabled ? insets : ZERO, rootRef, measure, measured };
 }

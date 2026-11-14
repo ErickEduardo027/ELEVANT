@@ -14,6 +14,8 @@ import { loadSatelliteImageInfo } from '../../../services/satelliteService';
 import { createSimulatedOccMapAdapter } from '../../../services/occMapService';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
+import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
+import { attachStandGeometry } from '../../maps/stands/standModel';
 import { resetPanelFoldsForTests } from '../../occ-ui/occPanelMemory';
 import { parseMetar } from '../../weather/metar';
 import { resetClosedArrivalsForTests } from './arrivalMemory';
@@ -173,6 +175,64 @@ class FakeResizeObserver {
   disconnect() { this.targets.clear(); }
 }
 
+// A screen as matchMedia answers it: narrow (below 1280 px, the panels open folded) or wide.
+const screenOf = narrow => query => ({ matches: narrow && /max-width/.test(query), media: query, addEventListener() {},
+  removeEventListener() {} });
+const boxOf = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height,
+  x: left, y: top, toJSON() { return this; } });
+// Where the console's box and its floating panels sit at 1440 × 900, the fake map's own viewport, as
+// `[left, top, width, height]` in window pixels: each panel as a pill when folded and open otherwise. «Alertas» and the
+// «Inspector» share the right column (24rem and the 12 px padding): either open there takes 404 px from the right.
+const PANEL_PLACES = Object.freeze({
+  map: [0, 0, 1440, 900],
+  board: { folded: [12, 12, 132, 40], open: [12, 12, 448, 560] },
+  figures: { folded: [600, 12, 220, 40], open: [480, 12, 540, 96] },
+  alerts: { folded: [1296, 12, 132, 40], open: [1044, 12, 384, 300] },
+  inspector: { folded: [1296, 60, 132, 40], open: [1044, 60, 384, 520] },
+  positions: { folded: [12, 848, 260, 40], open: [12, 588, 1416, 300] },
+});
+let laidOut = null;
+
+/** Lays out what jsdom does not: the console's map box and its panels, by fold, from PANEL_PLACES. */
+function layOutPanels(places = PANEL_PLACES) {
+  const original = Element.prototype.getBoundingClientRect;
+  laidOut = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function boundingClientRect() {
+    const fold = this.getAttribute('data-folded') === 'true' ? 'folded' : 'open';
+    const place = this.hasAttribute('data-occ-console-map') ? places.map
+      : places[this.getAttribute('data-occ-floating-panel')]?.[fold];
+    return place ? boxOf(...place) : original.call(this);
+  });
+}
+
+// The panels measured again, as the browser's ResizeObserver does after a fold.
+const remeasure = () => act(async () => {
+  for (const observer of FakeResizeObserver.instances) observer.callback([], observer);
+});
+// Where the map draws a stand: the centre of its box in the airport layout (the synthetic day saves no location).
+const standCentre = code => attachStandGeometry([{ id: code, code }], MDPC_LAYOUT)[0].geometry.center;
+// Whether a camera centre (a LngLat or `[lng, lat]`) is at `[lng, lat]`, to a millionth of a degree.
+function near(center, [lng, lat]) {
+  const [x, y] = Array.isArray(center) ? center : [center?.lng, center?.lat];
+  return Math.abs(x - lng) < 1e-6 && Math.abs(y - lat) < 1e-6;
+}
+// The fake map's camera put, at its zoom, so that `lngLat` is drawn at the pixel `[x, y]` of its 1440 × 900 viewport.
+function drawAt(map, lngLat, [x, y]) {
+  map.jumpTo({ center: lngLat });
+  const centre = map.unproject([720 - (x - 720), 450 - (y - 450)]);
+  map.jumpTo({ center: [centre.lng, centre.lat] });
+}
+// A click on the map at the pixel `[x, y]`, where it draws the stand `code` at `[lng, lat]`, as MapLibre picks it.
+async function clickStand(map, code, [x, y], [lng, lat]) {
+  fake.state.setRenderedFeatures(map, () => [{ id: code, layer: { id: 'occ-stands-fill' }, properties: { code } }]);
+  await act(async () => fake.state.emit(map, 'click', { point: { x, y }, lngLat: { lng, lat } }));
+}
+// The camera moves the console made after `from` (an index of the fake map's camera calls), padding left aside.
+const movesSince = (map, from) => map.cameraCalls.slice(from).filter(call => call.method !== 'setPadding');
+const paddedSince = (map, from, side, value) => map.cameraCalls.slice(from)
+  .findIndex(call => call.method === 'setPadding' && call.options[side] === value);
+const movedToSince = (map, from, point) => map.cameraCalls.slice(from)
+  .findIndex(call => call.method !== 'setPadding' && near(call.options.center, point));
+
 beforeEach(() => {
   fake.state.reset();
   auth.session = SESSION;
@@ -190,6 +250,8 @@ afterEach(() => {
   resetPanelFoldsForTests();
   resetClosedArrivalsForTests();
   FakeResizeObserver.instances = [];
+  laidOut?.mockRestore();
+  laidOut = null;
   vi.unstubAllGlobals();
   vi.mocked(loadSatelliteImageInfo).mockImplementation(() => new Promise(() => {}));
   window.history.replaceState({}, '', '/');
@@ -589,6 +651,141 @@ describe('the OCC console', () => {
     expect(await screen.findByRole('region', { name: 'Tablero' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Ocultar paneles' }));
     await waitFor(() => expect(search().get('focus')).toBe('map'));
+  });
+});
+
+// The panels never cover what is chosen (contratos 2.5): the room they take from the map changes the map's padding, so
+// the console moves the camera only once the panels are measured for the selection, and brings what is chosen back
+// when a change of the room covers it. The fake MapLibre answers `project` around the middle of its viewport and
+// applies every move at once; `cameraCalls` keeps their order.
+describe('the camera around the panels', () => {
+  /** The console on a laid-out screen, its engine ready, and `code` drawn at `pixel` after the opening view. */
+  async function consoleWithStandAt(code, pixel, { narrow = true, url = PAGE } = {}) {
+    vi.stubGlobal('matchMedia', screenOf(narrow));
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    layOutPanels();
+    const { map } = renderConsole({ url });
+    await boardReady();
+    await act(async () => fake.state.emit(map, 'style.load'));
+    const point = standCentre(code);
+    act(() => drawAt(map, point, pixel));
+    return { map, point };
+  }
+
+  it('a stand chosen on the map where the inspector opens comes back into sight, at the same zoom', async () => {
+    // A narrow screen: «Alertas» is a pill, so the right edge is the map's until something is chosen.
+    const { map, point } = await consoleWithStandAt('B24', [1300, 450]);
+    expect(screen.getByTestId('occ-map').style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
+    const zoom = map.getZoom();
+    const from = map.cameraCalls.length;
+    await clickStand(map, 'B24', [1300, 450], point);
+    await waitFor(() => expect(search().get('stand')).toBe('B24'));
+    expect(await screen.findByRole('region', { name: 'Inspector' })).toBeInTheDocument();
+    // The inspector takes 404 px from the right, where B24 was: once the map has that room, B24 is in its middle.
+    const padded = paddedSince(map, from, 'right', 404);
+    expect(padded).toBeGreaterThanOrEqual(0);
+    expect(movedToSince(map, from, point)).toBeGreaterThan(padded);
+    expect(near(map.getCenter(), point)).toBe(true);
+    expect(map.getZoom()).toBeCloseTo(zoom, 6);
+  });
+
+  it('a stand chosen on the map that the inspector leaves in sight keeps the camera where it is', async () => {
+    const { map, point } = await consoleWithStandAt('B24', [600, 450]);
+    const centre = map.getCenter();
+    const from = map.cameraCalls.length;
+    await clickStand(map, 'B24', [600, 450], point);
+    await screen.findByRole('region', { name: 'Inspector' });
+    expect(paddedSince(map, from, 'right', 404)).toBeGreaterThanOrEqual(0);
+    expect(movesSince(map, from)).toEqual([]);
+    expect(near(map.getCenter(), [centre.lng, centre.lat])).toBe(true);
+  });
+
+  it('a panel unfolded over what is chosen brings it back, but not what a person moved out of sight', async () => {
+    const { map, point } = await consoleWithStandAt('B24', [200, 450], { url: `${PAGE}?stand=B24` });
+    await screen.findByRole('region', { name: 'Inspector' });
+    const zoom = map.getZoom();
+    let from = map.cameraCalls.length;
+    // «Tablero» opens 468 px wide over B24, which the pill left in sight.
+    await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
+    await remeasure();
+    expect(paddedSince(map, from, 'left', 468)).toBeGreaterThanOrEqual(0);
+    expect(near(map.getCenter(), point)).toBe(true);
+    expect(map.getZoom()).toBeCloseTo(zoom, 6);
+
+    // A person drags B24 far out of sight; folding the board leaves the camera where they put it.
+    act(() => map.jumpTo({ center: [point[0] + 0.05, point[1]], originalEvent: { type: 'mousemove' } }));
+    const dragged = map.getCenter();
+    from = map.cameraCalls.length;
+    await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
+    await remeasure();
+    expect(paddedSince(map, from, 'left', 0)).toBeGreaterThanOrEqual(0);
+    expect(movesSince(map, from)).toEqual([]);
+    expect(near(map.getCenter(), [dragged.lng, dragged.lat])).toBe(true);
+  });
+
+  it('a strip chosen beside a folded «Alertas» flies to its flight only once the inspector is measured', async () => {
+    const { map } = await consoleWithStandAt('B24', [600, 450], { narrow: false });
+    // The person folds «Alertas»: its pill takes no width.
+    await userEvent.click(within(region('Alertas')).getByRole('button', { name: 'Alertas' }));
+    await remeasure();
+    expect(screen.getByTestId('occ-map').style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
+    const onFinal = airPicture({ now: Date.now() }).aircraft.find(item => item.hex === CONSOLE_HEX.onFinal);
+    const aircraft = [onFinal.longitude, onFinal.latitude];
+    const from = map.cameraCalls.length;
+    await userEvent.click(within(board()).getByRole('button', { name: /ZZ161/ }));
+    await waitFor(() => expect(search().get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY));
+    await screen.findByRole('region', { name: 'Inspector' });
+    // A move made before the inspector's room would stop half-way at the jump of the new padding.
+    const padded = paddedSince(map, from, 'right', 404);
+    expect(padded).toBeGreaterThanOrEqual(0);
+    expect(movedToSince(map, from, aircraft)).toBeGreaterThan(padded);
+    expect(near(map.getCenter(), aircraft)).toBe(true);
+  });
+
+  /** The console with a demo flight on its way whose aircraft the map draws, and «Ver y seguir» pressed. */
+  async function followDemoArrival() {
+    const demoFix = nowMs => ({ ...airPicture({ now: nowMs, trails: 'none' }).aircraft[0], hex: 'f1c901',
+      callsign: 'ZZZ9001', registration: 'ZZ-TST5', latitude: 18.48, longitude: -68.62,
+      matchedFlightKey: DEMO_FLIGHT_KEYS.arrival, matchedBy: 'Callsign', trail: [] });
+    const mapService = createSimulatedOccMapAdapter({ scenario: {
+      picture: ({ nowMs, stationId, trails }) => {
+        const picture = airPicture({ now: nowMs, stationId, trails });
+        return { ...picture, aircraft: [...picture.aircraft, demoFix(nowMs)] };
+      },
+      flights: ({ nowMs, stationId }) => mapFlights({ now: nowMs, stationId, demo: true }),
+    } });
+    const { map } = renderConsole({ mapService });
+    await boardReady();
+    await act(async () => fake.state.emit(map, 'style.load'));
+    const pill = (await screen.findByText('Llegada nueva: ZZ9001')).closest('[role="status"]');
+    await userEvent.click(within(pill).getByRole('button', { name: 'Ver y seguir' }));
+    await waitFor(() => expect(search().get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival));
+    // First the view that follows it, Aproximación, not yet on the aircraft.
+    await waitFor(() => expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'approach'));
+    return { map, aircraft: [-68.62, 18.48] };
+  }
+
+  it('«Ver y seguir» frames the view that follows the flight, then centres its aircraft', async () => {
+    const { map, aircraft } = await followDemoArrival();
+    const zoom = map.getZoom();
+    expect(near(map.getCenter(), aircraft)).toBe(false);
+    await act(async () => fake.state.emit(map, 'idle'));
+    await waitFor(() => expect(near(map.getCenter(), aircraft)).toBe(true));
+    expect(map.getZoom()).toBeCloseTo(zoom, 6);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'approach');
+  });
+
+  it('«Ver y seguir» leaves the camera to a person who moves it before the map settles', async () => {
+    const { map, aircraft } = await followDemoArrival();
+    act(() => map.jumpTo({ center: [-68.3, 18.6], originalEvent: { type: 'mousemove' } }));
+    const from = map.cameraCalls.length;
+    // The map settles, and what waited for it has run by the next task.
+    await act(async () => {
+      fake.state.emit(map, 'idle');
+      await new Promise(resolve => { setTimeout(resolve, 0); });
+    });
+    expect(movedToSince(map, from, aircraft)).toBe(-1);
+    expect(near(map.getCenter(), [-68.3, 18.6])).toBe(true);
   });
 });
 

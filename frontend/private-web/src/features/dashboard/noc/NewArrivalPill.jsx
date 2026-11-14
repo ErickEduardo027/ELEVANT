@@ -40,22 +40,22 @@ export function useNewDemoArrival(flights, { clock = null, accountId = null } = 
 
 /**
  * The pill «Llegada nueva: ZZ9001» with its «Demo» tag, «Ver y seguir» and «Cerrar», at the top left of the area the
- * panels leave in sight. «Ver y seguir» calls `onFollow(flight, view)` with the view that follows it (newArrivals.js:
- * followView): the console writes the flight, `follow=1` and that view in the URL in one go (one writer, so no write
- * undoes another). The pill moves the camera itself: to that view, or, when the map already shows it, onto the flight.
- * Then it closes, as «Cerrar» does (`onDismiss`). Inside an OccMap it reads the map's context; outside one (the fallback
- * grid) it only selects. A status: the arrival is read out once, politely.
+ * panels leave in sight. «Ver y seguir» calls `onFollow(flight, view, { viewShown })` with the view that follows it
+ * (newArrivals.js: followView) and whether the map shows that view now: the console writes the flight, `follow=1` and
+ * that view in the URL in one go (one writer, so no write undoes another) and moves the camera once the panels are
+ * measured for the flight: to that view, unless the map shows it already, and then onto the flight when the map draws
+ * its aircraft (ConsolePage.jsx). Then the pill closes, as «Cerrar» does (`onDismiss`). Inside an OccMap it reads the
+ * view on screen from the map's context; outside one (the fallback grid) there is no camera, and it only selects. A
+ * status: the arrival is read out once, politely.
  */
 export default function NewArrivalPill({ flight, onFollow, onDismiss, className = '' }) {
   const { t } = useTranslation(consoleMessages);
-  const { activeView, flyToPreset, flyToFlight } = useOccMap();
+  const { activeView } = useOccMap();
   if (!flight) return null;
 
   function follow() {
     const view = followView(flight);
-    onFollow?.(flight, view);
-    if (activeView === view) flyToFlight(flight.flightKey);
-    else flyToPreset(view);
+    onFollow?.(flight, view, { viewShown: activeView === view });
     onDismiss?.();
   }
 

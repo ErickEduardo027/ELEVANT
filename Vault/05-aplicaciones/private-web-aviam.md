@@ -1465,8 +1465,14 @@ tampoco.
   «Posiciones» abre plegada, «Cifras de la jornada» también por debajo de
   1600 px, y «Tablero» y «Alertas» por debajo de 1280 px. «Ocultar paneles»,
   bajo el mapa, deja solo el mapa (`focus=map`), y «Mostrar paneles» los
-  devuelve. Los paneles casi opacos y sin desenfoque no tapan lo elegido: la
-  consola los mide y el mapa encuadra lo que queda a la vista.
+  devuelve. Los paneles son casi opacos y sin desenfoque. La consola los mide y
+  el mapa encuadra sus vistas en lo que queda a la vista. Lo elegido no queda
+  debajo de un panel: la cámara se mueve después de medir el inspector que se
+  abre con la selección, y si después un panel se despliega o se pliega, o
+  cambia la ventana, y eso tapa lo elegido que estaba a la vista, la consola lo
+  trae al centro de lo que queda a la vista, con el mismo acercamiento
+  ([cámara](../../frontend/private-web/src/features/dashboard/noc/consoleCamera.js)).
+  Lo que la persona sacó de la vista se queda donde lo dejó.
 - **Tablero.** «Llegadas» y «Salidas» son los vuelos del mapa como tiras de
   vuelo ordenadas por su mejor hora: la hora con «real», «est.» o «prog.», el
   vuelo, el aeropuerto, la posición, el estado y la cuenta atrás. Debajo, «Por
@@ -1532,8 +1538,11 @@ tampoco.
 - **Llegada nueva.** Cuando aparece en los vuelos del mapa una llegada demo
   nueva, una pastilla dice «Llegada nueva: {vuelo}» con la placa «Demo», «Ver
   y seguir» y «Cerrar». «Ver y seguir» elige el vuelo, escribe `follow=1` y la
-  vista que lo sigue, y lleva la cámara hasta él; que el mapa lo siga llega con
-  M6. Al abrir la consola, recargarla o volver de otro módulo, la pastilla
+  vista que lo sigue, y lleva la cámara a esa vista; cuando el mapa se asienta,
+  centra el avión del vuelo si el mapa lo dibuja y nadie movió la cámara
+  entretanto. El avión de un vuelo demo se dibuja desde M6, y que el mapa siga
+  el vuelo también llega con M6. Al abrir la consola, recargarla o volver de
+  otro módulo, la pastilla
   también anuncia la llegada demo que ya venía y todavía no está en su
   posición, porque Superadministración suele dispararla antes. «Cerrar» y «Ver
   y seguir» la cierran para la pestaña, y una pastilla cerrada no vuelve
@@ -1579,7 +1588,11 @@ tampoco.
 
 Límites: el mapa todavía no sigue un vuelo ni dibuja los aviones estimados y
 demo, la ruta del vuelo elegido hasta su posición o la barra de avance de las
-posiciones, que llegan con M6, ni el 3D, que llega con M7. El clima sigue
+posiciones, que llegan con M6, ni el 3D, que llega con M7. Lo elegido vuelve a
+la vista cuando los paneles cambian el espacio, no cuando se mueve: un avión
+elegido que vuela hasta quedar debajo de un panel sigue ahí hasta que la
+persona mueva la cámara o el mapa lo siga (M6). Un avión de otro tráfico, sin
+vuelo de ELEVANT, vuelve a la vista de un salto, sin animación. El clima sigue
 leyendo el METAR de IEM desde el navegador, y el detalle monta un segundo mapa,
 pequeño, para las imágenes satelitales mientras está abierto; el plan pasa el
 satélite a una capa del mapa único en M8. «Importar» abre el diálogo con todo

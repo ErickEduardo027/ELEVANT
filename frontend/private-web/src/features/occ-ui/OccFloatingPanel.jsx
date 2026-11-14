@@ -28,9 +28,10 @@ const NOTHING_REMEMBERED = () => null;
 
 /**
  * A panel of the console that floats over the full-screen map and folds to a pill (contratos 2.5).
- * - A `section` named by its title: the title is the one button of the header, inside its heading (`headingLevel`,
- *   `h2` by default). The button says with `aria-expanded` whether the panel is open and points at the body with
- *   `aria-controls`; its name is the title alone.
+ * - A `section` named by its title: the title is the button that folds and unfolds the panel, inside its heading
+ *   (`headingLevel`, `h2` by default). It says with `aria-expanded` whether the panel is open and points at the body
+ *   with `aria-controls`; its name is the title alone. It is not the only control of the header: open, the header also
+ *   shows the panel's `actions` (below).
  * - Folded, only the header stays: the pill. The body stays mounted, `hidden`, so what it holds keeps its state and the
  *   console's ResizeObserver measures the pill. `foldedSummary` (the counts of «Posiciones») shows only while folded,
  *   next to the button, which it describes (`aria-describedby`); `meta` shows in both states; `actions` only open.

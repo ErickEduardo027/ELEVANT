@@ -9,8 +9,8 @@ import { expect, test } from '../support/test.mjs';
 // METAR of IEM answered by a route of this spec. Photographed for review at 1920 × 1080 and 1440 × 900, the laptop the
 // console is presented on (owner decision 11): the panels open and folded, a flight and a stand selected, the fallback
 // without a map engine, the pill of a demo flight already on its way when the console opens with the board's legend,
-// and the pill of a new demo arrival. Each test opens the console as a later OCC entry of its tab, so the OCC boot
-// screen (PR U4) never covers it.
+// the pill of a new demo arrival, and a strip chosen beside a folded «Alertas». Each test opens the console as a later
+// OCC entry of its tab, so the OCC boot screen (PR U4) never covers it.
 
 const PAGE = '/admin-occ/dashboard';
 const SIZES = Object.freeze([{ width: 1920, height: 1080 }, { width: 1440, height: 900 }]);
@@ -182,5 +182,28 @@ test.describe('the OCC console on the map engine', () => {
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       await shoot(page, testInfo, 'u3-consola-ver-y-seguir-1920');
     });
+
+    // With «Alertas» folded, the inspector that opens with the selection takes its column from the map, and the new
+    // padding of the map would stop a camera move already under way: the console flies only once it is measured. The
+    // legend lists only what the panels leave in sight, so it names the aircraft once the camera has brought it there.
+    test('a strip chosen beside a folded «Alertas» brings its aircraft beside the inspector at 1440×900',
+      async ({ page, isolation }, testInfo) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        const { map } = await openConsole(page, isolation);
+        await settled(page, map);
+        await setOpen(page, 'Alertas', false);
+        await expect.poll(() => map.evaluate(node => node.style.getPropertyValue('--occ-map-inset-right'))).toBe('0px');
+        await panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ }).click();
+        await expect.poll(() => new URL(page.url()).searchParams.get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY);
+        await expect(panel(page, 'Inspector').getByRole('dialog', { name: 'Vuelo ZZ161' })).toBeVisible();
+        await expect.poll(async () => Number.parseFloat(await map.evaluate(node =>
+          node.style.getPropertyValue('--occ-map-inset-right')))).toBeGreaterThan(300);
+        await expect(map).toHaveAttribute('data-occ-settled', 'true');
+        const legendButton = map.getByRole('button', { name: 'Leyenda', exact: true });
+        if ((await legendButton.getAttribute('aria-expanded')) !== 'true') await legendButton.click();
+        await expect(map.getByRole('list', { name: 'Leyenda', exact: true })).toContainText('Vuelo de AVIAM que llega');
+        await expect(map).toHaveAttribute('data-occ-settled', 'true');
+        await shoot(page, testInfo, 'u3-consola-alertas-plegada-1440');
+      });
   });
 });

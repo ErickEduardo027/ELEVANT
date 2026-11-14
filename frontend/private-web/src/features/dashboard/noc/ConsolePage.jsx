@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../../../components/Toast';
 import { useToast } from '../../../hooks/useToast';
 import { useTranslation } from '../../../i18n/LanguageScope';
@@ -24,6 +24,10 @@ import AlertsPanel from './AlertsPanel';
 import BoardPanel from './BoardPanel';
 import { buildBoard, selectionIdOf } from './boardModel';
 import ConsoleAssignDrawer from './ConsoleAssignDrawer';
+import {
+  REVEAL_MARGIN_PX, aimKeyOf, aimVerdict, freeAreaOf, inFreeArea, revealOf, selectionKeyOf, standGeometryOf,
+} from './consoleCamera';
+import { sameInsets } from './consoleInsets';
 import { consoleMessages } from './consoleMessages';
 import { buildFigures } from './consoleModel';
 import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT } from './ConsoleOverlay';
@@ -50,6 +54,7 @@ import WeatherPill from './WeatherPill';
 // the same place); with `focus=map` the panels hide behind «Mostrar paneles»; on a narrow screen they open folded.
 
 const EMPTY = Object.freeze([]);
+const NO_INSETS = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
 const NARROW_QUERY = '(max-width: 1279.98px)';
 const FIGURES_FOLDED_QUERY = '(max-width: 1599.98px)';
 // Where the pill of a new arrival goes: the top left of the area the panels leave in sight (OccMap's inset variables),
@@ -88,6 +93,17 @@ function boardStateOf(live, board) {
     onRetry: live.retry };
 }
 
+// What is chosen, as the map draws it now (consoleCamera.js: revealOf): the stand's outline, the aircraft of a flight
+// or else its stand, an aircraft's position; null with nothing chosen or nothing drawn.
+function revealNow({ chosen = null, target = null, stands = EMPTY, flights = EMPTY } = {}) {
+  if (chosen === null) return null;
+  return revealOf({
+    selection: chosen, aircraft: target?.aircraft ?? null, flightKey: target?.flight?.flightKey ?? null,
+    standCode: chosen.kind === 'flight' ? relatedEntities(chosen, { flights }).standCode : null,
+    standGeometry: code => standGeometryOf(stands, code),
+  });
+}
+
 /**
  * The console page.
  * - `station`: `{ stationId, stationCode }` of the OCC's PUJ scope.
@@ -115,7 +131,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
 
   const layout = engineStatus === 'unavailable' ? 'grid' : 'map';
   const focusMap = selection.focus === 'map';
-  const { insets, rootRef, measure } = useConsoleInsets({ enabled: layout === 'map' && !focusMap });
+  const { insets, rootRef, measure, measured } = useConsoleInsets({ enabled: layout === 'map' && !focusMap });
   const { planning, positions, reviewQueue, readiness, notices } = data;
   const { selection: chosen, selectFlight, selectStand, selectAircraft, clear, setFocus, setFollow, setView } = selection;
 
@@ -171,50 +187,178 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   // On screen: the route may now tell the boot screen, as soon as the first data are here too.
   useEffect(() => { onShown?.(); }, [onShown]);
 
-  // The opening view framed in the area the panels leave (contratos 2.5): the engine starts before the panels are
-  // measured, so the view is framed again once it is ready with the insets known, and again when the panels change the
-  // room (a fold, a window resized), as long as nothing moved the camera on purpose since: a person, a selection the
-  // console flew to, or a selection at all (OccMap keeps a selected stand in sight; follow mode keeps its flight).
+  // The camera and the panels (contratos 2.5; consoleCamera.js). The panels take room from the map, and when that room
+  // changes the map's padding changes with it, which MapLibre applies as a jump that also stops a move under way: what
+  // sat near the edge of a panel can end up under it. So the console moves the camera only once the panels are measured
+  // (useConsoleInsets: `measured`):
+  // - a move it asks for when something is chosen on the console or on the map (an aim) goes once the URL has that
+  //   selection, so the inspector that opens with a first selection, beside a folded «Alertas», already counts. A
+  //   strip, a turnaround or a pending item flies to its flight, else to its stand; a click on the map or a bar of the
+  //   band brings what it chose into sight when the panels cover it; «Ver y seguir» flies to the view that follows its
+  //   flight, unless the map shows that view already, and centres the flight once the map settles there;
+  // - the opening view is framed in the area the panels leave once the engine is ready, and again when the panels
+  //   change the room (a fold, a window resized), as long as nothing is chosen or followed and nothing moved the camera
+  //   on purpose since (a person, or a selection the console brought into sight);
+  // - when the room changes with something chosen that was in sight and the panels now cover it, it comes back to the
+  //   middle of the area in sight, at the same zoom. What a person moved out of sight stays where they left it.
   const framing = useRef({ key: null, moved: false });
+  const aim = useRef(null);
+  const [aimTick, setAimTick] = useState(0);
+  const userMoves = useRef(0);
   const insetsKey = `${insets.top}|${insets.right}|${insets.bottom}|${insets.left}`;
   const framedView = selection.view ?? 'ramp';
   const framedTerminal = selection.terminal ?? null;
   const held = chosen !== null || selection.follow;
-  useEffect(() => {
-    const state = framing.current;
-    if (engineStatus !== 'ready' || layout !== 'map' || state.key === insetsKey) return;
-    const first = state.key === null;
-    state.key = insetsKey;
-    if (!first && (state.moved || held)) return;
-    state.moved = false;
-    mapRef.current?.flyToPreset(framedView, { terminal: framedTerminal });
-  }, [engineStatus, framedTerminal, framedView, held, insetsKey, layout]);
-  const handleCamera = useCallback((camera, details) => {
-    if (details?.byUser) framing.current.moved = true;
+  // The newest selection and what the map draws of it, for the moves that run after this render.
+  const latest = useRef({ chosen: null, target: null, stands: EMPTY, flights: EMPTY });
+  useLayoutEffect(() => {
+    latest.current = { chosen, target: live.target, stands, flights: mapFlights };
+  });
+
+  // Whether what is chosen lies, where the map draws it now, in the area that `room` (insets) leaves in sight, `margin`
+  // pixels inside it; null when the map cannot tell (no map, no size, nothing of it drawn or placed).
+  const chosenInSight = useCallback((room, margin) => {
+    const map = mapRef.current;
+    const reveal = revealNow(latest.current);
+    const area = freeAreaOf(measured(), room);
+    if (!map || reveal === null || area === null) return null;
+    const pixels = reveal.points.map(point => map.project(point));
+    return pixels.every(Boolean) ? inFreeArea(pixels, area, margin) : null;
+  }, [measured]);
+  // Brings what is chosen to the middle of the area in sight, at the same zoom; whether the camera moved.
+  const bringIntoSight = useCallback(() => {
+    const map = mapRef.current;
+    const reveal = revealNow(latest.current);
+    const zoom = map?.getCamera()?.zoom;
+    if (!map || reveal === null || !Number.isFinite(zoom)) return false;
+    const { move } = reveal;
+    let moved;
+    if (move.kind === 'stand') moved = map.flyToStand(move.code, { minZoom: zoom });
+    else if (move.kind === 'flight') moved = map.flyToFlight(move.id);
+    else moved = map.jumpTo({ center: move.center });
+    if (moved) framing.current.moved = true;
+    return Boolean(moved);
+  }, []);
+  // An aim, now that the URL has its selection and the panels are measured for it (`room`, the insets).
+  const carryOut = useCallback((pending, room) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (pending.kind === 'flight') {
+      if (!map.flyToFlight(pending.id) && pending.standCode) map.flyToStand(pending.standCode);
+      return;
+    }
+    if (pending.kind === 'reveal') {
+      if (chosenInSight(room, REVEAL_MARGIN_PX) === false) bringIntoSight();
+      return;
+    }
+    // «Ver y seguir»: the view, then the flight once the map settles there, unless a person moved the camera or chose
+    // something else meanwhile. A flight whose aircraft the map does not draw stays where the view puts it.
+    if (pending.viewShown || !map.flyToPreset(pending.view)) {
+      map.flyToFlight(pending.id);
+      return;
+    }
+    const moves = userMoves.current;
+    map.whenIdle().then(idle => {
+      if (!idle || userMoves.current !== moves || selectionKeyOf(latest.current.chosen) !== pending.key) return;
+      mapRef.current?.flyToFlight(pending.id);
+    });
+  }, [bringIntoSight, chosenInSight]);
+  // Waits for the selection `next.key` (consoleCamera.js: aimKeyOf) to carry out `next`.
+  const aimAt = useCallback(next => {
+    if (!next.key) return;
+    if (next.kind !== 'reveal') framing.current.moved = true;
+    aim.current = { ...next, from: selectionKeyOf(latest.current.chosen) };
+    setAimTick(tick => tick + 1);
   }, []);
 
-  // The board, the band and the pending list select through the URL; the map follows the selection.
+  // Whether what is chosen was in sight in the room the map pads with until this render: OccMap takes the room this
+  // render measured in its own effects, which run after this one.
+  const padded = useRef(NO_INSETS);
+  const roomBefore = useRef({ key: null, inSight: false });
+  useLayoutEffect(() => {
+    if (roomBefore.current.key === insetsKey) return;
+    roomBefore.current = { key: insetsKey, inSight: chosenInSight(padded.current, 0) === true };
+  }, [chosenInSight, insetsKey]);
+  useEffect(() => {
+    padded.current = insets;
+  }, [insets]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (layout !== 'map') {
+      aim.current = null;
+      return;
+    }
+    if (!map || engineStatus !== 'ready') return;
+    // The panels were measured again after this render: the next render has the room the map is about to take.
+    if (!sameInsets(measured().insets, insets)) return;
+    const state = framing.current;
+    const first = state.key === null;
+    const roomChanged = state.key !== insetsKey;
+    const pending = aim.current;
+    const verdict = aimVerdict(pending, chosen);
+    if (verdict === 'go') {
+      aim.current = null;
+      state.key = insetsKey;
+      carryOut(pending, insets);
+      return;
+    }
+    if (verdict === 'drop') aim.current = null;
+    if (!roomChanged) return;
+    state.key = insetsKey;
+    if (first || (!state.moved && !held)) {
+      state.moved = false;
+      map.flyToPreset(framedView, { terminal: framedTerminal });
+      return;
+    }
+    const before = roomBefore.current;
+    if (chosen === null || before.key !== insetsKey || !before.inSight) return;
+    if (chosenInSight(insets, REVEAL_MARGIN_PX) === false) bringIntoSight();
+  }, [aimTick, bringIntoSight, carryOut, chosen, chosenInSight, engineStatus, framedTerminal, framedView, held, insets,
+    insetsKey, layout, measured]);
+  const handleCamera = useCallback((camera, details) => {
+    if (!details?.byUser) return;
+    framing.current.moved = true;
+    userMoves.current += 1;
+  }, []);
+
+  // The board, the turnarounds and the pending list select through the URL; the camera follows (an aim).
   const selectItem = useCallback(item => {
     const id = selectionIdOf(item, mapFlights);
     if (id === null) return;
     selectFlight(id);
-    const map = mapRef.current;
-    if (!map) return;
-    framing.current.moved = true;
-    if (!map.flyToFlight(id) && item.standCode) map.flyToStand(item.standCode);
-  }, [mapFlights, selectFlight]);
+    aimAt({ kind: 'flight', key: aimKeyOf('flight', id), id, standCode: item.standCode ?? null });
+  }, [aimAt, mapFlights, selectFlight]);
+  // Nothing chosen: no aim waits for anything either.
+  const clearChoice = useCallback(() => {
+    aim.current = null;
+    clear();
+  }, [clear]);
+  // A click on the map (OccMap) and a bar of the band select through the URL too.
   const handleMapSelect = useCallback(next => {
-    if (next === null) clear();
-    else if (next.kind === 'stand') selectStand(next.id);
+    if (next === null) {
+      clearChoice();
+      return;
+    }
+    if (next.kind === 'stand') selectStand(next.id);
     else if (next.kind === 'aircraft') selectAircraft(next.id);
     else if (next.kind === 'flight') selectFlight(next.id);
-  }, [clear, selectAircraft, selectFlight, selectStand]);
-  // «Ver y seguir»: the flight, follow=1 and the view that follows it, written by the console's one store in a row.
-  const follow = useCallback((flight, view) => {
+    else return;
+    aimAt({ kind: 'reveal', key: aimKeyOf(next.kind, next.id) });
+  }, [aimAt, clearChoice, selectAircraft, selectFlight, selectStand]);
+  const selectBandStand = useCallback(code => {
+    selectStand(code);
+    aimAt({ kind: 'reveal', key: aimKeyOf('stand', code) });
+  }, [aimAt, selectStand]);
+  // «Ver y seguir»: the flight, follow=1 and the view that follows it, written by the console's one store in a row;
+  // `viewShown` says that the map already shows that view.
+  const follow = useCallback((flight, view, { viewShown = false } = {}) => {
     selectFlight(flight.flightKey);
     setFollow(true);
     if (view) setView(view);
-  }, [selectFlight, setFollow, setView]);
+    aimAt({ kind: 'follow', key: aimKeyOf('flight', flight.flightKey), id: flight.flightKey, view: view ?? null,
+      viewShown: viewShown === true });
+  }, [aimAt, selectFlight, setFollow, setView]);
   const reread = useCallback(() => {
     planning.refresh?.();
     positions.refresh?.();
@@ -273,14 +417,14 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
         <InspectorPanel selection={chosen} target={live.target} telemetry={live.telemetry}
           stationAirport={live.flights?.stationAirport ?? null} stationId={station.stationId} stand={selectedStand}
           standFlight={standFlight} stripOf={stripOf} mapFlights={mapFlights} canImport={canImport} canAssign={canAssign}
-          onImport={openImport} onAssign={flight => setAssignTurnaroundId(flight.turnaroundId)} onClear={clear}
+          onImport={openImport} onAssign={flight => setAssignTurnaroundId(flight.turnaroundId)} onClear={clearChoice}
           nowMs={nowMs} timeZone={timeZone} measureRef={ref('inspector')} layout={panelLayout}
           className={classes.inspectorPanel} />
       ) : null,
       positions: (
         <PositionsPanel stands={stands} flightsByTurnaround={flightsByTurnaround} aircraft={aircraft} figures={figures}
           state={panelStateOf(positions)} labels={remoteLabels} nowMs={nowMs} timeZone={timeZone}
-          selectedBarId={selectedTurnaroundId} onSelectStand={code => selectStand(code)}
+          selectedBarId={selectedTurnaroundId} onSelectStand={selectBandStand}
           measureRef={ref('positions')} layout={panelLayout} className={classes.positionsPanel} />
       ),
     };
