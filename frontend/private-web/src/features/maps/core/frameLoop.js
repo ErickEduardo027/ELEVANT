@@ -3,8 +3,9 @@ import { serverClock } from '../../../services/serverClock';
 // One animation loop per OCC map (PR M6, design H). Everything that moves on a map is a pure function of the server's
 // time, so a frame only has to ask the clock for the time and draw: nothing is integrated frame by frame and nothing
 // has to catch up. The loop asks the browser for a frame only while one of its subscribers animates (an aircraft
-// moving, a blend or a fade under way; later the 3D matrices and the follow camera); otherwise there is no loop at all
-// and MapLibre idles. It stops while the tab is hidden and draws at the current server time when the tab shows again
+// moving, a blend or a fade under way, the follow camera closing in on its aircraft; later the 3D matrices); otherwise
+// there is no loop at all and MapLibre idles. OccMap subscribes the traffic first and follow mode after it, so the
+// camera frames each aircraft where that frame drew it. It stops while the tab is hidden and draws at the current server time when the tab shows again
 // (the clock's offset is synced again by the map's reads: useMapSituation pings on return). Under reduced motion it
 // ticks once a second, at whole seconds, without interpolation. React never renders per frame: a subscriber writes to
 // the map directly.

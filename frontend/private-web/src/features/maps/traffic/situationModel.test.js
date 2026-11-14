@@ -6,6 +6,7 @@ import {
   createAirPicture, createEstimates, createMapFlights, createTrack, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX,
   TRAFFIC_NOON, trafficInstant,
 } from '../testing/trafficFixtures';
+import { createMotionStore } from './motionStore';
 import { buildRoute } from './routeFeatures';
 import {
   airTrafficSourceState, buildSituation, claimFixes, fixIdentity, ownedStandCodes, selectionTarget, staleAfterSeconds,
@@ -457,6 +458,8 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
     for (const legs of [rows, turnaroundVisit]) {
       const model = flightsOf(legs);
       const situation = buildSituation({ picture, flights: model, nowMs: NOON });
+      const motion = createMotionStore();
+      motion.ingest({ picture, flights: model });
       const departure = model.byKey.get(KEY.departure);
       const arrival = model.byKey.get(KEY.arrival);
       const drawn = situation.byId.get(`f:${KEY.departure}`);
@@ -467,10 +470,12 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
       for (const id of [departure.visitKey, departure.turnaroundId]) {
         const target = selectionTarget({ kind: 'flight', id }, situation);
         expect(target, id).toEqual({ kind: 'flight', flight: departure, aircraft: drawn });
-        // Its route goes on to its destination, never back from the departing aircraft to the stand.
-        const route = buildRoute({ target, stationAirport: model.stationAirport, nowMs: NOON });
-        expect(route.features.filter(feature => feature.properties.part === 'next').map(feature => feature.properties.to), id)
-          .toEqual(['destination']);
+        // Its route goes on to its destination, Miami, never back from the departing aircraft to the stand.
+        const route = buildRoute({ target, trajectory: motion.trajectoryForRoute(target.flight), nowMs: NOON });
+        const remaining = route.features.filter(feature => feature.properties.part === 'remaining');
+        expect(remaining.map(feature => feature.geometry.coordinates.at(-1)), id).toEqual([[-80.2906, 25.7932]]);
+        expect(remaining[0].geometry.coordinates[0], id).toEqual([drawn.lon, drawn.lat]);
+        expect(route.features.filter(feature => feature.properties.mark === 'stand'), id).toEqual([]);
       }
       // A leg id names its own leg: the arrival, which has no aircraft now.
       expect(selectionTarget({ kind: 'flight', id: arrival.legId }, situation))

@@ -38,9 +38,13 @@ export const mapMessages = {
         staleHint: 'Atenuado, con la hora de su última posición',
         trail: 'Estela',
         trailEstimated: 'Estela estimada',
-        // The chosen flight's route (traffic/routeFeatures.js); PR M6 replaces the straight line with its trajectory.
-        routeFlown: 'Recorrido del vuelo elegido',
-        routeNext: 'Hasta su próximo punto, en línea recta',
+        // The chosen flight's route (traffic/routeFeatures.js): «Trayecto estimado» is the words kinematics/
+        // kinematicsMessages.js gives that part; the map writes «Posición por asignar» beside an apron hold.
+        routeFlownObserved: 'Recorrido observado',
+        routeFlownEstimated: 'Trayecto estimado',
+        routeRemaining: 'Ruta prevista',
+        routeMark: 'Puntos de la ruta',
+        routeMarkHint: 'Toma de pista, salida y posición',
       },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
@@ -189,6 +193,13 @@ export const mapMessages = {
       paused: 'Movimiento en pausa · datos de las {time}',
       pausedWithoutData: 'Movimiento en pausa',
     },
+    // Follow mode (ui/MapFollowButton.jsx, the data block's action, the S key; design A6). One name for the switch,
+    // pressed while the map follows (a toggle keeps its name; aria-pressed says its state). `id` is what the data block
+    // calls the aircraft.
+    follow: {
+      label: 'Seguir',
+      stopped: 'Dejaste de seguir a {id}. Pulsa Seguir para volver.',
+    },
     // The layers menu (ui/MapLayersMenu.jsx, core/layersMenu.js); its button takes «Capas» from the key table.
     layers: {
       menu: 'Capas del mapa',
@@ -242,8 +253,11 @@ export const mapMessages = {
         staleHint: 'Dimmed, with the time of its last position',
         trail: 'Trail',
         trailEstimated: 'Estimated trail',
-        routeFlown: 'Route flown by the selected flight',
-        routeNext: 'To its next point, in a straight line',
+        routeFlownObserved: 'Observed path',
+        routeFlownEstimated: 'Estimated path',
+        routeRemaining: 'Planned route',
+        routeMark: 'Route points',
+        routeMarkHint: 'Touchdown, runway exit and stand',
       },
     },
     airfield: {
@@ -374,6 +388,10 @@ export const mapMessages = {
       resume: 'Resume movement',
       paused: 'Movement paused · data from {time}',
       pausedWithoutData: 'Movement paused',
+    },
+    follow: {
+      label: 'Follow',
+      stopped: 'You stopped following {id}. Press Follow to resume.',
     },
     layers: {
       menu: 'Map layers',

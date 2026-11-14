@@ -25,6 +25,13 @@ const CLUSTER_EASE_MS = 500;
 const INSET_SIDES = ['top', 'right', 'bottom', 'left'];
 const ATTRIBUTION_SELECTOR = 'details.maplibregl-ctrl-attrib';
 
+// The gestures of a person (follow mode, design A6). MapLibre 6.16 fires these with the DOM event that started them
+// (`originalEvent`: a drag, the wheel, a pinch, a click on a zoom button, a key); the moves the code makes (jumpTo,
+// easeTo, flyTo) carry none. Its keyboard handler pans with the arrow keys through an easeTo, which starts a move with
+// the key and no drag.
+const GESTURE_EVENTS = Object.freeze({ dragstart: 'pan', zoomstart: 'zoom', rotatestart: 'rotate', pitchstart: 'pitch' });
+const PAN_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+
 let liveEngines = 0;
 
 /** How many engines hold a live map right now (a StrictMode double mount must leave exactly one). */
@@ -74,10 +81,13 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
  * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves, `null` when it
  *   leaves; its `hit` is picked when first read, so a caller that reads it once per frame picks once per frame.
+ * @param {(gesture: { kind: 'pan'|'zoom'|'rotate'|'pitch' }) => void} [options.onUserGesture] when a person starts to
+ *   move the map: a drag or an arrow key pans, the wheel, a pinch or a zoom button zooms, and the map rotates or tilts.
+ *   Moves made by code never call it. From then until the move ends `isInteracting()` is true.
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onIdle, onResize, onClick, onPointerMove,
+  onStatus, onCamera, onIdle, onResize, onClick, onPointerMove, onUserGesture,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -104,6 +114,8 @@ export function createMapEngine({
   let scaleControl = null;
   let customAttribution = attribution;
   let attributionPristine = true;
+  // Whether a person is moving the map: from the start of a gesture until the move ends.
+  let interacting = false;
   const listeners = [];
   const customLayers = new Map();
   const featureStates = new Map();
@@ -354,7 +366,21 @@ export function createMapEngine({
       }
     });
     listen('styledata', keepAttributionClosed);
+    const gesture = kind => {
+      interacting = true;
+      onUserGesture?.({ kind });
+    };
+    for (const [type, kind] of Object.entries(GESTURE_EVENTS)) {
+      listen(type, event => {
+        if (event?.originalEvent) gesture(kind);
+      });
+    }
+    listen('movestart', event => {
+      const key = event?.originalEvent;
+      if (key?.type === 'keydown' && PAN_KEYS.has(key.key) && !key.shiftKey) gesture('pan');
+    });
     listen('moveend', event => {
+      interacting = false;
       onCamera?.(readCamera(), { byUser: Boolean(event?.originalEvent) });
     });
     if (onIdle) listen('idle', () => onIdle());
@@ -515,6 +541,20 @@ export function createMapEngine({
     /** `{ center: [lng, lat], zoom, bearing, pitch }`, or `null` without a map. */
     getCamera() {
       return live() ? readCamera() : null;
+    },
+
+    /** Whether a person is moving the map now (see `onUserGesture`): a move then must not take the camera from them. */
+    isInteracting() {
+      return live() && interacting;
+    },
+
+    /** The size of the map on screen, `{ width, height }` in CSS px, or `null` without a map or before it has one. */
+    getViewport() {
+      if (!live()) return null;
+      const canvas = map.getCanvas();
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      return width > 0 && height > 0 ? { width, height } : null;
     },
 
     /** What the map shows, `[[west, south], [east, north]]` (the box around it when tilted), or `null` without a map. */

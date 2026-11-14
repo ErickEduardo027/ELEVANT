@@ -5,9 +5,10 @@ import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { SLOT_ORDER, buildOccStyle } from '../style/occStyle';
 import { selectionOverlay } from '../style/selectionLayers';
 import { createAirPicture, createEstimates, createMapFlights, TRAFFIC_NOON } from '../testing/trafficFixtures';
+import { ROUTE_PARTS } from './routeFeatures';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, trafficFeatures } from './trafficFeatures';
-import { TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay } from './trafficLayers';
+import { ROUTE_LAYER_IDS, ROUTE_STYLE, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay } from './trafficLayers';
 
 const NOON = Date.parse(TRAFFIC_NOON);
 
@@ -69,8 +70,8 @@ describe('traffic layers (design E1 and E3)', () => {
       const ids = style.layers.map(layer => layer.id);
       const slotOf = id => style.layers.find(layer => layer.id === id).metadata['occ:slot'];
       expect(TRAFFIC_LAYER_IDS.map(slotOf)).toEqual([
-        'routes', 'routes', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic',
-        'traffic', 'traffic', 'selection', 'selection',
+        'routes', 'routes', 'routes', 'routes', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic',
+        'traffic', 'traffic', 'traffic', 'traffic', 'selection', 'selection',
       ]);
       // MapLibre places from the top layer down: the plate, the ELEVANT tags (above every aircraft), the ELEVANT icons,
       // the optional tags of all other traffic (before their own icons, which they must never meet in the collision
@@ -96,7 +97,7 @@ describe('traffic layers (design E1 and E3)', () => {
     expect(['occ-traffic-aviam', 'occ-traffic-tags', 'occ-trails-live', 'occ-trails-estimated', 'occ-traffic-estimated-ring',
       'occ-traffic-demo-plate'].map(groupOf)).toEqual(Array(6).fill(TRAFFIC_GROUPS.aviam));
     expect(['occ-traffic-other', 'occ-traffic-other-ground'].map(groupOf)).toEqual([TRAFFIC_GROUPS.other, TRAFFIC_GROUPS.other]);
-    expect([groupOf('occ-traffic-tags-other'), groupOf('occ-trails-other'), groupOf('occ-route-next')])
+    expect([groupOf('occ-traffic-tags-other'), groupOf('occ-trails-other'), groupOf('occ-route-remaining')])
       .toEqual(['traffic.labels', 'traffic.trails', 'route']);
     expect(overlay.layers.filter(layer => layer.layout?.visibility === 'none').map(layer => layer.id))
       .toEqual(['occ-trails-other', 'occ-traffic-tags-other']);
@@ -115,6 +116,53 @@ describe('traffic layers (design E1 and E3)', () => {
     for (const image of images) expect(MAP_IMAGE_IDS, image).toContain(image);
     // The images inside a tag are plain: MapLibre draws them as they are.
     for (const glyph of ['glyph-arrival', 'glyph-departure', 'glyph-arrow-right']) expect(MAP_IMAGE_SHAPES[glyph].sdf).toBe(false);
+  });
+
+  it('draws the chosen flight\'s route in four layers, one per part, told apart by their lines', () => {
+    const routeLayers = trafficOverlay().layers.filter(layer => layer.source === ROUTE_SOURCE);
+    // One layer per part of the route builder, in the routes slot, in the layers-menu group «Ruta del vuelo elegido».
+    expect(routeLayers.map(layer => [layer.id, layer.filter])).toEqual([
+      ['occ-route-flown-estimated', ['==', ['get', 'part'], 'flownEstimated']],
+      ['occ-route-flown', ['==', ['get', 'part'], 'flownObserved']],
+      ['occ-route-remaining', ['==', ['get', 'part'], 'remaining']],
+      ['occ-route-marks', ['==', ['get', 'part'], 'mark']],
+    ]);
+    expect(Object.values(ROUTE_LAYER_IDS).sort()).toEqual(routeLayers.map(layer => layer.id).sort());
+    expect(Object.keys(ROUTE_LAYER_IDS)).toEqual(ROUTE_PARTS);
+    for (const layer of routeLayers) {
+      expect(layer, layer.id).toMatchObject({ slot: 'routes', metadata: { 'occ:group': TRAFFIC_GROUPS.route } });
+    }
+    expect(layerOf('occ-route-next')).toBeUndefined();
+    // All in the selection's cyan: what it flew observed solid at 2.5 px; estimated solid, thinner and at 55 %; what
+    // is still to fly dashed (still dashes: only aircraft move).
+    const accent = hex(occColor('accent'));
+    const observed = layerOf('occ-route-flown');
+    const estimated = layerOf('occ-route-flown-estimated');
+    const remaining = layerOf('occ-route-remaining');
+    expect(observed.paint).toEqual({ 'line-color': occColor('accent'), 'line-width': 2.5 });
+    expect(estimated.paint).toEqual({ 'line-color': occColor('accent'), 'line-width': 1.5, 'line-opacity': 0.55 });
+    expect(remaining.paint).toEqual({ 'line-color': occColor('accent'), 'line-width': 1.5, 'line-dasharray': [2, 2] });
+    expect(ROUTE_STYLE).toEqual({
+      flownObserved: { width: 2.5, opacity: 1 }, flownEstimated: { width: 1.5, opacity: 0.55 },
+      remaining: { width: 1.5, opacity: 1, dash: [2, 2] },
+    });
+    expect([observed, estimated].map(layer => layer.paint['line-dasharray'])).toEqual([undefined, undefined]);
+    // The marks: a small cyan ring on its dark halo at each point, and the words of an apron hold beside it.
+    const marks = layerOf('occ-route-marks');
+    expect(marks.type).toBe('symbol');
+    expect(marks.layout).toMatchObject({ 'icon-image': 'route-mark', 'icon-allow-overlap': true, 'text-optional': true });
+    expect(hex(marks.paint['icon-color'])).toBe(accent);
+    expect(hex(marks.paint['icon-halo-color'])).toBe(hex(occColor('nav')));
+    const words = properties => evaluate(marks, 'layout', 'text-field', properties).sections.map(section => section.text).join('');
+    expect(words({ part: 'mark', mark: 'apronHold', label: 'Posición por asignar' })).toBe('Posición por asignar');
+    expect(words({ part: 'mark', mark: 'touchdown' })).toBe('');
+    // Which part each layer takes from a route of every kind.
+    const route = [
+      { part: 'flownObserved' }, { part: 'flownEstimated', labelKey: 'flownEstimated' }, { part: 'remaining' },
+      { part: 'mark', mark: 'stand', standCode: 'A6' }, { part: 'next' },
+    ];
+    expect(routeLayers.map(layer => route.filter(properties => accepts(layer, properties)).map(item => item.part)))
+      .toEqual([['flownEstimated'], ['flownObserved'], ['remaining'], ['mark']]);
   });
 
   it('only the selected aircraft is cyan', () => {

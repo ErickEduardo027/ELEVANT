@@ -23,7 +23,8 @@ describe('the traffic scenes of the map lab', () => {
     expect(Object.keys(TRAFFIC_SCENARIOS)).toEqual(['region-traffic-mixed', 'approach-traffic-demo', 'ramp-traffic-ground',
       'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected', 'region-layers-menu',
       'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'approach-traffic-live-estimated',
-      'airfield-demo-cancelled', 'approach-demo-accelerated']);
+      'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route', 'airfield-departure-route',
+      'approach-follow-final', 'airfield-follow-taxi']);
     for (const [id, scenario] of Object.entries(TRAFFIC_SCENARIOS)) {
       expect(scenario.at, id).toBe(TRAFFIC_NOON);
       expect(isOccAirPicture(scenario.picture, TRAFFIC_STATION_ID, 'short'), `${id} picture`).toBe(true);
@@ -80,24 +81,30 @@ describe('the traffic scenes of the map lab', () => {
   });
 
   it('the selected scenes name their aircraft and draw its route; every trail is there when asked', () => {
-    // ZZ161 chosen in the region: its flight and aircraft, what it flew (its track) and the straight line to A5.
+    // ZZ161 chosen in the region: its flight and aircraft, what it flew (its track), estimated from Miami and still to
+    // fly down to A5 (PR M6).
     const selected = findScene('region-traffic-selected');
     const flight = labTraffic(selected.traffic, { nowMs: NOON, selection: selected.selection });
     expect(flight.target).toMatchObject({ kind: 'flight', flight: { flightNumber: 'ZZ161' }, aircraft: { hex: HEX.arrival } });
-    expect(flight.map.route.features.map(feature => [feature.properties.part, feature.properties.to ?? null]))
-      .toEqual([['flown', null], ['next', 'stand']]);
+    expect(flight.map.route.features.map(feature => feature.properties.part))
+      .toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark', 'mark', 'mark']);
     expect(flight.map.route.features[0].geometry.coordinates.length).toBeGreaterThanOrEqual(30);
+    expect(flight.map.route.features.at(-1).properties).toMatchObject({ mark: 'stand', standCode: 'A5' });
     expect(flight.stationAirport).toMatchObject({ iataCode: 'PUJ' });
+    // The frames' route: the same, with the aircraft where a frame draws it.
+    const drawnAt = [flight.target.aircraft.lon + 0.002, flight.target.aircraft.lat];
+    expect(flight.map.routeAt(NOON + 1_000, drawnAt).features.find(feature => feature.properties.part === 'remaining')
+      .geometry.coordinates[0]).toEqual(drawnAt);
     // Another airline's aircraft chosen by its address: no flight, and what it flew from the track the scene holds.
     const hexScene = findScene('approach-traffic-hex-selected');
     const other = labTraffic(hexScene.traffic, { nowMs: NOON, selection: hexScene.selection });
     expect(other.target).toMatchObject({ kind: 'aircraft', flight: null, aircraft: { hex: hexScene.selection.id, callsign: 'ZZZ880' } });
-    expect(other.map.route.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    expect(other.map.route.features.map(feature => feature.properties.part)).toEqual(['flownObserved']);
     expect(other.map.route.features[0].geometry.coordinates.length).toBeGreaterThanOrEqual(30);
     expect(isOccAircraftTrack(hexScene.traffic.tracks[hexScene.selection.id], hexScene.selection.id)).toBe(true);
     // No selection, no target and no route; every trail of other traffic only with allTrails.
     const plain = labTraffic(findScene('region-layers-menu').traffic, { nowMs: NOON });
-    expect([plain.target, plain.map.route]).toEqual([null, null]);
+    expect([plain.target, plain.map.route, plain.map.routeAt]).toEqual([null, null, undefined]);
     const all = labTraffic(findScene('region-layers-menu').traffic, { nowMs: NOON, allTrails: true });
     expect(new Set(all.map.trails.features.map(feature => feature.properties.kind))).toEqual(new Set(['aviam', 'other']));
     expect(findScene('region-layers-menu').layersMenu).toBe(true);
@@ -157,6 +164,42 @@ describe('the traffic scenes of the map lab', () => {
     const accelerated = demoAt('approach-demo-accelerated');
     expect(accelerated.drawn.timeScale).toBeGreaterThan(1);
     expect(accelerated.drawn.timeScale).toBe(accelerated.trajectory.meta.parts.air.timeScale);
+  });
+
+  it('the route scenes draw the demo arrival from New York to A6 and its departure from A6 to New York', { timeout: 30_000 }, () => {
+    const JFK = [-73.7781, 40.6413];
+    const a6 = MDPC_LAYOUT.stands.find(stand => stand.code === 'A6').center;
+    const partsOf = route => route.features.map(feature => feature.properties.part);
+    const lineOf = (route, part) => route.features.find(feature => feature.properties.part === part).geometry.coordinates;
+    // A minute after it appeared: estimated from New York to where it is, still to fly over 08 to A6, with its marks.
+    const arrival = findScene('approach-demo-route');
+    const inbound = labTraffic(arrival.traffic, { nowMs: NOON, selection: arrival.selection });
+    expect(inbound.target.aircraft).toMatchObject({ isDemo: true, quality: 'estimated', onGround: false });
+    expect(partsOf(inbound.map.route)).toEqual(['flownEstimated', 'remaining', 'mark', 'mark', 'mark']);
+    expect(haversineM(lineOf(inbound.map.route, 'flownEstimated')[0], JFK)).toBeLessThan(1);
+    expect(haversineM(lineOf(inbound.map.route, 'remaining').at(-1), a6)).toBeLessThan(0.5);
+    expect(inbound.map.route.features.filter(feature => feature.properties.part === 'mark')
+      .map(feature => feature.properties.mark)).toEqual(['touchdown', 'runwayExit', 'stand']);
+    // Its departure, taxiing to 08 two minutes after it left A6: what it covered since the stand, and the taxi route,
+    // the runway, the climb and the great circle to New York still ahead; the stand behind it is no longer marked.
+    const departure = findScene('airfield-departure-route');
+    const outbound = labTraffic(departure.traffic, { nowMs: NOON, selection: departure.selection });
+    expect(outbound.target).toMatchObject({ kind: 'flight', flight: { flightKey: KEY.demoDeparture },
+      aircraft: { id: `f:${KEY.demoDeparture}`, onGround: true } });
+    const drawn = outbound.motion.sampleOne(outbound.target.aircraft.id, NOON, outbound.target.aircraft);
+    expect(drawn.phase).toBe('taxiOut');
+    expect(partsOf(outbound.map.route)).toEqual(['flownEstimated', 'remaining']);
+    expect(haversineM(lineOf(outbound.map.route, 'flownEstimated')[0], a6)).toBeLessThan(0.5);
+    const ahead = lineOf(outbound.map.route, 'remaining');
+    expect(ahead.at(-1)).toEqual(JFK);
+    expect(Math.min(...ahead.map(point => haversineM(point, runwayEnd(MDPC_LAYOUT, '08').centerline[1])))).toBeLessThan(3_000);
+    // The followed scenes are the final and the taxi of the demo scenes.
+    for (const [id, phase] of [['approach-follow-final', 'final'], ['airfield-follow-taxi', 'taxiIn']]) {
+      const scene = findScene(id);
+      const { target, motion } = labTraffic(scene.traffic, { nowMs: NOON, selection: scene.selection });
+      expect(motion.sampleOne(target.aircraft.id, NOON, target.aircraft).phase, id).toBe(phase);
+      expect(scene.follow, id).toBe(true);
+    }
   });
 
   it('approach-traffic-live-estimated: live, without a signal for 20 s, and estimated', () => {

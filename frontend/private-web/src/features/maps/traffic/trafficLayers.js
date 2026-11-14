@@ -1,7 +1,7 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { FONT_STACKS } from '../style/occStyle';
-import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
+import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 
 // The traffic of the OCC maps as one overlay for buildOccStyle (design E1, contracts 2.4), fed by OccMap: the aircraft
@@ -10,7 +10,10 @@ import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 // only the chosen aircraft is cyan. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
 // striped plate, never by colour alone. Pure.
 //
-// Layers bottom to top. In the `routes` slot the chosen flight's route: flown (solid) and still to fly (dashed). In the
+// Layers bottom to top. In the `routes` slot the chosen flight's route (PR M6, traffic/routeFeatures.js), in the
+// selection's cyan and told apart by its line, never by a hue: flown as observed (solid), flown as estimated (thin and
+// faint, «Trayecto estimado»), still to fly (dashed, static: only aircraft move) and its marked points (small rings, an
+// apron hold with its words, «Posición por asignar»). In the
 // `traffic` slot: the trails of other traffic (off until «Estelas de todo el tráfico»), the live trails fading toward
 // their tail, the estimated ones dashed; other traffic on the ground (from the airfield threshold up) and in the air,
 // each icon with its tag in one symbol; the tags of all other traffic (off until «Etiquetas de todo el tráfico»); the
@@ -140,6 +143,41 @@ const ACCENT = occColor('accent');
 const SELECTED_RING_RADIUS_PX = 18;
 const SELECTED_RING_WIDTH_PX = 2;
 
+/** How the parts of the chosen flight's route are drawn (design E5): width in px, opacity, dashes. */
+export const ROUTE_STYLE = Object.freeze({
+  flownObserved: Object.freeze({ width: 2.5, opacity: 1 }),
+  flownEstimated: Object.freeze({ width: 1.5, opacity: 0.55 }),
+  remaining: Object.freeze({ width: 1.5, opacity: 1, dash: Object.freeze([2, 2]) }),
+});
+
+// One line layer per part of the route, filtered by its `part`.
+function routeLine(id, part) {
+  const { width, opacity, dash } = ROUTE_STYLE[part];
+  return {
+    slot: 'routes',
+    id,
+    type: 'line',
+    source: ROUTE_SOURCE,
+    filter: ['==', get('part'), part],
+    layout: dash ? { 'line-join': 'round' } : { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ACCENT,
+      'line-width': width,
+      ...(opacity === 1 ? {} : { 'line-opacity': opacity }),
+      ...(dash ? { 'line-dasharray': [...dash] } : {}),
+    },
+    metadata: { 'occ:group': TRAFFIC_GROUPS.route },
+  };
+}
+
+/** The ids of the route's layers, one per part of traffic/routeFeatures.js's ROUTE_PARTS. */
+export const ROUTE_LAYER_IDS = Object.freeze({
+  flownObserved: 'occ-route-flown',
+  flownEstimated: 'occ-route-flown-estimated',
+  remaining: 'occ-route-remaining',
+  mark: 'occ-route-marks',
+});
+
 /** The overlay of the traffic for buildOccStyle; its three sources start empty. */
 export function trafficOverlay() {
   return {
@@ -149,24 +187,39 @@ export function trafficOverlay() {
       [ROUTE_SOURCE]: { type: 'geojson' },
     },
     layers: [
+      // What it flew estimated, under what it flew observed, under what it still has to fly.
+      routeLine(ROUTE_LAYER_IDS.flownEstimated, 'flownEstimated'),
+      routeLine(ROUTE_LAYER_IDS.flownObserved, 'flownObserved'),
+      routeLine(ROUTE_LAYER_IDS.remaining, 'remaining'),
       {
         slot: 'routes',
-        id: 'occ-route-flown',
-        type: 'line',
+        id: ROUTE_LAYER_IDS.mark,
+        type: 'symbol',
         source: ROUTE_SOURCE,
-        filter: ['==', get('part'), 'flown'],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': ACCENT, 'line-width': 2.5 },
-        metadata: { 'occ:group': TRAFFIC_GROUPS.route },
-      },
-      {
-        slot: 'routes',
-        id: 'occ-route-next',
-        type: 'line',
-        source: ROUTE_SOURCE,
-        filter: ['==', get('part'), 'next'],
-        layout: { 'line-join': 'round' },
-        paint: { 'line-color': ACCENT, 'line-width': 1.5, 'line-dasharray': [2, 2] },
+        filter: ['==', get('part'), 'mark'],
+        layout: {
+          'icon-image': ROUTE_MARK_IMAGE,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-pitch-alignment': 'map',
+          // Only an apron hold has words: «Posición por asignar», beside its ring.
+          'text-field': ['coalesce', get('label'), ''],
+          'text-font': [...FONT_STACKS.bold],
+          'text-size': 12,
+          'text-anchor': 'left',
+          'text-offset': [0.8, 0],
+          'text-optional': true,
+          'text-rotation-alignment': 'viewport',
+          'text-pitch-alignment': 'viewport',
+        },
+        paint: {
+          'icon-color': ACCENT,
+          'icon-halo-color': occColor('nav'),
+          'icon-halo-width': 1.5,
+          'text-color': ACCENT,
+          'text-halo-color': occColor('nav'),
+          'text-halo-width': 1.5,
+        },
         metadata: { 'occ:group': TRAFFIC_GROUPS.route },
       },
       {

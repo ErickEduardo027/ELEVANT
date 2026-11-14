@@ -5,8 +5,8 @@ import {
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import {
-  ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, flightLevelText, isEmptyDiff, knotsText,
-  onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
+  ROUTE_KINDS, ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, flightLevelText, isEmptyDiff,
+  knotsText, onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
 } from './trafficFeatures';
 
 const NOON = Date.parse(TRAFFIC_NOON);
@@ -268,16 +268,31 @@ describe('traffic features (design E3, contracts 2.4)', () => {
       .trails).toEqual([]);
     expect(onScreenKey(everything)).toBe('aviamArrival,aviamDeparture,other,otherGround|demo,estimated,stale||');
 
-    // The chosen flight's route: its parts drawn inside the bounds or across them, while «Ruta del vuelo elegido» shows.
+    // The chosen flight's route (PR M6): its lines drawn inside the bounds or across them, and its marks inside them,
+    // while «Ruta del vuelo elegido» shows; in the order of ROUTE_KINDS.
+    expect(ROUTE_KINDS).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
+    const point = (properties, coordinates) => ({ type: 'Feature', properties, geometry: { type: 'Point', coordinates } });
     const route = { type: 'FeatureCollection', features: [
-      line({ part: 'flown', hex: 'f0a001' }, [[-68.6, 18.5], [-68.55, 18.52]]),
-      // From the final to Toronto: both ends outside the box of the final's east end, the line across it.
-      line({ part: 'next', hex: 'f0a001', to: 'destination' }, [[-68.7, 18.4], [-68.3, 18.7]]),
+      // Still to fly, from south-west of the field to the stand A5.
+      line({ part: 'remaining', hex: 'f0a001' }, [[-68.7, 18.4], [-68.3637, 18.5639]]),
+      line({ part: 'flownObserved', hex: 'f0a001' }, [[-68.6, 18.5], [-68.55, 18.52]]),
+      // From Miami to the first observed point: far to the west, its east end in the region.
+      line({ part: 'flownEstimated', hex: 'f0a001', labelKey: 'flownEstimated' }, [[-80.29, 25.79], [-68.6, 18.5]]),
+      // The touchdown on 08 and the stand A5.
+      point({ part: 'mark', mark: 'touchdown', hex: 'f0a001' }, [-68.38, 18.5707]),
+      point({ part: 'mark', mark: 'stand', standCode: 'A5', hex: 'f0a001' }, [-68.3637, 18.5639]),
     ] };
-    expect(trafficOnScreen([], null, { route }).route).toEqual(['flown', 'next']);
-    expect(trafficOnScreen([], [[-68.52, 18.5], [-68.45, 18.62]], { route }).route).toEqual(['next']);
+    expect(trafficOnScreen([], null, { route }).route).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
+    // The box of the final's east end: the line still to fly crosses it with both ends outside, nothing else is there.
+    expect(trafficOnScreen([], [[-68.52, 18.5], [-68.45, 18.62]], { route }).route).toEqual(['remaining']);
+    // Over the field: the line still to fly and the two marks.
+    expect(trafficOnScreen([], [[-68.4, 18.55], [-68.35, 18.6]], { route }).route).toEqual(['remaining', 'mark']);
     expect(trafficOnScreen([], [[-67.5, 17.5], [-67.4, 17.6]], { route }).route).toEqual([]);
     expect(trafficOnScreen([], null, { route, groups: { route: false } }).route).toEqual([]);
-    expect(onScreenKey(trafficOnScreen([], null, { route }))).toBe('|||flown,next');
+    expect(onScreenKey(trafficOnScreen([], null, { route }))).toBe('|||flownObserved,flownEstimated,remaining,mark');
+    // The parts of PR M5's straight line, and a mark without its point, are not on screen.
+    const old = { features: [line({ part: 'flown' }, [[-68.6, 18.5], [-68.55, 18.52]]),
+      line({ part: 'next' }, [[-68.6, 18.5], [-68.36, 18.56]]), point({ part: 'mark' }, [Number.NaN, 18.5])] };
+    expect(trafficOnScreen([], null, { route: old }).route).toEqual([]);
   });
 });

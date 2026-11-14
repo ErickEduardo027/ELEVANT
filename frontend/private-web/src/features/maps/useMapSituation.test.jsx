@@ -366,14 +366,22 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     await flush();
     expect(result.current.target).toMatchObject({ kind: 'flight', flight: { flightKey: KEY.arrival },
       aircraft: { id: `f:${KEY.arrival}`, hex: HEX.arrival } });
-    // The flight's aircraft is the chosen one: its track is read once, and the route draws what it flew (the trail with
-    // the track) and the straight line to its stand.
+    // The flight's aircraft is the chosen one: its track is read once, and the route (PR M6) draws what it flew observed
+    // (the trail with the track), estimated from Miami, and still to fly along its trajectory to its stand A5, with the
+    // touchdown, the runway exit and the stand marked.
     expect(readsOf(adapter, 'aircraftTrack').map(call => call.hex)).toEqual([HEX.arrival]);
     expect(result.current.track).toMatchObject({ hex: HEX.arrival });
-    const [flown, next] = result.current.route.features;
-    expect(result.current.route.features.map(feature => feature.properties.part)).toEqual(['flown', 'next']);
+    const parts = () => result.current.route.features.map(feature => feature.properties.part);
+    expect(parts()).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark', 'mark', 'mark']);
+    const [flown] = result.current.route.features;
     expect(flown.geometry.coordinates.length).toBeGreaterThanOrEqual(30);
-    expect(next.properties).toMatchObject({ hex: HEX.arrival, to: 'stand' });
+    expect(flown.properties).toMatchObject({ hex: HEX.arrival, flightKey: KEY.arrival });
+    expect(result.current.route.features.at(-1).properties).toMatchObject({ mark: 'stand', standCode: 'A5' });
+    // routeAt is the same route with the aircraft where a frame draws it: the split moves there.
+    const ahead = result.current.routeAt(NOON + 2_000, [-68.45, 18.55]);
+    expect(ahead.features.find(feature => feature.properties.part === 'remaining').geometry.coordinates[0])
+      .toEqual([-68.45, 18.55]);
+    expect(result.current.traffic.routeAt).toBe(result.current.routeAt);
     // The telemetry store holds the situation's aircraft for the data block, where the map draws it (PR M6): the fix is
     // 4 s old at noon, so 768 ft/min down from 2 600 ft it reads 2 549 ft.
     expect(result.current.telemetry.telemetryOf(`f:${KEY.arrival}`)).toMatchObject({ altFt: 2_549, gsKt: 150, quality: 'live',
@@ -386,14 +394,15 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     await flush();
     expect(result.current.target).toMatchObject({ kind: 'aircraft', flight: null, aircraft: { hex: HEX.overflight } });
     expect(readsOf(adapter, 'aircraftTrack').map(call => call.hex)).toEqual([HEX.arrival, HEX.overflight]);
-    expect(result.current.route.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    expect(parts()).toEqual(['flownObserved']);
 
-    // A flight without a position (ZZ162 waits for its push-back: F-1 draws no estimate of it): no aircraft, no route
-    // and no read; nothing chosen, nothing named.
+    // A flight without a position (ZZ162 waits for its push-back: F-1 draws no estimate of it): no aircraft and no read,
+    // and its planned way out from A5, all still to fly; nothing chosen, nothing named.
     rerender(props({ kind: 'flight', id: KEY.departure }));
     await flush();
     expect(result.current.target).toMatchObject({ kind: 'flight', aircraft: null });
-    expect(result.current.route.features).toEqual([]);
+    expect(parts()).toEqual(['remaining', 'mark']);
+    expect(result.current.route.features[1].properties).toMatchObject({ mark: 'stand', standCode: 'A5' });
     expect(result.current.track).toBeNull();
     rerender(props(null));
     await flush();
@@ -424,8 +433,9 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
   it('returns the traffic with its motion', async () => {
     const { result, rerender, adapter } = setup();
     await flush();
-    const { traffic, motion, renderClock, situation, trails, route } = result.current;
-    expect(traffic).toEqual({ aircraft: situation.aircraft, trails, route, source: situation.source, motion });
+    const { traffic, motion, renderClock, situation, trails, route, routeAt } = result.current;
+    expect(traffic).toEqual({ aircraft: situation.aircraft, trails, route, routeAt, source: situation.source, motion });
+    expect(typeof routeAt).toBe('function');
     expect(Object.isFrozen(traffic)).toBe(true);
     // The motion draws on the render clock, which follows the clock the reads feed.
     expect(motion.clock).toBe(renderClock);

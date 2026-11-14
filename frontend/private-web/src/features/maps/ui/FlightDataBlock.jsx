@@ -24,8 +24,8 @@ import { telemetryAt, useServerTime, useTelemetry } from '../traffic/telemetrySt
 // PR M6 adds what the motion knows: the status of a demo flight's plan («Esperando posición · sin importar»,
 // «Esperando posición», «Cancelado por el proveedor (demo)»), «Demo acelerada ×N» while the part the aircraft is in had
 // to be scaled, and the runway a real flight's estimated path uses with where that choice comes from («por el
-// tráfico», «habitual»; the wind with PR M8). A demo flight always names runway 08 (contracts 2.3). «Seguir» comes with
-// follow mode.
+// tráfico», «habitual»; the wind with PR M8). A demo flight always names runway 08 (contracts 2.3). «Seguir» (follow
+// mode, design A6) is its first action when the screen gives one: the same switch as the S key and the dock's button.
 
 /** A demo flight always lands and departs on runway 08 (owner decision 19, contracts 2.3). */
 export const DEMO_RUNWAY = '08';
@@ -246,6 +246,9 @@ const ACTION = 'inline-flex min-h-9 items-center rounded border border-occ-line 
   + 'text-occ-text hover:bg-occ-panel-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-occ-accent';
 const ACTION_OFF = 'inline-flex min-h-9 cursor-not-allowed items-center rounded border border-occ-line px-3 text-sm '
   + 'font-semibold text-occ-faint';
+// «Seguir» while it follows: pressed, with the cyan frame of a pressed view.
+const ACTION_ON = 'inline-flex min-h-9 items-center rounded border border-occ-accent bg-occ-accent-soft px-3 text-sm '
+  + 'font-semibold text-occ-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-occ-accent';
 
 /**
  * The data block of a selection target (traffic/situationModel.js: selectionTarget).
@@ -255,9 +258,13 @@ const ACTION_OFF = 'inline-flex min-h-9 cursor-not-allowed items-center rounded 
  * - `station`: the station's own airport (the map flights' `stationAirport`), for «MIA → PUJ»; `stationId` stays in
  *   the links.
  * - `onClose()`: «Cerrar»; `style` places the card inside the map (the pages dock it at the top left).
+ * - `onFollow()` and `following` (PR M6, follow mode): with `onFollow` the card's first action is «Seguir», a switch
+ *   that keeps its name and is pressed while `following` (pressing it again stops); it waits, disabled, while the
+ *   aircraft has no position on the map. Screens inside an OccMap pass its context's `follow` (`toggle`,
+ *   `following`).
  */
 export default function FlightDataBlock({ target, telemetry: store = null, station = null, stationId = null, onClose,
-  style, className = '' }) {
+  onFollow = null, following = false, style, className = '' }) {
   const { t, language, locale } = useTranslation(mapMessages);
   const { t: tk } = useTranslation(kinematicsMessages);
   const aircraft = target?.aircraft ?? null;
@@ -359,12 +366,24 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
         <span>{source.words}</span>
       </p>
 
-      {flight !== null && (
+      {(flight !== null || onFollow !== null) && (
         <div className="flex flex-wrap gap-2 pt-1">
-          {links.turnaround !== null
+          {onFollow !== null && (
+            <button
+              type="button"
+              aria-pressed={following === true}
+              aria-keyshortcuts="S"
+              disabled={following !== true && aircraft === null}
+              onClick={onFollow}
+              className={following === true ? ACTION_ON : (aircraft === null ? ACTION_OFF : ACTION)}
+            >
+              {t('follow.label')}
+            </button>
+          )}
+          {flight !== null && (links.turnaround !== null
             ? <Link href={links.turnaround} className={ACTION}>{t('dataBlock.viewTurnaround')}</Link>
-            : <button type="button" disabled className={ACTION_OFF}>{t('dataBlock.viewTurnaround')}</button>}
-          {links.stand !== null && <Link href={links.stand} className={ACTION}>{t('dataBlock.viewStand')}</Link>}
+            : <button type="button" disabled className={ACTION_OFF}>{t('dataBlock.viewTurnaround')}</button>)}
+          {flight !== null && links.stand !== null && <Link href={links.stand} className={ACTION}>{t('dataBlock.viewStand')}</Link>}
         </div>
       )}
     </div>

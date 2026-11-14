@@ -169,6 +169,20 @@
   top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem);
 }
 
+/* A short notice of the map that answers something just done, such as «Dejaste de seguir a …» (follow mode, PR M6):
+   at the bottom left of the visible area, over the credit of the aircraft data (one 24 px line over the dock's row),
+   where neither the dock's row nor the legend, open by default over the dock's right end, lie; up to 28rem wide, the
+   room a narrow map leaves beside the legend. The dock's own panels, opened by a person, stay over it (it comes first,
+   at the dock's level). */
+.occ-map .occ-map-notice {
+  position: absolute;
+  z-index: 10;
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 52px + 24px + 8px);
+  max-width: min(28rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
+    - 2 * var(--occ-map-gap)));
+}
+
 .occ-map .occ-map-credit {
   position: absolute;
   z-index: 10;

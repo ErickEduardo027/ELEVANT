@@ -666,6 +666,65 @@ describe('map engine', () => {
     expect(quiet.map.listenerCount('click') + quiet.map.listenerCount('mousemove')).toBe(0);
   });
 
+  it('onUserGesture hears a person pan, zoom, rotate and tilt the map, never a move the code makes', () => {
+    const onUserGesture = vi.fn();
+    const onCamera = vi.fn();
+    const { engine, map, state } = ready(setup({ onUserGesture, onCamera, camera: { center: [-68.36, 18.57], zoom: 12 } }));
+    const person = type => ({ originalEvent: new MouseEvent(type) });
+    // The moves the code makes, whatever they change, carry no DOM event: no gesture, nobody interacting.
+    engine.jumpTo({ center: [-68.37, 18.58], zoom: 13, bearing: -17, pitch: 40 });
+    engine.easeTo({ zoom: 14, duration: 0 });
+    engine.flyTo({ zoom: 10, duration: 0 });
+    state.emit(map, 'zoomstart');
+    expect(onUserGesture).not.toHaveBeenCalled();
+    expect(engine.isInteracting()).toBe(false);
+    // A drag pans; it lasts until its move ends, and meanwhile the person is moving the map.
+    state.emit(map, 'dragstart', person('mousedown'));
+    expect(onUserGesture).toHaveBeenLastCalledWith({ kind: 'pan' });
+    expect(engine.isInteracting()).toBe(true);
+    state.emit(map, 'moveend', person('mouseup'));
+    expect(engine.isInteracting()).toBe(false);
+    expect(onCamera).toHaveBeenLastCalledWith(expect.any(Object), { byUser: true });
+    // The wheel (or a zoom button) zooms, the right button rotates and tilts.
+    for (const [type, kind] of [['zoomstart', 'zoom'], ['rotatestart', 'rotate'], ['pitchstart', 'pitch']]) {
+      state.emit(map, type, person('wheel'));
+      expect(onUserGesture, type).toHaveBeenLastCalledWith({ kind });
+      expect(engine.isInteracting(), type).toBe(true);
+      state.emit(map, 'moveend', person('mouseup'));
+    }
+    // A zoom the map makes for a person (its zoom buttons pass the click) is theirs too.
+    map.easeTo({ zoom: 11, originalEvent: new MouseEvent('click') });
+    expect(onUserGesture).toHaveBeenLastCalledWith({ kind: 'zoom' });
+    expect(engine.isInteracting()).toBe(false);
+    // MapLibre's keyboard pans with the arrow keys: a move that starts with one is a pan; Shift rotates or tilts, and
+    // the + and − keys zoom (their zoomstart says so).
+    const calls = onUserGesture.mock.calls.length;
+    state.emit(map, 'movestart', { originalEvent: new KeyboardEvent('keydown', { key: 'ArrowLeft' }) });
+    expect(onUserGesture).toHaveBeenLastCalledWith({ kind: 'pan' });
+    state.emit(map, 'movestart', { originalEvent: new KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true }) });
+    state.emit(map, 'movestart', { originalEvent: new KeyboardEvent('keydown', { key: '+' }) });
+    state.emit(map, 'movestart', person('wheel'));
+    expect(onUserGesture).toHaveBeenCalledTimes(calls + 1);
+    state.emit(map, 'moveend');
+    // Without a handler the engine still knows who moves the map; without a map nobody does.
+    const quiet = ready(setup());
+    quiet.state.emit(quiet.map, 'dragstart', person('mousedown'));
+    expect(quiet.engine.isInteracting()).toBe(true);
+    quiet.engine.destroy();
+    expect(quiet.engine.isInteracting()).toBe(false);
+  });
+
+  it('getViewport is the size of the map on screen, or nothing without one', () => {
+    const { engine, state, map } = ready(setup());
+    expect(engine.getViewport()).toEqual({ width: 1440, height: 900 });
+    state.resize(map, { width: 1920, height: 1080 });
+    expect(engine.getViewport()).toEqual({ width: 1920, height: 1080 });
+    state.resize(map, { width: 0, height: 1080 });
+    expect(engine.getViewport()).toBeNull();
+    engine.destroy();
+    expect(engine.getViewport()).toBeNull();
+  });
+
   it('reports resizes and the bounds on screen, and picks under a moving pointer only when the hit is read', () => {
     const onResize = vi.fn();
     const onPointerMove = vi.fn();

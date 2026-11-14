@@ -314,6 +314,47 @@ describe('FlightDataBlock', () => {
     expect(block()).toHaveTextContent('Stand A5 · Runway 26 (from the traffic)');
   });
 
+  it('offers «Seguir» first when the screen follows, pressed while it follows (PR M6)', () => {
+    const situation = noonSituation();
+    const onFollow = vi.fn();
+    const blockOf = (selection, props) => (
+      <FlightDataBlock target={selectionTarget(selection, situation)} telemetry={storeOf(situation)} station={STATION}
+        stationId={TRAFFIC_STATION_ID} {...props} />
+    );
+    // Without onFollow the card has no such action (screens that do not follow).
+    const view = render(blockOf({ kind: 'flight', id: KEY.arrival }));
+    expect(within(block()).queryByRole('button', { name: 'Seguir' })).not.toBeInTheDocument();
+    view.rerender(blockOf({ kind: 'flight', id: KEY.arrival }, { onFollow }));
+    // The first of the card's actions, before «Ver escala»; the S key does the same.
+    const actions = within(block()).getAllByRole('button').filter(button => button.getAttribute('aria-label') === null)
+      .map(button => button.textContent);
+    const follow = within(block()).getByRole('button', { name: 'Seguir' });
+    expect(follow).toHaveAttribute('aria-pressed', 'false');
+    expect(follow).toHaveAttribute('aria-keyshortcuts', 'S');
+    expect(follow.compareDocumentPosition(within(block()).getByRole('link', { name: 'Ver escala' })) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(actions[0]).toBe('Seguir');
+    fireEvent.click(follow);
+    expect(onFollow).toHaveBeenCalledTimes(1);
+    // Following: the same switch, pressed, and pressing it again stops.
+    view.rerender(blockOf({ kind: 'flight', id: KEY.arrival }, { onFollow, following: true }));
+    const stop = within(block()).getByRole('button', { name: 'Seguir' });
+    expect(stop).toHaveAttribute('aria-pressed', 'true');
+    expect(within(block()).queryByRole('button', { name: 'Dejar de seguir' })).toBeNull();
+    fireEvent.click(stop);
+    expect(onFollow).toHaveBeenCalledTimes(2);
+    // Other traffic can be followed too; a flight without a position on the map not yet.
+    view.rerender(blockOf({ kind: 'aircraft', id: HEX.overflight }, { onFollow }));
+    expect(within(block()).getByRole('button', { name: 'Seguir' })).toBeEnabled();
+    view.rerender(blockOf({ kind: 'flight', id: KEY.departure }, { onFollow }));
+    expect(within(block()).getByRole('button', { name: 'Seguir' })).toBeDisabled();
+    // In English.
+    cleanup();
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope>{blockOf({ kind: 'flight', id: KEY.arrival }, { onFollow, following: true })}</LanguageScope>);
+    expect(within(block()).getByRole('button', { name: 'Follow' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('is a dialog named with the flight number and closes with its button', () => {
     const { onClose } = renderBlock({ kind: 'flight', id: KEY.arrival });
     const dialog = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });

@@ -7,7 +7,7 @@ import {
   TRAFFIC_HEX as HEX, TRAFFIC_NOON, trafficInstant,
 } from '../testing/trafficFixtures';
 import { createMotionStore } from '../traffic/motionStore';
-import { buildRoute, trailSegmentsOf } from '../traffic/routeFeatures';
+import { buildRoute } from '../traffic/routeFeatures';
 import { buildSituation, selectionTarget, toFlightsModel, toPictureModel, toTrackModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 
@@ -35,7 +35,11 @@ import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 //   (airfield-demo-taxiing), waiting at terminal B's apron hold before anyone imported it (ramp-demo-awaiting-stand),
 //   fading out after the provider cancelled it (airfield-demo-cancelled) and fired with two minutes, compressed
 //   (approach-demo-accelerated); and the three sources of a position side by side, live, without a signal for 20 s
-//   and estimated (approach-traffic-live-estimated).
+//   and estimated (approach-traffic-live-estimated);
+// - PR M6, the route of the chosen flight and follow mode: the demo arrival a minute after it appeared, imported onto A6
+//   (approach-demo-route: estimated from New York, still to fly down to A6), its departure taxiing from A6 to 08 for New
+//   York (airfield-departure-route), and the demo flight followed on final (approach-follow-final) and on the taxiway
+//   (airfield-follow-taxi).
 
 const ARP = Object.freeze([-68.3634, 18.5674]);
 const THRESHOLD_08 = Object.freeze([-68.383055, 18.57031]);
@@ -297,6 +301,13 @@ const rampDemoAwaitingStand = () => demoScenario(demoBlockAt({ appearS: 9 * 60 }
 const airfieldDemoCancelled = () => demoScenario(demoBlockAt({ appearS: 260, cancelAtMs: NOON_MS - 2_000 }));
 // Fired with two minutes to its stand: the 30 s it has in the air are too few for real speeds from 5 NM out.
 const approachDemoAccelerated = () => demoScenario(demoBlockAt({ appearS: 10, minutes: 2 }));
+// The route of the chosen flight (PR M6). A minute after it appeared, imported onto A6: on the approach to 08.
+const approachDemoRoute = () => demoScenario(demoBlockAt({ appearS: 60, imported: true }), { imported: true });
+// Its departure, taxiing to 08 two minutes after it left A6 on time (on its stand since 8 minutes after it appeared, for
+// the hour its schedule gives it): on the apron's taxiway, clear of the open legend, at both laptop sizes.
+const DEPARTURE_TAXI_S = 120;
+const airfieldDepartureRoute = () => demoScenario(demoBlockAt({ appearS: (8 + 60) * 60 + DEPARTURE_TAXI_S,
+  imported: true, offBlockAfterMin: 60 }), { imported: true });
 
 // The three sources of a position on the approach: ZZ161 live (its fix 4 s old), ZZ700 climbing out without a signal
 // for 20 s, and ZZ500 estimated from its schedule.
@@ -336,6 +347,11 @@ export const TRAFFIC_SCENARIOS = Object.freeze({
   'approach-traffic-live-estimated': liveEstimatedScenario(),
   'airfield-demo-cancelled': airfieldDemoCancelled(),
   'approach-demo-accelerated': approachDemoAccelerated(),
+  'approach-demo-route': approachDemoRoute(),
+  'airfield-departure-route': airfieldDepartureRoute(),
+  // Followed (the scenes say `follow`): on final as approach-demo-final, taxiing as airfield-demo-taxiing.
+  'approach-follow-final': approachDemoFinal(),
+  'airfield-follow-taxi': airfieldDemoTaxiing(),
 });
 
 /**
@@ -346,9 +362,11 @@ export const TRAFFIC_SCENARIOS = Object.freeze({
  * instant used, the situation, what the selection names (`target`, for the data block), the station's airport and the
  * motion store. The trails are those of the picture and the tracks; with `allTrails` also those of the other traffic,
  * which the map shows only while «Estelas de todo el tráfico» is on. The route is the chosen flight's
- * (traffic/routeFeatures.js), from its trail and track.
+ * (traffic/routeFeatures.js), from its aircraft's trail (with its track) and the trajectory the motion store has for it,
+ * as useMapSituation builds it, and `map.routeAt(tMs, [lng, lat])` the same with the aircraft where a frame draws it.
  */
-export function labTraffic(scenario, { nowMs = null, selection = null, allTrails = false, motion = null } = {}) {
+export function labTraffic(scenario, { nowMs = null, selection = null, allTrails = false, motion = null,
+  language = 'es' } = {}) {
   const time = Number.isFinite(nowMs) ? nowMs : parseInstant(scenario.at);
   const picture = toPictureModel(scenario.picture);
   const flights = toFlightsModel(scenario.flights);
@@ -366,10 +384,16 @@ export function labTraffic(scenario, { nowMs = null, selection = null, allTrails
   const observed = trailFeatures(store.getSnapshot(), { aviamHexes, includeOther: allTrails, selectedHex: chosenHex,
     nowMs: time });
   const trails = { type: 'FeatureCollection', features: observed.features };
-  const route = target === null ? null : buildRoute({ target, segments: trailSegmentsOf(observed, chosenHex),
-    track: chosenHex === null ? null : tracks.get(chosenHex) ?? null, stationAirport: flights.stationAirport, nowMs: time });
+  const snapshot = store.getSnapshot();
+  const chosenTrail = chosenHex === null ? null : snapshot.entries.get(chosenHex)?.points ?? null;
+  const routeInputs = target === null ? null : {
+    target, segments: chosenTrail === null ? [] : [chosenTrail], track: chosenHex === null ? null : tracks.get(chosenHex) ?? null,
+    trajectory: target.flight ? moving.trajectoryForRoute(target.flight) : null, breakMs: snapshot.breakMs, language,
+  };
+  const route = routeInputs === null ? null : buildRoute({ ...routeInputs, nowMs: time });
+  const routeAt = routeInputs === null ? undefined : (tMs, aircraft) => buildRoute({ ...routeInputs, nowMs: tMs, aircraft });
   return {
-    map: { aircraft: situation.aircraft, trails, route, source: situation.source, motion: moving },
+    map: { aircraft: situation.aircraft, trails, route, routeAt, source: situation.source, motion: moving },
     picture,
     nowMs: time,
     situation,

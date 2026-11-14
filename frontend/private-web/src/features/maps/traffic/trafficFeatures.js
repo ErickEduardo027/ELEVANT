@@ -28,8 +28,11 @@ export const TRAFFIC_SCALES = Object.freeze({ aviam: 1.25, other: 0.85, otherGro
 export const TRAFFIC_KINDS = Object.freeze(['aviamArrival', 'aviamDeparture', 'other', 'otherGround']);
 export const TRAFFIC_TAGS = Object.freeze(['demo', 'estimated', 'stale']);
 export const TRAIL_KINDS = Object.freeze(['live', 'estimated']);
-/** The parts of the chosen flight's route (traffic/routeFeatures.js), in the legend's order. */
-export const ROUTE_KINDS = Object.freeze(['flown', 'next']);
+/**
+ * The parts of the chosen flight's route (traffic/routeFeatures.js, kinematics/flightRoute.js), in the legend's order:
+ * flown as observed, flown as estimated, still to fly, and the points marked on it.
+ */
+export const ROUTE_KINDS = Object.freeze(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
 
 const FEET_PER_METRE = 1 / 0.3048;
 const KNOTS_PER_MPS = 3_600 / 1_852;
@@ -255,8 +258,8 @@ const lineInBounds = (points, bounds) => points.some(point => isInBounds(point, 
  *   `traffic.trails` (the trails of the rest of the traffic) only when `true`, as the style starts them.
  * - `zoom` and `thresholds`: other traffic on the ground is drawn only from the airfield threshold up.
  * - `trails`: the trails FeatureCollection (traffic/trailStore.js: trailFeatures).
- * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute), its parts drawn inside `bounds` or
- *   across them.
+ * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute): its lines drawn inside `bounds` or across
+ *   them, and its marks (points) inside them.
  */
 export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null,
   route = null } = {}) {
@@ -288,8 +291,15 @@ export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoo
   if (visibleGroup(groups, 'route')) {
     for (const feature of route?.features ?? []) {
       const part = feature?.properties?.part;
-      const points = feature?.geometry?.coordinates ?? [];
-      if (!ROUTE_KINDS.includes(part) || points.length < 2) continue;
+      const geometry = feature?.geometry;
+      if (!ROUTE_KINDS.includes(part)) continue;
+      if (geometry?.type === 'Point') {
+        const point = geometry.coordinates;
+        if (finite(point?.[0]) && finite(point?.[1]) && (bounds === null || isInBounds(point, bounds))) routeParts.add(part);
+        continue;
+      }
+      const points = geometry?.coordinates ?? [];
+      if (points.length < 2) continue;
       if (bounds === null || lineInBounds(points, bounds)) routeParts.add(part);
     }
   }

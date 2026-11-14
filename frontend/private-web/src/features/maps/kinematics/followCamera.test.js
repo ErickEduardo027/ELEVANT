@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { destinationPoint, haversineM } from '../airport/geo.js';
 import { runwayEnd } from '../airport/runwayInUse.js';
-import { FOLLOW_RANGES, FOLLOW_TAU_S, FOLLOW_ZOOM, followCamera, stepCamera } from './followCamera.js';
+import {
+  FOLLOW_RANGES, FOLLOW_TAU_S, FOLLOW_ZOOM, RECENTRE_SHARE, followCamera, needsRecentre, stepCamera,
+} from './followCamera.js';
 import { createKinematicsLayout } from './kinematicsFixtures.js';
 import { angleDiff } from './smoothing.js';
 import { ktToMs, nmToM } from './units.js';
@@ -196,5 +198,37 @@ describe('follow camera', () => {
     // The longitude goes the short way across the antimeridian too.
     const across = stepCamera({ center: [179.9, 0], zoom: 5, pitch: 0 }, { center: [-179.9, 0], zoom: 5, pitch: 0 }, FOLLOW_TAU_S);
     expect(across.center[0] > 179.9 || across.center[0] < -179.9).toBe(true);
+  });
+
+  it('needsRecentre only outside the central 60 % of the area the insets leave', () => {
+    expect(RECENTRE_SHARE).toBe(0.6);
+    // A 1000 × 800 map with a panel of 200 px on the right and bars of 100 px above and below: the area in sight runs
+    // from x 0 to 800 and from y 100 to 700, and its central 60 % from x 160 to 640 and from y 220 to 580.
+    const viewport = { width: 1000, height: 800 };
+    const insets = { top: 100, right: 200, bottom: 100, left: 0 };
+    const recentres = (x, y, options = {}) => needsRecentre({ pointPx: { x, y }, viewport, insets, ...options });
+    for (const [x, y] of [[400, 400], [160, 220], [640, 580], [639, 579], [161, 400]]) {
+      expect(recentres(x, y), `${x}, ${y}`).toBe(false);
+    }
+    for (const [x, y] of [[159, 400], [641, 400], [400, 219], [400, 581], [900, 400], [400, 50], [-5, 400], [400, 790]]) {
+      expect(recentres(x, y), `${x}, ${y}`).toBe(true);
+    }
+    // The panels count: x 700 is inside the central 60 % of the whole map (x 200 to 800), not of the area in sight.
+    expect(recentres(700, 400)).toBe(true);
+    expect(needsRecentre({ pointPx: { x: 700, y: 400 }, viewport })).toBe(false);
+    // Another share: 0.8 keeps the camera still from x 80 to 720; 1 only once the aircraft leaves the area in sight.
+    expect(recentres(100, 400, { share: 0.8 })).toBe(false);
+    expect(recentres(70, 400, { share: 0.8 })).toBe(true);
+    expect(recentres(1, 400, { share: 1 })).toBe(false);
+    expect(recentres(801, 400, { share: 1 })).toBe(true);
+    // A share out of range is clamped: 0 re-centres everywhere but on the exact middle.
+    expect(recentres(400, 400, { share: -3 })).toBe(false);
+    expect(recentres(401, 400, { share: 0 })).toBe(true);
+    // What cannot be told re-centres: no pixel, no viewport, no room left by the panels.
+    expect(needsRecentre({ pointPx: null, viewport, insets })).toBe(true);
+    expect(needsRecentre({ pointPx: { x: Number.NaN, y: 10 }, viewport, insets })).toBe(true);
+    expect(needsRecentre({ pointPx: { x: 10, y: 10 }, viewport: null })).toBe(true);
+    expect(needsRecentre({ pointPx: { x: 10, y: 10 }, viewport, insets: { left: 600, right: 400 } })).toBe(true);
+    expect(needsRecentre()).toBe(true);
   });
 });

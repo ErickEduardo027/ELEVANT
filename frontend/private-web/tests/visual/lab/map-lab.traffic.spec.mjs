@@ -111,14 +111,16 @@ test.describe('map lab traffic', () => {
       await expect(block.getByRole('link', { name: 'Ver escala' })).toBeVisible();
       await labIdle(page);
       await shoot(page, testInfo, `region-traffic-selected-${width}`);
-      // The same flight from the approach view, where its route reads: what it flew and the straight line to A5.
+      // The same flight from the approach view, where its route reads (PR M6): what it flew observed, estimated from
+      // Miami, and still to fly over 08 down to A5, with its marked points.
       await page.evaluate(() => window.__occMapLab.flyToPreset('approach'));
       await expect(map).toHaveAttribute('data-occ-view', 'approach');
       await labIdle(page);
-      await expect(legendItems(page)).toContainText(['Recorrido del vuelo elegido', 'Hasta su próximo punto, en línea recta']);
+      await expect(legendItems(page)).toContainText(['Recorrido observado', 'Trayecto estimado', 'Ruta prevista',
+        'Puntos de la ruta']);
       await shoot(page, testInfo, `approach-traffic-selected-route-${width}`);
 
-      // Another airline's aircraft chosen by its address: «Otro tráfico», what it flew, no next point and no link.
+      // Another airline's aircraft chosen by its address: «Otro tráfico», only what it flew, and no link.
       await openLab(page, `scene=approach-traffic-hex-selected&t=${NOON}`);
       const other = page.getByRole('dialog', { name: 'Vuelo ZZZ880' });
       await expect(other).toContainText('Otro tráfico');

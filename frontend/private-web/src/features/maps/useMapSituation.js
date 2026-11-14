@@ -9,9 +9,10 @@ import { useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { OCC_COALESCE_MS, OCC_SAFETY_POLL_MS } from '../admin-occ/live/occCadence';
 import { useOccResource } from '../admin-occ/live/useOccResource';
 import { useOptionalOccShellChannel } from '../admin-occ/shell/occShellContext';
+import { useLanguage } from '../../i18n/LanguageScope';
 import { createRenderClock } from './core/frameLoop';
 import { createMotionStore } from './traffic/motionStore';
-import { buildRoute, trailSegmentsOf } from './traffic/routeFeatures';
+import { buildRoute } from './traffic/routeFeatures';
 import {
   airTrafficSourceState, buildSituation, selectionTarget, toFlightsModel, toPictureModel, toTrackModel,
 } from './traffic/situationModel';
@@ -103,16 +104,18 @@ function situationStatus({ reading, access, granted, picture, flights, situation
  * source list (`sourceState`).
  *
  * Returns `{ status: 'loading'|'success'|'empty'|'error'|'unauthorized'|'idle', picture, flights, situation, trails,
- * track, target, route, telemetry, clock, sourceState, refreshing, refreshFailed, retry, motion, renderClock, traffic }`:
- * the models of situationModel.js, the trails as a FeatureCollection, the chosen aircraft's track (or null), what the
- * selection names (or null), its route (traffic/routeFeatures.js: buildRoute, with the trail and the track it has), the
+ * track, target, route, routeAt, telemetry, clock, sourceState, refreshing, refreshFailed, retry, motion, renderClock,
+ * traffic }`: the models of situationModel.js, the trails as a FeatureCollection, the chosen aircraft's track (or null),
+ * what the selection names (or null), its route (traffic/routeFeatures.js: buildRoute, PR M6: from its aircraft's
+ * trail and the trajectory of the motion store, the split where the situation has it) and `routeAt(tMs, [lng, lat])`,
+ * the same route with the aircraft where a frame draws it, the
  * telemetry store the data block reads (traffic/telemetryStore.js, fed with every situation and reading the moving
  * aircraft where the map draws them) and the clock the reads feed. `sourceState` is the state of the air traffic from
  * the picture's read alone, for its chip (ui/MapSourceStatus.jsx) and the shell; `refreshing` and `refreshFailed`
  * speak of the two reads together, so they never describe the traffic. PR M6 adds the motion store
  * (traffic/motionStore.js: the estimates of the situation come from it), the render clock the map draws at
  * (core/frameLoop.js: «Pausar movimiento» freezes it while the reads go on) and `traffic`, the `traffic` prop of OccMap
- * (`{ aircraft, trails, route, source, motion }`).
+ * (`{ aircraft, trails, route, routeAt, source, motion }`).
  */
 export function useMapSituation({ stationId = null, enabled = true, service = occMapService, selectedHex = null,
   selection = null, allTrails = false } = {}) {
@@ -246,10 +249,26 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   const trails = useMemo(() => trailFeatures(trailSnapshot, { includeOther: allTrails, selectedHex: chosenHex, aviamHexes,
     nowMs }), [allTrails, aviamHexes, chosenHex, nowMs, trailSnapshot]);
 
-  // The chosen flight's route: what it flew (its trail, with the server's track) and the straight line to its next point.
-  const stationAirport = flights?.stationAirport ?? null;
-  const route = useMemo(() => buildRoute({ target, segments: trailSegmentsOf(trails, target?.aircraft?.hex ?? null),
-    track: chosenTrack, stationAirport, nowMs }), [chosenTrack, nowMs, stationAirport, target, trails]);
+  // The chosen flight's route (PR M6, traffic/routeFeatures.js): what it flew observed (its aircraft's trail, the
+  // server's track in it once read), estimated and still to fly, along the trajectory the motion store plans for it (or
+  // builds from its schedule for the route alone), in the screen's language. `route` is where the situation has it now,
+  // for the legend; `routeAt(tMs, [lng, lat])` is the same route where the map draws the aircraft on a frame
+  // (core/OccMap.jsx), so the split between flown and still to fly follows it.
+  const { language } = useLanguage();
+  const routeHex = typeof target?.aircraft?.hex === 'string' ? target.aircraft.hex.toLowerCase() : null;
+  const routeTrail = routeHex === null ? null : trailSnapshot.entries.get(routeHex)?.points ?? null;
+  const routeInputs = useMemo(() => (target === null ? null : {
+    target,
+    segments: routeTrail === null ? [] : [routeTrail],
+    track: chosenTrack,
+    trajectory: target.flight ? motion.trajectoryForRoute(target.flight) : null,
+    breakMs: trailSnapshot.breakMs,
+    language,
+  }), [chosenTrack, language, motion, routeTrail, target, trailSnapshot.breakMs]);
+  const route = useMemo(() => (routeInputs === null ? buildRoute() : buildRoute({ ...routeInputs, nowMs })),
+    [nowMs, routeInputs]);
+  const routeAt = useCallback((tMs, aircraft) => (routeInputs === null ? buildRoute()
+    : buildRoute({ ...routeInputs, nowMs: tMs, aircraft })), [routeInputs]);
 
   // The telemetry the data block reads, outside React: every new situation goes in, and it ticks while it is watched,
   // reading each aircraft where the map draws it on the render clock.
@@ -288,13 +307,14 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   const refreshing = pictureRead.refreshing || flightsRead.refreshing;
   const refreshFailed = pictureRead.refreshFailed || flightsRead.refreshFailed;
 
-  // What OccMap draws of the traffic, with the motion its frames sample (core/OccMap.jsx: its `traffic` prop).
-  const traffic = useMemo(() => Object.freeze({ aircraft: situation.aircraft, trails, route, source: situation.source,
-    motion }), [motion, route, situation, trails]);
+  // What OccMap draws of the traffic, with the motion its frames sample and the route they rebuild (core/OccMap.jsx: its
+  // `traffic` prop).
+  const traffic = useMemo(() => Object.freeze({ aircraft: situation.aircraft, trails, route, routeAt,
+    source: situation.source, motion }), [motion, route, routeAt, situation, trails]);
 
   return useMemo(() => ({
-    status, picture, flights, situation, trails, track: chosenTrack, target, route, telemetry, clock, sourceState,
-    refreshing, refreshFailed, retry, motion, renderClock, traffic,
-  }), [chosenTrack, clock, flights, motion, picture, refreshFailed, refreshing, renderClock, retry, route, situation,
-    sourceState, status, target, telemetry, traffic, trails]);
+    status, picture, flights, situation, trails, track: chosenTrack, target, route, routeAt, telemetry, clock,
+    sourceState, refreshing, refreshFailed, retry, motion, renderClock, traffic,
+  }), [chosenTrack, clock, flights, motion, picture, refreshFailed, refreshing, renderClock, retry, route, routeAt,
+    situation, sourceState, status, target, telemetry, traffic, trails]);
 }

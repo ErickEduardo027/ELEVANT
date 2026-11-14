@@ -24,6 +24,9 @@ import { createContext, useContext } from 'react';
 // - motion (PR M6, core/frameLoop.js): `motion` is `{ available, paused, pausedAt, dataAt, pause(), resume() }`: whether
 //   the map moves its traffic, whether «Pausar movimiento» holds it and at which instant, the server instant of the
 //   newest data the map draws, and the two actions (ui/MapMotionControl.jsx).
+// - follow mode (PR M6, design A6): `follow` is `{ available, following, canFollow, toggle() }`: whether the map can
+//   follow (it moves its traffic), whether it follows now (`follow=1`), whether the selection names an aircraft it
+//   draws, and the action of the S key (ui/MapFollowButton.jsx, the data block's «Seguir»).
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -52,6 +55,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   setLayersMenuOpen: doNothing,
   registerLayersMenu: () => doNothing,
   motion: Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null, pause: doNothing, resume: doNothing }),
+  follow: Object.freeze({ available: false, following: false, canFollow: false, toggle: doNothing }),
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

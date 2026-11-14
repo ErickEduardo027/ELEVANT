@@ -260,7 +260,13 @@ describe('MapLab', () => {
     expect(query().get('flightId')).toMatch(/^p:/);
     const block = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });
     expect(block.querySelector('[data-source-line]')).toHaveTextContent('En vivo · hace 4 s');
-    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part)).toEqual(['flown', 'next']);
+    // Its route (PR M6): observed, estimated from Miami, still to fly to A5 with its three marks.
+    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part))
+      .toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark', 'mark', 'mark']);
+    // «Seguir» in the block and in the dock: one switch, off.
+    expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(screen.getByTestId('map-preset-switcher').parentElement).getByRole('button', { name: 'Seguir' }))
+      .toBeEnabled();
     expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }))
       .toHaveAttribute('aria-expanded', 'false');
     // «Cerrar» clears the selection, and with it the block and the route.
@@ -313,6 +319,35 @@ describe('MapLab', () => {
     // A scene without traffic has nothing to pause.
     open(`?scene=ramp-states&t=${NOON}`);
     expect(screen.queryByTestId('map-motion-control')).not.toBeInTheDocument();
+  });
+
+  it('opens a follow scene following its flight, and the dock\'s «Seguir» or S stops and starts it (PR M6)', () => {
+    const { map } = open(`?scene=approach-follow-final&t=${NOON}`);
+    loadStyle(map);
+    // The scene wrote its flight and follow=1; on the frozen clock the camera framed the aircraft once.
+    expect(query().get('flightId')).toBe('p:5b000000-0000-4000-8000-000000009001');
+    expect(query().get('follow')).toBe('1');
+    const dockFollow = () => within(screen.getByTestId('map-preset-switcher').parentElement).getByRole('button',
+      { name: 'Seguir' });
+    expect(dockFollow()).toHaveAttribute('aria-pressed', 'true');
+    const block = screen.getByRole('dialog', { name: 'Vuelo ZZ9001' });
+    expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'true');
+    // The dock's button lets it go; S on the map follows again.
+    fireEvent.click(dockFollow());
+    expect(query().get('follow')).toBeNull();
+    expect(dockFollow()).toHaveAttribute('aria-pressed', 'false');
+    expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: 's' });
+    expect(query().get('follow')).toBe('1');
+    expect(dockFollow()).toHaveAttribute('aria-pressed', 'true');
+    cleanup();
+    // A scene that does not follow opens without follow=1, and the route scenes choose their flight.
+    open(`?scene=airfield-departure-route&t=${NOON}`);
+    loadStyle(fake.state.liveMaps().at(-1));
+    expect(query().get('follow')).toBeNull();
+    expect(query().get('flightId')).toBe('p:5b000000-0000-4000-8000-000000009002');
+    expect(fake.state.liveMaps().at(-1).getSource('occ-route').data.features.map(feature => feature.properties.part))
+      .toEqual(['flownEstimated', 'remaining']);
   });
 
   it('uses only occ-* classes', async () => {

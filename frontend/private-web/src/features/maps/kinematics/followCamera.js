@@ -10,8 +10,10 @@ import { NM, ktToMs } from './units.js';
 // it waits) it shows the stand up close, tilted in 3D. A departure is the same, the other way round. The map resolves a
 // framing with its own cameraForBounds (the floating panels as padding, the zoom capped at `maxZoom`) and eases there
 // with stepCamera every frame; a user pan ends follow mode and a user zoom freezes the automatic zoom (run in OccMap).
-// Pure: nothing here reads a clock, the viewport or the map. Zoom levels are MapLibre's; distances in metres, speeds
-// in m/s, `[lng, lat]`; explicit '.js' imports, no JSON.
+// Under reduced motion the camera does not glide: it re-centres only when the aircraft leaves the central 60 % of the
+// area in sight (needsRecentre). Pure: nothing here reads a clock, the viewport or the map (the map passes what it
+// measures). Zoom levels are MapLibre's; distances in metres, speeds in m/s, `[lng, lat]`; pixels from the map's
+// top-left corner; explicit '.js' imports, no JSON.
 
 /**
  * The zoom levels and tilts of follow mode: the largest zoom en route and on the approach, the final's zoom from the
@@ -48,6 +50,9 @@ export const FOLLOW_RANGES = Object.freeze({
 
 /** How fast stepCamera closes in on its target: the time constant of its exponential smoothing, in seconds. */
 export const FOLLOW_TAU_S = 0.8;
+
+/** Under reduced motion the camera stays put while the aircraft is inside this share of the area in sight. */
+export const RECENTRE_SHARE = 0.6;
 
 // The trajectory phases on the ground (estimator.js), for an aircraft that does not say whether it is.
 const GROUND_PHASES = new Set(['landing', 'taxiIn', 'holding', 'parked', 'pushback', 'taxiOut', 'takeoff']);
@@ -180,4 +185,28 @@ export function stepCamera(current, target, dtS, tauS = FOLLOW_TAU_S) {
     camera.bearing = bearing;
   }
   return Object.freeze(camera);
+}
+
+const sideOf = (insets, side) => (finite(insets?.[side]) ? Math.max(0, insets[side]) : 0);
+
+/**
+ * Whether follow mode re-centres under reduced motion (design A6 and H): true when the aircraft's pixel `pointPx`
+ * (`{ x, y }`, from the map's top-left corner) lies outside the central `share` of the area that `insets` (`{ top,
+ * right, bottom, left }` in px, the floating panels) leave of `viewport` (`{ width, height }` in px), or when that
+ * cannot be told (no pixel, no viewport, no room left); false inside it, its edge included. `share` is clamped to
+ * 0–1 (0.6 by default: the camera stays put while the aircraft is in the middle 60 % of the area in sight).
+ */
+export function needsRecentre({ pointPx = null, viewport = null, insets = null, share = RECENTRE_SHARE } = {}) {
+  const x = pointPx?.x;
+  const y = pointPx?.y;
+  if (!finite(x) || !finite(y) || !finite(viewport?.width) || !finite(viewport?.height)) return true;
+  const left = sideOf(insets, 'left');
+  const top = sideOf(insets, 'top');
+  const right = viewport.width - sideOf(insets, 'right');
+  const bottom = viewport.height - sideOf(insets, 'bottom');
+  if (!(right > left) || !(bottom > top)) return true;
+  const kept = Math.min(1, Math.max(0, finite(share) ? share : RECENTRE_SHARE));
+  const marginX = ((right - left) * (1 - kept)) / 2;
+  const marginY = ((bottom - top) * (1 - kept)) / 2;
+  return x < left + marginX || x > right - marginX || y < top + marginY || y > bottom - marginY;
 }

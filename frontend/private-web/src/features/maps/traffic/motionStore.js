@@ -151,6 +151,12 @@ function trajectoryInstants(trajectory) {
  *   signal or its coast), or `null`.
  * - `trajectoryOf(flightKey)` and `followTargets(flightKey)` (`{ airport, threshold, stand, apronHold }`, for
  *   kinematics/followCamera.js): of a flight it plans.
+ * - `trajectoryForRoute(flight)` (PR M6, for the chosen flight's route, traffic/routeFeatures.js): the trajectory it
+ *   plans for a flight row, else, for one it does not draw (Decision F-1: merely scheduled, a departure waiting for
+ *   its push-back, the other leg of a visit drawn as one aircraft), one built from its schedule for the route alone
+ *   (cached by its inputs, never sampled for a position): an arrival from its origin to its stand, a departure from
+ *   its stand at its planned off-block. `null` for a cancelled or diverted flight, a demo flight it does not plan, or
+ *   without the instants.
  * - `runway()`: the runway in use for real flights (`{ arrival, departure, source }`), `dataAt()`: the server instant of
  *   the last read; `subscribe(listener)` hears every ingest; `clock` is the clock it was given.
  */
@@ -161,6 +167,8 @@ export function createMotionStore({
   const listeners = new Set();
   const tracks = new Map();
   const seenAt = new Map();
+  // The trajectories built for the route of a flight the store does not draw, by its key: `{ key, trajectory }`.
+  let routePlans = new Map();
   let plans = new Map();
   let units = [];
   let flightsByKey = new Map();
@@ -345,6 +353,8 @@ export function createMotionStore({
       for (const key of keysOf(unit)) current.add(`f:${key}`);
     }
     plans = next;
+    // A route's own trajectory goes with its flight's row.
+    routePlans = new Map([...routePlans].filter(([key]) => flightsByKey.has(key)));
 
     // A track nobody draws is kept a while (an aircraft may come back) and then forgotten.
     const now = dataAt ?? 0;
@@ -494,6 +504,42 @@ export function createMotionStore({
     return unit?.plan?.trajectory ?? null;
   }
 
+  // A departure's trajectory for its route alone: from its stand (or apron hold) at its push-back, else its planned
+  // off-block, without any rule of when it may be drawn leaving.
+  function routeDeparture(row, ctx) {
+    const times = flightTimesFromRow(row, parseInstant);
+    const offBlockMs = [times.pushbackAtMs, times.estimatedAtMs, times.scheduledAtMs].find(finite) ?? null;
+    if (offBlockMs === null) return null;
+    const stand = standOfCode(layout, row?.stand?.code);
+    return build.buildDepartureTrajectory({
+      times: { offBlockMs, takeoffMs: times.actualKind === 'Runway' ? times.actualAtMs : null },
+      destination: pointOf(row.counterpart), layout, runwayEnd: runwayEnd(layout, ctx.runway.departure), stand,
+      apronHold: stand ? null : ctx.apronHold, perf: ctx.perf, activeRunwayIds: runwayIdsInUse(layout, ctx.runway),
+    });
+  }
+
+  // What the store plans now for a flight it draws: its track's plan (rebuilt from its last fix once that aged), else
+  // its visit's; `null` for a flight no visit of the last read draws.
+  function plannedFor(flightKey) {
+    const unit = units.find(candidate => keysOf(candidate).includes(flightKey));
+    if (!unit) return null;
+    return tracks.get(`f:${flightKey}`)?.plan?.trajectory ?? unit.plan?.trajectory ?? null;
+  }
+
+  function trajectoryForRoute(row) {
+    const key = row?.flightKey ?? null;
+    if (key === null || row.phase === 'cancelled' || row.phase === 'diverted') return null;
+    const planned = plannedFor(key);
+    if (planned || row.isDemo === true) return planned;
+    const ctx = contextOf(row);
+    const inputs = planInputsKey(row, { ...ctx, perfCategory: ctx.perf.category });
+    const cached = routePlans.get(key);
+    if (cached?.key === inputs) return cached.trajectory;
+    const trajectory = row.direction === 'Departure' ? routeDeparture(row, ctx) : realTrajectory(row, ctx);
+    routePlans.set(key, { key: inputs, trajectory });
+    return trajectory;
+  }
+
   function followTargets(flightKey) {
     const trajectory = trajectoryOf(flightKey);
     const row = flightsByKey.get(flightKey) ?? null;
@@ -519,6 +565,7 @@ export function createMotionStore({
     isAnimating,
     nextChangeAt,
     trajectoryOf,
+    trajectoryForRoute,
     followTargets,
     runway: () => runway,
     dataAt: () => dataAt,

@@ -12,6 +12,7 @@ import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { isDrawn } from '../../maps/traffic/trafficFeatures';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
@@ -35,9 +36,10 @@ const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded bo
 // The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style. It opens on the
 // region, or on the approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
 // position as symbols, which its legend explains while one is on screen, and keeps «Restablecer vista» and «Centrar
-// PUJ». Inside the OCC shell it also draws the live traffic, the data block of the chosen aircraft and the layers menu
-// (LiveFlightMap). `detail` is the page's own card of its selected flight: the plain map shows it, the live map only
-// for a flight it does not know. `theme` is accepted and ignored: the OCC maps are dark only.
+// PUJ». Inside the OCC shell it also draws the live traffic, the data block of the chosen aircraft, the layers menu and
+// (PR M6) follow mode, «Seguir» beside the view selector (LiveFlightMap). `detail` is the page's own card of its selected
+// flight: the plain map shows it, the live map only for a flight it does not know. `theme` is accepted and ignored: the
+// OCC maps are dark only.
 function FlightMapView({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, drawnFlights, selection: chosen, onSelect,
   framePoints = EMPTY, children,
@@ -101,6 +103,7 @@ function FlightMapView({
       <MapDock>
         <MapLayersMenu />
         <MapPresetSwitcher />
+        <MapFollowButton />
         <button type="button" onClick={resetView} title={t('map.resetView')} aria-label={t('map.resetView')} className={toolClass}>
           <RotateCcwIcon className="h-4 w-4" />
         </button>
@@ -183,14 +186,17 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
 }
 
 /**
- * The card of the live map's selection, inside the map: the data block of what the map knows, docked at the top left;
- * the page's own card (`detail`) for a page flight the map does not know, and while the map cannot draw (its fallback
- * list covers the map, and the data block is one of the map's overlays).
+ * The card of the live map's selection, inside the map: the data block of what the map knows, docked at the top left,
+ * with «Seguir» when the map can follow (PR M6); the page's own card (`detail`) for a page flight the map does not know,
+ * and while the map cannot draw (its fallback list covers the map, and the data block is one of the map's overlays).
  */
 function SelectionCard({ target, detail, ...block }) {
-  const { engineStatus } = useOccMap();
+  const { engineStatus, follow } = useOccMap();
   if (target === null || engineStatus === 'unavailable') return detail;
-  return <FlightDataBlock target={target} style={DOCKED_BLOCK_STYLE} {...block} />;
+  return (
+    <FlightDataBlock target={target} style={DOCKED_BLOCK_STYLE} onFollow={follow.available ? follow.toggle : null}
+      following={follow.following} {...block} />
+  );
 }
 
 /**

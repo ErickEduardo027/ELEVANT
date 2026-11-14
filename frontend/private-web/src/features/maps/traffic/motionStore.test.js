@@ -259,6 +259,45 @@ describe('motion store (design F4, contracts 2.3)', () => {
     expect(fixed.estimatesAt(at(0)).map(item => item.flightKey)).not.toContain(KEY.parkedDeparture);
   });
 
+  it('trajectoryForRoute gives the planned trajectory, else one from the schedule for the route alone', () => {
+    const { build, calls } = spied();
+    const store = createMotionStore({ build });
+    const flights = flightsOf(createMapFlights());
+    store.ingest({ picture: DISABLED, flights });
+    const rowOf = key => flights.byKey.get(key);
+    // A flight the store draws: the very trajectory it plans (ZZ161 approaching, the demo visit).
+    expect(store.trajectoryForRoute(rowOf(KEY.arrival))).toBe(store.trajectoryOf(KEY.arrival));
+    expect(store.trajectoryForRoute(rowOf(KEY.demoArrival))).toBe(store.trajectoryOf(KEY.demoArrival));
+    // ZZ162 waits for its push-back, so F-1 does not draw it: its way out from A5 at its scheduled off-block, built
+    // once for the route and never as an estimate.
+    const departures = calls.departure.length;
+    const zz162 = store.trajectoryForRoute(rowOf(KEY.departure));
+    expect(zz162).toMatchObject({ kind: 'departure', startMs: at(75 * 60), meta: { standCode: 'A5', departureRunwayIdent: '08' } });
+    expect(haversineM(point(sampleTrajectory(zz162, at(75 * 60))), standOf('A5').center)).toBeLessThan(1);
+    expect(store.trajectoryForRoute(rowOf(KEY.departure))).toBe(zz162);
+    expect(calls.departure.length).toBe(departures + 1);
+    expect(store.estimatesAt(at(0)).map(item => item.flightKey)).not.toContain(KEY.departure);
+    // An arrival merely scheduled: from its origin, Miami, to its stand B30, by its schedule (on its stand at 11:48).
+    const base = createMapFlights();
+    const scheduled = flightsOf({ ...base, flights: base.flights.map(row => (row.flightKey === KEY.noFix
+      ? { ...row, phase: 'scheduled', providerStatus: 'Expected' } : row)) });
+    const later = createMotionStore();
+    later.ingest({ picture: DISABLED, flights: scheduled });
+    expect(later.estimatesAt(at(0)).map(item => item.flightKey)).not.toContain(KEY.noFix);
+    expect(later.trajectoryOf(KEY.noFix)).toBeNull();
+    const zz500 = later.trajectoryForRoute(scheduled.byKey.get(KEY.noFix));
+    expect(zz500).toMatchObject({ kind: 'arrival', meta: { standCode: 'B30', runwayIdent: '08' } });
+    expect(haversineM(point(sampleTrajectory(zz500, zz500.startMs)), [-80.2906, 25.7932])).toBeLessThan(1);
+    expect(haversineM(point(sampleTrajectory(zz500, at(48 * 60))), standOf('B30').center)).toBeLessThan(1);
+    // Nothing for a cancelled or diverted flight, nor for a row without a key.
+    for (const phase of ['cancelled', 'diverted']) {
+      expect(later.trajectoryForRoute({ ...scheduled.byKey.get(KEY.noFix), phase }), phase).toBeNull();
+      expect(store.trajectoryForRoute({ ...rowOf(KEY.arrival), phase }), phase).toBeNull();
+    }
+    expect(store.trajectoryForRoute(null)).toBeNull();
+    expect(store.trajectoryForRoute({ flightKey: null })).toBeNull();
+  });
+
   it('a live fix goes live, coast and estimate as it ages and is rebuilt from the fix once', () => {
     const { build, calls } = spied();
     const store = createMotionStore({ build });

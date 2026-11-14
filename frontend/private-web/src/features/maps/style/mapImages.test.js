@@ -361,7 +361,7 @@ describe('traffic images (PR M5)', () => {
     expect(MAP_IMAGE_IDS.slice(-TRAFFIC_IDS.length)).toEqual(TRAFFIC_IDS);
     expect(TRAFFIC_IDS).toEqual([
       ...ICON_CATEGORIES.flatMap(category => [`ac-${category}-solid`, `ac-${category}-hollow`]),
-      'traffic-ring-est', 'glyph-arrival', 'glyph-departure', 'glyph-arrow-right', 'plate-demo',
+      'traffic-ring-est', 'glyph-arrival', 'glyph-departure', 'glyph-arrow-right', 'plate-demo', 'route-mark',
     ]);
     expect(aircraftImage('narrow')).toBe('ac-narrow-solid');
     expect(aircraftImage('heavy4', { hollow: true })).toBe('ac-heavy4-hollow');
@@ -409,10 +409,16 @@ describe('traffic images (PR M5)', () => {
         expect(Math.max(...reach.map(([, y]) => y)), id).toBeLessThanOrEqual(height - 3 + 1e-9);
       }
     }
-    const { width, ops: [ring] } = MAP_IMAGE_SHAPES['traffic-ring-est'];
-    const [right, centreY, radius] = ring.stroke.match(/-?\d+(?:\.\d+)?/g).map(Number);
-    expect([right - radius, centreY]).toEqual([width / 2, width / 2]);
-    expect(width / 2 - radius - ring.lineWidth / 2).toBeGreaterThanOrEqual(3);
+    // The two rings (an estimated position's, a route mark's, PR M6): centred, with 3 px clear outside their stroke.
+    for (const id of ['traffic-ring-est', 'route-mark']) {
+      const { width, height, ops: [ring] } = MAP_IMAGE_SHAPES[id];
+      const [right, centreY, radius] = ring.stroke.match(/-?\d+(?:\.\d+)?/g).map(Number);
+      expect([right - radius, centreY], id).toEqual([width / 2, width / 2]);
+      expect(width, id).toBe(height);
+      expect(width / 2 - radius - ring.lineWidth / 2, id).toBeGreaterThanOrEqual(3);
+    }
+    // The route's ring is an SDF: the layer paints it in the selection's cyan.
+    expect(isSdfImage('route-mark')).toBe(true);
     // The plate's word has its slab: 38 × 16 px inside the 3 px margin.
     expect([MAP_IMAGE_SHAPES['plate-demo'].width, MAP_IMAGE_SHAPES['plate-demo'].height])
       .toEqual([DEMO_PLATE.width + 6, DEMO_PLATE.height + 6]);

@@ -16,6 +16,7 @@ import { createMotionStore } from '../traffic/motionStore';
 import { createTelemetryStore } from '../traffic/telemetryStore';
 import FlightDataBlock from '../ui/FlightDataBlock';
 import MapDock from '../ui/MapDock';
+import MapFollowButton from '../ui/MapFollowButton';
 import MapLayersMenu from '../ui/MapLayersMenu';
 import MapLegend from '../ui/MapLegend';
 import MapMotionControl from '../ui/MapMotionControl';
@@ -40,7 +41,9 @@ import { labTraffic } from './trafficScenes';
 // the aircraft the URL selects (flightId= or hex=) and the layers menu, and the handle adds aircraftAt(id), where the
 // map draws one of its aircraft. Its traffic moves as in the app (PR M6): through the motion store, on a render clock
 // frozen at `?t=` (one frame, no loop: the visual suite's pictures are still) or, without it, running from the scene's
-// own instant, so a person sees the demo flight move; «Pausar movimiento» is in the dock.
+// own instant, so a person sees the demo flight move; «Pausar movimiento» is in the dock. The chosen flight's route
+// follows its aircraft (PR M6), and «Seguir» is in the dock and in the data block; a scene with `follow` opens
+// following (`follow=1`): on the frozen clock the camera frames the aircraft once.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -59,6 +62,12 @@ function cutBasemap(url) {
 const copyStands = stands => stands.map(stand => ({ ...stand }));
 // The data block is docked at the top left of the map, as Monitoreo docks it.
 const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+
+// The data block of the scene's selection, with «Seguir» from the map it sits in (PR M6), as the screens give it.
+function LabDataBlock(props) {
+  const { follow } = useOccMap();
+  return <FlightDataBlock {...props} onFollow={follow.available ? follow.toggle : null} following={follow.following} />;
+}
 
 // A scene that opens with its layers menu open (region-layers-menu): once, as soon as the map offers its layers.
 function OpenLayersMenu() {
@@ -110,7 +119,7 @@ function LabScene({ scene, basemap, frozenAt }) {
   // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
   const standClock = frozenAt ?? scene.at ?? null;
   const displayed = useStandDisplay(stands, { nowMs: standClock });
-  const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
+  const { selection, follow, selectStand, selectFlight, selectAircraft, clear, setFollow } = useMapSelection();
   // The render clock of the scene's traffic (PR M6): frozen at `?t=`, else running from the scene's own instant; and
   // its motion store, one for the scene's whole life, as useMapSituation keeps one.
   const [renderClock] = useState(() => {
@@ -156,12 +165,15 @@ function LabScene({ scene, basemap, frozenAt }) {
     else if (next.kind === 'aircraft') selectAircraft(next.id);
   }, [clear, selectStand, selectFlight, selectAircraft]);
 
-  // The scene's own selection, once, when it opens on a URL that selects nothing.
+  // The scene's own selection, once, when it opens on a URL that selects nothing, and with it follow mode when the
+  // scene follows (PR M6).
   useEffect(() => {
     if (openedRef.current) return;
     openedRef.current = true;
-    if (scene.selection && selection === null) select(scene.selection);
-  }, [scene.selection, selection, select]);
+    if (!scene.selection || selection !== null) return;
+    select(scene.selection);
+    if (scene.follow && !follow) setFollow(true);
+  }, [scene.selection, scene.follow, selection, follow, select, setFollow]);
 
   useEffect(() => {
     // A stand of the scene by its code, or a `[lng, lat]`.
@@ -246,13 +258,14 @@ function LabScene({ scene, basemap, frozenAt }) {
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           {traffic?.target && (
-            <FlightDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
+            <LabDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
               style={DOCKED_BLOCK_STYLE} />
           )}
           {scene.layersMenu && <OpenLayersMenu />}
           <MapDock>
             <MapLayersMenu />
             <MapPresetSwitcher />
+            <MapFollowButton />
             <MapMotionControl />
             <MapLegend />
           </MapDock>

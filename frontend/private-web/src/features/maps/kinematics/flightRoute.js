@@ -8,9 +8,10 @@ import { TRACK_CONFIG } from './handoff.js';
 // exit and the taxi route to its stand, or to the apron hold where it waits for one («Posición por asignar»); for a
 // departure its stand, the taxi route, the runway, the climb and the great circle to its destination (nothing while it
 // does not leave yet: only the stand it waits at). The split follows the aircraft. A trail is never joined across a
-// break, and no estimated part takes a detour along a plan the aircraft is not on. traffic/routeFeatures.js (PR M5)
-// draws the route layers; it takes these parts in place of its straight line to the next point (PR M6, second part).
-// `[lng, lat]`, metres, epoch milliseconds. Pure: explicit '.js' imports, no clock, no JSON; the result is frozen.
+// break, and no estimated part takes a detour along a plan the aircraft is not on. It is the one builder of the route:
+// traffic/routeFeatures.js feeds it what the map knows of the selection (PR M6, second part) and the route layers of
+// traffic/trafficLayers.js draw its parts. `[lng, lat]`, metres, epoch milliseconds. Pure: explicit '.js' imports, no
+// clock, no JSON; the result is frozen.
 
 /** The parts of a flight route, as the route layers filter them (`properties.part`). */
 export const FLIGHT_ROUTE_PARTS = Object.freeze(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
