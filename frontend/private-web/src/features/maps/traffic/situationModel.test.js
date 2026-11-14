@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SOURCE_STATES } from '../../admin-occ/live/sourceHealth';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { relatedEntities } from '../core/mapSelection';
 import {
   createAirPicture, createEstimates, createMapFlights, createTrack, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX,
   TRAFFIC_NOON, trafficInstant,
@@ -22,6 +23,14 @@ function pictureWith(change, overrides = {}) {
 }
 
 const standCenter = code => MDPC_LAYOUT.stands.find(stand => stand.code === code).center;
+// Where an aircraft taxiing to a stand leaves the taxilane: the start of the stand's lead-in, outside its box.
+const leadInStart = code => MDPC_LAYOUT.stands.find(stand => stand.code === code).leadIn[0];
+/** The fields of an API aircraft standing on the ground at the centre of a stand. */
+const onGroundIn = code => ({ onGround: true, altitudeFeet: null, longitude: standCenter(code)[0],
+  latitude: standCenter(code)[1] });
+/** The rows of the synthetic map flights, each changed by `change(row)` (null keeps it), and their model. */
+const rowsWith = change => createMapFlights().flights.map(flight => change(flight) ?? flight);
+const flightsOf = rows => toFlightsModel(createMapFlights({ flights: rows }));
 
 describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
   it('reads the air picture, a track and the flights in the map units', () => {
@@ -179,34 +188,40 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
       .map(item => [item.id, item.quality])).toEqual([[`f:${KEY.demoArrival}`, 'estimated'], [`f:${KEY.arrival}`, 'estimated']]);
   });
 
-  it('other traffic on the ground inside a stand owned by an AVIAM or demo visit is hidden, outside it is kept', () => {
-    // A5 (ZZ161), the demo's suggested B21, A2 (ZZ300 on the stand) and B30 (ZZ500); not A3, whose visit left.
-    expect([...ownedStandCodes(flights.flights)].sort()).toEqual(['A2', 'A5', 'B21', 'B30']);
+  it('other traffic on the ground is hidden only inside a stand an AVIAM or demo aircraft is on', () => {
+    // Only ZZ300's aircraft is on its stand (A2, BLOCK_ON). ZZ161 is still on final for A5, ZZ500 is en route to B30,
+    // the demo pair is in Approach and not imported (B21 is only a suggestion), and ZZ700 left A3.
+    expect([...ownedStandCodes(flights.flights, { nowMs: NOON })]).toEqual(['A2']);
 
-    const ground = (hex, code, extra = {}) => ({ hex, onGround: true, altitudeFeet: null,
-      longitude: standCenter(code)[0], latitude: standCenter(code)[1], ...extra });
     const picture = pictureWith(item => {
-      if (item.hex === HEX.overflight) return { ...item, ...ground(item.hex, 'B21') };
-      if (item.hex === HEX.outsideWindow) return { ...item, ...ground(item.hex, 'A5'), onGround: false, altitudeFeet: 1_500 };
+      if (item.hex === HEX.overflight) return { ...item, ...onGroundIn('A5') };
+      if (item.hex === HEX.outsideWindow) return { ...item, ...onGroundIn('B21') };
+      if (item.hex === HEX.stale) return { ...item, ...onGroundIn('B30') };
       return null;
     });
     const situation = buildSituation({ picture, flights, nowMs: NOON });
     const hidden = Object.fromEntries(situation.aircraft.map(item => [item.hex, item.hiddenInStand]));
     expect(hidden).toEqual({
       [HEX.arrival]: false,
-      [HEX.overflight]: true, // on the ground in B21, which the demo visit holds
-      [HEX.groundInOwnedStand]: true, // on the ground in A2
-      [HEX.groundOnFreeStand]: false, // A3: its visit pushed back and departed
-      [HEX.outsideWindow]: false, // over A5, but in the air
-      [HEX.stale]: false,
+      [HEX.groundInOwnedStand]: true, // in A2, where the ZZ300 aircraft is
+      // Parked where a flight is due: the conflict OCC has to see is never hidden.
+      [HEX.overflight]: false, // in A5, while ZZ161 is still on final for it
+      [HEX.outsideWindow]: false, // in B21, suggested to the demo flight, which is still in the air
+      [HEX.stale]: false, // in B30, ZZ500's stand, 48 minutes out
+      [HEX.groundOnFreeStand]: false, // in A3, which ZZ700 left
     });
+    // Over A2 but in the air: nothing hides an aircraft in flight.
+    const above = pictureWith(item => (item.hex === HEX.outsideWindow
+      ? { ...item, ...onGroundIn('A2'), onGround: false, altitudeFeet: 1_500 } : null));
+    expect(buildSituation({ picture: above, flights, nowMs: NOON }).byId.get(`h:${HEX.outsideWindow}`).hiddenInStand)
+      .toBe(false);
 
     // Once the ZZ300 visit records its PUSHBACK, A2 is free and the aircraft there is drawn.
     const pushedBack = toFlightsModel(createMapFlights({ flights: createMapFlights().flights.map(flight => (
       flight.flightKey === KEY.parkedDeparture
         ? { ...flight, milestones: [...flight.milestones, { code: 'PUSHBACK', actualAt: trafficInstant(-60) }] }
         : flight)) }));
-    expect(ownedStandCodes(pushedBack.flights).has('A2')).toBe(false);
+    expect(ownedStandCodes(pushedBack.flights, { nowMs: NOON }).has('A2')).toBe(false);
     expect(buildSituation({ picture: livePicture, flights: pushedBack, nowMs: NOON })
       .byId.get(`h:${HEX.groundInOwnedStand}`).hiddenInStand).toBe(false);
     // An ELEVANT aircraft is never hidden, even on its own stand.
@@ -214,6 +229,100 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
       ? { ...item, matchedFlightKey: KEY.parkedArrival, matchedBy: 'Registration' } : null));
     expect(buildSituation({ picture: parkedAviam, flights, nowMs: NOON }).byId.get(`f:${KEY.parkedArrival}`))
       .toMatchObject({ hiddenInStand: false, standCode: 'A2' });
+  });
+
+  it('a stand counts from the moment its aircraft is on it, by the first evidence there is, until it leaves', () => {
+    const owned = (rows, options = {}) => [...ownedStandCodes(rows, { nowMs: NOON, ...options })].sort();
+    const arrivalOnly = change => rowsWith(flight => (flight.flightKey === KEY.arrival
+      ? { ...flight, ...change } : null));
+
+    // ZZ161 landed: a runway time says nothing of the stand. Its aircraft decides once the map has it: on the taxilane
+    // or in the air over A5 it is on its way; on the ground inside the box it is on its stand.
+    const landed = arrivalOnly({ phase: 'landed', actualAt: trafficInstant(-120), actualKind: 'Runway' });
+    expect(owned(landed)).toEqual(['A2']);
+    const aircraftAt = ([lon, lat], onGround = true) => new Map([[KEY.arrival, { lon, lat, onGround }]]);
+    expect(owned(landed, { positions: aircraftAt(leadInStart('A5')) })).toEqual(['A2']);
+    expect(owned(landed, { positions: aircraftAt(standCenter('A5'), false) })).toEqual(['A2']);
+    expect(owned(landed, { positions: aircraftAt(standCenter('A5')) })).toEqual(['A2', 'A5']);
+    // The live aircraft goes through the picture too: on its stand, the transponder beside it is hidden.
+    const parkedPicture = pictureWith(item => {
+      if (item.hex === HEX.arrival) return { ...item, ...onGroundIn('A5'), groundSpeedKnots: 0 };
+      if (item.hex === HEX.overflight) return { ...item, ...onGroundIn('A5') };
+      return null;
+    });
+    const parked = buildSituation({ picture: parkedPicture, flights: flightsOf(landed), nowMs: NOON });
+    expect(parked.ownedStandCodes.has('A5')).toBe(true);
+    expect([parked.byId.get(`f:${KEY.arrival}`).hiddenInStand, parked.byId.get(`h:${HEX.overflight}`).hiddenInStand])
+      .toEqual([false, true]);
+
+    // «Registrar llegada» wrote the on-block time; the aircraft's position, when the map has one, comes first.
+    const registered = arrivalOnly({ phase: 'arrived', actualAt: trafficInstant(-60), actualKind: 'OnBlock' });
+    expect(owned(registered)).toEqual(['A2', 'A5']);
+    expect(owned(registered, { positions: aircraftAt(leadInStart('A5')) })).toEqual(['A2']);
+
+    // The provider still says «Departed» (it took off from its origin) after the aircraft reached the stand: BLOCK_ON
+    // decides, and an arrival that reads `departed` does not end its visit (core/mapSelection.js: endsItsVisit).
+    const blockOn = [{ code: 'BLOCK_ON', actualAt: trafficInstant(-60) }];
+    const stalled = rowsWith(flight => (flight.visitKey === KEY.arrival
+      ? { ...flight, milestones: blockOn, ...(flight.direction === 'Arrival' ? { phase: 'departed' } : {}) } : null));
+    expect(owned(stalled)).toEqual(['A2', 'A5']);
+    // Without it, ZZ500 that reads `departed` is flying in: not on B30 yet, and still the stand's next flight.
+    const flyingIn = rowsWith(flight => (flight.flightKey === KEY.noFix ? { ...flight, phase: 'departed' } : null));
+    expect(owned(flyingIn)).toEqual(['A2']);
+    expect(relatedEntities({ kind: 'stand', id: 'B30' }, { flights: flyingIn }).flightKey).toBe(KEY.noFix);
+
+    // A demo flight follows the server's instants. Imported onto B21, it is not there in Approach, it is from its
+    // on-block instant (five minutes after noon), and it left at TaxiOut.
+    const demoOn = (phase, stand) => rowsWith(flight => (flight.isDemo
+      ? { ...flight, demo: { ...flight.demo, phase },
+        ...(stand ? { imported: true, suggestedStandCode: null, stand } : {}) }
+      : null));
+    const b21 = { id: 'stand-b21', code: 'B21', terminalCode: 'B' };
+    expect(owned(demoOn('Approach', b21))).toEqual(['A2']);
+    expect(owned(demoOn('Parked', b21), { nowMs: at(300) })).toEqual(['A2', 'B21']);
+    expect(owned(demoOn('TaxiOut', b21), { nowMs: at(3_960) })).toEqual(['A2']);
+    // Nobody imported it: it waits on the apron (contracts 2.3), so its suggested stand holds nothing, even parked.
+    expect(owned(demoOn('Parked'), { nowMs: at(300) })).toEqual(['A2']);
+
+    // A cancelled departure leaves the stand to its arrival; a cancelled arrival ends the visit.
+    const parkedVisit = flights.byKey.get(KEY.parkedArrival).visitKey;
+    const cancelled = direction => rowsWith(flight => (flight.visitKey === parkedVisit && flight.direction === direction
+      ? { ...flight, phase: 'cancelled' } : null));
+    expect(owned(cancelled('Departure'))).toEqual(['A2']);
+    expect(owned(cancelled('Arrival'))).toEqual([]);
+  });
+
+  it('an aircraft named by the old key of a visit linked under 3-N07 is that flight (contracts 1.3)', () => {
+    // OCC linked ZZ161's proposal to a planned leg: the row keeps the leg's «l:» key and the proposal id, while the
+    // server's matching keys (cached for 20 s) still name the proposal's «p:» key.
+    const arrival = flights.byKey.get(KEY.arrival);
+    const legKey = `l:${arrival.legId}`;
+    const linked = flightsOf(rowsWith(flight => (flight.flightKey === KEY.arrival
+      ? { ...flight, flightKey: legKey } : null)));
+    const situation = buildSituation({ picture: livePicture, flights: linked, nowMs: NOON });
+    expect(situation.byId.get(`f:${legKey}`)).toMatchObject({ hex: HEX.arrival, kind: 'aviam', flightKey: legKey,
+      flightNumber: 'ZZ161', standCode: 'A5', matchedBy: 'Registration' });
+    expect(situation.byId.has(`f:${KEY.arrival}`)).toBe(false);
+    expect(situation.byId.has(`h:${HEX.arrival}`)).toBe(false);
+    expect(selectionTarget({ kind: 'aircraft', id: HEX.arrival }, situation).flight).toBe(linked.byKey.get(legKey));
+
+    // One flight, one aircraft, whichever key names it: a newer aircraft named by the leg's key wins.
+    const both = pictureWith(item => (item.hex === HEX.overflight
+      ? { ...item, matchedFlightKey: legKey, matchedBy: 'Callsign', positionAt: trafficInstant(-1) } : null));
+    const twice = buildSituation({ picture: both, flights: linked, nowMs: NOON });
+    expect(twice.aircraft.filter(item => item.flightKey === legKey).map(item => item.hex)).toEqual([HEX.overflight]);
+    expect(twice.byId.get(`h:${HEX.arrival}`).kind).toBe('other');
+    // An estimate given by the old key is the flight's as well.
+    const disabled = toPictureModel(createAirPicture({ status: 'Disabled' }));
+    const byOldKey = buildSituation({ picture: disabled, flights: linked, nowMs: NOON,
+      estimates: [{ flightKey: KEY.arrival, lon: -68.4, lat: 18.5 }] });
+    expect(byOldKey.aircraft.map(item => item.id)).toEqual([`f:${legKey}`]);
+
+    // A key that a row of the window holds is always that row, never another row's old key.
+    const copy = { ...arrival, flightKey: 'l:5c000000-0000-4000-8000-000000000999', flightNumber: 'ZZ999' };
+    const shadowed = flightsOf([...createMapFlights().flights, copy]);
+    expect(buildSituation({ picture: livePicture, flights: shadowed, nowMs: NOON }).byId.get(`f:${KEY.arrival}`))
+      .toMatchObject({ hex: HEX.arrival, flightNumber: 'ZZ161' });
   });
 
   it('maps each picture status to the shell source state', () => {
@@ -229,12 +338,21 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
       [null, 'idle', {}, 'idle'],
       [null, 'error', {}, 'offline'],
       ['Live', 'timeout', {}, 'offline'],
-      [null, 'forbidden', {}, 'forbidden'],
       [null, 'unauthorized', {}, 'forbidden'],
+      [null, 'unauthorized', { flightsStatus: 'success' }, 'forbidden'],
+      // Refused: the account, when the flights are refused too; a station without live traffic (its 404), once they
+      // answer or fail; and nothing judged until then.
+      [null, 'forbidden', { flightsStatus: 'forbidden' }, 'forbidden'],
+      [null, 'forbidden', { flightsStatus: 'unauthorized' }, 'forbidden'],
+      [null, 'forbidden', { flightsStatus: 'success' }, 'unconfigured'],
+      [null, 'forbidden', { flightsStatus: 'empty' }, 'unconfigured'],
+      [null, 'forbidden', { flightsStatus: 'error' }, 'unconfigured'],
+      [null, 'forbidden', { flightsStatus: 'loading' }, 'idle'],
+      [null, 'forbidden', {}, 'idle'],
     ];
     for (const [picture, resource, options, expected] of cases) {
       const state = airTrafficSourceState(picture, resource, options);
-      expect(state, `${picture} / ${resource}`).toBe(expected);
+      expect(state, `${picture} / ${resource} / ${JSON.stringify(options)}`).toBe(expected);
       expect(SOURCE_STATES).toContain(state);
     }
   });

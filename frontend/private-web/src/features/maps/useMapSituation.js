@@ -61,8 +61,11 @@ const hasNoFlights = flights => flights.flights.length === 0;
 
 /**
  * The five states of the map's remote view (plus `idle` while it reads nothing). Both reads share their access rule,
- * so a refused flights read, or a 401 on either, is `unauthorized`. The air picture alone answers 404 for a station
- * without live traffic (useOccResource reads it as forbidden): the map then keeps its flights, without aircraft.
+ * so a refused flights read, or a 401 on either, is `unauthorized`. Each read fails alone: the ELEVANT flights decide
+ * the map's state, and only a flights read that failed is an `error`. An air picture that fails, or that the server
+ * refuses at a station without live traffic (a 404, which useOccResource reads as forbidden), leaves the map with its
+ * flights and no aircraft (`success` or `empty`, `picture` null), and the source state says why
+ * (traffic/situationModel.js: airTrafficSourceState).
  */
 function situationStatus({ reading, access, granted, picture, flights, situation }) {
   if (!reading) return 'idle';
@@ -72,7 +75,7 @@ function situationStatus({ reading, access, granted, picture, flights, situation
   const pictureDone = ANSWERED.has(picture.status) || FAILED.has(picture.status) || picture.status === 'forbidden';
   const flightsDone = ANSWERED.has(flights.status) || FAILED.has(flights.status);
   if (!pictureDone || !flightsDone) return 'loading';
-  if (FAILED.has(picture.status) || FAILED.has(flights.status)) return 'error';
+  if (FAILED.has(flights.status)) return 'error';
   const drawn = situation.aircraft.some(item => !item.hiddenInStand);
   return drawn || situation.flights.length > 0 ? 'success' : 'empty';
 }
@@ -92,9 +95,10 @@ function situationStatus({ reading, access, granted, picture, flights, situation
  *
  * Reads only when the account holds any of MAP_PERMISSIONS (otherwise `unauthorized`, with no request). The air picture
  * asks `trails=short` until it has one of the station, then `none`, every `refreshAfterSeconds`; its state (Live,
- * Stale, Warming, Unavailable, Disabled) is data, never an error. The flights re-read on `occ_planning` (at most one
- * every 3 s) and every 60 s. The server clock is asked once on start and when the tab shows again. The air traffic's
- * state goes to the shell's source list.
+ * Stale, Warming, Unavailable, Disabled) is data, never an error, and a failed or refused read of it leaves the map
+ * with its flights (situationStatus). The flights re-read on `occ_planning` (at most one every 3 s) and every 60 s.
+ * The server clock is asked once on start and when the tab shows again. The air traffic's state goes to the shell's
+ * source list (`sourceState`).
  *
  * Returns `{ status: 'loading'|'success'|'empty'|'error'|'unauthorized'|'idle', picture, flights, situation, trails,
  * track, target, route, telemetry, clock, sourceState, refreshing, refreshFailed, retry }`: the models of
@@ -240,7 +244,7 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   // The air traffic in the shell's source list, with the tags of what the map draws.
   const channel = useOptionalOccShellChannel();
   const sourceState = airTrafficSourceState(picture?.status ?? null, pictureRead.status,
-    { refreshFailed: pictureRead.refreshFailed });
+    { refreshFailed: pictureRead.refreshFailed, flightsStatus: flightsRead.status });
   const sourceAt = sourceState === 'ok' || sourceState === 'delayed' ? (picture?.observedAt ?? null) : null;
   const sourceReason = picture?.reason ?? null;
   const sourceTags = [

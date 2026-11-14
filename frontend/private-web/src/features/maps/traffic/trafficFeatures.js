@@ -34,7 +34,7 @@ const KNOTS_PER_MPS = 3_600 / 1_852;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const filled = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 
-/** Whether an aircraft is drawn at all: it has a position and no stand an ELEVANT visit holds hides it. */
+/** Whether an aircraft is drawn at all: it has a position and no stand an ELEVANT or demo aircraft is on hides it. */
 export function isDrawn(aircraft) {
   return aircraft != null && aircraft.hiddenInStand !== true && finite(aircraft.lon) && finite(aircraft.lat);
 }

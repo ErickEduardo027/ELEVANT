@@ -17,15 +17,22 @@ const SIGNALS = Object.freeze({ delayed: 'attention', unavailable: 'urgent' });
 /**
  * The chip a map shows for its air traffic, or `null` when all is well or nothing is read: `{ kind, reason, ageS,
  * retry }` with `kind` one of loading, empty, unavailable, forbidden, delayed. From useMapSituation: `status` (its
- * five states and idle), `picture` (the air picture model), `sourceState` (what the shell's source list says) and
- * `refreshFailed`; `nowMs` (the server's time) ages a picture that a failed refresh left behind.
+ * five states and idle), `picture` (the air picture model, null while its read has nothing to show), `sourceState`
+ * (what the shell's source list says) and `refreshFailed`; `nowMs` (the server's time) ages a picture that a failed
+ * refresh left behind. Without a picture the map still shows its flights, and the source state says why: a read that
+ * failed (`offline`) offers to try again, and a station without live traffic (`unconfigured`) reads as an environment
+ * without the source.
  */
 export function sourceChip({ status = 'idle', picture = null, sourceState = null, refreshFailed = false, nowMs = null } = {}) {
   if (status === 'idle') return null;
   if (status === 'unauthorized' || sourceState === 'forbidden') return { kind: 'forbidden', reason: null, ageS: null, retry: false };
   if (status === 'loading') return { kind: 'loading', reason: null, ageS: null, retry: false };
   if (status === 'error') return { kind: 'unavailable', reason: null, ageS: null, retry: true };
-  if (picture === null) return null;
+  if (picture === null) {
+    if (sourceState === 'offline') return { kind: 'unavailable', reason: null, ageS: null, retry: true };
+    if (sourceState === 'unconfigured') return { kind: 'unavailable', reason: 'not_configured', ageS: null, retry: false };
+    return null;
+  }
   const reason = picture.reason ?? null;
   const since = Number.isFinite(nowMs) && Number.isFinite(picture.serverTime) ? Math.max(0, nowMs - picture.serverTime) : 0;
   const ageS = (Number.isFinite(picture.ageSeconds) ? picture.ageSeconds : 0) + since / SECOND_MS;

@@ -50,9 +50,11 @@ describe('MapSourceStatus (design A7)', () => {
     renderStatus({ status: 'unauthorized' });
     expect(chipText()).toBe('Tu acceso no incluye el tráfico en vivo.');
     cleanup();
-    // A picture the server refuses while the flights answer: the same words.
-    renderStatus({ status: 'success', picture: null, sourceState: 'forbidden' });
-    expect(chipText()).toBe('Tu acceso no incluye el tráfico en vivo.');
+    // A station without live traffic (the air picture answers 404 while the flights answer): the words of an
+    // environment without the source, with nothing to retry, never a missing access.
+    renderStatus({ status: 'success', picture: null, sourceState: 'unconfigured', onRetry: vi.fn() });
+    expect(chipText()).toBe('No hay tráfico en vivo en este momento.La fuente de tráfico no está configurada.');
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
     cleanup();
 
     // A failed read offers to try again, with the shell's urgent signal.
@@ -63,6 +65,17 @@ describe('MapSourceStatus (design A7)', () => {
     expect(chip.querySelector('[data-occ-glyph], svg')).not.toBeNull();
     await userEvent.click(within(chip).getByRole('button', { name: 'Reintentar' }));
     expect(onRetry).toHaveBeenCalledOnce();
+    cleanup();
+
+    // The air picture failed while the flights answered: the map keeps them, and the chip says that the traffic is
+    // unavailable and offers to try again.
+    const onRetryPicture = vi.fn();
+    renderStatus({ status: 'success', picture: null, sourceState: 'offline', onRetry: onRetryPicture });
+    const offline = within(screen.getByTestId('map-source-status')).getByRole('status', { name: 'Estado del tráfico' });
+    expect(offline).toHaveTextContent('No hay tráfico en vivo en este momento.');
+    await userEvent.click(within(offline).getByRole('button', { name: 'Reintentar' }));
+    expect(onRetryPicture).toHaveBeenCalledOnce();
+    expect(sourceChip({ status: 'success', picture: null, sourceState: 'idle' })).toBeNull();
   });
 
   it('says why the air picture is unavailable in its own words, never the server text', () => {

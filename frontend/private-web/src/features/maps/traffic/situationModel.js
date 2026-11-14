@@ -108,23 +108,9 @@ const standCodeOf = flight => {
   const code = text(flight?.stand?.code);
   return code === null ? null : normalizeStandCode(code);
 };
-
-/**
- * The stands an ELEVANT visit holds (normalized codes): the assigned stand, or the stand suggested for a demo flight
- * not yet imported, of every visit that has not ended (core/mapSelection.js: endsItsVisit). A cancelled leg holds
- * nothing by itself; a cancelled departure leaves the stand to its arrival.
- */
-export function ownedStandCodes(flights = []) {
-  const rows = (Array.isArray(flights) ? flights : []).filter(flight => flight != null);
-  const ended = new Set(rows.filter(endsItsVisit).map(visitOf));
-  const owned = new Set();
-  for (const flight of rows) {
-    if (flight.phase === 'cancelled' || ended.has(visitOf(flight))) continue;
-    const code = text(flight.stand?.code) ?? text(flight.suggestedStandCode);
-    if (code !== null) owned.add(normalizeStandCode(code));
-  }
-  return owned;
-}
+const finite = value => typeof value === 'number' && Number.isFinite(value);
+const hasMilestone = (flight, code) => Array.isArray(flight.milestones)
+  && flight.milestones.some(milestone => milestone?.code === code && milestone.actualAt != null);
 
 const standIndexes = new WeakMap();
 
@@ -153,6 +139,57 @@ function standHolding(point, codes, boxes) {
     if (ring && pointInPolygon(point, ring)) return code;
   }
   return null;
+}
+
+/**
+ * Whether the aircraft of a visit (its legs) is on stand `code` at `nowMs`, by the first evidence there is, in the
+ * order the stand states read it (contracts 2.4: until then the stand is «Llegando»): for a demo flight, the server's
+ * on-block instant has come (contracts 1.1); else a recorded BLOCK_ON; else the position the map has of its aircraft,
+ * live or estimated, on the ground inside the stand's box; else the arrival's actual time when it is the on-block
+ * (`actualKind: 'OnBlock'`, OCC's «Registrar llegada»). A runway time only says that the aircraft landed: it is still
+ * on its way to the stand.
+ */
+function onTheStand(legs, code, { nowMs, positions, boxes }) {
+  const demo = legs.map(leg => leg.demo).find(value => value != null && typeof value === 'object') ?? null;
+  const onBlockAt = parseInstant(demo?.onBlockAt ?? null);
+  if (onBlockAt !== null) return finite(nowMs) && nowMs >= onBlockAt;
+  if (legs.some(leg => hasMilestone(leg, 'BLOCK_ON'))) return true;
+  const box = boxes.get(code);
+  const position = legs.map(leg => positions.get(leg.flightKey)).find(item => item != null) ?? null;
+  if (box && position) return position.onGround === true && pointInPolygon([position.lon, position.lat], box);
+  return legs.some(leg => leg.direction === 'Arrival' && leg.actualAt != null && leg.actualKind === 'OnBlock');
+}
+
+/**
+ * The stands an ELEVANT or demo aircraft is on at `nowMs`, the server's time (normalized codes). Other traffic on the
+ * ground is hidden only inside «a stand owned by an AVIAM or demo aircraft» (contracts 2.4): from the moment that
+ * aircraft is on it until it leaves. A stand whose flight is still to come, or is landing or taxiing in, hides nothing,
+ * so an aircraft parked where an arrival is due stays on the map: that is the conflict OCC has to see.
+ *
+ * A visit (its legs share one visitKey) is judged whole. It holds its assigned stand, never a suggestion: a demo flight
+ * nobody imported waits on the apron for its stand (contracts 2.3). It holds it while no leg ends the visit
+ * (core/mapSelection.js: endsItsVisit) and its aircraft is on the stand (onTheStand). A cancelled leg holds nothing by
+ * itself; a cancelled departure leaves the stand to its arrival.
+ *
+ * `positions` maps a flightKey to where the map has that flight's aircraft (`{ lon, lat, onGround }`, live or
+ * estimated); `layout` gives the stand boxes.
+ */
+export function ownedStandCodes(flights = [], { nowMs, positions = new Map(), layout = MDPC_LAYOUT } = {}) {
+  const visits = new Map();
+  for (const flight of Array.isArray(flights) ? flights : []) {
+    if (flight == null) continue;
+    const legs = visits.get(visitOf(flight)) ?? [];
+    legs.push(flight);
+    visits.set(visitOf(flight), legs);
+  }
+  const context = { nowMs, positions: positions instanceof Map ? positions : new Map(), boxes: standBoxes(layout) };
+  const owned = new Set();
+  for (const legs of visits.values()) {
+    if (legs.some(endsItsVisit)) continue;
+    const codes = new Set(legs.filter(leg => leg.phase !== 'cancelled').map(standCodeOf).filter(code => code !== null));
+    for (const code of codes) if (onTheStand(legs, code, context)) owned.add(code);
+  }
+  return owned;
 }
 
 // The fields every aircraft of the map carries, from its flight when it is one.
@@ -204,7 +241,6 @@ function liveAircraft(fix, flight, { nowMs, status, staleAfterMs, owned, boxes }
   });
 }
 
-const finite = value => typeof value === 'number' && Number.isFinite(value);
 const finiteOrNull = value => (finite(value) ? value : null);
 
 function estimatedAircraft(estimate, flight, nowMs) {
@@ -235,20 +271,36 @@ function estimatedAircraft(estimate, flight, nowMs) {
 
 const PICTURES_WITH_AIRCRAFT = new Set(['Live', 'Stale']);
 
+// The old key of a visit OCC linked to a planned flight (contracts 1.3, rule 3-N07): the proposal's «p:» key ends and
+// the leg keeps its «l:» key, while the air picture can still name the old one for a few seconds (the server keeps its
+// matching keys for 20 s per station). Such a key resolves to its row through the row's proposalId, as a selection does
+// (core/mapSelection.js: matchFlight); a key that a row of the window holds is always that row.
+function linkedKeys(rows, byKey) {
+  const linked = new Map();
+  for (const flight of rows) {
+    if (flight?.proposalId == null) continue;
+    const key = `p:${flight.proposalId}`;
+    if (!byKey.has(key) && !linked.has(key)) linked.set(key, flight);
+  }
+  return linked;
+}
+
 /**
  * What the map draws at `nowMs` (the server's time) from the air picture and flights models (design E1, contracts 2.4):
  * `{ aircraft, byId, flights, source, status, reason, ownedStandCodes, changesAt }`.
  *
  * - A live aircraft whose `matchedFlightKey` names a flight of the window becomes that flight (`kind: 'aviam'`, id
- *   `f:<flightKey>`); one whose key is not in the window stays other traffic (`h:<hex>`). One flight, one aircraft:
- *   when two name the same flight, the newest position wins and the other stays other traffic.
+ *   `f:<flightKey>`), also by the old «p:» key of a visit linked under 3-N07 (linkedKeys); one whose key is not in the
+ *   window stays other traffic (`h:<hex>`). One flight, one aircraft: when two name the same flight, by either key, the
+ *   newest position wins and the other stays other traffic.
  * - `ageS` counts from the fix to `nowMs`; the aircraft is `live` up to staleAfterSeconds(refreshAfterSeconds) and
  *   `stale` after it, and every aircraft of a `Stale` picture is `stale`. Warming, Unavailable and Disabled carry no
  *   aircraft; `status` and `reason` stay as data.
  * - An ELEVANT flight without a live fix is never given a position. A position the caller estimates (`estimates`:
  *   `{ flightKey, lon, lat, altM?, gsMs?, trackDeg?, vrateMs?, onGround?, positionAt? }`, PR M6) is drawn as
  *   `estimated`, unless the flight already has a live aircraft.
- * - Other traffic on the ground inside the box of a stand an ELEVANT visit holds (ownedStandCodes) is `hiddenInStand`.
+ * - Other traffic on the ground inside the box of a stand an ELEVANT or demo aircraft is on (ownedStandCodes, with the
+ *   live and estimated positions of the ELEVANT flights) is `hiddenInStand`.
  * - `changesAt`: the next instant a live aircraft turns stale without a new read, or `null`.
  *
  * RenderAircraft: `{ id, hex, kind, flightKey, visitKey, legId, turnaroundId, proposalId, direction, lon, lat, altM,
@@ -259,34 +311,44 @@ const PICTURES_WITH_AIRCRAFT = new Set(['Live', 'Stale']);
 export function buildSituation({ picture = null, flights = null, nowMs, estimates = [], layout = MDPC_LAYOUT } = {}) {
   const rows = flights?.flights ?? [];
   const byKey = flights?.byKey ?? new Map(rows.map(flight => [flight.flightKey, flight]));
+  const linked = linkedKeys(rows, byKey);
+  const flightOf = key => (key == null ? null : byKey.get(key) ?? linked.get(key) ?? null);
   const status = picture?.status ?? null;
   const time = finite(nowMs) ? nowMs : (picture?.serverTime ?? 0);
   const staleAfterMs = staleAfterSeconds(picture?.refreshAfterSeconds) * 1_000;
   const fixes = PICTURES_WITH_AIRCRAFT.has(status) ? picture.aircraft.filter(fix => finite(fix.positionAt)) : [];
-  const owned = ownedStandCodes(rows);
-  const context = { nowMs: time, status, staleAfterMs, owned, boxes: standBoxes(layout) };
 
-  // One flight, one aircraft: the newest position of each key of the window.
+  // One flight, one aircraft: the newest position of each flight of the window, whichever of its keys names it.
   const claimed = new Map();
   for (const fix of fixes) {
-    if (fix.matchedFlightKey === null || !byKey.has(fix.matchedFlightKey)) continue;
-    const held = claimed.get(fix.matchedFlightKey);
-    if (!held || fix.positionAt > held.positionAt) claimed.set(fix.matchedFlightKey, fix);
+    const flight = flightOf(fix.matchedFlightKey);
+    if (flight === null) continue;
+    const held = claimed.get(flight.flightKey);
+    if (!held || fix.positionAt > held.positionAt) claimed.set(flight.flightKey, fix);
+  }
+  // A position the caller estimated, for a flight without a live aircraft: one per flight.
+  const estimated = new Map();
+  for (const estimate of Array.isArray(estimates) ? estimates : []) {
+    const flight = flightOf(estimate?.flightKey);
+    if (flight === null || claimed.has(flight.flightKey) || estimated.has(flight.flightKey)) continue;
+    if (!finite(estimate.lon) || !finite(estimate.lat)) continue;
+    estimated.set(flight.flightKey, { estimate, flight });
   }
 
-  const aircraft = fixes.map(fix => {
-    const flight = fix.matchedFlightKey !== null && claimed.get(fix.matchedFlightKey) === fix
-      ? byKey.get(fix.matchedFlightKey) : null;
-    return liveAircraft(fix, flight, context);
-  });
-  const estimated = new Set();
-  for (const estimate of Array.isArray(estimates) ? estimates : []) {
-    const flight = byKey.get(estimate?.flightKey);
-    if (!flight || claimed.has(flight.flightKey) || estimated.has(flight.flightKey)) continue;
-    if (!finite(estimate.lon) || !finite(estimate.lat)) continue;
-    estimated.add(flight.flightKey);
-    aircraft.push(estimatedAircraft(estimate, flight, time));
+  // The stands an ELEVANT or demo aircraft is on, also from where the map has each flight's aircraft.
+  const positions = new Map();
+  for (const [key, fix] of claimed) positions.set(key, { lon: fix.lon, lat: fix.lat, onGround: fix.onGround });
+  for (const [key, { estimate }] of estimated) {
+    positions.set(key, { lon: estimate.lon, lat: estimate.lat, onGround: estimate.onGround === true });
   }
+  const owned = ownedStandCodes(rows, { nowMs: time, positions, layout });
+  const context = { nowMs: time, status, staleAfterMs, owned, boxes: standBoxes(layout) };
+
+  const aircraft = fixes.map(fix => {
+    const flight = flightOf(fix.matchedFlightKey);
+    return liveAircraft(fix, flight !== null && claimed.get(flight.flightKey) === fix ? flight : null, context);
+  });
+  for (const { estimate, flight } of estimated.values()) aircraft.push(estimatedAircraft(estimate, flight, time));
 
   let changesAt = null;
   if (status === 'Live') {
@@ -339,14 +401,28 @@ export function selectionTarget(selection, situation) {
   return null;
 }
 
+const SETTLED_READS = new Set(['success', 'empty', 'error', 'timeout']);
+const REFUSED_READS = new Set(['unauthorized', 'forbidden']);
+
 /**
  * What the shell's source list says of the air traffic (admin-occ/live/sourceHealth.js), from the picture's state and
- * its read's (useOccResource): refused → `forbidden`; failed without data → `offline`; not read yet → `idle`. Read:
- * Live → `ok` (`delayed` when the last refresh failed); Stale → `delayed`; Unavailable → `offline`; Disabled →
+ * its read's (useOccResource), and the state of the flights read (`flightsStatus`):
+ * - a 401 → `forbidden`;
+ * - refused (403 or 404) → `forbidden` when the flights are refused too, `unconfigured` once they answer or fail, and
+ *   `idle` until then. Both reads share their access rule (contracts 1.3), so a refusal of the account refuses both: a
+ *   refusal that only the air picture gets is the 404 of a station without live traffic (`AirTraffic:StationCode`),
+ *   where the environment does not provide it;
+ * - failed without data → `offline`; not read yet → `idle`.
+ * Read: Live → `ok` (`delayed` when the last refresh failed); Stale → `delayed`; Unavailable → `offline`; Disabled →
  * `unconfigured`; Warming → `idle` (nothing to judge yet).
  */
-export function airTrafficSourceState(pictureStatus, resourceStatus, { refreshFailed = false } = {}) {
-  if (resourceStatus === 'unauthorized' || resourceStatus === 'forbidden') return 'forbidden';
+export function airTrafficSourceState(pictureStatus, resourceStatus,
+  { refreshFailed = false, flightsStatus = null } = {}) {
+  if (resourceStatus === 'unauthorized') return 'forbidden';
+  if (resourceStatus === 'forbidden') {
+    if (REFUSED_READS.has(flightsStatus)) return 'forbidden';
+    return SETTLED_READS.has(flightsStatus) ? 'unconfigured' : 'idle';
+  }
   if (resourceStatus === 'error' || resourceStatus === 'timeout') return 'offline';
   if (resourceStatus !== 'success' && resourceStatus !== 'empty') return 'idle';
   switch (pictureStatus) {

@@ -106,7 +106,9 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     const down = setup({}, { service: failing });
     await flush(185_000);
     expect(asked.map(at => at - failingStart)).toEqual([0, 20_000, 60_000, 120_000, 180_000]);
-    expect(down.result.current.status).toBe('error');
+    // The flights answered all along: the map keeps them, and only the source says that the traffic is offline.
+    expect(down.result.current).toMatchObject({ status: 'success', picture: null, sourceState: 'offline' });
+    expect(down.result.current.situation.flights).toHaveLength(8);
   });
 
   it('pauses both reads while the tab is hidden and reads once when it shows again', async () => {
@@ -220,6 +222,24 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     expect(countOf(simulated, 'airPicture')).toBe(2);
     cleanup();
 
+    // Each read fails alone: an air picture that fails (a 503) while the flights answer leaves the map with its
+    // flights and no aircraft; the source list says that the traffic is offline, and retry() asks for it again.
+    const offlineShell = createOccShellValue();
+    const noPicture = { ...simulated,
+      getAirPicture: vi.fn().mockRejectedValueOnce(refused(503)).mockImplementation(simulated.getAirPicture) };
+    const unavailable = setup({}, { service: noPicture, shell: offlineShell });
+    await flush();
+    expect(unavailable.result.current).toMatchObject({ status: 'success', picture: null, sourceState: 'offline' });
+    expect(unavailable.result.current.situation.flights).toHaveLength(8);
+    expect(unavailable.result.current.situation.aircraft).toEqual([]);
+    expect(airTraffic(offlineShell)).toMatchObject({ state: 'offline' });
+    act(() => unavailable.result.current.retry());
+    await flush();
+    expect(unavailable.result.current)
+      .toMatchObject({ status: 'success', sourceState: 'ok', picture: { status: 'Live' } });
+    expect(noPicture.getAirPicture).toHaveBeenCalledTimes(2);
+    cleanup();
+
     // Without a map permission: unauthorized, and nothing is asked, not even the clock.
     const shell = createOccShellValue();
     const denied = setup({}, { access: WITHOUT_MAP, shell });
@@ -240,11 +260,24 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     await flush();
     expect(expired.result.current.status).toBe('unauthorized');
     cleanup();
-    const elsewhere = setup({}, { service: { ...simulated,
-      getAirPicture: vi.fn().mockRejectedValue(refused(404, 'not_found')) } });
+    // While the flights are on their way the refusal is not judged; once they answer, the source list says that the
+    // environment does not provide live traffic at this station, never that the account may not read it, and the
+    // refused picture is not asked again.
+    const notFound = () => vi.fn().mockRejectedValue(refused(404, 'not_found'));
+    const pending = () => new Promise(() => {});
+    const waiting = setup({}, { service: { ...simulated, getAirPicture: notFound(), getMapFlights: pending } });
     await flush();
-    expect(elsewhere.result.current).toMatchObject({ status: 'success', picture: null });
+    expect(waiting.result.current).toMatchObject({ status: 'loading', sourceState: 'idle' });
+    cleanup();
+    const elsewhereShell = createOccShellValue();
+    const noTraffic = { ...simulated, getAirPicture: notFound() };
+    const elsewhere = setup({}, { service: noTraffic, shell: elsewhereShell });
+    await flush();
+    expect(elsewhere.result.current).toMatchObject({ status: 'success', picture: null, sourceState: 'unconfigured' });
     expect(elsewhere.result.current.situation.aircraft).toEqual([]);
+    expect(airTraffic(elsewhereShell)).toMatchObject({ state: 'unconfigured' });
+    await flush(60_000);
+    expect(noTraffic.getAirPicture).toHaveBeenCalledTimes(1);
     cleanup();
 
     // No station: nothing is read.

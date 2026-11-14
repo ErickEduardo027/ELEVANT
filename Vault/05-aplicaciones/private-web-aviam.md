@@ -1167,8 +1167,10 @@ como planificado es el plan de los PR M6 y U3, no comportamiento actual.
   PUJ.
 - **Desde M5: aviones y crédito.** El mapa de Monitoreo dibuja los aviones de
   `air-picture` con su estela, une cada uno a su fila de `flights` por
-  `matchedFlightKey` y muestra «Datos de aeronaves: {source.name}», con el
-  enlace a la red y a su licencia, en su atribución y en una línea a la vista.
+  `matchedFlightKey` (también por la clave vieja de una visita enlazada con
+  3-N07, mediante `proposalId`) y muestra «Datos de aeronaves:
+  {source.name}», con el enlace a la red y a su licencia, en su atribución y
+  en una línea a la vista.
   El estado (`Live`, `Stale`, `Warming`, `Unavailable` o `Disabled`), los
   motivos y el crédito están en los mensajes del mapa, en español y en inglés,
   y nunca se muestra el título de un error.
@@ -1220,10 +1222,12 @@ de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
   siempre visible («ZZ161» y «B38M 026 150 → A5», con «GND» en tierra); la
   salida, una silueta hueca; el resto del tráfico, pequeño y tenue, con su
   etiqueta al pasar el puntero o al elegirlo. El tráfico ajeno en tierra no se
-  dibuja dentro de una posición que ocupa un vuelo de AVIAM o demo. Lo
-  estimado lleva un anillo discontinuo y «est.»; lo que no se actualiza va
-  atenuado, con su antigüedad; y un vuelo demo, la placa «Demo» de rayas. Las
-  siluetas son propias, una por categoría, y salen de una
+  dibuja dentro de una posición en la que ya está un avión de AVIAM o demo,
+  desde que llega a ella hasta que la deja; en la posición de un vuelo que
+  todavía no llega sí se dibuja, porque es el conflicto que OCC tiene que
+  ver. Lo estimado lleva un anillo discontinuo y «est.»; lo que no se
+  actualiza va atenuado, con su antigüedad; y un vuelo demo, la placa «Demo»
+  de rayas. Las siluetas son propias, una por categoría, y salen de una
   [tabla de dimensiones](../../frontend/private-web/src/features/maps/aircraft/types.js).
   Las estelas se desvanecen hacia la cola y nunca se unen a través de un hueco
   de datos.
@@ -1249,7 +1253,10 @@ de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
   «Cargando tráfico…», «No hay aviones en la zona», «No hay tráfico en vivo en
   este momento.» con su motivo y «Reintentar», «Tu acceso no incluye el
   tráfico en vivo.» o «Tráfico con retraso: último dato hace 4 min.». La lista
-  de fuentes de la barra de estado recibe el estado del tráfico aéreo.
+  de fuentes de la barra de estado recibe el estado del tráfico aéreo. Si la
+  imagen aérea falla, el mapa conserva los vuelos de ELEVANT y ofrece
+  «Reintentar»; en una estación sin tráfico en vivo dice que la fuente no está
+  configurada, y la lista de fuentes, «Sin configurar», no «Sin permiso».
 - **Menú de capas.** El botón «Capas» del mapa, o la tecla `L`, abre el
   [menú](../../frontend/private-web/src/features/maps/ui/MapLayersMenu.jsx)
   con el grupo Tráfico: «Vuelos de AVIAM», siempre visible, «Otro tráfico»,

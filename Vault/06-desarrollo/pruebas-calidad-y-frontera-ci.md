@@ -363,15 +363,19 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   vuelos se releen con `occ_planning` como mucho una vez cada 3 segundos, y
   cada 60 si no; que `Disabled`, `Unavailable`, `Stale` y `Warming` son datos y
   no errores; los cinco estados de la vista, con el no autorizado sin ninguna
-  petición; que el reloj se alimenta del `serverTime` y del ping; y que la
-  estela del avión elegido se lee una sola vez. Las pruebas del
+  petición; que una imagen aérea que falla, o el 404 de una estación sin
+  tráfico en vivo, deja el mapa con sus vuelos y la fuente «Sin conexión» o
+  «Sin configurar»; que el reloj se alimenta del `serverTime` y del ping; y
+  que la estela del avión elegido se lee una sola vez. Las pruebas del
   [reloj](../../frontend/private-web/src/services/serverClock.test.js), del
   [servicio](../../frontend/private-web/src/services/occMapService.test.js),
   del [modelo](../../frontend/private-web/src/features/maps/traffic/situationModel.test.js)
   y de las [estelas](../../frontend/private-web/src/features/maps/traffic/trailStore.test.js)
   prueban cada pieza sola: la muestra de menor ida y vuelta, el 401 que cierra
-  la sesión, un vuelo para un avión, el umbral derivado de «sin actualizar», el
-  tráfico oculto dentro de una posición ocupada y las estelas cortadas a
+  la sesión, un vuelo para un avión (también por la clave vieja de una visita
+  enlazada con 3-N07), el umbral derivado de «sin actualizar», el tráfico
+  oculto solo dentro de una posición en la que ya está un avión de AVIAM o
+  demo (nunca en la de un vuelo que todavía llega) y las estelas cortadas a
   `max(60 s, 3 × refreshAfterSeconds)`, con sus topes de 600 y 60 puntos.
 - **Tráfico sintético.**
   [`trafficFixtures.js`](../../frontend/private-web/src/features/maps/testing/trafficFixtures.js)
