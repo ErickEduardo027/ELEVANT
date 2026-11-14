@@ -191,6 +191,13 @@ Monitoreo](../../frontend/private-web/src/features/flight-monitoring/FlightMonit
 [verificación del build](../../frontend/private-web/scripts/verify-maplibre-worker.mjs) y
 [certificación](../../frontend/private-web/scripts/certify-image.sh).
 
+*Posterior al commit verificado (PR M5):* dentro del marco del OCC, el mapa de
+Monitoreo dibuja los aviones de la imagen aérea de la API, con el crédito de su
+red, y entre ellos los vuelos de la lista que la API reconoce; los vuelos que
+lee el servicio de monitoreo siguen sin coordenadas. El aviso «Sin posición de
+aeronaves en vivo…» ya no aparece: el estado del tráfico lo dice el propio
+mapa. Ver [Tráfico real en el mapa (PR M5)](#tráfico-real-en-el-mapa-pr-m5).
+
 En la rama de integración, Monitoreo y Mapa releen la estación autorizada
 cuando reciben `occ_planning` tras una asignación OCC. También refrescan al
 recuperar foco/conexión y cada 25 segundos con la pestaña visible; los sondeos
@@ -1140,15 +1147,16 @@ radioayudas que trajo el extracto de OurAirports. Las capturas se revisaron en
 local, en el laboratorio; nada de esto acredita un despliegue ni una revisión
 visual en el VPS.
 
-## Imagen aérea y vuelos para el mapa (PR A3, lo que consumirá M5)
+## Imagen aérea y vuelos para el mapa (PR A3)
 
 Posterior al commit verificado de esta nota: esta sección describe la API y el
 cliente compartido del PR A3 «Imagen aérea y vuelos para el mapa» (código de
 `77dff268` a `e098ccde`;
-[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)).
-**Private Web todavía no los usa:** ninguna pantalla cambió con ese PR, y lo
-que sigue sobre las pantallas es el plan de los PR M5, M6 y U3, no
-comportamiento actual.
+[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)). Ese PR no
+cambió ninguna pantalla. Desde el PR M5, también posterior a ese commit, los usa
+el mapa de Monitoreo de vuelos dentro del marco del OCC (ver
+[Tráfico real en el mapa (PR M5)](#tráfico-real-en-el-mapa-pr-m5)); lo marcado
+como planificado es el plan de los PR M6 y U3, no comportamiento actual.
 
 - **Lo que ya existe.** El cliente compartido ofrece `getOccAirPicture`,
   `getOccAircraftTrack` y `getOccMapFlights`, con validadores estrictos y el
@@ -1157,30 +1165,125 @@ comportamiento actual.
   interno con la estación en su alcance y un permiso de Panorama, Monitoreo de
   vuelos, Mapa de posiciones o Planificación; la imagen aérea solo existe para
   PUJ.
-- **Planificado (M5): aviones y crédito.** El mapa dibujará los aviones de
-  `air-picture` con su estela, unirá cada uno a su fila de `flights` por
-  `matchedFlightKey` y mostrará en la atribución de cada mapa «Datos de
-  aeronaves: {source.name}», con el enlace a la red y a su licencia. El estado
-  (`Live`, `Stale`, `Warming`, `Unavailable` o `Disabled`), los motivos y el
-  crédito se traducirán en los archivos de mensajes del OCC, en español y en
-  inglés, sin mostrar nunca el título de un error.
-- **Planificado: ritmo.** La imagen se pedirá al ritmo de
-  `refreshAfterSeconds` (10 segundos, 2 mientras calienta), con
-  `trails=short` una vez y `none` después, y en pausa con la pestaña oculta;
-  `flights`, con `occ_planning` (como mucho una vez cada 3 segundos) y un
-  sondeo de seguridad de 60; la estela completa, al elegir un avión. El
+- **Desde M5: aviones y crédito.** El mapa de Monitoreo dibuja los aviones de
+  `air-picture` con su estela, une cada uno a su fila de `flights` por
+  `matchedFlightKey` y muestra «Datos de aeronaves: {source.name}», con el
+  enlace a la red y a su licencia, en su atribución y en una línea a la vista.
+  El estado (`Live`, `Stale`, `Warming`, `Unavailable` o `Disabled`), los
+  motivos y el crédito están en los mensajes del mapa, en español y en inglés,
+  y nunca se muestra el título de un error.
+- **Desde M5: ritmo.** La imagen se pide al ritmo de `refreshAfterSeconds`
+  (10 segundos, 2 mientras calienta), con `trails=short` una vez y `none`
+  después, y en pausa con la pestaña oculta; `flights`, con `occ_planning`
+  (como mucho una vez cada 3 segundos) y un sondeo de seguridad de 60; la
+  estela completa, al elegir un avión. El
   [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
-  ya cuenta la imagen y los vuelos de la consola en la prueba de presupuesto.
-- **Planificado: seguir un vuelo.** La selección `flightId` aceptará una
-  `flightKey` o una `visitKey`. La clave de un vuelo no cambia con una
-  importación normal, así que «Seguir» no se suelta al importar; tras un
-  enlace 3-N07, la clave vieja se resuelve por `proposalId`.
-- **Planificado: hitos y vuelo demo (M5 y M6).** La barra de avance de cada
+  cuenta la imagen y los vuelos de la consola, y la prueba de presupuesto del
+  mapa, los de Monitoreo.
+- **Elegir un vuelo.** La selección `flightId` acepta una `flightKey`, una
+  `visitKey`, una pierna o una escala, y la clave vieja de una visita que OCC
+  enlazó a un vuelo planificado (3-N07) se resuelve por `proposalId`.
+  *Planificado (M6):* «Seguir»; como la clave de un vuelo no cambia con una
+  importación normal, no se soltará al importar.
+- **Planificado (M6 y U3): hitos y vuelo demo.** La barra de avance de cada
   posición y la tira de hitos saldrán de `milestones`, y el avión demo se
   ajustará a los instantes del bloque `demo`, sin derivar los suyos.
 - **El panel regional actual** del Panorama sigue con
   `GET occ/traffic/aircraft` (OpenSky, apagado sin credenciales) y sin
   reconocer vuelos de ELEVANT hasta que U3 lo retire.
+
+## Tráfico real en el mapa (PR M5)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M5 «Tráfico real en el mapa» (`48ae657e`, `585f07d3` y `03dda909`), que esa
+verificación no cubre. Las decisiones están en la actualización del 13 de
+noviembre de 2026 de [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+Hoy solo Monitoreo de vuelos, dentro del marco del OCC, dibuja el tráfico; Mapa
+de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
+
+- **De dónde salen los aviones.**
+  [`useMapSituation.js`](../../frontend/private-web/src/features/maps/useMapSituation.js)
+  pide las tres lecturas de A3 con el bucle del marco: la imagen aérea al ritmo
+  que pide el servidor (10 segundos) y los vuelos de ELEVANT con `occ_planning`
+  y cada 60 segundos, las dos en pausa con la pestaña oculta, y la estela
+  completa de un avión al elegirlo. El
+  [servicio del mapa](../../frontend/private-web/src/services/occMapService.js)
+  explica los errores por su código, sin mostrar el título del servidor, y
+  [`serverClock.js`](../../frontend/private-web/src/services/serverClock.js)
+  cuenta el tiempo con la hora del servidor. Un avión que la API reconoce como
+  vuelo de ELEVANT, por matrícula o por *callsign*, se dibuja como ese vuelo; un
+  vuelo de ELEVANT sin señal en vivo no se dibuja, y su bloque de datos dice
+  «Sin posición todavía».
+- **Cómo se lee cada avión**, sin color para lo normal
+  ([capas](../../frontend/private-web/src/features/maps/traffic/trafficLayers.js)):
+  la llegada de AVIAM es una silueta llena y más grande, con su etiqueta
+  siempre visible («ZZ161» y «B38M 026 150 → A5», con «GND» en tierra); la
+  salida, una silueta hueca; el resto del tráfico, pequeño y tenue, con su
+  etiqueta al pasar el puntero o al elegirlo. El tráfico ajeno en tierra no se
+  dibuja dentro de una posición que ocupa un vuelo de AVIAM o demo. Lo
+  estimado lleva un anillo discontinuo y «est.»; lo que no se actualiza va
+  atenuado, con su antigüedad; y un vuelo demo, la placa «Demo» de rayas. Las
+  siluetas son propias, una por categoría, y salen de una
+  [tabla de dimensiones](../../frontend/private-web/src/features/maps/aircraft/types.js).
+  Las estelas se desvanecen hacia la cola y nunca se unen a través de un hueco
+  de datos.
+- **Elegir un avión.** En Monitoreo, un clic en un vuelo de AVIAM elige ese
+  vuelo de la lista, y uno en otro avión escribe su dirección ADS-B en la URL
+  (`hex=`). Lo elegido va en cian, más grande y con su anillo. Su
+  [bloque de datos](../../frontend/private-web/src/features/maps/ui/FlightDataBlock.jsx),
+  fijo arriba a la izquierda del mapa, da el número, el tipo y la matrícula; el
+  origen y el destino, con su hora y la cuenta atrás; la altitud, la velocidad
+  y el rumbo; la posición, con «Pista 08» en un vuelo demo; y de dónde sale la
+  posición: «En vivo · hace 4 s», «Sin señal desde hace 45 s», la frase de lo
+  estimado o «Sin posición todavía». Marca «Vuelo demo», «Sin importar» y
+  «Cancelado por el proveedor (demo)», y enlaza «Ver escala», solo de un vuelo
+  importado, y «Ver posición». Su ruta es lo que voló, en línea sólida, y una
+  recta discontinua hasta su siguiente punto (su posición, el aeropuerto o su
+  destino), que M6 reemplazará por la trayectoria.
+- **Crédito y estado del tráfico.** Mientras hay aviones en pantalla, la
+  atribución del mapa y una línea a la vista, abajo a la izquierda, dicen
+  «Datos de aeronaves: {red}», con el enlace a la red y, si lo hay, a su
+  licencia
+  ([estado del tráfico](../../frontend/private-web/src/features/maps/ui/MapSourceStatus.jsx)).
+  El mismo componente dice el estado del tráfico con palabras propias:
+  «Cargando tráfico…», «No hay aviones en la zona», «No hay tráfico en vivo en
+  este momento.» con su motivo y «Reintentar», «Tu acceso no incluye el
+  tráfico en vivo.» o «Tráfico con retraso: último dato hace 4 min.». La lista
+  de fuentes de la barra de estado recibe el estado del tráfico aéreo.
+- **Menú de capas.** El botón «Capas» del mapa, o la tecla `L`, abre el
+  [menú](../../frontend/private-web/src/features/maps/ui/MapLayersMenu.jsx)
+  con el grupo Tráfico: «Vuelos de AVIAM», siempre visible, «Otro tráfico»,
+  «Etiquetas de todo el tráfico», «Estelas de todo el tráfico» y «Ruta del
+  vuelo elegido». El navegador guarda solo lo que difiere de lo que trae cada
+  vista (`elevant-occ-map-layers:v1`). Con el menú abierto, una `Esc` lo
+  cierra sin soltar lo elegido.
+- **Leyenda.** Suma, solo cuando están en pantalla, las clases de avión,
+  «Demo», «est.», «Sin actualizar», las estelas y la ruta del vuelo elegido.
+- **Monitoreo de vuelos.** La página pasa al mapa todos sus vuelos: uno que el
+  mapa ya dibuja como tráfico no se dibuja dos veces. El bloque de datos
+  reemplaza la ficha de la página para los vuelos que el mapa conoce; la ficha
+  sigue para uno que el mapa no conoce y mientras el mapa no puede dibujar
+  ([adaptador](../../frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx)).
+- **Laboratorio.** Siete escenas nuevas con tráfico sintético: tráfico mixto en
+  la región, una llegada demo, tráfico en tierra en la rampa, una imagen con
+  retraso y un vuelo estimado, un vuelo elegido, otro avión elegido y el menú
+  de capas abierto
+  ([escenas](../../frontend/private-web/src/features/maps/lab/trafficScenes.js)).
+  En el laboratorio la selección va en la URL (`flightId=` o `hex=`). Lo
+  estimado solo se ve ahí: el laboratorio pasa a mano las posiciones que
+  calculará M6. Las pruebas están en
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#tráfico-real-en-los-mapas-del-occ-pr-m5).
+
+Límites: Mapa de posiciones, Planificación y la plataforma de la consola
+todavía no dibujan tráfico, y no hay cinemática, modo seguir, huellas a escala
+ni barra de avance de los hitos, que llegan con M6. Los anillos de distancia,
+los ejes de pista, los aeropuertos de la región, la FIR, las radioayudas, el
+día y la noche, el satélite y el viento pasan a M8; por eso el menú de capas
+solo trae el grupo Tráfico. Desde M5, con el tráfico encendido (como en
+Development), abrir Monitoreo de vuelos en el OCC hace que la API lea la red de
+tráfico mientras la pestaña se ve y hasta 15 minutos después. Las capturas se
+revisaron en local, en el laboratorio; nada de esto acredita un despliegue ni
+una revisión visual en el VPS.
 
 ## Estado de integración
 
@@ -1241,7 +1344,8 @@ npm run build
 - smoke de creación del cliente OpenAPI compartido;
 - prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración;
 - *posterior al commit verificado (PR M2):* la suite visual de los mapas del OCC, con Playwright en Chrome y fuera del CI ([Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ));
-- *posterior al commit verificado (PR M3):* las pruebas del plano de MDPC, que corren con `npm test`: el plano versionado tiene que ser idéntico a lo que genera el generador ([prueba de igualdad](../../frontend/private-web/src/features/maps/airport/mdpcLayout.generated.test.js)) y cumplir los criterios de aceptación ([criterios](../../frontend/private-web/src/features/maps/airport/airportLayout.test.js)).
+- *posterior al commit verificado (PR M3):* las pruebas del plano de MDPC, que corren con `npm test`: el plano versionado tiene que ser idéntico a lo que genera el generador ([prueba de igualdad](../../frontend/private-web/src/features/maps/airport/mdpcLayout.generated.test.js)) y cumplir los criterios de aceptación ([criterios](../../frontend/private-web/src/features/maps/airport/airportLayout.test.js));
+- *posterior al commit verificado (PR M5):* la prueba de presupuesto del mapa, que repite un minuto demo y falla por encima de las 70 peticiones ([presupuesto](../../frontend/private-web/src/features/maps/useMapSituation.budget.test.jsx)), y el tráfico sintético que pasa los validadores estrictos del cliente compartido ([datos](../../frontend/private-web/src/features/maps/testing/trafficFixtures.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#tráfico-real-en-los-mapas-del-occ-pr-m5).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
 
