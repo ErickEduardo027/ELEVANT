@@ -1,3 +1,4 @@
+import { OCC_AERODROME_WEATHER_LIMITS } from '@elevant/api-client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 import { toWeatherReading, weatherService } from '../../services/weatherService';
@@ -14,25 +15,39 @@ import { MAP_PERMISSIONS } from '../maps/mapPermissions';
 /** The weather's own poll (contracts 2.7): ten minutes. */
 export const WEATHER_POLL_MS = 600_000;
 
-// El METAR rutinario de MDPC es horario: pasados 75 minutos falta al menos un reporte. Es un
-// criterio de frescura del dato, no un umbral meteorológico ni operacional.
-export const STALE_AFTER_MINUTES = 75;
+/**
+ * The oldest a METAR stays current, in minutes: the API's own limit for a live one
+ * (OCC_AERODROME_WEATHER_LIMITS.liveMetarMinutes), the age at which the map dims its wind as well
+ * (maps/traffic/referenceFeatures.js: WIND_MAX_AGE_MINUTES). MDPC reports every hour, so past it at least one report is
+ * missing. A freshness rule for the data, not a weather or operational threshold.
+ */
+export const STALE_AFTER_MINUTES = OCC_AERODROME_WEATHER_LIMITS.liveMetarMinutes;
 
 export function observationAgeMinutes(observedAt, now = Date.now()) {
   const time = Date.parse(observedAt ?? '');
   return Number.isNaN(time) ? null : Math.max(0, Math.floor((now - time) / 60_000));
 }
 
-export function isObservationStale(observedAt, now = Date.now()) {
-  const age = observationAgeMinutes(observedAt, now);
-  return age == null || age > STALE_AFTER_MINUTES;
+/**
+ * Whether a METAR is no longer current at `now` (milliseconds). The API's state comes first: `apiStatus` `Stale` is stale
+ * at any age (the server marks Stale a METAR past its live limit, and one it kept after the weather service failed,
+ * however recent). Otherwise it is stale when its instant is unknown or it is more than STALE_AFTER_MINUTES old, measured
+ * as the API measures a live one: a Live answer kept between two polls, or after failed refreshes, ages on this side.
+ * The same rule as the OCC frame's source list (weatherSourceState: Stale is `delayed`) and the map's wind
+ * (maps/traffic/weatherLayers.js: windReading). Without `apiStatus`, the age alone.
+ */
+export function isObservationStale(observedAt, now = Date.now(), apiStatus = null) {
+  if (apiStatus === 'Stale') return true;
+  const time = Date.parse(observedAt ?? '');
+  return Number.isNaN(time) || now - time > STALE_AFTER_MINUTES * 60_000;
 }
 
 const INITIAL = Object.freeze({
   status: 'loading', data: null, fetchedAt: null, refreshFailed: false, refreshing: false,
   apiStatus: null, taf: null, retrievedAt: null, source: null, error: null,
 });
-// The server refused the reader, or the session ended: nothing to read until the scope changes.
+// The server refused the reader (403), or the session ended (401): no read and no poll until the department access,
+// the station or `enabled` change, or refresh() asks again.
 const REFUSED = new Set([401, 403]);
 const ANSWERED = new Set(['success', 'empty']);
 const SOURCE_STATES = Object.freeze({ Live: 'ok', Stale: 'delayed', Unavailable: 'offline', Disabled: 'unconfigured' });
@@ -83,9 +98,11 @@ function failed(previous, error) {
  * - `service`: `{ getAerodromeWeather }` (services/weatherService.js: weatherService, or the simulated adapter).
  *
  * Reads when the account may read a map (any of MAP_PERMISSIONS, once the department access is loaded; the server
- * decides when it is not); a 401 or 403 stops it until the station or `enabled` change. The state of the weather
- * service (Live, Stale, Unavailable, Disabled) is data, never an error, and goes to the OCC frame's source list as
- * `weather`, tagged «No oficial».
+ * decides when it is not). A 401 or 403 stops it, poll included, until the department access changes (a new access
+ * object: the OCC shell refreshes it on department_users and access_requests), the station or `enabled` change, or
+ * refresh() is called; then it reads once more and the server decides again, as useOccResource does (contracts 2.7).
+ * The state of the weather service (Live, Stale, Unavailable, Disabled) is data, never an error, and goes to the OCC
+ * frame's source list as `weather`, tagged «No oficial».
  *
  * Returns `{ status, data, fetchedAt, refreshFailed, refreshing, refresh, apiStatus, taf, retrievedAt, source, error }`:
  * - `status`: `loading` (also while nothing is read), `success` (Live or Stale: `data` holds the METAR), `empty`
@@ -93,7 +110,9 @@ function failed(previous, error) {
  *   `unauthorized`.
  * - `data`: `{ station, observedAt, metar, derived, source, flightCategory, decoded }` (services/weatherService.js:
  *   toWeatherReading), or null. A failed refresh keeps the last answer and sets `refreshFailed`; nothing is made up.
+ *   Whether its METAR is still current is isObservationStale(data.observedAt, now, apiStatus).
  * - `fetchedAt`: when this browser got the last answer (ISO); `refreshing` while a refresh with an answer runs.
+ * - `refresh()`: reads again at once, also after a 401 or 403 (a person's retry; the poll never asks a refused reader).
  * - `apiStatus`, `taf` (features/weather/taf.js: toTafModel, or null), `retrievedAt` (the last time the weather
  *   service answered the API, ISO or null) and `source` (the credit, `{ name, url, homeUrl, official: false }`) of the
  *   last answer; `error`, the last failure (services/weatherService.js: weatherMessage explains it).
@@ -109,19 +128,30 @@ export function useMdpcWeather({ enabled = true, stationId, service = weatherSer
 
   const [state, setState] = useState(() => ({ ...INITIAL, scope }));
   const [revision, setRevision] = useState(0);
+  // The department access the hook last saw. A new object lets the server decide again on a refused reader: it starts
+  // again, and reads once more if the account may read a map.
+  const [seenAccess, setSeenAccess] = useState(access);
+  if (seenAccess !== access) {
+    setSeenAccess(access);
+    if (state.status === 'unauthorized') setState({ ...INITIAL, scope: state.scope });
+  }
   // A new station, or reading switched on or off, starts again: nothing of another scope stays on screen.
   if (state.scope !== scope) setState({ ...INITIAL, scope });
   const view = reading && withoutMap ? INITIAL : state;
   const status = reading && withoutMap ? 'unauthorized' : view.status;
   const active = reading && !withoutMap && state.scope === scope && state.status !== 'unauthorized';
 
-  const refresh = useCallback(() => {
+  // Reads again: a reading with an answer keeps it while it refreshes; one without shows loading. Only `retry` (a
+  // person's refresh()) asks a refused reader again; the poll and the browser back online never do.
+  const requestRead = useCallback(retry => {
     setState(previous => {
-      if (previous.status === 'unauthorized') return previous;
+      if (previous.status === 'unauthorized') return retry ? { ...INITIAL, scope: previous.scope } : previous;
       return ANSWERED.has(previous.status) ? { ...previous, refreshing: true } : { ...previous, status: 'loading' };
     });
     setRevision(value => value + 1);
   }, []);
+  const refresh = useCallback(() => requestRead(true), [requestRead]);
+  const reread = useCallback(() => requestRead(false), [requestRead]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -142,14 +172,14 @@ export function useMdpcWeather({ enabled = true, stationId, service = weatherSer
   useEffect(() => {
     if (!active) return undefined;
     const poll = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refresh();
+      if (document.visibilityState === 'visible') reread();
     }, WEATHER_POLL_MS);
-    window.addEventListener('online', refresh);
+    window.addEventListener('online', reread);
     return () => {
       window.clearInterval(poll);
-      window.removeEventListener('online', refresh);
+      window.removeEventListener('online', reread);
     };
-  }, [active, refresh]);
+  }, [active, reread]);
 
   // The weather in the OCC frame's source list, with the time of its METAR and the tag «No oficial».
   const channel = useOptionalOccShellChannel();

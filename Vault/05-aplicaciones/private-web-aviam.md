@@ -160,7 +160,7 @@ En el rediseño local posterior, la consola usa una superficie NOC única: plata
 El catálogo activo del dashboard recupera las 42 ubicaciones internas originales: 41 se dibujan y B33 permanece como registro histórico fuera de la vista operativa. Incluye B34–B37 y conserva las 13 coordenadas internas de B20–B32. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) y la [enmienda de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf) sirven solo como referencias de conciliación. La enmienda retira B33; las coordenadas internas difieren de la documentación AIP, especialmente B20–B32, y **no se declaran oficiales ni verificadas**. No consta permiso de IDAC para procesar coordenadas AIP, de acuerdo con su [política de uso](https://aip.sna.gob.do/Aip/CircularSerA); el frontend ya no contiene la transcripción previa. Los códigos planificados sin coincidencia exacta en el catálogo activo, incluido B33, se listan sin ubicación. No hay alias automáticos entre A1 y 1 ni entre códigos parecidos.
 
 Los dos mapas auxiliares se amplían:
-- **Meteorología MDPC:** *posterior al commit verificado (PR M8, mapas; ver [Referencias y meteorología en el mapa (PR M8)](#referencias-y-meteorología-en-el-mapa-pr-m8)):* el METAR actual llega de la API (`GET occ/weather`, que lo trae del Aviation Weather Center de NOAA) y se rotula «No oficial». Iowa Environmental Mesonet, una réplica no oficial, solo da el historial de 6 horas de la vista ampliada, y el texto de procedencia del panel la sigue nombrando hasta que U3 lo retire. La interfaz separa la hora observada de la recepción local, avisa tras 75 minutos y conserva el aviso de un refresco fallido. La humedad relativa, la sensación térmica y la precipitación horaria eran valores derivados de campos de IEM: la API no los trae, y el panel ya no los muestra. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa.
+- **Meteorología MDPC:** *posterior al commit verificado (PR M8, mapas; ver [Referencias y meteorología en el mapa (PR M8)](#referencias-y-meteorología-en-el-mapa-pr-m8)):* el METAR actual llega de la API (`GET occ/weather`, que lo trae del Aviation Weather Center de NOAA) y se rotula «No oficial». Iowa Environmental Mesonet, una réplica no oficial, solo da el historial de 6 horas de la vista ampliada, y el texto de procedencia del panel la sigue nombrando hasta que U3 lo retire. La interfaz separa la hora observada de la recepción local, avisa cuando el METAR pasa de 90 minutos, el límite de la API para uno en vivo (antes eran 75, y su texto todavía lo dice), y conserva el aviso de un refresco fallido. Con el clima `Unavailable` o `Disabled`, o sin permiso, deja la franja del METAR en blanco, sin mensaje, hasta que U3 lo retire. La humedad relativa, la sensación térmica y la precipitación horaria eran valores derivados de campos de IEM: la API no los trae, y el panel ya no los muestra. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa.
 - **Región de República Dominicana:** cartografía OpenStreetMap/OpenFreeMap con referencia PUJ. La rama local consulta el nuevo endpoint OCC y dibuja una marca por ICAO24 con posición OpenSky disponible; rumbo y otros campos pueden ser nulos. Seleccionar una marca abre la ficha de telemetría, separada de los vuelos y stands de planificación. No se infiere aterrizaje, destino ni ocupación por callsign o proximidad.
 
 En esta rama local, la certificación de la imagen AVIAM compara la CSP generada con una lista cerrada que incluye la API certificada, su WebSocket, dos orígenes cartográficos, IEM y NASA GIBS. Rechaza fuentes adicionales o ausentes; la prueba usa la política que genera la aplicación para evitar otra divergencia. Fuentes: [validador](../../frontend/scripts/deployment/csp-tool.mjs), [pruebas](../../frontend/tests/deployment/test-csp-tool.mjs) y [política AVIAM](../../frontend/private-web/src/config/securityHeaders.mjs).
@@ -1453,11 +1453,16 @@ de noviembre de 2026 sobre M8 (mapas) de
   nunca con `occ_planning`, y suma el estado del servicio (`Live`, `Stale`,
   `Unavailable` o `Disabled`, un dato y no un error), el TAF, la hora en que el
   servicio respondió por última vez y el crédito. Lee solo con un permiso de
-  mapa, y la barra de estado recibe la fuente «Clima MDPC» con la marca «No
-  oficial». Lo leen Monitoreo de vuelos (dentro del marco del OCC), Mapa de
-  posiciones, Planificación y el panel de meteorología de la consola actual. El
-  navegador ya no pide el METAR actual a Iowa Environmental Mesonet: solo el
-  historial de 6 horas de ese panel lo sigue leyendo, hasta que U3 lo retire.
+  mapa; tras un 401 o un 403 deja de leer, sondeo incluido, hasta que cambia
+  el acceso del departamento o alguien vuelve a pedirlo, y entonces decide de
+  nuevo el servidor. Un METAR está sin actualizar si la API lo marca `Stale` o
+  si pasa de 90 minutos, el límite de la API para uno en vivo: la misma regla
+  que sigue el viento del mapa. La barra de estado recibe la fuente «Clima
+  MDPC» con la marca «No oficial». Lo leen Monitoreo de vuelos (dentro del
+  marco del OCC), Mapa de posiciones, Planificación y el panel de meteorología
+  de la consola actual. El navegador ya no pide el METAR actual a Iowa
+  Environmental Mesonet: solo el historial de 6 horas de ese panel lo sigue
+  leyendo, hasta que U3 lo retire.
 - **El TAF.**
   [`taf.js`](../../frontend/private-web/src/features/weather/taf.js) une el
   texto en bruto y los periodos de la API, dice qué periodo rige y cuál viene, y
@@ -1525,7 +1530,12 @@ sigue permitiendo NASA GIBS e Iowa Mesonet; el origen de Iowa Mesonet sale en
 un cambio aparte cuando nada lo lea.
 
 Límites: la plataforma de la consola actual no recibe el clima, y su panel de
-meteorología todavía dice que su METAR viene de IEM, aunque ya llega de la API;
+meteorología todavía dice que su METAR viene de IEM, aunque ya llega de la API.
+Ese panel tampoco muestra los estados vacío y sin permiso del hook: con el
+clima `Unavailable` o `Disabled` (como en Production y en el arnés E2E), o sin
+permiso, deja la franja del METAR en blanco, sin mensaje ni «Reintentar», y su
+aviso de METAR desactualizado mira solo la edad, no el estado `Stale` de la
+API. El carril de mapas no edita ese panel, así que es una dependencia con U3;
 *planificado (U3):* la consola nueva lo reemplaza, con la pastilla del clima y
 el TAF. La pista según las llegadas cuenta solo los aviones que llegan en ese
 momento: entre dos llegadas vuelve al viento o a la 08. No hay SIGMET ni NOTAM.

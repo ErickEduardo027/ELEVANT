@@ -476,10 +476,14 @@ llama a aviationweather.gov, a Iowa Mesonet ni a NASA GIBS.
   comprueba que no lee apagado o sin estación, y que toma la de la sesión del
   OCC; los estados (`Live` y `Stale` con datos; `Unavailable` y `Disabled`
   vacíos, con el crédito; el error de la primera lectura y la relectura fallida
-  que conserva los datos); que un 403 detiene el sondeo; el sondeo de 10
-  minutos, solo con la pestaña a la vista, y la lectura al volver la conexión;
-  que su respuesta conserva las claves de antes; y que informa su estado a la
-  lista de fuentes del marco.
+  que conserva los datos); que un 403 detiene el sondeo hasta que llega un
+  acceso nuevo o alguien pide `refresh()`, y que entonces vuelve a leer; el
+  sondeo de 10 minutos, solo con la pestaña a la vista, y la lectura al volver
+  la conexión; que su respuesta conserva las claves de antes; que informa su
+  estado a la lista de fuentes del marco; y que la regla de frescura es la
+  misma en el marco, el viento del mapa e `isObservationStale` (un METAR `Live`
+  de 80 minutos al día, uno `Stale` de 40 sin actualizar y el límite de 90
+  minutos medido al milisegundo).
 - **TAF y viento por pista.**
   [`taf.test.js`](../../frontend/private-web/src/features/weather/taf.test.js)
   corta el texto en bruto en sus grupos, ordena los periodos, dice qué rige

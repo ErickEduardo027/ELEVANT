@@ -263,11 +263,17 @@ describe('the old dashboard METAR history (Iowa Environmental Mesonet, until PR 
     await expect(loadRecentMetars()).rejects.toBeInstanceOf(WeatherUnavailableError);
   });
 
-  it('measures observation age and flags reports older than one routine cycle', () => {
+  it('measures observation age and flags reports past the API live limit, or that the API marks Stale', () => {
     const now = Date.parse('2026-10-11T20:10:00Z');
     expect(observationAgeMinutes('2026-10-11T19:00:00Z', now)).toBe(70);
     expect(isObservationStale('2026-10-11T19:00:00Z', now)).toBe(false);
-    expect(isObservationStale('2026-10-11T18:50:00Z', now)).toBe(true);
+    // 80 minutes is still live for the API (90 at most), so for the panels too; past 90 it is not.
+    expect(isObservationStale('2026-10-11T18:50:00Z', now)).toBe(false);
+    expect(isObservationStale('2026-10-11T18:40:00Z', now)).toBe(false);
+    expect(isObservationStale('2026-10-11T18:39:59Z', now)).toBe(true);
     expect(isObservationStale(null, now)).toBe(true);
+    // The API's state comes first: a Stale METAR is stale whatever its age; a Live one by its age.
+    expect(isObservationStale('2026-10-11T19:30:00Z', now, 'Stale')).toBe(true);
+    expect(isObservationStale('2026-10-11T19:30:00Z', now, 'Live')).toBe(false);
   });
 });
