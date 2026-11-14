@@ -220,7 +220,9 @@ export default function PositionActions({ position, candidates = [], onChanged, 
         <p className="text-text-secondary-light dark:text-text-secondary-dark">
           {position.locationSource === 'occ'
             ? `Ubicación registrada por OCC (${Number(position.latitude).toFixed(5)}, ${Number(position.longitude).toFixed(5)}).`
-            : 'Ubicación de referencia interna, sin verificar. Ubícala en el mapa para que OCC y Planificación usen la real.'}
+            : position.locationSource === 'none'
+              ? 'El mapa no la dibuja todavía. Ubícala en el mapa para que OCC y Planificación la vean.'
+              : 'Ubicación de referencia interna, sin verificar. Ubícala en el mapa para que OCC y Planificación usen la real.'}
         </p>
         <div className="flex flex-wrap gap-2">
           {onStartPlacing && <button type="button" className={buttonClass} disabled={Boolean(busy)}

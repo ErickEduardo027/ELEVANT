@@ -9,9 +9,33 @@ import { PUJ_ARP, presetTargets } from '../../maps/core/cameraPresets';
 import { liveEngineCount } from '../../maps/core/mapEngine';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { OPENFREEMAP_TILEJSON } from '../../maps/style/occStyle';
+import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../../access/testAccess';
+import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
+import {
+  createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_STATION_ID,
+} from '../../maps/testing/trafficFixtures';
 import FlightMap from './FlightMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+// Inside the OCC shell the map reads the station of the session and the map service; both are synthetic here: the
+// session holds the station of the traffic fixtures, and the service answers their scenario without the network.
+vi.mock('../../auth/AuthContext', () => ({
+  useAuth: () => ({ session: { stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] } }),
+}));
+// The reads of the synthetic service a test makes fail (a 503) from then on, and how many failed.
+const failing = vi.hoisted(() => ({ airPicture: false, mapFlights: false, failed: { airPicture: 0, mapFlights: 0 } }));
+vi.mock('../../../services/occMapService', async () => {
+  const actual = await vi.importActual('../../../services/occMapService');
+  const { createTrafficScenario } = await import('../../maps/testing/trafficFixtures');
+  const simulated = actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() });
+  const failable = read => async input => {
+    if (!failing[read]) return simulated[read === 'airPicture' ? 'getAirPicture' : 'getMapFlights'](input);
+    failing.failed[read] += 1;
+    throw Object.assign(new Error('The synthetic service is unavailable.'), { status: 503 });
+  };
+  return { ...actual, occMapService: { ...simulated, getAirPicture: failable('airPicture'), getMapFlights: failable('mapFlights') } };
+});
 
 const fake = sharedFakeMapLibre();
 const PAGE = '/admin-occ/flight-monitoring?stationId=s-1';
@@ -278,5 +302,242 @@ describe('FlightMap', () => {
     unmount();
     expect(fake.state.liveMaps()).toEqual([]);
     expect(liveEngineCount()).toBe(before);
+  });
+});
+describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
+  const ACCESS = administratorAccess('operations', DepartmentPermissionCodes.operations);
+  // The page's flights of the visit ZZ161 (ids are leg ids, as the planning snapshot gives them), and one more.
+  const [arrivalRow, departureRow] = createMapFlights().flights;
+  const pageFlight = (row, extra = {}) => ({ id: row.legId, flightNumber: row.flightNumber, latitude: null, longitude: null,
+    heading: null, ...extra });
+  const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  // `shell` (createOccShellValue) lets a test announce `occ_planning` and read the shell's list of sources.
+  function renderLive(props = {}, { shell } = {}) {
+    const element = next => (
+      <DepartmentAccessProvider initialAccess={ACCESS} load={vi.fn().mockResolvedValue(ACCESS)} observe={false}>
+        <OccShellTestProvider value={shell}>
+          <FlightMap flights={[pageFlight(arrivalRow), pageFlight(departureRow)]} selectedFlightId={null}
+            onSelectFlight={() => {}} theme="dark" {...next} />
+        </OccShellTestProvider>
+      </DepartmentAccessProvider>
+    );
+    const view = render(element(props));
+    return { ...view, map: fake.state.liveMaps().at(-1), rerender: next => view.rerender(element({ ...props, ...next })) };
+  }
+  const drawnIds = map => map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id));
+  const airTrafficSource = shell => shell.sourceStore.getSnapshot().find(item => item.id === 'airTraffic') ?? null;
+  const trafficChip = () => within(screen.getByTestId('map-source-status')).queryByRole('status', { name: 'Estado del tráfico' });
+  const flightsNotice = () => screen.queryByRole('status', { name: 'Estado de los vuelos de AVIAM' });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(Date.parse(TRAFFIC_NOON));
+    Object.assign(failing, { airPicture: false, mapFlights: false, failed: { airPicture: 0, mapFlights: 0 } });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('draws the live traffic of the station, says nothing more while all is well and credits its source', async () => {
+    const { map } = renderLive();
+    expect(map.options.style.sources['occ-traffic']).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    loadStyle(map);
+    await flush();
+    const drawn = map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id));
+    expect(drawn).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(drawn).toContain(`h:${TRAFFIC_HEX.overflight}`);
+    // The credit of the aircraft data, as a link over the map and in its attribution; no chip while the picture is Live.
+    const status = screen.getByTestId('map-source-status');
+    expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toHaveAttribute('href', 'https://example.org/adsb');
+    expect(within(status).queryByRole('status')).not.toBeInTheDocument();
+    const attribution = map.controls.find(entry => entry.control instanceof fake.module.AttributionControl).control;
+    expect(attribution.options.customAttribution).toContain('Datos de aeronaves');
+    // The legend explains the traffic on screen.
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
+  });
+
+  it('keeps the traffic chip on the air picture when the AVIAM flights fail, and says that apart', async () => {
+    const shell = createOccShellValue();
+    failing.mapFlights = true;
+    const { map } = renderLive({}, { shell });
+    loadStyle(map);
+    await flush();
+    expect(failing.failed.mapFlights).toBe(1);
+    // The picture is Live: its aircraft are drawn, as other traffic while no flight names them, with their credit.
+    expect(drawnIds(map)).toContain(`h:${TRAFFIC_HEX.arrival}`);
+    const status = screen.getByTestId('map-source-status');
+    expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toBeInTheDocument();
+    // No chip says that the traffic is down or late: the chip and the shell's list of sources agree that it is live.
+    expect(trafficChip()).not.toBeInTheDocument();
+    expect(status).not.toHaveTextContent(/No hay tráfico en vivo|Tráfico con retraso/);
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'ok' });
+    // The AVIAM flights say it on their own, and «Reintentar» reads them again.
+    const notice = flightsNotice();
+    expect(notice).toHaveTextContent('No se pudieron cargar los vuelos de AVIAM.');
+    failing.mapFlights = false;
+    fireEvent.click(within(notice).getByRole('button', { name: 'Reintentar' }));
+    await flush();
+    expect(flightsNotice()).not.toBeInTheDocument();
+    expect(drawnIds(map)).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(trafficChip()).not.toBeInTheDocument();
+  });
+
+  it('says nothing of the traffic when a refresh of the AVIAM flights fails', async () => {
+    const shell = createOccShellValue();
+    const { map } = renderLive({}, { shell });
+    loadStyle(map);
+    await flush();
+    failing.mapFlights = true;
+    act(() => shell.announce(['occ_planning']));
+    await flush(3_000);
+    expect(failing.failed.mapFlights).toBe(1);
+    // The map keeps the flights of its last read and the traffic stays live: no chip and no notice.
+    expect(within(screen.getByTestId('map-source-status')).queryByRole('status')).not.toBeInTheDocument();
+    expect(drawnIds(map)).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'ok' });
+  });
+
+  it('ages the picture on the server clock after a refresh of it fails', async () => {
+    const shell = createOccShellValue();
+    const { map } = renderLive({}, { shell });
+    loadStyle(map);
+    await flush();
+    expect(trafficChip()).not.toBeInTheDocument();
+    // The next picture, 10 s later, fails. The one on screen was 2 s old when the server answered it at noon.
+    failing.airPicture = true;
+    await flush(10_000);
+    expect(failing.failed.airPicture).toBe(1);
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'delayed' });
+    expect(trafficChip()).toHaveTextContent('Tráfico con retraso: último dato hace 12 s.');
+    // It keeps counting with the server's clock between two reads, never from the instant of the last answer.
+    await flush(5_000);
+    expect(trafficChip()).toHaveTextContent('Tráfico con retraso: último dato hace 17 s.');
+    await flush(20_000);
+    expect(failing.failed.airPicture).toBe(2);
+    expect(trafficChip()).toHaveTextContent('Tráfico con retraso: último dato hace 37 s.');
+    // The picture answers again: the chip goes.
+    failing.airPicture = false;
+    await flush(40_000);
+    expect(trafficChip()).not.toBeInTheDocument();
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'ok' });
+  });
+
+  it('draws a flight the traffic shows once, as traffic, and selects the page\'s flight from its aircraft', async () => {
+    const onSelectFlight = vi.fn();
+    // ZZ161 has a position of its own on the page, but the traffic already draws its aircraft: it is not drawn twice.
+    const { map } = renderLive({ onSelectFlight,
+      flights: [pageFlight(arrivalRow, { latitude: 18.9, longitude: -68.6, heading: 90 }), pageFlight(departureRow, { latitude: 19, longitude: -68.5 })] });
+    loadStyle(map);
+    await flush();
+    expect(map.getSource('occ-flights').data.features.map(feature => feature.properties.id)).toEqual([departureRow.legId]);
+
+    // A click on the ELEVANT aircraft selects the page's flight by its leg.
+    const click = feature => {
+      fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes(feature.layer.id) ? [feature] : []));
+      return act(async () => { fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat: { lng: -68.5, lat: 18.5 } }); });
+    };
+    await click({ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, flightKey: TRAFFIC_FLIGHT_KEY.arrival } });
+    expect(onSelectFlight).toHaveBeenLastCalledWith(arrivalRow.legId);
+    // The demo arrival has no row on the page: it is selected by its key.
+    await click({ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`, flightKey: TRAFFIC_FLIGHT_KEY.demoArrival } });
+    expect(onSelectFlight).toHaveBeenLastCalledWith(TRAFFIC_FLIGHT_KEY.demoArrival);
+    // Other traffic is selected by its address in the URL, and the page's flight is let go.
+    await click({ layer: { id: 'occ-traffic-other' }, properties: { id: `h:${TRAFFIC_HEX.overflight}`, hex: TRAFFIC_HEX.overflight } });
+    expect(onSelectFlight).toHaveBeenLastCalledWith(null);
+    expect(new URLSearchParams(window.location.search).get('hex')).toBe(TRAFFIC_HEX.overflight);
+    expect(new URLSearchParams(window.location.search).get('stationId')).toBe('s-1');
+  });
+
+  it('shows the chosen flight drawn by the traffic in cyan, by the page\'s leg id', async () => {
+    const { map, rerender } = renderLive();
+    loadStyle(map);
+    await flush();
+    rerender({ selectedFlightId: arrivalRow.legId });
+    await flush();
+    const last = map.getSource('occ-traffic').updateDataCalls.at(-1);
+    expect(last.update).toEqual(expect.arrayContaining([{ id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, addOrUpdateProperties:
+      expect.arrayContaining([{ key: 'selected', value: true }]) }]));
+  });
+
+  it('is the plain map outside the OCC shell, without live traffic', () => {
+    const { map } = renderFlights({ flights: [flight({ id: 1 })], selectedFlightId: 1,
+      detail: <div role="dialog" aria-label="Detalle del vuelo ZZ101" /> });
+    expect(map.options.style.sources['occ-traffic']).toBeUndefined();
+    expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
+    expect(TRAFFIC_STATION_ID).toBe('5a000000-0000-4000-8000-000000000001');
+    // Without the traffic there is no data block and no layers menu: the page's own card of its flight shows instead.
+    loadStyle(map);
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Detalle del vuelo ZZ101' })).toBeInTheDocument();
+  });
+
+  it('shows the data block of the selected flight', async () => {
+    const onSelectFlight = vi.fn();
+    const { map, rerender } = renderLive({ selectedFlightId: arrivalRow.legId, onSelectFlight });
+    loadStyle(map);
+    await flush();
+    // Docked at the top left, named with the flight number, with its route, its time and where its position comes from.
+    const block = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });
+    expect(block).toBe(screen.getByTestId('flight-data-block'));
+    expect(block).toHaveStyle({ top: '12px', left: '12px' });
+    expect(within(block).getByText('MIA')).toBeInTheDocument();
+    expect(block).toHaveTextContent('Llega 11:10 · en 10 min');
+    expect(block).toHaveTextContent('Posición A5');
+    const sourceLine = () => screen.getByTestId('flight-data-block').querySelector('[data-source-line]');
+    expect(sourceLine()).toHaveTextContent('En vivo · hace 4 s');
+    expect(within(block).getByRole('link', { name: 'Ver escala' }))
+      .toHaveAttribute('href', `/admin-occ/planning?stationId=${TRAFFIC_STATION_ID}&flightId=${arrivalRow.legId}`);
+    // The map reads the aircraft's track once and draws its route: what it flew, and the straight line to A5.
+    const route = map.getSource('occ-route').data;
+    expect(route.features.map(feature => [feature.properties.part, feature.properties.to ?? null]))
+      .toEqual([['flown', null], ['next', 'stand']]);
+    // The age counts up on its own between two reads of the picture.
+    await flush(2_000);
+    expect(sourceLine()).toHaveTextContent('En vivo · hace 6 s');
+    // «Cerrar» lets the flight go.
+    fireEvent.click(within(screen.getByTestId('flight-data-block')).getByRole('button', { name: 'Cerrar' }));
+    expect(onSelectFlight).toHaveBeenLastCalledWith(null);
+
+    // Other traffic chosen by its address: its own block, «Otro tráfico», without a route to anywhere.
+    rerender({ selectedFlightId: null });
+    act(() => window.history.replaceState({}, '', `${PAGE}&hex=${TRAFFIC_HEX.overflight}`));
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flush();
+    const other = screen.getByRole('dialog', { name: 'Vuelo ZZZ804' });
+    expect(within(other).getByText('Otro tráfico')).toBeInTheDocument();
+    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    // The layers menu is in the dock.
+    expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' })).toBeInTheDocument();
+  });
+
+  it('keeps the page\'s card for a flight the map does not know', async () => {
+    const card = <div role="dialog" aria-label="Detalle del vuelo ZZ999" />;
+    const outside = { id: 'leg-zz999', flightNumber: 'ZZ999', latitude: null, longitude: null, heading: null };
+    const { map, rerender } = renderLive({ flights: [pageFlight(arrivalRow), outside], selectedFlightId: outside.id,
+      detail: card });
+    // Nothing while the map reads, so no card flashes before the map's own.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    loadStyle(map);
+    await flush();
+    expect(screen.getByRole('dialog', { name: 'Detalle del vuelo ZZ999' })).toBeInTheDocument();
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
+    // A flight the map knows has its data block, and the page's card goes.
+    rerender({ selectedFlightId: arrivalRow.legId, detail: <div role="dialog" aria-label="Detalle del vuelo ZZ161" /> });
+    await flush();
+    expect(screen.getAllByRole('dialog').map(dialog => dialog.getAttribute('aria-label'))).toEqual(['Vuelo ZZ161']);
+    cleanup();
+
+    // While the map cannot draw, its fallback list covers it: the page's card stays, not the map's data block.
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    renderLive({ selectedFlightId: arrivalRow.legId, detail: <div role="dialog" aria-label="Detalle del vuelo ZZ161" /> });
+    await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent('El mapa no está disponible en este navegador');
+    expect(screen.getAllByRole('dialog').map(dialog => dialog.getAttribute('aria-label'))).toEqual(['Detalle del vuelo ZZ161']);
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
   });
 });

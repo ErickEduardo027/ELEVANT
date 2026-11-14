@@ -2,26 +2,40 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { addProtocol, removeProtocol } from 'maplibre-gl';
+import { parseInstant } from '../../../services/serverClock';
 import { liveEngineCount } from '../core/mapEngine';
 import OccMap from '../core/OccMap';
+import { useOccMap } from '../core/OccMapContext';
 import { useMapSelection } from '../core/useMapSelection';
+import { useStandDisplay } from '../stands/useStandDisplay';
 import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
+import { createTelemetryStore } from '../traffic/telemetryStore';
+import FlightDataBlock from '../ui/FlightDataBlock';
 import MapDock from '../ui/MapDock';
+import MapLayersMenu from '../ui/MapLayersMenu';
 import MapLegend from '../ui/MapLegend';
 import MapPresetSwitcher from '../ui/MapPresetSwitcher';
+import MapSourceStatus from '../ui/MapSourceStatus';
 import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
 import LayoutQaScene from './LayoutQaScene';
 import { SCENES, readLabQuery } from './scenes';
+import { labTraffic } from './trafficScenes';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
 // the API, for the visual suite (tests/visual) and for a person checking the map by eye. The URL says what to show:
 // `?scene=` the scene, `?basemap=none` the style without the vector tiles, `?t=<ISO>` a frozen map clock (MapLibre's
-// setNow, with symbol fades off), and the selection keys of the OCC map (stand=, view=, terminal=). It exposes
-// `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code of the scene), flyToPreset,
-// whenIdle, liveMaps (the live engines: one after a StrictMode double mount) and refresh (the «Releer posiciones»
-// button). The review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
+// setNow, with symbol fades off, and the instant the stands read at; without it they read at the scene's own instant),
+// and the selection keys of the OCC map (stand=, view=, terminal=). A scene that places a stand draws its box at the
+// pointer and its pending location; a click on the map moves the pending location and Esc stops the placing (there is
+// no API to save it). It exposes `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code
+// of the scene), flyToPreset, jumpTo, whenIdle, liveMaps (the live engines: one after a StrictMode double mount),
+// refresh (the «Releer posiciones» button) and placing (the stand being placed and its pending location, or null). The
+// review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
+// A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), the data block of
+// the aircraft the URL selects (flightId= or hex=) and the layers menu, and the handle adds aircraftAt(id), where the
+// map draws one of its aircraft.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -38,6 +52,21 @@ function cutBasemap(url) {
 }
 
 const copyStands = stands => stands.map(stand => ({ ...stand }));
+// The data block is docked at the top left of the map, as Monitoreo docks it.
+const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+
+// A scene that opens with its layers menu open (region-layers-menu): once, as soon as the map offers its layers.
+function OpenLayersMenu() {
+  const { layers, setLayersMenuOpen } = useOccMap();
+  const offered = layers.keys.length > 0;
+  const openedRef = useRef(false);
+  useEffect(() => {
+    if (!offered || openedRef.current) return;
+    openedRef.current = true;
+    setLayersMenuOpen(true);
+  }, [offered, setLayersMenuOpen]);
+  return null;
+}
 
 // Layout effects run before the passive effect in which OccMap starts its engine (StrictMode re-runs them in the same
 // order), so each of these, and the frozen clock of labChrome.jsx, is in place before the map is created and is undone
@@ -73,7 +102,32 @@ function LabScene({ scene, basemap, frozenAt }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
+  // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
+  const standClock = frozenAt ?? scene.at ?? null;
+  const displayed = useStandDisplay(stands, { nowMs: standClock });
   const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
+  // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built at the frozen clock for the URL's selection:
+  // the lab never polls. Every trail is there; the map shows the other traffic's only when the layers menu asks.
+  const traffic = useMemo(() => (scene.traffic
+    ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true })
+    : null), [scene.traffic, frozenAt, selection]);
+  // The data block's telemetry on the lab's own clock: frozen, so the age of a position stays what the scene says.
+  const [telemetry] = useState(() => {
+    const labNow = frozenAt ?? parseInstant(scene.traffic?.at ?? null) ?? 0;
+    return createTelemetryStore({ clock: { now: () => labNow } });
+  });
+  useEffect(() => {
+    if (traffic) telemetry.set(traffic.situation);
+  }, [telemetry, traffic]);
+  // The stand the scene places, with its pending location: a click moves it, Esc or the map's cancel drops it.
+  const [placing, setPlacing] = useState(() => scene.placing);
+  const placingRef = useRef(placing);
+  useLayoutEffect(() => {
+    placingRef.current = placing;
+  });
+  const placingStand = useMemo(() => (placing ? { code: placing.code, sizeHint: placing.sizeHint ?? null } : null), [placing]);
+  const placeAt = useCallback(location => setPlacing(current => (current ? { ...current, pending: location } : current)), []);
+  const stopPlacing = useCallback(() => setPlacing(null), []);
 
   useFrozenMapClock(frozenAt);
   useWebGlRefused(!scene.webgl);
@@ -111,15 +165,22 @@ function LabScene({ scene, basemap, frozenAt }) {
         return point ? mapRef.current?.project(point) ?? null : null;
       },
       flyToPreset: (view, options) => mapRef.current?.flyToPreset(view, options) ?? false,
+      jumpTo: camera => mapRef.current?.jumpTo(camera) ?? false,
       whenIdle: () => mapRef.current?.whenIdle() ?? Promise.resolve(false),
       liveMaps: liveEngineCount,
       refresh: reread,
+      // Where the scene's traffic draws an aircraft (`f:<flightKey>` or `h:<hex>`), as `[lng, lat]`, or null.
+      aircraftAt: id => {
+        const item = traffic?.map.aircraft.find(entry => entry.id === id && !entry.hiddenInStand);
+        return item ? [item.lon, item.lat] : null;
+      },
+      placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
     };
     window.__occMapLab = lab;
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, reread]);
+  }, [scene.id, scene.stands, reread, traffic]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
@@ -140,6 +201,10 @@ function LabScene({ scene, basemap, frozenAt }) {
         {frozenAt !== null && (
           <span className="font-mono text-xs text-occ-muted">Reloj fijo: {frozenLabel(frozenAt)}</span>
         )}
+        {frozenAt === null && scene.at !== null && (
+          <span className="font-mono text-xs text-occ-muted">Hora de la escena: {frozenLabel(scene.at)}</span>
+        )}
+        {placing && <LabPlate>Ubicando {placing.code}: haz clic en el mapa; Esc lo deja</LabPlate>}
         <button
           type="button"
           onClick={reread}
@@ -153,13 +218,26 @@ function LabScene({ scene, basemap, frozenAt }) {
           ref={mapRef}
           testId="map-lab-map"
           defaultView={scene.view}
-          stands={stands}
+          stands={displayed}
+          frozenAt={standClock}
           selection={selection}
           onSelect={select}
+          placingStand={placingStand}
+          pendingLocation={placing?.pending ?? null}
+          onMapClick={placing ? placeAt : undefined}
+          onCancelPlacing={stopPlacing}
           basemap={basemap !== 'none'}
           mapOptions={mapOptions}
+          traffic={traffic?.map}
         >
+          {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
+          {traffic?.target && (
+            <FlightDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
+              style={DOCKED_BLOCK_STYLE} />
+          )}
+          {scene.layersMenu && <OpenLayersMenu />}
           <MapDock>
+            <MapLayersMenu />
             <MapPresetSwitcher />
             <MapLegend />
           </MapDock>

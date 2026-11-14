@@ -11,6 +11,9 @@ import {
 } from './positionsMapMappers';
 import { RAMP_POSITIONS } from '../dashboard/positionsData';
 import { DASHBOARD_POSITIONS } from '../dashboard/dashboardPositions';
+import { MDPC_LAYOUT } from '../maps/airport/airportLayout';
+import { layoutStandReferences } from '../maps/airport/layoutIndex';
+import { boardStand, createRampScenario } from '../maps/testing/mapFixtures';
 
 function position(overrides) {
   return {
@@ -216,5 +219,53 @@ describe('mapOccupancyToRampPositions with demo flights (ADR-0041)', () => {
     expect(free).toMatchObject({ id: 'A3', isDemo: false });
     // The listed turnarounds keep their own mark for the drawer.
     expect(real.turnarounds.map(item => item.isDemo === true)).toEqual([false, true]);
+  });
+});
+
+describe('mapOccupancyToRampPositions over the airport layout (PR M4)', () => {
+  const nowIso = '2026-11-13T18:07:00.000Z';
+
+  it('gives the same positions from layoutStandReferences(MDPC_LAYOUT) as from RAMP_POSITIONS', () => {
+    const references = layoutStandReferences(MDPC_LAYOUT);
+    const { board } = createRampScenario(Date.parse(nowIso));
+    const b33 = RAMP_POSITIONS.find(position => position.id === 'B33');
+    const boards = [
+      board,
+      { positions: [] },
+      null,
+      // The retired B33, placed by OCC, and a stand of an unknown code that OCC did not place.
+      { positions: [boardStand('B033', { latitude: b33.lat, longitude: b33.lon }), boardStand('Q01')] },
+    ];
+    for (const candidate of boards) {
+      expect(mapOccupancyToRampPositions(references, candidate, nowIso))
+        .toEqual(mapOccupancyToRampPositions(RAMP_POSITIONS, candidate, nowIso));
+    }
+    // The 41 drawn stands of the catalogue and C7, which OCC placed; Z1 is neither in the layout nor placed.
+    expect(mapOccupancyToRampPositions(references, board, nowIso).map(position => position.id))
+      .toEqual([...DASHBOARD_POSITIONS.map(position => position.id), 'C7']);
+  });
+
+  it('carries coveredBy, maxAircraftSize and cancelledBy from the board', () => {
+    const reference = layoutStandReferences(MDPC_LAYOUT).filter(item => ['A1', 'A2', 'A3'].includes(item.id));
+    const covered = ['Marta Castillo', 'Luis Peña'];
+    const board = { positions: [
+      boardStand('A01', { coveredBy: covered, maxAircraftSize: 'Widebody' }),
+      boardStand('A02', { cancelledBy: 'A01', narrowbodyOnly: true, maxAircraftSize: 'Narrowbody', standType: 'Remote', isRemote: true }),
+    ] };
+    const [a1, a2, a3] = mapOccupancyToRampPositions(reference, board, nowIso);
+    expect(a1).toMatchObject({
+      coveredBy: covered, assignedAgent: 'Marta Castillo, Luis Peña', maxAircraftSize: 'Widebody', standType: 'Contact',
+      isRemote: false, cancelledBy: null, linkedPositionId: null,
+    });
+    // A copy: the position never shares the board's list.
+    expect(a1.coveredBy).not.toBe(board.positions[0].coveredBy);
+    expect(a2).toMatchObject({
+      status: 'disabled', coveredBy: [], maxAircraftSize: 'Narrowbody', standType: 'Remote', isRemote: true,
+      narrowbodyOnly: true, cancelledBy: 'A01', linkedPositionId: 'A1', combinedConfiguration: 'A01',
+    });
+    // Without a stand row nothing is known: the coverage is unknown, not empty.
+    expect(a3).toMatchObject({
+      status: 'unverified', coveredBy: null, maxAircraftSize: null, standType: null, isRemote: false, cancelledBy: null,
+    });
   });
 });

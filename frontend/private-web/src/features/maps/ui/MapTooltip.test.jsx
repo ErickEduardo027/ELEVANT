@@ -1,8 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
-import MapTooltip from './MapTooltip';
+import MapTooltip, { tooltipText } from './MapTooltip';
 
 // Synthetic tooltips in the shape OccMap keeps them, with the size of runway 08/26 of the dataset.
 const RUNWAY = { kind: 'runway', id: '08/26', ref: '08/26', lengthM: 3100.1, widthM: 45.1, x: 240, y: 180, alignX: 'start', alignY: 'start', pinned: false };
@@ -50,5 +50,36 @@ describe('MapTooltip', () => {
     cleanup();
     render(<LanguageScope><MapTooltip tooltip={{ ...TAXIWAY, ref: null }} /></LanguageScope>);
     expect(screen.getByRole('tooltip')).toHaveTextContent('Unnamed taxiway');
+  });
+
+  it('a stand tooltip shows the code, the state, the flight and who covers it', () => {
+    // As stands/standInteractions.js writes it: invented flight and agent.
+    const STAND = {
+      kind: 'stand', id: 'A5', code: 'A5', title: 'A5 · Ocupada', detail: 'DM161 · Cubre M. Castillo',
+      reasons: [{ signal: 'attention', text: 'Pasó su hora de salida' }, { signal: null, text: 'Solo fuselaje estrecho' }],
+      x: 300, y: 200, alignX: 'start', alignY: 'end', pinned: false,
+    };
+    render(<MapTooltip tooltip={STAND} />);
+    const card = screen.getByRole('tooltip');
+    expect(card).toHaveAttribute('data-kind', 'stand');
+    expect(within(card).getByText('A5 · Ocupada')).toHaveClass('font-semibold');
+    expect(within(card).getByText('DM161 · Cubre M. Castillo')).toHaveClass('text-occ-muted');
+    // A signal reads with its shape and its word, never by colour alone; a note has no shape.
+    const signal = within(card).getByRole('img', { name: 'Atención' });
+    expect(signal).toHaveAttribute('data-shape', 'triangle');
+    expect(within(card).getByText('Pasó su hora de salida')).toBeInTheDocument();
+    expect(within(card).getByText('Solo fuselaje estrecho').parentElement.querySelector('svg')).toBeNull();
+    // It may wrap, inside its card, and never takes the pointer.
+    expect(card).toHaveClass('pointer-events-none', 'max-w-xs');
+    expect(card).not.toHaveClass('whitespace-nowrap');
+    expect(card).toHaveStyle({ left: '300px', top: '200px', transform: 'translate(12px, calc(-100% - 12px))' });
+    expect(tooltipText(STAND, key => key)).toEqual({ title: STAND.title, detail: STAND.detail, reasons: STAND.reasons });
+
+    // Nothing but the code and the state for a stand with no flight or agent; the signal's word in English.
+    cleanup();
+    resetLanguageForTests('en');
+    render(<LanguageScope><MapTooltip tooltip={{ ...STAND, title: 'A5 · Free', detail: null, reasons: [{ signal: 'urgent', text: 'Another aircraft is arriving at this stand' }] }} /></LanguageScope>);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/^A5 · FreeUrgentAnother aircraft is arriving at this stand$/);
+    expect(screen.getByRole('img', { name: 'Urgent' })).toHaveAttribute('data-shape', 'octagon');
   });
 });
