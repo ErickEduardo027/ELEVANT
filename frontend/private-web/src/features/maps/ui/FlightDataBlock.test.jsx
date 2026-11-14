@@ -12,6 +12,7 @@ import {
 } from '../testing/trafficFixtures';
 import { buildSituation, selectionTarget, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import { createTelemetryStore } from '../traffic/telemetryStore';
+import { trafficFeatures } from '../traffic/trafficFeatures';
 import FlightDataBlock, { dataBlockLinks } from './FlightDataBlock';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -58,7 +59,7 @@ afterEach(() => {
 });
 
 describe('FlightDataBlock', () => {
-  it('states the source of the position: live, no recent signal, estimated, no position yet', () => {
+  it('states the source of the position: live, not updated since a time, estimated, no position yet', () => {
     // ZZ161 on final, its fix 4 s old.
     renderBlock({ kind: 'flight', id: KEY.arrival });
     expect(block()).toHaveAttribute('data-source', 'live');
@@ -77,10 +78,12 @@ describe('FlightDataBlock', () => {
     expect(block()).not.toHaveTextContent('Pista');
     cleanup();
 
-    // Another airline's aircraft whose last position is 45 s old: no recent signal.
+    // Another airline's aircraft whose last position is 45 s old (10:59:15 at Punta Cana): not updated since then, in
+    // the words of the stale tag (contracts 2.4).
     renderBlock({ kind: 'aircraft', id: HEX.stale });
     expect(block()).toHaveAttribute('data-source', 'stale');
-    expect(sourceLine()).toHaveTextContent('Sin señal desde hace 45 s');
+    expect(sourceLine()).toHaveTextContent('Sin actualizar desde las 10:59');
+    expect(sourceLine()).toHaveTextContent(TAGS.stale.es.replace('{time}', '10:59'));
     cleanup();
 
     // The demo arrival drawn where its schedule puts it: estimated, in the vocabulary's words.
@@ -300,5 +303,26 @@ describe('FlightDataBlock', () => {
     expect(sourceLine()).toHaveTextContent('En vivo · hace 8 s');
     // Neither the page, nor the map and what it shares, nor the engine heard of it.
     expect({ mapRenders, pageRenders, calls: map.calls.length }).toEqual(before);
+  });
+
+  it('says since when a stale position is not updated, in the words of its tag on the map, without counting', () => {
+    const situation = noonSituation();
+    renderBlock({ kind: 'aircraft', id: HEX.stale }, { situation });
+    // The same words the aircraft's tag carries (traffic/trafficFeatures.js).
+    const tag = trafficFeatures(situation.aircraft).features
+      .find(feature => feature.properties.id === `h:${HEX.stale}`).properties.suffix;
+    expect(sourceLine().textContent).toBe(tag);
+    expect(tag).toBe('Sin actualizar desde las 10:59');
+    // A minute on, the store has ticked and the line has not moved: it names a time, not an age.
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(sourceLine()).toHaveTextContent('Sin actualizar desde las 10:59');
+    expect(sourceLine()).not.toHaveTextContent(/hace|\d+ s\b/);
+    cleanup();
+
+    // In English, the English words of the vocabulary.
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><FlightDataBlock target={selectionTarget({ kind: 'aircraft', id: HEX.stale }, situation)}
+      telemetry={storeOf(situation)} station={STATION} /></LanguageScope>);
+    expect(sourceLine()).toHaveTextContent('Not updated since 10:59');
   });
 });

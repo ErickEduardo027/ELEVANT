@@ -27,7 +27,7 @@ export const mapMessages = {
         otherGround: 'Otro tráfico en tierra',
         demoHint: 'Vuelo simulado',
         estimatedHint: 'Calculada con el horario',
-        staleHint: 'Atenuado, con su antigüedad',
+        staleHint: 'Atenuado, con la hora de su última posición',
         trail: 'Estela',
         trailEstimated: 'Estela estimada',
         // The chosen flight's route (traffic/routeFeatures.js); PR M6 replaces the straight line with its trajectory.
@@ -62,11 +62,10 @@ export const mapMessages = {
       attribution: 'Mostrar u ocultar los créditos del mapa',
       nauticalMiles: 'NM',
     },
-    // The words of an aircraft's tag (traffic/trafficFeatures.js).
+    // The words of an aircraft's tag (traffic/trafficFeatures.js). «est.» and «Sin actualizar desde las {time}» are the
+    // tags of src/features/occ-ui/statusVocabulary.js (traffic/stationTime.js fills the time).
     traffic: {
       ground: 'GND',
-      ageSeconds: '· {count} s',
-      ageMinutes: '· {count} min',
     },
     // The state of the air traffic over the map (ui/MapSourceStatus.jsx). The server's own words are never shown.
     source: {
@@ -92,7 +91,8 @@ export const mapMessages = {
         unavailable: 'No se pudieron cargar los vuelos de AVIAM.',
       },
     },
-    // The data block of the chosen aircraft (ui/FlightDataBlock.jsx). «est.» and its sentence come from TAGS.estimated.
+    // The data block of the chosen aircraft (ui/FlightDataBlock.jsx). «est.» and its sentence come from TAGS.estimated,
+    // and the source line of a stale position, «Sin actualizar desde las {time}», from TAGS.stale.
     dataBlock: {
       label: 'Vuelo {id}',
       close: 'Cerrar',
@@ -132,7 +132,6 @@ export const mapMessages = {
       noStand: 'Sin posición asignada',
       runway: 'Pista {id}',
       live: 'En vivo · hace {age}',
-      stale: 'Sin señal desde hace {age}',
       noPosition: 'Sin posición todavía',
       viewTurnaround: 'Ver escala',
       viewStand: 'Ver posición',
@@ -179,7 +178,7 @@ export const mapMessages = {
         otherGround: 'Other traffic on the ground',
         demoHint: 'Simulated flight',
         estimatedHint: 'Calculated from the schedule',
-        staleHint: 'Dimmed, with its age',
+        staleHint: 'Dimmed, with the time of its last position',
         trail: 'Trail',
         trailEstimated: 'Estimated trail',
         routeFlown: 'Route flown by the selected flight',
@@ -212,8 +211,6 @@ export const mapMessages = {
     },
     traffic: {
       ground: 'GND',
-      ageSeconds: '· {count} s',
-      ageMinutes: '· {count} min',
     },
     source: {
       label: 'Traffic status',
@@ -275,7 +272,6 @@ export const mapMessages = {
       noStand: 'No stand assigned',
       runway: 'Runway {id}',
       live: 'Live · {age} ago',
-      stale: 'No signal for {age}',
       noPosition: 'No position yet',
       viewTurnaround: 'View turnaround',
       viewStand: 'View stand',

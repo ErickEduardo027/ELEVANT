@@ -18,9 +18,10 @@ describe('traffic legend entries', () => {
       TAGS.demo.es, TAGS.estimated.es, TAGS.stale.short.es, 'Estela', 'Estela estimada', 'Recorrido del vuelo elegido',
       'Hasta su próximo punto, en línea recta',
     ]);
-    // A kind is its swatch and its name; a tag its word with a short hint; the two trails share a line.
+    // A kind is its swatch and its name; a tag its word with a short hint; the two trails share a line. A stale
+    // aircraft's tag says the time of its last position, and so does the hint.
     expect(entries.map(entry => entry.hint)).toEqual([null, null, null, null, 'Vuelo simulado', 'Calculada con el horario',
-      'Atenuado, con su antigüedad', null, null, null, null]);
+      'Atenuado, con la hora de su última posición', null, null, null, null]);
     // The two parts of the route take a line each.
     expect(entries.map(entry => entry.span)).toEqual([2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2]);
     // A trail alone takes the whole line, so nothing else of the legend sits beside it.
@@ -39,5 +40,6 @@ describe('traffic legend entries', () => {
       TAGS.stale.short.en, 'Trail', 'Estimated trail', 'Route flown by the selected flight', 'To its next point, in a straight line',
     ]);
     expect(english.find(entry => entry.key === 'estimated').hint).toBe('Calculated from the schedule');
+    expect(english.find(entry => entry.key === 'stale').hint).toBe('Dimmed, with the time of its last position');
   });
 });

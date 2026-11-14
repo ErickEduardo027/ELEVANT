@@ -3,9 +3,10 @@ import {
   createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX, TRAFFIC_NOON,
 } from '../testing/trafficFixtures';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
+import { TAGS } from '../../occ-ui/statusVocabulary';
 import {
-  ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, ageText, featuresById, flightLevelText, isEmptyDiff,
-  knotsText, onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
+  ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, flightLevelText, isEmptyDiff, knotsText,
+  onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
 } from './trafficFeatures';
 
 const NOON = Date.parse(TRAFFIC_NOON);
@@ -110,15 +111,24 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     expect([knotsText(77.1667), knotsText(0), knotsText(Number.NaN)]).toEqual(['150', '0', null]);
   });
 
-  it('estimated, stale and demo are carried by ring, age text and plate, never by colour alone', () => {
+  it('estimated, stale and demo are carried by ring, vocabulary words and plate, never by colour alone', () => {
     const drawn = byId(trafficFeatures(aircraftAtNoon()));
     // The demo arrival, estimated from the schedule: the ring and «est.», and its «Demo» plate.
     expect(drawn[`f:${KEY.demoArrival}`]).toMatchObject({ quality: 'estimated', estimated: true, stale: false, demo: true,
-      suffix: 'est.', age: '', icon: 'ac-narrow-solid' });
-    // A position 45 s old: dimmed by the layer, with its age in the tag.
+      suffix: TAGS.estimated.es, icon: 'ac-narrow-solid' });
+    // A position 45 s old (10:59:15 at Punta Cana): dimmed by the layer, and its tag says since when, in the words of
+    // the stale tag (contracts 2.4), never its age.
     expect(drawn[`h:${HEX.stale}`]).toMatchObject({ quality: 'stale', stale: true, estimated: false, demo: false,
-      suffix: '· 45 s', age: '· 45 s' });
-    expect(drawn[`f:${KEY.arrival}`]).toMatchObject({ quality: 'live', stale: false, estimated: false, demo: false });
+      suffix: 'Sin actualizar desde las 10:59' });
+    expect(drawn[`h:${HEX.stale}`].suffix).toBe(TAGS.stale.es.replace('{time}', '10:59'));
+    expect(drawn[`f:${KEY.arrival}`]).toMatchObject({ quality: 'live', stale: false, estimated: false, demo: false,
+      suffix: '' });
+    // The tag carries the words alone: no age of its own beside them.
+    for (const properties of Object.values(drawn)) expect(properties, properties.id).not.toHaveProperty('age');
+    // In English, the English words of the vocabulary.
+    const english = byId(trafficFeatures(aircraftAtNoon(), { language: 'en' }));
+    expect(english[`h:${HEX.stale}`].suffix).toBe('Not updated since 10:59');
+    expect(english[`f:${KEY.demoArrival}`].suffix).toBe(TAGS.estimated.en);
     // Only ELEVANT flights carry the plate: other traffic is never a demo.
     expect(Object.values(drawn).filter(item => item.demo).map(item => item.id)).toEqual([`f:${KEY.demoArrival}`]);
     // The features carry states and words, never a colour: the layers paint them (traffic/trafficLayers.js).
@@ -126,8 +136,23 @@ describe('traffic features (design E3, contracts 2.4)', () => {
       expect(Object.values(properties).some(value => typeof value === 'string' && /^#|rgb/i.test(value)), properties.id)
         .toBe(false);
     }
-    expect([ageText(45), ageText(59.9), ageText(240), ageText(null), ageText(240, 'en')])
-      .toEqual(['· 45 s', '· 59 s', '· 4 min', '· 0 s', '· 4 min']);
+  });
+
+  it('a stale tag names the time of the last position, so it holds still while the aircraft stays stale', () => {
+    const aircraftAt = nowMs => buildSituation({ picture: toPictureModel(createAirPicture()), flights, nowMs,
+      estimates: createEstimates() }).aircraft;
+    const before = featuresById(trafficFeatures(aircraftAt(NOON)));
+    // A minute on, without a new read: ZZZ612 was already stale, and its feature does not change at all.
+    const later = trafficFeatures(aircraftAt(NOON + 60_000));
+    const diff = trafficDiff(before, later.features);
+    expect(diff.update.map(change => change.id)).not.toContain(`h:${HEX.stale}`);
+    // ZZ161 turned stale in that minute: its tag says the time of its own last position (10:59:56).
+    const changed = diff.update.find(change => change.id === `f:${KEY.arrival}`);
+    expect(changed.addOrUpdateProperties).toEqual(expect.arrayContaining([
+      { key: 'quality', value: 'stale' }, { key: 'stale', value: true },
+      { key: 'suffix', value: 'Sin actualizar desde las 10:59' },
+    ]));
+    expect(byId(later)[`h:${HEX.stale}`].suffix).toBe('Sin actualizar desde las 10:59');
   });
 
   it('ground traffic inside an owned stand is not drawn', () => {

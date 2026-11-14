@@ -193,7 +193,8 @@ describe('traffic layers (design E1 and E3)', () => {
     expect(sections(aviam, { ...live, dir: 'dep', tagStand: '' })).toEqual(['glyph-departure', ' ', 'ZZ161', '', '\n',
       'B38M 026 150']);
     expect(sections(aviam, demo)).toEqual(['glyph-arrival', ' ', 'ZZ9001', ' est.', '\n', 'A320 019 140']);
-    expect(sections(other, { ...stale, forceTag: true })).toEqual(['ZZZ612', ' · 45 s', '\n', 'AT76 050 210']);
+    expect(sections(other, { ...stale, forceTag: true })).toEqual(['ZZZ612', ' Sin actualizar desde las 10:59', '\n',
+      'AT76 050 210']);
     expect(sections(other, stale)).toEqual(['']);
     // The forced tag of other traffic is placed after the rest of its layer, and so drawn above it.
     expect(evaluate(other, 'layout', 'symbol-sort-key', { ...stale, forceTag: true }))

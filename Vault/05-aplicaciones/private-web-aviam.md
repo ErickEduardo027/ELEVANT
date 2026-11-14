@@ -1226,8 +1226,11 @@ de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
   desde que llega a ella hasta que la deja; en la posición de un vuelo que
   todavía no llega sí se dibuja, porque es el conflicto que OCC tiene que
   ver. Lo estimado lleva un anillo discontinuo y «est.»; lo que no se
-  actualiza va atenuado, con su antigüedad; y un vuelo demo, la placa «Demo»
-  de rayas. Las siluetas son propias, una por categoría, y salen de una
+  actualiza va atenuado y dice desde cuándo, con las palabras del vocabulario
+  del OCC: «Sin actualizar desde las 10:59», la hora de Punta Cana de su
+  última posición, que no cambia hasta que llega otra; y un vuelo demo, la
+  placa «Demo» de rayas. Las siluetas son propias, una por categoría, y
+  salen de una
   [tabla de dimensiones](../../frontend/private-web/src/features/maps/aircraft/types.js).
   Las estelas se desvanecen hacia la cola y nunca se unen a través de un hueco
   de datos.
@@ -1240,8 +1243,9 @@ de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
   lo que ya pasó («Debía llegar 10:55 · hace 5 min» si la hora prevista pasó,
   «Salió · hora prevista 10:45» si el proveedor dice que salió sin dar la
   hora); la altitud, la velocidad y el rumbo; la posición, con «Pista 08» en un
-  vuelo demo; y de dónde sale la posición: «En vivo · hace 4 s», «Sin señal
-  desde hace 45 s», la frase de lo estimado o «Sin posición todavía». Marca
+  vuelo demo; y de dónde sale la posición: «En vivo · hace 4 s», «Sin
+  actualizar desde las 10:59» (lo mismo que su etiqueta en el mapa), la frase
+  de lo estimado o «Sin posición todavía». Marca
   «Vuelo demo», «Sin importar» y «Cancelado por el proveedor (demo)», y enlaza
   «Ver escala», solo de un vuelo importado, y «Ver posición». Su ruta es lo que
   voló, en línea sólida, y una recta discontinua hasta su siguiente punto (su

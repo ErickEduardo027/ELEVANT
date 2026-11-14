@@ -20,8 +20,9 @@ import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 //   and its dashed estimated path), the live arrival on base and other traffic around the approach;
 // - ramp-traffic-ground: the arrival taxiing to A4 (GND), a departure on A6, a transponder hidden inside A1 (the
 //   ZZ300 visit holds it) and other traffic taxiing out on taxiway B;
-// - approach-traffic-estimated-stale: the air picture four minutes late (every aircraft dimmed with its age, and the
-//   chip that says so) and an ELEVANT flight drawn from an estimate;
+// - approach-traffic-estimated-stale: the air picture four minutes late (every aircraft dimmed, its tag saying the
+//   time of its last position, and the chip that says the traffic is late) and an ELEVANT flight drawn from an
+//   estimate;
 // - region-traffic-selected and region-layers-menu: the region's mixed traffic, with ZZ161 chosen (its data block and
 //   its route) or with the layers menu open;
 // - approach-traffic-hex-selected: the approach with another airline's aircraft chosen by its address, with the track

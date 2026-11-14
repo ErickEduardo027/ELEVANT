@@ -5,7 +5,8 @@ import { expect, production, test } from '../support/test.mjs';
 // the laptop sizes of the presentation, 1440 × 900 and 1920 × 1080, in the Región, Aproximación and Rampa views, for a
 // person to review in test-results/visual. Beside the pictures it checks what must hold on every one: the credit of
 // the aircraft data is on screen as a link, the attribution names it, and the legend lists the traffic. Step c adds
-// the chosen aircraft (its data block, its cyan and its route) and the layers menu.
+// the chosen aircraft (its data block, its cyan and its route) and the layers menu; a stale aircraft chosen says since
+// when it is not updated.
 
 const SCENES = Object.freeze([
   ['region-traffic-mixed', 'region'],
@@ -72,6 +73,15 @@ test.describe('map lab traffic', () => {
     await expect(page.getByTestId('map-lab-map').locator('canvas.maplibregl-canvas')).toHaveCSS('cursor', 'pointer');
     await labIdle(page);
     await shoot(page, testInfo, 'region-traffic-hover-1440');
+
+    // ZZZ612, whose last position is from 10:59, chosen by its address: its tag and its block say since when, in the
+    // words of the stale tag (contracts 2.4), never its age.
+    await openLab(page, `scene=region-traffic-mixed&t=${NOON}&hex=f0a006`);
+    const stale = page.getByRole('dialog', { name: 'Vuelo ZZZ612' });
+    await expect(stale).toContainText('Sin actualizar desde las 10:59');
+    await expect(stale).not.toContainText('Sin señal');
+    await labIdle(page);
+    await shoot(page, testInfo, 'region-traffic-stale-selected-1440');
 
     // The ramp lists the aircraft on the ground and the demo approach its plate, ring and estimated path.
     await openLab(page, `scene=ramp-traffic-ground&t=${NOON}`);

@@ -90,11 +90,12 @@ describe('the traffic scenes of the map lab', () => {
     expect(findScene('region-layers-menu').layersMenu).toBe(true);
   });
 
-  it('approach-traffic-estimated-stale: every live aircraft dimmed with its age, an estimate and the late chip', () => {
+  it('approach-traffic-estimated-stale: every live aircraft dimmed since 10:55, an estimate and the late chip', () => {
     const drawn = drawnOf('approach-traffic-estimated-stale');
     const live = Object.values(drawn).filter(item => !item.estimated);
     expect(live.length).toBeGreaterThan(0);
-    expect(live.every(item => item.stale && item.age === '· 4 min')).toBe(true);
+    // Four minutes late: every position is from 10:55 at Punta Cana.
+    expect(live.every(item => item.stale && item.suffix === 'Sin actualizar desde las 10:55')).toBe(true);
     expect(drawn[`f:${KEY.noFix}`]).toMatchObject({ estimated: true, demo: false, suffix: 'est.', tag1: 'ZZ500' });
     const { picture, nowMs } = labTraffic(TRAFFIC_SCENARIOS['approach-traffic-estimated-stale'], { nowMs: NOON });
     expect(sourceChip({ status: 'success', picture, nowMs })).toMatchObject({ kind: 'delayed', ageS: 240 });

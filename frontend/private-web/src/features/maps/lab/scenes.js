@@ -139,8 +139,8 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-estimated-stale', {
     title: 'Aproximación: estimado y sin actualizar',
-    description: 'La imagen aérea con cuatro minutos de retraso, cada avión atenuado con su antigüedad, y un vuelo de '
-      + 'AVIAM dibujado con su posición estimada.',
+    description: 'La imagen aérea con cuatro minutos de retraso, cada avión atenuado con la hora de su última '
+      + 'posición, y un vuelo de AVIAM dibujado con su posición estimada.',
     view: 'approach',
   }),
   trafficScene('region-traffic-selected', {

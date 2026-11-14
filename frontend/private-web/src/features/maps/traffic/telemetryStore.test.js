@@ -84,9 +84,10 @@ describe('telemetry store', () => {
   it('gives the telemetry of an aircraft in the units of the screen, the same object while its values hold', () => {
     const store = createTelemetryStore({ clock: { now: () => Date.now() } });
     store.set(situationAt(NOON));
-    // ZZ161 on final: 2 600 ft, 150 kt, track 074°, 768 ft/min down, its fix 4 s old.
+    // ZZ161 on final: 2 600 ft, 150 kt, track 074°, 768 ft/min down, its fix 4 s old, and the instant of that fix.
     const first = store.telemetryOf(ARRIVAL);
-    expect(first).toEqual({ altFt: 2_600, gsKt: 150, trackDeg: 74, vrate: -768, ageS: 4, quality: 'live', onGround: false });
+    expect(first).toEqual({ altFt: 2_600, gsKt: 150, trackDeg: 74, vrate: -768, ageS: 4, positionAt: NOON - 4_000,
+      quality: 'live', onGround: false });
     expect(store.telemetryOf(ARRIVAL)).toBe(first);
     // A tick within the same second keeps the object; the next second gives a new one.
     store.subscribe(() => {});
@@ -99,7 +100,10 @@ describe('telemetry store', () => {
     expect(store.telemetryOf(null)).toBeNull();
     expect(telemetryAt(null, NOON)).toBeNull();
     expect(telemetryAt({ altM: null, gsMs: undefined, trackDeg: -10, positionAt: NOON + 2_000, quality: 'estimated' }, NOON))
-      .toEqual({ altFt: null, gsKt: null, trackDeg: 350, vrate: null, ageS: 0, quality: 'estimated', onGround: false });
+      .toEqual({ altFt: null, gsKt: null, trackDeg: 350, vrate: null, ageS: 0, positionAt: NOON + 2_000,
+        quality: 'estimated', onGround: false });
+    // An aircraft without the instant of its position has neither an age nor that instant.
+    expect(telemetryAt({ positionAt: null, quality: 'stale' }, NOON)).toMatchObject({ ageS: null, positionAt: null });
   });
 
   it('reads through hooks that render only when what they show changes', () => {

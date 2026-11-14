@@ -71,9 +71,16 @@ describe('map messages', () => {
       .map(key => es(`legend.traffic.${key}`))).toEqual(['Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale',
       'Otro tráfico', 'Otro tráfico en tierra', 'Estela', 'Estela estimada']);
     expect(en('legend.traffic.aviamDeparture')).toBe('AVIAM departure');
-    // The tag: GND on the ground and the age of a stale position.
-    expect([es('traffic.ground'), es('traffic.ageSeconds', { count: 45 }), es('traffic.ageMinutes', { count: 4 })])
-      .toEqual(['GND', '· 45 s', '· 4 min']);
+    // The tag: GND on the ground. «est.» and «Sin actualizar desde las {time}» are the vocabulary's (TAGS), so the map
+    // has no words of its own for a stale position: no age, no «Sin señal».
+    expect(es('traffic.ground')).toBe('GND');
+    expect([es('legend.traffic.staleHint'), en('legend.traffic.staleHint')])
+      .toEqual(['Atenuado, con la hora de su última posición', 'Dimmed, with the time of its last position']);
+    for (const language of ['es', 'en']) {
+      const texts = leafPaths(mapMessages[language]).map(path => createTranslator(mapMessages, language)(path));
+      expect(texts.filter(text => /sin señal|no signal|sin actualizar|not updated|^· \{count\}/i.test(text)), language)
+        .toEqual([]);
+    }
     // The chips over the map, word for word, and a reason for every one the air picture may give.
     expect([es('source.loading'), es('source.empty'), es('source.unavailable'), es('source.retry'), es('source.forbidden')])
       .toEqual(['Cargando tráfico…', 'No hay aviones en la zona', 'No hay tráfico en vivo en este momento.', 'Reintentar',
@@ -91,9 +98,9 @@ describe('map messages', () => {
     }
     // The data block and the layers menu (PR M5 step c), in plain words.
     expect([es('dataBlock.label', { id: 'ZZ161' }), es('dataBlock.live', { age: es('dataBlock.seconds', { count: 4 }) }),
-      es('dataBlock.stale', { age: es('dataBlock.seconds', { count: 45 }) }), es('dataBlock.noPosition'), es('dataBlock.demo'),
-      es('dataBlock.notImported'), es('dataBlock.cancelledDemo')]).toEqual(['Vuelo ZZ161', 'En vivo · hace 4 s',
-      'Sin señal desde hace 45 s', 'Sin posición todavía', 'Vuelo demo', 'Sin importar', 'Cancelado por el proveedor (demo)']);
+      es('dataBlock.noPosition'), es('dataBlock.demo'), es('dataBlock.notImported'), es('dataBlock.cancelledDemo')])
+      .toEqual(['Vuelo ZZ161', 'En vivo · hace 4 s', 'Sin posición todavía', 'Vuelo demo', 'Sin importar',
+        'Cancelado por el proveedor (demo)']);
     expect([es('dataBlock.viewTurnaround'), es('dataBlock.viewStand'), es('dataBlock.close')])
       .toEqual(['Ver escala', 'Ver posición', 'Cerrar']);
     expect(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route'].map(key => es(`layers.key.${key}`)))

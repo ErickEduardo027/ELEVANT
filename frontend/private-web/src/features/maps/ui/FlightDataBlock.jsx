@@ -2,21 +2,22 @@
 
 import Link from 'next/link';
 import { useTranslation } from '../../../i18n/LanguageScope';
-import { BUSINESS_TIME_ZONE } from '../../../services/businessDay';
 import { parseInstant } from '../../../services/serverClock';
 import { normalizeStandCode } from '../../../services/standCodes';
 import OccPlate from '../../occ-ui/OccPlate';
 import OccStandSwatch from '../../occ-ui/OccStandSwatch';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { mapMessages } from '../mapMessages';
+import { staleWords, stationTime } from '../traffic/stationTime';
 import { telemetryAt, useServerTime, useTelemetry } from '../traffic/telemetryStore';
 
 // The data block of the chosen aircraft (design E4, Decision E-1): a card docked in a corner of the map, never a popup
 // pinned to the aircraft, so it covers no traffic and React does not follow the aircraft on screen. It is a dialog
 // without aria-modal (the map keeps its keys) named with the flight number. Its telemetry comes from the map's
-// telemetry store (traffic/telemetryStore.js) through useSyncExternalStore, so the age of the position counts up while
-// the map does not re-render. It always says where the position comes from: live, without recent signal, estimated
-// from the schedule, or none yet; «Vuelo demo» and «Sin importar» when they apply.
+// telemetry store (traffic/telemetryStore.js) through useSyncExternalStore, so the age of a live position counts up
+// while the map does not re-render. It always says where the position comes from: live, not updated since the
+// station's time of its last position (the stale tag of the vocabulary, as the aircraft's tag says it), estimated from
+// the schedule, or none yet; «Vuelo demo» and «Sin importar» when they apply. Its times are the station's.
 //
 // PR M6 adds «Seguir» and «Demo acelerada ×N»; the runway in use of a real flight comes with the kinematics (M6) and
 // the weather (M8): until then only a demo flight names its runway, 08 (contracts 2.3).
@@ -53,15 +54,6 @@ export function dataBlockLinks(flight, { stationId = null } = {}) {
     turnaround: flight.imported === true && flightId ? `/admin-occ/planning?${query({ flightId })}` : null,
     stand: code ? `/admin-occ/positions-map?${query({ stand: normalizeStandCode(code) })}` : null,
   };
-}
-
-function clockText(at, locale) {
-  try {
-    return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: BUSINESS_TIME_ZONE })
-      .format(new Date(at));
-  } catch {
-    return new Date(at).toISOString().slice(11, 16);
-  }
 }
 
 function durationText(ms, t) {
@@ -112,7 +104,9 @@ export function flightTimeLine(flight, nowMs, { t, locale }) {
   if (flight.phase === 'cancelled') return { words: t('dataBlock.cancelled'), at: null, relative: null };
   if (flight.phase === 'diverted') return { words: t('dataBlock.diverted'), at: null, relative: null };
   const arrival = flight.direction !== 'Departure';
-  const line = (key, at, relative = relativeText(at, nowMs, t)) => ({ words: t(key, { time: clockText(at, locale) }), at, relative });
+  const line = (key, at, relative = relativeText(at, nowMs, t)) => ({
+    words: t(key, { time: stationTime(at, locale) }), at, relative,
+  });
   const actual = parseInstant(flight.actualAt ?? null);
   if (actual !== null) {
     if (!arrival) return line('dataBlock.departed', actual);
@@ -138,15 +132,16 @@ function ageWords(ageS, t) {
 
 /**
  * Where the position comes from (contracts 2.4): `{ kind: 'live' | 'stale' | 'estimated' | 'none', words }` —
- * «En vivo · hace 4 s», «Sin señal desde hace 45 s», «Posición estimada: calculada con el horario, no con señal del
- * avión.» or «Sin posición todavía».
+ * «En vivo · hace 4 s»; «Sin actualizar desde las 10:59», the stale tag of the vocabulary with the station's time of
+ * the last position (`telemetry.positionAt`), the words the aircraft's tag says; «Posición estimada: calculada con el
+ * horario, no con señal del avión.»; or «Sin posición todavía».
  */
 export function sourceLine(telemetry, { t, language }) {
   if (!telemetry) return { kind: 'none', words: t('dataBlock.noPosition') };
   if (telemetry.quality === 'estimated') {
     return { kind: 'estimated', words: TAGS.estimated.description[language] ?? TAGS.estimated.description.es };
   }
-  if (telemetry.quality === 'stale') return { kind: 'stale', words: t('dataBlock.stale', { age: ageWords(telemetry.ageS, t) }) };
+  if (telemetry.quality === 'stale') return { kind: 'stale', words: staleWords(telemetry.positionAt, language) };
   return { kind: 'live', words: t('dataBlock.live', { age: ageWords(telemetry.ageS, t) }) };
 }
 

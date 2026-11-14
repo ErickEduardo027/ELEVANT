@@ -19,8 +19,9 @@ const round = (value, unit) => (finite(value) ? Math.round(value / unit) : null)
 
 /**
  * What the data block shows of `aircraft` (a RenderAircraft of traffic/situationModel.js) at `nowMs`, the server's
- * time, in the units of the screen: `{ altFt, gsKt, trackDeg, vrate, ageS, quality, onGround }`, with feet, knots,
- * whole degrees, feet per minute and whole seconds since its position (never below 0); a value it does not know is
+ * time, in the units of the screen: `{ altFt, gsKt, trackDeg, vrate, ageS, positionAt, quality, onGround }`, with feet,
+ * knots, whole degrees, feet per minute, whole seconds since its position (never below 0) and the instant of that
+ * position in milliseconds (a stale position says its time: traffic/stationTime.js); a value it does not know is
  * `null`. No aircraft, `null`.
  */
 export function telemetryAt(aircraft, nowMs) {
@@ -32,12 +33,15 @@ export function telemetryAt(aircraft, nowMs) {
     trackDeg: track === null ? null : ((track % 360) + 360) % 360,
     vrate: round(aircraft.vrateMs, FOOT_PER_MINUTE_MS),
     ageS: finite(aircraft.positionAt) && finite(nowMs) ? Math.max(0, Math.floor((nowMs - aircraft.positionAt) / 1_000)) : null,
+    positionAt: finite(aircraft.positionAt) ? aircraft.positionAt : null,
     quality: aircraft.quality ?? null,
     onGround: aircraft.onGround === true,
   });
 }
 
-const TELEMETRY_FIELDS = Object.freeze(['altFt', 'gsKt', 'trackDeg', 'vrate', 'ageS', 'quality', 'onGround']);
+const TELEMETRY_FIELDS = Object.freeze([
+  'altFt', 'gsKt', 'trackDeg', 'vrate', 'ageS', 'positionAt', 'quality', 'onGround',
+]);
 const sameTelemetry = (first, second) => first === second
   || (first != null && second != null && TELEMETRY_FIELDS.every(field => Object.is(first[field], second[field])));
 

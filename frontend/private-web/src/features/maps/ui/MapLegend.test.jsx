@@ -388,7 +388,7 @@ describe('MapLegend', () => {
     expect(legendItems()).toEqual([
       'Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale', 'Otro tráfico', 'Otro tráfico en tierra',
       `${TAGS.demo.es}Vuelo simulado`, `${TAGS.estimated.es}Calculada con el horario`,
-      `${TAGS.stale.short.es}Atenuado, con su antigüedad`, 'Estela', 'Estela estimada',
+      `${TAGS.stale.short.es}Atenuado, con la hora de su última posición`, 'Estela', 'Estela estimada',
       FLIGHT_ENTRY,
     ]);
     // Short over the map: the two trails share a line, everything else of the traffic takes one each.

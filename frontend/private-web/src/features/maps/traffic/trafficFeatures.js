@@ -5,6 +5,7 @@ import { isInBounds } from '../core/cameraPresets';
 import { matchFlight } from '../core/mapSelection';
 import { mapMessages } from '../mapMessages';
 import { AIRCRAFT_ICON_INSET, AIRCRAFT_ICON_SIZES, aircraftImage } from '../style/trafficImages';
+import { staleWords } from './stationTime';
 
 // What the traffic layers draw (design E3, contracts 2.4), from the aircraft of the map situation
 // (traffic/situationModel.js: buildSituation). Pure: OccMap writes the features with one updateData per change
@@ -12,8 +13,9 @@ import { AIRCRAFT_ICON_INSET, AIRCRAFT_ICON_SIZES, aircraftImage } from '../styl
 //
 // Reading without colour: an arriving ELEVANT flight is a solid silhouette and a departing one a hollow one, both
 // larger than the rest and always tagged; other traffic is small and muted, tagged on demand; an estimated position
-// carries a dashed ring and «est.», a position without recent signal is dimmed and carries its age, a demo flight its
-// «Demo» plate. Other traffic on the ground inside a stand an ELEVANT visit holds is not drawn.
+// carries a dashed ring and «est.», a position without recent signal is dimmed and says since when, in the words of the
+// vocabulary («Sin actualizar desde las 14:02», traffic/stationTime.js), a demo flight its «Demo» plate. Other traffic
+// on the ground inside a stand an ELEVANT visit holds is not drawn.
 
 export const TRAFFIC_SOURCE = 'occ-traffic';
 export const TRAILS_SOURCE = 'occ-trails';
@@ -65,16 +67,6 @@ export function knotsText(gsMs) {
   return finite(gsMs) ? String(Math.max(0, Math.round(gsMs * KNOTS_PER_MPS))) : null;
 }
 
-function ageWith(t, ageS) {
-  const seconds = Math.max(0, Math.floor(finite(ageS) ? ageS : 0));
-  return seconds < 60 ? t('traffic.ageSeconds', { count: seconds }) : t('traffic.ageMinutes', { count: Math.floor(seconds / 60) });
-}
-
-/** The age of a position as the tag writes it: «· 45 s», «· 4 min». */
-export function ageText(ageS, language = 'es') {
-  return ageWith(createTranslator(mapMessages, language), ageS);
-}
-
 function tagLines(item, type, { t, language }) {
   const aviam = item.kind === 'aviam';
   const name = (aviam ? filled(item.flightNumber) : null) ?? filled(item.callsign) ?? filled(item.registration)
@@ -88,7 +80,7 @@ function tagLines(item, type, { t, language }) {
   const typeCode = filled(item.typeIcao)?.toUpperCase() ?? type.code ?? null;
   let suffix = '';
   if (item.quality === 'estimated') suffix = TAGS.estimated[language] ?? TAGS.estimated.es;
-  else if (item.quality === 'stale') suffix = ageWith(t, item.ageS);
+  else if (item.quality === 'stale') suffix = staleWords(item.positionAt, language);
   return {
     tag1: name,
     suffix,
@@ -138,7 +130,6 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
       suffix,
       tag2,
       tagStand: aviam && !departure ? (filled(item.standCode) ?? '') : '',
-      age: item.quality === 'stale' ? ageWith(t, item.ageS) : '',
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -148,12 +139,13 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
  * The traffic source's data: one point per drawn aircraft (isDrawn), keyed by its id (`f:<flightKey>` or `h:<hex>`,
  * the source's promoted id), with
  * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground,
- * selected, forceTag, showTag, tag1, suffix, tag2, tagStand, age }`:
+ * selected, forceTag, showTag, tag1, suffix, tag2, tagStand }`:
  * - `icon`: the solid silhouette of the aircraft's category, hollow for a departing ELEVANT flight;
  * - `scale`: 1.25 for ELEVANT flights, 0.85 for other traffic, 0.6 for other traffic on the ground, 1.4 when chosen;
- * - `tag1` the flight number (other traffic: callsign, registration or address), `suffix` «est.» or the age of a
- *   stale position, `tag2` type, altitude in hundreds of feet (GND on the ground) and knots (none while standing on
- *   the ground), `tagStand` the stand an arriving flight goes to;
+ * - `tag1` the flight number (other traffic: callsign, registration or address), `suffix` «est.», or for a stale
+ *   position «Sin actualizar desde las 14:02» with the station's time of its last position (it stays the same until a
+ *   new position comes), `tag2` type, altitude in hundreds of feet (GND on the ground) and knots (none while standing
+ *   on the ground), `tagStand` the stand an arriving flight goes to;
  * - `forceTag`: the tag is always on (ELEVANT flights, the chosen aircraft, the one under the pointer); `showTag`:
  *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»).
  * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`.
