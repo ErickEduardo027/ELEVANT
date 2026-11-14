@@ -87,8 +87,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
     movesIn: 'U2', resources: ['occ_review'], pollMs: null,
     // The review route re-reads its queue, and the open operation's detail and incidents.
     readsPerRefresh: 3 }),
-  'src/features/dashboard/useDashboardData.js': site({ mode: 'screen', screen: 'dashboard', movesIn: 'U3',
-    resources: ['notifications', 'occ_planning'], pollMs: 25_000, readsPerRefresh: 3 }),
   'src/features/flight-monitoring/FlightMonitoringRoute.jsx': site({ mode: 'screen', screen: 'flight-monitoring',
     movesIn: 'U5', resources: ['occ_planning'], pollMs: 25_000, readsPerRefresh: 1 }),
   'src/features/positions-map/PositionsMapRoute.jsx': site({ mode: 'screen', screen: 'positions-map', movesIn: 'U5',
@@ -130,7 +128,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
 
 /** Other periodic reads the OCC screens send today, outside any observer (file and pace read from the code). */
 export const OCC_SCREEN_POLLS = Object.freeze([
-  Object.freeze({ screen: 'dashboard', key: 'regionalTraffic', pollMs: 120_000, file: 'src/features/dashboard/useRegionalTraffic.js' }),
   Object.freeze({ screen: 'flight-monitoring', key: 'flightSnapshot', pollMs: 30_000, file: 'src/services/flightMonitoringService.js' }),
   Object.freeze({ screen: 'positions-map', key: 'positionsSnapshot', pollMs: 30_000, file: 'src/services/positionsMapService.js' }),
   Object.freeze({ screen: 'chat', key: 'conversations', pollMs: 20_000, file: 'src/features/chat/useChatPages.js' }),

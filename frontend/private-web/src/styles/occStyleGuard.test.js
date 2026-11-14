@@ -384,7 +384,9 @@ describe('OCC legacy bridge', () => {
     const frame = /const OCC_FRAME = \{([\s\S]*?)\n\};/.exec(layout)?.[1] ?? '';
     expect(frame).toMatch(/department: 'occ'/);
     expect(frame).toMatch(/rootAttributes: \{ 'data-occ-bridge': '' \}/);
-    expect(layout).toMatch(/frameProps=\{OCC_FRAME\}/);
+    // Every frame it hands to AppShell carries it: the console's (PR U3) is OCC_FRAME with its main filled.
+    expect(layout).toMatch(/const OCC_CONSOLE_FRAME = \{ \.\.\.OCC_FRAME, mainVariant: 'fill' \};/);
+    expect(layout).toMatch(/frameProps=\{pathname === OCC_CONSOLE_PATH \? OCC_CONSOLE_FRAME : OCC_FRAME\}/);
     // AppShell hands the frame props to ShellFrame, which spreads rootAttributes on its root (ShellFrame.test.jsx).
     expect(readSource('src/features/shell/AppShell.jsx')).toMatch(/<ShellFrame\s+\{\.\.\.frameProps\}/);
     expect(readSource('src/features/shell/ShellFrame.jsx')).toMatch(/\{\.\.\.rootAttributes\}/);

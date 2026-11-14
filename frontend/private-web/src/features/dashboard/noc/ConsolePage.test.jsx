@@ -1,0 +1,614 @@
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
+import {
+  ARRIVAL_ON_FINAL_KEY, CONSOLE_HEX, DEMO_FLIGHT_KEYS, aircraftTrack, airPicture, assignmentReadiness, mapFlights,
+  notices, planningSnapshot, positionsBoard, reviewQueue, stationDay,
+} from '../../../../tests/visual/occ/fixtures/consoleApi.mjs';
+import { OCC_ACCESS, STATION } from '../../../../tests/visual/occ/fixtures/occApi.mjs';
+import { LanguageScope } from '../../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../../i18n/languageStore';
+import { assignPlanningOperation, getPlanningOptions } from '../../../services/planningService';
+import { loadSatelliteImageInfo } from '../../../services/satelliteService';
+import { createSimulatedOccMapAdapter } from '../../../services/occMapService';
+import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
+import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
+import { resetPanelFoldsForTests } from '../../occ-ui/occPanelMemory';
+import { parseMetar } from '../../weather/metar';
+import ConsolePage from './ConsolePage';
+import ConsoleRoute from './ConsoleRoute';
+
+views.ConsolePage = ConsolePage;
+
+// The OCC console on the one map engine (contratos 2.5): the route with stand-ins of its reads (the synthetic day of
+// the visual suite, tests/visual/occ/fixtures/consoleApi.mjs), the simulated map adapter over the same day, a shell
+// stub and the recording MapLibre. No request leaves the test. The honesty checks are the old Panorama's
+// (DashboardPage.test.jsx, gone with PR U3), on the new console.
+
+vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+const auth = vi.hoisted(() => ({ session: null }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ session: auth.session }) }));
+const weatherView = vi.hoisted(() => ({ current: null }));
+vi.mock('../../weather/useMdpcWeather', async () => ({
+  ...(await vi.importActual('../../weather/useMdpcWeather')), useMdpcWeather: () => weatherView.current,
+}));
+vi.mock('../../../services/weatherService', () => ({
+  loadRecentMetars: vi.fn(() => new Promise(() => {})), loadCurrentObservation: vi.fn(() => new Promise(() => {})),
+}));
+vi.mock('../../../services/satelliteService', () => ({
+  loadSatelliteImageInfo: vi.fn(() => new Promise(() => {})),
+  imageAgeMinutes: vi.fn(() => 25),
+  SATELLITE_OPACITY: { goes: 0.7, imerg: 0.82 },
+  SATELLITE_LAYERS: { goes: 'goes', imerg: 'imerg' },
+  satelliteTileAt: () => null,
+}));
+// What the console loads with next/dynamic: its view (ConsolePage.jsx, its own chunk in the app), here at once, and the
+// satellite map of the weather detail, a stand-in that says what it would draw.
+const views = vi.hoisted(() => ({ ConsolePage: null }));
+vi.mock('next/dynamic', () => ({
+  default: () => function DynamicStub(props) {
+    if (props.live !== undefined) {
+      const View = views.ConsolePage;
+      return <View {...props} />;
+    }
+    return <div data-testid="goes-cloud-map" data-imagery={props.imagery} />;
+  },
+}));
+// The import dialog and the planning drawer are Planificación's (their own tests cover them): stand-ins that keep the
+// props the console gives them.
+const opened = vi.hoisted(() => ({ importProps: null, drawerProps: null }));
+vi.mock('../../planning/components/ProviderFlightsDialog', () => ({
+  default: props => {
+    opened.importProps = props;
+    return (
+      <section role="dialog" aria-modal="true" aria-label="Importar vuelos del proveedor">
+        <button type="button" onClick={props.onImported}>Escala importada</button>
+        <button type="button" onClick={props.onClose}>Cerrar</button>
+      </section>
+    );
+  },
+}));
+vi.mock('../../planning/components/PlanningDrawer', () => ({
+  default: props => {
+    opened.drawerProps = props;
+    if (!props.flight) return null;
+    return (
+      <aside role="dialog" aria-modal="true" aria-label={`Asignación de ${props.flight.operationCode}`}>
+        <p>{props.optionsState.status}</p>
+        <button type="button" onClick={() => props.onAssign('agent-1')}>Asignar operación</button>
+        <button type="button" onClick={props.onClose}>Cerrar</button>
+      </aside>
+    );
+  },
+}));
+vi.mock('../../../services/planningService', async () => ({
+  ...(await vi.importActual('../../../services/planningService')),
+  getPlanningOptions: vi.fn(),
+  assignPlanningOperation: vi.fn(),
+}));
+
+const fake = sharedFakeMapLibre();
+const PAGE = '/admin-occ/dashboard';
+const SESSION = { accountId: '2b7c4e1a-9d3f-4c5b-8e6a-1f2d3c4b5a69',
+  stationScopes: [{ stationId: STATION.stationId, stationCode: 'PUJ' }] };
+const observation = (ageMinutes = 20) => ({
+  station: 'MDPC', observedAt: new Date(Date.now() - ageMinutes * 60_000).toISOString(),
+  metar: parseMetar('MDPC 111900Z 10013G25KT 9999 FEW022 30/23 Q1015'),
+  derived: { relativeHumidity: 66, feelsLikeC: 34, precipitationLastHourIn: 0 },
+  source: { name: 'Iowa Environmental Mesonet', url: 'https://mesonet.agron.iastate.edu', official: false },
+});
+const weatherOf = (status, data = null, extra = {}) => ({ status, data, fetchedAt: null, refreshFailed: false,
+  refreshing: false, refresh: vi.fn(), ...extra });
+
+/** Counted stand-ins of the console's four reads, answering the synthetic day at the moment of each read. */
+function consoleServices(overrides = {}) {
+  return {
+    getPlanningSnapshot: vi.fn(async ({ stationId }) => planningSnapshot({ now: Date.now(), stationId })),
+    getAssignmentReadiness: vi.fn(async ({ stationId, date }) => assignmentReadiness({ stationId, date })),
+    loadOccPositions: vi.fn(async (stationId, date) => positionsBoard({ now: Date.now(), stationId, date })),
+    loadOccReviewQueue: vi.fn(async stationId => reviewQueue({ now: Date.now(), stationId })),
+    clock: { now: () => Date.now() },
+    ...overrides,
+  };
+}
+
+/** The simulated map reads of the same day; `demo.on` puts the demo pair in the flights from the next read. */
+function simulatedMap(demo = { on: false }) {
+  return createSimulatedOccMapAdapter({ scenario: {
+    picture: ({ nowMs, stationId, trails }) => airPicture({ now: nowMs, stationId, trails }),
+    flights: ({ nowMs, stationId }) => mapFlights({ now: nowMs, stationId, demo: demo.on }),
+    tracks: { [CONSOLE_HEX.onFinal]: ({ nowMs }) => aircraftTrack({ now: nowMs, hex: CONSOLE_HEX.onFinal }) },
+  } });
+}
+
+function shellWith(overrides = {}) {
+  return createOccShellValue({ notices: { status: 'success', items: notices({ now: Date.now() }).notifications,
+    fetchedAt: new Date().toISOString(), markRead: vi.fn(async id => ({ id })), ...overrides } });
+}
+
+function renderConsole({ url = PAGE, services = consoleServices(), mapService = simulatedMap(), shell = shellWith(),
+  scope = false } = {}) {
+  window.history.replaceState({}, '', url);
+  const route = <ConsoleRoute services={services} mapService={mapService} />;
+  const view = render(
+    <DepartmentAccessProvider initialAccess={OCC_ACCESS} load={vi.fn().mockResolvedValue(OCC_ACCESS)} observe={false}>
+      <OccShellTestProvider value={shell}>{scope ? <LanguageScope>{route}</LanguageScope> : route}</OccShellTestProvider>
+    </DepartmentAccessProvider>,
+  );
+  return { ...view, services, mapService, shell, map: fake.state.liveMaps().at(-1) ?? null };
+}
+
+const region = name => screen.getByRole('region', { name, exact: true });
+const board = () => region('Tablero');
+const panelOf = id => document.querySelector(`[data-occ-floating-panel="${id}"]`);
+const search = () => new URLSearchParams(window.location.search);
+// The board answers once the map flights did: its tabs show (also inside a folded board, whose body stays mounted).
+const boardReady = () => within(board()).findByRole('tablist', { name: 'Vista del tablero', hidden: true });
+
+class FakeResizeObserver {
+  static instances = [];
+
+  constructor(callback) {
+    this.callback = callback;
+    this.targets = new Set();
+    FakeResizeObserver.instances.push(this);
+  }
+
+  observe(target) { this.targets.add(target); }
+
+  unobserve(target) { this.targets.delete(target); }
+
+  disconnect() { this.targets.clear(); }
+}
+
+beforeEach(() => {
+  fake.state.reset();
+  auth.session = SESSION;
+  weatherView.current = weatherOf('loading');
+  Object.assign(opened, { importProps: null, drawerProps: null });
+  vi.mocked(getPlanningOptions).mockReset().mockResolvedValue({
+    options: { services: [], agents: [{ id: 'agent-1', displayName: 'Marta Castillo', employeeNumber: 'EMP-0101',
+      eligible: true, eligibilityReasons: [] }] }, etag: '"planning-options-v1"' });
+  vi.mocked(assignPlanningOperation).mockReset().mockResolvedValue({ assignmentId: 'assignment-new' });
+});
+
+afterEach(() => {
+  cleanup();
+  act(() => resetLanguageForTests('es'));
+  resetPanelFoldsForTests();
+  FakeResizeObserver.instances = [];
+  vi.unstubAllGlobals();
+  vi.mocked(loadSatelliteImageInfo).mockImplementation(() => new Promise(() => {}));
+  window.history.replaceState({}, '', '/');
+});
+
+describe('the OCC console', () => {
+  it('shows the scoped OCC facts of PUJ without a station selector or synthetic claims', async () => {
+    renderConsole();
+    await boardReady();
+    // The board: the map flights of the day, as strips.
+    expect(within(board()).getByRole('button', { name: /ZZ161/ })).toBeInTheDocument();
+    expect(within(board()).getByRole('button', { name: /ZZ500/ })).toBeInTheDocument();
+    // The station's operational date, as the server decided it.
+    expect(within(board()).getByText((_, element) => element?.tagName === 'TIME'
+      && element.getAttribute('dateTime') === stationDay())).toBeInTheDocument();
+    // The urgent alert in its words, never its raw kind.
+    const alerts = region('Alertas');
+    expect(await within(alerts).findByText('Incidencia reportada en rampa')).toBeInTheDocument();
+    expect(screen.queryByText('incident_reported')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByText(/sintéticos|FlyAware|42 vuelos/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Panorama operativo' })).toBeInTheDocument();
+    // The provenance line under the map says where the data comes from.
+    const provenance = await screen.findByTestId('occ-console-provenance');
+    await waitFor(() => expect(provenance).toHaveTextContent(/Aviones: Red ADS-B de prueba, hace \d+ s\./));
+    expect(provenance).toHaveTextContent('Posiciones: referencia interna sin verificar.');
+    expect(provenance).not.toHaveTextContent('Incluye un vuelo demo.');
+  });
+
+  it('panels are regions named Tablero, Alertas, Cifras de la jornada, Posiciones and fold through their own button', async () => {
+    renderConsole();
+    await boardReady();
+    for (const name of ['Tablero', 'Alertas', 'Cifras de la jornada', 'Posiciones']) {
+      const panel = region(name);
+      const button = within(panel).getByRole('button', { name, exact: true });
+      const open = button.getAttribute('aria-expanded') === 'true';
+      // No key of its own folds it.
+      fireEvent.keyDown(button, { key: 'f' });
+      expect(button).toHaveAttribute('aria-expanded', String(open));
+      await userEvent.click(button);
+      expect(button).toHaveAttribute('aria-expanded', String(!open));
+      expect(panel).toHaveAttribute('data-folded', String(open));
+    }
+    // «Posiciones» opens folded: its pill says the figures of the day and the stands by state.
+    expect(region('Posiciones')).toHaveAttribute('data-folded', 'false');
+    await userEvent.click(within(region('Posiciones')).getByRole('button', { name: 'Posiciones' }));
+    expect(within(region('Posiciones')).getByRole('list', { name: 'Posiciones por estado' })).toHaveTextContent(/Libre/);
+    // No inspector without a selection.
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+  });
+
+  it('selecting a strip selects the flight on the map and opens the Inspector', async () => {
+    renderConsole();
+    await boardReady();
+    const strip = within(board()).getByRole('button', { name: /ZZ161/ });
+    await userEvent.click(strip);
+    await waitFor(() => expect(search().get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY));
+    expect(strip).toHaveAttribute('aria-pressed', 'true');
+    const inspector = await screen.findByRole('region', { name: 'Inspector' });
+    // The maps lane's data block of the flight, its milestones and nothing to import or assign: it has its agent.
+    expect(within(inspector).getByRole('dialog', { name: 'Vuelo ZZ161' })).toBeInTheDocument();
+    expect(within(inspector).getByRole('list', { name: 'Hitos de la escala' })).toBeInTheDocument();
+    expect(within(inspector).queryByRole('button', { name: 'Asignar agente' })).not.toBeInTheDocument();
+    // «Cerrar» of the data block clears the selection.
+    await userEvent.click(within(inspector).getByRole('button', { name: 'Cerrar' }));
+    await waitFor(() => expect(search().has('flightId')).toBe(false));
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+  });
+
+  it('a map selection switches the board tab and marks the strip', async () => {
+    const { map } = renderConsole();
+    await boardReady();
+    await act(async () => fake.state.emit(map, 'style.load'));
+    await userEvent.click(within(board()).getByRole('tab', { name: /Salidas/ }));
+    expect(within(board()).getByRole('tab', { name: /Salidas/ })).toHaveAttribute('aria-selected', 'true');
+    // A click on the aircraft on final, the flight ZZ161, as the map picks it.
+    fake.state.setRenderedFeatures(map, () => [{ layer: { id: 'occ-traffic-aviam' },
+      properties: { flightKey: ARRIVAL_ON_FINAL_KEY, kind: 'aviam' } }]);
+    await act(async () => fake.state.emit(map, 'click', { point: { x: 200, y: 200 }, lngLat: { lng: -68.5, lat: 18.53 } }));
+    await waitFor(() => expect(search().get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY));
+    await waitFor(() => expect(within(board()).getByRole('tab', { name: /Llegadas/ })).toHaveAttribute('aria-selected', 'true'));
+    expect(within(board()).getByRole('button', { name: /ZZ161/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByRole('region', { name: 'Inspector' })).toBeInTheDocument();
+  });
+
+  it('a selected stand shows its facts and its flight in the Inspector, and marks its bar on the band', async () => {
+    renderConsole({ url: `${PAGE}?stand=A5` });
+    await boardReady();
+    const inspector = await screen.findByRole('region', { name: 'Inspector' });
+    expect(within(inspector).getByTestId('stand-detail-facts')).toBeInTheDocument();
+    const flight = within(inspector).getByRole('region', { name: 'Vuelo de la posición' });
+    await waitFor(() => expect(flight).toHaveTextContent('ZZ161'));
+    // The band shows the stand's visit selected.
+    await userEvent.click(within(region('Posiciones')).getByRole('button', { name: 'Posiciones' }));
+    const band = within(region('Posiciones')).getByRole('group', { name: 'Posiciones en el tiempo' });
+    expect(within(band).getAllByRole('button', { pressed: true }).map(bar => bar.textContent)).toEqual(['ZZ161 → ZZ162']);
+    await userEvent.click(within(inspector).getByRole('button', { name: 'Quitar selección' }));
+    await waitFor(() => expect(search().has('stand')).toBe(false));
+  });
+
+  it('Recibido acknowledges through the shell read receipt', async () => {
+    const shell = shellWith();
+    renderConsole({ shell });
+    await boardReady();
+    const alerts = region('Alertas');
+    const urgent = notices({ now: Date.now() }).notifications.find(item => item.kind === 'incident_reported');
+    await userEvent.click(within(alerts).getByRole('button', { name: 'Recibido' }));
+    expect(shell.notices.markRead).toHaveBeenCalledExactlyOnceWith(urgent.id);
+    // Only the unreceived urgent and attention alerts of the station are listed; the received one and the plain notice
+    // stay in the shell's drawer.
+    expect(within(alerts).queryByText('Operación entregada para revisión')).not.toBeInTheDocument();
+    expect(within(alerts).getByText('1 sin recibir')).toBeInTheDocument();
+  });
+
+  it('lists the open conditions of the day in «Pendientes de la jornada» with the action that closes each', async () => {
+    renderConsole();
+    await boardReady();
+    const pending = within(region('Alertas')).getByRole('region', { name: 'Pendientes de la jornada' });
+    await waitFor(() => expect(within(pending).getByText(/ZZ500 sin agente, llega en/)).toBeInTheDocument());
+    expect(within(pending).getByText(/ZZ610 sin posición/)).toBeInTheDocument();
+    expect(within(pending).getByText(/ZZ610 sin agente/)).toBeInTheDocument();
+    const day = stationDay().replaceAll('-', '');
+    expect(within(pending).getByText(`PUJ-${day}-005 por revisar`)).toBeInTheDocument();
+    expect(within(pending).getByRole('link', { name: 'Revisar' }))
+      .toHaveAttribute('href', `/admin-occ/review?operationId=${reviewQueue().operations[0].operationId}`);
+    expect(within(pending).getAllByRole('link', { name: 'Elegir posición' })[0]).toHaveAttribute('href', '/admin-occ/positions-map');
+  });
+
+  it('Importar vuelos opens the import dialog over the console', async () => {
+    const services = consoleServices();
+    renderConsole({ services });
+    await boardReady();
+    await userEvent.click(within(board()).getByRole('button', { name: 'Importar vuelos' }));
+    const dialog = screen.getByRole('dialog', { name: 'Importar vuelos del proveedor' });
+    expect(opened.importProps).toMatchObject({ stationId: STATION.stationId, date: stationDay(),
+      timeZone: 'America/Santo_Domingo', revision: expect.any(Number) });
+    // Over the console: the board and the map stay where they are.
+    expect(board()).toBeInTheDocument();
+    expect(screen.getByTestId('occ-map')).toBeInTheDocument();
+    // An import re-reads the day's planning, without waiting for its poll.
+    const reads = services.getPlanningSnapshot.mock.calls.length;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Escala importada' }));
+    await waitFor(() => expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+    expect(screen.queryByRole('dialog', { name: 'Importar vuelos del proveedor' })).not.toBeInTheDocument();
+  });
+
+  it('Asignar agente opens the assignment drawer over the console', async () => {
+    const services = consoleServices();
+    renderConsole({ services });
+    await boardReady();
+    const pending = within(region('Alertas')).getByRole('region', { name: 'Pendientes de la jornada' });
+    const item = (await within(pending).findByText(/ZZ500 sin agente/)).closest('li');
+    await userEvent.click(within(item).getByRole('button', { name: 'Asignar agente' }));
+    const day = stationDay().replaceAll('-', '');
+    const drawer = await screen.findByRole('dialog', { name: `Asignación de PUJ-${day}-003` });
+    await waitFor(() => expect(drawer).toHaveTextContent('success'));
+    expect(getPlanningOptions).toHaveBeenCalledWith(planningSnapshot().turnarounds[2].id, expect.anything());
+    const reads = services.getPlanningSnapshot.mock.calls.length;
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Asignar operación' }));
+    expect(assignPlanningOperation).toHaveBeenCalledWith(planningSnapshot().turnarounds[2].id, 'agent-1',
+      '"planning-options-v1"', expect.anything());
+    expect(await screen.findByText('Operación asignada a Marta Castillo.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /^Asignación de/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('a new demo arrival shows Llegada nueva with Ver y seguir, which writes flightId and follow=1', async () => {
+    const demo = { on: false };
+    const shell = shellWith();
+    renderConsole({ mapService: simulatedMap(demo), shell });
+    await boardReady();
+    // The first read only learns what is there: nothing is announced.
+    expect(screen.queryByText(/Llegada nueva/)).not.toBeInTheDocument();
+    // The superadministrator fires the demo flight: occ_planning re-reads the map flights.
+    demo.on = true;
+    act(() => shell.announce(['occ_planning']));
+    const pill = await screen.findByText('Llegada nueva: ZZ9001', {}, { timeout: 6_000 });
+    const status = pill.closest('[role="status"]');
+    expect(within(status).getByText('Demo')).toBeInTheDocument();
+    // The board lists it with «Demo» and «Llegada sin posición asignada», still to import.
+    expect(board()).toHaveTextContent('ZZ9001');
+    expect(board()).toHaveTextContent('Llegada sin posición asignada');
+    await userEvent.click(within(status).getByRole('button', { name: 'Ver y seguir' }));
+    await waitFor(() => expect(search().get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival));
+    expect(search().get('follow')).toBe('1');
+    // The map flies to the view that follows it: a demo flight in approach.
+    expect(search().get('view')).toBe('approach');
+    expect(screen.queryByText('Llegada nueva: ZZ9001')).not.toBeInTheDocument();
+    expect(screen.getByTestId('occ-console-provenance')).toHaveTextContent('Incluye un vuelo demo.');
+  }, 15_000);
+
+  it('an unavailable engine renders the same panels in a grid', async () => {
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    renderConsole();
+    await waitFor(() => expect(document.querySelector('[data-occ-console]')).toHaveAttribute('data-occ-console', 'grid'));
+    await boardReady();
+    for (const id of ['board', 'alerts', 'figures', 'positions']) expect(panelOf(id)).toHaveAttribute('data-layout', 'grid');
+    // The map stays in its place with its list, and its dock is gone.
+    const fallback = screen.getByTestId('map-unavailable');
+    expect(within(fallback).getByRole('heading', { name: 'El mapa no está disponible' })).toBeInTheDocument();
+    expect(screen.queryByTestId('map-preset-switcher')).not.toBeInTheDocument();
+    // A stand chosen from the list is the selection of the console, with its inspector.
+    await userEvent.click(within(within(fallback).getByRole('group', { name: 'Posiciones del mapa' }))
+      .getByRole('button', { name: 'A5' }));
+    await waitFor(() => expect(search().get('stand')).toBe('A5'));
+    expect(await screen.findByRole('region', { name: 'Inspector' })).toHaveAttribute('data-layout', 'grid');
+  });
+
+  it('narrow screens open the panels folded', async () => {
+    vi.stubGlobal('matchMedia', query => ({ matches: /max-width/.test(query), media: query, addEventListener() {},
+      removeEventListener() {} }));
+    renderConsole();
+    await boardReady();
+    for (const id of ['board', 'alerts', 'figures', 'positions']) expect(panelOf(id)).toHaveAttribute('data-folded', 'true');
+  });
+
+  it('a wide screen opens the board, the alerts and the figures, and folds the band', async () => {
+    vi.stubGlobal('matchMedia', query => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }));
+    renderConsole();
+    await boardReady();
+    for (const id of ['board', 'alerts', 'figures']) expect(panelOf(id)).toHaveAttribute('data-folded', 'false');
+    expect(panelOf('positions')).toHaveAttribute('data-folded', 'true');
+  });
+
+  it('open panels become map insets', async () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    renderConsole();
+    await boardReady();
+    const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height,
+      x: left, y: top, toJSON() { return this; } });
+    // The map's box at 1400 × 800, and the panels where the overlay lays them out.
+    document.querySelector('[data-occ-console-map]').getBoundingClientRect = () => rect(0, 0, 1400, 800);
+    panelOf('board').getBoundingClientRect = () => rect(12, 12, 448, 560);
+    panelOf('alerts').getBoundingClientRect = () => rect(1004, 12, 384, 300);
+    panelOf('figures').getBoundingClientRect = () => rect(560, 12, 420, 96);
+    panelOf('positions').getBoundingClientRect = () => rect(12, 748, 300, 40);
+    await act(async () => FakeResizeObserver.instances.forEach(observer => observer.callback([], observer)));
+    const map = screen.getByTestId('occ-map');
+    expect(map.style.getPropertyValue('--occ-map-inset-left')).toBe('468px');
+    expect(map.style.getPropertyValue('--occ-map-inset-right')).toBe('404px');
+    expect(map.style.getPropertyValue('--occ-map-inset-top')).toBe('116px');
+    // The folded band is a pill along the bottom: only its height counts.
+    expect(map.style.getPropertyValue('--occ-map-inset-bottom')).toBe('60px');
+
+    // Folding the board leaves its pill at the top: the left edge is the map's again.
+    await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
+    panelOf('board').getBoundingClientRect = () => rect(12, 12, 140, 40);
+    await act(async () => FakeResizeObserver.instances.forEach(observer => observer.callback([], observer)));
+    expect(map.style.getPropertyValue('--occ-map-inset-left')).toBe('0px');
+    expect(map.style.getPropertyValue('--occ-map-inset-top')).toBe('116px');
+  });
+
+  it('Escalas filters by derived resource state and labels a demo turnaround «Demo», and no other', async () => {
+    const services = consoleServices({
+      getPlanningSnapshot: vi.fn(async ({ stationId }) => {
+        const snapshot = planningSnapshot({ now: Date.now(), stationId });
+        return { ...snapshot, turnarounds: snapshot.turnarounds.map(turnaround => (
+          turnaround.arrival.flightNumber === 'ZZ610' ? { ...turnaround, isDemo: true } : turnaround)) };
+      }),
+    });
+    renderConsole({ services });
+    await boardReady();
+    await userEvent.click(within(board()).getByRole('tab', { name: /Escalas/ }));
+    const visits = () => [...board().querySelectorAll('[data-occ-visit]')];
+    await waitFor(() => expect(visits()).toHaveLength(5));
+    const filters = within(board()).getByRole('group', { name: 'Filtrar escalas' });
+    await userEvent.click(within(filters).getByRole('button', { name: /Sin recursos/ }));
+    expect(visits().map(visit => visit.textContent)).toEqual([expect.stringContaining('ZZ500'),
+      expect.stringContaining('ZZ610')]);
+    expect(visits()[0]).toHaveTextContent('sin agente');
+    expect(visits()[1]).toHaveTextContent('sin posición, sin agente');
+    // ADR-0041: the demo turnaround carries «Demo» next to its code, and no other row does.
+    expect(within(visits()[1]).getByText('Demo')).toBeInTheDocument();
+    expect(within(visits()[0]).queryByText('Demo')).not.toBeInTheDocument();
+    await userEvent.click(within(filters).getByRole('button', { name: /Completadas/ }));
+    expect(visits().map(visit => visit.textContent)).toEqual([expect.stringContaining('ZZ700')]);
+  });
+
+  it('?focus=map hides the panels behind «Mostrar paneles»', async () => {
+    renderConsole({ url: `${PAGE}?focus=map` });
+    expect(await screen.findByRole('button', { name: 'Mostrar paneles' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Tablero' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Mostrar paneles' }));
+    await waitFor(() => expect(search().has('focus')).toBe(false));
+    expect(await screen.findByRole('region', { name: 'Tablero' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Ocultar paneles' }));
+    await waitFor(() => expect(search().get('focus')).toBe('map'));
+  });
+});
+
+describe('honesty of the console states', () => {
+  it('fails closed when the station day is refused, and never shows the error text of the server', async () => {
+    const refused = Object.assign(new Error('forbidden'), { status: 403 });
+    renderConsole({ services: consoleServices({ getPlanningSnapshot: vi.fn(async () => { throw refused; }) }) });
+    await boardReady();
+    await waitFor(() => expect(region('Cifras de la jornada'))
+      .toHaveTextContent('No hay una estación OCC autorizada para consultar este panorama.'));
+    cleanup();
+
+    const services = consoleServices({ getPlanningSnapshot: vi.fn(async () => { throw new Error('SQL password=secret'); }) });
+    renderConsole({ services });
+    await boardReady();
+    const figures = region('Cifras de la jornada');
+    await waitFor(() => expect(within(figures).getByRole('alert'))
+      .toHaveTextContent('No se pudo cargar el panorama operativo de la estación.'));
+    expect(screen.queryByText(/password=secret/)).not.toBeInTheDocument();
+    const reads = services.getPlanningSnapshot.mock.calls.length;
+    await userEvent.click(within(figures).getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('shows the loading state without asserting zero as a business fact', async () => {
+    const never = () => new Promise(() => {});
+    renderConsole({
+      services: consoleServices({ getPlanningSnapshot: vi.fn(never), loadOccPositions: vi.fn(never),
+        loadOccReviewQueue: vi.fn(never) }),
+      mapService: { ...simulatedMap(), getMapFlights: vi.fn(never), getAirPicture: vi.fn(never) },
+    });
+    expect(await screen.findAllByRole('status')).not.toHaveLength(0);
+    expect(screen.getAllByRole('status').some(item => item.textContent.includes('Cargando panorama'))).toBe(true);
+    expect(screen.queryByText('ZZ161')).not.toBeInTheDocument();
+    // No figure claims a count nobody made.
+    expect(region('Cifras de la jornada').querySelectorAll('[data-occ-stat]')).toHaveLength(0);
+  });
+
+  it('keeps the last data visible and says so when a background refresh fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      let fail = false;
+      const services = consoleServices({ getPlanningSnapshot: vi.fn(async ({ stationId }) => {
+        if (fail) throw new Error('down');
+        return planningSnapshot({ now: Date.now(), stationId });
+      }) });
+      renderConsole({ services });
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      const figures = region('Cifras de la jornada');
+      expect(within(figures).getAllByRole('definition').length).toBeGreaterThan(0);
+      fail = true;
+      // The safety poll re-reads the planning after 60 s, and it fails.
+      await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });
+      expect(within(figures).getByRole('status')).toHaveTextContent('La última actualización falló');
+      expect(within(figures).getAllByRole('definition').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('the weather pill', () => {
+  const pill = () => screen.getByRole('button', { name: /Viento|observación|meteorológica/ });
+
+  it('shows the MDPC observation with its wind, QNH, age and unofficial source, and its detail', async () => {
+    weatherView.current = weatherOf('success', observation(20));
+    renderConsole();
+    expect(pill()).toHaveTextContent('Viento 100° · 13 kt · ráfagas 25 kt');
+    expect(pill()).toHaveTextContent('QNH 1015');
+    expect(pill()).toHaveTextContent('hace 20 min');
+    expect(pill()).toHaveTextContent('No oficial');
+    expect(pill()).not.toHaveTextContent('Desactualizado');
+    await userEvent.click(pill());
+    const detail = screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' });
+    expect(within(detail).getByText('1015 hPa')).toBeInTheDocument();
+    expect(within(detail).getByText('Escasas 2,200 ft')).toBeInTheDocument();
+    expect(within(detail).getByText(/Observado .* UTC/)).toBeInTheDocument();
+    expect(within(detail).getByText('34 °C')).toBeInTheDocument();
+    expect(within(detail).getByText('MDPC 111900Z 10013G25KT 9999 FEW022 30/23 Q1015')).toBeInTheDocument();
+    expect(within(detail).queryByText(/LIVE|En vivo/i)).not.toBeInTheDocument();
+    // The imagery of NASA GIBS, on the maps lane's satellite map, only while the detail is open.
+    expect(within(detail).getByRole('button', { name: 'GOES-East' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(detail).getByTestId('goes-cloud-map')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('goes-cloud-map')).not.toBeInTheDocument();
+  });
+
+  it('marks an old observation as outdated and a failed source as unavailable', async () => {
+    weatherView.current = weatherOf('success', observation(3 * 60));
+    const view = renderConsole();
+    expect(pill()).toHaveTextContent('Desactualizado');
+    view.unmount();
+
+    const refresh = vi.fn();
+    weatherView.current = weatherOf('error', null, { refresh });
+    renderConsole();
+    expect(pill()).toHaveTextContent('La observación meteorológica no está disponible.');
+    await userEvent.click(pill());
+    const alert = within(screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' })).getByRole('alert');
+    expect(alert).toHaveTextContent('no está disponible');
+    await userEvent.click(within(alert).getByRole('button', { name: 'Reintentar' }));
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('shows the GOES-East and IMERG image times with their source, a date-only product and a missing image', async () => {
+    vi.mocked(loadSatelliteImageInfo).mockImplementation(layer => Promise.resolve(layer === 'goes'
+      ? { time: '2026-09-28T13:00:00Z', precision: 'instant' } : { time: '2026-09-28T09:30:00Z', precision: 'instant' }));
+    weatherView.current = weatherOf('success', observation(20));
+    renderConsole();
+    await userEvent.click(pill());
+    const detail = screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' });
+    expect(await within(detail).findByText(/Imagen 13:00 UTC/)).toBeInTheDocument();
+    expect(within(detail).getByText(/NASA GIBS/)).toBeInTheDocument();
+    await userEvent.click(within(detail).getByRole('button', { name: 'IMERG' }));
+    expect(await within(detail).findByText(/Imagen 09:30 UTC/)).toBeInTheDocument();
+    expect(within(detail).getByText(/antigüedad 25 min/)).toBeInTheDocument();
+    expect(within(detail).getByText(/estimada IMERG/)).toBeInTheDocument();
+    expect(within(detail).getByText(/no radar/)).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+
+    vi.mocked(loadSatelliteImageInfo).mockImplementation(layer => (layer === 'imerg'
+      ? Promise.resolve({ time: '2026-09-28', precision: 'day' }) : Promise.reject(new Error('unavailable'))));
+    await userEvent.click(pill());
+    const again = screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' });
+    // The choice of layer is kept between two openings.
+    expect(within(again).getByRole('button', { name: 'IMERG' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await within(again).findByText(/Producto del día 2026-09-28 UTC/)).toBeInTheDocument();
+    expect(within(again).queryByText(/Imagen \d\d:\d\d UTC/)).not.toBeInTheDocument();
+    await userEvent.click(within(again).getByRole('button', { name: 'GOES-East' }));
+    expect(await within(again).findByText('La imagen satelital no está disponible.')).toBeInTheDocument();
+  });
+});
+
+describe('the console in English', () => {
+  it('renders in English inside the OCC language scope and in Spanish outside it', async () => {
+    act(() => resetLanguageForTests('en'));
+    renderConsole({ scope: true });
+    expect(screen.getByRole('heading', { level: 1, name: 'Operations overview' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Board', exact: true })).toBeInTheDocument();
+    expect(await within(region('Alerts')).findByText('Incident reported on the ramp')).toBeInTheDocument();
+    cleanup();
+
+    renderConsole();
+    expect(screen.getByRole('heading', { level: 1, name: 'Panorama operativo' })).toBeInTheDocument();
+  });
+});

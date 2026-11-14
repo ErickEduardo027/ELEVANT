@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import { parseMetar } from '../../weather/metar';
-import { dashboardMessages } from '../dashboardMessages';
 import { consoleMessages } from './consoleMessages';
 import { describeClouds, describeVisibility, describeWeather, describeWind } from './weatherWords';
 
@@ -31,15 +30,29 @@ describe('weatherWords', () => {
     expect(describeVisibility(t, null)).toBe('—');
     expect(describeClouds(t, [])).toBe('Sin nubes reportadas');
 
-    // The console's words are the dashboard's: the same sentence from either message file, in both languages.
+    // The console's words are the old dashboard's panel's, word for word, in both languages (that panel and its message
+    // file are gone with PR U3; these are the sentences it wrote for the same reports).
+    const reports = ['MDPC 111900Z 10013G25KT 280V340 9999 FEW022 30/23 Q1015',
+      'MDPC 111900Z VRB03KT 3000 -SHRA VCTS SCT015CB BKN040 25/23 Q1012'];
+    const expected = {
+      es: [
+        { wind: '100° · 13 kt · ráfagas 25 kt · variable 280°–340°', visibility: '10 km o más', clouds: 'Escasas 2,200 ft',
+          weather: [] },
+        { wind: 'Variable · 3 kt', visibility: '3 km', clouds: 'Dispersas 1,500 ft CB · Fragmentadas 4,000 ft',
+          weather: ['ligera chubascos lluvia'] },
+      ],
+      en: [
+        { wind: '100° · 13 kt · gusts 25 kt · variable 280°–340°', visibility: '10 km or more', clouds: 'Few 2,200 ft',
+          weather: [] },
+        { wind: 'Variable · 3 kt', visibility: '3 km', clouds: 'Scattered 1,500 ft CB · Broken 4,000 ft',
+          weather: ['light showers rain'] },
+      ],
+    };
     for (const language of ['es', 'en']) {
       const fromConsole = createTranslator(consoleMessages, language);
-      const fromDashboard = createTranslator(dashboardMessages, language);
-      for (const report of ['MDPC 111900Z 10013G25KT 280V340 9999 FEW022 30/23 Q1015',
-        'MDPC 111900Z VRB03KT 3000 -SHRA VCTS SCT015CB BKN040 25/23 Q1012']) {
-        expect(words(parseMetar(report), fromConsole), `${language}: ${report}`)
-          .toEqual(words(parseMetar(report), fromDashboard));
-      }
+      reports.forEach((report, index) => {
+        expect(words(parseMetar(report), fromConsole), `${language}: ${report}`).toEqual(expected[language][index]);
+      });
     }
     expect(describeWind(createTranslator(consoleMessages, 'en'), parseMetar('MDPC 111900Z 10013G25KT 9999 Q1015').wind))
       .toBe('100° · 13 kt · gusts 25 kt');

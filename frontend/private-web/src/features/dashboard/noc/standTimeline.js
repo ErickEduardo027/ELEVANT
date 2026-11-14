@@ -44,13 +44,16 @@ export function bandWindow(range, nowMs, timeZone) {
 }
 
 const flightsCache = new WeakMap();
+// Before the first read of the flights: one empty Map, so a memo fed with it holds still too.
+const NO_FLIGHTS_BY_TURNAROUND = new Map();
 
 /**
  * The map flights by turnaround id, `Map<turnaroundId, legs>`, for the stand display (useStandDisplay), the map and the
- * band. The same array of flights (one read) always gives the same Map, so a memo fed with it holds still between reads.
+ * band. The same array of flights (one read) always gives the same Map, and no flights the same empty Map, so a memo fed
+ * with it holds still between reads.
  */
 export function flightsByTurnaroundOf(flights) {
-  if (!Array.isArray(flights)) return new Map();
+  if (!Array.isArray(flights)) return NO_FLIGHTS_BY_TURNAROUND;
   const cached = flightsCache.get(flights);
   if (cached) return cached;
   const byTurnaround = new Map();

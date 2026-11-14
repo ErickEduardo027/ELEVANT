@@ -34,7 +34,7 @@ sources:
   - frontend/private-web/src/features/notifications/DepartmentNotificationCenter.jsx
   - frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx
   - frontend/private-web/src/features/positions-map/components/PositionActions.jsx
-  - frontend/private-web/src/features/dashboard/useDashboardData.js
+  - frontend/private-web/src/features/dashboard/noc/useConsoleData.js
   - frontend/public-web/src/components/portal/AirlineContractSignature.tsx
 tags:
   - revision-docente
@@ -190,6 +190,9 @@ estación. Las cifras cambian respecto de los reportes anteriores.*
 - **Panorama.** Si el panorama no responde en 20 s, la pantalla avisa y ofrece
   reintentar. Las señales del feed ya no reinician una lectura en curso; antes,
   eso lo dejaba en «Cargando panorama operativo…».
+
+  *Posterior al commit verificado: desde el PR U3, la consola de Panorama hace
+  cada lectura con el mismo límite de 20 s y el mismo reintento.*
 - **Límite:** las posiciones combinadas (9-Alfa, 32-Bravo) siguen sin modelarse
   en la base de datos.
 

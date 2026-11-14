@@ -1,3 +1,4 @@
+import { usePathname } from 'next/navigation';
 import AppShell from '../shell/AppShell';
 import DevPreviewPanel from '../dashboard/components/DevPreviewPanel';
 import { useMemo } from 'react';
@@ -18,16 +19,23 @@ import { OccShellProvider } from './shell/OccShellProvider';
 // (src/styles/occ-legacy-bridge.css); quitarlo lo apaga entero.
 // OccShellProvider tiene el único observador de cambios de la pestaña y lee los
 // avisos una vez para todo el marco: AppShell no lee avisos ni pinta toasts aquí.
+// La consola (Panorama) es un mapa a pantalla completa: `main` la llena sin
+// margen ni desplazamiento (`mainVariant: 'fill'`); los demás módulos desplazan
+// su contenido como siempre.
 const OCC_FRAME = {
   department: 'occ',
   rootAttributes: { 'data-occ-bridge': '' },
   SidebarComponent: OccSidebar,
   TopbarComponent: OccTopbar,
   rootClassName: 'bg-occ-canvas text-occ-text',
+  mainVariant: 'scroll',
 };
+const OCC_CONSOLE_FRAME = { ...OCC_FRAME, mainVariant: 'fill' };
+export const OCC_CONSOLE_PATH = `${ADMIN_OCC_BASE_PATH}/dashboard`;
 
 export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, children }) {
   const { forceState, setForceState } = useAdminOccPreview();
+  const pathname = usePathname();
   const { access } = useDepartmentAccess();
   const navigation = useMemo(() => allowedNavigation(ADMIN_OCC_NAVIGATION, access), [access]);
   const { permitted, empty } = useNavigationGuard(ADMIN_OCC_NAVIGATION, navigation);
@@ -42,7 +50,7 @@ export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, chi
           onLogout={onLogout}
           notificationsPath={`${ADMIN_OCC_BASE_PATH}/notifications`}
           notificationsEnabled={false}
-          frameProps={OCC_FRAME}
+          frameProps={pathname === OCC_CONSOLE_PATH ? OCC_CONSOLE_FRAME : OCC_FRAME}
         >{empty ? <NoModulesNotice /> : permitted ? children : null}</AppShell>
       </OccShellProvider>
       {process.env.NODE_ENV === 'development' && (

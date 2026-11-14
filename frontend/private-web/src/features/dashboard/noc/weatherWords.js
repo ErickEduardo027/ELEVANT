@@ -1,6 +1,6 @@
 // The words of a METAR observation (features/weather/metar.js: parseMetar), moved from the old dashboard's weather panel
-// with the same text: the console's weather pill and its detail say them, and so does the old panel until it goes. `t`
-// translates a message file with the dashboard's `weather.*` words (consoleMessages, dashboardMessages). Pure.
+// with the same text: the console's weather pill and its detail say them (WeatherPill.jsx). `t` translates a message
+// file with the console's `weather.*` words (consoleMessages). Pure.
 
 /** «fuerte tormenta lluvia»: the intensity, the descriptor and the phenomena of a present-weather group. */
 export function describeWeather(t, item) {

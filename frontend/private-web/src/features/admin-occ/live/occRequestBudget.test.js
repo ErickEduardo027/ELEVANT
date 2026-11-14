@@ -181,7 +181,6 @@ describe('OCC request budget', () => {
       + 'and nothing else is').toEqual({ notListed: [], notFound: [] });
 
     expect(SITES.filter(([, site]) => site.mode === 'screen').map(([file, site]) => `${file} → ${site.movesIn}`)).toEqual([
-      'src/features/dashboard/useDashboardData.js → U3',
       'src/features/flight-monitoring/FlightMonitoringRoute.jsx → U5',
       'src/features/positions-map/PositionsMapRoute.jsx → U5',
       'src/features/planning/PlanningRoute.jsx → U5',

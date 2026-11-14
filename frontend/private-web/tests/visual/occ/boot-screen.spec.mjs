@@ -1,14 +1,15 @@
 import { OCC_BOOT_EXIT_MS, OCC_BOOT_READY_TIMEOUT_MS } from '../../../src/features/admin-occ/boot/occBootMachine.js';
 import { OCC_BOOT_SEEN_KEY } from '../../../src/features/admin-occ/boot/occBootSession.js';
-import { ACCESS_PATH, answerLegacyConsoleOrigins, createBootApi } from './fixtures/bootApi.mjs';
+import { ACCESS_PATH, answerConsoleOrigins, createBootApi } from './fixtures/bootApi.mjs';
 import { AUTH_STORAGE_KEY, occSession } from './fixtures/occApi.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
 // The OCC boot screen (PR U4, contratos 2.6) in Chrome, with a synthetic OCC session and a stubbed API
 // (fixtures/bootApi.mjs). Each test is a fresh login: a new browser context starts with an empty sessionStorage, so the
-// tab has not seen the screen yet. The screen must cover Panorama from the session check, leave at most 6 s after the
-// department access loaded (here Panorama reports ready first), and never take a click once it starts leaving; a
+// tab has not seen the screen yet. The screen must cover Panorama, the OCC console (PR U3), from the session check,
+// leave at most 6 s after the department access loaded (here the console reports its first data first: the map flights,
+// ConsoleRoute.jsx; its map's own report does not end the wait), and never take a click once it starts leaving; a
 // reload of the same tab does not show it again. Screenshots for review go to test-results/visual: early in its
 // animation, while it waits for Panorama, the console after it, and the reduced-motion variant.
 
@@ -58,7 +59,7 @@ const phaseAt = (record, phase) => record.phases.find(entry => entry.phase === p
 async function enterOcc(page, isolation, delays) {
   const api = createBootApi(delays);
   isolation.setApi(api.handle);
-  await answerLegacyConsoleOrigins(page);
+  await answerConsoleOrigins(page);
   await page.addInitScript(recordBootScreen);
   await page.addInitScript(([key, session]) => {
     window.localStorage.setItem(key, JSON.stringify(session));
@@ -102,7 +103,9 @@ async function clickTheRail(page) {
     .toHaveAttribute('aria-expanded', 'false', { timeout: 1_000 });
 }
 
-const panorama = page => page.getByRole('region', { name: 'Resumen operacional' });
+// The console's board, and its tabs, which it shows only once the map flights answered: the console's first data.
+const panorama = page => page.getByRole('region', { name: 'Tablero', exact: true });
+const consoleData = page => panorama(page).getByRole('tablist', { name: 'Vista del tablero' });
 
 /**
  * Waits for the screen to go after the department access answered at `accessAt` (Date.now() of this process) and checks
@@ -133,7 +136,7 @@ test.describe('the OCC boot screen', () => {
       test('shows on a fresh login, leaves within 6 s of the access and never blocks a click', async ({
         page, isolation,
       }, testInfo) => {
-        // The access takes 1.5 s; Panorama's first data 3 s more (two reads of 1.5 s, one after the other).
+        // The access takes 1.5 s; the console's first data 1.5 s more (its reads run side by side).
         const { api, access, html } = await enterOcc(page, isolation, { accessDelayMs: 1_500, consoleDelayMs: 1_500 });
         const screen = page.locator(SCREEN);
         await expect(screen).toBeVisible();
@@ -171,8 +174,8 @@ test.describe('the OCC boot screen', () => {
         const waited = await expectLeftAfterAccess(page, accessAt);
         expect(waited).toBeLessThan(OCC_BOOT_READY_TIMEOUT_MS - 1_000);
 
-        // The console under it is the real one, with Panorama's data and its ramp map.
-        await expect(panorama(page)).toBeVisible();
+        // The console under it is the real one, with its data and its map.
+        await expect(consoleData(page)).toBeVisible();
         expect(api.consoleReads).toBeGreaterThanOrEqual(3);
         await mapReady(page.getByTestId('occ-map').first());
         await shoot(page, testInfo, `u4-arranque-despues-${viewport.width}`);
@@ -189,25 +192,25 @@ test.describe('the OCC boot screen', () => {
     test('leaves 6 s after the access when no screen reports ready, and lets the clicks through', async ({
       page, isolation,
     }) => {
-      // Panorama's first data take 10 s: the screen does not wait for them.
-      const { access } = await enterOcc(page, isolation, { accessDelayMs: ACCESS_PAUSE_MS, consoleDelayMs: 5_000 });
+      // The console's first data take 8 s: the screen does not wait for them.
+      const { access } = await enterOcc(page, isolation, { accessDelayMs: ACCESS_PAUSE_MS, consoleDelayMs: 8_000 });
       const screen = page.locator(SCREEN);
       await access;
       const waited = await expectLeftAfterAccess(page, Date.now());
       // It left on its timer.
       expect(waited).toBeGreaterThanOrEqual(OCC_BOOT_READY_TIMEOUT_MS - SLACK_MS);
 
-      // Panorama is still loading, and the page already takes clicks.
-      await expect(page.getByRole('status').filter({ hasText: 'Cargando panorama operativo…' })).toBeVisible();
+      // The console is still loading, and the page already takes clicks.
+      await expect(page.getByRole('status').filter({ hasText: 'Cargando panorama operativo…' }).first()).toBeVisible();
       await clickTheRail(page);
       // Its data arrive later, with no screen over them.
-      await expect(panorama(page)).toBeVisible({ timeout: 15_000 });
+      await expect(consoleData(page)).toBeVisible({ timeout: 15_000 });
       await expect(screen).toHaveCount(0);
     });
 
     test('a second entry in the same tab does not show it', async ({ page, isolation }) => {
       await enterOcc(page, isolation, { accessDelayMs: ACCESS_PAUSE_MS, consoleDelayMs: 500 });
-      await expect(panorama(page)).toBeVisible();
+      await expect(consoleData(page)).toBeVisible();
       await expect(page.locator(SCREEN)).toHaveCount(0, { timeout: OCC_BOOT_READY_TIMEOUT_MS + OCC_BOOT_EXIT_MS });
       const first = await bootRecord(page);
       expect(first.phases.map(entry => entry.phase)).toEqual(['waitingAccess', 'waitingReady', 'leaving', 'gone']);
@@ -215,7 +218,7 @@ test.describe('the OCC boot screen', () => {
       expect(await page.evaluate(key => window.sessionStorage.getItem(key), OCC_BOOT_SEEN_KEY))
         .toBe(occSession().accountId);
 
-      // The same tab and the same login: a reload opens Panorama directly.
+      // The same tab and the same login: a reload opens the console directly.
       await page.reload();
       await expect(panorama(page)).toBeVisible();
       await expect(page.locator(SCREEN)).toHaveCount(0);
