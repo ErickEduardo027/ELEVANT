@@ -356,6 +356,9 @@ export const MIGRATED_FOLDERS = Object.freeze([
   'src/features/devices',
   'src/features/ready-contracts',
   'src/features/reports',
+  // Monitoreo de vuelos (U5): the board, the inspector and the page on occ-ui; its map adapter (FlightMap.jsx, the maps
+  // lane's) already paints with occ tokens.
+  'src/features/flight-monitoring',
 ]);
 
 // Files rebuilt with occ-ui inside a folder that stays on the bridge, with the same rule. Notificaciones' route is the

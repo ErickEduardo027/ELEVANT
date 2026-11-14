@@ -5,7 +5,6 @@ import { createElement } from 'react';
 import tailwindcss from 'tailwindcss';
 import { describe, expect, it } from 'vitest';
 import tailwindConfig from '../../tailwind.config.js';
-import FlightListItem from '../features/flight-monitoring/components/FlightListItem';
 import { OCC_ROW_TONES } from '../features/occ-ui/OccDataTable';
 import { OCC_PALETTE } from '../features/occ-ui/occPalette';
 import FlightCard from '../features/planning/components/FlightCard';
@@ -20,27 +19,20 @@ import { globalStylesheets, occMountedFiles, readSource, sourceFilesUnder } from
 const BRIDGE_CSS = 'src/styles/occ-legacy-bridge.css';
 // The OCC boot screen (U4): it renders outside ShellFrame and paints only with the tokens of the scope it carries.
 const BOOT_FOLDER = 'src/features/admin-occ/boot';
-// The OCC screens U6 rebuilt with occ-ui, one per step: they draw as occ-ui does (contratos 2.4). Each also enters
-// MIGRATED_FOLDERS, which forbids its legacy colour classes; a route rebuilt inside a folder other departments share
-// enters MIGRATED_FILES instead.
+// The OCC screens U6 rebuilt with occ-ui, one per step, and then those of U5: they draw as occ-ui does (contratos 2.4).
+// Each also enters MIGRATED_FOLDERS, which forbids its legacy colour classes; a route rebuilt inside a folder other
+// departments share enters MIGRATED_FILES instead.
 const REBUILT_SCREEN_FOLDERS = Object.freeze([
   'src/features/review', 'src/features/position-coverage', 'src/features/chat', 'src/features/master-data',
-  'src/features/devices', 'src/features/ready-contracts', 'src/features/reports',
+  'src/features/devices', 'src/features/ready-contracts', 'src/features/reports', 'src/features/flight-monitoring',
 ]);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
 
-// The files mounted under /admin-occ that draw a status stripe with an inline colour, and how to render each.
+// The files mounted under /admin-occ that draw a status stripe with an inline colour, and how to render each. Monitoreo
+// de vuelos draws none since U5: its strips are occ-ui's (OccFlightStrip), which name the status in words.
 const STRIPE_PAINTERS = {
-  'src/features/flight-monitoring/components/FlightListItem.jsx': () => createElement(FlightListItem, {
-    flight: {
-      id: 2, flightNumber: 'AA904', airline: 'American', status: 'delayed', origin: 'PUJ', destination: 'MIA',
-      eta: '2026-08-06T08:20:00-04:00', stand: 'B21',
-    },
-    selected: false,
-    onSelect() {},
-  }),
   'src/features/planning/components/FlightCard.jsx': () => createElement(FlightCard, {
     flight: createPlanningFlight(), now: '2026-08-19T11:45:00-04:00', onSelect() {},
   }),
@@ -980,6 +972,12 @@ describe('OCC legacy bridge', () => {
     ]));
     // Reportes keeps no export button of its own: its actions are OccButtons in the panel's header.
     expect(existsSync('src/features/reports/components')).toBe(false);
+    // Monitoreo de vuelos (U5): its page, board, inspector and message file, and the maps lane's adapter it hosts.
+    expect(rebuiltFiles).toEqual(expect.arrayContaining([
+      'src/features/flight-monitoring/FlightMonitoringPage.jsx', 'src/features/flight-monitoring/components/FlightBoard.jsx',
+      'src/features/flight-monitoring/components/FlightInspector.jsx',
+      'src/features/flight-monitoring/flightMonitoringMessages.js', 'src/features/flight-monitoring/components/FlightMap.jsx',
+    ]));
   });
 
   it('the boot screen styles use only occ tokens defined on the OCC scope', () => {

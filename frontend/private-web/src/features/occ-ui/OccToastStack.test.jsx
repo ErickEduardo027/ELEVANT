@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import tailwindConfig from '../../../tailwind.config.js';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
-import OccToastStack, { OCC_TOAST_PLACEMENT, OccToastAnnouncer } from './OccToastStack';
+import OccToastStack, { OCC_TOAST_PLACEMENT, OCC_TOAST_PLACEMENTS, OccToastAnnouncer } from './OccToastStack';
 
 const TOASTS = [
   { id: 'notice:a', priority: 'urgent', message: 'Incidencia reportada en rampa', code: 'OP-0412' },
@@ -104,6 +104,35 @@ describe('OccToastStack', () => {
     const { zIndex } = tailwindConfig.theme.extend;
     expect(classes).toContain('z-toast');
     for (const layer of ['nav', 'overlay', 'drawer', 'modal']) expect(Number(zIndex.toast)).toBeGreaterThan(Number(zIndex[layer]));
+  });
+
+  it('placement workArea sits at the bottom right; the default stays under the status bar', () => {
+    const view = render(stack());
+    const statusBar = document.querySelector('[data-occ-toasts]');
+    expect(statusBar).toHaveAttribute('data-placement', 'statusBar');
+    expect(classesOf(statusBar)).toEqual(expect.arrayContaining(OCC_TOAST_PLACEMENT.className.split(' ')));
+    expect(OCC_TOAST_PLACEMENTS.statusBar).toBe(OCC_TOAST_PLACEMENT);
+
+    view.rerender(stack({ placement: 'workArea' }));
+    const workArea = document.querySelector('[data-occ-toasts]');
+    const classes = classesOf(workArea);
+    expect(workArea).toHaveAttribute('data-placement', 'workArea');
+    expect(classes).toEqual(expect.arrayContaining(OCC_TOAST_PLACEMENTS.workArea.className.split(' ')));
+    // Fixed 24 px from the bottom and the right of the screen, the margin of the frame's content: away from the stack
+    // under the status bar, with nothing at the top.
+    expect(classes).toContain('fixed');
+    expect(spacingPx(classes, 'bottom')).toBe(OCC_TOAST_PLACEMENTS.workArea.bottomPx);
+    expect(spacingPx(classes, 'right')).toBe(OCC_TOAST_PLACEMENTS.workArea.rightPx);
+    expect(classes.some(name => name.startsWith('top-'))).toBe(false);
+    expect(classes).toContain('z-toast');
+    // The toasts read the same in either place.
+    expect(screen.getByRole('alert')).toHaveTextContent('Incidencia reportada en rampa, OP-0412');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(stack({ placement: 'corner' }))).toThrow(RangeError);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('speaks English inside a translated scope and renders nothing without toasts', () => {

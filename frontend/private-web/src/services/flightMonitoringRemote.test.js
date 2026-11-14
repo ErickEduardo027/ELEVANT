@@ -76,6 +76,35 @@ describe('canonical flight monitoring', () => {
     });
   });
 
+  it('carries the leg\'s three times, the demo mark and the states of the turnaround for the board', async () => {
+    const snapshot = await mocks.getPlanningSnapshot();
+    Object.assign(snapshot.turnarounds[0], { status: 'InProgress', isDemo: true, operation: { status: 'Returned' } });
+    snapshot.station.ianaTimeZone = 'America/Santo_Domingo';
+    mocks.getPlanningSnapshot.mockResolvedValue(snapshot);
+
+    const result = await getFlightMonitoringSnapshot();
+
+    expect(result.station).toEqual({ code: 'PUJ', localAbbr: 'AST', ianaTimeZone: 'America/Santo_Domingo' });
+    expect(result.flights[0]).toMatchObject({
+      direction: 'arrival', scheduledAt: '2026-09-24T10:00:00Z', estimatedAt: '2026-09-24T10:15:00Z', actualAt: null,
+      isDemo: true, turnaroundStatus: 'InProgress', operationStatus: 'Returned',
+      // What the page always had stays as it was.
+      status: 'delayed', eta: '2026-09-24T10:15:00Z', stand: 'A5', agents: 1, services: ['Equipaje'],
+      registration: 'TEST-001', aircraft: 'A320',
+    });
+  });
+
+  it('marks no flight as demo without the server\'s mark and leaves an unknown aircraft empty', async () => {
+    const snapshot = await mocks.getPlanningSnapshot();
+    Object.assign(snapshot.turnarounds[0], { aircraft: null, isDemo: null });
+    mocks.getPlanningSnapshot.mockResolvedValue(snapshot);
+
+    const [flight] = (await getFlightMonitoringSnapshot()).flights;
+
+    expect(flight).toMatchObject({ isDemo: false, turnaroundStatus: null, operationStatus: null, registration: null,
+      aircraft: null });
+  });
+
   it('refreshes only the station chosen for this subscription', async () => {
     vi.useFakeTimers();
     const secondId = '20000000-0000-0000-0000-000000000002';

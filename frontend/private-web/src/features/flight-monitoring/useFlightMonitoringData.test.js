@@ -160,14 +160,18 @@ describe('useFlightMonitoringData', () => {
     expect(result.current).toMatchObject({ status: 'success', connection: 'connected' });
     expect(result.current.data.flights.map(item => item.id)).toEqual([2]);
 
-    // A refresh that fails still takes the old flights away.
+    // A refresh that fails keeps the flights on screen, marked disconnected, with the time of the last good read: the
+    // board shows them dimmed under its stale notice.
+    const lastGood = result.current.lastUpdatedAt;
     rerender({ token: 2 });
-    await waitFor(() => expect(result.current.status).toBe('error'));
-    expect(result.current.data).toBeNull();
-    expect(result.current.connection).toBe('disconnected');
+    await waitFor(() => expect(result.current.connection).toBe('disconnected'));
+    expect(result.current.status).toBe('success');
+    expect(result.current.data.flights.map(item => item.id)).toEqual([2]);
+    expect(result.current.error).toEqual(new Error('network down'));
+    expect(result.current.lastUpdatedAt).toBe(lastGood);
   });
 
-  it('drops stale flights on poll failure and replaces the collection after recovery', async () => {
+  it('keeps the flights on a failed poll and replaces the collection after recovery', async () => {
     vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')
       .mockResolvedValue({ station: { code: 'PUJ' }, flights: [{ id: 1 }] });
     let handlers;
@@ -178,11 +182,39 @@ describe('useFlightMonitoringData', () => {
       });
     const { result } = renderHook(() => useFlightMonitoringData('PUJ'));
     await waitFor(() => expect(result.current.status).toBe('success'));
+    const lastGood = result.current.lastUpdatedAt;
     act(() => handlers.onError(new Error('network down')));
-    expect(result.current.status).toBe('error');
-    expect(result.current.data).toBeNull();
+    expect(result.current).toMatchObject({ status: 'success', connection: 'disconnected', lastUpdatedAt: lastGood });
+    expect(result.current.data.flights.map(item => item.id)).toEqual([1]);
     act(() => handlers.onSnapshot({ station: { code: 'PUJ' }, flights: [{ id: 2 }] }));
-    expect(result.current.status).toBe('success');
+    expect(result.current).toMatchObject({ status: 'success', connection: 'connected', error: null });
     expect(result.current.data.flights.map(item => item.id)).toEqual([2]);
+  });
+
+  it('takes the flights away after a refusal or an answer for another station', async () => {
+    vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')
+      .mockResolvedValue({ station: { code: 'PUJ' }, flights: [{ id: 1 }] });
+    let handlers;
+    vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates')
+      .mockImplementation((_update, _station, options) => {
+        handlers = options;
+        return () => {};
+      });
+    const { result } = renderHook(() => useFlightMonitoringData('PUJ'));
+    await waitFor(() => expect(result.current.status).toBe('success'));
+
+    // The account may no longer read the station (403, or 401 once the session ended).
+    for (const status of [403, 401]) {
+      act(() => handlers.onSnapshot({ station: { code: 'PUJ' }, flights: [{ id: 1 }] }));
+      act(() => handlers.onError(Object.assign(new Error('refused'), { status })));
+      expect(result.current, String(status)).toMatchObject({ status: 'error', data: null, connection: 'disconnected' });
+      expect(result.current.error.status).toBe(status);
+    }
+
+    // An answer for another station is never shown, nor are the flights read before it.
+    act(() => handlers.onSnapshot({ station: { code: 'PUJ' }, flights: [{ id: 1 }] }));
+    act(() => handlers.onSnapshot({ station: { code: 'SDQ' }, flights: [{ id: 9 }] }));
+    expect(result.current).toMatchObject({ status: 'error', data: null });
+    expect(result.current.error.code).toBe('station_mismatch');
   });
 });
