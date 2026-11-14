@@ -6,6 +6,7 @@ import tailwindcss from 'tailwindcss';
 import { describe, expect, it } from 'vitest';
 import tailwindConfig from '../../tailwind.config.js';
 import FlightListItem from '../features/flight-monitoring/components/FlightListItem';
+import { OCC_ROW_TONES } from '../features/occ-ui/OccDataTable';
 import { OCC_PALETTE } from '../features/occ-ui/occPalette';
 import FlightCard from '../features/planning/components/FlightCard';
 import { createPlanningFlight } from '../features/planning/testing/planningFixtures';
@@ -502,6 +503,132 @@ describe('OCC legacy bridge', () => {
       expect(outsideOcc.querySelector(label ? 'td' : 'tr').matches(atRest), `${repair} outside the OCC`).toBe(false);
     }
     document.body.replaceChildren();
+  });
+
+  it('the stacked table labels inside the OCC are 12 px sentence case without tracking', async () => {
+    const LABEL = '.table-stack tbody > tr > td::before';
+    const REPAIR = "[data-department='occ'] table.table-stack tbody > tr > td::before";
+    const TYPE = ['font-size', 'line-height', 'font-weight', 'text-transform', 'letter-spacing'];
+    // What tokens.css gives the label of a stacked cell, its dark variant included.
+    const compiled = await compileStylesheet('src/styles/tokens.css');
+    const global = new Map();
+    compiled.walkRules(rule => {
+      const plain = rule.selectors.map(item => item.replace(':is(.dark *)', '').replace(/\s+/g, ' '));
+      if (plain.includes(LABEL)) rule.walkDecls(declaration => {
+        if (TYPE.includes(declaration.prop)) global.set(declaration.prop, declaration.value);
+      });
+    });
+    // The guard bites: outside the OCC the label is 11 px, upper case and tracked.
+    expect(Object.fromEntries(global)).toMatchObject({ 'font-size': '11px', 'text-transform': 'uppercase' });
+    expect(global.get('letter-spacing')).not.toBe('normal');
+
+    // Inside the OCC, in the same container query and with more weight, every one of them is set again.
+    let repair;
+    postcss.parse(occCss).walkRules(rule => { if (rule.selector.replace(/\s+/g, ' ') === REPAIR) repair = rule; });
+    expect(repair, REPAIR).toBeDefined();
+    expect(atRulesAround(repair)).toEqual(['@container (max-width: 39.98rem)']);
+    const declared = new Map(repair.nodes.filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
+    expect([...global.keys()].filter(property => !declared.has(property))).toEqual([]);
+    expect(Object.fromEntries(TYPE.map(property => [property, declared.get(property)]))).toEqual({
+      'font-size': '0.75rem', 'line-height': '1rem', 'font-weight': '500', 'text-transform': 'none',
+      'letter-spacing': 'normal',
+    });
+    let heaviest = [0, 0, 0];
+    compiled.walkRules(rule => {
+      const plain = rule.selectors.map(item => item.replace(':is(.dark *)', '').replace(/\s+/g, ' '));
+      if (plain.includes(LABEL)) {
+        for (const weight of rule.selectors.map(specificity)) {
+          if (compareSpecificity(weight, heaviest) > 0) heaviest = weight;
+        }
+      }
+    });
+    expect(compareSpecificity(specificity(REPAIR), heaviest)).toBeGreaterThan(0);
+  });
+
+  it('the stacked cards of OccDataTable keep their height, their alignment, their folded details and the signal of a lit row', async () => {
+    const CARD = '.table-stack tbody > tr';
+    const OCC_CARD = "[data-department='occ'] table.table-stack tbody > tr";
+    const rules = new Map();
+    postcss.parse(occCss).walkRules(rule => rules.set(rule.selector.replace(/\s+/g, ' '), rule));
+    const declarationsAt = selector => Object.fromEntries((rules.get(selector)?.nodes ?? [])
+      .filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
+
+    // tokens.css makes the card a block, with a weight that outweighs `[hidden]`: the rules below answer it.
+    const compiled = await compileStylesheet('src/styles/tokens.css');
+    let heaviest = [0, 0, 0];
+    let display;
+    compiled.walkRules(rule => {
+      const plain = rule.selectors.map(item => item.replace(':is(.dark *)', '').replace(/\s+/g, ' '));
+      if (!plain.includes(CARD)) return;
+      rule.walkDecls('display', declaration => { display = declaration.value; });
+      for (const weight of rule.selectors.map(specificity)) {
+        if (compareSpecificity(weight, heaviest) > 0) heaviest = weight;
+      }
+    });
+    expect(display).toBe('block');
+    expect(compareSpecificity(heaviest, specificity('[hidden]'))).toBeGreaterThan(0);
+
+    // A card grows with its content, whatever the row's own height, and starts every label and value at the left,
+    // also in a column the table sets on the right.
+    expect(declarationsAt(OCC_CARD).height).toBe('auto');
+    const cell = `${OCC_CARD} > td`;
+    expect(declarationsAt(cell)).toEqual({ 'text-align': 'start' });
+    expect(atRulesAround(rules.get(cell))).toEqual(['@container (max-width: 39.98rem)']);
+    expect(compareSpecificity(specificity(cell), specificity('.text-right'))).toBeGreaterThan(0);
+    const folded = `${OCC_CARD}[hidden]`;
+    expect(declarationsAt(folded)).toEqual({ display: 'none' });
+    const lit = Object.fromEntries(OCC_ROW_TONES.map(tone => [tone, `${OCC_CARD}[data-occ-tone='${tone}']`]));
+    expect(Object.fromEntries(Object.entries(lit).map(([tone, selector]) => [tone, declarationsAt(selector)]))).toEqual({
+      attention: { 'border-left-width': '3px', 'border-left-color': 'var(--occ-warn)', 'background-color': 'var(--occ-warn-soft)' },
+      urgent: { 'border-left-width': '3px', 'border-left-color': 'var(--occ-danger)', 'background-color': 'var(--occ-danger-soft)' },
+    });
+    for (const selector of [folded, ...Object.values(lit)]) {
+      expect(atRulesAround(rules.get(selector)), selector).toEqual(['@container (max-width: 39.98rem)']);
+      // Heavier than the card of tokens.css and than the OCC's own card slab, which they refine.
+      expect(compareSpecificity(specificity(selector), heaviest), selector).toBeGreaterThan(0);
+      expect(compareSpecificity(specificity(selector), specificity(OCC_CARD)), selector).toBeGreaterThan(0);
+    }
+
+    // They select the folded detail and the lit rows of a stacked table inside the OCC frame only.
+    document.body.innerHTML = ['<div data-department="occ">', '<div>'].map(open => `${open}<table class="table-stack"><tbody>`
+      + '<tr data-occ-tone="attention"><td>AA904</td></tr><tr data-occ-tone="urgent"><td>DL611</td></tr>'
+      + '<tr hidden><td>Servicios</td></tr></tbody></table></div>').join('');
+    const [inside, outside] = document.querySelectorAll('table');
+    for (const table of [inside, outside]) {
+      const [attention, urgent, detail] = table.querySelectorAll('tr');
+      const expected = table === inside;
+      expect(attention.matches(lit.attention), 'attention').toBe(expected);
+      expect(urgent.matches(lit.urgent), 'urgent').toBe(expected);
+      expect(detail.matches(folded), 'folded').toBe(expected);
+      expect(attention.matches(lit.urgent)).toBe(false);
+    }
+    document.body.replaceChildren();
+  });
+
+  it('a focused row of OccDataTable draws its ring inside, and a field error reads in the red of the OCC', () => {
+    const rules = parseRules(occCss);
+    const at = selector => rules.find(rule => rule.selectors.includes(selector));
+    const FOCUS = "[data-department='occ'] :focus-visible";
+    const ROW_FOCUS = "[data-department='occ'] [data-occ-row]:focus-visible";
+    expect(Object.fromEntries(at(ROW_FOCUS).declarations)).toEqual({ 'outline-offset': '-2px' });
+    expect(compareSpecificity(specificity(ROW_FOCUS), specificity(FOCUS))).toBeGreaterThan(0);
+    // The colour and width of the ring stay the OCC's.
+    expect(Object.fromEntries(at(FOCUS).declarations)).toMatchObject({ outline: '2px solid var(--occ-accent)' });
+
+    // The system's validation message is pink in the dark theme of app/globals.css; in the OCC it is the red token.
+    const globalRule = parseRules(readSource('app/globals.css'))
+      .find(rule => rule.selectors.includes('.dark .form-validation-message'));
+    expect(globalRule.declarations.some(([property]) => property === 'color')).toBe(true);
+    const MESSAGE = "[data-department='occ'] .form-validation-message";
+    expect(Object.fromEntries(at(MESSAGE).declarations)).toEqual({ color: 'var(--occ-danger)' });
+    // As heavy, and loaded later, so it wins.
+    expect(compareSpecificity(specificity(MESSAGE), specificity('.dark .form-validation-message'))).toBe(0);
+    const stylesheets = globalStylesheets();
+    expect(stylesheets.indexOf('src/styles/occ.css')).toBeGreaterThan(stylesheets.indexOf('app/globals.css'));
+    // The red on the surfaces a message sits on keeps 4.5:1.
+    for (const surface of ['--occ-canvas', '--occ-panel', '--occ-panel-raised']) {
+      expect(contrast('--occ-danger', surface), surface).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('the manifest maps no class twice and only to tokens that occ.css defines', () => {

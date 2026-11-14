@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { OCC_PALETTE } from './occPalette';
-import { SIGNALS, STAND_STATES, STAND_STATE_KEYS, TAGS, isInOperation } from './statusVocabulary';
+import {
+  OCC_STATUS_TONE_KEYS, SIGNALS, STAND_STATES, STAND_STATE_KEYS, STATUS_TONES, TAGS, isInOperation,
+} from './statusVocabulary';
 
 const stateTokens = state => [state.fill.token, state.outline.token].filter(token => token !== null);
 
@@ -152,6 +154,53 @@ describe('tags and signals', () => {
     expect(new Set(hues).size).toBe(2);
     // Cyan means «selected or actionable», so no signal may borrow it.
     expect(hues).not.toContain(OCC_PALETTE['--occ-accent']);
+  });
+});
+
+describe('status tones', () => {
+  it('STATUS_TONES gives each tone one shape and a container only to attention and urgent', () => {
+    expect(OCC_STATUS_TONE_KEYS).toEqual(['neutral', 'active', 'done', 'muted', 'attention', 'urgent']);
+    expect(Object.keys(STATUS_TONES)).toEqual(OCC_STATUS_TONE_KEYS);
+
+    const drawing = Object.fromEntries(OCC_STATUS_TONE_KEYS.map(key => {
+      const { shape, container, textToken, glyphToken } = STATUS_TONES[key];
+      return [key, [shape, container, textToken, glyphToken]];
+    }));
+    expect(drawing).toEqual({
+      neutral: ['hollow-circle', null, '--occ-text', '--occ-muted'],
+      active: ['filled-circle', null, '--occ-text', '--occ-text'],
+      done: ['check', null, '--occ-muted', '--occ-muted'],
+      muted: ['slashed-circle', null, '--occ-faint', '--occ-faint'],
+      attention: ['triangle', '--occ-warn-soft', '--occ-text', '--occ-warn'],
+      urgent: ['octagon', '--occ-danger-soft', '--occ-text', '--occ-danger'],
+    });
+    // One shape per tone, and the two signals keep the shape and the hue of SIGNALS.
+    expect(new Set(OCC_STATUS_TONE_KEYS.map(key => STATUS_TONES[key].shape)).size).toBe(OCC_STATUS_TONE_KEYS.length);
+    for (const signal of ['attention', 'urgent']) {
+      expect(STATUS_TONES[signal].shape).toBe(SIGNALS[signal].shape);
+      expect(STATUS_TONES[signal].glyphToken).toBe(SIGNALS[signal].colorToken);
+    }
+
+    // Every token is in the palette; the normal tones carry no signal hue at all.
+    const signalHues = new Set(['--occ-accent', '--occ-accent-soft', '--occ-warn', '--occ-warn-soft', '--occ-danger',
+      '--occ-danger-soft'].map(token => OCC_PALETTE[token]));
+    for (const key of OCC_STATUS_TONE_KEYS) {
+      const { container, textToken, glyphToken } = STATUS_TONES[key];
+      for (const token of [container, textToken, glyphToken].filter(Boolean)) {
+        expect(OCC_PALETTE, `${key}: ${token}`).toHaveProperty([token]);
+      }
+      const signal = key === 'attention' || key === 'urgent';
+      expect(container !== null, key).toBe(signal);
+      if (!signal) {
+        for (const token of [textToken, glyphToken]) expect(signalHues.has(OCC_PALETTE[token]), `${key}: ${token}`).toBe(false);
+      }
+    }
+    // The word on a signal's slab stays plain text: the colour lives in the glyph.
+    expect(STATUS_TONES.attention.textToken).toBe('--occ-text');
+    expect(STATUS_TONES.urgent.textToken).toBe('--occ-text');
+
+    expect(Object.isFrozen(OCC_STATUS_TONE_KEYS)).toBe(true);
+    expect(() => { STATUS_TONES.done.shape = 'circle'; }).toThrow(TypeError);
   });
 });
 
