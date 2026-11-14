@@ -87,7 +87,7 @@ El tráfico de OpenSky (`GET occ/traffic/aircraft`) no cambia: sigue apagado sin
 
 ## Clima aeronáutico: aviationweather.gov
 
-El clima del aeródromo del OCC ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del PR M8) lee la Data API de aviationweather.gov, del Aviation Weather Center de NOAA, detrás del puerto `IAerodromeWeatherSource`. Solo el servidor la llama, desde `AviationWeatherSource`; un navegador la leerá solo a través de `GET occ/weather`, así que la CSP no cambia. Hasta la segunda parte de M8 ninguna pantalla hace esa lectura: Private Web sigue con el METAR de Iowa Environmental Mesonet.
+El clima del aeródromo del OCC ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del PR M8) lee la Data API de aviationweather.gov, del Aviation Weather Center de NOAA, detrás del puerto `IAerodromeWeatherSource`. Solo el servidor la llama, desde `AviationWeatherSource`; un navegador la lee solo a través de `GET occ/weather`, así que la CSP no cambia. Desde la segunda parte de M8 (PR M8, mapas), Private Web hace esa lectura en Monitoreo de vuelos, Mapa de posiciones, Planificación y el panel de meteorología de la consola, y cada pantalla la repite cada 10 minutos con la pestaña a la vista. El navegador ya no pide el METAR actual a Iowa Environmental Mesonet, que solo da el historial de 6 horas de ese panel hasta que U3 lo retire.
 
 | Servicio | Consultas | Condiciones | Cadencia |
 | --- | --- | --- | --- |
