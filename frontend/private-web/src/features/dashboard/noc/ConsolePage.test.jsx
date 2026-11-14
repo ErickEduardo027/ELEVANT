@@ -624,9 +624,10 @@ describe('the OCC console', () => {
       ? `[data-occ-tag="${key}"]` : `[data-occ-glyph="${key}"]`) !== null);
     const body = () => board().querySelector('[role="tabpanel"]');
 
-    // «Llegadas»: the demo arrival still to import, without a stand and due within the hour.
+    // «Llegadas»: the demo arrival still to import, without a stand and due within the hour; the map draws its aircraft
+    // where its demo clock puts it (PR M6), an estimated position, so its strip also says «est.».
     await waitFor(() => expect(body()).toHaveTextContent('ZZ9001'));
-    expect(legendKeys()).toEqual(['attention', 'demo']);
+    await waitFor(() => expect(legendKeys()).toEqual(['attention', 'demo', 'estimated']));
     expect(legend()).toHaveTextContent('Atención');
     expect(legend()).toHaveTextContent('Simulado para la demostración');
     expect(within(legend()).getByText('Demo')).toHaveAttribute('data-occ-tag', 'demo');
