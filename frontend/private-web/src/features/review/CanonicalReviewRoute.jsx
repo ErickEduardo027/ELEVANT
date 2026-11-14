@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { BREAKPOINTS } from '../../config/breakpoints';
 import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchParams';
 import { useAuth } from '../auth/AuthContext';
-import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { selectOccStationScopes } from '../admin-occ/useOccStation';
 import { useOccReviewChangeVersion } from '../admin-occ/useOccReviewQueue';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
@@ -12,16 +12,40 @@ import {
   loadOccReviewSubmissionDetail, loadOccReviewSubmissionHistory,
 } from '../../services/occReviewService';
 import { reviewMessages } from './reviewMessages';
+import { reviewStatusTone } from './reviewStatusTone';
 import {
   checklistAnswerLabel, checklistStatusLabel, incidentSeverityLabel, incidentStatusLabel, incidentTypeLabel,
   serviceOrderStateLabel, serviceStatusLabel, submissionStatusLabel, unitLabel,
 } from '../operations/operationLabels';
 import OperationIncidentsPanel from '../incidents/OperationIncidentsPanel';
+import OccButton from '../occ-ui/OccButton';
+import OccDataTable from '../occ-ui/OccDataTable';
+import OccDialog from '../occ-ui/OccDialog';
+import OccEmptyState from '../occ-ui/OccEmptyState';
+import { OccTextareaField } from '../occ-ui/OccField';
+import OccGlyph from '../occ-ui/OccGlyph';
+import OccPanel from '../occ-ui/OccPanel';
+import OccPlate from '../occ-ui/OccPlate';
+import OccSegmented from '../occ-ui/OccSegmented';
+import OccStatTile, { OccStatList } from '../occ-ui/OccStatTile';
+import OccStatusPill from '../occ-ui/OccStatusPill';
+import OccToolbar from '../occ-ui/OccToolbar';
+import { formatClock } from '../occ-ui/occTime';
 import OperationDocumentsSection from './components/OperationDocumentsSection';
 import OperationCloseSection from './components/OperationCloseSection';
 import ReopenReviewSection from './components/ReopenReviewSection';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NO_ROWS = Object.freeze([]);
+// From 1280 px the detail is docked at the right of the queue (template C of the design, «Mesa de trabajo»).
+const DOCKED = `(min-width: ${BREAKPOINTS.xl}px)`;
+const isDocked = () => typeof window !== 'undefined' && window.matchMedia?.(DOCKED)?.matches === true;
+
+// Sections inside the detail: a 1 px joint on the panel slab, no shadow.
+const SUBSECTION = 'min-w-0 rounded-md border border-occ-line p-3';
+const SUBHEADING = 'text-sm font-semibold text-occ-text';
+const TERM = 'text-xs font-medium text-occ-muted';
+const NOTE = 'flex items-start gap-1.5 text-sm text-occ-text';
 
 function useReviewText() {
   const { t, language, locale } = useTranslation(reviewMessages);
@@ -42,13 +66,59 @@ function dateTime(value, timeZone, locale) {
   }
 }
 
+// The local calendar day of an instant in the station's zone, as `YYYY-MM-DD` (en-CA writes it that way).
+function localDay(value, timeZone) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone })
+      .format(new Date(value));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * When a hand-off arrived, in the station's time: «14:32», with its day in front («24/09 00:15») when the agent sent it
+ * on another local day than the operation's.
+ */
+function submittedText(row, timeZone, locale) {
+  try {
+    const clock = formatClock(row.submittedAt, locale, timeZone);
+    if (localDay(row.submittedAt, timeZone) === row.operationDate) return clock;
+    const day = new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', timeZone }).format(new Date(row.submittedAt));
+    return `${day} ${clock}`;
+  } catch {
+    return dateTime(row.submittedAt, 'UTC', locale);
+  }
+}
+
+// The queue's read as one of the states of OccRemoteView (useOccResource's names): a 403 is the no-permission state.
+function queueViewStatus(queue) {
+  if (queue.status === 'success') return 'success';
+  if (queue.status !== 'error') return 'loading';
+  if (queue.error?.status === 403) return 'forbidden';
+  if (queue.error?.status === 401) return 'unauthorized';
+  return 'error';
+}
+
 function Notice({ title, children, onRetry }) {
   const { t } = useTranslation(reviewMessages);
   return (
-    <div role="alert" className="rounded-2xl border border-status-warning/30 bg-white/80 p-5 text-ink-900 dark:bg-surface-dark-card dark:text-text-primary-dark">
+    <div role="alert" className="rounded-md border border-occ-line bg-occ-panel-raised p-3 text-sm text-occ-text">
       <p className="font-semibold">{title}</p>
-      {children && <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{children}</p>}
-      {onRetry && <button type="button" onClick={onRetry} className="mt-3 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{t('retry')}</button>}
+      {children && <p className="mt-1 text-occ-muted">{children}</p>}
+      {onRetry && <OccButton size="sm" className="mt-3" onClick={onRetry}>{t('retry')}</OccButton>}
+    </div>
+  );
+}
+
+/** What a command answered: a plain slab for a success, the amber slab with its triangle for a refusal. */
+function ReviewMessage({ message }) {
+  const refused = message.kind === 'error';
+  return (
+    <div role={refused ? 'alert' : 'status'}
+      className={`flex items-start gap-2 rounded-md border border-occ-line px-3 py-2 text-sm text-occ-text ${refused ? 'bg-occ-warn-soft' : 'bg-occ-panel-raised'}`}>
+      {refused ? <OccGlyph name="attention" className="mt-0.5" /> : null}
+      <p className="min-w-0">{message.text}</p>
     </div>
   );
 }
@@ -56,43 +126,44 @@ function Notice({ title, children, onRetry }) {
 function ReviewEvidence({ detail }) {
   const { t, locale, language } = useTranslation(reviewMessages);
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <section aria-label={t('evidence.services')} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
-        <h3 className="font-semibold">{t('evidence.servicesTitle', { count: detail.services.length })}</h3>
-        {detail.services.length === 0 ? <p className="mt-2 text-sm">{t('evidence.noServices')}</p> : (
-          <ul className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+    // Two columns only while the detail has the width of the page (below 1280 px); docked, one.
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-1">
+      <section aria-label={t('evidence.services')} className={SUBSECTION}>
+        <h3 className={SUBHEADING}>{t('evidence.servicesTitle', { count: detail.services.length })}</h3>
+        {detail.services.length === 0 ? <p className="mt-2 text-sm text-occ-muted">{t('evidence.noServices')}</p> : (
+          <ul className="mt-2 divide-y divide-occ-line text-sm">
             {detail.services.map(service => (
               <li key={service.id} className="flex justify-between gap-3 py-2">
-                <span>{service.name} <span className="text-text-secondary-light">({service.code})</span></span>
+                <span className="min-w-0">{service.name} <span className="font-mono text-xs text-occ-muted">({service.code})</span></span>
                 <span className="text-right">{t('evidence.quantity', { executed: service.executedQuantity, contracted: service.contractedQuantity, unit: unitLabel(service.unit) })}<br />{serviceStatusLabel(service.status, language)}</span>
               </li>
             ))}
           </ul>
         )}
       </section>
-      <section aria-label={t('evidence.checklist')} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
-        <h3 className="font-semibold">{t('evidence.checklistTitle', { status: checklistStatusLabel(detail.checklistStatus, language) })}</h3>
-        {detail.checklistAnswers.length === 0 ? <p className="mt-2 text-sm">{t('evidence.noAnswers')}</p> : (
-          <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+      <section aria-label={t('evidence.checklist')} className={SUBSECTION}>
+        <h3 className={SUBHEADING}>{t('evidence.checklistTitle', { status: checklistStatusLabel(detail.checklistStatus, language) })}</h3>
+        {detail.checklistAnswers.length === 0 ? <p className="mt-2 text-sm text-occ-muted">{t('evidence.noAnswers')}</p> : (
+          <dl className="mt-2 divide-y divide-occ-line text-sm">
             {detail.checklistAnswers.map(answer => (
               <div key={`${answer.section}:${answer.code}`} className="py-2">
-                <dt className="font-medium">{answer.section} · {answer.label}</dt>
-                <dd>{checklistAnswerLabel(answer.value, language)}{answer.note ? ` — ${answer.note}` : ''}</dd>
+                <dt className="font-medium text-occ-text">{answer.section} · {answer.label}</dt>
+                <dd className="text-occ-muted">{checklistAnswerLabel(answer.value, language)}{answer.note ? ` — ${answer.note}` : ''}</dd>
               </div>
             ))}
           </dl>
         )}
       </section>
-      <section aria-label={t('evidence.incidents')} className="rounded-xl border border-black/10 p-4 dark:border-white/10 lg:col-span-2">
-        <h3 className="font-semibold">{t('evidence.incidentsTitle', { count: detail.incidents.length })}</h3>
-        {detail.incidents.length === 0 ? <p className="mt-2 text-sm">{t('evidence.noIncidents')}</p> : (
-          <ul className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
+      <section aria-label={t('evidence.incidents')} className={`${SUBSECTION} lg:col-span-2 xl:col-span-1`}>
+        <h3 className={SUBHEADING}>{t('evidence.incidentsTitle', { count: detail.incidents.length })}</h3>
+        {detail.incidents.length === 0 ? <p className="mt-2 text-sm text-occ-muted">{t('evidence.noIncidents')}</p> : (
+          <ul className="mt-2 divide-y divide-occ-line text-sm">
             {detail.incidents.map(incident => (
               <li key={incident.id} className="py-2">
-                <strong>{incidentTypeLabel(incident.type, language)} · {incidentSeverityLabel(incident.severity, language)}</strong> · {incidentStatusLabel(incident.status, language)}
-                {incident.delayCode && <span className="ml-2 rounded bg-status-warning/15 px-1.5 py-0.5 text-xs font-semibold">IATA {incident.delayCode}</span>}
-                <span className="ml-2 text-text-secondary-light">{dateTime(incident.occurredAt, detail.ianaTimeZone, locale)}</span>
-                <p>{incident.description}</p>
+                <strong className="font-semibold">{incidentTypeLabel(incident.type, language)} · {incidentSeverityLabel(incident.severity, language)}</strong> · {incidentStatusLabel(incident.status, language)}
+                {incident.delayCode && <OccPlate kind="code" className="ml-2">IATA {incident.delayCode}</OccPlate>}
+                <span className="ml-2 font-mono text-xs text-occ-muted">{dateTime(incident.occurredAt, detail.ianaTimeZone, locale)}</span>
+                <p className="text-occ-text">{incident.description}</p>
               </li>
             ))}
           </ul>
@@ -139,29 +210,32 @@ function HistoricalSubmissions({ operationId, currentSubmissionId, timeZone }) {
     return () => abortForEffectCleanup(controller);
   }, [operationId, selectedId]);
 
-  return <section aria-label={t('history.title')} className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
-    <h3 className="font-semibold">{t('history.title')}</h3>
-    {history.status === 'loading' && <p role="status" className="text-sm">{t('history.loading')}</p>}
-    {history.status === 'error' && <Notice title={t('history.error')} onRetry={() => setRetryVersion(value => value + 1)}>{history.error?.message}</Notice>}
-    {history.status === 'success' && <>
-      {history.data.hasMore && <p role="status" className="text-sm">{t('history.hasMore')}</p>}
-      <div className="flex flex-wrap gap-2">{history.data.submissions.map(item =>
-        <button key={item.submissionId} type="button" disabled={item.submissionId === currentSubmissionId}
-          onClick={() => setSelectedId(item.submissionId === selectedId ? null : item.submissionId)}
-          aria-pressed={selectedId === item.submissionId}
-          className="min-h-11 rounded-lg border border-accent-600/40 px-3 py-2 text-sm disabled:cursor-default disabled:opacity-60">
-          {t('history.revision', { number: item.revisionNumber, status: statusLabel(item.status) })}
-          {item.submissionId === currentSubmissionId ? t('history.current') : ''}
-        </button>)}</div>
-    </>}
-    {selected.status === 'loading' && <p role="status">{t('history.loadingSelected')}</p>}
-    {selected.status === 'error' && <Notice title={t('history.selectedError')}>{selected.error?.message}</Notice>}
-    {selected.status === 'success' && <div className="space-y-3 rounded-xl bg-accent-600/5 p-4">
-      <p className="font-semibold">{t('history.revisionAt', { number: selected.data.revisionNumber, date: dateTime(selected.data.submittedAt, timeZone, locale) })}</p>
-      {selected.data.decision && <p className="text-sm">{t('history.decision', { outcome: statusLabel(selected.data.decision.outcome) })}{selected.data.decision.reason ? ` — ${selected.data.decision.reason}` : ''}</p>}
-      <ReviewEvidence detail={selected.data} />
-    </div>}
-  </section>;
+  return (
+    <OccPanel headingLevel={3} title={t('history.title')}>
+      <div className="space-y-3 p-3 text-sm">
+        {history.status === 'loading' && <p role="status" className="text-occ-muted">{t('history.loading')}</p>}
+        {history.status === 'error' && <Notice title={t('history.error')} onRetry={() => setRetryVersion(value => value + 1)}>{history.error?.message}</Notice>}
+        {history.status === 'success' && <>
+          {history.data.hasMore && <p role="status" className="text-occ-muted">{t('history.hasMore')}</p>}
+          <div className="flex flex-wrap gap-2">{history.data.submissions.map(item =>
+            <OccButton key={item.submissionId} size="sm" disabled={item.submissionId === currentSubmissionId}
+              onClick={() => setSelectedId(item.submissionId === selectedId ? null : item.submissionId)}
+              aria-pressed={selectedId === item.submissionId}
+              className="aria-pressed:border-occ-accent aria-pressed:bg-occ-accent-soft aria-pressed:text-occ-accent">
+              {t('history.revision', { number: item.revisionNumber, status: statusLabel(item.status) })}
+              {item.submissionId === currentSubmissionId ? t('history.current') : ''}
+            </OccButton>)}</div>
+        </>}
+        {selected.status === 'loading' && <p role="status" className="text-occ-muted">{t('history.loadingSelected')}</p>}
+        {selected.status === 'error' && <Notice title={t('history.selectedError')}>{selected.error?.message}</Notice>}
+        {selected.status === 'success' && <div className="space-y-3 rounded-md bg-occ-panel-raised p-3">
+          <p className="font-semibold">{t('history.revisionAt', { number: selected.data.revisionNumber, date: dateTime(selected.data.submittedAt, timeZone, locale) })}</p>
+          {selected.data.decision && <p>{t('history.decision', { outcome: statusLabel(selected.data.decision.outcome) })}{selected.data.decision.reason ? ` — ${selected.data.decision.reason}` : ''}</p>}
+          <ReviewEvidence detail={selected.data} />
+        </div>}
+      </div>
+    </OccPanel>
+  );
 }
 
 /**
@@ -170,7 +244,14 @@ function HistoricalSubmissions({ operationId, currentSubmissionId, timeZone }) {
  */
 const isApprovableOrder = state => !state || state === 'Signed' || state === 'Corrected';
 
-function ReviewStation({ stationId, selectedId, onSelectOperation }) {
+/**
+ * The review of one station, template C of the design («Mesa de trabajo»): the toolbar with the queue's filters, the
+ * figures, the queue at the left and the detail of the chosen hand-off at the right. From 1280 px the page takes the
+ * height of the screen and the queue and the detail scroll on their own, so the detail stays docked beside the queue;
+ * below that width they stack and choosing a hand-off scrolls its detail into view. The detail ends with the decision
+ * bar fixed at its bottom; the decision is confirmed in a dialog drawn inside the detail.
+ */
+function ReviewStation({ stationId, stationCode, selectedId, onSelectOperation }) {
   const { t, locale, language, statusLabel } = useReviewText();
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [queue, setQueue] = useState({ status: 'loading', data: null, error: null });
@@ -179,11 +260,13 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
+  const [filter, setFilter] = useState('all');
   const decisionInFlight = useRef(false);
   const decisionAbort = useRef(null);
   // 3-H: the decision's Idempotency-Key, kept while OCC retries the same intent after an answer that never arrived.
   const decisionKeys = useRef(createCommandKeyHolder());
   const detailRef = useRef(null);
+  const reasonRef = useRef(null);
   const liveVersion = useOccReviewChangeVersion();
   const shownVersion = useRef(null);
   const preparedDecision = useRef(null);
@@ -219,10 +302,15 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveVersion]);
 
-  // El detalle se muestra debajo de la cola; al elegir una operación se lleva a
-  // la vista para que en teléfono y tablet no quede fuera de pantalla.
+  // Below 1280 px the detail sits under the queue: choosing a hand-off brings it into view, so it is not left off the
+  // screen of a phone or a tablet. Docked at the right it is already in view; it starts again from its top.
   useEffect(() => {
-    if (selectedId) detailRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    if (!selectedId) return;
+    if (isDocked()) {
+      if (detailRef.current) detailRef.current.scrollTop = 0;
+      return;
+    }
+    detailRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, [selectedId]);
 
   useEffect(() => {
@@ -299,89 +387,201 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
     }
   }
 
-  const rows = queue.data?.operations ?? [];
+  function closeDecision() {
+    setDecision(null);
+    setReason('');
+  }
+
+  const rows = queue.data?.operations ?? NO_ROWS;
   const pendingCount = rows.filter(row => row.status === 'PendingReview').length;
+  const visibleRows = filter === 'pending' ? rows.filter(row => row.status === 'PendingReview') : rows;
+  const counted = queue.status === 'success';
   const timeZone = queue.data?.ianaTimeZone ?? 'UTC';
-  const approvable = detail.status === 'success' && isApprovableOrder(detail.data.serviceOrderState);
+  const current = detail.status === 'success' ? detail.data : null;
+  const sameStation = current !== null && current.stationId === stationId;
+  const deciding = sameStation && current.status === 'PendingReview';
+  const approvable = current !== null && isApprovableOrder(current.serviceOrderState);
+  const correction = reason.trim();
+  const validCorrection = correction.length >= 8 && correction.length <= 2000;
+
+  const columns = [
+    {
+      key: 'operation', header: t('queue.operation'),
+      render: row => (
+        <span className="flex min-w-0 flex-col items-start gap-1">
+          <OccPlate kind="code">{row.operationCode}</OccPlate>
+          <span className="flex flex-wrap gap-x-2 text-xs text-occ-muted">
+            <span>{row.airlineName}</span>
+            <span className="font-mono">{row.operationDate}</span>
+          </span>
+        </span>
+      ),
+    },
+    { key: 'agent', header: t('queue.agent'), render: row => row.agentName },
+    {
+      key: 'submitted', header: t('queue.submitted'), mono: true,
+      render: row => <span className="whitespace-nowrap">{submittedText(row, timeZone, locale)}</span>,
+    },
+    {
+      key: 'status', header: t('queue.status'),
+      render: row => (
+        <span className="flex flex-col items-start gap-0.5">
+          <OccStatusPill size="sm" tone={reviewStatusTone(row.status)} label={statusLabel(row.status)} />
+          <span className="text-xs text-occ-muted">{t('queue.counts', { services: row.serviceCount, incidents: row.incidentCount })}</span>
+        </span>
+      ),
+    },
+    {
+      // «Ver detalle» is the first button of its row: the cycle E2E and the guide open a hand-off with it.
+      key: 'review', header: t('queue.review'),
+      render: row => <OccButton size="sm" onClick={() => onSelectOperation(row.operationId)}>{t('queue.viewDetail')}</OccButton>,
+    },
+  ];
+
+  const queueLabels = {
+    loading: t('queue.loading'), error: t('queue.error'), retry: t('retry'),
+    empty: rows.length === 0 ? t('queue.empty') : t('queue.filters.empty'),
+  };
+  const moreNote = queue.data?.hasMore ? (
+    <p role="note" className="flex items-start gap-1.5 text-xs text-occ-muted">
+      <OccGlyph name="notice" />
+      <span className="min-w-0">{t('queue.hasMore')} {t('queue.hasMoreHint')}</span>
+    </p>
+  ) : null;
 
   return (
-    <div className="space-y-5">
-      {message && <div role={message.kind === 'error' ? 'alert' : 'status'} className="rounded-xl border border-accent-600/25 bg-accent-600/10 px-4 py-3 text-sm">{message.text}</div>}
-      {queue.status === 'loading' && <div role="status" className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{t('queue.loading')}</div>}
-      {queue.status === 'error' && <Notice title={t('queue.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{queue.error?.message}</Notice>}
-      {queue.status === 'success' && <>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-white/80 p-4 dark:bg-surface-dark-card"><p className="text-xs uppercase tracking-wide">{t('queue.pendingVisible')}</p><strong className="text-2xl">{pendingCount}</strong></div>
-          <div className="rounded-xl bg-white/80 p-4 dark:bg-surface-dark-card"><p className="text-xs uppercase tracking-wide">{t('queue.visible')}</p><strong className="text-2xl">{rows.length}</strong></div>
-          <div className="rounded-xl bg-white/80 p-4 dark:bg-surface-dark-card"><p className="text-xs uppercase tracking-wide">{t('queue.station')}</p><strong className="text-2xl">{queue.data.stationCode}</strong></div>
-        </div>
-        {queue.data.hasMore && <Notice title={t('queue.hasMore')}>{t('queue.hasMoreHint')}</Notice>}
-        {rows.length === 0 ? <Notice title={t('queue.empty')} /> : (
-          <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card">
-            <table className="table-stack w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-black/10 text-xs uppercase dark:border-white/10"><tr><th className="p-3">{t('queue.operation')}</th><th className="p-3">{t('queue.agent')}</th><th className="p-3">{t('queue.submitted')}</th><th className="p-3">{t('queue.status')}</th><th className="p-3">{t('queue.review')}</th></tr></thead>
-              <tbody>{rows.map(row => (
-                <tr key={row.operationId} className="border-b border-black/5 dark:border-white/5">
-                  <td className="p-3"><strong>{row.operationCode}</strong><br />{row.airlineName} · {row.operationDate}</td>
-                  <td className="p-3">{row.agentName}</td>
-                  <td className="p-3">{dateTime(row.submittedAt, timeZone, locale)}</td>
-                  <td className="p-3">{statusLabel(row.status)}<br /><span className="text-xs">{t('queue.counts', { services: row.serviceCount, incidents: row.incidentCount })}</span></td>
-                  <td className="p-3"><button type="button" onClick={() => onSelectOperation(row.operationId)} className="min-h-11 rounded-lg border border-accent-600 px-4 py-2 font-semibold text-accent-600 hover:bg-accent-600/10">{t('queue.viewDetail')}</button></td>
-                </tr>
-              ))}</tbody>
-            </table>
+    <>
+      <OccToolbar title={t('title')}>
+        <OccSegmented label={t('queue.filters.label')} value={filter} onChange={setFilter} options={[
+          { id: 'all', label: t('queue.filters.all'), count: counted ? rows.length : undefined },
+          { id: 'pending', label: t('queue.filters.pending'), count: counted ? pendingCount : undefined },
+        ]} />
+      </OccToolbar>
+      {message && <ReviewMessage message={message} />}
+      {(queue.status === 'loading' || counted) && (
+        <OccStatList className="flex flex-wrap gap-x-10 gap-y-2 rounded-md border border-occ-line bg-occ-panel px-3 py-2">
+          <OccStatTile label={t('queue.pendingVisible')} value={counted ? pendingCount : undefined} loading={!counted} />
+          <OccStatTile label={t('queue.visible')} value={counted ? rows.length : undefined} loading={!counted} />
+          <OccStatTile label={t('queue.station')}
+            value={<span className="font-mono">{queue.data?.stationCode ?? stationCode}</span>} />
+        </OccStatList>
+      )}
+      <div data-review-layout=""
+        className="grid min-w-0 items-start gap-3 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,42%)] xl:grid-rows-[minmax(0,1fr)]">
+        <OccPanel title={t('queue.title')} className="xl:max-h-full" bodyClassName="xl:overflow-y-auto xl:overscroll-contain">
+          {/* Docked, the panel's body scrolls the rows, so the header of the table sticks to its top. */}
+          <OccDataTable caption={t('queue.title')} columns={columns} rows={visibleRows}
+            getRowId={row => row.operationId} selectedId={selectedId} onSelectRow={id => onSelectOperation(id)}
+            status={queueViewStatus(queue)} onRetry={() => setRefreshVersion(value => value + 1)} labels={queueLabels}
+            footer={moreNote} scrollClassName="xl:overflow-visible" />
+        </OccPanel>
+        {selectedId ? (
+          <section ref={detailRef} aria-label={t('detail.title')} data-review-detail=""
+            className="flex min-w-0 scroll-mt-4 flex-col rounded-md border border-occ-line bg-occ-panel text-occ-text xl:max-h-full xl:overflow-y-auto xl:overscroll-contain">
+            <header className="sticky top-0 z-[1] flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-occ-line bg-occ-panel px-3 py-2">
+              <h2 className="text-sm font-semibold text-occ-text">{t('detail.title')}</h2>
+              <OccButton size="sm" onClick={() => onSelectOperation(null)}>{t('detail.close')}</OccButton>
+            </header>
+            <div className="flex-1 space-y-3 p-3">
+              {detail.status === 'loading' && <p role="status" className="text-sm text-occ-muted">{t('detail.loading')}</p>}
+              {/* 3-G: an operation still on the ramp has no hand-off yet (404); OCC manages its incidents meanwhile. */}
+              {detail.status === 'error' && detail.error?.status === 404 && <>
+                <Notice title={t('detail.noSubmission')} onRetry={() => setRefreshVersion(value => value + 1)}>{t('detail.noSubmissionHint')}</Notice>
+                <OperationIncidentsPanel operationId={selectedId} refreshToken={liveVersion} />
+              </>}
+              {detail.status === 'error' && detail.error?.status !== 404 && <Notice title={t('detail.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{detail.error?.message}</Notice>}
+              {current && !sameStation && (
+                <Notice title={t('detail.otherStation')}>{t('detail.otherStationHint')}</Notice>
+              )}
+              {sameStation && <>
+                <dl className="grid gap-x-4 gap-y-3 text-sm sm:grid-cols-2">
+                  <div className="min-w-0">
+                    <dt className={TERM}>{t('queue.operation')}</dt>
+                    <dd className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <OccPlate kind="code">{current.operationCode}</OccPlate>
+                      <span>{current.airlineName}</span>
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className={TERM}>{t('detail.status')}</dt>
+                    <dd className="mt-1">
+                      <OccStatusPill tone={reviewStatusTone(current.status, { reopened: Boolean(current.reopening) })}
+                        label={statusLabel(current.status)} />
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className={TERM}>{t('detail.agent')}</dt>
+                    <dd className="mt-1 font-semibold">{current.agentName}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className={TERM}>{t('detail.submitted')}</dt>
+                    <dd className="mt-1 font-semibold">{dateTime(current.submittedAt, current.ianaTimeZone, locale)}</dd>
+                  </div>
+                </dl>
+                <div className="grid gap-x-4 gap-y-1 text-sm text-occ-muted sm:grid-cols-2 xl:grid-cols-1 3xl:grid-cols-2">
+                  <p>{t('detail.plannedStart', { date: dateTime(current.plannedStartAt, current.ianaTimeZone, locale) })}<br />{t('detail.actualStart', { date: dateTime(current.actualStartAt, current.ianaTimeZone, locale) })}</p>
+                  <p>{t('detail.plannedEnd', { date: dateTime(current.plannedEndAt, current.ianaTimeZone, locale) })}<br />{t('detail.actualEnd', { date: dateTime(current.actualEndAt, current.ianaTimeZone, locale) })}</p>
+                </div>
+                {current.serviceOrderState && <p className="text-sm">{t('detail.serviceOrder')}: <strong className="font-semibold">{serviceOrderStateLabel(current.serviceOrderState, language)}</strong></p>}
+                {current.reopening && <div role="note" className="flex items-start gap-2 rounded-md border border-occ-line bg-occ-warn-soft p-3 text-sm text-occ-text">
+                  <OccGlyph name="attention" className="mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-semibold">{t('detail.reopened', { reason: current.reopening.reason })}</p>
+                    <p className="text-xs">{t('detail.reopenedBy', { by: current.reopening.reopenedBy, number: current.reopening.fromRevisionNumber,
+                      date: dateTime(current.reopening.reopenedAt, current.ianaTimeZone, locale) })}</p>
+                  </div>
+                </div>}
+                {current.agentNote && <p className="rounded-md bg-occ-panel-raised p-3 text-sm"><strong className="font-semibold">{t('detail.agentNote')}</strong> {current.agentNote}</p>}
+                <ReviewEvidence detail={current} />
+                <OperationIncidentsPanel operationId={current.operationId} refreshToken={liveVersion} />
+                {current.close && <OperationCloseSection detail={current} disabled={busy}
+                  onChanged={(text, kind = 'success') => { setMessage({ kind, text }); setRefreshVersion(value => value + 1); }} />}
+                <OperationDocumentsSection key={current.operationId} operationId={current.operationId}
+                  timeZone={current.ianaTimeZone} />
+                <HistoricalSubmissions operationId={current.operationId} currentSubmissionId={current.submissionId} timeZone={current.ianaTimeZone} />
+                {current.decision && <p className="rounded-md bg-occ-panel-raised p-3 text-sm">{t('detail.decision')}<strong className="font-semibold">{statusLabel(current.decision.outcome)}</strong> · {dateTime(current.decision.decidedAt, current.ianaTimeZone, locale)}{current.decision.reason ? ` — ${current.decision.reason}` : ''}</p>}
+                <ReopenReviewSection key={current.submissionId} detail={current} disabled={busy}
+                  onReopened={text => { setMessage({ kind: 'success', text }); setRefreshVersion(value => value + 1); }}
+                  onRefused={text => { setMessage({ kind: 'error', text }); setRefreshVersion(value => value + 1); }} />
+              </>}
+            </div>
+            {deciding && <div data-review-decision="" className="sticky bottom-0 z-[1] space-y-2 border-t border-occ-line bg-occ-panel px-3 py-3">
+              <p className="text-xs text-occ-muted">{t('decision.intro')}</p>
+              {/* 3-N02: OCC approves only the Service Order the airline and AVIAM signed, or its recorded correction. */}
+              {!approvable && <p role="note" className={NOTE}><OccGlyph name="attention" className="mt-0.5" /><span className="min-w-0">{current.serviceOrderState === 'Stale' ? t('decision.stale') : t('decision.unsigned')}</span></p>}
+              {/* 3-H: a reopened revision has nobody on the ramp to correct it: OCC corrects it here and approves it. */}
+              {current.reopening && <p role="note" className={NOTE}><OccGlyph name="attention" className="mt-0.5" /><span className="min-w-0">{t('decision.reopenedNoReturn')}</span></p>}
+              <div className="flex flex-wrap gap-2">
+                <OccButton variant="primary" disabled={busy || !approvable} onClick={() => setDecision('Approved')}>{t('decision.approve')}</OccButton>
+                {!current.reopening && <OccButton disabled={busy} onClick={() => setDecision('Returned')}>{t('decision.return')}</OccButton>}
+              </div>
+            </div>}
+            <OccDialog open={deciding && decision !== null} onClose={closeDecision} title={t('decision.confirmLabel')}
+              busy={busy} initialFocusRef={decision === 'Returned' ? reasonRef : undefined}
+              footer={(
+                <>
+                  <OccButton variant="primary" busy={busy} busyLabel={t('decision.confirming')}
+                    disabled={decision === 'Returned' && !validCorrection} onClick={() => void confirmDecision()}>
+                    {t('decision.confirm')}
+                  </OccButton>
+                  <OccButton data-occ-dialog-cancel="" disabled={busy} onClick={closeDecision}>{t('decision.cancel')}</OccButton>
+                </>
+              )}>
+              <p>{decision === 'Approved' ? t('decision.confirmApprove') : t('decision.confirmReturn')}</p>
+              {decision === 'Returned' && (
+                <OccTextareaField ref={reasonRef} className="mt-3" label={t('decision.corrections')} value={reason}
+                  onChange={event => setReason(event.target.value)} minLength={8} maxLength={2000} required rows={4} />
+              )}
+            </OccDialog>
+          </section>
+        ) : visibleRows.length > 0 && (
+          // Docked, the empty right-hand side says what to do; it is not the detail's region.
+          <div data-review-placeholder="" className="hidden rounded-md border border-occ-line bg-occ-panel p-3 xl:block">
+            <OccEmptyState title={t('detail.placeholder')} />
           </div>
         )}
-      </>}
-      {selectedId && <section ref={detailRef} aria-label={t('detail.title')} className="scroll-mt-4 space-y-4 rounded-2xl border border-accent-600/20 bg-white/90 p-4 dark:bg-surface-dark-card sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{t('detail.title')}</h2><button type="button" onClick={() => onSelectOperation(null)} className="min-h-11 rounded-lg border px-4 py-2">{t('detail.close')}</button></div>
-        {detail.status === 'loading' && <p role="status">{t('detail.loading')}</p>}
-        {/* 3-G: an operation still on the ramp has no hand-off yet (404); OCC manages its incidents meanwhile. */}
-        {detail.status === 'error' && detail.error?.status === 404 && <>
-          <Notice title={t('detail.noSubmission')} onRetry={() => setRefreshVersion(value => value + 1)}>{t('detail.noSubmissionHint')}</Notice>
-          <OperationIncidentsPanel operationId={selectedId} refreshToken={liveVersion} />
-        </>}
-        {detail.status === 'error' && detail.error?.status !== 404 && <Notice title={t('detail.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{detail.error?.message}</Notice>}
-        {detail.status === 'success' && detail.data.stationId !== stationId && (
-          <Notice title={t('detail.otherStation')}>{t('detail.otherStationHint')}</Notice>
-        )}
-        {detail.status === 'success' && detail.data.stationId === stationId && <>
-          <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{detail.data.operationCode}</strong><br />{detail.data.airlineName}</p><p>{t('detail.agent')}<br /><strong>{detail.data.agentName}</strong></p><p>{t('detail.submitted')}<br /><strong>{dateTime(detail.data.submittedAt, detail.data.ianaTimeZone, locale)}</strong></p><p>{t('detail.status')}<br /><strong>{statusLabel(detail.data.status)}</strong></p></div>
-          <div className="grid gap-2 text-sm sm:grid-cols-2"><p>{t('detail.plannedStart', { date: dateTime(detail.data.plannedStartAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualStart', { date: dateTime(detail.data.actualStartAt, detail.data.ianaTimeZone, locale) })}</p><p>{t('detail.plannedEnd', { date: dateTime(detail.data.plannedEndAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualEnd', { date: dateTime(detail.data.actualEndAt, detail.data.ianaTimeZone, locale) })}</p></div>
-          {detail.data.serviceOrderState && <p className="text-sm">{t('detail.serviceOrder')}: <strong>{serviceOrderStateLabel(detail.data.serviceOrderState, language)}</strong></p>}
-          {detail.data.reopening && <div role="note" className="rounded-xl border border-status-warning/40 bg-status-warning/10 p-3 text-sm">
-            <p className="font-semibold">{t('detail.reopened', { reason: detail.data.reopening.reason })}</p>
-            <p className="text-xs">{t('detail.reopenedBy', { by: detail.data.reopening.reopenedBy, number: detail.data.reopening.fromRevisionNumber,
-              date: dateTime(detail.data.reopening.reopenedAt, detail.data.ianaTimeZone, locale) })}</p>
-          </div>}
-          {detail.data.agentNote && <p className="rounded-xl bg-accent-600/10 p-3 text-sm"><strong>{t('detail.agentNote')}</strong> {detail.data.agentNote}</p>}
-          <ReviewEvidence detail={detail.data} />
-          <OperationIncidentsPanel operationId={detail.data.operationId} refreshToken={liveVersion} />
-          {detail.data.close && <OperationCloseSection detail={detail.data} disabled={busy}
-            onChanged={(text, kind = 'success') => { setMessage({ kind, text }); setRefreshVersion(value => value + 1); }} />}
-          <OperationDocumentsSection key={detail.data.operationId} operationId={detail.data.operationId}
-            timeZone={detail.data.ianaTimeZone} />
-          <HistoricalSubmissions operationId={detail.data.operationId} currentSubmissionId={detail.data.submissionId} timeZone={detail.data.ianaTimeZone} />
-          {detail.data.decision && <p className="rounded-xl bg-accent-600/10 p-3 text-sm">{t('detail.decision')}<strong>{statusLabel(detail.data.decision.outcome)}</strong> · {dateTime(detail.data.decision.decidedAt, detail.data.ianaTimeZone, locale)}{detail.data.decision.reason ? ` — ${detail.data.decision.reason}` : ''}</p>}
-          <ReopenReviewSection key={detail.data.submissionId} detail={detail.data} disabled={busy}
-            onReopened={text => { setMessage({ kind: 'success', text }); setRefreshVersion(value => value + 1); }}
-            onRefused={text => { setMessage({ kind: 'error', text }); setRefreshVersion(value => value + 1); }} />
-          {detail.data.status === 'PendingReview' && <div className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10">
-            <p className="text-sm">{t('decision.intro')}</p>
-            {/* 3-N02: OCC approves only the Service Order the airline and AVIAM signed, or its recorded correction. */}
-            {!approvable && <p role="note" className="text-sm font-semibold text-status-warning">{detail.data.serviceOrderState === 'Stale' ? t('decision.stale') : t('decision.unsigned')}</p>}
-            {/* 3-H: a reopened revision has nobody on the ramp to correct it: OCC corrects it here and approves it. */}
-            {detail.data.reopening && <p role="note" className="text-sm">{t('decision.reopenedNoReturn')}</p>}
-            <div className="flex flex-wrap gap-2"><button type="button" disabled={busy || !approvable} onClick={() => setDecision('Approved')} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{t('decision.approve')}</button>{!detail.data.reopening && <button type="button" disabled={busy} onClick={() => setDecision('Returned')} className="min-h-11 rounded-lg border border-status-warning px-4 py-2 font-semibold disabled:opacity-50">{t('decision.return')}</button>}</div>
-            {decision && <div className="space-y-3 rounded-xl border border-status-warning/40 p-4" aria-label={t('decision.confirmLabel')}>
-              <p className="font-semibold">{decision === 'Approved' ? t('decision.confirmApprove') : t('decision.confirmReturn')}</p>
-              {decision === 'Returned' && <label className="block text-sm">{t('decision.corrections')}<textarea value={reason} onChange={event => setReason(event.target.value)} minLength={8} maxLength={2000} required rows={4} className="mt-1 block w-full rounded-lg border border-black/20 bg-white p-3 text-ink-900" /></label>}
-              <div className="flex flex-wrap gap-2"><button type="button" disabled={busy || (decision === 'Returned' && (reason.trim().length < 8 || reason.trim().length > 2000))} onClick={confirmDecision} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? t('decision.confirming') : t('decision.confirm')}</button><button type="button" disabled={busy} onClick={() => { setDecision(null); setReason(''); }} className="min-h-11 rounded-lg border px-4 py-2">{t('decision.cancel')}</button></div>
-            </div>}
-          </div>}
-        </>}
-      </section>}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -393,6 +593,7 @@ export default function CanonicalReviewRoute() {
     .filter(scope => UUID.test(scope.stationId)), [session?.stationScopes]);
   const [stationId, setStationId] = useState(() => stationScopes[0]?.stationId ?? '');
   const selectedId = searchParams.get('operationId');
+  const stationCode = stationScopes.find(scope => scope.stationId === stationId)?.stationCode ?? '';
 
   useEffect(() => {
     if (stationScopes.some(scope => scope.stationId === stationId)) return;
@@ -406,13 +607,16 @@ export default function CanonicalReviewRoute() {
     setSearchParams(next);
   }
 
+  // The station is in the status bar of the OCC frame: the page has no badge of its own, nor a line above or under its
+  // title (design E.1).
   return (
-    <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
-      <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-accent-600">{t('eyebrow')}</p><h1 className="text-2xl font-bold">{t('title')}</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('subtitle')}</p></div>
-        <OccStationBadge />
-      </header>
-      {stationScopes.length === 0 ? <Notice title={t('noStations')}>{t('noStationsHint')}</Notice> : (
-        <ReviewStation key={stationId} stationId={stationId} selectedId={UUID.test(selectedId ?? '') ? selectedId : null} onSelectOperation={selectOperation} />
+    <section className="flex min-w-0 flex-col gap-3 text-occ-text xl:h-full xl:min-h-0">
+      {stationScopes.length === 0 ? <>
+        <OccToolbar title={t('title')} />
+        <Notice title={t('noStations')}>{t('noStationsHint')}</Notice>
+      </> : (
+        <ReviewStation key={stationId} stationId={stationId} stationCode={stationCode}
+          selectedId={UUID.test(selectedId ?? '') ? selectedId : null} onSelectOperation={selectOperation} />
       )}
     </section>
   );

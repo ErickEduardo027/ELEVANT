@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from '../../../tests/MemoryRouter.jsx';
@@ -358,6 +358,187 @@ describe('CanonicalReviewRoute live re-reads (3-N23)', () => {
     await waitFor(() => expect(live.start).toHaveBeenCalled());
     view.unmount();
     expect(live.stop).toHaveBeenCalled();
+  });
+});
+
+describe('CanonicalReviewRoute as a workbench (template C, U6)', () => {
+  // The queue of a station with a hand-off waiting, one under review, one approved and one returned to the ramp.
+  const queueRow = (index, status) => ({
+    ...queue.operations[0], status,
+    operationId: index === 1 ? operationId : `70000000-0000-0000-0001-00000000000${index}`,
+    submissionId: index === 1 ? submissionId : `70000000-0000-0000-0002-00000000000${index}`,
+    operationCode: `DEV-TAT-00${index}`,
+  });
+  const mixed = { ...queue, operations: [queueRow(1, 'PendingReview'), queueRow(2, 'Approved'), queueRow(3, 'Returned')] };
+  const codesIn = table => within(table).getAllByRole('row').slice(1)
+    .map(row => row.querySelector('[data-occ-plate]').textContent);
+
+  it('filters the queue to the submissions awaiting review and keeps «Todas» by default', async () => {
+    const user = userEvent.setup();
+    mocks.queue.mockResolvedValue(mixed);
+    const view = renderRoute();
+    const table = await screen.findByRole('table', { name: 'Entregas' });
+    const filters = screen.getByRole('group', { name: 'Filtrar entregas' });
+    const all = within(filters).getByRole('button', { name: 'Todas 3' });
+    const pending = within(filters).getByRole('button', { name: 'Por revisar 1' });
+    expect(all).toHaveAttribute('aria-pressed', 'true');
+    expect(pending).toHaveAttribute('aria-pressed', 'false');
+    expect(codesIn(table)).toEqual(['DEV-TAT-001', 'DEV-TAT-002', 'DEV-TAT-003']);
+
+    await user.click(pending);
+    expect(pending).toHaveAttribute('aria-pressed', 'true');
+    expect(codesIn(table)).toEqual(['DEV-TAT-001']);
+    await user.click(all);
+    expect(codesIn(table)).toHaveLength(3);
+    // The filter is the screen's own: it reads nothing.
+    expect(mocks.queue).toHaveBeenCalledTimes(1);
+    view.unmount();
+
+    // Nothing waiting: the filter says so and «Todas» brings the rows back.
+    mocks.queue.mockResolvedValue({ ...queue, operations: [queueRow(2, 'Approved')] });
+    renderRoute();
+    await screen.findByText('DEV-TAT-002');
+    await user.click(screen.getByRole('button', { name: 'Por revisar 0' }));
+    expect(screen.getByText('No hay entregas por revisar con este filtro.')).toBeInTheDocument();
+    expect(screen.queryByText('DEV-TAT-002')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Todas 1' }));
+    expect(screen.getByText('DEV-TAT-002')).toBeInTheDocument();
+  });
+
+  it('shows the three figures as stat tiles with their labels', async () => {
+    const figures = () => [...document.querySelectorAll('[data-occ-stat]')].map(tile => [
+      within(tile).getByRole('term').textContent, within(tile).getAllByRole('definition')[0].textContent,
+    ]);
+    // While the queue loads nothing is counted yet: «—», read as «Cargando», never a zero; the station is known.
+    let answer;
+    mocks.queue.mockReturnValueOnce(new Promise(resolve => { answer = resolve; }));
+    renderRoute();
+    expect(figures()).toEqual([['Pendientes visibles', '—Cargando'], ['Entregas visibles', '—Cargando'], ['Estación', 'PUJ']]);
+    await act(async () => answer(mixed));
+    await screen.findByRole('table', { name: 'Entregas' });
+    expect(figures()).toEqual([['Pendientes visibles', '1'], ['Entregas visibles', '3'], ['Estación', 'PUJ']]);
+    // One list of figures, outside the queue they count.
+    const list = document.querySelector('[data-occ-stats]');
+    expect(list.tagName).toBe('DL');
+    expect(screen.getByRole('region', { name: 'Entregas' })).not.toContainElement(list);
+  });
+
+  it('selects a submission from the row with Enter and keeps «Ver detalle» as its first button', async () => {
+    const user = userEvent.setup();
+    renderRoute();
+    const row = (await screen.findByText('DEV-TAT-001')).closest('tr');
+    // The cycle E2E and the guide open a hand-off with the row's first button.
+    expect(within(row).getAllByRole('button')[0]).toHaveAccessibleName('Ver detalle');
+    expect(row).toHaveAttribute('aria-selected', 'false');
+    act(() => row.focus());
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', { name: 'Detalle de entrega' });
+    expect(new URLSearchParams(window.location.search).get('operationId')).toBe(operationId);
+    expect(row).toHaveAttribute('aria-selected', 'true');
+    expect(await within(panel).findByText(/Detalle visible/)).toBeInTheDocument();
+  });
+
+  it('docks the detail at the right from 1280 px and does not scroll it into view there', async () => {
+    const user = userEvent.setup();
+    let wide = true;
+    const original = { matchMedia: window.matchMedia, scrollIntoView: Element.prototype.scrollIntoView };
+    window.matchMedia = vi.fn(query => ({
+      matches: wide && query === '(min-width: 1280px)', media: query, addEventListener() {}, removeEventListener() {},
+    }));
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      window.matchMedia = original.matchMedia;
+      Element.prototype.scrollIntoView = original.scrollIntoView;
+    });
+    renderRoute();
+    await screen.findByText('DEV-TAT-001');
+    // Nothing chosen: the docked side says what to do, and it is not the detail's region.
+    expect(screen.getByText('Elige una entrega de la lista para ver su detalle.')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Detalle de entrega' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    const panel = await screen.findByRole('region', { name: 'Detalle de entrega' });
+    // One grid holds the queue and, beside it from xl, the detail; each one scrolls on its own there.
+    const layout = panel.parentElement;
+    expect(layout).toHaveClass('xl:grid-cols-[minmax(0,1fr)_minmax(28rem,42%)]', 'xl:grid-rows-[minmax(0,1fr)]');
+    expect(layout.firstElementChild).toBe(screen.getByRole('region', { name: 'Entregas' }));
+    expect(panel).toHaveClass('xl:max-h-full', 'xl:overflow-y-auto');
+    expect(screen.queryByText('Elige una entrega de la lista para ver su detalle.')).not.toBeInTheDocument();
+    expect(window.matchMedia).toHaveBeenCalledWith('(min-width: 1280px)');
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    // The decision bar closes the detail and stays fixed at its bottom.
+    const bar = within(panel).getByRole('button', { name: 'Aprobar' }).closest('[data-review-decision]');
+    expect(bar).toHaveClass('sticky', 'bottom-0');
+    expect(panel.lastElementChild).toBe(bar);
+
+    // Below 1280 px the detail stacks under the queue: choosing a hand-off brings it into view.
+    wide = false;
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar detalle' }));
+    await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    await screen.findByRole('region', { name: 'Detalle de entrega' });
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  });
+
+  it('confirms the decision in a dialog inside the detail and closes it on Cancelar or Esc', async () => {
+    const user = userEvent.setup();
+    renderRoute(`/admin-occ/review?operationId=${operationId}`);
+    const panel = await screen.findByRole('region', { name: 'Detalle de entrega' });
+    await within(panel).findByText(/Detalle visible/);
+    const approve = within(panel).getByRole('button', { name: 'Aprobar' });
+    await user.click(approve);
+    let dialog = within(panel).getByRole('dialog', { name: 'Confirmar decisión' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(within(dialog).getByText('¿Confirmas la aprobación de esta entrega?')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Confirmar decisión' })).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(within(panel).queryByRole('dialog')).not.toBeInTheDocument();
+    expect(approve).toHaveFocus();
+
+    await user.click(within(panel).getByRole('button', { name: 'Devolver con correcciones' }));
+    dialog = within(panel).getByRole('dialog', { name: 'Confirmar decisión' });
+    expect(within(dialog).getByText('¿Confirmas la devolución de esta entrega?')).toBeInTheDocument();
+    const correction = within(dialog).getByRole('textbox', { name: /Correcciones necesarias/ });
+    expect(correction).toHaveFocus();
+    await user.type(correction, 'Falta la foto del daño');
+    await user.keyboard('{Escape}');
+    expect(within(panel).queryByRole('dialog')).not.toBeInTheDocument();
+    // Closed, the decision and its text are gone: the next one starts empty.
+    await user.click(within(panel).getByRole('button', { name: 'Devolver con correcciones' }));
+    expect(within(panel).getByRole('textbox', { name: /Correcciones necesarias/ })).toHaveValue('');
+    expect(mocks.decide).not.toHaveBeenCalled();
+  });
+
+  it('shows each submission status with its glyph and word', async () => {
+    mocks.queue.mockResolvedValue({ ...queue, operations: [
+      queueRow(1, 'PendingReview'), queueRow(2, 'InReview'), queueRow(3, 'Approved'), queueRow(4, 'Returned'),
+    ] });
+    renderRoute();
+    const table = await screen.findByRole('table', { name: 'Entregas' });
+    const pills = within(table).getAllByRole('row').slice(1).map(row => {
+      const pill = row.querySelector('[data-occ-status]');
+      const glyph = pill.querySelector('svg');
+      return [pill.getAttribute('data-tone'), glyph.getAttribute('data-shape'), glyph.getAttribute('aria-hidden'), pill.textContent];
+    });
+    // Normal states carry no hue and differ by shape; a returned hand-off asks for attention with its triangle.
+    expect(pills).toEqual([
+      ['neutral', 'hollow-circle', 'true', 'Pendiente'],
+      ['active', 'filled-circle', 'true', 'En revisión'],
+      ['done', 'check', 'true', 'Aprobada'],
+      ['attention', 'triangle', 'true', 'Devuelta'],
+    ]);
+    expect(within(table).queryByText(/PendingReview|InReview|Approved|Returned/)).not.toBeInTheDocument();
+  });
+
+  it('marks a reopened revision waiting for its decision as attention in the detail', async () => {
+    mocks.detail.mockResolvedValueOnce({ ...detail, revisionNumber: 3, serviceOrderState: 'Signed',
+      reopening: { fromRevisionNumber: 2, reason: 'La aerolínea disputó el GPU', reopenedAt: '2026-09-23T18:00:00Z',
+        reopenedBy: 'Alex Operations' } });
+    renderRoute(`/admin-occ/review?operationId=${operationId}`);
+    const panel = await screen.findByRole('region', { name: 'Detalle de entrega' });
+    await within(panel).findByText('Revisión reabierta por OCC: La aerolínea disputó el GPU');
+    const status = within(panel).getByText('Estado').closest('div').querySelector('[data-occ-status]');
+    expect(status).toHaveAttribute('data-tone', 'attention');
+    expect(status).toHaveTextContent('Pendiente');
   });
 });
 

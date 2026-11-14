@@ -1,4 +1,5 @@
 import { CHARGE_SOURCE_LABELS, SUBMISSION_STATUS_LABELS } from '../operations/operationLabels';
+import { DOCUMENT_TITLES, SIGNER_ROLES } from '../../services/occDocumentsService';
 
 /**
  * The Problem Details codes of OCC's review (phase 3, block D) in Spanish. The screens never show the server's title:
@@ -84,9 +85,27 @@ export const reviewMessages = {
       done: 'Revisión reabierta como revisión {number}: vuelve a Pendiente de revisión.',
       unsigned: 'La Orden de Servicio de esta aprobación no está firmada: no se puede reabrir. Después de facturar, corrija con una nota de crédito.',
     },
-    eyebrow: 'Control operativo',
+    // «Formularios AVIAM» (ADR-0032): the form titles and signer roles in Spanish are the ones of the documents service.
+    documents: {
+      title: 'Formularios AVIAM',
+      loading: 'Cargando formularios…',
+      empty: 'Esta operación aún no tiene formularios.',
+      signed: '✓ {name}',
+      signAgain: 'Firmar de nuevo',
+      pending: 'Pendiente',
+      fingerprint: 'Huella SHA-256 del contenido',
+      generating: 'Generando PDF…',
+      download: 'Descargar PDF',
+      marks: 'Daños del walk-around',
+      photoLoading: 'Cargando foto…',
+      photoAlt: 'Foto del daño',
+      showPhoto: 'Ver foto',
+      hidePhoto: 'Ocultar foto',
+      noPhoto: 'Sin foto',
+      titles: DOCUMENT_TITLES,
+      roles: SIGNER_ROLES,
+    },
     title: 'Revisión OCC',
-    subtitle: 'Entregas reales enviadas por agentes de rampa a la API.',
     noStations: 'Sin estaciones habilitadas.',
     noStationsHint: 'Solicita que tu cuenta OCC tenga un alcance de estación activo.',
     retry: 'Reintentar',
@@ -117,6 +136,13 @@ export const reviewMessages = {
       decision: 'Decisión: {outcome}',
     },
     queue: {
+      title: 'Entregas',
+      filters: {
+        label: 'Filtrar entregas',
+        all: 'Todas',
+        pending: 'Por revisar',
+        empty: 'No hay entregas por revisar con este filtro.',
+      },
       loading: 'Cargando entregas de la estación…',
       error: 'No se pudo cargar la cola de revisión.',
       pendingVisible: 'Pendientes visibles',
@@ -136,6 +162,7 @@ export const reviewMessages = {
     detail: {
       title: 'Detalle de entrega',
       close: 'Cerrar detalle',
+      placeholder: 'Elige una entrega de la lista para ver su detalle.',
       loading: 'Cargando ejecución y evidencias…',
       error: 'No se pudo cargar el detalle.',
       otherStation: 'La entrega pertenece a otra estación.',
@@ -228,9 +255,35 @@ export const reviewMessages = {
       done: 'Review reopened as revision {number}: it is pending review again.',
       unsigned: 'The Service Order of this approval is not signed: it cannot be reopened. After invoicing, correct it with a credit note.',
     },
-    eyebrow: 'Operational control',
+    documents: {
+      title: 'AVIAM forms',
+      loading: 'Loading forms…',
+      empty: 'This operation has no forms yet.',
+      signed: '✓ {name}',
+      signAgain: 'Sign again',
+      pending: 'Pending',
+      fingerprint: 'SHA-256 fingerprint of the content',
+      generating: 'Generating PDF…',
+      download: 'Download PDF',
+      marks: 'Walk-around damages',
+      photoLoading: 'Loading photo…',
+      photoAlt: 'Damage photo',
+      showPhoto: 'View photo',
+      hidePhoto: 'Hide photo',
+      noPhoto: 'No photo',
+      titles: {
+        ServiceOrder: 'Ramp Service Order',
+        FlightReport: 'Flight Report',
+        BridgeChecklist: 'Bridge checklist and daily report',
+      },
+      roles: {
+        AirlineRepresentative: 'Airline representative',
+        AviamAgent: 'AVIAM · Person in charge',
+        Coordinator: 'Coordinator',
+        BridgeOperator: 'Bridge operator',
+      },
+    },
     title: 'OCC review',
-    subtitle: 'Live submissions sent by ramp agents to the API.',
     noStations: 'No stations enabled.',
     noStationsHint: 'Ask for your OCC account to have an active station scope.',
     retry: 'Retry',
@@ -263,6 +316,13 @@ export const reviewMessages = {
       decision: 'Decision: {outcome}',
     },
     queue: {
+      title: 'Submissions',
+      filters: {
+        label: 'Filter submissions',
+        all: 'All',
+        pending: 'To review',
+        empty: 'No submissions to review with this filter.',
+      },
       loading: 'Loading station submissions…',
       error: 'The review queue could not be loaded.',
       pendingVisible: 'Visible pending',
@@ -282,6 +342,7 @@ export const reviewMessages = {
     detail: {
       title: 'Submission details',
       close: 'Close details',
+      placeholder: 'Choose a submission from the list to see its details.',
       loading: 'Loading execution and evidence…',
       error: 'The details could not be loaded.',
       otherStation: 'This submission belongs to another station.',

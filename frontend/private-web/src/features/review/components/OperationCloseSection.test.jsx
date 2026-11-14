@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const mocks = vi.hoisted(() => ({ add: vi.fn(), remove: vi.fn(), exclusion: vi.fn() }));
@@ -37,13 +37,61 @@ afterEach(() => vi.clearAllMocks());
 describe('OperationCloseSection (ADR-0034)', () => {
   it('shows the ground time against the allowance and who marked each charge', () => {
     render(<OperationCloseSection detail={detail} onChanged={() => {}} />);
-    expect(screen.getByText('Paquete excedido por 16 min')).toBeTruthy();
+    // The panel keeps the region the cycle E2E and the guide look for.
+    expect(screen.getByRole('region', { name: 'Cierre de la operación' })).toBeTruthy();
+    // The overrun asks for attention with its triangle and its words, never with a colour alone.
+    const overrun = screen.getByText('Paquete excedido por 16 min').closest('[data-occ-status]');
+    expect(overrun).toHaveAttribute('data-tone', 'attention');
+    expect(overrun.querySelector('[data-occ-glyph="attention"]')).not.toBeNull();
     expect(screen.getByText('avión estrecho')).toBeTruthy();
     expect(screen.getByText('Automático')).toBeTruthy();
     expect(screen.getByText('2 daño(s) marcados en el walk-around')).toBeTruthy();
-    // 3-N22: the milestone shows the Flight Report label, never its code.
-    expect(screen.getByText(/Bloqueo ·/)).toBeTruthy();
+  });
+
+  it('shows the recorded milestones in the full milestone strip with their local time', () => {
+    render(<OperationCloseSection detail={detail} onChanged={() => {}} />);
+    expect(screen.getByRole('heading', { name: 'Hitos del Reporte de Vuelo' })).toBeTruthy();
+    const strip = screen.getByRole('list', { name: 'Hitos de la escala' });
+    expect(strip).toHaveAttribute('data-occ-milestones', 'full');
+    // 3-N22: the milestone shows the Flight Report label, never its code; 14:00 UTC is 10:00 in Santo Domingo.
+    const blockOn = within(strip).getByText('Bloqueo').closest('li');
+    expect(within(blockOn).getByText('10:00')).toHaveAttribute('datetime', '2026-11-05T14:00:00Z');
     expect(screen.queryByText(/BLOCK_ON/)).toBeNull();
+    // Each phase counts against the flight report, and the rest of the 25 milestones wait as pending.
+    expect(within(strip).getByText('1 de 6')).toBeTruthy();
+    expect(within(strip).getAllByText('Pendiente')).toHaveLength(24);
+  });
+
+  it('keeps «Sin hitos registrados.» when the hand-off recorded no milestone', () => {
+    render(<OperationCloseSection detail={{ ...detail, close: { ...detail.close, milestones: [] } }} onChanged={() => {}} />);
+    expect(screen.getByText('Sin hitos registrados.')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Hitos de la escala' })).toBeNull();
+  });
+
+  it('confirms each charge change in a dialog named after its confirm button, and closes it on Cancelar or Esc', async () => {
+    const user = userEvent.setup();
+    render(<OperationCloseSection detail={detail} onChanged={() => {}} />);
+    const panel = screen.getByRole('region', { name: 'Cierre de la operación' });
+    await user.click(within(panel).getByRole('button', { name: 'Quitar' }));
+    // Drawn inside the panel, so the review's «Detalle de entrega» still holds its field and its buttons.
+    const removing = within(panel).getByRole('dialog', { name: 'Quitar recargo' });
+    expect(removing).toHaveAttribute('aria-modal', 'true');
+    const reason = within(removing).getByLabelText('Motivo (8 a 500 caracteres)');
+    expect(reason).toHaveFocus();
+    await user.type(reason, 'Fue operación diurna');
+    await user.click(within(removing).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(panel).getByRole('button', { name: 'Quitar' })).toHaveFocus();
+
+    await user.click(within(panel).getByRole('button', { name: 'Agregar recargo' }));
+    const adding = within(panel).getByRole('dialog', { name: 'Agregar' });
+    expect(within(adding).getByLabelText('Servicio')).toHaveFocus();
+    // A cancelled change leaves nothing behind: the reason starts empty again.
+    expect(within(adding).getByLabelText('Motivo (8 a 500 caracteres)')).toHaveValue('');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mocks.remove).not.toHaveBeenCalled();
+    expect(mocks.add).not.toHaveBeenCalled();
   });
 
   it('removes a charge only with a reason, against the review version', async () => {

@@ -20,6 +20,9 @@ import { globalStylesheets, occMountedFiles, readSource, sourceFilesUnder } from
 const BRIDGE_CSS = 'src/styles/occ-legacy-bridge.css';
 // The OCC boot screen (U4): it renders outside ShellFrame and paints only with the tokens of the scope it carries.
 const BOOT_FOLDER = 'src/features/admin-occ/boot';
+// The OCC screens U6 rebuilt with occ-ui, one per step: they draw as occ-ui does (contratos 2.4). Each also enters
+// MIGRATED_FOLDERS, which forbids its legacy colour classes.
+const REBUILT_SCREEN_FOLDERS = Object.freeze(['src/features/review']);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
@@ -869,6 +872,28 @@ describe('OCC legacy bridge', () => {
     // occPalette.js may hold colours; nothing else may.
     expect(occUiStyleFindings("'#0f161a'", { colours: false })).toEqual([]);
     expect(occUiStyleFindings("'#0f161a'")).toEqual(['colour: #0f161a']);
+  });
+
+  it('rebuilt OCC screens draw no shadow, upper case, tracking, text under 12 px or literal colour', () => {
+    for (const folder of REBUILT_SCREEN_FOLDERS) {
+      expect(MIGRATED_FOLDERS, folder).toContain(folder);
+      const files = sourceFilesUnder(folder).filter(file => SCRIPT_FILE.test(file));
+      expect(files.length, folder).toBeGreaterThan(0);
+      const found = files.flatMap(file => occUiStyleFindings(stripScriptComments(readSource(file)))
+        .map(finding => `${file}: ${finding}`));
+      expect(found, folder).toEqual([]);
+      for (const file of files) {
+        const source = readSource(file);
+        expect(source, file).not.toMatch(/backdrop-filter|backdropFilter|backdrop-blur/);
+        expect(source, file).not.toMatch(/gradient/i);
+      }
+    }
+    // The review's route and the sections it restyled are among the files read.
+    expect(sourceFilesUnder('src/features/review')).toEqual(expect.arrayContaining([
+      'src/features/review/CanonicalReviewRoute.jsx', 'src/features/review/components/OperationCloseSection.jsx',
+      'src/features/review/components/OperationDocumentsSection.jsx',
+      'src/features/review/components/ReopenReviewSection.jsx',
+    ]));
   });
 
   it('the boot screen styles use only occ tokens defined on the OCC scope', () => {

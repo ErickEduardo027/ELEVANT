@@ -1,25 +1,27 @@
-import { useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { reviewMessages } from '../reviewMessages';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import {
   addOccReviewCharge, removeOccReviewCharge, setOccReviewBillingExclusion,
 } from '../../../services/occReviewService';
-import { chargeSourceLabel, milestoneLabel } from '../../operations/operationLabels';
+import { chargeSourceLabel } from '../../operations/operationLabels';
+import OccButton from '../../occ-ui/OccButton';
+import OccDialog from '../../occ-ui/OccDialog';
+import { OccSelectField, OccTextareaField } from '../../occ-ui/OccField';
+import OccGlyph from '../../occ-ui/OccGlyph';
+import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
+import OccPanel from '../../occ-ui/OccPanel';
+import OccStatusPill from '../../occ-ui/OccStatusPill';
+import { buildMilestonePhases } from '../../occ-ui/milestonePhases';
 
-const SOURCE_TONE = {
-  Agent: 'bg-black/5 dark:bg-white/10',
-  Automatic: 'bg-accent-600/10 text-accent-600',
-  Occ: 'bg-status-warning/15',
-};
-
-function time(value, timeZone, locale) {
-  try {
-    return new Intl.DateTimeFormat(locale, { timeStyle: 'short', timeZone }).format(new Date(value));
-  } catch {
-    return value;
-  }
-}
+// A label over its figure, as the review's other figures read; the figure keeps tabular digits.
+const TERM = 'text-xs font-medium text-occ-muted';
+const FIGURE = 'mt-0.5 text-lg font-semibold tabular-nums text-occ-text';
+// Who marked a charge, or what OCC decided about a service, is a plain outlined tag: a normal state carries no hue.
+const TAG = 'ml-2 inline-flex rounded-sm border border-occ-line px-1.5 text-xs font-medium text-occ-muted';
+const SUBHEADING = 'text-sm font-semibold text-occ-text';
+const ROW = 'flex flex-wrap items-center justify-between gap-2 py-2';
 
 /**
  * «Cierre de la operación» (ADR-0034): ground time against Finance's allowance, the Flight Report
@@ -29,11 +31,17 @@ function time(value, timeZone, locale) {
  * Phase 3, block D: a service in Exception with an executed quantity is billed unless OCC excludes it here with a reason
  * (3-N11); a change after the Service Order was signed becomes its corrected version (3-N02). Each change carries its
  * intent's Idempotency-Key; a refusal for a stale version is reported with `onChanged(text, 'error')`, which re-reads.
+ *
+ * U6: the panel keeps the region «Cierre de la operación»; the milestones are the full strip of the flight report in the
+ * station's time, and each change is confirmed in a dialog drawn inside the panel, named after its confirm button.
  */
 export default function OperationCloseSection({ detail, disabled, onChanged }) {
   const { t, locale, language } = useTranslation(reviewMessages);
   const close = detail.close;
   const keys = useRef(createCommandKeyHolder());
+  const reasonRef = useRef(null);
+  const serviceRef = useRef(null);
+  const formId = useId();
   const [removing, setRemoving] = useState(null);
   const [adding, setAdding] = useState(false);
   const [exclusion, setExclusion] = useState(null);
@@ -42,6 +50,7 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const phases = useMemo(() => buildMilestonePhases(close.milestones, language), [close.milestones, language]);
   const timing = close.timing;
   const minutes = value => (value === null || value === undefined ? t('close.unknown') : t('close.minutes', { value: Math.round(value) }));
   const overrun = timing.groundMinutes != null && timing.allowedGroundMinutes != null
@@ -55,6 +64,7 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
   const billable = detail.services.filter(service =>
     (service.status === 'Exception' && service.executedQuantity > 0) || exclusionOf(service.id));
   const signed = detail.serviceOrderState === 'Signed' || detail.serviceOrderState === 'Corrected';
+  const changing = Boolean(removing || adding || exclusion);
 
   function reset() {
     setRemoving(null);
@@ -112,137 +122,139 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
       : t('close.confirmAdd');
 
   return (
-    <section aria-label={t('close.title')} className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
-      <div>
-        <h3 className="font-semibold">{t('close.title')}</h3>
-        <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('close.intro')}</p>
-      </div>
-      <dl className="grid gap-3 text-sm sm:grid-cols-3">
-        <div className="rounded-lg bg-black/[0.03] p-3 dark:bg-white/5">
-          <dt className="text-xs uppercase tracking-wide">{t('close.ground')}</dt>
-          <dd className="text-lg font-semibold tabular-nums">{minutes(timing.groundMinutes)}</dd>
-          {overrun > 0 && <dd className="text-xs font-semibold text-status-warning">{t('close.exceeded', { value: overrun })}</dd>}
-        </div>
-        <div className="rounded-lg bg-black/[0.03] p-3 dark:bg-white/5">
-          <dt className="text-xs uppercase tracking-wide">{t('close.allowed')}</dt>
-          <dd className="text-lg font-semibold tabular-nums">
-            {timing.allowedGroundMinutes != null ? minutes(timing.allowedGroundMinutes) : t('close.unknown')}
-          </dd>
-          <dd className="text-xs">{timing.aircraftCategory ? t(`close.category.${timing.aircraftCategory}`) : t('close.noAllowance')}</dd>
-        </div>
-        <div className="rounded-lg bg-black/[0.03] p-3 dark:bg-white/5">
-          <dt className="text-xs uppercase tracking-wide">{t('close.delay')}</dt>
-          <dd className="text-lg font-semibold tabular-nums">{minutes(timing.arrivalDelayMinutes)}</dd>
-        </div>
-      </dl>
-      <div>
-        <h4 className="text-sm font-semibold">{t('close.milestones')}</h4>
-        {close.milestones.length === 0 ? <p className="text-sm">{t('close.noMilestones')}</p> : (
-          <ul className="mt-1 flex flex-wrap gap-2 text-xs">
-            {close.milestones.map(item => (
-              <li key={`${item.code}:${item.actualAt}`} className="rounded-full border border-black/10 px-2.5 py-1 dark:border-white/10">
-                {milestoneLabel(item.code, language)} · <span className="tabular-nums">{time(item.actualAt, detail.ianaTimeZone, locale)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {close.damageCount > 0 && <p className="mt-1 text-xs">{t('close.damages', { count: close.damageCount })}</p>}
-      </div>
-      <div>
-        <h4 className="text-sm font-semibold">{t('close.charges')}</h4>
-        {!close.canAdjustCharges && <p className="text-xs text-text-secondary-light">{t('close.frozen')}</p>}
-        {close.charges.length === 0 ? <p className="text-sm">{t('close.noCharges')}</p> : (
-          <ul className="mt-1 divide-y divide-black/10 text-sm dark:divide-white/10">
-            {close.charges.map(charge => (
-              <li key={charge.markId} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span>
-                  <strong>{charge.name}</strong> <span className="text-text-secondary-light">({charge.code})</span> · {serviceName(charge.serviceId) || charge.serviceCode}
-                  <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_TONE[charge.source] ?? ''}`}>
-                    {chargeSourceLabel(charge.source, language)}
-                  </span>
-                  {charge.reason && <span className="block text-xs text-text-secondary-light">{charge.reason}</span>}
-                </span>
-                {close.canAdjustCharges && (
-                  <button type="button" disabled={disabled || busy} onClick={() => { reset(); setRemoving(charge.markId); }}
-                    className="min-h-10 rounded-lg border border-status-warning px-3 py-1.5 text-xs font-semibold disabled:opacity-50">
-                    {t('close.remove')}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {billable.length > 0 && (
+    <OccPanel headingLevel={3} title={t('close.title')}>
+      <div className="space-y-4 p-3 text-sm">
+        <p className="text-occ-muted">{t('close.intro')}</p>
+        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3 xl:grid-cols-2 3xl:grid-cols-3">
+          <div className="min-w-0">
+            <dt className={TERM}>{t('close.ground')}</dt>
+            <dd className={FIGURE}>{minutes(timing.groundMinutes)}</dd>
+            {overrun > 0 && (
+              <dd className="mt-1">
+                <OccStatusPill size="sm" tone="attention" label={t('close.exceeded', { value: overrun })} />
+              </dd>
+            )}
+          </div>
+          <div className="min-w-0">
+            <dt className={TERM}>{t('close.allowed')}</dt>
+            <dd className={FIGURE}>
+              {timing.allowedGroundMinutes != null ? minutes(timing.allowedGroundMinutes) : t('close.unknown')}
+            </dd>
+            <dd className="mt-0.5 text-xs text-occ-muted">
+              {timing.aircraftCategory ? t(`close.category.${timing.aircraftCategory}`) : t('close.noAllowance')}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className={TERM}>{t('close.delay')}</dt>
+            <dd className={FIGURE}>{minutes(timing.arrivalDelayMinutes)}</dd>
+          </div>
+        </dl>
         <div>
-          <h4 className="text-sm font-semibold">{t('close.billing')}</h4>
-          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('close.billingIntro')}</p>
-          <ul className="mt-1 divide-y divide-black/10 text-sm dark:divide-white/10">
-            {billable.map(service => {
-              const excluded = exclusionOf(service.id);
-              return (
-                <li key={service.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span>
-                    <strong>{service.name}</strong> <span className="text-text-secondary-light">({service.code})</span>
-                    <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${excluded ? 'bg-status-warning/15' : 'bg-black/5 dark:bg-white/10'}`}>
-                      {excluded ? t('close.excluded', { reason: excluded.reason }) : t('close.billed')}
-                    </span>
+          <h4 className={SUBHEADING}>{t('close.milestones')}</h4>
+          {close.milestones.length === 0 ? <p className="mt-1 text-occ-muted">{t('close.noMilestones')}</p> : (
+            <OccMilestoneStrip variant="full" phases={phases} locale={locale} timeZone={detail.ianaTimeZone}
+              className="mt-2 sm:grid-cols-2" />
+          )}
+          {close.damageCount > 0 && <p className="mt-2 text-xs text-occ-muted">{t('close.damages', { count: close.damageCount })}</p>}
+        </div>
+        <div>
+          <h4 className={SUBHEADING}>{t('close.charges')}</h4>
+          {!close.canAdjustCharges && <p className="mt-1 text-xs text-occ-muted">{t('close.frozen')}</p>}
+          {close.charges.length === 0 ? <p className="mt-1 text-occ-muted">{t('close.noCharges')}</p> : (
+            <ul className="mt-1 divide-y divide-occ-line">
+              {close.charges.map(charge => (
+                <li key={charge.markId} className={ROW}>
+                  <span className="min-w-0">
+                    <strong className="font-semibold">{charge.name}</strong>{' '}
+                    <span className="font-mono text-xs text-occ-muted">({charge.code})</span> · {serviceName(charge.serviceId) || charge.serviceCode}
+                    <span className={TAG}>{chargeSourceLabel(charge.source, language)}</span>
+                    {charge.reason && <span className="block text-xs text-occ-muted">{charge.reason}</span>}
                   </span>
                   {close.canAdjustCharges && (
-                    <button type="button" disabled={disabled || busy}
-                      onClick={() => { reset(); setExclusion({ serviceId: service.id, excluded: !excluded }); }}
-                      className="min-h-10 rounded-lg border border-status-warning px-3 py-1.5 text-xs font-semibold disabled:opacity-50">
-                      {excluded ? t('close.include') : t('close.exclude')}
-                    </button>
+                    <OccButton size="sm" disabled={disabled || busy} onClick={() => { reset(); setRemoving(charge.markId); }}>
+                      {t('close.remove')}
+                    </OccButton>
                   )}
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
-      {close.canAdjustCharges && !removing && !adding && !exclusion && close.chargeOptions.length > 0 && (
-        <button type="button" disabled={disabled || busy} onClick={() => { reset(); setAdding(true); }}
-          className="min-h-10 rounded-lg border border-accent-600 px-3 py-1.5 text-sm font-semibold text-accent-600 disabled:opacity-50">
-          {t('close.add')}
-        </button>
-      )}
-      {(removing || adding || exclusion) && (
-        <form onSubmit={event => void submit(event)} className="space-y-2 rounded-lg border border-status-warning/40 p-3 text-sm">
+        {billable.length > 0 && (
+          <div>
+            <h4 className={SUBHEADING}>{t('close.billing')}</h4>
+            <p className="mt-0.5 text-xs text-occ-muted">{t('close.billingIntro')}</p>
+            <ul className="mt-1 divide-y divide-occ-line">
+              {billable.map(service => {
+                const excluded = exclusionOf(service.id);
+                return (
+                  <li key={service.id} className={ROW}>
+                    <span className="min-w-0">
+                      <strong className="font-semibold">{service.name}</strong>{' '}
+                      <span className="font-mono text-xs text-occ-muted">({service.code})</span>
+                      <span className={TAG}>{excluded ? t('close.excluded', { reason: excluded.reason }) : t('close.billed')}</span>
+                    </span>
+                    {close.canAdjustCharges && (
+                      <OccButton size="sm" disabled={disabled || busy}
+                        onClick={() => { reset(); setExclusion({ serviceId: service.id, excluded: !excluded }); }}>
+                        {excluded ? t('close.include') : t('close.exclude')}
+                      </OccButton>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        {close.canAdjustCharges && close.chargeOptions.length > 0 && (
+          <OccButton size="sm" disabled={disabled || busy || changing} onClick={() => { reset(); setAdding(true); }}>
+            {t('close.add')}
+          </OccButton>
+        )}
+      </div>
+      <OccDialog open={changing} onClose={reset} title={confirmLabel} busy={busy}
+        initialFocusRef={adding ? serviceRef : reasonRef}
+        footer={(
+          <>
+            <OccButton type="submit" form={formId} variant="primary" busy={busy} busyLabel={t('close.saving')}
+              disabled={!validReason || (adding && (!serviceId || !chargeId))}>
+              {confirmLabel}
+            </OccButton>
+            <OccButton data-occ-dialog-cancel="" disabled={busy} onClick={reset}>{t('close.cancel')}</OccButton>
+          </>
+        )}>
+        <form id={formId} onSubmit={event => void submit(event)} className="space-y-3">
           {exclusion && <p className="font-semibold">{exclusion.excluded ? t('close.exclude') : t('close.include')} · {serviceName(exclusion.serviceId)}</p>}
-          {signed && <p role="note" className="text-xs font-semibold text-status-warning">{t('close.correction')}</p>}
+          {signed && (
+            <p role="note" className="flex items-start gap-1.5 text-xs text-occ-text">
+              <OccGlyph name="attention" />
+              <span className="min-w-0">{t('close.correction')}</span>
+            </p>
+          )}
           {adding && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="block">{t('close.service')}
-                <select required value={serviceId} onChange={event => { setServiceId(event.target.value); setChargeId(''); }}
-                  className="mt-1 block w-full rounded-lg border border-black/20 bg-white p-2 text-ink-900">
-                  <option value="">{t('close.select')}</option>
-                  {detail.services.map(service => <option key={service.id} value={service.id}>{service.name}</option>)}
-                </select>
-              </label>
-              <label className="block">{t('close.charge')}
-                <select required value={chargeId} onChange={event => setChargeId(event.target.value)} disabled={!serviceId}
-                  className="mt-1 block w-full rounded-lg border border-black/20 bg-white p-2 text-ink-900 disabled:opacity-50">
-                  <option value="">{t('close.select')}</option>
-                  {options.map(option => <option key={option.chargeId} value={option.chargeId}>{option.name} ({option.code})</option>)}
-                </select>
-              </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <OccSelectField ref={serviceRef} label={t('close.service')} required value={serviceId}
+                onChange={event => { setServiceId(event.target.value); setChargeId(''); }}>
+                <option value="">{t('close.select')}</option>
+                {detail.services.map(service => <option key={service.id} value={service.id}>{service.name}</option>)}
+              </OccSelectField>
+              <OccSelectField label={t('close.charge')} required value={chargeId} disabled={!serviceId}
+                onChange={event => setChargeId(event.target.value)}>
+                <option value="">{t('close.select')}</option>
+                {options.map(option => <option key={option.chargeId} value={option.chargeId}>{option.name} ({option.code})</option>)}
+              </OccSelectField>
             </div>
           )}
-          <label className="block">{t('close.reason')}
-            <textarea required minLength={8} maxLength={500} rows={2} value={reason} onChange={event => setReason(event.target.value)}
-              className="mt-1 block w-full rounded-lg border border-black/20 bg-white p-2 text-ink-900" />
-          </label>
-          {error && <p role="alert" className="text-status-danger">{error}</p>}
-          <div className="flex flex-wrap gap-2">
-            <button type="submit" disabled={busy || !validReason || (adding && (!serviceId || !chargeId))}
-              className="min-h-10 rounded-lg bg-accent-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
-              {busy ? t('close.saving') : confirmLabel}
-            </button>
-            <button type="button" disabled={busy} onClick={reset} className="min-h-10 rounded-lg border px-3 py-1.5">{t('close.cancel')}</button>
-          </div>
+          <OccTextareaField ref={reasonRef} label={t('close.reason')} required minLength={8} maxLength={500} rows={2}
+            value={reason} onChange={event => setReason(event.target.value)} />
+          {error && (
+            <p role="alert" className="flex items-start gap-1.5 text-sm text-occ-text">
+              <OccGlyph name="attention" className="mt-0.5" />
+              <span className="min-w-0">{error}</span>
+            </p>
+          )}
         </form>
-      )}
-    </section>
+      </OccDialog>
+    </OccPanel>
   );
 }
