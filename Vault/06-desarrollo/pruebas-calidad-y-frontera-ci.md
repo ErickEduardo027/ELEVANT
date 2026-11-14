@@ -285,6 +285,9 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y, posterior al commit verificado (PR U4, `bcfd6fd7`), la pantalla de
   arranque del OCC sobre Panorama
   ([prueba](../../frontend/private-web/tests/visual/occ/boot-screen.spec.mjs)).
+  Desde el PR M6, también posterior, recorre la vista «Mapa» de Planificación
+  ([prueba](../../frontend/private-web/tests/visual/occ/planning-map.spec.mjs);
+  ver [Cinemática y vuelo demo en los mapas del OCC (PR M6)](#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
   leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
@@ -396,9 +399,11 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   con la red sintética «Red ADS-B de prueba»: `region-traffic-mixed`,
   `approach-traffic-demo`, `ramp-traffic-ground`,
   `approach-traffic-estimated-stale`, `region-traffic-selected`,
-  `approach-traffic-hex-selected` y `region-layers-menu`. Sus posiciones
-  estimadas (la llegada demo en final y un vuelo de AVIAM sin señal) se pasan a
-  mano, como las calculará M6: las pantallas no estiman ninguna.
+  `approach-traffic-hex-selected` y `region-layers-menu`. En M5 sus posiciones
+  estimadas (la llegada demo en final y un vuelo de AVIAM sin señal) se pasaban
+  a mano, porque las pantallas no estimaban ninguna; desde M6 las calcula el
+  almacén de movimiento, como en las pantallas (ver
+  [Cinemática y vuelo demo en los mapas del OCC (PR M6)](#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6)).
 - **Spec visual del tráfico.**
   [`map-lab.traffic.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.traffic.spec.mjs),
   del proyecto `lab` de la [suite visual](#suite-visual-de-los-mapas-del-occ),
@@ -406,14 +411,92 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   primeras comprueba que el crédito de la red está a la vista como enlace y que
   la leyenda lista el tráfico. Comprueba también que la atribución abierta
   nombra la red; que otro avión muestra su etiqueta bajo el puntero; que cada
-  vista explica su tráfico («Otro tráfico en tierra» en la rampa, «Demo»,
-  «est.» y «Estela estimada» en la llegada demo) y que la imagen con retraso lo
-  dice; el bloque de datos del vuelo elegido y el de otro avión, sin enlaces; y
+  vista explica su tráfico («Otro tráfico en tierra» en la rampa; «Demo»,
+  «est.» y la estela en la llegada demo, que en M5 tenía además una estela
+  estimada pasada a mano) y que la imagen con retraso lo dice; el bloque de
+  datos del vuelo elegido y el de otro avión, sin enlaces; desde M6, las cuatro
+  partes de la ruta del vuelo elegido en la leyenda; y
   que un clic elige un avión (`hex=` o `flightId=`), `L` abre el menú de capas,
   la primera `Esc` lo cierra y conserva lo elegido, la segunda suelta el vuelo,
   y «Etiquetas de todo el tráfico» sobrevive a una recarga, con
   `elevant-occ-map-layers:v1` vacío al volver al valor por omisión. Como el
   resto de la suite, corre fuera del CI y una persona revisa sus capturas.
+
+## Cinemática y vuelo demo en los mapas del OCC (PR M6)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M6 «Cinemática y vuelo demo en el mapa» (`71b01804` a `763cf9ae`), que esa
+verificación no cubre ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)).
+Las pruebas de vitest corren con `npm test`; las specs visuales, con la suite
+visual.
+
+- **El contrato del vuelo demo.**
+  [`demoProfile.test.js`](../../frontend/private-web/src/features/maps/kinematics/demoProfile.test.js)
+  arma el reloj demo como lo arma el servidor y lo lee como el mapa lee el
+  bloque `demo` de los vuelos, sobre el plano firmado de MDPC. Con 8 minutos
+  (216 s de rodaje de llegada), cada una de las 41 posiciones activas se alcanza
+  por la 08 con un rodaje ajustado de 25 kt o menos. B36 y B37, las dos que no
+  caben a velocidad real, van comprimidas menos del 2 %: la prueba demuestra por
+  geometría que ningún rodaje posible cabe, fija el rótulo «Demo acelerada
+  ×1,02» y comprueba que con 222 s de rodaje o con 10 minutos todas caben. Los
+  5 minutos de rodaje de salida caben a 25 kt o menos desde todas, con A1, A2 y
+  AN1 desde la intersección H. Prueba también los seis instantes del servidor,
+  con un segundo de margen; que ningún tramo salta; el arranque a 5 NM como
+  mínimo; la espera sobre la puerta de aproximación; la 08 con cualquier viento;
+  la espera de plataforma; la posición dada después; la cancelación; y que dos
+  construcciones dan lo mismo.
+- **Pureza.**
+  [`purity.test.js`](../../frontend/private-web/src/features/maps/kinematics/purity.test.js)
+  recorre las fuentes de `kinematics/` y `airport/runwayInUse.js`, sin sus
+  comentarios, y falla con `Date.now()`, `performance.now()`, un `new Date()`
+  sin argumentos, `Math.random()` o un import de JSON.
+- **El bucle y el movimiento.**
+  [`frameLoop.test.js`](../../frontend/private-web/src/features/maps/core/frameLoop.test.js)
+  usa un reloj y un `requestAnimationFrame` falsos: ningún cuadro si nada se
+  mueve; un cuadro por cada cuadro del navegador mientras algo se mueve; la hora
+  del reloj de render, nunca `Date.now()`; la pausa y la reanudación; el reloj
+  congelado del laboratorio; la pestaña oculta; un tic por segundo con
+  movimiento reducido; y el ritmo de `updateData`.
+  [`motionStore.test.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.test.js)
+  prueba la caché de trayectorias por sus entradas; el vuelo demo con los
+  instantes del servidor en la 08, su espera sin importar, la importación sin
+  salto y la cancelación; la decisión F-1; que una salida importada solo sale con
+  `PUSHBACK` o con señal; la ruta de un vuelo que no se dibuja; el relevo en
+  vivo, sin señal y estimado; un avión por visita; la escala de tiempo;
+  `trackConfigFor`; y el próximo cambio. Las del relevo, la ruta, la cámara de
+  seguimiento y los rodajes están junto a cada módulo de `kinematics/`.
+- **Las posiciones con los vuelos.**
+  [`standInputs.test.js`](../../frontend/private-web/src/features/maps/traffic/standInputs.test.js)
+  y [`footprint.test.js`](../../frontend/private-web/src/features/maps/aircraft/footprint.test.js)
+  (la huella mide la envergadura por el largo con un 2 % de margen, apunta
+  según el rumbo y cabe en su posición); las pruebas del modelo, las capas y la
+  leyenda de las posiciones suman «Llegando» desde el vuelo, las huellas, la
+  barra de avance y el aviso.
+  [`MapSituationGate.test.jsx`](../../frontend/private-web/src/features/maps/MapSituationGate.test.jsx)
+  comprueba que fuera del marco del OCC no se lee nada. Las pruebas de Mapa de
+  posiciones y de Planificación comprueban que fuera del marco leen solo el
+  tablero, como antes, y que dentro dibujan el tráfico, sus posiciones leen
+  «Llegando» y «Ocupada» de los vuelos y el vuelo o el avión de la URL es lo
+  elegido, con su bloque de datos.
+- **Datos sintéticos validados.**
+  [`visualOccFixtures.test.js`](../../frontend/private-web/tests/visualOccFixtures.test.js)
+  pasa por los validadores estrictos del cliente compartido la imagen aérea, los
+  vuelos del mapa, la traza y el ping que responde la API simulada de la suite
+  visual, inventados y sin ningún proveedor.
+- **Specs visuales.**
+  [`map-lab.motion.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.motion.spec.mjs)
+  fotografía seis escenas del vuelo demo y de las fuentes de una posición, con
+  lo que dice el bloque de datos de cada una, y «Pausar movimiento».
+  [`map-lab.route-follow.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.route-follow.spec.mjs)
+  fotografía la ruta de una llegada y la de una salida y el modo seguir en
+  final y en rodaje, y comprueba que `S` y «Seguir» escriben `follow=1` y que un
+  arrastre deja de seguir y lo dice. En el proyecto `occ`,
+  [`planning-map.spec.mjs`](../../frontend/private-web/tests/visual/occ/planning-map.spec.mjs)
+  y [`positions-map.spec.mjs`](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)
+  muestran las posiciones alimentadas por los vuelos con el tráfico encima.
+  Todas corren a 1440×900 y a 1920×1080, fuera del CI, y una persona revisa sus
+  capturas. Ninguna mide los cuadros por segundo: el Chrome de la suite dibuja
+  por software.
 
 ## Qué agrega cada workflow activo
 
