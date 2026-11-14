@@ -229,6 +229,41 @@ a `ff066d47`, también posterior al commit verificado;
   ([liberación](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.StandRelease.cs));
   del cliente compartido, y de private-web: panel, tarjeta, motivos y servicio.
 
+Desde la imagen aérea y los vuelos del mapa (PR A3 del mismo plan, código de
+`77dff268` a `e098ccde`, también posterior al commit verificado;
+[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)):
+
+- **Fixtures sintéticos.** Las respuestas de prueba del adaptador tienen la
+  forma real del JSON v2 de readsb, con direcciones, matrículas, *callsign* y
+  posiciones inventadas
+  ([adsb.fi](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/readsb-adsbfi-point.synthetic.json)
+  y [adsb.lol](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/readsb-adsblol-point.synthetic.json));
+  el proyecto de pruebas los copia a su salida. Ninguna respuesta real se
+  versiona, porque la licencia de adsb.fi no permite redistribuirla. El HTTP se
+  simula con un manejador de prueba, y ninguna prueba ni workflow de CI llama a
+  adsb.fi o a adsb.lol.
+- **Prueba en vivo opcional.**
+  [`AirTrafficLiveTests`](../../backend/tests/Elevant.UnitTests/Infrastructure/AirTrafficLiveTests.cs)
+  hace una sola lectura de 250 NM alrededor de Punta Cana, sin clave, y solo
+  corre con `ELEVANT_LIVE_AIR_TRAFFIC=1`: contra adsb.fi, o contra adsb.lol con
+  `ELEVANT_LIVE_AIR_TRAFFIC_PROVIDER=AdsbLol`. Informa cuántos aviones vio,
+  nunca la respuesta. Como la de AeroDataBox, CI nunca la activa.
+- **La E2E no activa el tráfico.** El overlay del arnés deja apagada la imagen
+  aérea salvo que `ELEVANT_E2E_AIR_TRAFFIC_ENABLED` la encienda, así que el
+  recorrido nunca lee una red real; la lectura a mano es un paso aparte y
+  deliberado ([guía local](../../docs/workflows/local-development.md)). El PR
+  no suma pasos al arnés porque no tiene pantallas.
+- **Pruebas automáticas.** Unitarias del adaptador y su parser, el relevo, la
+  configuración, el servicio de la imagen, las esperas, el emparejamiento, las
+  claves y las fases, y los manejadores de las tres lecturas. De la API,
+  montando el host sin SQL: el worker y los endpoints, entre ellos que la
+  imagen de Development enciende el tráfico y sube el límite a 600. De
+  arquitectura: contratos sin `long` y con ids públicos, tres lecturas bajo
+  `occ/map` y el worker, que solo depende de Application. Siete pruebas SQL de
+  los vuelos del mapa
+  ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.MapFlights.cs)),
+  y las del cliente compartido.
+
 ## Suite visual de los mapas del OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código del
@@ -246,7 +281,10 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   (`/map-lab`, solo en desarrollo), con escenas fijas, sin sesión ni API. `occ`
   abre las pantallas del OCC con una sesión sintética y la API simulada; hoy,
   Mapa de posiciones
-  ([prueba](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)).
+  ([prueba](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs))
+  y, posterior al commit verificado (PR U4, `bcfd6fd7`), la pantalla de
+  arranque del OCC sobre Panorama
+  ([prueba](../../frontend/private-web/tests/visual/occ/boot-screen.spec.mjs)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
   leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
@@ -257,13 +295,23 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y las vistas mueven de verdad la cámara, en `next dev` y en un build de
   producción; que el doble montaje de React Strict Mode deja un solo mapa y la
   página llega a `networkidle`; y que releer las posiciones conserva el mismo
-  lienzo.
+  lienzo. De la pantalla de arranque comprueba que no está en el HTML del
+  servidor pero aparece en una sesión nueva, sobre la pantalla de carga; que se
+  va como mucho 6 s después del acceso aunque nadie avise; que deja pasar los
+  clics desde el primer instante de su salida; que una recarga de la misma
+  pestaña no la repite; y que con movimiento reducido solo se mueve la línea de
+  progreso.
 - **Sin red.** Cada petición a otro origen se responde desde la suite o se
   aborta, y la prueba falla si una salió hacia un origen que la suite no
   responde. La TileJSON es sintética; las teselas son un mundo inventado
   alrededor de Punta Cana; los glifos `0-255` de los tres Noto Sans son
   fixtures con su licencia SIL OFL 1.1; y la API responde un stub con Problem
-  Details. Además, su Chrome no resuelve ningún nombre salvo `localhost`.
+  Details. La prueba de la pantalla de arranque también responde el acceso y
+  las tres lecturas de Panorama, con datos sintéticos que pasan los validadores
+  estrictos del cliente compartido, y, sin salir del equipo, los tres orígenes
+  que todavía usa Panorama (los estilos publicados de OpenFreeMap, NASA GIBS e
+  IEM), con un estilo vacío, un 404 y un 503. Además, su Chrome no resuelve
+  ningún nombre salvo `localhost`.
   Ninguna prueba llama a OpenFreeMap, a la API real ni a un proveedor.
 - **Cómo corre.** `npm run test:visual`, desde `frontend/private-web`, levanta
   `next dev` en el puerto 4186 con los tres `NEXT_PUBLIC_*` de Development y
@@ -274,9 +322,14 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y en [Comandos locales por subárbol](comandos-locales-por-subarbol.md#private-web).
 - **Capturas.** Una por escena del laboratorio a 1440×900, más la terminal B de
   cerca, la rampa sin mapa base, la rampa a 1920×1080 y Mapa de posiciones, en
-  `frontend/private-web/test-results/visual/`, que Git ignora. Las revisa una
-  persona: no hay líneas base de imagen, porque cambian con la máquina y la
-  GPU.
+  `frontend/private-web/test-results/visual/`, que Git ignora. Desde U4 se
+  suman las de la pantalla de arranque: al empezar, mientras espera a Panorama
+  y la consola después, a 1440×900 y a 1920×1080, y con movimiento reducido a
+  1440×900. La de Mapa de posiciones muestra el mapa sin la pantalla de
+  arranque: sus pruebas entran como una entrada posterior de la misma pestaña,
+  con la marca de la cuenta ya puesta, y fallan si la pantalla sigue encima
+  cuando el mapa ya está listo. Las revisa una persona: no hay líneas base de
+  imagen, porque cambian con la máquina y la GPU.
 - **Qué no es.** Ningún workflow de CI la ejecuta, y `npm test` no la recoge:
   `vitest.config.mjs` excluye `tests/visual/**`. Se corre antes de mergear un
   cambio de mapas, y una corrida verde es evidencia local, no de un despliegue.

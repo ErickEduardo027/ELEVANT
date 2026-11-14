@@ -20,6 +20,7 @@ import {
   logout,
   readSession,
 } from './authService';
+import { hasSeenOccBoot, markOccBootSeen } from '../admin-occ/boot/occBootSession';
 
 function apiSession(overrides = {}) {
   return {
@@ -117,6 +118,17 @@ describe('session renewal (ADR-0021)', () => {
     } finally {
       window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
     }
+  });
+
+  it('renewing the session keeps the OCC boot screen seen', async () => {
+    await signIn('2099-01-01T00:00:00.000Z');
+    const { accountId } = readSession();
+    markOccBootSeen(accountId);
+    refreshApi.refreshSession.mockResolvedValueOnce({ ...renewable('2099-01-02T00:00:00.000Z'),
+      accessToken: 'renewed-access-token' });
+    expect(await renewSession({ force: true })).toMatchObject({ token: 'renewed-access-token' });
+    // The same login goes on: no second boot screen in this tab.
+    expect(hasSeenOccBoot(accountId)).toBe(true);
   });
 
   it('revokes the refresh chain on logout', async () => {
@@ -369,5 +381,59 @@ describe('authService', () => {
 
     expect(readSession()).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('the OCC boot screen flag (contratos 2.6)', () => {
+  const credentials = { email: 'admin.occ@dev.elevant.test', password: 'IndividualPassword!2026' };
+  const { accountId } = apiSession().actor;
+
+  it('logout forgets the OCC boot screen so the next login shows it again', async () => {
+    await login(credentials, { createSession: vi.fn().mockResolvedValue(apiSession()) });
+    markOccBootSeen(accountId);
+
+    // A sign-out whose cleanup fails keeps the person signed in, and the screen already seen.
+    const originalRemove = Storage.prototype.removeItem;
+    const removal = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (key) {
+      if (key === AUTH_STORAGE_KEY) throw new Error('Storage is unavailable');
+      return originalRemove.call(this, key);
+    });
+    expect(() => logout()).toThrow('No fue posible completar el cierre de sesión.');
+    expect(readSession()?.accountId).toBe(accountId);
+    expect(hasSeenOccBoot(accountId)).toBe(true);
+    removal.mockRestore();
+
+    logout();
+    expect(readSession()).toBeNull();
+    expect(hasSeenOccBoot(accountId)).toBe(false);
+  });
+
+  it('a new login and an expired session forget the OCC boot screen', async () => {
+    // A login, even of the same account in the same tab, shows the screen again on its first OCC entry.
+    markOccBootSeen(accountId);
+    await login(credentials, { createSession: vi.fn().mockResolvedValue(apiSession()) });
+    expect(hasSeenOccBoot(accountId)).toBe(false);
+
+    // A 401 that cannot be renewed ends the session.
+    markOccBootSeen(accountId);
+    expect(handleUnauthorizedResponse({ status: 401 })).toBe(true);
+    expect(readSession()).toBeNull();
+    expect(hasSeenOccBoot(accountId)).toBe(false);
+
+    // So does an access token that reaches its expiry without a refresh token.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-16T12:00:00.000Z'));
+    await login(credentials, { createSession: vi.fn().mockResolvedValue(apiSession({ expiresAt: '2026-09-16T12:00:02.000Z' })) });
+    markOccBootSeen(accountId);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(hasSeenOccBoot(accountId)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(readSession()).toBeNull();
+    expect(hasSeenOccBoot(accountId)).toBe(false);
+
+    // And a failed login leaves nothing behind.
+    markOccBootSeen(accountId);
+    await expect(login(credentials, { createSession: vi.fn().mockRejectedValue(new Error('offline')) })).rejects.toThrow();
+    expect(hasSeenOccBoot(accountId)).toBe(false);
   });
 });

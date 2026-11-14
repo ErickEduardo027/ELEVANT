@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-12"
-verified_commit: "cba00f73861c2773ee4b7c2a52b4ae246cae485f"
+last_verified: "2026-11-13"
+verified_commit: "e098ccde9d1ab6996d7d79bf914662a67236768c"
 sources:
   - packages/api-client/openapi/elevant-v1.json
   - packages/api-client/src/client.ts
@@ -19,6 +19,7 @@ sources:
   - backend/Elevant.Api/Controllers/OccPlanningController.cs
   - backend/Elevant.Api/Controllers/OccFlightFeedController.cs
   - backend/Elevant.Api/Controllers/DemoFlightsController.cs
+  - backend/Elevant.Api/Controllers/OccMapController.cs
   - backend/Elevant.Api/Controllers/RampExecutionController.cs
   - backend/Elevant.Api/Controllers/OccReviewController.cs
   - backend/Elevant.Api/Controllers/MobileDevicesController.cs
@@ -51,13 +52,9 @@ tags:
 Este inventario responde «¿qué existe hoy y hasta dónde llega?» para el código
 del commit verificado. Cada fila nombra el controlador y una o más operaciones
 (`operationId`) del [snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json),
-que en ese commit publica 404 operaciones en 352 rutas. Ninguna fila acredita
+que en ese commit publica 408 operaciones en 356 rutas. Ninguna fila acredita
 merge en otra rama, promoción ni despliegue en el VPS: eso solo lo respalda un
 registro `operator-recorded`.
-
-*Posterior al commit verificado de esta nota (PR A2 de «OCC a nivel NOC»):* el
-snapshot publica 405 operaciones en 353 rutas; la nueva es `PrepareDemoStation`,
-de la fila «Vuelos demo».
 
 ## Escala
 
@@ -81,7 +78,8 @@ de la fila «Vuelos demo».
 | Solicitudes comerciales y alta de aerolíneas | Public Web, Private Web | `PublicCommercialRequestsController` · `SubmitCommercialRequest`; `CommercialRequestsManagementController` · `DecideCommercialRequest`; `CommercialProvisioningController` · `ProvisionCommercialAirline` | Entregada | Fase 1 del ciclo ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). |
 | Contratos versionados, permisos y tarifas | Private Web, Public Web | `ContractDraftsController` · `ActivateManagedContractDraft`; `ContractDocumentsController` · `SignContractVersion`; `ContractLifecycleController` · `ApplyContractLifecycle`, `ReviewAirlinePermit`; `FinanceTariffBookController` · `DecideFinanceContractApproval` | Entregada | Vigencia, firmas dibujadas, permisos de operación y aprobación de precios por Finanzas ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md), [ADR-0025](../../docs/adr/0025-contract-validity-and-drawn-signatures.md), [ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)). |
 | Turnaround y vuelos | Private Web | `OccTurnaroundsController` · `RescheduleOccTurnaround`; `OccFlightFeedController` · `ImportOccFlight`, `RefreshOccFlightFeed`; `OccTrafficController` · `GetOccAircraftTraffic` | Entregada; el feed externo es configurable | El feed AeroDataBox está apagado sin `AeroDataBox:Enabled` y clave; el feed simulado solo arranca en Development o Test ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). El tráfico OpenSky también está apagado por defecto. |
-| Vuelos demo | Private Web | `DemoFlightsController` · `GetDemoFlightOptions`, `ListDemoFlights`, `CreateDemoFlight`, `CancelDemoFlight`, `PrepareDemoStation` | Configurable o solo Development | Superadministración dispara dos propuestas del proveedor «Demo» que OCC importa y opera como un vuelo real, sin gastar unidades de AeroDataBox. `DemoFlights:Mode` es `Disabled` por defecto y `Enabled` en `appsettings.Development.json`; fuera de Development, Test o Testing la API no arranca con él. *Posterior al commit verificado:* la decisión está en el [ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md). Desde el PR A2, `PrepareDemoStation` carga las 41 posiciones de Punta Cana sin coordenadas y sin tocar lo que existe, «Al azar» sortea la posición entre las que cubre un agente elegible y la posición de cualquier vuelo queda libre con el `PUSHBACK` registrado. |
+| Vuelos demo | Private Web | `DemoFlightsController` · `GetDemoFlightOptions`, `ListDemoFlights`, `CreateDemoFlight`, `CancelDemoFlight`, `PrepareDemoStation` | Configurable o solo Development | Superadministración dispara dos propuestas del proveedor «Demo» que OCC importa y opera como un vuelo real, sin gastar unidades de AeroDataBox. `DemoFlights:Mode` es `Disabled` por defecto y `Enabled` en `appsettings.Development.json`; fuera de Development, Test o Testing la API no arranca con él. La decisión está en el [ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md). Desde el PR A2, `PrepareDemoStation` carga las 41 posiciones de Punta Cana sin coordenadas y sin tocar lo que existe, «Al azar» sortea la posición entre las que cubre un agente elegible y la posición de cualquier vuelo queda libre con el `PUSHBACK` registrado. |
+| Mapas del OCC: imagen aérea y vuelos | Private Web (desde el PR M5, planificado) | `OccMapController` · `GetOccAirPicture`, `GetOccAircraftTrack`, `GetOccMapFlights` | Configurable o solo Development | La imagen aérea, con los aviones reales de adsb.fi y adsb.lol de relevo, está apagada por defecto (`AirTraffic:Enabled`) y la enciende `appsettings.Development.json`. Se lee solo mientras alguien la pide, se sirve desde memoria con el crédito de la red y reconoce los vuelos de ELEVANT por matrícula y *callsign*. Los vuelos del mapa (tramos y propuestas con claves que no cambian al importar, fase, posición, hitos y reloj demo) no dependen de esa configuración. Lee el personal interno con un permiso de mapas y la estación en su alcance. Ninguna pantalla los consume todavía: el carril de mapas los dibuja desde el PR M5. *Posterior al commit verificado:* la decisión está en el [ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md). |
 | Planificación y cobertura | Private Web, Mobile Agent | `OccPlanningController` · `AssignOccPlanningOperation`; `OccPositionsController` · `AssignOccStand`; `OccCoverageController` · `CreateOccCoverage`; `OccAssignmentReadinessController` · `GetOccAssignmentReadiness` | Entregada | Posiciones combinadas, cobertura por turno y relevos ([ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md), [ADR-0030](../../docs/adr/0030-position-coverage-per-shift-and-combined-stands.md), [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)). |
 | Ejecución en rampa | Mobile Agent | `RampOperationsController` · `StartRampOperation`; `RampExecutionController` · `RecordRampMilestone`; `RampOperationServicesController` · `TransitionRampOperationService`; `RampServiceChargesController` · `ApplyRampServiceCharge` | Entregada | Captura del reporte de vuelo en la tableta ([ADR-0031](../../docs/adr/0031-flight-report-capture-on-the-tablet.md)). |
 | Checklists, formularios y firmas | Mobile Agent, Private Web | `RampOperationChecklistsController` · `SubmitRampOperationChecklist`; `RampDocumentsController` · `SignRampOperationDocument`, `RecordRampDamageMark` | Entregada | Orden de Servicio y walk-around con fotos en almacenamiento privado ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)). |
@@ -105,7 +103,7 @@ de la fila «Vuelos demo».
 | Notificaciones y correo | `OperationalNotificationsController`, `DepartmentNotificationsController` y el outbox de correo (`ListEmailOutbox`) | Entregada; el correo sale por SMTP configurado. |
 | Tiempo real | Hubs `/hubs/operations`, `/hubs/notifications` y `/hubs/public-catalog`, más el feed por cursor (`GetAccountChanges`) | Configurable: el despachador `Realtime:AccountChangeDispatcherEnabled` está apagado por defecto y encendido en `appsettings.Development.json`. Sin él, los clientes reconcilian por sondeo. |
 | Medios y documentos | `CommercialMediaController` (`UploadCommercialMedia`), `RampDocumentsController` (`AttachRampDamagePhoto`), `OccOperationDocumentsController` (`GetOccOperationDocumentPdf`) | Entregada sobre un bucket S3 privado ([medios](../04-arquitectura/medios-comerciales-privados.md)). |
-| Información externa de vuelos | AeroDataBox, OpenSky y FlightAware ([integraciones](../04-arquitectura/integraciones-externas.md)) | AeroDataBox y OpenSky configurables; FlightAware sigue como frontera futura sin adaptador. |
+| Información externa de vuelos | AeroDataBox, adsb.fi, adsb.lol, OpenSky y FlightAware ([integraciones](../04-arquitectura/integraciones-externas.md)) | AeroDataBox y OpenSky configurables; la imagen aérea (adsb.fi, con adsb.lol de relevo), apagada por defecto y encendida en Development; FlightAware sigue como frontera futura sin adaptador. |
 | Conectividad fiscal real con la DGII | Sin proveedor, certificado ni secuencias autorizadas | Diferido; el e-CF actual es simulación. |
 | Conciliación bancaria, tasas automáticas y libro mayor | Ninguna | Diferido. |
 | Production | `database/ProductionDB` solo contiene `.gitkeep` | Futuro: necesita su propio plan. |

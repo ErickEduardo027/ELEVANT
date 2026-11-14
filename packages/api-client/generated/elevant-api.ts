@@ -4011,6 +4011,76 @@ export interface OccAgentShiftResponse {
   version: string;
 }
 
+export interface OccAirTrailPointResponse {
+  at: string;
+  latitude: number;
+  longitude: number;
+  /** @nullable */
+  altitudeFeet?: number | null;
+  onGround: boolean;
+}
+
+export interface OccAirPictureAircraftResponse {
+  hex: string;
+  /** @nullable */
+  callsign?: string | null;
+  /** @nullable */
+  registration?: string | null;
+  /** @nullable */
+  typeIcaoCode?: string | null;
+  /** @nullable */
+  category?: string | null;
+  latitude: number;
+  longitude: number;
+  /** @nullable */
+  altitudeFeet?: number | null;
+  onGround: boolean;
+  /** @nullable */
+  groundSpeedKnots?: number | null;
+  /** @nullable */
+  trackDegrees?: number | null;
+  /** @nullable */
+  verticalRateFeetPerMinute?: number | null;
+  /** @nullable */
+  squawk?: string | null;
+  positionAt: string;
+  /** @nullable */
+  matchedFlightKey?: string | null;
+  /** @nullable */
+  matchedBy?: string | null;
+  trail: OccAirTrailPointResponse[];
+}
+
+export interface OccAirPictureCenterResponse {
+  latitude: number;
+  longitude: number;
+  radiusNm: number;
+}
+
+export interface OccAirTrafficSourceResponse {
+  name: string;
+  homeUrl: string;
+  licenseName: string;
+  /** @nullable */
+  licenseUrl?: string | null;
+}
+
+export interface OccAirPictureResponse {
+  stationId: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  serverTime: string;
+  /** @nullable */
+  observedAt?: string | null;
+  /** @nullable */
+  ageSeconds?: number | null;
+  refreshAfterSeconds: number;
+  source?: OccAirTrafficSourceResponse | null;
+  center: OccAirPictureCenterResponse;
+  aircraft: OccAirPictureAircraftResponse[];
+}
+
 export interface OccAircraftResponse {
   id: string;
   icaoCode: string;
@@ -4051,6 +4121,13 @@ export interface OccAircraftStateResponse {
   positionSource?: number | null;
   /** @nullable */
   category?: number | null;
+}
+
+export interface OccAircraftTrackResponse {
+  hex: string;
+  serverTime: string;
+  source?: OccAirTrafficSourceResponse | null;
+  points: OccAirTrailPointResponse[];
 }
 
 export interface OccAircraftTrafficResponse {
@@ -4384,6 +4461,120 @@ export interface OccIncidentListResponse {
   ianaTimeZone: string;
   canReport: boolean;
   incidents: OccIncidentResponse[];
+}
+
+export interface OccMapAircraftResponse {
+  /** @nullable */
+  registration?: string | null;
+  /** @nullable */
+  typeIcaoCode?: string | null;
+  /** @nullable */
+  model?: string | null;
+  /** @nullable */
+  sizeCategory?: string | null;
+}
+
+export interface OccMapAirlineResponse {
+  id: string;
+  name: string;
+  /** @nullable */
+  iataCode?: string | null;
+  icaoCode: string;
+}
+
+export interface OccMapAirportResponse {
+  iataCode: string;
+  /** @nullable */
+  icaoCode?: string | null;
+  name: string;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+}
+
+export interface OccMapDemoResponse {
+  demoFlightId: string;
+  state: string;
+  phase: string;
+  appearAt: string;
+  touchdownAt: string;
+  onBlockAt: string;
+  scheduledOffBlockAt: string;
+  /** @nullable */
+  offBlockAt?: string | null;
+  /** @nullable */
+  takeoffAt?: string | null;
+  /** @nullable */
+  vanishAt?: string | null;
+}
+
+export interface OccMapTurnaroundResponse {
+  id: string;
+  operationCode: string;
+  status: string;
+  /** @nullable */
+  operationId?: string | null;
+  /** @nullable */
+  operationStatus?: string | null;
+}
+
+export interface OccMapStandResponse {
+  id: string;
+  code: string;
+  /** @nullable */
+  terminalCode?: string | null;
+}
+
+export interface OccMapMilestoneResponse {
+  code: string;
+  actualAt: string;
+}
+
+export interface OccMapFlightResponse {
+  flightKey: string;
+  visitKey: string;
+  /** @nullable */
+  proposalId?: string | null;
+  /** @nullable */
+  legId?: string | null;
+  /** @nullable */
+  turnaroundId?: string | null;
+  direction: string;
+  flightNumber: string;
+  /** @nullable */
+  callsign?: string | null;
+  airline: OccMapAirlineResponse;
+  counterpart?: OccMapAirportResponse | null;
+  scheduledAt: string;
+  /** @nullable */
+  estimatedAt?: string | null;
+  /** @nullable */
+  actualAt?: string | null;
+  /** @nullable */
+  actualKind?: string | null;
+  phase: string;
+  /** @nullable */
+  providerStatus?: string | null;
+  aircraft?: OccMapAircraftResponse | null;
+  imported: boolean;
+  turnaround?: OccMapTurnaroundResponse | null;
+  stand?: OccMapStandResponse | null;
+  /** @nullable */
+  suggestedStandCode?: string | null;
+  milestones: OccMapMilestoneResponse[];
+  isDemo: boolean;
+  demo?: OccMapDemoResponse | null;
+}
+
+export interface OccMapFlightsResponse {
+  stationId: string;
+  stationCode: string;
+  serverTime: string;
+  windowFrom: string;
+  windowTo: string;
+  stationAirport: OccMapAirportResponse;
+  flights: OccMapFlightResponse[];
 }
 
 export interface OccMasterData {
@@ -6942,6 +7133,21 @@ export type GetOccFlightFeedParams = {
 stationId: string;
 date: string;
 view?: string;
+};
+
+export type GetOccAirPictureParams = {
+stationId: string;
+trails?: string;
+};
+
+export type GetOccAircraftTrackParams = {
+stationId: string;
+};
+
+export type GetOccMapFlightsParams = {
+stationId: string;
+hoursBack?: number;
+hoursAhead?: number;
 };
 
 export type GetOccMasterDataParams = {
@@ -17418,6 +17624,129 @@ const res = await fetch(getChangeOccIncidentStatusUrl(incidentId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccIncidentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAirPictureUrl = (params: GetOccAirPictureParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/map/air-picture?${stringifiedParams}` : `/api/v1/occ/map/air-picture`
+}
+
+/**
+ * @summary The live aircraft around the station, each with the ELEVANT flight it is. `trails` is `short` (default:
+up to eight points of each trail) or `none`. The state of the picture (`Live`, `Stale`,
+`Warming`, `Unavailable`, `Disabled`) and the credit of the network come in the 200; screens ask
+again after `refreshAfterSeconds`. Only the station with live traffic has a picture.
+ */
+export const getOccAirPicture = async (params: GetOccAirPictureParams, options?: RequestInit): Promise<OccAirPictureResponse> => {
+
+  const res = await fetch(getGetOccAirPictureUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAirPictureResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAircraftTrackUrl = (hex: string,
+    params: GetOccAircraftTrackParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/map/aircraft/${hex}/track?${stringifiedParams}` : `/api/v1/occ/map/aircraft/${hex}/track`
+}
+
+/**
+ * @summary The trail of one live aircraft from memory: its last segment, at most 600 points, oldest first. `hex` is its
+ICAO 24-bit address, six hexadecimal digits; an address no read saw lately is not found.
+ */
+export const getOccAircraftTrack = async (hex: string,
+    params: GetOccAircraftTrackParams, options?: RequestInit): Promise<OccAircraftTrackResponse> => {
+
+  const res = await fetch(getGetOccAircraftTrackUrl(hex,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAircraftTrackResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccMapFlightsUrl = (params: GetOccMapFlightsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/map/flights?${stringifiedParams}` : `/api/v1/occ/map/flights`
+}
+
+/**
+ * @summary The ELEVANT flights of the station from `hoursBack` hours before now (0 to 24, default 2) to
+`hoursAhead` hours after it (1 to 36, default 12), and the legs of every aircraft on the ground now: one row
+per leg of a turnaround and per open proposal of the feed, with stable keys, phase, stand, recorded milestones and
+the demo clock. It changes only when OCC's planning does (`occ_planning`).
+ */
+export const getOccMapFlights = async (params: GetOccMapFlightsParams, options?: RequestInit): Promise<OccMapFlightsResponse> => {
+
+  const res = await fetch(getGetOccMapFlightsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccMapFlightsResponse = body ? JSON.parse(body) : {}
   return data
 }
 

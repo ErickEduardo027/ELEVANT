@@ -337,9 +337,10 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
 export const OCC_BRIDGE_UNMAPPED = Object.freeze({});
 
 // Folders already rebuilt with the OCC tokens and the occ-ui primitives: they may not use a legacy colour class. U2
-// rebuilt the frame (the rail, the status bar and the shell provider with its live modules); the screens follow from
-// U3, each in the PR that restyles it.
+// rebuilt the frame (the rail, the status bar and the shell provider with its live modules) and U4 added the boot
+// screen; the screens follow from U3, each in the PR that restyles it.
 export const MIGRATED_FOLDERS = Object.freeze([
   'src/features/admin-occ/shell',
   'src/features/admin-occ/live',
+  'src/features/admin-occ/boot',
 ]);

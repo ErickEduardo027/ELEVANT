@@ -61,12 +61,14 @@ Esta nota resume decisiones aceptadas y las contrasta con el código vigente. Un
 | ADR-0006 · Development/Production separados | Guardas y límites de repo implementados | Development tiene tooling; Production sigue reservada y requiere diseño/rollout independiente. |
 | ADR-0007 · Cliente TypeScript generado | Implementada | Snapshot, descriptor, Orval y wrappers existen. *Posterior al commit verificado:* el snapshot publica 400 operaciones y los tres clientes las consumen. |
 | ADR-0014 · Release API ligada a fingerprint OpenAPI | Implementada en CI/CD | Descriptor, snapshot, Swagger y etiqueta OCI deben coincidir; la huella prueba igualdad canónica, no compatibilidad semántica ni una atestación externa. |
+| ADR-0042 · Imagen aérea del mapa del OCC | *Posterior al commit verificado (código de `77dff268` a `e098ccde`):* implementada; apagada por defecto y encendida en Development | adsb.fi, con adsb.lol de relevo, pasa por el servidor como pide ADR-0004, solo mientras alguien pide la imagen y sin guardar nada ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)). Su estado vive en la memoria de una sola instancia, y la licencia de adsb.fi, personal y no comercial, limita su uso a la demostración de Development. |
 
 Los ADR-0008 a ADR-0013 sobre empaquetado y operación de Development
 pertenecen principalmente a CI/CD y Operaciones. ADR-0014 sí aparece aquí
-porque separa identidad del contrato y procedencia de release. Ninguna de estas
-decisiones se usa para inferir disponibilidad, despliegue o recuperación de un
-runtime vivo.
+porque separa identidad del contrato y procedencia de release. ADR-0042
+aparece porque suma una red externa sin contrato y estado en memoria. Ninguna
+de estas decisiones se usa para inferir disponibilidad, despliegue o
+recuperación de un runtime vivo.
 
 ## Restricciones no negociables
 

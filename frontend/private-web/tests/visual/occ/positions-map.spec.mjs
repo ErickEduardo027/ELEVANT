@@ -1,3 +1,4 @@
+import { OCC_BOOT_SEEN_KEY } from '../../../src/features/admin-occ/boot/occBootSession.js';
 import { AUTH_STORAGE_KEY, createOccApi, occSession } from './fixtures/occApi.mjs';
 import { VIEW_LABELS, mapReady, shoot, viewInUrl, zoomOf } from '../support/map.mjs';
 import { expect, production, test } from '../support/test.mjs';
@@ -6,7 +7,9 @@ import { expect, production, test } from '../support/test.mjs';
 // `next dev` and against a production build (OCC_VISUAL_TARGET=production). Lessons 4 and 7 of PR M1: the zoom
 // buttons and the view presets really move the camera in both builds, and re-reading the positions keeps the same
 // map instead of starting a new one. The page shows one legend, the map's, and the map draws the stands as polygons
-// with the state of now (PR M4): Rampa, a terminal and Aeródromo are photographed at 1440 × 900 and 1920 × 1080.
+// with the state of now (PR M4): Rampa, a terminal and Aeródromo are photographed at 1440 × 900 and 1920 × 1080. Each
+// test opens it as a later OCC entry of its tab, so the OCC boot screen (PR U4, boot-screen.spec.mjs) never covers the
+// map.
 
 const PAGE = '/admin-occ/positions-map';
 const target = production ? 'production' : 'development';
@@ -15,9 +18,13 @@ const SIZES = Object.freeze([{ width: 1440, height: 900 }, { width: 1920, height
 async function openPositionsMap(page, isolation, query = '') {
   const api = createOccApi();
   isolation.setApi(api.handle);
-  await page.addInitScript(([key, session]) => {
-    window.localStorage.setItem(key, JSON.stringify(session));
-  }, [AUTH_STORAGE_KEY, occSession()]);
+  // The tab already showed the boot screen to this account (occBootSession.js keeps the account id under
+  // OCC_BOOT_SEEN_KEY), as when Mapa de posiciones is opened from another module. Without the mark the screen would
+  // cover the map until 6 s after the access: nothing on this page reports ready yet.
+  await page.addInitScript(([authKey, bootSeenKey, session]) => {
+    window.localStorage.setItem(authKey, JSON.stringify(session));
+    window.sessionStorage.setItem(bootSeenKey, String(session.accountId));
+  }, [AUTH_STORAGE_KEY, OCC_BOOT_SEEN_KEY, occSession()]);
   const response = await page.goto(`${PAGE}${query}`);
   expect(response?.status(), `GET ${PAGE}${query}`).toBe(200);
   const container = page.getByTestId('position-map-container');
@@ -25,6 +32,8 @@ async function openPositionsMap(page, isolation, query = '') {
   await expect(container.locator('.maplibregl-canvas')).toBeVisible();
   const map = page.getByTestId('occ-map');
   await mapReady(map);
+  // With that mark the screen stays away: the screenshots show the map and the first click reaches it at once.
+  await expect(page.getByTestId('occ-boot-screen'), 'the OCC boot screen').toHaveCount(0, { timeout: 1_000 });
   await expect.poll(() => api.reads, { message: 'the positions board was read' }).toBeGreaterThan(0);
   return { api, map, container };
 }

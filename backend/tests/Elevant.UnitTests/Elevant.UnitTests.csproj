@@ -26,6 +26,8 @@
   <ItemGroup>
     <!-- One stand-code rule for the API and the web (ADR-0041): both test suites read the same vectors. -->
     <None Include="..\..\Elevant.Application\Operations\StandCodes.vectors.json" Link="Fixtures\StandCodes.vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ADR-0042: synthetic readsb v2 answers (invented addresses, flights and positions); no test calls a network. -->
+    <None Update="Infrastructure\Fixtures\*.synthetic.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

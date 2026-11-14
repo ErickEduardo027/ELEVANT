@@ -122,6 +122,30 @@ propuesta del feed, la escala de planificación y la del mapa de posiciones
 traen `isDemo` solo cuando es `true`; sus validadores aceptan la clave ausente
 o `true`. La app móvil no lee estas respuestas.
 
+Mapa del OCC (ADR-0042, personal interno de AVIAM con la estación en su
+alcance y permiso de dashboard, monitoreo de vuelos, mapa de posiciones o
+planificación): `getOccAirPicture({ stationId, trails? })` lee de memoria los
+aviones en vivo de la estación con tráfico (`AirTraffic:StationCode`, Punta
+Cana). Su estado llega siempre en un 200 (`Live`, `Stale`, `Warming`,
+`Unavailable` o `Disabled`, con `reason` cuando no está en vivo), junto con
+`refreshAfterSeconds` (2 mientras calienta; si no, de 10 a 60: la pantalla
+nunca pregunta antes) y el crédito de la red en `source`, que todo mapa
+muestra. `trails` es `short` (por omisión, hasta ocho puntos de estela) o
+`none`; cada avión trae `matchedFlightKey` y `matchedBy` cuando es un vuelo de
+ELEVANT. `getOccAircraftTrack({ stationId, hex })` lee la estela en memoria de
+un avión (seis dígitos hexadecimales; como mucho 600 puntos).
+`getOccMapFlights({ stationId, hoursBack?, hoursAhead? })` lee los vuelos de
+ELEVANT del mapa (de 0 a 24 horas atrás, 2 por omisión; de 1 a 36 adelante, 12
+por omisión): una fila por pierna con `flightKey` y `visitKey` que no cambian al
+importar, `phase`, `actualKind`, posición, hitos registrados (como mucho
+`FLIGHT_REPORT_MILESTONES.length`) y el reloj demo. Las tres consultas se
+validan antes de enviarse y los validadores (`isOccAirPicture`,
+`isOccAircraftTrack`, `isOccMapFlights`) son estrictos en cada nivel: una clave
+falta o viene en `null` solo donde el contrato dice `null`, y las coordenadas
+se comprueban como posiciones de la Tierra, sin caja. El código nuevo es
+`invalid_map_query`; una estación fuera de alcance o un avión que ninguna
+lectura vio responden `not_found`. La app móvil no lee estas respuestas.
+
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,

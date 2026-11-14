@@ -26,7 +26,8 @@ namespace Elevant.Persistence.Integration;
 /// OCC review of the provider's proposed flights (ADR-0028). The feed keeps the legs of every active registered
 /// airline (2-B); the review shows those with a contract in force that day, the charter candidates apart
 /// (ADR-0033), and the dismissed ones OCC can still restore (2-N36). Airlines whose contract at the station is
-/// suspended or expired are hidden and their import answers <c>contract_not_in_force</c> (2-N16).
+/// suspended or expired are hidden and their import answers <c>contract_not_in_force</c> (2-N16): the rule is
+/// <see cref="FlightFeedVisibility"/>, which the map's flights apply too.
 /// </summary>
 internal sealed class EfOccFlightFeedStore(
     ElevantDbContext context, IActorContextResolver actors, IAirportFlightFeed feed, FlightFeedBudget budget,
@@ -49,9 +50,11 @@ internal sealed class EfOccFlightFeedStore(
             .Select(item => new { item.Id, item.Code }).SingleOrDefaultAsync(cancellationToken);
         if (station is null) return null;
 
-        var (contracted, notInForce) = await ClassifyAsync(station.Id, date, cancellationToken);
+        var (contracted, notInForce) = await FlightFeedVisibility.ClassifyAsync(context, station.Id, date, cancellationToken);
         var hidden = notInForce.ToArray();
         var withContract = contracted.ToArray();
+        // A query variable: EF inlines it as a subquery of the charter view.
+        var charterCandidates = FlightFeedVisibility.CharterCandidates(context);
         var proposals = context.Set<ExternalFlightProposal>().AsNoTracking()
             .Where(proposal => proposal.StationId == station.Id && proposal.OperationDate == date &&
                                !hidden.Contains(proposal.AirlineId));
@@ -61,9 +64,7 @@ internal sealed class EfOccFlightFeedStore(
             OccFlightFeedView.Charter => proposals.Where(proposal => proposal.Status != ExternalFlightProposalStatus.Dismissed &&
                 !withContract.Contains(proposal.AirlineId) &&
                 // A charter needs an active carrier with an active organization (ADR-0033).
-                context.Airlines.Any(airline => airline.Id == proposal.AirlineId && airline.IsActive &&
-                    context.Organizations.Any(organization => organization.Id == airline.OrganizationId &&
-                        organization.Status == OrganizationStatus.Active))),
+                charterCandidates.Contains(proposal.AirlineId)),
             _ => proposals.Where(proposal => proposal.Status != ExternalFlightProposalStatus.Dismissed &&
                 withContract.Contains(proposal.AirlineId)),
         };
@@ -268,12 +269,11 @@ internal sealed class EfOccFlightFeedStore(
         if (arrival.CounterpartAirportId is not { } originId || departure.CounterpartAirportId is not { } destinationId)
             return Failed(OccFlightFeedFailure.CounterpartUnknown, "flight_counterpart_unknown");
 
+        var charterCandidates = FlightFeedVisibility.CharterCandidates(context);
         var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == arrival.AirlineId)
             .Select(item => new
             {
-                item.OrganizationId, item.IsActive,
-                OrganizationActive = context.Organizations.Any(organization => organization.Id == item.OrganizationId &&
-                    organization.Status == OrganizationStatus.Active),
+                item.OrganizationId, item.IsActive, CharterCandidate = charterCandidates.Contains(item.Id),
             }).SingleAsync(cancellationToken);
         if (!airline.IsActive) return Failed(OccFlightFeedFailure.Conflict, "airline_inactive");
 
@@ -294,10 +294,12 @@ internal sealed class EfOccFlightFeedStore(
         }
         else
         {
-            if (await NotInForceAirlines(station.Id).AnyAsync(id => id == arrival.AirlineId, cancellationToken))
+            if (await FlightFeedVisibility.NotInForceAirlines(context, station.Id)
+                    .AnyAsync(id => id == arrival.AirlineId, cancellationToken))
                 return Failed(OccFlightFeedFailure.Conflict, "contract_not_in_force");
             if (!input.Charter) return Failed(OccFlightFeedFailure.Conflict, "charter_required");
-            if (!airline.OrganizationActive) return Failed(OccFlightFeedFailure.Conflict, "airline_inactive");
+            // The carrier is active (checked above): a charter also needs its organization active (ADR-0033).
+            if (!airline.CharterCandidate) return Failed(OccFlightFeedFailure.Conflict, "airline_inactive");
         }
 
         long? aircraftTypeId = null;
@@ -559,7 +561,8 @@ internal sealed class EfOccFlightFeedStore(
         if (proposal.Provider == DemoFlightProvider.Name ||
             (proposal.RunwayAt ?? proposal.RevisedAt ?? proposal.ScheduledAt) <= now)
             return RestoreFailed(OccFlightFeedFailure.Conflict, "flight_proposal_passed");
-        if (await NotInForceAirlines(proposal.StationId).AnyAsync(id => id == proposal.AirlineId, cancellationToken))
+        if (await FlightFeedVisibility.NotInForceAirlines(context, proposal.StationId)
+                .AnyAsync(id => id == proposal.AirlineId, cancellationToken))
             return RestoreFailed(OccFlightFeedFailure.Conflict, "contract_not_in_force");
         MasterDataCommand.Audit(context, accountId, "occ.flight_proposal.restored", nameof(ExternalFlightProposal), proposal.PublicId,
             proposal.StationId, now, new AuditFieldChangeData("flight_proposal.status", nameof(ExternalFlightProposalStatus.Dismissed),
@@ -582,29 +585,6 @@ internal sealed class EfOccFlightFeedStore(
             ? RestoreFailed(OccFlightFeedFailure.NotFound, "not_found")
             : new OccFlightProposalRestoreResult(proposalId, Version(rowVersion), null, null, replayed);
     }
-
-    /// <summary>
-    /// The airlines with a contract in force at the station that day and those whose contract there is
-    /// suspended or expired without another in force (2-N16). Everyone else is a charter candidate.
-    /// </summary>
-    private async Task<(HashSet<long> Contracted, HashSet<long> NotInForce)> ClassifyAsync(long stationId, DateOnly date,
-        CancellationToken cancellationToken)
-    {
-        var contracted = (await ApplicableContracts.For(context, null, stationId, date).Select(row => row.AirlineId).Distinct()
-            .ToArrayAsync(cancellationToken)).ToHashSet();
-        var notInForce = (await NotInForceAirlines(stationId).ToArrayAsync(cancellationToken))
-            .Where(id => !contracted.Contains(id)).ToHashSet();
-        return (contracted, notInForce);
-    }
-
-    /// <summary>Airlines with a suspended or expired contract whose versions cover the station.</summary>
-    private IQueryable<long> NotInForceAirlines(long stationId) =>
-        (from contract in context.Contracts.AsNoTracking()
-         where (contract.Status == ContractStatus.Suspended || contract.Status == ContractStatus.Expired) &&
-               context.ContractVersions.Any(version => version.ContractId == contract.Id &&
-                   context.Set<ContractVersionStation>().Any(link => link.ContractVersionId == version.Id &&
-                       link.StationId == stationId))
-         select contract.AirlineId).Distinct();
 
     private async Task<AircraftTypeCandidate[]> AircraftTypeCandidatesAsync(CancellationToken cancellationToken) =>
         await context.AircraftTypes.AsNoTracking().Where(type => type.IsActive)

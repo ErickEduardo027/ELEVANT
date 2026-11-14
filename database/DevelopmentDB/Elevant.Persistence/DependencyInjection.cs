@@ -128,6 +128,11 @@ public static class DependencyInjection
         services.AddScoped<IDemoFlightStore, EfDemoFlightStore>();
         // ADR-0041: «Cargar posiciones de Punta Cana», which only creates the catalogue's terminals and stands.
         services.AddScoped<IDemoStationStore, EfDemoStationStore>();
+        // ADR-0042: the ELEVANT flights of the map and the keys the live aircraft are matched against come from one read,
+        // so both ports share the store of the scope.
+        services.AddScoped<EfOccMapFlightStore>();
+        services.AddScoped<IOccMapFlightStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
+        services.AddScoped<IOccMapFlightMatchKeyStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
         // Defaults when Infrastructure is not composed (tests, database tool); its registrations win.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);

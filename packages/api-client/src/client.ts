@@ -186,6 +186,17 @@ import {
   type DemoFlightOptionsQuery,
 } from "./demoFlights";
 import {
+  isOccAircraftTrack,
+  isOccAirPicture,
+  isOccMapFlights,
+  normalizedOccAircraftTrackQuery,
+  normalizedOccAirPictureQuery,
+  normalizedOccMapFlightsQuery,
+  type OccAircraftTrackQuery,
+  type OccAirPictureQuery,
+  type OccMapFlightsQuery,
+} from "./occMap";
+import {
   isOccFlightFeedView,
   isRestoredFlightProposal,
   normalizedFlightImport,
@@ -390,6 +401,9 @@ import {
   getCreateDemoFlightUrl,
   getCancelDemoFlightUrl,
   getPrepareDemoStationUrl,
+  getGetOccAirPictureUrl,
+  getGetOccAircraftTrackUrl,
+  getGetOccMapFlightsUrl,
   getGetOccMasterDataUrl,
   getCreateOccTerminalUrl,
   getUpdateOccTerminalUrl,
@@ -578,6 +592,9 @@ import {
   type DemoFlightListResponse,
   type DemoFlightResponse,
   type DemoStationLayoutResponse,
+  type OccAirPictureResponse,
+  type OccAircraftTrackResponse,
+  type OccMapFlightsResponse,
   type OccMasterData,
   type MasterTerminalData,
   type MasterStandData,
@@ -830,6 +847,8 @@ export type GetOccPlanningSnapshotOptions = Omit<
   "body" | "method"
 >;
 export type GetOccAircraftTrafficOptions = Omit<ElevantRequestInit, "body" | "method">;
+/** Options of the three reads of the OCC map (ADR-0042). */
+export type GetOccMapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -1209,6 +1228,21 @@ export interface ElevantApiClient {
     parameters: GetOccAircraftTrafficParams,
     options?: GetOccAircraftTrafficOptions,
   ): Promise<OccAircraftTrafficResponse>;
+  /**
+   * The live aircraft around the station with live traffic, served from memory (ADR-0042); any map permission of OCC
+   * reads it. The query is checked before it is sent (`trails`: `short`, the default, or `none`). The picture's state
+   * comes in the 200 (`Live`, `Stale`, `Warming`, `Unavailable`, `Disabled`) with its reason, the pace to ask again at
+   * (`refreshAfterSeconds`) and the credit of the network; another station answers `not_found`.
+   */
+  getOccAirPicture(query: OccAirPictureQuery, options?: GetOccMapOptions): Promise<OccAirPictureResponse>;
+  /** One aircraft's trail from memory, at most 600 points: `hex` is six hexadecimal digits, checked before it is sent. */
+  getOccAircraftTrack(query: OccAircraftTrackQuery, options?: GetOccMapOptions): Promise<OccAircraftTrackResponse>;
+  /**
+   * The ELEVANT flights of a station for the map (ADR-0042): `hoursBack` 0 to 24 (2 when absent) and `hoursAhead` 1 to
+   * 36 (12 when absent), checked before they are sent. One row per leg with stable keys, phase, stand, recorded
+   * milestones and the demo clock.
+   */
+  getOccMapFlights(query: OccMapFlightsQuery, options?: GetOccMapOptions): Promise<OccMapFlightsResponse>;
   getOccPlanningOptions(
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
@@ -6626,6 +6660,26 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "GET" }, true);
       if (!isOccAircraftTrafficResponse(result.data))
         throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAirPicture(query: OccAirPictureQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccAirPictureQuery(query);
+      const result = await execute(getGetOccAirPictureUrl(params), { ...options, method: "GET" }, true);
+      // The picture of the station asked for; with `none`, no aircraft brings a trail.
+      if (result.status !== 200 || !isOccAirPicture(result.data, params.stationId, query.trails))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAircraftTrack(query: OccAircraftTrackQuery, options?: GetOccMapOptions) {
+      const { hex, stationId } = normalizedOccAircraftTrackQuery(query);
+      const result = await execute(getGetOccAircraftTrackUrl(hex, { stationId }), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAircraftTrack(result.data, hex)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccMapFlights(query: OccMapFlightsQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccMapFlightsQuery(query);
+      const result = await execute(getGetOccMapFlightsUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccMapFlights(result.data, params.stationId)) throw malformedResponse(result.status);
       return result.data;
     },
     async getManualTurnaroundOptions(

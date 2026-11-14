@@ -53,7 +53,8 @@ describe('LayoutQaScene', () => {
     expect(fake.state.liveMaps()).toEqual([map]);
     expect(screen.getByRole('heading', { level: 1, name: 'Revisión del plano de MDPC' })).toBeInTheDocument();
     // Nothing is signed off yet: the plate says so. The clock is frozen as in the other scenes.
-    expect(screen.getByText('Plano sin revisar')).toBeInTheDocument();
+    // The owner signed the review on 2026-11-13: every stand carries reviewedBy.
+    expect(screen.getByText('Plano revisado')).toBeInTheDocument();
     expect(screen.getByText('Reloj fijo: 2026-11-13 15:00 UTC')).toBeInTheDocument();
     expect(map.options.fadeDuration).toBe(0);
 
@@ -70,7 +71,7 @@ describe('LayoutQaScene', () => {
     expect(buttons).toHaveLength(42);
     expect(FLAGGED.length).toBeGreaterThan(0);
     FLAGGED.forEach((code, index) => expect(buttons[index].textContent.startsWith(code), code).toBe(true));
-    expect(screen.getByText(`${FLAGGED.length} de 42 con marcas que piden revisión. Haz clic en una para encuadrarla.`))
+    expect(screen.getByText(`${FLAGGED.length} de 42 con marcas, ya revisadas por el dueño del producto. Haz clic en una para encuadrarla.`))
       .toBeInTheDocument();
     expect(rowOf('B31')).toHaveTextContent(/Sin geometría OSM/u);
     expect(rowOf('B31')).toHaveTextContent(/puerta B31 a 46,1 m/u);
