@@ -4,16 +4,29 @@ import {
   METRES_PER_NM,
   convexIntersectionAreaM2,
   destinationPoint,
+  easePolyline,
+  enuBearingDeg,
+  filletPath,
+  filletPolyline,
+  fromEnu,
+  greatCirclePath,
   haversineM,
   initialBearing,
   lineEntersPolygon,
+  measurePolyline,
   minimumBoundingRectangle,
+  nearestOnPolyline,
+  pointAlong,
   pointInPolygon,
   pointToPolylineM,
   pointToSegmentM,
   polygonAreaM2,
   polygonCentroid,
+  polylineLengthM,
+  resampleEnu,
+  resampleFilletPath,
   roundCoord,
+  toEnu,
   toLocal,
 } from './geo.js';
 
@@ -152,3 +165,202 @@ describe('polygons', () => {
     expect(roundCoord([1.23456, 2], 2)).toEqual([1.23, 2]);
   });
 });
+
+// PR M6: paths for the map kinematics.
+const MIA = [-80.287, 25.7959];
+const PUJ = ARP;
+const angleBetween = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+const planarDistance = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+/** Distance from a planar point to a planar polyline. */
+function toPlanarLine(point, line) {
+  let best = Infinity;
+  for (let at = 0; at < line.length - 1; at += 1) {
+    const [a, b] = [line[at], line[at + 1]];
+    const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+    const t = Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+    best = Math.min(best, Math.hypot(point[0] - a[0] - t * dx, point[1] - a[1] - t * dy));
+  }
+  return best;
+}
+
+describe('great circles and the local east-north frame', () => {
+  it('a great circle from MIA to PUJ has a point every 10 km or less and its length equals the haversine distance within 0.01 percent', () => {
+    const path = greatCirclePath(MIA, PUJ);
+    expect(path[0]).toEqual(MIA);
+    expect(path[path.length - 1]).toEqual(PUJ);
+    for (let at = 1; at < path.length; at += 1) expect(haversineM(path[at - 1], path[at])).toBeLessThanOrEqual(10_000);
+    const direct = haversineM(MIA, PUJ);
+    expect(direct).toBeGreaterThan(1_400_000);
+    expect(Math.abs(polylineLengthM(path) - direct) / direct).toBeLessThan(0.0001);
+    // Every point lies on the great circle: the bearing from MIA to it is the initial bearing to PUJ.
+    for (const point of path.slice(1, -1)) expect(angleBetween(initialBearing(MIA, point), initialBearing(MIA, PUJ))).toBeLessThan(1e-6);
+    // A shorter step gives more points; equal ends give the point itself. Results are frozen.
+    expect(greatCirclePath(MIA, PUJ, 2_000).length).toBeGreaterThan(path.length * 4);
+    expect(greatCirclePath(PUJ, PUJ)).toEqual([PUJ]);
+    expect(Object.isFrozen(path)).toBe(true);
+    expect(Object.isFrozen(path[3])).toBe(true);
+  });
+
+  it('toEnu and fromEnu round-trip under 1 cm within 50 km of the ARP', () => {
+    for (let bearing = 0; bearing < 360; bearing += 15) {
+      for (const distance of [0, 3, 950, 12_000, 50_000]) {
+        const point = destinationPoint(ARP, bearing, distance);
+        const [x, y] = toEnu(ARP, point);
+        expect(Math.hypot(x, y)).toBeCloseTo(distance, 6);
+        expect(haversineM(fromEnu(ARP, [x, y]), point)).toBeLessThan(0.01);
+      }
+    }
+    expect(toEnu(ARP, ARP)).toEqual([0, 0]);
+    expect(fromEnu(ARP, [0, 0])).toEqual(ARP);
+    expect(enuBearingDeg([0, 5])).toBe(0);
+    expect(enuBearingDeg([3, 0])).toBe(90);
+    expect(enuBearingDeg([-2, -2])).toBeCloseTo(225, 9);
+    expect(enuBearingDeg([0, 0])).toBeNull();
+  });
+});
+
+describe('measured polylines', () => {
+  const east = destinationPoint(ARP, 90, 100);
+  const corner = destinationPoint(east, 0, 50);
+  const bend = [ARP, east, corner];
+
+  it('pointAlong clamps to the ends and gives the bearing of its segment', () => {
+    const measured = measurePolyline(bend);
+    expect(measured.lengthM).toBeCloseTo(150, 6);
+    expect(measured.cumM.map(value => Math.round(value))).toEqual([0, 100, 150]);
+    expect(Object.isFrozen(measured.cumM)).toBe(true);
+    expect(measurePolyline(measured)).toBe(measured);
+
+    const before = pointAlong(measured, -20);
+    expect(before.p).toEqual(ARP);
+    expect(before.index).toBe(0);
+    expect(before.bearingDeg).toBeCloseTo(90, 2);
+    const middle = pointAlong(bend, 40);
+    expect(haversineM(middle.p, destinationPoint(ARP, 90, 40))).toBeLessThan(0.001);
+    expect(middle.bearingDeg).toBeCloseTo(90, 2);
+    // At the vertex the next segment's bearing wins; past the end the point is the end on the last bearing.
+    const atVertex = pointAlong(measured, measured.cumM[1]);
+    expect(atVertex.p).toEqual(east);
+    expect(atVertex.index).toBe(1);
+    expect(atVertex.bearingDeg).toBeCloseTo(0, 6);
+    const after = pointAlong(measured, 1_000);
+    expect(after.p).toEqual(corner);
+    expect(after.index).toBe(1);
+    expect(after.bearingDeg).toBeCloseTo(0, 6);
+    // A path of length 0 has no bearing; an empty one has no point.
+    expect(pointAlong([ARP], 10)).toEqual({ p: ARP, bearingDeg: null, index: 0 });
+    expect(pointAlong([ARP, ARP], 10).bearingDeg).toBeNull();
+    expect(pointAlong([], 10)).toBeNull();
+    // A repeated vertex does not stop the walk.
+    expect(pointAlong([ARP, east, east, corner], 100).bearingDeg).toBeCloseTo(0, 6);
+  });
+
+  it('nearestOnPolyline gives the distance along the line', () => {
+    const beside = destinationPoint(destinationPoint(east, 0, 20), 90, 7);
+    const hit = nearestOnPolyline(bend, beside);
+    expect(hit.index).toBe(1);
+    expect(hit.distanceM).toBeCloseTo(7, 2);
+    expect(hit.alongM).toBeCloseTo(120, 2);
+    expect(hit.t).toBeCloseTo(0.4, 3);
+    expect(haversineM(hit.point, destinationPoint(east, 0, 20))).toBeLessThan(0.05);
+    // Before the start the nearest point is the start.
+    expect(nearestOnPolyline(bend, destinationPoint(ARP, 270, 30)).alongM).toBe(0);
+    expect(nearestOnPolyline([ARP], east)).toMatchObject({ alongM: 0, index: 0 });
+    expect(nearestOnPolyline([], east)).toBeNull();
+  });
+});
+
+describe('rounded planar paths', () => {
+  const R = 30;
+
+  it('a 90° corner filleted at 30 m is tangent at both ends and stays within R(√2−1) of the corner', () => {
+    const corner = [0, 100];
+    const line = [[0, 0], corner, [100, 100]];
+    const path = filletPath(line, R);
+    expect(path.radiiM).toHaveLength(1);
+    expect(path.radiiM[0]).toBeCloseTo(R, 9);
+    // The arc starts and ends R·tan(45°) = 30 m from the corner, on each leg.
+    const start = path.coords.findIndex(point => planarDistance(point, [0, 70]) < 1e-9);
+    const end = path.coords.findIndex(point => planarDistance(point, [30, 100]) < 1e-9);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const arc = path.coords.slice(start, end + 1);
+    for (const point of arc) expect(planarDistance(point, [30, 70])).toBeCloseTo(R, 6);
+    // Tangent at both ends: the exact bearing is the incoming leg's at the start and the outgoing leg's at the end,
+    // and the first and last chords of the arc leave the legs by less than one arc step.
+    expect(path.tangentsDeg[start]).toBeCloseTo(0, 9);
+    expect(path.tangentsDeg[end]).toBeCloseTo(90, 9);
+    const step = toDegrees2(2 / R);
+    expect(angleBetween(enuBearingDeg([arc[1][0] - arc[0][0], arc[1][1] - arc[0][1]]), 0)).toBeLessThan(step);
+    const lastChord = [arc[arc.length - 1][0] - arc[arc.length - 2][0], arc[arc.length - 1][1] - arc[arc.length - 2][1]];
+    expect(angleBetween(enuBearingDeg(lastChord), 90)).toBeLessThan(step);
+    // It never strays more than R(√2−1) from the corner's legs and passes exactly that far from the corner.
+    const bound = R * (Math.SQRT2 - 1);
+    for (const point of path.coords) expect(toPlanarLine(point, line)).toBeLessThanOrEqual(bound);
+    const closest = Math.min(...path.coords.map(point => planarDistance(point, corner)));
+    expect(closest).toBeCloseTo(bound, 1);
+    expect(filletPolyline(line, R)).toEqual(path.coords);
+    expect(Object.isFrozen(path.coords)).toBe(true);
+  });
+
+  it('a fillet shrinks to fit short segments and leaves straight lines and cusps alone', () => {
+    // Two 90° corners 8 m apart (a jog): each gets half of the shared segment, so both radii shrink to 4 m.
+    const jog = filletPath([[0, -60], [0, 0], [8, 0], [8, 60]], R);
+    expect(jog.radiiM.map(radius => Number(radius.toFixed(6)))).toEqual([4, 4]);
+    // A short corner next to a gentle one takes what the gentle one leaves: more than half of the shared segment.
+    const shared = filletPath([[0, -60], [0, 0], [10, 0], [60, 3]], R);
+    expect(shared.radiiM[0]).toBeGreaterThan(5);
+    // An end segment is wholly available: a 90° corner with 10 m legs becomes one 10 m arc.
+    expect(filletPath([[0, 0], [0, 10], [10, 10]], R).radiiM[0]).toBeCloseTo(10, 9);
+    // A straight line (a vertex turning less than 0.5°) is left straight; repeated points are dropped.
+    expect(filletPolyline([[0, 0], [50, 0.2], [50, 0.2], [100, 0]], R)).toEqual([[0, 0], [100, 0]]);
+    // A cusp (a reversal) stays a vertex, with the next segment's bearing.
+    const cusp = filletPath([[0, 0], [50, 0], [0, 0.5]], R);
+    expect(cusp.coords).toEqual([[0, 0], [50, 0], [0, 0.5]]);
+    expect(cusp.radiiM).toEqual([0]);
+    expect(cusp.tangentsDeg[1]).toBeGreaterThan(269);
+  });
+
+  it('resampling keeps the length and the spacing', () => {
+    const straight = resampleEnu([[0, 0], [23, 0]], 5);
+    expect(straight).toEqual([[0, 0], [5, 0], [10, 0], [15, 0], [20, 0], [23, 0]]);
+    const rounded = filletPath([[0, 0], [0, 100], [100, 100]], R);
+    const roundedLength = rounded.coords.slice(1).reduce((sum, point, at) => sum + planarDistance(rounded.coords[at], point), 0);
+    const samples = resampleFilletPath(rounded, 5);
+    expect(samples.coords[0]).toEqual([0, 0]);
+    expect(samples.coords[samples.coords.length - 1]).toEqual([100, 100]);
+    expect(samples.alongM[samples.alongM.length - 1]).toBeCloseTo(roundedLength, 9);
+    // Every step is 5 m along the path (the last one shorter); the chords lose under 0.2 % on the 30 m arc.
+    for (let at = 1; at < samples.alongM.length - 1; at += 1) expect(samples.alongM[at] - samples.alongM[at - 1]).toBeCloseTo(5, 9);
+    const chords = samples.coords.slice(1).reduce((sum, point, at) => sum + planarDistance(samples.coords[at], point), 0);
+    expect(chords / roundedLength).toBeGreaterThan(0.998);
+    expect(chords).toBeLessThanOrEqual(roundedLength + 1e-9);
+    // The bearing turns smoothly: 5 m on a 30 m arc is 9.55° (2 m chords are 0.02 % shorter than their arcs).
+    for (let at = 1; at < samples.tangentsDeg.length; at += 1) {
+      expect(angleBetween(samples.tangentsDeg[at], samples.tangentsDeg[at - 1])).toBeLessThanOrEqual(toDegrees2(5 / R) * 1.001);
+    }
+    expect(resampleEnu([[0, 0]], 5)).toEqual([[0, 0]]);
+  });
+
+  it('easing widens a corner the fillet cannot fit and keeps the first and last legs', () => {
+    // A taxilane that bends 4° every 6 m before a 90° turn into a lead-in: the turn alone would get only 3 m.
+    const bent = [[-200, 0], [-12, 0], [-6, 0.42], [0, 0], [0, -80]];
+    expect(Math.min(...filletPath(bent, R).radiiM)).toBeLessThan(20);
+    const eased = easePolyline(bent, { radiusM: R, minRadiusM: 20, maxShiftM: 15 });
+    expect(Math.min(...filletPath(eased, R).radiiM)).toBeGreaterThanOrEqual(20);
+    expect(eased[0]).toEqual([-200, 0]);
+    expect(eased[eased.length - 1]).toEqual([0, -80]);
+    expect(enuBearingDeg([eased[1][0] - eased[0][0], eased[1][1] - eased[0][1]])).toBeCloseTo(90, 6);
+    const last = eased.length - 1;
+    expect(enuBearingDeg([eased[last][0] - eased[last - 1][0], eased[last][1] - eased[last - 1][1]])).toBeCloseTo(180, 6);
+    for (const point of eased) expect(toPlanarLine(point, bent)).toBeLessThanOrEqual(15);
+    // A U-turn 23 m wide cannot be widened past 11.5 m within 15 m of the line: easing leaves what fits.
+    const hook = [[-20, 120], [-20, 0], [3, 0], [3, 40]];
+    const unchanged = easePolyline(hook, { radiusM: R, minRadiusM: 20, maxShiftM: 15 });
+    expect(unchanged).toEqual(hook);
+  });
+});
+
+function toDegrees2(radians) {
+  return (radians * 180) / Math.PI;
+}
