@@ -22,6 +22,7 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'glyph-arriving',
   'signal-attention',
   'signal-urgent',
+  'signal-notice',
   'aircraft-solid',
   'airport-arp',
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
@@ -121,6 +122,13 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
     width: 20,
     height: 20,
     ops: [{ fill: octagonPath(10, 10, 7) }, ...exclamation(5.6, 11.2, 12.4)],
+  },
+  // The plain notice of the vocabulary (SIGNALS.notice, PR M6): a diamond without colour, only its outline; the layer
+  // paints it in the text colour, never a hue.
+  'signal-notice': {
+    width: 20,
+    height: 20,
+    ops: [{ stroke: 'M10 4 L16 10 L10 16 L4 10 Z', lineWidth: 1.6 }],
   },
   'aircraft-solid': { width: 40, height: 40, ops: [silhouette(32, 4)] },
   // Aerodrome reference point: a ring crossed by a runway bar that runs well past it, nearly level (a generic runway,

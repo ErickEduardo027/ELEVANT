@@ -15,7 +15,9 @@ import { staleWords } from './stationTime';
 // larger than the rest and always tagged; other traffic is small and muted, tagged on demand; an estimated position
 // carries a dashed ring and «est.», a position without recent signal is dimmed and says since when, in the words of the
 // vocabulary («Sin actualizar desde las 14:02», traffic/stationTime.js), a demo flight its «Demo» plate. Other traffic
-// on the ground inside a stand an ELEVANT visit holds is not drawn.
+// on the ground inside a stand an ELEVANT visit holds is not drawn. One owner per aircraft (PR M6, design F4): an
+// ELEVANT aircraft parked in the stand that shows it is the stand's (stands/standFeatures.js: parkedAircraftIds), so
+// where the stands are drawn its symbol gives way to the stand's footprint or glyph (`parkedOnStand`).
 
 export const TRAFFIC_SOURCE = 'occ-traffic';
 export const TRAILS_SOURCE = 'occ-trails';
@@ -94,8 +96,11 @@ function tagLines(item, type, { t, language }) {
 // The opacity of an aircraft in hundredths, so a fade writes a hundred steps at most; 1 when it says none.
 const opacityOf = item => (finite(item.opacity) ? Math.round(Math.min(1, Math.max(0, item.opacity)) * 100) / 100 : 1);
 
+const NO_IDS = Object.freeze(new Set());
+const idsOf = value => (value instanceof Set ? value : NO_IDS);
+
 /** One feature of the traffic source; see trafficFeatures for its properties. */
-function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
+function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked }) {
   const aviam = item.kind === 'aviam';
   const departure = aviam && item.direction === 'Departure';
   const ground = item.onGround === true;
@@ -138,6 +143,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
       tagStand: aviam && !departure ? (filled(item.standCode) ?? '') : '',
       // How much of it shows (PR M6): 1, or less while it fades out (a cancelled demo, traffic that lost its signal).
       opacity: opacityOf(item),
+      // Parked in the stand that shows it (PR M6): its symbol gives way to the stand's footprint or glyph.
+      parkedOnStand: aviam && parked.has(item.id),
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -157,16 +164,22 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
  * - `forceTag`: the tag is always on (ELEVANT flights, the chosen aircraft, the one under the pointer); `showTag`:
  *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»);
  * - `opacity`: the aircraft's own (PR M6, the motion store), in hundredths: 1, or less while it fades out; the layers
- *   multiply it into the dimming of a stale position.
- * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`.
+ *   multiply it into the dimming of a stale position;
+ * - `parkedOnStand` (PR M6): an ELEVANT aircraft of `parkedIds` (a Set of ids), parked in the stand that draws it to
+ *   scale or as its glyph; the layers then leave it to the stand, except as the chosen aircraft.
+ * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`,
+ * `parkedIds`.
  */
-export function trafficFeatures(aircraft = [], { selection = null, focusId = null, labelsOn = false, language = 'es' } = {}) {
+export function trafficFeatures(aircraft = [], {
+  selection = null, focusId = null, labelsOn = false, language = 'es', parkedIds = null,
+} = {}) {
   const list = (Array.isArray(aircraft) ? aircraft : []).filter(isDrawn);
   const selectedId = selectedAircraftId(list, selection);
   const t = createTranslator(mapMessages, language);
+  const parked = idsOf(parkedIds);
   return {
     type: 'FeatureCollection',
-    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t })),
+    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })),
   };
 }
 
@@ -260,14 +273,18 @@ const lineInBounds = (points, bounds) => points.some(point => isInBounds(point, 
  * - `trails`: the trails FeatureCollection (traffic/trailStore.js: trailFeatures).
  * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute): its lines drawn inside `bounds` or across
  *   them, and its marks (points) inside them.
+ * - `parkedIds` (PR M6): the ELEVANT aircraft a stand draws instead (trafficFeatures' `parkedOnStand`): the stands'
+ *   legend explains them, so they bring no traffic entry.
  */
 export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null,
-  route = null } = {}) {
+  route = null, parkedIds = null } = {}) {
   const kinds = new Set();
   const tags = new Set();
   const groundHidden = finite(zoom) && finite(thresholds?.airfield) && zoom < thresholds.airfield;
+  const parked = idsOf(parkedIds);
   for (const item of Array.isArray(aircraft) ? aircraft : []) {
     if (!isDrawn(item) || (bounds !== null && !isInBounds([item.lon, item.lat], bounds))) continue;
+    if (item.kind === 'aviam' && parked.has(item.id)) continue;
     const aviam = item.kind === 'aviam';
     if (!visibleGroup(groups, aviam ? 'traffic.aviam' : 'traffic.other')) continue;
     if (aviam) kinds.add(item.direction === 'Departure' ? 'aviamDeparture' : 'aviamArrival');

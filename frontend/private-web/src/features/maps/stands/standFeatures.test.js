@@ -2,15 +2,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
+import { aircraftFootprint } from '../aircraft/footprint';
+import { AIRCRAFT_TYPES } from '../aircraft/types';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
-import { destinationPoint, haversineM } from '../airport/geo';
+import { destinationPoint, haversineM, pointInPolygon, toEnu } from '../airport/geo';
 import { layoutStandReferences } from '../airport/layoutIndex';
 import { STAND_BOX, standBox } from '../airport/standGeometry';
 import { mapMessages } from '../mapMessages';
 import { SCENARIO_AGENTS, boardStand, boardVisit, createMapStands, createRampScenario } from '../testing/mapFixtures';
 import {
-  STAND_FEATURE_COLLECTIONS, STAND_FEATURE_KEYS, STAND_FEATURE_LABEL_MODES, boxOfPoints, boxesMeet, buildStandFeatures,
-  diffFeatureCollections, diffStandFeatures, featuresIn, standSignalOf, standsDrawnIn,
+  PROGRESS_INSET, STAND_FEATURE_COLLECTIONS, STAND_FEATURE_KEYS, STAND_FEATURE_LABEL_MODES, boxOfPoints, boxesMeet,
+  buildStandFeatures, diffFeatureCollections, diffStandFeatures, featuresIn, parkedAircraftIds, progressSegment,
+  standSignalOf, standsDrawnIn,
 } from './standFeatures';
 import { STAND_LABEL_MODES } from './standLayers';
 import { attachStandGeometry, withStandDisplay } from './standModel';
@@ -23,9 +26,9 @@ const { marta } = SCENARIO_AGENTS;
 
 // The positions a screen gives its map: the board over the references, with their geometry and, as the screens derive
 // it (useStandDisplay), how each reads at `nowMs`.
-const positionsOf = (board, { nowMs = NOW, flightsByTurnaround } = {}) => withStandDisplay(
+const positionsOf = (board, { nowMs = NOW, flightsByTurnaround, aircraftByTurnaround } = {}) => withStandDisplay(
   attachStandGeometry(mapOccupancyToRampPositions(REFERENCES, board, board.asOf), MDPC_LAYOUT),
-  { nowMs, flightsByTurnaround },
+  { nowMs, flightsByTurnaround, aircraftByTurnaround },
 );
 
 function scenario(options = {}) {
@@ -70,6 +73,7 @@ describe('buildStandFeatures', () => {
       aux: { type: 'FeatureCollection', features: [] },
       labels: { type: 'FeatureCollection', features: [] },
       groups: { type: 'FeatureCollection', features: [] },
+      footprints: { type: 'FeatureCollection', features: [] },
     });
   });
 
@@ -91,7 +95,7 @@ describe('buildStandFeatures', () => {
     const label = code => propertiesOf(features.labels, code);
     const heading = code => positions.find(item => item.id === code).geometry.headingTrue;
     expect(label('A1')).toEqual({
-      code: 'A1', state: 'available', signal: null, glyph: null, clock: false, heading: heading('A1'), sortKey: 4,
+      code: 'A1', state: 'available', signal: null, glyph: null, footprint: null, clock: false, heading: heading('A1'), sortKey: 4,
       label1: 'A1', label2: 'A1', label3: 'A1\nMC',
     });
     expect(label('A2')).toMatchObject({
@@ -142,7 +146,11 @@ describe('buildStandFeatures', () => {
     expect(standSignalOf({ signals: [urgent, attention] })).toBe('urgent');
     expect(standSignalOf({ signals: [attention, urgent] })).toBe('urgent');
     expect(standSignalOf({ signals: [attention, { kind: 'attention', reason: 'overdue' }] })).toBe('attention');
-    expect(standSignalOf({ signals: [{ kind: 'notice' }, null] })).toBeNull();
+    // A plain notice (PR M6) is drawn too, after both.
+    expect(standSignalOf({ signals: [{ kind: 'notice' }, null] })).toBe('notice');
+    expect(standSignalOf({ signals: [{ kind: 'notice' }, attention] })).toBe('attention');
+    expect(standSignalOf({ signals: [{ kind: 'notice' }, urgent] })).toBe('urgent');
+    expect(standSignalOf({ signals: [{ kind: 'reminder' }] })).toBeNull();
     // The signals the screen derived, else those of the stand's display; without either, none.
     expect(standSignalOf({ display: { signals: [attention] } })).toBe('attention');
     expect(standSignalOf({ signals: [], display: { signals: [urgent] } })).toBeNull();
@@ -244,8 +252,8 @@ describe('buildStandFeatures', () => {
     // A re-read of the same board, in new objects, changes nothing.
     expect(diffStandFeatures(before, build(createRampScenario(NOW).board.positions))).toBeNull();
     expect(diffStandFeatures(before, before)).toBeNull();
-    expect(STAND_FEATURE_COLLECTIONS).toEqual(['polygons', 'aux', 'labels', 'groups']);
-    expect(STAND_FEATURE_KEYS).toEqual({ polygons: 'code', aux: 'id', labels: 'code', groups: 'terminal' });
+    expect(STAND_FEATURE_COLLECTIONS).toEqual(['polygons', 'aux', 'labels', 'groups', 'footprints']);
+    expect(STAND_FEATURE_KEYS).toEqual({ polygons: 'code', aux: 'id', labels: 'code', groups: 'terminal', footprints: 'id' });
 
     // A1 gets a planned flight: its polygon, its lead-in and its label change, and nothing else.
     const planned = build(board.positions.map(stand => (stand.code === 'A01'
@@ -329,5 +337,154 @@ describe('buildStandFeatures', () => {
 
   it('never imports the dataset (source text guard)', () => {
     expect(readFileSync('src/features/maps/stands/standFeatures.js', 'utf8')).not.toMatch(/airportLayout|\.json['"]/);
+  });
+});
+
+// The stands fed by the map flights and the aircraft positions (PR M6, design D1 to D3): the scenario's ramp with the
+// legs of DM205 on A4 (an A320 with five milestones recorded) and DM211 on A9 (its aircraft standing in the box with no
+// arrival recorded), next to the demo flight on A6.
+describe('buildStandFeatures with the map flights (PR M6)', () => {
+  const ago = minutes => new Date(NOW - minutes * MINUTE).toISOString();
+  const recorded = ['BLOCK_ON', 'WALKAROUND_START', 'WALKAROUND_END', 'STAIRS_JETBRIDGE', 'FIRST_CUSTOMS']
+    .map((code, index) => ({ code, actualAt: ago(28 - index) }));
+  const legsOf = (flight, next, { milestones = [], aircraft = { registration: null, typeIcaoCode: 'A320', model: null, sizeCategory: 'Narrowbody' }, departureInMin = 60 } = {}) => [
+    { direction: 'Arrival', flightNumber: flight, phase: 'landed', actualAt: ago(30), actualKind: 'Runway', aircraft, milestones },
+    { direction: 'Departure', flightNumber: next, phase: 'scheduled', scheduledAt: new Date(NOW + departureInMin * MINUTE).toISOString(),
+      aircraft, milestones },
+  ];
+  function fed({ nowMs = NOW, standing = true } = {}) {
+    const { board, flightsByTurnaround } = createRampScenario(NOW);
+    const base = positionsOf(board);
+    const a9 = base.find(item => item.id === 'A9').geometry.center;
+    const flights = {
+      ...flightsByTurnaround,
+      'turn-DM205': legsOf('DM205', 'DM206', { milestones: recorded }),
+      'turn-DM211': legsOf('DM211', 'DM212', { departureInMin: 120 }),
+    };
+    const aircraft = standing ? { 'turn-DM211': { position: a9, onGround: true, gsMs: 0, quality: 'live' } } : {};
+    const positions = positionsOf(board, { nowMs, flightsByTurnaround: flights, aircraftByTurnaround: aircraft });
+    return { positions, features: buildStandFeatures(positions, { nowMs }) };
+  }
+  const byId = (collection, id) => collection.features.find(item => item.id === id);
+
+  it('footprints: the aircraft to scale, solid on its stand and dashed while it comes, only with a type to draw', () => {
+    const { positions, features } = fed();
+    const find = code => positions.find(item => item.id === code);
+    // A4 and A9 have their A320 on the stand; the demo flight's B38M comes to A6 in 3 minutes.
+    expect(features.footprints.features.map(item => [item.id, item.properties.kind, item.properties.state])).toEqual([
+      ['footprint:A4', 'solid', 'occupied'], ['footprint:A6', 'planned', 'arriving'], ['footprint:A9', 'solid', 'occupied'],
+    ]);
+    for (const item of features.footprints.features) {
+      const code = item.properties.code;
+      expect(item.properties, code).toEqual({ id: item.id, code, kind: item.properties.kind, state: find(code).displayStatus });
+      expect(item.geometry, code).toEqual({
+        type: 'Polygon', coordinates: [aircraftFootprint(find(code).display.typeSpec, find(code).geometry.center, find(code).geometry.headingTrue)],
+      });
+    }
+    expect(find('A6').display.typeSpec).toBe(AIRCRAFT_TYPES.B38M);
+    // The label point says which: a stand with its aircraft drawn solid keeps no glyph from the codes on.
+    expect(propertiesOf(features.labels, 'A4')).toMatchObject({ glyph: 'aircraft', footprint: 'solid' });
+    expect(propertiesOf(features.labels, 'A6')).toMatchObject({ glyph: null, footprint: 'planned' });
+    // A5's aircraft has no map flight, so no type: its glyph stays.
+    expect(propertiesOf(features.labels, 'A5')).toMatchObject({ glyph: 'aircraft', footprint: null });
+    // Three minutes later the demo aircraft is on A6: its footprint turns solid, nothing else of it moves.
+    const later = fed({ nowMs: NOW + 3 * MINUTE }).features;
+    const diff = diffFeatureCollections(features.footprints, later.footprints);
+    expect(diff).toEqual({ add: [], remove: [], update: [{ id: 'footprint:A6', addOrUpdateProperties: [
+      { key: 'kind', value: 'solid' }, { key: 'state', value: 'occupied' },
+    ] }] });
+    // Without the map flights the screens draw no aircraft to scale.
+    expect(scenario().features.footprints.features.map(item => item.id)).toEqual(['footprint:A6']);
+    expect(buildStandFeatures(positionsOf(createRampScenario(NOW).board), { nowMs: NOW }).footprints.features).toEqual([]);
+  });
+
+  it('the progress bar runs along the rear edge: the whole track and the milestones done, out of 25', () => {
+    const { positions, features } = fed();
+    const a4 = positions.find(item => item.id === 'A4');
+    expect(byId(features.aux, 'progressTrack:A4')).toEqual({
+      type: 'Feature', id: 'progressTrack:A4',
+      properties: { id: 'progressTrack:A4', kind: 'progressTrack', code: 'A4', done: 5, total: 25 },
+      geometry: { type: 'LineString', coordinates: progressSegment(a4.geometry.polygon, a4.geometry.headingTrue, 1) },
+    });
+    expect(byId(features.aux, 'progressDone:A4').geometry.coordinates)
+      .toEqual(progressSegment(a4.geometry.polygon, a4.geometry.headingTrue, 5 / 25));
+    // A9 has nothing recorded yet: the track alone. A stand that waits for its aircraft, or whose milestones nobody
+    // knows, has no bar.
+    expect(byId(features.aux, 'progressTrack:A9').properties).toMatchObject({ done: 0, total: 25 });
+    expect(byId(features.aux, 'progressDone:A9')).toBeUndefined();
+    const withBar = features.aux.features.filter(item => item.properties.kind === 'progressTrack').map(item => item.properties.code);
+    expect(withBar).toEqual(['A4', 'A9']);
+    // It never carries a colour or a time of its own: what it draws is the count.
+    expect(Object.keys(byId(features.aux, 'progressDone:A4').properties).sort()).toEqual(['code', 'done', 'id', 'kind', 'total']);
+  });
+
+  it('progressSegment: inside the box, 4 m from its tail side, reading west to east or south to north', () => {
+    const { positions } = fed();
+    const a1 = positions.find(item => item.id === 'A1').geometry;
+    const [start, end] = progressSegment(a1.polygon, a1.headingTrue, 1);
+    const along = point => {
+      const [x, y] = toEnu(a1.center, point);
+      const radians = (a1.headingTrue * Math.PI) / 180;
+      return x * Math.sin(radians) + y * Math.cos(radians);
+    };
+    // A1's nose points south (174.8°): its tail side is the north one, the bar 4 m inside it, 80 % of its 60 m width.
+    expect(along(start) - Math.min(...a1.polygon.map(along))).toBeCloseTo(PROGRESS_INSET.rearM, 0);
+    expect(along(end)).toBeCloseTo(along(start), 1);
+    expect(Math.abs(haversineM(start, end) - 60 * (1 - 2 * PROGRESS_INSET.sideShare))).toBeLessThan(1.5);
+    expect(start[0]).toBeLessThan(end[0]);
+    expect(pointInPolygon(start, a1.polygon) && pointInPolygon(end, a1.polygon)).toBe(true);
+    // A share runs from the same start; nothing past the ends.
+    const [from, stop] = progressSegment(a1.polygon, a1.headingTrue, 0.36);
+    expect(from).toEqual(start);
+    expect(haversineM(from, stop)).toBeCloseTo(0.36 * haversineM(start, end), 1);
+    expect(progressSegment(a1.polygon, a1.headingTrue, 3)).toEqual([start, end]);
+    // A stand facing east has its rear edge across north and south: it reads from the south.
+    const east = standBox(a1.center, 90, 'C');
+    const [south, north] = progressSegment(east, 90, 1);
+    expect(south[1]).toBeLessThan(north[1]);
+    for (const bad of [[null, 90, 1], [east, null, 1], [east, 90, Number.NaN], [[a1.center], 90, 1]]) {
+      expect(progressSegment(...bad)).toBeNull();
+    }
+  });
+
+  it('a stand with its aircraft standing in it and no arrival recorded says so on its full label, with the notice', () => {
+    const { features } = fed();
+    const a9 = propertiesOf(features.labels, 'A9');
+    expect(a9).toMatchObject({ state: 'occupied', signal: 'notice', sortKey: -3 });
+    expect(a9.label3).toBe('A9\nDM212 · A320\nSale 16:07 · en 120 min · AR\nEl avión ya está en la posición. Registra la llegada.');
+    // Only the full label: the code and the flight stay as they were.
+    expect(a9.label2).toBe('A9\nDM212');
+    // Past the stand's own signal, which keeps its place: A4's conflict, which has no notice.
+    expect(propertiesOf(features.labels, 'A4')).toMatchObject({ signal: 'urgent' });
+    expect(propertiesOf(features.labels, 'A4').label3).not.toMatch(/Registra la llegada/);
+    // In English; and gone once the aircraft is not standing there.
+    const english = buildStandFeatures(fed().positions, { nowMs: NOW, language: 'en' });
+    expect(propertiesOf(english.labels, 'A9').label3).toMatch(/\nThe aircraft is already on the stand\. Record its arrival\.$/);
+    expect(propertiesOf(fed({ standing: false }).features.labels, 'A9')).toMatchObject({ signal: null });
+  });
+
+  it('parkedAircraftIds: the ELEVANT aircraft standing in the box of the stand that shows it', () => {
+    const { positions } = fed();
+    const centre = code => positions.find(item => item.id === code).geometry.center;
+    const aircraft = (id, turnaroundId, point, extra = {}) => ({
+      id, kind: 'aviam', turnaroundId, lon: point[0], lat: point[1], onGround: true, gsMs: 0, ...extra,
+    });
+    const parked = parkedAircraftIds([
+      aircraft('f:a4', 'turn-DM205', centre('A4')),
+      aircraft('f:a9', 'turn-DM211', centre('A9'), { gsMs: null }),
+      // Moving, in the air, outside its box, at another stand, on a stand still to come, other traffic: not parked.
+      aircraft('f:moving', 'turn-DM205', centre('A4'), { gsMs: 3 }),
+      aircraft('f:air', 'turn-DM211', centre('A9'), { onGround: false }),
+      aircraft('f:out', 'turn-DM205', destinationPoint(centre('A4'), 0, 300)),
+      aircraft('f:elsewhere', 'turn-DM205', centre('A9')),
+      aircraft('f:a6', 'turn-ZZ9001', centre('A6')),
+      { ...aircraft('h:other', 'turn-DM205', centre('A4')), kind: 'other' },
+    ], positions);
+    expect([...parked].sort()).toEqual(['f:a4', 'f:a9']);
+    // A stand that reads an aircraft on it shows it even without its type (its glyph): with the board alone, A4 too.
+    expect([...parkedAircraftIds([aircraft('f:a4', 'turn-DM205', centre('A4'))], scenario().positions)]).toEqual(['f:a4']);
+    // Nothing without stands, or without aircraft.
+    expect(parkedAircraftIds(undefined, positions).size).toBe(0);
+    expect(parkedAircraftIds([aircraft('f:a4', 'turn-DM205', centre('A4'))], null).size).toBe(0);
   });
 });

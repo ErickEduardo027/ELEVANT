@@ -18,8 +18,8 @@ import { followCamera, needsRecentre, stepCamera } from '../kinematics/followCam
 import { mapMessages } from '../mapMessages';
 import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
 import {
-  STAND_FEATURE_COLLECTIONS, boxOfPoints, boxesMeet, buildStandFeatures, diffStandFeatures, featuresIn, standSignalOf,
-  standsDrawnIn,
+  STAND_FEATURE_COLLECTIONS, boxOfPoints, boxesMeet, buildStandFeatures, diffStandFeatures, featuresIn,
+  parkedAircraftIds, standSignalOf, standsDrawnIn,
 } from '../stands/standFeatures';
 import {
   featureStatePlan, findStandByCode, isOutsideSafeArea, sameAgentMark, standFlags, standTooltip,
@@ -125,6 +125,14 @@ function layerStorage() {
   }
 }
 
+// The stand of the ELEVANT aircraft the traffic draws for a chosen flight (its assigned stand, normalized), or null.
+function trafficStandOf(aircraft, selection) {
+  const list = aircraft ?? EMPTY;
+  const chosen = selectedAircraftId(list, selection);
+  const code = chosen === null ? null : list.find(entry => entry.id === chosen)?.standCode;
+  return typeof code === 'string' && code !== '' ? mapStandCode(code) || null : null;
+}
+
 // Where the traffic draws the ELEVANT aircraft a flight id names (any id matchFlight reads), as `[lng, lat]`, or null.
 function trafficPoint(aircraft, id) {
   const list = aircraft ?? EMPTY;
@@ -135,6 +143,13 @@ function trafficPoint(aircraft, id) {
 
 // The legend reads the moving traffic at most this often while it moves (PR M6): once a second.
 const MOVING_ON_SCREEN_MS = 1_000;
+
+// The aircraft a stand draws instead of the traffic (PR M6, design F4): none, and whether the map draws the stands, and
+// so the aircraft on them, at a zoom: from the polygons threshold on, as a glyph and from the codes on to scale
+// (anywhere before the thresholds are known: the layers have no zoom range yet).
+const NO_IDS = Object.freeze(new Set());
+const standsDrawnAt = (zoom, thresholds) => !Number.isFinite(thresholds?.polygons) || !Number.isFinite(zoom)
+  || zoom >= thresholds.polygons;
 const MOTION_OFF = Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null });
 
 // The chosen flight's route follows its aircraft (PR M6, design E5): rewritten at most once a second below the
@@ -382,6 +397,14 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   (needsRecentre). A person's drag ends it with «Dejaste de seguir a … Pulsa Seguir para volver.», as does a view
  *   asked for; a person's zoom or tilt keeps following with that zoom or tilt; nothing moves the camera while a person
  *   moves the map.
+ * - The stands fed by the flights (PR M6, design D1 to D3): a stand whose display names an aircraft type draws it to
+ *   scale from the codes threshold on (solid on the stand, dashed while it comes) and, with an aircraft on it, the
+ *   progress of its turnaround from the three-line labels on; the legend explains both while they are in sight. One
+ *   owner per aircraft (design F4): where the stands are drawn (from the polygons threshold on), an ELEVANT aircraft
+ *   parked in the stand that shows it (its glyph, and from the codes on its footprint) is the stand's
+ *   (stands/standFeatures.js: parkedAircraftIds), so every write of the traffic flags it (`parkedOnStand`) and its
+ *   symbol gives way, unless it is the chosen one; a zoom across the polygons threshold, a new fit or new stands write
+ *   the traffic again for it.
  */
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
@@ -677,14 +700,29 @@ const OccMap = forwardRef(function OccMap({
     // The chosen aircraft where this write draws it (PR M6): its route and follow mode go with it.
     const chosenId = selectedAircraftId(drawn, chosen);
     applied.chosen = chosenId === null ? null : drawn.find(item => item.id === chosenId) ?? null;
+    // One owner per aircraft (PR M6, design F4): where the stands are drawn, an ELEVANT aircraft parked in the stand that
+    // shows it is the stand's, and its symbol gives way to the stand's footprint or glyph.
+    const standsShown = applied.drawsStands === true && standsDrawnAt(engine.getCamera()?.zoom, store.get().thresholds);
+    applied.standsShown = standsShown;
+    applied.parkedIds = standsShown ? parkedAircraftIds(drawn, latest.current.attached) : NO_IDS;
     const data = trafficFeatures(drawn, {
       selection: chosen, focusId: trafficFocusRef.current, labelsOn: shown?.['traffic.labels'] === true, language: words,
+      parkedIds: applied.parkedIds,
     });
     const diff = trafficDiff(applied.trafficById, data.features);
     if (isEmptyDiff(diff)) return;
     applied.trafficById = featuresById(data);
     engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
-  }, []);
+  }, [store]);
+
+  // A camera or a fit that takes the zoom across the polygons threshold shows or hides the stands and the aircraft on
+  // them (PR M6): the parked aircraft's symbols go or come back with them, in one write.
+  const syncParkedTraffic = useCallback(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsTraffic || !applied.drawsStands) return;
+    if (standsDrawnAt(engine.getCamera()?.zoom, store.get().thresholds) !== applied.standsShown) writeTraffic();
+  }, [store, writeTraffic]);
 
   // The chosen flight's route where the last write drew its aircraft (PR M6, design E5): `traffic.routeAt` rebuilds it
   // so the split follows the aircraft, at most once a second below the airfield threshold and from it every frame the
@@ -720,7 +758,7 @@ const OccMap = forwardRef(function OccMap({
     const next = appliedRef.current.drawsTraffic && bounds !== null
       ? trafficOnScreenOf(drawn, bounds, {
         groups: latest.current.groups, zoom, thresholds, trails: latest.current.shownTrails ?? null,
-        route: current?.route ?? null,
+        route: current?.route ?? null, parkedIds: appliedRef.current.parkedIds ?? null,
       })
       : NO_TRAFFIC_ON_SCREEN;
     if (onScreenKey(next) !== onScreenKey(store.get().trafficOnScreen)) store.set({ trafficOnScreen: next });
@@ -760,9 +798,16 @@ const OccMap = forwardRef(function OccMap({
     const ringInSight = polygons && ringMark !== null
       && standsDrawnIn(drawnStands.filter(stand => ringed.has(mapStandCode(standCodeOf(stand)))), bounds).length > 0;
     const boxInSight = box => bounds !== null && Array.isArray(box?.polygon) && boxesMeet(boxOfPoints(box.polygon), bounds);
+    // The aircraft to scale are drawn from the codes threshold on, the progress bars with the three-line labels (PR M6).
+    const footprintKinds = new Set(polygons && codesShown && features.footprints
+      ? featuresIn(features.footprints, bounds).map(item => item.properties?.kind) : EMPTY);
+    const threeLineShown = !Number.isFinite(thresholds?.threeLine) || zoom >= thresholds.threeLine;
     const marks = [
       // The arrow over a chip is drawn with the chips (stands/standLayers.js: occ-stand-groups-arriving).
       ...(chipsInSight.some(chip => chip.properties?.arriving === true) ? ['chipArriving'] : []),
+      ...(footprintKinds.has('solid') ? ['footprint'] : []),
+      ...(footprintKinds.has('planned') ? ['footprintPlanned'] : []),
+      ...(drawsAux('progressTrack', polygons && threeLineShown) ? ['progress'] : []),
       ...(drawsAux('combinedLink', polygons) ? ['combined'] : []),
       ...(drawsAux('narrowInner', polygons && codesShown) ? ['narrowbody'] : []),
       ...(ringInSight ? [ringMark] : []),
@@ -800,11 +845,13 @@ const OccMap = forwardRef(function OccMap({
     // Without its own airfield the map leaves the tile aeroway at every zoom.
     if (thresholds) engine.applyThresholds(appliedRef.current.drawsAirfield ? thresholds : withoutAirfield(thresholds));
     store.set({ fits, thresholds, activeView: presetForZoom(engine.getCamera()?.zoom, fits) });
-    // New thresholds may draw the stands on screen in another way (hidden, as chips or as polygons).
+    // New thresholds may draw the stands on screen in another way (hidden, as chips or as polygons), and their aircraft
+    // to scale from another zoom.
     updateOnScreen();
+    syncParkedTraffic();
     const pending = pendingViewRef.current;
     if (fits && pending) applyView(pending.view, { terminal: pending.terminal, animate: false });
-  }, [store, applyView, updateOnScreen]);
+  }, [store, applyView, updateOnScreen, syncParkedTraffic]);
 
   // The map tooltip after a move: a card that follows the pointer goes with the move (the pointer shows the next one);
   // a held card moves with the point it was held at while that stays in sight, and closes when it leaves.
@@ -834,6 +881,7 @@ const OccMap = forwardRef(function OccMap({
     markSettled(rootRef.current, false);
     store.set({ activeView: presetForZoom(camera.zoom, store.get().fits) });
     followTooltip();
+    syncParkedTraffic();
     // Follow mode moves the camera every frame (PR M6): what is on screen, and the page, hear of it at most once a
     // second then, and again when the map settles.
     if (applied.followMoving) {
@@ -852,7 +900,7 @@ const OccMap = forwardRef(function OccMap({
     // What is in sight sets how often the moving traffic is written (PR M6): one frame reads it again.
     applied.loop?.wake();
     latest.current?.onCameraChange?.(camera, details);
-  }, [store, followTooltip, updateOnScreen]);
+  }, [store, followTooltip, updateOnScreen, syncParkedTraffic]);
 
   const handleStatus = useCallback(status => {
     store.set({ engineStatus: status.engine, basemapStatus: status.basemap });
@@ -1137,6 +1185,8 @@ const OccMap = forwardRef(function OccMap({
     // The traffic of this engine: what its source holds, the trails and route written, and the credit shown.
     Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null, route: null,
       credit: '' });
+    // The ELEVANT aircraft the stands draw instead (PR M6), and whether the stands were drawn at the last write.
+    Object.assign(appliedRef.current, { parkedIds: NO_IDS, standsShown: null });
     // Its motion (PR M6): one frame loop for the life of the engine, on the render clock of the motion it was given.
     const motionClock = props.drawsTraffic && props.traffic?.motion ? props.traffic.motion.clock ?? createRenderClock() : null;
     const reduced = motionClock ? reducedMotionQuery() : null;
@@ -1335,6 +1385,13 @@ const OccMap = forwardRef(function OccMap({
     if (motion.dataAt !== dataAt) store.set({ motion: { ...motion, dataAt } });
   }, [trafficAircraft, selection, shownGroupsKey, language, writeTraffic, updateOnScreen, store]);
 
+  // A stand that turns occupied or lets its aircraft go changes whose symbol gives way to a footprint (PR M6): the traffic
+  // is written again with the stands, which a re-read of the same stands leaves as it is.
+  useEffect(() => {
+    const applied = appliedRef.current;
+    if (applied.drawsTraffic && applied.drawsStands) writeTraffic();
+  }, [attached, writeTraffic]);
+
   // The trails and the chosen flight's route: one setData when what they draw changes. A new route from the props is
   // the frames' to follow from their next frame on (PR M6).
   useEffect(() => {
@@ -1453,7 +1510,9 @@ const OccMap = forwardRef(function OccMap({
     }
     if (!applied.drawsStands) return;
     const code = selection?.kind === 'stand' ? mapStandCode(selection.id) || null : null;
-    const related = selection?.kind === 'flight' ? relatedEntities(selection, { flights }).standCode : null;
+    // The stand of a chosen flight: from the flights the map draws, else (PR M6) from the aircraft its traffic draws for it.
+    const related = selection?.kind === 'flight'
+      ? relatedEntities(selection, { flights }).standCode ?? trafficStandOf(trafficAircraft, selection) : null;
     const { hover } = applied.standFlags ?? NO_FLAGS;
     applyStandFlags(standFlags({ hover, selected: code, related, stands: attached }));
     if (code === applied.easedFor) return;
@@ -1461,7 +1520,7 @@ const OccMap = forwardRef(function OccMap({
     const focused = focusRef.current;
     focusRef.current = null;
     if (code !== null && focused !== code) easeToStand(code);
-  }, [selection, attached, presetStands, flights, standFeatures, applyStandFlags, easeToStand]);
+  }, [selection, attached, presetStands, flights, trafficAircraft, standFeatures, applyStandFlags, easeToStand]);
 
   useEffect(() => {
     const engine = engineRef.current;

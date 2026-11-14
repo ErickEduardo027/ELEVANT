@@ -861,13 +861,17 @@ describe('OccMap', () => {
     expect(ids.slice(ids.indexOf('slot-stands') + 1, ids.indexOf('slot-routes'))).toEqual([
       'occ-stands-fill', 'occ-stands-hatch', 'occ-stands-outline-solid', 'occ-stands-outline-dash-4-3',
       'occ-stands-outline-dash-2-2', 'occ-stands-outline-dot-1-3', 'occ-stands-leadin', 'occ-stands-leadin-arriving',
-      'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-selection', 'occ-stands-related',
-      'occ-stands-same-agent',
+      'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-progress-track', 'occ-stands-progress-done',
+      'occ-stands-selection', 'occ-stands-related', 'occ-stands-same-agent',
     ]);
+    // The aircraft to scale on the stands (PR M6), in their own slot.
+    expect(ids.slice(ids.indexOf('slot-footprints') + 1, ids.indexOf('slot-extrusions')))
+      .toEqual(['occ-footprints-fill', 'occ-footprints-outline', 'occ-footprints-planned']);
     // A screen's own overlays come after the map's in their slot.
     expect(ids.slice(ids.indexOf('slot-standLabels') + 1, ids.indexOf('slot-traffic'))).toEqual([
-      'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-clock', 'occ-stand-labels',
-      'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal', 'test-notes',
+      'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-glyph-unsized', 'occ-stand-clock',
+      'occ-stand-labels', 'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
+      'test-notes',
     ]);
     const sources = ['occ-stands', 'occ-stand-aux', 'occ-stand-labels', 'occ-stand-groups'].map(id => map.getSource(id));
     // One setData per source when the map starts, and no clustering any more.
@@ -2334,5 +2338,150 @@ describe('OccMap route and follow mode (PR M6)', () => {
     expect(followProbe()).toEqual({ available: false, following: false, canFollow: false });
     expect(press(screen.getByTestId('occ-map'), 's').defaultPrevented).toBe(false);
     expect(query().get('follow')).toBeNull();
+  });
+});
+
+// The stands fed by the map flights (PR M6, design D1 to D3, F4): the ramp scenario with the legs of DM205 on A4, an A320
+// with two milestones recorded, next to the demo flight coming to A6.
+describe('OccMap stands fed by the flights (PR M6)', () => {
+  const ago = minutes => new Date(NOW - minutes * MINUTE).toISOString();
+  const A320 = Object.freeze({ registration: 'HI0205', typeIcaoCode: 'A320', model: null, sizeCategory: 'Narrowbody' });
+  const legs = milestones => [
+    { direction: 'Arrival', flightNumber: 'DM205', phase: 'landed', actualAt: ago(30), actualKind: 'Runway', aircraft: A320,
+      milestones },
+    { direction: 'Departure', flightNumber: 'DM206', phase: 'scheduled', scheduledAt: new Date(NOW + 60 * MINUTE).toISOString(),
+      aircraft: A320, milestones },
+  ];
+  function fedStands() {
+    const { board, flightsByTurnaround } = createRampScenario(NOW);
+    const flights = { ...flightsByTurnaround, 'turn-DM205': legs([{ code: 'BLOCK_ON', actualAt: ago(28) },
+      { code: 'FIRST_CUSTOMS', actualAt: ago(20) }]) };
+    return withStandDisplay(mapOccupancyToRampPositions(REFERENCES, board, board.asOf), { nowMs: NOW, flightsByTurnaround: flights });
+  }
+  // The same ramp with A4 free on the board: its visits are gone.
+  function freeA4Stands() {
+    const { board } = createRampScenario(NOW);
+    const free = { ...board, positions: board.positions.map(stand => (stand.code === 'A04'
+      ? { ...stand, status: 'available', turnarounds: [] } : stand)) };
+    return withStandDisplay(mapOccupancyToRampPositions(REFERENCES, free, free.asOf), { nowMs: NOW });
+  }
+  const A4 = attachStandGeometry(fedStands(), MDPC_LAYOUT).find(stand => stand.id === 'A4').geometry;
+  // The aircraft of DM205 as the traffic draws it: live, standing still on the ground at `point`.
+  const parkedAircraft = (point, extra = {}) => ({
+    id: 'f:l:5c000000-0000-4000-8000-000000000205', hex: 'f0b205', kind: 'aviam',
+    flightKey: 'l:5c000000-0000-4000-8000-000000000205', visitKey: 't:turn-DM205', legId: '5c000000-0000-4000-8000-000000000205',
+    turnaroundId: 'turn-DM205', proposalId: null, direction: 'Arrival', isDemo: false, imported: true, phase: 'arrived',
+    flightNumber: 'DM205', counterpartIata: 'MIA', standCode: 'A4', model: null, sizeCategory: 'Narrowbody',
+    lon: point[0], lat: point[1], altM: null, gsMs: 0, trackDeg: A4.headingTrue, vrateMs: null, onGround: true,
+    positionAt: NOW, ageS: 2, quality: 'live', callsign: 'DMO205', registration: 'HI0205', typeIcao: 'A320',
+    emitterCategory: 'A3', squawk: null, matchedBy: 'Registration', hiddenInStand: false, statusKey: null, timeScale: null,
+    opacity: null, mode: null, ...extra,
+  });
+  const trafficOf = aircraft => ({ aircraft, trails: EMPTY_TRAILS, route: null, source: TRAFFIC_SOURCE });
+  // The properties a feature of a source ends up with, from its writes.
+  function lastProperties(source, id) {
+    let properties = null;
+    for (const diff of source.updateDataCalls) {
+      const added = diff.add.find(item => item.properties.id === id);
+      if (added) properties = { ...added.properties };
+      for (const change of diff.update.filter(item => item.id === id)) {
+        for (const { key, value } of change.addOrUpdateProperties ?? []) properties = { ...properties, [key]: value };
+      }
+    }
+    return properties;
+  }
+
+  it('draws the aircraft of the stands to scale from the codes threshold on and their progress from the three lines, as the legend says', () => {
+    const { map } = renderMap({ stands: fedStands(), frozenAt: NOW });
+    loadStyle(map);
+    // One more stand source, written with the others.
+    const footprints = map.getSource('occ-aircraft-footprints');
+    expect(footprints.spec).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    expect(footprints.setDataCalls).toHaveLength(1);
+    expect(footprints.data.features.map(item => [item.id, item.properties.kind])).toEqual([
+      ['footprint:A4', 'solid'], ['footprint:A6', 'planned'],
+    ]);
+    expect(map.getSource('occ-stand-aux').data.features.filter(item => item.properties.kind.startsWith('progress'))
+      .map(item => [item.id, item.properties.done, item.properties.total])).toEqual([
+      ['progressTrack:A4', 2, 25], ['progressDone:A4', 2, 25],
+    ]);
+    const ranges = Object.fromEntries(map.zoomRangeCalls.map(call => [call.id, [call.minzoom, call.maxzoom]]));
+    const { polygons, codes, threeLine } = probe().thresholds;
+    for (const id of ['occ-footprints-fill', 'occ-footprints-outline', 'occ-footprints-planned', 'occ-stand-glyph-unsized']) {
+      expect(ranges[id][0], id).toBe(codes);
+    }
+    expect(ranges['occ-stand-glyph']).toEqual([polygons, codes]);
+    expect([ranges['occ-stands-progress-track'][0], ranges['occ-stands-progress-done'][0]]).toEqual([threeLine, threeLine]);
+    // The ramp view shows the aircraft to scale, not the bars yet.
+    expect(probe().marks).toEqual(expect.arrayContaining(['footprint', 'footprintPlanned']));
+    expect(probe().marks).not.toContain('progress');
+    // Close on A4, past the three-line labels: its bar too.
+    act(() => map.jumpTo({ center: A4.center, zoom: threeLine + 1 }));
+    expect(probe().marks).toEqual(expect.arrayContaining(['footprint', 'progress']));
+    // Far from every stand, nothing of them.
+    act(() => map.jumpTo({ center: [-68.2, 18.45] }));
+    expect(probe().marks).toEqual([]);
+    act(() => map.jumpTo({ center: A4.center }));
+    // Below the codes, none of them.
+    act(() => map.jumpTo({ zoom: codes - 0.4 }));
+    expect(probe().marks.filter(mark => ['footprint', 'footprintPlanned', 'progress'].includes(mark))).toEqual([]);
+  });
+
+  it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand wherever the stands are drawn', () => {
+    const view = render(
+      <OccMap stands={fedStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}>
+        <Probe /><TrafficProbe />
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    const id = parkedAircraft(A4.center).id;
+    const { polygons, codes } = probe().thresholds;
+    // The ramp view draws the footprints: the parked aircraft is the stand's, and the legend leaves it to the stand.
+    expect(lastProperties(source, id)).toMatchObject({ parkedOnStand: true, kind: 'aviam' });
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
+    // Below the codes the stand draws its glyph instead of the footprint: still the stand's, nothing is written.
+    const writes = source.updateDataCalls.length;
+    act(() => map.jumpTo({ center: A4.center, zoom: codes - 0.4 }));
+    expect(source.updateDataCalls).toHaveLength(writes);
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
+    // Below the polygons the stands go: its symbol comes back, in one write of that property.
+    act(() => map.jumpTo({ zoom: polygons - 0.4 }));
+    expect(source.updateDataCalls).toHaveLength(writes + 1);
+    expect(source.updateDataCalls.at(-1).update).toEqual([{ id, addOrUpdateProperties: [{ key: 'parkedOnStand', value: false }] }]);
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual(['aviamArrival']);
+    // A move that stays on one side of the threshold writes nothing.
+    act(() => map.jumpTo({ zoom: polygons - 0.6 }));
+    expect(source.updateDataCalls).toHaveLength(writes + 1);
+    act(() => map.jumpTo({ zoom: polygons + 0.2 }));
+    expect(lastProperties(source, id).parkedOnStand).toBe(true);
+    // Moving, it is the traffic's again; so is it once its stand no longer shows it (A4 free on the board). With the board
+    // alone A4 reads its aircraft and shows it with the glyph: the stand's.
+    view.rerender(
+      <OccMap stands={fedStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center, { gsMs: 3 })])}>
+        <Probe /><TrafficProbe />
+      </OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(false);
+    view.rerender(
+      <OccMap stands={fedStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}><Probe /><TrafficProbe /></OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(true);
+    view.rerender(
+      <OccMap stands={freeA4Stands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}><Probe /><TrafficProbe /></OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(false);
+    view.rerender(
+      <OccMap stands={scenarioStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}><Probe /><TrafficProbe /></OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(true);
+    cleanup();
+
+    // A map without stands parks nothing.
+    render(<OccMap defaultView="ramp" traffic={trafficOf([parkedAircraft(A4.center)])} />);
+    const bare = fake.state.liveMaps().at(-1);
+    loadStyle(bare);
+    expect(lastProperties(bare.getSource('occ-traffic'), id).parkedOnStand).toBe(false);
   });
 });

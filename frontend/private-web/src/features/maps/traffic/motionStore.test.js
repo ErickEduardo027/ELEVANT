@@ -323,6 +323,26 @@ describe('motion store (design F4, contracts 2.3)', () => {
     expect(estimate).toMatchObject({ id: item.id, kind: 'aviam', flightKey: KEY.arrival, flightNumber: 'ZZ161', hex: HEX.arrival });
   });
 
+  it('a fix the picture gave before the flights is the flight\'s as soon as they come, live and not estimated', () => {
+    const store = createMotionStore();
+    const fix = LIVE.aircraft.find(aircraft => aircraft.hex === HEX.arrival);
+    // The air picture answers first (the two reads go out together): ZZ161's fix is other traffic for now.
+    store.ingest({ picture: LIVE, flights: null });
+    expect(store.sampleOne(`h:${HEX.arrival}`, at(5))).toMatchObject({ mode: 'live' });
+    // Then the map flights, with the same picture: the flight takes that fix at once, not at the next picture, so it is
+    // drawn where its aircraft is and not along its planned approach.
+    const read = { picture: LIVE, flights: flightsOf(createMapFlights()) };
+    store.ingest(read);
+    const item = situationOf(store, read).byId.get(`f:${KEY.arrival}`);
+    expect(item).toMatchObject({ quality: 'live', hex: HEX.arrival });
+    const live = store.sampleOne(item.id, at(5), item);
+    expect(live).toMatchObject({ mode: 'live', quality: 'live' });
+    expect(haversineM(point(live), destinationPoint(point(fix), fix.trackDeg, fix.gsMs * 9))).toBeLessThan(0.5);
+    // The same fix again, with new flights, changes nothing.
+    store.ingest({ picture: LIVE, flights: flightsOf(createMapFlights()) });
+    expect(store.sampleOne(item.id, at(5), item)).toEqual(live);
+  });
+
   it('other traffic dead-reckons and is dropped at 120 s', () => {
     const store = createMotionStore();
     const read = { picture: LIVE, flights: flightsOf(createMapFlights()) };

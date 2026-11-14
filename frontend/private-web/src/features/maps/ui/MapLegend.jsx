@@ -1,10 +1,11 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { SIGNALS, STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
-import { standPaint } from '../stands/standLayers';
+import { FOOTPRINT_PAINT, PROGRESS_PAINT, standPaint } from '../stands/standLayers';
+import { MILESTONES_TOTAL } from '../stands/standModel';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
@@ -76,9 +77,17 @@ function StateSwatch({ state }) {
   );
 }
 
-// A signal as the map draws it (style/mapImages.js): its shape filled in its colour, the «!» in the dark of the halo.
+// A signal as the map draws it (style/mapImages.js): its shape filled in its colour, the «!» in the dark of the halo; a
+// plain notice (PR M6) is its diamond's outline alone, in the text colour, without a hue.
 function SignalSwatch({ signal }) {
   const [shape, ...cuts] = MAP_IMAGE_SHAPES[`signal-${signal}`].ops;
+  if (SIGNALS[signal].colorToken === null) {
+    return (
+      <svg {...SWATCH_PROPS} data-swatch="signal" data-shape={SIGNALS[signal].shape}>
+        <path d={shape.stroke} style={{ fill: 'none', stroke: tokenColour('--occ-text'), strokeWidth: shape.lineWidth, strokeLinejoin: 'miter' }} />
+      </svg>
+    );
+  }
   return (
     <svg {...SWATCH_PROPS} data-swatch="signal" data-shape={SIGNALS[signal].shape}>
       <path d={shape.fill} style={{ fill: tokenColour(SIGNALS[signal].colorToken), stroke: tokenColour('--occ-nav'), strokeWidth: 1 }} />
@@ -106,6 +115,13 @@ function ChipSwatch() {
 // a wash, with its centre).
 const ACCENT = tokenColour('--occ-accent');
 const [ARRIVING_SHAFT, ARRIVING_HEAD] = MAP_IMAGE_SHAPES['glyph-arriving'].ops;
+// The aircraft of a stand to scale (PR M6, stands/standLayers.js: FOOTPRINT_PAINT), 14 px long on the slab of a stand
+// with an aircraft on it, or dashed on a stand still waiting for it; and the progress bar of its turnaround
+// (PROGRESS_PAINT) along the rear edge, a third of it done.
+const FOOTPRINT_SCALE = 14 / AIRCRAFT_SILHOUETTE_VIEWBOX;
+const FOOTPRINT_TRANSFORM = `translate(3 3) scale(${FOOTPRINT_SCALE})`;
+const units = pixels => pixels / FOOTPRINT_SCALE;
+const SLAB = Object.freeze({ fill: tokenColour('--occ-panel-raised'), stroke: tokenColour('--occ-text'), strokeWidth: 1 });
 const SAME_AGENT_RING = (
   <>
     <rect x="5.5" y="5.5" width="9" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
@@ -137,6 +153,31 @@ const MARK_SWATCHES = Object.freeze({
   ),
   sameAgent: SAME_AGENT_RING,
   sameAgentHover: SAME_AGENT_RING,
+  footprint: (
+    <>
+      <rect x="1.5" y="1.5" width="17" height="17" style={SLAB} />
+      <path data-glyph="footprint" d={AIRCRAFT_SILHOUETTE_PATH} transform={FOOTPRINT_TRANSFORM} style={{
+        fill: tokenColour(`--occ-${FOOTPRINT_PAINT.solid.fillToken}`), fillOpacity: FOOTPRINT_PAINT.solid.fillOpacity,
+        stroke: tokenColour(`--occ-${FOOTPRINT_PAINT.solid.outlineToken}`), strokeWidth: units(FOOTPRINT_PAINT.solid.width),
+      }} />
+    </>
+  ),
+  footprintPlanned: (
+    <>
+      <rect x="1.5" y="1.5" width="17" height="17" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1.5, strokeDasharray: '4 3' }} />
+      <path data-glyph="footprint-planned" d={AIRCRAFT_SILHOUETTE_PATH} transform={FOOTPRINT_TRANSFORM} style={{
+        fill: 'none', stroke: tokenColour(`--occ-${FOOTPRINT_PAINT.planned.token}`), strokeWidth: units(FOOTPRINT_PAINT.planned.width),
+        strokeDasharray: FOOTPRINT_PAINT.planned.dash.map(units).join(' '),
+      }} />
+    </>
+  ),
+  progress: (
+    <>
+      <rect x="1.5" y="1.5" width="17" height="17" style={SLAB} />
+      <path data-glyph="progress-track" d="M4 5 H16" style={{ fill: 'none', stroke: tokenColour(`--occ-${PROGRESS_PAINT.trackToken}`), strokeWidth: PROGRESS_PAINT.width }} />
+      <path data-glyph="progress-done" d="M4 5 H8" style={{ fill: 'none', stroke: tokenColour(`--occ-${PROGRESS_PAINT.doneToken}`), strokeWidth: PROGRESS_PAINT.width }} />
+    </>
+  ),
   ghost: (
     <rect x="3" y="3" width="14" height="14" style={{ fill: 'none', stroke: ACCENT, strokeWidth: 2, strokeDasharray: '4 3' }} />
   ),
@@ -148,10 +189,16 @@ const MARK_SWATCHES = Object.freeze({
   ),
 });
 const MARK_MESSAGES = Object.freeze({
-  chipArriving: 'legend.chipArriving', combined: 'legend.combined', narrowbody: 'legend.narrowbody',
-  sameAgent: 'legend.sameAgent', sameAgentHover: 'legend.sameAgentHover', ghost: 'legend.ghost', pending: 'legend.pending',
+  chipArriving: 'legend.chipArriving', footprint: 'legend.footprint', footprintPlanned: 'legend.footprintPlanned',
+  progress: 'legend.progress', combined: 'legend.combined', narrowbody: 'legend.narrowbody', sameAgent: 'legend.sameAgent',
+  sameAgentHover: 'legend.sameAgentHover', ghost: 'legend.ghost', pending: 'legend.pending',
 });
-const MARK_HINTS = Object.freeze({ ghost: 'legend.ghostHint' });
+// The hint under a mark's name, with what it is filled with.
+const MARK_HINTS = Object.freeze({
+  ghost: ['legend.ghostHint'],
+  footprintPlanned: ['legend.footprintPlannedHint'],
+  progress: ['legend.progressHint', { total: MILESTONES_TOTAL }],
+});
 
 // A flight as the map draws it (traffic/flightLayers.js): the solid silhouette, nose up, in the text colour with a 1 px
 // halo of the nav colour, here 16 px long. The halo is a 2 px line drawn under the fill, so 1 px of it shows outside.
@@ -235,10 +282,12 @@ function WideEntry({ swatch, name, hint }) {
 /**
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
  * the flights drawn there, the terminal chips (below the stand polygons), the states of the stands whose polygon is
- * drawn there with the signal the map draws on each and the marks drawn there (the arrow over a chip whose terminal has
- * a flight arriving, the link of a cancelled stand, the narrow-body box, the ring of the stands covered by the agent of
- * the selected stand or of the one under the pointer, the boxes of a stand being placed), «No oficial» for a stand at
- * its reference location, and the airfield items drawn there (runway, taxiway, holding point, apron, terminal), set
+ * drawn there with the signal the map draws on each (attention, urgent, or the plain notice of PR M6) and the marks
+ * drawn there (the arrow over a chip whose terminal has a flight arriving, the aircraft of a stand to scale on it or
+ * still to come and the progress bar of its turnaround (PR M6), the link of a cancelled stand, the narrow-body box, the
+ * ring of the stands covered by the agent of the selected stand or of the one under the pointer, the boxes of a stand
+ * being placed), «No oficial» for a stand at its reference location, and the airfield items drawn there (runway,
+ * taxiway, holding point, apron, terminal), set
  * apart below the rest; or the `stands` given (inside `bounds` when given). The stand states use the words of the
  * vocabulary (STAND_STATES) and the signals theirs (SIGNALS). The short entries (the states, the signals and the
  * airfield items) sit two to a row, so the open legend stays low over the map. It folds through its own button, whose
@@ -247,6 +296,34 @@ function WideEntry({ swatch, name, hint }) {
  * The traffic an OccMap draws on screen comes first (ui/trafficLegend.js): the kinds of aircraft, their tags (Demo,
  * est., Sin actualizar) and their trails.
  */
+// The open legend stays inside its map (PR M6): a short map (Mapa de posiciones at 1440 × 900) has less room above the
+// legend's button than a long legend needs, and the map clips what leaves it, so the panel is capped at that room, this
+// far from the map's top, and scrolls. Below LEGEND_MIN_ROOM_PX of room, or outside a map, it is not capped.
+const LEGEND_TOP_ROOM_PX = 20;
+const LEGEND_MIN_ROOM_PX = 120;
+const MAP_ROOT = '[data-testid="occ-map"]';
+
+function useLegendInsideMap(rootRef, panelRef, active) {
+  useEffect(() => {
+    const root = rootRef.current;
+    const panel = panelRef.current;
+    const map = root?.closest?.(MAP_ROOT) ?? null;
+    if (!active || !panel || map === null) return undefined;
+    const fit = () => {
+      const room = root.getBoundingClientRect().top - map.getBoundingClientRect().top - LEGEND_TOP_ROOM_PX;
+      panel.style.maxHeight = room >= LEGEND_MIN_ROOM_PX ? `${Math.floor(room)}px` : '';
+    };
+    fit();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+    observer?.observe(map);
+    window.addEventListener('resize', fit);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [rootRef, panelRef, active]);
+}
+
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen,
@@ -254,6 +331,8 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
+  const rootRef = useRef(null);
+  const panelRef = useRef(null);
   const { flights, states, chips, signals, tags, marks, airfield } = useMemo(() => (stands === undefined
     ? legendEntries({
       stands: standsOnScreen, flights: flightsOnScreen, chips: chipsOnScreen, marks: standMarksOnScreen, airfield: airfieldOnScreen,
@@ -265,11 +344,14 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
   const word = entry => entry[language] ?? entry.es;
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
     || marks.length > 0 || tags.length > 0;
-  if (!listsOthers && airfield.length === 0) return null;
+  const shown = listsOthers || airfield.length > 0;
+  useLegendInsideMap(rootRef, panelRef, open && shown);
+  if (!shown) return null;
 
   return (
-    <div data-testid="map-legend" className={`relative ${className}`.trim()}>
-      <div id={panelId} hidden={!open} className="absolute bottom-full right-0 mb-2 w-max max-w-xs rounded-md border border-occ-line bg-occ-panel-float p-3">
+    <div ref={rootRef} data-testid="map-legend" className={`relative ${className}`.trim()}>
+      <div ref={panelRef} id={panelId} hidden={!open}
+        className="absolute bottom-full right-0 mb-2 w-max max-w-xs overflow-y-auto overflow-x-hidden rounded-md border border-occ-line bg-occ-panel-float p-3 [scrollbar-color:var(--occ-line-strong)_transparent] [scrollbar-width:thin]">
         <ul aria-label={t('legend.title')} className="grid grid-cols-2 gap-y-1.5 text-sm text-occ-text">
           {traffic.map(entry => (
             <li key={entry.key} data-legend-traffic={entry.key}
@@ -297,7 +379,7 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
           ))}
           {marks.map(mark => (
             <WideEntry key={mark} swatch={<svg {...SWATCH_PROPS} data-swatch={mark}>{MARK_SWATCHES[mark]}</svg>} name={t(MARK_MESSAGES[mark])}
-              hint={MARK_HINTS[mark] ? t(MARK_HINTS[mark]) : null} />
+              hint={MARK_HINTS[mark] ? t(...MARK_HINTS[mark]) : null} />
           ))}
           {tags.map(tag => (
             <li key={tag} className="col-span-2 flex items-center gap-2">

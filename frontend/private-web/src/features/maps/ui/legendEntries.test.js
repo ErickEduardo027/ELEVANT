@@ -55,8 +55,8 @@ describe('legend entries', () => {
     expect(legendEntries({ stands: points, bounds: viewOf('BN6') }).states).toEqual([]);
   });
 
-  it('lists the signals the map draws on the stands on screen, attention before urgent', () => {
-    expect(STAND_SIGNAL_KEYS).toEqual(['attention', 'urgent']);
+  it('lists the signals the map draws on the stands on screen, attention before urgent, then the plain notice', () => {
+    expect(STAND_SIGNAL_KEYS).toEqual(['attention', 'urgent', 'notice']);
     const signalled = [
       { ...byId('A3'), signals: [{ kind: 'urgent', reason: 'conflict' }] },
       { ...byId('A1'), signals: [{ kind: 'attention', reason: 'uncovered' }, { kind: 'attention', reason: 'overdue' }] },
@@ -65,7 +65,14 @@ describe('legend entries', () => {
     expect(legendEntries({ stands: signalled }).signals).toEqual(['attention', 'urgent']);
     expect(legendEntries({ stands: signalled, bounds: around('A3') }).signals).toEqual(['urgent']);
     expect(legendEntries({ stands: STANDS }).signals).toEqual([]);
-    expect(legendEntries({ stands: [{ ...byId('A1'), signals: [{ kind: 'notice' }] }] }).signals).toEqual([]);
+    // The plain notice of PR M6 («Registra la llegada»): a diamond without colour, listed last; a stand that carries a
+    // stronger signal shows that one instead.
+    const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
+    expect(legendEntries({ stands: [{ ...byId('A1'), signals: [notice] }] }).signals).toEqual(['notice']);
+    expect(legendEntries({ stands: [...signalled, { ...byId('A2'), signals: [notice] }] }).signals)
+      .toEqual(['attention', 'urgent', 'notice']);
+    expect(legendEntries({ stands: [{ ...byId('A1'), signals: [{ kind: 'attention', reason: 'uncovered' }, notice] }] }).signals)
+      .toEqual(['attention']);
   });
 
   it('lists one signal per stand, the strongest, as the map draws only that one', () => {
@@ -93,7 +100,12 @@ describe('legend entries', () => {
     expect(legendEntries({ chips: ['A', 'B'] })).toEqual({ ...NOTHING, chips: true });
     expect(legendEntries({ chips: [] }).chips).toBe(false);
     expect(legendEntries({ chips: 'A' }).chips).toBe(false);
-    expect(STAND_MARKS).toEqual(['chipArriving', 'combined', 'narrowbody', 'sameAgent', 'sameAgentHover', 'ghost', 'pending']);
+    expect(STAND_MARKS).toEqual(['chipArriving', 'footprint', 'footprintPlanned', 'progress', 'combined', 'narrowbody',
+      'sameAgent', 'sameAgentHover', 'ghost', 'pending']);
+    // The aircraft of the stands to scale and the progress bar (PR M6), right after the chip's arrow, before the links.
+    expect(legendEntries({ marks: ['combined', 'progress', 'footprintPlanned', 'footprint'] }).marks)
+      .toEqual(['footprint', 'footprintPlanned', 'progress', 'combined']);
+    expect(legendEntries({ marks: ['pending', 'footprintPlanned'] }).marks).toEqual(['footprintPlanned', 'pending']);
     // The arrow over a chip whose terminal has a flight arriving comes first: with the chips no state or signal is
     // listed, so it follows the chip's entry, before the boxes of a stand being placed.
     expect(legendEntries({ chips: ['A', 'B'], marks: ['chipArriving'] })).toEqual({ ...NOTHING, chips: true, marks: ['chipArriving'] });

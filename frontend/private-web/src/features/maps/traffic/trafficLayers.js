@@ -39,6 +39,9 @@ const is = key => ['==', get(key), true];
 const isNot = key => ['!=', get(key), true];
 const AVIAM = ['==', get('kind'), 'aviam'];
 const OTHER = ['==', get('kind'), 'other'];
+// An ELEVANT aircraft parked in the stand that shows it is the stand's (PR M6, design F4: one owner per aircraft): its
+// symbol, ring, tag and plate give way to the stand's footprint or glyph; the chosen aircraft is drawn all the same.
+const NOT_PARKED = isNot('parkedOnStand');
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
 const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
@@ -296,7 +299,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-aviam',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: AVIAM,
+        filter: ['all', AVIAM, NOT_PARKED],
         layout: iconLayout(),
         paint: iconPaint(occColor('text'), 1.5),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:pick': 'flight', 'occ:pickId': 'flightKey' },
@@ -306,7 +309,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-estimated-ring',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('estimated'),
+        filter: ['all', is('estimated'), NOT_PARKED],
         layout: {
           'icon-image': ESTIMATED_RING_IMAGE,
           'icon-size': get('scale'),
@@ -324,7 +327,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-tags',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: AVIAM,
+        filter: ['all', AVIAM, NOT_PARKED],
         layout: tagLayout(12, {
           'text-field': ['case', ['!=', get('tagStand'), ''], aviamTag({ stand: true }), aviamTag({ stand: false })],
           // Always on: where no anchor is free, over what is there.
@@ -339,7 +342,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-demo-plate',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('demo'),
+        filter: ['all', is('demo'), NOT_PARKED],
         layout: {
           'icon-image': DEMO_PLATE_IMAGE,
           'icon-anchor': 'center',

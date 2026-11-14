@@ -113,7 +113,7 @@ describe('map images', () => {
 
   it('every icon keeps 3 px clear of its border for the SDF and its halo', () => {
     // The icons drawn with lines and curves: every point of what they draw (a cut lies inside its shape).
-    for (const id of ['glyph-aircraft', 'glyph-arriving', 'signal-attention', 'signal-urgent', 'aircraft-solid']) {
+    for (const id of ['glyph-aircraft', 'glyph-arriving', 'signal-attention', 'signal-urgent', 'signal-notice', 'aircraft-solid']) {
       const { width, height, ops } = MAP_IMAGE_SHAPES[id];
       for (const op of ops.filter(item => item.clear === undefined)) {
         const scale = op.scale ?? 1;
@@ -184,6 +184,16 @@ describe('map images', () => {
     // Both resolve as SDF icons the layer paints in --occ-warn and --occ-danger.
     const resolve = createImageResolver({ rasterize: centreRasterizer() });
     expect([resolve('signal-attention').sdf, resolve('signal-urgent').sdf]).toEqual([true, true]);
+    // The plain notice (PR M6) is a diamond without colour: its outline alone, centred, with nothing cut out of it; an
+    // SDF too, which the layer paints in the text colour.
+    expect(SIGNALS.notice).toMatchObject({ shape: 'diamond', colorToken: null });
+    const diamond = MAP_IMAGE_SHAPES['signal-notice'];
+    expect(diamond.ops).toHaveLength(1);
+    expect(diamond.ops[0].fill).toBeUndefined();
+    const tips = pointsOf(diamond.ops[0].stroke);
+    expect(tips).toHaveLength(4);
+    for (const [x, y] of tips) expect(Math.abs(x - 10) + Math.abs(y - 10)).toBeCloseTo(6, 9);
+    expect(resolve('signal-notice').sdf).toBe(true);
   });
 
   it('the chip stretches only its flat middle around the text and keeps the text inside its plate', () => {

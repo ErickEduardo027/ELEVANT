@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
-import { STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
+import { SIGNALS, STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
@@ -84,5 +84,31 @@ describe('StandDetailFacts', () => {
     expect(locationOrigin({ latitude: 1, longitude: 2 })).toBe('reference');
     expect(locationOrigin({ locationSource: 'none' })).toBe('none');
     expect(locationOrigin({ latitude: null, longitude: null })).toBe('none');
+  });
+
+  it('says how far the turnaround on the stand has gone and asks to record an arrival nobody recorded (PR M6)', () => {
+    // A9's DM211 on the stand, with three milestones recorded and its aircraft standing in the box: the notice and the
+    // count its progress bar draws.
+    const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
+    const fed = { ...stand('A9'), signals: [notice], display: { ...stand('A9').display, signals: [notice], milestonesDone: 3 } };
+    const { rerender } = render(<StandDetailFacts position={fed} />);
+    expect(within(facts()).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+      STAND_STATES.occupied.es, 'Cubre Ana Ruiz', `${SIGNALS.notice.es}El avión ya está en la posición. Registra la llegada.`,
+      'Hitos registrados: 3 de 25', `${TAGS.unofficial.es}Referencia interna sin verificar`,
+    ]);
+    // The notice with its diamond, named with the vocabulary's word.
+    expect(within(factsOf('signal')[0]).getByRole('img', { hidden: true, name: 'Aviso' })).toBeInTheDocument();
+    // Without its map flights nobody knows the count; a stand without an aircraft on it has no progress either.
+    rerender(<StandDetailFacts position={stand('A9')} />);
+    expect(factsOf('progress')).toEqual([]);
+    rerender(<StandDetailFacts position={{ ...stand('A3'), display: { ...stand('A3').display, milestonesDone: 2 } }} />);
+    expect(factsOf('progress')).toEqual([]);
+    cleanup();
+
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><StandDetailFacts position={fed} /></LanguageScope>);
+    expect(factsOf('progress').map(item => item.textContent)).toEqual(['Milestones recorded: 3 of 25']);
+    expect(factsOf('signal').map(item => item.textContent))
+      .toEqual([`${SIGNALS.notice.en}The aircraft is already on the stand. Record its arrival.`]);
   });
 });

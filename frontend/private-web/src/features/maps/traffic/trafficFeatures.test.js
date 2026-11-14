@@ -295,4 +295,29 @@ describe('traffic features (design E3, contracts 2.4)', () => {
       line({ part: 'next' }, [[-68.6, 18.5], [-68.36, 18.56]]), point({ part: 'mark' }, [Number.NaN, 18.5])] };
     expect(trafficOnScreen([], null, { route: old }).route).toEqual([]);
   });
+
+  it('an ELEVANT aircraft parked in the stand that shows it carries parkedOnStand and leaves the legend to it', () => {
+    const aircraft = aircraftAtNoon();
+    // The arrival and the demo flight, given as parked by the stands (stands/standFeatures.js: parkedAircraftIds); other
+    // traffic is never the stand's, whatever the list says.
+    const parkedIds = new Set([`f:${KEY.arrival}`, `h:${HEX.outsideWindow}`]);
+    const drawn = byId(trafficFeatures(aircraft, { parkedIds }));
+    expect(drawn[`f:${KEY.arrival}`]).toMatchObject({ kind: 'aviam', parkedOnStand: true });
+    expect(drawn[`f:${KEY.demoArrival}`].parkedOnStand).toBe(false);
+    expect(drawn[`h:${HEX.outsideWindow}`].parkedOnStand).toBe(false);
+    // Without the list nothing is parked; anything that is not a Set is no list.
+    expect(Object.values(byId(trafficFeatures(aircraft))).some(properties => properties.parkedOnStand)).toBe(false);
+    expect(byId(trafficFeatures(aircraft, { parkedIds: [`f:${KEY.arrival}`] }))[`f:${KEY.arrival}`].parkedOnStand).toBe(false);
+    // A flight that parks or leaves is one update of that property.
+    const before = featuresById(trafficFeatures(aircraft));
+    expect(trafficDiff(before, trafficFeatures(aircraft, { parkedIds }).features).update).toEqual([
+      { id: `f:${KEY.arrival}`, addOrUpdateProperties: [{ key: 'parkedOnStand', value: true }] },
+    ]);
+    // What its stand shows, the stands' legend explains: the arrival brings no traffic entry of its own then.
+    const final = [[-68.66, 18.45], [-68.42, 18.62]];
+    expect(trafficOnScreen(aircraft, final).kinds).toEqual(['aviamArrival']);
+    expect(trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`]) }).kinds).toEqual(['aviamArrival']);
+    expect(trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`, `f:${KEY.demoArrival}`]) }))
+      .toEqual({ kinds: [], tags: [], trails: [], route: [] });
+  });
 });

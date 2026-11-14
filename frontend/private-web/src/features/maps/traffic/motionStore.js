@@ -314,7 +314,6 @@ export function createMotionStore({
 
   function ingest({ picture = null, flights = null } = {}) {
     if (picture === lastPicture && flights === lastFlights) return;
-    const pictureChanged = picture !== lastPicture;
     lastPicture = picture;
     lastFlights = flights;
     config = trackConfigFor(picture?.refreshAfterSeconds);
@@ -324,11 +323,12 @@ export function createMotionStore({
     const owners = claimFixes({ picture, flights });
     const current = new Set();
 
-    // Every fix of the picture on its aircraft's track, received at the instant the server answered.
+    // Every fix of the picture on its aircraft's track, received at the instant the server answered. Also when only the
+    // flights changed: a picture read before the flights left the fix of an ELEVANT flight on other traffic's track,
+    // and the flight takes it now; a track that has the fix already keeps it as it is (handoff.js: onFix).
     for (const fix of owners.fixes) {
       const { id, flight } = fixIdentity(fix, owners);
       current.add(id);
-      if (!pictureChanged) continue;
       tracks.set(id, reduceTrack(trackOf(id, flight ? 'aviam' : 'other'), {
         type: 'fix', fix, atMs: finite(picture?.serverTime) ? picture.serverTime : fix.positionAt,
       }, config));
