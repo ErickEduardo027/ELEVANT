@@ -132,16 +132,32 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     createAircraft3dLayer({ three, originLngLat: ARP, getInstances: () => null }).onAdd(map, gl);
     expect(built).toEqual([{ canvas: map.canvas, context: gl, antialias: true }]);
 
-    // A renderer that cannot be built warns once, in English, and leaves the map in 2D.
+    // A renderer that cannot be built warns once, in English, and reports the layer failed, so that the map shows its
+    // 2D aircraft again; each onAdd tries again.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const refusing = vi.fn(() => {
+      throw new Error('no WebGL2');
+    });
+    const onFailedChange = vi.fn();
     const failing = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, getInstances: () => null,
-      createRenderer: () => { throw new Error('no WebGL2'); } });
+      createRenderer: refusing, onFailedChange });
+    // Not on a map yet, it has not failed.
+    expect(failing.stats().failed).toBe(false);
     failing.onAdd(map, gl);
+    expect(failing.stats()).toMatchObject({ failed: true, lost: false });
+    expect(onFailedChange.mock.calls).toEqual([[true]]);
     failing.onAdd(map, gl);
     failing.render(gl, viewOf().input);
+    expect(refusing).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toBe('The 3D aircraft could not be drawn; the map keeps its 2D aircraft.');
+    expect(onFailedChange).toHaveBeenCalledTimes(1);
+    expect(failing.stats().failed).toBe(true);
     expect(failing.pick({ x: 1, y: 1 })).toBeNull();
+    // Off the map it has not failed: whether the map draws in 2D is again the map's choice.
+    failing.onRemove(map, gl);
+    expect(failing.stats().failed).toBe(false);
+    expect(onFailedChange.mock.calls).toEqual([[true], [false]]);
 
     // What the layer cannot work without.
     expect(() => createAircraft3dLayer({ originLngLat: ARP, getInstances: () => null })).toThrow(TypeError);
@@ -244,7 +260,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(meshesOf(scene)).toHaveLength(2);
 
     const triangles = triangleCount(grown.geometry) * 6 + triangleCount(b738.geometry) * 2;
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 8, triangles, drawCalls: 2, lost: false });
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 8, triangles, drawCalls: 2, lost: false, failed: false });
   });
 
   it('disposes a mesh unused for 5 minutes together with its geometry', () => {
@@ -467,6 +483,75 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(made[3].calls).toContain('render');
   });
 
+  it('a context that comes back refusing a renderer reports the layer failed until a renderer is built again', () => {
+    const { createRenderer: build, made } = fakeRenderers();
+    let refuse = false;
+    const createRenderer = vi.fn(options => {
+      if (refuse) throw new Error('context rejected');
+      return build(options);
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onFailedChange = vi.fn();
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, onFailedChange,
+      getInstances: () => ({ revision: 1, plan: planOf(GROUND) }) });
+    const map = fakeMap();
+    const gl = fakeContext('gl');
+    const view = viewOf();
+    const [x, y] = localOf(GROUND[0]);
+    const onAircraft = view.toPixel([x, y, 3.5]);
+    layer.onAdd(map, gl);
+    layer.render(gl, view.input);
+    expect(layer.pick(onAircraft)).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+
+    // Lost: nothing draws then, 2D included, so the layer has not failed.
+    map._fire('webglcontextlost');
+    expect(layer.stats()).toMatchObject({ lost: true, failed: false });
+    expect(onFailedChange).not.toHaveBeenCalled();
+
+    // Back, but three cannot build its renderer on it: the layer draws and picks nothing (the map picks in 2D) and says
+    // so once, so that the map shows its 2D aircraft again.
+    refuse = true;
+    map._fire('webglcontextrestored');
+    expect(createRenderer).toHaveBeenCalledTimes(2);
+    expect(made[0].disposed).toBe(true);
+    expect(layer.stats()).toMatchObject({ lost: false, failed: true });
+    expect(onFailedChange.mock.calls).toEqual([[true]]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    layer.render(gl, view.input);
+    expect(made[0].calls.filter(call => call === 'render')).toHaveLength(1);
+    expect(layer.pick(onAircraft)).toBeNull();
+
+    // Added again on a context three accepts, it draws and picks again, and says so.
+    refuse = false;
+    layer.onAdd(map, gl);
+    expect(createRenderer).toHaveBeenCalledTimes(3);
+    expect(layer.stats().failed).toBe(false);
+    expect(onFailedChange.mock.calls).toEqual([[true], [false]]);
+    layer.render(gl, view.input);
+    expect(made[1].calls).toContain('render');
+    expect(layer.pick(onAircraft)).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+
+    // Failed on the next restore, then lost again: while nothing draws it has not failed, and the restore after that
+    // tries again.
+    refuse = true;
+    map._fire('webglcontextlost');
+    map._fire('webglcontextrestored');
+    expect(layer.stats().failed).toBe(true);
+    expect(onFailedChange.mock.calls).toEqual([[true], [false], [true]]);
+    map._fire('webglcontextlost');
+    expect(layer.stats()).toMatchObject({ lost: true, failed: false });
+    expect(onFailedChange.mock.calls).toEqual([[true], [false], [true], [false]]);
+    refuse = false;
+    map._fire('webglcontextrestored');
+    expect(createRenderer).toHaveBeenCalledTimes(5);
+    expect(layer.stats().failed).toBe(false);
+    expect(onFailedChange).toHaveBeenCalledTimes(4);
+    layer.render(gl, view.input);
+    expect(made[2].calls).toContain('render');
+    // One warning on the page's console, however often it fails.
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it('added again after a restore, it binds to the new context without a second set of listeners', () => {
     const { createRenderer, made } = fakeRenderers();
     const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer,
@@ -543,7 +628,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(map.off.mock.calls.map(([type]) => type)).toEqual(['webglcontextlost', 'webglcontextrestored']);
     expect(map.listenerCount('webglcontextlost') + map.listenerCount('webglcontextrestored')).toBe(0);
     expect(scene.children).toHaveLength(0);
-    expect(layer.stats()).toEqual({ meshes: 0, instances: 0, triangles: 0, drawCalls: 0, lost: false });
+    expect(layer.stats()).toEqual({ meshes: 0, instances: 0, triangles: 0, drawCalls: 0, lost: false, failed: false });
     // Removed, it draws, picks and rebuilds nothing.
     layer.render(gl, view.input);
     expect(made[0].calls.filter(call => call === 'render')).toHaveLength(1);
@@ -575,7 +660,8 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     const b738 = meshOf(scene, 'B738');
     const triangles = triangleCount(a320.geometry) + triangleCount(b738.geometry);
     // Two aircraft, two shadows, one drop line: three draw calls.
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 4, triangles: 2 * triangles, drawCalls: 3, lost: false });
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 4, triangles: 2 * triangles, drawCalls: 3, lost: false,
+      failed: false });
 
     expect(layer.setQuality({ shadows: false, dropLines: false })).toEqual({ shadows: false, dropLines: false });
     expect(map.triggerRepaint).toHaveBeenCalledTimes(1);
@@ -583,7 +669,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(made[0].calls.filter(call => call === 'render')).toHaveLength(2);
     expect([a320.count, b738.count]).toEqual([1, 1]);
     expect(lines.visible).toBe(false);
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 2, triangles, drawCalls: 2, lost: false });
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 2, triangles, drawCalls: 2, lost: false, failed: false });
     // The aircraft are still there to pick.
     const [x, y] = localOf(GROUND[0]);
     expect(layer.pick(view.toPixel([x, y, 3.5]))).toEqual({ kind: 'aircraft', id: 'f:p:a' });

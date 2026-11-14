@@ -22,6 +22,9 @@ import { linearRgb, mercatorFrame } from './instancePlan';
 //   without onRemove: the layer then stops drawing on `webglcontextlost` and builds a new renderer on the map's context
 //   on `webglcontextrestored`; its geometries and materials are plain objects the new renderer uploads again. Added
 //   again on another context or map, it moves its renderer there.
+// - Failure: when three cannot build its renderer on the map's context (in onAdd or on a restored context), the layer
+//   warns once, draws and picks nothing and reports itself failed (stats().failed and onFailedChange), so that the map
+//   shows its 2D aircraft again (design G4: if 3D fails, 2D); the next onAdd or restored context tries again.
 //
 // `three` is a parameter (aircraft/aircraft3dChunk.js: THREE_PARTS), so this module imports neither three nor
 // maplibre-gl. It names three's renderer, so only the 3D chunk may import it (scripts/verify-map-chunks.mjs).
@@ -155,18 +158,22 @@ function sameSun(a, b) {
  * - `getInstances()` → `{ revision, plan }`, the plan of instancePlan.js: its matrices are copied when `revision`
  *   changes (compared with Object.is), never otherwise;
  * - `getSun()` → `{ azimuthDeg, elevationDeg }` at the ARP, or null; `palette`: the OCC palette;
+ * - `onFailedChange(failed)` hears every change of `stats().failed`, after the lifecycle call that made it, so that a
+ *   map that hides its 2D aircraft under the 3D ones shows them again while the layer has failed;
  * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)` and `now()` (milliseconds, monotonic) are
  *   for tests.
  *
  * `pick({ x, y })` (CSS pixels from the canvas's top-left corner) answers `{ kind: 'aircraft', id }` with the plan's id
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
- * first frame and while the context is lost: the map then picks in 2D. `setQuality({ shadows, dropLines })` lets the
- * frame loop's governor lighten the scene without switching it off. `stats()` → `{ meshes, instances, triangles,
- * drawCalls, lost }`: the meshes held, the instances and triangles drawn, the draw calls of the scene and whether the
- * context is lost.
+ * first frame, while the context is lost and while the layer has failed: the map then picks in 2D.
+ * `setQuality({ shadows, dropLines })` lets the frame loop's governor lighten the scene without switching it off.
+ * `stats()` → `{ meshes, instances, triangles, drawCalls, lost, failed }`: the meshes held, the instances and triangles
+ * drawn, the draw calls of the scene, whether the context is lost and whether the layer has failed. It has failed while
+ * it is on a map whose context works and three could not build its renderer on that context, so it draws nothing; it
+ * has not failed before onAdd, after onRemove or while the context is lost, when nothing draws, 2D included.
  */
 export function createAircraft3dLayer({
-  three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null,
+  three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null, onFailedChange,
   createRenderer = ({ canvas, context }) => new three.WebGLRenderer({ canvas, context, antialias: true }),
   buildGeometry = buildAircraftGeometry, now = () => performance.now(),
 } = {}) {
@@ -203,6 +210,7 @@ export function createAircraft3dLayer({
   let revision;
   let appliedSun;
   let warned = false;
+  let failed = false;
 
   function buildScene() {
     scene = new three.Scene();
@@ -372,9 +380,19 @@ export function createAircraft3dLayer({
     rebuild = renderer === null;
   }
 
+  // On a map whose context works but without a renderer, the layer draws and picks nothing. It reports every change of
+  // that state, last in each lifecycle call, so that the map shows its 2D aircraft again while the layer has failed.
+  function reportFailed() {
+    const next = !removed && !lost && renderer === null;
+    if (next === failed) return;
+    failed = next;
+    onFailedChange?.(failed);
+  }
+
   function onContextLost() {
     lost = true;
     rebuild = true;
+    reportFailed();
   }
 
   function onContextRestored() {
@@ -382,6 +400,7 @@ export function createAircraft3dLayer({
     if (removed || map === null) return;
     if (rebuild) replaceRenderer(context);
     map.triggerRepaint();
+    reportFailed();
   }
 
   function listenTo(nextMap) {
@@ -413,6 +432,7 @@ export function createAircraft3dLayer({
       // MapLibre adds a layer only with a working painter: a context it adds the layer on again is a working one.
       lost = false;
       if (renderer === null || rebuild || moved || nextContext !== context) replaceRenderer(nextContext);
+      reportFailed();
     },
 
     render(frameContext, options) {
@@ -464,10 +484,11 @@ export function createAircraft3dLayer({
       map = null;
       context = null;
       rebuild = false;
+      reportFailed();
     },
 
     pick(point) {
-      if (removed || lost || !drawn || map === null) return null;
+      if (removed || lost || renderer === null || !drawn || map === null) return null;
       const x = Array.isArray(point) ? point[0] : point?.x;
       const y = Array.isArray(point) ? point[1] : point?.y;
       const canvas = map.getCanvas();
@@ -507,7 +528,7 @@ export function createAircraft3dLayer({
         if (held.mesh.count > 0) drawCalls += 1;
       }
       if (lines !== null && lines.visible && lines.geometry.drawRange.count > 0) drawCalls += 1;
-      return { meshes: meshes.size, instances, triangles, drawCalls, lost };
+      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed };
     },
   };
 }
