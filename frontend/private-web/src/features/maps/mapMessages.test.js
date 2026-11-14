@@ -1,3 +1,4 @@
+import { OCC_AIR_PICTURE_REASONS } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { OCC_SHORTCUTS } from '../occ-ui/occShortcuts';
@@ -60,6 +61,34 @@ describe('map messages', () => {
     for (const { action, es, en } of OCC_SHORTCUTS.filter(row => row.action.startsWith('view.'))) {
       expect(texts, action).not.toContain(es);
       expect(texts, action).not.toContain(en);
+    }
+  });
+
+  it('names the traffic of the legend, the words of a tag and the states of the air traffic in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect(['aviamArrival', 'aviamDeparture', 'other', 'otherGround', 'trail', 'trailEstimated']
+      .map(key => es(`legend.traffic.${key}`))).toEqual(['Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale',
+      'Otro tráfico', 'Otro tráfico en tierra', 'Estela', 'Estela estimada']);
+    expect(en('legend.traffic.aviamDeparture')).toBe('AVIAM departure');
+    // The tag: GND on the ground and the age of a stale position.
+    expect([es('traffic.ground'), es('traffic.ageSeconds', { count: 45 }), es('traffic.ageMinutes', { count: 4 })])
+      .toEqual(['GND', '· 45 s', '· 4 min']);
+    // The chips over the map, word for word, and a reason for every one the air picture may give.
+    expect([es('source.loading'), es('source.empty'), es('source.unavailable'), es('source.retry'), es('source.forbidden')])
+      .toEqual(['Cargando tráfico…', 'No hay aviones en la zona', 'No hay tráfico en vivo en este momento.', 'Reintentar',
+        'Tu acceso no incluye el tráfico en vivo.']);
+    expect(es('source.delayed', { age: es('source.ageMinutes', { count: 4 }) }))
+      .toBe('Tráfico con retraso: último dato hace 4 min.');
+    expect(en('source.delayed', { age: en('source.ageSeconds', { count: 45 }) })).toBe('Traffic delayed: last data 45 s ago.');
+    for (const reason of OCC_AIR_PICTURE_REASONS) {
+      expect(es(`source.reason.${reason}`), reason).toMatch(/^La fuente de tráfico .+\.$/);
+      expect(en(`source.reason.${reason}`), reason).toMatch(/^The traffic source .+\.$/);
+    }
+    // The words the server writes never reach the screen: no reason names the provider or repeats a code.
+    for (const language of ['es', 'en']) {
+      const texts = OCC_AIR_PICTURE_REASONS.map(reason => createTranslator(mapMessages, language)(`source.reason.${reason}`));
+      expect(texts.join(' '), language).not.toMatch(/_|adsb|provider_error|rate_limited/i);
     }
   });
 });

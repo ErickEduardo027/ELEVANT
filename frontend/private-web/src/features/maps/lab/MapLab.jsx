@@ -11,9 +11,11 @@ import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
 import MapDock from '../ui/MapDock';
 import MapLegend from '../ui/MapLegend';
 import MapPresetSwitcher from '../ui/MapPresetSwitcher';
+import MapSourceStatus from '../ui/MapSourceStatus';
 import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
 import LayoutQaScene from './LayoutQaScene';
 import { SCENES, readLabQuery } from './scenes';
+import { labTraffic } from './trafficScenes';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
 // the API, for the visual suite (tests/visual) and for a person checking the map by eye. The URL says what to show:
@@ -22,6 +24,8 @@ import { SCENES, readLabQuery } from './scenes';
 // `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code of the scene), flyToPreset,
 // whenIdle, liveMaps (the live engines: one after a StrictMode double mount) and refresh (the «Releer posiciones»
 // button). The review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
+// A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), and the handle adds
+// aircraftAt(id), where the map draws one of its aircraft.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -73,6 +77,8 @@ function LabScene({ scene, basemap, frozenAt }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
+  // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built once at the frozen clock: the lab never polls.
+  const [traffic] = useState(() => (scene.traffic ? labTraffic(scene.traffic, { nowMs: frozenAt }) : null));
   const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
 
   useFrozenMapClock(frozenAt);
@@ -114,12 +120,17 @@ function LabScene({ scene, basemap, frozenAt }) {
       whenIdle: () => mapRef.current?.whenIdle() ?? Promise.resolve(false),
       liveMaps: liveEngineCount,
       refresh: reread,
+      // Where the scene's traffic draws an aircraft (`f:<flightKey>` or `h:<hex>`), as `[lng, lat]`, or null.
+      aircraftAt: id => {
+        const item = traffic?.map.aircraft.find(entry => entry.id === id && !entry.hiddenInStand);
+        return item ? [item.lon, item.lat] : null;
+      },
     };
     window.__occMapLab = lab;
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, reread]);
+  }, [scene.id, scene.stands, reread, traffic]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
@@ -158,7 +169,9 @@ function LabScene({ scene, basemap, frozenAt }) {
           onSelect={select}
           basemap={basemap !== 'none'}
           mapOptions={mapOptions}
+          traffic={traffic?.map}
         >
+          {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           <MapDock>
             <MapPresetSwitcher />
             <MapLegend />

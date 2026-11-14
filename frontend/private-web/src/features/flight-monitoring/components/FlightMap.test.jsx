@@ -9,9 +9,25 @@ import { PUJ_ARP, presetTargets } from '../../maps/core/cameraPresets';
 import { liveEngineCount } from '../../maps/core/mapEngine';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { OPENFREEMAP_TILEJSON } from '../../maps/style/occStyle';
+import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../../access/testAccess';
+import { OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
+import {
+  createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_STATION_ID,
+} from '../../maps/testing/trafficFixtures';
 import FlightMap from './FlightMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+// Inside the OCC shell the map reads the station of the session and the map service; both are synthetic here: the
+// session holds the station of the traffic fixtures, and the service answers their scenario without the network.
+vi.mock('../../auth/AuthContext', () => ({
+  useAuth: () => ({ session: { stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] } }),
+}));
+vi.mock('../../../services/occMapService', async () => {
+  const actual = await vi.importActual('../../../services/occMapService');
+  const { createTrafficScenario } = await import('../../maps/testing/trafficFixtures');
+  return { ...actual, occMapService: actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() }) };
+});
 
 const fake = sharedFakeMapLibre();
 const PAGE = '/admin-occ/flight-monitoring?stationId=s-1';
@@ -278,5 +294,99 @@ describe('FlightMap', () => {
     unmount();
     expect(fake.state.liveMaps()).toEqual([]);
     expect(liveEngineCount()).toBe(before);
+  });
+});
+describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
+  const ACCESS = administratorAccess('operations', DepartmentPermissionCodes.operations);
+  // The page's flights of the visit ZZ161 (ids are leg ids, as the planning snapshot gives them), and one more.
+  const [arrivalRow, departureRow] = createMapFlights().flights;
+  const pageFlight = (row, extra = {}) => ({ id: row.legId, flightNumber: row.flightNumber, latitude: null, longitude: null,
+    heading: null, ...extra });
+  const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  function renderLive(props = {}) {
+    const element = next => (
+      <DepartmentAccessProvider initialAccess={ACCESS} load={vi.fn().mockResolvedValue(ACCESS)} observe={false}>
+        <OccShellTestProvider>
+          <FlightMap flights={[pageFlight(arrivalRow), pageFlight(departureRow)]} selectedFlightId={null}
+            onSelectFlight={() => {}} theme="dark" {...next} />
+        </OccShellTestProvider>
+      </DepartmentAccessProvider>
+    );
+    const view = render(element(props));
+    return { ...view, map: fake.state.liveMaps().at(-1), rerender: next => view.rerender(element({ ...props, ...next })) };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(Date.parse(TRAFFIC_NOON));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('draws the live traffic of the station, says nothing more while all is well and credits its source', async () => {
+    const { map } = renderLive();
+    expect(map.options.style.sources['occ-traffic']).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    loadStyle(map);
+    await flush();
+    const drawn = map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id));
+    expect(drawn).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(drawn).toContain(`h:${TRAFFIC_HEX.overflight}`);
+    // The credit of the aircraft data, as a link over the map and in its attribution; no chip while the picture is Live.
+    const status = screen.getByTestId('map-source-status');
+    expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toHaveAttribute('href', 'https://example.org/adsb');
+    expect(within(status).queryByRole('status')).not.toBeInTheDocument();
+    const attribution = map.controls.find(entry => entry.control instanceof fake.module.AttributionControl).control;
+    expect(attribution.options.customAttribution).toContain('Datos de aeronaves');
+    // The legend explains the traffic on screen.
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
+  });
+
+  it('draws a flight the traffic shows once, as traffic, and selects the page\'s flight from its aircraft', async () => {
+    const onSelectFlight = vi.fn();
+    // ZZ161 has a position of its own on the page, but the traffic already draws its aircraft: it is not drawn twice.
+    const { map } = renderLive({ onSelectFlight,
+      flights: [pageFlight(arrivalRow, { latitude: 18.9, longitude: -68.6, heading: 90 }), pageFlight(departureRow, { latitude: 19, longitude: -68.5 })] });
+    loadStyle(map);
+    await flush();
+    expect(map.getSource('occ-flights').data.features.map(feature => feature.properties.id)).toEqual([departureRow.legId]);
+
+    // A click on the ELEVANT aircraft selects the page's flight by its leg.
+    const click = feature => {
+      fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes(feature.layer.id) ? [feature] : []));
+      return act(async () => { fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat: { lng: -68.5, lat: 18.5 } }); });
+    };
+    await click({ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, flightKey: TRAFFIC_FLIGHT_KEY.arrival } });
+    expect(onSelectFlight).toHaveBeenLastCalledWith(arrivalRow.legId);
+    // The demo arrival has no row on the page: it is selected by its key.
+    await click({ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`, flightKey: TRAFFIC_FLIGHT_KEY.demoArrival } });
+    expect(onSelectFlight).toHaveBeenLastCalledWith(TRAFFIC_FLIGHT_KEY.demoArrival);
+    // Other traffic is selected by its address in the URL, and the page's flight is let go.
+    await click({ layer: { id: 'occ-traffic-other' }, properties: { id: `h:${TRAFFIC_HEX.overflight}`, hex: TRAFFIC_HEX.overflight } });
+    expect(onSelectFlight).toHaveBeenLastCalledWith(null);
+    expect(new URLSearchParams(window.location.search).get('hex')).toBe(TRAFFIC_HEX.overflight);
+    expect(new URLSearchParams(window.location.search).get('stationId')).toBe('s-1');
+  });
+
+  it('shows the chosen flight drawn by the traffic in cyan, by the page\'s leg id', async () => {
+    const { map, rerender } = renderLive();
+    loadStyle(map);
+    await flush();
+    rerender({ selectedFlightId: arrivalRow.legId });
+    await flush();
+    const last = map.getSource('occ-traffic').updateDataCalls.at(-1);
+    expect(last.update).toEqual(expect.arrayContaining([{ id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, addOrUpdateProperties:
+      expect.arrayContaining([{ key: 'selected', value: true }]) }]));
+  });
+
+  it('is the plain map outside the OCC shell, without live traffic', () => {
+    const { map } = renderFlights({ flights: [flight({ id: 1 })] });
+    expect(map.options.style.sources['occ-traffic']).toBeUndefined();
+    expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
+    expect(TRAFFIC_STATION_ID).toBe('5a000000-0000-4000-8000-000000000001');
   });
 });

@@ -13,6 +13,11 @@ import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { AIRFIELD_LAYER_IDS } from '../style/airfieldLayers';
 import { referenceFeatures } from '../style/referenceLayers';
 import { createMapStands, standPoint } from '../testing/mapFixtures';
+import {
+  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_SOURCE,
+} from '../testing/trafficFixtures';
+import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
+import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 import MapLegend from '../ui/MapLegend';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
 import { boundsCenter, presetTargets } from './cameraPresets';
@@ -1098,5 +1103,186 @@ describe('OccMap', () => {
     // The root of the component is the scope of the stylesheet.
     renderMap();
     expect(screen.getByTestId('occ-map')).toHaveClass('occ-map');
+  });
+});
+// The traffic of PR M5 at the lab's noon: the synthetic air picture and map flights, the demo arrival estimated on
+// final, and the trails the picture's short trails draw.
+function noonTraffic({ change = () => null, source = TRAFFIC_SOURCE } = {}) {
+  const base = createAirPicture();
+  const picture = toPictureModel({ ...base, aircraft: base.aircraft.map(item => change(item) ?? item) });
+  const situation = buildSituation({ picture, flights: toFlightsModel(createMapFlights()), nowMs: Date.parse(TRAFFIC_NOON),
+    estimates: createEstimates() });
+  const trails = createTrailStore();
+  trails.ingestPicture(picture);
+  const aviamHexes = new Set(situation.aircraft.filter(item => item.kind === 'aviam' && item.hex).map(item => item.hex));
+  return { aircraft: situation.aircraft, trails: trailFeatures(trails.getSnapshot(), { aviamHexes, nowMs: picture.serverTime }),
+    route: null, source };
+}
+
+function TrafficProbe() {
+  const { trafficOnScreen, trafficSource } = useOccMap();
+  return <pre data-testid="traffic-probe">{JSON.stringify({ trafficOnScreen, trafficSource })}</pre>;
+}
+const trafficProbe = () => JSON.parse(screen.getByTestId('traffic-probe').textContent);
+const attributionOf = map => map.controls.find(entry => entry.control instanceof fake.module.AttributionControl)
+  ?.control.options.customAttribution;
+// Far from PUJ and from every aircraft of the picture.
+const NOWHERE = { center: [-72.4, 22.4], zoom: 11 };
+
+describe('OccMap traffic (PR M5)', () => {
+  it('draws the traffic with one updateData per read and never re-creates the map', () => {
+    const traffic = noonTraffic();
+    const view = render(<OccMap defaultView="region" traffic={traffic}><TrafficProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    const { style } = map.options;
+    expect(style.sources['occ-traffic']).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    expect(style.sources['occ-trails']).toMatchObject({ type: 'geojson', lineMetrics: true });
+    expect(style.sources['occ-route']).toMatchObject({ type: 'geojson' });
+    loadStyle(map);
+    // Its layers in the traffic slot, above the stands' labels, and the chosen aircraft in the selection slot.
+    const ids = map.layerIds();
+    expect(ids.indexOf('occ-traffic-aviam')).toBeGreaterThan(ids.indexOf('slot-traffic'));
+    expect(ids.indexOf('occ-traffic-selected')).toBeGreaterThan(ids.indexOf('slot-selection'));
+    const source = map.getSource('occ-traffic');
+    expect(source.updateDataCalls).toHaveLength(1);
+    const [first] = source.updateDataCalls;
+    // Every aircraft drawn, the one inside the stand ZZ300 holds left out.
+    expect(first.add.map(feature => feature.properties.id).sort()).toEqual([
+      `f:${TRAFFIC_FLIGHT_KEY.arrival}`, `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`, `h:${TRAFFIC_HEX.overflight}`,
+      `h:${TRAFFIC_HEX.groundOnFreeStand}`, `h:${TRAFFIC_HEX.outsideWindow}`, `h:${TRAFFIC_HEX.stale}`,
+    ].sort());
+    expect([first.update, first.remove]).toEqual([[], []]);
+    expect(source.setDataCalls).toEqual([]);
+    expect(map.getSource('occ-trails').setDataCalls).toHaveLength(1);
+
+    // The same picture read again in new objects writes nothing; a moved aircraft is one update of its own.
+    view.rerender(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
+    expect(source.updateDataCalls).toHaveLength(1);
+    const moved = noonTraffic({ change: item => (item.hex === TRAFFIC_HEX.overflight
+      ? { ...item, latitude: item.latitude + 0.05 } : null) });
+    view.rerender(<OccMap defaultView="region" traffic={moved}><TrafficProbe /></OccMap>);
+    expect(source.updateDataCalls).toHaveLength(2);
+    expect(source.updateDataCalls[1]).toMatchObject({ add: [], remove: [],
+      update: [{ id: `h:${TRAFFIC_HEX.overflight}`, newGeometry: { type: 'Point' } }] });
+
+    // A selection is a change of properties: the chosen aircraft grows and takes its tag.
+    view.rerender(<OccMap defaultView="region" traffic={moved} selection={{ kind: 'aircraft', id: TRAFFIC_HEX.stale }}>
+      <TrafficProbe /></OccMap>);
+    expect(source.updateDataCalls).toHaveLength(3);
+    expect(source.updateDataCalls[2].update).toEqual([{ id: `h:${TRAFFIC_HEX.stale}`, addOrUpdateProperties: expect.arrayContaining([
+      { key: 'selected', value: true }, { key: 'scale', value: 1.4 }, { key: 'forceTag', value: true },
+    ]) }]);
+    // One map for its whole life, and never a new style.
+    expect(fake.state.maps).toEqual([map]);
+    expect(map.calls.filter(call => call.method === 'setStyle')).toEqual([]);
+
+    // The aircraft of other traffic under the pointer shows its tag, once per frame and once per change.
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const hovered = { layer: { id: 'occ-traffic-other' }, properties: { id: `h:${TRAFFIC_HEX.outsideWindow}`, hex: TRAFFIC_HEX.outsideWindow } };
+    fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes('occ-traffic-other') ? [hovered] : []));
+    fake.state.emit(map, 'mousemove', { point: { x: 10, y: 10 }, lngLat: { lng: -68.4, lat: 18.2 } });
+    act(() => frames.shift()(0));
+    expect(source.updateDataCalls).toHaveLength(4);
+    expect(source.updateDataCalls[3].update).toEqual([{ id: `h:${TRAFFIC_HEX.outsideWindow}`,
+      addOrUpdateProperties: [{ key: 'forceTag', value: true }, { key: 'showTag', value: true }] }]);
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    fake.state.emit(map, 'mousemove', { point: { x: 11, y: 10 }, lngLat: { lng: -68.4, lat: 18.2 } });
+    act(() => frames.shift()(16));
+    expect(source.updateDataCalls).toHaveLength(4);
+    fake.state.emit(map, 'mouseout');
+    act(() => frames.shift()(32));
+    expect(source.updateDataCalls).toHaveLength(5);
+    expect(source.updateDataCalls[4].update[0].addOrUpdateProperties).toEqual([{ key: 'forceTag', value: false },
+      { key: 'showTag', value: false }]);
+    view.unmount();
+
+    // A map that starts without traffic has no traffic layers, and traffic given later draws nothing.
+    const plain = render(<OccMap defaultView="region" />);
+    const without = fake.state.liveMaps().at(-1);
+    loadStyle(without);
+    plain.rerender(<OccMap defaultView="region" traffic={traffic} />);
+    expect(without.options.style.sources['occ-traffic']).toBeUndefined();
+    expect(without.calls.filter(call => call.method === 'updateData')).toEqual([]);
+  });
+
+  it('selects an ELEVANT flight by its key and other traffic by its address, and centres a flight it draws', async () => {
+    const onSelect = vi.fn();
+    const ref = createRef();
+    const traffic = noonTraffic();
+    render(<OccMap ref={ref} defaultView="region" traffic={traffic} onSelect={onSelect} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const click = features => {
+      fake.state.setRenderedFeatures(map, (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
+      return act(async () => fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat: { lng: -68.5, lat: 18.5 } }));
+    };
+    await click([{ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, flightKey: TRAFFIC_FLIGHT_KEY.arrival } }]);
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
+    await click([{ layer: { id: 'occ-traffic-other' }, properties: { id: `h:${TRAFFIC_HEX.overflight}`, hex: TRAFFIC_HEX.overflight } }]);
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: 'aircraft', id: TRAFFIC_HEX.overflight });
+
+    // flyToFlight finds a flight the traffic draws by any of its ids, keeping the zoom.
+    const zoom = map.getZoom();
+    const arrival = traffic.aircraft.find(item => item.flightKey === TRAFFIC_FLIGHT_KEY.arrival);
+    act(() => { expect(ref.current.flyToFlight(arrival.legId)).toBe(true); });
+    expect(map.getCenter().toArray()).toEqual([arrival.lon, arrival.lat]);
+    expect(map.getZoom()).toBeCloseTo(zoom, 9);
+    act(() => { expect(ref.current.flyToFlight(TRAFFIC_FLIGHT_KEY.noFix)).toBe(false); });
+  });
+
+  it('adds the aircraft credit while traffic is on screen and drops it when none is', () => {
+    const { rerender } = render(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    // The map starts with the fixed credit only, and credits the source once it knows traffic is on screen.
+    const created = map.calls.find(call => call.method === 'addControl' && call.args[0] instanceof fake.module.AttributionControl);
+    expect(created.args[0].options.customAttribution).not.toMatch(/Datos de aeronaves/);
+    loadStyle(map);
+    // The region view holds the traffic: «Datos de aeronaves» links the source and names its licence.
+    expect(attributionOf(map)).toContain('Datos de aeronaves: <a href="https://example.org/adsb" target="_blank" '
+      + 'rel="noopener noreferrer">Red ADS-B de prueba</a> (Datos sintéticos)');
+    expect(trafficProbe().trafficSource).toEqual(TRAFFIC_SOURCE);
+    // Away from every aircraft the credit goes, and comes back with them.
+    act(() => map.jumpTo(NOWHERE));
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
+    expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
+    expect(trafficProbe().trafficSource).toBeNull();
+    act(() => map.jumpTo({ center: [-68.36, 18.56], zoom: 7 }));
+    expect(attributionOf(map)).toContain('Datos de aeronaves');
+    // A credit is written once: re-reads of the same source write nothing.
+    const writes = map.calls.filter(call => call.method === 'removeControl').length;
+    rerender(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
+    expect(map.calls.filter(call => call.method === 'removeControl')).toHaveLength(writes);
+    // Without a source (the provider is off) there is nothing to credit.
+    rerender(<OccMap defaultView="region" traffic={noonTraffic({ source: null })}><TrafficProbe /></OccMap>);
+    expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
+    cleanup();
+
+    // In English the credit speaks English.
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><OccMap defaultView="region" traffic={noonTraffic()} /></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    loadStyle(english);
+    expect(attributionOf(english)).toContain('Aircraft data: <a href="https://example.org/adsb"');
+  });
+
+  it('the legend lists the aircraft kinds, tags and trails on screen', () => {
+    render(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /><MapLegend /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    // The region view: the arrival and the demo on final, other traffic in the air (on the ground only from the
+    // airfield threshold up), the demo's plate, its estimated ring, a stale position, and the arrival's trail.
+    expect(trafficProbe().trafficOnScreen).toEqual({ kinds: ['aviamArrival', 'other'], tags: ['demo', 'estimated', 'stale'],
+      trails: ['live'] });
+    const items = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
+      .map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
+    expect(items()).toEqual(['aviamArrival', 'other', 'demo', 'estimated', 'stale', 'trail']);
+    // Close over the ramp the aircraft on the free stand A3 is drawn, small, and listed.
+    act(() => map.jumpTo({ center: standPoint('A3'), zoom: 17 }));
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual(['otherGround']);
+    expect(items()).toEqual(['otherGround']);
+    // Nothing of the traffic on screen: no traffic in the legend.
+    act(() => map.jumpTo(NOWHERE));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
   });
 });

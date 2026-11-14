@@ -187,6 +187,29 @@ describe('MapLab', () => {
     expect(window.__occMapLab.qaFlagged().length).toBeGreaterThan(0);
   });
 
+  it('draws the synthetic traffic of a traffic scene once, with its credit and its state, and exposes where it is', () => {
+    const { map } = open(`?scene=approach-traffic-estimated-stale&t=${NOON}`);
+    expect(map.options.style.sources['occ-traffic']).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    expect(source.updateDataCalls).toHaveLength(1);
+    expect(source.updateDataCalls[0].add.length).toBeGreaterThan(3);
+    // The picture is four minutes late: the chip says so, and the credit of its (invented) source is a link.
+    const status = screen.getByTestId('map-source-status');
+    expect(within(status).getByRole('status')).toHaveTextContent('Tráfico con retraso: último dato hace 4 min.');
+    expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toHaveAttribute('href', 'https://example.org/adsb');
+    // The handle answers where an aircraft is drawn, and nothing for one the map does not draw.
+    const [first] = source.updateDataCalls[0].add;
+    expect(window.__occMapLab.aircraftAt(first.properties.id)).toEqual(first.geometry.coordinates);
+    expect(window.__occMapLab.aircraftAt('h:000000')).toBeNull();
+    cleanup();
+
+    // A scene without traffic has no traffic layers.
+    const plain = open(`?scene=ramp-points&t=${NOON}`);
+    expect(plain.map.options.style.sources['occ-traffic']).toBeUndefined();
+    expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
+  });
+
   it('uses only occ-* classes', async () => {
     const { readSource } = await import('../../../styles/occSourceScan');
     const { findLegacyColourClasses } = await import('../../../styles/occLegacyBridge');

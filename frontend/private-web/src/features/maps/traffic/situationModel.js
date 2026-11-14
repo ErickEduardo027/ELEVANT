@@ -170,6 +170,9 @@ function flightFields(flight) {
     flightNumber: flight?.flightNumber ?? null,
     counterpartIata: flight?.counterpart?.iataCode ?? null,
     standCode: standCodeOf(flight),
+    // What the flight knows of its aircraft, for its silhouette (aircraft/types.js: resolveAircraftType).
+    model: text(flight?.aircraft?.model),
+    sizeCategory: flight?.aircraft?.sizeCategory ?? null,
   };
 }
 
@@ -249,7 +252,8 @@ const PICTURES_WITH_AIRCRAFT = new Set(['Live', 'Stale']);
  *
  * RenderAircraft: `{ id, hex, kind, flightKey, visitKey, legId, turnaroundId, proposalId, direction, lon, lat, altM,
  * gsMs, trackDeg, vrateMs, onGround, positionAt, ageS, quality, isDemo, imported, phase, callsign, flightNumber,
- * registration, typeIcao, emitterCategory, squawk, counterpartIata, standCode, matchedBy, hiddenInStand }`.
+ * registration, typeIcao, model, sizeCategory, emitterCategory, squawk, counterpartIata, standCode, matchedBy,
+ * hiddenInStand }` (`model` and `sizeCategory` from the ELEVANT flight's aircraft, null for other traffic).
  */
 export function buildSituation({ picture = null, flights = null, nowMs, estimates = [], layout = MDPC_LAYOUT } = {}) {
   const rows = flights?.flights ?? [];

@@ -28,24 +28,19 @@ function MonitoringMapArea({
   onStatusChange,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
-  const geolocatedFlights = flights.filter(flight =>
-    Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
-  // Only PUJ has reviewed coordinates; do not center a different station on PUJ. The map's own legend explains what
-  // it draws.
+  // Only PUJ has reviewed coordinates; do not center a different station on PUJ. The map takes every flight of the
+  // list: it draws those it can place (from the live traffic inside the OCC shell), lists all of them when it cannot
+  // draw, and its own legend and traffic status explain what it shows.
   return (
     <div className="relative min-h-[420px] flex-1">
-      {stationCode === 'PUJ' ? <>
+      {stationCode === 'PUJ' ? (
         <FlightMap
-          flights={geolocatedFlights}
+          flights={flights}
           selectedFlightId={selectedFlightId}
           onSelectFlight={onSelectFlight}
           theme={theme}
         />
-        {/* Above the map's dock (views, «Restablecer vista», «Centrar PUJ»), which sits at the bottom of the map. */}
-        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-20 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
-          {t('page.noLivePositions')}
-        </p>}
-      </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
+      ) : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
         {t('page.noLiveSource')}
       </div>}
       <FlightDetailPopover flight={selectedFlight} now={now} style={DOCKED_POPOVER_STYLE} onClose={onClosePopover} onStatusChange={onStatusChange} />

@@ -1,5 +1,7 @@
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
+import { occColor } from '../../occ-ui/occPalette';
 import { maskToSdf } from './sdf';
+import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
 
 // The icons of the OCC map style. There is no sprite: each icon is drawn on demand from the path data below, turned
 // into an SDF and handed to MapLibre, which paints it in the colour of the layer (icon-color) with an optional halo.
@@ -24,6 +26,8 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'stand-selected',
   'aircraft-solid',
   'airport-arp',
+  // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
+  ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
 
 // A stand is a 24 px square centred in a 32 px image; its fill and glyphs share that image, so the layers of one stand
@@ -95,6 +99,8 @@ const silhouette = (size, offset) => ({
  * What each image draws: `width` × `height` CSS px and a list of operations in that space. An operation fills a path
  * (`fill`) or strokes one (`stroke`, with `lineWidth`, an optional `dash` [dash, gap] and `cap`); `scale` and
  * `translate` place path data drawn in another unit, such as the 64-unit silhouette.
+ * A stroke may also name its `join` (miter by default). A shape with `sdf: false` is a plain image: each of its
+ * operations names the OCC colour token it is painted in (`color`).
  */
 export const MAP_IMAGE_SHAPES = deepFreeze({
   ...Object.fromEntries(STAND_FRAMES.map(frame => [frame.id, frameShape(frame)])),
@@ -123,6 +129,7 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
       { stroke: 'M3.2 11.6 L24.8 8.4', lineWidth: 2 },
     ],
   },
+  ...TRAFFIC_IMAGE_SHAPES,
 });
 
 function createCanvas(width, height) {
@@ -161,7 +168,7 @@ export function rasterizeWithCanvas(shape, pixelRatio, { canvasFactory = createC
     if (op.stroke !== undefined) {
       context.lineWidth = op.lineWidth / scale;
       context.lineCap = op.cap ?? 'butt';
-      context.lineJoin = 'miter';
+      context.lineJoin = op.join ?? 'miter';
       context.setLineDash((op.dash ?? []).map(length => length / scale));
       context.stroke(new Path2D(op.stroke));
     }
@@ -177,7 +184,8 @@ export function rasterizeWithCanvas(shape, pixelRatio, { canvasFactory = createC
 /**
  * The resolver the map engine hands to MapLibre for images the style names and the map does not have yet. It answers
  * `{ width, height, data, pixelRatio, sdf: true }` (RGBA data, the field in the alpha channel) for a known id, and
- * `null` for any other id or when nothing can be drawn. Results are kept, so an id is drawn once.
+ * `null` for any other id or when nothing can be drawn. Results are kept, so an id is drawn once. A shape marked
+ * `sdf: false` is drawn as a plain image in its own colours instead (drawPlainImage).
  * `rasterize(shape, pixelRatio)` is injectable because jsdom has no canvas.
  */
 export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRatio = 2 } = {}) {
@@ -186,6 +194,11 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
     if (drawn.has(id)) return drawn.get(id);
     if (!Object.hasOwn(MAP_IMAGE_SHAPES, id)) return null;
     const shape = MAP_IMAGE_SHAPES[id];
+    if (shape.sdf === false) {
+      const plain = drawPlainImage(id, shape, { rasterize, pixelRatio });
+      if (plain) drawn.set(id, plain);
+      return plain;
+    }
     const raster = rasterize(shape, pixelRatio);
     if (!raster) return null;
 
@@ -206,4 +219,54 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
     drawn.set(id, image);
     return image;
   };
+}
+
+// The red, green and blue of an OCC colour token written as #rrggbb.
+function tokenRgb(token) {
+  const value = occColor(token);
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
+  if (!match) throw new RangeError(`A plain map image needs a #rrggbb token, not ${token} (${value})`);
+  return match.slice(1).map(hex => parseInt(hex, 16));
+}
+
+/**
+ * A plain image (`sdf: false` in its shape): each operation drawn alone as an alpha mask, then laid over the ones
+ * before it in its own `color` (an OCC token), as a canvas would paint it. Answers `{ width, height, data, pixelRatio,
+ * sdf: false }` with straight (not premultiplied) RGBA, as MapLibre takes it, or `null` when nothing can be drawn.
+ */
+function drawPlainImage(id, shape, { rasterize, pixelRatio }) {
+  const width = Math.round(shape.width * pixelRatio);
+  const height = Math.round(shape.height * pixelRatio);
+  const size = width * height;
+  const red = new Float64Array(size);
+  const green = new Float64Array(size);
+  const blue = new Float64Array(size);
+  const alpha = new Float64Array(size);
+  for (const op of shape.ops) {
+    const raster = rasterize({ width: shape.width, height: shape.height, ops: [op] }, pixelRatio);
+    if (!raster) return null;
+    if (raster.width !== width || raster.height !== height) {
+      throw new RangeError(`Image ${id} was drawn at ${raster.width} × ${raster.height}, not ${width} × ${height}`);
+    }
+    const [r, g, b] = tokenRgb(op.color);
+    for (let index = 0; index < size; index += 1) {
+      const cover = raster.alpha[index] / 255;
+      if (cover === 0) continue;
+      // Source over, with premultiplied channels.
+      red[index] = r * cover + red[index] * (1 - cover);
+      green[index] = g * cover + green[index] * (1 - cover);
+      blue[index] = b * cover + blue[index] * (1 - cover);
+      alpha[index] = cover + alpha[index] * (1 - cover);
+    }
+  }
+  const data = new Uint8ClampedArray(size * 4);
+  for (let index = 0; index < size; index += 1) {
+    const cover = alpha[index];
+    if (cover === 0) continue;
+    data[index * 4] = Math.round(red[index] / cover);
+    data[index * 4 + 1] = Math.round(green[index] / cover);
+    data[index * 4 + 2] = Math.round(blue[index] / cover);
+    data[index * 4 + 3] = Math.round(cover * 255);
+  }
+  return Object.freeze({ width, height, data, pixelRatio, sdf: false });
 }

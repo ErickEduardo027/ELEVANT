@@ -19,6 +19,18 @@ export const mapMessages = {
       hold: 'Punto de espera',
       apron: 'Plataforma',
       terminal: 'Terminal',
+      // The traffic on screen (ui/trafficLegend.js); its tags take their words from occ-ui/statusVocabulary.js.
+      traffic: {
+        aviamArrival: 'Vuelo de AVIAM que llega',
+        aviamDeparture: 'Vuelo de AVIAM que sale',
+        other: 'Otro tráfico',
+        otherGround: 'Otro tráfico en tierra',
+        demoHint: 'Vuelo simulado',
+        estimatedHint: 'Calculada con el horario',
+        staleHint: 'Atenuado, con su antigüedad',
+        trail: 'Estela',
+        trailEstimated: 'Estela estimada',
+      },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
@@ -47,6 +59,31 @@ export const mapMessages = {
       attribution: 'Mostrar u ocultar los créditos del mapa',
       nauticalMiles: 'NM',
     },
+    // The words of an aircraft's tag (traffic/trafficFeatures.js).
+    traffic: {
+      ground: 'GND',
+      ageSeconds: '· {count} s',
+      ageMinutes: '· {count} min',
+    },
+    // The state of the air traffic over the map (ui/MapSourceStatus.jsx). The server's own words are never shown.
+    source: {
+      label: 'Estado del tráfico',
+      loading: 'Cargando tráfico…',
+      empty: 'No hay aviones en la zona',
+      unavailable: 'No hay tráfico en vivo en este momento.',
+      retry: 'Reintentar',
+      forbidden: 'Tu acceso no incluye el tráfico en vivo.',
+      delayed: 'Tráfico con retraso: último dato hace {age}.',
+      ageSeconds: '{count} s',
+      ageMinutes: '{count} min',
+      reason: {
+        not_configured: 'La fuente de tráfico no está configurada.',
+        quota_exceeded: 'La fuente de tráfico llegó a su límite de consultas.',
+        rate_limited: 'La fuente de tráfico pidió esperar antes de consultar de nuevo.',
+        unauthorized: 'La fuente de tráfico rechazó la consulta.',
+        provider_error: 'La fuente de tráfico no respondió.',
+      },
+    },
   },
   en: {
     map: { label: 'OCC map' },
@@ -65,6 +102,17 @@ export const mapMessages = {
       hold: 'Holding point',
       apron: 'Apron',
       terminal: 'Terminal',
+      traffic: {
+        aviamArrival: 'AVIAM arrival',
+        aviamDeparture: 'AVIAM departure',
+        other: 'Other traffic',
+        otherGround: 'Other traffic on the ground',
+        demoHint: 'Simulated flight',
+        estimatedHint: 'Calculated from the schedule',
+        staleHint: 'Dimmed, with its age',
+        trail: 'Trail',
+        trailEstimated: 'Estimated trail',
+      },
     },
     airfield: {
       runway: 'Runway {id}',
@@ -89,6 +137,29 @@ export const mapMessages = {
       resetBearing: 'Drag to rotate the map or click to return to north',
       attribution: 'Show or hide the map credits',
       nauticalMiles: 'NM',
+    },
+    traffic: {
+      ground: 'GND',
+      ageSeconds: '· {count} s',
+      ageMinutes: '· {count} min',
+    },
+    source: {
+      label: 'Traffic status',
+      loading: 'Loading traffic…',
+      empty: 'No aircraft in the area',
+      unavailable: 'There is no live traffic right now.',
+      retry: 'Retry',
+      forbidden: 'Your access does not include live traffic.',
+      delayed: 'Traffic delayed: last data {age} ago.',
+      ageSeconds: '{count} s',
+      ageMinutes: '{count} min',
+      reason: {
+        not_configured: 'The traffic source is not configured.',
+        quota_exceeded: 'The traffic source reached its query limit.',
+        rate_limited: 'The traffic source asked to wait before the next query.',
+        unauthorized: 'The traffic source refused the query.',
+        provider_error: 'The traffic source did not answer.',
+      },
     },
   },
 };

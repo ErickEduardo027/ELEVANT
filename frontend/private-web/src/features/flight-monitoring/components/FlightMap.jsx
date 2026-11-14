@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
+import { useOccStation } from '../../admin-occ/useOccStation';
 import { PUJ_ARP, defaultFlightView, lngLatOf } from '../../maps/core/cameraPresets';
+import { matchFlight } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
+import { useMapSelection } from '../../maps/core/useMapSelection';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
+import { isDrawn } from '../../maps/traffic/trafficFeatures';
 import MapDock from '../../maps/ui/MapDock';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
+import MapSourceStatus from '../../maps/ui/MapSourceStatus';
+import { useMapSituation } from '../../maps/useMapSituation';
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
 import { CrosshairIcon, RotateCcwIcon } from './icons';
 
@@ -22,9 +29,12 @@ const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded bo
 // The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style. It opens on the
 // region, or on the approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
 // position as symbols, which its legend explains while one is on screen, and keeps «Restablecer vista» and «Centrar
-// PUJ». The detail card is docked by the page, so nothing follows the aircraft on screen. `theme` is accepted and
-// ignored: the OCC maps are dark only.
-export default function FlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFlight }) {
+// PUJ». The detail card is docked by the page, so nothing follows the aircraft on screen. Inside the OCC shell it also
+// draws the live traffic (LiveFlightMap). `theme` is accepted and ignored: the OCC maps are dark only.
+function FlightMapView({
+  flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, drawnFlights, selection: chosen, onSelect,
+  framePoints = EMPTY, children,
+}) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
   const mapRef = useRef(null);
@@ -32,8 +42,9 @@ export default function FlightMap({ flights = EMPTY, selectedFlightId = null, on
   // The flight the map last flew to; the one it opens with is framed by its view.
   const flownRef = useRef(selectedFlightId);
 
-  const selection = useMemo(() => (selectedFlightId == null ? null : { kind: 'flight', id: String(selectedFlightId) }),
+  const flightSelection = useMemo(() => (selectedFlightId == null ? null : { kind: 'flight', id: String(selectedFlightId) }),
     [selectedFlightId]);
+  const selection = chosen === undefined ? flightSelection : chosen;
   const fallbackItems = useMemo(() => flights.map(flight => ({
     id: String(flight.id), label: flight.flightNumber ?? String(flight.id), kind: 'flight',
   })), [flights]);
@@ -44,17 +55,18 @@ export default function FlightMap({ flights = EMPTY, selectedFlightId = null, on
     else if (next.kind === 'flight') selectFlight(next.id);
   };
 
-  // A newly selected flight is brought to the centre once it has a position.
+  // A newly selected flight is brought to the centre once it has a position: its own, or its aircraft's.
+  const trafficAircraft = traffic?.aircraft;
   useEffect(() => {
     if (selectedFlightId == null || flownRef.current === selectedFlightId) {
       flownRef.current = selectedFlightId;
       return;
     }
     if (mapRef.current?.flyToFlight(String(selectedFlightId))) flownRef.current = selectedFlightId;
-  }, [selectedFlightId, flights]);
+  }, [selectedFlightId, flights, trafficAircraft]);
 
   function resetView() {
-    const points = flights.map(lngLatOf).filter(Boolean);
+    const points = [...flights.map(lngLatOf).filter(Boolean), ...framePoints];
     if (points.length === 0) mapRef.current?.flyToPreset('region');
     else mapRef.current?.flyToBounds([PUJ_ARP, ...points], { padding: RESET_PADDING_PX });
   }
@@ -66,9 +78,10 @@ export default function FlightMap({ flights = EMPTY, selectedFlightId = null, on
       className="rounded-md"
       defaultView={defaultView}
       presetStands={STAND_REFERENCE}
-      flights={flights}
+      flights={drawnFlights ?? flights}
+      traffic={traffic}
       selection={selection}
-      onSelect={handleSelect}
+      onSelect={onSelect ?? handleSelect}
       labels={{
         unavailableTitle: t('map.unavailableTitle'),
         unavailableDescription: t('map.unavailableDescription'),
@@ -77,6 +90,7 @@ export default function FlightMap({ flights = EMPTY, selectedFlightId = null, on
       fallbackItems={fallbackItems}
       onFallbackSelect={selectFlight}
     >
+      {children}
       <MapDock>
         <MapPresetSwitcher />
         <button type="button" onClick={resetView} title={t('map.resetView')} aria-label={t('map.resetView')} className={toolClass}>
@@ -90,4 +104,74 @@ export default function FlightMap({ flights = EMPTY, selectedFlightId = null, on
       </MapDock>
     </OccMap>
   );
+}
+
+/**
+ * Monitoreo inside the OCC shell: the same map with the live traffic of the station (useMapSituation over the air
+ * picture and the map flights, at the cadences of contracts 2.7). The page's flights (ids are leg ids) are joined to
+ * the map flights with matchFlight: a flight whose aircraft the traffic draws is drawn once, as traffic, and a click on
+ * it selects the page's flight; one with no page row is selected by its key. A click on other traffic writes `hex=`.
+ * The state of the traffic and the credit of its source sit over the map (MapSourceStatus).
+ */
+function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFlight }) {
+  const { stationId } = useOccStation();
+  const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
+  const selectedHex = urlSelection?.kind === 'aircraft' ? urlSelection.id : null;
+  const live = useMapSituation({ stationId, selectedHex });
+  const { situation, trails } = live;
+  const mapFlights = situation.flights;
+
+  const traffic = useMemo(() => ({ aircraft: situation.aircraft, trails, route: null, source: situation.source }),
+    [situation, trails]);
+  // The ELEVANT flights the traffic draws, by key: the page does not draw them a second time.
+  const drawnKeys = useMemo(() => new Set(situation.aircraft
+    .filter(item => item.kind === 'aviam' && isDrawn(item)).map(item => item.flightKey)), [situation]);
+  const drawnFlights = useMemo(() => flights.filter(flight => !drawnKeys.has(matchFlight(mapFlights, flight.id)?.flightKey)),
+    [drawnKeys, flights, mapFlights]);
+  const framePoints = useMemo(() => situation.aircraft.filter(item => item.kind === 'aviam' && isDrawn(item))
+    .map(item => [item.lon, item.lat]), [situation]);
+
+  // One selection at a time: the page's flight, else the aircraft of the URL.
+  const selection = useMemo(() => {
+    if (selectedFlightId != null) return { kind: 'flight', id: String(selectedFlightId) };
+    return selectedHex === null ? null : { kind: 'aircraft', id: selectedHex };
+  }, [selectedFlightId, selectedHex]);
+  useEffect(() => {
+    if (selectedFlightId != null && selectedHex !== null) clear();
+  }, [clear, selectedFlightId, selectedHex]);
+
+  const handleSelect = next => {
+    if (next?.kind === 'aircraft') {
+      onSelectFlight?.(null);
+      selectAircraft(next.id);
+      return;
+    }
+    if (selectedHex !== null) clear();
+    if (next === null) {
+      onSelectFlight?.(null);
+      return;
+    }
+    if (next.kind !== 'flight') return;
+    // A flight key from the traffic names the page's flight through its leg; without a page row it keeps its key.
+    const page = findFlight(flights, next.id) ?? findFlight(flights, matchFlight(mapFlights, next.id)?.legId);
+    onSelectFlight?.(page?.id ?? next.id);
+  };
+
+  const nowMs = Math.max(live.picture?.serverTime ?? 0, live.flights?.serverTime ?? 0) || null;
+  return (
+    <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
+      drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
+      <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
+        refreshFailed={live.refreshFailed} nowMs={nowMs} onRetry={live.retry} />
+    </FlightMapView>
+  );
+}
+
+/**
+ * The map of Monitoreo de vuelos. Inside the OCC shell (its channel present) it draws the live traffic of the station
+ * (LiveFlightMap); elsewhere (isolated screens and the tests) the same map without live traffic.
+ */
+export default function FlightMap(props) {
+  const channel = useOptionalOccShellChannel();
+  return channel ? <LiveFlightMap {...props} /> : <FlightMapView {...props} />;
 }

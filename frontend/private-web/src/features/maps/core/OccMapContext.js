@@ -10,6 +10,9 @@ import { createContext, useContext } from 'react';
 //   items the map draws there (`runway`, `taxiway`, `holdBar`, `apron`, `terminal`, in that order);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
 //   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight.
+// - traffic (PR M5): `trafficOnScreen`, the aircraft kinds, tags and trails drawn in that area (traffic/
+//   trafficFeatures.js: trafficOnScreen), and `trafficSource`, the air picture's source while traffic is on screen
+//   (`{ name, homeUrl, licenseName, licenseUrl }` or null), whose credit the map shows.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -28,6 +31,8 @@ export const OCC_MAP_IDLE = Object.freeze({
   flyToPreset: doNothing,
   flyToStand: doNothing,
   flyToFlight: doNothing,
+  trafficOnScreen: Object.freeze({ kinds: Object.freeze([]), tags: Object.freeze([]), trails: Object.freeze([]) }),
+  trafficSource: null,
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

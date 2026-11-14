@@ -7,6 +7,8 @@ import { mapMessages } from '../mapMessages';
 import { standAppearance } from '../stands/standLayers';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
+import { trafficLegendEntries } from './trafficLegend';
+import TrafficSwatch from './TrafficSwatch';
 
 // The swatch is the map's stand at half its size: the 24 px stand square of mapImages.js is the 12 px square at 4–16.
 // The diagonal hatch of «Inhabilitada» at 45°, like the map's stand-hatch image.
@@ -137,6 +139,8 @@ function AirfieldSwatch({ kind }) {
  * given). The short entries (the stand states and the airfield items) sit two to a row, so the open legend stays low
  * over the stands it explains. It folds through its own button, whose name stays «Leyenda» while `aria-expanded`
  * tells whether it is open, and it renders nothing when there is nothing to explain.
+ * The traffic an OccMap draws on screen comes first (ui/trafficLegend.js): the kinds of aircraft, their tags (Demo,
+ * est., Sin actualizar) and their trails.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const { standsOnScreen, standsGrouped, flightsOnScreen, airfieldOnScreen } = useOccMap();
@@ -146,14 +150,27 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
   const { flights, states, tags, grouped, airfield } = useMemo(() => (stands === undefined
     ? legendEntries({ stands: standsOnScreen, flights: flightsOnScreen, grouped: standsGrouped, airfield: airfieldOnScreen })
     : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, standsGrouped, flightsOnScreen, airfieldOnScreen]);
+  // The traffic on screen (PR M5): the aircraft kinds, their tags and their trails.
+  const { trafficOnScreen } = useOccMap();
+  const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language }), [trafficOnScreen, language]);
 
-  const listsOthers = flights || grouped || states.length > 0 || tags.length > 0;
+  const listsOthers = traffic.length > 0 || flights || grouped || states.length > 0 || tags.length > 0;
   if (!listsOthers && airfield.length === 0) return null;
 
   return (
     <div data-testid="map-legend" className={`relative ${className}`.trim()}>
       <div id={panelId} hidden={!open} className="absolute bottom-full right-0 mb-2 w-max max-w-xs rounded-md border border-occ-line bg-occ-panel-float p-3">
         <ul aria-label={t('legend.title')} className="grid grid-cols-2 gap-y-2 text-sm text-occ-text">
+          {traffic.map(entry => (
+            <li key={entry.key} data-legend-traffic={entry.key}
+              className={`${entry.span === 2 ? 'col-span-2 ' : ''}flex items-center gap-2 pr-3`}>
+              <TrafficSwatch kind={entry.swatch} />
+              <span>
+                {entry.label}
+                {entry.hint !== null && <span className="ml-1.5 text-occ-muted">{entry.hint}</span>}
+              </span>
+            </li>
+          ))}
           {flights && (
             <li className="col-span-2 flex items-center gap-2">
               <FlightSwatch />

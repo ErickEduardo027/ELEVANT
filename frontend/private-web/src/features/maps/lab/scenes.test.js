@@ -15,7 +15,7 @@ describe('map lab scenes', () => {
     const ids = SCENES.map(scene => scene.id);
     expect(ids).toEqual([
       'ramp-points', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
-      'layout-qa',
+      'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo', 'ramp-traffic-ground', 'approach-traffic-estimated-stale',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {

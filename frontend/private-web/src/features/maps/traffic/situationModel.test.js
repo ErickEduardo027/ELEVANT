@@ -67,6 +67,9 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
     expect(arrival.turnaroundId).toBe(flights.byKey.get(KEY.arrival).turnaroundId);
     expect(arrival.proposalId).toBe(flights.byKey.get(KEY.arrival).proposalId);
     expect(situation.byId.has(`h:${HEX.arrival}`)).toBe(false);
+    // What the flight knows of its aircraft goes with it, for its silhouette; other traffic knows none of it.
+    expect([arrival.model, arrival.sizeCategory]).toEqual(['737 MAX 8', 'Narrowbody']);
+    expect(situation.byId.get(`h:${HEX.overflight}`)).toMatchObject({ model: null, sizeCategory: null });
 
     // An aircraft named after the demo arrival carries the flight's demo mark; a suggested stand is not its stand.
     const named = pictureWith(item => (item.hex === HEX.overflight

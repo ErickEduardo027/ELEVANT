@@ -8,7 +8,7 @@ import { resetLanguageForTests } from '../../i18n/languageStore';
 vi.mock('./components/FlightMap', () => ({
   default: function FlightMapStub(props) {
     return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)}
-      data-popover-position={typeof props.onPopoverPosition} />;
+      data-popover-position={typeof props.onPopoverPosition} data-flights={String(props.flights.length)} />;
   },
 }));
 
@@ -77,7 +77,16 @@ describe('FlightMonitoringPage', () => {
     expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
   });
 
-  it('shows the empty state and explains the absence of telemetry when there are no flights', () => {
+  it('passes every flight of the list to the map, with a position or without one', () => {
+    render(
+      <FlightMonitoringPage status="success" connection="connected" lastUpdatedAt={null} onRetry={() => {}} error={null}
+        data={{ station: { code: 'PUJ' }, flights: [flight({ id: 1 }), flight({ id: 2, flightNumber: 'AA904', latitude: null, longitude: null })] }} />
+    );
+    // The live map places what the air picture sees and lists every flight when it cannot draw.
+    expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-flights', '2');
+  });
+
+  it('shows the empty state when there are no flights, with the map and without a notice of its own', () => {
     render(
       <FlightMonitoringPage
         status="success"
@@ -90,7 +99,8 @@ describe('FlightMonitoringPage', () => {
     );
     expect(screen.getByText('Sin vuelos para mostrar')).toBeInTheDocument();
     expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
-    expect(screen.getByText(/Sin posición de aeronaves en vivo/)).toBeInTheDocument();
+    // The map explains its traffic itself (maps/ui/MapSourceStatus.jsx): the page adds no notice of its own.
+    expect(screen.queryByText(/Sin posición de aeronaves en vivo/)).not.toBeInTheDocument();
   });
 
   it('does not center another station on PUJ', () => {
