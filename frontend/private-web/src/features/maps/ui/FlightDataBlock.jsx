@@ -79,10 +79,32 @@ function relativeText(at, nowMs, t) {
   return t(delta > 0 ? 'dataBlock.in' : 'dataBlock.ago', { duration: durationText(delta, t) });
 }
 
+// The provider's words for an arrival that is down (contracts 1.3), which may come before any time does.
+const LANDED_PHASES = new Set(['landed', 'arrived']);
+
+/**
+ * Whether a departure has left: it has its runway time, or the provider says `departed` (contracts 1.3) before it
+ * gives one. The time line and the stand line read it the same way.
+ */
+const hasLeft = flight => flight.direction === 'Departure'
+  && (flight.phase === 'departed' || parseInstant(flight.actualAt ?? null) !== null);
+
+// The recorded time of a milestone of the flight's operation (contracts 1.3), or null.
+function milestoneAt(flight, code) {
+  const milestone = Array.isArray(flight.milestones)
+    ? flight.milestones.find(item => item?.code === code && item.actualAt != null)
+    : null;
+  return milestone ? parseInstant(milestone.actualAt) : null;
+}
+
 /**
  * The time line of a flight at `nowMs`: `{ words, at, relative }` («Llega 11:10» and «en 10 min»), or the words of a
- * cancelled or diverted flight alone. An arrival says when it lands (or landed, or reached its stand, by what the time
- * means: `actualKind`); a departure when it leaves.
+ * cancelled or diverted flight alone. It never speaks in the future of what has happened, nor of a time gone by:
+ * - with a time of what happened: an arrival landed (its runway time) or reached its stand (its on-block time,
+ *   `actualKind: 'OnBlock'`, else a recorded BLOCK_ON); a departure left (its runway time);
+ * - when the provider says so before it gives a time (an arrival `landed` or `arrived`, a departure `departed`): the
+ *   same verb with the planned time, named as such, and no count that would date it («Aterrizó · hora prevista 11:10»);
+ * - a planned time gone by is overdue («Debía llegar 11:10 · hace 5 min»); one still to come, «Llega 11:10 · en 10 min».
  */
 export function flightTimeLine(flight, nowMs, { t, locale }) {
   if (!flight) return null;
@@ -90,16 +112,23 @@ export function flightTimeLine(flight, nowMs, { t, locale }) {
   if (flight.phase === 'cancelled') return { words: t('dataBlock.cancelled'), at: null, relative: null };
   if (flight.phase === 'diverted') return { words: t('dataBlock.diverted'), at: null, relative: null };
   const arrival = flight.direction !== 'Departure';
+  const line = (key, at, relative = relativeText(at, nowMs, t)) => ({ words: t(key, { time: clockText(at, locale) }), at, relative });
   const actual = parseInstant(flight.actualAt ?? null);
-  const planned = parseInstant(flight.estimatedAt ?? null) ?? parseInstant(flight.scheduledAt ?? null);
-  const at = actual ?? planned;
-  if (at === null) return null;
-  let key = arrival ? 'dataBlock.arrives' : 'dataBlock.departs';
   if (actual !== null) {
-    if (!arrival) key = 'dataBlock.departed';
-    else key = flight.actualKind === 'OnBlock' ? 'dataBlock.onBlock' : 'dataBlock.landed';
+    if (!arrival) return line('dataBlock.departed', actual);
+    return line(flight.actualKind === 'OnBlock' ? 'dataBlock.onBlock' : 'dataBlock.landed', actual);
   }
-  return { words: t(key, { time: clockText(at, locale) }), at, relative: relativeText(at, nowMs, t) };
+  const onBlock = arrival ? milestoneAt(flight, 'BLOCK_ON') : null;
+  if (onBlock !== null) return line('dataBlock.onBlock', onBlock);
+  const planned = parseInstant(flight.estimatedAt ?? null) ?? parseInstant(flight.scheduledAt ?? null);
+  if (planned === null) return null;
+  if (arrival ? LANDED_PHASES.has(flight.phase) : hasLeft(flight)) {
+    return line(arrival ? 'dataBlock.landedPlanned' : 'dataBlock.departedPlanned', planned, null);
+  }
+  if (finite(nowMs) && nowMs - planned >= NOW_MS) {
+    return line(arrival ? 'dataBlock.overdueArrival' : 'dataBlock.overdueDeparture', planned);
+  }
+  return line(arrival ? 'dataBlock.arrives' : 'dataBlock.departs', planned);
 }
 
 function ageWords(ageS, t) {
@@ -170,9 +199,8 @@ function standWords(flight, t) {
   if (!flight) return null;
   const assigned = text(flight.stand?.code);
   const suggested = text(flight.suggestedStandCode);
-  const left = flight.direction === 'Departure' && (flight.phase === 'departed' || parseInstant(flight.actualAt ?? null) !== null);
   let stand = t('dataBlock.noStand');
-  if (assigned) stand = t(left ? 'dataBlock.leftStand' : 'dataBlock.stand', { code: normalizeStandCode(assigned) });
+  if (assigned) stand = t(hasLeft(flight) ? 'dataBlock.leftStand' : 'dataBlock.stand', { code: normalizeStandCode(assigned) });
   else if (suggested) stand = t('dataBlock.suggestedStand', { code: normalizeStandCode(suggested) });
   return flight.isDemo === true ? `${stand} · ${t('dataBlock.runway', { id: DEMO_RUNWAY })}` : stand;
 }

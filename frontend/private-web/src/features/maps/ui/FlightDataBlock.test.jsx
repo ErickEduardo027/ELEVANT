@@ -8,7 +8,7 @@ import OccMap from '../core/OccMap';
 import { useOccMap } from '../core/OccMapContext';
 import {
   createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX, TRAFFIC_NOON,
-  TRAFFIC_STATION_ID,
+  TRAFFIC_STATION_ID, trafficInstant,
 } from '../testing/trafficFixtures';
 import { buildSituation, selectionTarget, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import { createTelemetryStore } from '../traffic/telemetryStore';
@@ -103,6 +103,89 @@ describe('FlightDataBlock', () => {
     expect(within(block()).getByText('YYZ')).toBeInTheDocument();
     expect(block()).toHaveTextContent('Salió 10:52 · hace 8 min');
     expect(block()).toHaveTextContent('Salió de la posición A3');
+  });
+
+  it('never speaks in the future of what happened, nor of a time gone by', () => {
+    const changed = (key, fields) => noonSituation(row => (row.flightKey === key ? { ...row, ...fields } : null));
+    // ZZ500 was due five minutes ago and has not landed: overdue, never «Llega … hace».
+    renderBlock({ kind: 'flight', id: KEY.noFix }, { situation: changed(KEY.noFix, { estimatedAt: trafficInstant(-300) }) });
+    expect(block()).toHaveTextContent('Debía llegar 10:55 · hace 5 min');
+    expect(block()).not.toHaveTextContent('Llega');
+    cleanup();
+    // Within half a minute of its time it is due now, not overdue yet.
+    renderBlock({ kind: 'flight', id: KEY.noFix }, { situation: changed(KEY.noFix, { estimatedAt: trafficInstant(-20) }) });
+    expect(block()).toHaveTextContent('Llega 10:59 · ahora');
+    cleanup();
+    // The provider says it arrived before it gives a runway time: landed, at a time named as the planned one, uncounted.
+    renderBlock({ kind: 'flight', id: KEY.noFix },
+      { situation: changed(KEY.noFix, { phase: 'arrived', estimatedAt: trafficInstant(-180) }) });
+    expect(block()).toHaveTextContent('Aterrizó · hora prevista 10:57');
+    expect(block()).not.toHaveTextContent('hace');
+    cleanup();
+    // ZZ300's arrival has no time of its own, but its BLOCK_ON is recorded: on its stand since then.
+    renderBlock({ kind: 'flight', id: KEY.parkedArrival },
+      { situation: changed(KEY.parkedArrival, { actualAt: null, actualKind: null, phase: 'enroute' }) });
+    expect(block()).toHaveTextContent('En posición 10:38 · hace 22 min');
+    cleanup();
+
+    // ZZ700 departed by the provider's word before its runway time: the past tense, as its stand line says.
+    renderBlock({ kind: 'flight', id: KEY.departed },
+      { situation: changed(KEY.departed, { actualAt: null, actualKind: null }) });
+    expect(block()).toHaveTextContent('Salió · hora prevista 10:45');
+    expect(block()).toHaveTextContent('Salió de la posición A3');
+    expect(block()).not.toHaveTextContent('Sale');
+    expect(block()).not.toHaveTextContent('hace');
+    cleanup();
+    // So does one that left before its planned time.
+    renderBlock({ kind: 'flight', id: KEY.departure }, { situation: changed(KEY.departure, { phase: 'departed' }) });
+    expect(block()).toHaveTextContent('Salió · hora prevista 12:15');
+    expect(block()).toHaveTextContent('Salió de la posición A5');
+    cleanup();
+    // ZZ301 was due to leave ten minutes ago and is still on A2.
+    renderBlock({ kind: 'flight', id: KEY.parkedDeparture },
+      { situation: changed(KEY.parkedDeparture, { scheduledAt: trafficInstant(-600) }) });
+    expect(block()).toHaveTextContent('Debía salir 10:50 · hace 10 min');
+    expect(block()).toHaveTextContent('Posición A2');
+    cleanup();
+
+    // In English.
+    act(() => resetLanguageForTests('en'));
+    for (const [key, fields, words] of [
+      [KEY.noFix, { estimatedAt: trafficInstant(-300) }, 'Was due to arrive 10:55 · 5 min ago'],
+      [KEY.noFix, { phase: 'arrived', estimatedAt: trafficInstant(-180) }, 'Landed · planned time 10:57'],
+      [KEY.departed, { actualAt: null, actualKind: null }, 'Departed · planned time 10:45'],
+      [KEY.parkedDeparture, { scheduledAt: trafficInstant(-600) }, 'Was due to depart 10:50 · 10 min ago'],
+    ]) {
+      const situation = changed(key, fields);
+      render(<LanguageScope><FlightDataBlock target={selectionTarget({ kind: 'flight', id: key }, situation)}
+        telemetry={storeOf(situation)} station={STATION} /></LanguageScope>);
+      expect(block(), words).toHaveTextContent(words);
+      cleanup();
+    }
+  });
+
+  it('speaks of the leg the chosen aircraft flies when a visit or a turnaround names both', () => {
+    // After the stop-over the picture gives ZZ161's aircraft to its departure: it took off a minute ago as ZZZ162.
+    const raw = createAirPicture();
+    const picture = toPictureModel({ ...raw, aircraft: raw.aircraft.map(item => (item.hex === HEX.arrival
+      ? { ...item, callsign: 'ZZZ162', matchedFlightKey: KEY.departure, matchedBy: 'Callsign', altitudeFeet: 3_400,
+        verticalRateFeetPerMinute: 1_800 }
+      : item)) });
+    const legs = createMapFlights();
+    const flights = toFlightsModel({ ...legs, flights: legs.flights.map(row => {
+      if (row.flightKey === KEY.arrival) return { ...row, actualAt: trafficInstant(-3_600), actualKind: 'Runway', phase: 'landed' };
+      if (row.flightKey === KEY.departure) return { ...row, actualAt: trafficInstant(-60), actualKind: 'Runway', phase: 'departed' };
+      return row;
+    }) });
+    const situation = buildSituation({ picture, flights, nowMs: NOON });
+    renderBlock({ kind: 'flight', id: flights.byKey.get(KEY.arrival).turnaroundId }, { situation });
+    // The departure's number, route and time, with the telemetry of the aircraft that flies it.
+    const dialog = screen.getByRole('dialog', { name: 'Vuelo ZZ162' });
+    expect(dialog).toHaveTextContent('Salió 10:59 · hace 1 min');
+    expect(dialog).toHaveTextContent('Salió de la posición A5');
+    expect(within(dialog).getAllByText(/^(PUJ|MIA)$/).map(plate => plate.textContent)).toEqual(['PUJ', 'MIA']);
+    expect(within(dialog).getByText('subiendo')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Aterrizó');
   });
 
   it('says Vuelo demo and Sin importar when they apply', () => {

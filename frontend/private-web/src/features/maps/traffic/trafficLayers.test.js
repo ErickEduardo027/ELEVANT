@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { occColor } from '../../occ-ui/occPalette';
 import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { SLOT_ORDER, buildOccStyle } from '../style/occStyle';
+import { selectionOverlay } from '../style/selectionLayers';
 import { createAirPicture, createEstimates, createMapFlights, TRAFFIC_NOON } from '../testing/trafficFixtures';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, trafficFeatures } from './trafficFeatures';
@@ -69,7 +70,7 @@ describe('traffic layers (design E1 and E3)', () => {
       const slotOf = id => style.layers.find(layer => layer.id === id).metadata['occ:slot'];
       expect(TRAFFIC_LAYER_IDS.map(slotOf)).toEqual([
         'routes', 'routes', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic', 'traffic',
-        'traffic', 'traffic', 'selection',
+        'traffic', 'traffic', 'selection', 'selection',
       ]);
       // MapLibre places from the top layer down: the plate, the ELEVANT tags (above every aircraft), the ELEVANT icons,
       // the optional tags of all other traffic (before their own icons, which they must never meet in the collision
@@ -134,6 +135,15 @@ describe('traffic layers (design E1 and E3)', () => {
     const cyan = [...colours].filter(([, colour]) => colour === accent).map(([key]) => key);
     expect(cyan).toEqual(['h:f0a002 occ-traffic-selected']);
     expect(evaluate(layerOf('occ-traffic-selected'), 'layout', 'icon-size', features.find(item => item.selected))).toBe(1.4);
+    // Its ring is the selection's own (style/selectionLayers.js), around the chosen aircraft alone and under its cyan
+    // silhouette, read from the aircraft's feature: it moves in the same write. Drawn, never picked.
+    const ring = layerOf('occ-traffic-selected-ring');
+    expect(ring).toMatchObject({ slot: 'selection', type: 'circle', source: TRAFFIC_SOURCE, metadata: { 'occ:group': 'selection' } });
+    expect(ring.paint).toEqual(selectionOverlay().layers.find(layer => layer.id === 'occ-selection-ring').paint);
+    expect(features.filter(properties => accepts(ring, properties)).map(properties => properties.id)).toEqual(['h:f0a002']);
+    expect(noonFeatures().filter(properties => accepts(ring, properties))).toEqual([]);
+    expect(TRAFFIC_LAYER_IDS.slice(-2)).toEqual(['occ-traffic-selected-ring', 'occ-traffic-selected']);
+    expect(ring.metadata['occ:pick']).toBeUndefined();
     // Without a selection there is no cyan at all: normal traffic carries no hue.
     for (const properties of noonFeatures()) {
       for (const layer of iconLayers) {
@@ -144,7 +154,7 @@ describe('traffic layers (design E1 and E3)', () => {
     expect(hex(layerOf('occ-traffic-aviam').paint['icon-color'])).toBe(hex(occColor('text')));
     expect(hex(layerOf('occ-traffic-other').paint['icon-color'])).toBe(hex(occColor('faint')));
     const paints = JSON.stringify(trafficOverlay().layers.filter(layer => !layer.id.startsWith('occ-route')
-      && layer.id !== 'occ-traffic-selected').map(layer => layer.paint));
+      && !['occ-traffic-selected', 'occ-traffic-selected-ring'].includes(layer.id)).map(layer => layer.paint));
     for (const token of ['accent', 'warn', 'danger']) expect(paints, token).not.toContain(occColor(token));
   });
 

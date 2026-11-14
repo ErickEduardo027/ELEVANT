@@ -14,8 +14,9 @@ import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 // `traffic` slot: the trails of other traffic (off until «Estelas de todo el tráfico»), the live trails fading toward
 // their tail, the estimated ones dashed; other traffic on the ground (from the airfield threshold up) and in the air,
 // each icon with its tag in one symbol; the tags of all other traffic (off until «Etiquetas de todo el tráfico»); the
-// ELEVANT flights, the estimated ring, their tags and the «Demo» plate. In the `selection` slot the chosen aircraft in
-// cyan.
+// ELEVANT flights, the estimated ring, their tags and the «Demo» plate. In the `selection` slot the chosen aircraft's
+// ring and the aircraft again, in cyan: both read its own feature, so they move with it in the same write, and the
+// selection source (style/selectionLayers.js) keeps the stands and the flights a screen places itself.
 // Placement: MapLibre places the layers from the top down and boxes a rotated icon with its whole image, so a tag must
 // never meet its own icon in the collision index. Other traffic shares one symbol for its icon and its tag (the tag then
 // ignores its own icon and draws above the icons of its layer). The tags of all other traffic sit above those icons, so
@@ -131,6 +132,10 @@ const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLA
 const ems = pixels => Math.round((pixels / PLATE_TEXT_SIZE) * 1000) / 1000;
 
 const ACCENT = occColor('accent');
+// The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
+// cyan clear of the silhouette.
+const SELECTED_RING_RADIUS_PX = 18;
+const SELECTED_RING_WIDTH_PX = 2;
 
 /** The overlay of the traffic for buildOccStyle; its three sources start empty. */
 export function trafficOverlay() {
@@ -298,6 +303,21 @@ export function trafficOverlay() {
           'text-opacity': DIMMED,
         },
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
+      },
+      {
+        slot: 'selection',
+        id: 'occ-traffic-selected-ring',
+        type: 'circle',
+        source: TRAFFIC_SOURCE,
+        filter: is('selected'),
+        paint: {
+          'circle-radius': SELECTED_RING_RADIUS_PX,
+          'circle-color': ACCENT,
+          'circle-opacity': 0,
+          'circle-stroke-width': SELECTED_RING_WIDTH_PX,
+          'circle-stroke-color': ACCENT,
+        },
+        metadata: { 'occ:group': 'selection' },
       },
       {
         slot: 'selection',

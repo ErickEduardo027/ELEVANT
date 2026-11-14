@@ -2,7 +2,6 @@ import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { occColor } from '../../occ-ui/occPalette';
 import { lngLatOf, standCodeOf } from '../core/cameraPresets';
 import { matchFlight } from '../core/mapSelection';
-import { selectedAircraftId } from '../traffic/trafficFeatures';
 
 // The selection drawn on the map: the 2 px cyan casing of contracts 2.4, in the top slot, from a source of its own
 // that holds at most one feature. It is data, not feature state, so it needs nothing back after a context loss or a
@@ -63,14 +62,8 @@ export function selectionOverlay() {
 
 const EMPTY = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
 
-// The point of the aircraft of the traffic (PR M5) a selection names, by the rule that draws it in cyan.
-function trafficPoint(aircraft, selection) {
-  const id = selectedAircraftId(aircraft, selection);
-  return id === null ? null : lngLatOf((aircraft ?? []).find(item => item.id === id));
-}
-
 // Where the selection is on the map, as `{ id, point }`, or `null`.
-function locate(selection, { stands, flights, aircraft }) {
+function locate(selection, { stands, flights }) {
   if (selection?.kind === 'stand') {
     const code = mapStandCode(selection.id);
     const stand = (stands ?? []).find(item => item?.retired !== true && mapStandCode(standCodeOf(item)) === code);
@@ -79,24 +72,18 @@ function locate(selection, { stands, flights, aircraft }) {
   }
   if (selection?.kind === 'flight') {
     const flight = matchFlight(flights, selection.id);
-    const point = lngLatOf(flight?.position ?? flight) ?? trafficPoint(aircraft, selection);
+    const point = lngLatOf(flight?.position ?? flight);
     return point && { id: String(selection.id), point };
-  }
-  if (selection?.kind === 'aircraft') {
-    const point = trafficPoint(aircraft, selection);
-    return point && { id: String(selection.id).trim().toLowerCase(), point };
   }
   return null;
 }
 
 /**
- * The data of the selection source: one point feature `{ kind, id }` where the selected stand, flight or aircraft is,
- * or an empty collection when nothing is selected or the selection has no place on the map. `aircraft` are the
- * aircraft of the traffic (traffic/situationModel.js: RenderAircraft): a flight that has no position of its own is
- * where the traffic draws its aircraft, and an aircraft (`hex`) is where the traffic draws it.
+ * The data of the selection source: one point feature `{ kind, id }` where the selected stand or flight is, or an
+ * empty collection when nothing is selected or the selection has no place on the map (an aircraft, until PR M5).
  */
-export function selectionFeatures(selection, { stands = [], flights = [], aircraft = [] } = {}) {
-  const found = locate(selection, { stands, flights, aircraft });
+export function selectionFeatures(selection, { stands = [], flights = [] } = {}) {
+  const found = locate(selection, { stands, flights });
   if (found === null) return EMPTY;
   return {
     type: 'FeatureCollection',

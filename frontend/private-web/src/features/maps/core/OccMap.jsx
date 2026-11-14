@@ -207,8 +207,10 @@ function findStand(stands, code) {
  *   Whether it is given is read at start, as for the stands and the flights: the map then draws the traffic overlay,
  *   one updateData per change of the aircraft (a selection, the aircraft under the pointer and the shown groups
  *   included), lists the traffic on screen for the legend, and credits the source in the attribution while traffic
- *   is on screen. The chosen aircraft is drawn larger in cyan with the selection ring; while its route shows, its trail
- *   gives way to the route's flown part.
+ *   is on screen. The chosen aircraft is drawn larger in cyan with the selection ring, both layers of the traffic
+ *   overlay in the selection slot (traffic/trafficLayers.js), so they move in the aircraft's own updateData and the
+ *   selection source keeps the stands and the flights; while its route shows, its trail gives way to the route's flown
+ *   part.
  * - The layers menu (PR M5, core/layersMenu.js, ui/MapLayersMenu.jsx): the map keeps the person's choices (only what
  *   differs from the defaults of the view on screen, in `localStorage`) and shows or hides the groups they name, except
  *   a group the page sets in `groups`, which wins. The menu reads them from OccMapContext; L opens and closes a menu on
@@ -816,18 +818,16 @@ const OccMap = forwardRef(function OccMap({
     }
   }, [overlayData]);
 
-  // The selection casing: one feature in the selection source, written only when it changes. The aircraft the traffic
-  // draws are candidates too (PR M5): a chosen aircraft, or a flight drawn as traffic, is ringed where it is.
+  // The selection casing: one feature in the selection source, written only when it changes.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
-    const aircraft = appliedRef.current.drawsTraffic ? trafficAircraft : EMPTY;
-    const data = selectionFeatures(selection, { stands: [...stands, ...(presetStands ?? EMPTY)], flights, aircraft });
+    const data = selectionFeatures(selection, { stands: [...stands, ...(presetStands ?? EMPTY)], flights });
     const key = JSON.stringify(data.features);
     if (appliedRef.current.selection === key) return;
     appliedRef.current.selection = key;
     engine.setData(SELECTION_SOURCE, data);
-  }, [selection, stands, presetStands, flights, trafficAircraft]);
+  }, [selection, stands, presetStands, flights]);
 
   useEffect(() => {
     const engine = engineRef.current;

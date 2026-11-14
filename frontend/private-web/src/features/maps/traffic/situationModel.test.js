@@ -6,6 +6,7 @@ import {
   createAirPicture, createEstimates, createMapFlights, createTrack, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX,
   TRAFFIC_NOON, trafficInstant,
 } from '../testing/trafficFixtures';
+import { buildRoute } from './routeFeatures';
 import {
   airTrafficSourceState, buildSituation, ownedStandCodes, selectionTarget, staleAfterSeconds, toFlightsModel,
   toPictureModel, toTrackModel,
@@ -362,7 +363,7 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
     const arrival = flights.byKey.get(KEY.arrival);
     const drawn = situation.byId.get(`f:${KEY.arrival}`);
     // flightId by its key, its visit, its leg, its turnaround or the old p: key of its proposal: ZZ161 and its aircraft.
-    for (const id of [KEY.arrival, arrival.legId, arrival.turnaroundId, `p:${arrival.proposalId}`]) {
+    for (const id of [KEY.arrival, arrival.visitKey, arrival.legId, arrival.turnaroundId, `p:${arrival.proposalId}`]) {
       const target = selectionTarget({ kind: 'flight', id }, situation);
       expect(target, id).toEqual({ kind: 'flight', flight: arrival, aircraft: drawn });
     }
@@ -385,5 +386,46 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
       expect(selectionTarget(selection, situation), JSON.stringify(selection)).toBeNull();
     }
     expect(selectionTarget({ kind: 'flight', id: KEY.arrival }, null)).toBeNull();
+  });
+
+  it('a visit or a turnaround names the leg its aircraft flies, so the block, the cyan and the route agree', () => {
+    // After the stop-over the picture gives ZZ161's aircraft to its departure (one flight, one aircraft): it took off a
+    // minute ago as ZZZ162 and climbs out.
+    const picture = pictureWith(item => (item.hex === HEX.arrival
+      ? { ...item, callsign: 'ZZZ162', matchedFlightKey: KEY.departure, matchedBy: 'Callsign', altitudeFeet: 3_400,
+        verticalRateFeetPerMinute: 1_800 }
+      : null));
+    const rows = rowsWith(flight => {
+      if (flight.flightKey === KEY.arrival) return { ...flight, actualAt: trafficInstant(-3_600), actualKind: 'Runway', phase: 'landed' };
+      if (flight.flightKey === KEY.departure) return { ...flight, actualAt: trafficInstant(-60), actualKind: 'Runway', phase: 'departed' };
+      return null;
+    });
+    // The visit as the import creates it (its visitKey is the arrival's key) and as any other turnaround («t:»).
+    const turnaroundVisit = rows.map(flight => (flight.turnaroundId === flights.byKey.get(KEY.arrival).turnaroundId
+      ? { ...flight, visitKey: `t:${flight.turnaroundId}` } : flight));
+    for (const legs of [rows, turnaroundVisit]) {
+      const model = flightsOf(legs);
+      const situation = buildSituation({ picture, flights: model, nowMs: NOON });
+      const departure = model.byKey.get(KEY.departure);
+      const arrival = model.byKey.get(KEY.arrival);
+      const drawn = situation.byId.get(`f:${KEY.departure}`);
+      expect(drawn).toMatchObject({ hex: HEX.arrival, direction: 'Departure', flightNumber: 'ZZ162' });
+      expect(situation.byId.has(`f:${KEY.arrival}`)).toBe(false);
+      // By its visitKey or its turnaround: the departure, the leg its aircraft flies, never the arrival with the
+      // departure's aircraft.
+      for (const id of [departure.visitKey, departure.turnaroundId]) {
+        const target = selectionTarget({ kind: 'flight', id }, situation);
+        expect(target, id).toEqual({ kind: 'flight', flight: departure, aircraft: drawn });
+        // Its route goes on to its destination, never back from the departing aircraft to the stand.
+        const route = buildRoute({ target, stationAirport: model.stationAirport, nowMs: NOON });
+        expect(route.features.filter(feature => feature.properties.part === 'next').map(feature => feature.properties.to), id)
+          .toEqual(['destination']);
+      }
+      // A leg id names its own leg: the arrival, which has no aircraft now.
+      expect(selectionTarget({ kind: 'flight', id: arrival.legId }, situation))
+        .toEqual({ kind: 'flight', flight: arrival, aircraft: null });
+      expect(selectionTarget({ kind: 'aircraft', id: HEX.arrival }, situation))
+        .toEqual({ kind: 'aircraft', flight: departure, aircraft: drawn });
+    }
   });
 });

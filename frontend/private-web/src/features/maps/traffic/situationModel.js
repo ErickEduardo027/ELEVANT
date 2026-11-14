@@ -374,14 +374,17 @@ export function buildSituation({ picture = null, flights = null, nowMs, estimate
 /**
  * What a selection of the URL names on the map (contracts 2.1): `{ kind: 'flight' | 'aircraft', flight, aircraft }`,
  * or `null` when it names nothing the map knows.
- * - `flightId` (`kind: 'flight'`): the flight of the window that matchFlight finds by its flightKey, visitKey, leg id,
- *   turnaround id or the old `p:` key of a visit OCC linked to a planned flight (its proposalId); `aircraft` is the
- *   aircraft the map draws for it (live, or estimated), the one the map draws in cyan, or `null` while it has no
- *   position.
+ * - `flightId` (`kind: 'flight'`): `aircraft` is the aircraft the map draws for it (live, or estimated), the one the
+ *   map draws in cyan, or `null` while it has no position. `flight` is that aircraft's own flight when there is one:
+ *   a visitKey or a turnaround id names both legs of a visit, and once its arrival has happened the picture matches
+ *   the aircraft to the departure (one flight, one aircraft), so the drawn aircraft may be the other leg's. Without an
+ *   aircraft, the flight of the window that matchFlight finds by its flightKey, visitKey, leg id, turnaround id or the
+ *   old `p:` key of a visit OCC linked to a planned flight (its proposalId): of a visit, its arrival.
  * - `hex` (`kind: 'aircraft'`): the drawn aircraft with that ADS-B address and, when the picture matched it to a
  *   flight of the window, that flight (else `flight` is `null`).
- * The aircraft comes from the same rule that draws the selection (traffic/trafficFeatures.js: selectedAircraftId), so
- * the data block, the cyan aircraft and its ring always speak of the same one.
+ * The aircraft comes from the same rule that draws the selection (traffic/trafficFeatures.js: selectedAircraftId), and
+ * the flight from the aircraft, so the data block, the cyan aircraft, its ring and its route always speak of the same
+ * leg.
  */
 export function selectionTarget(selection, situation) {
   if (!selection || selection.id == null || String(selection.id).trim() === '') return null;
@@ -389,14 +392,15 @@ export function selectionTarget(selection, situation) {
   const flights = situation?.flights ?? [];
   const chosenId = selectedAircraftId(aircraft, selection);
   const chosen = chosenId === null ? null : situation?.byId?.get(chosenId) ?? aircraft.find(item => item.id === chosenId) ?? null;
+  // The leg the chosen aircraft flies: the flight the picture matched it to, or the one it was estimated for.
+  const chosenFlight = chosen?.flightKey == null ? null : flights.find(row => row?.flightKey === chosen.flightKey) ?? null;
   if (selection.kind === 'flight') {
-    const flight = matchFlight(flights, selection.id);
+    const flight = chosenFlight ?? matchFlight(flights, selection.id);
     return flight ? Object.freeze({ kind: 'flight', flight, aircraft: chosen }) : null;
   }
   if (selection.kind === 'aircraft') {
     if (chosen === null) return null;
-    const flight = chosen.flightKey === null ? null : flights.find(row => row?.flightKey === chosen.flightKey) ?? null;
-    return Object.freeze({ kind: 'aircraft', flight, aircraft: chosen });
+    return Object.freeze({ kind: 'aircraft', flight: chosenFlight, aircraft: chosen });
   }
   return null;
 }

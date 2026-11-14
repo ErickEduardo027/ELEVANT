@@ -1244,7 +1244,6 @@ describe('OccMap traffic (PR M5)', () => {
     loadStyle(map);
     const added = Object.fromEntries(map.getSource('occ-traffic').updateDataCalls[0].add
       .map(feature => [feature.properties.id, feature.properties]));
-    const overflight = traffic.aircraft.find(item => item.hex === TRAFFIC_HEX.overflight);
     // Larger (1.4×) with its tag, drawn again in the selection slot in cyan, above every other aircraft.
     expect(added[`h:${TRAFFIC_HEX.overflight}`]).toMatchObject({ selected: true, scale: 1.4, forceTag: true });
     expect(Object.values(added).filter(properties => properties.selected).map(properties => properties.id))
@@ -1255,11 +1254,17 @@ describe('OccMap traffic (PR M5)', () => {
     expect(selected.layout['icon-size']).toEqual(['get', 'scale']);
     const ids = map.layerIds();
     expect(ids.indexOf('occ-traffic-selected')).toBeGreaterThan(ids.indexOf('slot-selection'));
-    // Its ring, a circle in the selection slot where the aircraft is.
-    expect(map.getSource('occ-selection').data.features).toEqual([{ type: 'Feature',
-      properties: { kind: 'aircraft', id: TRAFFIC_HEX.overflight },
-      geometry: { type: 'Point', coordinates: [overflight.lon, overflight.lat] } }]);
-    expect(map.getLayer('occ-selection-ring').paint['circle-stroke-color']).toBe(occColor('accent'));
+    // Its ring, a circle of the traffic overlay in the selection slot, under the cyan aircraft, drawn from the chosen
+    // aircraft's own feature: the selection source, which rings the stands and the flights a screen places, stays empty.
+    const ring = map.getLayer('occ-traffic-selected-ring');
+    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic', filter: ['==', ['get', 'selected'], true] });
+    expect(ring.paint['circle-stroke-color']).toBe(occColor('accent'));
+    expect(ring.paint['circle-stroke-width']).toBe(2);
+    expect(ids.indexOf('occ-traffic-selected-ring')).toBeGreaterThan(ids.indexOf('slot-selection'));
+    expect(ids.indexOf('occ-traffic-selected-ring')).toBeLessThan(ids.indexOf('occ-traffic-selected'));
+    const selectionSource = map.getSource('occ-selection');
+    expect(selectionSource.data.features).toEqual([]);
+    const selectionWrites = selectionSource.setDataCalls.length;
 
     // A flight drawn as traffic, chosen by the page's leg id: the cyan and the ring move to its aircraft.
     const arrival = traffic.aircraft.find(item => item.flightKey === TRAFFIC_FLIGHT_KEY.arrival);
@@ -1269,17 +1274,19 @@ describe('OccMap traffic (PR M5)', () => {
       Object.fromEntries(change.addOrUpdateProperties.map(({ key, value }) => [key, value]))]));
     expect(byId[`f:${TRAFFIC_FLIGHT_KEY.arrival}`]).toMatchObject({ selected: true, scale: 1.4 });
     expect(byId[`h:${TRAFFIC_HEX.overflight}`]).toMatchObject({ selected: false, scale: 0.85 });
-    expect(map.getSource('occ-selection').data.features[0]).toMatchObject({ properties: { kind: 'flight', id: arrival.legId },
-      geometry: { coordinates: [arrival.lon, arrival.lat] } });
-    // The ring follows the aircraft to its next position.
+    // The ring follows the aircraft to its next position in the same write that moves it.
     const moved = noonTraffic({ change: item => (item.hex === TRAFFIC_HEX.arrival ? { ...item, latitude: item.latitude + 0.02 } : null) });
     view.rerender(<OccMap defaultView="region" traffic={moved} selection={{ kind: 'flight', id: arrival.legId }} />);
-    expect(map.getSource('occ-selection').data.features[0].geometry.coordinates[1]).toBeCloseTo(arrival.lat + 0.02, 6);
+    const step = map.getSource('occ-traffic').updateDataCalls.at(-1).update;
+    expect(step).toEqual([{ id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, newGeometry: { type: 'Point',
+      coordinates: [arrival.lon, expect.closeTo(arrival.lat + 0.02, 6)] } }]);
     // Nothing chosen: no ring, no cyan.
     view.rerender(<OccMap defaultView="region" traffic={moved} selection={null} />);
-    expect(map.getSource('occ-selection').data.features).toEqual([]);
-    expect(map.getSource('occ-traffic').updateDataCalls.at(-1).update.map(change => change.id))
-      .toEqual([`f:${TRAFFIC_FLIGHT_KEY.arrival}`]);
+    expect(map.getSource('occ-traffic').updateDataCalls.at(-1).update).toEqual([{ id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`,
+      addOrUpdateProperties: expect.arrayContaining([{ key: 'selected', value: false }]) }]);
+    // None of it wrote the selection source.
+    expect(selectionSource.setDataCalls).toHaveLength(selectionWrites);
+    expect(selectionSource.data.features).toEqual([]);
   });
 
   it('the chosen flight\'s route is drawn with its trail giving way to it, and the legend explains it', () => {

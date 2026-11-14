@@ -1236,14 +1236,18 @@ de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
   (`hex=`). Lo elegido va en cian, más grande y con su anillo. Su
   [bloque de datos](../../frontend/private-web/src/features/maps/ui/FlightDataBlock.jsx),
   fijo arriba a la izquierda del mapa, da el número, el tipo y la matrícula; el
-  origen y el destino, con su hora y la cuenta atrás; la altitud, la velocidad
-  y el rumbo; la posición, con «Pista 08» en un vuelo demo; y de dónde sale la
-  posición: «En vivo · hace 4 s», «Sin señal desde hace 45 s», la frase de lo
-  estimado o «Sin posición todavía». Marca «Vuelo demo», «Sin importar» y
-  «Cancelado por el proveedor (demo)», y enlaza «Ver escala», solo de un vuelo
-  importado, y «Ver posición». Su ruta es lo que voló, en línea sólida, y una
-  recta discontinua hasta su siguiente punto (su posición, el aeropuerto o su
-  destino), que M6 reemplazará por la trayectoria.
+  origen y el destino, con su hora y la cuenta atrás, sin hablar en futuro de
+  lo que ya pasó («Debía llegar 10:55 · hace 5 min» si la hora prevista pasó,
+  «Salió · hora prevista 10:45» si el proveedor dice que salió sin dar la
+  hora); la altitud, la velocidad y el rumbo; la posición, con «Pista 08» en un
+  vuelo demo; y de dónde sale la posición: «En vivo · hace 4 s», «Sin señal
+  desde hace 45 s», la frase de lo estimado o «Sin posición todavía». Marca
+  «Vuelo demo», «Sin importar» y «Cancelado por el proveedor (demo)», y enlaza
+  «Ver escala», solo de un vuelo importado, y «Ver posición». Su ruta es lo que
+  voló, en línea sólida, y una recta discontinua hasta su siguiente punto (su
+  posición, el aeropuerto o su destino), que M6 reemplazará por la trayectoria.
+  Una selección que nombra una visita o una escala (sus dos tramos) muestra el
+  tramo que vuela el avión dibujado: tras la escala, el de la salida.
 - **Crédito y estado del tráfico.** Mientras hay aviones en pantalla, la
   atribución del mapa y una línea a la vista, abajo a la izquierda, dicen
   «Datos de aeronaves: {red}», con el enlace a la red y, si lo hay, a su

@@ -373,7 +373,8 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   y de las [estelas](../../frontend/private-web/src/features/maps/traffic/trailStore.test.js)
   prueban cada pieza sola: la muestra de menor ida y vuelta, el 401 que cierra
   la sesión, un vuelo para un avión (también por la clave vieja de una visita
-  enlazada con 3-N07), el umbral derivado de «sin actualizar», el tráfico
+  enlazada con 3-N07), una visita o una escala elegidas que nombran el tramo
+  que vuela su avión, el umbral derivado de «sin actualizar», el tráfico
   oculto solo dentro de una posición en la que ya está un avión de AVIAM o
   demo (nunca en la de un vuelo que todavía llega) y las estelas cortadas a
   `max(60 s, 3 × refreshAfterSeconds)`, con sus topes de 600 y 60 puntos.
