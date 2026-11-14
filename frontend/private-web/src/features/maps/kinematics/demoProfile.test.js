@@ -173,12 +173,20 @@ describe('demo flight profile', () => {
     const clock = clockOf(8);
     expect(clock.onBlockAtMs - clock.touchdownAtMs).toBe(216_000);
     expect(ACTIVE).toHaveLength(41);
+    const vref = PERF.final.vrefMs;
+    const minRollM = (vref * vref - PERF.landing.exitSpeedMs ** 2) / (2 * PERF.landing.brakingMaxMs2);
+    // The exits a landing on 08 can take and stop for: the rapid exits 1 349 m and 2 231 m along. The others past the
+    // touchdown point turn more than 90°: n7592209929 and n7592262113, built for 26, turn 149° and 164° back towards the
+    // threshold, and the right-angle exit at the far end reads 92°.
+    const exits = landingExitCandidates(MDPC_LAYOUT, END_08, { minRollM });
+    expect(exits.map(exit => exit.nodeId)).toEqual(['n7592209935', 'n7592262104']);
     const compressed = [];
     for (const stand of ACTIVE) {
       const trajectory = fitDemoTrajectory({ demo: clock, imported: true, stand, counterpart: MIA, perf: PERF, layout: MDPC_LAYOUT });
       const label = stand.code;
       expect(trajectory.meta.runwayIdent, label).toBe('08');
       expect(trajectory.meta.departureRunwayIdent, label).toBe('08');
+      expect(exits.map(exit => exit.nodeId), label).toContain(trajectory.meta.exitNodeId);
       const taxi = trajectory.legs.filter(leg => leg.part === 'taxiIn' && leg.kind === 'move' && leg.phase === 'taxiIn');
       const scale = trajectory.meta.parts.taxiIn.timeScale;
       // The fitted taxi speed: what the fit gives each taxi leg, before any time compression.
@@ -198,24 +206,25 @@ describe('demo flight profile', () => {
         expect(shown, label).toBeLessThanOrEqual(KT25 + 1e-9);
       }
     }
-    // Every stand but B37 is reached at real speeds. B37 cannot be: from every exit a landing on 08 can take, even
-    // braking straight down to 25 kt at the exit and taxiing at 25 kt the whole way, its ground path takes longer than
-    // the server's 216 s, so the map compresses that part by about 1 % and the data block says «Demo acelerada».
-    expect(compressed.map(item => item.code)).toEqual(['B37']);
-    expect(compressed[0].scale).toBeLessThan(1.02);
-    expect(compressed[0].shownKt).toBeLessThan(25.5);
-    const vref = PERF.final.vrefMs;
-    const minRollM = (vref * vref - PERF.landing.exitSpeedMs ** 2) / (2 * PERF.landing.brakingMaxMs2);
-    for (const exit of landingExitCandidates(MDPC_LAYOUT, END_08, { minRollM })) {
-      const path = routeLandingTaxi(MDPC_LAYOUT, {
-        runwayEnd: END_08, fromAlongM: 300, exitNodeId: exit.nodeId, stand: standOf('B37'), activeRunwayIds: ['08/26'],
-      });
-      const rollM = exit.alongM - 300;
-      // The fastest roll ends at 25 kt at the exit; the fastest taxi runs at 25 kt from there.
-      const fastestS = (2 * rollM) / (vref + KT25) + (path.lengthM - rollM) / KT25;
-      expect(fastestS, exit.nodeId).toBeGreaterThan(216);
+    // Every stand but B36 and B37 is reached at real speeds. Those two cannot be: from both exits, even braking straight
+    // down to 25 kt at the exit and taxiing at 25 kt the whole way, the ground path takes longer than the server's
+    // 216 s, so the map compresses that part by under 2 % and the data block says «Demo acelerada ×1,1». (B36 kept real
+    // speeds only by turning back through n7592209929, a hairpin at the end of the roll.)
+    expect(compressed.map(item => item.code)).toEqual(['B36', 'B37']);
+    for (const { code, scale, shownKt } of compressed) {
+      expect(scale, code).toBeLessThan(1.02);
+      expect(shownKt, code).toBeLessThan(25.5);
+      expect(formatTimeScale(scale, 'es'), code).toBe('×1,1');
+      for (const exit of exits) {
+        const path = routeLandingTaxi(MDPC_LAYOUT, {
+          runwayEnd: END_08, fromAlongM: 300, exitNodeId: exit.nodeId, stand: standOf(code), activeRunwayIds: ['08/26'],
+        });
+        const rollM = exit.alongM - 300;
+        // The fastest roll ends at 25 kt at the exit; the fastest taxi runs at 25 kt from there.
+        const fastestS = (2 * rollM) / (vref + KT25) + (path.lengthM - rollM) / KT25;
+        expect(fastestS, `${code} ${exit.nodeId}`).toBeGreaterThan(216);
+      }
     }
-    expect(formatTimeScale(compressed[0].scale, 'es')).toBe('×1,1');
   });
 
   it('for 8, 15 and 30 minutes the approach starts as far back as real speeds need and timeScale is 1', { timeout: 30_000 }, () => {

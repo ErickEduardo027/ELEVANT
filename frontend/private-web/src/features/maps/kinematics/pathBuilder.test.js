@@ -4,6 +4,7 @@ import {
   destinationPoint, haversineM, initialBearing, measurePolyline, nearestOnPolyline, pointAlong, pointToPolylineM, toLocal,
 } from '../airport/geo.js';
 import { runwayEnd } from '../airport/runwayInUse.js';
+import { edgeLine } from '../airport/taxiGraph.js';
 import { createKinematicsLayout } from './kinematicsFixtures.js';
 import {
   AIR_ARC_STEP_DEG,
@@ -20,7 +21,7 @@ import {
   takeoffPath,
   turnRadiusM,
 } from './pathBuilder.js';
-import { runwayExits } from './taxiRoute.js';
+import { graphFor, runwayExits } from './taxiRoute.js';
 import { NM, fpmToMs, ftToM, ktToMs } from './units.js';
 
 const end08 = runwayEnd(MDPC_LAYOUT, '08');
@@ -49,6 +50,33 @@ function bearingsAlong(coords, stepM) {
   const bearings = [];
   for (let distance = 0; distance <= measured.lengthM; distance += stepM) bearings.push(pointAlong(measured, distance).bearingDeg);
   return bearings;
+}
+
+/**
+ * How far a landing on `end` turns to leave by `exit`, measured on the plan itself: the smallest angle between the
+ * runway heading and the bearing of the first 10 m of each of the exit's edges that are not runway.
+ */
+function turnOnto(layout, end, exit) {
+  const graph = graphFor(layout);
+  return Math.min(...graph.adjacency.get(exit.nodeId)
+    .filter(({ edge }) => edge.kind !== 'runway')
+    .map(({ edge }) => {
+      const line = edge.a === exit.nodeId ? edgeLine(graph, edge) : [...edgeLine(graph, edge)].reverse();
+      return angleBetween(initialBearing(exit.p, pointAlong(line, 10).p), end.headingTrue);
+    }));
+}
+
+/** The synthetic aerodrome with the taxi edges of `exitIds` leaving them on 233°: back towards 09, ahead along 27. */
+function bentBack(exitIds) {
+  const layout = createKinematicsLayout();
+  const point = id => layout.taxiGraph.nodes.find(node => node.id === id).p;
+  for (const edge of layout.taxiGraph.edges) {
+    if (edge.kind === 'runway' || !exitIds.includes(edge.a)) continue;
+    const via = destinationPoint(point(edge.a), 233, 50);
+    edge.line = [point(edge.a), via, point(edge.b)];
+    edge.m = haversineM(point(edge.a), via) + haversineM(via, point(edge.b));
+  }
+  return layout;
 }
 
 describe('approach and departure paths', () => {
@@ -149,11 +177,70 @@ describe('approach and departure paths', () => {
     const takeoff = takeoffPath(end08, 110, 1800);
     expect(takeoff.toAlongM - takeoff.fromAlongM).toBeCloseTo(1800, 6);
     expect(takeoffPath(end08, 2000, 5000).toAlongM).toBeCloseTo(end08.lengthM, 6);
-    // On a runway with one exit beyond 1 500 m, that one; on the synthetic runway x2 at 1 600 m.
+    // On the synthetic runway every exit leaves at a right angle, and right angles are taken whatever the last digits
+    // of the arithmetic (x2 reads 90.000000004°): x2 at 1 600 m, and the farthest, x3, when none lies beyond the
+    // distance asked for.
     const synthetic = createKinematicsLayout();
     const end09 = runwayEnd(synthetic, '09');
+    for (const exit of runwayExits(synthetic, end09)) expect(exit.turnDeg, exit.nodeId).toBeCloseTo(90, 6);
     expect(defaultLandingExit(synthetic, end09).nodeId).toBe('x2');
     expect(defaultLandingExit(synthetic, end09, { minAlongM: 2800 }).nodeId).toBe('x3');
+  });
+
+  it('a landing on 08, 26, 09 or 27 turns off only by an exit that turns 90° at most from the runway heading', () => {
+    const defaults = [];
+    for (const ident of ['08', '26', '09', '27']) {
+      const end = runwayEnd(MDPC_LAYOUT, ident);
+      const exits = runwayExits(MDPC_LAYOUT, end);
+      for (const exit of exits) expect(exit.turnDeg, `${ident} ${exit.nodeId}`).toBeCloseTo(turnOnto(MDPC_LAYOUT, end, exit), 9);
+      // Every end has rapid exits built for the other direction, which point back towards its threshold.
+      const usable = exits.filter(exit => turnOnto(MDPC_LAYOUT, end, exit) <= 90);
+      expect(usable.length, ident).toBeLessThan(exits.length);
+      // The default: the first usable exit beyond 1 500 m.
+      const exit = defaultLandingExit(MDPC_LAYOUT, end);
+      expect(turnOnto(MDPC_LAYOUT, end, exit), ident).toBeLessThanOrEqual(90);
+      expect(exit, ident).toBe(usable.find(candidate => candidate.alongM > 1500));
+      defaults.push(exit.nodeId);
+      // The candidates the demo fits its time with: every usable exit past the touchdown point, and only those.
+      for (const minRollM of [0, 948, 1500]) {
+        const label = `${ident} after ${minRollM} m`;
+        const candidates = landingExitCandidates(MDPC_LAYOUT, end, { minRollM });
+        expect(candidates.length, label).toBeGreaterThan(0);
+        for (const candidate of candidates) expect(turnOnto(MDPC_LAYOUT, end, candidate), `${label}: ${candidate.nodeId}`).toBeLessThanOrEqual(90);
+        expect(candidates, label).toEqual(usable.filter(candidate => candidate.alongM - TOUCHDOWN_ALONG_M >= minRollM));
+      }
+    }
+    expect(defaults).toEqual(['n7592262104', 'n7592209929', 'n7592254365', 'n7592254321']);
+    // On 09 the first exit beyond 1 500 m, n7592254321 at 1 513 m, is the rapid exit of 27 and turns 155° back: the
+    // landing goes on to n7592254365, 2 088 m along, which turns 11°.
+    const end09 = runwayEnd(MDPC_LAYOUT, '09');
+    const first = runwayExits(MDPC_LAYOUT, end09).find(exit => exit.alongM > 1500);
+    expect(first.nodeId).toBe('n7592254321');
+    expect(turnOnto(MDPC_LAYOUT, end09, first)).toBeGreaterThan(150);
+    const taken = defaultLandingExit(MDPC_LAYOUT, end09);
+    expect(taken.alongM).toBeCloseTo(2088, 0);
+    expect(turnOnto(MDPC_LAYOUT, end09, taken)).toBeLessThan(20);
+    // On 08 the rapid exits of 26 at 1 439 m and 2 485 m turn 149° and 164° back: never candidates.
+    const on08 = landingExitCandidates(MDPC_LAYOUT, end08).map(exit => exit.nodeId);
+    for (const nodeId of ['n7592209929', 'n7592262113']) expect(on08).not.toContain(nodeId);
+  });
+
+  it('an exit that turns back is never the fallback, and a runway whose exits all turn back gives no exit', () => {
+    // x3 bent back: 143° from the heading of 09, but a rapid exit of 37° for a landing on 27, 300 m along.
+    const bent = bentBack(['x3']);
+    const end09 = runwayEnd(bent, '09');
+    const end27 = runwayEnd(bent, '27');
+    expect(runwayExits(bent, end09).find(exit => exit.nodeId === 'x3').turnDeg).toBeCloseTo(143, 6);
+    expect(runwayExits(bent, end27).find(exit => exit.nodeId === 'x3').turnDeg).toBeCloseTo(37, 6);
+    expect(defaultLandingExit(bent, end09).nodeId).toBe('x2');
+    // Nothing beyond 2 800 m: the farthest exit that turns 90° at most, x2, rather than x3.
+    expect(defaultLandingExit(bent, end09, { minAlongM: 2800 }).nodeId).toBe('x2');
+    expect(landingExitCandidates(bent, end09).map(exit => exit.nodeId)).not.toContain('x3');
+    expect(defaultLandingExit(bent, end27, { minAlongM: 0 }).nodeId).toBe('x3');
+    // All three bent back: a landing on 09 has no exit and no candidate.
+    const allBent = bentBack(['x1', 'x2', 'x3']);
+    expect(defaultLandingExit(allBent, runwayEnd(allBent, '09'))).toBeNull();
+    expect(landingExitCandidates(allBent, runwayEnd(allBent, '09'))).toEqual([]);
   });
 
   it('the climb holds runway heading to 1 500 ft and then turns onto the great circle', () => {

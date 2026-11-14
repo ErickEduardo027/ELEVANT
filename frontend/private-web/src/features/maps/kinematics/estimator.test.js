@@ -17,6 +17,7 @@ import {
   trajectoryPath,
 } from './estimator.js';
 import { perfFor } from './perfProfiles.js';
+import { runwayExits } from './taxiRoute.js';
 import { ftToM, ktToMs, msToKt, nmToM } from './units.js';
 
 // The map's parser in the tests: ISO instants through Date.parse (the screens inject serverClock's).
@@ -401,6 +402,32 @@ describe('estimated trajectories', () => {
     enroute.phases.forEach(phase => seen.add(phase));
     expect([...seen].sort()).toEqual([...TRAJECTORY_PHASES].sort());
     expect(Object.isFrozen(arrival) && Object.isFrozen(arrival.legs[3]) && Object.isFrozen(arrival.meta)).toBe(true);
+  });
+
+  it('an estimated arrival leaves any runway end by an exit that turns 90° at most, from the schedule or a live fix', () => {
+    // Live arrivals can put real traffic on 09, whose first exit past 1 500 m (n7592254321) is the rapid exit of 27,
+    // turning 155° back: the estimate leaves by n7592254365, 2 088 m along, instead.
+    const stand = standOf('A5');
+    for (const [ident, exitNodeId] of [['08', 'n7592262104'], ['26', 'n7592209929'], ['09', 'n7592254365'], ['27', 'n7592254321']]) {
+      const end = runwayEnd(MDPC_LAYOUT, ident);
+      const scheduled = buildArrivalTrajectory({
+        times: flightTimesFromRow(row({ phase: 'approaching', scheduledAt: iso(T0 + 3_600_000) }), parseInstant),
+        origin: MIA, layout: MDPC_LAYOUT, runwayEnd: end, stand, perf: PERF,
+      });
+      // 8 NM out on the final of that end, at 2 600 ft and 160 kt.
+      const fix = {
+        ...lonLat(destinationPoint(end.threshold, end.headingTrue + 180, nmToM(8))), altM: ftToM(2_600), gsMs: ktToMs(160),
+        trackDeg: end.headingTrue, onGround: false, positionAt: T0,
+      };
+      const live = buildArrivalTrajectory({
+        times: null, origin: MIA, layout: MDPC_LAYOUT, runwayEnd: end, stand, perf: PERF, anchor: { kind: 'fix', fix },
+      });
+      for (const [label, trajectory] of [['schedule', scheduled], ['fix', live]]) {
+        expect(trajectory.meta.exitNodeId, `${ident} ${label}`).toBe(exitNodeId);
+        const exit = runwayExits(MDPC_LAYOUT, end).find(candidate => candidate.nodeId === exitNodeId);
+        expect(exit.turnDeg, `${ident} ${label}`).toBeLessThanOrEqual(90);
+      }
+    }
   });
 });
 

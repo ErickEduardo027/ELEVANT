@@ -36,6 +36,8 @@ export const PUSHBACK_MAX_M = 40;
 export const LINE_UP_RUN_M = 60;
 /** An exit lies on a runway when it is this close to the runway's centreline. */
 export const EXIT_ON_CENTERLINE_M = 1;
+/** The way an exit leaves a runway is read over this first stretch of each of its taxi edges, in metres. */
+export const EXIT_TURN_PROBE_M = 10;
 // Holding points this close in distance to the threshold are equally «full length»: the shorter route decides.
 const HOLD_TIE_M = 20;
 // A street leaves the lead-in's join «behind» the first taxi edge when it points within this of the opposite way.
@@ -84,9 +86,29 @@ export function taxiCostFn({ activeRunwayIds = [], closedRunwayIds = [] } = {}) 
 }
 
 /**
- * The exits of a runway end, nearest to its threshold first: `[{ nodeId, p, alongM }]`, frozen, where `alongM` is the
- * distance along the centreline from the threshold. An exit is an `exit` node within 1 m of the centreline with at
- * least one edge that is not runway.
+ * How far an aircraft rolling along `headingDeg` turns to leave by an exit node: the smallest angle between that
+ * heading and the bearing of the first 10 m of each of the node's edges that are not runway (an edge without length
+ * shows no way). Infinity when no edge shows one.
+ */
+function exitTurnDeg(graph, node, headingDeg) {
+  let least = Infinity;
+  for (const { edge } of graph.adjacency.get(node.id)) {
+    if (edge.kind === 'runway') continue;
+    const line = edge.a === node.id ? edgeLine(graph, edge) : [...edgeLine(graph, edge)].reverse();
+    const probe = pointAlong(line, EXIT_TURN_PROBE_M);
+    if (probe.bearingDeg === null) continue;
+    least = Math.min(least, angleBetween(initialBearing(node.p, probe.p), headingDeg));
+  }
+  return least;
+}
+
+/**
+ * The exits of a runway end, nearest to its threshold first: `[{ nodeId, p, alongM, turnDeg }]`, frozen, where
+ * `alongM` is the distance along the centreline from the threshold and `turnDeg` how far an aircraft rolling along the
+ * end's heading turns to leave by it, read over the first 10 m of each of its edges that are not runway (0° runs
+ * straight on, 90° is a right-angle exit; more points back towards the threshold: a rapid exit built for the other
+ * direction). An exit is an `exit` node within 1 m of the centreline with at least one edge that is not runway; the
+ * same node is an exit of both ends of its runway, with its own `alongM` and `turnDeg` for each.
  */
 export function runwayExits(layout, end) {
   if (!end?.centerline) return Object.freeze([]);
@@ -105,7 +127,9 @@ export function runwayExits(layout, end) {
     if (!graph.adjacency.get(node.id).some(({ edge }) => edge.kind !== 'runway')) continue;
     const hit = nearestOnPolyline(centreline, node.p);
     if (hit === null || hit.distanceM > EXIT_ON_CENTERLINE_M) continue;
-    exits.push(Object.freeze({ nodeId: node.id, p: freezePoint(node.p), alongM: hit.alongM }));
+    exits.push(Object.freeze({
+      nodeId: node.id, p: freezePoint(node.p), alongM: hit.alongM, turnDeg: exitTurnDeg(graph, node, end.headingTrue),
+    }));
   }
   exits.sort((a, b) => a.alongM - b.alongM || compareIds(a.nodeId, b.nodeId));
   const result = Object.freeze(exits);

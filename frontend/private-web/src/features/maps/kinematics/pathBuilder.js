@@ -30,8 +30,16 @@ export const GLIDE_DEG = 3;
 export const THRESHOLD_CROSS_FT = 50;
 /** Where the wheels touch, along the centreline from the threshold. */
 export const TOUCHDOWN_ALONG_M = 300;
-/** A real flight leaves the runway by the first exit beyond this. */
+/** A real flight leaves the runway by the first exit beyond this that it can take (LANDING_EXIT_MAX_TURN_DEG). */
 export const LANDING_EXIT_MIN_ALONG_M = 1500;
+/**
+ * A landing turns off only by an exit that turns this much at most from the runway heading (`turnDeg` of
+ * taxiRoute.js: runwayExits). One that turns more points back towards the threshold, a rapid exit built for the other
+ * direction: taking it would end the roll in a hairpin.
+ */
+export const LANDING_EXIT_MAX_TURN_DEG = 90;
+// Bearings carry the arithmetic's rounding: a right-angle exit can read 90.000000004°.
+const TURN_EPSILON_DEG = 1e-6;
 /** The downwind is joined abeam this far past the threshold, and a straight-in flies its inbound course this long. */
 export const DOWNWIND_JOIN_NM = 4;
 export const STRAIGHT_IN_LEAD_NM = 3;
@@ -140,18 +148,27 @@ export function landingRollPath(runwayEnd, exit) {
   return Object.freeze({ coords, fromAlongM: TOUCHDOWN_ALONG_M, toAlongM: exit.alongM, lengthM: measurePolyline(coords).lengthM });
 }
 
+/** The exits a landing on `runwayEnd` can turn off by (90° at most from its heading), nearest to the threshold first. */
+function landingExits(layout, runwayEnd) {
+  return runwayExits(layout, runwayEnd).filter(exit => exit.turnDeg <= LANDING_EXIT_MAX_TURN_DEG + TURN_EPSILON_DEG);
+}
+
 /**
- * The exit a real flight takes: the first beyond `minAlongM` (1 500 m) from the threshold, else the farthest; `null`
- * for a runway without exits. `{ nodeId, p, alongM }`.
+ * The exit a real flight takes, among those that turn 90° at most from the runway heading: the first beyond
+ * `minAlongM` (1 500 m) from the threshold, else the farthest of them; `null` for a runway without one.
+ * `{ nodeId, p, alongM, turnDeg }`.
  */
 export function defaultLandingExit(layout, runwayEnd, { minAlongM = LANDING_EXIT_MIN_ALONG_M } = {}) {
-  const exits = runwayExits(layout, runwayEnd);
+  const exits = landingExits(layout, runwayEnd);
   return exits.find(exit => exit.alongM > minAlongM) ?? exits[exits.length - 1] ?? null;
 }
 
-/** The exits a landing can take after rolling at least `minRollM` from the touchdown point, nearest first. */
+/**
+ * The exits a landing can take after rolling at least `minRollM` from the touchdown point, nearest first: only those
+ * that turn 90° at most from the runway heading, as for defaultLandingExit.
+ */
 export function landingExitCandidates(layout, runwayEnd, { minRollM = 0 } = {}) {
-  return Object.freeze(runwayExits(layout, runwayEnd).filter(exit => exit.alongM - TOUCHDOWN_ALONG_M >= minRollM));
+  return Object.freeze(landingExits(layout, runwayEnd).filter(exit => exit.alongM - TOUCHDOWN_ALONG_M >= minRollM));
 }
 
 /**

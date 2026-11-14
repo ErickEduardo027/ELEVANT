@@ -343,4 +343,26 @@ describe('taxi routes on the MDPC layout', () => {
     expect(graphFor(layout)).toBe(graphFor(layout));
     expect(taxiPath(layout, null)).toBeNull();
   });
+
+  it('each exit says how far a landing on that end turns to leave by it, read over the first metres of its taxi edges', () => {
+    // A rapid exit serves one direction: n7592254321 turns 14° off 27 and 155° back off 09. The right-angle exit of
+    // taxiway B, n1619995019, is about 90° off both.
+    const turnOf = (ident, nodeId) => runwayExits(MDPC_LAYOUT, runwayEnd(MDPC_LAYOUT, ident))
+      .find(exit => exit.nodeId === nodeId).turnDeg;
+    expect(turnOf('27', 'n7592254321')).toBeCloseTo(13.6, 1);
+    expect(turnOf('09', 'n7592254321')).toBeCloseTo(155.3, 1);
+    expect(turnOf('09', 'n1619995019')).toBeCloseTo(89.3, 1);
+    expect(turnOf('27', 'n1619995019')).toBeCloseTo(89.2, 1);
+    // An edge without length shows no way off: an exit that has nothing else reads Infinity, so no landing takes it.
+    const layout = createKinematicsLayout();
+    layout.taxiGraph.nodes.push(
+      { id: 'x4', p: kinematicsPoint(500, 0), kind: 'exit' },
+      { id: 'x4-stub', p: kinematicsPoint(500, 0), kind: 'junction' },
+    );
+    layout.taxiGraph.edges.push({ a: 'x4', b: 'x4-stub', m: 0, kind: 'taxiway', ref: null });
+    const exits = runwayExits(layout, runwayEnd(layout, '09'));
+    expect(exits.map(exit => exit.nodeId)).toEqual(['x1', 'x2', 'x4', 'x3']);
+    expect(exits[2].turnDeg).toBe(Infinity);
+    expect(Object.isFrozen(exits[2])).toBe(true);
+  });
 });

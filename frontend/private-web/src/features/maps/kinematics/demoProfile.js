@@ -78,9 +78,9 @@ const lastHeading = legs => {
 
 /**
  * The landing of a demo flight between its touchdown and its on-block (contracts 2.3): among the exits a landing can
- * reach braking at most at the profile's maximum, nearest first, the first whose taxi fits at real speeds (5 to
- * 25 kt, no wait but the one before the lead-in); when none does, the one that needs the smallest time scale.
- * `{ fit, path }` or `null`.
+ * take (landingExitCandidates: those that turn 90° at most from the runway heading) and reach braking at most at the
+ * profile's maximum, nearest first, the first whose taxi fits at real speeds (5 to 25 kt, no wait but the one before
+ * the lead-in); when none does, the one that needs the smallest time scale. `{ fit, path }` or `null`.
  */
 function demoLanding({ layout, runwayEnd, stand, apronHold, perf, activeRunwayIds, requiredMs, statusKey, groundAltM }) {
   const vref = perf.final.vrefMs;
