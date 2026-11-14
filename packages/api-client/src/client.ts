@@ -186,12 +186,15 @@ import {
   type DemoFlightOptionsQuery,
 } from "./demoFlights";
 import {
+  isOccAerodromeWeather,
   isOccAircraftTrack,
   isOccAirPicture,
   isOccMapFlights,
+  normalizedOccAerodromeWeatherQuery,
   normalizedOccAircraftTrackQuery,
   normalizedOccAirPictureQuery,
   normalizedOccMapFlightsQuery,
+  type OccAerodromeWeatherQuery,
   type OccAircraftTrackQuery,
   type OccAirPictureQuery,
   type OccMapFlightsQuery,
@@ -404,6 +407,7 @@ import {
   getGetOccAirPictureUrl,
   getGetOccAircraftTrackUrl,
   getGetOccMapFlightsUrl,
+  getGetOccAerodromeWeatherUrl,
   getGetOccMasterDataUrl,
   getCreateOccTerminalUrl,
   getUpdateOccTerminalUrl,
@@ -595,6 +599,7 @@ import {
   type OccAirPictureResponse,
   type OccAircraftTrackResponse,
   type OccMapFlightsResponse,
+  type OccAerodromeWeatherResponse,
   type OccMasterData,
   type MasterTerminalData,
   type MasterStandData,
@@ -847,7 +852,7 @@ export type GetOccPlanningSnapshotOptions = Omit<
   "body" | "method"
 >;
 export type GetOccAircraftTrafficOptions = Omit<ElevantRequestInit, "body" | "method">;
-/** Options of the three reads of the OCC map (ADR-0042). */
+/** Options of the three reads of the OCC map (ADR-0042) and of its weather (ADR-0043). */
 export type GetOccMapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
@@ -1243,6 +1248,14 @@ export interface ElevantApiClient {
    * milestones and the demo clock.
    */
   getOccMapFlights(query: OccMapFlightsQuery, options?: GetOccMapOptions): Promise<OccMapFlightsResponse>;
+  /**
+   * The METAR (decoded basics and raw text) and the TAF (raw text and periods) of the station's airport, from
+   * aviationweather.gov through the API (ADR-0043); any map permission of OCC reads it, for any station in scope. The
+   * query is checked before it is sent. The state comes in the 200 (`Live`, `Stale`, `Unavailable`, `Disabled`) with the
+   * credit of the weather service; a malformed station answers `invalid_weather_query` and another one `not_found`.
+   */
+  getOccAerodromeWeather(query: OccAerodromeWeatherQuery, options?: GetOccMapOptions):
+    Promise<OccAerodromeWeatherResponse>;
   getOccPlanningOptions(
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
@@ -6680,6 +6693,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const params = normalizedOccMapFlightsQuery(query);
       const result = await execute(getGetOccMapFlightsUrl(params), { ...options, method: "GET" }, true);
       if (result.status !== 200 || !isOccMapFlights(result.data, params.stationId)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAerodromeWeather(query: OccAerodromeWeatherQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccAerodromeWeatherQuery(query);
+      const result = await execute(getGetOccAerodromeWeatherUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAerodromeWeather(result.data, params.stationId))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getManualTurnaroundOptions(

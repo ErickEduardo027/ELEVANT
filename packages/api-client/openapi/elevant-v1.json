@@ -29108,6 +29108,83 @@
         ]
       }
     },
+    "/api/v1/occ/weather": {
+      "get": {
+        "tags": [
+          "OccWeather"
+        ],
+        "summary": "The METAR (decoded basics and raw text) and the TAF (raw text and periods) of the station's airport, which the API\nkeeps a few minutes. The state of the weather (`Live`, `Stale`, `Unavailable`, `Disabled`)\nand the credit of the weather service come in the 200; a station outside the reader's scope is not found.",
+        "operationId": "GetOccAerodromeWeather",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAerodromeWeatherResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chat/conversations": {
       "get": {
         "tags": [
@@ -48187,6 +48264,61 @@
         },
         "additionalProperties": false
       },
+      "OccAerodromeWeatherResponse": {
+        "required": [
+          "icaoCode",
+          "serverTime",
+          "source",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccWeatherSourceResponse"
+              }
+            ]
+          },
+          "metar": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccMetarResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "taf": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccTafResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAgentOptionResponse": {
         "required": [
           "displayName",
@@ -48956,6 +49088,23 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCloudLayerResponse": {
+        "required": [
+          "cover"
+        ],
+        "type": "object",
+        "properties": {
+          "cover": {
+            "type": "string"
+          },
+          "baseFeet": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -50203,6 +50352,77 @@
           },
           "canUpdate": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMetarResponse": {
+        "required": [
+          "clouds",
+          "observedAt",
+          "raw",
+          "windVariable"
+        ],
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "flightCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "windDirectionDegrees": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windVariable": {
+            "type": "boolean"
+          },
+          "windSpeedKnots": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windGustKnots": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "visibilityStatuteMiles": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "temperatureCelsius": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "dewpointCelsius": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "altimeterHectopascals": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "weather": {
+            "type": "string",
+            "nullable": true
+          },
+          "clouds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCloudLayerResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -51776,6 +51996,102 @@
         },
         "additionalProperties": false
       },
+      "OccTafPeriodResponse": {
+        "required": [
+          "clouds",
+          "from",
+          "to",
+          "windVariable"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "change": {
+            "type": "string",
+            "nullable": true
+          },
+          "probabilityPercent": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windDirectionDegrees": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windVariable": {
+            "type": "boolean"
+          },
+          "windSpeedKnots": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windGustKnots": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "visibilityStatuteMiles": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "weather": {
+            "type": "string",
+            "nullable": true
+          },
+          "clouds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCloudLayerResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccTafResponse": {
+        "required": [
+          "issuedAt",
+          "periods",
+          "raw",
+          "validFrom",
+          "validTo"
+        ],
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccTafPeriodResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccTerminalResponse": {
         "required": [
           "code",
@@ -51961,6 +52277,22 @@
             "items": {
               "type": "string"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccWeatherSourceResponse": {
+        "required": [
+          "homeUrl",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "homeUrl": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -58177,6 +58509,9 @@
     },
     {
       "name": "OccTurnarounds"
+    },
+    {
+      "name": "OccWeather"
     },
     {
       "name": "OperationalChat"
