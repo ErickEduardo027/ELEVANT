@@ -111,7 +111,9 @@
 }
 
 /* The group of map controls at the bottom centre of the visible area (contracts 2.5): the view selector and the
-   legend now, then 2D/3D, follow and layers. Only its children take the pointer. */
+   legend now, then 2D/3D, follow and layers. Only its children take the pointer. Its own width is its content's, up to
+   the visible area (a box placed at the middle would otherwise get half of it, and fold its items); there they shrink.
+   */
 .occ-map .occ-map-dock {
   position: absolute;
   z-index: 10;
@@ -119,6 +121,7 @@
   left: calc(var(--occ-map-inset-left, 0px)
     + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
   display: flex;
+  width: max-content;
   max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 2 * var(--occ-map-gap));
   align-items: flex-end;
   gap: 8px;

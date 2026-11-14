@@ -14,6 +14,7 @@ import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import MapDock from '../../maps/ui/MapDock';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
+import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
 import { useMapSituation } from '../../maps/useMapSituation';
@@ -107,6 +108,7 @@ function FlightMapView({
           aria-label={t('map.centerPuj')} className={toolClass}>
           <CrosshairIcon className="h-4 w-4" />
         </button>
+        <MapMotionControl />
         <MapLegend />
       </MapDock>
     </OccMap>
@@ -135,11 +137,9 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
   }, [selectedFlightId, selectedHex]);
   // Every trail is read: the layers menu shows the other traffic's only while «Estelas de todo el tráfico» is on.
   const live = useMapSituation({ stationId, selectedHex, selection, allTrails: true });
-  const { situation, trails, target, route } = live;
+  // The traffic with its motion (PR M6): the map moves it frame by frame on the hook's render clock.
+  const { situation, target, traffic } = live;
   const mapFlights = situation.flights;
-
-  const traffic = useMemo(() => ({ aircraft: situation.aircraft, trails, route, source: situation.source }),
-    [route, situation, trails]);
   // The ELEVANT flights the traffic draws, by key: the page does not draw them a second time.
   const drawnKeys = useMemo(() => new Set(situation.aircraft
     .filter(item => item.kind === 'aviam' && isDrawn(item)).map(item => item.flightKey)), [situation]);

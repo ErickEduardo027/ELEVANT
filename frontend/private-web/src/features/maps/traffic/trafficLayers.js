@@ -36,7 +36,10 @@ const is = key => ['==', get(key), true];
 const isNot = key => ['!=', get(key), true];
 const AVIAM = ['==', get('kind'), 'aviam'];
 const OTHER = ['==', get('kind'), 'other'];
-const DIMMED = ['case', is('stale'), 0.5, 1];
+// A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
+// carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
+const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
+const FADED = ['coalesce', get('opacity'), 1];
 const bold = () => ['literal', [...FONT_STACKS.bold]];
 
 // An OCC colour with its alpha, for the fading trail: the token's own colour, never a new hue.
@@ -258,7 +261,9 @@ export function trafficOverlay() {
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
         },
-        paint: { 'icon-color': occColor('muted'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1 },
+        paint: {
+          'icon-color': occColor('muted'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1, 'icon-opacity': FADED,
+        },
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
       },
       {

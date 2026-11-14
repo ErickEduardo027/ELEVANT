@@ -228,8 +228,8 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-demo', {
     title: 'Aproximación: llegada demo',
-    description: 'El vuelo demo en final de la 08 con su placa «Demo», su anillo «est.» y su recorrido estimado, con la '
-      + 'llegada de AVIAM en base y otro tráfico alrededor.',
+    description: 'El vuelo demo en final de la 08, donde lo pone su trayectoria ajustada al reloj del servidor, con su '
+      + 'placa «Demo» y su anillo «est.», la llegada de AVIAM en base y otro tráfico alrededor.',
     view: 'approach',
   }),
   trafficScene('ramp-traffic-ground', {
@@ -240,8 +240,9 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-estimated-stale', {
     title: 'Aproximación: estimado y sin actualizar',
-    description: 'La imagen aérea con cuatro minutos de retraso, cada avión atenuado con la hora de su última '
-      + 'posición, y un vuelo de AVIAM dibujado con su posición estimada.',
+    description: 'La imagen aérea con más de un minuto de retraso: cada avión atenuado con la hora de su última '
+      + 'posición, los que llevan más tiempo sin señal desvaneciéndose, y un vuelo de AVIAM con su posición estimada '
+      + 'por el horario.',
     view: 'approach',
   }),
   trafficScene('region-traffic-selected', {
@@ -264,6 +265,50 @@ export const SCENES = deepFreeze([
       + 'siempre visibles.',
     view: 'region',
     layersMenu: true,
+  }),
+  // The demo flight in motion (PR M6): each scene fires it with the server's timeline so the lab's instant finds it where
+  // the scene says (lab/trafficScenes.js).
+  trafficScene('approach-demo-final', {
+    title: 'Aproximación: vuelo demo en final',
+    description: 'El vuelo demo importado con la A6, en final de la 08 dos minutos antes de tocar pista, elegido: su '
+      + 'bloque dice que su posición es estimada.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('airfield-demo-taxiing', {
+    title: 'Aeródromo: vuelo demo rodando',
+    description: 'El vuelo demo importado rueda por las calles de rodaje hacia la A6, minuto y medio después de tocar '
+      + 'pista en la 08.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('ramp-demo-awaiting-stand', {
+    title: 'Rampa: vuelo demo esperando posición',
+    description: 'Nadie importó el vuelo demo: espera en el punto de espera de la plataforma de la terminal B, con su '
+      + 'bloque «Esperando posición · sin importar».',
+    view: 'ramp',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('approach-traffic-live-estimated', {
+    title: 'Aproximación: en vivo, sin señal y estimado',
+    description: 'ZZ161 en vivo, ZZ700 saliendo sin señal desde hace 20 s y ZZ500 estimado por su horario: el bloque de '
+      + 'cada uno dice de dónde sale su posición. Elegido, ZZ700.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.departed },
+  }),
+  trafficScene('airfield-demo-cancelled', {
+    title: 'Aeródromo: vuelo demo cancelado',
+    description: 'El proveedor canceló el vuelo demo en final corta: se desvanece donde está y su bloque dice «Cancelado '
+      + 'por el proveedor (demo)».',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('approach-demo-accelerated', {
+    title: 'Aproximación: vuelo demo de 2 minutos',
+    description: 'Disparado con 2 minutos hasta la posición: sus 30 s en el aire no alcanzan a velocidad real desde 5 NM, '
+      + 'así que esa parte va comprimida y su bloque dice «Demo acelerada ×N».',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
   }),
 ]);
 

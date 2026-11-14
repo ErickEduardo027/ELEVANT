@@ -7,6 +7,7 @@ import { normalizeStandCode } from '../../../services/standCodes';
 import OccPlate from '../../occ-ui/OccPlate';
 import OccStandSwatch from '../../occ-ui/OccStandSwatch';
 import { TAGS } from '../../occ-ui/statusVocabulary';
+import { STATUS_MESSAGES, formatTimeScale, kinematicsMessages, timeScaleMessage } from '../kinematics/kinematicsMessages';
 import { mapMessages } from '../mapMessages';
 import { staleWords, stationTime } from '../traffic/stationTime';
 import { telemetryAt, useServerTime, useTelemetry } from '../traffic/telemetryStore';
@@ -15,12 +16,16 @@ import { telemetryAt, useServerTime, useTelemetry } from '../traffic/telemetrySt
 // pinned to the aircraft, so it covers no traffic and React does not follow the aircraft on screen. It is a dialog
 // without aria-modal (the map keeps its keys) named with the flight number. Its telemetry comes from the map's
 // telemetry store (traffic/telemetryStore.js) through useSyncExternalStore, so the age of a live position counts up
-// while the map does not re-render. It always says where the position comes from: live, not updated since the
-// station's time of its last position (the stale tag of the vocabulary, as the aircraft's tag says it), estimated from
-// the schedule, or none yet; «Vuelo demo» and «Sin importar» when they apply. Its times are the station's.
+// while the map does not re-render. It always says where the position comes from: live, without a signal for N s
+// (PR M6: the fix carried on), not updated since the station's time of its last position (the stale tag of the
+// vocabulary, as the aircraft's tag says it), estimated from the schedule, or none yet; «Vuelo demo» and «Sin
+// importar» when they apply. Its times are the station's.
 //
-// PR M6 adds «Seguir» and «Demo acelerada ×N»; the runway in use of a real flight comes with the kinematics (M6) and
-// the weather (M8): until then only a demo flight names its runway, 08 (contracts 2.3).
+// PR M6 adds what the motion knows: the status of a demo flight's plan («Esperando posición · sin importar»,
+// «Esperando posición», «Cancelado por el proveedor (demo)»), «Demo acelerada ×N» while the part the aircraft is in had
+// to be scaled, and the runway a real flight's estimated path uses with where that choice comes from («por el
+// tráfico», «habitual»; the wind with PR M8). A demo flight always names runway 08 (contracts 2.3). «Seguir» comes with
+// follow mode.
 
 /** A demo flight always lands and departs on runway 08 (owner decision 19, contracts 2.3). */
 export const DEMO_RUNWAY = '08';
@@ -131,30 +136,53 @@ function ageWords(ageS, t) {
 }
 
 /**
- * Where the position comes from (contracts 2.4): `{ kind: 'live' | 'stale' | 'estimated' | 'none', words }` —
- * «En vivo · hace 4 s»; «Sin actualizar desde las 10:59», the stale tag of the vocabulary with the station's time of
- * the last position (`telemetry.positionAt`), the words the aircraft's tag says; «Posición estimada: calculada con el
- * horario, no con señal del avión.»; or «Sin posición todavía».
+ * Where the position comes from (contracts 2.4): `{ kind: 'live' | 'coast' | 'stale' | 'estimated' | 'none', words }`
+ * — «En vivo · hace 4 s»; «Sin señal desde hace 20 s» while the last fix is carried on without a new one (PR M6:
+ * kinematics/handoff.js, mode 'coast', `tk` the kinematics messages); «Sin actualizar desde las 10:59», the stale tag of
+ * the vocabulary with the station's time of the last position (`telemetry.positionAt`), the words the aircraft's tag
+ * says, as soon as the position is older than the map's stale limit or the whole picture is late; «Posición estimada:
+ * calculada con el horario, no con señal del avión.»; or «Sin posición todavía».
  */
-export function sourceLine(telemetry, { t, language }) {
+export function sourceLine(telemetry, { t, language, tk = null }) {
   if (!telemetry) return { kind: 'none', words: t('dataBlock.noPosition') };
   if (telemetry.quality === 'estimated') {
     return { kind: 'estimated', words: TAGS.estimated.description[language] ?? TAGS.estimated.description.es };
   }
   if (telemetry.quality === 'stale') return { kind: 'stale', words: staleWords(telemetry.positionAt, language) };
+  if (telemetry.mode === 'coast' && tk !== null) {
+    return { kind: 'coast', words: tk(STATUS_MESSAGES.noSignal, { seconds: Math.max(0, Math.floor(telemetry.ageS ?? 0)) }) };
+  }
   return { kind: 'live', words: t('dataBlock.live', { age: ageWords(telemetry.ageS, t) }) };
 }
 
-// The mark before the source line: a solid dot live, the dimmed swatch with its clock stale, the dashed swatch
-// estimated and an empty ring without a position. Shapes, never hues.
+// The statuses of a plan the card says in a line of their own (a demo flight that waits or was cancelled); «Sin señal»
+// is the source line's.
+const PLAN_STATUSES = new Set(['awaitingStandNotImported', 'awaitingStand', 'cancelledByProvider']);
+
+/** The line of the plan's status (PR M6, kinematicsMessages.js), or `null`. */
+export function statusLine(telemetry, tk) {
+  const key = telemetry?.statusKey ?? null;
+  return PLAN_STATUSES.has(key) ? tk(STATUS_MESSAGES[key]) : null;
+}
+
+/** «Demo acelerada ×1,02» while the part of its plan the aircraft is in had to be scaled, or `null` in real time. */
+export function timeScaleLine(telemetry, tk, language) {
+  const scale = telemetry?.timeScale;
+  const message = timeScaleMessage(scale);
+  return message === null ? null : tk(message, { factor: formatTimeScale(scale, language) });
+}
+
+// The mark before the source line: a solid dot live, a hollow ring without a signal, the dimmed swatch with its clock
+// stale, the dashed swatch estimated and a faint ring without a position. Shapes, never hues.
 function SourceMark({ kind }) {
   if (kind === 'stale') return <OccStandSwatch tag="stale" />;
   if (kind === 'estimated') return <OccStandSwatch tag="estimated" />;
+  let style = { fill: 'none', stroke: 'var(--occ-faint)', strokeWidth: 1.2 };
+  if (kind === 'live') style = { fill: 'var(--occ-text)' };
+  if (kind === 'coast') style = { fill: 'none', stroke: 'var(--occ-text)', strokeWidth: 1.6 };
   return (
     <svg viewBox="0 0 24 16" aria-hidden="true" focusable="false" data-source-mark={kind} className="h-4 w-6 shrink-0">
-      <circle cx="12" cy="8" r="3.5" style={kind === 'live'
-        ? { fill: 'var(--occ-text)' }
-        : { fill: 'none', stroke: 'var(--occ-faint)', strokeWidth: 1.2 }} />
+      <circle cx="12" cy="8" r="3.5" style={style} />
     </svg>
   );
 }
@@ -189,15 +217,29 @@ function Telemetry({ telemetry, t, locale }) {
   );
 }
 
-// The stand and runway line of an ELEVANT flight: «Posición A5 · Pista 08»; a departure that has left says where from.
-function standWords(flight, t) {
+// Where a real flight's runway comes from (airport/runwayInUse.js `source`): the words the card adds to it.
+const RUNWAY_SOURCES = new Set(['live', 'wind', 'default']);
+
+/**
+ * The stand and runway line of an ELEVANT flight: «Posición A5 · Pista 08»; a departure that has left says where from.
+ * A demo flight always names 08 (contracts 2.3); a real flight the runway its estimated path uses (PR M6, from the
+ * telemetry: `runwayIdent`, `runwaySource`) with where that choice comes from, «Pista 08 (por el tráfico)», and none
+ * while the map has no path for it.
+ */
+export function standWords(flight, t, telemetry = null) {
   if (!flight) return null;
   const assigned = text(flight.stand?.code);
   const suggested = text(flight.suggestedStandCode);
   let stand = t('dataBlock.noStand');
   if (assigned) stand = t(hasLeft(flight) ? 'dataBlock.leftStand' : 'dataBlock.stand', { code: normalizeStandCode(assigned) });
   else if (suggested) stand = t('dataBlock.suggestedStand', { code: normalizeStandCode(suggested) });
-  return flight.isDemo === true ? `${stand} · ${t('dataBlock.runway', { id: DEMO_RUNWAY })}` : stand;
+  if (flight.isDemo === true) return `${stand} · ${t('dataBlock.runway', { id: DEMO_RUNWAY })}`;
+  const runway = text(telemetry?.runwayIdent);
+  if (runway === null) return stand;
+  const source = RUNWAY_SOURCES.has(telemetry?.runwaySource) ? telemetry.runwaySource : null;
+  const words = source === null ? t('dataBlock.runway', { id: runway })
+    : t('dataBlock.runwayFrom', { id: runway, source: t(`dataBlock.runwaySource.${source}`) });
+  return `${stand} · ${words}`;
 }
 
 const ACTION = 'inline-flex min-h-9 items-center rounded border border-occ-line bg-occ-panel px-3 text-sm font-semibold '
@@ -217,6 +259,7 @@ const ACTION_OFF = 'inline-flex min-h-9 cursor-not-allowed items-center rounded 
 export default function FlightDataBlock({ target, telemetry: store = null, station = null, stationId = null, onClose,
   style, className = '' }) {
   const { t, language, locale } = useTranslation(mapMessages);
+  const { t: tk } = useTranslation(kinematicsMessages);
   const aircraft = target?.aircraft ?? null;
   const flight = target?.flight ?? null;
   const fromStore = useTelemetry(store, aircraft?.id ?? null);
@@ -233,9 +276,14 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
   const counterpart = text(flight?.counterpart?.iataCode) ?? text(flight?.counterpart?.icaoCode);
   const ends = flight?.direction === 'Departure' ? [stationCode, counterpart] : [counterpart, stationCode];
   const time = flightTimeLine(flight, nowMs, { t, locale });
-  const source = sourceLine(telemetry, { t, language });
+  const source = sourceLine(telemetry, { t, language, tk });
   const links = dataBlockLinks(flight, { stationId });
   const notImported = flight !== null && flight.imported !== true;
+  // What the motion says of it (PR M6): its plan's status, said once (a cancelled demo's time line already says it),
+  // and whether the part it is in had to be scaled.
+  const status = flight !== null ? statusLine(telemetry, tk) : null;
+  const shownStatus = status !== null && status !== time?.words ? status : null;
+  const scaled = flight?.isDemo === true ? timeScaleLine(telemetry, tk, language) : null;
 
   return (
     <div
@@ -277,6 +325,7 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
           {notImported && (
             <span className="rounded-sm border border-occ-line-strong px-1.5 leading-5 text-occ-text">{t('dataBlock.notImported')}</span>
           )}
+          {scaled !== null && <span data-time-scale="" className="text-occ-text">{scaled}</span>}
         </p>
       )}
 
@@ -301,7 +350,9 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
 
       {aircraft !== null && <Telemetry telemetry={telemetry} t={t} locale={locale} />}
 
-      {flight !== null && <p className="border-t border-occ-line pt-2">{standWords(flight, t)}</p>}
+      {flight !== null && <p className="border-t border-occ-line pt-2">{standWords(flight, t, telemetry)}</p>}
+
+      {shownStatus !== null && <p data-status-line="" className="font-semibold text-occ-text">{shownStatus}</p>}
 
       <p data-source-line={source.kind} className="flex items-start gap-1.5 text-occ-muted">
         <span className="mt-0.5"><SourceMark kind={source.kind} /></span>

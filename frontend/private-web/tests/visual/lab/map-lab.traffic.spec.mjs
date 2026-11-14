@@ -83,18 +83,19 @@ test.describe('map lab traffic', () => {
     await labIdle(page);
     await shoot(page, testInfo, 'region-traffic-stale-selected-1440');
 
-    // The ramp lists the aircraft on the ground and the demo approach its plate, ring and estimated path.
+    // The ramp lists the aircraft on the ground and the demo approach its plate and ring (PR M6: drawn where its
+    // trajectory has it; its estimated route comes with the chosen flight's route).
     await openLab(page, `scene=ramp-traffic-ground&t=${NOON}`);
     await labIdle(page);
     await expect(legendItems(page)).toContainText(['Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale',
       'Otro tráfico en tierra']);
     await openLab(page, `scene=approach-traffic-demo&t=${NOON}`);
     await labIdle(page);
-    await expect(legendItems(page)).toContainText(['Vuelo de AVIAM que llega', 'Demo', 'est.', 'Estela', 'Estela estimada']);
+    await expect(legendItems(page)).toContainText(['Vuelo de AVIAM que llega', 'Demo', 'est.', 'Estela']);
     await openLab(page, `scene=approach-traffic-estimated-stale&t=${NOON}`);
     await labIdle(page);
     await expect(page.getByTestId('map-source-status').getByRole('status'))
-      .toHaveText('Tráfico con retraso: último dato hace 4 min.');
+      .toHaveText('Tráfico con retraso: último dato hace 1 min.');
   });
 
   test('screenshots of the data block, the selection and the layers menu at 1440 × 900 and 1920 × 1080', async ({ page }, testInfo) => {

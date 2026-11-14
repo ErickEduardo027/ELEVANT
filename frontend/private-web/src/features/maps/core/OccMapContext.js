@@ -21,6 +21,9 @@ import { createContext, useContext } from 'react';
 // - layers menu (PR M5, core/layersMenu.js): `layers` (`{ keys, values }`: the keys the map can show and whether each is
 //   on now), `setLayer(key, on)`, `layersMenuOpen`, `setLayersMenuOpen(open)` and `registerLayersMenu()`, which a menu
 //   on screen calls (it returns the call that unregisters it): the L key opens a menu only while one is registered.
+// - motion (PR M6, core/frameLoop.js): `motion` is `{ available, paused, pausedAt, dataAt, pause(), resume() }`: whether
+//   the map moves its traffic, whether «Pausar movimiento» holds it and at which instant, the server instant of the
+//   newest data the map draws, and the two actions (ui/MapMotionControl.jsx).
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -48,6 +51,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   layersMenuOpen: false,
   setLayersMenuOpen: doNothing,
   registerLayersMenu: () => doNothing,
+  motion: Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null, pause: doNothing, resume: doNothing }),
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

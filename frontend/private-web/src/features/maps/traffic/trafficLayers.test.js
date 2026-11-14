@@ -158,6 +158,30 @@ describe('traffic layers (design E1 and E3)', () => {
     for (const token of ['accent', 'warn', 'danger']) expect(paints, token).not.toContain(occColor(token));
   });
 
+  it('a fading demo aircraft dims its icon, tag and plate', () => {
+    const features = noonFeatures();
+    const demo = { ...features.find(item => item.demo), opacity: 0.4 };
+    // Its silhouette, its estimated ring, its tag and its «Demo» plate fade together, also in cyan while it is chosen;
+    // the selection's own ring stays whole while it is there (it goes with the aircraft).
+    for (const [layer, property] of [
+      ['occ-traffic-aviam', 'icon-opacity'], ['occ-traffic-estimated-ring', 'icon-opacity'], ['occ-traffic-tags', 'text-opacity'],
+      ['occ-traffic-demo-plate', 'icon-opacity'], ['occ-traffic-demo-plate', 'text-opacity'],
+      ['occ-traffic-selected', 'icon-opacity'],
+    ]) {
+      expect(evaluate(layerOf(layer), 'paint', property, { ...demo, selected: true }), `${layer} ${property}`).toBeCloseTo(0.4, 9);
+    }
+    expect(layerOf('occ-traffic-selected-ring').paint['circle-stroke-opacity']).toBeUndefined();
+    // Traffic that lost its signal fades the same way, on top of the dimming of a stale position.
+    const stale = features.find(item => item.stale);
+    expect(evaluate(layerOf('occ-traffic-other'), 'paint', 'icon-opacity', { ...stale, opacity: 0.5 })).toBeCloseTo(0.25, 9);
+    expect(evaluate(layerOf('occ-traffic-other'), 'paint', 'text-opacity', { ...stale, opacity: 0.5, forceTag: true }))
+      .toBeCloseTo(0.25, 9);
+    // A feature without its own opacity (an older source) shows whole.
+    const { opacity, ...older } = features.find(item => item.kind === 'aviam' && item.quality === 'live');
+    expect(opacity).toBe(1);
+    expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older)).toBe(1);
+  });
+
   it('dims a stale position, rings an estimated one and plates a demo flight, from the feature flags', () => {
     const features = noonFeatures();
     const of = id => features.find(item => item.id === id);

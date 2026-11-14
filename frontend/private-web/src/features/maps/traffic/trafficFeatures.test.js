@@ -138,6 +138,29 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     }
   });
 
+  it('carries the aircraft\'s opacity, in hundredths, whole by default', () => {
+    const aircraft = aircraftAtNoon();
+    const drawn = byId(trafficFeatures(aircraft));
+    // From a fix or an estimate without a fade: whole.
+    expect(Object.values(drawn).every(properties => properties.opacity === 1)).toBe(true);
+    // A cancelled demo fading out (the motion store sampled it at 0.4237): in hundredths, so a fade writes little.
+    const fading = aircraft.map(item => (item.flightKey === KEY.demoArrival ? { ...item, opacity: 0.4237 } : item));
+    const faded = byId(trafficFeatures(fading));
+    expect(faded[`f:${KEY.demoArrival}`].opacity).toBe(0.42);
+    expect(trafficDiff(featuresById(trafficFeatures(aircraft)), trafficFeatures(fading).features).update)
+      .toEqual([{ id: `f:${KEY.demoArrival}`, addOrUpdateProperties: [{ key: 'opacity', value: 0.42 }] }]);
+    // Out of range or not a number: clamped, or whole.
+    const odd = aircraft.map(item => {
+      if (item.flightKey === KEY.demoArrival) return { ...item, opacity: 3 };
+      if (item.hex === HEX.stale) return { ...item, opacity: -1 };
+      if (item.hex === HEX.overflight) return { ...item, opacity: 'x' };
+      return item;
+    });
+    const clamped = byId(trafficFeatures(odd));
+    expect([clamped[`f:${KEY.demoArrival}`].opacity, clamped[`h:${HEX.stale}`].opacity, clamped[`f:${KEY.departure}`].opacity])
+      .toEqual([1, 0, 1]);
+  });
+
   it('a stale tag names the time of the last position, so it holds still while the aircraft stays stale', () => {
     const aircraftAt = nowMs => buildSituation({ picture: toPictureModel(createAirPicture()), flights, nowMs,
       estimates: createEstimates() }).aircraft;

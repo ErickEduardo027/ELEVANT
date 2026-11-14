@@ -169,10 +169,25 @@ export const mapMessages = {
       suggestedStand: 'Posición sugerida {code}',
       noStand: 'Sin posición asignada',
       runway: 'Pista {id}',
+      // The runway a real flight's estimated path uses, and why (PR M6, airport/runwayInUse.js): the live arrivals,
+      // the wind of the METAR (PR M8) or the airport's usual runway.
+      runwayFrom: 'Pista {id} ({source})',
+      runwaySource: {
+        live: 'por el tráfico',
+        wind: 'por el viento',
+        default: 'habitual',
+      },
       live: 'En vivo · hace {age}',
       noPosition: 'Sin posición todavía',
       viewTurnaround: 'Ver escala',
       viewStand: 'Ver posición',
+    },
+    // «Pausar movimiento» (ui/MapMotionControl.jsx, design H): the aircraft stand still while the data keeps loading.
+    motion: {
+      pause: 'Pausar movimiento',
+      resume: 'Reanudar movimiento',
+      paused: 'Movimiento en pausa · datos de las {time}',
+      pausedWithoutData: 'Movimiento en pausa',
     },
     // The layers menu (ui/MapLayersMenu.jsx, core/layersMenu.js); its button takes «Capas» from the key table.
     layers: {
@@ -343,10 +358,22 @@ export const mapMessages = {
       suggestedStand: 'Suggested stand {code}',
       noStand: 'No stand assigned',
       runway: 'Runway {id}',
+      runwayFrom: 'Runway {id} ({source})',
+      runwaySource: {
+        live: 'from the traffic',
+        wind: 'from the wind',
+        default: 'usual',
+      },
       live: 'Live · {age} ago',
       noPosition: 'No position yet',
       viewTurnaround: 'View turnaround',
       viewStand: 'View stand',
+    },
+    motion: {
+      pause: 'Pause movement',
+      resume: 'Resume movement',
+      paused: 'Movement paused · data from {time}',
+      pausedWithoutData: 'Movement paused',
     },
     layers: {
       menu: 'Map layers',

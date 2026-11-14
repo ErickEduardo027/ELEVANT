@@ -8,8 +8,8 @@ import {
 } from '../testing/trafficFixtures';
 import { buildRoute } from './routeFeatures';
 import {
-  airTrafficSourceState, buildSituation, ownedStandCodes, selectionTarget, staleAfterSeconds, toFlightsModel,
-  toPictureModel, toTrackModel,
+  airTrafficSourceState, buildSituation, claimFixes, fixIdentity, ownedStandCodes, selectionTarget, staleAfterSeconds,
+  toFlightsModel, toPictureModel, toTrackModel,
 } from './situationModel';
 
 const NOON = Date.parse(TRAFFIC_NOON);
@@ -187,6 +187,57 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
     const disabled = toPictureModel(createAirPicture({ status: 'Disabled' }));
     expect(buildSituation({ picture: disabled, flights, nowMs: NOON, estimates }).aircraft
       .map(item => [item.id, item.quality])).toEqual([[`f:${KEY.demoArrival}`, 'estimated'], [`f:${KEY.arrival}`, 'estimated']]);
+  });
+
+  it('an estimate carries its status, time scale, opacity and mode into the aircraft; a live one carries none', () => {
+    const [estimate] = createEstimates();
+    const fading = { ...estimate, statusKey: 'cancelledByProvider', timeScale: 1.02, opacity: 0.25, mode: 'estimate' };
+    const situation = buildSituation({ picture: livePicture, flights, nowMs: NOON, estimates: [fading] });
+    expect(situation.byId.get(`f:${KEY.demoArrival}`)).toMatchObject({
+      quality: 'estimated', statusKey: 'cancelledByProvider', timeScale: 1.02, opacity: 0.25, mode: 'estimate',
+    });
+    // An aircraft drawn from a fix: its motion is the map's frames' (traffic/motionStore.js), not the situation's.
+    for (const id of [`f:${KEY.arrival}`, `h:${HEX.overflight}`]) {
+      expect(situation.byId.get(id), id).toMatchObject({ statusKey: null, timeScale: null, opacity: null, mode: null });
+    }
+    // Without them an estimate is plain: no status, real time, opaque, estimated; nonsense is read the same way.
+    const plain = buildSituation({ picture: livePicture, flights, nowMs: NOON, estimates: [estimate] });
+    expect(plain.byId.get(`f:${KEY.demoArrival}`)).toMatchObject({ statusKey: null, timeScale: 1, opacity: 1, mode: 'estimate' });
+    const odd = buildSituation({ picture: livePicture, flights, nowMs: NOON,
+      estimates: [{ ...estimate, statusKey: 3, timeScale: -1, opacity: 7, mode: 'warp' }] });
+    expect(odd.byId.get(`f:${KEY.demoArrival}`)).toMatchObject({ statusKey: null, timeScale: 1, opacity: 1, mode: 'estimate' });
+  });
+
+  it('the motion store\'s next change joins the instant a live aircraft turns stale', () => {
+    const live = buildSituation({ picture: livePicture, flights, nowMs: NOON });
+    // The oldest live fix (the transponder inside A2, 8 s old at noon) turns stale 30 s after it.
+    expect(live.changesAt).toBe(at(-8) + 30_000 + 1);
+    expect(buildSituation({ picture: livePicture, flights, nowMs: NOON, estimatesChangeAt: at(12) }).changesAt).toBe(at(12));
+    expect(buildSituation({ picture: livePicture, flights, nowMs: NOON, estimatesChangeAt: at(90) }).changesAt)
+      .toBe(live.changesAt);
+    // Without live traffic only the estimates change anything.
+    const disabled = toPictureModel(createAirPicture({ status: 'Disabled' }));
+    expect(buildSituation({ picture: disabled, flights, nowMs: NOON, estimatesChangeAt: at(84) }).changesAt).toBe(at(84));
+    expect(buildSituation({ picture: disabled, flights, nowMs: NOON }).changesAt).toBeNull();
+    expect(buildSituation({ picture: disabled, flights, nowMs: NOON, estimatesChangeAt: Number.NaN }).changesAt).toBeNull();
+  });
+
+  it('names each fix\'s flight once, as the situation draws it', () => {
+    // Two aircraft name ZZ161: the newer position is its aircraft, the other stays other traffic.
+    const picture = pictureWith(item => (item.hex === HEX.overflight
+      ? { ...item, matchedFlightKey: KEY.arrival, positionAt: trafficInstant(-1) } : null));
+    const owners = claimFixes({ picture, flights });
+    expect(owners.fixes).toHaveLength(picture.aircraft.length);
+    expect(owners.claimed.get(KEY.arrival).hex).toBe(HEX.overflight);
+    const byHex = new Map(owners.fixes.map(fix => [fix.hex, fixIdentity(fix, owners)]));
+    expect(byHex.get(HEX.overflight)).toMatchObject({ id: `f:${KEY.arrival}`, flight: { flightKey: KEY.arrival } });
+    expect(byHex.get(HEX.arrival)).toEqual({ id: `h:${HEX.arrival}`, flight: null });
+    expect(byHex.get(HEX.outsideWindow)).toEqual({ id: `h:${HEX.outsideWindow}`, flight: null });
+    const situation = buildSituation({ picture, flights, nowMs: NOON });
+    expect(situation.aircraft.map(item => item.id).sort()).toEqual([...byHex.values()].map(item => item.id).sort());
+    // A picture without aircraft has no fixes to name.
+    expect(claimFixes({ picture: toPictureModel(createAirPicture({ status: 'Warming' })), flights }).fixes).toEqual([]);
+    expect(claimFixes().fixes).toEqual([]);
   });
 
   it('other traffic on the ground is hidden only inside a stand an AVIAM or demo aircraft is on', () => {

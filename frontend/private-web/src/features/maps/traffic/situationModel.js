@@ -214,6 +214,10 @@ function flightFields(flight) {
   };
 }
 
+// What only the motion of the map knows (PR M6, traffic/motionStore.js): an aircraft drawn from a fix carries none of
+// it in the situation; the map's frames fill it in.
+const NO_MOTION = Object.freeze({ statusKey: null, timeScale: null, opacity: null, mode: null });
+
 function liveAircraft(fix, flight, { nowMs, status, staleAfterMs, owned, boxes }) {
   const ageMs = Math.max(0, nowMs - fix.positionAt);
   const hiddenInStand = !flight && fix.onGround && standHolding([fix.lon, fix.lat], owned, boxes) !== null;
@@ -238,10 +242,12 @@ function liveAircraft(fix, flight, { nowMs, status, staleAfterMs, owned, boxes }
     squawk: fix.squawk,
     matchedBy: flight ? fix.matchedBy : null,
     hiddenInStand,
+    ...NO_MOTION,
   });
 }
 
 const finiteOrNull = value => (finite(value) ? value : null);
+const MODES = new Set(['live', 'coast', 'estimate']);
 
 function estimatedAircraft(estimate, flight, nowMs) {
   const positionAt = finite(estimate.positionAt) ? estimate.positionAt : nowMs;
@@ -266,6 +272,10 @@ function estimatedAircraft(estimate, flight, nowMs) {
     squawk: null,
     matchedBy: null,
     hiddenInStand: false,
+    statusKey: typeof estimate.statusKey === 'string' ? estimate.statusKey : null,
+    timeScale: finite(estimate.timeScale) && estimate.timeScale > 0 ? estimate.timeScale : 1,
+    opacity: finite(estimate.opacity) ? Math.min(1, Math.max(0, estimate.opacity)) : 1,
+    mode: MODES.has(estimate.mode) ? estimate.mode : 'estimate',
   });
 }
 
@@ -286,6 +296,39 @@ function linkedKeys(rows, byKey) {
 }
 
 /**
+ * Which flight each fix of the air picture is (contracts 1.3): `{ fixes, claimed, flightOf }`. `fixes` are the
+ * picture's aircraft with a position instant (none unless the picture is Live or Stale); `claimed` maps a flightKey to
+ * the fix that is its aircraft, the newest when two name the same flight by either of its keys (one flight, one
+ * aircraft); `flightOf(key)` finds the flight row of a key of the window, also the old «p:» key of a visit linked under
+ * 3-N07 (linkedKeys). buildSituation and the motion store (traffic/motionStore.js) read the picture the same way.
+ */
+export function claimFixes({ picture = null, flights = null } = {}) {
+  const rows = flights?.flights ?? [];
+  const byKey = flights?.byKey ?? new Map(rows.map(flight => [flight.flightKey, flight]));
+  const linked = linkedKeys(rows, byKey);
+  const flightOf = key => (key == null ? null : byKey.get(key) ?? linked.get(key) ?? null);
+  const fixes = PICTURES_WITH_AIRCRAFT.has(picture?.status) ? picture.aircraft.filter(fix => finite(fix.positionAt)) : [];
+  const claimed = new Map();
+  for (const fix of fixes) {
+    const flight = flightOf(fix.matchedFlightKey);
+    if (flight === null) continue;
+    const held = claimed.get(flight.flightKey);
+    if (!held || fix.positionAt > held.positionAt) claimed.set(flight.flightKey, fix);
+  }
+  return { fixes, claimed, flightOf };
+}
+
+/**
+ * The id of the aircraft a fix draws (`f:<flightKey>` when it is a flight's, else `h:<hex>`) and its flight (or
+ * `null`), from claimFixes.
+ */
+export function fixIdentity(fix, { claimed, flightOf }) {
+  const flight = flightOf(fix?.matchedFlightKey);
+  const owner = flight !== null && claimed.get(flight.flightKey) === fix ? flight : null;
+  return { id: owner ? `f:${owner.flightKey}` : `h:${fix.hex}`, flight: owner };
+}
+
+/**
  * What the map draws at `nowMs` (the server's time) from the air picture and flights models (design E1, contracts 2.4):
  * `{ aircraft, byId, flights, source, status, reason, ownedStandCodes, changesAt }`.
  *
@@ -297,35 +340,33 @@ function linkedKeys(rows, byKey) {
  *   `stale` after it, and every aircraft of a `Stale` picture is `stale`. Warming, Unavailable and Disabled carry no
  *   aircraft; `status` and `reason` stay as data.
  * - An ELEVANT flight without a live fix is never given a position. A position the caller estimates (`estimates`:
- *   `{ flightKey, lon, lat, altM?, gsMs?, trackDeg?, vrateMs?, onGround?, positionAt? }`, PR M6) is drawn as
- *   `estimated`, unless the flight already has a live aircraft.
+ *   `{ flightKey, lon, lat, altM?, gsMs?, trackDeg?, vrateMs?, onGround?, positionAt?, statusKey?, timeScale?,
+ *   opacity?, mode? }`, PR M6: traffic/motionStore.js) is drawn as `estimated`, unless the flight already has a live
+ *   aircraft; its `statusKey` (a demo's «Esperando posición», «Cancelado por el proveedor (demo)»), `timeScale` (1
+ *   unless the part it is in was scaled), `opacity` (1 unless it fades out) and `mode` ('estimate' unless given) go
+ *   with it.
  * - Other traffic on the ground inside the box of a stand an ELEVANT or demo aircraft is on (ownedStandCodes, with the
  *   live and estimated positions of the ELEVANT flights) is `hiddenInStand`.
- * - `changesAt`: the next instant a live aircraft turns stale without a new read, or `null`.
+ * - `changesAt`: the next instant a live aircraft turns stale without a new read, or `estimatesChangeAt` (the motion
+ *   store's next instant that changes what is estimated: an appearance, a touchdown, an on-block, an off-block, a
+ *   vanishing) when that comes first; `null` without either.
  *
  * RenderAircraft: `{ id, hex, kind, flightKey, visitKey, legId, turnaroundId, proposalId, direction, lon, lat, altM,
  * gsMs, trackDeg, vrateMs, onGround, positionAt, ageS, quality, isDemo, imported, phase, callsign, flightNumber,
  * registration, typeIcao, model, sizeCategory, emitterCategory, squawk, counterpartIata, standCode, matchedBy,
- * hiddenInStand }` (`model` and `sizeCategory` from the ELEVANT flight's aircraft, null for other traffic).
+ * hiddenInStand, statusKey, timeScale, opacity, mode }` (`model` and `sizeCategory` from the ELEVANT flight's aircraft,
+ * null for other traffic; the last four are the estimate's, and `null` on an aircraft drawn from a fix, whose motion
+ * the map's frames add: traffic/motionStore.js).
  */
-export function buildSituation({ picture = null, flights = null, nowMs, estimates = [], layout = MDPC_LAYOUT } = {}) {
+export function buildSituation({
+  picture = null, flights = null, nowMs, estimates = [], estimatesChangeAt = null, layout = MDPC_LAYOUT,
+} = {}) {
   const rows = flights?.flights ?? [];
-  const byKey = flights?.byKey ?? new Map(rows.map(flight => [flight.flightKey, flight]));
-  const linked = linkedKeys(rows, byKey);
-  const flightOf = key => (key == null ? null : byKey.get(key) ?? linked.get(key) ?? null);
   const status = picture?.status ?? null;
   const time = finite(nowMs) ? nowMs : (picture?.serverTime ?? 0);
   const staleAfterMs = staleAfterSeconds(picture?.refreshAfterSeconds) * 1_000;
-  const fixes = PICTURES_WITH_AIRCRAFT.has(status) ? picture.aircraft.filter(fix => finite(fix.positionAt)) : [];
-
   // One flight, one aircraft: the newest position of each flight of the window, whichever of its keys names it.
-  const claimed = new Map();
-  for (const fix of fixes) {
-    const flight = flightOf(fix.matchedFlightKey);
-    if (flight === null) continue;
-    const held = claimed.get(flight.flightKey);
-    if (!held || fix.positionAt > held.positionAt) claimed.set(flight.flightKey, fix);
-  }
+  const { fixes, claimed, flightOf } = claimFixes({ picture, flights });
   // A position the caller estimated, for a flight without a live aircraft: one per flight.
   const estimated = new Map();
   for (const estimate of Array.isArray(estimates) ? estimates : []) {
@@ -358,6 +399,7 @@ export function buildSituation({ picture = null, flights = null, nowMs, estimate
       if (changesAt === null || turns < changesAt) changesAt = turns;
     }
   }
+  if (finite(estimatesChangeAt) && (changesAt === null || estimatesChangeAt < changesAt)) changesAt = estimatesChangeAt;
 
   return Object.freeze({
     aircraft: Object.freeze(aircraft),

@@ -182,4 +182,17 @@ describe('map messages', () => {
       expect(texts.join(' '), language).not.toMatch(/_|adsb|provider_error|rate_limited/i);
     }
   });
+
+  it('says «Pausar movimiento» and where a real flight\'s runway comes from, in both languages (PR M6)', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect([es('motion.pause'), es('motion.resume'), es('motion.paused', { time: '14:20' }), es('motion.pausedWithoutData')])
+      .toEqual(['Pausar movimiento', 'Reanudar movimiento', 'Movimiento en pausa · datos de las 14:20', 'Movimiento en pausa']);
+    expect([en('motion.pause'), en('motion.resume'), en('motion.paused', { time: '14:20' })])
+      .toEqual(['Pause movement', 'Resume movement', 'Movement paused · data from 14:20']);
+    // The runway in use of a real flight with where the choice comes from (airport/runwayInUse.js: its `source`).
+    expect(['live', 'wind', 'default'].map(source => es('dataBlock.runwayFrom', { id: '08', source: es(`dataBlock.runwaySource.${source}`) })))
+      .toEqual(['Pista 08 (por el tráfico)', 'Pista 08 (por el viento)', 'Pista 08 (habitual)']);
+    expect(en('dataBlock.runwayFrom', { id: '26', source: en('dataBlock.runwaySource.live') })).toBe('Runway 26 (from the traffic)');
+  });
 });

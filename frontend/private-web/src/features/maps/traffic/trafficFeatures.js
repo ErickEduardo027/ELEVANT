@@ -88,6 +88,9 @@ function tagLines(item, type, { t, language }) {
   };
 }
 
+// The opacity of an aircraft in hundredths, so a fade writes a hundred steps at most; 1 when it says none.
+const opacityOf = item => (finite(item.opacity) ? Math.round(Math.min(1, Math.max(0, item.opacity)) * 100) / 100 : 1);
+
 /** One feature of the traffic source; see trafficFeatures for its properties. */
 function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
   const aviam = item.kind === 'aviam';
@@ -130,6 +133,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
       suffix,
       tag2,
       tagStand: aviam && !departure ? (filled(item.standCode) ?? '') : '',
+      // How much of it shows (PR M6): 1, or less while it fades out (a cancelled demo, traffic that lost its signal).
+      opacity: opacityOf(item),
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -139,7 +144,7 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
  * The traffic source's data: one point per drawn aircraft (isDrawn), keyed by its id (`f:<flightKey>` or `h:<hex>`,
  * the source's promoted id), with
  * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground,
- * selected, forceTag, showTag, tag1, suffix, tag2, tagStand }`:
+ * selected, forceTag, showTag, tag1, suffix, tag2, tagStand, opacity }`:
  * - `icon`: the solid silhouette of the aircraft's category, hollow for a departing ELEVANT flight;
  * - `scale`: 1.25 for ELEVANT flights, 0.85 for other traffic, 0.6 for other traffic on the ground, 1.4 when chosen;
  * - `tag1` the flight number (other traffic: callsign, registration or address), `suffix` «est.», or for a stale
@@ -147,7 +152,9 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
  *   new position comes), `tag2` type, altitude in hundreds of feet (GND on the ground) and knots (none while standing
  *   on the ground), `tagStand` the stand an arriving flight goes to;
  * - `forceTag`: the tag is always on (ELEVANT flights, the chosen aircraft, the one under the pointer); `showTag`:
- *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»).
+ *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»);
+ * - `opacity`: the aircraft's own (PR M6, the motion store), in hundredths: 1, or less while it fades out; the layers
+ *   multiply it into the dimming of a stale position.
  * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`.
  */
 export function trafficFeatures(aircraft = [], { selection = null, focusId = null, labelsOn = false, language = 'es' } = {}) {

@@ -34,8 +34,8 @@ import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
 import { trailsBesideRoute } from '../traffic/routeFeatures';
 import {
-  ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, isEmptyDiff, onScreenKey, selectedAircraftId, trafficDiff,
-  trafficFeatures, trafficOnScreen as trafficOnScreenOf,
+  ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, isDrawn, isEmptyDiff, onScreenKey, selectedAircraftId,
+  trafficDiff, trafficFeatures, trafficOnScreen as trafficOnScreenOf,
 } from '../traffic/trafficFeatures';
 import { trafficOverlay } from '../traffic/trafficLayers';
 import MapTooltip from '../ui/MapTooltip';
@@ -44,6 +44,7 @@ import {
   VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom, presetTargets,
   sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
+import { createFrameLoop, createRenderClock, metresPerPixel, updateIntervalMs } from './frameLoop';
 import {
   availableLayerKeys, engineGroupsFor, readLayerOverrides, resolveLayers, setLayerOverride, writeLayerOverrides,
 } from './layersMenu';
@@ -123,11 +124,38 @@ function layerStorage() {
 }
 
 // Where the traffic draws the ELEVANT aircraft a flight id names (any id matchFlight reads), as `[lng, lat]`, or null.
-function trafficPoint(traffic, id) {
-  const aircraft = traffic?.aircraft ?? EMPTY;
-  const chosen = selectedAircraftId(aircraft, { kind: 'flight', id });
-  const item = chosen === null ? null : aircraft.find(entry => entry.id === chosen);
+function trafficPoint(aircraft, id) {
+  const list = aircraft ?? EMPTY;
+  const chosen = selectedAircraftId(list, { kind: 'flight', id });
+  const item = chosen === null ? null : list.find(entry => entry.id === chosen);
   return item ? [item.lon, item.lat] : null;
+}
+
+// The legend reads the moving traffic at most this often while it moves (PR M6): once a second.
+const MOVING_ON_SCREEN_MS = 1_000;
+const MOTION_OFF = Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null });
+
+// Whether the browser asks for reduced motion; false where it cannot say (jsdom has no matchMedia).
+function reducedMotionQuery() {
+  return typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia('(prefers-reduced-motion: reduce)') : null;
+}
+
+/**
+ * How long until the next write of the moving traffic (core/frameLoop.js, design H): every frame with fewer than 30
+ * aircraft drawn in the area in sight, otherwise at half the fastest one's pixels per second on screen, 2 to 30 Hz.
+ */
+function writeIntervalFor(engine, aircraft, padding) {
+  const bounds = engine.getVisibleBounds(padding);
+  const zoom = engine.getCamera()?.zoom;
+  if (bounds === null || !Number.isFinite(zoom)) return 0;
+  let inView = 0;
+  let fastest = 0;
+  for (const item of aircraft) {
+    if (!isDrawn(item) || !isInBounds([item.lon, item.lat], bounds)) continue;
+    inView += 1;
+    if (Number.isFinite(item.gsMs) && item.gsMs > 0) fastest = Math.max(fastest, item.gsMs / metresPerPixel(zoom, item.lat));
+  }
+  return updateIntervalMs({ inView, fastestPxPerSecond: fastest });
 }
 
 // Where the tooltip of the airfield sits: at the pixel it points at, on the side of the visible area's middle that has
@@ -191,6 +219,9 @@ const initialSnapshot = basemap => ({
   trafficOnScreen: NO_TRAFFIC_ON_SCREEN,
   // The keys of the layers menu this map's style has layers for (PR M5, core/layersMenu.js).
   layerKeys: EMPTY,
+  // The motion of the traffic (PR M6): whether this map moves it, whether «Pausar movimiento» holds it and since when,
+  // and the server instant of the newest data it draws.
+  motion: MOTION_OFF,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -275,6 +306,14 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   differs from the defaults of the view on screen, in `localStorage`) and shows or hides the groups they name, except
  *   a group the page sets in `groups`, which wins. The menu reads them from OccMapContext; L opens and closes a menu on
  *   screen and Esc closes an open one before it clears the selection.
+ * - The motion of the traffic (PR M6, design H): when `traffic.motion` is given at start (traffic/motionStore.js, with
+ *   its render clock as `motion.clock`), the map runs one frame loop for the life of its engine (core/frameLoop.js).
+ *   Each frame samples the aircraft at the render clock's time and writes them with one updateData of what changed:
+ *   every frame with fewer than 30 aircraft in sight, else at half the fastest one's pixels per second (2 to 30 Hz).
+ *   The loop asks for frames only while something moves, wakes for a new situation, a selection, the groups, the
+ *   language or a camera move, stops in a hidden tab and ticks once a second under reduced motion; React renders
+ *   nothing per frame. OccMapContext's `motion` offers «Pausar movimiento» (ui/MapMotionControl.jsx). Without
+ *   `traffic.motion` the traffic is drawn where the situation puts it, as in PR M5.
  */
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
@@ -469,8 +508,9 @@ const OccMap = forwardRef(function OccMap({
     const engine = engineRef.current;
     const { flights: current, padding: inset } = latest.current ?? {};
     const flight = matchFlight(current ?? EMPTY, id);
-    // A flight the traffic draws (PR M5) is where its aircraft is.
-    const point = lngLatOf(flight?.position ?? flight) ?? trafficPoint(latest.current?.traffic, id);
+    // A flight the traffic draws (PR M5) is where its aircraft is drawn now (PR M6: where its last frame put it).
+    const drawnAircraft = appliedRef.current.sampledAircraft ?? latest.current?.traffic?.aircraft;
+    const point = lngLatOf(flight?.position ?? flight) ?? trafficPoint(drawnAircraft, id);
     const camera = engine?.getCamera();
     if (!point || !camera) return false;
     const zoom = Number.isFinite(minZoom) ? Math.max(camera.zoom, minZoom) : camera.zoom;
@@ -516,13 +556,25 @@ const OccMap = forwardRef(function OccMap({
   // The traffic (PR M5). The aircraft of other traffic under the pointer, whose tag shows while it is there.
   const trafficFocusRef = useRef(null);
 
-  // The traffic's features from the newest props: one updateData with what changed since the last write.
-  const writeTraffic = useCallback(() => {
+  // The traffic's features from the newest props: one updateData with what changed since the last write. With motion
+  // (PR M6) the aircraft are those of the situation where they are drawn at `tMs` (the frame's instant, else the render
+  // clock's now), and the write says how long until the next one is due.
+  const writeTraffic = useCallback((tMs = null) => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     if (!engine || !applied.drawsTraffic) return;
-    const { traffic: current, selection: chosen, groups: shown, language: words } = latest.current;
-    const data = trafficFeatures(current?.aircraft ?? EMPTY, {
+    const { traffic: current, selection: chosen, groups: shown, language: words, padding: inset } = latest.current;
+    const motion = applied.loop ? current?.motion ?? null : null;
+    const aircraft = current?.aircraft ?? EMPTY;
+    let drawn = aircraft;
+    if (motion) {
+      const t = Number.isFinite(tMs) ? tMs : applied.loop.now();
+      drawn = motion.sample(aircraft, t).filter(Boolean);
+      applied.trafficWrittenAt = t;
+      applied.trafficIntervalMs = writeIntervalFor(engine, drawn, inset);
+    }
+    applied.sampledAircraft = motion ? drawn : null;
+    const data = trafficFeatures(drawn, {
       selection: chosen, focusId: trafficFocusRef.current, labelsOn: shown?.['traffic.labels'] === true, language: words,
     });
     const diff = trafficDiff(applied.trafficById, data.features);
@@ -531,11 +583,13 @@ const OccMap = forwardRef(function OccMap({
     engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
   }, []);
 
-  // The traffic drawn in `bounds` (the area the insets leave in sight), for the legend and the credit.
+  // The traffic drawn in `bounds` (the area the insets leave in sight), for the legend and the credit: where the last
+  // write drew it when it moves.
   const updateTrafficOnScreen = useCallback((bounds, zoom, thresholds) => {
     const current = latest.current?.traffic;
+    const drawn = appliedRef.current.sampledAircraft ?? current?.aircraft ?? EMPTY;
     const next = appliedRef.current.drawsTraffic && bounds !== null
-      ? trafficOnScreenOf(current?.aircraft ?? EMPTY, bounds, {
+      ? trafficOnScreenOf(drawn, bounds, {
         groups: latest.current.groups, zoom, thresholds, trails: latest.current.shownTrails ?? null,
         route: current?.route ?? null,
       })
@@ -651,6 +705,8 @@ const OccMap = forwardRef(function OccMap({
     store.set({ activeView: presetForZoom(camera.zoom, store.get().fits) });
     followTooltip();
     updateOnScreen();
+    // What is in sight sets how often the moving traffic is written (PR M6): one frame reads it again.
+    appliedRef.current.loop?.wake();
     latest.current?.onCameraChange?.(camera, details);
   }, [store, followTooltip, updateOnScreen]);
 
@@ -856,6 +912,32 @@ const OccMap = forwardRef(function OccMap({
     // The traffic of this engine: what its source holds, the trails and route written, and the credit shown.
     Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null, route: null,
       credit: '' });
+    // Its motion (PR M6): one frame loop for the life of the engine, on the render clock of the motion it was given.
+    const motionClock = props.drawsTraffic && props.traffic?.motion ? props.traffic.motion.clock ?? createRenderClock() : null;
+    const reduced = motionClock ? reducedMotionQuery() : null;
+    const loop = motionClock ? createFrameLoop({ clock: motionClock, reducedMotion: reduced?.matches === true }) : null;
+    Object.assign(appliedRef.current, { loop, sampledAircraft: null, trafficWrittenAt: null, trafficIntervalMs: 0,
+      trafficOnScreenAt: null });
+    const motionState = () => ({ available: true, paused: motionClock.isPaused?.() === true,
+      pausedAt: motionClock.pausedAt?.() ?? null, dataAt: latest.current?.traffic?.motion?.dataAt?.() ?? null });
+    store.set({ motion: loop ? motionState() : MOTION_OFF });
+    // Each frame writes the traffic when its write is due, and the legend reads it at most once a second.
+    const onFrame = tMs => {
+      const applied = appliedRef.current;
+      if (Number.isFinite(applied.trafficWrittenAt) && tMs - applied.trafficWrittenAt < applied.trafficIntervalMs) return;
+      writeTraffic(tMs);
+      if (Number.isFinite(applied.trafficOnScreenAt) && tMs - applied.trafficOnScreenAt < MOVING_ON_SCREEN_MS) return;
+      applied.trafficOnScreenAt = tMs;
+      const current = engineRef.current;
+      updateTrafficOnScreen(current?.getVisibleBounds(latest.current.padding) ?? null, current?.getCamera()?.zoom,
+        store.get().thresholds);
+    };
+    const stopFrames = loop?.subscribe(onFrame, {
+      isAnimating: tMs => latest.current?.traffic?.motion?.isAnimating?.(tMs) === true,
+    });
+    const onReducedMotion = () => loop.setReducedMotion(reduced.matches === true);
+    reduced?.addEventListener?.('change', onReducedMotion);
+    const stopClock = motionClock?.subscribe?.(() => store.set({ motion: motionState() }));
     focusRef.current = null;
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
@@ -914,10 +996,16 @@ const OccMap = forwardRef(function OccMap({
       if (pointer.frame) cancelFrame(pointer.frame);
       pointer.frame = 0;
       pointer.event = null;
+      stopFrames?.();
+      stopClock?.();
+      reduced?.removeEventListener?.('change', onReducedMotion);
+      loop?.dispose();
+      if (appliedRef.current.loop === loop) appliedRef.current.loop = null;
       engine.destroy();
       if (engineRef.current === engine) engineRef.current = null;
     };
-  }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit, updateOnScreen]);
+  }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit, updateOnScreen, writeTraffic,
+    updateTrafficOnScreen]);
 
   // The URL view: fly only when it differs from the last view applied, so a view this map asked for flies once.
   useEffect(() => {
@@ -992,12 +1080,19 @@ const OccMap = forwardRef(function OccMap({
   }, [flights]);
 
   // The traffic (PR M5): the aircraft, again whenever the selection, the shown groups or the language change what
-  // they draw, then what is on screen. A read that moved nothing writes nothing.
+  // they draw, then what is on screen. A read that moved nothing writes nothing. With motion (PR M6) the write is at
+  // the render clock's now, the loop wakes (it runs on while something moves), and the motion says how new its data is.
   const trafficAircraft = traffic?.aircraft ?? EMPTY;
   useEffect(() => {
     writeTraffic();
     updateOnScreen();
-  }, [trafficAircraft, selection, shownGroupsKey, language, writeTraffic, updateOnScreen]);
+    const applied = appliedRef.current;
+    if (!applied.loop) return;
+    applied.loop.wake();
+    const dataAt = latest.current?.traffic?.motion?.dataAt?.() ?? null;
+    const motion = store.get().motion;
+    if (motion.dataAt !== dataAt) store.set({ motion: { ...motion, dataAt } });
+  }, [trafficAircraft, selection, shownGroupsKey, language, writeTraffic, updateOnScreen, store]);
 
   // The trails and the chosen flight's route: one setData when what they draw changes.
   useEffect(() => {
@@ -1214,10 +1309,18 @@ const OccMap = forwardRef(function OccMap({
   // With the traffic on screen and its source (PR M5), for the legend and the status over the map, and the layers menu.
   const { layerKeys } = snapshot;
   const layers = useMemo(() => Object.freeze({ keys: layerKeys, values: resolvedLayers }), [layerKeys, resolvedLayers]);
+  // The motion of the traffic (PR M6): «Pausar movimiento» freezes the render clock, «Reanudar movimiento» goes back to
+  // the server's time; the reads go on meanwhile.
+  const pauseMotion = useCallback(() => appliedRef.current.loop?.pause(), []);
+  const resumeMotion = useCallback(() => appliedRef.current.loop?.resume(), []);
+  const motionSnapshot = snapshot.motion;
+  const motion = useMemo(() => Object.freeze({ ...motionSnapshot, pause: pauseMotion, resume: resumeMotion }),
+    [motionSnapshot, pauseMotion, resumeMotion]);
   const mapContext = useMemo(() => ({
     ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
-    registerLayersMenu,
-  }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu]);
+    registerLayersMenu, motion,
+  }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu,
+    motion]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;

@@ -3,7 +3,7 @@ import { assembleTrajectory, sampleTrajectory } from './estimator.js';
 import { cutLeg, fitLegs, legDurationS, legStateAt, waitLeg } from './legs.js';
 import { arrivalAirLegs, backOutAir, climbLegs, departureGroundLegs, fitGround, groundLegs } from './legPlans.js';
 import { landingExitCandidates } from './pathBuilder.js';
-import { routeFromPoint, routeLandingTaxi } from './taxiRoute.js';
+import { departureHoldingPoints, routeFromPoint, routeLandingTaxi } from './taxiRoute.js';
 import { ftToM } from './units.js';
 
 // The demo flight on the map (PR M6, contracts 1.1 and 2.3, plan «Ajustes» 2 to 4). The server owns every instant of
@@ -109,9 +109,35 @@ function demoLanding({ layout, runwayEnd, stand, apronHold, perf, activeRunwayId
 }
 
 /**
+ * The departure on the ground of a demo flight fitted to [off-block, take-off] (contracts 2.3; the orchestrator's
+ * decision of 2026-11-14): to the holding point that leaves the whole runway, unless that taxi needs more than real
+ * speeds (25 kt at most) in the time it has; then to the first holding point of the runway after it, from the
+ * threshold, whose taxi fits at real speeds and whose runway left still holds the take-off roll (at Punta Cana,
+ * terminal A's farthest stands depart from H on 08: kinematics/demoProfile.test.js lists them). When none does, the full
+ * length, compressed («Demo acelerada ×N»). `{ ground, fit }`, or `null` without a route.
+ */
+function demoDeparture({ layout, departureEnd, stand, apronHold, perf, activeRunwayIds, startHeadingDeg, requiredMs }) {
+  const build = holdingPointId => departureGroundLegs({
+    layout, runwayEnd: departureEnd, stand, apronHold, perf, activeRunwayIds, demo: true, startHeadingDeg, holdingPointId,
+  });
+  const ground = build(null);
+  if (!ground) return null;
+  const fit = fitLegs(ground.legs, requiredMs);
+  if (!(fit.timeScale > SCALED)) return { ground, fit };
+  for (const { hold } of departureHoldingPoints(layout, departureEnd)) {
+    if (hold.id === ground.holdingPoint?.id) continue;
+    const other = build(hold.id);
+    if (!other || !other.rollFits) continue;
+    const otherFit = fitLegs(other.legs, requiredMs);
+    if (!(otherFit.timeScale > SCALED)) return { ground: other, fit: otherFit };
+  }
+  return { ground, fit };
+}
+
+/**
  * What follows the arrival: the wait at the stand or the apron hold from `arrivalMs` until the off-block (or without
- * end), then, once the off-block is known, the departure fitted to [off-block, take-off] and the climb at real speed.
- * `{ parts, departureFit }`.
+ * end), then, once the off-block is known, the departure fitted to [off-block, take-off] (demoDeparture) and the climb
+ * at real speed. `{ parts, departureFit, holdingPointId }`: the holding point the departure taxis to, or `null`.
  */
 function afterArrival({ clock, arrivalMs, stand, holdPoint, holdHeading, apronHold, holdStatus, layout, departureEnd, destination, perf, activeRunwayIds, groundAltM }) {
   const parts = [];
@@ -124,16 +150,16 @@ function afterArrival({ clock, arrivalMs, stand, holdPoint, holdHeading, apronHo
     nominalS: leaves ? (offBlockMs - arrivalMs) / 1000 : Infinity, statusKey: stand ? null : holdStatus,
   });
   parts.push({ startMs: arrivalMs, legs: [wait] });
-  if (!leaves) return { parts, departureFit: null };
-  const ground = departureGroundLegs({
-    layout, runwayEnd: departureEnd, stand, apronHold: stand ? null : apronHold, perf, activeRunwayIds, demo: true,
-    startHeadingDeg: stand ? null : holdHeading,
+  if (!leaves) return { parts, departureFit: null, holdingPointId: null };
+  const departure = demoDeparture({
+    layout, departureEnd, stand, apronHold: stand ? null : apronHold, perf, activeRunwayIds,
+    startHeadingDeg: stand ? null : holdHeading, requiredMs: clock.takeoffAtMs - offBlockMs,
   });
-  if (!ground) return { parts, departureFit: null };
-  const departureFit = fitLegs(ground.legs, clock.takeoffAtMs - offBlockMs);
+  if (!departure) return { parts, departureFit: null, holdingPointId: null };
+  const { ground, fit: departureFit } = departure;
   parts.push({ startMs: offBlockMs, legs: departureFit.legs });
   parts.push({ startMs: clock.takeoffAtMs, legs: climbLegs({ runwayEnd: departureEnd, liftoff: ground.liftoff, destination, perf }) });
-  return { parts, departureFit };
+  return { parts, departureFit, holdingPointId: ground.holdingPoint?.id ?? null };
 }
 
 /** The legs of a timed trajectory up to `cutMs`: whole legs before it and the leg it falls in, cut there. */
@@ -173,7 +199,9 @@ function legsUntil(trajectory, cutMs) {
  *   'awaitingStandNotImported' before the import, 'awaitingStand' after.
  * - (c) [onBlockAt, offBlockAt ?? ∞]: parked at the stand's centre on its heading, or holding.
  * - (d) [offBlockAt, takeoffAt]: pushback (from a stand) and taxi, the line-up and the roll lifting off at takeoffAt;
- *   no engine start or hold ('taxiOut' when compressed).
+ *   no engine start or hold ('taxiOut' when compressed). It taxis to the holding point that leaves the whole runway,
+ *   or, when that taxi does not fit at real speeds, to the first intersection that does and still holds the roll
+ *   (demoDeparture); `meta.departureHoldingPointId` names it.
  * - (e) [takeoffAt, vanishAt]: the climb at real speed, fading out over DEMO_FADE_MS from vanishAt.
  * - Cancelled: the same parts, fading out from vanishAt (the cancel instant), `meta.statusKey` 'cancelledByProvider'.
  *   With `continueFrom` (the trajectory drawn until the cancellation came; `atMs` is not needed) its legs stay exactly
@@ -244,6 +272,7 @@ export function fitDemoTrajectory({
     meta: {
       exitNodeId: landing.path.exit?.nodeId ?? null,
       apronHoldId: target ? null : (landing.path.apronHold?.id ?? null),
+      departureHoldingPointId: after.holdingPointId,
       originPath: backed.originPath,
       startAlongM: backed.startAlongM,
       airLimit: backed.limit,
@@ -300,6 +329,7 @@ function continued({ clock, old, atMs, stand, layout, perf, departureEnd, destin
     meta: {
       exitNodeId: old.meta.exitNodeId,
       apronHoldId: null,
+      departureHoldingPointId: after.holdingPointId,
       originPath: old.meta.originPath,
       startAlongM: old.meta.startAlongM ?? null,
       airLimit: old.meta.airLimit ?? null,

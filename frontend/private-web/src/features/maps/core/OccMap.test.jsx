@@ -1,4 +1,4 @@
-import { StrictMode, createRef } from 'react';
+import { StrictMode, createRef, useEffect } from 'react';
 import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
@@ -11,7 +11,7 @@ import { readSource } from '../../../styles/occSourceScan';
 import { occColor } from '../../occ-ui/occPalette';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
-import { destinationPoint } from '../airport/geo';
+import { destinationPoint, haversineM } from '../airport/geo';
 import { AIRFIELD_LAYER_IDS } from '../style/airfieldLayers';
 import { referenceFeatures } from '../style/referenceLayers';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
@@ -21,13 +21,16 @@ import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import {
-  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_SOURCE,
+  createAirPicture, createDemoBlock, createDemoFlights, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX,
+  TRAFFIC_NOON, TRAFFIC_SOURCE,
 } from '../testing/trafficFixtures';
+import { createMotionStore } from '../traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 import MapLegend from '../ui/MapLegend';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
 import { boundsCenter, presetTargets } from './cameraPresets';
+import { createRenderClock, metresPerPixel } from './frameLoop';
 import { liveEngineCount } from './mapEngine';
 import OccMap from './OccMap';
 import { useOccMap } from './OccMapContext';
@@ -1526,6 +1529,8 @@ describe('OccMap', () => {
       'src/features/positions-map/components/PositionMap.jsx', 'src/features/flight-monitoring/components/FlightMap.jsx',
       // PR M5: the data block and the layers menu.
       'src/features/maps/ui/FlightDataBlock.jsx', 'src/features/maps/ui/MapLayersMenu.jsx',
+      // PR M6: the pause control.
+      'src/features/maps/ui/MapMotionControl.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {
@@ -1837,5 +1842,193 @@ describe('OccMap traffic (PR M5)', () => {
     // Nothing of the traffic on screen: no traffic in the legend.
     act(() => map.jumpTo(NOWHERE));
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
+});
+
+// The traffic of a motion store on a render clock whose server time the test moves (PR M6): the situation as
+// useMapSituation builds it, with the store's estimates, and the store as the traffic's motion.
+function motionTraffic({ picture = createAirPicture({ status: 'Disabled' }), flights = createMapFlights(), at = Date.parse(TRAFFIC_NOON),
+  server = null } = {}) {
+  const time = server ?? { at, now() { return this.at; } };
+  const clock = createRenderClock({ clock: time });
+  const motion = createMotionStore({ clock });
+  return { server: time, clock, motion, read: (nextPicture = picture, nextFlights = flights) => {
+    const pictureModel = toPictureModel(nextPicture);
+    const flightsModel = toFlightsModel(nextFlights);
+    motion.ingest({ picture: pictureModel, flights: flightsModel });
+    const nowMs = time.now();
+    const situation = buildSituation({ picture: pictureModel, flights: flightsModel, nowMs,
+      estimates: motion.estimatesAt(nowMs), estimatesChangeAt: motion.nextChangeAt(nowMs) });
+    return { aircraft: situation.aircraft, trails: EMPTY_TRAILS, route: null, source: TRAFFIC_SOURCE, motion };
+  } };
+}
+const EMPTY_TRAILS = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
+// The demo pair alone, on the flights of the lab's noon.
+function demoPairOnly(block, options) {
+  const response = createDemoFlights(block, options);
+  return { ...response, flights: response.flights.filter(row => row.isDemo) };
+}
+// Animation frames the test runs by hand; a cancelled one never runs.
+function controlledFrames() {
+  const frames = new Map();
+  let next = 1;
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+    const handle = next++;
+    frames.set(handle, callback);
+    return handle;
+  });
+  vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(handle => { frames.delete(handle); });
+  return {
+    pending: () => frames.size,
+    run: () => {
+      const due = [...frames.values()];
+      frames.clear();
+      act(() => due.forEach(callback => callback(0)));
+      return due.length;
+    },
+  };
+}
+function MotionProbe({ onMotion = null }) {
+  const { motion } = useOccMap();
+  useEffect(() => {
+    onMotion?.(motion);
+  });
+  return <pre data-testid="motion-probe">{JSON.stringify({ available: motion.available, paused: motion.paused,
+    pausedAt: motion.pausedAt, dataAt: motion.dataAt })}</pre>;
+}
+const motionProbe = () => JSON.parse(screen.getByTestId('motion-probe').textContent);
+const DEMO_ID = `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`;
+const geometryUpdates = (source, id) => source.updateDataCalls.filter(diff => diff.update.some(change => change.id === id && change.newGeometry));
+// Other aircraft in the air around PUJ, `count` of them, live at `atMs` and moving at 250 kt.
+function movingOthers(count, atMs) {
+  return Array.from({ length: count }, (_, index) => {
+    const [longitude, latitude] = destinationPoint([-68.3634, 18.5674], (index * 360) / count, 3_000 + index * 400);
+    return { hex: `f0d${String(index).padStart(3, '0')}`, callsign: `ZZZ${100 + index}`, registration: null, typeIcaoCode: 'A320',
+      category: 'A3', latitude, longitude, altitudeFeet: 9_000, onGround: false, groundSpeedKnots: 250, trackDegrees: 90,
+      verticalRateFeetPerMinute: 0, squawk: null, positionAt: new Date(atMs - 1_000).toISOString(), matchedFlightKey: null,
+      matchedBy: null, trail: [] };
+  });
+}
+
+describe('OccMap motion (PR M6)', () => {
+  it('runs no frame loop without motion', () => {
+    const frames = controlledFrames();
+    const view = render(<OccMap defaultView="region" traffic={noonTraffic()}><MotionProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    view.rerender(<OccMap defaultView="region" traffic={noonTraffic()}><MotionProbe /></OccMap>);
+    act(() => map.jumpTo({ center: [-68.36, 18.56], zoom: 12 }));
+    expect(frames.pending()).toBe(0);
+    expect(globalThis.requestAnimationFrame).not.toHaveBeenCalled();
+    expect(motionProbe()).toEqual({ available: false, paused: false, pausedAt: null, dataAt: null });
+    view.unmount();
+    // With a motion store the map draws through its own loop, and says it can pause.
+    const { read } = motionTraffic();
+    render(<OccMap defaultView="region" traffic={read()}><MotionProbe /></OccMap>);
+    loadStyle(fake.state.liveMaps().at(-1));
+    expect(motionProbe()).toMatchObject({ available: true, paused: false, dataAt: Date.parse(TRAFFIC_NOON) });
+    expect(frames.pending()).toBe(1);
+  });
+
+  it('moves the traffic with one updateData per due frame and stops when nothing moves', () => {
+    const frames = controlledFrames();
+    const NOON = Date.parse(TRAFFIC_NOON);
+    // The demo flight on final at noon (it appeared 4 minutes before, for its stand in 8), nothing else.
+    const { server, read } = motionTraffic({ flights: demoPairOnly(createDemoBlock({ appearAt: NOON - 240_000 })) });
+    render(<OccMap defaultView="approach" traffic={read()} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    expect(source.updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id))).toEqual([DEMO_ID]);
+    const writes = source.updateDataCalls.length;
+    // Every frame draws it where its trajectory puts it at the render clock's time: one updateData each, moving it.
+    for (let frame = 1; frame <= 3; frame += 1) {
+      server.at += 16;
+      expect(frames.run()).toBe(1);
+      expect(source.updateDataCalls).toHaveLength(writes + frame);
+    }
+    expect(geometryUpdates(source, DEMO_ID)).toHaveLength(3);
+    const moved = source.data.features.find(feature => feature.properties.id === DEMO_ID).geometry.coordinates;
+    // A frame at the same instant moves nothing and writes nothing.
+    frames.run();
+    expect(source.updateDataCalls).toHaveLength(writes + 3);
+    // An hour later it waits at terminal B's apron hold: one frame draws it there, and the loop stops.
+    server.at = NOON + 3_600_000;
+    expect(frames.run()).toBe(1);
+    const parked = source.data.features.find(feature => feature.properties.id === DEMO_ID).geometry.coordinates;
+    expect(parked).not.toEqual(moved);
+    expect(haversineM(parked, MDPC_LAYOUT.apronHolds.find(hold => hold.id === 'ah-b').p)).toBeLessThan(1);
+    expect(frames.pending()).toBe(0);
+    expect(map.calls.filter(call => call.method === 'setStyle')).toEqual([]);
+    expect(fake.state.maps).toEqual([map]);
+  });
+
+  it('updates every frame with fewer than 30 aircraft in view', () => {
+    const NOON = Date.parse(TRAFFIC_NOON);
+    const runFor = count => {
+      const frames = controlledFrames();
+      const picture = createAirPicture({ aircraft: movingOthers(count, NOON) });
+      const { server, read } = motionTraffic({ picture, flights: createMapFlights({ flights: [] }) });
+      const ref = createRef();
+      const view = render(<OccMap ref={ref} defaultView="approach" traffic={read()} />);
+      const map = fake.state.liveMaps().at(-1);
+      loadStyle(map);
+      act(() => { ref.current.jumpTo({ center: [-68.3634, 18.5674], zoom: 9 }); });
+      frames.run();
+      const source = map.getSource('occ-traffic');
+      const before = source.updateDataCalls.length;
+      // Two seconds of frames, 16 ms apart.
+      for (let frame = 0; frame < 125; frame += 1) {
+        server.at += 16;
+        frames.run();
+      }
+      const written = source.updateDataCalls.length - before;
+      view.unmount();
+      vi.restoreAllMocks();
+      return written;
+    };
+    // 29 aircraft in view: every frame.
+    expect(runFor(29)).toBe(125);
+    // 35 at 250 kt at zoom 9 cross about 0.9 px a second: the slowest rate, two writes a second (one every 500 ms
+    // after the one the camera move asked for).
+    expect(metresPerPixel(9, 18.5674)).toBeCloseTo(144.9, 0);
+    expect(runFor(35)).toBe(3);
+  });
+
+  it('pause freezes the aircraft while data keeps arriving', () => {
+    const frames = controlledFrames();
+    const NOON = Date.parse(TRAFFIC_NOON);
+    const block = createDemoBlock({ appearAt: NOON - 240_000 });
+    const { server, clock, read } = motionTraffic({ flights: demoPairOnly(block) });
+    const motionRef = { current: null };
+    const view = render(<OccMap defaultView="approach" traffic={read()}><MotionProbe onMotion={value => { motionRef.current = value; }} /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    server.at += 16;
+    frames.run();
+    // «Pausar movimiento»: the render clock holds, the context says since when, and the loop stops after its frame.
+    act(() => motionRef.current.pause());
+    expect(clock.isPaused()).toBe(true);
+    expect(motionProbe()).toMatchObject({ available: true, paused: true, pausedAt: NOON + 16 });
+    server.at += 5_000;
+    frames.run();
+    const held = geometryUpdates(source, DEMO_ID).length;
+    server.at += 5_000;
+    frames.run();
+    expect(frames.pending()).toBe(0);
+    expect(geometryUpdates(source, DEMO_ID)).toHaveLength(held);
+    // The reads go on: a new picture brings another aircraft, drawn at once, while the demo stays where it is.
+    const picture = createAirPicture({ aircraft: movingOthers(1, server.at) });
+    view.rerender(<OccMap defaultView="approach" traffic={read(picture, demoPairOnly(block))}><MotionProbe onMotion={value => { motionRef.current = value; }} /></OccMap>);
+    expect(source.updateDataCalls.at(-1).add.map(feature => feature.properties.id)).toEqual(['h:f0d000']);
+    frames.run();
+    expect(geometryUpdates(source, DEMO_ID)).toHaveLength(held);
+    // «Reanudar movimiento» picks up the server's time: the demo is drawn where it is now, and the loop runs again.
+    act(() => motionRef.current.resume());
+    expect(motionProbe()).toMatchObject({ paused: false, pausedAt: null });
+    frames.run();
+    expect(geometryUpdates(source, DEMO_ID).length).toBeGreaterThan(held);
+    expect(frames.pending()).toBe(1);
   });
 });

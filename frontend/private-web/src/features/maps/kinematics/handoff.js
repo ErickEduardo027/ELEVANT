@@ -241,6 +241,15 @@ function coastOnPlan(track, ageS, config) {
   };
 }
 
+/**
+ * The time scale of the part of its plan a trajectory sample is in (demoProfile.js: «Demo acelerada ×N»): its leg's
+ * `timeScale`, or 1 when the leg has none.
+ */
+function scaleAt(trajectory, sample) {
+  const scale = trajectory?.legs?.[sample?.legIndex]?.timeScale;
+  return finite(scale) && scale > 0 ? scale : 1;
+}
+
 /** A trajectory sample (estimator.js) as a state. */
 function fromSample(sample) {
   return {
@@ -268,37 +277,48 @@ export function trackMode(track, tMs, config = TRACK_CONFIG) {
   return 'estimate';
 }
 
-/** The estimate of a track `ageS` seconds after its fix: `{ state, quality, statusKey, opacity }`, or `null` (not drawn). */
+/**
+ * The estimate of a track `ageS` seconds after its fix: `{ state, quality, statusKey, opacity, timeScale }`, or `null`
+ * (not drawn).
+ */
 function estimateOf(track, tMs, ageS, config) {
   const fix = track.lastFix;
   if (track.kind === 'aviam') {
     if (planIsCurrent(track)) {
-      const sample = sampleTrajectory(planTrajectory(track), tMs);
+      const trajectory = planTrajectory(track);
+      const sample = sampleTrajectory(trajectory, tMs);
       if (sample === null) return null;
-      return { state: fromSample(sample), quality: 'estimated', statusKey: sample.statusKey ?? 'noSignal', opacity: sample.opacity };
+      return {
+        state: fromSample(sample), quality: 'estimated', statusKey: sample.statusKey ?? 'noSignal', opacity: sample.opacity,
+        timeScale: scaleAt(trajectory, sample),
+      };
     }
     // A plan that is not the last fix's: the flight keeps coasting along it until the store rebuilds one.
     const coasting = coastOnPlan(track, ageS, config);
-    if (coasting !== null) return { state: coasting, quality: 'estimated', statusKey: 'noSignal', opacity: 1 };
+    if (coasting !== null) return { state: coasting, quality: 'estimated', statusKey: 'noSignal', opacity: 1, timeScale: 1 };
   }
   // Nothing to estimate from: straight on, fading out from the end of the coast to the drop.
   const start = coastLimitS(fix, config);
   const end = config.dropOtherAfterS;
   if (ageS >= end) return null;
   const opacity = end > start ? clamp01(1 - (ageS - start) / (end - start)) : 0;
-  return { state: deadReckon(fix, ageS), quality: 'coasted', statusKey: 'noSignal', opacity };
+  return { state: deadReckon(fix, ageS), quality: 'coasted', statusKey: 'noSignal', opacity, timeScale: 1 };
 }
 
-/** What a track draws at `tMs` before any blend of a fix or a plan: `{ state, mode, quality, ageS, statusKey, opacity }`. */
+/**
+ * What a track draws at `tMs` before any blend of a fix or a plan: `{ state, mode, quality, ageS, statusKey, opacity,
+ * timeScale }`.
+ */
 function baseOf(track, tMs, config) {
   const fix = track.lastFix;
   if (fix === null) {
     if (!planIsCurrent(track)) return null;
-    const sample = sampleTrajectory(planTrajectory(track), tMs);
+    const trajectory = planTrajectory(track);
+    const sample = sampleTrajectory(trajectory, tMs);
     if (sample === null) return null;
     return {
       state: fromSample(sample), mode: 'estimate', quality: 'estimated', ageS: null, statusKey: sample.statusKey ?? null,
-      opacity: sample.opacity,
+      opacity: sample.opacity, timeScale: scaleAt(trajectory, sample),
     };
   }
   const ageS = ageOf(track, tMs);
@@ -309,14 +329,16 @@ function baseOf(track, tMs, config) {
     state.phase = anchor === null ? null : (legAtAlong(anchor.trajectory, anchor.alongM)?.phase ?? null);
     return state;
   };
-  if (mode === 'live') return { state: live(), mode, quality: 'live', ageS, statusKey: null, opacity: 1 };
+  if (mode === 'live') return { state: live(), mode, quality: 'live', ageS, statusKey: null, opacity: 1, timeScale: 1 };
   // The coast, eased in from the live dead reckoning over the blend time after the live limit.
   const coasted = () => {
     const along = coastOnPlan(track, ageS, config) ?? deadReckon(fix, ageS);
     const w = ease((ageS - config.liveMaxAgeS) / config.blendS);
     return w >= 1 ? along : mix(live(), along, w);
   };
-  if (mode === 'coast') return { state: coasted(), mode, quality: 'coasted', ageS, statusKey: 'noSignal', opacity: 1 };
+  if (mode === 'coast') {
+    return { state: coasted(), mode, quality: 'coasted', ageS, statusKey: 'noSignal', opacity: 1, timeScale: 1 };
+  }
   const estimate = estimateOf(track, tMs, ageS, config);
   if (estimate === null) return null;
   const w = ease((ageS - coastLimitS(fix, config)) / config.blendS);
@@ -327,20 +349,24 @@ function baseOf(track, tMs, config) {
     ageS,
     statusKey: estimate.statusKey,
     opacity: estimate.opacity,
+    timeScale: estimate.timeScale,
   };
 }
 
 /**
  * Where a track's aircraft is drawn at `tMs` (design F4): `{ lon, lat, altM, gsMs, trackDeg, vrateMs, onGround,
  * phase, mode: 'live' | 'coast' | 'estimate', quality: 'live' | 'coasted' | 'estimated', ageS, statusKey, opacity,
- * trailEpoch }`, frozen, or `null` when it is not drawn (nothing known, dropped, faded out, or its plan has not begun
- * or is over). The first eight keys are a trajectory sample's (estimator.js) and what traffic/situationModel.js takes
- * as an estimate.
+ * timeScale, trailEpoch }`, frozen, or `null` when it is not drawn (nothing known, dropped, faded out, or its plan has
+ * not begun or is over). The first eight keys are a trajectory sample's (estimator.js) and what
+ * traffic/situationModel.js takes as an estimate.
  * - `mode` comes from the age of the last fix (trackMode). `quality` says where the position comes from: the fix
  *   ('live'), the fix carried on without a signal ('coasted': coasting, and other traffic fading out) or a plan
  *   ('estimated'). `ageS` is the age of the fix (`null` without one). `statusKey` is the plan's own status when the
  *   plan places the aircraft and has one (awaiting a stand, cancelled), else 'noSignal' from the coast on
  *   (kinematicsMessages.js: «Sin señal desde hace N s»), else `null`.
+ * - `timeScale` is the time scale of the part of its plan the aircraft is in while the plan places it (demoProfile.js:
+ *   a demo part that had to be compressed, «Demo acelerada ×N»), and 1 otherwise (a fix, live or carried on, runs in
+ *   real time). A blend takes the scale of where it goes.
  * - `phase` is the plan's where the aircraft is, `null` for traffic no plan guides.
  * - A blend of a fix or a plan mixes, over its 6 s, the drawn state it started from (carried straight on) with the new
  *   one: the position in the east-north plane, the heading the short way, and the opacity. After a snap the opacity
@@ -364,6 +390,7 @@ export function renderTrack(track, tMs, config = TRACK_CONFIG) {
     ageS: base.ageS,
     statusKey: base.statusKey,
     opacity: clamp01(drawn.opacity * snapFade(track, tMs, config)),
+    timeScale: base.timeScale,
     trailEpoch: track.trailEpoch,
   });
 }
@@ -377,7 +404,7 @@ function drawnOf(track, tMs, config) {
   const blend = track.blend;
   if (blend !== null && tMs >= blend.startMs && tMs < blend.startMs + blend.durationMs) {
     const w = ease((tMs - blend.startMs) / blend.durationMs);
-    state = mix(deadReckon(blend.from, (tMs - blend.startMs) / 1000), state, w);
+    if (blend.opacityOnly !== true) state = mix(deadReckon(blend.from, (tMs - blend.startMs) / 1000), state, w);
     opacity = lerp(blend.from.opacity, opacity, w);
   }
   return { state, base, opacity };
@@ -406,13 +433,26 @@ function snapshotOf({ state, opacity }) {
   });
 }
 
+// A new state this close to the drawn one, the same way, needs no blend of its position: it is where it is drawn.
+const SAME_M = 0.5;
+const SAME_DEG = 1;
+const SAME_OPACITY = 0.01;
+
+/** Whether two states are where the eye sees one: within SAME_M, headings within SAME_DEG (or either unknown). */
+function samePlace(a, b) {
+  if (haversineM([a.lon, a.lat], [b.lon, b.lat]) > SAME_M) return false;
+  return !(finite(a.trackDeg) && finite(b.trackDeg)) || Math.abs(angleDiff(a.trackDeg, b.trackDeg)) <= SAME_DEG;
+}
+
 /**
  * The track `next` (a draft of `prev` with its new fix or plan) after the hand-off at `atMs`, from `drawn` (what
- * `prev` drew then, drawnOf) to `target` (where `next` puts the aircraft, judged against `limitM`): nothing drawn
- * before → no blend (a fade-in when the aircraft comes back); a gap above `limitM` → a snap (a new trail part and a
- * fade-in); otherwise a blend from the drawn state. A fade-in under way goes on.
+ * `prev` drew then, drawnOf) to `target` (where `next` puts the aircraft, judged against `limitM`, with
+ * `targetOpacity`): nothing drawn before → no blend (a fade-in when the aircraft comes back); a gap above `limitM` → a
+ * snap (a new trail part and a fade-in); where it is drawn already (a plan continued from the one drawn) → no blend of
+ * the position, and of its opacity only when that changes (a cancelled demo read late fades in from where it was
+ * drawn); otherwise a blend from the drawn state. A fade-in under way goes on.
  */
-function handOver(prev, next, { drawn, target, atMs, limitM, config }) {
+function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, config }) {
   if (drawn === null) {
     const comesBack = prev.lastFix !== null || planTrajectory(prev) !== null;
     return Object.freeze({
@@ -424,8 +464,15 @@ function handOver(prev, next, { drawn, target, atMs, limitM, config }) {
   if (haversineM([drawn.state.lon, drawn.state.lat], [target.lon, target.lat]) > limitM) {
     return Object.freeze({ ...next, blend: null, trailEpoch: prev.trailEpoch + 1, snapAtMs: atMs });
   }
+  const durationMs = config.blendS * 1000;
+  if (samePlace(drawn.state, target)) {
+    if (Math.abs(drawn.opacity - targetOpacity) <= SAME_OPACITY) return Object.freeze({ ...next, blend: null });
+    return Object.freeze({
+      ...next, blend: Object.freeze({ from: snapshotOf(drawn), startMs: atMs, durationMs, opacityOnly: true }),
+    });
+  }
   return Object.freeze({
-    ...next, blend: Object.freeze({ from: snapshotOf(drawn), startMs: atMs, durationMs: config.blendS * 1000 }),
+    ...next, blend: Object.freeze({ from: snapshotOf(drawn), startMs: atMs, durationMs, opacityOnly: false }),
   });
 }
 
@@ -455,9 +502,11 @@ function onPlan(prev, event, config) {
     ? Object.freeze({ trajectory, atMs: event.atMs, anchorFixAt }) : null;
   const drawn = drawnOf(prev, event.atMs, config);
   const next = { ...prev, plan, dropped: false };
-  const target = drawnOf(Object.freeze({ ...next, blend: null }), event.atMs, config)?.state ?? null;
+  const goal = drawnOf(Object.freeze({ ...next, blend: null }), event.atMs, config);
+  const target = goal?.state ?? null;
   return handOver(prev, next, {
-    drawn, target, atMs: event.atMs, limitM: snapLimitM(target?.onGround === true, config), config,
+    drawn, target, targetOpacity: goal?.opacity ?? 1, atMs: event.atMs,
+    limitM: snapLimitM(target?.onGround === true, config), config,
   });
 }
 
@@ -492,9 +541,10 @@ function onTick(prev, event, config) {
  *   fix is) snaps, with a fade-in and a new trail part; closer, it blends from the drawn state over 6 s.
  * - `{ type: 'plan', trajectory, atMs, anchorFixAt? }`: the trajectory planned for the flight from `atMs` (a stand or
  *   a runway changed, or one rebuilt from the last fix; `meta.anchor` says which). It blends from the drawn state to
- *   where the new plan puts the aircraft, and snaps like a fix beyond the snap distance. An older plan, or the same
- *   one, is ignored; `trajectory: null` drops the plan, and with `anchorFixAt` records that no route was found from
- *   that fix (needsReplan stops asking).
+ *   where the new plan puts the aircraft, and snaps like a fix beyond the snap distance; a plan that puts it where it
+ *   is drawn (half a metre, a degree: one continued from the plan drawn) takes over without moving it, and blends only
+ *   its opacity when that changes. An older plan, or the same one, is ignored; `trajectory: null` drops the plan, and
+ *   with `anchorFixAt` records that no route was found from that fix (needsReplan stops asking).
  * - `{ type: 'tick', tMs }`: clears a finished blend and a finished fade, and drops other traffic 120 s after its fix
  *   and an ELEVANT flight 600 s after it when no plan can place it (none, or one that is over).
  * The mode is never stored: renderTrack derives it from the time.
