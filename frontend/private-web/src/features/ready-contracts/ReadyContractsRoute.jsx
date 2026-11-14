@@ -14,7 +14,7 @@ import { stationDate } from '../../services/positionsMapService';
 import { readyContractsMessages } from './readyContractsMessages';
 
 // Template D of the design («Registro»): the toolbar with the page title and the operation date, then the contracts of
-// that date as a dense list, one row per contract with its services folded under it.
+// that date as a dense list, one row per contract with its services open under it and a disclosure that folds them.
 const TITLE_ID = 'ready-contracts-title';
 const SLAB = 'rounded-md border border-occ-line bg-occ-panel text-occ-text';
 // The 28 px button (44 px on a touch screen) overhangs its cell instead of making the row taller, so it sits on the
@@ -108,6 +108,16 @@ export default function ReadyContractsRoute() {
   const [date, setDate] = useState(() => stationDate());
   const [result, setResult] = useState({ key: '' });
   const [attempt, setAttempt] = useState(0);
+  // What each airline contracted reads at a glance: every row opens with its services on view, as the presentation
+  // guide pictures them (step 15). The page, not the table, keeps the rows the user folds: they stay folded while the
+  // page is open, also on another date.
+  const [folded, setFolded] = useState(() => new Set());
+  const toggleServices = useCallback(contractId => setFolded(current => {
+    const next = new Set(current);
+    if (next.has(contractId)) next.delete(contractId);
+    else next.add(contractId);
+    return next;
+  }), []);
 
   useEffect(() => {
     if (!station.stationId || !date) return undefined;
@@ -123,6 +133,7 @@ export default function ReadyContractsRoute() {
   const state = result.key === `${station.stationId}|${date}|${attempt}` ? result : { status: 'loading' };
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   const contracts = state.data?.contracts ?? [];
+  const openIds = contracts.map(contractIdOf).filter(contractId => !folded.has(contractId));
   const failed = state.status === 'error';
   // The service's own sentence for the failure (occReadyContractsService), never the server's title.
   const labels = { loading: t('loading'), retry: t('retry'), ...(failed ? { error: state.error.message } : {}) };
@@ -143,6 +154,7 @@ export default function ReadyContractsRoute() {
             onRetry={failed && state.error.status !== 403 ? retry : undefined}
             emptyState={<OccEmptyState title={t('emptyTitle')} description={t('emptyDescription')} />}
             renderExpanded={contract => <ContractServices contract={contract} t={t} />}
+            expandedIds={openIds} onToggleExpanded={toggleServices}
             expandLabel={contract => t('servicesToggle', { count: contract.services.length })} />
         </div>
       ) : <p role="alert" className={`${OCC_CLASSES.card} text-sm`}>{t('noStation')}</p>}

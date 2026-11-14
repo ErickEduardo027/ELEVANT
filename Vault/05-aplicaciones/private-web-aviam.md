@@ -1070,13 +1070,15 @@ escriben.
 - **Contratos listos**
   ([ruta](../../frontend/private-web/src/features/ready-contracts/ReadyContractsRoute.jsx)).
   La cuenta del día junto al título, «Fecha de operación» y los contratos como
-  lista; cada uno despliega «Servicios contratados (n)» y conserva «Planificar
-  vuelos».
+  lista; cada uno muestra sus servicios a la vista, que «Servicios contratados
+  (n)» pliega y vuelve a abrir, y conserva «Planificar vuelos».
 - **Reportes**
   ([ruta](../../frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx)).
-  La barra «Reporte y período» lleva «Generar». El resultado lleva «Exportar
-  Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la tabla densa y las
-  páginas al pie. El botón de exportar, que tenía carpeta propia, se borró.
+  La barra «Reporte y período» lleva «Generar»; mientras llega la lista de
+  reportes, un esqueleto bajo la barra dice «Cargando reportes…». El resultado
+  lleva «Exportar Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la
+  tabla densa y las páginas al pie. El botón de exportar, que tenía carpeta
+  propia, se borró.
 - **Primitivas y guardas.** U6 suma a `src/features/occ-ui` la
   [tabla densa](../../frontend/private-web/src/features/occ-ui/OccDataTable.jsx),
   que se dibuja como tabla o como lista, con filas encendidas, filas
