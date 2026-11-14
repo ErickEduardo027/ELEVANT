@@ -4,10 +4,12 @@ import { alertPriority } from '../src/features/dashboard/noc/alertModel';
 import { describeReasons } from '../src/services/occCoverageService';
 import { STATION } from './visual/occ/fixtures/occApi.mjs';
 import {
-  API_PATHS, COVERAGE_AGENTS, COVERAGE_REFUSAL, COVERAGE_TERMINALS, FORBIDDEN, REVIEW_IDS, SCREEN_SCENARIOS,
-  SCREENS_ACCESS, SERVER_ERROR, STATION_TIME_ZONE, coverageBoard, createScreensApi, operationalNotices, reviewDetail,
-  reviewDocuments, reviewHistory, reviewIncidents, reviewQueue,
+  API_PATHS, CHAT_IDS, COVERAGE_AGENTS, COVERAGE_REFUSAL, COVERAGE_TERMINALS, DEVICE_IDS, FORBIDDEN, MASTER_TERMINALS,
+  OWN_ACCOUNT_ID, OWN_PRESENCE, REVIEW_IDS, SCREEN_SCENARIOS, SCREENS_ACCESS, SERVER_ERROR, STATION_TIME_ZONE,
+  chatConversations, chatMessages, chatPresence, coverageBoard, createScreensApi, masterData, occDevices,
+  operationalNotices, reviewDetail, reviewDocuments, reviewHistory, reviewIncidents, reviewQueue,
 } from './visual/occ/fixtures/screensApi.mjs';
+import { PRESENCE_SHAPES, resolvePresence } from '../src/features/chat/presenceStatus';
 
 // The synthetic API of the OCC work screens of the visual suite (tests/visual/occ/fixtures/screensApi.mjs) must be
 // answers the app accepts: the shared client validates them strictly, so a fixture that drifted from the contract would
@@ -122,6 +124,74 @@ describe('visual suite screens fixtures', () => {
     expect(times).toEqual([...times].sort((a, b) => b - a));
   });
 
+  it('chat, master data and tablets answers pass the strict validators', async () => {
+    for (const scenario of ['data', 'empty']) {
+      const conversations = chatConversations(scenario);
+      await expect(clientAnswering(conversations).getOperationalConversations(STATION.stationId), scenario)
+        .resolves.toEqual(conversations);
+      const layout = masterData(scenario);
+      await expect(clientAnswering(layout).getOccMasterData(STATION.stationId), scenario).resolves.toEqual(layout);
+      const tablets = occDevices(scenario);
+      await expect(clientAnswering(tablets).getOccMobileDevices(STATION.stationId), scenario).resolves.toEqual(tablets);
+    }
+    for (const operationId of Object.values(CHAT_IDS)) {
+      const thread = chatMessages(operationId);
+      await expect(clientAnswering(thread).getOperationalMessages(operationId), operationId).resolves.toEqual(thread);
+    }
+    // The presence answers only the operations asked for, as the validator demands.
+    const ids = Object.values(CHAT_IDS);
+    const presence = chatPresence(ids);
+    await expect(clientAnswering(presence).getOperationalPresence(ids)).resolves.toEqual(presence);
+    await expect(clientAnswering(chatPresence(ids)).getOperationalPresence([CHAT_IDS.open])).rejects.toThrow();
+    expect(chatPresence([CHAT_IDS.open]).operations.map(item => item.operationId)).toEqual([CHAT_IDS.open]);
+    await expect(clientAnswering(OWN_PRESENCE).getOwnOperationalPresence()).resolves.toEqual(OWN_PRESENCE);
+    // Read-only, the same layout and tablets with nothing to change.
+    const readOnly = masterData('data', { readOnly: true });
+    await expect(clientAnswering(readOnly).getOccMasterData(STATION.stationId)).resolves.toMatchObject({ canCreate: false,
+      canUpdate: false });
+    await expect(clientAnswering(occDevices('data', { readOnly: true })).getOccMobileDevices(STATION.stationId))
+      .resolves.toMatchObject({ canUnbind: false, canRevoke: false });
+    // Another station's layout and tablets are refused, as the page would refuse them.
+    const other = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
+    await expect(clientAnswering(masterData()).getOccMasterData(other)).rejects.toThrow();
+    await expect(clientAnswering(occDevices()).getOccMobileDevices(other)).rejects.toThrow();
+    await expect(clientAnswering(SERVER_ERROR, { status: 500 }).getOperationalConversations(STATION.stationId))
+      .rejects.toMatchObject({ kind: 'http', status: 500 });
+    await expect(clientAnswering(FORBIDDEN, { status: 403 }).getOccMasterData(STATION.stationId))
+      .rejects.toMatchObject({ kind: 'http', status: 403 });
+  });
+
+  it('the chat shows every presence shape, the register every state, and the tablets every holder', () => {
+    // Every shape of the legend once, the OCC session among the participants (the page leaves it out).
+    const presence = chatPresence(Object.values(CHAT_IDS));
+    const shapes = presence.operations.flatMap(item => item.participants)
+      .filter(person => person.accountId !== OWN_ACCOUNT_ID).map(person => PRESENCE_SHAPES[resolvePresence(person)]);
+    expect([...new Set(shapes)].sort()).toEqual(['dashed', 'filled', 'filled-bar', 'half', 'hollow']);
+    expect(presence.operations.flatMap(item => item.participants).some(person => person.accountId === OWN_ACCOUNT_ID)).toBe(true);
+    // The open thread: own messages seen and one only sent; another conversation unread, one without messages.
+    const thread = chatMessages(CHAT_IDS.open);
+    const own = thread.messages.filter(message => message.senderAccountId === OWN_ACCOUNT_ID);
+    expect(own.map(message => Date.parse(message.sentAt) <= Date.parse(thread.othersReadUpTo))).toEqual([true, true, false]);
+    const { conversations } = chatConversations();
+    expect(conversations.map(item => [item.unreadCount, item.lastMessage === null])).toEqual([[0, false], [3, false], [0, true],
+      [0, false]]);
+    expect(SCREENS_ACCESS.permissions).toContain('operations.chat.create');
+
+    // The register: a terminal out of use, stands with and without history, a stand out of use, a type out of use.
+    const layout = masterData();
+    expect(layout.terminals.filter(item => !item.isActive).map(item => item.code)).toEqual(['C']);
+    expect(layout.stands.filter(item => !item.isActive).map(item => item.code)).toEqual(['A11']);
+    expect(layout.stands.some(item => item.hasHistory) && layout.stands.some(item => !item.hasHistory)).toBe(true);
+    expect(layout.stands.every(item => Object.values(MASTER_TERMINALS).some(terminal => terminal.id === item.terminalId))).toBe(true);
+    expect(layout.aircraftTypes.filter(item => !item.isActive).map(item => item.icaoCode)).toEqual(['B752']);
+
+    // The tablets: one busy with an operation, one held, two free (one with no name and no agent) and one revoked.
+    const { devices } = occDevices();
+    expect(devices.map(item => [item.status, item.agentHasOperationInProgress])).toEqual([['Bound', true], ['Bound', false],
+      ['Unbound', false], ['Unbound', false], ['Revoked', false]]);
+    expect(devices.find(item => item.id === DEVICE_IDS.unnamed)).toMatchObject({ deviceName: null, agent: null, platform: 'Ios' });
+  });
+
   it('the stub answers each scenario, sends the detail with its ETag and counts what it serves', async () => {
     expect(SCREEN_SCENARIOS).toEqual(['data', 'empty', 'error', 'forbidden']);
     expect(() => createScreensApi('broken')).toThrow(RangeError);
@@ -158,5 +228,29 @@ describe('visual suite screens fixtures', () => {
     expect((await answer(createScreensApi('empty', { notices: true }), API_PATHS.notices)).json.notifications).toEqual([]);
     expect(await answer(createScreensApi('error', { notices: true }), API_PATHS.notices))
       .toEqual({ status: 500, json: SERVER_ERROR });
+
+    // The chat, Datos maestros and Tablets follow the scenario; the thread of an unknown operation has no answer.
+    const stationQuery = `?stationId=${STATION.stationId}`;
+    expect((await answer(data, `${API_PATHS.conversations}${stationQuery}`)).json).toEqual(chatConversations());
+    expect((await answer(data, `${API_PATHS.conversations}/${CHAT_IDS.open}/messages`)).json).toEqual(chatMessages(CHAT_IDS.open));
+    expect(await answer(data, `${API_PATHS.conversations}/${REVIEW_IDS.returned}/messages`)).toBeNull();
+    expect((await answer(data, `${API_PATHS.presence}?operationIds=${CHAT_IDS.quiet}`)).json)
+      .toEqual(chatPresence([CHAT_IDS.quiet]));
+    expect(await answer(data, API_PATHS.ownPresence)).toEqual({ status: 200, json: OWN_PRESENCE });
+    expect((await answer(data, `${API_PATHS.masterData}${stationQuery}`)).json).toEqual(masterData());
+    expect((await answer(data, `${API_PATHS.devices}${stationQuery}`)).json).toEqual(occDevices());
+    expect((await answer(createScreensApi('empty'), `${API_PATHS.conversations}${stationQuery}`)).json.conversations).toEqual([]);
+    expect(await answer(createScreensApi('error'), `${API_PATHS.conversations}${stationQuery}`))
+      .toEqual({ status: 500, json: SERVER_ERROR });
+    expect(await answer(createScreensApi('forbidden'), `${API_PATHS.masterData}${stationQuery}`))
+      .toEqual({ status: 403, json: FORBIDDEN });
+    expect((await answer(createScreensApi('data', { readOnly: true }), `${API_PATHS.devices}${stationQuery}`)).json)
+      .toEqual(occDevices('data', { readOnly: true }));
+    // No command of these screens is answered: a message, a read receipt, a presence lease or a tablet's release.
+    for (const [method, path] of [['POST', `${API_PATHS.conversations}/${CHAT_IDS.open}/messages`],
+      ['PUT', `${API_PATHS.conversations}/${CHAT_IDS.open}/read`], ['PUT', API_PATHS.presence],
+      ['PUT', `/api/v1/occ/stands/${masterData().stands[0].id}`], ['POST', `${API_PATHS.devices}/${DEVICE_IDS.held}/unbind`]]) {
+      expect(data.handle({ method: () => method }, new URL(`https://api.elevant.test${path}`)), `${method} ${path}`).toBeNull();
+    }
   });
 });

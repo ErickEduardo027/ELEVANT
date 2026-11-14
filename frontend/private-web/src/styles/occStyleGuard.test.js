@@ -23,7 +23,10 @@ const BOOT_FOLDER = 'src/features/admin-occ/boot';
 // The OCC screens U6 rebuilt with occ-ui, one per step: they draw as occ-ui does (contratos 2.4). Each also enters
 // MIGRATED_FOLDERS, which forbids its legacy colour classes; a route rebuilt inside a folder other departments share
 // enters MIGRATED_FILES instead.
-const REBUILT_SCREEN_FOLDERS = Object.freeze(['src/features/review', 'src/features/position-coverage']);
+const REBUILT_SCREEN_FOLDERS = Object.freeze([
+  'src/features/review', 'src/features/position-coverage', 'src/features/chat', 'src/features/master-data',
+  'src/features/devices',
+]);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
@@ -61,25 +64,16 @@ const GLOBAL_LEGACY_RULES = {
   },
 };
 
-// The rules of the chat stylesheet that paint a fixed colour (the legacy blue #145dc4), the element each one paints in
-// the chat's markup, and the rule that outweighs it there under the OCC. U6 rebuilds the chat with occ-ui.
-const CHAT_STYLESHEET = 'src/features/chat/ChatWorkspace.module.css';
-const CHAT_FIXED_COLOURS = [
-  {
-    rule: ".workspace [aria-current='true']", element: 'button', property: 'border-color',
-    repair: "[data-department='occ'] [data-occ-chat-layout] [aria-label] button[aria-current='true']",
-    value: 'var(--occ-accent)',
-  },
-  {
-    rule: '.workspace .composerInput:focus-visible', element: 'textarea', property: 'outline-color',
-    repair: "[data-department='occ'] [data-occ-chat-layout] textarea:focus-visible", value: 'var(--occ-accent)',
-  },
-  {
-    // The own message also carries `border-black/10`, which the bridge repaints at a greater weight.
-    rule: ".history article[data-own='true']", element: 'article', property: 'border-color',
-    repair: `${OCC_BRIDGE_SCOPE} ${bridgeSelector('border-black/10').selector}`, value: 'var(--occ-line)',
-  },
-];
+// The chat's stylesheets (CSS Modules, which the bridge cannot reach): U6 rebuilt them on the OCC tokens, so they paint
+// no colour of their own. The properties that carry a colour, and what such a value may hold besides a custom property:
+// the keywords of a token-less paint and the system colours of forced-colours mode.
+const CHAT_FOLDER = 'src/features/chat';
+const COLOUR_PROPERTY = /^(?:color|background(?:-color)?|border(?:-(?:top|right|bottom|left|inline|block))?-color|outline-color|fill|stroke|scrollbar-color|caret-color|accent-color|--[\w-]*surface)$/;
+const COLOUR_KEYWORDS = new Set(['transparent', 'currentColor', 'currentcolor', 'none', 'inherit', 'Canvas', 'CanvasText',
+  'Field', 'FieldText']);
+// The radius of each role (contratos 2.4): plates 2 px, controls 4 px, panels and bubbles 6 px, overlays 8 px.
+const RADIUS_TOKENS = new Set(['var(--occ-radius-plate)', 'var(--occ-radius-control)', 'var(--occ-radius-panel)',
+  'var(--occ-radius-overlay)']);
 
 const stripComments = css => css.replace(/\/\*[\s\S]*?\*\//g, '');
 // A script without its comments: block and JSX comments, then line comments (a `//` after a colon is a URL).
@@ -913,6 +907,13 @@ describe('OCC legacy bridge', () => {
       'src/features/review/components/OperationDocumentsSection.jsx',
       'src/features/review/components/ReopenReviewSection.jsx',
     ]));
+    // So are the chat with its presence, Datos maestros and Tablets, with their message files.
+    expect(rebuiltFiles).toEqual(expect.arrayContaining([
+      'src/features/chat/CanonicalChatRoute.jsx', 'src/features/chat/PresencePeople.jsx',
+      'src/features/chat/PresenceStatusPicker.jsx', 'src/features/chat/presenceStatus.js',
+      'src/features/master-data/MasterDataRoute.jsx', 'src/features/master-data/masterDataMessages.js',
+      'src/features/devices/DevicesRoute.jsx', 'src/features/devices/devicesMessages.js',
+    ]));
   });
 
   it('the boot screen styles use only occ tokens defined on the OCC scope', () => {
@@ -981,71 +982,72 @@ describe('OCC legacy bridge', () => {
         .map(name => `${file}: ${name}`);
     });
     expect(missing).toEqual([]);
-    // The --occ-ui-* aliases the chat reads live on the OCC scope, so every chat element inherits them.
-    const aliases = readVariables(stylesheets.map(file => readSource(file)).join('\n')).filter(name => name.startsWith('--occ-'));
-    expect(aliases.filter(alias => !occScopeTokens.has(alias))).toEqual([]);
+    // The tokens the chat reads live on the OCC scope, so every chat element inherits them.
+    const tokens = readVariables(stylesheets.map(file => readSource(file)).join('\n')).filter(name => name.startsWith('--occ-'));
+    expect(tokens.length).toBeGreaterThan(10);
+    expect(tokens.filter(token => !occScopeTokens.has(token))).toEqual([]);
   });
 
-  it('the chat shows its selection and focus in cyan, above the fixed legacy blue of its stylesheet', () => {
-    const FIXED_COLOUR = /#[0-9a-f]{3,8}\b|rgba?\(/i;
-    const paintsFixed = rule => rule.declarations.some(([, value]) => FIXED_COLOUR.test(value));
-    // No chat stylesheet draws a focus or a selection with a fixed colour, apart from the rules listed above.
-    const STATE = /:focus|\[aria-(?:current|selected|checked|pressed)/;
-    const chat = 'src/features/chat';
-    const stateRules = readdirSync(chat).filter(name => name.endsWith('.module.css'))
-      .flatMap(name => parseRules(readSource(`${chat}/${name}`)).filter(paintsFixed).flatMap(rule => rule.selectors))
-      .filter(selector => STATE.test(selector));
-    expect(stateRules).toEqual(CHAT_FIXED_COLOURS.map(row => row.rule).filter(selector => STATE.test(selector)));
-    // And every fixed colour of the workspace stylesheet has its row.
-    const fixed = parseRules(readSource(CHAT_STYLESHEET)).filter(paintsFixed);
-    expect(fixed.flatMap(rule => rule.selectors)).toEqual(CHAT_FIXED_COLOURS.map(row => row.rule));
-
-    // The chat's markup, with the classes of its route (the module's own classes are plain names here).
-    const route = readSource('src/features/chat/CanonicalChatRoute.jsx');
-    const conversation = /aria-current=\{[^}]*\} className="([^"]+)"/.exec(route)?.[1];
-    const message = /data-own=\{[^}]*\} className="([^"]+)"/.exec(route)?.[1];
-    expect([conversation, message].every(Boolean)).toBe(true);
-    expect(route).toMatch(/<div data-occ-chat-layout className=\{styles\.layout\}>/);
-    expect(route).toMatch(/<section data-occ-surface aria-label=\{t\('conversations'\)\}/);
-    expect(route).toMatch(/<ChatComposerInput id="occ-chat-draft"/);
-    expect(readSource('src/features/chat/ChatComposerInput.jsx')).toMatch(/<textarea [^>]*className=\{styles\.composerInput\}/);
-    document.body.innerHTML = `<div data-department="occ" data-occ-bridge=""><section class="workspace">
-      <div data-occ-chat-layout="" class="layout">
-        <section data-occ-surface="" aria-label="Conversaciones"><ul><li>
-          <button type="button" aria-current="true" class="${conversation}"></button></li></ul></section>
-        <section data-occ-surface="" aria-label="Mensajes"><div class="history">
-          <article data-own="true" class="${message}"></article></div>
-          <form><textarea id="occ-chat-draft" class="composerInput"></textarea></form></section>
-      </div></section></div>`;
-
-    const atRest = selector => selector.replace(/(?<!\\):(?:hover|focus-visible|focus)\b/g, '');
-    const occRules = parseRules(occCss);
-    const bridgeRules = parseRules(readSource(BRIDGE_CSS));
-    for (const row of CHAT_FIXED_COLOURS) {
-      const element = document.querySelector(row.element);
-      // The module paints this element with a fixed colour…
-      const rule = fixed.find(item => item.selectors.includes(row.rule));
-      const paints = ([property, value]) => (property === row.property || row.property.startsWith(`${property}-`))
-        && FIXED_COLOUR.test(value);
-      expect(rule.declarations.some(paints), row.rule).toBe(true);
-      expect(element.matches(atRest(row.rule)), row.rule).toBe(true);
-      // …and the repair paints the same element with a token, at a greater weight.
-      const repair = [...occRules, ...bridgeRules].find(item => item.selectors.includes(row.repair)
-        && item.declarations.some(([property, value]) => property === row.property && value === row.value));
-      expect(repair, row.repair).toBeDefined();
-      expect(element.matches(atRest(row.repair)), row.repair).toBe(true);
-      expect(compareSpecificity(specificity(row.repair), specificity(row.rule)), row.repair).toBeGreaterThan(0);
-      // occ.css loads before the bridge, so a repair there also outweighs the bridge rules of the element's classes
-      // that set the same property (the hover border of the conversation).
-      if (!occRules.includes(repair)) continue;
-      const competing = [...element.classList].filter(className => Object.hasOwn(declarationsOf(className) ?? {}, row.property));
-      expect(competing, row.repair).toEqual(row.element === 'button' ? ['hover:border-accent-600/40'] : []);
-      for (const className of competing) {
-        const weight = specificity(`${OCC_BRIDGE_SCOPE} ${bridgeSelector(className).selector}`);
-        expect(compareSpecificity(specificity(row.repair), weight), `${row.repair} against ${className}`).toBeGreaterThan(0);
+  it('no chat stylesheet paints a fixed colour or a shadow, and the selection uses occ tokens', () => {
+    const FIXED_COLOUR = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch|color-mix)\(/i;
+    const pixels = value => {
+      const [, amount, unit] = /^([\d.]+)(px|rem)$/.exec(value) ?? [];
+      return unit === 'rem' ? Number(amount) * 16 : Number(amount);
+    };
+    const colourParts = value => value.replace(/var\(|\)|,/g, ' ').split(/\s+/).filter(Boolean);
+    // What a stylesheet breaks, as `selector → declaration`.
+    const findings = css => parseRules(stripComments(css)).flatMap(rule => rule.declarations.flatMap(([property, value]) => {
+      const broken = [];
+      if (FIXED_COLOUR.test(value)) broken.push('a fixed colour');
+      if (/shadow/.test(property) || /shadow|gradient|blur\(/.test(value) || property.startsWith('backdrop')) {
+        broken.push('a shadow, gradient or blur');
       }
+      if (/var\(\s*--occ-ui-/.test(value)) broken.push('an --occ-ui-* alias');
+      if (COLOUR_PROPERTY.test(property)
+        && colourParts(value).some(part => !part.startsWith('--') && !COLOUR_KEYWORDS.has(part))) broken.push('a named colour');
+      if (property === 'font-size' && !(pixels(value) >= 12)) broken.push('text under 12 px');
+      if (/^border(?:-[a-z]+)*-radius$/.test(property) && !RADIUS_TOKENS.has(value)) broken.push('a radius off its role');
+      if (rule.selectors.some(selector => /:focus/.test(selector))) broken.push('a focus ring of its own');
+      return broken.map(what => `${rule.selectors.join(', ')} → ${property}: ${value} (${what})`);
+    }));
+
+    const stylesheets = sourceFilesUnder(CHAT_FOLDER).filter(file => file.endsWith('.module.css'));
+    expect(stylesheets).toEqual(['src/features/chat/ChatWorkspace.module.css', 'src/features/chat/PresencePeople.module.css']);
+    for (const file of stylesheets) {
+      expect(findings(readSource(file)), file).toEqual([]);
+      // Every radius of the chat is a role's token, and the bubbles and the composer have theirs.
+      expect(parseRules(stripComments(readSource(file))).some(rule => rule.declarations
+        .some(([property]) => property === 'border-radius')), file).toBe(true);
     }
-    document.body.replaceChildren();
+    const workspace = parseRules(stripComments(readSource(`${CHAT_FOLDER}/ChatWorkspace.module.css`)));
+    const radiusOf = selector => workspace.find(rule => rule.selectors.includes(selector))?.declarations
+      .find(([property]) => property === 'border-radius')?.[1];
+    expect([radiusOf('.message'), radiusOf('.composerInput')]).toEqual(['var(--occ-radius-panel)', 'var(--occ-radius-control)']);
+
+    // The selection is cyan in occ tokens, on the conversation itself: the soft slab, a cyan joint and a cyan code.
+    // occ.css no longer repairs the chat's legacy blue.
+    const route = readSource(`${CHAT_FOLDER}/CanonicalChatRoute.jsx`);
+    expect(route).toMatch(/aria-current=\{open \? 'true' : undefined\}/);
+    expect(/const CONVERSATION_OPEN = '([^']+)'/.exec(route)?.[1].split(' ')).toEqual(expect.arrayContaining([
+      'border-occ-accent', 'bg-occ-accent-soft',
+    ]));
+    expect(route).toMatch(/open \? 'text-occ-accent' : 'text-occ-text'/);
+    expect(occCss).not.toMatch(/data-occ-chat-layout/);
+    expect(route).not.toMatch(/data-occ-chat-layout|#145dc4/i);
+
+    // The guard bites: the chat's old rules break it.
+    expect(findings(`.workspace [aria-current='true'] { border: 1px solid #145dc4; }
+      .dot { box-shadow: 0 0 0 2px var(--occ-ui-solid); font-size: 10px; border-radius: 50%; }
+      .dot[data-presence='available'] { background: green; }
+      .composerInput:focus-visible { outline: 2px solid var(--occ-accent); }`)).toEqual([
+      ".workspace [aria-current='true'] → border: 1px solid #145dc4 (a fixed colour)",
+      '.dot → box-shadow: 0 0 0 2px var(--occ-ui-solid) (a shadow, gradient or blur)',
+      '.dot → box-shadow: 0 0 0 2px var(--occ-ui-solid) (an --occ-ui-* alias)',
+      '.dot → font-size: 10px (text under 12 px)',
+      '.dot → border-radius: 50% (a radius off its role)',
+      ".dot[data-presence='available'] → background: green (a named colour)",
+      '.composerInput:focus-visible → outline: 2px solid var(--occ-accent) (a focus ring of its own)',
+    ]);
   });
 
   it('occ.css, the bridge and the Tailwind occ colours reference only defined variables', () => {

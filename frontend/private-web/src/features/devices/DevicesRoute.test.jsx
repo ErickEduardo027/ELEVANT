@@ -1,6 +1,8 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import DevicesRoute from './DevicesRoute';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import DevicesRoute, { DEVICE_STATUS_TONES } from './DevicesRoute';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 import { loadOccDevices, revokeOccDevice, unbindOccDevice } from '../../services/occDevicesService';
 
 const stationId = '20000000-0000-7000-8000-000000000003';
@@ -23,7 +25,13 @@ const free = { ...busy, id: 'dev-2', deviceName: 'Tablet T-08', status: 'Unbound
 const data = (extra = {}) => ({ stationId, stationCode: 'PUJ', canUnbind: true, canRevoke: true, devices: [busy, free], ...extra });
 const failure = (status, code) => Object.assign(new Error('Raw server title'), { status, code, title: 'Raw server title' });
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); auth.scopes = []; });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); auth.scopes = []; });
+
+// The register writes the year of an instant only when it is not this one: these cases read the clock of a fixed day.
+function onFixedDay() {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-14T12:00:00.000Z'));
+}
 
 function signedIn() { auth.scopes = [{ stationId, stationCode: 'PUJ' }]; }
 
@@ -129,4 +137,109 @@ it('needs the OCC station of the session', () => {
   render(<DevicesRoute />);
   expect(screen.getByRole('alert')).toHaveTextContent('no tiene una estación OCC autorizada');
   expect(loadOccDevices).not.toHaveBeenCalled();
+});
+
+it('shows each tablet status with its glyph and word', async () => {
+  onFixedDay();
+  signedIn();
+  const held = { ...busy, id: 'dev-3', deviceName: 'Tablet T-09', agentHasOperationInProgress: false, version: 'tok-5' };
+  const revoked = { ...free, id: 'dev-4', deviceName: 'Tablet T-10', status: 'Revoked', revokedAt: '2025-12-30T15:00:00.000Z',
+    version: 'tok-6' };
+  loadOccDevices.mockResolvedValue(data({ devices: [busy, held, free, revoked] }));
+  render(<DevicesRoute />);
+  const list = await screen.findByRole('region', { name: 'Tablets de la estación' });
+  const table = within(list).getByRole('table', { name: 'Tablets de la estación' });
+  expect(within(table).getAllByRole('columnheader').map(header => header.textContent))
+    .toEqual(['Tablet', 'Agente', 'Última conexión', 'Estado', '']);
+  const rowOf = name => within(table).getByText(name).closest('tr');
+  const statusOf = name => rowOf(name).querySelector('[data-occ-status]');
+  // In an agent's hands, free and revoked carry no hue: a filled, a hollow and a slashed circle, each with its word.
+  expect(DEVICE_STATUS_TONES).toEqual({ Bound: 'active', Unbound: 'neutral', Revoked: 'muted' });
+  expect([statusOf('Tablet T-09').dataset.tone, statusOf('Tablet T-09').textContent]).toEqual(['active', 'En uso']);
+  expect(statusOf('Tablet T-09').querySelector('svg')).toHaveAttribute('data-shape', 'filled-circle');
+  expect([statusOf('Tablet T-08').dataset.tone, statusOf('Tablet T-08').textContent]).toEqual(['neutral', 'Libre']);
+  expect(statusOf('Tablet T-08').querySelector('svg')).toHaveAttribute('data-shape', 'hollow-circle');
+  expect([statusOf('Tablet T-10').dataset.tone, statusOf('Tablet T-10').textContent]).toEqual(['muted', 'Revocada']);
+  expect(statusOf('Tablet T-10').querySelector('svg')).toHaveAttribute('data-shape', 'slashed-circle');
+  // An agent in the middle of an operation asks for attention: the amber triangle and why no one else can take it.
+  expect([statusOf('Tablet T-07').dataset.tone, statusOf('Tablet T-07').textContent]).toEqual(['attention', 'Operación en curso']);
+  expect(statusOf('Tablet T-07').querySelector('[data-occ-glyph="attention"]')).not.toBeNull();
+  expect(within(rowOf('Tablet T-07')).getByText(/Otro agente no puede tomarla hasta que este cierre sesión o la liberes\./))
+    .toBeInTheDocument();
+  // Who holds it, since when; the last connection in the station's time, in the identifiers' face.
+  expect(within(rowOf('Tablet T-07')).getByText('En manos de')).toBeInTheDocument();
+  expect(within(rowOf('Tablet T-08')).getByText('Último agente')).toBeInTheDocument();
+  const lastSeen = within(rowOf('Tablet T-07')).getByText((_, element) => element?.tagName === 'TIME');
+  expect(lastSeen).toHaveAttribute('dateTime', busy.lastSeenAt);
+  expect(lastSeen.textContent).toMatch(/^06\/11 08:00$/);
+  expect(lastSeen.closest('td')).toHaveClass('font-mono');
+  // An instant of another year says its year.
+  expect(within(rowOf('Tablet T-10')).getByText('desde 30/12/2025 11:00')).toBeInTheDocument();
+  // Each row offers only what can be done to it: «Liberar» on a held tablet, «Revocar» until it is revoked.
+  expect(within(rowOf('Tablet T-09')).getAllByRole('button').map(button => button.textContent)).toEqual(['Liberar', 'Revocar']);
+  expect(within(rowOf('Tablet T-08')).getAllByRole('button').map(button => button.textContent)).toEqual(['Revocar']);
+  expect(within(rowOf('Tablet T-10')).queryByRole('button')).toBeNull();
+});
+
+it('revoking opens an alertdialog with the first focus on Cancelar', async () => {
+  signedIn();
+  loadOccDevices.mockResolvedValue(data());
+  render(<DevicesRoute />);
+  const list = await screen.findByRole('region', { name: 'Tablets de la estación' });
+  const opener = within(list).getAllByRole('button', { name: 'Revocar' })[0];
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = screen.getByRole('alertdialog', { name: 'Revocar Tablet T-07' });
+  expect(dialog).toHaveAttribute('aria-modal', 'true');
+  // A hasty Enter changes nothing: the dialog starts on «Cancelar».
+  const cancel = within(dialog).getByRole('button', { name: 'Cancelar' });
+  await waitFor(() => expect(cancel).toHaveFocus());
+  expect(cancel).toHaveAttribute('data-occ-dialog-cancel');
+  // The sentence of the command describes the dialog, and the reason is required.
+  expect(dialog).toHaveAccessibleDescription(/nunca más podrá vincularse con ELEVANT y se cierran todas las sesiones de Riley Ramp\./);
+  expect(within(dialog).getByLabelText('Motivo')).toBeRequired();
+  const submit = within(dialog).getByRole('button', { name: 'Revocar tablet' });
+  expect(submit).toHaveAttribute('form', 'occ-device-command');
+  expect(submit).toBeDisabled();
+  // Esc closes it and gives the focus back to the row's «Revocar»; nothing was sent.
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  await waitFor(() => expect(opener).toHaveFocus());
+  expect(revokeOccDevice).not.toHaveBeenCalled();
+
+  // Freeing one asks without alarm: a plain dialog that starts on its reason.
+  fireEvent.click(within(list).getByRole('button', { name: 'Liberar' }));
+  const unbind = screen.getByRole('dialog', { name: 'Liberar Tablet T-07' });
+  await waitFor(() => expect(within(unbind).getByLabelText('Motivo (opcional)')).toHaveFocus());
+  expect(within(unbind).getByRole('button', { name: 'Liberar tablet' })).toBeEnabled();
+});
+
+describe('DevicesRoute in English', () => {
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  it('renders the tablets in English inside the OCC scope', async () => {
+    onFixedDay();
+    act(() => resetLanguageForTests('en'));
+    signedIn();
+    loadOccDevices.mockResolvedValue(data());
+    unbindOccDevice.mockResolvedValue({ ...busy, status: 'Unbound', version: 'tok-3' });
+    render(<LanguageScope><DevicesRoute /></LanguageScope>);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading the tablets…');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Tablets' })).toBeInTheDocument();
+    const list = screen.getByRole('region', { name: 'Station tablets' });
+    expect(within(within(list).getByRole('table')).getAllByRole('columnheader').map(header => header.textContent))
+      .toEqual(['Tablet', 'Agent', 'Last connection', 'Status', '']);
+    expect(within(list).getByText('Operation in progress')).toBeInTheDocument();
+    expect(within(list).getByText('Free')).toBeInTheDocument();
+    expect(within(list).getByText('Held by')).toBeInTheDocument();
+    // The last connection in English order: month, then day.
+    expect(within(list).getAllByText((_, element) => element?.tagName === 'TIME')[0].textContent).toBe('11/06 08:00');
+    fireEvent.click(within(list).getByRole('button', { name: 'Release' }));
+    const dialog = screen.getByRole('dialog', { name: 'Release Tablet T-07' });
+    expect(within(dialog).getByText(/The tablet becomes free/)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Reason (optional)'), { target: { value: 'Shift change' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Release tablet' }));
+    expect(await screen.findByText('Tablet T-07 is free for the next agent.')).toBeInTheDocument();
+    expect(screen.queryByText(/Tablets de la estación|Liberar|Revocar|Cancelar|En manos de/)).toBeNull();
+  });
 });

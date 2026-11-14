@@ -1,18 +1,23 @@
-.workspace { display: grid; grid-template-rows: auto minmax(0,1fr); height: 100%; gap: 12px; min-width: 0; min-height: 0; }
-.layout { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr); gap: 12px; min-width: 0; min-height: 0; }
-.workspace .layout > section[data-occ-surface] { min-width: 0; min-height: 0; border-radius: 24px; padding: 12px; }
-.workspace .layout > section:first-child { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.workspace [aria-label] ul li button { border-radius: 16px; padding: 12px; }
-.workspace [aria-current='true'] { border: 1px solid #145dc4; }
-.workspace [aria-label] article { width: fit-content; max-width: 94%; background: var(--occ-ui-soft); border-radius: 4px 16px 16px; padding: 12px; }
-.workspace [data-occ-header] > div > p { font-size: 12px; }
-.history { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; padding: 12px 4px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+/* The operational chat (template C «Mesa de trabajo», PR U6): what Tailwind does not say well, drawn only with the OCC
+   tokens of src/styles/occ.css. No colour of its own, no shadow, nothing under 12 px. A message is a bubble on the
+   panel radius (6 px) and the composer a control (4 px). */
+.history { display: flex; flex: 1; flex-direction: column; gap: 8px; min-height: 0; padding: 12px; overflow-y: auto;
+  overscroll-behavior: contain; overflow-anchor: none; scrollbar-width: thin;
+  scrollbar-color: var(--occ-line-strong) transparent; }
 .history p { overflow-wrap: anywhere; }
-.workspace form { flex-shrink: 0; }
-.workspace .composerInput.composerInput { display: block; width: 100%; box-sizing: border-box; min-height: 44px; max-height: 144px; resize: none; padding: 10px 12px; line-height: 22px; border: 1px solid var(--occ-ui-line); border-radius: 16px; background: var(--occ-ui-glass); color: var(--occ-ui-text); overflow-y: hidden; font-size: 14px; }
-.workspace .composerInput:focus-visible { outline: 2px solid #145dc4; outline-offset: 2px; }
-.workspace .composerInput:disabled { opacity: .7; }
-.history article[data-own='true'] { margin-inline-start: auto; background: var(--occ-ui-solid); border-color: #145dc4; border-radius: 16px 4px 16px 16px; }
-@media(min-width:1024px) { .layout { grid-template-columns: clamp(240px,26%,320px) minmax(0,1fr); } }
-@media(max-width:767px) { .workspace .composerInput { font-size: 16px; } }
-@media(forced-colors:active) { .workspace .composerInput { background: Field; color: FieldText; border-color: FieldText; } }
+/* Someone else's message sits at the start on the canvas; one's own at the end, on the raised slab with a strong
+   joint. Neither takes a hue: the side and the slab tell them apart. */
+.message { width: fit-content; max-width: min(94%, 44rem); padding: 8px 12px; border: 1px solid var(--occ-line);
+  border-radius: var(--occ-radius-panel); background: var(--occ-canvas); }
+.message[data-own='true'] { margin-inline-start: auto; border-color: var(--occ-line-strong); background: var(--occ-panel-raised); }
+.messageMeta { color: var(--occ-muted); font-size: 0.75rem; line-height: 1rem; font-weight: 600; }
+.messageBody { margin-top: 2px; color: var(--occ-text); font-size: 0.875rem; line-height: 1.25rem; white-space: pre-wrap; }
+.receipt { margin-top: 4px; color: var(--occ-muted); font-size: 0.75rem; line-height: 1rem; text-align: right; }
+.composerInput { display: block; width: 100%; box-sizing: border-box; min-height: 44px; max-height: 144px; resize: none;
+  padding: 10px 12px; overflow-y: hidden; border: 1px solid var(--occ-line-strong); border-radius: var(--occ-radius-control);
+  background: var(--occ-field); color: var(--occ-text); font-size: 0.875rem; line-height: 22px; }
+.composerInput::placeholder { color: var(--occ-faint); }
+/* A message waiting for its retry stays readable in the composer, which no longer takes typing. */
+.composerInput:disabled { border-color: var(--occ-line); color: var(--occ-muted); cursor: not-allowed; }
+@media (max-width: 767px) { .composerInput { font-size: 1rem; } }
+@media (forced-colors: active) { .composerInput { background: Field; color: FieldText; border-color: FieldText; } }

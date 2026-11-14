@@ -1,10 +1,10 @@
-import { OCC_ACCESS, STATION, createOccApi } from './occApi.mjs';
+import { OCC_ACCESS, STATION, createOccApi, occSession } from './occApi.mjs';
 
 // Synthetic answers of the ELEVANT API for the OCC work screens of the visual suite (PR U6), one screen at a time:
-// Revisión, Cobertura de posiciones and Notificaciones. On top of occApi.mjs (the OCC session's access and the
-// positions board) it answers the reads every OCC screen makes through its frame (the notices and the account-change
-// feed, both empty and valid) and the reads of each screen, in one of four scenarios: `data`, `empty`, `error` (a
-// 500) and `forbidden` (a 403). Every answer passes the strict validators of @elevant/api-client
+// Revisión, Cobertura de posiciones, Notificaciones, the chat, Datos maestros and Tablets. On top of occApi.mjs (the OCC
+// session's access and the positions board) it answers the reads every OCC screen makes through its frame (the notices
+// and the account-change feed, both empty and valid) and the reads of each screen, in one of four scenarios: `data`,
+// `empty`, `error` (a 500) and `forbidden` (a 403). Every answer passes the strict validators of @elevant/api-client
 // (tests/visualScreensFixtures.test.js checks them). Every id, code, name and time is invented.
 
 export const SCREEN_SCENARIOS = Object.freeze(['data', 'empty', 'error', 'forbidden']);
@@ -18,10 +18,13 @@ const uuid = (group, index) => `${group}-0000-4000-8000-${String(index).padStart
 const at = time => `${OPERATION_DATE}T${time}:00Z`;
 const sha = digit => digit.repeat(64);
 
-/** The department access of the review: the OCC administrator, who also reads the live incidents of an operation. */
+/**
+ * The department access of the work screens: the OCC administrator, who also reads the live incidents of an operation
+ * (the review) and writes in the chat of an operation (its composer).
+ */
 export const SCREENS_ACCESS = Object.freeze({
   ...OCC_ACCESS,
-  permissions: Object.freeze([...OCC_ACCESS.permissions, 'operations.incidents.read']),
+  permissions: Object.freeze([...OCC_ACCESS.permissions, 'operations.incidents.read', 'operations.chat.create']),
 });
 
 export const API_PATHS = Object.freeze({
@@ -30,6 +33,11 @@ export const API_PATHS = Object.freeze({
   changes: '/api/v1/changes',
   reviewQueue: '/api/v1/occ/review/queue',
   coverage: '/api/v1/occ/coverage',
+  conversations: '/api/v1/chat/conversations',
+  presence: '/api/v1/chat/presence',
+  ownPresence: '/api/v1/chat/presence/status',
+  masterData: '/api/v1/occ/master-data',
+  devices: '/api/v1/occ/devices',
 });
 
 /** The ids of the review's hand-offs: the one the spec opens, and the rest of the queue. */
@@ -349,6 +357,234 @@ export function operationalNotices(scenario = 'data') {
   return { notifications, hasMore: false };
 }
 
+// ── Chat ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The account of the OCC session (occApi.mjs): its own messages are the ones on the right. */
+export const OWN_ACCOUNT_ID = occSession().accountId;
+
+// The operations with a conversation: the hand-offs of the review (the same ids), newest activity first. The first one
+// is the thread the spec opens; the second has three unread messages; the third no message yet.
+export const CHAT_IDS = Object.freeze({
+  open: uuid('7e1a2b3c', 4),
+  unread: uuid('7e1a2b3c', 5),
+  quiet: uuid('7e1a2b3c', 6),
+  closed: uuid('7e1a2b3c', 2),
+});
+
+// The people of the conversations: the ramp agents and a second OCC seat.
+const CHAT_PEOPLE = Object.freeze({
+  uno: Object.freeze({ accountId: uuid('e1a1b2c3', 1), name: 'Agente de prueba Uno', role: 'agent' }),
+  dos: Object.freeze({ accountId: uuid('e1a1b2c3', 2), name: 'Agente de prueba Dos', role: 'agent' }),
+  tres: Object.freeze({ accountId: uuid('e1a1b2c3', 3), name: 'Agente de prueba Tres', role: 'agent' }),
+  colega: Object.freeze({ accountId: uuid('e1a1b2c3', 9), name: 'Coordinación de prueba', role: 'occ' }),
+});
+const OWN_NAME = occSession().name;
+
+function chatMessage(operationId, index, { from, time, content }) {
+  const own = from === 'own';
+  return {
+    id: uuid('8b1c2d3e', index), operationId,
+    senderAccountId: own ? OWN_ACCOUNT_ID : CHAT_PEOPLE[from].accountId,
+    senderRole: own ? 'occ' : CHAT_PEOPLE[from].role,
+    senderName: own ? OWN_NAME : CHAT_PEOPLE[from].name,
+    content, sentAt: at(time),
+  };
+}
+
+// The thread of each operation, oldest first. The agent read the open thread up to 14:41 UTC: the first two own
+// messages are «Visto» and the last one only «Enviado».
+const CHAT_THREADS = Object.freeze({
+  [CHAT_IDS.open]: [
+    { from: 'uno', time: '14:30', content: 'Llegué a la posición A4. El puente está libre.' },
+    { from: 'own', time: '14:31', content: 'Recibido. El vuelo bloquea a las 10:34, con dos minutos de adelanto.' },
+    { from: 'uno', time: '14:36', content: 'Bloqueo listo en A4. Empezamos la descarga.' },
+    { from: 'own', time: '14:38', content: 'Perfecto. El GPU sale antes del push-back; avísame si cambia algo.' },
+    { from: 'colega', time: '14:40', content: 'La aerolínea pide el reporte de daños apenas termine el recorrido.' },
+    { from: 'uno', time: '14:41', content: 'Rayón leve en la puerta de carga trasera. Lo marco en el recorrido.' },
+    { from: 'own', time: '14:44', content: 'Gracias. Lo revisamos en la entrega.' },
+  ],
+  [CHAT_IDS.unread]: [
+    { from: 'own', time: '15:02', content: 'El vuelo ZZ105 entra a B21.' },
+    { from: 'dos', time: '15:06', content: '¿Confirmas la posición B21 para la salida?' },
+  ],
+  [CHAT_IDS.quiet]: [],
+  [CHAT_IDS.closed]: [
+    { from: 'uno', time: '12:01', content: 'Entrega firmada y enviada.' },
+  ],
+});
+const READ_UP_TO = Object.freeze({ [CHAT_IDS.open]: at('14:41') });
+
+/** GET chat/conversations/{id}/messages: the thread of one operation of CHAT_IDS. */
+export function chatMessages(operationId) {
+  let index = 0;
+  const offset = Object.keys(CHAT_THREADS).indexOf(operationId) * 20;
+  const messages = (CHAT_THREADS[operationId] ?? []).map(item => {
+    index += 1;
+    return chatMessage(operationId, offset + index, item);
+  });
+  return { operationId, messages, hasMore: false, othersReadUpTo: READ_UP_TO[operationId] ?? null };
+}
+
+// The conversations of the station, with the last message of each thread.
+const CONVERSATIONS = [
+  { id: CHAT_IDS.open, code: 'PUJ-20261113-004', agent: 'uno', status: 'InProgress', unread: 0 },
+  { id: CHAT_IDS.unread, code: 'PUJ-20261113-005', agent: 'dos', status: 'InProgress', unread: 3 },
+  { id: CHAT_IDS.quiet, code: 'PUJ-20261113-006', agent: 'tres', status: 'Assigned', unread: 0 },
+  { id: CHAT_IDS.closed, code: 'PUJ-20261113-002', agent: 'uno', status: 'Completed', unread: 0 },
+];
+
+/** GET chat/conversations?stationId=: four conversations, or none in the `empty` scenario. */
+export function chatConversations(scenario = 'data') {
+  const conversations = scenario === 'empty' ? [] : CONVERSATIONS.map(item => ({
+    operationId: item.id, operationCode: item.code, operationDate: OPERATION_DATE, stationCode: STATION.stationCode,
+    airlineName: 'Aerolínea de prueba', agentName: CHAT_PEOPLE[item.agent].name, status: item.status,
+    lastMessage: chatMessages(item.id).messages.at(-1) ?? null, unreadCount: item.unread,
+    othersReadUpTo: READ_UP_TO[item.id] ?? null,
+  }));
+  return { conversations, hasMore: false };
+}
+
+// Who is in each conversation and how: every presence shape of the legend appears once. The OCC session itself is
+// a participant too; the page leaves it out.
+const PRESENCE = Object.freeze({
+  [CHAT_IDS.open]: [
+    { person: 'uno', state: 'active', availability: null, message: 'En rampa, posición A4', last: '14:44' },
+    { person: 'colega', state: 'active', availability: 'busy', message: null, last: '14:43' },
+    { person: 'own', state: 'active', availability: null, message: null, last: '14:44' },
+  ],
+  [CHAT_IDS.unread]: [{ person: 'dos', state: 'away', availability: 'beRightBack', message: null, last: '15:06' }],
+  [CHAT_IDS.quiet]: [{ person: 'tres', state: 'offline', availability: null, message: null, last: '11:20' }],
+  [CHAT_IDS.closed]: [{ person: 'uno', state: 'unknown', availability: null, message: null, last: null }],
+});
+
+/** GET chat/presence?operationIds=: the participants of the operations asked for, and only of those. */
+export function chatPresence(operationIds) {
+  const asked = new Set(operationIds.map(id => id.toLowerCase()));
+  return {
+    asOf: at('15:10'),
+    operations: Object.entries(PRESENCE).filter(([operationId]) => asked.has(operationId)).map(([operationId, people]) => ({
+      operationId,
+      participants: people.map(({ person, state, availability, message, last }) => ({
+        accountId: person === 'own' ? OWN_ACCOUNT_ID : CHAT_PEOPLE[person].accountId,
+        name: person === 'own' ? OWN_NAME : CHAT_PEOPLE[person].name,
+        role: person === 'own' ? 'occ' : CHAT_PEOPLE[person].role,
+        state, lastActivityAt: last ? at(last) : null, availability, message,
+      })),
+    })),
+  };
+}
+
+/** GET chat/presence/status: the session's own status, automatic (nothing chosen). */
+export const OWN_PRESENCE = Object.freeze({ state: 'active', availability: null, message: null });
+
+const CHAT_THREAD = /^\/api\/v1\/chat\/conversations\/([0-9a-f-]{36})\/messages$/;
+
+// ── Datos maestros ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The terminals of the station: A and B have history, FBO is new, and C was closed. */
+export const MASTER_TERMINALS = Object.freeze({
+  A: Object.freeze({ id: uuid('d0a1b2c3', 1), code: 'A', name: 'Terminal A', isActive: true, hasHistory: true,
+    version: 'AAAAAAAAD01=' }),
+  B: Object.freeze({ id: uuid('d0a1b2c3', 2), code: 'B', name: 'Terminal B', isActive: true, hasHistory: true,
+    version: 'AAAAAAAAD02=' }),
+  FBO: Object.freeze({ id: uuid('d0a1b2c3', 3), code: 'FBO', name: 'FBO / Aviación local', isActive: true, hasHistory: false,
+    version: 'AAAAAAAAD03=' }),
+  C: Object.freeze({ id: uuid('d0a1b2c3', 4), code: 'C', name: 'Terminal C (cerrada)', isActive: false, hasHistory: false,
+    version: 'AAAAAAAAD04=' }),
+});
+
+// A sample of the Punta Cana stands, with every attribute and state the register shows: history, a remote stand, the
+// bridges of B, a narrow-body stand of the FBO and a stand out of use.
+const MASTER_STANDS = [
+  { code: 'A1', terminal: 'A', history: true }, { code: 'A2', terminal: 'A', history: true },
+  { code: 'A3', terminal: 'A', history: true }, { code: 'A4', terminal: 'A', history: true },
+  { code: 'A11', terminal: 'A', active: false }, { code: 'AN1', terminal: 'A', remote: true },
+  { code: 'B20', terminal: 'B', bridge: true, history: true }, { code: 'B21', terminal: 'B', bridge: true, history: true },
+  { code: 'B32', terminal: 'B', remote: true }, { code: 'BN6', terminal: 'FBO', remote: true, size: 'Narrowbody' },
+];
+
+// The shared aircraft types: three narrow-bodies, a wide-body and one out of use.
+const MASTER_AIRCRAFT_TYPES = [
+  ['A320', '320', 'Airbus', 'A320', 'Narrowbody'], ['B738', '73H', 'Boeing', '737-800', 'Narrowbody'],
+  ['E190', 'E90', 'Embraer', 'E190', 'Narrowbody'], ['A332', '332', 'Airbus', 'A330-200', 'Widebody'],
+  ['B752', '752', 'Boeing', '757-200', 'Widebody', false],
+];
+
+/**
+ * GET occ/master-data?stationId=: the layout of the station, or none in the `empty` scenario. With `readOnly` the
+ * account may neither create nor change anything.
+ */
+export function masterData(scenario = 'data', { stationId = STATION.stationId, readOnly = false } = {}) {
+  const empty = scenario === 'empty';
+  return {
+    stationId, stationCode: STATION.stationCode,
+    terminals: empty ? [] : Object.values(MASTER_TERMINALS).map(terminal => ({ ...terminal })),
+    stands: empty ? [] : MASTER_STANDS.map((stand, index) => ({
+      id: uuid('d1a1b2c3', index + 1), terminalId: MASTER_TERMINALS[stand.terminal].id, code: stand.code,
+      hasBoardingBridge: stand.bridge ?? false, isRemote: stand.remote ?? false, maxAircraftSize: stand.size ?? null,
+      isActive: stand.active ?? true, hasHistory: stand.history ?? false, version: `AAAAAAAAE${String(index + 1).padStart(2, '0')}=`,
+    })),
+    aircraftTypes: empty ? [] : MASTER_AIRCRAFT_TYPES.map(([icaoCode, iataCode, manufacturer, model, sizeCategory, isActive = true],
+      index) => ({
+      id: uuid('d2a1b2c3', index + 1), icaoCode, iataCode, manufacturer, model, sizeCategory, isActive,
+      version: `AAAAAAAAF${String(index + 1).padStart(2, '0')}=`,
+    })),
+    canCreate: !readOnly, canUpdate: !readOnly,
+  };
+}
+
+// ── Tablets ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const DEVICE_AGENTS = Object.freeze({
+  uno: Object.freeze({ accountId: uuid('e1a1b2c3', 1), rampAgentId: uuid('c2a1b2c3', 1), name: 'Agente de prueba Uno',
+    employeeNumber: 'VIS-RA-001' }),
+  dos: Object.freeze({ accountId: uuid('e1a1b2c3', 2), rampAgentId: uuid('c2a1b2c3', 2), name: 'Agente de prueba Dos',
+    employeeNumber: 'VIS-RA-002' }),
+  tres: Object.freeze({ accountId: uuid('e1a1b2c3', 3), rampAgentId: uuid('c2a1b2c3', 3), name: 'Agente de prueba Tres',
+    employeeNumber: 'VIS-RA-003' }),
+  cuatro: Object.freeze({ accountId: uuid('e1a1b2c3', 4), rampAgentId: null, name: 'Agente de prueba Cuatro',
+    employeeNumber: null }),
+});
+
+/** The ids of the tablets: the two in an agent's hands, the free ones and the revoked one. */
+export const DEVICE_IDS = Object.freeze({
+  busy: uuid('f0a1b2c3', 1), held: uuid('f0a1b2c3', 2), free: uuid('f0a1b2c3', 3), unnamed: uuid('f0a1b2c3', 4),
+  revoked: uuid('f0a1b2c3', 5),
+});
+
+// Who holds each tablet: an agent in the middle of an operation, an agent between flights, a tablet freed at the end
+// of a shift, an iOS tablet with no name and no agent, and a tablet revoked after it was lost. Times are UTC.
+const DEVICES = [
+  { id: DEVICE_IDS.busy, name: 'Tablet T-01', platform: 'Android', os: '15', app: '1.4.2', status: 'Bound', agent: 'uno',
+    inProgress: true, since: '10:05', seen: '15:38' },
+  { id: DEVICE_IDS.held, name: 'Tablet T-02', platform: 'Android', os: '15', app: '1.4.2', status: 'Bound', agent: 'dos',
+    since: '11:20', seen: '15:31' },
+  { id: DEVICE_IDS.free, name: 'Tablet T-03', platform: 'Android', os: '14', app: '1.4.1', status: 'Unbound', agent: 'tres',
+    since: '14:02', seen: '14:02' },
+  { id: DEVICE_IDS.unnamed, name: null, platform: 'Ios', os: '18.1', app: '1.4.2', status: 'Unbound', agent: null,
+    since: '09:12', seen: '09:12' },
+  { id: DEVICE_IDS.revoked, name: 'Tablet T-05', platform: 'Android', os: '13', app: '1.3.0', status: 'Revoked', agent: 'cuatro',
+    since: '13:15', seen: '12:58' },
+];
+
+/**
+ * GET occ/devices?stationId=: the tablets of the station, or none in the `empty` scenario. With `readOnly` the
+ * account may neither free nor revoke one.
+ */
+export function occDevices(scenario = 'data', { stationId = STATION.stationId, readOnly = false } = {}) {
+  const devices = scenario === 'empty' ? [] : DEVICES.map((device, index) => ({
+    id: device.id, platform: device.platform, deviceName: device.name, appVersion: device.app,
+    operatingSystemVersion: device.os, lastSeenAt: at(device.seen), status: device.status,
+    agent: device.agent ? { ...DEVICE_AGENTS[device.agent] } : null,
+    boundAt: device.status === 'Bound' ? at(device.since) : at('08:00'),
+    unboundAt: device.status === 'Unbound' ? at(device.since) : null,
+    revokedAt: device.status === 'Revoked' ? at(device.since) : null,
+    agentHasOperationInProgress: device.inProgress ?? false,
+    version: `tok-visual-${index + 1}`,
+  }));
+  return { stationId, stationCode: STATION.stationCode, canUnbind: !readOnly, canRevoke: !readOnly, devices };
+}
+
 const REVIEW_OPERATION = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})$/;
 const REVIEW_HISTORY = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})\/submissions$/;
 const OPERATION_DOCUMENTS = /^\/api\/v1\/occ\/operations\/([0-9a-f-]{36})\/documents$/;
@@ -377,14 +613,27 @@ function reviewAnswer(url, scenario) {
 const failed = scenario => (scenario === 'error' ? { status: 500, json: SERVER_ERROR }
   : scenario === 'forbidden' ? { status: 403, json: FORBIDDEN } : null);
 
+// The chat's reads: the conversations in the scenario, the thread of a known operation, the presence of the operations
+// asked for and the session's own status. The presence is the page's company, not what it is about: it is always there.
+function chatAnswer(url, scenario) {
+  if (url.pathname === API_PATHS.conversations) return failed(scenario) ?? { status: 200, json: chatConversations(scenario) };
+  const thread = CHAT_THREAD.exec(url.pathname)?.[1];
+  if (thread) return Object.hasOwn(CHAT_THREADS, thread) ? { status: 200, json: chatMessages(thread) } : null;
+  if (url.pathname === API_PATHS.presence) return { status: 200, json: chatPresence(url.searchParams.getAll('operationIds')) };
+  if (url.pathname === API_PATHS.ownPresence) return { status: 200, json: OWN_PRESENCE };
+  return null;
+}
+
 /**
  * The API handler for support/isolate.mjs in a `scenario` of SCREEN_SCENARIOS: the access of SCREENS_ACCESS, the
- * frame's change feed, and the reads of Revisión and Cobertura in that scenario; every other path is occApi.mjs's, then
- * the isolation's Problem Details 404. The notices are the frame's empty list, or with `{ notices: true }` the reads of
- * Notificaciones in the scenario (the page and the frame read the same list). It accepts no command: a new coverage is
- * refused with COVERAGE_REFUSAL, and any other command gets the 404. `reads` counts the answers by path.
+ * frame's change feed, and the reads of Revisión, Cobertura, the chat, Datos maestros and Tablets in that scenario;
+ * every other path is occApi.mjs's, then the isolation's Problem Details 404. The notices are the frame's empty list, or
+ * with `{ notices: true }` the reads of Notificaciones in the scenario (the page and the frame read the same list).
+ * With `{ readOnly: true }` Datos maestros and Tablets answer an account that may change nothing. It accepts no
+ * command: a new coverage is refused with COVERAGE_REFUSAL, and any other command (a message, a read receipt, a
+ * presence lease, a change of the layout, a tablet's release) gets the 404. `reads` counts the answers by path.
  */
-export function createScreensApi(scenario = 'data', { notices = false } = {}) {
+export function createScreensApi(scenario = 'data', { notices = false, readOnly = false } = {}) {
   if (!SCREEN_SCENARIOS.includes(scenario)) throw new RangeError(`Unknown screens scenario: ${scenario}`);
   const base = createOccApi();
   const api = { scenario, reads: new Map(), commands: [] };
@@ -412,6 +661,11 @@ export function createScreensApi(scenario = 'data', { notices = false } = {}) {
     if (url.pathname === API_PATHS.changes) {
       return served(url, { status: 200, json: { changes: [], nextCursor: null, hasMore: false } });
     }
+    const station = { stationId: url.searchParams.get('stationId') ?? undefined, readOnly };
+    if (url.pathname === API_PATHS.masterData) return served(url, failed(scenario) ?? { status: 200, json: masterData(scenario, station) });
+    if (url.pathname === API_PATHS.devices) return served(url, failed(scenario) ?? { status: 200, json: occDevices(scenario, station) });
+    const chat = chatAnswer(url, scenario);
+    if (chat) return served(url, chat);
     const answer = reviewAnswer(url, scenario);
     return answer ? served(url, answer) : base.handle(request, url);
   };
