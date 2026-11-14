@@ -103,6 +103,8 @@ public static class DependencyInjection
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
             Elevant.Application.Abstractions.Operations.IAerodromeWeatherSource,
             Elevant.Application.Abstractions.Operations.DisabledAerodromeWeatherSource>(services);
+        // ADR-0043 (contracts 1.4): the OCC's weather read (occ/weather), for the readers of the map.
+        services.AddScoped<Elevant.Application.Operations.Weather.GetOccAerodromeWeatherHandler>();
         return services;
     }
 }
