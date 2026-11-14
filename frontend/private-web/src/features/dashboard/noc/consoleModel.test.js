@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { createMapFlights, TRAFFIC_NOON } from '../../maps/testing/trafficFixtures';
+import { createTranslator } from '../../../i18n/languageStore';
+import { createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON } from '../../maps/testing/trafficFixtures';
 import { classifyTurnarounds } from '../dashboardModel';
+import { buildBoard, filterVisits } from './boardModel';
+import { consoleMessages } from './consoleMessages';
 import { ARRIVING_WINDOW_MS, buildFigures } from './consoleModel';
 
 const NOW = Date.parse(TRAFFIC_NOON);
 const MINUTE = 60_000;
 const at = minutes => new Date(NOW + minutes * MINUTE).toISOString();
+const t = createTranslator(consoleMessages, 'es');
 
 // Turnarounds of the planning snapshot as the API sends them, with only what the figures read.
 const turnaround = (id, status, extra = {}) => ({ id, operationCode: id, status, stand: { code: 'A1' },
@@ -42,6 +46,30 @@ describe('buildFigures', () => {
       .toEqual({ ...NOTHING, toReview: 0, arriving60: 0 });
     // Without the server's time the window cannot be counted.
     expect(buildFigures({ flights: createMapFlights().flights }).arriving60).toBeNull();
+  });
+
+  it('counts «Sin recursos» as «Escalas» files them once the board has its visits', () => {
+    const { flights } = createMapFlights();
+    const id161 = flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.arrival).turnaroundId;
+    const figureOf = (rows, turnarounds) => {
+      const board = buildBoard({ flights: rows, planningTurnarounds: turnarounds, nowMs: NOW, t });
+      const figures = buildFigures({ planning: { turnarounds }, visits: board.visits, nowMs: NOW });
+      // The figure and the filter of «Escalas» always say the same.
+      expect(figures.needsResources).toBe(filterVisits(board.visits, 'needsResources').length);
+      return figures.needsResources;
+    };
+
+    // Assigned on another screen after the planning snapshot was read: the snapshot has no stand yet, the map flights
+    // say A5 (contratos 2.7). The snapshot alone counts it; with the board's visits nothing is missing.
+    const unassigned = [turnaround(id161, 'Confirmed', { stand: null })];
+    expect(buildFigures({ planning: { turnarounds: unassigned }, nowMs: NOW }).needsResources).toBe(1);
+    expect(figureOf(flights, unassigned)).toBe(0);
+    // Released on another screen: the snapshot still has its stand, the map flights none.
+    const released = flights.map(flight => (flight.turnaroundId === id161 ? { ...flight, stand: null } : flight));
+    expect(figureOf(released, [turnaround(id161, 'Confirmed')])).toBe(1);
+    // Without the planning snapshot the figure waits for it, whatever the board holds.
+    expect(buildFigures({ visits: buildBoard({ flights: released, nowMs: NOW, t }).visits, nowMs: NOW }).needsResources)
+      .toBeNull();
   });
 
   it('review lower bound when hasMore', () => {

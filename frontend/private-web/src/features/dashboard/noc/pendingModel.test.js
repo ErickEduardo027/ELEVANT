@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
-import { createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON } from '../../maps/testing/trafficFixtures';
+import { createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON, trafficInstant } from '../../maps/testing/trafficFixtures';
 import { createPlanningFlight } from '../../planning/testing/planningFixtures';
 import { buildBoard } from './boardModel';
 import { consoleMessages } from './consoleMessages';
@@ -25,6 +25,18 @@ function flightAt(id, flightNumber, localTime, overrides = {}) {
 
 const unfit = (turnaroundId, number) => ({ assignmentId: `assignment-${number}`, turnaroundId,
   agentId: `agent-${number}`, reasons: ['airport_permit_not_current'] });
+
+// The arrival of a planning turnaround as the map flights give it (contratos 1.3), on `stand` (null: none), synthetic:
+// the shape of the map lab's ZZ161 with the turnaround's own identifiers and times.
+function mapArrivalOf(flight, stand) {
+  const base = createMapFlights().flights.find(item => item.flightKey === TRAFFIC_FLIGHT_KEY.arrival);
+  return { ...base, flightKey: `l:${flight.arrival.id}`, visitKey: `t:${flight.turnaroundId}`, proposalId: null,
+    legId: flight.arrival.id, turnaroundId: flight.turnaroundId, flightNumber: flight.arrival.flightNumber,
+    scheduledAt: flight.arrival.scheduledAt, estimatedAt: flight.arrival.estimatedAt, actualAt: null, phase: 'enroute',
+    turnaround: { id: flight.turnaroundId, operationCode: flight.operationCode, status: flight.status, operationId: null,
+      operationStatus: 'Planned' },
+    stand: stand === null ? null : { id: `stand-${stand}`, code: stand, terminalCode: 'B' }, milestones: [] };
+}
 
 describe('buildPending', () => {
   it('a turnaround without agent due soon is pending with Asignar agente', () => {
@@ -53,6 +65,46 @@ describe('buildPending', () => {
     ]);
     expect(both[0].action).toEqual({ kind: 'chooseStand', target: 't-landed' });
     expect(t('pending.actions.chooseStand')).toBe('Elegir posición');
+  });
+
+  it('decides «sin posición» with the stand of the map flights when the board holds the visit', () => {
+    // Assigned on another screen after the planning snapshot was read (contratos 2.7: the map flights are re-read on
+    // occ_planning, the snapshot on its 60 s poll): the snapshot has no stand yet, the map flights say B20.
+    const unassigned = createPlanningFlight({ stand: null });
+    const assigned = buildBoard({ flights: [mapArrivalOf(unassigned, 'B20')], nowMs: NOW, t });
+    expect(assigned.arrivals[0].standCode).toBe('B20');
+    expect(buildPending({ board: assigned, planningFlights: [unassigned], nowMs: NOW, t })).toEqual([]);
+
+    // Released on another screen: the snapshot still says A02, the map flights no stand, as the board's strip says.
+    const planned = createPlanningFlight();
+    const released = buildBoard({ flights: [mapArrivalOf(planned, null)], nowMs: NOW, t });
+    expect(released.arrivals[0].status.label).toBe('Llegada sin posición asignada');
+    const pending = buildPending({ board: released, planningFlights: [planned], nowMs: NOW, t });
+    expect(summary(pending)).toEqual([['noStand', 'attention', 'ZZ102 sin posición, llega en 30 min']]);
+    expect(pending[0]).toMatchObject({ flightKey: `l:${planned.arrival.id}`,
+      action: { kind: 'chooseStand', target: planned.turnaroundId } });
+
+    // Without its visit on the board, the snapshot decides.
+    expect(buildPending({ planningFlights: [unassigned], nowMs: NOW, t }).map(item => item.kind)).toEqual(['noStand']);
+    expect(buildPending({ planningFlights: [planned], nowMs: NOW, t })).toEqual([]);
+  });
+
+  it('an aircraft past its departure time is overdue only when it is on its stand', () => {
+    const later = Date.parse(TRAFFIC_NOON) + 45 * 60_000;
+    const { flights } = createMapFlights();
+    const id300 = flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId;
+    // ZZ300 without its BLOCK_ON and before its operation starts: only its arrival leg says where the aircraft is.
+    const withArrival = arrival => flights.map(flight => (flight.turnaroundId !== id300 ? flight : { ...flight,
+      milestones: [], turnaround: { ...flight.turnaround, status: 'Confirmed', operationStatus: 'Assigned' },
+      ...(flight.direction === 'Arrival' ? arrival : null) }));
+    const overdue = arrival => buildPending({ board: buildBoard({ flights: withArrival(arrival), nowMs: later, t }),
+      nowMs: later, t }).filter(item => item.kind === 'overdue').map(item => item.label);
+
+    // The provider says «Arrived»: it landed, and nothing says that it is on its stand, as the stand reads it.
+    expect(overdue({ phase: 'arrived', actualAt: null, actualKind: null })).toEqual([]);
+    // OCC's «Registrar llegada» wrote its on-block time: on its stand, 5 minutes past its departure time.
+    expect(overdue({ phase: 'arrived', actualAt: trafficInstant(-22 * 60), actualKind: 'OnBlock' }))
+      .toEqual(['ZZ301 pasó su hora de salida']);
   });
 
   it('a readiness mark becomes agentCannotOperate', () => {

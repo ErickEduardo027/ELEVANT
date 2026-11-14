@@ -117,7 +117,8 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
     planningTurnarounds: planning.data?.turnarounds ?? null, nowMs, t }) : null),
   [aircraft, flightRows, nowMs, planning.data, t]);
   const figures = useMemo(() => buildFigures({ planning: planning.data, reviewQueue: reviewQueue.data,
-    flights: live.flights, nowMs }), [live.flights, nowMs, planning.data, reviewQueue.data]);
+    flights: live.flights, visits: board?.visits ?? null, nowMs }), [board, live.flights, nowMs, planning.data,
+    reviewQueue.data]);
   const alerts = useMemo(() => consoleAlerts(notices.data ?? EMPTY, { stationCode: station.stationCode }).entries,
     [notices.data, station.stationCode]);
   const pending = useMemo(() => buildPending({ board, planningFlights: planning.data ? planningFlights : null,

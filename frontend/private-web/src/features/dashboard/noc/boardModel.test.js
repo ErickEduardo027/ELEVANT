@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import {
-  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON,
+  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON, trafficInstant,
 } from '../../maps/testing/trafficFixtures';
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import { readSelection, writeSelection } from '../../maps/core/mapSelection';
@@ -181,6 +181,8 @@ describe('boardModel', () => {
   it('filters visits by derived resource state', () => {
     const id161 = legOf(TRAFFIC_FLIGHT_KEY.arrival).turnaroundId;
     const id300 = legOf(TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId;
+    // ZZ161 has no stand yet, in the planning snapshot and in the map flights alike.
+    const flights = FLIGHTS.map(flight => (flight.turnaroundId === id161 ? { ...flight, stand: null } : flight));
     const planning = [
       planTurnaround(id161, { stand: null }),
       planTurnaround(id300, { status: 'InProgress' }),
@@ -188,7 +190,7 @@ describe('boardModel', () => {
       // Returned to the agent: still in operation (isInOperation), with the turnaround Confirmed.
       planTurnaround('5d000000-0000-4000-8000-000000000070', { operation: { id: 'op-70', status: 'Returned' } }),
     ];
-    const { visits } = buildBoard({ flights: FLIGHTS, planningTurnarounds: planning, nowMs: NOW, t });
+    const { visits } = buildBoard({ flights, planningTurnarounds: planning, nowMs: NOW, t });
     const codes = list => list.map(item => item.operationCode).sort();
     expect(VISIT_FILTERS).toEqual(['all', 'inOperation', 'needsResources', 'completed']);
     expect(filterVisits(visits, 'all')).toHaveLength(visits.length);
@@ -198,6 +200,85 @@ describe('boardModel', () => {
     expect(codes(filterVisits(visits, 'completed'))).toEqual(['PLAN-060']);
     expect(filterVisits(undefined, 'all')).toEqual([]);
     expect(() => filterVisits(visits, 'inProgress')).toThrow(RangeError);
+  });
+
+  it('takes the stand of a visit from its map flights, fresher than the planning snapshot', () => {
+    const id161 = legOf(TRAFFIC_FLIGHT_KEY.arrival).turnaroundId;
+    const visitOf = board => board.visits.find(item => item.turnaroundId === id161);
+    const lacking = board => filterVisits(board.visits, 'needsResources').map(item => item.operationCode);
+
+    // Assigned on another screen after the snapshot was read (contratos 2.7: the map flights are re-read on
+    // occ_planning, the snapshot on its 60 s poll): the snapshot has no stand yet, the map flights say A5.
+    const assigned = buildBoard({ flights: FLIGHTS, planningTurnarounds: [planTurnaround(id161, { stand: null })],
+      nowMs: NOW, t });
+    expect(visitOf(assigned)).toMatchObject({ standCode: 'A5', missing: [], source: 'map' });
+    expect(visitOf(assigned).arrival.status.key).toBe('approaching');
+    expect(lacking(assigned)).toEqual([]);
+
+    // Released on another screen: the snapshot still says A05, the map flights no stand, as the strip says.
+    const released = FLIGHTS.map(flight => (flight.turnaroundId === id161 ? { ...flight, stand: null } : flight));
+    const freed = buildBoard({ flights: released, planningTurnarounds: [planTurnaround(id161)], nowMs: NOW, t });
+    expect(visitOf(freed)).toMatchObject({ standCode: null, missing: ['stand'] });
+    expect(visitOf(freed).arrival.status).toMatchObject({ key: 'noStand', label: 'Llegada sin posición asignada' });
+    expect(lacking(freed)).toEqual(['ZZ161-1113']);
+
+    // The agents are still the snapshot's: the map flights carry none.
+    const unstaffed = buildBoard({ flights: FLIGHTS, nowMs: NOW, t,
+      planningTurnarounds: [planTurnaround(id161, { stand: null, agents: [] })] });
+    expect(visitOf(unstaffed).missing).toEqual(['agents']);
+
+    // A leg the map's window leaves out takes the stand of its visit too: ZZ501 leaves tomorrow from B30.
+    const id500 = legOf(TRAFFIC_FLIGHT_KEY.noFix).turnaroundId;
+    const ahead = buildBoard({ flights: FLIGHTS, nowMs: NOW, t, planningTurnarounds: [planTurnaround(id500, {
+      stand: null,
+      departure: { id: 'leg-501', flightNumber: 'ZZ501', origin: { iataCode: 'PUJ' }, destination: { iataCode: 'MIA' },
+        scheduledAt: '2026-11-14T05:00:00Z', estimatedAt: null, actualAt: null } })] });
+    expect(ahead.visits.find(item => item.turnaroundId === id500)).toMatchObject({ standCode: 'B30', missing: [],
+      departure: { flightNumber: 'ZZ501', flightKey: null, standCode: 'B30' } });
+  });
+
+  it('reads «En posición» by the evidence of the stand states, never by the provider’s «Arrived»', () => {
+    const id300 = legOf(TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId;
+    // ZZ300 before its operation starts, so that only the evidence of the stand decides: `milestones` are its
+    // operation's (both legs carry them) and `arrival` replaces fields of its arrival leg.
+    const flightsWith = (arrival, milestones = []) => FLIGHTS.map(flight => (flight.turnaroundId !== id300 ? flight : {
+      ...flight, milestones, turnaround: { ...flight.turnaround, status: 'Confirmed', operationStatus: 'Assigned' },
+      ...(flight.direction === 'Arrival' ? arrival : null) }));
+    const read = flights => {
+      const visit = buildBoard({ flights, nowMs: NOW, t }).visits.find(item => item.turnaroundId === id300);
+      return [visit.arrival.status.key, visit.departure.status.key, visit.onStand];
+    };
+    const arrived = { phase: 'arrived', actualAt: null, actualKind: null };
+
+    // The provider says «Arrived» and nothing recorded the on-block: it landed, it is not on its stand yet.
+    expect(read(flightsWith(arrived))).toEqual(['landed', 'scheduled', false]);
+    expect(t('status.landed')).toBe('Aterrizó');
+    // A runway time only says that it landed, too.
+    expect(read(flightsWith({ phase: 'landed', actualAt: trafficInstant(-22 * 60), actualKind: 'Runway' })))
+      .toEqual(['landed', 'scheduled', false]);
+    // OCC's «Registrar llegada» wrote the on-block time: on its stand, and its departure strip says so as well.
+    expect(read(flightsWith({ ...arrived, actualAt: trafficInstant(-22 * 60), actualKind: 'OnBlock' })))
+      .toEqual(['onStand', 'onStand', true]);
+    // So does a recorded BLOCK_ON, whatever the provider says; and its PUSHBACK ends the visit.
+    expect(read(flightsWith(arrived, [{ code: 'BLOCK_ON', actualAt: trafficInstant(-20 * 60) }])))
+      .toEqual(['onStand', 'onStand', true]);
+    expect(read(flightsWith(arrived, [{ code: 'BLOCK_ON', actualAt: trafficInstant(-20 * 60) },
+      { code: 'PUSHBACK', actualAt: trafficInstant(-60) }]))).toEqual(['landed', 'departed', false]);
+    // One flight alone reads the same way.
+    const [leg] = flightsWith(arrived).filter(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.parkedArrival);
+    expect(flightStatus(leg, { nowMs: NOW }).key).toBe('landed');
+    expect(flightStatus({ ...leg, actualAt: trafficInstant(-22 * 60), actualKind: 'OnBlock' }, { nowMs: NOW }).key)
+      .toBe('onStand');
+
+    // A demo flight is on its stand from the server's on-block instant (in 5 minutes), not before.
+    const demoTurnaround = '5d000000-0000-4000-8000-000000009001';
+    const demo = FLIGHTS.map(flight => (flight.visitKey === TRAFFIC_FLIGHT_KEY.demoArrival ? { ...flight,
+      imported: true, turnaroundId: demoTurnaround, stand: { id: 'stand-b21', code: 'B21', terminalCode: 'B' } } : flight));
+    const demoVisit = nowMs => buildBoard({ flights: demo, nowMs, t }).visits
+      .find(item => item.turnaroundId === demoTurnaround);
+    expect(demoVisit(NOW)).toMatchObject({ onStand: false, arrival: { status: { key: 'approaching' } } });
+    expect(demoVisit(NOW + 6 * MINUTE)).toMatchObject({ onStand: true, arrival: { status: { key: 'onStand' } },
+      departure: { status: { key: 'onStand' } } });
   });
 
   it('selects through the one store with the flightKey of the map flight', () => {

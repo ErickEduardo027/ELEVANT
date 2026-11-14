@@ -4,12 +4,14 @@ import { endsItsVisit } from '../../maps/core/mapSelection';
 import { standStateOf } from '../../maps/stands/standModel';
 import { barGeometry } from '../../occ-ui/occTimelineModel';
 import { isInOperation, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
-import { assignedStandCode, bestTime, hasMilestone, instantMs } from './boardModel';
+import { aircraftOnStand, assignedStandCode, bestTime, instantMs } from './boardModel';
 
 // The band of «Posiciones» (contratos 2.5, design D.1): the ramp in time, one row per stand with its visits as bars of
 // occ-ui/OccTimeline.jsx, under the «ahora» line, in a window of «4 h», «8 h» or the station's «Día». Pure. The stands
 // are the positions board joined with the map flights (maps/stands/standModel.js: withStandDisplay), the same display
-// the map draws; each visit's times are the best times of its map legs, else the board's. `nowMs` is the server's time.
+// the map draws; each visit is one bar, on the stand its map flights assign it when they give one (they are re-read on
+// `occ_planning`, the board only on its 60 s poll, contratos 2.7), and its times are the best times of its map legs,
+// else the board's. `nowMs` is the server's time.
 
 const HOUR_MS = 3_600_000;
 
@@ -87,19 +89,11 @@ const boardTime = (at, kind) => {
   return ms === null ? null : { at: ms, kind };
 };
 
-// Whether the visit's aircraft is on its stand, in the order the stand states read the evidence (standModel.js): the
-// server's demo on-block instant; a recorded BLOCK_ON; the arrival leg's on-block time («Registrar llegada»); without
-// the arrival leg, the board's recorded arrival.
-function onTheStand(legs, arrival, turnaround, nowMs) {
-  const demo = legs.map(leg => leg.demo).find(isObject) ?? null;
-  const onBlockAt = instantMs(demo?.onBlockAt ?? null);
-  if (onBlockAt !== null) return Number.isFinite(nowMs) && nowMs >= onBlockAt;
-  if (legs.some(leg => hasMilestone(leg, 'BLOCK_ON'))) return true;
-  if (arrival !== null) return arrival.actualAt != null && arrival.actualKind === 'OnBlock';
-  return turnaround?.arrivedAt != null;
-}
-
-/** One visit as a bar of OccTimeline, with the keys the console selects with. */
+/**
+ * One visit as a bar of OccTimeline, with the keys the console selects with. Its aircraft is on the stand by the rule
+ * the board reads too (boardModel.js: aircraftOnStand, the order of the stand states; without the arrival leg, the
+ * board's recorded arrival).
+ */
 function barOf({ turnaroundId, turnaround, legs, nowMs, estimatedKeys }) {
   const arrival = legs.find(leg => leg.direction === 'Arrival') ?? null;
   const departure = legs.find(leg => leg.direction === 'Departure') ?? null;
@@ -108,7 +102,7 @@ function barOf({ turnaroundId, turnaround, legs, nowMs, estimatedKeys }) {
   const end = bestTime(departure) ?? boardTime(turnaround?.departureScheduledAt, 'scheduled');
   let state = 'planned';
   if (legs.some(endsItsVisit)) state = 'departed';
-  else if (onTheStand(legs, arrival, turnaround, nowMs)) state = 'onStand';
+  else if (aircraftOnStand(legs, { nowMs, arrivedAt: turnaround?.arrivedAt ?? null })) state = 'onStand';
   return {
     id: turnaroundId,
     turnaroundId,
@@ -131,13 +125,53 @@ const byStart = (left, right) => {
   return String(left.id).localeCompare(String(right.id));
 };
 
+const codeOf = stand => normalizeStandCode(stand.id ?? stand.code);
+
+/**
+ * Where the band draws each visit, one bar per visit: `Map<stand code, [{ turnaroundId, turnaround, legs }]>`. A visit
+ * the map flights assign to a stand goes on that stand: they are re-read on `occ_planning` (at most every 3 s), the
+ * positions board only on its 60 s poll (contratos 2.7), so a visit OCC moved from A5 to B20 is drawn on B20 alone,
+ * whichever of the two reads is behind. A visit the map flights give no stand stays on the stand the board lists it on,
+ * as the map draws its stand from the board. A visit the board no longer lists stays where the map flights keep its
+ * assignment: its PUSHBACK freed the stand (contratos 1.2), and the bar says it left.
+ */
+function placeVisits(stands, flightsByTurnaround) {
+  const mapStands = new Map();
+  for (const [turnaroundId, value] of entriesOf(flightsByTurnaround)) {
+    const legs = Array.isArray(value) ? value.filter(isObject) : [];
+    const code = legs.map(assignedStandCode).find(Boolean) ?? null;
+    if (code !== null) mapStands.set(turnaroundId, { code, legs });
+  }
+  const placed = new Map();
+  const place = (code, visit) => {
+    if (!placed.has(code)) placed.set(code, []);
+    placed.get(code).push(visit);
+  };
+  const listed = new Set();
+  for (const stand of stands) {
+    const code = codeOf(stand);
+    if (code === '') continue;
+    for (const turnaround of Array.isArray(stand.turnarounds) ? stand.turnarounds : NO_ROWS) {
+      if (!isObject(turnaround) || turnaround.turnaroundId == null || listed.has(turnaround.turnaroundId)) continue;
+      listed.add(turnaround.turnaroundId);
+      place(mapStands.get(turnaround.turnaroundId)?.code ?? code, { turnaroundId: turnaround.turnaroundId, turnaround,
+        legs: legsOf(flightsByTurnaround, turnaround.turnaroundId) });
+    }
+  }
+  for (const [turnaroundId, { code, legs }] of mapStands) {
+    if (!listed.has(turnaroundId)) place(code, { turnaroundId, turnaround: null, legs });
+  }
+  return placed;
+}
+
 /**
  * The rows of the band in the window `[windowStart, windowEnd]` (milliseconds), `{ rows: [{ id, label, bars }] }`, one
  * per stand in the order of `stands` (the withStandDisplay output of the console's stands; `label` is the stand code).
- * - The bars of a stand are the visits the positions board lists on it, plus the visits the map flights still assign to
- *   it that the board no longer lists (its PUSHBACK freed the stand, contratos 1.2, while the map keeps the assignment),
- *   in time order: `{ id, turnaroundId, flightKey, arrivalFlight, departureFlight, startAt, startKind, endAt, endKind,
- *   state, estimated, demo, conflict, inOperation }`, the shape of OccTimeline. Only bars inside the window are kept.
+ * - Each visit is one bar, on one stand (placeVisits): the stand its map flights assign it when they give one, else the
+ *   stand the positions board lists it on; a visit the board no longer lists, because its PUSHBACK freed the stand
+ *   (contratos 1.2), stays where the map flights keep its assignment. The bars of a stand are in time order: `{ id,
+ *   turnaroundId, flightKey, arrivalFlight, departureFlight, startAt, startKind, endAt, endKind, state, estimated, demo,
+ *   conflict, inOperation }`, the shape of OccTimeline. Only bars inside the window are kept.
  * - A bar runs from the best time of its arrival leg to its departure leg's (`flightsByTurnaround`, the map flights by
  *   turnaround id, a Map or a plain object), else the board's times; a missing end stays open. `state` is `departed`
  *   once a leg ends the visit
@@ -146,6 +180,7 @@ const byStart = (left, right) => {
  *   situation's), `demo` the server's mark, `inOperation` isInOperation.
  * - The stand's most pressing signal goes on the bar of the visit the stand shows (`display.visit`), with its words:
  *   `urgent` for `conflict`, `attention` for `uncovered` and `overdue` (contratos 2.4; `t` translates consoleMessages).
+ *   A visit drawn away from the stand the board lists it on carries none of that stand's signals.
  * `filter` `withFlights` leaves out the stands without a bar in the window; `all` keeps every stand. An unknown filter
  * throws.
  */
@@ -154,32 +189,16 @@ export function buildStandTimeline({ stands = NO_ROWS, flightsByTurnaround = nul
   if (!TIMELINE_FILTERS.includes(filter)) throw new RangeError(`Unknown console band filter: ${String(filter)}`);
   const estimatedKeys = new Set((Array.isArray(aircraft) ? aircraft : [])
     .filter(item => item?.quality === 'estimated' && typeof item.flightKey === 'string').map(item => item.flightKey));
-  // The map's visits by the stand they are assigned to.
-  const mapVisits = new Map();
-  for (const [turnaroundId, value] of entriesOf(flightsByTurnaround)) {
-    const legs = Array.isArray(value) ? value.filter(isObject) : [];
-    const code = legs.map(assignedStandCode).find(Boolean) ?? null;
-    if (code === null) continue;
-    if (!mapVisits.has(code)) mapVisits.set(code, []);
-    mapVisits.get(code).push({ turnaroundId, legs });
-  }
+  const standList = (Array.isArray(stands) ? stands : NO_ROWS).filter(isObject);
+  const placed = placeVisits(standList, flightsByTurnaround);
 
   const rows = [];
-  for (const stand of Array.isArray(stands) ? stands : []) {
-    if (!isObject(stand)) continue;
-    const code = normalizeStandCode(stand.id ?? stand.code);
-    if (code === '') continue;
-    const listed = new Set();
-    const bars = [];
-    for (const turnaround of Array.isArray(stand.turnarounds) ? stand.turnarounds : NO_ROWS) {
-      if (!isObject(turnaround) || turnaround.turnaroundId == null || listed.has(turnaround.turnaroundId)) continue;
-      listed.add(turnaround.turnaroundId);
-      bars.push(barOf({ turnaroundId: turnaround.turnaroundId, turnaround,
-        legs: legsOf(flightsByTurnaround, turnaround.turnaroundId), nowMs, estimatedKeys }));
-    }
-    for (const { turnaroundId, legs } of mapVisits.get(code) ?? NO_ROWS) {
-      if (!listed.has(turnaroundId)) bars.push(barOf({ turnaroundId, turnaround: null, legs, nowMs, estimatedKeys }));
-    }
+  const seen = new Set();
+  for (const stand of standList) {
+    const code = codeOf(stand);
+    if (code === '' || seen.has(code)) continue;
+    seen.add(code);
+    const bars = (placed.get(code) ?? NO_ROWS).map(visit => barOf({ ...visit, nowMs, estimatedKeys }));
     const signal = (Array.isArray(stand.signals) ? stand.signals : NO_ROWS)[0] ?? null;
     const shown = stand.display?.visit?.turnaroundId ?? null;
     if (signal !== null && shown !== null) {

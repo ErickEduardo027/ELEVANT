@@ -29,6 +29,11 @@ function deadlineOf(flight, visit) {
   return departure ? { time: departure, direction: 'Departure' } : null;
 }
 
+// The stand of a turnaround: the one its map flights give it when the board holds its visit from them (boardModel.js:
+// they are re-read on `occ_planning`, the planning snapshot only on its 60 s poll, contratos 2.7), else the snapshot's.
+// A stand assigned or released on another screen reads here as on the board's strip.
+const standOf = (flight, visit) => (visit?.source === 'map' ? visit.standCode : flight.stand?.code ?? null);
+
 /**
  * «llega en 23 min», «llega ahora», «llegó hace 5 min» (an actual time) or «debía llegar hace 5 min» (a time that
  * passed with nothing recorded); the same for a departure. An empty text without a deadline.
@@ -61,14 +66,17 @@ function entry(kind, key, fields) {
  * time (none last). Each `{ id, kind, priority, at, label, action: { kind, target } | null, flightKey, turnaroundId }`,
  * `at` in milliseconds (or null), `label` in the words of `t` (consoleMessages):
  * - `noStand` («Elegir posición») and `noAgent` («Asignar agente»): an open turnaround of the planning snapshot
- *   (`planningFlights`, mapped) without a stand or without an agent; amber when it is due within the hour;
+ *   (`planningFlights`, mapped) without a stand or without an agent; amber when it is due within the hour. Its stand is
+ *   the one the board's map flights give it when they hold its visit, fresher than the snapshot's; its agents are the
+ *   snapshot's (the map flights carry none);
  * - `agentCannotOperate` («Asignar agente»): a turnaround of the snapshot with an assigned agent the readiness marks
  *   say cannot operate (2-N25), amber;
  * - `toImport` («Importar»): a flight the feed proposes that nobody imported (the board's «Por importar», demo ones
  *   included); amber when it is due within the hour;
  * - `toReview` («Revisar»): an operation of the queue awaiting OCC's decision, a notice;
- * - `overdue`: an aircraft still on its stand after its departure time (the board's visits), amber, with no action of
- *   its own (the console selects the flight).
+ * - `overdue`: an aircraft still on its stand after its departure time (the board's visits, on their stand by the
+ *   evidence of the stand states, boardModel.js: aircraftOnStand), amber, with no action of its own (the console
+ *   selects the flight).
  * `target` is the turnaround id, the proposal id or the operation id the action opens.
  */
 export function buildPending({ board = null, planningFlights = null, readiness = null, reviewQueue = null, nowMs, t } = {}) {
@@ -86,7 +94,7 @@ export function buildPending({ board = null, planningFlights = null, readiness =
     const when = whenWords(deadline, nowMs, t);
     const fields = { priority: priorityOf(deadline, nowMs), at: deadline?.time.at ?? null,
       flightKey: visit?.arrival?.flightKey ?? visit?.departure?.flightKey ?? null, turnaroundId: flight.turnaroundId };
-    if (!flight.stand?.code) {
+    if (!standOf(flight, visit)) {
       entries.push(entry('noStand', flight.turnaroundId, { ...fields,
         label: withWhen(t('pending.noStand', { flight: nameOf(flight) }), when, t),
         action: Object.freeze({ kind: 'chooseStand', target: flight.turnaroundId }) }));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import { withStandDisplay } from '../../maps/stands/standModel';
-import { createRampScenario } from '../../maps/testing/mapFixtures';
+import { boardStand, createRampScenario } from '../../maps/testing/mapFixtures';
 import { createMapFlights } from '../../maps/testing/trafficFixtures';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
@@ -16,14 +16,21 @@ const MINUTE = 60_000;
 const t = createTranslator(consoleMessages, 'es');
 const at = minutes => new Date(NOW + minutes * MINUTE).toISOString();
 
-// The console's stands at NOW: the positions board over the reference list, read with the map flights.
-function ramp({ nowMs = NOW, flightsByTurnaround } = {}) {
+// The console's stands at NOW: the positions board (the scenario's, or `board`) over the reference list, read with the
+// map flights.
+function ramp({ nowMs = NOW, flightsByTurnaround, board } = {}) {
   const scenario = createRampScenario(NOW);
   const flights = flightsByTurnaround ?? scenario.flightsByTurnaround;
-  const stands = withStandDisplay(mapOccupancyToRampPositions(RAMP_POSITIONS, scenario.board, at(0)),
+  const stands = withStandDisplay(mapOccupancyToRampPositions(RAMP_POSITIONS, board ?? scenario.board, at(0)),
     { nowMs, flightsByTurnaround: flights });
   return { stands, flightsByTurnaround: flights };
 }
+
+// A leg of the map flights (contratos 1.3) with only what the band reads, assigned to A05; `extra` replaces fields.
+const mapLeg = (turnaroundId, direction, flightNumber, extra) => ({ flightKey: `l:${flightNumber}`,
+  visitKey: `t:${turnaroundId}`, turnaroundId, direction, flightNumber, phase: 'scheduled', scheduledAt: null,
+  estimatedAt: null, actualAt: null, actualKind: null, isDemo: false, demo: null, stand: { code: 'A05' },
+  milestones: [], ...extra });
 
 function band(options = {}, { range = '4h', filter = 'withFlights', aircraft } = {}) {
   const { stands, flightsByTurnaround } = ramp(options);
@@ -67,10 +74,8 @@ describe('standTimeline', () => {
   it('a pushed-back visit is departed', () => {
     const scenario = createRampScenario(NOW);
     const pushedBack = { code: 'PUSHBACK', actualAt: at(-3) };
-    const leg = (turnaroundId, direction, flightNumber, extra) => ({ flightKey: `l:${flightNumber}`,
-      visitKey: `t:${turnaroundId}`, turnaroundId, direction, flightNumber, phase: 'scheduled', scheduledAt: null,
-      estimatedAt: null, actualAt: null, actualKind: null, isDemo: false, demo: null, stand: { code: 'A05' },
-      milestones: [pushedBack], ...extra });
+    const leg = (turnaroundId, direction, flightNumber, extra) => mapLeg(turnaroundId, direction, flightNumber,
+      { milestones: [pushedBack], ...extra });
     const flightsByTurnaround = {
       ...scenario.flightsByTurnaround,
       // DM209 is still on the board's A5 list (the board was read before the tap); its map legs carry the PUSHBACK.
@@ -87,6 +92,48 @@ describe('standTimeline', () => {
     expect(bars.map(bar => [bar.id, bar.state])).toEqual([['turn-DM150', 'departed'], ['turn-DM209', 'departed']]);
     expect(bars[0]).toMatchObject({ arrivalFlight: 'DM150', departureFlight: 'DM151', startAt: Date.parse(at(-100)),
       startKind: 'actual', endAt: Date.parse(at(-35)), endKind: 'actual' });
+  });
+
+  it('draws a visit moved to another stand once, on the stand its map flights give', () => {
+    const scenario = createRampScenario(NOW);
+    // DM209, which the positions board lists on A5: its aircraft on the stand, leaving in 10 minutes.
+    const dm209 = stand => [
+      mapLeg('turn-DM209', 'Arrival', 'DM209', { phase: 'arrived', scheduledAt: at(-45), actualAt: at(-45),
+        actualKind: 'OnBlock', stand }),
+      mapLeg('turn-DM209', 'Departure', 'DM210', { scheduledAt: at(10), stand }),
+    ];
+    const flightsOn = stand => ({ ...scenario.flightsByTurnaround, 'turn-DM209': dm209(stand) });
+    const standsOf = (timeline, id) => timeline.rows.filter(row => row.bars.some(bar => bar.id === id))
+      .map(row => row.id);
+
+    // OCC moved it to B20: the map flights, re-read on occ_planning, say so; the board, on its 60 s poll, still lists
+    // it on A5 (contratos 2.7). One bar, on B20.
+    const moved = band({ flightsByTurnaround: flightsOn({ code: 'B20' }) }, { filter: 'all' });
+    expect(standsOf(moved, 'turn-DM209')).toEqual(['B20']);
+    expect(rowOf(moved, 'B20').bars).toHaveLength(1);
+    expect(rowOf(moved, 'B20').bars[0]).toMatchObject({ arrivalFlight: 'DM209', departureFlight: 'DM210',
+      state: 'onStand', endAt: Date.parse(at(10)) });
+    expect(rowOf(moved, 'A5').bars).toEqual([]);
+    // «Con vuelos» counts it once: B20 has a flight, A5 has none.
+    const withFlights = band({ flightsByTurnaround: flightsOn({ code: 'B20' }) });
+    expect(standsOf(withFlights, 'turn-DM209')).toEqual(['B20']);
+    expect(rowOf(withFlights, 'A5')).toBeUndefined();
+
+    // The other way round, the board read after the move and the map flights not yet: still one bar, where the map
+    // flights say, until they are read again.
+    const a5 = scenario.board.positions.find(position => position.code === 'A05');
+    const board = { ...scenario.board, positions: [
+      ...scenario.board.positions.map(position => (position === a5
+        ? { ...position, status: 'available', turnarounds: [] } : position)),
+      boardStand('B20', { turnarounds: a5.turnarounds }),
+    ] };
+    expect(standsOf(band({ board, flightsByTurnaround: flightsOn({ code: 'A05' }) }, { filter: 'all' }), 'turn-DM209'))
+      .toEqual(['A5']);
+    expect(standsOf(band({ board, flightsByTurnaround: flightsOn({ code: 'B20' }) }, { filter: 'all' }), 'turn-DM209'))
+      .toEqual(['B20']);
+
+    // Map flights that give the visit no stand leave it where the board lists it, as the map draws that stand.
+    expect(standsOf(band({ flightsByTurnaround: flightsOn(null) }, { filter: 'all' }), 'turn-DM209')).toEqual(['A5']);
   });
 
   it('with flights hides empty rows', () => {

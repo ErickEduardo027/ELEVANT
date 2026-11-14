@@ -1475,7 +1475,10 @@ tampoco.
   filtros «Todas», «En operación», «Sin recursos» y «Completadas». Un vuelo
   demo lleva «Demo», y «est.» marca una tira solo cuando su avión está en una
   posición estimada. Una llegada sin posición dice «Llegada sin posición
-  asignada», con el triángulo ámbar si llega en menos de 60 minutos
+  asignada», con el triángulo ámbar si llega en menos de 60 minutos. Una tira
+  dice «En posición» con la regla de los estados de las posiciones: el instante
+  de calzos del vuelo demo, el hito `BLOCK_ON` o la hora de calzos que escribe
+  «Registrar llegada»; el «Arrived» del proveedor solo dice «Aterrizó»
   ([tablero](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
 - **Alertas.** Las alertas urgentes y de atención de la estación que la cuenta
   no recibió, cada una con «Recibido», el recibo de lectura por cuenta, y
@@ -1532,7 +1535,12 @@ tampoco.
   La planificación, las posiciones, la cola de revisión y la disponibilidad de
   los agentes se releen cada 60 segundos, nunca con `occ_planning`; la cola,
   además, con `occ_review`. Los vuelos y los aviones son los del mapa, leídos
-  una sola vez para el mapa y los paneles, y los avisos, los del marco.
+  una sola vez para el mapa y los paneles, y los avisos, los del marco. La
+  posición de una escala que traen esos vuelos es la de ellos, que se releen
+  con `occ_planning`: una posición asignada, cambiada o liberada en otra
+  pantalla se ve enseguida igual en el tablero, en «Sin recursos» (el filtro y
+  la cifra) y en «Pendientes de la jornada», y la banda dibuja cada escala una
+  sola vez; la planificación pone los agentes.
   Panorama ya no abre su propio observador. Una consola en reposo hace 16
   peticiones por minuto, y 38 durante un minuto de vuelo demo, por debajo de
   40 y de 70; una
@@ -1557,9 +1565,12 @@ leyendo el METAR de IEM desde el navegador, y el detalle monta un segundo mapa,
 pequeño, para las imágenes satelitales mientras está abierto; el plan pasa el
 satélite a una capa del mapa único en M8. «Importar» abre el diálogo con todo
 el día, no en el vuelo de la tira. Los conteos de «Alertas» salen de los 100
-avisos más recientes que lee el marco. Las capturas se revisaron en local, con
-una API simulada; nada de esto acredita un despliegue ni una revisión visual en
-el VPS.
+avisos más recientes que lee el marco. El dibujo de las posiciones en el mapa
+sale del tablero de posiciones, que se relee cada 60 segundos: una escala
+movida o liberada en otra pantalla cambia en el mapa hasta un minuto después
+que en los paneles, y una liberada sigue en su fila de la banda hasta entonces.
+Las capturas se revisaron en local, con una API simulada; nada de esto acredita
+un despliegue ni una revisión visual en el VPS.
 
 ## Estado de integración
 
