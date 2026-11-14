@@ -79,6 +79,12 @@ test.describe('the OCC console on the map engine', () => {
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       await expect.poll(async () => Number.parseFloat(await map.evaluate(node =>
         node.style.getPropertyValue('--occ-map-inset-left')))).toBeGreaterThan(300);
+      // The open band takes its height from the bottom of the map: the view dock moves above it, never over its rows.
+      await expect.poll(async () => {
+        const band = await panel(page, 'Posiciones').boundingBox();
+        const dock = await map.locator('.occ-map-dock').boundingBox();
+        return band && dock ? Math.round(band.y - (dock.y + dock.height)) : -1;
+      }).toBeGreaterThanOrEqual(0);
       await shoot(page, testInfo, `u3-consola-abierta-${size.width}`);
     });
 
