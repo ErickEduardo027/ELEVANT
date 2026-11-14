@@ -9,6 +9,7 @@ import { useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { OCC_COALESCE_MS, OCC_SAFETY_POLL_MS } from '../admin-occ/live/occCadence';
 import { useOccResource } from '../admin-occ/live/useOccResource';
 import { useOptionalOccShellChannel } from '../admin-occ/shell/occShellContext';
+import { MAP_PERMISSIONS } from './mapPermissions';
 import { buildRoute, trailSegmentsOf } from './traffic/routeFeatures';
 import {
   airTrafficSourceState, buildSituation, selectionTarget, toFlightsModel, toPictureModel, toTrackModel,
@@ -21,9 +22,8 @@ import { createTrailStore, trailFeatures } from './traffic/trailStore';
 // safety poll. Both pause while the tab is hidden. The page passes the service (occMapService, or the simulated adapter
 // in the lab and the tests); this hook never chooses the source.
 
-/** Any of them lets an OCC account read the map (contracts 1.3, OccMapAccess). */
-export const MAP_PERMISSIONS = Object.freeze(['operations.dashboard.read', 'operations.flight_monitoring.read',
-  'operations.positions_map.read', 'operations.planning.read']);
+// Any of them lets an OCC account read the map (contracts 1.3, OccMapAccess); the list is maps/mapPermissions.js's.
+export { MAP_PERMISSIONS };
 
 /**
  * The pace of the air picture: the `refreshAfterSeconds` of its last answer, never faster (10 s before the first one);

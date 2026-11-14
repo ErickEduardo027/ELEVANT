@@ -1,9 +1,10 @@
-import { OCC_AIR_PICTURE_REASONS } from '@elevant/api-client';
+import { OCC_AIR_PICTURE_REASONS, OCC_TAF_CHANGES } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { OCC_SHORTCUTS } from '../occ-ui/occShortcuts';
 import { STAND_STATES, TAGS } from '../occ-ui/statusVocabulary';
 import { mapMessages } from './mapMessages';
+import { staleWords } from './traffic/stationTime';
 
 // Every leaf of a message tree as `a.b.c`.
 function leafPaths(tree, prefix = '') {
@@ -181,5 +182,40 @@ describe('map messages', () => {
       const texts = OCC_AIR_PICTURE_REASONS.map(reason => createTranslator(mapMessages, language)(`source.reason.${reason}`));
       expect(texts.join(' '), language).not.toMatch(/_|adsb|provider_error|rate_limited/i);
     }
+  });
+
+  it('names the states of the aerodrome weather, its credit, the TAF and the wind in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect(['loading', 'unavailable', 'disabled', 'error', 'forbidden'].map(key => es(`weather.status.${key}`))).toEqual([
+      'Cargando el clima del aeródromo…', 'No hay clima del aeródromo en este momento.',
+      'El clima del aeródromo no está activado en este entorno.', 'No se pudo cargar el clima del aeródromo.',
+      'Tu acceso no incluye el clima del aeródromo.',
+    ]);
+    expect(['unavailable', 'disabled', 'forbidden'].map(key => en(`weather.status.${key}`))).toEqual([
+      'No aerodrome weather right now.', 'Aerodrome weather is not turned on in this environment.',
+      'Your access does not include the aerodrome weather.',
+    ]);
+    // Stale has no words of its own: «Sin actualizar desde las 08:00» is the vocabulary's (TAGS.stale), with the
+    // station's time of the METAR, and «No oficial» is TAGS.unofficial.
+    expect(Object.keys(mapMessages.es.weather.status)).not.toContain('stale');
+    expect(staleWords(Date.parse('2026-11-13T12:00:00Z'), 'es')).toBe('Sin actualizar desde las 08:00');
+    expect(staleWords(Date.parse('2026-11-13T12:00:00Z'), 'en')).toBe('Not updated since 08:00');
+    expect([es('weather.source', { name: 'NOAA Aviation Weather Center' }), en('weather.source', { name: 'NOAA Aviation Weather Center' })])
+      .toEqual(['Clima: NOAA Aviation Weather Center', 'Weather: NOAA Aviation Weather Center']);
+    expect(['now', 'next', 'expired', 'none'].map(key => es(`weather.taf.${key}`)))
+      .toEqual(['Ahora', 'Después', 'Pronóstico vencido', 'Sin pronóstico']);
+    expect([es('weather.taf.until', { time: '18:00' }), es('weather.taf.from', { time: '18:00' }),
+      en('weather.taf.until', { time: '18:00' }), en('weather.taf.from', { time: '18:00' })])
+      .toEqual(['Hasta las 18:00', 'Desde las 18:00', 'Until 18:00', 'From 18:00']);
+    // One word for each change the API names (OCC_TAF_CHANGES); PROB takes its percent.
+    for (const language of ['es', 'en']) {
+      expect(Object.keys(mapMessages[language].weather.taf.change), language).toEqual([...OCC_TAF_CHANGES]);
+    }
+    expect([es('weather.taf.change.TEMPO'), es('weather.taf.change.PROB', { percent: '30 %' }),
+      en('weather.taf.change.BECMG'), en('weather.taf.change.PROB', { percent: '30%' })])
+      .toEqual(['Temporal', 'Probabilidad 30 %', 'Gradual change', 'Probability 30%']);
+    expect([es('weather.wind.calm'), es('weather.wind.variable'), es('weather.wind.gust', { speed: 25 }), en('weather.wind.calm')])
+      .toEqual(['Calma', 'VRB', 'G25', 'Calm']);
   });
 });

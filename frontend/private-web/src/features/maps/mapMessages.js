@@ -191,6 +191,30 @@ export const mapMessages = {
         route: 'Ruta del vuelo elegido',
       },
     },
+    // The aerodrome weather (features/weather/useMdpcWeather.js, services/weatherService.js; contracts 1.4 and 2.5).
+    // Its stale state says «Sin actualizar desde las 14:02» with the vocabulary's words (TAGS.stale, through
+    // traffic/stationTime.js: staleWords and the time of the METAR) and its tag «No oficial» is TAGS.unofficial, so
+    // neither is copied here. The TAF readout (features/weather/taf.js) writes its times at the station.
+    weather: {
+      status: {
+        loading: 'Cargando el clima del aeródromo…',
+        unavailable: 'No hay clima del aeródromo en este momento.',
+        disabled: 'El clima del aeródromo no está activado en este entorno.',
+        error: 'No se pudo cargar el clima del aeródromo.',
+        forbidden: 'Tu acceso no incluye el clima del aeródromo.',
+      },
+      source: 'Clima: {name}',
+      taf: {
+        now: 'Ahora',
+        next: 'Después',
+        until: 'Hasta las {time}',
+        from: 'Desde las {time}',
+        expired: 'Pronóstico vencido',
+        none: 'Sin pronóstico',
+        change: { FM: 'Cambio', BECMG: 'Cambio gradual', TEMPO: 'Temporal', PROB: 'Probabilidad {percent}' },
+      },
+      wind: { calm: 'Calma', variable: 'VRB', gust: 'G{speed}' },
+    },
   },
   en: {
     map: { label: 'OCC map' },
@@ -363,6 +387,26 @@ export const mapMessages = {
         },
         route: 'Route of the selected flight',
       },
+    },
+    weather: {
+      status: {
+        loading: 'Loading the aerodrome weather…',
+        unavailable: 'No aerodrome weather right now.',
+        disabled: 'Aerodrome weather is not turned on in this environment.',
+        error: 'The aerodrome weather could not be loaded.',
+        forbidden: 'Your access does not include the aerodrome weather.',
+      },
+      source: 'Weather: {name}',
+      taf: {
+        now: 'Now',
+        next: 'Next',
+        until: 'Until {time}',
+        from: 'From {time}',
+        expired: 'Forecast expired',
+        none: 'No forecast',
+        change: { FM: 'Change', BECMG: 'Gradual change', TEMPO: 'Temporary', PROB: 'Probability {percent}' },
+      },
+      wind: { calm: 'Calm', variable: 'VRB', gust: 'G{speed}' },
     },
   },
 };
