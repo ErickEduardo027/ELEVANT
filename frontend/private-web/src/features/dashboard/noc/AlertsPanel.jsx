@@ -7,15 +7,21 @@ import OccAlertQueue from '../../occ-ui/OccAlertQueue';
 import OccEmptyState from '../../occ-ui/OccEmptyState';
 import OccFloatingPanel from '../../occ-ui/OccFloatingPanel';
 import OccGlyph from '../../occ-ui/OccGlyph';
-import { OccRemoteView } from '../../occ-ui/OccPanel';
+import OccSkeleton from '../../occ-ui/OccSkeleton';
+import { formatClock } from '../../occ-ui/occTime';
 import { SIGNALS } from '../../occ-ui/statusVocabulary';
 import { consoleMessages } from './consoleMessages';
 import { CONSOLE_ACTION, CONSOLE_SCROLL } from './consoleStyles';
+import { pendingCoverage } from './pendingModel';
 
 // «Alertas» (contratos 2.5): over the top right of the map, the urgent and attention notices of the station that the
 // account has not received, each with «Recibido» (the account's read receipt, the shell's notices.markRead) and
 // «Abrir»; then «Pendientes de la jornada», the conditions of the day still open (pendingModel.js), each with the
 // action that closes it. The plain notices and the received alerts stay in the shell's «Alertas y avisos».
+//
+// The pending items come from four reads (pendingModel.js: PENDING_SOURCES), and each read blanks only its own items: a
+// read that has not answered, failed, was refused or shows old data gets one line that says so, above the items of the
+// others, and «No hay pendientes.» is said only once every read answered.
 
 const POSITIONS_PATH = '/admin-occ/positions-map';
 const reviewPath = operationId => `/admin-occ/review?operationId=${encodeURIComponent(operationId)}`;
@@ -53,20 +59,45 @@ function PendingItem({ item, t, language, onSelect, onAssign, onImport }) {
   );
 }
 
+// One line per read the list lacks or shows late: «Cargando la cola de revisión…», «La consulta de la planificación del
+// día falló.» with «Reintentar», «No tienes permiso para ver los vuelos del mapa.», or the time of the data it keeps.
+function PendingNotes({ notes, t, locale, timeZone }) {
+  if (notes.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-1 px-1 py-1">
+      {notes.map(note => (
+        <li key={note.id} data-pending-note={note.id} data-note-kind={note.kind}
+          className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs ${
+            note.kind === 'failed' || note.kind === 'refused' ? 'text-occ-text' : 'text-occ-muted'}`}>
+          <span className="min-w-0 flex-1">
+            {t(`pending.notes.${note.kind}`, { source: t(`pending.sources.${note.id}`),
+              time: formatClock(note.staleSince, locale, timeZone) })}
+          </span>
+          {note.onRetry && (note.kind === 'failed' || note.kind === 'stale') ? (
+            <button type="button" onClick={() => note.onRetry()} className={CONSOLE_ACTION}>{t('states.retry')}</button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * The alerts panel. `alerts` is consoleAlerts' `entries` and `notices` the shell's notices of the station (useConsoleData's
  * `notices`: `status`, `markRead`, `retry`, `refreshFailed`, `fetchedAt`); `pending` is buildPending's list and
- * `pendingState` the remote state of the reads it comes from. `onOpen(entry)` follows «Abrir»; `onSelectPending(item)`
- * selects the flight of a pending item; `onAssign(turnaroundId)` and `onImport()` open the assignment drawer and the
- * import dialog over the console. `timeZone` is the station's.
+ * `pendingSources` the state of each read it comes from (`[{ id, status, staleSince, onRetry }]`, pendingModel.js:
+ * pendingCoverage); `labels.loading` names the list's first load. `onOpen(entry)` follows «Abrir»;
+ * `onSelectPending(item)` selects the flight of a pending item; `onAssign(turnaroundId)` and `onImport()` open the
+ * assignment drawer and the import dialog over the console. `timeZone` is the station's.
  */
 export default function AlertsPanel({
-  alerts, notices, pending, pendingState, labels, onOpen, onSelectPending, onAssign, onImport, timeZone,
+  alerts, notices, pending, pendingSources, labels, onOpen, onSelectPending, onAssign, onImport, timeZone,
   measureRef, layout = 'float', defaultFolded = false, className = '',
 }) {
   const { t, language, locale } = useTranslation(consoleMessages);
   const pendingTitleId = useId();
   const unreceived = alerts.length;
+  const coverage = pendingCoverage(pendingSources);
   return (
     <OccFloatingPanel ref={measureRef} panelId="alerts" title={t('panels.alerts')} layout={layout}
       defaultFolded={defaultFolded} className={className} bodyClassName="h-full min-h-0"
@@ -77,19 +108,21 @@ export default function AlertsPanel({
           staleSince={notices.refreshFailed ? notices.fetchedAt : null} locale={locale} timeZone={timeZone} />
         <section aria-labelledby={pendingTitleId} className="border-t border-occ-line pt-2">
           <h3 id={pendingTitleId} className="px-1 text-sm font-semibold text-occ-text">{t('pending.title')}</h3>
-          <OccRemoteView {...pendingState} labels={labels} timeZone={timeZone} className="mt-1"
-            emptyState={<OccEmptyState title={t('pending.empty')} />}>
-            {pending.length === 0
-              ? <OccEmptyState title={t('pending.empty')} className="px-1 py-2" />
-              : (
+          {coverage.loading ? <OccSkeleton label={labels?.loading} className="mt-1 px-1 py-2" /> : (
+            <div className="mt-1">
+              <PendingNotes notes={coverage.notes} t={t} locale={locale} timeZone={timeZone} />
+              {pending.length > 0 ? (
                 <ul className="flex flex-col divide-y divide-occ-line">
                   {pending.map(item => (
                     <PendingItem key={item.id} item={item} t={t} language={language} onSelect={onSelectPending}
                       onAssign={onAssign} onImport={onImport} />
                   ))}
                 </ul>
-              )}
-          </OccRemoteView>
+              ) : null}
+              {pending.length === 0 && coverage.complete
+                ? <OccEmptyState title={t('pending.empty')} className="px-1 py-2" /> : null}
+            </div>
+          )}
         </section>
       </div>
     </OccFloatingPanel>

@@ -82,6 +82,6 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
 
   return (
     <ConsoleView station={stationScope} live={live} data={data} stands={stands} weather={weather}
-      selection={selection} onShown={showView} />
+      selection={selection} accountId={session?.accountId ?? null} onShown={showView} />
   );
 }

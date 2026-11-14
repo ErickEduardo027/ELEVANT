@@ -7,6 +7,7 @@ import { isInitialAssignmentCandidate } from '../../planning/planningMappers';
 import { planningMessages } from '../../planning/planningMessages';
 import { usePlanningAssignment } from '../../planning/usePlanningAssignment';
 import { usePlanningOptions } from '../../planning/usePlanningOptions';
+import { consoleMessages } from './consoleMessages';
 
 const EMPTY_OPTIONS_STATE = Object.freeze({
   status: 'idle', data: null, etag: null, error: null, reason: null, recoverable: false,
@@ -21,9 +22,12 @@ const EMPTY_OPTIONS_STATE = Object.freeze({
  *   «Operación asignada a {agente}.»; an answer that needs a fresh read (a 409, an uncertain result) closes the drawer and
  *   re-reads before a new intent; any other refusal says its message in a toast and keeps the drawer open.
  * - The other commands of the drawer (release, hand-over, shift, a stale version) re-read the same way.
+ * - `dataRevision` is what the drawer reads again with (its options, the operation's incidents and relieved agents): the
+ *   console's own changes, never the safety poll of its planning, so the list of agents never empties while OCC picks.
  */
 export default function ConsoleAssignDrawer({ flight, onClose, onChanged, showToast, dataRevision = 0 }) {
   const { t } = useTranslation(planningMessages);
+  const { t: tConsole } = useTranslation(consoleMessages);
   const assignment = usePlanningAssignment();
   const [optionsRetry, setOptionsRetry] = useState(0);
   const planningOptions = usePlanningOptions({
@@ -79,7 +83,7 @@ export default function ConsoleAssignDrawer({ flight, onClose, onChanged, showTo
       }}
       onAgentReleased={() => {
         changed();
-        showToast?.('Agente liberado. Ya puedes asignar a otro.', 'success');
+        showToast?.(tConsole('assign.agentReleased'), 'success');
       }}
       onAgentHandedOver={name => {
         changed();

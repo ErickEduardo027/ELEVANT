@@ -4,7 +4,7 @@ import { createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON, trafficInstant } fr
 import { createPlanningFlight } from '../../planning/testing/planningFixtures';
 import { buildBoard } from './boardModel';
 import { consoleMessages } from './consoleMessages';
-import { buildPending, PENDING_KINDS } from './pendingModel';
+import { buildPending, PENDING_KINDS, PENDING_NOTE_KINDS, PENDING_SOURCES, pendingCoverage } from './pendingModel';
 
 // 11:40 at Punta Cana on the planning fixtures' day: their arrival is estimated at 12:10.
 const NOW = Date.parse('2026-08-19T15:40:00Z');
@@ -180,5 +180,66 @@ describe('buildPending', () => {
     const overdue = buildPending({ board, nowMs: noon + 45 * 60_000, t }).filter(item => item.kind === 'overdue');
     expect(summary(overdue)).toEqual([['overdue', 'attention', 'ZZ301 pasó su hora de salida']]);
     expect(overdue[0]).toMatchObject({ action: null, flightKey: TRAFFIC_FLIGHT_KEY.parkedDeparture });
+  });
+});
+
+describe('pendingCoverage', () => {
+  const source = (id, status, extra = {}) => ({ id, status, staleSince: null, onRetry: undefined, ...extra });
+  const kinds = coverage => coverage.notes.map(note => [note.id, note.kind]);
+
+  it('says nothing while every read answered and is current', () => {
+    expect(PENDING_SOURCES).toEqual(['planning', 'readiness', 'flights', 'reviewQueue']);
+    expect(PENDING_NOTE_KINDS).toEqual(['loading', 'failed', 'refused', 'stale']);
+    const coverage = pendingCoverage(PENDING_SOURCES.map(id => source(id, id === 'planning' ? 'empty' : 'success')));
+    // A day without turnarounds is an answer like any other: an empty list may say that nothing is pending.
+    expect(coverage).toEqual({ loading: false, complete: true, notes: [] });
+  });
+
+  it('waits for the first answer, then lets each read blank only its own items', () => {
+    // Nothing answered and something on its way: the list waits.
+    expect(pendingCoverage([source('planning', 'loading'), source('flights', 'idle')]).loading).toBe(true);
+    // The map flights answered first: their items show, with a line for the read still on its way.
+    const early = pendingCoverage([source('planning', 'loading'), source('flights', 'success'),
+      source('reviewQueue', 'success')]);
+    expect([early.loading, early.complete]).toEqual([false, false]);
+    expect(kinds(early)).toEqual([['planning', 'loading']]);
+
+    // A refused planning and a failed queue: their lines, never a claim that nothing is pending.
+    const retry = () => {};
+    const refused = pendingCoverage([source('planning', 'forbidden'), source('flights', 'success'),
+      source('reviewQueue', 'error', { onRetry: retry }), source('readiness', 'unauthorized')]);
+    expect([refused.loading, refused.complete]).toEqual([false, false]);
+    expect(kinds(refused)).toEqual([['planning', 'refused'], ['reviewQueue', 'failed'], ['readiness', 'refused']]);
+    expect(refused.notes[1].onRetry).toBe(retry);
+    expect(refused.notes[0].onRetry).toBeNull();
+    // Nothing answered and nothing on its way: no wait, only the lines.
+    const down = pendingCoverage([source('planning', 'timeout'), source('flights', 'error')]);
+    expect([down.loading, down.complete]).toEqual([false, false]);
+    expect(kinds(down)).toEqual([['planning', 'failed'], ['flights', 'failed']]);
+
+    // A read whose last refresh failed keeps its items and says since when.
+    const stale = pendingCoverage([source('planning', 'success', { staleSince: '2026-08-19T15:32:00Z' }),
+      source('flights', 'success')]);
+    expect(stale.complete).toBe(true);
+    expect(stale.notes).toEqual([{ id: 'planning', kind: 'stale', staleSince: '2026-08-19T15:32:00Z', onRetry: null }]);
+    // Reads it does not know, and nothing at all, are not reads of the list.
+    expect(pendingCoverage([source('weather', 'error'), null])).toEqual({ loading: false, complete: false, notes: [] });
+    expect(pendingCoverage()).toEqual({ loading: false, complete: false, notes: [] });
+  });
+
+  it('names every read and every note in both languages', () => {
+    for (const language of ['es', 'en']) {
+      const translate = createTranslator(consoleMessages, language);
+      for (const id of PENDING_SOURCES) expect(translate(`pending.sources.${id}`), `${language}: ${id}`).not.toMatch(/^pending/);
+      for (const kind of PENDING_NOTE_KINDS) {
+        expect(translate(`pending.notes.${kind}`, { source: 'X', time: '14:32' }), `${language}: ${kind}`).toContain('X');
+      }
+    }
+    expect(t('pending.notes.failed', { source: t('pending.sources.planning') }))
+      .toBe('La consulta de la planificación del día falló.');
+    expect(t('pending.notes.refused', { source: t('pending.sources.reviewQueue') }))
+      .toBe('No tienes permiso para ver la cola de revisión.');
+    expect(t('pending.notes.stale', { source: t('pending.sources.flights'), time: '14:32' }))
+      .toBe('La última actualización de los vuelos del mapa falló; se muestra lo consultado a las 14:32.');
   });
 });

@@ -6,7 +6,7 @@ import {
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import { readSelection, writeSelection } from '../../maps/core/mapSelection';
 import {
-  bestTime, buildBoard, filterVisits, flightStatus, selectionIdOf, VISIT_FILTERS,
+  BOARD_LEGEND_KEYS, bestTime, boardLegendKeys, buildBoard, filterVisits, flightStatus, selectionIdOf, VISIT_FILTERS,
 } from './boardModel';
 import { consoleMessages } from './consoleMessages';
 
@@ -120,6 +120,30 @@ describe('boardModel', () => {
     expect(live).toMatchObject({ estimated: false, time: { kind: 'estimated' } });
     // Without the situation nothing is estimated.
     expect(buildBoard({ flights: FLIGHTS, nowMs: NOW, t }).toImport.arrivals[0].estimated).toBe(false);
+  });
+
+  it('the legend names only the marks the visible tab draws', () => {
+    expect(BOARD_LEGEND_KEYS).toEqual(['attention', 'urgent', 'demo', 'estimated']);
+    const situation = buildSituation({ picture: toPictureModel(createAirPicture()),
+      flights: toFlightsModel(createMapFlights()), nowMs: NOW, estimates: createEstimates() });
+    const board = buildBoard({ flights: FLIGHTS, aircraft: situation.aircraft, nowMs: NOW, t });
+    // «Llegadas» with «Por importar»: the demo arrival without a stand, due within the hour (amber), demo and estimated.
+    const arrivals = [...board.arrivals, ...board.toImport.arrivals];
+    expect(arrivals.find(item => item.flightNumber === 'ZZ9001')).toMatchObject({ demo: true, estimated: true,
+      status: { key: 'noStand', signal: 'attention' } });
+    expect(boardLegendKeys({ strips: arrivals })).toEqual(['attention', 'demo', 'estimated']);
+    // Without the demo pair the same tab has nothing to explain: no legend.
+    const plain = arrivals.filter(item => !item.demo);
+    expect(plain.some(item => item.status.signal || item.estimated)).toBe(false);
+    expect(boardLegendKeys({ strips: plain })).toEqual([]);
+    // An urgent strip says so; a strip that is only demo, only that.
+    expect(boardLegendKeys({ strips: [{ status: { signal: 'urgent' } }, { demo: true, status: { signal: null } }] }))
+      .toEqual(['urgent', 'demo']);
+    // «Escalas»: a visit without a stand or an agent draws the amber triangle; a demo visit its plate.
+    expect(boardLegendKeys({ visits: [{ missing: ['agents'], demo: false }, { missing: [], demo: true }] }))
+      .toEqual(['attention', 'demo']);
+    expect(boardLegendKeys({ visits: [{ missing: null }, { missing: [] }] })).toEqual([]);
+    expect(boardLegendKeys()).toEqual([]);
   });
 
   it('groups the two legs of a visit and its missing resources', () => {

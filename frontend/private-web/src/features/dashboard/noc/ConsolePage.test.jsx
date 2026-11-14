@@ -16,6 +16,8 @@ import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
 import { resetPanelFoldsForTests } from '../../occ-ui/occPanelMemory';
 import { parseMetar } from '../../weather/metar';
+import { resetClosedArrivalsForTests } from './arrivalMemory';
+import { BOARD_LEGEND_KEYS } from './boardModel';
 import ConsolePage from './ConsolePage';
 import ConsoleRoute from './ConsoleRoute';
 
@@ -77,6 +79,7 @@ vi.mock('../../planning/components/PlanningDrawer', () => ({
       <aside role="dialog" aria-modal="true" aria-label={`Asignación de ${props.flight.operationCode}`}>
         <p>{props.optionsState.status}</p>
         <button type="button" onClick={() => props.onAssign('agent-1')}>Asignar operación</button>
+        <button type="button" onClick={() => props.onAgentReleased()}>Liberar agente</button>
         <button type="button" onClick={props.onClose}>Cerrar</button>
       </aside>
     );
@@ -128,11 +131,11 @@ function shellWith(overrides = {}) {
 }
 
 function renderConsole({ url = PAGE, services = consoleServices(), mapService = simulatedMap(), shell = shellWith(),
-  scope = false } = {}) {
+  scope = false, access = OCC_ACCESS } = {}) {
   window.history.replaceState({}, '', url);
   const route = <ConsoleRoute services={services} mapService={mapService} />;
   const view = render(
-    <DepartmentAccessProvider initialAccess={OCC_ACCESS} load={vi.fn().mockResolvedValue(OCC_ACCESS)} observe={false}>
+    <DepartmentAccessProvider initialAccess={access} load={vi.fn().mockResolvedValue(access)} observe={false}>
       <OccShellTestProvider value={shell}>{scope ? <LanguageScope>{route}</LanguageScope> : route}</OccShellTestProvider>
     </DepartmentAccessProvider>,
   );
@@ -141,6 +144,14 @@ function renderConsole({ url = PAGE, services = consoleServices(), mapService = 
 
 const region = name => screen.getByRole('region', { name, exact: true });
 const board = () => region('Tablero');
+const pendingRegion = () => within(region('Alertas')).getByRole('region', { name: 'Pendientes de la jornada' });
+// The figure a tile of «Cifras de la jornada» shows, by its label.
+const figureOf = label => [...region('Cifras de la jornada').querySelectorAll('[data-occ-stat]')]
+  .find(tile => tile.querySelector('dt')?.textContent.trim() === label)?.querySelector('dd')?.textContent ?? null;
+// The OCC access without some of its permissions.
+const accessWithout = (...codes) => ({ ...OCC_ACCESS, permissions: OCC_ACCESS.permissions.filter(code => !codes.includes(code)) });
+const NO_PERMISSION = 'No tienes permiso para ver esta información.';
+const NO_STATION = 'No hay una estación OCC autorizada para consultar este panorama.';
 const panelOf = id => document.querySelector(`[data-occ-floating-panel="${id}"]`);
 const search = () => new URLSearchParams(window.location.search);
 // The board answers once the map flights did: its tabs show (also inside a folded board, whose body stays mounted).
@@ -177,6 +188,7 @@ afterEach(() => {
   cleanup();
   act(() => resetLanguageForTests('es'));
   resetPanelFoldsForTests();
+  resetClosedArrivalsForTests();
   FakeResizeObserver.instances = [];
   vi.unstubAllGlobals();
   vi.mocked(loadSatelliteImageInfo).mockImplementation(() => new Promise(() => {}));
@@ -317,10 +329,12 @@ describe('the OCC console', () => {
     // Over the console: the board and the map stay where they are.
     expect(board()).toBeInTheDocument();
     expect(screen.getByTestId('occ-map')).toBeInTheDocument();
-    // An import re-reads the day's planning, without waiting for its poll.
+    // An import re-reads the day's planning, without waiting for its poll, and what the assignment drawer reads.
     const reads = services.getPlanningSnapshot.mock.calls.length;
+    expect(opened.drawerProps.dataRevision).toBe(0);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Escala importada' }));
     await waitFor(() => expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads));
+    expect(opened.drawerProps.dataRevision).toBe(1);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByRole('dialog', { name: 'Importar vuelos del proveedor' })).not.toBeInTheDocument();
   });
@@ -343,6 +357,42 @@ describe('the OCC console', () => {
     expect(await screen.findByText('Operación asignada a Marta Castillo.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: /^Asignación de/ })).not.toBeInTheDocument();
     await waitFor(() => expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('the safety poll of the planning never reloads the options of an open assignment drawer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const services = consoleServices();
+      renderConsole({ services });
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      const item = within(pendingRegion()).getByText(/ZZ500 sin agente/).closest('li');
+      act(() => { fireEvent.click(within(item).getByRole('button', { name: 'Asignar agente' })); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      const drawer = screen.getByRole('dialog', { name: /^Asignación de/ });
+      expect(drawer).toHaveTextContent('success');
+      expect(getPlanningOptions).toHaveBeenCalledOnce();
+      const reads = services.getPlanningSnapshot.mock.calls.length;
+      // A minute later the planning re-reads on its poll; the agents OCC is choosing from stay as they are.
+      await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });
+      expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads);
+      expect(getPlanningOptions).toHaveBeenCalledOnce();
+      expect(drawer).toHaveTextContent('success');
+      expect(opened.drawerProps.dataRevision).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releasing an agent from the drawer says so in the words of the console', async () => {
+    renderConsole();
+    await boardReady();
+    const item = (await within(pendingRegion()).findByText(/ZZ500 sin agente/)).closest('li');
+    await userEvent.click(within(item).getByRole('button', { name: 'Asignar agente' }));
+    const drawer = await screen.findByRole('dialog', { name: /^Asignación de/ });
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Liberar agente' }));
+    expect(await screen.findByText('Agente liberado. Ya puedes asignar a otro.')).toBeInTheDocument();
+    // A release is a change of the console's own: the drawer reads again what it shows.
+    expect(opened.drawerProps.dataRevision).toBe(1);
   });
 
   it('a new demo arrival shows Llegada nueva with Ver y seguir, which writes flightId and follow=1', async () => {
@@ -369,6 +419,48 @@ describe('the OCC console', () => {
     expect(screen.queryByText('Llegada nueva: ZZ9001')).not.toBeInTheDocument();
     expect(screen.getByTestId('occ-console-provenance')).toHaveTextContent('Incluye un vuelo demo.');
   }, 15_000);
+
+  it('a demo flight already on its way when the console opens shows Llegada nueva, until it is closed', async () => {
+    // The superadministrator fired the flight before OCC opened the console: it comes in the first read of the flights.
+    renderConsole({ mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    const announced = await screen.findByText('Llegada nueva: ZZ9001');
+    // In the area the panels leave, and no wider than it: it wraps rather than run over a panel.
+    const place = announced.closest('[data-occ-arrival-place]');
+    expect(place.style.left).toContain('--occ-map-inset-left');
+    expect(place.style.maxWidth).toContain('--occ-map-inset-right');
+    // Opened again (a reload, or back from another module) before anyone acted on it: it is still news.
+    cleanup();
+    renderConsole({ mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    const pill = (await screen.findByText('Llegada nueva: ZZ9001')).closest('[role="status"]');
+    await userEvent.click(within(pill).getByRole('button', { name: 'Ver y seguir' }));
+    await waitFor(() => expect(search().get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival));
+    expect(search().get('follow')).toBe('1');
+    expect(search().get('view')).toBe('approach');
+    expect(screen.queryByText(/Llegada nueva/)).not.toBeInTheDocument();
+    // «Ver y seguir» closed it for the tab: opening the console again does not announce it, though the board lists it.
+    cleanup();
+    renderConsole({ mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    await waitFor(() => expect(board()).toHaveTextContent('ZZ9001'));
+    expect(screen.queryByText(/Llegada nueva/)).not.toBeInTheDocument();
+  }, 15_000);
+
+  it('«Cerrar» on Llegada nueva keeps that flight closed when the console opens again', async () => {
+    renderConsole({ mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    const pill = (await screen.findByText('Llegada nueva: ZZ9001')).closest('[role="status"]');
+    await userEvent.click(within(pill).getByRole('button', { name: 'Cerrar' }));
+    expect(screen.queryByText(/Llegada nueva/)).not.toBeInTheDocument();
+    // Nothing was selected: «Cerrar» only closes.
+    expect(search().has('flightId')).toBe(false);
+    cleanup();
+    renderConsole({ mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    await waitFor(() => expect(board()).toHaveTextContent('ZZ9001'));
+    expect(screen.queryByText(/Llegada nueva/)).not.toBeInTheDocument();
+  });
 
   it('an unavailable engine renders the same panels in a grid', async () => {
     fake.state.reset({ constructorError: new GPUInitializationError() });
@@ -457,6 +549,37 @@ describe('the OCC console', () => {
     expect(visits().map(visit => visit.textContent)).toEqual([expect.stringContaining('ZZ700')]);
   });
 
+  it('the board names in its header the marks of the tab on screen, and only those', async () => {
+    renderConsole({ mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    const legend = () => within(board()).queryByRole('list', { name: 'Leyenda del tablero' });
+    const legendKeys = () => [...(legend()?.querySelectorAll('[data-occ-legend-item]') ?? [])]
+      .map(item => item.getAttribute('data-occ-legend-item'));
+    // What the tab's body draws: the glyph of a signal, the «Demo» and «est.» tags.
+    const marksOf = body => BOARD_LEGEND_KEYS.filter(key => body.querySelector(key === 'demo' || key === 'estimated'
+      ? `[data-occ-tag="${key}"]` : `[data-occ-glyph="${key}"]`) !== null);
+    const body = () => board().querySelector('[role="tabpanel"]');
+
+    // «Llegadas»: the demo arrival still to import, without a stand and due within the hour.
+    await waitFor(() => expect(body()).toHaveTextContent('ZZ9001'));
+    expect(legendKeys()).toEqual(['attention', 'demo']);
+    expect(legend()).toHaveTextContent('Atención');
+    expect(legend()).toHaveTextContent('Simulado para la demostración');
+    expect(within(legend()).getByText('Demo')).toHaveAttribute('data-occ-tag', 'demo');
+    // In the header, never in the body it explains.
+    expect(body()).not.toContainElement(legend());
+    for (const tab of ['Salidas', 'Escalas', 'Llegadas']) {
+      await userEvent.click(within(board()).getByRole('tab', { name: new RegExp(`^${tab}`) }));
+      expect(legendKeys(), tab).toEqual(marksOf(body()));
+    }
+    // «Escalas» lists visits without a stand or an agent: its legend says what their amber triangle means.
+    await userEvent.click(within(board()).getByRole('tab', { name: /^Escalas/ }));
+    expect(legendKeys()).toContain('attention');
+    // Folded, the board explains nothing.
+    await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
+    expect(legend()).toBeNull();
+  });
+
   it('?focus=map hides the panels behind «Mostrar paneles»', async () => {
     renderConsole({ url: `${PAGE}?focus=map` });
     expect(await screen.findByRole('button', { name: 'Mostrar paneles' })).toBeInTheDocument();
@@ -488,6 +611,76 @@ describe('honesty of the console states', () => {
     const reads = services.getPlanningSnapshot.mock.calls.length;
     await userEvent.click(within(figures).getByRole('button', { name: 'Reintentar' }));
     await waitFor(() => expect(services.getPlanningSnapshot.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('a day without turnarounds still lists what is pending from the other reads, and counts its figures', async () => {
+    const services = consoleServices({ getPlanningSnapshot: vi.fn(async ({ stationId }) => ({
+      ...planningSnapshot({ now: Date.now(), stationId }), turnarounds: [] })) });
+    renderConsole({ services, mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    // The demo flight waits to be imported and the queue has a hand-off: the planning's empty day hides neither.
+    await waitFor(() => expect(within(pendingRegion()).getByText(/ZZ9001 por importar/)).toBeInTheDocument());
+    const day = stationDay().replaceAll('-', '');
+    await waitFor(() => expect(within(pendingRegion()).getByText(`PUJ-${day}-005 por revisar`)).toBeInTheDocument());
+    expect(within(pendingRegion()).queryByText('No hay pendientes.')).not.toBeInTheDocument();
+    // The figures of an empty day are counted zeros, next to those the other reads answer.
+    const figures = region('Cifras de la jornada');
+    await waitFor(() => expect(figureOf('Escalas')).toBe('0'));
+    expect(figureOf('En operación')).toBe('0');
+    expect(figureOf('Completadas')).toBe('0');
+    expect(Number.parseInt(figureOf('Por revisar').replace(/\D/g, ''), 10)).toBeGreaterThan(0);
+    expect(figures).not.toHaveTextContent('No hay datos para mostrar.');
+  });
+
+  it('a refused or failing read blanks only its own pending items, and says so', async () => {
+    const refused = Object.assign(new Error('forbidden'), { status: 403 });
+    renderConsole({ services: consoleServices({ getPlanningSnapshot: vi.fn(async () => { throw refused; }) }),
+      mapService: simulatedMap({ on: true }) });
+    await boardReady();
+    const day = stationDay().replaceAll('-', '');
+    // The items of the map flights and of the review queue stay, under the line of the refused planning.
+    await waitFor(() => expect(within(pendingRegion()).getByText(/ZZ9001 por importar/)).toBeInTheDocument());
+    await waitFor(() => expect(within(pendingRegion()).getByText(`PUJ-${day}-005 por revisar`)).toBeInTheDocument());
+    expect(within(pendingRegion()).getByText('No tienes permiso para ver la planificación del día.')).toBeInTheDocument();
+    expect(within(pendingRegion()).queryByText('No hay pendientes.')).not.toBeInTheDocument();
+    expect(pendingRegion()).not.toHaveTextContent(NO_STATION);
+    // The figures keep the old Panorama's refusal of the station's day.
+    await waitFor(() => expect(region('Cifras de la jornada')).toHaveTextContent(NO_STATION));
+    cleanup();
+
+    // A failing queue: its line with «Reintentar», which reads it again, and the planning's items stay.
+    const queue = vi.fn(async () => { throw new Error('SQL password=secret'); });
+    renderConsole({ services: consoleServices({ loadOccReviewQueue: queue }) });
+    await boardReady();
+    await waitFor(() => expect(within(pendingRegion()).getByText(/ZZ500 sin agente/)).toBeInTheDocument());
+    const line = await within(pendingRegion()).findByText('La consulta de la cola de revisión falló.');
+    expect(within(pendingRegion()).queryByText('No hay pendientes.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/password=secret/)).not.toBeInTheDocument();
+    const reads = queue.mock.calls.length;
+    await userEvent.click(within(line.closest('li')).getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => expect(queue.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('a panel the account may not read says so in plain words, never that the station is not authorized', async () => {
+    const services = consoleServices();
+    renderConsole({ services, access: accessWithout('operations.positions_map.read') });
+    await boardReady();
+    const positions = region('Posiciones');
+    await waitFor(() => expect(positions).toHaveTextContent(NO_PERMISSION));
+    expect(positions).not.toHaveTextContent(NO_STATION);
+    // Nothing is asked for it, and the other panels read as usual.
+    expect(services.loadOccPositions).not.toHaveBeenCalled();
+    await waitFor(() => expect(figureOf('Escalas')).toMatch(/^\d+$/));
+    cleanup();
+
+    // Without any of the map's permissions the board is refused as well, in the same plain words.
+    renderConsole({ access: accessWithout('operations.dashboard.read', 'operations.flight_monitoring.read',
+      'operations.positions_map.read', 'operations.planning.read') });
+    await waitFor(() => expect(board()).toHaveTextContent(NO_PERMISSION));
+    expect(board()).not.toHaveTextContent(NO_STATION);
+    expect(board()).not.toHaveTextContent('La sesión expiró');
+    // The planning's own refusal keeps its words.
+    await waitFor(() => expect(region('Cifras de la jornada')).toHaveTextContent(NO_STATION));
   });
 
   it('shows the loading state without asserting zero as a business fact', async () => {
@@ -610,5 +803,19 @@ describe('the console in English', () => {
 
     renderConsole();
     expect(screen.getByRole('heading', { level: 1, name: 'Panorama operativo' })).toBeInTheDocument();
+  });
+
+  it('says that an agent was released in English too', async () => {
+    act(() => resetLanguageForTests('en'));
+    renderConsole({ scope: true });
+    await within(await screen.findByRole('region', { name: 'Board', exact: true }))
+      .findByRole('tablist', { name: 'Board view', hidden: true });
+    const pending = within(region('Alerts')).getByRole('region', { name: 'Open items of the day' });
+    const item = (await within(pending).findByText(/ZZ500 without an agent/)).closest('li');
+    await userEvent.click(within(item).getByRole('button', { name: 'Assign agent' }));
+    const drawer = await screen.findByRole('dialog', { name: /^Asignación de/ });
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Liberar agente' }));
+    expect(await screen.findByText('Agent released. You can assign another one.')).toBeInTheDocument();
+    expect(screen.queryByText('Agente liberado. Ya puedes asignar a otro.')).not.toBeInTheDocument();
   });
 });

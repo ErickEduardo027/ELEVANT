@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import DemoTag from '../../occ-ui/DemoTag';
+import EstimatedTag from '../../occ-ui/EstimatedTag';
 import OccEmptyState from '../../occ-ui/OccEmptyState';
 import OccFlightStrip from '../../occ-ui/OccFlightStrip';
 import OccFloatingPanel from '../../occ-ui/OccFloatingPanel';
@@ -10,7 +11,9 @@ import OccGlyph from '../../occ-ui/OccGlyph';
 import { OccRemoteView } from '../../occ-ui/OccPanel';
 import OccPlate from '../../occ-ui/OccPlate';
 import OccSegmented from '../../occ-ui/OccSegmented';
-import { filterVisits, VISIT_FILTERS } from './boardModel';
+import { occUiMessages } from '../../occ-ui/occUiMessages';
+import { SIGNALS } from '../../occ-ui/statusVocabulary';
+import { boardLegendKeys, filterVisits, VISIT_FILTERS } from './boardModel';
 import { formatConsoleDate } from './consoleFormat';
 import { consoleMessages } from './consoleMessages';
 import { CONSOLE_ACTION, CONSOLE_SCROLL, CONSOLE_SECTION_TITLE } from './consoleStyles';
@@ -18,7 +21,8 @@ import { CONSOLE_ACTION, CONSOLE_SCROLL, CONSOLE_SECTION_TITLE } from './console
 // «Tablero» (contratos 2.5): the console's board over the top left of the map. «Llegadas» and «Salidas» are the map
 // flights as flight strips with the flights still to import under them («Por importar»), and «Escalas» the visits of the
 // day (the old turnaround table), filtered by their resources. A strip selects its flight on the map; a selection made
-// on the map brings its tab to the front and its strip into view. The model is boardModel.js.
+// on the map brings its tab to the front and its strip into view. The header carries the legend of what the visible tab
+// draws (contratos 2.4). The model is boardModel.js.
 
 const TABS = Object.freeze(['arrivals', 'departures', 'turnarounds']);
 const DIRECTION_TAB = Object.freeze({ Arrival: 'arrivals', Departure: 'departures' });
@@ -46,6 +50,26 @@ function StripList({ items, selectedId, onSelect, now, timeZone, locale, importL
           ) : null}
         </li>
       ))}
+    </ul>
+  );
+}
+
+// The legend of the visible tab (boardModel.js: boardLegendKeys), in the words of the status bar's «Leyenda»: each
+// signal with its glyph and its word, each tag as the board draws it with what it means.
+function BoardLegend({ keys, label, language, tUi }) {
+  return (
+    <ul aria-label={label} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-occ-muted">
+      {keys.map(key => {
+        const signal = Object.hasOwn(SIGNALS, key);
+        return (
+          <li key={key} data-occ-legend-item={key} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            {signal ? <OccGlyph name={key} /> : null}
+            {key === 'demo' ? <DemoTag /> : null}
+            {key === 'estimated' ? <EstimatedTag /> : null}
+            <span>{signal ? SIGNALS[key][language] : tUi(`legend.tagMeaning.${key}`)}</span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -107,7 +131,8 @@ export default function BoardPanel({
   board, state, labels, selectedId = null, onSelect, onImport, onImportFlight, nowMs, timeZone, date = null,
   measureRef, layout = 'float', defaultFolded = false, className = '',
 }) {
-  const { t, locale } = useTranslation(consoleMessages);
+  const { t, language, locale } = useTranslation(consoleMessages);
+  const { t: tUi } = useTranslation(occUiMessages);
   const [tab, setTab] = useState('arrivals');
   const [filter, setFilter] = useState('all');
   // The selection the board made itself, and the last selection whose tab the board followed.
@@ -156,7 +181,9 @@ export default function BoardPanel({
   const strip = { selectedId, onSelect: select, now: nowMs, timeZone, locale };
 
   let panel;
+  let legendKeys;
   if (tab === 'turnarounds') {
+    legendKeys = boardLegendKeys({ visits: shownVisits });
     panel = (
       <>
         <div className="px-2 pt-2">
@@ -179,6 +206,7 @@ export default function BoardPanel({
   } else {
     const shown = tab === 'arrivals' ? arrivals : departures;
     const pending = tab === 'arrivals' ? toImport.arrivals : toImport.departures;
+    legendKeys = boardLegendKeys({ strips: [...shown, ...pending] });
     panel = (
       <>
         {shown.length > 0
@@ -204,9 +232,13 @@ export default function BoardPanel({
     </span>
   ) : null;
 
+  // The legend of what the tab on screen draws, once the board answered: its strips are on screen only then.
+  const legend = state?.status === 'success' && legendKeys.length > 0
+    ? <BoardLegend keys={legendKeys} label={t('board.legend')} language={language} tUi={tUi} /> : null;
+
   return (
     <OccFloatingPanel ref={measureRef} panelId="board" title={t('panels.board')} layout={layout} meta={meta}
-      defaultFolded={defaultFolded} className={className} bodyClassName="flex h-full min-h-0 flex-col"
+      defaultFolded={defaultFolded} className={className} bodyClassName="flex h-full min-h-0 flex-col" legend={legend}
       actions={typeof onImport === 'function'
         ? <button type="button" onClick={onImport} className={CONSOLE_ACTION}>{t('board.import')}</button>
         : null}>

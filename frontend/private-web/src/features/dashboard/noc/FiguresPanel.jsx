@@ -21,16 +21,19 @@ const FIGURES = Object.freeze([
 
 /**
  * The figures panel. `figures` is buildFigures' model and `state` the remote state of the planning snapshot, which most
- * figures come from (`{ status, staleSince, onRetry }`).
+ * figures come from (`{ status, staleSince, onRetry }`). A day without turnarounds (`empty`) is a day the planning
+ * answered: its figures are counted, zeros included, next to «Llegan en 60 min» and «Por revisar», which come from the
+ * map flights and the review queue.
  */
 export default function FiguresPanel({
   figures, state, labels, timeZone, measureRef, layout = 'float', defaultFolded = false, className = '',
 }) {
   const { t } = useTranslation(consoleMessages);
+  const shown = state?.status === 'empty' ? { ...state, status: 'success' } : state;
   return (
     <OccFloatingPanel ref={measureRef} panelId="figures" title={t('panels.figures')} layout={layout}
       defaultFolded={defaultFolded} className={className}>
-      <OccRemoteView {...state} labels={labels} timeZone={timeZone}>
+      <OccRemoteView {...shown} labels={labels} timeZone={timeZone}>
         <OccStatList label={t('panels.figures')}
           className="grid grid-cols-[repeat(auto-fit,minmax(6rem,1fr))] gap-x-4 gap-y-3 px-3 py-2">
           {FIGURES.map(figure => (

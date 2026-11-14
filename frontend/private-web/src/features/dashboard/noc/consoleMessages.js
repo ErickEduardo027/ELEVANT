@@ -45,6 +45,7 @@ export const consoleMessages = {
       importOne: 'Importar',
       importFlight: 'Importar {flight}',
       date: 'Fecha operacional',
+      legend: 'Leyenda del tablero',
       filters: { all: 'Todas', inOperation: 'En operación', needsResources: 'Sin recursos', completed: 'Completadas' },
       filterLabel: 'Filtrar escalas',
       empty: 'No hay escalas registradas para esta estación y fecha local.',
@@ -129,6 +130,21 @@ export const consoleMessages = {
         review: 'Revisar',
         import: 'Importar',
       },
+      sources: {
+        planning: 'la planificación del día',
+        readiness: 'la disponibilidad de los agentes asignados',
+        flights: 'los vuelos del mapa',
+        reviewQueue: 'la cola de revisión',
+      },
+      notes: {
+        loading: 'Cargando {source}…',
+        failed: 'La consulta de {source} falló.',
+        refused: 'No tienes permiso para ver {source}.',
+        stale: 'La última actualización de {source} falló; se muestra lo consultado a las {time}.',
+      },
+    },
+    assign: {
+      agentReleased: 'Agente liberado. Ya puedes asignar a otro.',
     },
     band: {
       label: 'Posiciones en el tiempo',
@@ -323,6 +339,7 @@ export const consoleMessages = {
       importOne: 'Import',
       importFlight: 'Import {flight}',
       date: 'Operational date',
+      legend: 'Board legend',
       filters: { all: 'All', inOperation: 'In operation', needsResources: 'Missing resources', completed: 'Completed' },
       filterLabel: 'Filter turnarounds',
       empty: 'No turnarounds are recorded for this station and local date.',
@@ -407,6 +424,21 @@ export const consoleMessages = {
         review: 'Review',
         import: 'Import',
       },
+      sources: {
+        planning: "the day's planning",
+        readiness: 'the availability of the assigned agents',
+        flights: 'the map flights',
+        reviewQueue: 'the review queue',
+      },
+      notes: {
+        loading: 'Loading {source}…',
+        failed: 'Could not load {source}.',
+        refused: 'You do not have permission to see {source}.',
+        stale: 'The last refresh of {source} failed; showing what was retrieved at {time}.',
+      },
+    },
+    assign: {
+      agentReleased: 'Agent released. You can assign another one.',
     },
     band: {
       label: 'Stands over time',

@@ -34,6 +34,8 @@ const NOTHING_REMEMBERED = () => null;
  * - Folded, only the header stays: the pill. The body stays mounted, `hidden`, so what it holds keeps its state and the
  *   console's ResizeObserver measures the pill. `foldedSummary` (the counts of «Posiciones») shows only while folded,
  *   next to the button, which it describes (`aria-describedby`); `meta` shows in both states; `actions` only open.
+ * - `legend`, the key to the marks the body draws (contratos 2.4: a board shows its legend in its header), takes a line
+ *   of its own at the foot of the header, only while open: folded, there is nothing on screen for it to explain.
  * - Each panel remembers its fold for the tab session (occPanelMemory.js, keyed by `panelId`) and starts from
  *   `defaultFolded` when nothing is remembered, on the server too. With `folded` it is controlled: the console owns the
  *   fold and hears every press through `onFoldedChange(next)`.
@@ -45,7 +47,7 @@ const NOTHING_REMEMBERED = () => null;
  * A missing `panelId`, or an unknown layout or heading level, throws.
  */
 export default function OccFloatingPanel({
-  ref, panelId, title, meta, actions, foldedSummary, defaultFolded = false, folded: foldedProp, onFoldedChange,
+  ref, panelId, title, meta, actions, legend, foldedSummary, defaultFolded = false, folded: foldedProp, onFoldedChange,
   layout = 'float', headingLevel = 2, className = '', bodyClassName = '', children, 'data-testid': testId,
 }) {
   const titleId = useId();
@@ -82,6 +84,7 @@ export default function OccFloatingPanel({
         {summarised ? <div id={summaryId} className="min-w-0 text-xs text-occ-muted">{foldedSummary}</div> : null}
         {meta ? <div className="min-w-0 text-xs text-occ-muted">{meta}</div> : null}
         {!folded && actions ? <div className="ml-auto flex items-center gap-1.5">{actions}</div> : null}
+        {!folded && legend ? <div data-occ-panel-legend="" className="w-full min-w-0 px-0.5 pb-0.5">{legend}</div> : null}
       </div>
       {/* No display class here: one would override `hidden`. The body's own layout goes on the element inside. */}
       <div id={bodyId} hidden={folded} data-occ-panel-body="" className="min-h-0 flex-1">

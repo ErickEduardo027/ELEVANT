@@ -1083,7 +1083,7 @@ posiciones, que siguen siendo una referencia interna no oficial salvo las que
 ubicó OCC; y los datos que leen las pantallas, sin endpoints nuevos ni cambios
 en la API. Los dos mapas auxiliares del dashboard (región y meteorología)
 conservan su ciclo de vida y los estilos publicados de OpenFreeMap hasta que U3
-retire el dashboard actual. Desde el PR U3 el mapa regional ya no se monta, y
+retire el dashboard actual. Desde el PR U3 el mapa regional ya no existe, y
 el de meteorología solo aparece dentro del detalle de la píldora del clima de
 Panorama, mientras está abierto.
 
@@ -1480,6 +1480,10 @@ tampoco.
   de calzos del vuelo demo, el hito `BLOCK_ON` o la hora de calzos que escribe
   «Registrar llegada»; el «Arrived» del proveedor solo dice «Aterrizó»
   ([tablero](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
+  El encabezado del tablero lleva su leyenda, solo con lo que dibuja la pestaña
+  a la vista: el triángulo de «Atención» y el octágono de «Urgente» con su
+  palabra, y «Demo» y «est.» con lo que significan, con las palabras de
+  «Leyenda» de la barra de estado.
 - **Alertas.** Las alertas urgentes y de atención de la estación que la cuenta
   no recibió, cada una con «Recibido», el recibo de lectura por cuenta, y
   «Abrir»; plegado, el panel dice cuántas son. Debajo, «Pendientes de la
@@ -1489,11 +1493,21 @@ tampoco.
   cierra cuando la hay: «Elegir posición», «Asignar agente», «Revisar» o
   «Importar»
   ([pendientes](../../frontend/private-web/src/features/dashboard/noc/pendingModel.js)).
+  Esos pendientes salen de cuatro lecturas (la planificación, la disponibilidad
+  de los agentes, los vuelos del mapa y la cola de revisión), y cada una apaga
+  solo lo suyo: la que no respondió, falló, fue rechazada o muestra datos
+  viejos deja una línea que lo dice, con «Reintentar» si falló, encima de lo
+  que trajeron las demás. «No hay pendientes.» solo aparece cuando respondieron
+  todas, así que un día sin escalas sigue mostrando el vuelo demo por importar.
   Los avisos simples y las alertas ya recibidas siguen en el cajón «Alertas y
   avisos» del marco.
 - **Cifras de la jornada.** Escalas, en operación, llegan en 60 min, sin
   recursos, por revisar y completadas, cada una con su definición. Una cifra
-  cuya consulta no respondió muestra «—», nunca un cero.
+  cuya consulta no respondió muestra «—», nunca un cero; un día sin escalas
+  sí respondió, y sus cifras son ceros contados. Un panel que la cuenta no
+  puede leer dice «No tienes permiso para ver esta información.»; solo la
+  planificación, que lee el día de la estación, dice «No hay una estación OCC
+  autorizada para consultar este panorama.».
 - **Posiciones.** Plegado, dice las escalas del día, las que están en operación
   y cuántas posiciones hay en cada estado. Abierto, la banda de las posiciones en
   el tiempo, una fila por posición con sus escalas bajo la línea «ahora», con
@@ -1511,13 +1525,18 @@ tampoco.
   importación de Planificación sobre la consola, y «Asignar agente», el panel
   de asignación de Planificación, con sus mismas opciones y comandos: OCC no
   sale de Panorama. Después, la consola relee una vez su planificación, sus
-  posiciones y la disponibilidad de los agentes
+  posiciones y la disponibilidad de los agentes, y el panel de asignación sus
+  opciones; el sondeo de 60 s de la planificación no las relee, así que la
+  lista de agentes no se vacía mientras OCC elige
   ([asignación](../../frontend/private-web/src/features/dashboard/noc/ConsoleAssignDrawer.jsx)).
 - **Llegada nueva.** Cuando aparece en los vuelos del mapa una llegada demo
   nueva, una pastilla dice «Llegada nueva: {vuelo}» con la placa «Demo», «Ver
   y seguir» y «Cerrar». «Ver y seguir» elige el vuelo, escribe `follow=1` y la
   vista que lo sigue, y lleva la cámara hasta él; que el mapa lo siga llega con
-  M6. Abrir la consola no anuncia un vuelo que ya venía
+  M6. Al abrir la consola, recargarla o volver de otro módulo, la pastilla
+  también anuncia la llegada demo que ya venía y todavía no está en su
+  posición, porque Superadministración suele dispararla antes. «Cerrar» y «Ver
+  y seguir» la cierran para la pestaña, y una pastilla cerrada no vuelve
   ([pastilla](../../frontend/private-web/src/features/dashboard/noc/NewArrivalPill.jsx)).
 - **Procedencia y clima.** Bajo el mapa, una línea dice de dónde sale lo que
   muestra, solo lo que aplica: «Posiciones: referencia interna sin
@@ -1551,9 +1570,9 @@ tampoco.
   cede enseguida
   ([ruta](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.jsx)).
 - **Lo que se retiró.** El panorama anterior (su vista, su ruta, su lectura,
-  el panel del tráfico regional de OpenSky, su adaptador y sus textos) y el
-  bloque de `occ.css` que lo disponía. La carpeta `dashboard/noc` entra en
-  `MIGRATED_FOLDERS` del
+  el panel del tráfico regional de OpenSky con su mapa, su adaptador y sus
+  textos) y el bloque de `occ.css` que lo disponía. La carpeta
+  `dashboard/noc` entra en `MIGRATED_FOLDERS` del
   [manifiesto del puente](../../frontend/private-web/src/styles/occLegacyBridgeMap.js).
   Las pruebas están en
   [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#la-consola-del-occ-pr-u3).

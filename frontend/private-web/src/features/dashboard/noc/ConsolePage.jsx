@@ -52,9 +52,12 @@ import WeatherPill from './WeatherPill';
 const EMPTY = Object.freeze([]);
 const NARROW_QUERY = '(max-width: 1279.98px)';
 const FIGURES_FOLDED_QUERY = '(max-width: 1599.98px)';
-// Where the pill of a new arrival goes: the top left of the area the panels leave in sight (OccMap's inset variables).
+// Where the pill of a new arrival goes: the top left of the area the panels leave in sight (OccMap's inset variables),
+// short of the map's zoom buttons in the top right corner of that area (a 38 px column 10 px from its edge,
+// occ-map.css), so it wraps instead of running over them or over «Alertas» (1440 px with both sides open).
 const ARRIVAL_PLACE = Object.freeze({
   top: 'calc(var(--occ-map-inset-top, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
+  maxWidth: 'calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 72px)',
 });
 
 // The console tells the boot screen when its first data is on screen (ConsoleRoute.jsx). The map it hosts draws from
@@ -64,12 +67,22 @@ const CONSOLE_MAP_BOOT = Object.freeze({ markReady: () => {} });
 const matches = query => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia(query).matches;
 
+const ANSWERED = new Set(['success', 'empty']);
+
+// The map flights before they answer, as the map situation says (useMapSituation): a situation that answered while its
+// flights did not is still loading them.
+function flightsWaitingOf(live) {
+  const status = ANSWERED.has(live.status) ? 'loading' : live.status;
+  return { status, staleSince: null, onRetry: live.retry };
+}
+
+// The map flights as one of the reads of «Pendientes de la jornada»: they answered once they are here.
+const flightsStateOf = live => (live.flights ? { status: 'success', staleSince: null, onRetry: live.retry }
+  : flightsWaitingOf(live));
+
 // The board's remote state: the map flights read (useMapSituation), then whether the day has anything to show.
 function boardStateOf(live, board) {
-  if (!live.flights || board === null) {
-    const status = live.status === 'success' || live.status === 'empty' ? 'loading' : live.status;
-    return { status, staleSince: null, onRetry: live.retry };
-  }
+  if (!live.flights || board === null) return flightsWaitingOf(live);
   const { arrivals, departures, toImport, visits } = board.counts;
   return { status: arrivals + departures + toImport + visits > 0 ? 'success' : 'empty', staleSince: null,
     onRetry: live.retry };
@@ -82,15 +95,19 @@ function boardStateOf(live, board) {
  * - `data`: the console's own reads (useConsoleData: `planning`, `positions`, `reviewQueue`, `readiness`, `notices`).
  * - `stands`: the stands as the map draws them (useStandDisplay over the positions board and the map flights).
  * - `weather`: useMdpcWeather's view; `selection`: the URL selection store (maps/core/useMapSelection.js).
+ * - `accountId`: the signed-in account, whose closed «Llegada nueva» pills the tab remembers (arrivalMemory.js).
  * - `onShown()`: called once the console is on screen (its route tells the OCC boot screen when its data are too).
  */
-export default function ConsolePage({ station, live, data, stands = EMPTY, weather, selection, onShown }) {
+export default function ConsolePage({ station, live, data, stands = EMPTY, weather, selection, accountId = null, onShown }) {
   const { t } = useTranslation(consoleMessages);
   const router = useRouter();
   const mapRef = useRef(null);
   const [engineStatus, setEngineStatus] = useState('starting');
   const [importOpen, setImportOpen] = useState(false);
   const [assignTurnaroundId, setAssignTurnaroundId] = useState(null);
+  // What the assignment drawer reads again with (its options, the incidents, the relieved agents): the console's own
+  // changes, an import or an assignment, never the 60 s safety poll of the planning (contratos 2.7).
+  const [drawerRevision, setDrawerRevision] = useState(0);
   const { toasts, showToast, dismissToast } = useToast();
   // Read once: the console is a client-only route, so the first render already knows the screen.
   const [narrow] = useState(() => matches(NARROW_QUERY));
@@ -124,7 +141,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const pending = useMemo(() => buildPending({ board, planningFlights: planning.data ? planningFlights : null,
     readiness: readiness.data, reviewQueue: reviewQueue.data, nowMs, t }),
   [board, nowMs, planning.data, planningFlights, readiness.data, reviewQueue.data, t]);
-  const { arrival, dismiss: dismissArrival } = useNewDemoArrival(flightRows);
+  const { arrival, dismiss: dismissArrival } = useNewDemoArrival(flightRows, { clock: live.clock, accountId });
 
   // What the one selection names, for the board, the band and the inspector.
   const related = useMemo(() => (chosen?.kind === 'stand' ? relatedEntities(chosen, { flights: mapFlights }) : null),
@@ -202,15 +219,27 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
     planning.refresh?.();
     positions.refresh?.();
     readiness.refresh?.();
+    setDrawerRevision(value => value + 1);
   }, [planning, positions, readiness]);
 
+  // The texts of the panels' remote states. A refusal says the plain no-permission sentence of occ-ui, except the
+  // planning's: the old Panorama's «No hay una estación OCC autorizada…» answered a refusal of the station's day, which is
+  // what that read is, so its figures keep it.
   const remoteLabels = useMemo(() => ({
     loading: t('states.loading'), error: t('states.error'), timeout: t('states.timeout'),
-    unauthorized: t('states.unauthorized'), forbidden: t('states.forbidden'), retry: t('states.retry'),
-    stale: t('states.refreshFailed'),
+    unauthorized: t('states.unauthorized'), retry: t('states.retry'), stale: t('states.refreshFailed'),
   }), [t]);
+  const planningLabels = useMemo(() => ({ ...remoteLabels, forbidden: t('states.forbidden') }), [remoteLabels, t]);
   // The map reads read a refusal as `unauthorized`; the board never says that the session expired for it.
   const boardLabels = useMemo(() => ({ ...remoteLabels, unauthorized: undefined }), [remoteLabels]);
+  // The reads «Pendientes de la jornada» comes from, each blanking only its own items (pendingModel.js). The readiness
+  // marks belong to the planning's day and wait for it, so they count only once the planning answered.
+  const pendingSources = [
+    { id: 'planning', ...panelStateOf(planning) },
+    ...(ANSWERED.has(planning.status) ? [{ id: 'readiness', ...panelStateOf(readiness) }] : []),
+    { id: 'flights', ...flightsStateOf(live) },
+    { id: 'reviewQueue', ...panelStateOf(reviewQueue) },
+  ];
   const mapLabels = useMemo(() => ({
     map: t('map.label'), unavailableTitle: t('map.unavailableTitle'),
     unavailableDescription: t('map.unavailableDescription'), unavailableList: t('map.unavailableList'),
@@ -229,12 +258,12 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
           defaultFolded={narrow} className={classes.boardPanel} />
       ),
       figures: (
-        <FiguresPanel figures={figures} state={panelStateOf(planning)} labels={remoteLabels} timeZone={timeZone}
+        <FiguresPanel figures={figures} state={panelStateOf(planning)} labels={planningLabels} timeZone={timeZone}
           measureRef={ref('figures')} layout={panelLayout} defaultFolded={narrow || figuresFolded}
           className={classes.figuresPanel} />
       ),
       alerts: (
-        <AlertsPanel alerts={alerts} notices={notices} pending={pending} pendingState={panelStateOf(planning)}
+        <AlertsPanel alerts={alerts} notices={notices} pending={pending} pendingSources={pendingSources}
           labels={remoteLabels} onOpen={entry => router.push(notificationTargetPath(entry.notice))}
           onSelectPending={item => selectItem(item)} onAssign={setAssignTurnaroundId}
           onImport={openImport} timeZone={timeZone} measureRef={ref('alerts')} layout={panelLayout}
@@ -282,7 +311,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
             <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
               clock={live.clock} onRetry={live.retry} />
             {layout === 'map' && pill ? (
-              <div className="pointer-events-none absolute z-20 max-w-[calc(100%_-_1.5rem)]" style={ARRIVAL_PLACE}>
+              <div data-occ-arrival-place="" className="pointer-events-none absolute z-20" style={ARRIVAL_PLACE}>
                 {pill}
               </div>
             ) : null}
@@ -314,7 +343,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
           revision={live.flights?.serverTime ?? 0} onClose={() => setImportOpen(false)} onImported={reread} />
       ) : null}
       <ConsoleAssignDrawer flight={assignFlight} onClose={() => setAssignTurnaroundId(null)} onChanged={reread}
-        showToast={showToast} dataRevision={Date.parse(planning.fetchedAt ?? '') || 0} />
+        showToast={showToast} dataRevision={drawerRevision} />
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

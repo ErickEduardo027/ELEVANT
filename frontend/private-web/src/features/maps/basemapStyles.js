@@ -1,7 +1,7 @@
-// Mapas base OpenStreetMap vía OpenFreeMap (sin clave) de los dos mapas del dashboard que aún tienen su propio ciclo
-// de vida, RegionalTrafficMap y GoesCloudMap, hasta que el PR U3 los retire. El estilo ya no se configura por entorno:
-// los demás mapas del OCC usan el estilo NOC construido en código (style/occStyle.js). El estilo "dark" no incluye
-// edificios 3D.
+// Mapa base OpenStreetMap vía OpenFreeMap (sin clave) del único mapa que aún tiene su propio ciclo de vida, GoesCloudMap,
+// el satélite del detalle del clima de la consola, hasta que M8 lo pase a una capa del mapa único; el PR U3 retiró
+// RegionalTrafficMap con el dashboard anterior. El estilo ya no se configura por entorno: los demás mapas del OCC usan
+// el estilo NOC construido en código (style/occStyle.js). El estilo "dark" no incluye edificios 3D.
 const DEFAULT_STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
 

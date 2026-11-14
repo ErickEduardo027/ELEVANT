@@ -14,7 +14,20 @@ export const PENDING_KINDS = Object.freeze(['noStand', 'noAgent', 'agentCannotOp
 /** The actions that close a pending item, with their words (consoleMessages `pending.actions.*`). */
 export const PENDING_ACTIONS = Object.freeze(['chooseStand', 'assign', 'import', 'review']);
 
+/**
+ * The reads the pending items come from, with their names (consoleMessages `pending.sources.*`): the planning snapshot
+ * (`noStand`, `noAgent`), the readiness marks of its day (`agentCannotOperate`), the map flights (`toImport`,
+ * `overdue`) and the review queue (`toReview`).
+ */
+export const PENDING_SOURCES = Object.freeze(['planning', 'readiness', 'flights', 'reviewQueue']);
+
+/** What a note of «Pendientes de la jornada» says of a read (consoleMessages `pending.notes.*`). */
+export const PENDING_NOTE_KINDS = Object.freeze(['loading', 'failed', 'refused', 'stale']);
+
 const PRIORITY_RANK = Object.freeze({ urgent: 0, attention: 1, notice: 2 });
+const ANSWERED = new Set(['success', 'empty']);
+const WAITING = new Set(['idle', 'loading']);
+const REFUSED = new Set(['forbidden', 'unauthorized']);
 const CLOSED = new Set(['completed', 'cancelled', 'diverted']);
 const NO_ROWS = Object.freeze([]);
 const isObject = value => value !== null && typeof value === 'object';
@@ -163,4 +176,39 @@ export function buildPending({ board = null, planningFlights = null, readiness =
     return PENDING_KINDS.indexOf(left.kind) - PENDING_KINDS.indexOf(right.kind)
       || left.label.localeCompare(right.label) || left.id.localeCompare(right.id);
   }));
+}
+
+// What a note says of a read: nothing when it answered and is current.
+function noteKindOf(source) {
+  if (ANSWERED.has(source.status)) return source.staleSince != null ? 'stale' : null;
+  if (WAITING.has(source.status)) return 'loading';
+  return REFUSED.has(source.status) ? 'refused' : 'failed';
+}
+
+/**
+ * What «Pendientes de la jornada» can say from the state of the reads its items come from (contratos 2.7: a read that
+ * fails or is refused blanks only what comes from it, never the items of the others). `sources` are
+ * `{ id, status, staleSince, onRetry }`, panelStateOf's shape with an id of PENDING_SOURCES (others are ignored).
+ * Returns `{ loading, complete, notes }`:
+ * - `loading`: no read answered yet and one is still on its way: the list waits for its first data;
+ * - `complete`: every read answered, so an empty list may say that nothing is pending;
+ * - `notes`: one per read the list lacks or shows late, in the order of `sources`, each `{ id, kind, staleSince,
+ *   onRetry }` with `kind` `loading`, `failed` (an error or a timeout), `refused` (no permission, or the session
+ *   expired) or `stale` (its last refresh failed: its items are the ones it answered before), and `onRetry` the read's
+ *   retry or null.
+ */
+export function pendingCoverage(sources = NO_ROWS) {
+  const list = (Array.isArray(sources) ? sources : []).filter(source => isObject(source)
+    && PENDING_SOURCES.includes(source.id));
+  const answered = list.filter(source => ANSWERED.has(source.status)).length;
+  const notes = list.flatMap(source => {
+    const kind = noteKindOf(source);
+    return kind === null ? [] : [Object.freeze({ id: source.id, kind, staleSince: source.staleSince ?? null,
+      onRetry: typeof source.onRetry === 'function' ? source.onRetry : null })];
+  });
+  return Object.freeze({
+    loading: answered === 0 && list.some(source => WAITING.has(source.status)),
+    complete: list.length > 0 && answered === list.length,
+    notes: Object.freeze(notes),
+  });
 }

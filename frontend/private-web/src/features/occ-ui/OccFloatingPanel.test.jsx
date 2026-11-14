@@ -121,6 +121,32 @@ describe('OccFloatingPanel', () => {
     expect(screen.queryByText('12 escalas, 3 en posición')).not.toBeInTheDocument();
   });
 
+  it('shows its legend on a line of its own at the foot of the header, only while open', async () => {
+    const user = userEvent.setup();
+    render(
+      <OccFloatingPanel panelId="board" title="Tablero" meta="14 nov" actions={<button type="button">Importar vuelos</button>}
+        legend={<ul aria-label="Leyenda del tablero"><li>Atención</li></ul>}>
+        <p>ZZ9001</p>
+      </OccFloatingPanel>,
+    );
+    const region = screen.getByRole('region', { name: 'Tablero' });
+    const toggle = within(region).getByRole('button', { name: 'Tablero' });
+    const legend = within(region).getByRole('list', { name: 'Leyenda del tablero' });
+    // In the header, after the title, the meta and the actions, on a line of its own; never in the body or the button.
+    expect(bodyOf(toggle)).not.toContainElement(legend);
+    expect(toggle).not.toContainElement(legend);
+    const line = legend.parentElement;
+    expect(line).toHaveAttribute('data-occ-panel-legend');
+    expect(line.parentElement).toContainElement(toggle);
+    expect(line.previousElementSibling).toContainElement(screen.getByRole('button', { name: 'Importar vuelos' }));
+    expect(classesOf(line)).toContain('w-full');
+    // Folded: nothing of the body is on screen for it to explain.
+    await user.click(toggle);
+    expect(within(region).queryByRole('list', { name: 'Leyenda del tablero' })).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(within(region).getByRole('list', { name: 'Leyenda del tablero' })).toBeVisible();
+  });
+
   it("remembers each panel's fold for the session across a remount, and starts from defaultFolded when nothing is remembered", async () => {
     const user = userEvent.setup();
     const panels = (

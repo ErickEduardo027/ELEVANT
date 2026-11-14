@@ -8,8 +8,9 @@ import { expect, test } from '../support/test.mjs';
 // with a synthetic OCC session and a stubbed API (fixtures/consoleApi.mjs: one coherent day at Punta Cana) and today's
 // METAR of IEM answered by a route of this spec. Photographed for review at 1920 × 1080 and 1440 × 900, the laptop the
 // console is presented on (owner decision 11): the panels open and folded, a flight and a stand selected, the fallback
-// without a map engine, and the pill of a new demo arrival. Each test opens the console as a later OCC entry of its tab,
-// so the OCC boot screen (PR U4) never covers it.
+// without a map engine, the pill of a demo flight already on its way when the console opens with the board's legend,
+// and the pill of a new demo arrival. Each test opens the console as a later OCC entry of its tab, so the OCC boot
+// screen (PR U4) never covers it.
 
 const PAGE = '/admin-occ/dashboard';
 const SIZES = Object.freeze([{ width: 1920, height: 1080 }, { width: 1440, height: 900 }]);
@@ -19,8 +20,8 @@ const PANELS = Object.freeze(['Tablero', 'Alertas', 'Cifras de la jornada', 'Pos
 const panel = (page, name) => page.getByRole('region', { name, exact: true });
 const foldButton = (page, name) => panel(page, name).getByRole('button', { name, exact: true });
 
-async function openConsole(page, isolation, query = '') {
-  const api = createConsoleApi();
+async function openConsole(page, isolation, query = '', { demo = false } = {}) {
+  const api = createConsoleApi({ demo });
   isolation.setApi(api.handle);
   // Today's METAR, without leaving the machine: registered after the isolation, this route answers first.
   await page.route(IEM, route => route.fulfill({
@@ -104,6 +105,32 @@ test.describe('the OCC console on the map engine', () => {
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       await shoot(page, testInfo, `u3-consola-posicion-${size.width}`);
     });
+
+    test(`a demo flight already on its way when the console opens at ${size.width}×${size.height}`,
+      async ({ page, isolation }, testInfo) => {
+        await page.setViewportSize(size);
+        // The superadministrator fired it before OCC opened the console: the first read of the flights announces it.
+        const { map } = await openConsole(page, isolation, '', { demo: true });
+        await settled(page, map);
+        await expect(page.getByText('Llegada nueva: ZZ9001')).toBeVisible();
+        // In the area the panels leave: it covers neither «Tablero», «Alertas» nor the map's zoom buttons, at either size.
+        const pill = await page.getByRole('status').filter({ hasText: 'Llegada nueva: ZZ9001' }).boundingBox();
+        const neighbours = [['Tablero', panel(page, 'Tablero')], ['Alertas', panel(page, 'Alertas')],
+          ['the zoom buttons', map.locator('.maplibregl-ctrl-top-right')]];
+        for (const [name, neighbour] of neighbours) {
+          const box = await neighbour.boundingBox();
+          const apart = pill.x + pill.width <= box.x || box.x + box.width <= pill.x
+            || pill.y + pill.height <= box.y || box.y + box.height <= pill.y;
+          expect(apart, `the pill covers ${name}`).toBe(true);
+        }
+        // The board's header says what the marks of its tab mean: the amber triangle of the flight without a stand and
+        // the «Demo» plate.
+        const legend = panel(page, 'Tablero').getByRole('list', { name: 'Leyenda del tablero' });
+        await expect(legend).toContainText('Atención');
+        await expect(legend).toContainText('Simulado para la demostración');
+        await expect(map).toHaveAttribute('data-occ-settled', 'true');
+        await shoot(page, testInfo, `u3-consola-llegada-al-abrir-${size.width}`);
+      });
 
     test(`the fallback without a map engine at ${size.width}×${size.height}`, async ({ page, isolation }, testInfo) => {
       await page.setViewportSize(size);

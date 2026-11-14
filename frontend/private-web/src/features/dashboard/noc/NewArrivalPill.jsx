@@ -1,28 +1,41 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { useOccMap } from '../../maps/core/OccMapContext';
 import DemoTag from '../../occ-ui/DemoTag';
+import { readClosedArrivals, rememberClosedArrival } from './arrivalMemory';
 import { consoleMessages } from './consoleMessages';
 import { CONSOLE_ACTION, CONSOLE_PRIMARY_ACTION } from './consoleStyles';
 import { demoArrivalsSince, followView } from './newArrivals';
 
 /**
- * The demo arrival the console announces (contratos 2.5): the newest active demo arrival that appeared in the map
- * flights since the console opened (newArrivals.js: demoArrivalsSince), or null. The first read only learns what is
- * there, so opening the console never announces a flight that was already on its way. `dismiss()` hides it.
+ * The demo arrival the console announces (contratos 2.5), or null: the newest of the demo arrivals newArrivals.js
+ * (demoArrivalsSince) finds in the map flights. On the console's first read, an active demo arrival still on its way to
+ * its stand at the server's time (`clock.now()`), so a flight triggered before the console opened, reloaded or came
+ * back from another module is announced; after it, one that appears. `arrival` is that flight as the last read has
+ * it. `dismiss()` hides it and remembers for the tab session that `accountId` closed it (arrivalMemory.js): a closed
+ * pill never comes back.
  */
-export function useNewDemoArrival(flights) {
+export function useNewDemoArrival(flights, { clock = null, accountId = null } = {}) {
   const seen = useRef(null);
   const [arrival, setArrival] = useState(null);
   useEffect(() => {
     if (!Array.isArray(flights)) return;
-    const { seen: next, arrived } = demoArrivalsSince(seen.current, flights);
+    const nowMs = typeof clock?.now === 'function' ? clock.now() : null;
+    const { seen: next, arrived } = demoArrivalsSince(seen.current, flights,
+      { nowMs, closed: readClosedArrivals(accountId) });
     seen.current = next;
     if (arrived.length > 0) setArrival(arrived.at(-1));
-  }, [flights]);
-  return { arrival, dismiss: () => setArrival(null) };
+  }, [accountId, clock, flights]);
+  const dismiss = useCallback(() => {
+    if (arrival !== null) rememberClosedArrival(arrival.flightKey, accountId);
+    setArrival(null);
+  }, [accountId, arrival]);
+  // The flight as the last read has it: «Ver y seguir» picks its view by where it is now.
+  const latest = arrival !== null && Array.isArray(flights)
+    ? flights.find(row => row?.flightKey === arrival.flightKey) ?? arrival : arrival;
+  return { arrival: latest, dismiss };
 }
 
 /**
@@ -30,8 +43,8 @@ export function useNewDemoArrival(flights) {
  * panels leave in sight. «Ver y seguir» calls `onFollow(flight, view)` with the view that follows it (newArrivals.js:
  * followView): the console writes the flight, `follow=1` and that view in the URL in one go (one writer, so no write
  * undoes another). The pill moves the camera itself: to that view, or, when the map already shows it, onto the flight.
- * Then it closes. Inside an OccMap it reads the map's context; outside one (the fallback grid) it only selects. A
- * status: the arrival is read out once, politely.
+ * Then it closes, as «Cerrar» does (`onDismiss`). Inside an OccMap it reads the map's context; outside one (the fallback
+ * grid) it only selects. A status: the arrival is read out once, politely.
  */
 export default function NewArrivalPill({ flight, onFollow, onDismiss, className = '' }) {
   const { t } = useTranslation(consoleMessages);

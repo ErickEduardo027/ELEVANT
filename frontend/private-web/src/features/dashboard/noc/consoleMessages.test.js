@@ -161,6 +161,10 @@ describe('consoleMessages', () => {
     expect(es.arrival.follow).toBe('Ver y seguir');
     expect(Object.values(es.panels)).toEqual(['Tablero', 'Alertas', 'Cifras de la jornada', 'Posiciones', 'Inspector']);
     expect(en.panels.board).toBe('Board');
+    // The notice of a release from the assignment drawer, in Planificación's words and in English as well.
+    expect(es.assign.agentReleased).toBe('Agente liberado. Ya puedes asignar a otro.');
+    expect(en.assign.agentReleased).toBe('Agent released. You can assign another one.');
+    expect(es.board.legend).toBe('Leyenda del tablero');
   });
 
   it('says the signals of a stand with the map words and counts with the words of occTime', () => {

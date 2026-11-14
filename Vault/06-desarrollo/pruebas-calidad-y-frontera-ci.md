@@ -457,8 +457,16 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   ([`ConsolePage.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/ConsolePage.test.jsx)
   y [`ConsoleRoute.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.test.jsx)),
   con las afirmaciones de honestidad del panorama anterior y el aviso a la
-  pantalla de arranque. El mapa se simula con el MapLibre falso de
-  `tests/fakeMapLibre.js`, y jsdom recibe un `ResizeObserver` falso.
+  pantalla de arranque. La página comprueba también que un vuelo demo que ya
+  venía al abrir muestra «Llegada nueva» y que una pastilla cerrada no vuelve
+  ([memoria de la pestaña](../../frontend/private-web/src/features/dashboard/noc/arrivalMemory.test.js));
+  que cada lectura apaga solo sus pendientes, con la planificación vacía,
+  rechazada o con la cola caída; que un panel sin su permiso lo dice sin
+  culpar a la estación; que la leyenda del tablero nombra lo que dibuja cada
+  pestaña; que el sondeo de la planificación no relee las opciones del panel
+  de asignación abierto, y el aviso de agente liberado en los dos idiomas. El
+  mapa se simula con el MapLibre falso de `tests/fakeMapLibre.js`, y jsdom
+  recibe un `ResizeObserver` falso.
 - **Datos sintéticos validados.**
   [`visualConsoleFixtures.test.js`](../../frontend/private-web/tests/visualConsoleFixtures.test.js)
   pasa cada respuesta de
@@ -474,11 +482,12 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   «Posiciones» siempre; que con los paneles plegados el mapa no pierde ancho y
   abiertos sí; que una tira elige su vuelo (`flightId=`) y abre el inspector
   con su bloque de datos y sus hitos, y una barra de la banda, su posición
-  (`stand=`); que sin WebGL los paneles pasan a la cuadrícula; y, a
-  1920×1080, que «Recibido» envía el recibo, que un vuelo demo nuevo muestra
-  «Llegada nueva» y que «Ver y seguir» escribe `flightId` y `follow=1` y lleva
-  el mapa a Aproximación. Como el resto de la suite, corre fuera del CI y una
-  persona revisa sus capturas.
+  (`stand=`); que sin WebGL los paneles pasan a la cuadrícula; que un vuelo
+  demo que ya venía al abrir muestra «Llegada nueva» y la leyenda del tablero;
+  y, a 1920×1080, que «Recibido» envía el recibo, que un vuelo demo nuevo
+  muestra «Llegada nueva» y que «Ver y seguir» escribe `flightId` y `follow=1`
+  y lleva el mapa a Aproximación. Como el resto de la suite, corre fuera del CI
+  y una persona revisa sus capturas.
 
 ## Qué agrega cada workflow activo
 

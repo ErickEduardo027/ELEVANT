@@ -344,6 +344,30 @@ export function selectionIdOf(item, flights = NO_ROWS) {
   return matchFlight(flights, own)?.flightKey ?? own;
 }
 
+/** The marks of the board its legend explains, in the legend's order: the two signals, then the two tags. */
+export const BOARD_LEGEND_KEYS = Object.freeze(['attention', 'urgent', 'demo', 'estimated']);
+
+/**
+ * What the legend of the board names (contratos 2.4: a board shows its legend in its header, and a legend lists only
+ * what is on screen), for the items of its visible tab: `strips` («Llegadas» or «Salidas», «Por importar» included) or
+ * `visits` («Escalas» as its filter shows them). `attention` and `urgent` when a strip's status carries that signal or
+ * a visit lacks a stand or an agent (its amber triangle); `demo` when a strip or a visit is a demo flight; `estimated`
+ * when a strip says «est.» (its aircraft at an estimated position). In the order of BOARD_LEGEND_KEYS.
+ */
+export function boardLegendKeys({ strips = NO_ROWS, visits = NO_ROWS } = {}) {
+  const found = new Set();
+  for (const item of Array.isArray(strips) ? strips : NO_ROWS) {
+    if (item?.status?.signal) found.add(item.status.signal);
+    if (item?.demo) found.add('demo');
+    if (item?.estimated) found.add('estimated');
+  }
+  for (const item of Array.isArray(visits) ? visits : NO_ROWS) {
+    if (Array.isArray(item?.missing) && item.missing.length > 0) found.add('attention');
+    if (item?.demo) found.add('demo');
+  }
+  return BOARD_LEGEND_KEYS.filter(key => found.has(key));
+}
+
 /**
  * The visits of «Escalas» that `filter` keeps: `all`; `inOperation` (isInOperation); `needsResources` (an open
  * turnaround without a stand or an agent: the stand as its map flights give it when they hold the visit, the agents as
