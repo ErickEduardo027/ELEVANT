@@ -442,8 +442,10 @@ function ReviewStation({ stationId, stationCode, selectedId, onSelectOperation }
     loading: t('queue.loading'), error: t('queue.error'), retry: t('retry'),
     empty: rows.length === 0 ? t('queue.empty') : t('queue.filters.empty'),
   };
+  // A queue the API cut at 100 says so under the list, outside the table: the note stays when the filter leaves no
+  // row, because hand-offs beyond those 100 may be waiting too.
   const moreNote = queue.data?.hasMore ? (
-    <p role="note" className="flex items-start gap-1.5 text-xs text-occ-muted">
+    <p role="note" className="flex items-start gap-1.5 border-t border-occ-line px-3 py-2 text-xs text-occ-muted">
       <OccGlyph name="notice" />
       <span className="min-w-0">{t('queue.hasMore')} {t('queue.hasMoreHint')}</span>
     </p>
@@ -473,7 +475,8 @@ function ReviewStation({ stationId, stationCode, selectedId, onSelectOperation }
           <OccDataTable caption={t('queue.title')} columns={columns} rows={visibleRows}
             getRowId={row => row.operationId} selectedId={selectedId} onSelectRow={id => onSelectOperation(id)}
             status={queueViewStatus(queue)} onRetry={() => setRefreshVersion(value => value + 1)} labels={queueLabels}
-            footer={moreNote} scrollClassName="xl:overflow-visible" />
+            scrollClassName="xl:overflow-visible" />
+          {moreNote}
         </OccPanel>
         {selectedId ? (
           <section ref={detailRef} aria-label={t('detail.title')} data-review-detail=""

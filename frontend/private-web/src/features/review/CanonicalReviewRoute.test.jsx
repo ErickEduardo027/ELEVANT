@@ -540,6 +540,71 @@ describe('CanonicalReviewRoute as a workbench (template C, U6)', () => {
     expect(status).toHaveAttribute('data-tone', 'attention');
     expect(status).toHaveTextContent('Pendiente');
   });
+
+  // Contratos 2.7: after a 401 or a 403 the queue is the no-permission state, which offers no «Reintentar» (the read
+  // would be refused again). Nothing of a queue that did not load is counted, and the service's text never shows.
+  it.each([[403, 'forbidden'], [401, 'unauthorized']])(
+    'shows the no-permission state for a %i of the queue, without «Reintentar» or figures',
+    async (status, code) => {
+      mocks.queue.mockRejectedValue(Object.assign(new Error('No tiene permiso para revisar esta operación.'), { status, code }));
+      renderRoute();
+      const panel = screen.getByRole('region', { name: 'Entregas' });
+      expect(await within(panel).findByText('No tienes permiso para ver esta información.')).toBeInTheDocument();
+      expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
+      expect(within(panel).queryByRole('table')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+      expect(screen.queryByText('No tiene permiso para revisar esta operación.')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-occ-stats]')).toBeNull();
+      // The filters count nothing either.
+      const filters = screen.getByRole('group', { name: 'Filtrar entregas' });
+      expect(within(filters).getByRole('button', { name: 'Todas' })).toBeInTheDocument();
+      expect(within(filters).getByRole('button', { name: 'Por revisar' })).toBeInTheDocument();
+      expect(mocks.queue).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('explains a failed queue read in its own words and reads the queue again with «Reintentar»', async () => {
+    const user = userEvent.setup();
+    mocks.queue.mockRejectedValueOnce(Object.assign(
+      new Error('No fue posible cargar la revisión. Comprueba la conexión e intenta nuevamente.'),
+      { status: 500, code: 'request-failed' }));
+    renderRoute();
+    const panel = screen.getByRole('region', { name: 'Entregas' });
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(/^No se pudo cargar la cola de revisión\.$/);
+    expect(screen.queryByText(/No fue posible cargar la revisión/)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-occ-stats]')).toBeNull();
+
+    await user.click(within(panel).getByRole('button', { name: 'Reintentar' }));
+    expect(await within(panel).findByText('DEV-TAT-001')).toBeInTheDocument();
+    expect(mocks.queue).toHaveBeenCalledTimes(2);
+    expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-occ-stats]')).not.toBeNull();
+  });
+
+  it('keeps the note of a queue cut at 100 under the list, with rows and when the filter leaves none', async () => {
+    const user = userEvent.setup();
+    const cut = 'Hay más entregas fuera de esta vista. La API limita la cola a 100 entregas; '
+      + 'esta pantalla no representa el historial completo.';
+    // None of the hand-offs on screen waits for a decision, but some beyond the first 100 may.
+    mocks.queue.mockResolvedValue({ ...queue, hasMore: true, operations: [queueRow(2, 'Approved'), queueRow(3, 'Returned')] });
+    const view = renderRoute();
+    const panel = screen.getByRole('region', { name: 'Entregas' });
+    const table = await within(panel).findByRole('table', { name: 'Entregas' });
+    expect(within(panel).getByRole('note')).toHaveTextContent(cut);
+    expect(table).not.toContainElement(within(panel).getByRole('note'));
+
+    await user.click(screen.getByRole('button', { name: 'Por revisar 0' }));
+    expect(within(panel).getByText('No hay entregas por revisar con este filtro.')).toBeInTheDocument();
+    expect(within(panel).queryByRole('table')).not.toBeInTheDocument();
+    expect(within(panel).getByRole('note')).toHaveTextContent(cut);
+    view.unmount();
+
+    // A queue that was not cut has no note.
+    mocks.queue.mockResolvedValue(queue);
+    renderRoute();
+    await screen.findByText('DEV-TAT-001');
+    expect(within(screen.getByRole('region', { name: 'Entregas' })).queryByRole('note')).not.toBeInTheDocument();
+  });
 });
 
 describe('CanonicalReviewRoute in English', () => {

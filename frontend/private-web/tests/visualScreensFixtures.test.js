@@ -5,10 +5,10 @@ import { describeReasons } from '../src/services/occCoverageService';
 import { STATION } from './visual/occ/fixtures/occApi.mjs';
 import {
   API_PATHS, CHAT_IDS, COVERAGE_AGENTS, COVERAGE_REFUSAL, COVERAGE_TERMINALS, DEVICE_IDS, FORBIDDEN, MASTER_TERMINALS,
-  OWN_ACCOUNT_ID, OWN_PRESENCE, REPORT_CATALOG, REVIEW_IDS, SCREEN_SCENARIOS, SCREENS_ACCESS, SERVER_ERROR,
-  STATION_TIME_ZONE, chatConversations, chatMessages, chatPresence, coverageBoard, createScreensApi, masterData,
-  occDevices, operationalNotices, readyContracts, reportCatalog, reportPage, reviewDetail, reviewDocuments,
-  reviewHistory, reviewIncidents, reviewQueue,
+  NO_HAND_OFF, ON_RAMP_INCIDENT, OWN_ACCOUNT_ID, OWN_PRESENCE, REOPENING, REPORT_CATALOG, REVIEW_IDS, SCREEN_SCENARIOS,
+  SCREENS_ACCESS, SERVER_ERROR, STATION_TIME_ZONE, chatConversations, chatMessages, chatPresence, coverageBoard,
+  createScreensApi, masterData, occDevices, onRampIncidents, operationalNotices, readyContracts, reportCatalog,
+  reportPage, reviewDetail, reviewDocuments, reviewHistory, reviewIncidents, reviewQueue,
 } from './visual/occ/fixtures/screensApi.mjs';
 import { PRESENCE_SHAPES, resolvePresence } from '../src/features/chat/presenceStatus';
 
@@ -50,6 +50,22 @@ describe('visual suite screens fixtures', () => {
     const incidents = reviewIncidents();
     await expect(clientAnswering(incidents).getOccOperationIncidents(REVIEW_IDS.pending)).resolves.toEqual(incidents);
 
+    // The `reopened` variant (3-H): the queue, the detail with its ETag and the history of revision 3.
+    const reopenedQueue = reviewQueue('data', STATION.stationId, { reopened: true });
+    await expect(clientAnswering(reopenedQueue).getOccReviewQueue(STATION.stationId)).resolves.toEqual(reopenedQueue);
+    const reopened = reviewDetail(REVIEW_IDS.pending, { reopened: true });
+    await expect(clientAnswering(reopened, { headers: { ETag: reopened.reviewVersion } })
+      .getOccReviewDetail(REVIEW_IDS.pending)).resolves.toEqual(reopened);
+    const reopenedHistory = reviewHistory(REVIEW_IDS.pending, { reopened: true });
+    await expect(clientAnswering(reopenedHistory).getOccReviewSubmissionHistory(REVIEW_IDS.pending))
+      .resolves.toEqual(reopenedHistory);
+    // The operation still on the ramp (3-G): its detail is a Problem Details 404, which the client rejects with its
+    // status and code (the screen reads that as «no hand-off yet»), and its live incidents pass.
+    await expect(clientAnswering(NO_HAND_OFF, { status: 404 }).getOccReviewDetail(REVIEW_IDS.onRamp))
+      .rejects.toMatchObject({ kind: 'http', status: 404, code: 'not_found' });
+    const onRamp = onRampIncidents();
+    await expect(clientAnswering(onRamp).getOccOperationIncidents(REVIEW_IDS.onRamp)).resolves.toEqual(onRamp);
+
     // The frame's own reads, empty.
     const notices = { notifications: [], hasMore: false };
     await expect(clientAnswering(notices).getOperationalNotifications()).resolves.toEqual(notices);
@@ -74,7 +90,36 @@ describe('visual suite screens fixtures', () => {
     const close = reviewDetail().close;
     expect(close.milestones).toHaveLength(8);
     expect(close.timing.groundMinutes - close.timing.allowedGroundMinutes).toBe(4);
-    expect(SCREENS_ACCESS.permissions).toEqual(expect.arrayContaining(['operations.review.read', 'operations.incidents.read']));
+    // The OCC administrator reads and manages the live incidents, which an operation not yet approved still takes.
+    expect(SCREENS_ACCESS.permissions).toEqual(expect.arrayContaining(['operations.review.read', 'operations.incidents.read',
+      'operations.incidents.update']));
+    expect([reviewIncidents().operationStatus, reviewIncidents().canReport]).toEqual(['PendingReview', true]);
+  });
+
+  it('the reopened revision follows the approval it reopened, and the operation on the ramp has no hand-off', () => {
+    // 3-H: revision 3 waits on the signed Service Order, sent when revision 2 was, which OCC approved and then reopened.
+    const reopened = reviewDetail(REVIEW_IDS.pending, { reopened: true });
+    expect([reopened.status, reopened.serviceOrderState, reopened.decision]).toEqual(['PendingReview', 'Signed', null]);
+    expect(reopened.reopening).toEqual(REOPENING);
+    expect(reopened.reopening.fromRevisionNumber).toBe(reopened.revisionNumber - 1);
+    expect(reopened.reviewVersion).not.toBe(reviewDetail().reviewVersion);
+    const { submissions } = reviewHistory(REVIEW_IDS.pending, { reopened: true });
+    expect(submissions.map(item => [item.revisionNumber, item.status, item.outcome])).toEqual([
+      [3, 'PendingReview', null], [2, 'Approved', 'Approved'], [1, 'Returned', 'Returned']]);
+    expect(submissions[0]).toMatchObject({ submissionId: reopened.submissionId, submittedAt: reopened.submittedAt });
+    expect(Date.parse(REOPENING.reopenedAt)).toBeGreaterThan(Date.parse(submissions[1].decidedAt));
+    const [first] = reviewQueue('data', STATION.stationId, { reopened: true }).operations;
+    expect(first).toMatchObject({ operationId: REVIEW_IDS.pending, submissionId: reopened.submissionId, revisionNumber: 3 });
+    // Without the variant nothing is reopened.
+    expect(reviewDetail().reopening).toBeNull();
+    expect(reviewQueue().operations[0].submissionId).toBe(REVIEW_IDS.pendingSubmission);
+
+    // 3-G: the operation on the ramp is not in the queue; it is in progress and OCC may still report on it.
+    expect(reviewQueue().operations.map(item => item.operationId)).not.toContain(REVIEW_IDS.onRamp);
+    const onRamp = onRampIncidents();
+    expect([onRamp.operationStatus, onRamp.canReport]).toEqual(['InProgress', true]);
+    expect(onRamp.incidents.map(item => [item.description, item.reportedByKind, item.status]))
+      .toEqual([[ON_RAMP_INCIDENT, 'Agent', 'Open']]);
   });
 
   it('the coverage board and the notices pass the strict validators', async () => {
@@ -206,7 +251,20 @@ describe('visual suite screens fixtures', () => {
     expect((await answer(data, `/api/v1/occ/operations/${REVIEW_IDS.pending}/documents`)).json).toEqual(reviewDocuments());
     // Another hand-off has no answer: the isolation sends its Problem Details 404.
     expect(await answer(data, `/api/v1/occ/review/operations/${REVIEW_IDS.approved}`)).toBeNull();
+    // The operation on the ramp has no hand-off, with the API's own 404, and its live incidents answer.
+    expect(await answer(data, `/api/v1/occ/review/operations/${REVIEW_IDS.onRamp}`)).toEqual({ status: 404, json: NO_HAND_OFF });
+    expect(await answer(data, `/api/v1/occ/operations/${REVIEW_IDS.onRamp}/incidents`))
+      .toEqual({ status: 200, json: onRampIncidents() });
     expect(data.readsOf(API_PATHS.reviewQueue)).toBe(1);
+    // With `reopened`, the queue and the hand-off are revision 3 of the reopening, with its ETag and its history.
+    const reopened = createScreensApi('data', { reopened: true });
+    expect((await answer(reopened, queuePath)).json).toEqual(reviewQueue('data', STATION.stationId, { reopened: true }));
+    const reopenedDetail = await answer(reopened, `/api/v1/occ/review/operations/${REVIEW_IDS.pending}`);
+    expect(reopenedDetail).toEqual({ status: 200, json: reviewDetail(REVIEW_IDS.pending, { reopened: true }),
+      headers: { etag: reopenedDetail.json.reviewVersion } });
+    expect((await answer(reopened, `/api/v1/occ/review/operations/${REVIEW_IDS.pending}/submissions`)).json)
+      .toEqual(reviewHistory(REVIEW_IDS.pending, { reopened: true }));
+    expect((await answer(data, `/api/v1/occ/review/operations/${REVIEW_IDS.pending}`)).json.reopening).toBeNull();
     // It accepts no command: a new coverage is refused with its rules, and any other command has no answer.
     expect(data.handle({ method: () => 'POST' },
       new URL(`https://api.elevant.test/api/v1/occ/review/operations/${REVIEW_IDS.pending}/decision`))).toBeNull();

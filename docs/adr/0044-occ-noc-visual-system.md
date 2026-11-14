@@ -502,6 +502,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
 - **Revisión** (`review/CanonicalReviewRoute.jsx`, plantilla C).
   - La barra lleva el `h1` «Revisión OCC» y los filtros «Todas» (por defecto) y «Por revisar», con su cuenta. Debajo, las tres cifras («Pendientes visibles», «Entregas visibles» y «Estación») son `OccStatTile`.
   - La cola es una `OccDataTable` en el panel «Entregas»: el código de la operación en placa, la hora de envío en la zona de la estación, el estado con su glifo y su palabra y «Ver detalle» en cada fila; Enter también elige la fila. El tono de cada estado sale de `review/reviewStatusTone.js`: una entrega devuelta, y una revisión reabierta mientras espera su decisión, piden atención.
+  - Si la API corta la cola en 100 entregas, la nota «Hay más entregas fuera de esta vista.» va bajo la lista, fuera de la tabla. Así sigue a la vista cuando «Por revisar» no deja filas, porque más allá de esas 100 puede haber entregas esperando.
   - Desde 1280 px, el «Detalle de entrega» queda acoplado a la derecha; por debajo se apila bajo la cola y se trae a la vista al elegir una entrega. La barra de decisión queda fija al pie del detalle.
   - La decisión, la reapertura y los cambios de recargos se confirman en `OccDialog`, dibujado dentro del detalle.
   - Los textos de «Formularios AVIAM» pasan al archivo de mensajes, con inglés.
@@ -634,7 +635,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
 - *El puente* no se reduce a las páginas compartidas (plan, bloque U6; diseño J): ver el punto 10.
 - *`?sel=stand:`* (diseño E.2) es `stand=` (contratos 2.1).
 - *`OccStationBadge`* no pasa a ser la placa de la estación: sale de las pantallas (punto 6).
-- *Los estados fotografiados* son los que tiene la prueba visual de cada pantalla (consecuencias). Del diseño I.1 faltan la operación sin entrega y la revisión reabierta en Revisión, la pestaña «Servicios» de Notificaciones, que es de Contratos, y el diálogo de Datos maestros, Contratos listos y Reportes, que no tienen diálogos.
+- *Los estados fotografiados* son los que tiene la prueba visual de cada pantalla (consecuencias). Del diseño I.1 faltan la pestaña «Servicios» de Notificaciones, que es de Contratos, y el diálogo de Datos maestros, Contratos listos y Reportes, que no tienen diálogos.
 
 **12. Límites.**
 - Las cinco pantallas del punto 11 abren su propio observador, con dos hubs y su sondeo, mientras están abiertas.
@@ -664,4 +665,4 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
   - en `occ-ui/`: `OccDataTable`, `OccToolbar`, `OccButton`, `OccField`, `OccDialog`, `OccStatusPill` y `classes`;
   - la paridad de los mensajes de Revisión, Cobertura, Datos maestros, Tablets, Contratos listos y Reportes, y `review/reviewStatusTone.test.js`;
   - `tests/visualScreensFixtures.test.js`, que valida las respuestas sintéticas de las pantallas con los validadores estrictos del cliente compartido;
-  - en la suite visual, ocho pruebas en `tests/visual/occ/` (`review`, `coverage`, `notifications`, `chat`, `master-data`, `devices`, `contracts` y `reports`), sobre `occScreen.mjs` y `fixtures/screensApi.mjs`: los datos, el vacío, el error o la falta de permiso y los diálogos de cada pantalla, a 1920×1080 y a 1440×900, y el chat en su ancho estrecho, a 1024×768. Como el resto de la suite, corre fuera del CI.
+  - en la suite visual, ocho pruebas en `tests/visual/occ/` (`review`, `coverage`, `notifications`, `chat`, `master-data`, `devices`, `contracts` y `reports`), sobre `occScreen.mjs` y `fixtures/screensApi.mjs`: los datos, el vacío, el error o la falta de permiso y los diálogos de cada pantalla, a 1920×1080 y a 1440×900, y el chat en su ancho estrecho, a 1024×768. Revisión suma la operación que sigue en rampa sin entrega, con su panel de incidencias dentro del detalle acoplado, y la revisión reabierta. La sesión sintética es la de un administrador del OCC, que también gestiona incidencias. Como el resto de la suite, corre fuera del CI.

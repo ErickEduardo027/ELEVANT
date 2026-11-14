@@ -19,13 +19,14 @@ const at = time => `${OPERATION_DATE}T${time}:00Z`;
 const sha = digit => digit.repeat(64);
 
 /**
- * The department access of the work screens: the OCC administrator, who also reads the live incidents of an operation
- * (the review), writes in the chat of an operation (its composer) and exports the reports.
+ * The department access of the work screens: the OCC administrator, who also reads and manages the live incidents of
+ * an operation (the review, as in hueco 3-G of the cycle E2E), writes in the chat of an operation (its composer) and
+ * exports the reports. The API gives an administrator every code of the department.
  */
 export const SCREENS_ACCESS = Object.freeze({
   ...OCC_ACCESS,
-  permissions: Object.freeze([...OCC_ACCESS.permissions, 'operations.incidents.read', 'operations.chat.create',
-    'operations.reports.export']),
+  permissions: Object.freeze([...OCC_ACCESS.permissions, 'operations.incidents.read', 'operations.incidents.update',
+    'operations.chat.create', 'operations.reports.export']),
 });
 
 export const API_PATHS = Object.freeze({
@@ -43,16 +44,32 @@ export const API_PATHS = Object.freeze({
   reports: '/api/v1/occ/reports',
 });
 
-/** The ids of the review's hand-offs: the one the spec opens, and the rest of the queue. */
+/**
+ * The ids of the review: the hand-off the spec opens with its revisions (`reopenedSubmission` is the revision 3 that
+ * OCC's reopening creates in the `reopened` variant), the rest of the queue, and an operation still on the ramp, which
+ * has no hand-off yet and is not in the queue.
+ */
 export const REVIEW_IDS = Object.freeze({
   pending: uuid('7e1a2b3c', 4),
   pendingSubmission: uuid('7e2a2b3c', 4),
   earlierSubmission: uuid('7e2a2b3c', 104),
+  reopenedSubmission: uuid('7e2a2b3c', 204),
   secondPending: uuid('7e1a2b3c', 5),
   approved: uuid('7e1a2b3c', 2),
   returned: uuid('7e1a2b3c', 3),
+  onRamp: uuid('7e1a2b3c', 10),
 });
 const REVIEW_VERSION = `"${sha('7')}"`;
+const REOPENED_VERSION = `"${sha('8')}"`;
+
+/**
+ * What OCC wrote when it reopened the approval of revision 2 (3-H): the `reopening` of the detail in the `reopened`
+ * variant, whose revision 3 waits for a new decision.
+ */
+export const REOPENING = Object.freeze({
+  fromRevisionNumber: 2, reason: 'La aerolínea pidió revisar el recargo nocturno del GPU.', reopenedAt: at('16:40'),
+  reopenedBy: 'Coordinación de prueba',
+});
 
 // The services of the hand-off the spec opens, as the detail and the close name them.
 const SERVICES = Object.freeze({
@@ -71,13 +88,15 @@ function queueRow({ operationId, submissionId, revisionNumber = 1, status, code,
 
 /**
  * GET occ/review/queue?stationId=: two hand-offs waiting, one approved and one returned to the ramp (sent after the
- * local midnight of its operation date), or none in the `empty` scenario.
+ * local midnight of its operation date), or none in the `empty` scenario. With `reopened`, the first one waiting is
+ * the revision 3 that OCC's reopening created.
  */
-export function reviewQueue(scenario = 'data', stationId = STATION.stationId) {
+export function reviewQueue(scenario = 'data', stationId = STATION.stationId, { reopened = false } = {}) {
   const operations = scenario === 'empty' ? [] : [
-    queueRow({ operationId: REVIEW_IDS.pending, submissionId: REVIEW_IDS.pendingSubmission, revisionNumber: 2,
-      status: 'PendingReview', code: 'PUJ-20261113-004', agentName: 'Agente de prueba Uno', submittedAt: at('15:42'),
-      serviceCount: 3, incidentCount: 1 }),
+    queueRow({ operationId: REVIEW_IDS.pending,
+      submissionId: reopened ? REVIEW_IDS.reopenedSubmission : REVIEW_IDS.pendingSubmission,
+      revisionNumber: reopened ? 3 : 2, status: 'PendingReview', code: 'PUJ-20261113-004',
+      agentName: 'Agente de prueba Uno', submittedAt: at('15:42'), serviceCount: 3, incidentCount: 1 }),
     queueRow({ operationId: REVIEW_IDS.secondPending, submissionId: uuid('7e2a2b3c', 5), status: 'PendingReview',
       code: 'PUJ-20261113-005', agentName: 'Agente de prueba Dos', submittedAt: at('16:10'), serviceCount: 2,
       incidentCount: 0 }),
@@ -100,9 +119,12 @@ const MILESTONES = Object.freeze([
   ['WALKAROUND_END', '14:43'], ['FIRST_CUSTOMS', '14:46'], ['UNLOAD_SHEET', '14:52'], ['LOAD_SHEET', '15:21'],
 ].map(([code, time]) => Object.freeze({ code, actualAt: at(time) })));
 
-/** GET occ/review/operations/{id} of the hand-off the spec opens (its ETag is `reviewVersion`). */
-export function reviewDetail(operationId = REVIEW_IDS.pending) {
-  return {
+/**
+ * GET occ/review/operations/{id} of the hand-off the spec opens (its ETag is `reviewVersion`). With `reopened` it is
+ * the revision 3 that OCC's reopening created (3-H): the same evidence, on its signed Service Order, with REOPENING.
+ */
+export function reviewDetail(operationId = REVIEW_IDS.pending, { reopened = false } = {}) {
+  const detail = {
     operationId, submissionId: REVIEW_IDS.pendingSubmission, revisionNumber: 2, status: 'PendingReview',
     operationCode: 'PUJ-20261113-004', operationDate: OPERATION_DATE, stationId: STATION.stationId,
     stationCode: STATION.stationCode, ianaTimeZone: STATION_TIME_ZONE, airlineName: 'Aerolínea de prueba',
@@ -151,19 +173,31 @@ export function reviewDetail(operationId = REVIEW_IDS.pending) {
       billingExclusions: [],
     },
   };
+  if (!reopened) return detail;
+  // A reopening copies the approved revision as a new one, sent when it was (the API keeps its `submittedAt`).
+  return { ...detail, submissionId: REVIEW_IDS.reopenedSubmission, revisionNumber: 3, reviewVersion: REOPENED_VERSION,
+    reopening: { ...REOPENING } };
 }
 
-/** GET occ/review/operations/{id}/submissions: the revision on screen and the earlier one, returned to the ramp. */
-export function reviewHistory(operationId = REVIEW_IDS.pending) {
-  return {
-    operationId, hasMore: false,
-    submissions: [
-      { submissionId: REVIEW_IDS.pendingSubmission, revisionNumber: 2, status: 'PendingReview', submittedAt: at('15:42'),
-        outcome: null, decidedAt: null },
-      { submissionId: REVIEW_IDS.earlierSubmission, revisionNumber: 1, status: 'Returned', submittedAt: at('15:30'),
-        outcome: 'Returned', decidedAt: at('15:35') },
-    ],
-  };
+/**
+ * GET occ/review/operations/{id}/submissions: the revision on screen and the earlier one, returned to the ramp. With
+ * `reopened`, the revision 3 on screen, then the approval it reopened and the first one, returned.
+ */
+export function reviewHistory(operationId = REVIEW_IDS.pending, { reopened = false } = {}) {
+  const returned = { submissionId: REVIEW_IDS.earlierSubmission, revisionNumber: 1, status: 'Returned',
+    submittedAt: at('15:30'), outcome: 'Returned', decidedAt: at('15:35') };
+  const submissions = reopened ? [
+    { submissionId: REVIEW_IDS.reopenedSubmission, revisionNumber: 3, status: 'PendingReview', submittedAt: at('15:42'),
+      outcome: null, decidedAt: null },
+    { submissionId: REVIEW_IDS.pendingSubmission, revisionNumber: 2, status: 'Approved', submittedAt: at('15:42'),
+      outcome: 'Approved', decidedAt: at('15:58') },
+    returned,
+  ] : [
+    { submissionId: REVIEW_IDS.pendingSubmission, revisionNumber: 2, status: 'PendingReview', submittedAt: at('15:42'),
+      outcome: null, decidedAt: null },
+    returned,
+  ];
+  return { operationId, hasMore: false, submissions };
 }
 
 function reviewForm(kind, { number, title, formCode, requiredRoles, signatures, staleRoles }) {
@@ -203,11 +237,14 @@ export function reviewDocuments(operationId = REVIEW_IDS.pending) {
   };
 }
 
-/** GET occ/operations/{id}/incidents: the live incident of the hand-off, still open. */
+/**
+ * GET occ/operations/{id}/incidents: the live incident of the hand-off, still open. OCC may still report one: the API
+ * stops it only once the operation is approved or cancelled.
+ */
 export function reviewIncidents(operationId = REVIEW_IDS.pending) {
   return {
     operationId, operationCode: 'PUJ-20261113-004', operationStatus: 'PendingReview', ianaTimeZone: STATION_TIME_ZONE,
-    canReport: false,
+    canReport: true,
     incidents: [
       { id: uuid('1c1d2e3f', 1), type: 'Operational', severity: 'Low', status: 'Open',
         description: 'La aeronave llegó 12 minutos tarde por rotación.', occurredAt: at('14:22'), reportedAt: at('14:24'),
@@ -217,6 +254,35 @@ export function reviewIncidents(operationId = REVIEW_IDS.pending) {
     ],
   };
 }
+
+/** What the agent reported from the tablet on the operation still on the ramp. */
+export const ON_RAMP_INCIDENT = 'Derrame de combustible bajo el ala izquierda; los bomberos están en camino.';
+
+/**
+ * GET occ/operations/{id}/incidents of the operation still on the ramp (3-G): in progress, open to OCC's reports, with
+ * the agent's report from the tablet.
+ */
+export function onRampIncidents(operationId = REVIEW_IDS.onRamp) {
+  return {
+    operationId, operationCode: 'PUJ-20261113-010', operationStatus: 'InProgress', ianaTimeZone: STATION_TIME_ZONE,
+    canReport: true,
+    incidents: [
+      { id: uuid('1c1d2e3f', 2), type: 'Safety', severity: 'High', status: 'Open', description: ON_RAMP_INCIDENT,
+        occurredAt: at('16:18'), reportedAt: at('16:19'), delayCode: null, reportedBy: 'Agente de prueba Tres',
+        reportedByKind: 'Agent', resolutionNote: null, resolvedAt: null, resolvedBy: null, version: 'AAAAAAAAB9I=',
+        allowedStatuses: ['InReview', 'Resolved'], history: [] },
+    ],
+  };
+}
+
+/**
+ * The Problem Details of the review detail of an operation without a hand-off yet (3-G), with the API's code and
+ * title: the review explains it with its own words, never with this title.
+ */
+export const NO_HAND_OFF = Object.freeze({
+  type: 'https://tools.ietf.org/html/rfc9110#section-15.5.5',
+  title: 'La operación ya no existe o no está en su alcance.', status: 404, code: 'not_found',
+});
 
 /** The Problem Details of a server that failed: the review explains it with its own words, never with this title. */
 export const SERVER_ERROR = Object.freeze({
@@ -720,20 +786,25 @@ const REVIEW_HISTORY = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})\/su
 const OPERATION_DOCUMENTS = /^\/api\/v1\/occ\/operations\/([0-9a-f-]{36})\/documents$/;
 const OPERATION_INCIDENTS = /^\/api\/v1\/occ\/operations\/([0-9a-f-]{36})\/incidents$/;
 
-// The review's reads: the queue in its scenario, and the hand-off the spec opens with its history, forms and incidents.
-// Any other operation has no hand-off (404).
-function reviewAnswer(url, scenario) {
+// The review's reads: the queue in its scenario, the hand-off the spec opens with its history, forms and incidents
+// (as revision 3 of a reopening with `reopened`), and the operation still on the ramp: its detail is the API's 404 of
+// an operation without a hand-off, and its live incidents answer. Any other operation has no answer (the isolation's
+// 404).
+function reviewAnswer(url, scenario, { reopened = false } = {}) {
   if (url.pathname === API_PATHS.reviewQueue) {
     if (scenario === 'error') return { status: 500, json: SERVER_ERROR };
     if (scenario === 'forbidden') return { status: 403, json: FORBIDDEN };
-    return { status: 200, json: reviewQueue(scenario, url.searchParams.get('stationId') ?? undefined) };
+    return { status: 200, json: reviewQueue(scenario, url.searchParams.get('stationId') ?? undefined, { reopened }) };
   }
-  const known = path => path.exec(url.pathname)?.[1] === REVIEW_IDS.pending;
+  const operationOf = path => path.exec(url.pathname)?.[1];
+  if (operationOf(REVIEW_OPERATION) === REVIEW_IDS.onRamp) return { status: 404, json: NO_HAND_OFF };
+  if (operationOf(OPERATION_INCIDENTS) === REVIEW_IDS.onRamp) return { status: 200, json: onRampIncidents() };
+  const known = path => operationOf(path) === REVIEW_IDS.pending;
   if (known(REVIEW_OPERATION)) {
-    const detail = reviewDetail();
+    const detail = reviewDetail(REVIEW_IDS.pending, { reopened });
     return { status: 200, json: detail, headers: { etag: detail.reviewVersion } };
   }
-  if (known(REVIEW_HISTORY)) return { status: 200, json: reviewHistory() };
+  if (known(REVIEW_HISTORY)) return { status: 200, json: reviewHistory(REVIEW_IDS.pending, { reopened }) };
   if (known(OPERATION_DOCUMENTS)) return { status: 200, json: reviewDocuments() };
   if (known(OPERATION_INCIDENTS)) return { status: 200, json: reviewIncidents() };
   return null;
@@ -760,12 +831,13 @@ function chatAnswer(url, scenario) {
  * Reportes in that scenario; every other path is occApi.mjs's, then the isolation's Problem Details 404. The notices are
  * the frame's empty list, or with `{ notices: true }` the reads of Notificaciones in the scenario (the page and the frame
  * read the same list). With `{ readOnly: true }` Datos maestros and Tablets answer an account that may change nothing.
- * The list of reports is the API's in every scenario; the scenario applies to the page of a report, which echoes the
- * period asked. It accepts no command: a new coverage is refused with COVERAGE_REFUSAL, and any other command (a
- * message, a read receipt, a presence lease, a change of the layout, a tablet's release) gets the 404, and so does an
- * export. `reads` counts the answers by path.
+ * With `{ reopened: true }` the review's hand-off is the revision 3 of a reopening (3-H). The list of reports is the
+ * API's in every scenario; the scenario applies to the page of a report, which echoes the period asked. It accepts no
+ * command: a new coverage is refused with COVERAGE_REFUSAL, and any other command (a message, a read receipt, a
+ * presence lease, a change of the layout, a tablet's release) gets the 404, and so does an export. `reads` counts the
+ * answers by path.
  */
-export function createScreensApi(scenario = 'data', { notices = false, readOnly = false } = {}) {
+export function createScreensApi(scenario = 'data', { notices = false, readOnly = false, reopened = false } = {}) {
   if (!SCREEN_SCENARIOS.includes(scenario)) throw new RangeError(`Unknown screens scenario: ${scenario}`);
   const base = createOccApi();
   const api = { scenario, reads: new Map(), commands: [] };
@@ -808,7 +880,7 @@ export function createScreensApi(scenario = 'data', { notices = false, readOnly 
     }
     const chat = chatAnswer(url, scenario);
     if (chat) return served(url, chat);
-    const answer = reviewAnswer(url, scenario);
+    const answer = reviewAnswer(url, scenario, { reopened });
     return answer ? served(url, answer) : base.handle(request, url);
   };
   return api;

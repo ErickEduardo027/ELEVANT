@@ -1,4 +1,6 @@
-import { API_PATHS, REVIEW_IDS, createScreensApi } from './fixtures/screensApi.mjs';
+import {
+  API_PATHS, NO_HAND_OFF, ON_RAMP_INCIDENT, REOPENING, REVIEW_IDS, createScreensApi,
+} from './fixtures/screensApi.mjs';
 import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
@@ -114,6 +116,72 @@ for (const viewport of SCREEN_VIEWPORTS) {
       await page.keyboard.press('Escape');
       await expect(returning).toHaveCount(0);
       // Nothing was decided: no command reached the OCC's API (the frame's own presence and hubs are not the review's).
+      const commands = isolation.requests.filter(entry => entry.kind === 'api' && entry.method !== 'GET'
+        && new URL(entry.url).pathname.startsWith('/api/v1/occ/'));
+      expect(commands).toEqual([]);
+    });
+
+    test('operation still on the ramp, without a hand-off', async ({ page, isolation }, testInfo) => {
+      const api = createScreensApi('data');
+      const main = await openOccScreen(page, isolation, { path: `${PAGE}?operationId=${REVIEW_IDS.onRamp}`, api, viewport });
+      const queue = main.getByRole('region', { name: 'Entregas', exact: true });
+      const detail = main.getByRole('region', { name: 'Detalle de entrega' });
+      // 3-G, as the cycle E2E opens it from an alert: no hand-off yet (the API's 404), and the live incidents of the
+      // operation, which OCC manages while the agent works. The panel is still the bridge's, inside the docked detail.
+      await expect(detail.getByText('La operación sigue en curso; aún no hay entrega.')).toBeVisible();
+      await expect(detail.getByText('Puede gestionar sus incidencias mientras el agente trabaja.')).toBeVisible();
+      const incidents = detail.getByRole('region', { name: 'Incidencias de la operación' });
+      const spill = incidents.getByRole('listitem').filter({ hasText: ON_RAMP_INCIDENT });
+      await expect(spill).toContainText('Seguridad · Alta');
+      await expect(spill.getByRole('button', { name: 'Pasar a revisión' })).toBeVisible();
+      await expect(incidents.getByRole('button', { name: 'Reportar incidencia' })).toBeVisible();
+      // Nothing to decide on an operation without a hand-off, and the server's title never reaches the screen.
+      await expect(detail.getByRole('button', { name: 'Aprobar', exact: true })).toHaveCount(0);
+      await expect(main.getByText(NO_HAND_OFF.title)).toHaveCount(0);
+      // Docked at the right of the queue, which keeps its rows with none chosen: the operation is not in it.
+      const table = queue.getByRole('table', { name: 'Entregas', exact: true });
+      await expect(table.getByRole('row')).toHaveCount(5);
+      await expect(table.locator('tr[aria-selected="true"]')).toHaveCount(0);
+      const queueBox = await queue.boundingBox();
+      const detailBox = await detail.boundingBox();
+      expect(detailBox.x).toBeGreaterThan(queueBox.x + queueBox.width);
+      await expect(incidents.getByRole('button', { name: 'Reportar incidencia' })).toBeInViewport();
+      await shoot(page, testInfo, `revision-sin-entrega-${viewport.width}`);
+    });
+
+    test('reopened revision', async ({ page, isolation }, testInfo) => {
+      const api = createScreensApi('data', { reopened: true });
+      const main = await openOccScreen(page, isolation, { path: `${PAGE}?operationId=${REVIEW_IDS.pending}`, api, viewport });
+      const detail = main.getByRole('region', { name: 'Detalle de entrega' });
+      await expect(detail.getByRole('region', { name: 'Cierre de la operación' })).toBeVisible();
+      // 3-H: OCC reopened the approval of revision 2; revision 3 waits for its decision and asks for attention.
+      const reopening = detail.getByRole('note').filter({ hasText: 'Revisión reabierta por OCC:' });
+      await expect(reopening).toContainText(`Revisión reabierta por OCC: ${REOPENING.reason}`);
+      await expect(reopening).toContainText(/Coordinación de prueba · .+ · desde la revisión 2$/);
+      await expect(reopening).toBeInViewport();
+      const status = detail.locator('dl > div').filter({ has: page.getByText('Estado', { exact: true }) })
+        .locator('[data-occ-status]');
+      await expect(status).toHaveAttribute('data-tone', 'attention');
+      await expect(status).toHaveText('Pendiente');
+      // The decision bar: OCC corrects and approves it here, because a reopened revision never goes back to the ramp.
+      const bar = detail.locator('[data-review-decision]');
+      await expect(bar.getByText('Una revisión reabierta no vuelve a rampa: corríjala aquí y apruébela.')).toBeVisible();
+      const approve = bar.getByRole('button', { name: 'Aprobar', exact: true });
+      await expect(approve).toBeEnabled();
+      await expect(approve).toBeInViewport();
+      await expect(detail.getByRole('button', { name: 'Devolver con correcciones' })).toHaveCount(0);
+      // The queue's row of the hand-off is the one chosen.
+      const row = main.getByRole('table', { name: 'Entregas', exact: true }).getByRole('row').filter({ hasText: PENDING_CODE });
+      await expect(row).toHaveAttribute('aria-selected', 'true');
+      await shoot(page, testInfo, `revision-reabierta-${viewport.width}`);
+
+      // Further down, the history: the current revision 3 comes after the approval it reopened.
+      const history = detail.getByRole('region', { name: 'Historial de entregas' });
+      await history.scrollIntoViewIfNeeded();
+      await expect(history.getByRole('button', { name: 'Revisión 3 · Pendiente (actual)' })).toBeDisabled();
+      await expect(history.getByRole('button', { name: 'Revisión 2 · Aprobada' })).toBeEnabled();
+      await expect(approve).toBeInViewport();
+      // Nothing was decided.
       const commands = isolation.requests.filter(entry => entry.kind === 'api' && entry.method !== 'GET'
         && new URL(entry.url).pathname.startsWith('/api/v1/occ/'));
       expect(commands).toEqual([]);

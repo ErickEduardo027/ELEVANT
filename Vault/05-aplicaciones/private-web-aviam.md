@@ -1013,10 +1013,11 @@ escriben.
 - **Revisión**
   ([ruta](../../frontend/private-web/src/features/review/CanonicalReviewRoute.jsx)).
   La barra filtra «Todas» o «Por revisar», con su cuenta; debajo van las tres
-  cifras y la cola «Entregas», una tabla con «Ver detalle» en cada fila. Desde
-  1280 px el «Detalle de entrega» queda a la derecha, con la barra de decisión
-  fija al pie; por debajo se apila bajo la cola. La decisión, la reapertura y
-  los cambios de recargos se confirman en un
+  cifras y la cola «Entregas», una tabla con «Ver detalle» en cada fila. Si la
+  API corta la cola en 100 entregas, una nota bajo la lista lo dice, también
+  cuando el filtro no deja filas. Desde 1280 px el «Detalle de entrega» queda a
+  la derecha, con la barra de decisión fija al pie; por debajo se apila bajo la
+  cola. La decisión, la reapertura y los cambios de recargos se confirman en un
   [diálogo](../../frontend/private-web/src/features/occ-ui/OccDialog.jsx)
   dentro del detalle. «Cierre de la operación» muestra la tira completa de los
   hitos del Reporte de Vuelo, en la hora de la estación, con los datos que el
