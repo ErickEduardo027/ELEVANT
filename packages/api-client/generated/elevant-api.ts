@@ -3993,6 +3993,83 @@ export interface NonFiscalPaymentLookupResponse {
   payment?: NonFiscalPaymentResponse | null;
 }
 
+export interface OccWeatherSourceResponse {
+  name: string;
+  homeUrl: string;
+}
+
+export interface OccCloudLayerResponse {
+  cover: string;
+  /** @nullable */
+  baseFeet?: number | null;
+}
+
+export interface OccMetarResponse {
+  raw: string;
+  observedAt: string;
+  /** @nullable */
+  flightCategory?: string | null;
+  /** @nullable */
+  windDirectionDegrees?: number | null;
+  windVariable: boolean;
+  /** @nullable */
+  windSpeedKnots?: number | null;
+  /** @nullable */
+  windGustKnots?: number | null;
+  /** @nullable */
+  visibilityStatuteMiles?: number | null;
+  /** @nullable */
+  temperatureCelsius?: number | null;
+  /** @nullable */
+  dewpointCelsius?: number | null;
+  /** @nullable */
+  altimeterHectopascals?: number | null;
+  /** @nullable */
+  weather?: string | null;
+  clouds: OccCloudLayerResponse[];
+}
+
+export interface OccTafPeriodResponse {
+  from: string;
+  to: string;
+  /** @nullable */
+  change?: string | null;
+  /** @nullable */
+  probabilityPercent?: number | null;
+  /** @nullable */
+  windDirectionDegrees?: number | null;
+  windVariable: boolean;
+  /** @nullable */
+  windSpeedKnots?: number | null;
+  /** @nullable */
+  windGustKnots?: number | null;
+  /** @nullable */
+  visibilityStatuteMiles?: number | null;
+  /** @nullable */
+  weather?: string | null;
+  clouds: OccCloudLayerResponse[];
+}
+
+export interface OccTafResponse {
+  raw: string;
+  issuedAt: string;
+  validFrom: string;
+  validTo: string;
+  periods: OccTafPeriodResponse[];
+}
+
+export interface OccAerodromeWeatherResponse {
+  stationId: string;
+  icaoCode: string;
+  status: string;
+  serverTime: string;
+  /** @nullable */
+  retrievedAt?: string | null;
+  source: OccWeatherSourceResponse;
+  metar?: OccMetarResponse | null;
+  taf?: OccTafResponse | null;
+}
+
 export interface OccAgentOptionResponse {
   id: string;
   displayName: string;
@@ -7202,6 +7279,10 @@ stationId: string;
 };
 
 export type GetOccAircraftTrafficParams = {
+stationId: string;
+};
+
+export type GetOccAerodromeWeatherParams = {
 stationId: string;
 };
 
@@ -19276,6 +19357,46 @@ const res = await fetch(getCreateOccCharterAirlineUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccCharterAirlineResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAerodromeWeatherUrl = (params: GetOccAerodromeWeatherParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/weather?${stringifiedParams}` : `/api/v1/occ/weather`
+}
+
+/**
+ * @summary The METAR (decoded basics and raw text) and the TAF (raw text and periods) of the station's airport, which the API
+keeps a few minutes. The state of the weather (`Live`, `Stale`, `Unavailable`, `Disabled`)
+and the credit of the weather service come in the 200; a station outside the reader's scope is not found.
+ */
+export const getOccAerodromeWeather = async (params: GetOccAerodromeWeatherParams, options?: RequestInit): Promise<OccAerodromeWeatherResponse> => {
+
+  const res = await fetch(getGetOccAerodromeWeatherUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAerodromeWeatherResponse = body ? JSON.parse(body) : {}
   return data
 }
 

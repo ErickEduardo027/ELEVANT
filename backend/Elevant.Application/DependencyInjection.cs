@@ -98,6 +98,13 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Operations.AirPicture.GetOccAirPictureHandler>();
         services.AddScoped<Elevant.Application.Operations.AirPicture.GetOccAircraftTrackHandler>();
         services.AddScoped<Elevant.Application.Operations.MapFlights.GetOccMapFlightsHandler>();
+        // ADR-0043 (contracts 1.4): without Infrastructure (tools, tests) there is no AviationWeather section: no weather
+        // service is ever called.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IAerodromeWeatherSource,
+            Elevant.Application.Abstractions.Operations.DisabledAerodromeWeatherSource>(services);
+        // ADR-0043 (contracts 1.4): the OCC's weather read (occ/weather), for the readers of the map.
+        services.AddScoped<Elevant.Application.Operations.Weather.GetOccAerodromeWeatherHandler>();
         return services;
     }
 }
