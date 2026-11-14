@@ -182,7 +182,8 @@ test.describe('the OCC console on the map engine', () => {
 
       await page.getByRole('button', { name: 'Ver y seguir' }).click();
       await expect.poll(() => new URL(page.url()).searchParams.get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival);
-      expect(new URL(page.url()).searchParams.get('follow')).toBe('1');
+      // follow=1 once the URL has the flight and its view: a view the page asks for ends follow mode (PR M6).
+      await expect.poll(() => new URL(page.url()).searchParams.get('follow')).toBe('1');
       await expect(map).toHaveAttribute('data-occ-view', 'approach');
       await expect(page.getByTestId('occ-console-provenance')).toContainText('Incluye un vuelo demo.');
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
