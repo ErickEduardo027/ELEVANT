@@ -141,3 +141,35 @@
     - 2 * var(--occ-map-gap)));
   transform: translateX(-50%);
 }
+
+/* The air traffic's state (src/features/maps/ui/MapSourceStatus.jsx): its chip and, apart, the notice of the AVIAM
+   flights, one under the other at the top centre of the visible area, below the base-map notice when both show; and
+   the credit of the aircraft data at the bottom left, above the row of the dock, so neither covers the other on a
+   narrow map. */
+.occ-map .occ-map-source-chips {
+  position: absolute;
+  z-index: 11;
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap));
+  left: calc(var(--occ-map-inset-left, 0px)
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
+  display: flex;
+  width: max-content;
+  max-width: min(36rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
+    - 2 * var(--occ-map-gap)));
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.occ-map .occ-map-chip ~ .occ-map-source-status .occ-map-source-chips {
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem);
+}
+
+.occ-map .occ-map-credit {
+  position: absolute;
+  z-index: 10;
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 52px);
+  max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 2 * var(--occ-map-gap));
+}
