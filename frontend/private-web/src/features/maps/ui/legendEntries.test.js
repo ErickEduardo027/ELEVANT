@@ -93,14 +93,16 @@ describe('legend entries', () => {
     expect(legendEntries({ chips: ['A', 'B'] })).toEqual({ ...NOTHING, chips: true });
     expect(legendEntries({ chips: [] }).chips).toBe(false);
     expect(legendEntries({ chips: 'A' }).chips).toBe(false);
-    expect(STAND_MARKS).toEqual(['chipArriving', 'combined', 'narrowbody', 'sameAgent', 'ghost', 'pending']);
+    expect(STAND_MARKS).toEqual(['chipArriving', 'combined', 'narrowbody', 'sameAgent', 'sameAgentHover', 'ghost', 'pending']);
     // The arrow over a chip whose terminal has a flight arriving comes first: with the chips no state or signal is
     // listed, so it follows the chip's entry, before the boxes of a stand being placed.
     expect(legendEntries({ chips: ['A', 'B'], marks: ['chipArriving'] })).toEqual({ ...NOTHING, chips: true, marks: ['chipArriving'] });
     expect(legendEntries({ chips: ['A'], marks: ['pending', 'ghost', 'chipArriving'] }).marks).toEqual(['chipArriving', 'ghost', 'pending']);
     expect(legendEntries({ marks: ['narrowbody', 'combined', 'narrowbody'] }).marks).toEqual(['combined', 'narrowbody']);
-    // The same-agent ring of a selection and the boxes of a stand being placed, in the order of the legend.
+    // The same-agent ring of a selection and the boxes of a stand being placed, in the order of the legend; the ring
+    // of the stand under the pointer takes the selection's place.
     expect(legendEntries({ marks: ['pending', 'sameAgent', 'ghost'] }).marks).toEqual(['sameAgent', 'ghost', 'pending']);
+    expect(legendEntries({ marks: ['ghost', 'sameAgentHover', 'combined'] }).marks).toEqual(['combined', 'sameAgentHover', 'ghost']);
     expect(legendEntries({ marks: ['clusters', 'hatch'] }).marks).toEqual([]);
     expect(legendEntries({ marks: null }).marks).toEqual([]);
   });

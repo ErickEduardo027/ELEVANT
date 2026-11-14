@@ -98,11 +98,18 @@ function ChipSwatch() {
 // The marks of the stands: the arrow over the chip of a terminal with a flight arriving at one of its stands, pointing
 // down at it as the map draws it (style/mapImages.js: glyph-arriving, in --occ-text), the dashed link from a cancelled
 // stand to the one that cancels it, the dotted code-C box inside a larger stand limited to narrow-body aircraft, the
-// thin ring around the stands covered by the same agent as the selected one (stands/standLayers.js: the same-agent
-// casing), and while a stand is placed, its box at the pointer (dashed cyan) and the pending location (solid cyan over
+// thin ring around the stands covered by the same agent as the selected one or the one under the pointer
+// (stands/standLayers.js: the same-agent casing, one ring drawn the same way for both; the entry says which stand it
+// follows), and while a stand is placed, its box at the pointer (dashed cyan) and the pending location (solid cyan over
 // a wash, with its centre).
 const ACCENT = tokenColour('--occ-accent');
 const [ARRIVING_SHAFT, ARRIVING_HEAD] = MAP_IMAGE_SHAPES['glyph-arriving'].ops;
+const SAME_AGENT_RING = (
+  <>
+    <rect x="5.5" y="5.5" width="9" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    <rect x="2.5" y="2.5" width="15" height="15" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1 }} />
+  </>
+);
 const MARK_SWATCHES = Object.freeze({
   chipArriving: (
     <>
@@ -126,12 +133,8 @@ const MARK_SWATCHES = Object.freeze({
       <rect x="6.5" y="5.5" width="7" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1, strokeDasharray: '1 2' }} />
     </>
   ),
-  sameAgent: (
-    <>
-      <rect x="5.5" y="5.5" width="9" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
-      <rect x="2.5" y="2.5" width="15" height="15" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1 }} />
-    </>
-  ),
+  sameAgent: SAME_AGENT_RING,
+  sameAgentHover: SAME_AGENT_RING,
   ghost: (
     <rect x="3" y="3" width="14" height="14" style={{ fill: 'none', stroke: ACCENT, strokeWidth: 2, strokeDasharray: '4 3' }} />
   ),
@@ -144,7 +147,7 @@ const MARK_SWATCHES = Object.freeze({
 });
 const MARK_MESSAGES = Object.freeze({
   chipArriving: 'legend.chipArriving', combined: 'legend.combined', narrowbody: 'legend.narrowbody',
-  sameAgent: 'legend.sameAgent', ghost: 'legend.ghost', pending: 'legend.pending',
+  sameAgent: 'legend.sameAgent', sameAgentHover: 'legend.sameAgentHover', ghost: 'legend.ghost', pending: 'legend.pending',
 });
 const MARK_HINTS = Object.freeze({ ghost: 'legend.ghostHint' });
 
@@ -231,13 +234,14 @@ function WideEntry({ swatch, name, hint }) {
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
  * the flights drawn there, the terminal chips (below the stand polygons), the states of the stands whose polygon is
  * drawn there with the signal the map draws on each and the marks drawn there (the arrow over a chip whose terminal has
- * a flight arriving, the link of a cancelled stand, the narrow-body box, the ring of the stands the selected one's agent
- * covers, the boxes of a stand being placed), «No oficial» for a stand at its reference location, and the airfield
- * items drawn there (runway, taxiway, holding point, apron, terminal), set apart below the rest; or the `stands` given
- * (inside `bounds` when given). The stand states use the words of the vocabulary (STAND_STATES) and the signals theirs
- * (SIGNALS). The short entries (the states, the signals and the airfield items) sit two to a row, so the open legend
- * stays low over the map. It folds through its own button, whose name stays «Leyenda» while `aria-expanded` tells
- * whether it is open, and it renders nothing when there is nothing to explain.
+ * a flight arriving, the link of a cancelled stand, the narrow-body box, the ring of the stands covered by the agent of
+ * the selected stand or of the one under the pointer, the boxes of a stand being placed), «No oficial» for a stand at
+ * its reference location, and the airfield items drawn there (runway, taxiway, holding point, apron, terminal), set
+ * apart below the rest; or the `stands` given (inside `bounds` when given). The stand states use the words of the
+ * vocabulary (STAND_STATES) and the signals theirs (SIGNALS). The short entries (the states, the signals and the
+ * airfield items) sit two to a row, so the open legend stays low over the map. It folds through its own button, whose
+ * name stays «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to
+ * explain.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const { standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen } = useOccMap();

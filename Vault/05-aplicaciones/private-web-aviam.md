@@ -1134,9 +1134,11 @@ cambia.
   señales, la combinada que la anula, el límite de fuselaje estrecho y de dónde
   sale su ubicación
   ([`StandDetailFacts.jsx`](../../frontend/private-web/src/features/maps/ui/StandDetailFacts.jsx));
-  Planificación lo muestra en el panel junto a su mapa. La cámara solo se mueve
-  si la posición elegida queda fuera de la vista. Una `Esc` cierra el cajón y la
-  siguiente limpia la selección.
+  Planificación lo muestra en el panel junto a su mapa. El cajón dice el estado
+  una sola vez, con las palabras del mapa: su cabecera ya no muestra la del
+  tablero, que podía contradecirla («Planificada» frente a «Llegando»). La
+  cámara solo se mueve si la posición elegida queda fuera de la vista. Una `Esc`
+  cierra el cajón y la siguiente limpia la selección.
 - **Combinadas.** La posición que una combinada anula se dibuja «Inhabilitada»,
   con «Anulada por A9» y un enlace a trazos hasta la que la anula. «Solo
   fuselaje estrecho» suma una caja punteada de letra C dentro de una posición
@@ -1159,7 +1161,9 @@ cambia.
   por posición: la más fuerte, la única que el mapa dibuja en ella; la pastilla
   de las terminales y, mientras se ve una con un vuelo que llega, su flecha;
   «No oficial»; el enlace de las combinadas; la caja de fuselaje estrecho; el
-  anillo del mismo agente; y, al ubicar, la caja y la ubicación sin guardar.
+  anillo del mismo agente, mientras se dibuja, con la posición a la que sigue
+  (la elegida o la que está bajo el puntero); y, al ubicar, la caja y la
+  ubicación sin guardar.
 - **Laboratorio y suite visual.** La escena `ramp-states`, con los siete
   estados, reemplaza a `ramp-points`, y llegan `ramp-combined-selected` y
   `ramp-placing-ghost`. La suite visual suma los

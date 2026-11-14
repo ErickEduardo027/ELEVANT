@@ -9,6 +9,7 @@ import { AIRCRAFT_SILHOUETTE_PATH } from '../aircraftSilhouette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { boundsCenter, presetTargets } from '../core/cameraPresets';
 import OccMap from '../core/OccMap';
+import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import { standPaint } from '../stands/standLayers';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
@@ -458,6 +459,30 @@ describe('MapLegend', () => {
     );
     act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
     expect(legendItems()).toContain('Same agent as the selected stand');
+  });
+
+  it('names the same-agent ring after the stand it follows, with the one swatch the map draws for both', () => {
+    // The marks as OccMap shares them: the ring of the selected stand's agent, or of the agent of the one under the
+    // pointer (OccMap.test.jsx checks that they follow what the map draws).
+    const onScreen = marks => ({ ...OCC_MAP_IDLE, standMarksOnScreen: marks });
+    const ringOf = mark => [...screen.getByTestId('map-legend').querySelectorAll(`svg[data-swatch="${mark}"] rect`)]
+      .map(rect => [rect.getAttribute('x'), rect.style.stroke, rect.style.strokeWidth]);
+    const { rerender } = render(<OccMapContext.Provider value={onScreen(['sameAgent'])}><MapLegend /></OccMapContext.Provider>);
+    expect(legendItems()).toEqual(['Mismo agente que la posición elegida']);
+    const selectedRing = ringOf('sameAgent');
+    expect(selectedRing).toEqual([['5.5', 'var(--occ-line-strong)', '1'], ['2.5', 'var(--occ-muted)', '1']]);
+
+    rerender(<OccMapContext.Provider value={onScreen(['sameAgentHover'])}><MapLegend /></OccMapContext.Provider>);
+    expect(legendItems()).toEqual(['Mismo agente que la posición bajo el puntero']);
+    expect(ringOf('sameAgentHover')).toEqual(selectedRing);
+    // No ring drawn, nothing to explain.
+    rerender(<OccMapContext.Provider value={onScreen([])}><MapLegend /></OccMapContext.Provider>);
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMapContext.Provider value={onScreen(['sameAgentHover'])}><MapLegend /></OccMapContext.Provider></LanguageScope>);
+    expect(legendItems()).toEqual(['Same agent as the stand under the pointer']);
   });
 
   it('renders nothing when no stand is on screen', async () => {

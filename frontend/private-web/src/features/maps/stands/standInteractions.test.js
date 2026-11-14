@@ -8,7 +8,8 @@ import { layoutStandReferences } from '../airport/layoutIndex';
 import { mapMessages } from '../mapMessages';
 import { SCENARIO_AGENTS, createRampScenario } from '../testing/mapFixtures';
 import {
-  SAFE_AREA_MARGIN, STAND_FLAG_KEYS, featureStatePlan, findStandByCode, isOutsideSafeArea, standFlags, standTooltip,
+  SAFE_AREA_MARGIN, STAND_FLAG_KEYS, featureStatePlan, findStandByCode, isOutsideSafeArea, sameAgentMark, standFlags,
+  standTooltip,
 } from './standInteractions';
 import { attachStandGeometry, withStandDisplay } from './standModel';
 
@@ -74,6 +75,28 @@ describe('stand interactions', () => {
     expect(standFlags({ hover: 'Z9', stands }).sameAgent.size).toBe(0);
     // Ana covers A9, A10, B21 and C7, the stand OCC placed away from the layout.
     expect(sorted(standFlags({ selected: 'A10', stands }).sameAgent)).toEqual(['A9', 'B21', 'C7']);
+  });
+
+  it('sameAgentMark names the ring after the stand whose agent it follows, and gives nothing when it rings no stand', () => {
+    const stands = scenarioStands();
+    // Nothing under the pointer and nothing selected: no ring.
+    expect(sameAgentMark(standFlags({ stands }))).toBeNull();
+    // Marta's stands around A1 under the pointer; Luis's around the selected A4.
+    expect(sameAgentMark(standFlags({ hover: 'A1', stands }))).toBe('sameAgentHover');
+    expect(sameAgentMark(standFlags({ selected: 'A4', stands }))).toBe('sameAgent');
+    // The pointer wins while it is over another stand: the ring is that stand's, not the selection's.
+    expect(sameAgentMark(standFlags({ hover: 'A1', selected: 'A4', stands }))).toBe('sameAgentHover');
+    // Over the selected stand itself, whatever the spelling of its code, the ring is the selection's.
+    expect(sameAgentMark(standFlags({ hover: 'a-04', selected: 'A4', stands }))).toBe('sameAgent');
+    // Over A3, which nobody covers, no stand is ringed, so there is nothing to name, not even the selection's ring.
+    const uncovered = standFlags({ hover: 'A3', selected: 'A4', stands });
+    expect(uncovered.sameAgent.size).toBe(0);
+    expect(sameAgentMark(uncovered)).toBeNull();
+    // Flags given as lists, empty, or not at all.
+    expect(sameAgentMark({ hover: null, selected: 'A4', sameAgent: ['A5'] })).toBe('sameAgent');
+    expect(sameAgentMark({ hover: 'A1', selected: null, sameAgent: [] })).toBeNull();
+    expect(sameAgentMark(null)).toBeNull();
+    expect(sameAgentMark(undefined)).toBeNull();
   });
 
   it('the feature-state plan touches only the stands whose flags changed', () => {

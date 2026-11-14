@@ -99,7 +99,7 @@ const flagOf = value => {
  * `related` (the stand of a selected flight): `{ hover, selected, related, sameAgent }`, where `sameAgent` holds the
  * other stands covered by an agent who covers the hovered stand, else the selected one (standModel.js:
  * sameAgentCodes over `stands`, the stands of the screen with their `coveredBy`). Leaving a stand gives the marks back
- * to the selection; without a selection they go.
+ * to the selection; without a selection they go. sameAgentMark says whose agent they follow.
  */
 export function standFlags({ hover = null, selected = null, related = null, stands = [] } = {}) {
   const pointed = flagOf(hover);
@@ -111,6 +111,19 @@ export function standFlags({ hover = null, selected = null, related = null, stan
     related: flagOf(related),
     sameAgent: source === null ? new Set() : sameAgentCodes(stands, source),
   };
+}
+
+/**
+ * The legend's name for the ring the `flags` of standFlags draw around the stands covered by the same agent:
+ * `sameAgentHover` while it follows the agent of the stand under the pointer, `sameAgent` while it follows the selected
+ * stand's (also with the pointer over the selected stand), and `null` when it rings no stand: the stand it follows has
+ * no agent with other stands, or there is no stand to follow. The legend explains only the ring the map draws
+ * (contracts 2.4), so a stand under the pointer without an agent leaves nothing to explain, not even the selection's.
+ */
+export function sameAgentMark(flags) {
+  if (codesOf(flags?.sameAgent).length === 0) return null;
+  const pointed = flagOf(flags.hover);
+  return pointed !== null && pointed !== flagOf(flags.selected) ? 'sameAgentHover' : 'sameAgent';
 }
 
 /**

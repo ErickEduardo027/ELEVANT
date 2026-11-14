@@ -19,7 +19,7 @@ import {
   standsDrawnIn,
 } from '../stands/standFeatures';
 import {
-  featureStatePlan, findStandByCode, isOutsideSafeArea, standFlags, standTooltip,
+  featureStatePlan, findStandByCode, isOutsideSafeArea, sameAgentMark, standFlags, standTooltip,
 } from '../stands/standInteractions';
 import { STAND_GHOST_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay } from '../stands/standLayers';
 import { attachStandGeometry, standStateOf } from '../stands/standModel';
@@ -419,11 +419,12 @@ const OccMap = forwardRef(function OccMap({
   // What is drawn in the area the insets leave in sight (the page's panels hide what lies under them), for the legend,
   // which explains only what is on screen (contracts 2.4): the stands whose polygon reaches into that area from the
   // polygon threshold on, the terminal chips drawn there below it with the arrow over a chip whose terminal has a stand
-  // in «Llegando», the combined links and narrow-body boxes drawn there, the flights drawn there and the airfield items
-  // drawn there. The stands and the chips are known from their own geometry; the airfield is read back from the map
-  // from its threshold on, and right after a move the tiles of the new zoom may still be loading, so it is read again
-  // when the map settles (onIdle). They change only when the camera, the insets, the thresholds, the stands, the
-  // flights or what the map draws do, and a list keeps its identity while what the legend reads of it stays the same.
+  // in «Llegando», the combined links, narrow-body boxes and same-agent rings drawn there, the flights drawn there and
+  // the airfield items drawn there. The stands and the chips are known from their own geometry; the airfield is read
+  // back from the map from its threshold on, and right after a move the tiles of the new zoom may still be loading, so
+  // it is read again when the map settles (onIdle). They change only when the camera, the insets, the thresholds, the
+  // stands, the flights or what the map draws do, and a list keeps its identity while what the legend reads of it stays
+  // the same.
   const updateOnScreen = useCallback(() => {
     const engine = engineRef.current;
     const { padding, attached: drawnStands, standFeatures: features } = latest.current;
@@ -439,18 +440,22 @@ const OccMap = forwardRef(function OccMap({
     // The narrow-body boxes are drawn from the codes threshold on, the combined links with the polygons.
     const codesShown = !Number.isFinite(thresholds?.codes) || zoom >= thresholds.codes;
     const drawsAux = (kind, from) => from && featuresIn(features.aux, bounds, { kind }).length > 0;
-    // The ring of the stands the selected one's agent covers is explained with the polygons it is drawn around (the
-    // pointer's are a passing hint); the placing boxes at every zoom, while they are in sight.
-    const { selectionSameAgent = NO_CODES, ghost, pendingGhost } = appliedRef.current;
-    const marked = polygons && selectionSameAgent.size > 0
-      && standsDrawnIn(drawnStands.filter(stand => selectionSameAgent.has(mapStandCode(standCodeOf(stand)))), bounds).length > 0;
+    // The ring of the same agent is explained from what the feature-state draws (applyStandFlags): while it rings a
+    // polygon in sight, with whose agent it follows, the stand under the pointer or the selected one (sameAgentMark). A
+    // stand under the pointer without an agent rings nothing, so nothing is explained. The placing boxes at every
+    // zoom, while they are in sight.
+    const { standFlags: flags = NO_FLAGS, ghost, pendingGhost } = appliedRef.current;
+    const ringMark = sameAgentMark(flags);
+    const ringed = ringMark === null ? NO_CODES : new Set(flags.sameAgent);
+    const ringInSight = polygons && ringMark !== null
+      && standsDrawnIn(drawnStands.filter(stand => ringed.has(mapStandCode(standCodeOf(stand)))), bounds).length > 0;
     const boxInSight = box => bounds !== null && Array.isArray(box?.polygon) && boxesMeet(boxOfPoints(box.polygon), bounds);
     const marks = [
       // The arrow over a chip is drawn with the chips (stands/standLayers.js: occ-stand-groups-arriving).
       ...(chipsInSight.some(chip => chip.properties?.arriving === true) ? ['chipArriving'] : []),
       ...(drawsAux('combinedLink', polygons) ? ['combined'] : []),
       ...(drawsAux('narrowInner', polygons && codesShown) ? ['narrowbody'] : []),
-      ...(marked ? ['sameAgent'] : []),
+      ...(ringInSight ? [ringMark] : []),
       ...(boxInSight(ghost) ? ['ghost'] : []),
       ...(boxInSight(pendingGhost) ? ['pending'] : []),
     ];
@@ -558,12 +563,15 @@ const OccMap = forwardRef(function OccMap({
   }, [store, standTooltipOf]);
 
   // The flags of the stand polygons (hover, selected, related, same agent), written as their feature-state: only what
-  // changed (stands/standInteractions.js: featureStatePlan), so a pointer or a selection never rewrites the data.
+  // changed (stands/standInteractions.js: featureStatePlan), so a pointer or a selection never rewrites the data. The
+  // legend explains the same-agent ring the flags draw, and whose agent it follows: when the pointer or the selection
+  // moves the ring, or makes it follow another stand, what is on screen is read again.
   const applyStandFlags = useCallback(next => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     if (!engine || !applied.drawsStands) return;
-    const plan = featureStatePlan(applied.standFlags, next);
+    const previous = applied.standFlags ?? NO_FLAGS;
+    const plan = featureStatePlan(previous, next);
     applied.standFlags = next;
     if (plan.length === 0) return;
     for (const step of plan) {
@@ -571,7 +579,9 @@ const OccMap = forwardRef(function OccMap({
       else engine.setFeatureState(STAND_SOURCE, step.id, step.state);
     }
     markSettled(rootRef.current, false);
-  }, []);
+    const ringMoved = plan.some(step => step.key === 'sameAgent' || step.state?.sameAgent === true);
+    if (ringMoved || sameAgentMark(previous) !== sameAgentMark(next)) updateOnScreen();
+  }, [updateOnScreen]);
 
   // The stand under the pointer (`null` when there is none, or a drag), with the stands its agent covers.
   const hoverStand = useCallback(code => {
@@ -701,9 +711,9 @@ const OccMap = forwardRef(function OccMap({
       padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null, standFeatures: null, flights: null,
       overlayData: {}, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights, standLabels: props.standLabels,
       drawsAirfield: Boolean(props.layout),
-      // The feature-state flags of the stands, the stands the selected one's agent covers (for the legend), and the
-      // placing boxes; the stand selected when the map starts is framed by the view, not eased to.
-      standFlags: NO_FLAGS, selectionSameAgent: NO_CODES, ghost: null, pendingGhost: null, ghostKey: '[]', placingCode: null,
+      // The feature-state flags of the stands (the legend reads the same-agent ring from them) and the placing boxes;
+      // the stand selected when the map starts is framed by the view, not eased to.
+      standFlags: NO_FLAGS, ghost: null, pendingGhost: null, ghostKey: '[]', placingCode: null,
       easedFor: props.selection?.kind === 'stand' ? mapStandCode(props.selection.id) || null : null,
     };
     focusRef.current = null;
@@ -874,17 +884,12 @@ const OccMap = forwardRef(function OccMap({
     const related = selection?.kind === 'flight' ? relatedEntities(selection, { flights }).standCode : null;
     const { hover } = applied.standFlags ?? NO_FLAGS;
     applyStandFlags(standFlags({ hover, selected: code, related, stands: attached }));
-    const marked = standFlags({ selected: code, stands: attached }).sameAgent;
-    if ([...marked].sort().join('|') !== [...applied.selectionSameAgent].sort().join('|')) {
-      applied.selectionSameAgent = marked.size === 0 ? NO_CODES : marked;
-      updateOnScreen();
-    }
     if (code === applied.easedFor) return;
     applied.easedFor = code;
     const focused = focusRef.current;
     focusRef.current = null;
     if (code !== null && focused !== code) easeToStand(code);
-  }, [selection, attached, presetStands, flights, standFeatures, applyStandFlags, updateOnScreen, easeToStand]);
+  }, [selection, attached, presetStands, flights, standFeatures, applyStandFlags, easeToStand]);
 
   useEffect(() => {
     const engine = engineRef.current;

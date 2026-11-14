@@ -1326,6 +1326,55 @@ describe('OccMap', () => {
     expect([stateOf('A4'), stateOf('A5')]).toEqual([{}, {}]);
   });
 
+  it('the legend explains the same-agent ring the map draws, and whose agent it follows, as the pointer moves', () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const stands = scenarioStands();
+    const { map, rerender } = renderMap({ stands, frozenAt: NOW, children: <MapLegend /> });
+    loadStyle(map);
+    const pick = code => ({ id: code, layer: { id: 'occ-stands-fill' }, properties: { code } });
+    let under = [];
+    fake.state.setRenderedFeatures(map, (_geometry, options) => under.filter(feature => options.layers.includes(feature.layer.id)));
+    const hover = features => {
+      under = features;
+      act(() => {
+        fake.state.emit(map, 'mousemove', { point: { x: 500, y: 400 }, lngLat: { lng: -68.36, lat: 18.564 } });
+        frames.shift()?.(0);
+      });
+    };
+    // The stands the feature-state rings, and the entries of the legend and the marks of the map that explain a ring.
+    const ringed = () => stands.map(stand => stand.id).filter(code => map.featureStateOf('occ-stands', code)?.sameAgent === true);
+    const SELECTED = 'Mismo agente que la posición elegida';
+    const POINTED = 'Mismo agente que la posición bajo el puntero';
+    const explained = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
+      .map(item => item.textContent).filter(text => text === SELECTED || text === POINTED);
+    const ringMarks = () => probe().marks.filter(mark => mark.startsWith('sameAgent'));
+
+    // Without a selection, the pointer over A1 rings Marta's other stands, and the legend says it follows the pointer.
+    expect([ringed(), explained()]).toEqual([[], []]);
+    hover([pick('A1')]);
+    expect([ringed(), explained(), ringMarks()]).toEqual([['A2', 'A6'], [POINTED], ['sameAgentHover']]);
+    hover([]);
+    expect([ringed(), explained(), ringMarks()]).toEqual([[], [], []]);
+
+    // With A4 selected, Luis's other stands are ringed, and the legend says they are the selected stand's.
+    rerender({ stands, frozenAt: NOW, selection: { kind: 'stand', id: 'A4' }, children: <MapLegend /> });
+    expect([ringed(), explained(), ringMarks()]).toEqual([['A5', 'B22'], [SELECTED], ['sameAgent']]);
+    // Over A3, which nobody covers, the map rings no stand: the legend explains no ring, not even the selection's.
+    hover([pick('A3')]);
+    expect([ringed(), explained(), ringMarks()]).toEqual([[], [], []]);
+    // Over A1 the ring is Marta's, and the legend follows the pointer, never naming the selected stand.
+    hover([pick('A1')]);
+    expect([ringed(), explained(), ringMarks()]).toEqual([['A2', 'A6'], [POINTED], ['sameAgentHover']]);
+    // Over the selected stand itself, the ring is the selection's.
+    hover([pick('A4')]);
+    expect([ringed(), explained(), ringMarks()]).toEqual([['A5', 'B22'], [SELECTED], ['sameAgent']]);
+    // Off the stands, the ring and its entry are the selection's again.
+    hover([pick('A1')]);
+    hover([]);
+    expect([ringed(), explained(), ringMarks()]).toEqual([['A5', 'B22'], [SELECTED], ['sameAgent']]);
+  });
+
   it('selecting a visible stand does not move the camera; one outside the safe area eases to it', () => {
     // A stand selected when the map starts is framed by the view: no move of its own.
     window.history.replaceState({}, '', PAGE);

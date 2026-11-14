@@ -104,8 +104,12 @@ describe('map messages', () => {
     expect(en('placing.prompt', { code: 'A5' })).toBe('Click the centre of stand A5.');
     expect([en('placing.save'), en('placing.cancel'), en('placing.saved', { code: 'A5' })])
       .toEqual(['Save location', 'Cancel', 'A5 is now placed on the map.']);
-    expect(['sameAgent', 'ghost', 'pending'].map(key => es(`legend.${key}`)))
-      .toEqual(['Mismo agente que la posición elegida', 'Posición que estás ubicando', 'Ubicación sin guardar']);
+    expect(['sameAgent', 'sameAgentHover', 'ghost', 'pending'].map(key => es(`legend.${key}`))).toEqual([
+      'Mismo agente que la posición elegida', 'Mismo agente que la posición bajo el puntero', 'Posición que estás ubicando',
+      'Ubicación sin guardar',
+    ]);
+    expect(['sameAgent', 'sameAgentHover'].map(key => en(`legend.${key}`)))
+      .toEqual(['Same agent as the selected stand', 'Same agent as the stand under the pointer']);
     expect(es('facts.label')).toBe('Estado en el mapa');
   });
 

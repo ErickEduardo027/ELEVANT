@@ -7,8 +7,9 @@ import { createContext, useContext } from 'react';
 //   polygon threshold on; the legend lists their states, signals and tags), `chipsOnScreen`, the terminals whose chip
 //   it draws there (below that threshold), `standMarksOnScreen`, the stand marks it draws there (`chipArriving`, the
 //   arrow over the chip of a terminal with a stand in «Llegando»; `combined`, the link of a cancelled stand;
-//   `narrowbody`, the code-C box of a stand limited to narrow-body aircraft; `sameAgent`, the ring of the stands the
-//   selected stand's agent covers; `ghost` and `pending`, the boxes of a stand being placed),
+//   `narrowbody`, the code-C box of a stand limited to narrow-body aircraft; `sameAgent` or `sameAgentHover`, the ring
+//   of the stands covered by the agent of the selected stand or of the one under the pointer, whichever it follows;
+//   `ghost` and `pending`, the boxes of a stand being placed),
 //   `flightsOnScreen`, the flights drawn in that area (the list changes when other flights come into sight, not when
 //   they move inside it), and `airfieldOnScreen`, the airfield items the map draws there (`runway`, `taxiway`,
 //   `holdBar`, `apron`, `terminal`, in that order);
