@@ -1,56 +1,106 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { useOccStation } from '../admin-occ/useOccStation';
+import { OCC_CLASSES } from '../occ-ui/classes';
+import { occButtonClass } from '../occ-ui/OccButton';
+import OccDataTable from '../occ-ui/OccDataTable';
+import OccEmptyState from '../occ-ui/OccEmptyState';
+import { OccTextField } from '../occ-ui/OccField';
+import OccPlate from '../occ-ui/OccPlate';
+import OccToolbar from '../occ-ui/OccToolbar';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { listOccReadyContracts } from '../../services/occReadyContractsService';
 import { stationDate } from '../../services/positionsMapService';
 import { readyContractsMessages } from './readyContractsMessages';
 
-const cardClass = 'rounded-2xl border border-black/5 bg-white/80 p-5 dark:border-white/5 dark:bg-surface-dark-card';
+// Template D of the design («Registro»): the toolbar with the page title and the operation date, then the contracts of
+// that date as a dense list, one row per contract with its services folded under it.
+const TITLE_ID = 'ready-contracts-title';
+const SLAB = 'rounded-md border border-occ-line bg-occ-panel text-occ-text';
+// The 28 px button (44 px on a touch screen) overhangs its cell instead of making the row taller, so it sits on the
+// line of the row's text.
+const PLAN_LINK = `${occButtonClass({ variant: 'secondary', size: 'sm' })} -my-1 [@media(pointer:coarse)]:-my-3`;
+// A service is a quiet tag: the slab's joint and plain text, never the cyan of what can be acted on.
+const SERVICE = 'rounded-sm border border-occ-line px-2 py-0.5 text-sm text-occ-text';
+const contractIdOf = contract => contract.contractId;
 
 function formatDate(value, locale) {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function ContractCard({ contract, t, locale }) {
-  const flights = contract.flightsOnDate === 0 ? t('flightsNone')
-    : contract.flightsOnDate === 1 ? t('flightsOne') : t('flights', { count: contract.flightsOnDate });
+/**
+ * The services of a contract, under its row. They line up with the airline's name, past the row's disclosure (8 px of
+ * cell, a 24 px control and its 6 px gap).
+ */
+function ContractServices({ contract, t }) {
+  const labelId = `ready-contract-services-${contract.contractId}`;
   return (
-    <li className={`${cardClass} space-y-3`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-base font-semibold">{contract.airlineName}
-            {contract.airlineIataCode && <span className="ml-2 font-mono text-xs text-accent-600">{contract.airlineIataCode}</span>}</p>
-          <p className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            {t('contract')} {contract.contractCode} · {t('version', { number: contract.versionNumber })}</p>
-        </div>
-        <Link href="/admin-occ/planning"
-          className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-accent-600/40 px-3 text-xs font-semibold text-accent-600">
-          {t('plan')}</Link>
-      </div>
-      <dl className="grid grid-cols-2 gap-3 text-xs">
-        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('validity')}</dt>
-          <dd>{t('validFromTo', { from: formatDate(contract.validFrom, locale),
-            to: contract.validTo ? formatDate(contract.validTo, locale) : t('openEnded') })}</dd></div>
-        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('renewal')}</dt>
-          <dd>{contract.renewalMode ? t(`renewalModes.${contract.renewalMode}`) : t('renewalUnset')}</dd></div>
-      </dl>
-      <div className="text-xs">
-        <p className="text-text-secondary-light dark:text-text-secondary-dark">{t('services')}</p>
-        {contract.services.length ? <ul className="mt-1 flex flex-wrap gap-1.5">
-          {contract.services.map(service => <li key={service.code}
-            className="rounded-md bg-accent-600/10 px-2 py-0.5 text-accent-600">{service.name}</li>)}
-        </ul> : <p>{t('noServices')}</p>}
-      </div>
-      <p className="text-xs font-medium">{flights}</p>
-    </li>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-[1.875rem]">
+      <span id={labelId} className="text-xs font-medium text-occ-muted">{t('services')}</span>
+      {contract.services.length > 0 ? (
+        <ul aria-labelledby={labelId} className="flex flex-wrap gap-1.5">
+          {contract.services.map(service => <li key={service.code} className={SERVICE}>{service.name}</li>)}
+        </ul>
+      ) : <span className="text-sm text-occ-muted">{t('noServices')}</span>}
+    </div>
   );
 }
 
+// The tracks share the room by what their longest text needs, so from 1440 px every cell keeps one line (a long
+// airline name may still put its plate under it) and below that the cells wrap instead of scrolling.
+function contractColumns(t, locale) {
+  const renewalModes = t('renewalModes');
+  return [
+    {
+      key: 'airline', header: t('columns.airline'), width: 'minmax(0,1.1fr)',
+      render: contract => (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <strong className="font-semibold">{contract.airlineName}</strong>
+          {contract.airlineIataCode ? <OccPlate kind="code">{contract.airlineIataCode}</OccPlate> : null}
+        </span>
+      ),
+    },
+    {
+      // The code and its version read as one, «CTR-2026-0001 · Versión 2», as the cycle E2E and the tests find them.
+      key: 'contract', header: t('columns.contract'), width: 'minmax(0,1fr)',
+      render: contract => (
+        <span className="min-w-0">
+          <span className="font-mono">{contract.contractCode}</span>
+          <span className="text-occ-muted">{` · ${t('version', { number: contract.versionNumber })}`}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'validity', header: t('columns.validity'), width: 'minmax(0,1.15fr)',
+      render: contract => (contract.validTo
+        ? t('validFromTo', { from: formatDate(contract.validFrom, locale), to: formatDate(contract.validTo, locale) })
+        : t('validFromOpen', { from: formatDate(contract.validFrom, locale) })),
+    },
+    {
+      // A mode this screen does not name yet is shown as the server sends it, never as a message key.
+      key: 'renewal', header: t('columns.renewal'), width: '6rem',
+      render: contract => {
+        if (!contract.renewalMode) return <span className="text-occ-muted">{t('renewalUnset')}</span>;
+        return Object.hasOwn(renewalModes, contract.renewalMode) ? renewalModes[contract.renewalMode] : contract.renewalMode;
+      },
+    },
+    {
+      key: 'flights', header: t('columns.flights'), width: 'minmax(0,1.1fr)',
+      render: contract => {
+        if (contract.flightsOnDate === 0) return <span className="text-occ-muted">{t('flightsNone')}</span>;
+        return contract.flightsOnDate === 1 ? t('flightsOne') : t('flights', { count: contract.flightsOnDate });
+      },
+    },
+    {
+      key: 'plan', header: '', width: '8.25rem', align: 'end',
+      render: () => <Link href="/admin-occ/planning" className={PLAN_LINK}>{t('plan')}</Link>,
+    },
+  ];
+}
+
 /**
- * «Contratos listos para operar» (ADR-0027): the contracts OCC can plan flights for at PUJ on a
- * date, read from the API. Prices are never shown to OCC.
+ * «Contratos listos para operar» (ADR-0027): the contracts OCC can plan flights for at PUJ on a date, read from the
+ * API. Prices are never shown to OCC. A refusal (403) offers no retry: pressing again would not change the access.
  */
 export default function ReadyContractsRoute() {
   const { t, locale } = useTranslation(readyContractsMessages);
@@ -73,38 +123,29 @@ export default function ReadyContractsRoute() {
   const state = result.key === `${station.stationId}|${date}|${attempt}` ? result : { status: 'loading' };
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   const contracts = state.data?.contracts ?? [];
+  const failed = state.status === 'error';
+  // The service's own sentence for the failure (occReadyContractsService), never the server's title.
+  const labels = { loading: t('loading'), retry: t('retry'), ...(failed ? { error: state.error.message } : {}) };
+  const summary = state.status === 'success'
+    ? <span role="status">{contracts.length === 1 ? t('countOne') : t('count', { count: contracts.length })}</span>
+    : null;
 
-  let body;
-  if (!station.stationId) body = <p role="alert" className={cardClass}>{t('noStation')}</p>;
-  else if (state.status === 'loading') body = <p role="status" className={cardClass}>{t('loading')}</p>;
-  else if (state.status === 'error') body = <div role="alert" className={`${cardClass} flex flex-wrap items-center gap-3`}>
-    <p>{state.error.message}</p>
-    {state.error.status !== 403 && <button type="button" onClick={retry}
-      className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{t('retry')}</button>}
-  </div>;
-  else if (state.status === 'empty') body = <p role="status" className={cardClass}>{t('empty')}</p>;
-  else body = <>
-    <p role="status" className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-      {contracts.length === 1 ? t('countOne') : t('count', { count: contracts.length })}</p>
-    <ul className="grid gap-4 md:grid-cols-2" aria-label={t('title')}>
-      {contracts.map(contract => <ContractCard key={contract.contractId} contract={contract} t={t} locale={locale} />)}
-    </ul>
-  </>;
-
+  // The station is in the status bar of the OCC frame: the page has no badge of its own, nor a line under its title.
   return (
-    <section className="mx-auto max-w-[1200px] space-y-4" aria-labelledby="ready-contracts-title">
-      <header className={`${cardClass} flex flex-wrap items-end justify-between gap-4`}>
-        <div className="space-y-2">
-          <h1 id="ready-contracts-title" className="text-lg font-semibold">{t('title')}</h1>
-          <p className="max-w-2xl text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('subtitle')}</p>
-          <OccStationBadge />
+    <section aria-labelledby={TITLE_ID} className="flex min-w-0 flex-col gap-3 text-occ-text">
+      <OccToolbar title={t('title')} titleId={TITLE_ID} summary={summary}>
+        <OccTextField type="date" label={t('date')} className="w-44" value={date} onChange={event => setDate(event.target.value)} />
+      </OccToolbar>
+      {station.stationId ? (
+        <div className={SLAB}>
+          <OccDataTable as="list" caption={t('title')} columns={contractColumns(t, locale)} rows={contracts}
+            getRowId={contractIdOf} status={state.status} labels={labels}
+            onRetry={failed && state.error.status !== 403 ? retry : undefined}
+            emptyState={<OccEmptyState title={t('emptyTitle')} description={t('emptyDescription')} />}
+            renderExpanded={contract => <ContractServices contract={contract} t={t} />}
+            expandLabel={contract => t('servicesToggle', { count: contract.services.length })} />
         </div>
-        <label className="text-sm">{t('date')}
-          <input type="date" value={date} onChange={event => setDate(event.target.value)}
-            className="mt-1 block min-h-11 rounded-lg border border-black/10 bg-white px-3 dark:border-white/10 dark:bg-surface-dark-card" />
-        </label>
-      </header>
-      {body}
+      ) : <p role="alert" className={`${OCC_CLASSES.card} text-sm`}>{t('noStation')}</p>}
     </section>
   );
 }

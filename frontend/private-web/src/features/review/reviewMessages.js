@@ -1,4 +1,4 @@
-import { CHARGE_SOURCE_LABELS, SUBMISSION_STATUS_LABELS } from '../operations/operationLabels';
+import { SUBMISSION_STATUS_LABELS } from '../operations/operationLabels';
 import { DOCUMENT_TITLES, SIGNER_ROLES } from '../../services/occDocumentsService';
 
 /**
@@ -46,7 +46,6 @@ export const reviewMessages = {
       damages: '{count} daño(s) marcados en el walk-around',
       charges: 'Recargos',
       noCharges: 'Sin recargos.',
-      source: CHARGE_SOURCE_LABELS,
       remove: 'Quitar',
       add: 'Agregar recargo',
       service: 'Servicio',
@@ -218,7 +217,6 @@ export const reviewMessages = {
       damages: '{count} damage(s) marked in the walk-around',
       charges: 'Charges',
       noCharges: 'No charges.',
-      source: { Agent: 'Agent', Automatic: 'Automatic', Occ: 'OCC' },
       remove: 'Remove',
       add: 'Add charge',
       service: 'Service',

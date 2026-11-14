@@ -59,4 +59,17 @@ describe('OccToolbar', () => {
     // Actions alone still make a toolbar.
     expect(within(bar).getByRole('toolbar', { name: 'Tablets' })).toContainElement(screen.getByRole('button', { name: 'Actualizar' }));
   });
+
+  it('gives the h1 the id a page section names itself by, and none without titleId', () => {
+    const { rerender } = render(
+      <section aria-labelledby="ready-contracts-title">
+        <OccToolbar title="Contratos listos para operar" titleId="ready-contracts-title" />
+      </section>,
+    );
+    const heading = screen.getByRole('heading', { level: 1, name: 'Contratos listos para operar' });
+    expect(heading).toHaveAttribute('id', 'ready-contracts-title');
+    expect(screen.getByRole('region', { name: 'Contratos listos para operar' })).toContainElement(heading);
+    rerender(<OccToolbar title="Reportes operativos" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Reportes operativos' })).not.toHaveAttribute('id');
+  });
 });

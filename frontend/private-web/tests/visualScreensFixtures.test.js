@@ -5,9 +5,10 @@ import { describeReasons } from '../src/services/occCoverageService';
 import { STATION } from './visual/occ/fixtures/occApi.mjs';
 import {
   API_PATHS, CHAT_IDS, COVERAGE_AGENTS, COVERAGE_REFUSAL, COVERAGE_TERMINALS, DEVICE_IDS, FORBIDDEN, MASTER_TERMINALS,
-  OWN_ACCOUNT_ID, OWN_PRESENCE, REVIEW_IDS, SCREEN_SCENARIOS, SCREENS_ACCESS, SERVER_ERROR, STATION_TIME_ZONE,
-  chatConversations, chatMessages, chatPresence, coverageBoard, createScreensApi, masterData, occDevices,
-  operationalNotices, reviewDetail, reviewDocuments, reviewHistory, reviewIncidents, reviewQueue,
+  OWN_ACCOUNT_ID, OWN_PRESENCE, REPORT_CATALOG, REVIEW_IDS, SCREEN_SCENARIOS, SCREENS_ACCESS, SERVER_ERROR,
+  STATION_TIME_ZONE, chatConversations, chatMessages, chatPresence, coverageBoard, createScreensApi, masterData,
+  occDevices, operationalNotices, readyContracts, reportCatalog, reportPage, reviewDetail, reviewDocuments,
+  reviewHistory, reviewIncidents, reviewQueue,
 } from './visual/occ/fixtures/screensApi.mjs';
 import { PRESENCE_SHAPES, resolvePresence } from '../src/features/chat/presenceStatus';
 
@@ -252,5 +253,95 @@ describe('visual suite screens fixtures', () => {
       ['PUT', `/api/v1/occ/stands/${masterData().stands[0].id}`], ['POST', `${API_PATHS.devices}/${DEVICE_IDS.held}/unbind`]]) {
       expect(data.handle({ method: () => method }, new URL(`https://api.elevant.test${path}`)), `${method} ${path}`).toBeNull();
     }
+  });
+
+  it('ready contracts and a report page pass the strict validators', async () => {
+    const date = '2026-11-14';
+    for (const scenario of ['data', 'empty']) {
+      const contracts = readyContracts(scenario, { date });
+      await expect(clientAnswering(contracts).listOccReadyContracts(STATION.stationId, date), scenario)
+        .resolves.toEqual(contracts);
+    }
+    // The contracts of another date or station are refused, as the page would refuse them.
+    await expect(clientAnswering(readyContracts('data', { date })).listOccReadyContracts(STATION.stationId, '2026-11-15'))
+      .rejects.toThrow();
+    await expect(clientAnswering(readyContracts('data', { date }))
+      .listOccReadyContracts('0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', date)).rejects.toThrow();
+
+    const catalog = reportCatalog();
+    await expect(clientAnswering(catalog).listOccReports()).resolves.toEqual(catalog);
+    const query = { stationId: STATION.stationId, from: '2026-11-01', to: date, limit: 25 };
+    for (const key of REPORT_CATALOG.map(report => report.key)) {
+      for (const [scenario, page] of [['data', 1], ['data', 2], ['empty', 1]]) {
+        const body = reportPage(key, { ...query, page }, scenario);
+        await expect(clientAnswering(body).getOccReport(key, { ...query, page }), `${key} ${scenario} ${page}`)
+          .resolves.toEqual(body);
+      }
+    }
+    // A page of another period, report or station is refused.
+    const first = reportPage('turnaround-times', { ...query, page: 1 });
+    await expect(clientAnswering(first).getOccReport('turnaround-times', { ...query, from: '2026-10-01', page: 1 }))
+      .rejects.toThrow();
+    await expect(clientAnswering(first).getOccReport('operations', { ...query, page: 1 })).rejects.toThrow();
+    await expect(clientAnswering(first).getOccReport('turnaround-times',
+      { ...query, stationId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', page: 1 })).rejects.toThrow();
+    await expect(clientAnswering(SERVER_ERROR, { status: 500 }).getOccReport('turnaround-times', { ...query, page: 1 }))
+      .rejects.toMatchObject({ kind: 'http', status: 500 });
+    await expect(clientAnswering(FORBIDDEN, { status: 403 }).listOccReadyContracts(STATION.stationId, date))
+      .rejects.toMatchObject({ kind: 'http', status: 403 });
+    expect(SCREENS_ACCESS.permissions).toEqual(expect.arrayContaining(['operations.planning.read', 'operations.reports.read',
+      'operations.reports.export']));
+  });
+
+  it('the contracts show every case of the list, and the report its two pages and its placeholders', () => {
+    // Open-ended and dated, manual and unset renewal, no services, no flights and no IATA code, each once at least.
+    const { contracts } = readyContracts();
+    expect(contracts.map(item => [item.validTo === null, item.renewalMode, item.services.length, item.flightsOnDate,
+      item.airlineIataCode])).toEqual([[true, 'Automatic', 3, 3, 'ZZ'], [false, 'Manual', 2, 1, 'Z1'],
+      [false, null, 0, 0, 'Z2'], [true, 'Automatic', 1, 2, null]]);
+    expect(readyContracts('empty').contracts).toEqual([]);
+
+    // The six reports of the API, each with its headers.
+    expect(REPORT_CATALOG.map(report => report.key)).toEqual(['operations', 'turnaround-times', 'services-by-airline',
+      'reviews', 'agent-productivity', 'daily-close']);
+    // Turnaround times: 25 rows on the first page and 7 on the second, whose numbers sit in their own columns, with a
+    // «—» placeholder in a column of numbers.
+    const query = { from: '2026-11-01', to: '2026-11-14', limit: 25 };
+    const first = reportPage('turnaround-times', { ...query, page: 1 });
+    const second = reportPage('turnaround-times', { ...query, page: 2 });
+    expect([first.rows.length, first.hasMore, second.rows.length, second.hasMore]).toEqual([25, true, 7, false]);
+    expect(first.rows.every(row => row.length === first.columns.length)).toBe(true);
+    const types = index => new Set(first.rows.map(row => row[index].type));
+    expect([...types(4)]).toEqual(['number']);
+    expect(first.rows.some(row => row[3].value === '—' && row[3].type === 'text')).toBe(true);
+    expect([...types(1)]).toEqual(['text']);
+    // The empty period has no rows and no next page.
+    expect(reportPage('turnaround-times', { ...query, page: 1 }, 'empty')).toMatchObject({ rows: [], hasMore: false });
+    expect(() => reportPage('sla', query)).toThrow(RangeError);
+  });
+
+  it('the stub answers the contracts and the reports in each scenario and echoes their query', async () => {
+    const stationQuery = `stationId=${STATION.stationId}`;
+    const contractsPath = `${API_PATHS.contracts}?${stationQuery}&date=2026-11-14`;
+    const data = createScreensApi('data');
+    expect((await answer(data, contractsPath)).json).toEqual(readyContracts('data', { date: '2026-11-14' }));
+    expect((await answer(createScreensApi('empty'), contractsPath)).json.contracts).toEqual([]);
+    expect(await answer(createScreensApi('error'), contractsPath)).toEqual({ status: 500, json: SERVER_ERROR });
+    expect(await answer(createScreensApi('forbidden'), contractsPath)).toEqual({ status: 403, json: FORBIDDEN });
+
+    // The list of reports is the API's in every scenario; the scenario applies to a report's page.
+    for (const scenario of SCREEN_SCENARIOS) {
+      expect(await answer(createScreensApi(scenario), API_PATHS.reports), scenario).toEqual({ status: 200, json: reportCatalog() });
+    }
+    const pagePath = page => `${API_PATHS.reports}/turnaround-times?${stationQuery}&from=2026-11-01&to=2026-11-14&page=${page}&limit=25`;
+    const query = { stationId: STATION.stationId, from: '2026-11-01', to: '2026-11-14', limit: 25 };
+    expect((await answer(data, pagePath(2))).json).toEqual(reportPage('turnaround-times', { ...query, page: 2 }));
+    expect((await answer(createScreensApi('empty'), pagePath(1))).json.rows).toEqual([]);
+    expect(await answer(createScreensApi('error'), pagePath(1))).toEqual({ status: 500, json: SERVER_ERROR });
+    expect(data.readsOf(`${API_PATHS.reports}/turnaround-times`)).toBe(1);
+    // An unknown report and an export have no answer: the isolation sends its Problem Details 404.
+    expect(await answer(data, `${API_PATHS.reports}/sla?${stationQuery}&from=2026-11-01&to=2026-11-14`)).toBeNull();
+    expect(await answer(data, `${API_PATHS.reports}/turnaround-times/export?${stationQuery}&from=2026-11-01&to=2026-11-14&format=csv`))
+      .toBeNull();
   });
 });

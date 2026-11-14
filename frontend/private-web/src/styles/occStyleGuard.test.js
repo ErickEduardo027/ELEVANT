@@ -25,7 +25,7 @@ const BOOT_FOLDER = 'src/features/admin-occ/boot';
 // enters MIGRATED_FILES instead.
 const REBUILT_SCREEN_FOLDERS = Object.freeze([
   'src/features/review', 'src/features/position-coverage', 'src/features/chat', 'src/features/master-data',
-  'src/features/devices',
+  'src/features/devices', 'src/features/ready-contracts', 'src/features/reports',
 ]);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
@@ -907,13 +907,18 @@ describe('OCC legacy bridge', () => {
       'src/features/review/components/OperationDocumentsSection.jsx',
       'src/features/review/components/ReopenReviewSection.jsx',
     ]));
-    // So are the chat with its presence, Datos maestros and Tablets, with their message files.
+    // So are the chat with its presence, Datos maestros, Tablets, Contratos listos and Reportes, with their message
+    // files.
     expect(rebuiltFiles).toEqual(expect.arrayContaining([
       'src/features/chat/CanonicalChatRoute.jsx', 'src/features/chat/PresencePeople.jsx',
       'src/features/chat/PresenceStatusPicker.jsx', 'src/features/chat/presenceStatus.js',
       'src/features/master-data/MasterDataRoute.jsx', 'src/features/master-data/masterDataMessages.js',
       'src/features/devices/DevicesRoute.jsx', 'src/features/devices/devicesMessages.js',
+      'src/features/ready-contracts/ReadyContractsRoute.jsx', 'src/features/ready-contracts/readyContractsMessages.js',
+      'src/features/reports/CanonicalReportsRoute.jsx', 'src/features/reports/reportsMessages.js',
     ]));
+    // Reportes keeps no export button of its own: its actions are OccButtons in the panel's header.
+    expect(existsSync('src/features/reports/components')).toBe(false);
   });
 
   it('the boot screen styles use only occ tokens defined on the OCC scope', () => {

@@ -1,11 +1,11 @@
 import { OCC_ACCESS, STATION, createOccApi, occSession } from './occApi.mjs';
 
 // Synthetic answers of the ELEVANT API for the OCC work screens of the visual suite (PR U6), one screen at a time:
-// Revisión, Cobertura de posiciones, Notificaciones, the chat, Datos maestros and Tablets. On top of occApi.mjs (the OCC
-// session's access and the positions board) it answers the reads every OCC screen makes through its frame (the notices
-// and the account-change feed, both empty and valid) and the reads of each screen, in one of four scenarios: `data`,
-// `empty`, `error` (a 500) and `forbidden` (a 403). Every answer passes the strict validators of @elevant/api-client
-// (tests/visualScreensFixtures.test.js checks them). Every id, code, name and time is invented.
+// Revisión, Cobertura de posiciones, Notificaciones, the chat, Datos maestros, Tablets, Contratos listos and Reportes. On
+// top of occApi.mjs (the OCC session's access and the positions board) it answers the reads every OCC screen makes
+// through its frame (the notices and the account-change feed, both empty and valid) and the reads of each screen, in one
+// of four scenarios: `data`, `empty`, `error` (a 500) and `forbidden` (a 403). Every answer passes the strict validators
+// of @elevant/api-client (tests/visualScreensFixtures.test.js checks them). Every id, code, name and time is invented.
 
 export const SCREEN_SCENARIOS = Object.freeze(['data', 'empty', 'error', 'forbidden']);
 
@@ -20,11 +20,12 @@ const sha = digit => digit.repeat(64);
 
 /**
  * The department access of the work screens: the OCC administrator, who also reads the live incidents of an operation
- * (the review) and writes in the chat of an operation (its composer).
+ * (the review), writes in the chat of an operation (its composer) and exports the reports.
  */
 export const SCREENS_ACCESS = Object.freeze({
   ...OCC_ACCESS,
-  permissions: Object.freeze([...OCC_ACCESS.permissions, 'operations.incidents.read', 'operations.chat.create']),
+  permissions: Object.freeze([...OCC_ACCESS.permissions, 'operations.incidents.read', 'operations.chat.create',
+    'operations.reports.export']),
 });
 
 export const API_PATHS = Object.freeze({
@@ -38,6 +39,8 @@ export const API_PATHS = Object.freeze({
   ownPresence: '/api/v1/chat/presence/status',
   masterData: '/api/v1/occ/master-data',
   devices: '/api/v1/occ/devices',
+  contracts: '/api/v1/occ/contracts',
+  reports: '/api/v1/occ/reports',
 });
 
 /** The ids of the review's hand-offs: the one the spec opens, and the rest of the queue. */
@@ -585,6 +588,133 @@ export function occDevices(scenario = 'data', { stationId = STATION.stationId, r
   return { stationId, stationCode: STATION.stationCode, canUnbind: !readOnly, canRevoke: !readOnly, devices };
 }
 
+// ── Contratos listos ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The services a ready contract lists, without prices: OCC never sees them. */
+const CONTRACT_SERVICES = Object.freeze({
+  turnaround: Object.freeze({ code: 'TURN', name: 'Turnaround completo', billingUnit: 'operation' }),
+  pushback: Object.freeze({ code: 'PUSHBACK', name: 'Remolque', billingUnit: 'operation' }),
+  gpu: Object.freeze({ code: 'GPU', name: 'Planta de energía', billingUnit: 'hour' }),
+  baggage: Object.freeze({ code: 'BAGGAGE', name: 'Manejo de equipaje', billingUnit: 'operation' }),
+  stairs: Object.freeze({ code: 'STAIRS', name: 'Escalera de pasajeros', billingUnit: 'operation' }),
+  cargo: Object.freeze({ code: 'CARGO', name: 'Turnaround de carga', billingUnit: 'operation' }),
+});
+
+// Every case the list draws: an open-ended contract with three services, one with an end date and a manual renewal,
+// one with no renewal mode, no services and no flights that day, and a cargo airline with no IATA code.
+const READY_CONTRACTS = [
+  { code: 'CTR-2026-0101', airline: 'Demo Airlines', iata: 'ZZ', version: 3, from: '2026-01-01', to: null,
+    renewal: 'Automatic', services: ['turnaround', 'pushback', 'gpu'], flights: 3 },
+  { code: 'CTR-2026-0102', airline: 'Aerolínea de prueba', iata: 'Z1', version: 1, from: '2026-03-01', to: '2026-12-31',
+    renewal: 'Manual', services: ['baggage', 'stairs'], flights: 1 },
+  { code: 'CTR-2026-0103', airline: 'Aerolínea de prueba Dos', iata: 'Z2', version: 2, from: '2026-06-15', to: '2027-06-14',
+    renewal: null, services: [], flights: 0 },
+  { code: 'CTR-2026-0104', airline: 'Carga de prueba', iata: null, version: 1, from: '2026-09-01', to: null,
+    renewal: 'Automatic', services: ['cargo'], flights: 2 },
+];
+
+/** GET occ/contracts?stationId=&date=: the contracts ready on that date, or none in the `empty` scenario. */
+export function readyContracts(scenario = 'data', { stationId = STATION.stationId, date = OPERATION_DATE } = {}) {
+  return {
+    stationId, stationCode: STATION.stationCode, date,
+    contracts: scenario === 'empty' ? [] : READY_CONTRACTS.map((item, index) => ({
+      contractId: uuid('a0c1d2e3', index + 1), contractCode: item.code, airlineId: uuid('a1c1d2e3', index + 1),
+      airlineName: item.airline, airlineIataCode: item.iata, versionId: uuid('a2c1d2e3', index + 1),
+      versionNumber: item.version, validFrom: item.from, validTo: item.to, renewalMode: item.renewal,
+      services: item.services.map(key => ({ ...CONTRACT_SERVICES[key] })), flightsOnDate: item.flights,
+    })),
+  };
+}
+
+// ── Reportes ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** GET occ/reports: the six reports of the API, with their headers. */
+export const REPORT_CATALOG = Object.freeze([
+  ['operations', 'Operaciones del período', 'Cada operación de la estación con su estado, horarios planificados y reales y sus agentes.',
+    ['Fecha', 'Operación', 'Aerolínea', 'Matrícula', 'Estado', 'Inicio planificado', 'Fin planificado', 'Inicio real',
+      'Fin real', 'Agentes']],
+  ['turnaround-times', 'Tiempos de turnaround',
+    'Duración planificada frente a la real de las operaciones terminadas, con su desviación en minutos.',
+    ['Fecha', 'Operación', 'Aerolínea', 'Minutos planificados', 'Minutos reales', 'Desviación (min)']],
+  ['services-by-airline', 'Servicios ejecutados por aerolínea',
+    'Servicios facturables de las operaciones aprobadas por OCC, agrupados por aerolínea.',
+    ['Aerolínea', 'Servicio', 'Unidad', 'Operaciones', 'Cantidad contratada', 'Cantidad ejecutada']],
+  ['reviews', 'Revisiones, devoluciones e incidencias', 'Decisiones de revisión OCC de cada envío y sus incidencias.',
+    ['Fecha', 'Operación', 'Aerolínea', 'Revisión', 'Resultado', 'Motivo', 'Decidido', 'Incidencias']],
+  ['agent-productivity', 'Productividad por agente', 'Operaciones y minutos que cada agente trabajó en el período.',
+    ['Agente', 'N.º de empleado', 'Operaciones', 'Aprobadas', 'Devueltas', 'Minutos trabajados']],
+  ['daily-close', 'Cierre operacional del día', 'Por vuelo: horarios programados y reales, posiciones y tiempo en tierra.',
+    ['Fecha', 'Operación', 'Aerolínea', 'Vuelos', 'STA', 'ATA', 'STD', 'Push-back', 'Posición inicial', 'Posición final',
+      'Aviso del cambio (min)', 'Tiempo en tierra (min)', 'Permitido (min)', 'Demoras IATA', 'Desviaciones', 'Estado']],
+].map(([key, title, description, columns]) => Object.freeze({ key, title, description, columns: Object.freeze(columns) })));
+
+export const reportCatalog = () => ({
+  maxRangeDays: 366,
+  reports: REPORT_CATALOG.map(report => ({ ...report, columns: [...report.columns] })),
+});
+
+const textCell = value => ({ value, type: 'text' });
+const numberCell = value => ({ value: String(value), type: 'number' });
+const REPORT_AIRLINES = Object.freeze(['Demo Airlines', 'Aerolínea de prueba', 'Aerolínea de prueba Dos']);
+
+// 32 finished operations of 1 to 11 November: 25 on the first page and 7 on the second. Every seventh has no planned
+// time, so its planned minutes and its deviation are «—» inside a column of numbers, as the API writes them.
+const TURNAROUND_ROWS = Object.freeze(Array.from({ length: 32 }, (_, index) => {
+  const day = String(1 + Math.floor(index / 3)).padStart(2, '0');
+  const planned = index % 7 === 5 ? null : 60 + (index % 4) * 15;
+  const actual = (planned ?? 70) + ((index * 7) % 23) - 8;
+  return Object.freeze([
+    textCell(`${day}/11/2026`), textCell(`PUJ-202611${day}-${String((index % 3) + 1).padStart(3, '0')}`),
+    textCell(REPORT_AIRLINES[index % 3]), planned === null ? textCell('—') : numberCell(planned), numberCell(actual),
+    planned === null ? textCell('—') : numberCell(actual - planned),
+  ]);
+}));
+
+// Six operations of the day, with their agents.
+const OPERATION_ROWS = Object.freeze([
+  ['PUJ-20261113-001', 'ZZ-T101', 'Aprobada', '06:00', '07:00', '06:04', '06:58', 'Agente de prueba Uno'],
+  ['PUJ-20261113-002', 'ZZ-T102', 'Aprobada', '08:15', '09:15', '08:20', '09:31', 'Agente de prueba Dos, Agente de prueba Tres'],
+  ['PUJ-20261113-003', 'ZZ-T103', 'Devuelta', '10:30', '11:30', '10:41', '11:44', 'Agente de prueba Uno'],
+  ['PUJ-20261113-004', 'ZZ-T104', 'Por revisar', '14:30', '15:30', '14:34', '15:38', 'Agente de prueba Uno'],
+  ['PUJ-20261113-005', 'ZZ-T105', 'En curso', '16:00', '17:00', '16:06', '—', 'Agente de prueba Dos'],
+  ['PUJ-20261113-006', 'ZZ-T106', 'Planificada', '19:45', '20:45', '—', '—', 'Sin asignar'],
+].map(([code, registration, status, plannedStart, plannedEnd, actualStart, actualEnd, agents], index) => Object.freeze([
+  textCell('13/11/2026'), textCell(code), textCell(REPORT_AIRLINES[index % 3]), textCell(registration),
+  textCell(status), textCell(plannedStart), textCell(plannedEnd), textCell(actualStart), textCell(actualEnd),
+  textCell(agents),
+])));
+
+const REPORT_ROWS = Object.freeze({ 'turnaround-times': TURNAROUND_ROWS, operations: OPERATION_ROWS });
+
+/**
+ * GET occ/reports/{key}?stationId=&from=&to=&page=&limit=: one page of the report for the period asked, which it
+ * echoes. `turnaround-times` and `operations` have rows; the others, and every report in the `empty` scenario, none.
+ */
+export function reportPage(key, { stationId = STATION.stationId, from = '2026-11-01', to = OPERATION_DATE, page = 1,
+  limit = 25 } = {}, scenario = 'data') {
+  const report = REPORT_CATALOG.find(item => item.key === key);
+  if (!report) throw new RangeError(`Unknown report: ${key}`);
+  const rows = scenario === 'empty' ? [] : REPORT_ROWS[key] ?? [];
+  const start = (page - 1) * limit;
+  return {
+    key, title: report.title, stationId, stationCode: STATION.stationCode, from, to, asOf: at('15:45'),
+    columns: [...report.columns], rows: rows.slice(start, start + limit).map(row => row.map(cell => ({ ...cell }))),
+    page, limit, hasMore: start + limit < rows.length,
+  };
+}
+
+const REPORT_PAGE = /^\/api\/v1\/occ\/reports\/([a-z-]+)$/;
+
+/** The query of a report page as the page sends it. */
+function reportQuery(url) {
+  const { searchParams } = url;
+  return {
+    stationId: searchParams.get('stationId') ?? undefined, from: searchParams.get('from') ?? undefined,
+    to: searchParams.get('to') ?? undefined, page: Number(searchParams.get('page') ?? 1),
+    limit: Number(searchParams.get('limit') ?? 25),
+  };
+}
+
 const REVIEW_OPERATION = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})$/;
 const REVIEW_HISTORY = /^\/api\/v1\/occ\/review\/operations\/([0-9a-f-]{36})\/submissions$/;
 const OPERATION_DOCUMENTS = /^\/api\/v1\/occ\/operations\/([0-9a-f-]{36})\/documents$/;
@@ -626,12 +756,14 @@ function chatAnswer(url, scenario) {
 
 /**
  * The API handler for support/isolate.mjs in a `scenario` of SCREEN_SCENARIOS: the access of SCREENS_ACCESS, the
- * frame's change feed, and the reads of Revisión, Cobertura, the chat, Datos maestros and Tablets in that scenario;
- * every other path is occApi.mjs's, then the isolation's Problem Details 404. The notices are the frame's empty list, or
- * with `{ notices: true }` the reads of Notificaciones in the scenario (the page and the frame read the same list).
- * With `{ readOnly: true }` Datos maestros and Tablets answer an account that may change nothing. It accepts no
- * command: a new coverage is refused with COVERAGE_REFUSAL, and any other command (a message, a read receipt, a
- * presence lease, a change of the layout, a tablet's release) gets the 404. `reads` counts the answers by path.
+ * frame's change feed, and the reads of Revisión, Cobertura, the chat, Datos maestros, Tablets, Contratos listos and
+ * Reportes in that scenario; every other path is occApi.mjs's, then the isolation's Problem Details 404. The notices are
+ * the frame's empty list, or with `{ notices: true }` the reads of Notificaciones in the scenario (the page and the frame
+ * read the same list). With `{ readOnly: true }` Datos maestros and Tablets answer an account that may change nothing.
+ * The list of reports is the API's in every scenario; the scenario applies to the page of a report, which echoes the
+ * period asked. It accepts no command: a new coverage is refused with COVERAGE_REFUSAL, and any other command (a
+ * message, a read receipt, a presence lease, a change of the layout, a tablet's release) gets the 404, and so does an
+ * export. `reads` counts the answers by path.
  */
 export function createScreensApi(scenario = 'data', { notices = false, readOnly = false } = {}) {
   if (!SCREEN_SCENARIOS.includes(scenario)) throw new RangeError(`Unknown screens scenario: ${scenario}`);
@@ -664,6 +796,16 @@ export function createScreensApi(scenario = 'data', { notices = false, readOnly 
     const station = { stationId: url.searchParams.get('stationId') ?? undefined, readOnly };
     if (url.pathname === API_PATHS.masterData) return served(url, failed(scenario) ?? { status: 200, json: masterData(scenario, station) });
     if (url.pathname === API_PATHS.devices) return served(url, failed(scenario) ?? { status: 200, json: occDevices(scenario, station) });
+    if (url.pathname === API_PATHS.contracts) {
+      return served(url, failed(scenario) ?? { status: 200, json: readyContracts(scenario, {
+        stationId: station.stationId, date: url.searchParams.get('date') ?? undefined,
+      }) });
+    }
+    if (url.pathname === API_PATHS.reports) return served(url, { status: 200, json: reportCatalog() });
+    const reportKey = REPORT_PAGE.exec(url.pathname)?.[1];
+    if (reportKey && REPORT_CATALOG.some(report => report.key === reportKey)) {
+      return served(url, failed(scenario) ?? { status: 200, json: reportPage(reportKey, reportQuery(url), scenario) });
+    }
     const chat = chatAnswer(url, scenario);
     if (chat) return served(url, chat);
     const answer = reviewAnswer(url, scenario);
