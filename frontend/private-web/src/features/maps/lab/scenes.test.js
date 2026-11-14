@@ -18,14 +18,18 @@ import { CIVIL_TWILIGHT_DEG, sunPosition } from '../traffic/solar';
 import { legendEntries } from '../ui/legendEntries';
 import { labTraffic } from './trafficScenes';
 import {
-  BASEMAP_MODES, NIGHT_SCENE_INSTANT, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene,
-  labInstant, labStands, labWeather, readLabQuery,
+  BASEMAP_MODES, LAB_SATELLITE, NIGHT_SCENE_INSTANT, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS,
+  findScene, labInstant, labStands, labWeather, readLabQuery,
 } from './scenes';
+import { satelliteTiles, windFeatures } from '../traffic/weatherLayers';
+import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 
 // The lab's stands as the map lab shows them: read at the scene's instant (useStandDisplay).
 const shown = () => withStandDisplay(labStands(), { nowMs: SCENE_INSTANT });
 const byId = (stands, code) => stands.find(stand => stand.id === code);
 const legendOf = stands => legendEntries({ stands }).states;
+// The weather scenes of PR M8.
+const WEATHER_SCENES = ['region-satellite', 'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable'];
 
 describe('map lab scenes', () => {
   it('every scene id is unique, names a known view and kind and reads at a fixed instant', () => {
@@ -34,7 +38,8 @@ describe('map lab scenes', () => {
       'ramp-states', 'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'airfield', 'approach', 'region',
       'unavailable-fallback', 'basemap-degraded', 'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo',
       'ramp-traffic-ground', 'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected',
-      'region-layers-menu', 'region-references', 'region-references-night', 'approach-references',
+      'region-layers-menu', 'region-references', 'region-references-night', 'approach-references', 'region-satellite',
+      'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -205,7 +210,7 @@ describe('map lab scenes', () => {
       expect(Object.isFrozen(scene.weather), id).toBe(true);
     }
     expect(labWeather(null)).toBeNull();
-    expect(SCENES.filter(scene => scene.weather !== undefined).map(scene => scene.id)).toEqual(ids);
+    expect(SCENES.filter(scene => scene.weather !== undefined).map(scene => scene.id)).toEqual([...ids, ...WEATHER_SCENES]);
 
     // By day the region carries its traffic, where ZZ500 comes from Santo Domingo, an airport of the region.
     const day = findScene('region-references');
@@ -236,6 +241,41 @@ describe('map lab scenes', () => {
     const { situation } = labTraffic(approach.traffic, { nowMs: SCENE_INSTANT });
     expect(mapRunwayInUse({ aircraft: situation.aircraft, weather: labWeather(approach.weather), nowMs: SCENE_INSTANT }))
       .toEqual({ arrival: '08', departure: '08', source: 'wind' });
+  });
+
+  it('the weather scenes are valid: their weather passes the validator, their images are simulated and pinned', async () => {
+    for (const id of WEATHER_SCENES) {
+      const scene = findScene(id);
+      expect(scene.kind, id).toBe('map');
+      expect(scene.at, id).toBe(SCENE_INSTANT);
+      expect(isOccAerodromeWeather(scene.weather, WEATHER_STATION_ID), id).toBe(true);
+    }
+    // The wind of each airfield scene as the map draws it, read once at the scene's instant: live, stale or none.
+    const windOf = id => windFeatures({ reading: labWeather(findScene(id).weather), runway: '08', nowMs: SCENE_INSTANT })
+      .features[0]?.properties ?? null;
+    expect(windOf('airfield-wind-live')).toMatchObject({ label: '100° 13 kt R08', stale: false });
+    expect(windOf('airfield-wind-stale')).toMatchObject({ label: '100° 13 kt R08\nSin actualizar desde las 08:00', stale: true });
+    expect(windOf('airfield-wind-unavailable')).toBeNull();
+    for (const id of ['airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable']) {
+      expect(findScene(id).view, id).toBe('airfield');
+      expect(findScene(id).satellite, id).toBeUndefined();
+    }
+    // The region opens with both images on, over its traffic, from a simulated GIBS that names their times.
+    const region = findScene('region-satellite');
+    expect(region.view).toBe('region');
+    expect(region.layers).toEqual({ 'weather.goes': true, 'weather.imerg': true });
+    expect(region.satellite).toBe(LAB_SATELLITE);
+    expect(Object.isFrozen(region.layers) && Object.isFrozen(region.satellite)).toBe(true);
+    expect(isOccMapFlights(region.traffic.flights, WEATHER_STATION_ID)).toBe(true);
+    const service = createSimulatedSatelliteImagery(region.satellite);
+    for (const layer of ['goes', 'imerg']) {
+      const info = await service.loadImageInfo(layer);
+      expect(Date.parse(info.time), layer).toBeLessThan(SCENE_INSTANT);
+      expect(info.tileTemplate, layer).toBe(satelliteTiles(layer, info)[0]);
+      expect(info.tileTemplate, layer).toContain(`/default/${info.time}/`);
+    }
+    // Every other scene opens with the browser's layers.
+    expect(SCENES.filter(scene => scene.layers !== undefined).map(scene => scene.id)).toEqual(['region-satellite']);
   });
 
   it('reads the scene, the base map and the frozen clock from the URL', () => {

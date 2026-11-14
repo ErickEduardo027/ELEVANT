@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ElevantApiError } from '@elevant/api-client';
 import PositionsMapPage from './PositionsMapPage';
@@ -8,6 +8,7 @@ import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { destinationPoint } from '../maps/airport/geo';
 import { boardStand, standPoint } from '../maps/testing/mapFixtures';
+import { WEATHER_STATION_ID } from '../maps/testing/weatherFixtures';
 
 // The map is a stub that shows what the page gives it and clicks where a test says (`map.next`); the API client is a
 // stub too, so the real positions service translates its errors.
@@ -16,6 +17,16 @@ const api = vi.hoisted(() => ({ locateOccStand: null }));
 vi.mock('../../config/elevantApiClient', async importOriginal => ({
   ...(await importOriginal()), createPrivateWebApiClient: () => api,
 }));
+
+// The page reads the aerodrome weather of the OCC station (PR M8): the session that names it and the weather service
+// are synthetic. Without a PUJ scope in the session (the default here) nothing is read.
+const auth = vi.hoisted(() => ({ session: null }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: auth.session }) }));
+vi.mock('../../services/weatherService', async () => {
+  const actual = await vi.importActual('../../services/weatherService');
+  const { createWeatherScenario } = await import('../maps/testing/weatherFixtures');
+  return { ...actual, weatherService: actual.createSimulatedWeatherAdapter({ scenario: createWeatherScenario() }) };
+});
 
 vi.mock('./components/PositionMap', () => ({
   default: forwardRef(function PositionMapStub(props, ref) {
@@ -29,7 +40,8 @@ vi.mock('./components/PositionMap', () => ({
     const pending = props.pendingLocation;
     return (
       <div data-testid="position-map-stub" data-placing={props.placingCode ?? ''} data-selected={props.selectedPositionId ?? ''}
-        data-pending={pending ? `${pending.latitude},${pending.longitude}` : ''}>
+        data-pending={pending ? `${pending.latitude},${pending.longitude}` : ''} data-weather={props.weather?.apiStatus ?? ''}
+        data-weather-status={props.weather?.status ?? ''}>
         {props.onMapClick && <button type="button" onClick={() => props.onMapClick(map.next)}>Clic en el mapa</button>}
       </div>
     );
@@ -105,6 +117,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.history.replaceState({}, '', '/');
+  auth.session = null;
 });
 
 // Opens the list (unless it is open), the drawer of `code` and «Ubicar en el mapa».
@@ -130,6 +143,19 @@ describe('PositionsMapPage', () => {
     expect(screen.getByText('network down')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the aerodrome weather of the OCC station and gives it to its map (PR M8)', async () => {
+    // Without the PUJ scope there is no station: nothing read, the map gets a weather still loading.
+    const first = render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather-status', 'loading');
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather', '');
+    first.unmount();
+    // With it, the synthetic live METAR reaches the map, which draws its wind at the airfield.
+    auth.session = { stationScopes: [{ stationId: WEATHER_STATION_ID, stationCode: 'PUJ' }] };
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather', 'Live'));
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather-status', 'success');
   });
 
   it('renders the toolbar title/subtitle and the map', () => {

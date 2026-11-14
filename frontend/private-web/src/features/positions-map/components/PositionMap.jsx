@@ -19,11 +19,12 @@ const EMPTY = Object.freeze([]);
 // ignored: the OCC maps have one dark style and never swap it. Placing a stand (ADR-0027, Decision D-2): `placing` with
 // `onMapClick` gives the clicked point; `placingCode` also draws that stand's box at the pointer and a click gives the
 // point it snapped to (`{ latitude, longitude, snapped }`), `pendingLocation` draws the location waiting for «Guardar
-// ubicación» and `onCancelPlacing` is what Esc on the map does first.
+// ubicación» and `onCancelPlacing` is what Esc on the map does first. `weather` (PR M8, what useMdpcWeather answers)
+// gives the map its wind at the airfield; without it the map draws no weather, as on the console's apron.
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
-  pendingLocation = null, onCancelPlacing,
+  pendingLocation = null, onCancelPlacing, weather,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -78,6 +79,7 @@ const PositionMap = forwardRef(function PositionMap({
       initialCamera={initialCamera}
       onCameraChange={onCameraChange}
       pitchMode={threeD ? '3d' : '2d'}
+      weather={weather}
       groups={{ 'buildings-3d': allowBuildingExtrusion && threeD }}
       labels={{
         unavailableTitle: t('map.unavailableTitle'),

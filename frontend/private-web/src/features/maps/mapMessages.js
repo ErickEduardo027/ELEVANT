@@ -52,6 +52,15 @@ export const mapMessages = {
         ndb: 'Radioayuda NDB',
         night: 'Noche (tras el crepúsculo civil)',
       },
+      // The weather on screen (ui/referenceLegend.js, traffic/weatherLayers.js, PR M8); its tags «No oficial» and «Sin
+      // actualizar» are the vocabulary's.
+      weather: {
+        wind: 'Viento en pista',
+        goes: 'Nubes por satélite (GOES-East, infrarrojo)',
+        imerg: 'Lluvia estimada (IMERG)',
+        imageAt: 'Imagen de las {time}',
+        imageDay: 'Imagen del {date}',
+      },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
@@ -102,7 +111,7 @@ export const mapMessages = {
       stands: 'Posiciones del mapa',
       flights: 'Vuelos del mapa',
     },
-    attribution: { aircraftData: 'Datos de aeronaves' },
+    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima' },
     controls: {
       zoomIn: 'Acercar',
       zoomOut: 'Alejar',
@@ -190,7 +199,7 @@ export const mapMessages = {
       show: 'Mostrar las capas',
       hide: 'Ocultar las capas',
       locked: 'Siempre visible',
-      group: { traffic: 'Tráfico', reference: 'Referencias' },
+      group: { traffic: 'Tráfico', reference: 'Referencias', weather: 'Meteorología' },
       key: {
         traffic: {
           aviam: 'Vuelos de AVIAM',
@@ -205,6 +214,14 @@ export const mapMessages = {
         airports: 'Aeropuertos de la región',
         navaids: 'Radioayudas',
         daynight: 'Día y noche',
+        // The weather of PR M8 (design E7).
+        weather: { goes: 'Nubes por satélite', imerg: 'Lluvia estimada', wind: 'Viento en pista' },
+      },
+      // What a weather key that is on says when the map shows nothing of it (traffic/weatherLayers.js).
+      note: {
+        views: 'Se ve en {first} y {second}',
+        loadingImage: 'Buscando la imagen…',
+        noImage: 'No hay imagen en este momento.',
       },
     },
     // The words the map draws by its references (traffic/referenceFeatures.js): the runway in use and where it comes
@@ -242,6 +259,17 @@ export const mapMessages = {
         change: { FM: 'Cambio', BECMG: 'Cambio gradual', TEMPO: 'Temporal', PROB: 'Probabilidad {percent}' },
       },
       wind: { calm: 'Calma', variable: 'VRB', gust: 'G{speed}' },
+    },
+    // The tooltip of the wind at the airfield (traffic/weatherLayers.js: windTooltip): its words, the time of the METAR
+    // and the head (or tail) and cross wind of each runway end. «No oficial» is TAGS.unofficial.
+    wind: {
+      title: 'Viento {wind}',
+      calmTitle: 'Viento en calma',
+      observed: 'METAR de las {time}',
+      head: '{speed} kt de frente',
+      tail: '{speed} kt de cola',
+      fromRight: '{speed} kt de la derecha',
+      fromLeft: '{speed} kt de la izquierda',
     },
   },
   en: {
@@ -291,6 +319,13 @@ export const mapMessages = {
         ndb: 'NDB navaid',
         night: 'Night (after civil twilight)',
       },
+      weather: {
+        wind: 'Runway wind',
+        goes: 'Satellite clouds (GOES-East, infrared)',
+        imerg: 'Estimated rain (IMERG)',
+        imageAt: 'Image of {time}',
+        imageDay: 'Image of {date}',
+      },
     },
     airfield: {
       runway: 'Runway {id}',
@@ -334,7 +369,7 @@ export const mapMessages = {
       stands: 'Stands on the map',
       flights: 'Flights on the map',
     },
-    attribution: { aircraftData: 'Aircraft data' },
+    attribution: { aircraftData: 'Aircraft data', weather: 'Weather' },
     controls: {
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',
@@ -414,7 +449,7 @@ export const mapMessages = {
       show: 'Show the layers',
       hide: 'Hide the layers',
       locked: 'Always shown',
-      group: { traffic: 'Traffic', reference: 'References' },
+      group: { traffic: 'Traffic', reference: 'References', weather: 'Weather' },
       key: {
         traffic: {
           aviam: 'AVIAM flights',
@@ -428,6 +463,12 @@ export const mapMessages = {
         airports: 'Airports in the region',
         navaids: 'Navaids',
         daynight: 'Day and night',
+        weather: { goes: 'Satellite clouds', imerg: 'Estimated rain', wind: 'Runway wind' },
+      },
+      note: {
+        views: 'Shown in {first} and {second}',
+        loadingImage: 'Looking for the image…',
+        noImage: 'No image right now.',
       },
     },
     reference: {
@@ -458,6 +499,15 @@ export const mapMessages = {
         change: { FM: 'Change', BECMG: 'Gradual change', TEMPO: 'Temporary', PROB: 'Probability {percent}' },
       },
       wind: { calm: 'Calm', variable: 'VRB', gust: 'G{speed}' },
+    },
+    wind: {
+      title: 'Wind {wind}',
+      calmTitle: 'Calm wind',
+      observed: 'METAR of {time}',
+      head: '{speed} kt headwind',
+      tail: '{speed} kt tailwind',
+      fromRight: '{speed} kt from the right',
+      fromLeft: '{speed} kt from the left',
     },
   },
 };

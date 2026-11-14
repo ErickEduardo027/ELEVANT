@@ -1,9 +1,12 @@
+import { inflateSync } from 'node:zlib';
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import { describe, expect, it } from 'vitest';
 import { basemapLayers } from '../src/features/maps/style/basemapLayers';
+import { GOES_TILE_TEMPLATE, IMERG_TILE_TEMPLATE } from '../src/services/satelliteService';
+import { GIBS_ORIGIN, gibsTileRequest, isolate } from './visual/support/isolate.mjs';
 import {
-  SYNTHETIC_LAYERS, clipLine, clipRing, syntheticTile, toTileUnits,
+  SYNTHETIC_LAYERS, clipLine, clipRing, encodePng, syntheticSatelliteTile, syntheticTile, tilePixelLngLat, toTileUnits,
 } from './visual/support/syntheticTiles.mjs';
 
 // The invented base map of the visual suite (tests/visual/support/syntheticTiles.mjs), read back with the vector tile
@@ -62,5 +65,103 @@ describe('synthetic vector tiles of the visual suite', () => {
     expect(clipRing([[20, 20], [30, 20], [30, 30]], 0, 5)).toEqual([]);
     expect(clipLine([[-5, 1], [5, 1], [5, 9], [1, 9], [1, 3]], 0, 6)).toEqual([[[0, 1], [5, 1], [5, 6]], [[1, 6], [1, 3]]]);
     expect(clipLine([[10, 10], [20, 20]], 0, 6)).toEqual([]);
+  });
+});
+
+// A PNG read back: its size and its RGBA pixels (the tiles here are unfiltered rows of 8-bit RGBA).
+function readPng(bytes) {
+  expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const chunks = [];
+  for (let at = 8; at < bytes.length;) {
+    const length = bytes.readUInt32BE(at);
+    chunks.push({ type: bytes.toString('ascii', at + 4, at + 8), data: bytes.subarray(at + 8, at + 8 + length) });
+    at += 12 + length;
+  }
+  expect(chunks.map(chunk => chunk.type)).toEqual(['IHDR', 'IDAT', 'IEND']);
+  const header = chunks[0].data;
+  const [width, height] = [header.readUInt32BE(0), header.readUInt32BE(4)];
+  expect([...header.subarray(8)]).toEqual([8, 6, 0, 0, 0]);
+  const rows = inflateSync(chunks[1].data);
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    expect(rows[row * (width * 4 + 1)]).toBe(0);
+    rows.copy(pixels, row * width * 4, row * (width * 4 + 1) + 1, (row + 1) * (width * 4 + 1));
+  }
+  return { width, height, pixels };
+}
+
+// A tile URL of a GIBS image, pinned to `time` or the latest one (`default`).
+const gibsUrl = (template, time, { z, y, x }) => new URL(template.replace('/default/default/', `/default/${time}/`)
+  .replace('{z}', String(z)).replace('{y}', String(y)).replace('{x}', String(x)));
+
+describe('synthetic satellite images of the visual suite (PR M8)', () => {
+  it('answers the satellite images of NASA GIBS pinned to their time with a synthetic PNG, and nothing else', () => {
+    expect(gibsTileRequest(gibsUrl(GOES_TILE_TEMPLATE, '2026-11-13T14:50:00Z', { z: 5, y: 14, x: 9 }))).toEqual({
+      layer: 'GOES-East_ABI_Band13_Clean_Infrared', image: 'goes', time: '2026-11-13T14:50:00Z', z: 5, y: 14, x: 9,
+    });
+    expect(gibsTileRequest(gibsUrl(IMERG_TILE_TEMPLATE, '2026-11-13', { z: 6, y: 28, x: 19 }))).toMatchObject({
+      image: 'imerg', time: '2026-11-13', z: 6, y: 28, x: 19,
+    });
+    // The latest image, which names no time, another layer of GIBS and another origin are not answered.
+    expect(gibsTileRequest(gibsUrl(GOES_TILE_TEMPLATE, 'default', { z: 5, y: 14, x: 9 }))).toBeNull();
+    expect(gibsTileRequest(new URL(`${GIBS_ORIGIN}/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/`
+      + '2026-11-13/GoogleMapsCompatible_Level9/5/14/9.jpg'))).toBeNull();
+    expect(gibsTileRequest(new URL('https://gibs.example.org/wmts/epsg3857/best/GOES-East_ABI_Band13_Clean_Infrared/default/'
+      + '2026-11-13/GoogleMapsCompatible_Level6/5/14/9.png'))).toBeNull();
+
+    // The clouds of a tile over Punta Cana: a real PNG, 256 px a side, with clouds in it and clear sky around them.
+    const [lng, lat] = [-68.3634, 18.5674];
+    const tile = { z: 5, x: Math.floor(((lng + 180) / 360) * 32), y: 14 };
+    const png = syntheticSatelliteTile('goes', tile.z, tile.x, tile.y);
+    const { width, height, pixels } = readPng(png);
+    expect([width, height]).toEqual([256, 256]);
+    const alphas = Array.from({ length: width * height }, (_, index) => pixels[index * 4 + 3]);
+    expect(Math.max(...alphas)).toBeGreaterThan(150);
+    expect(alphas.filter(alpha => alpha === 0).length).toBeGreaterThan(0);
+    // White clouds; the rain a muted blue, inside the clouds and smaller.
+    const cloudy = alphas.indexOf(Math.max(...alphas));
+    expect([...pixels.subarray(cloudy * 4, cloudy * 4 + 3)]).toEqual([236, 240, 242]);
+    const rain = readPng(syntheticSatelliteTile('imerg', tile.z, tile.x, tile.y));
+    const rainy = Array.from({ length: width * height }, (_, index) => rain.pixels[index * 4 + 3]).filter(alpha => alpha > 0);
+    expect(rainy.length).toBeGreaterThan(0);
+    expect(rainy.length).toBeLessThan(alphas.filter(alpha => alpha > 0).length);
+    // Made once, the same every time; nothing for another image.
+    expect(syntheticSatelliteTile('goes', tile.z, tile.x, tile.y)).toBe(png);
+    expect(syntheticSatelliteTile('radar', 5, 9, 14)).toBeNull();
+    // The pixels run on across tiles: the centre of a tile's pixel is where Web Mercator puts it.
+    const [west] = tilePixelLngLat(5, 9, 14, -0.5, 0);
+    expect(west).toBeCloseTo((9 / 32) * 360 - 180, 9);
+    expect(readPng(encodePng(1, 1, Buffer.from([1, 2, 3, 4]))).pixels).toEqual(Buffer.from([1, 2, 3, 4]));
+  });
+
+  it('routes the tiles of GIBS through the isolation without the network, and reports a tile that is not pinned', async () => {
+    // A stand-in for Playwright's page: the isolation's routes, and what a route answers.
+    const routes = [];
+    const page = {
+      route: async (matcher, handler) => { routes.push({ matcher, handler }); },
+      routeWebSocket: async () => {},
+    };
+    const log = await isolate(page, { origin: 'http://localhost:4186' });
+    const request = url => {
+      const result = {};
+      const route = {
+        request: () => ({ url: () => url.href, method: () => 'GET', headers: () => ({ origin: 'http://localhost:4186' }) }),
+        fulfill: async answer => { result.answer = answer; },
+        abort: async reason => { result.aborted = reason; },
+      };
+      return routes[0].handler(route).then(() => result);
+    };
+    const pinned = gibsUrl(GOES_TILE_TEMPLATE, '2026-11-13T14:50:00Z', { z: 5, y: 14, x: 9 });
+    expect(routes[0].matcher(pinned)).toBe(true);
+    const answered = await request(pinned);
+    expect(answered.answer).toMatchObject({ status: 200, contentType: 'image/png' });
+    expect(answered.answer.headers['access-control-allow-origin']).toBe('http://localhost:4186');
+    expect(answered.answer.body).toBe(syntheticSatelliteTile('goes', 5, 9, 14));
+    expect(log.count('satellite')).toBe(1);
+    expect(log.unexpected).toEqual([]);
+    // The latest image is never asked for by a map that pins its tiles: such a request fails the spec.
+    const latest = gibsUrl(GOES_TILE_TEMPLATE, 'default', { z: 5, y: 14, x: 9 });
+    expect((await request(latest)).aborted).toBe('blockedbyclient');
+    expect(log.unexpected).toEqual([`GET ${latest.href}`]);
   });
 });

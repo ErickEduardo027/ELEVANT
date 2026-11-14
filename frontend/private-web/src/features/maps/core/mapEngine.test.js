@@ -421,6 +421,52 @@ describe('map engine', () => {
     expect(map.featureStateOf('occ-stands', 'A2')).toEqual({ selected: true });
   });
 
+  it('setRasterTiles sets the tiles and restores them after a context loss', () => {
+    // A raster source of PR M8 (a satellite image of GIBS), its tiles the latest image until they are pinned.
+    const latest = 'https://gibs.example/wmts/epsg3857/best/Clouds/default/default/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png';
+    const pinned = latest.replace('/default/default/', '/default/2026-11-13T14:50:00Z/');
+    const style = buildOccStyle({ overlays: [OVERLAY, {
+      sources: { 'occ-weather-goes': { type: 'raster', tiles: [latest], tileSize: 256, maxzoom: 6 } },
+      layers: [{ slot: 'weather', id: 'occ-weather-goes-image', type: 'raster', source: 'occ-weather-goes',
+        layout: { visibility: 'none' }, metadata: { 'occ:group': 'weather.goes' } }],
+    }] });
+    const { engine, map, state } = setup({ style });
+    // Asked before the style loads, it waits for it, like every call that needs the style.
+    engine.setRasterTiles('occ-weather-goes', [pinned]);
+    state.emit(map, 'style.load');
+    const source = map.getSource('occ-weather-goes');
+    expect(source.setTilesCalls).toEqual([[pinned]]);
+    expect(source.serialize().tiles).toEqual([pinned]);
+    // The same tiles again: MapLibre would reload the source for nothing, so nothing is called.
+    engine.setRasterTiles('occ-weather-goes', [pinned]);
+    expect(source.setTilesCalls).toHaveLength(1);
+
+    // A context loss: MapLibre 6.16 rebuilds the source with the tiles it was last given, and the engine adds nothing.
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(map.getSource('occ-weather-goes').serialize().tiles).toEqual([pinned]);
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([]);
+    // A style rebuilt without them (another MapLibre, a worker restart that lost them) gets them back from the engine.
+    state.loseContext(map);
+    map.snapshot.sources['occ-weather-goes'].tiles = [latest];
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([[pinned]]);
+    expect(map.getSource('occ-weather-goes').tiles).toEqual([pinned]);
+
+    // Only a list of URL templates; a source that is not a raster, or none, is left alone.
+    for (const tiles of [[], pinned, null, [''], [42]]) {
+      expect(() => engine.setRasterTiles('occ-weather-goes', tiles), JSON.stringify(tiles)).toThrow(TypeError);
+    }
+    expect(() => engine.setRasterTiles('occ-stands', [pinned])).not.toThrow();
+    expect(() => engine.setRasterTiles('nowhere', [pinned])).not.toThrow();
+    // After destroy nothing reaches MapLibre.
+    engine.destroy();
+    expect(() => engine.setRasterTiles('occ-weather-goes', [latest])).not.toThrow();
+    expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(2);
+  });
+
   it('stays unavailable when the context comes back without WebGL2 and removes the map at once', async () => {
     vi.useFakeTimers();
     const onStatus = vi.fn();

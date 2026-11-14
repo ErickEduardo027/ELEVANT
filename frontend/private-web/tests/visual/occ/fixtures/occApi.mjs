@@ -1,6 +1,7 @@
 // Synthetic answers of the ELEVANT API for the OCC screens of the visual suite: an OCC account of Punta Cana, its
-// department access and a positions board that passes the strict validators of @elevant/api-client
-// (tests/visualOccFixtures.test.js checks them). Every id, flight and registration is invented.
+// department access, a positions board and the aerodrome weather (PR M8) that pass the strict validators of
+// @elevant/api-client (tests/visualOccFixtures.test.js checks them). Every id, flight, registration and report is
+// invented.
 
 export const STATION = Object.freeze({ stationId: '6f1d2c3b-4a59-4e6f-8a7b-9c0d1e2f3a4b', stationCode: 'PUJ' });
 const ACCOUNT_ID = '2b7c4e1a-9d3f-4c5b-8e6a-1f2d3c4b5a69';
@@ -124,16 +125,77 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
   };
 }
 
+const pad = (value, length) => String(value).padStart(length, '0');
+// «131450»: the day, hour and minute of an instant in UTC, as a METAR writes it.
+const dayTime = ms => {
+  const date = new Date(ms);
+  return `${pad(date.getUTCDate(), 2)}${pad(date.getUTCHours(), 2)}${pad(date.getUTCMinutes(), 2)}`;
+};
+const iso = ms => new Date(ms).toISOString();
+
+/**
+ * GET occ/weather?stationId= (PR M8): the aerodrome weather of the station as of `now`, Live, with an invented METAR
+ * observed ten minutes before (wind 100° at 13 kt, as the map lab's) and a one-period TAF around it, with the credit the
+ * API always sends. Nothing of it comes from aviationweather.gov.
+ */
+export function aerodromeWeather({ stationId = STATION.stationId, now = Date.now() } = {}) {
+  const observedAt = now - 10 * 60 * 1000;
+  return {
+    stationId,
+    icaoCode: 'MDPC',
+    status: 'Live',
+    serverTime: iso(now),
+    retrievedAt: iso(now - 3 * 60 * 1000),
+    source: { name: 'NOAA Aviation Weather Center', homeUrl: 'https://aviationweather.gov' },
+    metar: {
+      raw: `MDPC ${dayTime(observedAt)}Z 10013KT 9999 SCT020 29/22 Q1015`,
+      observedAt: iso(observedAt),
+      flightCategory: 'VFR',
+      windDirectionDegrees: 100,
+      windVariable: false,
+      windSpeedKnots: 13,
+      windGustKnots: null,
+      visibilityStatuteMiles: 6,
+      temperatureCelsius: 29,
+      dewpointCelsius: 22,
+      altimeterHectopascals: 1015,
+      weather: null,
+      clouds: [{ cover: 'SCT', baseFeet: 2000 }],
+    },
+    taf: {
+      raw: `TAF MDPC ${dayTime(now - 4 * 60 * 60 * 1000)}Z ${dayTime(now - 3 * 60 * 60 * 1000).slice(0, 4)}/`
+        + `${dayTime(now + 21 * 60 * 60 * 1000).slice(0, 4)} 09012KT 9999 FEW020`,
+      issuedAt: iso(now - 4 * 60 * 60 * 1000),
+      validFrom: iso(now - 3 * 60 * 60 * 1000),
+      validTo: iso(now + 21 * 60 * 60 * 1000),
+      periods: [{
+        from: iso(now - 3 * 60 * 60 * 1000),
+        to: iso(now + 21 * 60 * 60 * 1000),
+        change: null,
+        probabilityPercent: null,
+        windDirectionDegrees: 90,
+        windVariable: false,
+        windSpeedKnots: 12,
+        windGustKnots: null,
+        visibilityStatuteMiles: 6,
+        weather: null,
+        clouds: [{ cover: 'FEW', baseFeet: 2000 }],
+      }],
+    },
+  };
+}
+
 const LOCATION_PATH = /^\/api\/v1\/occ\/stands\/([^/]+)\/location$/;
 
 /**
- * The API handler for support/isolate.mjs: the access, the positions board and «Ubicar en el mapa» (PUT
- * occ/stands/{standId}/location, ADR-0027), which keeps the location and answers the board with it, as the API does;
- * every other path answers the Problem Details 404 of the isolation. `reads` counts the boards served, `locates` lists
- * the locations sent (`{ standId, latitude, longitude, operationDate }`) and `located` keeps them by stand.
+ * The API handler for support/isolate.mjs: the access, the positions board, the aerodrome weather (PR M8) and «Ubicar en
+ * el mapa» (PUT occ/stands/{standId}/location, ADR-0027), which keeps the location and answers the board with it, as
+ * the API does; every other path answers the Problem Details 404 of the isolation. `reads` counts the boards served,
+ * `weatherReads` the weather, `locates` lists the locations sent (`{ standId, latitude, longitude, operationDate }`)
+ * and `located` keeps them by stand.
  */
 export function createOccApi() {
-  const api = { reads: 0, locates: [], located: new Map() };
+  const api = { reads: 0, weatherReads: 0, locates: [], located: new Map() };
   api.handle = (request, url) => {
     const location = request.method() === 'PUT' ? LOCATION_PATH.exec(url.pathname) : null;
     if (location) {
@@ -146,6 +208,10 @@ export function createOccApi() {
     }
     if (request.method() !== 'GET') return null;
     if (url.pathname === '/api/v1/governance/me/access') return { status: 200, json: OCC_ACCESS };
+    if (url.pathname === '/api/v1/occ/weather') {
+      api.weatherReads += 1;
+      return { status: 200, json: aerodromeWeather({ stationId: url.searchParams.get('stationId') ?? STATION.stationId }) };
+    }
     if (url.pathname === '/api/v1/occ/positions') {
       api.reads += 1;
       return {

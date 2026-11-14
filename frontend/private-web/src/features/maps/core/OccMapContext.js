@@ -21,10 +21,13 @@ import { createContext, useContext } from 'react';
 // - references (PR M8): `referencesOnScreen`, the references drawn in that area, read back from the map
 //   (traffic/referenceFeatures.js: referencesOnScreen): `{ kinds, runway }`, the legend kinds on screen (`rings`,
 //   `centrelines`, `runwayInUse`, `airports`, `counterparts`, `vor`, `ndb`, `night`, in that order) and the runway in
-//   use its emphasised centreline says (`{ arrival, source }` or null).
-// - layers menu (PR M5, core/layersMenu.js): `layers` (`{ keys, values }`: the keys the map can show and whether each is
-//   on now), `setLayer(key, on)`, `layersMenuOpen`, `setLayersMenuOpen(open)` and `registerLayersMenu()`, which a menu
-//   on screen calls (it returns the call that unregisters it): the L key opens a menu only while one is registered.
+//   use its emphasised centreline says (`{ arrival, source }` or null). On a map with the weather, the kinds go on with
+//   the weather drawn there (traffic/weatherLayers.js: weatherOnScreen; `wind` or `windStale`, `goes`, `imerg`) and
+//   `imagery` holds the time of each satellite image on screen (`{ goes: { time, precision } }`).
+// - layers menu (PR M5, core/layersMenu.js): `layers` (`{ keys, values, notes }`: the keys the map can show, whether each
+//   is on now and, from PR M8, what a weather key that is on says when the map shows nothing of it), `setLayer(key,
+//   on)`, `layersMenuOpen`, `setLayersMenuOpen(open)` and `registerLayersMenu()`, which a menu on screen calls (it
+//   returns the call that unregisters it): the L key opens a menu only while one is registered.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -48,7 +51,7 @@ export const OCC_MAP_IDLE = Object.freeze({
     route: Object.freeze([]) }),
   trafficSource: null,
   referencesOnScreen: Object.freeze({ kinds: Object.freeze([]), runway: null }),
-  layers: Object.freeze({ keys: Object.freeze([]), values: Object.freeze({}) }),
+  layers: Object.freeze({ keys: Object.freeze([]), values: Object.freeze({}), notes: Object.freeze({}) }),
   setLayer: doNothing,
   layersMenuOpen: false,
   setLayersMenuOpen: doNothing,

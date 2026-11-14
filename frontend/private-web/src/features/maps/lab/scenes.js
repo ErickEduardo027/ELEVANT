@@ -31,7 +31,9 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 // lab/trafficScenes.js, which the lab draws at the frozen clock for the URL's selection (MapLab.jsx), without polling;
 // with `layersMenu: true` it opens with the layers menu open. A reference scene (PR M8) has `weather`, a synthetic
 // answer of GET occ/weather (testing/weatherFixtures.js) that the lab reads once (labWeather), and may have `traffic`
-// too; the night scene reads at an instant of its own, dusk in Punta Cana.
+// too; the night scene reads at an instant of its own, dusk in Punta Cana. A weather scene (PR M8) may also have
+// `satellite`, the times the simulated satellite images name (useSatelliteImagery: createSimulatedSatelliteImagery; no
+// scene ever reads GIBS), and `layers`, the layers it opens with (OccMap's layerOverrides).
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
 export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
@@ -183,6 +185,25 @@ function referenceScene(id, { weather, traffic = null, at = null, ...options }) 
     ...(at === null ? {} : { at }),
     weather,
     ...(traffic === null ? {} : { traffic }),
+  };
+}
+
+/**
+ * The satellite images of the lab (PR M8): the times GIBS would name for the GOES-East clouds and the IMERG rain before
+ * the scene's 11:00, 10:50 and 10:30 in Punta Cana. Simulated: the visual suite answers their tiles with a synthetic
+ * picture (tests/visual/support/isolate.mjs).
+ */
+export const LAB_SATELLITE = Object.freeze({
+  goes: Object.freeze({ time: '2026-11-13T14:50:00Z', precision: 'instant' }),
+  imerg: Object.freeze({ time: '2026-11-13T14:30:00Z', precision: 'instant' }),
+});
+
+// A map scene with the weather of PR M8: a reference scene with, when given, its satellite images and its layers.
+function weatherScene(id, { satellite = null, layers = null, ...options }) {
+  return {
+    ...referenceScene(id, options),
+    ...(satellite === null ? {} : { satellite }),
+    ...(layers === null ? {} : { layers }),
   };
 }
 
@@ -342,6 +363,35 @@ export const SCENES = deepFreeze([
     view: 'approach',
     weather: createAerodromeWeather(),
     traffic: TRAFFIC_SCENARIOS['approach-traffic-demo'],
+  }),
+  weatherScene('region-satellite', {
+    title: 'Región: nubes y lluvia por satélite',
+    description: 'Hasta 250 NM alrededor de PUJ a las 11:00, con las nubes de GOES-East y la lluvia de IMERG encendidas y '
+      + 'fijadas a la hora de su imagen, bajo las referencias y el tráfico mixto. Imágenes simuladas, sin red.',
+    view: 'region',
+    weather: createAerodromeWeather(),
+    satellite: LAB_SATELLITE,
+    layers: { 'weather.goes': true, 'weather.imerg': true },
+    traffic: TRAFFIC_SCENARIOS['region-traffic-mixed'],
+  }),
+  weatherScene('airfield-wind-live', {
+    title: 'Aeródromo: viento en pista',
+    description: 'El viento del METAR de las 10:50, 100° a 13 kt, junto al aeródromo: su flecha y «100° 13 kt R08», con el '
+      + 'viento de frente y de costado de cada pista en su tooltip.',
+    view: 'airfield',
+    weather: createAerodromeWeather(),
+  }),
+  weatherScene('airfield-wind-stale', {
+    title: 'Aeródromo: viento sin actualizar',
+    description: 'El último METAR es de las 08:00: el viento se atenúa y dice «Sin actualizar desde las 08:00».',
+    view: 'airfield',
+    weather: createAerodromeWeather({ status: 'Stale' }),
+  }),
+  weatherScene('airfield-wind-unavailable', {
+    title: 'Aeródromo: sin clima del aeródromo',
+    description: 'El servicio del clima no tiene METAR: no hay viento en el mapa y el menú de capas dice por qué.',
+    view: 'airfield',
+    weather: createAerodromeWeather({ status: 'Unavailable' }),
   }),
 ]);
 

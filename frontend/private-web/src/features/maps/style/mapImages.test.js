@@ -137,6 +137,36 @@ describe('map images', () => {
     expect(clock.width / 2 - ringRadius - clock.ops[0].lineWidth / 2).toBeGreaterThanOrEqual(3);
   });
 
+  it('the wind arrow points up, a shaft and a head clear of the border; a calm or variable wind is a ring around a dot', () => {
+    const { width, height, ops: [shaft, head] } = MAP_IMAGE_SHAPES['wind-arrow'];
+    expect([width, height]).toEqual([24, 24]);
+    // Nose up (north): the layer turns it to where the wind blows. The shaft runs down the middle below the head.
+    const tip = pathPoints(head.fill).reduce((top, point) => (point[1] < top[1] ? point : top));
+    expect(tip).toEqual([width / 2, 3.5]);
+    const [shaftStart, shaftEnd] = pathPoints(shaft.stroke);
+    expect([shaftStart[0], shaftEnd[0]]).toEqual([width / 2, width / 2]);
+    // From the bottom up into the head's base (y 11), so the two join.
+    expect(shaftStart[1]).toBeGreaterThan(shaftEnd[1]);
+    expect(shaftEnd[1]).toBeLessThanOrEqual(Math.max(...pathPoints(head.fill).map(([, y]) => y)));
+    // 3 px clear of the border for its SDF and halo, the shaft's width included.
+    for (const op of [shaft, head]) {
+      const half = op.stroke === undefined ? 0 : op.lineWidth / 2;
+      for (const [x, y] of pathPoints(op.fill ?? op.stroke)) {
+        expect(Math.min(x, width - x) - half, `x ${x}`).toBeGreaterThanOrEqual(3);
+        expect(Math.min(y, height - y) - half, `y ${y}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+    // The ring of a calm wind: 5.5 px around the middle with its 1.5 px stroke, and a dot inside it.
+    const calm = MAP_IMAGE_SHAPES['wind-calm'];
+    const [ringRight, ringY, ringRadius] = numbers(calm.ops[0].stroke);
+    expect([ringRight - ringRadius, ringY]).toEqual([calm.width / 2, calm.height / 2]);
+    expect(calm.width / 2 - ringRadius - calm.ops[0].lineWidth / 2).toBeGreaterThanOrEqual(3);
+    expect(calm.ops[1].fill).toBeDefined();
+    // Both are icons the layer paints (SDF), before the traffic's images at the end of the list.
+    expect(['wind-arrow', 'wind-calm'].every(isSdfImage)).toBe(true);
+    expect(MAP_IMAGE_IDS.indexOf('wind-calm')).toBe(MAP_IMAGE_IDS.indexOf('wind-arrow') + 1);
+  });
+
   it('the hatch pattern is a non-SDF image painted in line-strong; the signal images are a triangle and an octagon with «!»', () => {
     // The hatch: stripes at 45° (x + y constant) every 8 px, with the corner pieces that join the tiles, painted here in
     // the token of «Inhabilitada»'s hatch, because MapLibre cannot draw a pattern from an SDF.

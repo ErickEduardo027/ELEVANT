@@ -2,8 +2,10 @@ import { BASEMAP_SOURCE_ID, FONT_STACKS, basemapLayers } from './basemapLayers';
 
 // The one style document of the OCC maps, built in code and handed to the map as an object: the NOC base map over
 // the OpenFreeMap vector tiles, an invisible marker at the base of every slot, and the overlay layers of the screen
-// with their GeoJSON sources born empty (the map engine fills them). There is no theme parameter and no sprite: the
-// OCC is dark only, icons are generated as SDF images (mapImages.js), and the style is never swapped after start.
+// with their GeoJSON sources born empty (the map engine fills them) and, from PR M8, the raster sources of the
+// satellite images with their own https tiles (the engine pins them to the time of the image). There is no theme
+// parameter and no sprite: the OCC is dark only, icons are generated as SDF images (mapImages.js), and the style is
+// never swapped after start.
 
 export { BASEMAP_SOURCE_ID, FONT_STACKS };
 
@@ -84,12 +86,18 @@ function overlayLayerProblem(layer, slot) {
   return null;
 }
 
+// A raster source of an overlay (PR M8): its tiles are a list of https URL templates, and it has no TileJSON of its own.
+const HTTPS_TILE = /^https:\/\/[^/\s]+\/\S*$/;
+const isHttpsRaster = source => source?.type === 'raster' && source.url === undefined && Array.isArray(source.tiles)
+  && source.tiles.length > 0 && source.tiles.every(tile => typeof tile === 'string' && HTTPS_TILE.test(tile));
+
 /**
  * Builds the style. `basemap: false` leaves out the vector source and every tile layer (the land colour stays as the
  * background), which the map lab uses to render without the network. An overlay is
  * `{ sources: { id: GeoJSONSourceSpecification }, layers: [{ slot, ...LayerSpecification }] }`: every layer names
  * its slot and its `metadata['occ:group']`, may name a threshold in `occ:minThreshold` / `occ:maxThreshold`, and
- * keeps its order inside the slot. Duplicate ids, unknown slots or thresholds and missing sources throw.
+ * keeps its order inside the slot. A source is GeoJSON, born empty, or (PR M8) a raster with its https `tiles`, taken
+ * as given. Duplicate ids, other sources, unknown slots or thresholds and missing sources throw.
  */
 export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
   const sources = {};
@@ -109,7 +117,14 @@ export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
   for (const overlay of overlays) {
     for (const [id, source] of Object.entries(overlay?.sources ?? {})) {
       if (Object.hasOwn(sources, id)) throw new Error(`Map source ${id} is defined twice`);
-      if (source?.type !== 'geojson') throw new Error(`Overlay source ${id} must be a GeoJSON source`);
+      // A raster of PR M8 (the satellite images) is taken as given, with its own https tiles and no data.
+      if (isHttpsRaster(source)) {
+        sources[id] = { ...source, tiles: [...source.tiles] };
+        continue;
+      }
+      if (source?.type !== 'geojson') {
+        throw new Error(`Overlay source ${id} must be a GeoJSON source or a raster source with https tiles`);
+      }
       sources[id] = { ...source, data: EMPTY_COLLECTION };
     }
   }

@@ -12,6 +12,7 @@ import { useMapSelection } from '../core/useMapSelection';
 import { useStandDisplay } from '../stands/useStandDisplay';
 import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
 import { createTelemetryStore } from '../traffic/telemetryStore';
+import { windPoint } from '../traffic/weatherLayers';
 import FlightDataBlock from '../ui/FlightDataBlock';
 import MapDock from '../ui/MapDock';
 import MapLayersMenu from '../ui/MapLayersMenu';
@@ -22,6 +23,7 @@ import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome'
 import LayoutQaScene from './LayoutQaScene';
 import { SCENES, labWeather, readLabQuery } from './scenes';
 import { labTraffic } from './trafficScenes';
+import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
 // the API, for the visual suite (tests/visual) and for a person checking the map by eye. The URL says what to show:
@@ -36,7 +38,8 @@ import { labTraffic } from './trafficScenes';
 // A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), the data block of
 // the aircraft the URL selects (flightId= or hex=) and the layers menu, and the handle adds aircraftAt(id), where the
 // map draws one of its aircraft. A reference scene (PR M8) draws the references with its synthetic weather, read once,
-// and the night scene at its own instant.
+// and the night scene at its own instant. A weather scene (PR M8) draws the wind and, with the layers it opens with,
+// the simulated satellite images; the handle adds windAt(), where the map draws the wind by the airfield.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -114,8 +117,11 @@ function LabScene({ scene, basemap, frozenAt }) {
     : null), [scene.traffic, frozenAt, selection]);
   // What the map draws of it, with the map flights whose counterparts the references emphasise (PR M8).
   const mapTraffic = useMemo(() => (traffic ? { ...traffic.map, flights: traffic.situation.flights } : undefined), [traffic]);
-  // The weather of a reference scene (PR M8), read once as useMdpcWeather would answer it: the lab never polls.
+  // The weather of a reference scene (PR M8), read once as useMdpcWeather would answer it: the lab never polls. A scene
+  // without weather gives the map none, so it draws no weather. The satellite images are always the simulated ones: the
+  // lab never reads GIBS, also when a person turns them on in a scene that names none.
   const weather = useMemo(() => labWeather(scene.weather ?? null), [scene.weather]);
+  const [satelliteService] = useState(() => createSimulatedSatelliteImagery(scene.satellite ?? {}));
   // The data block's telemetry on the lab's own clock: frozen, so the age of a position stays what the scene says.
   const [telemetry] = useState(() => {
     const labNow = frozenAt ?? parseInstant(scene.traffic?.at ?? null) ?? 0;
@@ -180,12 +186,14 @@ function LabScene({ scene, basemap, frozenAt }) {
         return item ? [item.lon, item.lat] : null;
       },
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
+      // Where the scene's wind stands by the airfield (PR M8), as `[lng, lat]`, or null without weather.
+      windAt: () => (scene.weather ? windPoint() : null),
     };
     window.__occMapLab = lab;
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, reread, traffic]);
+  }, [scene.id, scene.stands, scene.weather, reread, traffic]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
@@ -234,7 +242,9 @@ function LabScene({ scene, basemap, frozenAt }) {
           basemap={basemap !== 'none'}
           mapOptions={mapOptions}
           traffic={mapTraffic}
-          weather={weather}
+          weather={scene.weather ? weather : undefined}
+          satelliteService={satelliteService}
+          layerOverrides={scene.layers}
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           {traffic?.target && (

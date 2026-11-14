@@ -249,4 +249,33 @@ describe('map messages', () => {
     expect([es('weather.wind.calm'), es('weather.wind.variable'), es('weather.wind.gust', { speed: 25 }), en('weather.wind.calm')])
       .toEqual(['Calma', 'VRB', 'G25', 'Calm']);
   });
+  it('names the weather of the layers menu, the legend, the wind tooltip and the credit in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    // The group and keys of design E7.
+    expect([es('layers.group.weather'), en('layers.group.weather')]).toEqual(['Meteorología', 'Weather']);
+    const keys = ['goes', 'imerg', 'wind'];
+    expect(keys.map(key => es(`layers.key.weather.${key}`))).toEqual(['Nubes por satélite', 'Lluvia estimada', 'Viento en pista']);
+    expect(keys.map(key => en(`layers.key.weather.${key}`))).toEqual(['Satellite clouds', 'Estimated rain', 'Runway wind']);
+    expect([es('layers.note.views', { first: 'Región', second: 'Aproximación' }), es('layers.note.loadingImage'),
+      es('layers.note.noImage')]).toEqual(['Se ve en Región y Aproximación', 'Buscando la imagen…', 'No hay imagen en este momento.']);
+    // The legend: what each is, and the time of an image.
+    expect(['wind', 'goes', 'imerg'].map(key => es(`legend.weather.${key}`))).toEqual([
+      'Viento en pista', 'Nubes por satélite (GOES-East, infrarrojo)', 'Lluvia estimada (IMERG)',
+    ]);
+    expect([es('legend.weather.imageAt', { time: '10:50' }), en('legend.weather.imageDay', { date: 'Nov 13' })])
+      .toEqual(['Imagen de las 10:50', 'Image of Nov 13']);
+    // The wind's tooltip: its words, the time of its METAR, head, tail and cross wind; «No oficial» is the vocabulary's.
+    expect([es('wind.title', { wind: '100° 13 kt' }), es('wind.calmTitle'), es('wind.observed', { time: '10:50' })])
+      .toEqual(['Viento 100° 13 kt', 'Viento en calma', 'METAR de las 10:50']);
+    expect(['head', 'tail', 'fromRight', 'fromLeft'].map(key => es(`wind.${key}`, { speed: 6 }))).toEqual([
+      '6 kt de frente', '6 kt de cola', '6 kt de la derecha', '6 kt de la izquierda',
+    ]);
+    expect(['head', 'tail', 'fromRight', 'fromLeft'].map(key => en(`wind.${key}`, { speed: 6 }))).toEqual([
+      '6 kt headwind', '6 kt tailwind', '6 kt from the right', '6 kt from the left',
+    ]);
+    expect(Object.values(mapMessages.es.wind)).not.toContain(TAGS.unofficial.es);
+    // The credit of the aerodrome weather beside the aircraft data's.
+    expect([es('attribution.weather'), en('attribution.weather')]).toEqual(['Clima', 'Weather']);
+  });
 });

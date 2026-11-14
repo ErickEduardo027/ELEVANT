@@ -39,7 +39,7 @@ const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded bo
 // (LiveFlightMap). `detail` is the page's own card of its selected flight: the plain map shows it, the live map only
 // for a flight it does not know. `theme` is accepted and ignored: the OCC maps are dark only.
 function FlightMapView({
-  flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather = null, drawnFlights, selection: chosen,
+  flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather, drawnFlights, selection: chosen,
   onSelect, framePoints = EMPTY, children,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
@@ -121,7 +121,8 @@ function FlightMapView({
  * the map flights with matchFlight: a flight whose aircraft the traffic draws is drawn once, as traffic, and a click on
  * it selects the page's flight; one with no page row is selected by its key. A click on other traffic writes `hex=`.
  * It also reads the aerodrome weather of the station (useMdpcWeather, its own 10-minute poll), whose live wind the map
- * uses for the runway in use, and gives the map its flights, whose counterparts the references emphasise (PR M8).
+ * uses for the runway in use and draws at the airfield, with the satellite clouds and rain its layers menu offers, and
+ * gives the map its flights, whose counterparts the references emphasise (PR M8). The plain map draws no weather.
  * The state of the traffic (from the air picture alone, its age on the server's clock), the credit of its source and,
  * apart, a failed read of the AVIAM flights sit over the map (MapSourceStatus). The chosen flight or
  * aircraft has its data block docked at the top left (FlightDataBlock) and its route on the map; a flight of the page

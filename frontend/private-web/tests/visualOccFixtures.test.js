@@ -1,10 +1,11 @@
-import { createElevantApiClient } from '@elevant/api-client';
+import { createElevantApiClient, isOccAerodromeWeather } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { AUTH_STORAGE_KEY as APP_AUTH_STORAGE_KEY } from '../src/features/auth/authService';
 import { mapOccupancyToRampPositions } from '../src/features/positions-map/positionsMapMappers';
 import { RAMP_POSITIONS } from '../src/features/dashboard/positionsData';
+import { toWeatherReading } from '../src/services/weatherService';
 import {
-  AUTH_STORAGE_KEY, OCC_ACCESS, STATION, createOccApi, occSession, positionsBoard,
+  AUTH_STORAGE_KEY, OCC_ACCESS, STATION, aerodromeWeather, createOccApi, occSession, positionsBoard,
 } from './visual/occ/fixtures/occApi.mjs';
 
 // The synthetic API of the OCC visual suite (tests/visual/occ) must be answers the app accepts: the shared client
@@ -59,7 +60,25 @@ describe('visual suite OCC fixtures', () => {
     expect(board.json).toMatchObject({ stationId: STATION.stationId, operationDate: DATE });
     expect(api.reads).toBe(1);
     expect(await answer('/api/v1/occ/planning')).toBeNull();
+    // The aerodrome weather (PR M8) of the station asked for, counted.
+    const weather = await answer(`/api/v1/occ/weather?stationId=${STATION.stationId}`);
+    expect(weather).toMatchObject({ status: 200, json: { stationId: STATION.stationId, status: 'Live' } });
+    expect(api.weatherReads).toBe(1);
     expect(api.handle({ method: () => 'POST' }, new URL('https://api.elevant.test/api/v1/occ/positions'))).toBeNull();
+  });
+
+  it('the aerodrome weather of the stub passes the strict validator of the shared client: a live METAR of 100° at 13 kt', async () => {
+    const weather = aerodromeWeather({ now: NOW });
+    expect(isOccAerodromeWeather(weather, STATION.stationId)).toBe(true);
+    await expect(clientAnswering(weather).getOccAerodromeWeather({ stationId: STATION.stationId })).resolves.toEqual(weather);
+    // Read as the positions map reads it: live, the METAR of ten minutes before, its wind and the credit of NOAA.
+    const reading = toWeatherReading(weather, { receivedAt: NOW });
+    expect(reading).toMatchObject({ apiStatus: 'Live', source: { name: 'NOAA Aviation Weather Center' } });
+    expect(Date.parse(reading.observation.observedAt)).toBe(NOW - 10 * 60 * 1000);
+    expect(reading.observation.metar.wind).toMatchObject({ directionDeg: 100, speedKt: 13, variable: false });
+    expect(reading.taf.periods).toHaveLength(1);
+    // Another station's weather is refused, as the page would refuse it.
+    expect(isOccAerodromeWeather(weather, '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e')).toBe(false);
   });
 
   it('«Ubicar en el mapa» keeps the location, answers the board with it as the client expects, and the next read keeps it', async () => {

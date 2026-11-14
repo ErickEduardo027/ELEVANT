@@ -31,6 +31,8 @@ import { nightShadeFeatures } from '../traffic/nightShade';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 import MapLegend from '../ui/MapLegend';
+import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
+import { GOES_TILE_TEMPLATE } from '../../../services/satelliteService';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
 import { boundsCenter, presetTargets } from './cameraPresets';
 import { liveEngineCount } from './mapEngine';
@@ -2018,5 +2020,185 @@ describe('OccMap references (PR M8)', () => {
     act(() => fake.state.emit(map, 'idle'));
     expect(referenceProbe()).toEqual({ kinds: [], runway: null });
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
+});
+
+// The weather of PR M8 (traffic/weatherLayers.js): the wind at the airfield and the satellite images, over the synthetic
+// weather of the lab's noon and a simulated GIBS; nothing here calls aviationweather.gov or GIBS.
+const layoutOf = (map, id) => map.getLayer(id)?.layout?.visibility;
+// Lets the answers of a simulated service and the renders they bring settle.
+const settle = () => act(() => new Promise(resolve => { setTimeout(resolve, 0); }));
+const PINNED_GOES = GOES_TILE_TEMPLATE.replace('/default/default/', '/default/2026-11-13T14:50:00Z/');
+// The wind as queryRenderedFeatures answers it for the map's layers: what the map wrote, from the layer that draws it.
+function windDrawn(map) {
+  const [airfield] = map.getSource('occ-weather-wind').data.features;
+  return { layer: { id: 'occ-weather-wind' }, properties: airfield.properties };
+}
+
+describe('OccMap weather (PR M8)', () => {
+  afterEach(() => {
+    serverClock.reset();
+  });
+
+  it('draws the wind only with weather', () => {
+    // Without weather (the console's apron, the plain Monitoreo), no weather at all: read at start, as the traffic.
+    const plain = render(<OccMap defaultView="airfield" />);
+    const without = fake.state.liveMaps().at(-1);
+    expect(without.options.style.sources['occ-weather-wind']).toBeUndefined();
+    expect(without.options.style.sources['occ-weather-goes']).toBeUndefined();
+    plain.rerender(<OccMap defaultView="airfield" weather={weatherAt()} />);
+    expect(without.options.style.sources['occ-weather-wind']).toBeUndefined();
+    plain.unmount();
+
+    // With it (null until there is a reading): its sources and layers, and the wind written when what it draws changes.
+    const element = props => <OccMap defaultView="airfield" frozenAt={WEATHER_NOON_MS} {...props}><ReferenceProbe /></OccMap>;
+    const view = render(element({ weather: null }));
+    const map = fake.state.liveMaps().at(-1);
+    expect(map.options.style.sources['occ-weather-wind']).toMatchObject({ type: 'geojson' });
+    expect(map.options.style.sources['occ-weather-goes']).toMatchObject({ type: 'raster', tiles: [GOES_TILE_TEMPLATE] });
+    loadStyle(map);
+    const wind = map.getSource('occ-weather-wind');
+    expect(wind.data.features).toEqual([]);
+    const writes = wind.setDataCalls.length;
+    view.rerender(element({ weather: weatherAt() }));
+    expect(wind.setDataCalls).toHaveLength(writes + 1);
+    expect(wind.data.features.map(feature => [feature.properties.placement, feature.properties.label])).toEqual([
+      ['airfield', '100° 13 kt R08'], ['wide', '100° 13 kt R08'],
+    ]);
+    // The same reading again in new objects writes nothing.
+    view.rerender(element({ weather: weatherAt() }));
+    expect(wind.setDataCalls).toHaveLength(writes + 1);
+    // A westerly wind lands the map on 26 (contracts 2.3), and the wind says it.
+    view.rerender(element({ weather: weatherAt({ wind: { directionDeg: 270, speedKt: 15 } }) }));
+    expect(wind.data.features[0].properties.label).toBe('270° 15 kt R26');
+    // Stale: dimmed, with the time of its METAR; the runway goes back to the usual 08.
+    view.rerender(element({ weather: weatherAt({ status: 'Stale' }) }));
+    expect(wind.data.features[0].properties).toMatchObject({ stale: true,
+      label: '100° 13 kt R08\nSin actualizar desde las 08:00' });
+    // Unavailable or Disabled: no wind on the map.
+    for (const status of ['Unavailable', 'Disabled']) {
+      view.rerender(element({ weather: weatherAt({ status }) }));
+      expect(wind.data.features, status).toEqual([]);
+    }
+    // The wind shows in Aeródromo by default (design E7), as its own group; the satellite images stay hidden.
+    expect(layoutOf(map, 'occ-weather-wind')).toBe('visible');
+    expect(layoutOf(map, 'occ-weather-goes-image')).toBe('none');
+    expect(layoutOf(map, 'occ-weather-imerg-image')).toBe('none');
+    // One map for its whole life.
+    expect(fake.state.maps.filter(item => item.options.style.sources['occ-weather-wind'])).toEqual([map]);
+  });
+
+  it('shows a satellite layer only when its image time is known', async () => {
+    // GIBS names the time of the clouds after a while; the rain it serves without a time.
+    const service = createSimulatedSatelliteImagery({ goes: { time: '2026-11-13T14:50:00Z' }, imerg: null, latencyMs: 20 });
+    const layers = { 'weather.goes': true, 'weather.imerg': true };
+    const element = props => (
+      <OccMap defaultView="region" weather={weatherAt()} satelliteService={service} layerOverrides={layers} {...props}>
+        <ReferenceProbe />
+        <MapLegend />
+      </OccMap>
+    );
+    window.localStorage.setItem('elevant-occ-map-layers:v1', '{"weather.goes":false}');
+    render(element({}));
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    // The scene's layers win over the browser's: both images are wanted in Región, and read.
+    await act(async () => {});
+    expect(service.calls.map(call => call.layer).sort()).toEqual(['goes', 'imerg']);
+    // Until GIBS answers, nothing is shown and no tile is asked for.
+    expect(layoutOf(map, 'occ-weather-goes-image')).toBe('none');
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([]);
+    await act(() => new Promise(resolve => { setTimeout(resolve, 40); }));
+    await settle();
+    // The clouds pinned to the time of their image, then shown: the tiles before the layer.
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([[PINNED_GOES]]);
+    expect(layoutOf(map, 'occ-weather-goes-image')).toBe('visible');
+    const order = map.calls.filter(call => call.method === 'setTiles'
+      || (call.method === 'setLayoutProperty' && call.args[0] === 'occ-weather-goes-image' && call.args[2] === 'visible'))
+      .map(call => call.method);
+    expect(order).toEqual(['setTiles', 'setLayoutProperty']);
+    // The rain has no time: it stays hidden, its tiles untouched.
+    expect(layoutOf(map, 'occ-weather-imerg-image')).toBe('none');
+    expect(map.getSource('occ-weather-imerg').setTilesCalls).toEqual([]);
+    // The legend lists the clouds with the time of their image, the rain not at all.
+    act(() => fake.state.emit(map, 'idle'));
+    expect(referenceProbe().kinds).toEqual(['goes']);
+    expect(referenceProbe().imagery).toEqual({ goes: { time: '2026-11-13T14:50:00Z', precision: 'instant' } });
+    const legend = within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem').map(item => item.textContent);
+    expect(legend).toContain('Nubes por satélite (GOES-East, infrarrojo)Imagen de las 10:50');
+    // Past the airfield threshold the image leaves the screen and the legend; nothing more is read there.
+    const reads = service.calls.length;
+    act(() => map.jumpTo({ center: [-68.36, 18.57], zoom: 15 }));
+    act(() => fake.state.emit(map, 'idle'));
+    expect(referenceProbe().kinds).not.toContain('goes');
+    await settle();
+    expect(service.calls).toHaveLength(reads);
+    // The browser's choices were not touched by the scene's.
+    expect(window.localStorage.getItem('elevant-occ-map-layers:v1')).toBe('{"weather.goes":false}');
+    window.localStorage.clear();
+  });
+
+  it('credits NOAA while the wind is on screen', () => {
+    const element = props => (
+      <OccMap defaultView="airfield" frozenAt={WEATHER_NOON_MS} weather={weatherAt()} {...props}><ReferenceProbe /></OccMap>
+    );
+    render(element({}));
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    expect(attributionOf(map) ?? '').not.toMatch(/Clima/);
+    // The map draws the wind in sight: «Clima: NOAA Aviation Weather Center», linked, with no traffic on the map.
+    fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes('occ-weather-wind') ? [windDrawn(map)] : []));
+    act(() => fake.state.emit(map, 'idle'));
+    expect(referenceProbe().kinds).toEqual(['wind']);
+    expect(attributionOf(map)).toContain('Clima: <a href="https://aviationweather.gov/" target="_blank" '
+      + 'rel="noopener noreferrer">NOAA Aviation Weather Center</a>');
+    // Out of sight, or hidden by the layers menu, the credit goes.
+    fake.state.setRenderedFeatures(map, () => []);
+    act(() => fake.state.emit(map, 'idle'));
+    expect(attributionOf(map)).not.toMatch(/Clima/);
+    cleanup();
+
+    // In English, with the aircraft data beside it when traffic is on screen too.
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><OccMap defaultView="region" weather={weatherAt()} traffic={noonTraffic()}
+      layerOverrides={{ 'weather.wind': true }} /></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    loadStyle(english);
+    fake.state.setRenderedFeatures(english, (_geometry, options) => (options.layers.includes('occ-weather-wind')
+      ? [windDrawn(english)] : []));
+    act(() => fake.state.emit(english, 'idle'));
+    expect(attributionOf(english)).toContain('Aircraft data: <a href="https://example.org/adsb"');
+    expect(attributionOf(english)).toContain('Weather: <a href="https://aviationweather.gov/"');
+  });
+
+  it('the wind tooltip', async () => {
+    const element = props => <OccMap defaultView="airfield" frozenAt={WEATHER_NOON_MS} weather={weatherAt()} {...props} />;
+    const view = render(element({}));
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes('occ-weather-wind') ? [windDrawn(map)] : []));
+    // The pointer on the wind: a pointer cursor and its card, «No oficial», the time of its METAR and every runway end.
+    fake.state.emit(map, 'mousemove', { point: { x: 300, y: 200 }, lngLat: { lng: -68.34, lat: 18.58 } });
+    act(() => frames.shift()(0));
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    const card = () => screen.getByRole('tooltip');
+    expect(card()).toHaveAttribute('data-kind', 'wind');
+    expect(card()).toHaveAttribute('data-pinned', 'false');
+    expect(within(card()).getByText('Viento 100° 13 kt · No oficial')).toHaveClass('font-semibold');
+    expect(within(card()).getByText('METAR de las 10:50')).toHaveClass('text-occ-muted');
+    for (const line of ['R08: 12 kt de frente · 6 kt de la derecha', 'R26: 12 kt de cola · 6 kt de la izquierda',
+      'R09: 13 kt de frente · 3 kt de la derecha', 'R27: 13 kt de cola · 3 kt de la izquierda']) {
+      expect(within(card()).getByText(line)).toBeInTheDocument();
+    }
+    // A click holds it: nothing depends on hovering alone.
+    await act(async () => fake.state.emit(map, 'click', { point: { x: 300, y: 200 }, lngLat: { lng: -68.34, lat: 18.58 } }));
+    expect(card()).toHaveAttribute('data-pinned', 'true');
+    // A new METAR: the held card says what the wind says now; a wind no longer drawn closes it.
+    view.rerender(element({ weather: weatherAt({ wind: { directionDeg: 120, speedKt: 9 } }) }));
+    expect(within(card()).getByText('Viento 120° 9 kt · No oficial')).toBeInTheDocument();
+    view.rerender(element({ weather: weatherAt({ status: 'Unavailable' }) }));
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });

@@ -6,7 +6,8 @@ import { mapMessages } from '../mapMessages';
 // The map tooltip (PR M3, stands in PR M4): a small card, not a modal, that says what is under the pointer. A runway or
 // a taxiway says what the airport layout says of it: «Pista 08/26 · 3100 m × 45 m», «Calle de rodaje A», or «Calle de
 // rodaje sin nombre». A stand says its code and state, its flight and who covers it, and the reasons of its signals
-// with their shape (stands/standInteractions.js: standTooltip); its drawer and its label carry the same facts. OccMap
+// with their shape (stands/standInteractions.js: standTooltip); its drawer and its label carry the same facts. The wind
+// at the airfield (PR M8) says its words, «No oficial», the time of its METAR and its wind on every runway end. OccMap
 // owns when it shows (a hover shows it; a click holds the card of a runway or a taxiway and selects a stand; a click
 // elsewhere or another view closes it) and where: `x` and `y` are the pixel of the map it points at, and `alignX` /
 // `alignY` ('start' or 'end') put the card on the side of that point with room, so it stays inside the map. It never
@@ -16,12 +17,17 @@ const OFFSET_PX = 12;
 const shift = align => (align === 'end' ? `calc(-100% - ${OFFSET_PX}px)` : `${OFFSET_PX}px`);
 const metres = value => String(Math.round(value));
 
+// The cards written in lines: a stand, and the wind at the airfield (PR M8).
+const BLOCK_KINDS = new Set(['stand', 'wind']);
+
 /**
  * The words of a tooltip: `{ title, detail, reasons }`, `detail` null when there is nothing to add and `reasons` the
- * extra lines of a stand (`[{ signal, text }]`, empty for anything else).
+ * extra lines of a stand or of the wind (`[{ signal, text }]`, empty for anything else). The wind's come written in the
+ * screen's language (traffic/weatherLayers.js: windTooltip): its words with «No oficial», the time of its METAR or
+ * «Sin actualizar desde las 14:02», and a line per runway end with its head (or tail) and cross wind.
  */
 export function tooltipText(tooltip, t) {
-  if (tooltip.kind === 'stand') {
+  if (BLOCK_KINDS.has(tooltip.kind)) {
     return { title: tooltip.title, detail: tooltip.detail ?? null, reasons: Array.isArray(tooltip.reasons) ? tooltip.reasons : [] };
   }
   if (tooltip.kind === 'runway') {
@@ -36,7 +42,7 @@ export function tooltipText(tooltip, t) {
 }
 
 /**
- * `tooltip`: `{ kind: 'runway' | 'taxiway', id, ref, lengthM, widthM }` or `{ kind: 'stand', id, title, detail,
+ * `tooltip`: `{ kind: 'runway' | 'taxiway', id, ref, lengthM, widthM }` or `{ kind: 'stand' | 'wind', id, title, detail,
  * reasons }`, with `x`, `y`, `alignX`, `alignY` and `pinned`; or null for nothing. A held card (`pinned`) has a
  * stronger frame than one that follows the pointer.
  */
@@ -44,7 +50,7 @@ export default function MapTooltip({ tooltip }) {
   const { t, language } = useTranslation(mapMessages);
   if (!tooltip) return null;
   const { title, detail, reasons } = tooltipText(tooltip, t);
-  const stand = tooltip.kind === 'stand';
+  const stand = BLOCK_KINDS.has(tooltip.kind);
   return (
     <div
       role="tooltip"

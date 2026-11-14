@@ -7,6 +7,7 @@ import { useTranslation } from '../../../i18n/LanguageScope';
 import { useMapSelection } from '../../maps/core/useMapSelection';
 import { useStandDisplay } from '../../maps/stands/useStandDisplay';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
+import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { planningMessages } from '../planningMessages';
 
 // MapLibre needs the browser: the map loads only on the client.
@@ -27,6 +28,7 @@ function time(value, timeZone) {
  * OCC positions board the positions map reads. Selecting a flight opens it in the planning drawer.
  * Stands use the location OCC saved; the rest fall back to the unverified internal reference.
  * The selected stand lives in the URL (`stand=`, contracts 2.1), as on the positions map.
+ * The map also draws the wind at the airfield from the station's aerodrome weather (PR M8, useMdpcWeather).
  */
 export default function PlanningMap({ stationId, date, flights = [], timeZone, onSelectFlight, dataRevision = 0 }) {
   const { t } = useTranslation(planningMessages);
@@ -34,6 +36,8 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
   const { selection, selectStand, clear } = useMapSelection();
   const selectedCode = selection?.kind === 'stand' ? selection.id : null;
   const mapRef = useRef(null);
+  // The aerodrome weather of the station (PR M8): its own 10-minute poll; the map draws its wind at the airfield.
+  const weather = useMdpcWeather({ stationId, enabled: Boolean(stationId) });
 
   useEffect(() => {
     if (!stationId || !date) return undefined;
@@ -73,7 +77,7 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
     <section aria-label={t('map.label')} className="grid gap-4 lg:grid-cols-[7fr_minmax(16rem,3fr)]">
       <div className={`${panelClass} relative min-h-[460px] overflow-hidden`}>
         <PositionMap ref={mapRef} positions={mapPositions} selectedPositionId={selected?.id ?? selectedCode}
-          onSelectPosition={selectPosition} theme="dark" viewMode="2d" />
+          onSelectPosition={selectPosition} theme="dark" viewMode="2d" weather={weather} />
       </div>
       <aside className={`${panelClass} space-y-3 p-4 text-sm`}>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">

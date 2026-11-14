@@ -20,6 +20,8 @@ import { useMapSelection } from '../maps/core/useMapSelection';
 import { mapMessages } from '../maps/mapMessages';
 import { unlocatedStands } from '../maps/stands/standModel';
 import { useStandDisplay } from '../maps/stands/useStandDisplay';
+import { useOccStation } from '../admin-occ/useOccStation';
+import { useMdpcWeather } from '../weather/useMdpcWeather';
 
 const NO_POSITIONS = Object.freeze([]);
 const NO_MESSAGE = Object.freeze({ tone: '', text: '' });
@@ -63,6 +65,9 @@ export default function PositionsMapPage({
   const mapAreaRef = useRef(null);
   const placingRef = useRef(null);
   const isTablet = useIsTabletBreakpoint();
+  // The aerodrome weather of the OCC station (PR M8): its own 10-minute poll; the map draws its wind at the airfield.
+  const station = useOccStation();
+  const weather = useMdpcWeather({ enabled: station.status === 'ready' });
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -261,6 +266,7 @@ export default function PositionsMapPage({
         pendingLocation={placing?.pending ?? null}
         onCancelPlacing={cancelPlacing}
         onMapClick={placing ? handleMapClick : undefined}
+        weather={weather}
       />
       {placing && (
         <div ref={placingRef} tabIndex={-1} role="group" aria-label={tMap('placing.label', { code: placing.code })}

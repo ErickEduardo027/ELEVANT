@@ -10,7 +10,9 @@
 // - adding a layer twice or before a missing layer, querying a missing layer, and passing the query point as a plain
 //   object (MapLibre would read it as the options) throw;
 // - `updateData` applies its diff to the source's `data` as MapLibre 6.16 does, `removeAllProperties` dropping the
-//   properties that come with it.
+//   properties that come with it;
+// - a raster source has `setTiles` (a list of URL templates, anything else throws) and `serialize`, and a context loss
+//   rebuilds it with the tiles it was last given, as MapLibre 6.16 does.
 // Camera moves are applied at once and fire `moveend` synchronously.
 //
 // Engine tests create one fake per test and inject `module`. Component tests share one fake through vi.mock:
@@ -222,9 +224,32 @@ function applySourceDiff(data, diff, promoteId) {
   return { ...data, features };
 }
 
+// What a raster source adds, as MapLibre 6.16's RasterTileSource: setTiles takes a list of URL templates and keeps it
+// in the options it serializes, so a context loss rebuilds the source with them; serialize answers those options.
+function rasterMethods(map, id, spec) {
+  return {
+    tiles: Array.isArray(spec.tiles) ? [...spec.tiles] : null,
+    setTilesCalls: [],
+    setTiles(tiles) {
+      if (!Array.isArray(tiles)) throw new TypeError(`setTiles of ${id} takes a list of tile URLs, not ${JSON.stringify(tiles)}`);
+      map._record('setTiles', [id, tiles]);
+      this.setTilesCalls.push(tiles);
+      this.tiles = [...tiles];
+      this.spec = { ...this.spec, tiles: [...tiles] };
+      return this;
+    },
+    serialize() {
+      return clone(this.spec);
+    },
+  };
+}
+
+// What a source keeps of itself in a snapshot of the style: its options, and its data when it is GeoJSON.
+const sourceSnapshot = source => (source.type === 'geojson' ? { ...source.spec, data: source.data } : { ...source.spec });
+
 function createModule(state) {
   function createSource(map, id, spec) {
-    return {
+    const source = {
       id,
       type: spec.type,
       spec,
@@ -273,6 +298,7 @@ function createModule(state) {
         return Promise.resolve(this.expansionZoom);
       },
     };
+    return spec.type === 'raster' ? Object.assign(source, rasterMethods(map, id, spec)) : source;
   }
 
   const normalizeLayer = layer => ({ ...layer, layout: { ...layer.layout }, paint: { ...layer.paint } });
@@ -735,7 +761,7 @@ function createModule(state) {
     getStyle() {
       return {
         version: 8,
-        sources: Object.fromEntries([...this.sources].map(([id, source]) => [id, { ...source.spec, data: source.data }])),
+        sources: Object.fromEntries([...this.sources].map(([id, source]) => [id, sourceSnapshot(source)])),
         layers: this.layers.filter(layer => layer.type !== 'custom').map(clone),
       };
     }
@@ -836,7 +862,7 @@ function addHelpers(state) {
     loseContext(map) {
       map.snapshot = {
         version: 8,
-        sources: Object.fromEntries([...map.sources].map(([id, source]) => [id, { ...source.spec, data: source.data }])),
+        sources: Object.fromEntries([...map.sources].map(([id, source]) => [id, sourceSnapshot(source)])),
         layers: map.layers.filter(layer => layer.type !== 'custom').map(clone),
       };
       map.sources = new Map();

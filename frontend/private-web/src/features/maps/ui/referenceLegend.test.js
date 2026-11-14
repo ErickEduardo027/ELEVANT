@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TAGS } from '../../occ-ui/statusVocabulary';
 import { REFERENCE_LEGEND_KINDS } from '../traffic/referenceFeatures';
 import { referenceLegendEntries } from './referenceLegend';
 
@@ -35,5 +36,25 @@ describe('reference legend entries', () => {
       'Airport in the region', 'Origin or destination of a flight today', 'VOR-DME navaid', 'NDB navaid',
       'Night (after civil twilight)',
     ]);
+  });
+  it('lists the weather after the references: the wind with «No oficial» or «Sin actualizar», each image with its time', () => {
+    const imagery = { goes: { time: '2026-11-13T14:50:00Z', precision: 'instant' }, imerg: { time: '2026-11-13', precision: 'day' } };
+    const entries = referenceLegendEntries({ kinds: ['imerg', 'wind', 'rings', 'goes'], runway: null, imagery });
+    expect(entries).toEqual([
+      { key: 'rings', swatch: 'rings', label: 'Anillos de distancia' },
+      { key: 'wind', swatch: 'wind', label: 'Viento en pista', tag: TAGS.unofficial.es, hint: null },
+      { key: 'goes', swatch: 'goes', label: 'Nubes por satélite (GOES-East, infrarrojo)', tag: null, hint: 'Imagen de las 10:50' },
+      { key: 'imerg', swatch: 'imerg', label: 'Lluvia estimada (IMERG)', tag: null, hint: 'Imagen del 13 nov' },
+    ]);
+    // A stale wind is dimmed and says it, with the vocabulary's word; in English too.
+    expect(referenceLegendEntries({ kinds: ['windStale'] })).toEqual([
+      { key: 'windStale', swatch: 'windStale', label: 'Viento en pista', tag: TAGS.stale.short.es, hint: null },
+    ]);
+    expect(referenceLegendEntries({ kinds: ['wind', 'goes'], imagery }, { language: 'en' }).map(entry => [entry.label,
+      entry.tag, entry.hint])).toEqual([
+      ['Runway wind', 'Unofficial', null], ['Satellite clouds (GOES-East, infrared)', null, 'Image of 10:50'],
+    ]);
+    // An image without its time is still listed, without a hint.
+    expect(referenceLegendEntries({ kinds: ['goes'] })[0].hint).toBeNull();
   });
 });

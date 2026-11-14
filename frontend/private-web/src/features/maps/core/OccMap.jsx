@@ -43,14 +43,20 @@ import {
   trafficFeatures, trafficOnScreen as trafficOnScreenOf,
 } from '../traffic/trafficFeatures';
 import { trafficOverlay } from '../traffic/trafficLayers';
+import {
+  SATELLITE_KEYS, SATELLITE_SOURCES, WIND_FEATURE_ID, WIND_LAYER_IDS, WIND_SOURCE, satelliteTiles, wantedImagery,
+  weatherLayerNotes, weatherOnScreen, weatherOverlay, windFeatures, windTooltip, withPinnedImagery,
+} from '../traffic/weatherLayers';
 import MapTooltip from '../ui/MapTooltip';
+import { remoteSatelliteImagery, useSatelliteImagery } from '../useSatelliteImagery';
 import { buildAttribution } from './attribution';
 import {
   VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom, presetTargets,
   sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
 import {
-  availableLayerKeys, engineGroupsFor, readLayerOverrides, resolveLayers, setLayerOverride, writeLayerOverrides,
+  availableLayerKeys, cleanOverrides, engineGroupsFor, readLayerOverrides, resolveLayers, setLayerOverride,
+  writeLayerOverrides,
 } from './layersMenu';
 import { createMapEngine } from './mapEngine';
 import { matchFlight, relatedEntities } from './mapSelection';
@@ -76,7 +82,8 @@ import { useMinuteClock } from './useMinuteClock';
 // source and every later change one updateData with what changed: the map is never re-created. A screen's own overlays
 // get their data through `overlayData`. The references of PR M8 (range rings, extended centrelines with the runway in
 // use, the region's airports, the navaids and the night) are part of every map: one setData when what they draw changes,
-// and the night on the minute of the server's clock.
+// and the night on the minute of the server's clock. A map given the weather (PR M8) also draws the wind at the airfield
+// and, when a person asks, the satellite clouds and rain of NASA GIBS pinned to the time of their image.
 
 const EMPTY = Object.freeze([]);
 const NO_FLAGS = Object.freeze({ hover: null, selected: null, related: null, sameAgent: Object.freeze(new Set()) });
@@ -84,9 +91,9 @@ const NO_CODES = Object.freeze(new Set());
 const NO_GROUPS = Object.freeze({});
 const INSET_SIDES = Object.freeze(['top', 'right', 'bottom', 'left']);
 const SELECTABLE_KINDS = new Set(['stand', 'flight', 'aircraft']);
-// What takes the pointer cursor: what can be selected, a terminal chip to open, and a runway or a taxiway with its
-// tooltip.
-const POINTER_KINDS = new Set([...SELECTABLE_KINDS, 'terminal', 'runway', 'taxiway']);
+// What takes the pointer cursor: what can be selected, a terminal chip to open, and a runway, a taxiway or the wind (PR
+// M8) with its tooltip.
+const POINTER_KINDS = new Set([...SELECTABLE_KINDS, 'terminal', 'runway', 'taxiway', 'wind']);
 // A map without stands has no countdown to keep: its clock stays still at this instant and starts no timer.
 const NO_CLOCK = 0;
 const PITCH_EASE_MS = 600;
@@ -116,9 +123,14 @@ const flightsKey = flights => flights.map(flight => String(flight.id)).join('|')
 const withoutAirfield = ({ airfield, ...rest }) => rest;
 // The traffic (PR M5): nothing on screen, an empty source, and the key of a traffic source's credit.
 const NO_TRAFFIC_ON_SCREEN = Object.freeze({ kinds: EMPTY, tags: EMPTY, trails: EMPTY, route: EMPTY });
-// The references (PR M8): nothing on screen, and what the legend reads of what is.
+// The references (PR M8): nothing on screen, and what the legend reads of what is (with the weather: the time of each
+// satellite image on screen).
 const NO_REFERENCES_ON_SCREEN = Object.freeze({ kinds: EMPTY, runway: null });
-const referencesKey = ({ kinds, runway }) => `${kinds.join('|')}#${runway ? `${runway.arrival}:${runway.source}` : ''}`;
+const imageryKey = imagery => Object.entries(imagery ?? {}).map(([key, image]) => `${key}@${image.time}`).join(',');
+const referencesKey = ({ kinds, runway, imagery }) => `${kinds.join('|')}#${runway ? `${runway.arrival}:${runway.source}` : ''}`
+  + `#${imageryKey(imagery)}`;
+// The weather (PR M8): no note under a key of the layers menu.
+const NO_NOTES = Object.freeze({});
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: EMPTY });
 const creditKeyOf = source => (source && typeof source.name === 'string' && source.name.trim() !== ''
   ? JSON.stringify([source.name, source.homeUrl ?? null, source.licenseName ?? null, source.licenseUrl ?? null])
@@ -293,6 +305,13 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   2.3); `traffic.flights` the counterparts of today's flights. The reference source is written again only when the
  *   runway in use, the counterparts or the language change, and the night shade on the minute of the server's clock
  *   (`frozenAt` holds it in the map lab). The legend lists the references on screen, read back from the map.
+ * - The weather (PR M8, traffic/weatherLayers.js). Whether `weather` is given (null while there is no reading) is read at
+ *   start, as for the traffic: the map then draws the wind of its METAR at the airfield, written again only when what it
+ *   draws changes, with its tooltip and, while it is on screen, the credit «Clima: NOAA Aviation Weather Center»; and
+ *   the satellite clouds and rain of NASA GIBS, read (useSatelliteImagery, through `satelliteService`, by default the
+ *   browser's) only while the layers menu shows one and the map is in Región or Aproximación, and shown only once its
+ *   tiles are pinned to the time GIBS reports. `layerOverrides` (read once, at start) replaces the choices kept in the
+ *   browser, which then stay as they are: the scenes of the map lab open with their own layers.
  */
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
@@ -303,7 +322,9 @@ const OccMap = forwardRef(function OccMap({
   frozenAt = null,
   flights: flightsProp,
   traffic,
-  weather = null,
+  weather,
+  satelliteService = remoteSatelliteImagery,
+  layerOverrides: layerOverridesProp,
   overlays = EMPTY,
   overlayData,
   selection = null,
@@ -349,8 +370,11 @@ const OccMap = forwardRef(function OccMap({
   // features are built again only when the runway in use, the counterparts or the language change.
   const referenceMinute = useMinuteClock({ frozenAt, clock: serverClock });
   const referenceAircraft = traffic?.aircraft ?? EMPTY;
-  const runway = useMemo(() => mapRunwayInUse({ layout, aircraft: referenceAircraft, weather, nowMs: referenceMinute }),
-    [layout, referenceAircraft, weather, referenceMinute]);
+  // The weather (PR M8): whether the map draws it is read at start; a map without it still takes no wind for the runway.
+  const [drawsWeather] = useState(() => weather !== undefined);
+  const weatherNow = weather ?? null;
+  const runway = useMemo(() => mapRunwayInUse({ layout, aircraft: referenceAircraft, weather: weatherNow,
+    nowMs: referenceMinute }), [layout, referenceAircraft, weatherNow, referenceMinute]);
   const { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource } = runway;
   const counterpartsKey = counterpartCodes(traffic?.flights).join('|');
   const referenceData = useMemo(() => referenceFeatures({
@@ -361,6 +385,10 @@ const OccMap = forwardRef(function OccMap({
   }), [layout, runwayArrival, runwayDeparture, runwaySource, counterpartsKey, language]);
   const nightWord = t('reference.night');
   const nightData = useMemo(() => nightShadeFeatures(referenceMinute, { label: nightWord }), [referenceMinute, nightWord]);
+  // The wind at the airfield (PR M8), from the METAR of the weather with the runway in use, at the server's minute (a
+  // live METAR kept after failed refreshes ages into a stale one).
+  const windData = useMemo(() => windFeatures({ reading: weatherNow, runway: runwayArrival, layout, language,
+    nowMs: referenceMinute }), [weatherNow, runwayArrival, layout, language, referenceMinute]);
 
   const paddingKey = insetsKey(normalizeInsets(insets));
   const padding = useMemo(() => insetsFromKey(paddingKey), [paddingKey]);
@@ -370,7 +398,11 @@ const OccMap = forwardRef(function OccMap({
 
   // The layers menu (PR M5, core/layersMenu.js): the person's choices, read from the browser once, resolved for the
   // view on screen. The groups they show join the page's own `groups`, which win for a group the page sets itself.
-  const [layerOverrides, setLayerOverrides] = useState(() => readLayerOverrides(layerStorage()));
+  const [layerOverrides, setLayerOverrides] = useState(() => (layerOverridesProp === undefined
+    ? readLayerOverrides(layerStorage())
+    : cleanOverrides(layerOverridesProp)));
+  // Choices a page gives (the map lab's scenes, PR M8) are not the browser's: they are never written back.
+  const [keepsLayers] = useState(() => layerOverridesProp === undefined);
   const [layersMenuOpen, setLayersMenuOpenState] = useState(false);
   const layersMenusRef = useRef(0);
   const setLayersMenuOpen = useCallback(open => setLayersMenuOpenState(open === true), []);
@@ -385,7 +417,11 @@ const OccMap = forwardRef(function OccMap({
   const layerView = snapshot.activeView ?? defaultView;
   const resolvedLayers = useMemo(() => resolveLayers(layerView, layerOverrides), [layerView, layerOverrides]);
   const menuGroups = useMemo(() => engineGroupsFor(resolvedLayers), [resolvedLayers]);
-  const menuGroupsKey = JSON.stringify(menuGroups);
+  // The satellite images (PR M8): read only while the menu shows one and the map is in Región or Aproximación, and
+  // shown only once their tiles are pinned to the time GIBS reports.
+  const wanted = wantedImagery({ groups: menuGroups, view: layerView, drawsWeather });
+  const imagery = useSatelliteImagery({ goes: wanted.goes, imerg: wanted.imerg, service: satelliteService });
+  const menuGroupsKey = JSON.stringify(withPinnedImagery(menuGroups, imagery));
   const shownGroups = useMemo(() => ({ ...JSON.parse(menuGroupsKey), ...JSON.parse(groupsKey) }),
     [menuGroupsKey, groupsKey]);
   const shownGroupsKey = JSON.stringify(shownGroups);
@@ -427,6 +463,8 @@ const OccMap = forwardRef(function OccMap({
     // tags, the trails it draws beside the chosen flight's route, and the layers menu the map keys open and close.
     Object.assign(latest.current, { traffic: traffic ?? null, drawsTraffic: traffic !== undefined, groups: shownGroups,
       language, shownTrails, layersMenuOpen, setLayersMenuOpen });
+    // The weather (PR M8): whether the map draws it, the satellite images and the wind it draws.
+    Object.assign(latest.current, { drawsWeather, imagery, windData });
   });
 
   // A choice of the layers menu: a difference from the defaults of the view on screen, kept in the browser.
@@ -438,8 +476,8 @@ const OccMap = forwardRef(function OccMap({
   useEffect(() => {
     if (writtenLayersRef.current === layerOverrides) return;
     writtenLayersRef.current = layerOverrides;
-    writeLayerOverrides(layerStorage(), layerOverrides);
-  }, [layerOverrides]);
+    if (keepsLayers) writeLayerOverrides(layerStorage(), layerOverrides);
+  }, [layerOverrides, keepsLayers]);
 
   // The camera that frames `bounds` in the area the insets leave free, plus `extra` pixels on every side.
   const cameraFor = useCallback((bounds, extra = 0) => {
@@ -633,6 +671,18 @@ const OccMap = forwardRef(function OccMap({
     const references = referenceIds.length === 0
       ? NO_REFERENCES_ON_SCREEN
       : referencesOnScreenOf(engine.renderedFeatures(referenceIds, padding));
+    // The weather drawn there (PR M8): the wind, read back from the map; a satellite image while its group is shown
+    // (once pinned) below the airfield threshold, as a raster is not read back. Listed after the references.
+    const { groups: shown, imagery: images } = latest.current;
+    const weatherShown = appliedRef.current.drawsWeather && bounds !== null ? weatherOnScreen({
+      wind: shown?.['weather.wind'] === false ? EMPTY : engine.renderedFeatures(WIND_LAYER_IDS, padding),
+      rasters: Object.fromEntries(SATELLITE_KEYS.map(key => [key,
+        shown?.[`weather.${key}`] === true && !(zoom >= thresholds?.airfield)])),
+      imagery: images,
+    }) : null;
+    const onScreen = weatherShown === null || weatherShown.kinds.length === 0
+      ? references
+      : { kinds: [...references.kinds, ...weatherShown.kinds], runway: references.runway, imagery: weatherShown.imagery };
     const previous = store.get();
     store.set({
       ...(standsKey(next) === standsKey(previous.standsOnScreen) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
@@ -642,9 +692,9 @@ const OccMap = forwardRef(function OccMap({
         ? {}
         : { flightsOnScreen: flights.length === 0 ? EMPTY : flights }),
       ...(sameList(airfield, previous.airfieldOnScreen) ? {} : { airfieldOnScreen: airfield.length === 0 ? EMPTY : airfield }),
-      ...(referencesKey(references) === referencesKey(previous.referencesOnScreen)
+      ...(referencesKey(onScreen) === referencesKey(previous.referencesOnScreen)
         ? {}
-        : { referencesOnScreen: references.kinds.length === 0 ? NO_REFERENCES_ON_SCREEN : references }),
+        : { referencesOnScreen: onScreen.kinds.length === 0 ? NO_REFERENCES_ON_SCREEN : onScreen }),
     });
     updateTrafficOnScreen(bounds, zoom, thresholds);
   }, [store, updateTrafficOnScreen]);
@@ -719,6 +769,27 @@ const OccMap = forwardRef(function OccMap({
     const { attached: drawn, t: translate, language: words } = latest.current;
     return standTooltip(code, drawn, translate, words);
   }, []);
+
+  // The tooltip of the wind (PR M8) a hit names: what the wind the map draws says now, in the screen's language, or null
+  // for anything else.
+  const windTooltipOf = useCallback(hit => {
+    if (hit?.kind !== 'wind') return null;
+    const { windData: data, language: words } = latest.current;
+    const info = windTooltip(data?.features?.[0]?.properties, words);
+    return info === null ? null : { kind: 'wind', id: WIND_FEATURE_ID, title: info.title, detail: info.detail,
+      reasons: info.lines.map(text => ({ signal: null, text })) };
+  }, []);
+
+  // The wind's tooltip says what the wind says now: a new METAR, the runway in use or the language change its words, and
+  // a wind that is no longer drawn closes it.
+  const refreshWindTooltip = useCallback(() => {
+    const tooltip = store.get().tooltip;
+    if (tooltip?.kind !== 'wind') return;
+    const info = windTooltipOf(tooltip);
+    if (info === null) store.set({ tooltip: null });
+    else if (JSON.stringify(info) !== JSON.stringify({ kind: tooltip.kind, id: tooltip.id, title: tooltip.title,
+      detail: tooltip.detail, reasons: tooltip.reasons })) store.set({ tooltip: { ...tooltip, ...info } });
+  }, [store, windTooltipOf]);
 
   // A stand's tooltip says what the stand says now: a board refresh, the minute or the language change its words, and a
   // stand that is no longer drawn closes it.
@@ -807,8 +878,8 @@ const OccMap = forwardRef(function OccMap({
       return;
     }
     // A click on a runway or a taxiway holds its tooltip, so nothing depends on hovering alone; a click anywhere else
-    // closes it (a stand's says what its drawer says).
-    const info = airfieldTooltip(hit);
+    // closes it (a stand's says what its drawer says). The wind's is held the same way (PR M8).
+    const info = airfieldTooltip(hit) ?? windTooltipOf(hit);
     if (info !== null) {
       showTooltip(info, point, lngLat, true);
       return;
@@ -820,7 +891,7 @@ const OccMap = forwardRef(function OccMap({
     else if (SELECTABLE_KINDS.has(hit.kind)) props.onSelect?.({ kind: hit.kind, id: String(hit.id) });
     // Anything else a screen's own layer lets pick (the graph nodes of the map lab's layout review) is the screen's.
     else props.onPick?.(hit);
-  }, [store, showTooltip, requestView]);
+  }, [store, showTooltip, requestView, windTooltipOf]);
 
   // The tooltip of what is under the pointer, unless a click holds one: written to the store only when the runway, the
   // taxiway or the stand under the pointer changes, never on every frame. A drag (a button held down) shows none.
@@ -828,14 +899,17 @@ const OccMap = forwardRef(function OccMap({
     const current = store.get().tooltip;
     if (current?.pinned) return;
     let info = null;
-    if (event && !event.originalEvent?.buttons) info = hit?.kind === 'stand' ? standTooltipOf(hit.id) : airfieldTooltip(hit);
+    // The wind's tooltip (PR M8) shows on the same terms as a runway's.
+    if (event && !event.originalEvent?.buttons) {
+      info = hit?.kind === 'stand' ? standTooltipOf(hit.id) : (windTooltipOf(hit) ?? airfieldTooltip(hit));
+    }
     if (info === null) {
       if (current !== null) store.set({ tooltip: null });
       return;
     }
     if (current?.kind === info.kind && current.id === info.id) return;
     showTooltip(info, event.point, event.lngLat, false);
-  }, [store, showTooltip, standTooltipOf]);
+  }, [store, showTooltip, standTooltipOf, windTooltipOf]);
 
   // Other traffic shows its tag while the pointer is on it (contracts 2.4: tag on demand), written with updateData.
   const focusTraffic = useCallback(hit => {
@@ -901,6 +975,8 @@ const OccMap = forwardRef(function OccMap({
     // The traffic of this engine: what its source holds, the trails and route written, and the credit shown.
     Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null, route: null,
       credit: '' });
+    // The weather of this engine (PR M8): the wind written and the tiles each satellite image is pinned to.
+    Object.assign(appliedRef.current, { drawsWeather: props.drawsWeather, wind: null, rasterTiles: {} });
     focusRef.current = null;
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
@@ -921,6 +997,8 @@ const OccMap = forwardRef(function OccMap({
       ...(props.drawsStands ? [standOverlay({ labels: props.standLabels })] : []),
       ...(props.drawsFlights ? [flightOverlay()] : []),
       ...(props.drawsTraffic ? [trafficOverlay()] : []),
+      // The weather (PR M8): the satellite images under the references, the wind over the stands.
+      ...(props.drawsWeather ? [weatherOverlay()] : []),
       ...props.overlays,
     ];
     // The keys of the layers menu this style has layers for (PR M5).
@@ -1054,6 +1132,35 @@ const OccMap = forwardRef(function OccMap({
     markSettled(rootRef.current, false);
   }, [nightData]);
 
+  // The weather (PR M8): the wind, one setData when what it draws changes (a new METAR, the runway in use, the language,
+  // a METAR that ages), never on a read that brings the same; its tooltip follows.
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsWeather) return;
+    const key = JSON.stringify(windData.features);
+    if (applied.wind === key) return;
+    applied.wind = key;
+    engine.setData(WIND_SOURCE, windData);
+    markSettled(rootRef.current, false);
+    refreshWindTooltip();
+  }, [windData, refreshWindTooltip]);
+  // Each satellite image pinned to the time GIBS reports, once per image and before the layers menu shows it (this
+  // effect runs before the menu's); the legend follows.
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsWeather) return;
+    for (const key of SATELLITE_KEYS) {
+      const tiles = imagery[key].status === 'ready' ? satelliteTiles(key, imagery[key]) : null;
+      if (tiles === null || applied.rasterTiles[key] === tiles[0]) continue;
+      applied.rasterTiles[key] = tiles[0];
+      engine.setRasterTiles(SATELLITE_SOURCES[key], tiles);
+      markSettled(rootRef.current, false);
+    }
+    updateOnScreen();
+  }, [imagery, updateOnScreen]);
+
   // The traffic (PR M5): the aircraft, again whenever the selection, the shown groups or the language change what
   // they draw, then what is on screen. A read that moved nothing writes nothing.
   const trafficAircraft = traffic?.aircraft ?? EMPTY;
@@ -1087,15 +1194,25 @@ const OccMap = forwardRef(function OccMap({
     return Object.freeze({ name, homeUrl, licenseName, licenseUrl });
   }, [creditKey]);
   const aircraftDataLabel = t('attribution.aircraftData');
+  // The credit of the aerodrome weather (PR M8): «Clima: NOAA Aviation Weather Center» while the wind is on screen.
+  const windOnScreen = snapshot.referencesOnScreen.kinds.some(kind => kind === 'wind' || kind === 'windStale');
+  const weatherCreditKey = windOnScreen ? creditKeyOf(weatherNow?.source) : '';
+  const weatherLabel = t('attribution.weather');
+  const weatherSource = useMemo(() => {
+    if (weatherCreditKey === '') return null;
+    const [name, homeUrl] = JSON.parse(weatherCreditKey);
+    return Object.freeze({ name, homeUrl, label: weatherLabel });
+  }, [weatherCreditKey, weatherLabel]);
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
-    // What the attribution shows: nothing of the traffic, or this source in this language.
-    const key = creditKey === '' ? '' : `${creditKey}|${aircraftDataLabel}`;
-    if (!engine || !applied.drawsTraffic || applied.credit === key) return;
+    // What the attribution shows: nothing of the traffic, or this source in this language; then the weather's.
+    const key = [creditKey === '' ? '' : `${creditKey}|${aircraftDataLabel}`,
+      weatherCreditKey === '' ? '' : `${weatherCreditKey}|${weatherLabel}`].filter(Boolean).join('#');
+    if (!engine || !(applied.drawsTraffic || applied.drawsWeather) || applied.credit === key) return;
     applied.credit = key;
-    engine.setAttribution(buildAttribution(trafficSource === null ? [] : [trafficSource], { aircraftDataLabel }));
-  }, [creditKey, trafficSource, aircraftDataLabel]);
+    engine.setAttribution(buildAttribution([trafficSource, weatherSource].filter(Boolean), { aircraftDataLabel }));
+  }, [creditKey, trafficSource, aircraftDataLabel, weatherCreditKey, weatherLabel, weatherSource]);
 
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
   useEffect(() => {
@@ -1277,7 +1394,14 @@ const OccMap = forwardRef(function OccMap({
   // With the traffic on screen and its source (PR M5), for the legend and the status over the map, and the layers menu;
   // and the references on screen (PR M8), for the legend.
   const { layerKeys, referencesOnScreen } = snapshot;
-  const layers = useMemo(() => Object.freeze({ keys: layerKeys, values: resolvedLayers }), [layerKeys, resolvedLayers]);
+  // What the layers menu says under a weather key that is on and shows nothing (PR M8): why, or the time of its image;
+  // the same words keep the same object, so the minute does not re-render the menu.
+  const layerNotesKey = drawsWeather ? JSON.stringify(weatherLayerNotes({ layers: resolvedLayers, view: layerView, imagery,
+    weather: weatherNow, nowMs: referenceMinute, language })) : '';
+  const layerNotes = useMemo(() => (layerNotesKey === '' ? NO_NOTES : Object.freeze(JSON.parse(layerNotesKey))),
+    [layerNotesKey]);
+  const layers = useMemo(() => Object.freeze({ keys: layerKeys, values: resolvedLayers, notes: layerNotes }),
+    [layerKeys, resolvedLayers, layerNotes]);
   const mapContext = useMemo(() => ({
     ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
     registerLayersMenu, referencesOnScreen,

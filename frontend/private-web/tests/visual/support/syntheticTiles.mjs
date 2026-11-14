@@ -2,7 +2,10 @@
 // (src/features/maps/style/basemapLayers.js), built here from an invented world around Punta Cana, so the screenshots
 // show the base map's colours (land, sea, coast, borders, roads, labels, buildings and pavement) without a tile
 // server. Nothing here is map data: the coast, the borders, the roads, the names, the runway and the aprons are made
-// up and only roughly placed. Node built-ins only; support/isolate.mjs serves the tiles.
+// up and only roughly placed. Node built-ins only; support/isolate.mjs serves the tiles. From PR M8 it also invents the
+// satellite images of NASA GIBS (syntheticSatelliteTile), PNG tiles of soft clouds and rain.
+
+import { deflateSync } from 'node:zlib';
 
 const EXTENT = 4096;
 // Polygons keep this much tile space around the tile, and the land cut out of the sea a little less, so the clipped
@@ -301,4 +304,106 @@ export function syntheticTile(z, x, y) {
     if (features.length > 0) bytesField(3, layerMessage(name, features), tile);
   }
   return tile.length === 0 ? null : Buffer.from(tile);
+}
+
+// --- The satellite images (PR M8) ---------------------------------------------------------------------------------
+// The GOES-East clouds and the IMERG rain that NASA GIBS would serve, invented the same way: soft clouds over the
+// region and a few cores of rain inside them, placed in longitude and latitude so they run on across tiles. Nothing here
+// is weather data. The map draws them as GIBS's own PNG tiles, at their opacity, under the references.
+
+const SATELLITE_TILE_PX = 256;
+// [longitude, latitude, radius in degrees, strength] of each blob.
+const CLOUDS = Object.freeze([
+  [-66.4, 20.6, 1.15, 1], [-65.3, 21.3, 0.9, 0.9], [-67.6, 19.9, 0.6, 0.8], [-72.4, 19.1, 1.05, 0.95],
+  [-71.2, 20.4, 0.55, 0.7], [-69.6, 16.8, 0.5, 0.8], [-70.6, 17.4, 0.4, 0.6], [-67.7, 16.2, 0.65, 0.85],
+  [-64.6, 18.2, 0.5, 0.7], [-74.6, 17.6, 0.8, 0.8],
+]);
+const RAIN = Object.freeze([
+  [-66.3, 20.6, 0.32, 1], [-72.2, 19.1, 0.3, 0.9], [-69.6, 16.9, 0.18, 0.8], [-67.7, 16.3, 0.22, 0.9],
+]);
+// What each layer paints: GOES's clouds white, IMERG's rain a muted blue, as their palettes roughly do.
+const SATELLITE_LOOKS = Object.freeze({
+  goes: { blobs: CLOUDS, colour: [236, 240, 242], maxAlpha: 225 },
+  imerg: { blobs: RAIN, colour: [86, 140, 214], maxAlpha: 235 },
+});
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, crc]);
+}
+
+/** An RGBA image (`width × height`, rows of 4 bytes a pixel) as the bytes of a PNG file, unfiltered and deflated. */
+export function encodePng(width, height, rgba) {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  const rows = Buffer.alloc((width * 4 + 1) * height);
+  for (let row = 0; row < height; row += 1) {
+    // Filter type 0 (none), then the row as it is.
+    rows[row * (width * 4 + 1)] = 0;
+    rows.set(rgba.subarray(row * width * 4, (row + 1) * width * 4), row * (width * 4 + 1) + 1);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(rows)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** The longitude and latitude of the centre of pixel (`px`, `py`) of the Web Mercator tile `z/x/y` of 256 px. */
+export function tilePixelLngLat(z, x, y, px, py) {
+  const world = SATELLITE_TILE_PX * 2 ** z;
+  const lng = ((x * SATELLITE_TILE_PX + px + 0.5) / world) * 360 - 180;
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y * SATELLITE_TILE_PX + py + 0.5)) / world))) * 180) / Math.PI;
+  return [lng, lat];
+}
+
+const satelliteTiles = new Map();
+
+/**
+ * The PNG tile `z/x/y` of the synthetic satellite image `layer` (`goes` or `imerg`), 256 px a side: transparent where
+ * there is no cloud or rain. Kept once made. `null` for another layer.
+ */
+export function syntheticSatelliteTile(layer, z, x, y) {
+  const look = SATELLITE_LOOKS[layer];
+  if (!look) return null;
+  const key = `${layer}/${z}/${x}/${y}`;
+  if (satelliteTiles.has(key)) return satelliteTiles.get(key);
+  const rgba = Buffer.alloc(SATELLITE_TILE_PX * SATELLITE_TILE_PX * 4);
+  for (let py = 0; py < SATELLITE_TILE_PX; py += 1) {
+    for (let px = 0; px < SATELLITE_TILE_PX; px += 1) {
+      const [lng, lat] = tilePixelLngLat(z, x, y, px, py);
+      let cover = 0;
+      for (const [blobLng, blobLat, radius, strength] of look.blobs) {
+        const dx = (lng - blobLng) * Math.cos((blobLat * Math.PI) / 180);
+        const dy = lat - blobLat;
+        cover += strength * Math.exp(-(dx * dx + dy * dy) / (radius * radius));
+      }
+      const alpha = Math.round(Math.min(1, cover) * look.maxAlpha);
+      if (alpha === 0) continue;
+      const at = (py * SATELLITE_TILE_PX + px) * 4;
+      rgba.set([...look.colour, alpha], at);
+    }
+  }
+  const png = encodePng(SATELLITE_TILE_PX, SATELLITE_TILE_PX, rgba);
+  satelliteTiles.set(key, png);
+  return png;
 }

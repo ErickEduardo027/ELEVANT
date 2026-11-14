@@ -620,4 +620,33 @@ describe('MapLegend', () => {
     expect(legendItems().slice(0, 3)).toEqual(['Range rings', 'Extended runway centreline (a tick per NM)',
       'Runway 08 (estimated from the wind)']);
   });
+  it('lists the weather on screen after the references: the wind, dimmed when stale, and each image with its time', () => {
+    const withWeather = referencesOnScreen => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, referencesOnScreen }}>
+        <MapLegend />
+      </OccMapContext.Provider>
+    );
+    const imagery = { goes: { time: '2026-11-13T14:50:00Z', precision: 'instant' }, imerg: { time: '2026-11-13T14:30:00Z',
+      precision: 'instant' } };
+    const { rerender } = render(withWeather({ kinds: ['rings', 'wind', 'goes', 'imerg'], runway: null, imagery }));
+    expect(legendItems()).toEqual(['Anillos de distancia', `Viento en pista${TAGS.unofficial.es}`,
+      'Nubes por satélite (GOES-East, infrarrojo)Imagen de las 10:50', 'Lluvia estimada (IMERG)Imagen de las 10:30']);
+    const legend = screen.getByTestId('map-legend');
+    // The wind's arrow in the text colour; «No oficial» a plate of the vocabulary; each image's time muted.
+    const swatch = kind => legend.querySelector(`[data-reference-swatch="${kind}"]`);
+    expect(swatch('wind').querySelector('[data-glyph="wind"]').style.opacity).toBe('1');
+    expect(swatch('wind').querySelector('[data-glyph="wind"] path:last-child').style.fill).toBe('var(--occ-text)');
+    expect(within(legend.querySelector('[data-legend-reference="wind"]')).getByText(TAGS.unofficial.es))
+      .toHaveClass('rounded-sm', 'border-occ-line-strong');
+    expect(within(legend.querySelector('[data-legend-reference="goes"]')).getByText('Imagen de las 10:50'))
+      .toHaveClass('text-occ-muted');
+    expect(swatch('goes')).not.toBeNull();
+    expect(swatch('imerg')).not.toBeNull();
+    // Stale: the arrow dimmed and «Sin actualizar»; nothing of the weather on screen, nothing listed.
+    rerender(withWeather({ kinds: ['windStale'], runway: null }));
+    expect(legendItems()).toEqual([`Viento en pista${TAGS.stale.short.es}`]);
+    expect(screen.getByTestId('map-legend').querySelector('[data-glyph="wind"]').style.opacity).toBe('0.75');
+    rerender(withWeather({ kinds: [], runway: null }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
 });

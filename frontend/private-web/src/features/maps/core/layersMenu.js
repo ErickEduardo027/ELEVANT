@@ -6,8 +6,9 @@ import { VIEW_NAMES } from './cameraPresets';
 // touched that key. Pure: OccMap holds the choices and ui/MapLayersMenu.jsx draws them.
 //
 // M5 ships the «Tráfico» group. PR M8 adds «Referencias» (rings, centrelines, airports, navaids, day and night; the FIR
-// waits for an extract of its boundary) and the weather, and PR M6 the ramp keys: each adds its group here, its
-// defaults in ON_IN and, when its keys depend on another, a line in engineGroupsFor.
+// waits for an extract of its boundary) and «Meteorología» (the satellite clouds and rain, off by default, and the wind
+// at the airfield), and PR M6 the ramp keys: each adds its group here, its defaults in ON_IN and, when its keys depend
+// on another, a line in engineGroupsFor.
 
 /** The groups of the menu and their keys, in the order the menu lists them. */
 export const LAYER_GROUPS = Object.freeze([
@@ -19,6 +20,11 @@ export const LAYER_GROUPS = Object.freeze([
   Object.freeze({
     id: 'reference',
     keys: Object.freeze(['rings', 'centrelines', 'airports', 'navaids', 'daynight']),
+  }),
+  // The weather of PR M8 (design E6, traffic/weatherLayers.js): the satellite images and the wind at the airfield.
+  Object.freeze({
+    id: 'weather',
+    keys: Object.freeze(['weather.goes', 'weather.imerg', 'weather.wind']),
   }),
 ]);
 
@@ -43,6 +49,10 @@ const ON_IN = Object.freeze({
   airports: Object.freeze(['region', 'approach']),
   navaids: Object.freeze(['approach', 'airfield']),
   daynight: Object.freeze(['region', 'approach']),
+  // The satellite images are off until a person turns them on; the wind shows in Aproximación and Aeródromo.
+  'weather.goes': Object.freeze([]),
+  'weather.imerg': Object.freeze([]),
+  'weather.wind': Object.freeze(['approach', 'airfield']),
 });
 
 /**
@@ -130,6 +140,11 @@ export function engineGroupsFor(resolved) {
     airports: on('airports'),
     navaids: on('navaids'),
     daynight: on('daynight'),
+    // The weather (PR M8): each key is its own group. OccMap also keeps a satellite image hidden until it knows the time
+    // of the image, so the map never asks for an image that is not pinned to it.
+    'weather.goes': on('weather.goes'),
+    'weather.imerg': on('weather.imerg'),
+    'weather.wind': on('weather.wind'),
   });
 }
 

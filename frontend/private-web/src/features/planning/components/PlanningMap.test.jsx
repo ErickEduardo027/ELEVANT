@@ -1,14 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PlanningMap from './PlanningMap';
 import { standPoint } from '../../maps/testing/mapFixtures';
 import { loadOccPositions } from '../../../services/occPositionsService';
+import { weatherService } from '../../../services/weatherService';
 
-vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, selectedPositionId, onSelectPosition }) {
-  return <div data-testid="map" data-selected={selectedPositionId ?? ''}>{positions.map(position => <button key={position.id} type="button"
+vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, selectedPositionId, onSelectPosition, weather }) {
+  return <div data-testid="map" data-selected={selectedPositionId ?? ''} data-weather={weather?.apiStatus ?? ''}>{positions.map(position => <button key={position.id} type="button"
     data-state={position.displayStatus} onClick={() => onSelectPosition(position.id)}>{`pin ${position.id}`}</button>)}</div>;
 } }));
 vi.mock('../../../services/occPositionsService', () => ({ loadOccPositions: vi.fn() }));
+// The map reads the aerodrome weather of its station (PR M8): the session and the weather service are synthetic.
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ session: null }) }));
+vi.mock('../../../services/weatherService', async () => {
+  const actual = await vi.importActual('../../../services/weatherService');
+  const { createWeatherScenario } = await import('../../maps/testing/weatherFixtures');
+  return { ...actual, weatherService: actual.createSimulatedWeatherAdapter({ scenario: createWeatherScenario() }) };
+});
 
 const stationId = '20000000-0000-7000-8000-000000000003';
 const PAGE = '/admin-occ/planning?stationId=s-1';
@@ -69,6 +77,20 @@ it('a stand click writes stand= and shows its flights', async () => {
   window.history.replaceState({}, '', `${PAGE}&stand=A01`);
   render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }]} />);
   expect(await screen.findByText('Posición A1')).toBeInTheDocument();
+});
+
+it('reads the aerodrome weather of its station and gives it to the map (PR M8)', async () => {
+  loadOccPositions.mockResolvedValue(board);
+  render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }]} />);
+  // The synthetic live METAR of the station reaches the map, which draws its wind at the airfield.
+  await waitFor(() => expect(screen.getByTestId('map')).toHaveAttribute('data-weather', 'Live'));
+  expect(weatherService.calls.at(-1)).toMatchObject({ read: 'aerodromeWeather', stationId });
+  cleanup();
+  // Without a station nothing is read.
+  const reads = weatherService.calls.length;
+  render(<PlanningMap stationId="" date="2026-11-03" />);
+  await act(async () => {});
+  expect(weatherService.calls).toHaveLength(reads);
 });
 
 it('reports a board error', async () => {

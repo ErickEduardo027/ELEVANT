@@ -10,6 +10,8 @@ import { presetTargets } from '../../maps/core/cameraPresets';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
+import { createAerodromeWeather, WEATHER_NOON } from '../../maps/testing/weatherFixtures';
+import { toWeatherReading } from '../../../services/weatherService';
 import PositionMap from './PositionMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -307,6 +309,21 @@ describe('PositionMap on the map engine', () => {
     // On the console's apron it starts folded.
     view = renderPositions({ dashboardLabels: true });
     expect(screen.getByRole('button', { name: 'Leyenda' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('gives its map the weather of the page: the wind at the airfield, and none without it (PR M8)', () => {
+    // The aerodrome weather as useMdpcWeather answers it, from a synthetic answer of the API: 100° at 13 kt.
+    const reading = toWeatherReading(createAerodromeWeather(), { receivedAt: Date.parse(WEATHER_NOON) });
+    const weather = { status: 'success', data: reading.observation, apiStatus: reading.apiStatus, source: reading.source };
+    let view = renderPositions({ weather });
+    loadStyle(view.map);
+    expect(view.map.options.style.sources['occ-weather-wind']).toMatchObject({ type: 'geojson' });
+    expect(view.map.getSource('occ-weather-wind').data.features[0].properties).toMatchObject({ kind: 'wind',
+      directionDeg: 100, speedKt: 13 });
+    view.unmount();
+    // The console's apron gives it none: no weather on its map.
+    view = renderPositions({ dashboardLabels: true });
+    expect(view.map.options.style.sources['occ-weather-wind']).toBeUndefined();
   });
 
   it('no setStyle on theme change', () => {
