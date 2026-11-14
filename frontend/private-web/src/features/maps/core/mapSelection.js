@@ -150,7 +150,7 @@ const visitOf = flight => flight.visitKey ?? flight;
 const pushedBack = flight => Array.isArray(flight.milestones)
   && flight.milestones.some(milestone => milestone?.code === 'PUSHBACK' && milestone.actualAt != null);
 
-function endsItsVisit(flight) {
+export function endsItsVisit(flight) {
   return LEFT_PHASES.has(flight.phase)
     || (flight.phase === 'cancelled' && flight.direction !== 'Departure')
     || pushedBack(flight)
