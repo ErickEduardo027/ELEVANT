@@ -773,3 +773,20 @@ export function easePolyline(coordsEnu, { radiusM = 30, minRadiusM = 20, maxShif
   }
   return freezePoints(points);
 }
+
+/**
+ * The part of a polyline between two distances along it, clamped to its ends (PR M6), as `[[lng, lat], …]`, frozen:
+ * the point at `fromM`, the vertices strictly between, and the point at `toM`. Equal distances give that point twice.
+ */
+export function slicePolyline(pathOrMeasured, fromM, toM) {
+  const measured = measurePolyline(pathOrMeasured);
+  if (measured.coords.length === 0) return freezePoints([]);
+  const from = Math.max(0, Math.min(measured.lengthM, Number.isFinite(fromM) ? fromM : 0));
+  const to = Math.max(from, Math.min(measured.lengthM, Number.isFinite(toM) ? toM : measured.lengthM));
+  const points = [pointAlong(measured, from).p];
+  measured.coords.forEach((point, at) => {
+    if (measured.cumM[at] > from + 1e-6 && measured.cumM[at] < to - 1e-6) points.push(point);
+  });
+  points.push(pointAlong(measured, to).p);
+  return freezePoints(points);
+}

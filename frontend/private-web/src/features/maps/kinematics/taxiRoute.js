@@ -289,17 +289,68 @@ export function routeExitToApronHold(layout, { exitNodeId, terminal = null, acti
   const graph = graphFor(layout);
   if (!graph.nodes.has(exitNodeId)) return null;
   const costFn = taxiCostFn({ activeRunwayIds, closedRunwayIds: runwaysAt(graph, exitNodeId) });
-  const own = apronHoldFor(layout, terminal);
+  const best = apronHoldRoute(layout, graph, exitNodeId, { terminal, costFn });
+  return best === null ? null : taxiPath(layout, best.route, options);
+}
+
+/** The apron hold named (object or id), else the terminal's, else the one the cheapest route reaches (ties by id). */
+function apronHoldRoute(layout, graph, fromNodeId, { terminal = null, apronHold = null, costFn }) {
+  const named = typeof apronHold === 'string'
+    ? (layout?.apronHolds ?? []).find(candidate => candidate.id === apronHold || candidate.node === apronHold) ?? null
+    : apronHold;
+  const own = named ?? apronHoldFor(layout, terminal);
   const holds = own ? [own] : (layout?.apronHolds ?? []);
   let best = null;
   for (const hold of holds) {
-    const route = routeBetween(graph, exitNodeId, hold.node, { costFn });
+    if (!graph.nodes.has(hold.node)) continue;
+    const route = routeBetween(graph, fromNodeId, hold.node, { costFn });
     if (route && (best === null || route.cost < best.cost - 1e-9
-      || (Math.abs(route.cost - best.cost) <= 1e-9 && compareIds(hold.id, best.holdId) < 0))) {
-      best = { route, cost: route.cost, holdId: hold.id };
+      || (Math.abs(route.cost - best.cost) <= 1e-9 && compareIds(hold.id, best.hold.id) < 0))) {
+      best = { route, cost: route.cost, hold };
     }
   }
-  return best === null ? null : taxiPath(layout, best.route, options);
+  return best;
+}
+
+/**
+ * The ground path of a landing (PR M6): from `fromAlongM` metres along `runwayEnd`'s centreline (the touchdown point)
+ * to the exit `exitNodeId`, then the taxi to a stand's centre or, without a stand, to an apron hold (`apronHold`, else
+ * the `terminal`'s, else the one the cheapest route reaches), eased, rounded and sampled as one line, so the turn-off
+ * has no heading step. A TaxiPath with `exit`, `fromAlongM` and `apronHold` (the hold it ends at, or `null`) added:
+ * the samples on the centreline are of kind 'runway'. The runway the exit is on is closed to the taxi. `null` when the
+ * exit is not on that runway beyond `fromAlongM`, or nothing is reachable.
+ */
+export function routeLandingTaxi(layout, {
+  runwayEnd, fromAlongM = 0, exitNodeId, stand = null, terminal = null, apronHold = null, activeRunwayIds = [],
+} = {}, options = {}) {
+  if (!runwayEnd) return null;
+  const graph = graphFor(layout);
+  const exit = runwayExits(layout, runwayEnd).find(candidate => candidate.nodeId === exitNodeId);
+  if (!exit || !(exit.alongM > fromAlongM)) return null;
+  const costFn = taxiCostFn({ activeRunwayIds, closedRunwayIds: runwaysAt(graph, exitNodeId) });
+  let route = null;
+  let hold = null;
+  if (stand !== null && stand !== undefined) {
+    const target = resolveStand(layout, stand);
+    if (!target) return null;
+    route = routeBetween(graph, exitNodeId, target.node, { costFn });
+  } else {
+    const best = apronHoldRoute(layout, graph, exitNodeId, { terminal, apronHold, costFn });
+    route = best?.route ?? null;
+    hold = best?.hold ?? null;
+  }
+  if (!route) return null;
+  const pieces = [
+    { coords: centrelineBetween(runwayEnd, fromAlongM, exit.alongM), kind: 'runway' },
+    ...routePieces(graph, route),
+  ];
+  return buildTaxiPath(pieces, {
+    nodeIds: route.nodeIds,
+    edges: route.edges,
+    filletM: options.filletM ?? TAXI_FILLET_M,
+    stepM: options.stepM ?? TAXI_STEP_M,
+    extra: { exit, fromAlongM, apronHold: hold },
+  });
 }
 
 /**

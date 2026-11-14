@@ -33,8 +33,9 @@ describe('kinematics purity', () => {
   it('kinematic sources read no clock, no randomness and no JSON', () => {
     const files = sources();
     expect(files.map(file => file.name)).toEqual(expect.arrayContaining([
-      'airport/runwayInUse.js', 'kinematics/kinematicsFixtures.js', 'kinematics/pathBuilder.js', 'kinematics/taxiRoute.js',
-      'kinematics/units.js',
+      'airport/runwayInUse.js', 'kinematics/demoProfile.js', 'kinematics/estimator.js', 'kinematics/kinematicsFixtures.js',
+      'kinematics/kinematicsMessages.js', 'kinematics/legPlans.js', 'kinematics/legs.js', 'kinematics/pathBuilder.js',
+      'kinematics/perfProfiles.js', 'kinematics/taxiRoute.js', 'kinematics/units.js',
     ]));
     const found = [];
     for (const file of files) {

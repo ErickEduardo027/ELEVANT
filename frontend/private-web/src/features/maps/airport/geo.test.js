@@ -26,6 +26,7 @@ import {
   resampleEnu,
   resampleFilletPath,
   roundCoord,
+  slicePolyline,
   toEnu,
   toLocal,
 } from './geo.js';
@@ -267,6 +268,23 @@ describe('measured polylines', () => {
     expect(nearestOnPolyline(bend, destinationPoint(ARP, 270, 30)).alongM).toBe(0);
     expect(nearestOnPolyline([ARP], east)).toMatchObject({ alongM: 0, index: 0 });
     expect(nearestOnPolyline([], east)).toBeNull();
+  });
+
+  it('slicePolyline cuts a line between two distances, keeping the vertices between them', () => {
+    const measured = measurePolyline(bend);
+    // From 40 m along the first segment to 20 m along the second: the cut points and the corner between them.
+    const slice = slicePolyline(measured, 40, 120);
+    expect(slice).toHaveLength(3);
+    expect(haversineM(slice[0], destinationPoint(ARP, 90, 40))).toBeLessThan(0.001);
+    expect(slice[1]).toEqual(east);
+    expect(haversineM(slice[2], destinationPoint(east, 0, 20))).toBeLessThan(0.001);
+    expect(measurePolyline(slice).lengthM).toBeCloseTo(80, 6);
+    // Clamped to the ends; equal distances give the point twice; an empty line gives nothing.
+    expect(slicePolyline(bend, -50, 1_000)).toEqual([ARP, east, corner]);
+    expect(measurePolyline(slicePolyline(bend, 60, 60)).lengthM).toBe(0);
+    expect(slicePolyline(bend, 60, 60)).toHaveLength(2);
+    expect(slicePolyline([], 0, 10)).toEqual([]);
+    expect(Object.isFrozen(slice) && Object.isFrozen(slice[0])).toBe(true);
   });
 });
 

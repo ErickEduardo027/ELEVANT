@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout.js';
-import { haversineM, initialBearing, toLocal } from '../airport/geo.js';
+import { haversineM, initialBearing, pointAlong, pointToPolylineM, toLocal } from '../airport/geo.js';
 import { runwayEnd, runwayEnds } from '../airport/runwayInUse.js';
 import { buildTaxiGraph, nearestEdge, routeLine } from '../airport/taxiGraph.js';
 import { createKinematicsLayout, kinematicsPoint } from './kinematicsFixtures.js';
@@ -15,6 +15,7 @@ import {
   routeExitToStand,
   routeFromApronHold,
   routeFromPoint,
+  routeLandingTaxi,
   routeStandToHold,
   runwayExits,
   taxiCostFn,
@@ -263,6 +264,57 @@ describe('taxi routes on the MDPC layout', () => {
     expect(goingOn.nodeIds).toEqual(['st-S4']);
     expect(goingOn.coords.at(-1)).toEqual(layout.stands[3].center);
     expect(routeFromPoint(layout, { point: halfWay, toNodeId: 'nowhere' })).toBeNull();
+  });
+
+  it('a landing path rolls on the centreline from the touchdown point and turns off at its exit without a heading step', () => {
+    const end08 = runwayEnd(MDPC_LAYOUT, '08');
+    const a5 = ACTIVE.find(stand => stand.code === 'A5');
+    const touchdown = pointAlong(end08.centerline, 300).p;
+    // A rapid exit (15° off the runway), a reverse one (155°: a U-turn) and a far one.
+    for (const [exitNodeId, worstStepDeg] of [['n7592209935', 15], ['n7592209929', 20], ['n7592262104', 15]]) {
+      const path = routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId, stand: a5, activeRunwayIds: ['08/26'] });
+      expect(path.exit.nodeId).toBe(exitNodeId);
+      expect(path.fromAlongM).toBe(300);
+      expect(path.apronHold).toBeNull();
+      expect(haversineM(path.coords[0], touchdown), exitNodeId).toBeLessThan(0.01);
+      expect(angleBetween(path.headingsDeg[0], end08.headingTrue), exitNodeId).toBeLessThan(0.1);
+      // The roll is runway samples on the centreline up to the turn-off, then the taxi of routeExitToStand.
+      const offRunway = path.kinds.findIndex(kind => kind !== 'runway');
+      for (let at = 0; at < offRunway && !path.turning[at]; at += 1) {
+        expect(pointToPolylineM(path.coords[at], end08.centerline).distanceM, exitNodeId).toBeLessThan(0.5);
+      }
+      expect(path.nodeIds[0]).toBe(exitNodeId);
+      expect(path.coords[path.coords.length - 1]).toEqual(a5.center);
+      expect(path.kinds[path.kinds.length - 1]).toBe('leadin');
+      const taxi = routeExitToStand(MDPC_LAYOUT, { exitNodeId, stand: a5, activeRunwayIds: ['08/26'] });
+      expect(path.nodeIds).toEqual(taxi.nodeIds);
+      expect(Math.abs(path.lengthM - (path.exit.alongM - 300) - taxi.lengthM), exitNodeId).toBeLessThan(40);
+      // Rounded through the turn-off: no step at the exit, even the U-turn of the reverse exit stays under 20° per 5 m.
+      expect(maxTurn(path.headingsDeg), exitNodeId).toBeLessThan(worstStepDeg);
+    }
+    // Without a stand: to the named apron hold, else the terminal's, else the one the cheapest taxi reaches.
+    const exitNodeId = 'n7592209935';
+    const toA = routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId, terminal: 'A', activeRunwayIds: ['08/26'] });
+    expect(toA.apronHold.id).toBe('ah-a');
+    expect(toA.coords[toA.coords.length - 1]).toEqual(toA.apronHold.p);
+    const named = MDPC_LAYOUT.apronHolds.find(hold => hold.id === 'ah-fbo');
+    expect(routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId, apronHold: named, activeRunwayIds: ['08/26'] }).apronHold.id).toBe('ah-fbo');
+    expect(routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId, apronHold: 'ah-b', activeRunwayIds: ['08/26'] }).apronHold.id).toBe('ah-b');
+    const any = routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId, activeRunwayIds: ['08/26'] });
+    const cheapest = routeExitToApronHold(MDPC_LAYOUT, { exitNodeId, activeRunwayIds: ['08/26'] });
+    expect(any.nodeIds).toEqual(cheapest.nodeIds);
+    expect(any.apronHold.node).toBe(cheapest.nodeIds.at(-1));
+    // An exit behind the touchdown point, one that is not on that runway, or no runway: no path.
+    expect(routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId: 'n7592209958', stand: a5 })).toBeNull();
+    expect(routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: end08, fromAlongM: 300, exitNodeId: 'st-A5', stand: a5 })).toBeNull();
+    expect(routeLandingTaxi(MDPC_LAYOUT, { runwayEnd: null, exitNodeId, stand: a5 })).toBeNull();
+    // The synthetic aerodrome: from 300 m along 09 to x2 and on to S1.
+    const layout = createKinematicsLayout();
+    const s1 = layout.stands.find(stand => stand.code === 'S1');
+    const synthetic = routeLandingTaxi(layout, { runwayEnd: runwayEnd(layout, '09'), fromAlongM: 300, exitNodeId: 'x2', stand: s1, activeRunwayIds: ['09/27'] });
+    expect(synthetic.nodeIds[0]).toBe('x2');
+    expect(synthetic.coords.at(-1)).toEqual(s1.center);
+    expect(Object.isFrozen(synthetic) && Object.isFrozen(synthetic.coords)).toBe(true);
   });
 
   it('the same inputs give identical routes', () => {
