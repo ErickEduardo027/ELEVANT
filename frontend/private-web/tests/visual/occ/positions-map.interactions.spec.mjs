@@ -7,7 +7,9 @@ import { expect, test } from '../support/test.mjs';
 // stubbed API (fixtures/occApi.mjs), in Chrome: the tooltip of a stand under the pointer; a selection in the URL that
 // opens the drawer, which says what the map says; the marks of the stands the same agent covers; the combined pair; and
 // «Ubicar en el mapa» with its confirmation, before and after «Guardar ubicación». The screenshots go to
-// test-results/visual/positions-interactions-*.png for a person to review.
+// test-results/visual/positions-interactions-*.png for a person to review. Since PR M6 the stands also read the map
+// flights and the aircraft of the stub (the traffic of positions-map.spec.mjs), so the drawer of a stand with a
+// turnaround on it says its milestones as well.
 
 const PAGE = '/admin-occ/positions-map';
 
@@ -78,11 +80,14 @@ async function unfoldLegend(page) {
 
 test.describe('Mapa de posiciones: what a person does with the stands', () => {
   test('a stand under the pointer shows its tooltip; a click opens its drawer; the stands of its agent are marked', async ({ page, isolation }, testInfo) => {
-    // A link to A2 on terminal A: the drawer opens on it, and says what the map says.
+    // A link to A2 on terminal A: the drawer opens on it, and says what the map says, with the milestones its progress
+    // bar draws (PR M6: nine of the flight report's 25 recorded).
     const { map } = await openPositionsMap(page, isolation, '?view=ramp&terminal=A&stand=A2');
     await settled(page);
     const facts = drawer(page).getByRole('list', { name: 'Estado en el mapa' });
-    await expect(facts.getByRole('listitem')).toHaveText(['Ocupada', 'Cubre Agente de prueba', /^No oficial/]);
+    await expect(facts.getByRole('listitem')).toHaveText([
+      'Ocupada', 'Cubre Agente de prueba', 'Hitos registrados: 9 de 25', /^No oficial/,
+    ]);
     await shoot(page, testInfo, 'positions-interactions-drawer');
 
     // One Esc closes only the drawer: A2 stays selected, and the stands its agent covers are ringed and explained.

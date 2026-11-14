@@ -29,7 +29,9 @@ describe('map lab scenes', () => {
       'ramp-states', 'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'airfield', 'approach', 'region',
       'unavailable-fallback', 'basemap-degraded', 'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo',
       'ramp-traffic-ground', 'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected',
-      'region-layers-menu',
+      'region-layers-menu', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
+      'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -50,8 +52,21 @@ describe('map lab scenes', () => {
     expect(findScene('ramp-combined-selected').selection).toEqual({ kind: 'stand', id: 'A10' });
     expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual([
       'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'region-traffic-selected',
-      'approach-traffic-hex-selected',
+      'approach-traffic-hex-selected', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
+      'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi',
     ]);
+    // The demo scenes of PR M6 choose the demo flight; the three sources of a position, the one without a signal.
+    for (const id of ['approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'airfield-demo-cancelled',
+      'approach-demo-accelerated', 'approach-demo-route', 'approach-follow-final', 'airfield-follow-taxi']) {
+      expect(findScene(id).selection, id).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival });
+    }
+    // The departure's route chooses the demo departure; two scenes open following (follow=1), every other does not.
+    expect(findScene('airfield-departure-route').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture });
+    expect(SCENES.filter(scene => scene.follow === true).map(scene => scene.id))
+      .toEqual(['approach-follow-final', 'airfield-follow-taxi']);
+    expect(SCENES.every(scene => typeof scene.follow === 'boolean')).toBe(true);
+    expect(findScene('approach-traffic-live-estimated').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.departed });
     // The traffic scenes that choose an aircraft: an AVIAM flight by its key and other traffic by its address.
     expect(findScene('region-traffic-selected').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
     expect(findScene('approach-traffic-hex-selected').selection).toEqual({ kind: 'aircraft', id: 'f0c002' });
@@ -127,6 +142,7 @@ describe('map lab scenes', () => {
       stands: [],
       at: null,
       selection: null,
+      follow: false,
       basemap: 'on',
       webgl: true,
       placing: null,

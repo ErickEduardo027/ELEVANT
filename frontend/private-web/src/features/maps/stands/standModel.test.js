@@ -1,16 +1,23 @@
 import { readFileSync } from 'node:fs';
+import { FLIGHT_REPORT_MILESTONES } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { RAMP_POSITIONS } from '../../dashboard/positionsData';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions, mapTurnaroundsToRampPositions } from '../../positions-map/positionsMapMappers';
+import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from '../aircraft/types';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
 import { layoutStandReferences } from '../airport/layoutIndex';
 import { SCENARIO_AGENTS, boardStand, boardVisit, createQaLayout, createRampScenario } from '../testing/mapFixtures';
 import {
-  ARRIVING_WINDOW_MS, COVERAGE_WINDOW_MS, RELEASING_WINDOW_MS, attachStandGeometry, coverageInitials,
-  deriveDisplayStatus, displayFromStatus, floorToMinute, minutesUntil, sameAgentCodes, standDrawState, standStateOf,
-  unlocatedStands, withStandDisplay,
+  createAirPicture, createDemoBlock, createDemoFlights, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON,
+} from '../testing/trafficFixtures';
+import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
+import { standInputsOf } from '../traffic/standInputs';
+import {
+  ARRIVING_WINDOW_MS, COVERAGE_WINDOW_MS, MILESTONES_TOTAL, RELEASING_WINDOW_MS, STILL_BELOW_MS, attachStandGeometry,
+  coverageInitials, deriveDisplayStatus, displayFromStatus, floorToMinute, minutesUntil, sameAgentCodes, standDrawState,
+  standStateOf, unlocatedStands, withStandDisplay,
 } from './standModel';
 
 // 14:07 in Punta Cana (UTC−4). Every time of the fixtures is relative to it.
@@ -343,6 +350,196 @@ describe('deriveDisplayStatus', () => {
     for (const offset of [1, 30 * 1000, MINUTE - 1]) expect(at(NOW + offset)).toEqual(at(NOW));
     expect(at(NOW + MINUTE)).toMatchObject({ state: 'arriving', minutesToArrival: 15 });
     expect(floorToMinute(NOW + MINUTE - 1)).toBe(NOW);
+  });
+});
+
+// The stands read with what the OCC frame gives them (PR M6): the map situation of the lab's noon through
+// traffic/standInputs.js, as Mapa de posiciones and Planificación read it. Synthetic: the fixtures' flights with the times
+// each case needs, a board whose visits carry the same turnaround ids and times, and the picture's ZZ161 fix moved where
+// each case puts it.
+describe('deriveDisplayStatus with the map situation (PR M6)', () => {
+  const NOON = Date.parse(TRAFFIC_NOON);
+  const KNOT = 1852 / 3600;
+  const at = minutes => iso(NOON + minutes * MINUTE);
+  const rows = () => createMapFlights().flights;
+  const rowOf = key => rows().find(row => row.flightKey === key);
+  const ARRIVAL = rowOf(TRAFFIC_FLIGHT_KEY.arrival);
+  const PARKED = rowOf(TRAFFIC_FLIGHT_KEY.parkedArrival);
+  const DEPARTED = rowOf(TRAFFIC_FLIGHT_KEY.departed);
+  const noonVisit = options => boardVisit({ nowMs: NOON, ...options });
+  const standAt = (code, stand) => attachStandGeometry(mapOccupancyToRampPositions(REFERENCES, { positions: [stand] },
+    TRAFFIC_NOON), MDPC_LAYOUT).find(position => position.id === code);
+  const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
+
+  // The legs of a visit of the fixtures at the times of the board: its arrival due `arrivalInMin` from noon (down on the
+  // runway then, as the feed writes it, when `landed`), its departure `departureInMin`, and `extra` on both legs.
+  function visitRows(turnaroundId, { arrivalInMin, departureInMin, landed = false, extra = {}, base = rows() }) {
+    return base.map(row => {
+      if (row.turnaroundId !== turnaroundId) return row;
+      const times = row.direction === 'Arrival'
+        ? { scheduledAt: at(arrivalInMin), estimatedAt: at(arrivalInMin),
+          ...(landed ? { phase: 'landed', actualAt: at(arrivalInMin), actualKind: 'Runway' } : {}) }
+        : { scheduledAt: at(departureInMin) };
+      return { ...row, ...times, ...extra };
+    });
+  }
+  // ZZ161 landed 2 minutes ago and leaves in 75, as the board of A5 says.
+  const zz161 = (options = {}) => visitRows(ARRIVAL.turnaroundId, { arrivalInMin: -2, departureInMin: 75, landed: true, ...options });
+  const a5Of = ({ arrivalInMin = -2, departureInMin = 75, arrived = true, coveredBy = [marta] } = {}) => standAt('A5',
+    boardStand('A05', { coveredBy, turnarounds: [noonVisit({
+      flight: 'ZZ161', turnaroundId: ARRIVAL.turnaroundId, arrivalInMin, departureInMin, arrived,
+    })] }));
+  const a5 = a5Of();
+  const { center, headingTrue } = a5.geometry;
+  const blockOn = minutesAgo => ({ milestones: [{ code: 'BLOCK_ON', actualAt: at(-minutesAgo) }] });
+
+  // The stand inputs with the ZZ161 fix at `point` (none without one), on the ground or not, at `knots`, the flights
+  // `flightRows` and the positions a caller estimated.
+  function inputsWith({ point = null, onGround = true, knots = 0, flightRows = zz161(), estimates = [] } = {}) {
+    const picture = createAirPicture();
+    picture.aircraft = picture.aircraft.flatMap(item => {
+      if (item.hex !== TRAFFIC_HEX.arrival) return [item];
+      if (point === null) return [];
+      return [{ ...item, longitude: point[0], latitude: point[1], onGround, altitudeFeet: onGround ? null : 900,
+        groundSpeedKnots: knots, verticalRateFeetPerMinute: onGround ? null : -700, trail: [] }];
+    });
+    const flights = { ...createMapFlights(), flights: flightRows };
+    return standInputsOf(buildSituation({ picture: toPictureModel(picture), flights: toFlightsModel(flights), nowMs: NOON,
+      estimates }));
+  }
+  const read = (stand, options) => deriveDisplayStatus(stand, { nowMs: NOON, ...inputsWith(options) });
+
+  it('Llegando until the aircraft is on its stand', () => {
+    // Taxiing in, 200 m behind the stand: «Llegando», whatever the board says.
+    expect(a5.status).toBe('occupied');
+    const behind = destinationPoint(center, headingTrue + 180, 200);
+    expect(read(a5, { point: behind, knots: 14 })).toMatchObject({ state: 'arriving', flightNumber: 'ZZ161', signals: [] });
+    // Over the stand in the air (a low pass, or a fix of the approach): still on its way.
+    expect(read(a5, { point: center, onGround: false, knots: 140 }).state).toBe('arriving');
+    // On the stand: «Ocupada», from then on with the departure's flight and time.
+    expect(read(a5, { point: center })).toMatchObject({ state: 'occupied', flightNumber: 'ZZ162', minutesToDeparture: 75 });
+    // A recorded BLOCK_ON puts it there whatever its fix says.
+    expect(read(a5, { point: behind, knots: 5, flightRows: zz161({ extra: blockOn(1) }) }).state).toBe('occupied');
+    // Without a fix the runway time alone keeps it arriving; OCC's on-block time puts it on the stand.
+    expect(read(a5).state).toBe('arriving');
+    const onBlock = zz161().map(row => (row.flightKey === ARRIVAL.flightKey ? { ...row, phase: 'arrived', actualKind: 'OnBlock' } : row));
+    expect(read(a5, { flightRows: onBlock }).state).toBe('occupied');
+  });
+
+  it('free at PUSHBACK', () => {
+    // ZZ700 pushed back from A3 14 minutes ago and took off; the board still lists it there.
+    const a3 = standAt('A3', boardStand('A03', { turnarounds: [noonVisit({
+      flight: 'ZZ700', turnaroundId: DEPARTED.turnaroundId, arrivalInMin: -70, departureInMin: -15, arrived: true,
+    })] }));
+    expect(deriveDisplayStatus(a3, { nowMs: NOON })).toMatchObject({ state: 'releasing' });
+    expect(read(a3)).toMatchObject({ state: 'available', visit: null, signals: [] });
+    // Before the take-off as well: the PUSHBACK alone frees the stand.
+    const onTheGround = rows().map(row => (row.flightKey === DEPARTED.flightKey
+      ? { ...row, phase: 'scheduled', actualAt: null, actualKind: null } : row));
+    expect(read(a3, { flightRows: onTheGround }).state).toBe('available');
+
+    // A demo aircraft leaves its stand at the server's off-block, even before a read brings the timeline's next phase.
+    const block = { ...createDemoBlock({ minutes: 8, imported: true, offBlockAfterMin: 20, appearAt: NOON - 40 * MINUTE }),
+      phase: 'Parked' };
+    const demoRows = demo => createDemoFlights(demo, { imported: true, standCode: 'A06' }).flights;
+    const demoTurnaround = demoRows(block).find(row => row.flightKey === TRAFFIC_FLIGHT_KEY.demoArrival).turnaroundId;
+    const a6 = standAt('A6', boardStand('A06', { coveredBy: [marta], turnarounds: [noonVisit({
+      flight: 'ZZ9001', turnaroundId: demoTurnaround, arrivalInMin: -32, departureInMin: -12, arrived: true, isDemo: true,
+    })] }));
+    expect(read(a6, { flightRows: demoRows(block) })).toMatchObject({ state: 'available', visit: null });
+    const later = { ...block, offBlockAt: at(5) };
+    expect(read(a6, { flightRows: demoRows(later) })).toMatchObject({ state: 'releasing', minutesToDeparture: 5, isDemo: true });
+  });
+
+  it('the planned aircraft footprint is dashed', () => {
+    // ZZ161 due in 40 minutes, then in 10: the B38M it flies, drawn dashed on the stand to see whether it fits.
+    const due = minutes => [a5Of({ arrivalInMin: minutes, departureInMin: minutes + 60, arrived: false }),
+      { flightRows: zz161({ arrivalInMin: minutes, departureInMin: minutes + 60, landed: false }) }];
+    expect(read(...due(40))).toMatchObject({ state: 'planned', footprint: 'planned', typeSpec: AIRCRAFT_TYPES.B38M, aircraftType: 'B38M' });
+    expect(read(...due(10))).toMatchObject({ state: 'arriving', footprint: 'planned' });
+    // On the stand it is solid, for «Ocupada» and «Por liberar» alike.
+    expect(read(a5, { point: center })).toMatchObject({ state: 'occupied', footprint: 'solid' });
+    const leaving = a5Of({ arrivalInMin: -50, departureInMin: 10 });
+    expect(read(leaving, { flightRows: zz161({ arrivalInMin: -50, departureInMin: 10, extra: blockOn(45) }) }))
+      .toMatchObject({ state: 'releasing', footprint: 'solid' });
+    // Only the size class known: the generic airframe of that class. Nothing known, or no map flights: no footprint.
+    const [planned] = due(40);
+    const withAircraft = aircraft => ({ flightRows: zz161({ arrivalInMin: 40, departureInMin: 100, landed: false,
+      extra: { aircraft } }) });
+    expect(read(planned, withAircraft({ registration: null, typeIcaoCode: null, model: null, sizeCategory: 'Narrowbody' })))
+      .toMatchObject({ state: 'planned', footprint: 'planned', typeSpec: CATEGORY_FALLBACKS.narrow });
+    expect(read(planned, withAircraft({ registration: 'ZZ-TST1', typeIcaoCode: null, model: null, sizeCategory: null })))
+      .toMatchObject({ footprint: null, typeSpec: null });
+    expect(read(planned, withAircraft(null))).toMatchObject({ footprint: null, typeSpec: null });
+    expect(deriveDisplayStatus(planned, { nowMs: NOON })).toMatchObject({ state: 'planned', footprint: null, typeSpec: null });
+    // A free stand draws none; nor does a stand read from its own fields.
+    expect(deriveDisplayStatus(standAt('A5', boardStand('A05')), { nowMs: NOON })).toMatchObject({ footprint: null });
+    expect(displayFromStatus({ id: 'A5', status: 'occupied', aircraftType: 'A320' })).toMatchObject({ footprint: null, typeSpec: null });
+  });
+
+  it('progress counts recorded milestones out of 25 without a late colour', () => {
+    const done = ['BLOCK_ON', 'WALKAROUND_START', 'WALKAROUND_END', 'STAIRS_JETBRIDGE', 'UNLOADING_EQUIPMENT',
+      'FIRST_CUSTOMS', 'UNLOAD_SHEET', 'LAVATORY_SERVICE', 'POTABLE_WATER'].map((code, index) => ({ code, actualAt: at(index - 22) }));
+    // ZZ300 on A2 since 30 minutes ago, leaving in 40, or a minute ago; both legs carry the operation's milestones, so
+    // each code counts once.
+    const a2Of = departureInMin => standAt('A2', boardStand('A02', { coveredBy: [marta], turnarounds: [noonVisit({
+      flight: 'ZZ300', turnaroundId: PARKED.turnaroundId, arrivalInMin: -30, departureInMin, arrived: true,
+    })] }));
+    const zz300 = (milestones, departureInMin = 40) => ({
+      flightRows: visitRows(PARKED.turnaroundId, { arrivalInMin: -30, departureInMin, extra: { milestones } }),
+    });
+    expect(MILESTONES_TOTAL).toBe(FLIGHT_REPORT_MILESTONES.length);
+    expect(MILESTONES_TOTAL).toBe(25);
+    expect(read(a2Of(40), zz300(done))).toMatchObject({ state: 'occupied', milestonesDone: 9, milestonesTotal: 25, signals: [] });
+    // A code outside the flight report, or one without its time, counts for nothing.
+    expect(read(a2Of(40), zz300([...done, { code: 'COFFEE_BREAK', actualAt: at(-1) }, { code: 'BOARDING', actualAt: null }]))
+      .milestonesDone).toBe(9);
+    expect(read(a2Of(40), zz300(done.slice(0, 1))).milestonesDone).toBe(1);
+    // Without its map flights nobody knows how far it has gone.
+    expect(deriveDisplayStatus(a2Of(40), { nowMs: NOON }).milestonesDone).toBeNull();
+    // Past its departure time the progress reads the same: no target time exists per milestone (contracts 1.3), so
+    // there is no «late» colour and no signal of it, only the stand's own «Pasó su hora de salida».
+    const shown = read(a2Of(-1), zz300(done, -1));
+    expect(shown).toMatchObject({ state: 'releasing', milestonesDone: 9, signals: [{ kind: 'attention', reason: 'overdue' }] });
+    expect(Object.keys(shown).sort()).toEqual([
+      'aircraftType', 'arrivalAt', 'cancelledBy', 'departureAt', 'flightNumber', 'footprint', 'isDemo', 'milestonesDone',
+      'milestonesTotal', 'minutesToArrival', 'minutesToDeparture', 'signals', 'state', 'typeSpec', 'visit',
+    ]);
+  });
+
+  it('an aircraft standing in a stand without an arrival recorded asks to record it', () => {
+    // Its fix stands still inside A5 and nothing records it there: the plain notice.
+    expect(read(a5, { point: center })).toMatchObject({ state: 'occupied', signals: [notice] });
+    expect(read(a5, { point: center, knots: 1.5 }).signals).toEqual([notice]);
+    expect(STILL_BELOW_MS).toBeCloseTo(2 * KNOT, 9);
+    // Still rolling into the box (a fix at 6 kt): it has not stopped yet.
+    expect(read(a5, { point: center, knots: 6 }).signals).toEqual([]);
+    // BLOCK_ON or OCC's on-block time records it: no notice.
+    expect(read(a5, { point: center, flightRows: zz161({ extra: blockOn(1) }) }).signals).toEqual([]);
+    const onBlock = zz161().map(row => (row.flightKey === ARRIVAL.flightKey ? { ...row, phase: 'arrived', actualKind: 'OnBlock' } : row));
+    expect(read(a5, { point: center, flightRows: onBlock }).signals).toEqual([]);
+    // An estimated position counts as well (contracts 2.4: live or estimated).
+    expect(read(a5, { estimates: [{ flightKey: ARRIVAL.flightKey, lon: center[0], lat: center[1], gsMs: 0, onGround: true }] }))
+      .toMatchObject({ state: 'occupied', signals: [notice] });
+    // With the stand's own signals, after them: nobody covers A5.
+    expect(read(a5Of({ coveredBy: [] }), { point: center }).signals).toEqual([{ kind: 'attention', reason: 'uncovered' }, notice]);
+  });
+
+  it('a demo aircraft never asks (its time is recorded)', () => {
+    // The demo flight imported onto A6, parked there since the server's on-block, its estimated aircraft standing in the
+    // box: the server recorded its time, so the stand asks nothing.
+    const block = createDemoBlock({ minutes: 8, imported: true, appearAt: NOON - 20 * MINUTE });
+    const demoRows = createDemoFlights(block, { imported: true, standCode: 'A06' }).flights;
+    const arrival = demoRows.find(row => row.flightKey === TRAFFIC_FLIGHT_KEY.demoArrival);
+    const a6 = standAt('A6', boardStand('A06', { coveredBy: [marta], turnarounds: [noonVisit({
+      flight: 'ZZ9001', turnaroundId: arrival.turnaroundId, arrivalInMin: -12, departureInMin: 48, arrived: true, isDemo: true,
+    })] }));
+    const [lon, lat] = a6.geometry.center;
+    const options = { flightRows: demoRows, estimates: [{ flightKey: arrival.flightKey, lon, lat, gsMs: 0, onGround: true }] };
+    expect(inputsWith(options).aircraftByTurnaround.get(arrival.turnaroundId)).toMatchObject({ quality: 'estimated', onGround: true });
+    expect(read(a6, options)).toMatchObject({
+      state: 'occupied', isDemo: true, footprint: 'solid', typeSpec: AIRCRAFT_TYPES.A320, signals: [],
+    });
   });
 });
 

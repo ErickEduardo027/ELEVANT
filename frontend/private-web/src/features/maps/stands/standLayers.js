@@ -7,26 +7,41 @@ import { SELECTION_SOURCE } from '../style/selectionLayers';
 // occ-ui/statusVocabulary.js: each state is a fill (none, a see-through tint, the raised slab or the hatch), an outline
 // with its width and dash, and the marks that go with it (the aircraft of a stand with an aircraft on it, the clock of
 // «Por liberar», the emphasised lead-in of «Llegando», the link of a stand a combined stand cancels). Normal states
-// carry no hue; cyan is the selection, amber and red the signals. What the map draws depends on the zoom, through the
-// thresholds derived from the fitted views (contracts 2.3, never a fixed zoom): one chip per terminal from the airfield
-// threshold up to the stand polygons; the polygons, their marks and signals from `polygons` (the airfield fit − 0.3);
-// codes, flights and lead-ins from `codes` (the ramp fit − 0.3; the console's apron shows its codes from `polygons`);
-// the three-line labels from `threeLine` (the ramp fit + 0.8). Hover, selection, related and same-agent marks are
-// feature-state, so a pointer or a selection never rewrites the data. «Ubicar en el mapa» draws its boxes from a source
-// of its own in the top slot. Pure: OccMap adds the overlay, fills the four stand sources with stands/standFeatures.js
-// and the placing source with stands/placing.js.
+// carry no hue; cyan is the selection, amber and red the signals, and a plain notice is a diamond without colour. What
+// the map draws depends on the zoom, through the thresholds derived from the fitted views (contracts 2.3, never a fixed
+// zoom): one chip per terminal from the airfield threshold up to the stand polygons; the polygons, their marks and
+// signals from `polygons` (the airfield fit − 0.3); codes, flights, lead-ins and the aircraft to scale from `codes` (the
+// ramp fit − 0.3; the console's apron shows its codes from `polygons`); the three-line labels and the progress of a
+// turnaround from `threeLine` (the ramp fit + 0.8). Hover, selection, related and same-agent marks are feature-state, so
+// a pointer or a selection never rewrites the data. «Ubicar en el mapa» draws its boxes from a source of its own in the
+// top slot. Pure: OccMap adds the overlay, fills the five stand sources with stands/standFeatures.js and the placing
+// source with stands/placing.js.
+//
+// PR M6 (design D3): the aircraft of a stand at true size (aircraft/footprint.js), solid while it is on the stand and
+// dashed while it is still to come, so one sees whether it fits; below `codes`, where a footprint is too small to read,
+// the aircraft glyph stands in for it, and from `codes` on the glyph stays only on a stand whose aircraft has no type to
+// draw. The progress bar of the turnaround runs along the stand's rear edge: the milestones recorded out of 25, with no
+// «late» colour (no target time exists per milestone).
 
 export const STAND_SOURCE = 'occ-stands';
 export const STAND_AUX_SOURCE = 'occ-stand-aux';
 export const STAND_LABEL_SOURCE = 'occ-stand-labels';
 export const STAND_GROUP_SOURCE = 'occ-stand-groups';
+/** The aircraft of the stands at true size (PR M6, design D2): one polygon per stand that draws one. */
+export const STAND_FOOTPRINT_SOURCE = 'occ-aircraft-footprints';
 /** The source of «Ubicar en el mapa»: the box that follows the pointer and the pending location (stands/placing.js). */
 export const STAND_GHOST_SOURCE = 'occ-stand-ghost';
 /** The source of each collection of buildStandFeatures (stands/standFeatures.js). */
 export const STAND_SOURCES = Object.freeze({
   polygons: STAND_SOURCE, aux: STAND_AUX_SOURCE, labels: STAND_LABEL_SOURCE, groups: STAND_GROUP_SOURCE,
+  footprints: STAND_FOOTPRINT_SOURCE,
 });
 export const STAND_GROUP = 'stands';
+/**
+ * The group of the aircraft to scale on the stands: the layers menu's «Aviones a escala» of design E7 when it comes,
+ * and what the 3D layer of PR M7 hides where it draws the models.
+ */
+export const FOOTPRINT_GROUP = 'stands.footprints';
 /** The layer that paints every stand's polygon: the pick target of a stand. */
 export const STAND_FILL_LAYER = 'occ-stands-fill';
 /** The layer of the terminal chips: the pick target of a terminal. */
@@ -46,7 +61,8 @@ const CASING_CLEARANCE = 1;
 const SAME_AGENT_CLEARANCE = 6;
 const HOVER_OPACITY = 0.55;
 // The aircraft of a stand stays inside its box at every zoom: a silhouette about 30 m across on the ground, sized with
-// the map (twice as large for each zoom step). It is a stand-in until the footprints to scale of PR M5.
+// the map (twice as large for each zoom step). It stands in for the aircraft to scale (PR M6) where that is too small to
+// read, and where the aircraft has no type to draw.
 export const STAND_GLYPH_SIZE = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 13, 0.17, 16, 1.32, 19.5, 14.93]);
 // Where the signal and the clock sit: the upper corners of the stand around its centre, about 15 m out on the ground
 // (8 px when the stands are small), so they keep clear of the label in the middle as the map grows.
@@ -76,6 +92,23 @@ export const PLACING_PAINT = Object.freeze({
   ghost: Object.freeze({ width: 2, dash: Object.freeze([4, 3]) }),
   pending: Object.freeze({ width: 2.5, fillOpacity: 0.2, centreRadius: 3 }),
 });
+
+/**
+ * How the aircraft to scale are drawn (PR M6, design D3), widths and dashes in pixels, tokens of occPalette.js: the
+ * aircraft on a stand is a light silhouette over the stand's slab with a hairline in the text colour; the one still to
+ * come only its outline, dashed 4-3 in the muted colour, as the outline of a planned stand. No hue: they are normal
+ * states.
+ */
+export const FOOTPRINT_PAINT = Object.freeze({
+  solid: Object.freeze({ fillToken: 'muted', fillOpacity: 0.35, outlineToken: 'text', width: 1 }),
+  planned: Object.freeze({ token: 'muted', width: 1.5, dash: Object.freeze([4, 3]) }),
+});
+
+/**
+ * The progress bar of a turnaround along the stand's rear edge (PR M6, design D3): its track in the strong line colour
+ * and the part done in the text colour, 3 px wide. One colour whatever the time: there is no «late» colour.
+ */
+export const PROGRESS_PAINT = Object.freeze({ width: 3, trackToken: 'line-strong', doneToken: 'text' });
 
 function dashName(dash) {
   if (dash === null) return 'solid';
@@ -226,6 +259,22 @@ function polygonLayers() {
       paint: { 'line-color': occColor('line-strong'), 'line-width': 1, 'line-dasharray': [1, 2] },
       meta: { 'occ:minThreshold': 'codes' },
     }),
+    // The progress of the turnaround on the stand (PR M6): the whole bar, then the milestones done over it, with the
+    // three-line labels.
+    standLayer('occ-stands-progress-track', 'line', {
+      source: STAND_AUX_SOURCE,
+      filter: ['==', KIND, 'progressTrack'],
+      layout: { 'line-cap': 'butt' },
+      paint: { 'line-color': occColor(PROGRESS_PAINT.trackToken), 'line-width': PROGRESS_PAINT.width },
+      meta: { 'occ:minThreshold': 'threeLine' },
+    }),
+    standLayer('occ-stands-progress-done', 'line', {
+      source: STAND_AUX_SOURCE,
+      filter: ['==', KIND, 'progressDone'],
+      layout: { 'line-cap': 'butt' },
+      paint: { 'line-color': occColor(PROGRESS_PAINT.doneToken), 'line-width': PROGRESS_PAINT.width },
+      meta: { 'occ:minThreshold': 'threeLine' },
+    }),
     // The selection: a 2 px cyan casing; the stand under the pointer gets it lighter.
     casingLayer('occ-stands-selection', {
       color: occColor('accent'),
@@ -247,6 +296,35 @@ function polygonLayers() {
       width: 1,
       clearance: SAME_AGENT_CLEARANCE,
       opacity: ['case', featureState('sameAgent'), 1, 0],
+    }),
+  ];
+}
+
+// The aircraft of the stands at true size (PR M6), in the slot above the stands and the chosen flight's route: from the
+// codes on, where a footprint is large enough to read.
+function footprintLayers() {
+  const { solid, planned } = FOOTPRINT_PAINT;
+  const layer = (id, type, kind, paint) => ({
+    slot: 'footprints',
+    id,
+    type,
+    source: STAND_FOOTPRINT_SOURCE,
+    filter: ['==', KIND, kind],
+    ...(type === 'line' ? { layout: { 'line-join': 'round' } } : {}),
+    paint,
+    metadata: metadata({ 'occ:group': FOOTPRINT_GROUP, 'occ:minThreshold': 'codes' }),
+  });
+  return [
+    layer('occ-footprints-fill', 'fill', 'solid', {
+      'fill-color': occColor(solid.fillToken), 'fill-opacity': solid.fillOpacity,
+    }),
+    layer('occ-footprints-outline', 'line', 'solid', {
+      'line-color': occColor(solid.outlineToken), 'line-width': solid.width,
+    }),
+    layer('occ-footprints-planned', 'line', 'planned', {
+      'line-color': occColor(planned.token),
+      'line-width': planned.width,
+      'line-dasharray': planned.dash.map(length => length / planned.width),
     }),
   ];
 }
@@ -278,6 +356,25 @@ const textLayout = (field, { placed = 'centre' } = {}) => ({
 });
 
 const codeColour = () => byState(STAND_STATE_KEYS, state => occColor(standPaint(state).mutedCode ? 'faint' : 'text'));
+
+// The aircraft glyph of a stand, sized with the map so it stays inside the box at every zoom.
+const glyphLayout = () => ({
+  'icon-image': 'glyph-aircraft',
+  'icon-size': [...STAND_GLYPH_SIZE],
+  'icon-rotate': ['get', 'heading'],
+  'icon-rotation-alignment': 'map',
+  'icon-pitch-alignment': 'map',
+  'icon-allow-overlap': true,
+  'icon-ignore-placement': true,
+});
+
+// The image and the colour of each signal (SIGNALS): the amber triangle, the red octagon, and the plain notice, a diamond
+// without a hue in the text colour.
+const SIGNAL_IMAGE = ['match', ['get', 'signal'], 'urgent', 'signal-urgent', 'notice', 'signal-notice', 'signal-attention'];
+const signalColour = () => ['match', ['get', 'signal'],
+  'urgent', occColor(SIGNALS.urgent.colorToken),
+  'notice', occColor('text'),
+  occColor(SIGNALS.attention.colorToken)];
 
 function labelLayers(labels) {
   const aircraft = statesWhere(paint => paint.glyph === 'aircraft');
@@ -321,19 +418,20 @@ function labelLayers(labels) {
       paint: { 'icon-color': occColor('text'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1 },
       meta: { 'occ:minThreshold': 'airfield', 'occ:maxThreshold': 'polygons' },
     }),
-    // The aircraft on a stand, its nose along the stand's heading, in the outline's token.
+    // The aircraft on a stand, its nose along the stand's heading, in the outline's token: below the codes, where the
+    // aircraft to scale is too small to read (PR M6), on every stand with an aircraft on it; from the codes on only on
+    // one whose aircraft has no type to draw, since the others show their footprint.
     labelLayer('occ-stand-glyph', {
       filter: ['==', ['get', 'glyph'], 'aircraft'],
-      layout: {
-        'icon-image': 'glyph-aircraft',
-        'icon-size': [...STAND_GLYPH_SIZE],
-        'icon-rotate': ['get', 'heading'],
-        'icon-rotation-alignment': 'map',
-        'icon-pitch-alignment': 'map',
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
+      layout: glyphLayout(),
       paint: { 'icon-color': byState(aircraft, state => standPaint(state).outline.color) },
+      meta: { 'occ:maxThreshold': 'codes' },
+    }),
+    labelLayer('occ-stand-glyph-unsized', {
+      filter: ['all', ['==', ['get', 'glyph'], 'aircraft'], ['!=', ['get', 'footprint'], 'solid']],
+      layout: glyphLayout(),
+      paint: { 'icon-color': byState(aircraft, state => standPaint(state).outline.color) },
+      meta: { 'occ:minThreshold': 'codes' },
     }),
     // The clock of «Por liberar», below the stand's box, on the slab's colour. Always drawn, and the labels give way to
     // it (MapLibre places the upper layers first).
@@ -381,20 +479,20 @@ function labelLayers(labels) {
       paint: selectedPaint,
       meta: { 'occ:minThreshold': 'threeLine' },
     }),
-    // The signals, on top of everything of the stands: amber triangle (attention) or red octagon (urgent), above the
-    // stand's box with a dark halo that fills their «!». Always drawn, never over the stand's code: the labels are
-    // placed after them and give way.
+    // The signals, on top of everything of the stands: amber triangle (attention), red octagon (urgent) or the plain
+    // notice's diamond without a hue (PR M6), above the stand's box with a dark halo that fills their «!». Always drawn,
+    // never over the stand's code: the labels are placed after them and give way.
     labelLayer('occ-stand-signal', {
       filter: ['to-boolean', ['get', 'signal']],
       layout: {
-        'icon-image': ['match', ['get', 'signal'], 'urgent', 'signal-urgent', 'signal-attention'],
+        'icon-image': [...SIGNAL_IMAGE],
         'icon-offset': outsideOffset(-1),
         'icon-allow-overlap': true,
         'icon-ignore-placement': false,
         'icon-padding': 0,
       },
       paint: {
-        'icon-color': ['match', ['get', 'signal'], 'urgent', occColor(SIGNALS.urgent.colorToken), occColor(SIGNALS.attention.colorToken)],
+        'icon-color': signalColour(),
         'icon-halo-color': occColor('nav'),
         'icon-halo-width': 1.5,
       },
@@ -449,14 +547,16 @@ function assertLabels(labels) {
 }
 
 /**
- * The overlay of the stands for buildOccStyle: the five sources (the polygons `occ-stands`, their lines
- * `occ-stand-aux`, the label points `occ-stand-labels`, the terminal chips `occ-stand-groups`, each keyed by the
- * property buildStandFeatures promotes, and the placing boxes `occ-stand-ghost`) and their layers. In the `stands`
- * slot: the fill (the pick target), the hatch, one outline per dash, the lead-ins, the combined links, the narrow-body
- * boxes and the three casings of the feature state. In the `standLabels` slot: the chips, the aircraft, the clock, the
- * labels in two variants, the selected stand's label (from the selection source) and the signals. In the `selection`
- * slot: the pending location of «Ubicar en el mapa» and the box that follows the pointer. `labels: 'dashboard'` starts
- * the codes at the polygons.
+ * The overlay of the stands for buildOccStyle: the six sources (the polygons `occ-stands`, their lines
+ * `occ-stand-aux`, the label points `occ-stand-labels`, the terminal chips `occ-stand-groups`, the aircraft to scale
+ * `occ-aircraft-footprints`, each keyed by the property buildStandFeatures promotes, and the placing boxes
+ * `occ-stand-ghost`) and their layers. In the `stands` slot: the fill (the pick target), the hatch, one outline per
+ * dash, the lead-ins, the combined links, the narrow-body boxes, the progress bars and the three casings of the feature
+ * state. In the `footprints` slot: the aircraft on a stand (fill and outline) and the one to come (dashed). In the
+ * `standLabels` slot: the chips, the aircraft glyph (below the codes, and from them where no type is drawn), the clock,
+ * the labels in two variants, the selected stand's label (from the selection source) and the signals. In the
+ * `selection` slot: the pending location of «Ubicar en el mapa» and the box that follows the pointer.
+ * `labels: 'dashboard'` starts the codes at the polygons.
  */
 export function standOverlay({ labels = 'default' } = {}) {
   assertLabels(labels);
@@ -466,9 +566,10 @@ export function standOverlay({ labels = 'default' } = {}) {
       [STAND_AUX_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_LABEL_SOURCE]: { type: 'geojson', promoteId: 'code' },
       [STAND_GROUP_SOURCE]: { type: 'geojson', promoteId: 'terminal' },
+      [STAND_FOOTPRINT_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_GHOST_SOURCE]: { type: 'geojson', promoteId: 'id' },
     },
-    layers: [...polygonLayers(), ...labelLayers(labels), ...placingLayers()],
+    layers: [...polygonLayers(), ...footprintLayers(), ...labelLayers(labels), ...placingLayers()],
   };
 }
 

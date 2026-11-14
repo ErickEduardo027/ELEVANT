@@ -20,6 +20,12 @@ export const mapMessages = {
       ghost: 'Posición que estás ubicando',
       ghostHint: 'A tamaño real; se ajusta al plano a menos de 15 m',
       pending: 'Ubicación sin guardar',
+      // The aircraft to scale on the stands and the progress of a turnaround (PR M6, stands/standLayers.js).
+      footprint: 'Avión en la posición, a escala',
+      footprintPlanned: 'Avión previsto, a escala',
+      footprintPlannedHint: 'Muestra si cabe en la posición',
+      progress: 'Avance de la escala',
+      progressHint: 'Hitos registrados de {total}',
       flight: 'Vuelo',
       flightHint: 'Apunta según su rumbo; al norte si no se conoce',
       runway: 'Pista',
@@ -38,9 +44,13 @@ export const mapMessages = {
         staleHint: 'Atenuado, con la hora de su última posición',
         trail: 'Estela',
         trailEstimated: 'Estela estimada',
-        // The chosen flight's route (traffic/routeFeatures.js); PR M6 replaces the straight line with its trajectory.
-        routeFlown: 'Recorrido del vuelo elegido',
-        routeNext: 'Hasta su próximo punto, en línea recta',
+        // The chosen flight's route (traffic/routeFeatures.js): «Trayecto estimado» is the words kinematics/
+        // kinematicsMessages.js gives that part; the map writes «Posición por asignar» beside an apron hold.
+        routeFlownObserved: 'Recorrido observado',
+        routeFlownEstimated: 'Trayecto estimado',
+        routeRemaining: 'Ruta prevista',
+        routeMark: 'Puntos de la ruta',
+        routeMarkHint: 'Toma de pista, salida y posición',
       },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
@@ -74,6 +84,9 @@ export const mapMessages = {
       uncovered: 'Sin agente que la cubra',
       overdue: 'Pasó su hora de salida',
       conflict: 'Otra aeronave llega a esta posición',
+      // A plain notice (PR M6): an aircraft stands on the stand and nothing records its arrival.
+      arrivalNotRecorded: 'El avión ya está en la posición. Registra la llegada.',
+      progress: 'Hitos registrados: {done} de {total}',
       cancelledBy: 'Anulada por {code}',
       narrowbodyOnly: 'Solo fuselaje estrecho',
       unlocated: 'Sin ubicar',
@@ -169,10 +182,32 @@ export const mapMessages = {
       suggestedStand: 'Posición sugerida {code}',
       noStand: 'Sin posición asignada',
       runway: 'Pista {id}',
+      // The runway a real flight's estimated path uses, and why (PR M6, airport/runwayInUse.js): the live arrivals,
+      // the wind of the METAR (PR M8) or the airport's usual runway.
+      runwayFrom: 'Pista {id} ({source})',
+      runwaySource: {
+        live: 'por el tráfico',
+        wind: 'por el viento',
+        default: 'habitual',
+      },
       live: 'En vivo · hace {age}',
       noPosition: 'Sin posición todavía',
       viewTurnaround: 'Ver escala',
       viewStand: 'Ver posición',
+    },
+    // «Pausar movimiento» (ui/MapMotionControl.jsx, design H): the aircraft stand still while the data keeps loading.
+    motion: {
+      pause: 'Pausar movimiento',
+      resume: 'Reanudar movimiento',
+      paused: 'Movimiento en pausa · datos de las {time}',
+      pausedWithoutData: 'Movimiento en pausa',
+    },
+    // Follow mode (ui/MapFollowButton.jsx, the data block's action, the S key; design A6). One name for the switch,
+    // pressed while the map follows (a toggle keeps its name; aria-pressed says its state). `id` is what the data block
+    // calls the aircraft.
+    follow: {
+      label: 'Seguir',
+      stopped: 'Dejaste de seguir a {id}. Pulsa Seguir para volver.',
     },
     // The layers menu (ui/MapLayersMenu.jsx, core/layersMenu.js); its button takes «Capas» from the key table.
     layers: {
@@ -210,6 +245,11 @@ export const mapMessages = {
       ghost: 'Stand you are placing',
       ghostHint: 'At true size; it snaps to the layout within 15 m',
       pending: 'Location not saved yet',
+      footprint: 'Aircraft on the stand, to scale',
+      footprintPlanned: 'Planned aircraft, to scale',
+      footprintPlannedHint: 'Shows whether it fits the stand',
+      progress: 'Turnaround progress',
+      progressHint: 'Milestones recorded out of {total}',
       flight: 'Flight',
       flightHint: 'Points along its heading; north when unknown',
       runway: 'Runway',
@@ -227,8 +267,11 @@ export const mapMessages = {
         staleHint: 'Dimmed, with the time of its last position',
         trail: 'Trail',
         trailEstimated: 'Estimated trail',
-        routeFlown: 'Route flown by the selected flight',
-        routeNext: 'To its next point, in a straight line',
+        routeFlownObserved: 'Observed path',
+        routeFlownEstimated: 'Estimated path',
+        routeRemaining: 'Planned route',
+        routeMark: 'Route points',
+        routeMarkHint: 'Touchdown, runway exit and stand',
       },
     },
     airfield: {
@@ -257,6 +300,8 @@ export const mapMessages = {
       uncovered: 'No agent covers it',
       overdue: 'Past its departure time',
       conflict: 'Another aircraft is arriving at this stand',
+      arrivalNotRecorded: 'The aircraft is already on the stand. Record its arrival.',
+      progress: 'Milestones recorded: {done} of {total}',
       cancelledBy: 'Cancelled by {code}',
       narrowbodyOnly: 'Narrow-body aircraft only',
       unlocated: 'Not placed',
@@ -343,10 +388,26 @@ export const mapMessages = {
       suggestedStand: 'Suggested stand {code}',
       noStand: 'No stand assigned',
       runway: 'Runway {id}',
+      runwayFrom: 'Runway {id} ({source})',
+      runwaySource: {
+        live: 'from the traffic',
+        wind: 'from the wind',
+        default: 'usual',
+      },
       live: 'Live · {age} ago',
       noPosition: 'No position yet',
       viewTurnaround: 'View turnaround',
       viewStand: 'View stand',
+    },
+    motion: {
+      pause: 'Pause movement',
+      resume: 'Resume movement',
+      paused: 'Movement paused · data from {time}',
+      pausedWithoutData: 'Movement paused',
+    },
+    follow: {
+      label: 'Follow',
+      stopped: 'You stopped following {id}. Press Follow to resume.',
     },
     layers: {
       menu: 'Map layers',

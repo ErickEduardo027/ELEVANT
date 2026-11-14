@@ -176,9 +176,11 @@ describe('MapLayersMenu', () => {
     expect(visibilityOf(second.map, 'occ-traffic-tags-other')).toBe('visible');
     // Back to the default, the entry goes; the labels stay as the one difference.
     expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBe('{"traffic.labels":true}');
-    // The route of the chosen flight hides with its key.
+    // The route of the chosen flight hides with its key: its four layers (PR M6), observed, estimated, still to fly and
+    // its marked points.
     await user.click(checkbox('Ruta del vuelo elegido'));
-    expect([visibilityOf(second.map, 'occ-route-flown'), visibilityOf(second.map, 'occ-route-next')]).toEqual(['none', 'none']);
+    expect(['occ-route-flown', 'occ-route-flown-estimated', 'occ-route-remaining', 'occ-route-marks']
+      .map(id => visibilityOf(second.map, id))).toEqual(['none', 'none', 'none', 'none']);
   });
 
   it('speaks English inside a translated scope', async () => {

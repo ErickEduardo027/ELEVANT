@@ -5,8 +5,8 @@ import {
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import {
-  ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, flightLevelText, isEmptyDiff, knotsText,
-  onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
+  ROUTE_KINDS, ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, flightLevelText, isEmptyDiff,
+  knotsText, onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
 } from './trafficFeatures';
 
 const NOON = Date.parse(TRAFFIC_NOON);
@@ -138,6 +138,29 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     }
   });
 
+  it('carries the aircraft\'s opacity, in hundredths, whole by default', () => {
+    const aircraft = aircraftAtNoon();
+    const drawn = byId(trafficFeatures(aircraft));
+    // From a fix or an estimate without a fade: whole.
+    expect(Object.values(drawn).every(properties => properties.opacity === 1)).toBe(true);
+    // A cancelled demo fading out (the motion store sampled it at 0.4237): in hundredths, so a fade writes little.
+    const fading = aircraft.map(item => (item.flightKey === KEY.demoArrival ? { ...item, opacity: 0.4237 } : item));
+    const faded = byId(trafficFeatures(fading));
+    expect(faded[`f:${KEY.demoArrival}`].opacity).toBe(0.42);
+    expect(trafficDiff(featuresById(trafficFeatures(aircraft)), trafficFeatures(fading).features).update)
+      .toEqual([{ id: `f:${KEY.demoArrival}`, addOrUpdateProperties: [{ key: 'opacity', value: 0.42 }] }]);
+    // Out of range or not a number: clamped, or whole.
+    const odd = aircraft.map(item => {
+      if (item.flightKey === KEY.demoArrival) return { ...item, opacity: 3 };
+      if (item.hex === HEX.stale) return { ...item, opacity: -1 };
+      if (item.hex === HEX.overflight) return { ...item, opacity: 'x' };
+      return item;
+    });
+    const clamped = byId(trafficFeatures(odd));
+    expect([clamped[`f:${KEY.demoArrival}`].opacity, clamped[`h:${HEX.stale}`].opacity, clamped[`f:${KEY.departure}`].opacity])
+      .toEqual([1, 0, 1]);
+  });
+
   it('a stale tag names the time of the last position, so it holds still while the aircraft stays stale', () => {
     const aircraftAt = nowMs => buildSituation({ picture: toPictureModel(createAirPicture()), flights, nowMs,
       estimates: createEstimates() }).aircraft;
@@ -245,16 +268,56 @@ describe('traffic features (design E3, contracts 2.4)', () => {
       .trails).toEqual([]);
     expect(onScreenKey(everything)).toBe('aviamArrival,aviamDeparture,other,otherGround|demo,estimated,stale||');
 
-    // The chosen flight's route: its parts drawn inside the bounds or across them, while «Ruta del vuelo elegido» shows.
+    // The chosen flight's route (PR M6): its lines drawn inside the bounds or across them, and its marks inside them,
+    // while «Ruta del vuelo elegido» shows; in the order of ROUTE_KINDS.
+    expect(ROUTE_KINDS).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
+    const point = (properties, coordinates) => ({ type: 'Feature', properties, geometry: { type: 'Point', coordinates } });
     const route = { type: 'FeatureCollection', features: [
-      line({ part: 'flown', hex: 'f0a001' }, [[-68.6, 18.5], [-68.55, 18.52]]),
-      // From the final to Toronto: both ends outside the box of the final's east end, the line across it.
-      line({ part: 'next', hex: 'f0a001', to: 'destination' }, [[-68.7, 18.4], [-68.3, 18.7]]),
+      // Still to fly, from south-west of the field to the stand A5.
+      line({ part: 'remaining', hex: 'f0a001' }, [[-68.7, 18.4], [-68.3637, 18.5639]]),
+      line({ part: 'flownObserved', hex: 'f0a001' }, [[-68.6, 18.5], [-68.55, 18.52]]),
+      // From Miami to the first observed point: far to the west, its east end in the region.
+      line({ part: 'flownEstimated', hex: 'f0a001', labelKey: 'flownEstimated' }, [[-80.29, 25.79], [-68.6, 18.5]]),
+      // The touchdown on 08 and the stand A5.
+      point({ part: 'mark', mark: 'touchdown', hex: 'f0a001' }, [-68.38, 18.5707]),
+      point({ part: 'mark', mark: 'stand', standCode: 'A5', hex: 'f0a001' }, [-68.3637, 18.5639]),
     ] };
-    expect(trafficOnScreen([], null, { route }).route).toEqual(['flown', 'next']);
-    expect(trafficOnScreen([], [[-68.52, 18.5], [-68.45, 18.62]], { route }).route).toEqual(['next']);
+    expect(trafficOnScreen([], null, { route }).route).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
+    // The box of the final's east end: the line still to fly crosses it with both ends outside, nothing else is there.
+    expect(trafficOnScreen([], [[-68.52, 18.5], [-68.45, 18.62]], { route }).route).toEqual(['remaining']);
+    // Over the field: the line still to fly and the two marks.
+    expect(trafficOnScreen([], [[-68.4, 18.55], [-68.35, 18.6]], { route }).route).toEqual(['remaining', 'mark']);
     expect(trafficOnScreen([], [[-67.5, 17.5], [-67.4, 17.6]], { route }).route).toEqual([]);
     expect(trafficOnScreen([], null, { route, groups: { route: false } }).route).toEqual([]);
-    expect(onScreenKey(trafficOnScreen([], null, { route }))).toBe('|||flown,next');
+    expect(onScreenKey(trafficOnScreen([], null, { route }))).toBe('|||flownObserved,flownEstimated,remaining,mark');
+    // The parts of PR M5's straight line, and a mark without its point, are not on screen.
+    const old = { features: [line({ part: 'flown' }, [[-68.6, 18.5], [-68.55, 18.52]]),
+      line({ part: 'next' }, [[-68.6, 18.5], [-68.36, 18.56]]), point({ part: 'mark' }, [Number.NaN, 18.5])] };
+    expect(trafficOnScreen([], null, { route: old }).route).toEqual([]);
+  });
+
+  it('an ELEVANT aircraft parked in the stand that shows it carries parkedOnStand and leaves the legend to it', () => {
+    const aircraft = aircraftAtNoon();
+    // The arrival and the demo flight, given as parked by the stands (stands/standFeatures.js: parkedAircraftIds); other
+    // traffic is never the stand's, whatever the list says.
+    const parkedIds = new Set([`f:${KEY.arrival}`, `h:${HEX.outsideWindow}`]);
+    const drawn = byId(trafficFeatures(aircraft, { parkedIds }));
+    expect(drawn[`f:${KEY.arrival}`]).toMatchObject({ kind: 'aviam', parkedOnStand: true });
+    expect(drawn[`f:${KEY.demoArrival}`].parkedOnStand).toBe(false);
+    expect(drawn[`h:${HEX.outsideWindow}`].parkedOnStand).toBe(false);
+    // Without the list nothing is parked; anything that is not a Set is no list.
+    expect(Object.values(byId(trafficFeatures(aircraft))).some(properties => properties.parkedOnStand)).toBe(false);
+    expect(byId(trafficFeatures(aircraft, { parkedIds: [`f:${KEY.arrival}`] }))[`f:${KEY.arrival}`].parkedOnStand).toBe(false);
+    // A flight that parks or leaves is one update of that property.
+    const before = featuresById(trafficFeatures(aircraft));
+    expect(trafficDiff(before, trafficFeatures(aircraft, { parkedIds }).features).update).toEqual([
+      { id: `f:${KEY.arrival}`, addOrUpdateProperties: [{ key: 'parkedOnStand', value: true }] },
+    ]);
+    // What its stand shows, the stands' legend explains: the arrival brings no traffic entry of its own then.
+    const final = [[-68.66, 18.45], [-68.42, 18.62]];
+    expect(trafficOnScreen(aircraft, final).kinds).toEqual(['aviamArrival']);
+    expect(trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`]) }).kinds).toEqual(['aviamArrival']);
+    expect(trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`, `f:${KEY.demoArrival}`]) }))
+      .toEqual({ kinds: [], tags: [], trails: [], route: [] });
   });
 });
