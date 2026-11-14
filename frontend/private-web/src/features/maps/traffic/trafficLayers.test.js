@@ -72,14 +72,15 @@ describe('traffic layers (design E1 and E3)', () => {
         'traffic', 'traffic', 'selection',
       ]);
       // MapLibre places from the top layer down: the plate, the ELEVANT tags (above every aircraft), the ELEVANT icons,
-      // then other traffic, whose icon and tag share a symbol, and last the optional tags of all other traffic.
+      // the optional tags of all other traffic (before their own icons, which they must never meet in the collision
+      // index), then other traffic, whose icon and forced tag share a symbol.
       const order = id => ids.indexOf(id);
-      expect(order('occ-traffic-tags-other')).toBeLessThan(order('occ-traffic-other-ground'));
       expect(order('occ-traffic-other-ground')).toBeLessThan(order('occ-traffic-other'));
-      expect(order('occ-traffic-other')).toBeLessThan(order('occ-traffic-aviam'));
+      expect(order('occ-traffic-other')).toBeLessThan(order('occ-traffic-tags-other'));
+      expect(order('occ-traffic-tags-other')).toBeLessThan(order('occ-traffic-aviam'));
       expect(order('occ-traffic-aviam')).toBeLessThan(order('occ-traffic-tags'));
       expect(order('occ-traffic-tags')).toBeLessThan(order('occ-traffic-demo-plate'));
-      expect(order('occ-trails-live')).toBeLessThan(order('occ-traffic-tags-other'));
+      expect(order('occ-trails-live')).toBeLessThan(order('occ-traffic-other-ground'));
       for (const id of ['occ-traffic-other', 'occ-traffic-other-ground']) {
         const { layout } = style.layers.find(layer => layer.id === id);
         expect(layout, id).toMatchObject({ 'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'text-allow-overlap': true });

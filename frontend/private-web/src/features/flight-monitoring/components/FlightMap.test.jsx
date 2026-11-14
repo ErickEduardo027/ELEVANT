@@ -384,9 +384,80 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
   });
 
   it('is the plain map outside the OCC shell, without live traffic', () => {
-    const { map } = renderFlights({ flights: [flight({ id: 1 })] });
+    const { map } = renderFlights({ flights: [flight({ id: 1 })], selectedFlightId: 1,
+      detail: <div role="dialog" aria-label="Detalle del vuelo ZZ101" /> });
     expect(map.options.style.sources['occ-traffic']).toBeUndefined();
     expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
     expect(TRAFFIC_STATION_ID).toBe('5a000000-0000-4000-8000-000000000001');
+    // Without the traffic there is no data block and no layers menu: the page's own card of its flight shows instead.
+    loadStyle(map);
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Detalle del vuelo ZZ101' })).toBeInTheDocument();
+  });
+
+  it('shows the data block of the selected flight', async () => {
+    const onSelectFlight = vi.fn();
+    const { map, rerender } = renderLive({ selectedFlightId: arrivalRow.legId, onSelectFlight });
+    loadStyle(map);
+    await flush();
+    // Docked at the top left, named with the flight number, with its route, its time and where its position comes from.
+    const block = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });
+    expect(block).toBe(screen.getByTestId('flight-data-block'));
+    expect(block).toHaveStyle({ top: '12px', left: '12px' });
+    expect(within(block).getByText('MIA')).toBeInTheDocument();
+    expect(block).toHaveTextContent('Llega 11:10 · en 10 min');
+    expect(block).toHaveTextContent('Posición A5');
+    const sourceLine = () => screen.getByTestId('flight-data-block').querySelector('[data-source-line]');
+    expect(sourceLine()).toHaveTextContent('En vivo · hace 4 s');
+    expect(within(block).getByRole('link', { name: 'Ver escala' }))
+      .toHaveAttribute('href', `/admin-occ/planning?stationId=${TRAFFIC_STATION_ID}&flightId=${arrivalRow.legId}`);
+    // The map reads the aircraft's track once and draws its route: what it flew, and the straight line to A5.
+    const route = map.getSource('occ-route').data;
+    expect(route.features.map(feature => [feature.properties.part, feature.properties.to ?? null]))
+      .toEqual([['flown', null], ['next', 'stand']]);
+    // The age counts up on its own between two reads of the picture.
+    await flush(2_000);
+    expect(sourceLine()).toHaveTextContent('En vivo · hace 6 s');
+    // «Cerrar» lets the flight go.
+    fireEvent.click(within(screen.getByTestId('flight-data-block')).getByRole('button', { name: 'Cerrar' }));
+    expect(onSelectFlight).toHaveBeenLastCalledWith(null);
+
+    // Other traffic chosen by its address: its own block, «Otro tráfico», without a route to anywhere.
+    rerender({ selectedFlightId: null });
+    act(() => window.history.replaceState({}, '', `${PAGE}&hex=${TRAFFIC_HEX.overflight}`));
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flush();
+    const other = screen.getByRole('dialog', { name: 'Vuelo ZZZ804' });
+    expect(within(other).getByText('Otro tráfico')).toBeInTheDocument();
+    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    // The layers menu is in the dock.
+    expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' })).toBeInTheDocument();
+  });
+
+  it('keeps the page\'s card for a flight the map does not know', async () => {
+    const card = <div role="dialog" aria-label="Detalle del vuelo ZZ999" />;
+    const outside = { id: 'leg-zz999', flightNumber: 'ZZ999', latitude: null, longitude: null, heading: null };
+    const { map, rerender } = renderLive({ flights: [pageFlight(arrivalRow), outside], selectedFlightId: outside.id,
+      detail: card });
+    // Nothing while the map reads, so no card flashes before the map's own.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    loadStyle(map);
+    await flush();
+    expect(screen.getByRole('dialog', { name: 'Detalle del vuelo ZZ999' })).toBeInTheDocument();
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
+    // A flight the map knows has its data block, and the page's card goes.
+    rerender({ selectedFlightId: arrivalRow.legId, detail: <div role="dialog" aria-label="Detalle del vuelo ZZ161" /> });
+    await flush();
+    expect(screen.getAllByRole('dialog').map(dialog => dialog.getAttribute('aria-label'))).toEqual(['Vuelo ZZ161']);
+    cleanup();
+
+    // While the map cannot draw, its fallback list covers it: the page's card stays, not the map's data block.
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    renderLive({ selectedFlightId: arrivalRow.legId, detail: <div role="dialog" aria-label="Detalle del vuelo ZZ161" /> });
+    await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent('El mapa no está disponible en este navegador');
+    expect(screen.getAllByRole('dialog').map(dialog => dialog.getAttribute('aria-label'))).toEqual(['Detalle del vuelo ZZ161']);
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
   });
 });

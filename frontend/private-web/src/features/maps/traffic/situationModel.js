@@ -2,7 +2,8 @@ import { normalizeStandCode } from '../../../services/standCodes';
 import { parseInstant } from '../../../services/serverClock';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { pointInPolygon } from '../airport/geo';
-import { endsItsVisit } from '../core/mapSelection';
+import { endsItsVisit, matchFlight } from '../core/mapSelection';
+import { selectedAircraftId } from './trafficFeatures';
 
 // The only module that knows the shape of the map reads (contracts 1.3): it turns the air picture, an aircraft's track
 // and the map flights into the map's model, and joins them into what the map draws (design E1). Pure.
@@ -306,6 +307,36 @@ export function buildSituation({ picture = null, flights = null, nowMs, estimate
     ownedStandCodes: owned,
     changesAt,
   });
+}
+
+/**
+ * What a selection of the URL names on the map (contracts 2.1): `{ kind: 'flight' | 'aircraft', flight, aircraft }`,
+ * or `null` when it names nothing the map knows.
+ * - `flightId` (`kind: 'flight'`): the flight of the window that matchFlight finds by its flightKey, visitKey, leg id,
+ *   turnaround id or the old `p:` key of a visit OCC linked to a planned flight (its proposalId); `aircraft` is the
+ *   aircraft the map draws for it (live, or estimated), the one the map draws in cyan, or `null` while it has no
+ *   position.
+ * - `hex` (`kind: 'aircraft'`): the drawn aircraft with that ADS-B address and, when the picture matched it to a
+ *   flight of the window, that flight (else `flight` is `null`).
+ * The aircraft comes from the same rule that draws the selection (traffic/trafficFeatures.js: selectedAircraftId), so
+ * the data block, the cyan aircraft and its ring always speak of the same one.
+ */
+export function selectionTarget(selection, situation) {
+  if (!selection || selection.id == null || String(selection.id).trim() === '') return null;
+  const aircraft = situation?.aircraft ?? [];
+  const flights = situation?.flights ?? [];
+  const chosenId = selectedAircraftId(aircraft, selection);
+  const chosen = chosenId === null ? null : situation?.byId?.get(chosenId) ?? aircraft.find(item => item.id === chosenId) ?? null;
+  if (selection.kind === 'flight') {
+    const flight = matchFlight(flights, selection.id);
+    return flight ? Object.freeze({ kind: 'flight', flight, aircraft: chosen }) : null;
+  }
+  if (selection.kind === 'aircraft') {
+    if (chosen === null) return null;
+    const flight = chosen.flightKey === null ? null : flights.find(row => row?.flightKey === chosen.flightKey) ?? null;
+    return Object.freeze({ kind: 'aircraft', flight, aircraft: chosen });
+  }
+  return null;
 }
 
 /**

@@ -85,6 +85,18 @@ describe('map messages', () => {
       expect(es(`source.reason.${reason}`), reason).toMatch(/^La fuente de tráfico .+\.$/);
       expect(en(`source.reason.${reason}`), reason).toMatch(/^The traffic source .+\.$/);
     }
+    // The data block and the layers menu (PR M5 step c), in plain words.
+    expect([es('dataBlock.label', { id: 'ZZ161' }), es('dataBlock.live', { age: es('dataBlock.seconds', { count: 4 }) }),
+      es('dataBlock.stale', { age: es('dataBlock.seconds', { count: 45 }) }), es('dataBlock.noPosition'), es('dataBlock.demo'),
+      es('dataBlock.notImported'), es('dataBlock.cancelledDemo')]).toEqual(['Vuelo ZZ161', 'En vivo · hace 4 s',
+      'Sin señal desde hace 45 s', 'Sin posición todavía', 'Vuelo demo', 'Sin importar', 'Cancelado por el proveedor (demo)']);
+    expect([es('dataBlock.viewTurnaround'), es('dataBlock.viewStand'), es('dataBlock.close')])
+      .toEqual(['Ver escala', 'Ver posición', 'Cerrar']);
+    expect(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route'].map(key => es(`layers.key.${key}`)))
+      .toEqual(['Vuelos de AVIAM', 'Otro tráfico', 'Etiquetas de todo el tráfico', 'Estelas de todo el tráfico',
+        'Ruta del vuelo elegido']);
+    expect([es('layers.group.traffic'), es('layers.locked'), en('layers.group.traffic'), en('layers.key.traffic.aviam')])
+      .toEqual(['Tráfico', 'Siempre visible', 'Traffic', 'AVIAM flights']);
     // The words the server writes never reach the screen: no reason names the provider or repeats a code.
     for (const language of ['es', 'en']) {
       const texts = OCC_AIR_PICTURE_REASONS.map(reason => createTranslator(mapMessages, language)(`source.reason.${reason}`));

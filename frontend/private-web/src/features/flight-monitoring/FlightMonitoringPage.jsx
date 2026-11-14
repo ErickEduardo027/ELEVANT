@@ -28,6 +28,12 @@ function MonitoringMapArea({
   onStatusChange,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
+  // The page's own card of the selected flight. With the map (PUJ) the map docks the data block of the flight instead
+  // (maps/ui/FlightDataBlock.jsx) and shows this card only for a flight it does not know; without the map it is the
+  // card of the flight.
+  const detail = selectedFlight ? (
+    <FlightDetailPopover flight={selectedFlight} now={now} style={DOCKED_POPOVER_STYLE} onClose={onClosePopover} onStatusChange={onStatusChange} />
+  ) : null;
   // Only PUJ has reviewed coordinates; do not center a different station on PUJ. The map takes every flight of the
   // list: it draws those it can place (from the live traffic inside the OCC shell), lists all of them when it cannot
   // draw, and its own legend and traffic status explain what it shows.
@@ -39,11 +45,12 @@ function MonitoringMapArea({
           selectedFlightId={selectedFlightId}
           onSelectFlight={onSelectFlight}
           theme={theme}
+          detail={detail}
         />
       ) : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
         {t('page.noLiveSource')}
       </div>}
-      <FlightDetailPopover flight={selectedFlight} now={now} style={DOCKED_POPOVER_STYLE} onClose={onClosePopover} onStatusChange={onStatusChange} />
+      {stationCode !== 'PUJ' && detail}
     </div>
   );
 }

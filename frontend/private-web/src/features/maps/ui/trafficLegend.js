@@ -18,6 +18,12 @@ const TRAIL_ENTRIES = Object.freeze({
   estimated: { key: 'trailEstimated', label: 'legend.traffic.trailEstimated' },
 });
 
+// The chosen flight's route (traffic/routeFeatures.js): what it flew, and the straight line to its next point.
+const ROUTE_ENTRIES = Object.freeze({
+  flown: { key: 'routeFlown', label: 'legend.traffic.routeFlown' },
+  next: { key: 'routeNext', label: 'legend.traffic.routeNext' },
+});
+
 const word = (entry, language) => entry?.[language] ?? entry?.es ?? '';
 
 // A tag in its word of the vocabulary, with a short hint after it.
@@ -29,14 +35,15 @@ function tagEntry(tag, t, language) {
 }
 
 /**
- * The legend's traffic entries for `{ kinds, tags, trails }` (what trafficOnScreen answers), in that order: each
- * `{ key, swatch, label, hint, span }` with its words in `language`. The legend sits over the map, so it stays short:
- * a kind of aircraft is its swatch and its name on one line, a tag its word with a short hint, and the two trails share
- * a line (`span` 1, half the legend) when both are on screen. The swatch names what ui/TrafficSwatch.jsx draws: the
- * solid and hollow ELEVANT silhouettes, the small muted other traffic, the plate, the ring, the dimmed aircraft and the
- * two trails. Nothing on screen, no entry.
+ * The legend's traffic entries for `{ kinds, tags, trails, route }` (what trafficOnScreen answers), in that order:
+ * each `{ key, swatch, label, hint, span }` with its words in `language`. The legend sits over the map, so it stays
+ * short: a kind of aircraft is its swatch and its name on one line, a tag its word with a short hint, and the two trails
+ * share a line (`span` 1, half the legend) when both are on screen. The two parts of the chosen flight's route take a
+ * line each. The swatch names what ui/TrafficSwatch.jsx draws: the solid and hollow ELEVANT silhouettes, the small muted
+ * other traffic, the plate, the ring, the dimmed aircraft, the two trails and the route's solid and dashed lines.
+ * Nothing on screen, no entry.
  */
-export function trafficLegendEntries({ kinds = [], tags = [], trails = [] } = {}, { language = 'es' } = {}) {
+export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route = [] } = {}, { language = 'es' } = {}) {
   const t = createTranslator(mapMessages, language);
   const shownTrails = trails.filter(kind => Object.hasOwn(TRAIL_ENTRIES, kind));
   return [
@@ -49,6 +56,10 @@ export function trafficLegendEntries({ kinds = [], tags = [], trails = [] } = {}
     ...shownTrails.map(kind => {
       const entry = TRAIL_ENTRIES[kind];
       return { key: entry.key, swatch: entry.key, label: t(entry.label), hint: null, span: shownTrails.length === 2 ? 1 : 2 };
+    }),
+    ...(Array.isArray(route) ? route : []).filter(part => Object.hasOwn(ROUTE_ENTRIES, part)).map(part => {
+      const entry = ROUTE_ENTRIES[part];
+      return { key: entry.key, swatch: entry.key, label: t(entry.label), hint: null, span: 2 };
     }),
   ];
 }

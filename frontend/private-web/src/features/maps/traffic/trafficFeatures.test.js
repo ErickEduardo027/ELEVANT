@@ -142,7 +142,7 @@ describe('traffic features (design E3, contracts 2.4)', () => {
       ? { ...item, matchedFlightKey: KEY.parkedArrival, matchedBy: 'Registration' } : null));
     expect(trafficFeatures(parked).features.map(feature => feature.properties.id)).toContain(`f:${KEY.parkedArrival}`);
     // What is not drawn is not on screen either.
-    expect(trafficOnScreen([hidden])).toEqual({ kinds: [], tags: [], trails: [] });
+    expect(trafficOnScreen([hidden])).toEqual({ kinds: [], tags: [], trails: [], route: [] });
   });
 
   it('the diff adds, updates and removes by id', () => {
@@ -190,16 +190,18 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     const everything = trafficOnScreen(aircraft);
     expect(everything).toEqual({
       kinds: ['aviamArrival', 'aviamDeparture', 'other', 'otherGround'], tags: ['demo', 'estimated', 'stale'], trails: [],
+      route: [],
     });
     // The approach box around the final for runway 08: the arrival and the demo, not the overflight 40 NM away.
     const final = [[-68.66, 18.45], [-68.42, 18.62]];
-    expect(trafficOnScreen(aircraft, final)).toEqual({ kinds: ['aviamArrival'], tags: ['demo', 'estimated'], trails: [] });
+    expect(trafficOnScreen(aircraft, final)).toEqual({ kinds: ['aviamArrival'], tags: ['demo', 'estimated'], trails: [],
+      route: [] });
     // Other traffic on the ground is drawn only from the airfield threshold up; a hidden group lists nothing.
     const thresholds = { airfield: 11.2 };
     expect(trafficOnScreen(aircraft, null, { zoom: 9, thresholds }).kinds).not.toContain('otherGround');
     expect(trafficOnScreen(aircraft, null, { zoom: 14, thresholds }).kinds).toContain('otherGround');
     expect(trafficOnScreen(aircraft, null, { groups: { 'traffic.other': false } }))
-      .toEqual({ kinds: ['aviamArrival', 'aviamDeparture'], tags: ['demo', 'estimated'], trails: [] });
+      .toEqual({ kinds: ['aviamArrival', 'aviamDeparture'], tags: ['demo', 'estimated'], trails: [], route: [] });
 
     // Trails: an ELEVANT trail is live, an estimated part estimated; other traffic's only while its group shows.
     const line = (properties, coordinates) => ({ type: 'Feature', properties, geometry: { type: 'LineString', coordinates } });
@@ -216,6 +218,18 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     expect(trafficOnScreen([], null, { trails: otherTrail, groups: { 'traffic.trails': true } }).trails).toEqual(['live']);
     expect(trafficOnScreen([], null, { trails: otherTrail, groups: { 'traffic.trails': true, 'traffic.other': false } })
       .trails).toEqual([]);
-    expect(onScreenKey(everything)).toBe('aviamArrival,aviamDeparture,other,otherGround|demo,estimated,stale|');
+    expect(onScreenKey(everything)).toBe('aviamArrival,aviamDeparture,other,otherGround|demo,estimated,stale||');
+
+    // The chosen flight's route: its parts drawn inside the bounds or across them, while «Ruta del vuelo elegido» shows.
+    const route = { type: 'FeatureCollection', features: [
+      line({ part: 'flown', hex: 'f0a001' }, [[-68.6, 18.5], [-68.55, 18.52]]),
+      // From the final to Toronto: both ends outside the box of the final's east end, the line across it.
+      line({ part: 'next', hex: 'f0a001', to: 'destination' }, [[-68.7, 18.4], [-68.3, 18.7]]),
+    ] };
+    expect(trafficOnScreen([], null, { route }).route).toEqual(['flown', 'next']);
+    expect(trafficOnScreen([], [[-68.52, 18.5], [-68.45, 18.62]], { route }).route).toEqual(['next']);
+    expect(trafficOnScreen([], [[-67.5, 17.5], [-67.4, 17.6]], { route }).route).toEqual([]);
+    expect(trafficOnScreen([], null, { route, groups: { route: false } }).route).toEqual([]);
+    expect(onScreenKey(trafficOnScreen([], null, { route }))).toBe('|||flown,next');
   });
 });

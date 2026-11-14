@@ -6,8 +6,8 @@ import {
   TRAFFIC_NOON, trafficInstant,
 } from '../testing/trafficFixtures';
 import {
-  airTrafficSourceState, buildSituation, ownedStandCodes, staleAfterSeconds, toFlightsModel, toPictureModel,
-  toTrackModel,
+  airTrafficSourceState, buildSituation, ownedStandCodes, selectionTarget, staleAfterSeconds, toFlightsModel,
+  toPictureModel, toTrackModel,
 } from './situationModel';
 
 const NOON = Date.parse(TRAFFIC_NOON);
@@ -237,5 +237,35 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
       expect(state, `${picture} / ${resource}`).toBe(expected);
       expect(SOURCE_STATES).toContain(state);
     }
+  });
+
+  it('a selection names its flight and the aircraft the map draws for it (contracts 2.1)', () => {
+    const situation = buildSituation({ picture: livePicture, flights, nowMs: NOON, estimates: createEstimates() });
+    const arrival = flights.byKey.get(KEY.arrival);
+    const drawn = situation.byId.get(`f:${KEY.arrival}`);
+    // flightId by its key, its visit, its leg, its turnaround or the old p: key of its proposal: ZZ161 and its aircraft.
+    for (const id of [KEY.arrival, arrival.legId, arrival.turnaroundId, `p:${arrival.proposalId}`]) {
+      const target = selectionTarget({ kind: 'flight', id }, situation);
+      expect(target, id).toEqual({ kind: 'flight', flight: arrival, aircraft: drawn });
+    }
+    // A flight without a live fix has no aircraft yet; the demo flight is drawn where its estimate puts it.
+    expect(selectionTarget({ kind: 'flight', id: KEY.noFix }, situation))
+      .toEqual({ kind: 'flight', flight: flights.byKey.get(KEY.noFix), aircraft: null });
+    expect(selectionTarget({ kind: 'flight', id: KEY.demoArrival }, situation).aircraft)
+      .toMatchObject({ quality: 'estimated', isDemo: true });
+
+    // hex: the aircraft by its address (any case) and, when the picture matched it, its flight.
+    expect(selectionTarget({ kind: 'aircraft', id: HEX.overflight.toUpperCase() }, situation))
+      .toEqual({ kind: 'aircraft', flight: null, aircraft: situation.byId.get(`h:${HEX.overflight}`) });
+    expect(selectionTarget({ kind: 'aircraft', id: HEX.arrival }, situation))
+      .toEqual({ kind: 'aircraft', flight: arrival, aircraft: drawn });
+
+    // What the map does not know or does not draw names nothing: an unknown flight or address, an aircraft hidden inside
+    // a stand, a stand selection and no selection.
+    for (const selection of [{ kind: 'flight', id: 'l:nada' }, { kind: 'aircraft', id: 'f0ffff' },
+      { kind: 'aircraft', id: HEX.groundInOwnedStand }, { kind: 'stand', id: 'A5' }, { kind: 'flight', id: '  ' }, null]) {
+      expect(selectionTarget(selection, situation), JSON.stringify(selection)).toBeNull();
+    }
+    expect(selectionTarget({ kind: 'flight', id: KEY.arrival }, null)).toBeNull();
   });
 });

@@ -315,4 +315,42 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     expect(result.current.track).toBeNull();
     expect(result.current.status).toBe('success');
   });
+
+  it('names what the selection chooses, reads its aircraft track once and gives its route and telemetry', async () => {
+    const props = selection => ({ stationId: TRAFFIC_STATION_ID, service: adapter, selection });
+    const { adapter, result, rerender } = setup({ selection: { kind: 'flight', id: KEY.arrival } });
+    await flush();
+    expect(result.current.target).toMatchObject({ kind: 'flight', flight: { flightKey: KEY.arrival },
+      aircraft: { id: `f:${KEY.arrival}`, hex: HEX.arrival } });
+    // The flight's aircraft is the chosen one: its track is read once, and the route draws what it flew (the trail with
+    // the track) and the straight line to its stand.
+    expect(readsOf(adapter, 'aircraftTrack').map(call => call.hex)).toEqual([HEX.arrival]);
+    expect(result.current.track).toMatchObject({ hex: HEX.arrival });
+    const [flown, next] = result.current.route.features;
+    expect(result.current.route.features.map(feature => feature.properties.part)).toEqual(['flown', 'next']);
+    expect(flown.geometry.coordinates.length).toBeGreaterThanOrEqual(30);
+    expect(next.properties).toMatchObject({ hex: HEX.arrival, to: 'stand' });
+    // The telemetry store holds the situation's aircraft for the data block.
+    expect(result.current.telemetry.telemetryOf(`f:${KEY.arrival}`)).toMatchObject({ altFt: 2_600, gsKt: 150, quality: 'live' });
+    await flush(30_000);
+    expect(countOf(adapter, 'aircraftTrack')).toBe(1);
+
+    // Other traffic by its address: its own track, its route without a next point.
+    rerender(props({ kind: 'aircraft', id: HEX.overflight }));
+    await flush();
+    expect(result.current.target).toMatchObject({ kind: 'aircraft', flight: null, aircraft: { hex: HEX.overflight } });
+    expect(readsOf(adapter, 'aircraftTrack').map(call => call.hex)).toEqual([HEX.arrival, HEX.overflight]);
+    expect(result.current.route.features.map(feature => feature.properties.part)).toEqual(['flown']);
+
+    // A flight without a position: no aircraft, no route and no read; nothing chosen, nothing named.
+    rerender(props({ kind: 'flight', id: KEY.noFix }));
+    await flush();
+    expect(result.current.target).toMatchObject({ kind: 'flight', aircraft: null });
+    expect(result.current.route.features).toEqual([]);
+    expect(result.current.track).toBeNull();
+    rerender(props(null));
+    await flush();
+    expect(result.current.target).toBeNull();
+    expect(countOf(adapter, 'aircraftTrack')).toBe(2);
+  });
 });

@@ -5,7 +5,8 @@ import {
   createAirPicture, createMapFlights, createTrack, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX, TRAFFIC_NOON,
   trafficInstant,
 } from '../testing/trafficFixtures';
-import { buildSituation, toFlightsModel, toPictureModel, toTrackModel } from '../traffic/situationModel';
+import { buildRoute, trailSegmentsOf } from '../traffic/routeFeatures';
+import { buildSituation, selectionTarget, toFlightsModel, toPictureModel, toTrackModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 
 // The traffic of the map lab's scenes (PR M5): synthetic air pictures, map flights and tracks at the lab's noon, in the
@@ -20,7 +21,11 @@ import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 // - ramp-traffic-ground: the arrival taxiing to A4 (GND), a departure on A6, a transponder hidden inside A1 (the
 //   ZZ300 visit holds it) and other traffic taxiing out on taxiway B;
 // - approach-traffic-estimated-stale: the air picture four minutes late (every aircraft dimmed with its age, and the
-//   chip that says so) and an ELEVANT flight drawn from an estimate.
+//   chip that says so) and an ELEVANT flight drawn from an estimate;
+// - region-traffic-selected and region-layers-menu: the region's mixed traffic, with ZZ161 chosen (its data block and
+//   its route) or with the layers menu open;
+// - approach-traffic-hex-selected: the approach with another airline's aircraft chosen by its address, with the track
+//   the server keeps of it.
 
 const ARP = Object.freeze([-68.3634, 18.5674]);
 const THRESHOLD_08 = Object.freeze([-68.383055, 18.57031]);
@@ -256,36 +261,58 @@ function estimatedStaleScenario() {
   };
 }
 
+/** The address of the other traffic chosen in approach-traffic-hex-selected: ZZZ880 on downwind for 08. */
+export const LAB_CHOSEN_HEX = APPROACH_OTHERS[1].hex;
+
+// The approach with ZZZ880 chosen: the server's track of it too, so its route shows what it flew.
+function approachHexScenario() {
+  const base = approachDemoScenario();
+  const chosen = base.picture.aircraft.find(item => item.hex === LAB_CHOSEN_HEX);
+  return { ...base, tracks: { ...base.tracks, [chosen.hex]: trackOf(chosen) } };
+}
+
 /** The traffic scenarios of the lab by scene id: `{ at, picture, flights, tracks, estimates, estimatedTrails }`. */
 export const TRAFFIC_SCENARIOS = Object.freeze({
   'region-traffic-mixed': regionScenario(),
   'approach-traffic-demo': approachDemoScenario(),
   'ramp-traffic-ground': rampScenario(),
   'approach-traffic-estimated-stale': estimatedStaleScenario(),
+  'region-traffic-selected': regionScenario(),
+  'approach-traffic-hex-selected': approachHexScenario(),
+  'region-layers-menu': regionScenario(),
 });
 
 /**
- * What the lab's map draws of a scenario at `nowMs` (the frozen clock; the scenario's own instant without one): the
- * `map` prop of OccMap (`{ aircraft, trails, route, source }`), the air picture model for MapSourceStatus and the
- * instant used. The trails are those of the picture and the tracks, plus the scenario's estimated paths.
+ * What the lab's map draws of a scenario at `nowMs` (the frozen clock; the scenario's own instant without one), for
+ * the URL's `selection`: the `map` prop of OccMap (`{ aircraft, trails, route, source }`), the air picture model for
+ * MapSourceStatus, the instant used, the situation, what the selection names (`target`, for the data block) and the
+ * station's airport. The trails are those of the picture and the tracks, plus the scenario's estimated paths; with
+ * `allTrails` also those of the other traffic, which the map shows only while «Estelas de todo el tráfico» is on. The
+ * route is the chosen flight's (traffic/routeFeatures.js), from its trail and track.
  */
-export function labTraffic(scenario, { nowMs = null } = {}) {
+export function labTraffic(scenario, { nowMs = null, selection = null, allTrails = false } = {}) {
   const time = Number.isFinite(nowMs) ? nowMs : parseInstant(scenario.at);
   const picture = toPictureModel(scenario.picture);
-  const situation = buildSituation({ picture, flights: toFlightsModel(scenario.flights), nowMs: time,
-    estimates: scenario.estimates ?? [] });
+  const flights = toFlightsModel(scenario.flights);
+  const situation = buildSituation({ picture, flights, nowMs: time, estimates: scenario.estimates ?? [] });
+  const target = selectionTarget(selection, situation);
+  const chosenHex = target?.aircraft?.hex ?? null;
   const store = createTrailStore();
   store.ingestPicture(picture);
-  for (const track of Object.values(scenario.tracks ?? {})) {
-    const model = toTrackModel(track);
-    store.ingestTrack(model.hex, model.points);
-  }
+  const tracks = new Map(Object.values(scenario.tracks ?? {}).map(track => [track.hex, toTrackModel(track)]));
+  for (const model of tracks.values()) store.ingestTrack(model.hex, model.points);
   const aviamHexes = new Set(situation.aircraft.filter(item => item.kind === 'aviam' && item.hex).map(item => item.hex));
-  const observed = trailFeatures(store.getSnapshot(), { aviamHexes, nowMs: time });
+  const observed = trailFeatures(store.getSnapshot(), { aviamHexes, includeOther: allTrails, selectedHex: chosenHex,
+    nowMs: time });
   const trails = { type: 'FeatureCollection', features: [...observed.features, ...(scenario.estimatedTrails ?? [])] };
+  const route = target === null ? null : buildRoute({ target, segments: trailSegmentsOf(observed, chosenHex),
+    track: chosenHex === null ? null : tracks.get(chosenHex) ?? null, stationAirport: flights.stationAirport, nowMs: time });
   return {
-    map: { aircraft: situation.aircraft, trails, route: null, source: situation.source },
+    map: { aircraft: situation.aircraft, trails, route, source: situation.source },
     picture,
     nowMs: time,
+    situation,
+    target,
+    stationAirport: flights.stationAirport,
   };
 }

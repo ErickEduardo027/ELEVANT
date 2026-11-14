@@ -9,9 +9,11 @@ import { useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { OCC_COALESCE_MS, OCC_SAFETY_POLL_MS } from '../admin-occ/live/occCadence';
 import { useOccResource } from '../admin-occ/live/useOccResource';
 import { useOptionalOccShellChannel } from '../admin-occ/shell/occShellContext';
+import { buildRoute, trailSegmentsOf } from './traffic/routeFeatures';
 import {
-  airTrafficSourceState, buildSituation, toFlightsModel, toPictureModel, toTrackModel,
+  airTrafficSourceState, buildSituation, selectionTarget, toFlightsModel, toPictureModel, toTrackModel,
 } from './traffic/situationModel';
+import { createTelemetryStore } from './traffic/telemetryStore';
 import { createTrailStore, trailFeatures } from './traffic/trailStore';
 
 // What an OCC map shows of the sky and of the ELEVANT flights (contracts 1.3 and 2.7), read through the shell's single
@@ -81,8 +83,12 @@ function situationStatus({ reading, access, granted, picture, flights, situation
  * - `stationId` (none: nothing is read, `idle`); `enabled: false` reads nothing either.
  * - `service`: `{ getAirPicture, getMapFlights, getAircraftTrack, ping, clock }` (src/services/occMapService.js).
  * - `selectedHex`: the chosen aircraft; its track is read once each time it changes.
+ * - `selection`: the URL selection of the map (`{ kind: 'flight' | 'aircraft', id }`, contracts 2.1). It names the
+ *   `target` (traffic/situationModel.js: selectionTarget); without `selectedHex`, the target's aircraft is the chosen
+ *   one, whose track is read.
  * - `estimates`: positions computed for ELEVANT flights without a live fix (PR M6; pass a stable array).
- * - `allTrails`: also the trails of other traffic («Estelas de todo el tráfico», their last 2 minutes).
+ * - `allTrails`: also the trails of other traffic («Estelas de todo el tráfico», their last 2 minutes; the map shows
+ *   them only while that layer is on).
  *
  * Reads only when the account holds any of MAP_PERMISSIONS (otherwise `unauthorized`, with no request). The air picture
  * asks `trails=short` until it has one of the station, then `none`, every `refreshAfterSeconds`; its state (Live,
@@ -91,11 +97,13 @@ function situationStatus({ reading, access, granted, picture, flights, situation
  * state goes to the shell's source list.
  *
  * Returns `{ status: 'loading'|'success'|'empty'|'error'|'unauthorized'|'idle', picture, flights, situation, trails,
- * track, clock, sourceState, refreshing, refreshFailed, retry }`: the models of situationModel.js, the trails as a
- * FeatureCollection, the chosen aircraft's track (or null) and the clock the reads feed.
+ * track, target, route, telemetry, clock, sourceState, refreshing, refreshFailed, retry }`: the models of
+ * situationModel.js, the trails as a FeatureCollection, the chosen aircraft's track (or null), what the selection names
+ * (or null), its route (traffic/routeFeatures.js: buildRoute, with the trail and the track it has), the telemetry
+ * store the data block reads (traffic/telemetryStore.js, fed with every situation) and the clock the reads feed.
  */
 export function useMapSituation({ stationId = null, enabled = true, service = occMapService, selectedHex = null,
-  estimates = NO_ESTIMATES, allTrails = false } = {}) {
+  selection = null, estimates = NO_ESTIMATES, allTrails = false } = {}) {
   const { access } = useDepartmentAccess();
   const granted = MAP_PERMISSIONS.find(code => access?.can(code)) ?? null;
   const reading = Boolean(enabled) && typeof stationId === 'string' && stationId !== '';
@@ -173,21 +181,6 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
     };
   }, [active, clock, service]);
 
-  // The chosen aircraft's track, once per choice: it replaces the older part of that trail.
-  const [track, setTrack] = useState(null);
-  useEffect(() => {
-    if (!active || hex === null) return undefined;
-    const controller = new AbortController();
-    service.getAircraftTrack({ stationId, hex, signal: controller.signal }).then(response => {
-      if (controller.signal.aborted) return;
-      const model = toTrackModel(response);
-      trailStore.ingestTrack(model.hex, model.points);
-      setTrack(model);
-    }, () => {});
-    return () => abortForEffectCleanup(controller);
-  }, [active, hex, service, stationId, trailStore]);
-  const chosenTrack = track !== null && track.hex === hex ? track : null;
-
   // The situation at the newest server instant known: the last answer's, or the moment a live aircraft turns stale.
   const [tickAt, setTickAt] = useState(0);
   const picture = pictureRead.data;
@@ -202,10 +195,44 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
     return () => clearTimeout(timer);
   }, [clock, situation]);
 
+  // What the selection names, and the chosen aircraft: the one asked for, else the selection's own (contracts 2.1).
+  const selectionKind = typeof selection?.kind === 'string' ? selection.kind : null;
+  const selectionId = selection?.id == null ? null : String(selection.id);
+  const target = useMemo(() => (selectionKind === null ? null
+    : selectionTarget({ kind: selectionKind, id: selectionId }, situation)), [selectionId, selectionKind, situation]);
+  const targetHex = target?.aircraft?.hex;
+  const chosenHex = hex ?? (typeof targetHex === 'string' && HEX.test(targetHex) ? targetHex.toLowerCase() : null);
+
+  // The chosen aircraft's track, once per choice: it replaces the older part of that trail.
+  const [track, setTrack] = useState(null);
+  useEffect(() => {
+    if (!active || chosenHex === null) return undefined;
+    const controller = new AbortController();
+    service.getAircraftTrack({ stationId, hex: chosenHex, signal: controller.signal }).then(response => {
+      if (controller.signal.aborted) return;
+      const model = toTrackModel(response);
+      trailStore.ingestTrack(model.hex, model.points);
+      setTrack(model);
+    }, () => {});
+    return () => abortForEffectCleanup(controller);
+  }, [active, chosenHex, service, stationId, trailStore]);
+  const chosenTrack = track !== null && track.hex === chosenHex ? track : null;
+
   const aviamHexes = useMemo(() => new Set(situation.aircraft
     .filter(item => item.kind === 'aviam' && item.hex !== null).map(item => item.hex)), [situation]);
-  const trails = useMemo(() => trailFeatures(trailSnapshot, { includeOther: allTrails, selectedHex: hex, aviamHexes,
-    nowMs }), [allTrails, aviamHexes, hex, nowMs, trailSnapshot]);
+  const trails = useMemo(() => trailFeatures(trailSnapshot, { includeOther: allTrails, selectedHex: chosenHex, aviamHexes,
+    nowMs }), [allTrails, aviamHexes, chosenHex, nowMs, trailSnapshot]);
+
+  // The chosen flight's route: what it flew (its trail, with the server's track) and the straight line to its next point.
+  const stationAirport = flights?.stationAirport ?? null;
+  const route = useMemo(() => buildRoute({ target, segments: trailSegmentsOf(trails, target?.aircraft?.hex ?? null),
+    track: chosenTrack, stationAirport, nowMs }), [chosenTrack, nowMs, stationAirport, target, trails]);
+
+  // The telemetry the data block reads, outside React: every new situation goes in, and it ticks while it is watched.
+  const [telemetry] = useState(() => createTelemetryStore({ clock }));
+  useEffect(() => {
+    telemetry.set(situation);
+  }, [situation, telemetry]);
 
   const status = situationStatus({ reading, access, granted: granted !== null, picture: pictureRead,
     flights: flightsRead, situation });
@@ -237,6 +264,8 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   const refreshFailed = pictureRead.refreshFailed || flightsRead.refreshFailed;
 
   return useMemo(() => ({
-    status, picture, flights, situation, trails, track: chosenTrack, clock, sourceState, refreshing, refreshFailed, retry,
-  }), [chosenTrack, clock, flights, picture, refreshFailed, refreshing, retry, situation, sourceState, status, trails]);
+    status, picture, flights, situation, trails, track: chosenTrack, target, route, telemetry, clock, sourceState,
+    refreshing, refreshFailed, retry,
+  }), [chosenTrack, clock, flights, picture, refreshFailed, refreshing, retry, route, situation, sourceState, status, target,
+    telemetry, trails]);
 }

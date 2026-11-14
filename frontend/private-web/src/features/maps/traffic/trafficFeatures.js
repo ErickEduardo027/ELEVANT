@@ -26,6 +26,8 @@ export const TRAFFIC_SCALES = Object.freeze({ aviam: 1.25, other: 0.85, otherGro
 export const TRAFFIC_KINDS = Object.freeze(['aviamArrival', 'aviamDeparture', 'other', 'otherGround']);
 export const TRAFFIC_TAGS = Object.freeze(['demo', 'estimated', 'stale']);
 export const TRAIL_KINDS = Object.freeze(['live', 'estimated']);
+/** The parts of the chosen flight's route (traffic/routeFeatures.js), in the legend's order. */
+export const ROUTE_KINDS = Object.freeze(['flown', 'next']);
 
 const FEET_PER_METRE = 1 / 0.3048;
 const KNOTS_PER_MPS = 3_600 / 1_852;
@@ -218,16 +220,47 @@ export const isEmptyDiff = diff => diff.add.length === 0 && diff.update.length =
 const HIDDEN_BY_DEFAULT = new Set(['traffic.trails', 'traffic.labels']);
 const visibleGroup = (groups, group) => (HIDDEN_BY_DEFAULT.has(group) ? groups?.[group] === true : groups?.[group] !== false);
 
+// Whether the segment from `from` to `to` crosses the box `[[west, south], [east, north]]` (Liang–Barsky).
+function segmentCrosses([x0, y0], [x1, y1], [[west, south], [east, north]]) {
+  let enter = 0;
+  let leave = 1;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  for (const [p, q] of [[-dx, x0 - west], [dx, east - x0], [-dy, y0 - south], [dy, north - y0]]) {
+    if (p === 0) {
+      if (q < 0) return false;
+    } else {
+      const share = q / p;
+      if (p < 0) {
+        if (share > leave) return false;
+        enter = Math.max(enter, share);
+      } else {
+        if (share < enter) return false;
+        leave = Math.min(leave, share);
+      }
+    }
+  }
+  return true;
+}
+
+// Whether a line of `[lng, lat]` points has a point inside `bounds` or crosses them (a straight line to a far airport
+// may cross the view with both ends outside it).
+const lineInBounds = (points, bounds) => points.some(point => isInBounds(point, bounds))
+  || points.some((point, index) => index > 0 && segmentCrosses(points[index - 1], point, bounds));
+
 /**
  * What of the traffic is drawn inside `bounds` (`[[west, south], [east, north]]`, every drawn aircraft without them),
  * for the legend and the credit (contracts 2.4: the legend lists only what is on screen):
- * `{ kinds, tags, trails }` in the orders of TRAFFIC_KINDS, TRAFFIC_TAGS and TRAIL_KINDS.
- * - `groups`: the layers-menu groups the map shows: `traffic.aviam` and `traffic.other` unless `false`, and
+ * `{ kinds, tags, trails, route }` in the orders of TRAFFIC_KINDS, TRAFFIC_TAGS, TRAIL_KINDS and ROUTE_KINDS.
+ * - `groups`: the layers-menu groups the map shows: `traffic.aviam`, `traffic.other` and `route` unless `false`, and
  *   `traffic.trails` (the trails of the rest of the traffic) only when `true`, as the style starts them.
  * - `zoom` and `thresholds`: other traffic on the ground is drawn only from the airfield threshold up.
  * - `trails`: the trails FeatureCollection (traffic/trailStore.js: trailFeatures).
+ * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute), its parts drawn inside `bounds` or
+ *   across them.
  */
-export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null } = {}) {
+export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null,
+  route = null } = {}) {
   const kinds = new Set();
   const tags = new Set();
   const groundHidden = finite(zoom) && finite(thresholds?.airfield) && zoom < thresholds.airfield;
@@ -252,12 +285,23 @@ export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoo
     if (bounds !== null && !points.some(point => isInBounds(point, bounds))) continue;
     trailKinds.add(quality === 'estimated' ? 'estimated' : 'live');
   }
+  const routeParts = new Set();
+  if (visibleGroup(groups, 'route')) {
+    for (const feature of route?.features ?? []) {
+      const part = feature?.properties?.part;
+      const points = feature?.geometry?.coordinates ?? [];
+      if (!ROUTE_KINDS.includes(part) || points.length < 2) continue;
+      if (bounds === null || lineInBounds(points, bounds)) routeParts.add(part);
+    }
+  }
   return {
     kinds: TRAFFIC_KINDS.filter(kind => kinds.has(kind)),
     tags: TRAFFIC_TAGS.filter(tag => tags.has(tag)),
     trails: TRAIL_KINDS.filter(kind => trailKinds.has(kind)),
+    route: ROUTE_KINDS.filter(part => routeParts.has(part)),
   };
 }
 
 /** The key of what trafficOnScreen answers: equal keys, the same legend. */
-export const onScreenKey = onScreen => [onScreen.kinds, onScreen.tags, onScreen.trails].map(list => list.join(',')).join('|');
+export const onScreenKey = onScreen => [onScreen.kinds, onScreen.tags, onScreen.trails, onScreen.route ?? []]
+  .map(list => list.join(',')).join('|');

@@ -16,7 +16,7 @@ const drawnOf = id => {
 describe('the traffic scenes of the map lab', () => {
   it('are synthetic answers that pass the api-client validators, written at the lab noon', () => {
     expect(Object.keys(TRAFFIC_SCENARIOS)).toEqual(['region-traffic-mixed', 'approach-traffic-demo', 'ramp-traffic-ground',
-      'approach-traffic-estimated-stale']);
+      'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected', 'region-layers-menu']);
     for (const [id, scenario] of Object.entries(TRAFFIC_SCENARIOS)) {
       expect(scenario.at, id).toBe(TRAFFIC_NOON);
       expect(isOccAirPicture(scenario.picture, TRAFFIC_STATION_ID, 'short'), `${id} picture`).toBe(true);
@@ -53,7 +53,7 @@ describe('the traffic scenes of the map lab', () => {
     expect(drawn[`f:${KEY.arrival}`]).toMatchObject({ estimated: false, demo: false });
     const { map } = labTraffic(TRAFFIC_SCENARIOS['approach-traffic-demo'], { nowMs: NOON });
     expect(trafficOnScreen(map.aircraft, [[-68.75, 18.4], [-68.38, 18.62]], { trails: map.trails })).toEqual({
-      kinds: ['aviamArrival'], tags: ['demo', 'estimated'], trails: ['live', 'estimated'],
+      kinds: ['aviamArrival'], tags: ['demo', 'estimated'], trails: ['live', 'estimated'], route: [],
     });
   });
 
@@ -64,6 +64,30 @@ describe('the traffic scenes of the map lab', () => {
     expect(departure).toMatchObject({ dir: 'dep', icon: 'ac-narrow-hollow', ground: true, tag2: 'A320 GND', tagStand: '' });
     expect(drawn[`h:${HEX.groundInOwnedStand}`]).toBeUndefined();
     expect(drawn[`h:${HEX.groundOnFreeStand}`]).toMatchObject({ kind: 'other', ground: true, scale: 0.6, tag1: 'ZZZ415' });
+  });
+
+  it('the selected scenes name their aircraft and draw its route; every trail is there when asked', () => {
+    // ZZ161 chosen in the region: its flight and aircraft, what it flew (its track) and the straight line to A5.
+    const selected = findScene('region-traffic-selected');
+    const flight = labTraffic(selected.traffic, { nowMs: NOON, selection: selected.selection });
+    expect(flight.target).toMatchObject({ kind: 'flight', flight: { flightNumber: 'ZZ161' }, aircraft: { hex: HEX.arrival } });
+    expect(flight.map.route.features.map(feature => [feature.properties.part, feature.properties.to ?? null]))
+      .toEqual([['flown', null], ['next', 'stand']]);
+    expect(flight.map.route.features[0].geometry.coordinates.length).toBeGreaterThanOrEqual(30);
+    expect(flight.stationAirport).toMatchObject({ iataCode: 'PUJ' });
+    // Another airline's aircraft chosen by its address: no flight, and what it flew from the track the scene holds.
+    const hexScene = findScene('approach-traffic-hex-selected');
+    const other = labTraffic(hexScene.traffic, { nowMs: NOON, selection: hexScene.selection });
+    expect(other.target).toMatchObject({ kind: 'aircraft', flight: null, aircraft: { hex: hexScene.selection.id, callsign: 'ZZZ880' } });
+    expect(other.map.route.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    expect(other.map.route.features[0].geometry.coordinates.length).toBeGreaterThanOrEqual(30);
+    expect(isOccAircraftTrack(hexScene.traffic.tracks[hexScene.selection.id], hexScene.selection.id)).toBe(true);
+    // No selection, no target and no route; every trail of other traffic only with allTrails.
+    const plain = labTraffic(findScene('region-layers-menu').traffic, { nowMs: NOON });
+    expect([plain.target, plain.map.route]).toEqual([null, null]);
+    const all = labTraffic(findScene('region-layers-menu').traffic, { nowMs: NOON, allTrails: true });
+    expect(new Set(all.map.trails.features.map(feature => feature.properties.kind))).toEqual(new Set(['aviam', 'other']));
+    expect(findScene('region-layers-menu').layersMenu).toBe(true);
   });
 
   it('approach-traffic-estimated-stale: every live aircraft dimmed with its age, an estimate and the late chip', () => {

@@ -12,15 +12,17 @@ import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 //
 // Layers bottom to top. In the `routes` slot the chosen flight's route: flown (solid) and still to fly (dashed). In the
 // `traffic` slot: the trails of other traffic (off until «Estelas de todo el tráfico»), the live trails fading toward
-// their tail, the estimated ones dashed; the tags of all other traffic (off until «Etiquetas de todo el tráfico»);
-// other traffic on the ground (from the airfield threshold up) and in the air, each icon with its tag in one symbol;
-// the ELEVANT flights, the estimated ring, their tags and the «Demo» plate. In the `selection` slot the chosen aircraft
-// in cyan.
+// their tail, the estimated ones dashed; other traffic on the ground (from the airfield threshold up) and in the air,
+// each icon with its tag in one symbol; the tags of all other traffic (off until «Etiquetas de todo el tráfico»); the
+// ELEVANT flights, the estimated ring, their tags and the «Demo» plate. In the `selection` slot the chosen aircraft in
+// cyan.
 // Placement: MapLibre places the layers from the top down and boxes a rotated icon with its whole image, so a tag must
 // never meet its own icon in the collision index. Other traffic shares one symbol for its icon and its tag (the tag then
-// ignores its own icon and draws above the icons of its layer). The ELEVANT tags carry images in their text, and
-// MapLibre does not draw a layer's icons next to text with images, so they have a layer of their own above the icons:
-// placed before them, they keep off the plates only, and they draw above every aircraft.
+// ignores its own icon and draws above the icons of its layer). The tags of all other traffic sit above those icons, so
+// they are placed before them: they keep off the ELEVANT symbols and off each other, never off their own aircraft. The
+// ELEVANT tags carry images in their text, and MapLibre does not draw a layer's icons next to text with images, so they
+// have a layer of their own above the icons: placed before them, they keep off the plates only, and they draw above
+// every aircraft.
 
 /** The layers-menu groups of the traffic (layers menu, PR M5 step c). */
 export const TRAFFIC_GROUPS = Object.freeze({
@@ -197,16 +199,6 @@ export function trafficOverlay() {
       },
       {
         slot: 'traffic',
-        id: 'occ-traffic-tags-other',
-        type: 'symbol',
-        source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, isNot('forceTag')],
-        layout: tagLayout(11, { visibility: 'none', 'text-field': OTHER_TAG, 'text-allow-overlap': false }),
-        paint: tagPaint(occColor('muted')),
-        metadata: { 'occ:group': TRAFFIC_GROUPS.labels },
-      },
-      {
-        slot: 'traffic',
         id: 'occ-traffic-other-ground',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
@@ -225,6 +217,18 @@ export function trafficOverlay() {
         layout: otherLayout(),
         paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
+      },
+      // Above the icons of other traffic, so MapLibre places these tags before them: a tag keeps off the ELEVANT
+      // symbols and off the other tags, never off its own aircraft.
+      {
+        slot: 'traffic',
+        id: 'occ-traffic-tags-other',
+        type: 'symbol',
+        source: TRAFFIC_SOURCE,
+        filter: ['all', OTHER, isNot('forceTag')],
+        layout: tagLayout(11, { visibility: 'none', 'text-field': OTHER_TAG, 'text-allow-overlap': false }),
+        paint: tagPaint(occColor('muted')),
+        metadata: { 'occ:group': TRAFFIC_GROUPS.labels },
       },
       {
         slot: 'traffic',

@@ -4,6 +4,7 @@ import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
 import { STAND_REFERENCE } from '../stands/standReference';
+import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { legendEntries } from '../ui/legendEntries';
 import { BASEMAP_MODES, SCENES, SCENE_KINDS, findScene, labInstant, labStands, readLabQuery } from './scenes';
 
@@ -16,6 +17,7 @@ describe('map lab scenes', () => {
     expect(ids).toEqual([
       'ramp-points', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
       'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo', 'ramp-traffic-ground', 'approach-traffic-estimated-stale',
+      'region-traffic-selected', 'approach-traffic-hex-selected', 'region-layers-menu',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -31,7 +33,13 @@ describe('map lab scenes', () => {
       expect(Object.isFrozen(scene) && Object.isFrozen(scene.stands[0]), scene.id).toBe(true);
     }
     expect(findScene('ramp-selected').selection).toEqual({ kind: 'stand', id: 'A5' });
-    expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual(['ramp-selected']);
+    expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id))
+      .toEqual(['ramp-selected', 'region-traffic-selected', 'approach-traffic-hex-selected']);
+    // The traffic scenes that choose an aircraft: an AVIAM flight by its key and other traffic by its address.
+    expect(findScene('region-traffic-selected').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
+    expect(findScene('approach-traffic-hex-selected').selection).toEqual({ kind: 'aircraft', id: 'f0c002' });
+    // Only the layers-menu scene opens with its menu open.
+    expect(SCENES.filter(scene => scene.layersMenu === true).map(scene => scene.id)).toEqual(['region-layers-menu']);
     expect(findScene('unavailable-fallback').webgl).toBe(false);
     expect(SCENES.filter(scene => !scene.webgl).map(scene => scene.id)).toEqual(['unavailable-fallback']);
     expect(findScene('basemap-degraded').basemap).toBe('cut');

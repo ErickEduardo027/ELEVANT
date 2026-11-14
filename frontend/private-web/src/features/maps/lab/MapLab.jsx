@@ -2,13 +2,18 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { addProtocol, removeProtocol } from 'maplibre-gl';
+import { parseInstant } from '../../../services/serverClock';
 import { liveEngineCount } from '../core/mapEngine';
 import OccMap from '../core/OccMap';
+import { useOccMap } from '../core/OccMapContext';
 import { useMapSelection } from '../core/useMapSelection';
 import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
+import { createTelemetryStore } from '../traffic/telemetryStore';
+import FlightDataBlock from '../ui/FlightDataBlock';
 import MapDock from '../ui/MapDock';
+import MapLayersMenu from '../ui/MapLayersMenu';
 import MapLegend from '../ui/MapLegend';
 import MapPresetSwitcher from '../ui/MapPresetSwitcher';
 import MapSourceStatus from '../ui/MapSourceStatus';
@@ -24,8 +29,9 @@ import { labTraffic } from './trafficScenes';
 // `window.__occMapLab` for the suite: getCamera, project (a `[lng, lat]` or a stand code of the scene), flyToPreset,
 // whenIdle, liveMaps (the live engines: one after a StrictMode double mount) and refresh (the «Releer posiciones»
 // button). The review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
-// A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), and the handle adds
-// aircraftAt(id), where the map draws one of its aircraft.
+// A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), the data block of
+// the aircraft the URL selects (flightId= or hex=) and the layers menu, and the handle adds aircraftAt(id), where the
+// map draws one of its aircraft.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -42,6 +48,21 @@ function cutBasemap(url) {
 }
 
 const copyStands = stands => stands.map(stand => ({ ...stand }));
+// The data block is docked at the top left of the map, as Monitoreo docks it.
+const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+
+// A scene that opens with its layers menu open (region-layers-menu): once, as soon as the map offers its layers.
+function OpenLayersMenu() {
+  const { layers, setLayersMenuOpen } = useOccMap();
+  const offered = layers.keys.length > 0;
+  const openedRef = useRef(false);
+  useEffect(() => {
+    if (!offered || openedRef.current) return;
+    openedRef.current = true;
+    setLayersMenuOpen(true);
+  }, [offered, setLayersMenuOpen]);
+  return null;
+}
 
 // Layout effects run before the passive effect in which OccMap starts its engine (StrictMode re-runs them in the same
 // order), so each of these, and the frozen clock of labChrome.jsx, is in place before the map is created and is undone
@@ -77,9 +98,20 @@ function LabScene({ scene, basemap, frozenAt }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
-  // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built once at the frozen clock: the lab never polls.
-  const [traffic] = useState(() => (scene.traffic ? labTraffic(scene.traffic, { nowMs: frozenAt }) : null));
   const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
+  // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built at the frozen clock for the URL's selection:
+  // the lab never polls. Every trail is there; the map shows the other traffic's only when the layers menu asks.
+  const traffic = useMemo(() => (scene.traffic
+    ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true })
+    : null), [scene.traffic, frozenAt, selection]);
+  // The data block's telemetry on the lab's own clock: frozen, so the age of a position stays what the scene says.
+  const [telemetry] = useState(() => {
+    const labNow = frozenAt ?? parseInstant(scene.traffic?.at ?? null) ?? 0;
+    return createTelemetryStore({ clock: { now: () => labNow } });
+  });
+  useEffect(() => {
+    if (traffic) telemetry.set(traffic.situation);
+  }, [telemetry, traffic]);
 
   useFrozenMapClock(frozenAt);
   useWebGlRefused(!scene.webgl);
@@ -172,7 +204,13 @@ function LabScene({ scene, basemap, frozenAt }) {
           traffic={traffic?.map}
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
+          {traffic?.target && (
+            <FlightDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
+              style={DOCKED_BLOCK_STYLE} />
+          )}
+          {scene.layersMenu && <OpenLayersMenu />}
           <MapDock>
+            <MapLayersMenu />
             <MapPresetSwitcher />
             <MapLegend />
           </MapDock>

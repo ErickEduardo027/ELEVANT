@@ -1065,6 +1065,8 @@ describe('OccMap', () => {
       'src/features/maps/ui/MapLegend.jsx', 'src/features/maps/ui/MapPresetSwitcher.jsx', 'src/features/maps/ui/MapDock.jsx',
       'src/features/maps/ui/MapTooltip.jsx',
       'src/features/positions-map/components/PositionMap.jsx', 'src/features/flight-monitoring/components/FlightMap.jsx',
+      // PR M5: the data block and the layers menu.
+      'src/features/maps/ui/FlightDataBlock.jsx', 'src/features/maps/ui/MapLayersMenu.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {
@@ -1206,7 +1208,7 @@ describe('OccMap traffic (PR M5)', () => {
     expect(without.calls.filter(call => call.method === 'updateData')).toEqual([]);
   });
 
-  it('selects an ELEVANT flight by its key and other traffic by its address, and centres a flight it draws', async () => {
+  it('a click on an AVIAM aircraft selects its flight key and on other traffic its hex', async () => {
     const onSelect = vi.fn();
     const ref = createRef();
     const traffic = noonTraffic();
@@ -1221,6 +1223,10 @@ describe('OccMap traffic (PR M5)', () => {
     expect(onSelect).toHaveBeenLastCalledWith({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
     await click([{ layer: { id: 'occ-traffic-other' }, properties: { id: `h:${TRAFFIC_HEX.overflight}`, hex: TRAFFIC_HEX.overflight } }]);
     expect(onSelect).toHaveBeenLastCalledWith({ kind: 'aircraft', id: TRAFFIC_HEX.overflight });
+    // Other traffic on the ground is picked by its address too; the AVIAM layer is picked above other traffic.
+    await click([{ layer: { id: 'occ-traffic-other-ground' }, properties: { id: `h:${TRAFFIC_HEX.groundOnFreeStand}`, hex: TRAFFIC_HEX.groundOnFreeStand } }]);
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: 'aircraft', id: TRAFFIC_HEX.groundOnFreeStand });
+    expect(onSelect).toHaveBeenCalledTimes(3);
 
     // flyToFlight finds a flight the traffic draws by any of its ids, keeping the zoom.
     const zoom = map.getZoom();
@@ -1229,6 +1235,87 @@ describe('OccMap traffic (PR M5)', () => {
     expect(map.getCenter().toArray()).toEqual([arrival.lon, arrival.lat]);
     expect(map.getZoom()).toBeCloseTo(zoom, 9);
     act(() => { expect(ref.current.flyToFlight(TRAFFIC_FLIGHT_KEY.noFix)).toBe(false); });
+  });
+
+  it('the selected aircraft is cyan and larger with its ring', () => {
+    const traffic = noonTraffic();
+    const view = render(<OccMap defaultView="region" traffic={traffic} selection={{ kind: 'aircraft', id: TRAFFIC_HEX.overflight }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const added = Object.fromEntries(map.getSource('occ-traffic').updateDataCalls[0].add
+      .map(feature => [feature.properties.id, feature.properties]));
+    const overflight = traffic.aircraft.find(item => item.hex === TRAFFIC_HEX.overflight);
+    // Larger (1.4×) with its tag, drawn again in the selection slot in cyan, above every other aircraft.
+    expect(added[`h:${TRAFFIC_HEX.overflight}`]).toMatchObject({ selected: true, scale: 1.4, forceTag: true });
+    expect(Object.values(added).filter(properties => properties.selected).map(properties => properties.id))
+      .toEqual([`h:${TRAFFIC_HEX.overflight}`]);
+    const selected = map.getLayer('occ-traffic-selected');
+    expect(selected.filter).toEqual(['==', ['get', 'selected'], true]);
+    expect(selected.paint['icon-color']).toBe(occColor('accent'));
+    expect(selected.layout['icon-size']).toEqual(['get', 'scale']);
+    const ids = map.layerIds();
+    expect(ids.indexOf('occ-traffic-selected')).toBeGreaterThan(ids.indexOf('slot-selection'));
+    // Its ring, a circle in the selection slot where the aircraft is.
+    expect(map.getSource('occ-selection').data.features).toEqual([{ type: 'Feature',
+      properties: { kind: 'aircraft', id: TRAFFIC_HEX.overflight },
+      geometry: { type: 'Point', coordinates: [overflight.lon, overflight.lat] } }]);
+    expect(map.getLayer('occ-selection-ring').paint['circle-stroke-color']).toBe(occColor('accent'));
+
+    // A flight drawn as traffic, chosen by the page's leg id: the cyan and the ring move to its aircraft.
+    const arrival = traffic.aircraft.find(item => item.flightKey === TRAFFIC_FLIGHT_KEY.arrival);
+    view.rerender(<OccMap defaultView="region" traffic={traffic} selection={{ kind: 'flight', id: arrival.legId }} />);
+    const updates = map.getSource('occ-traffic').updateDataCalls.at(-1).update;
+    const byId = Object.fromEntries(updates.map(change => [change.id,
+      Object.fromEntries(change.addOrUpdateProperties.map(({ key, value }) => [key, value]))]));
+    expect(byId[`f:${TRAFFIC_FLIGHT_KEY.arrival}`]).toMatchObject({ selected: true, scale: 1.4 });
+    expect(byId[`h:${TRAFFIC_HEX.overflight}`]).toMatchObject({ selected: false, scale: 0.85 });
+    expect(map.getSource('occ-selection').data.features[0]).toMatchObject({ properties: { kind: 'flight', id: arrival.legId },
+      geometry: { coordinates: [arrival.lon, arrival.lat] } });
+    // The ring follows the aircraft to its next position.
+    const moved = noonTraffic({ change: item => (item.hex === TRAFFIC_HEX.arrival ? { ...item, latitude: item.latitude + 0.02 } : null) });
+    view.rerender(<OccMap defaultView="region" traffic={moved} selection={{ kind: 'flight', id: arrival.legId }} />);
+    expect(map.getSource('occ-selection').data.features[0].geometry.coordinates[1]).toBeCloseTo(arrival.lat + 0.02, 6);
+    // Nothing chosen: no ring, no cyan.
+    view.rerender(<OccMap defaultView="region" traffic={moved} selection={null} />);
+    expect(map.getSource('occ-selection').data.features).toEqual([]);
+    expect(map.getSource('occ-traffic').updateDataCalls.at(-1).update.map(change => change.id))
+      .toEqual([`f:${TRAFFIC_FLIGHT_KEY.arrival}`]);
+  });
+
+  it('the chosen flight\'s route is drawn with its trail giving way to it, and the legend explains it', () => {
+    const traffic = noonTraffic();
+    const hex = TRAFFIC_HEX.arrival;
+    const arrival = traffic.aircraft.find(item => item.hex === hex);
+    const trailOf = collection => collection.features.filter(feature => feature.properties.hex === hex);
+    const route = { type: 'FeatureCollection', features: [
+      { type: 'Feature', properties: { id: `${arrival.id}:flown:0`, part: 'flown', hex },
+        geometry: { type: 'LineString', coordinates: trailOf(traffic.trails)[0].geometry.coordinates } },
+      { type: 'Feature', properties: { id: `${arrival.id}:next`, part: 'next', hex, to: 'stand' },
+        geometry: { type: 'LineString', coordinates: [[arrival.lon, arrival.lat], standPoint('A5')] } },
+    ] };
+    const element = withRoute => (
+      <OccMap defaultView="region" traffic={{ ...traffic, route: withRoute ? route : null }}
+        selection={{ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }}>
+        <TrafficProbe /><MapLegend />
+      </OccMap>
+    );
+    const view = render(element(true));
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    expect(map.getSource('occ-route').data).toEqual(route);
+    // The arrival's trail is its route's flown part now: the trails source no longer draws it.
+    expect(trailOf(map.getSource('occ-trails').data)).toEqual([]);
+    expect(trafficProbe().trafficOnScreen.route).toEqual(['flown', 'next']);
+    const items = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
+      .map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
+    expect(items()).toEqual(['aviamArrival', 'other', 'demo', 'estimated', 'stale', 'routeFlown', 'routeNext']);
+    expect(screen.getByText('Recorrido del vuelo elegido')).toBeInTheDocument();
+    expect(screen.getByText('Hasta su próximo punto, en línea recta')).toBeInTheDocument();
+    // No route: the trail comes back.
+    view.rerender(element(false));
+    expect(trailOf(map.getSource('occ-trails').data)).toHaveLength(1);
+    expect(map.getSource('occ-route').data.features).toEqual([]);
+    expect(items()).not.toContain('routeFlown');
   });
 
   it('adds the aircraft credit while traffic is on screen and drops it when none is', () => {
@@ -1273,7 +1360,7 @@ describe('OccMap traffic (PR M5)', () => {
     // The region view: the arrival and the demo on final, other traffic in the air (on the ground only from the
     // airfield threshold up), the demo's plate, its estimated ring, a stale position, and the arrival's trail.
     expect(trafficProbe().trafficOnScreen).toEqual({ kinds: ['aviamArrival', 'other'], tags: ['demo', 'estimated', 'stale'],
-      trails: ['live'] });
+      trails: ['live'], route: [] });
     const items = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
       .map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
     expect(items()).toEqual(['aviamArrival', 'other', 'demo', 'estimated', 'stale', 'trail']);
