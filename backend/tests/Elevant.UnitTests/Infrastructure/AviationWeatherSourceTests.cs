@@ -392,6 +392,43 @@ public sealed class AviationWeatherSourceTests
         Assert.Equal(limited + 1, handler.Count("metar"));
     }
 
+    [Theory]
+    [InlineData("a delay of thirty minutes", 30)]
+    [InlineData("a date thirty minutes ahead", 30)]
+    [InlineData("a date thirty minutes past", 1)]
+    public async Task TooManyRequestsWaitsTheDelayOrTheDateOfItsRetryAfter(string retryAfter, int waitMinutes)
+    {
+        // Every request gets a 429. A first failure waits a minute; a Retry-After that asks for longer, as a delay or as a
+        // date counted from the source's clock, is waited instead, and a date already past asks for nothing.
+        var clock = new ManualClock(Start);
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Headers =
+            {
+                RetryAfter = retryAfter switch
+                {
+                    "a delay of thirty minutes" => new RetryConditionHeaderValue(TimeSpan.FromMinutes(30)),
+                    "a date thirty minutes ahead" => new RetryConditionHeaderValue(clock.Now.AddMinutes(30)),
+                    "a date thirty minutes past" => new RetryConditionHeaderValue(clock.Now.AddMinutes(-30)),
+                    _ => throw new ArgumentOutOfRangeException(nameof(retryAfter), retryAfter, null),
+                },
+            },
+        });
+        using var source = Source(handler, clock);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        await Read(source, cancellationToken);
+        Assert.Equal((1, 1), (handler.Count("metar"), handler.Count("taf")));
+
+        // Neither report is asked again a second before its wait ends, and both are once it has.
+        clock.Now = Start.AddMinutes(waitMinutes).AddSeconds(-1);
+        await Read(source, cancellationToken);
+        Assert.Equal((1, 1), (handler.Count("metar"), handler.Count("taf")));
+        clock.Now = Start.AddMinutes(waitMinutes);
+        await Read(source, cancellationToken);
+        Assert.Equal((2, 2), (handler.Count("metar"), handler.Count("taf")));
+    }
+
     [Fact]
     public async Task ConcurrentRequestsShareOneRead()
     {
