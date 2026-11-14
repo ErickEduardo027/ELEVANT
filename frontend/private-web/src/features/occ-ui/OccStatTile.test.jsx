@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
@@ -109,7 +109,7 @@ describe('OccStatTile', () => {
     expect(classesOf(link).filter(name => /^text-occ-(?:accent|warn|danger)$/.test(name))).toEqual([]);
 
     // A figure still loading has nowhere to go; English inside the scope.
-    resetLanguageForTests('en');
+    act(() => resetLanguageForTests('en'));
     rerender(
       <LanguageScope>
         {figures(<OccStatTile label="To review" value={null} href="/admin-occ/review" />)}

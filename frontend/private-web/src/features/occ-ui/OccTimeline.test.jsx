@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageScope } from '../../i18n/LanguageScope';
@@ -134,7 +134,7 @@ describe('OccTimeline', () => {
 
     await user.click(barOf('demo-1'));
     expect(onSelectBar).toHaveBeenCalledExactlyOnceWith(ROWS[1].bars[0], ROWS[1]);
-    barOf('tat-3').focus();
+    act(() => barOf('tat-3').focus());
     await user.keyboard('{Enter}');
     expect(onSelectBar).toHaveBeenLastCalledWith(ROWS[3].bars[0], ROWS[3]);
     await user.keyboard(' ');

@@ -11,11 +11,11 @@ const ADAPTERS = [
   'src/features/flight-monitoring/components/FlightMap.jsx',
 ];
 
-// Old maps that keep their own lifecycle and still swap the basemap style on a theme change: RegionalTrafficMap and
-// GoesCloudMap stay frozen until PR U3 retires the old dashboard. The test fails once one of them is gone, so this
-// list never outlives its files.
+// The old map that keeps its own lifecycle and still swaps the basemap style on a theme change: GoesCloudMap, the
+// satellite map of the console's weather detail, stays frozen until M8 turns the satellite into a layer of the one map
+// (PR U3 retired RegionalTrafficMap with the old dashboard). The test fails once it is gone, so this list never
+// outlives its file.
 const OLD_MAPS = [
-  'src/features/maps/RegionalTrafficMap.jsx',
   'src/features/maps/GoesCloudMap.jsx',
 ];
 
@@ -86,10 +86,11 @@ function mapStackFiles() {
 }
 
 describe('one style for the whole map lifetime', () => {
-  it('no module of the engine, style, ui, lab or the two adapters calls setStyle (the frozen RegionalTrafficMap and GoesCloudMap are excluded)', () => {
+  it('no module of the engine, style, ui, lab or the two adapters calls setStyle (the frozen GoesCloudMap is excluded)', () => {
     const files = mapStackFiles();
     for (const file of ['core/mapEngine.js', 'core/workerUrl.js', 'style/occStyle.js', 'style/basemapLayers.js', 'style/mapImages.js',
-      'stands/standLayers.js', 'traffic/flightLayers.js', 'style/referenceLayers.js']) {
+      'stands/standLayers.js', 'stands/standFeatures.js', 'stands/useStandDisplay.js', 'core/useMinuteClock.js',
+      'traffic/flightLayers.js', 'style/referenceLayers.js']) {
       expect(files).toContain(`src/features/maps/${file}`);
     }
     for (const file of [...OLD_MAPS, ...ADAPTERS]) {

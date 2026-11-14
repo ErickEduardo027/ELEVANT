@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PositionsToolbar from './components/PositionsToolbar';
 import PositionMap from './components/PositionMap';
 import MapControls from './components/MapControls';
@@ -11,11 +11,20 @@ import PositionsMapSkeleton from './components/PositionsMapSkeleton';
 import { usePositionsMapFilters } from './usePositionsMapFilters';
 import { usePositionAlerts } from './usePositionAlerts';
 import { useIsTabletBreakpoint } from '../flight-monitoring/useIsTabletBreakpoint';
-import { findPositionByQuery } from './positionsMapMappers';
+import { findPositionByQuery, mapStandCode } from './positionsMapMappers';
 import { ADMIN_OCC_MODULE_IDS } from '../admin-occ/navigation';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { positionsMapMessages } from './positionsMapMessages';
 import { locateOccStand } from '../../services/occPositionsService';
+import { useMapSelection } from '../maps/core/useMapSelection';
+import { mapMessages } from '../maps/mapMessages';
+import { unlocatedStands } from '../maps/stands/standModel';
+import { useStandDisplay } from '../maps/stands/useStandDisplay';
+
+const NO_POSITIONS = Object.freeze([]);
+const NO_MESSAGE = Object.freeze({ tone: '', text: '' });
+// The location saved for a stand, as «Ubicar en el mapa» always sent it: six decimals, about 10 cm.
+const toSixDecimals = value => Number(Number(value).toFixed(6));
 
 // Flights that can be brought to a stand: the unassigned ones and those parked elsewhere.
 export function assignCandidates(data) {
@@ -36,16 +45,23 @@ export default function PositionsMapPage({
   onNavigateToResource = () => {},
 }) {
   const { t } = useTranslation(positionsMapMessages);
-  const [selectedPositionId, setSelectedPositionId] = useState(null);
+  const { t: tMap } = useTranslation(mapMessages);
+  // The selected stand lives in the URL (contracts 2.1: `stand=`); its drawer has an open state of its own, so the first
+  // Esc closes the drawer and the next one, on the map, clears the selection (contracts 2.2).
+  const { selection, selectStand, clear } = useMapSelection();
+  const selectedCode = selection?.kind === 'stand' ? selection.id : null;
+  const [drawerOpen, setDrawerOpen] = useState(() => selectedCode !== null);
   const [viewMode, setViewMode] = useState('2d');
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
-  // Stand OCC is placing on the map (ADR-0027): the next click on the map saves its location.
+  // The stand OCC is placing on the map (ADR-0027, Decision D-2): `pointing` until a click on the map sets a pending
+  // location, `pending` until «Guardar ubicación» sends it, `saving` while it is sent.
   const [placing, setPlacing] = useState(null);
-  const [placeMessage, setPlaceMessage] = useState({ tone: '', text: '' });
+  const [placeMessage, setPlaceMessage] = useState(NO_MESSAGE);
   const mapRef = useRef(null);
   const mapAreaRef = useRef(null);
+  const placingRef = useRef(null);
   const isTablet = useIsTabletBreakpoint();
 
   useEffect(() => {
@@ -56,16 +72,38 @@ export default function PositionsMapPage({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // The notice of a stand being placed takes the focus, so its keys (Esc) and its buttons are at hand.
+  const placingStandCode = placing?.code ?? null;
+  useEffect(() => {
+    if (placingStandCode !== null) placingRef.current?.focus();
+  }, [placingStandCode]);
+
   const isLoading = status === 'loading' || forceState === 'loading';
   const isError = (status === 'error' && forceState === 'default') || forceState === 'positionsMapError';
-  const positions = forceState === 'positionsMapEmpty' ? [] : data?.positions ?? [];
+  // The stands of the board that no map position shows are listed too, «Sin ubicar», so OCC can place them; the map
+  // does not draw them.
+  const positions = useMemo(() => {
+    if (forceState === 'positionsMapEmpty') return NO_POSITIONS;
+    const drawn = data?.positions ?? NO_POSITIONS;
+    const missing = unlocatedStands(data?.stands ?? NO_POSITIONS, drawn, { asOf: data?.asOf });
+    return missing.length === 0 ? drawn : [...drawn, ...missing];
+  }, [data, forceState]);
   const displayConnection = forceState === 'positionsMapDisconnected' ? 'disconnected' : connection;
 
-  const { search, setSearch, terminalFilter, setTerminalFilter, filteredPositions } = usePositionsMapFilters(positions);
+  // Each stand as it reads now (the seven states, recomputed on the minute): the map draws it and the drawer says it;
+  // the list, the summary and the alerts keep the board's status.
+  const displayedPositions = useStandDisplay(positions);
+  const { search, setSearch, terminalFilter, setTerminalFilter, filteredPositions } = usePositionsMapFilters(displayedPositions);
   const { toasts, dismissToast } = usePositionAlerts(positions, displayConnection);
 
-  const selectedPosition = positions.find(position => position.id === selectedPositionId) ?? null;
+  const selectedPosition = selectedCode === null ? null
+    : displayedPositions.find(position => mapStandCode(position.id) === selectedCode) ?? null;
   const emptyReason = positions.length === 0 ? 'no-positions' : filteredPositions.length === 0 ? 'no-results' : null;
+
+  function openStand(id) {
+    selectStand(id);
+    setDrawerOpen(true);
+  }
 
   function handleSearchChange(value) {
     setSearch(value);
@@ -79,7 +117,7 @@ export default function PositionsMapPage({
       return;
     }
     setSearchNotFound(false);
-    setSelectedPositionId(found.id);
+    openStand(found.id);
     mapRef.current?.flyToPosition(found.id);
   }
 
@@ -93,9 +131,13 @@ export default function PositionsMapPage({
     mapRef.current?.flyToBounds(coords);
   }
 
-  function handleSelectFromList(id) {
-    setSelectedPositionId(id);
-    mapRef.current?.flyToPosition(id);
+  // A stand chosen on the map or in the list: the map brings it into sight when it is not, and its drawer opens.
+  function handleSelectPosition(id) {
+    if (id == null) {
+      clear();
+      return;
+    }
+    openStand(id);
   }
 
   function handleToggleFullscreen() {
@@ -107,23 +149,44 @@ export default function PositionsMapPage({
   }
 
   function handleStartPlacing(position) {
-    setSelectedPositionId(null);
-    setPlaceMessage({ tone: '', text: '' });
-    setPlacing({ standId: position.standId, code: position.id, saving: false });
+    setDrawerOpen(false);
+    setPlaceMessage(NO_MESSAGE);
+    setPlacing({ standId: position.standId, code: mapStandCode(position.id), phase: 'pointing', pending: null });
   }
 
-  async function handleMapClick({ latitude, longitude }) {
-    if (!placing || placing.saving || !data?.operationDate) return;
-    setPlacing(current => ({ ...current, saving: true }));
+  // A click on the map while placing sets the pending location; nothing is sent until «Guardar ubicación».
+  function handleMapClick({ latitude, longitude, snapped = false }) {
+    setPlacing(current => (current === null || current.phase === 'saving'
+      ? current
+      : { ...current, phase: 'pending', pending: { latitude, longitude, snapped } }));
+  }
+
+  function cancelPlacing() {
+    setPlacing(current => (current?.phase === 'saving' ? current : null));
+  }
+
+  // The same command as always (ADR-0027): the board it answers is read again, and the saved location moves the stand's
+  // box rigidly. A failure keeps the pending location and says why in Spanish, never with the server's title.
+  async function handleSaveLocation() {
+    if (placing?.phase !== 'pending' || !placing.pending || !data?.operationDate) return;
+    const { standId, code, pending } = placing;
+    setPlaceMessage(NO_MESSAGE);
+    setPlacing(current => ({ ...current, phase: 'saving' }));
     try {
-      await locateOccStand(placing.standId, Number(latitude.toFixed(6)), Number(longitude.toFixed(6)), data.operationDate);
-      setPlaceMessage({ tone: 'success', text: `${placing.code} quedó ubicada en el mapa.` });
+      await locateOccStand(standId, toSixDecimals(pending.latitude), toSixDecimals(pending.longitude), data.operationDate);
+      setPlaceMessage({ tone: 'success', text: tMap('placing.saved', { code }) });
       setPlacing(null);
       onRetry?.();
     } catch (failure) {
       setPlaceMessage({ tone: 'danger', text: failure.message });
-      setPlacing(current => current && { ...current, saving: false });
+      setPlacing(current => (current?.code === code ? { ...current, phase: 'pending' } : current));
     }
+  }
+
+  function handlePlacingKeyDown(event) {
+    if (event.key !== 'Escape' || placing?.phase === 'saving') return;
+    event.preventDefault();
+    cancelPlacing();
   }
 
   function handleViewFlightInMonitoring(flightId) {
@@ -173,32 +236,51 @@ export default function PositionsMapPage({
     </section>;
   }
 
+  const selectedPositionId = selectedPosition?.id ?? selectedCode;
   const sidePanel = (
     <PositionsSidePanel
       positions={filteredPositions}
       emptyReason={emptyReason}
       selectedPositionId={selectedPositionId}
-      onSelectPosition={handleSelectFromList}
+      onSelectPosition={handleSelectPosition}
     />
   );
 
+  const saving = placing?.phase === 'saving';
   const mapArea = (
     <div ref={mapAreaRef} className="relative min-h-[420px] flex-1 bg-surface-light dark:bg-surface-dark">
       <PositionMap
         ref={mapRef}
         positions={filteredPositions}
         selectedPositionId={selectedPositionId}
-        onSelectPosition={setSelectedPositionId}
+        onSelectPosition={handleSelectPosition}
         theme={theme}
         viewMode={viewMode}
-        placing={Boolean(placing)}
+        placing={placing !== null}
+        placingCode={placing?.code ?? null}
+        pendingLocation={placing?.pending ?? null}
+        onCancelPlacing={cancelPlacing}
         onMapClick={placing ? handleMapClick : undefined}
       />
-      {placing && <div role="status" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-accent-600/40 bg-white/95 px-4 py-2 text-xs shadow dark:bg-surface-dark-card">
-        <span>{placing.saving ? `Guardando la ubicación de ${placing.code}…` : `Haz clic en el mapa donde está ${placing.code}.`}</span>
-        <button type="button" className="font-semibold text-accent-600" disabled={placing.saving}
-          onClick={() => setPlacing(null)}>Cancelar</button>
-      </div>}
+      {placing && (
+        <div ref={placingRef} tabIndex={-1} role="group" aria-label={tMap('placing.label', { code: placing.code })}
+          onKeyDown={handlePlacingKeyDown}
+          className="absolute left-1/2 top-3 z-10 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-occ-line-strong bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
+          <p role="status" className="min-w-0">
+            {saving ? tMap('placing.saving', { code: placing.code }) : tMap('placing.prompt', { code: placing.code })}
+          </p>
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={placing.phase !== 'pending'} onClick={() => void handleSaveLocation()}
+              className="min-h-9 rounded bg-occ-primary px-3 font-semibold text-occ-on-primary hover:bg-occ-primary-hover disabled:cursor-not-allowed disabled:bg-occ-panel-raised disabled:text-occ-faint">
+              {tMap('placing.save')}
+            </button>
+            <button type="button" disabled={saving} onClick={cancelPlacing}
+              className="min-h-9 rounded border border-occ-line px-3 font-semibold text-occ-text hover:border-occ-line-strong disabled:cursor-not-allowed disabled:text-occ-faint">
+              {tMap('placing.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
       <MapControls
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode(mode => (mode === '3d' ? '2d' : '3d'))}
@@ -259,8 +341,8 @@ export default function PositionsMapPage({
       )}
 
       <PositionDetailDrawer
-        position={selectedPosition}
-        onClose={() => setSelectedPositionId(null)}
+        position={drawerOpen ? selectedPosition : null}
+        onClose={() => setDrawerOpen(false)}
         onViewFlightInMonitoring={handleViewFlightInMonitoring}
         canAssign={Boolean(data?.canAssign)}
         candidates={assignCandidates(data)}

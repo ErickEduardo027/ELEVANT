@@ -12,6 +12,9 @@
 # - the live air traffic of the OCC map off (AirTraffic__Enabled, ADR-0042): the image turns it on for Development, and
 #   the harness never reads adsb.fi or adsb.lol unless ELEVANT_E2E_AIR_TRAFFIC_ENABLED=true asks for a deliberate manual
 #   read. The list of networks (AirTraffic:Providers) is never overridden here.
+# - the aerodrome weather of the OCC off (AviationWeather__Enabled, ADR-0043): the image turns it on for Development,
+#   and the harness never reads aviationweather.gov unless ELEVANT_E2E_AVIATION_WEATHER_ENABLED=true asks for a
+#   deliberate manual read.
 #
 # docker compose --env-file database/DevelopmentDB/.env \
 #   -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
@@ -78,6 +81,7 @@ services:
       SimulatedFlightFeed__Enabled: "${ELEVANT_E2E_SIMULATED_FLIGHT_FEED:-true}"
       CardPayments__Mode: "Simulated"
       AirTraffic__Enabled: "${ELEVANT_E2E_AIR_TRAFFIC_ENABLED:-false}"
+      AviationWeather__Enabled: "${ELEVANT_E2E_AVIATION_WEATHER_ENABLED:-false}"
     depends_on:
       media:
         condition: service_started

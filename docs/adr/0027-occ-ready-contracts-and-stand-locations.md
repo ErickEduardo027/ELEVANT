@@ -112,3 +112,28 @@ asignación.
 > `PUT occ/stands/{standId}/location`, que sigue reemplazando a la referencia. En M3 las posiciones
 > siguen dibujándose como puntos; con M4, el mapa dibujará la caja del plano y la trasladará sin
 > deformarla al punto que OCC guardó.
+
+> **Actualización (13 de noviembre de 2026).** Con el PR M4
+> ([ADR-0043](0043-occ-maps-one-engine.md)), el mapa del OCC dibuja cada posición como una caja con
+> su estado, y la ubicación que OCC guarda con `PUT occ/stands/{standId}/location` decide dónde:
+> - a 80 m o menos del centro que le da el plano, traslada sin deformarlas la caja y la entrada del
+>   plano hasta ese punto, con la misma forma, el mismo rumbo y el mismo tamaño;
+> - más lejos, o en una posición que el plano no conoce (una combinada como «9A», o una B33 que OCC
+>   colocó, porque el plano la tiene retirada), el mapa dibuja allí una caja propia: con el rumbo de
+>   la posición activa del plano más cercana a 150 m o menos o, si no hay ninguna, perpendicular a la
+>   calle de rodaje más cercana; con la letra del avión más grande que admite (E con fuselaje ancho,
+>   C con estrecho, D si no se sabe); y con la entrada pegada al grafo de rodaje. Lejos del
+>   aeródromo (sin calle de rodaje a 300 m o menos) la caja mira al norte y no tiene entrada;
+> - sin plano ni ubicación, la posición no se dibuja: Mapa de posiciones la lista «Sin ubicar», con
+>   «Ubicar en el mapa» en su cajón.
+>
+> Una posición sin ubicación de OCC se dibuja con la caja del plano, centrada en su punto de
+> `positionsData.js`, y sigue marcada como referencia sin verificar («No oficial»). «Ubicar en el
+> mapa» ya no guarda con un clic: la caja de la posición, a tamaño real, sigue al puntero y toma el
+> contorno del plano a 15 m o menos de su centro; un clic deja la ubicación pendiente y otro la
+> mueve. La ubicación se guarda solo tras «Guardar ubicación», con el mismo
+> `PUT occ/stands/{standId}/location` (el mismo permiso, la misma auditoría, el aviso `occ_planning`
+> y seis decimales); «Cancelar» o `Esc` la descartan sin enviar nada. Como decidió el dueño del
+> producto el 13 de noviembre de 2026, su documento de coordenadas manda sobre OpenStreetMap, que
+> está desactualizado en el aeropuerto: ninguna posición se mueve ni se gira hacia OSM, y solo la
+> ubicación que guarda OCC la mueve.

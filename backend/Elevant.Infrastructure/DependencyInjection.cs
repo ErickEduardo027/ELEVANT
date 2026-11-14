@@ -9,6 +9,7 @@ using Elevant.Infrastructure.Operations;
 using Elevant.Infrastructure.Commercial;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Integrations.AirTraffic;
+using Elevant.Infrastructure.Integrations.AviationWeather;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
@@ -69,6 +70,7 @@ public static class DependencyInjection
                 openSky,
                 provider.GetRequiredService<TimeProvider>()));
         AddAirTraffic(services, configuration);
+        AddAviationWeather(services, configuration);
         // Public airline registries, asked in this order (ADR-0023).
         services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource>(_ =>
             new Elevant.Infrastructure.Integrations.AirlineRegistry.WikidataAirlineRegistrySource(
@@ -204,5 +206,26 @@ public static class DependencyInjection
         return new AirTrafficSettings(options.Enabled, options.StationCode.Trim().ToUpperInvariant(), options.CenterLatitude,
             options.CenterLongitude, options.RadiusNm, TimeSpan.FromSeconds(options.IntervalSeconds),
             TimeSpan.FromSeconds(options.IdleAfterSeconds), TimeSpan.FromMinutes(options.TrailMinutes));
+    }
+
+    /// <summary>
+    /// ADR-0043 (contracts 1.4): the METAR and the TAF of the OCC, from aviationweather.gov. <c>AviationWeather:Enabled</c>
+    /// is off by default, and then the source is <see cref="DisabledAerodromeWeatherSource"/> and nothing is ever called.
+    /// <c>AviationWeather:BaseUrl</c> is checked on every start, also while it is off, and gets its final slash when it
+    /// lacks one. On, the source is built only when it is first resolved, and it calls the service only when someone reads
+    /// an airport's weather: never while the API starts. No environment is refused: <c>appsettings.json</c> leaves it off.
+    /// </summary>
+    private static void AddAviationWeather(IServiceCollection services, IConfiguration configuration)
+    {
+        var options = configuration.GetSection(AviationWeatherOptions.SectionName).Get<AviationWeatherOptions>() ?? new();
+        var baseUrl = AviationWeatherSource.DataApiAddress(options.BaseUrl) ??
+            throw new InvalidOperationException("AviationWeather:BaseUrl must be an absolute https address.");
+        if (!options.Enabled)
+        {
+            services.AddSingleton<IAerodromeWeatherSource, DisabledAerodromeWeatherSource>();
+            return;
+        }
+        services.AddSingleton<IAerodromeWeatherSource>(provider => new AviationWeatherSource(
+            AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
     }
 }

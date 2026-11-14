@@ -142,9 +142,20 @@ function occupancyTurnaround(item) {
   };
 }
 
-// Real occupancy (teacher review, Phase 7): `occupied` means the aircraft arrived and is parked,
-// `planned` an assignment whose aircraft has not arrived, `available` a registered free stand and
-// `unverified` a map position with no stand registered for the station.
+/**
+ * The stands of the positions board (`board`, getOccPositions) over a list of reference stands. Real occupancy
+ * (teacher review, Phase 7): `occupied` means the aircraft arrived and is parked, `planned` an assignment whose
+ * aircraft has not arrived, `available` a registered free stand and `unverified` a map position with no stand
+ * registered for the station.
+ *
+ * `rampPositions` are the references, `[{ id, terminal, lat, lon, retired? }]`: `layoutStandReferences(layout)` of
+ * the airport layout (maps/airport/layoutIndex.js), or the short list of positionsData.js, which gives the same
+ * positions. A retired reference is never drawn from the reference; a stand OCC placed is (ADR-0027).
+ *
+ * Each position keeps the board's own stand fields for the maps (PR M4): `coveredBy` (a copy of the board's list;
+ * `null` without a stand row, unknown rather than empty), `maxAircraftSize`, `standType`, `isRemote` and the raw
+ * `cancelledBy` code, next to its normalized `linkedPositionId`.
+ */
 export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new Date().toISOString()) {
   const byCode = new Map((board?.positions ?? []).map(position => [mapStandCode(position.code), position]));
   const references = drawnReferences(rampPositions);
@@ -175,6 +186,10 @@ export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new D
       // A demo flight the superadministrator triggered (ADR-0041): the drawer labels it «Demo».
       isDemo: current?.isDemo === true,
       assignedAgent: stand?.coveredBy?.length ? stand.coveredBy.join(', ') : null,
+      coveredBy: Array.isArray(stand?.coveredBy) ? [...stand.coveredBy] : null,
+      maxAircraftSize: stand?.maxAircraftSize ?? null,
+      standType: stand?.standType ?? null,
+      isRemote: stand?.isRemote ?? false,
       hasBoardingBridge: stand?.hasBoardingBridge ?? false,
       narrowbodyOnly: stand?.narrowbodyOnly ?? false,
       arrivedAt: current?.arrivedAt ?? null,
@@ -184,6 +199,7 @@ export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new D
       updatedAt: board?.asOf ?? nowIso,
       combinedConfiguration: stand?.cancelledBy ?? null,
       linkedPositionId: stand?.cancelledBy ? mapStandCode(stand.cancelledBy) : null,
+      cancelledBy: stand?.cancelledBy ?? null,
     };
   });
 }

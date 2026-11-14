@@ -26,8 +26,8 @@ describe('EstimatedTag', () => {
     expect(classes.at(-1)).toBe('ml-1');
 
     // The same word in English.
-    resetLanguageForTests('en');
     cleanup();
+    resetLanguageForTests('en');
     render(<LanguageScope><EstimatedTag /></LanguageScope>);
     expect(screen.getByText(TAGS.estimated.en)).toHaveAttribute('data-occ-tag', 'estimated');
   });

@@ -264,6 +264,38 @@ Desde la imagen aérea y los vuelos del mapa (PR A3 del mismo plan, código de
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.MapFlights.cs)),
   y las del cliente compartido.
 
+Desde el clima del aeródromo por la API (PR M8 del mismo plan, código de
+`65f9446f` y `eeac6d1e`, también posterior al commit verificado;
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)):
+
+- **Fixtures sintéticos.** Las respuestas de prueba de la fuente tienen la
+  forma real de las respuestas `metar` y `taf` de la Data API de
+  aviationweather.gov, con valores inventados
+  ([METAR](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/awc-metar.synthetic.json)
+  y [TAF](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/awc-taf.synthetic.json));
+  ninguna respuesta real se versiona. El HTTP se simula con un manejador de
+  prueba, y ninguna prueba ni workflow de CI llama a aviationweather.gov.
+- **Prueba en vivo opcional.**
+  [`AviationWeatherLiveTests`](../../backend/tests/Elevant.UnitTests/Infrastructure/AviationWeatherLiveTests.cs)
+  hace una consulta de METAR y una de TAF de Punta Cana (MDPC) y solo corre
+  con `ELEVANT_LIVE_AVIATION_WEATHER=1`. Informa conteos y la antigüedad del
+  METAR, nunca la respuesta. Como las de AeroDataBox y del tráfico, CI nunca la
+  activa.
+- **La E2E no enciende el clima.** El overlay del arnés lo deja apagado salvo
+  que `ELEVANT_E2E_AVIATION_WEATHER_ENABLED` lo encienda, así que el recorrido
+  nunca lee el servicio real; la lectura a mano es un paso aparte y deliberado
+  ([guía local](../../docs/workflows/local-development.md)). El PR no suma
+  pasos al arnés porque no tiene pantallas.
+- **Pruebas automáticas.** Unitarias de la fuente y su parser, las esperas, la
+  configuración y el manejador de la lectura. De la API, montando el host sin
+  SQL: la validación, los códigos y los títulos, el estado en el 200, el lector
+  solo de planificación y la imagen de Development, que enciende el clima. De
+  arquitectura: contratos sin `long`, enumeraciones ni ids internos, y una sola
+  lectura bajo `occ/weather`. Una prueba SQL del código OACI del aeropuerto de
+  la estación
+  ([prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Weather.cs)),
+  y las del cliente compartido.
+
 ## Suite visual de los mapas del OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código del
@@ -285,6 +317,9 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y, posterior al commit verificado (PR U4, `bcfd6fd7`), la pantalla de
   arranque del OCC sobre Panorama
   ([prueba](../../frontend/private-web/tests/visual/occ/boot-screen.spec.mjs)).
+  Desde el PR U3 recorre también la consola de Panorama
+  ([prueba](../../frontend/private-web/tests/visual/occ/console.spec.mjs); ver
+  [La consola del OCC (PR U3)](#la-consola-del-occ-pr-u3)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
   leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
@@ -323,8 +358,11 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   las tres lecturas de Panorama, con datos sintéticos que pasan los validadores
   estrictos del cliente compartido, y, sin salir del equipo, los tres orígenes
   que todavía usa Panorama (los estilos publicados de OpenFreeMap, NASA GIBS e
-  IEM), con un estilo vacío, un 404 y un 503. Además, su Chrome no resuelve
-  ningún nombre salvo `localhost`.
+  IEM), con un estilo vacío, un 404 y un 503. Desde el PR U3, esa prueba
+  responde las lecturas de la consola, las mismas de su propia prueba, y de los
+  orígenes ajenos solo queda IEM, con un 503; la prueba de la consola responde
+  IEM con un METAR sintético. Además, su Chrome no resuelve ningún nombre salvo
+  `localhost`.
   Ninguna prueba llama a OpenFreeMap, a la API real ni a un proveedor.
 - **Cómo corre.** `npm run test:visual`, desde `frontend/private-web`, levanta
   `next dev` en el puerto 4186 con los tres `NEXT_PUBLIC_*` de Development y
@@ -338,7 +376,11 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   `frontend/private-web/test-results/visual/`, que Git ignora. Desde U4 se
   suman las de la pantalla de arranque: al empezar, mientras espera a Panorama
   y la consola después, a 1440×900 y a 1920×1080, y con movimiento reducido a
-  1440×900. La de Mapa de posiciones muestra el mapa sin la pantalla de
+  1440×900. Desde U3 se suman las de la consola: al abrir, con los paneles
+  plegados y abiertos, con un vuelo y una posición elegidos y sin motor de
+  mapa, a 1440×900 y a 1920×1080, una llegada demo antes y después de «Ver y
+  seguir», a 1920×1080, y una tira elegida con «Alertas» plegada, a 1440×900.
+  La de Mapa de posiciones muestra el mapa sin la pantalla de
   arranque: sus pruebas entran como una entrada posterior de la misma pestaña,
   con la marca de la cuenta ya puesta, y fallan si la pantalla sigue encima
   cuando el mapa ya está listo. Las revisa una persona: no hay líneas base de
@@ -349,6 +391,162 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   Lo que sí corre en CI es el build, que termina comprobando que el
   laboratorio no entra en el bundle de producción
   (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`).
+
+## Tráfico real en los mapas del OCC (PR M5)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M5 «Tráfico real en el mapa» (`48ae657e` a `03dda909`), que esa verificación
+no cubre ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Las pruebas
+de vitest corren con `npm test`; la spec visual, con la suite visual.
+
+- **Presupuesto de un minuto demo.**
+  [`useMapSituation.budget.test.jsx`](../../frontend/private-web/src/features/maps/useMapSituation.budget.test.jsx)
+  monta el hook real del mapa con el adaptador simulado, que responde cada
+  lectura a los 200 ms, y repite con relojes falsos el minuto demo del
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  (ocho `occ_planning`, dos avisos y una revisión). Comprueba que el mapa pide
+  6 imágenes aéreas, cada una al menos 10 segundos después de la anterior por
+  mucho que se anuncie, como mucho 9 lecturas de vuelos, un ping y ninguna
+  estela; y que Monitoreo de vuelos como está hoy (el marco, el observador
+  propio de la ruta, sus relecturas y su sondeo), más el mapa, no pasa de las
+  70 peticiones de un minuto con vuelo demo. En la corrida del PR sumaron 62.
+- **Ritmo y estados.**
+  [`useMapSituation.test.jsx`](../../frontend/private-web/src/features/maps/useMapSituation.test.jsx)
+  comprueba con el mismo adaptador que la imagen se pide con `trails=short` una
+  vez y `none` después, nunca más rápido que `refreshAfterSeconds`; que las dos
+  lecturas esperan con la pestaña oculta y leen una vez al volver; que los
+  vuelos se releen con `occ_planning` como mucho una vez cada 3 segundos, y
+  cada 60 si no; que `Disabled`, `Unavailable`, `Stale` y `Warming` son datos y
+  no errores; los cinco estados de la vista, con el no autorizado sin ninguna
+  petición; que una imagen aérea que falla, o el 404 de una estación sin
+  tráfico en vivo, deja el mapa con sus vuelos y la fuente «Sin conexión» o
+  «Sin configurar»; que el reloj se alimenta del `serverTime` y del ping; y
+  que la estela del avión elegido se lee una sola vez. Las pruebas del
+  [reloj](../../frontend/private-web/src/services/serverClock.test.js), del
+  [servicio](../../frontend/private-web/src/services/occMapService.test.js),
+  del [modelo](../../frontend/private-web/src/features/maps/traffic/situationModel.test.js)
+  y de las [estelas](../../frontend/private-web/src/features/maps/traffic/trailStore.test.js)
+  prueban cada pieza sola: la muestra de menor ida y vuelta, el 401 que cierra
+  la sesión, un vuelo para un avión (también por la clave vieja de una visita
+  enlazada con 3-N07), una visita o una escala elegidas que nombran el tramo
+  que vuela su avión, el umbral derivado de «sin actualizar», el tráfico
+  oculto solo dentro de una posición en la que ya está un avión de AVIAM o
+  demo (nunca en la de un vuelo que todavía llega) y las estelas cortadas a
+  `max(60 s, 3 × refreshAfterSeconds)`, con sus topes de 600 y 60 puntos.
+- **Tráfico sintético.**
+  [`trafficFixtures.js`](../../frontend/private-web/src/features/maps/testing/trafficFixtures.js)
+  arma, con la forma de las tres lecturas de A3, una imagen aérea, vuelos y
+  estelas alrededor de Punta Cana, con direcciones, matrículas, *callsign*,
+  aerolínea e identificadores inventados; nada sale de un proveedor. Su
+  [prueba](../../frontend/private-web/src/features/maps/testing/trafficFixtures.test.js)
+  y la de las
+  [escenas del laboratorio](../../frontend/private-web/src/features/maps/lab/trafficScenes.test.js)
+  pasan cada respuesta por los validadores estrictos del cliente compartido
+  (`isOccAirPicture`, `isOccMapFlights` e `isOccAircraftTrack`), en los cinco
+  estados de la imagen y con estelas y sin ellas. El adaptador simulado
+  también valida cada respuesta que da, como el cliente valida las de la API.
+  Ninguna prueba llama a la API ni a una red de tráfico.
+- **Escenas del laboratorio.** Siete escenas nuevas
+  ([escenas](../../frontend/private-web/src/features/maps/lab/trafficScenes.js)),
+  con la red sintética «Red ADS-B de prueba»: `region-traffic-mixed`,
+  `approach-traffic-demo`, `ramp-traffic-ground`,
+  `approach-traffic-estimated-stale`, `region-traffic-selected`,
+  `approach-traffic-hex-selected` y `region-layers-menu`. Sus posiciones
+  estimadas (la llegada demo en final y un vuelo de AVIAM sin señal) se pasan a
+  mano, como las calculará M6: las pantallas no estiman ninguna.
+- **Spec visual del tráfico.**
+  [`map-lab.traffic.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.traffic.spec.mjs),
+  del proyecto `lab` de la [suite visual](#suite-visual-de-los-mapas-del-occ),
+  fotografía las siete escenas a 1440×900 y a 1920×1080, y en las cuatro
+  primeras comprueba que el crédito de la red está a la vista como enlace y que
+  la leyenda lista el tráfico. Comprueba también que la atribución abierta
+  nombra la red; que otro avión muestra su etiqueta bajo el puntero; que cada
+  vista explica su tráfico («Otro tráfico en tierra» en la rampa, «Demo»,
+  «est.» y «Estela estimada» en la llegada demo) y que la imagen con retraso lo
+  dice; el bloque de datos del vuelo elegido y el de otro avión, sin enlaces; y
+  que un clic elige un avión (`hex=` o `flightId=`), `L` abre el menú de capas,
+  la primera `Esc` lo cierra y conserva lo elegido, la segunda suelta el vuelo,
+  y «Etiquetas de todo el tráfico» sobrevive a una recarga, con
+  `elevant-occ-map-layers:v1` vacío al volver al valor por omisión. Como el
+  resto de la suite, corre fuera del CI y una persona revisa sus capturas.
+
+## La consola del OCC (PR U3)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U3 «Consola del OCC con el mapa a pantalla completa» (`94e60144`,
+`de08535e`, `582077b1` y `bc8bc5f5`), que esa verificación no cubre
+([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)). Las pruebas de
+vitest corren con `npm test`; la spec visual, con la suite visual.
+
+- **Presupuesto con los hooks reales.**
+  [`useConsoleData.budget.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)
+  monta las lecturas de la consola sobre adaptadores contados que responden a
+  los 200 ms, el hook del mapa sobre su adaptador simulado y las lecturas del
+  marco, y repite con relojes falsos, después de un minuto de calentamiento, un
+  minuto en reposo y el minuto demo del
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js).
+  Falla por encima de 40 o de 70 peticiones: hoy son 16 y 38. Comprueba
+  también que los ocho `occ_planning` solo releen los vuelos del mapa, que la
+  cola relee con `occ_review` y que veinte toques de la tablet en diez segundos
+  no cambian ninguna lectura propia de la consola.
+  [`occRequestBudget.test.js`](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  exige además que la consola planificada coincida con las tablas de lecturas
+  de la consola y del mapa.
+- **Piezas de la consola.** Junto a cada módulo de `dashboard/noc`: los modelos
+  puros (tablero, cifras, alertas, pendientes, banda, hitos, llegada nueva y
+  palabras del METAR), las lecturas
+  ([`useConsoleData.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.test.jsx):
+  sin fecha del navegador, nada sin el alcance PUJ, un 403 que solo apaga su
+  panel, el último dato tras una relectura fallida y una respuesta de otra
+  estación que falla entera), los márgenes del mapa, la línea de procedencia,
+  la paridad de claves de los textos, la página y la ruta
+  ([`ConsolePage.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/ConsolePage.test.jsx)
+  y [`ConsoleRoute.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.test.jsx)),
+  con las afirmaciones de honestidad del panorama anterior y el aviso a la
+  pantalla de arranque. La página comprueba también que un vuelo demo que ya
+  venía al abrir muestra «Llegada nueva» y que una pastilla cerrada no vuelve
+  ([memoria de la pestaña](../../frontend/private-web/src/features/dashboard/noc/arrivalMemory.test.js));
+  que cada lectura apaga solo sus pendientes, con la planificación vacía,
+  rechazada o con la cola caída; que un panel sin su permiso lo dice sin
+  culpar a la estación; que la leyenda del tablero nombra lo que dibuja cada
+  pestaña; que el sondeo de la planificación no relee las opciones del panel
+  de asignación abierto, y el aviso de agente liberado en los dos idiomas.
+  Comprueba además que los paneles no tapan lo elegido: una posición elegida
+  en el mapa donde se abre el inspector vuelve al centro de lo que queda a la
+  vista, con el mismo acercamiento, y una que sigue a la vista no mueve la
+  cámara; un panel desplegado sobre lo elegido lo trae de vuelta, pero no lo
+  que la persona sacó de la vista; una tira elegida junto a «Alertas» plegada
+  vuela a su vuelo solo después de medir el inspector; y «Ver y seguir»
+  encuadra la vista que sigue el vuelo y después centra su avión, salvo que la
+  persona mueva la cámara antes
+  ([cámara](../../frontend/private-web/src/features/dashboard/noc/consoleCamera.test.js)
+  y [última medida de los paneles](../../frontend/private-web/src/features/dashboard/noc/useConsoleInsets.test.jsx)).
+  El mapa se simula con el MapLibre falso de `tests/fakeMapLibre.js`, y jsdom
+  recibe un `ResizeObserver` falso.
+- **Datos sintéticos validados.**
+  [`visualConsoleFixtures.test.js`](../../frontend/private-web/tests/visualConsoleFixtures.test.js)
+  pasa cada respuesta de
+  [`consoleApi.mjs`](../../frontend/private-web/tests/visual/occ/fixtures/consoleApi.mjs),
+  el día sintético de Punta Cana con su mapa, por los validadores estrictos del
+  cliente compartido. Ningún identificador, nombre ni posición sale de un
+  proveedor.
+- **Spec visual.**
+  [`console.spec.mjs`](../../frontend/private-web/tests/visual/occ/console.spec.mjs),
+  del proyecto `occ`, abre la consola como una entrada posterior de la pestaña,
+  sin pantalla de arranque, a 1920×1080 y a 1440×900. Comprueba que abre en
+  Rampa con «Cifras de la jornada» plegada por debajo de 1600 px y
+  «Posiciones» siempre; que con los paneles plegados el mapa no pierde ancho y
+  abiertos sí; que una tira elige su vuelo (`flightId=`) y abre el inspector
+  con su bloque de datos y sus hitos, y una barra de la banda, su posición
+  (`stand=`); que sin WebGL los paneles pasan a la cuadrícula; que un vuelo
+  demo que ya venía al abrir muestra «Llegada nueva» y la leyenda del tablero;
+  y, a 1920×1080, que «Recibido» envía el recibo, que un vuelo demo nuevo
+  muestra «Llegada nueva» y que «Ver y seguir» escribe `flightId` y `follow=1`
+  y lleva el mapa a Aproximación. Con movimiento y a 1440×900, comprueba
+  también que una tira elegida con «Alertas» plegada deja su avión a la vista
+  junto al inspector que se abre: la leyenda del mapa, que solo nombra lo que
+  queda a la vista, nombra el vuelo de AVIAM que llega. Como el resto de la
+  suite, corre fuera del CI y una persona revisa sus capturas.
 
 ## Qué agrega cada workflow activo
 

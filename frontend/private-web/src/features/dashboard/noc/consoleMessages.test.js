@@ -1,0 +1,185 @@
+import { describe, expect, it } from 'vitest';
+import { createTranslator } from '../../../i18n/languageStore';
+import { mapMessages } from '../../maps/mapMessages';
+import { occUiMessages } from '../../occ-ui/occUiMessages';
+import { durationText, relativeTimeText } from '../../occ-ui/occTime';
+import { FLIGHT_STATUS_KEYS } from './boardModel';
+import { consoleMessages } from './consoleMessages';
+import { PENDING_ACTIONS } from './pendingModel';
+
+// Every leaf of a message tree as a dotted path, sorted.
+function leafPaths(node, prefix = '') {
+  return Object.entries(node).flatMap(([key, value]) => (value !== null && typeof value === 'object'
+    ? leafPaths(value, `${prefix}${key}.`)
+    : [`${prefix}${key}`])).sort();
+}
+
+// The honesty texts of the old dashboard (src/features/dashboard/dashboardMessages.js, gone with PR U3), word for word:
+// the console keeps them.
+const OLD_DASHBOARD_TEXTS = Object.freeze({
+  es: {
+    states: {
+      loading: 'Cargando panorama operativo…',
+      forbidden: 'No hay una estación OCC autorizada para consultar este panorama.',
+      unavailable: 'Tu cuenta no tiene acceso autorizado a la estación PUJ.',
+      unauthorized: 'La sesión expiró. Vuelva a iniciar sesión.',
+      error: 'No se pudo cargar el panorama operativo de la estación.',
+      timeout: 'El panorama tardó demasiado en responder. Comprueba la conexión y vuelve a intentarlo.',
+      retry: 'Reintentar',
+      refreshFailed: 'La última actualización falló; se muestran los datos consultados a las {time}.'
+    },
+    weather: {
+      title: 'Meteorología MDPC',
+      unofficial: 'No oficial',
+      source: 'METAR MDPC vía Iowa Environmental Mesonet (réplica no oficial, sin garantía).',
+      sourceCompact: 'METAR MDPC · IEM · réplica no oficial',
+      observed: 'Observado {time} UTC',
+      received: 'Recibido {time} UTC',
+      age: 'hace {minutes} min',
+      stale: 'Desactualizado',
+      staleBody: 'La última observación tiene más de 75 minutos: falta al menos un reporte horario.',
+      refreshFailed: 'La última consulta falló; se muestra la observación anterior.',
+      loading: 'Consultando la observación de MDPC…',
+      error: 'La observación meteorológica no está disponible.',
+      derivedNote: 'calculada por IEM',
+      dialogTitle: 'Meteorología · Punta Cana (MDPC)',
+      expand: 'Ver meteorología',
+      imageSource: 'Infrarrojo GOES-East · NASA GIBS; contexto regional, no radar',
+      imageUnavailable: 'La imagen satelital no está disponible.',
+      sourceLayer: {
+        goes: 'Infrarrojo GOES-East · NASA GIBS',
+        imerg: 'Precipitación estimada IMERG · NASA GIBS; imagen retrasada, no radar'
+      },
+      hint: {
+        goes: 'Imagen infrarroja regional; no es observación del aeródromo.',
+        imerg: 'Estimación satelital de precipitación de 30 minutos; puede llegar con varias horas de retraso.'
+      },
+      imageAge: 'antigüedad {minutes} min',
+      imageDay: 'Producto del día {date} UTC; hora exacta no publicada'
+    },
+    boardEmpty: 'No hay escalas registradas para esta estación y fecha local.',
+    plannedNote: 'Asignación planificada; no confirma ocupación física.',
+    needsResourcesHint: 'Escalas abiertas sin posición o sin agente asignado.',
+    title: 'Panorama operativo'
+  },
+  en: {
+    states: {
+      loading: 'Loading operations overview…',
+      forbidden: 'There is no authorized OCC station for this overview.',
+      unavailable: 'Your account has no authorized access to the PUJ station.',
+      unauthorized: 'Your session expired. Please sign in again.',
+      error: 'The station operations overview could not be loaded.',
+      timeout: 'The overview took too long to respond. Check the connection and try again.',
+      retry: 'Retry',
+      refreshFailed: 'The last refresh failed; showing data retrieved at {time}.'
+    },
+    weather: {
+      title: 'MDPC weather',
+      unofficial: 'Unofficial',
+      source: 'MDPC METAR via Iowa Environmental Mesonet (unofficial mirror, no warranty).',
+      sourceCompact: 'MDPC METAR · IEM · unofficial mirror',
+      observed: 'Observed {time} UTC',
+      received: 'Received {time} UTC',
+      age: '{minutes} min ago',
+      stale: 'Outdated',
+      staleBody: 'The latest observation is older than 75 minutes: at least one hourly report is missing.',
+      refreshFailed: 'The last request failed; showing the previous observation.',
+      loading: 'Retrieving the MDPC observation…',
+      error: 'The weather observation is unavailable.',
+      derivedNote: 'computed by IEM',
+      dialogTitle: 'Weather · Punta Cana (MDPC)',
+      expand: 'View weather',
+      imageSource: 'GOES-East infrared · NASA GIBS; regional context, not radar',
+      imageUnavailable: 'Satellite imagery is unavailable.',
+      sourceLayer: {
+        goes: 'GOES-East infrared · NASA GIBS',
+        imerg: 'IMERG estimated precipitation · NASA GIBS; delayed image, not radar'
+      },
+      hint: {
+        goes: 'Regional infrared imagery; not an airfield observation.',
+        imerg: 'Half-hour satellite precipitation estimate; imagery may arrive several hours late.'
+      },
+      imageAge: '{minutes} min old',
+      imageDay: 'Product dated {date} UTC; exact time not published'
+    },
+    boardEmpty: 'No turnarounds are recorded for this station and local date.',
+    plannedNote: 'Planned assignment; does not confirm physical occupancy.',
+    needsResourcesHint: 'Open turnarounds without a stand or an assigned agent.',
+    title: 'Operations overview'
+  }
+});
+
+const textAt = (messages, path) => path.split('.').reduce((node, key) => node[key], messages);
+const placeholdersOf = text => [...text.matchAll(/\{(\w+)\}/g)].map(([, name]) => name).sort();
+
+describe('consoleMessages', () => {
+  it('es and en carry the same keys', () => {
+    const paths = leafPaths(consoleMessages.es);
+    expect(leafPaths(consoleMessages.en)).toEqual(paths);
+    for (const section of ['states', 'panels', 'board', 'status', 'figures', 'pending', 'band', 'arrival', 'provenance',
+      'weather', 'time']) {
+      expect(paths.some(path => path.startsWith(`${section}.`)), section).toBe(true);
+    }
+    for (const path of paths) {
+      for (const language of ['es', 'en']) {
+        const text = textAt(consoleMessages[language], path);
+        expect(typeof text === 'string' && text.trim().length > 0, `${language}: ${path}`).toBe(true);
+      }
+      // A placeholder keeps its English name in both languages, so one call fills either.
+      expect(placeholdersOf(textAt(consoleMessages.en, path)), path)
+        .toEqual(placeholdersOf(textAt(consoleMessages.es, path)));
+    }
+    // Every status of a strip and every action of a pending item has its words.
+    for (const key of FLIGHT_STATUS_KEYS) expect(consoleMessages.es.status[key], key).toBeTruthy();
+    for (const action of PENDING_ACTIONS) expect(consoleMessages.es.pending.actions[action], action).toBeTruthy();
+  });
+
+  it('keeps the honesty texts of the old dashboard word for word', () => {
+    const { es, en } = consoleMessages;
+    for (const language of ['es', 'en']) {
+      // The states, and every weather word the pill and its detail say.
+      const old = OLD_DASHBOARD_TEXTS[language];
+      expect(consoleMessages[language].states, language).toEqual(old.states);
+      for (const [key, value] of Object.entries(old.weather)) {
+        expect(consoleMessages[language].weather[key], `${language}: weather.${key}`).toEqual(value);
+      }
+      expect(consoleMessages[language].title).toBe(old.title);
+      expect(consoleMessages[language].board.empty).toBe(old.boardEmpty);
+      expect(consoleMessages[language].provenance.planned).toBe(old.plannedNote);
+      expect(consoleMessages[language].figures.needsResourcesHint).toBe(old.needsResourcesHint);
+    }
+    expect(es.states.loading).toMatch(/^Cargando panorama/);
+    expect(es.states.unavailable).toContain('estación PUJ');
+    expect(es.states.forbidden).toContain('estación OCC autorizada');
+    expect(es.states.retry).toBe('Reintentar');
+    expect(es.weather.unofficial).toBe('No oficial');
+    expect(es.provenance.planned).toBe('Asignación planificada; no confirma ocupación física.');
+    expect(es.board.empty).toBe('No hay escalas registradas para esta estación y fecha local.');
+    // The words the presentation guide waits for on the console.
+    expect(es.status.noStand).toBe('Llegada sin posición asignada');
+    expect(createTranslator(consoleMessages, 'es')('arrival.pill', { flight: 'ZZ9001' })).toBe('Llegada nueva: ZZ9001');
+    expect(es.arrival.follow).toBe('Ver y seguir');
+    expect(Object.values(es.panels)).toEqual(['Tablero', 'Alertas', 'Cifras de la jornada', 'Posiciones', 'Inspector']);
+    expect(en.panels.board).toBe('Board');
+    // The notice of a release from the assignment drawer, in Planificación's words and in English as well.
+    expect(es.assign.agentReleased).toBe('Agente liberado. Ya puedes asignar a otro.');
+    expect(en.assign.agentReleased).toBe('Agent released. You can assign another one.');
+    expect(es.board.legend).toBe('Leyenda del tablero');
+  });
+
+  it('says the signals of a stand with the map words and counts with the words of occTime', () => {
+    for (const language of ['es', 'en']) {
+      for (const reason of ['conflict', 'uncovered', 'overdue']) {
+        expect(consoleMessages[language].band.signals[reason], `${language}: ${reason}`)
+          .toBe(mapMessages[language].stand[reason]);
+      }
+      expect(consoleMessages[language].time).toEqual(occUiMessages[language].time);
+    }
+    const t = createTranslator(consoleMessages, 'es');
+    expect(durationText({ hours: 1, minutes: 25 }, t)).toBe('1 h 25 min');
+    expect(relativeTimeText(Date.parse('2026-11-14T15:23:00Z'), Date.parse('2026-11-14T15:00:00Z'), t)).toBe('en 23 min');
+    const english = createTranslator(consoleMessages, 'en');
+    expect(english('pending.withWhen', { what: english('pending.noAgent', { flight: 'DM161' }),
+      when: english('pending.when.arrives', { duration: '23 min' }) })).toBe('DM161 without an agent, arrives in 23 min');
+  });
+});

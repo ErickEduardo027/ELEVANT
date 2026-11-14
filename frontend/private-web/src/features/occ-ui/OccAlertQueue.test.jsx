@@ -291,6 +291,70 @@ describe('OccAlertQueue', () => {
     expect(onOpen.mock.calls.map(([entry]) => entry.notice)).toEqual([deviation, started]);
   });
 
+  it('the panel variant lists the unreceived alerts without the recent notices', async () => {
+    const user = userEvent.setup();
+    const items = [
+      notice('deviation_reported', { operationCode: 'OP-A1', occurredAt: '2026-11-12T18:20:00Z' }),
+      notice('incident_reported', { operationCode: 'OP-U1', occurredAt: '2026-11-12T18:10:00Z' }),
+      notice('operation_submitted', { operationCode: 'OP-N1' }),
+    ];
+    const { alerts, recent } = buildAlertQueue(items);
+    const onOpen = vi.fn();
+    const { container, rerender } = render(
+      <LanguageScope>
+        <OccAlertQueue variant="panel" alerts={alerts} recent={recent} onAcknowledge={vi.fn()} onOpen={onOpen}
+          timeZone={ZONE} />
+      </LanguageScope>,
+    );
+    const queue = container.querySelector('[data-occ-alert-queue="panel"]');
+    // The floating panel names the queue: no title, no section of its own and no «Avisos recientes».
+    expect(within(queue).queryByRole('heading')).not.toBeInTheDocument();
+    expect(within(queue).queryByRole('region')).not.toBeInTheDocument();
+    expect(within(queue).queryByText('Avisos recientes')).not.toBeInTheDocument();
+    expect(within(queue).queryByText('Operación entregada para revisión')).not.toBeInTheDocument();
+    // The count, then the alerts with «Recibido» and «Abrir», the urgent one first.
+    expect(within(queue).getByText('2 sin recibir')).toHaveAttribute('aria-live', 'polite');
+    const rows = within(queue).getAllByRole('listitem');
+    expect(rows.map(codeOf)).toEqual(['OP-U1', 'OP-A1']);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('button').map(button => button.textContent)).toEqual(['Recibido', 'Abrir']);
+    }
+    await user.click(within(rows[1]).getByRole('button', { name: 'Abrir' }));
+    expect(onOpen.mock.calls[0][0].notice).toBe(items[0]);
+
+    // Every alert received: the line says so, and nothing else is listed.
+    rerender(
+      <LanguageScope>
+        <OccAlertQueue variant="panel" alerts={[]} recent={recent} onAcknowledge={vi.fn()} timeZone={ZONE} />
+      </LanguageScope>,
+    );
+    expect(within(queue).getByText('No hay alertas sin atender.')).toBeInTheDocument();
+    expect(within(queue).queryByRole('listitem')).not.toBeInTheDocument();
+  });
+
+  it('in the panel variant the last receipt hands the focus to the line that says nothing is waiting', async () => {
+    const user = userEvent.setup();
+    function PanelQueue() {
+      const [items, setItems] = useState([notice('agent_released', { operationCode: 'OP-A9' })]);
+      const { alerts } = buildAlertQueue(items);
+      const acknowledge = async entry => {
+        await Promise.resolve();
+        setItems(current => current.map(item => (item.id === entry.id ? { ...item, readAt: RECEIVED_AT } : item)));
+      };
+      return (
+        <LanguageScope>
+          <OccAlertQueue variant="panel" alerts={alerts.filter(entry => entry.receivedAt === null)}
+            onAcknowledge={acknowledge} timeZone={ZONE} />
+        </LanguageScope>
+      );
+    }
+    render(<PanelQueue />);
+    await user.click(screen.getByRole('button', { name: 'Recibido' }));
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: 'Recibido' })).not.toBeInTheDocument();
+    expect(screen.getByText('No hay alertas sin atender.')).toHaveFocus();
+  });
+
   it('rejects a variant it does not draw', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

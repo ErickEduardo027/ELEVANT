@@ -338,15 +338,17 @@ export const OCC_BRIDGE_UNMAPPED = Object.freeze({});
 
 // Folders already rebuilt with the OCC tokens and the occ-ui primitives: they may not use a legacy colour class. U2
 // rebuilt the frame (the rail, the status bar and the shell provider with its live modules) and U4 added the boot
-// screen; the screens follow from U3, each in the PR that restyles it. U6 adds them one step at a time: Revisión (the
-// review route and its sections), then Cobertura de posiciones, then the chat with its presence, Datos maestros and
-// Tablets, and last Contratos listos and Reportes. The incidents panel the review shows (src/features/incidents) is
-// shared with Planificación and stays on the bridge, and so do the shared Modal, StatusBadge and EmptyState that
-// Tablets no longer draws: Usuarios, inside the OCC, and the other departments still use them.
+// screen; the screens follow from U3, each in the PR that restyles it: U3 builds the console in dashboard/noc, and U6
+// adds the others one step at a time: Revisión (the review route and its sections), then Cobertura de posiciones, then
+// the chat with its presence, Datos maestros and Tablets, and last Contratos listos and Reportes. The incidents panel the
+// review shows (src/features/incidents) is shared with Planificación and stays on the bridge, and so do the shared Modal,
+// StatusBadge and EmptyState that Tablets no longer draws: Usuarios, inside the OCC, and the other departments still use
+// them.
 export const MIGRATED_FOLDERS = Object.freeze([
   'src/features/admin-occ/shell',
   'src/features/admin-occ/live',
   'src/features/admin-occ/boot',
+  'src/features/dashboard/noc',
   'src/features/review',
   'src/features/position-coverage',
   'src/features/chat',

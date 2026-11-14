@@ -50,15 +50,22 @@ const STANDS = [
   // BN13 is left out: a map stand with no database row reads as «Sin verificar».
   ...['BN6', 'BN7', 'BN8', 'BN9', 'BN10', 'BN11', 'BN12'].map(code => [code, 'FBO', 'Remote']),
 ];
-// Synthetic visits: on the stand, due on it, and a free stand cancelled by its combined neighbour.
+// Synthetic visits: on the stand, due on it, and a free stand cancelled by its combined neighbour; then a flight due
+// within 15 minutes («Llegando» on the map) and an aircraft leaving within 15 («Por liberar»). Two stands with a flight
+// due within the hour have nobody covering them («Sin agente que la cubra»).
 const OCCUPIED = new Map([['A2', 1], ['A6', 2], ['B21', 3], ['B31', 4], ['BN8', 5]]);
 const PLANNED = new Map([['A4', 6], ['A9', 7], ['B25', 8], ['AN2', 9]]);
+const ARRIVING = new Map([['A3', [10, 8]], ['B24', [11, 12]]]);
+const RELEASING = new Map([['A7', 12]]);
+const UNCOVERED = new Set(['B24', 'AN2']);
 const CANCELLED_BY = new Map([['A10', 'A9']]);
 
 const uuid = (group, index) => `${group}-0000-4000-8000-${String(index).padStart(12, '0')}`;
 const minutes = (base, delta) => new Date(base + delta * 60 * 1000).toISOString();
 
-function turnaround(index, now, { arrived }) {
+// A visit of the board: its arrival `arrivalInMin` minutes from `now` (recorded 5 minutes later when `arrived`) and
+// its departure `departureInMin` minutes from it.
+function turnaround(index, now, { arrived, arrivalInMin = arrived ? -40 : 50, departureInMin = arrived ? 45 : 140 }) {
   return {
     turnaroundId: uuid('7a1b2c3d', index),
     operationCode: `VIS-TAT-${String(index).padStart(4, '0')}`,
@@ -66,39 +73,50 @@ function turnaround(index, now, { arrived }) {
     aircraftRegistration: `HI${1000 + index}`,
     arrivalFlightNumber: `ZZ${100 + index}`,
     departureFlightNumber: `ZZ${200 + index}`,
-    arrivalScheduledAt: minutes(now, arrived ? -40 : 50),
-    arrivedAt: arrived ? minutes(now, -35) : null,
-    departureScheduledAt: minutes(now, arrived ? 45 : 140),
+    arrivalScheduledAt: minutes(now, arrivalInMin),
+    arrivedAt: arrived ? minutes(now, arrivalInMin + 5) : null,
+    departureScheduledAt: minutes(now, departureInMin),
     assignedFrom: minutes(now, -120),
     status: arrived ? 'InProgress' : 'Planned',
   };
 }
 
-/** GET occ/positions?stationId=&date=: the board of the station for that operation date, as of `now`. */
-export function positionsBoard({ stationId = STATION.stationId, date, now = Date.now() } = {}) {
+/**
+ * GET occ/positions?stationId=&date=: the board of the station for that operation date, as of `now`. `located` maps a
+ * stand id to the location OCC saved for it (`{ latitude, longitude }`, «Ubicar en el mapa»); every other stand has
+ * none.
+ */
+export function positionsBoard({ stationId = STATION.stationId, date, now = Date.now(), located = new Map() } = {}) {
   return {
     stationId,
     stationCode: STATION.stationCode,
     operationDate: date,
     asOf: new Date(now).toISOString(),
     positions: STANDS.map(([code, terminalCode, standType], index) => {
-      const visit = OCCUPIED.has(code) ? turnaround(OCCUPIED.get(code), now, { arrived: true })
-        : PLANNED.has(code) ? turnaround(PLANNED.get(code), now, { arrived: false }) : null;
+      const standId = uuid('5e4d3c2b', index + 1);
+      const place = located.get(standId) ?? null;
+      let visit = null;
+      if (OCCUPIED.has(code)) visit = turnaround(OCCUPIED.get(code), now, { arrived: true });
+      else if (RELEASING.has(code)) visit = turnaround(RELEASING.get(code), now, { arrived: true, arrivalInMin: -50, departureInMin: 10 });
+      else if (ARRIVING.has(code)) {
+        const [visitIndex, arrivalInMin] = ARRIVING.get(code);
+        visit = turnaround(visitIndex, now, { arrived: false, arrivalInMin, departureInMin: arrivalInMin + 60 });
+      } else if (PLANNED.has(code)) visit = turnaround(PLANNED.get(code), now, { arrived: false });
       return {
-        standId: uuid('5e4d3c2b', index + 1),
+        standId,
         code,
         terminalCode,
         standType,
-        status: OCCUPIED.has(code) ? 'occupied' : PLANNED.has(code) ? 'planned' : 'available',
+        status: visit === null ? 'available' : visit.arrivedAt ? 'occupied' : 'planned',
         turnarounds: visit ? [visit] : [],
-        latitude: null,
-        longitude: null,
+        latitude: place?.latitude ?? null,
+        longitude: place?.longitude ?? null,
         hasBoardingBridge: false,
         isRemote: standType === 'Remote',
         maxAircraftSize: null,
         cancelledBy: CANCELLED_BY.get(code) ?? null,
         narrowbodyOnly: false,
-        coveredBy: visit ? ['Agente de prueba'] : [],
+        coveredBy: visit && !UNCOVERED.has(code) ? ['Agente de prueba'] : [],
       };
     }),
     unassigned: [],
@@ -106,20 +124,35 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
   };
 }
 
+const LOCATION_PATH = /^\/api\/v1\/occ\/stands\/([^/]+)\/location$/;
+
 /**
- * The API handler for support/isolate.mjs: the access and the positions board; every other path answers the
- * Problem Details 404 of the isolation. `reads` counts the boards served.
+ * The API handler for support/isolate.mjs: the access, the positions board and «Ubicar en el mapa» (PUT
+ * occ/stands/{standId}/location, ADR-0027), which keeps the location and answers the board with it, as the API does;
+ * every other path answers the Problem Details 404 of the isolation. `reads` counts the boards served, `locates` lists
+ * the locations sent (`{ standId, latitude, longitude, operationDate }`) and `located` keeps them by stand.
  */
 export function createOccApi() {
-  const api = { reads: 0 };
+  const api = { reads: 0, locates: [], located: new Map() };
   api.handle = (request, url) => {
+    const location = request.method() === 'PUT' ? LOCATION_PATH.exec(url.pathname) : null;
+    if (location) {
+      const { latitude = null, longitude = null, operationDate } = JSON.parse(request.postData() ?? '{}');
+      const standId = decodeURIComponent(location[1]);
+      api.locates.push({ standId, latitude, longitude, operationDate });
+      if (latitude === null || longitude === null) api.located.delete(standId);
+      else api.located.set(standId, { latitude, longitude });
+      return { status: 200, json: positionsBoard({ date: operationDate, located: api.located }) };
+    }
     if (request.method() !== 'GET') return null;
     if (url.pathname === '/api/v1/governance/me/access') return { status: 200, json: OCC_ACCESS };
     if (url.pathname === '/api/v1/occ/positions') {
       api.reads += 1;
       return {
         status: 200,
-        json: positionsBoard({ stationId: url.searchParams.get('stationId'), date: url.searchParams.get('date') }),
+        json: positionsBoard({
+          stationId: url.searchParams.get('stationId'), date: url.searchParams.get('date'), located: api.located,
+        }),
       };
     }
     return null;

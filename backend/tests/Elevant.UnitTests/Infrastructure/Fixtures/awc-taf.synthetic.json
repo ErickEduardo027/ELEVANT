@@ -1,0 +1,114 @@
+[
+  {
+    "tafId": 900000201,
+    "icaoId": "MDPC",
+    "dbPopTime": "2026-11-13T11:04:38.000Z",
+    "bulletinTime": "2026-11-13T11:00:00.000Z",
+    "issueTime": "2026-11-13T11:00:00.000Z",
+    "validTimeFrom": 1794571200,
+    "validTimeTo": 1794657600,
+    "rawTAF": "TAF MDPC 131100Z 1312/1412 09012KT 9999 FEW020 SCT040 TEMPO 1316/1320 10015G25KT 4000 SHRA BKN015 FM132200 07008KT 9999 FEW020 PROB30 1404/1408 3000 TSRA BKN012CB",
+    "mostRecent": 1,
+    "remarks": "",
+    "lat": 18.567,
+    "lon": -68.363,
+    "elev": 14,
+    "prior": 5,
+    "name": "Punta Cana Intl, DR",
+    "fcsts": [
+      {
+        "timeFrom": 1794571200,
+        "timeTo": 1794607200,
+        "timeBec": null,
+        "fcstChange": null,
+        "probability": null,
+        "wdir": 90,
+        "wspd": 12,
+        "wgst": null,
+        "wshearHgt": null,
+        "wshearDir": null,
+        "wshearSpd": null,
+        "visib": "6+",
+        "altim": null,
+        "vertVis": null,
+        "wxString": null,
+        "notDecoded": null,
+        "clouds": [
+          { "cover": "FEW", "base": 2000 },
+          { "cover": "SCT", "base": 4000 }
+        ],
+        "icgTurb": [],
+        "temp": []
+      },
+      {
+        "timeFrom": 1794585600,
+        "timeTo": 1794600000,
+        "timeBec": null,
+        "fcstChange": "TEMPO",
+        "probability": null,
+        "wdir": 100,
+        "wspd": 15,
+        "wgst": 25,
+        "wshearHgt": null,
+        "wshearDir": null,
+        "wshearSpd": null,
+        "visib": 2.49,
+        "altim": null,
+        "vertVis": null,
+        "wxString": "SHRA",
+        "notDecoded": null,
+        "clouds": [
+          { "cover": "BKN", "base": 1500 }
+        ],
+        "icgTurb": [],
+        "temp": []
+      },
+      {
+        "timeFrom": 1794607200,
+        "timeTo": 1794657600,
+        "timeBec": null,
+        "fcstChange": "FM",
+        "probability": null,
+        "wdir": 70,
+        "wspd": 8,
+        "wgst": null,
+        "wshearHgt": null,
+        "wshearDir": null,
+        "wshearSpd": null,
+        "visib": "6+",
+        "altim": null,
+        "vertVis": null,
+        "wxString": null,
+        "notDecoded": null,
+        "clouds": [
+          { "cover": "FEW", "base": 2000 }
+        ],
+        "icgTurb": [],
+        "temp": []
+      },
+      {
+        "timeFrom": 1794628800,
+        "timeTo": 1794643200,
+        "timeBec": null,
+        "fcstChange": "PROB",
+        "probability": 30,
+        "wdir": null,
+        "wspd": null,
+        "wgst": null,
+        "wshearHgt": null,
+        "wshearDir": null,
+        "wshearSpd": null,
+        "visib": 1.86,
+        "altim": null,
+        "vertVis": null,
+        "wxString": "TSRA",
+        "notDecoded": null,
+        "clouds": [
+          { "cover": "BKN", "base": 1200 }
+        ],
+        "icgTurb": [],
+        "temp": []
+      }
+    ]
+  }
+]

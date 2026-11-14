@@ -13,12 +13,17 @@ const EMPTY = Object.freeze([]);
 
 // The stands map of Mapa de posiciones, Planificación and the console's apron, on the one map engine: a thin adapter
 // over OccMap that keeps the props, the imperative handle, the test id and the fallback strings of the map it
-// replaces, so its pages need no change. The stands are points with today's meaning, drawn and clustered through the
-// stands slot; the map opens on the ramp of the reference catalogue (contracts 2.3), with the view selector and the
-// legend at the bottom. `theme` is accepted and ignored: the OCC maps have one dark style and never swap it.
+// replaces, so its pages need no change. The stands are polygons with their state (PR M4), with a tooltip, the marks of
+// the agent who covers them and the camera brought to a selected stand out of sight; the map opens on the ramp of the
+// reference catalogue (contracts 2.3), with the view selector and the legend at the bottom. `theme` is accepted and
+// ignored: the OCC maps have one dark style and never swap it. Placing a stand (ADR-0027, Decision D-2): `placing` with
+// `onMapClick` gives the clicked point; `placingCode` also draws that stand's box at the pointer and a click gives the
+// point it snapped to (`{ latitude, longitude, snapped }`), `pendingLocation` draws the location waiting for «Guardar
+// ubicación» and `onCancelPlacing` is what Esc on the map does first.
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
-  allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false,
+  allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
+  pendingLocation = null, onCancelPlacing,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -35,6 +40,13 @@ const PositionMap = forwardRef(function PositionMap({
   const fallbackItems = useMemo(() => positions.map(position => ({
     id: String(position.id), label: String(position.id), kind: 'stand',
   })), [positions]);
+  // The stand being placed, with the largest aircraft it takes: a stand the layout does not know gets a box that size.
+  const placingStand = useMemo(() => {
+    const code = placingCode == null ? '' : mapStandCode(placingCode);
+    if (code === '') return null;
+    const position = positions.find(item => mapStandCode(item.id) === code);
+    return { code, sizeHint: position?.maxAircraftSize ?? null };
+  }, [placingCode, positions]);
   const threeD = viewMode === '3d';
 
   useImperativeHandle(ref, () => ({
@@ -60,6 +72,9 @@ const PositionMap = forwardRef(function PositionMap({
       onSelect={selectStand}
       onMapClick={onMapClick}
       placing={placing}
+      placingStand={placingStand}
+      pendingLocation={pendingLocation}
+      onCancelPlacing={onCancelPlacing}
       initialCamera={initialCamera}
       onCameraChange={onCameraChange}
       pitchMode={threeD ? '3d' : '2d'}
