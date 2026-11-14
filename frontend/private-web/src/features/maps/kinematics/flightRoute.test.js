@@ -5,6 +5,7 @@ import { runwayEnd } from '../airport/runwayInUse.js';
 import { demoClock, fitDemoTrajectory } from './demoProfile.js';
 import { alongAt, buildArrivalTrajectory, buildDepartureTrajectory, sampleTrajectory, trajectoryLine } from './estimator.js';
 import { FLIGHT_ROUTE_MARKS, FLIGHT_ROUTE_PARTS, buildFlightRoute } from './flightRoute.js';
+import { TRACK_CONFIG } from './handoff.js';
 import { KINEMATICS_ORIGIN, createKinematicsLayout } from './kinematicsFixtures.js';
 import { ROUTE_LABELS, kinematicsMessages } from './kinematicsMessages.js';
 import { perfFor } from './perfProfiles.js';
@@ -34,8 +35,11 @@ function arrival(stand) {
   });
 }
 
-/** A demo flight triggered at T0 to reach its stand 8 minutes later, as the API's demo block has it. */
-function demoVisit({ offBlockAfterMin = null } = {}) {
+/**
+ * A demo flight triggered at T0 to reach its stand 8 minutes later, as the API's demo block has it: imported onto
+ * `stand` (`null`: imported without one, it waits at an apron hold), waiting there until its off-block is known.
+ */
+function demoVisit({ offBlockAfterMin = null, stand = standOf('S2') } = {}) {
   const onBlock = T0 + 8 * 60_000;
   const offBlock = offBlockAfterMin === null ? null : onBlock + offBlockAfterMin * 60_000;
   const clock = demoClock({
@@ -44,7 +48,7 @@ function demoVisit({ offBlockAfterMin = null } = {}) {
     offBlockAt: iso(offBlock), takeoffAt: iso(offBlock === null ? null : offBlock + 300_000),
     vanishAt: iso(offBlock === null ? null : offBlock + 900_000),
   }, parseInstant);
-  return fitDemoTrajectory({ demo: clock, imported: true, stand: standOf('S2'), counterpart: ORIGIN, destination: ORIGIN, perf: PERF, layout });
+  return fitDemoTrajectory({ demo: clock, imported: true, stand, counterpart: ORIGIN, destination: ORIGIN, perf: PERF, layout });
 }
 
 const partsOf = (route, part) => route.features.filter(feature => feature.properties.part === part);
@@ -65,6 +69,14 @@ const trailOf = (trajectory, tMs, seconds) => seconds.map(offset => {
   const sample = sampleTrajectory(trajectory, tMs + offset * 1000);
   return { at: tMs + offset * 1000, lon: sample.lon, lat: sample.lat, altM: sample.altM, onGround: sample.onGround };
 });
+
+/** Trail points `metres` to the left of where a trajectory has the aircraft at `seconds` from `tMs`: flown alongside it. */
+const besideOf = (trajectory, tMs, seconds, metres) => seconds.map(offset => {
+  const sample = sampleTrajectory(trajectory, tMs + offset * 1000);
+  const [lon, lat] = destinationPoint(at(sample), sample.trackDeg - 90, metres);
+  return { at: tMs + offset * 1000, lon, lat, altM: sample.altM, onGround: sample.onGround };
+});
+const lonLat = point => [point.lon, point.lat];
 
 describe('route of the chosen flight', () => {
   it('the remaining part ends at the stand centre through the taxi route, or at the apron hold labelled position pending', () => {
@@ -207,6 +219,74 @@ describe('route of the chosen flight', () => {
     expect(Math.abs(lengthOf(onPlan) - lengthOf(ahead) - 800)).toBeLessThan(2);
   });
 
+  it('the part estimated since the last observed point follows the plan only when the aircraft is drawn on it', () => {
+    const trajectory = arrival(standOf('S1'));
+    const touchdown = touchdownOf(trajectory);
+    const plan = trajectoryLine(trajectory).coords;
+    const sinceOf = route => route.features.find(feature => feature.properties.id === `${ARRIVAL.flightKey}:flownEstimated:1`) ?? null;
+    // A line from `a` to `b` that never leaves the straight segment between them.
+    const expectStraight = (feature, a, b) => {
+      expect(first(feature)).toEqual(a);
+      expect(last(feature)).toEqual(b);
+      for (const point of coordsOf(feature)) expect(pointToPolylineM(point, [a, b]).distanceM).toBeLessThan(1);
+      expect(Math.abs(lengthOf(feature) - haversineM(a, b))).toBeLessThan(1);
+    };
+    // A line from `a` onto the plan and along it to `b`.
+    const expectAlongPlan = (feature, a, b) => {
+      expect(first(feature)).toEqual(a);
+      expect(haversineM(last(feature), b)).toBeLessThan(0.5);
+      for (const point of coordsOf(feature).slice(1)) expect(pointToPolylineM(point, plan).distanceM).toBeLessThan(1);
+    };
+
+    // A live aircraft on final flying alongside its plan 3 km north of it, within the hand-off's 2 NM (a schedule plan
+    // that is not the way it flies, and live it is never rebuilt): its trail up to its last fix 15 s ago, and where the
+    // map draws it now, carried straight on.
+    const tMs = touchdown - 120_000;
+    expect(3000).toBeLessThan(TRACK_CONFIG.snapAirM);
+    const trail = besideOf(trajectory, tMs, [-75, -65, -55, -45, -35, -25, -15], 3000);
+    const lastFix = lonLat(trail[trail.length - 1]);
+    expect(trail.every(point => point.onGround === false)).toBe(true);
+    expect(pointToPolylineM(lastFix, plan).distanceM).toBeCloseTo(3000, 0);
+    const [live] = besideOf(trajectory, tMs, [0], 3000).map(lonLat);
+    const alongside = buildFlightRoute(ARRIVAL, trajectory, trail, tMs, { aircraft: live, origin: ORIGIN });
+    // Straight from the last fix to the aircraft: never down to the plan, along it and back up.
+    const straight = sinceOf(alongside);
+    expect(straight.properties).toEqual({
+      id: `${ARRIVAL.flightKey}:flownEstimated:1`, flightKey: ARRIVAL.flightKey, part: 'flownEstimated', labelKey: 'flownEstimated',
+    });
+    expectStraight(straight, lastFix, live);
+    expect(first(partsOf(alongside, 'remaining')[0])).toEqual(live);
+
+    // The same trail with the aircraft coasting on its plan (the hand-off re-anchors a fix within 2 NM on it), or where
+    // its plan has it: from the last fix onto the plan and along it to the aircraft.
+    const planned = at(sampleTrajectory(trajectory, tMs));
+    const coasting = sinceOf(buildFlightRoute(ARRIVAL, trajectory, trail, tMs, { aircraft: planned, origin: ORIGIN }));
+    expectAlongPlan(coasting, lastFix, planned);
+    expect(Math.abs(lengthOf(coasting) - (3000 + alongAt(trajectory, tMs) - alongAt(trajectory, tMs - 15_000)))).toBeLessThan(2);
+    const byPlan = sinceOf(buildFlightRoute(ARRIVAL, trajectory, trail, tMs, { origin: ORIGIN }));
+    expectAlongPlan(byPlan, lastFix, planned);
+    expect(Math.abs(lengthOf(byPlan) - lengthOf(coasting))).toBeLessThan(0.01);
+
+    // A last fix 5 km off the plan, beyond 2 NM (the hand-off snaps there), joins the aircraft on its plan straight.
+    expect(5000).toBeGreaterThan(TRACK_CONFIG.snapAirM);
+    const far = besideOf(trajectory, tMs, [-35, -25, -15], 5000);
+    expectStraight(sinceOf(buildFlightRoute(ARRIVAL, trajectory, far, tMs, { aircraft: planned })), lonLat(far[2]), planned);
+
+    // Seen on the ground the limit is 150 m: taxiing along the apron lane, a last fix 120 m beside the plan joins it,
+    // one 200 m beside it goes straight to the aircraft.
+    const taxiing = touchdown + 150_000;
+    const onLane = at(sampleTrajectory(trajectory, taxiing));
+    expect(sampleTrajectory(trajectory, taxiing).phase).toBe('taxiIn');
+    expect([120, 200].map(metres => metres < TRACK_CONFIG.snapGroundM)).toEqual([true, false]);
+    for (const [metres, expectRoute] of [[120, expectAlongPlan], [200, expectStraight]]) {
+      const ground = besideOf(trajectory, touchdown, [120, 130, 140], metres);
+      const fix = lonLat(ground[2]);
+      expect(ground.every(point => point.onGround === true)).toBe(true);
+      expect(pointToPolylineM(fix, plan).distanceM).toBeCloseTo(metres, 0);
+      expectRoute(sinceOf(buildFlightRoute(ARRIVAL, trajectory, ground, taxiing, { aircraft: onLane })), fix, onLane);
+    }
+  });
+
   it("a departure's remaining part runs stand, taxi route, runway, climb and the great circle to the destination", () => {
     const stand = standOf('S2');
     const offBlock = T0 + 3_600_000;
@@ -256,6 +336,44 @@ describe('route of the chosen flight', () => {
     expect(partsOf(outbound, 'flownEstimated')).toEqual([]);
     expect(markOf(outbound, 'stand').properties.standCode).toBe('S2');
     expect(markOf(outbound, 'touchdown')).toBeNull();
+  });
+
+  it('a departure that does not leave yet draws no line to its destination, only the stand it waits at', () => {
+    // An imported demo visit waits at its stand until PUSHBACK (plan «Ajustes» 2): the server has no off-block yet, so
+    // its trajectory holds the arrival and an endless wait at S2, and no leg of the departure.
+    const visit = demoVisit();
+    expect(visit.legs.some(leg => leg.part === 'taxiOut' || leg.part === 'climb')).toBe(false);
+    expect(visit.meta.destination).toEqual(ORIGIN);
+    const stand = standOf('S2');
+    const departureRow = { ...DEMO, direction: 'Departure' };
+    const ids = route => route.features.map(feature => feature.properties.id);
+    const lineStrings = route => route.features.filter(feature => feature.geometry.type === 'LineString');
+    // Approaching, parked and two hours on (with where the map draws it and a destination given): no remaining part,
+    // no great circle from the stand, nothing estimated; only the stand it leaves from, with its code.
+    for (const [tMs, options] of [
+      [T0 + 60_000, {}], [T0 + 20 * 60_000, {}], [T0 + 2 * 3_600_000, { aircraft: stand.center, destination: DESTINATION }],
+    ]) {
+      const route = buildFlightRoute(departureRow, visit, [], tMs, options);
+      expect(lineStrings(route)).toEqual([]);
+      expect(ids(route)).toEqual([`${DEMO.flightKey}:mark:stand`]);
+      expect(markOf(route, 'stand').properties).toEqual({
+        id: `${DEMO.flightKey}:mark:stand`, flightKey: DEMO.flightKey, part: 'mark', mark: 'stand', standCode: 'S2',
+      });
+      expect(haversineM(coordsOf(markOf(route, 'stand')), stand.center)).toBeLessThan(0.5);
+    }
+    // Its observed trail is still drawn, and nothing estimated joins it to the aircraft.
+    const parkedAt = T0 + 20 * 60_000;
+    const seen = [[-20, 30], [-10, 10]].map(([offset, metres]) => {
+      const [lon, lat] = destinationPoint(stand.center, 0, metres);
+      return { at: parkedAt + offset * 1000, lon, lat, altM: null, onGround: true };
+    });
+    const withTrail = buildFlightRoute(departureRow, visit, seen, parkedAt, { aircraft: stand.center });
+    expect(ids(withTrail)).toEqual([`${DEMO.flightKey}:flownObserved:0`, `${DEMO.flightKey}:mark:stand`]);
+    // Waiting at an apron hold (imported without a stand) nothing is marked.
+    expect(buildFlightRoute(departureRow, demoVisit({ stand: null }), [], parkedAt).features).toEqual([]);
+    // The arrival row of the same visit still runs to its stand.
+    const inbound = buildFlightRoute(DEMO, visit, [], T0 + 60_000);
+    expect(haversineM(last(partsOf(inbound, 'remaining')[0]), stand.center)).toBeLessThan(0.5);
   });
 
   it('feature ids are stable between calls', () => {

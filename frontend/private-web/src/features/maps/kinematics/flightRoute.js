@@ -1,13 +1,15 @@
 import { greatCirclePath, haversineM, measurePolyline, nearestOnPolyline, pointAlong, slicePolyline } from '../airport/geo.js';
 import { alongAt, trajectoryLine } from './estimator.js';
+import { TRACK_CONFIG } from './handoff.js';
 
 // The route of the chosen flight on the OCC map (PR M6, design E5), from its trajectory and its trail: the part flown
 // as observed (the ADS-B trail, solid), the part flown as estimated (from the origin airport, or since the signal was
 // lost: faint, «Trayecto estimado») and the part still to fly (dashed): for an arrival the approach, the runway, the
 // exit and the taxi route to its stand, or to the apron hold where it waits for one («Posición por asignar»); for a
-// departure its stand, the taxi route, the runway, the climb and the great circle to its destination. The split
-// follows the aircraft. A trail is never joined across a break. traffic/routeFeatures.js (PR M5) draws the route
-// layers; it takes these parts in place of its straight line to the next point (PR M6, second part).
+// departure its stand, the taxi route, the runway, the climb and the great circle to its destination (nothing while it
+// does not leave yet: only the stand it waits at). The split follows the aircraft. A trail is never joined across a
+// break, and no estimated part takes a detour along a plan the aircraft is not on. traffic/routeFeatures.js (PR M5)
+// draws the route layers; it takes these parts in place of its straight line to the next point (PR M6, second part).
 // `[lng, lat]`, metres, epoch milliseconds. Pure: explicit '.js' imports, no clock, no JSON; the result is frozen.
 
 /** The parts of a flight route, as the route layers filter them (`properties.part`). */
@@ -15,7 +17,8 @@ export const FLIGHT_ROUTE_PARTS = Object.freeze(['flownObserved', 'flownEstimate
 /** The points marked on the part still to fly (`properties.mark`). */
 export const FLIGHT_ROUTE_MARKS = Object.freeze(['touchdown', 'runwayExit', 'stand', 'apronHold']);
 
-// Closer than this two ends are one point; a line shorter than MIN_LINE_M is not drawn.
+// Closer than this two ends are one point (and the aircraft is on its trajectory's line: a plan puts it exactly there);
+// a line shorter than MIN_LINE_M is not drawn.
 const JOIN_M = 1;
 const MIN_LINE_M = 0.5;
 const GREAT_CIRCLE_STEP_M = 10_000;
@@ -55,22 +58,27 @@ function isDeparture(flight, trajectory) {
 /**
  * The stretch of a trajectory's line that is this flight's: an arrival's ends where it parks or waits for a stand
  * (the first leg of part 'parked'), a departure's begins with its first leg of part 'taxiOut' or 'climb' (a demo
- * visit's trajectory holds both). `{ fromM, toM }`, metres along the line.
+ * visit's trajectory holds both). `{ fromM, toM }`, metres along the line; `null` for a departure whose trajectory has
+ * no such leg: it does not leave yet (a demo visit waiting at its stand until its off-block is known).
  */
 function windowOf(trajectory, line, departure) {
   if (departure) {
     const first = trajectory.legs.find(leg => leg.part === 'taxiOut' || leg.part === 'climb');
-    return { fromM: first ? first.alongStartM : line.lengthM, toM: line.lengthM };
+    return first ? { fromM: first.alongStartM, toM: line.lengthM } : null;
   }
   const end = trajectory.legs.find(leg => leg.part === 'parked');
   return { fromM: 0, toM: end ? Math.min(line.lengthM, end.alongStartM) : line.lengthM };
 }
 
-/** Where `point` projects on the line between `fromM` and `toM`, in metres along the whole line. */
-function alongInWindow(line, point, { fromM, toM }) {
-  if (!(toM > fromM)) return fromM;
+/**
+ * Where `point` projects on the line between `fromM` and `toM`: `{ alongM, distanceM }`, `alongM` in metres along the
+ * whole line and `distanceM` how far the point is from that stretch.
+ */
+function projectInWindow(line, point, { fromM, toM }) {
+  if (!(toM > fromM)) return { alongM: fromM, distanceM: haversineM(point, pointAlong(line, fromM).p) };
   const hit = nearestOnPolyline(measurePolyline(slicePolyline(line, fromM, toM)), point);
-  return hit === null ? fromM : clamp(fromM + hit.alongM, fromM, toM);
+  if (hit === null) return { alongM: fromM, distanceM: Infinity };
+  return { alongM: clamp(fromM + hit.alongM, fromM, toM), distanceM: hit.distanceM };
 }
 
 /**
@@ -120,9 +128,10 @@ function markFeature(flightKey, { mark, point, extra }) {
 const epochOf = point => (finite(point.trailEpoch) ? point.trailEpoch : null);
 
 /**
- * The observed parts of a trail (`[{ at, lon, lat, breakBefore?, trailEpoch? }]`, traffic/trailStore.js) in time
- * order, as `[[lng, lat], …]`: a new part at each break mark, at each change of trail epoch (a hand-off snap) and
- * after a gap longer than `breakMs`. `{ parts, first, last }`, the first and last observed points as `[lng, lat]`.
+ * The observed parts of a trail (`[{ at, lon, lat, onGround?, breakBefore?, trailEpoch? }]`, traffic/trailStore.js) in
+ * time order, as `[[lng, lat], …]`: a new part at each break mark, at each change of trail epoch (a hand-off snap) and
+ * after a gap longer than `breakMs`. `{ parts, first, last, lastOnGround }`, the first and last observed points as
+ * `[lng, lat]` and whether the last one was seen on the ground.
  */
 function observedParts(trail, breakMs) {
   const points = (Array.isArray(trail) ? trail : [])
@@ -143,7 +152,8 @@ function observedParts(trail, breakMs) {
   }
   if (part.length > 0) parts.push(part);
   const corner = point => (point ? [point.lon, point.lat] : null);
-  return { parts, first: corner(points[0]), last: corner(points[points.length - 1]) };
+  const lastPoint = points[points.length - 1];
+  return { parts, first: corner(points[0]), last: corner(lastPoint), lastOnGround: lastPoint?.onGround === true };
 }
 
 /**
@@ -184,6 +194,17 @@ function marksOf(trajectory, { fromM }, departure) {
 }
 
 /**
+ * The marks of a departure that does not leave yet: the stand it waits at (its wait of part 'parked' at a stand, with
+ * the stand's code); none while it waits at an apron hold.
+ */
+function waitingMarks(trajectory) {
+  const wait = trajectory.legs.find(leg => leg.part === 'parked');
+  const standCode = trajectory.meta?.standCode ?? null;
+  if (wait?.phase !== 'parked' || !standCode) return [];
+  return [{ mark: 'stand', point: wait.path.coords[0], alongM: wait.alongStartM, extra: { standCode } }];
+}
+
+/**
  * The route of a flight as the route source's data (design E5): a FeatureCollection, frozen.
  * - `flight`: `{ flightKey, direction: 'Arrival' | 'Departure', isDemo }`; `trajectory`: its trajectory (estimator.js
  *   or demoProfile.js; a demo visit's holds the arrival and the departure, and each row draws its own stretch);
@@ -192,11 +213,19 @@ function marksOf(trajectory, { fromM }, departure) {
  *   - 'flownObserved': each part of the trail, split at its breaks; a break is never joined;
  *   - 'flownEstimated' (`labelKey: 'flownEstimated'`): n = 0 from the origin (the trajectory's `meta.originPath`, else
  *     `origin`) along the trajectory to its first observed point, or to the aircraft without a trail; n = 1 from the
- *     last observed point along the trajectory to the aircraft, once it is estimated past its trail;
+ *     last observed point to the aircraft. It follows the trajectory only when the aircraft is on it (a plan puts it
+ *     exactly there) and that point is within the hand-off's snap distance of it (handoff.js TRACK_CONFIG: 150 m when
+ *     it was seen on the ground, 2 NM in the air), as an aircraft estimated from its last fix runs along its plan; and
+ *     then only once the aircraft is past that point. Otherwise it is a straight line: the map carries a fix straight
+ *     on (live or coasting), so it never takes a detour along a plan the aircraft is not on;
  *   - 'remaining': from the aircraft to the end of its stretch: an arrival's stand centre or apron hold; a departure's
  *     climb and then the great circle to `destination` (else the trajectory's `meta.destination`).
  * - Points `{ id: '<flightKey>:mark:<mark>', part: 'mark', mark }` still ahead of the aircraft: 'touchdown',
  *   'runwayExit', 'stand' (`standCode`) and 'apronHold' (`labelKey: 'positionPending'`, `apronHoldId`).
+ * - A departure whose trajectory does not leave yet (no leg of part 'taxiOut' or 'climb': a demo visit imported and
+ *   waiting at its stand until its off-block is known, plan «Ajustes» 2) has no stretch: no estimated or remaining
+ *   part and no great circle, only the stand it waits at is marked ('stand', none at an apron hold). A caller that
+ *   wants its way out drawn passes a departure trajectory.
  * - The aircraft is where the trajectory has it at `tMs` (alongAt), or at `aircraft` (`[lng, lat]`, where the map
  *   draws it: a live or coasting position) projected on its stretch. `breakMs` also breaks the trail where two points
  *   are further apart in time. Without a trajectory only the observed parts are drawn. Ids are stable between calls.
@@ -222,10 +251,18 @@ export function buildFlightRoute(flight, trajectory, trail, tMs, { origin = null
   if (line !== null && line.coords.length > 0) {
     const departure = isDeparture(flight, trajectory);
     const window = windowOf(trajectory, line, departure);
+    if (window === null) {
+      // A departure that does not leave yet: nothing to fly is known, only the stand it waits at.
+      for (const mark of waitingMarks(trajectory)) features.push(markFeature(flightKey, mark));
+      return deepFreeze({ type: 'FeatureCollection', features });
+    }
     const drawnAt = pointOf(aircraft);
-    const split = drawnAt !== null ? alongInWindow(line, drawnAt, window)
+    const drawn = drawnAt !== null ? projectInWindow(line, drawnAt, window) : null;
+    const split = drawn !== null ? drawn.alongM
       : clamp(alongAt(trajectory, finite(tMs) ? tMs : Number.NaN), window.fromM, window.toM);
     const here = drawnAt ?? [...pointAlong(line, split).p];
+    // The aircraft is on its trajectory when it is drawn where the line passes: always where the trajectory has it.
+    const onLine = drawn === null || drawn.distanceM <= JOIN_M;
     const sliceTo = (fromM, toM) => (toM > fromM ? [...slicePolyline(line, fromM, toM)] : []);
 
     // Flown, estimated: from the origin to the first observed point, or to the aircraft.
@@ -233,16 +270,18 @@ export function buildFlightRoute(flight, trajectory, trail, tMs, { origin = null
     const origin0 = pointOf(origin);
     let head = [];
     if (!departure) head = Array.isArray(originPath) && originPath.length >= 2 ? [...originPath] : (origin0 ? [origin0] : []);
-    const until = observed.first !== null ? Math.min(split, alongInWindow(line, observed.first, window)) : split;
+    const until = observed.first !== null ? Math.min(split, projectInWindow(line, observed.first, window).alongM) : split;
     const before = joinPaths(joinPaths(head, sliceTo(window.fromM, until)), [observed.first ?? here]);
     push(lineFeature(flightKey, 'flownEstimated', 0, before, { labelKey: 'flownEstimated' }));
-    // Flown, estimated since the last observed point.
+    // Flown, estimated since the last observed point: along the trajectory when the aircraft is on it and that point is
+    // close enough for the hand-off to put a fix on it; otherwise straight on, as the map carries a fix.
     if (observed.last !== null) {
-      const from = alongInWindow(line, observed.last, window);
-      if (split > from + JOIN_M) {
-        push(lineFeature(flightKey, 'flownEstimated', 1, joinPaths(joinPaths([observed.last], sliceTo(from, split)), [here]),
-          { labelKey: 'flownEstimated' }));
-      }
+      const last = projectInWindow(line, observed.last, window);
+      const snapM = observed.lastOnGround ? TRACK_CONFIG.snapGroundM : TRACK_CONFIG.snapAirM;
+      let since = null;
+      if (!(onLine && last.distanceM <= snapM)) since = joinPaths([observed.last], [here]);
+      else if (split > last.alongM + JOIN_M) since = joinPaths(joinPaths([observed.last], sliceTo(last.alongM, split)), [here]);
+      if (since !== null) push(lineFeature(flightKey, 'flownEstimated', 1, since, { labelKey: 'flownEstimated' }));
     }
     // Still to fly: to the stand or the apron hold, or (a departure) on to its destination.
     let remaining = joinPaths([here], sliceTo(split, window.toM));
