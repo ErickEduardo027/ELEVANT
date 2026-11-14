@@ -92,6 +92,22 @@ describe('map messages', () => {
       .toEqual(['No agent covers it', 'Past its departure time', 'Another aircraft is arriving at this stand', 'Not placed']);
   });
 
+  it('says «Ubicar en el mapa» with its confirmation in the words of design D5, and names the new legend marks', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect(es('placing.prompt', { code: 'A5' })).toBe('Haz clic en el centro de la posición A5.');
+    expect([es('placing.save'), es('placing.cancel')]).toEqual(['Guardar ubicación', 'Cancelar']);
+    expect(es('placing.saving', { code: 'A5' })).toBe('Guardando la ubicación de A5…');
+    expect(es('placing.saved', { code: 'A5' })).toBe('A5 quedó ubicada en el mapa.');
+    expect(es('placing.label', { code: 'A5' })).toBe('Ubicar A5 en el mapa');
+    expect(en('placing.prompt', { code: 'A5' })).toBe('Click the centre of stand A5.');
+    expect([en('placing.save'), en('placing.cancel'), en('placing.saved', { code: 'A5' })])
+      .toEqual(['Save location', 'Cancel', 'A5 is now placed on the map.']);
+    expect(['sameAgent', 'ghost', 'pending'].map(key => es(`legend.${key}`)))
+      .toEqual(['Mismo agente que la posición elegida', 'Posición que estás ubicando', 'Ubicación sin guardar']);
+    expect(es('facts.label')).toBe('Estado en el mapa');
+  });
+
   it('takes the stand states and the tags from the vocabulary instead of copying them', () => {
     // «Libre», «Demo», «No oficial»… are the words of occ-ui/statusVocabulary.js on every screen.
     for (const language of ['es', 'en']) {

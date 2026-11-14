@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { importClosure } from '../../../styles/occSourceScan';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { haversineM } from '../airport/geo';
+import { MAX_TRANSLATION_M } from '../airport/standGeometry';
 import { VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
+import { PLACING_SNAP_M } from '../stands/placing';
 import { buildStandFeatures } from '../stands/standFeatures';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS } from '../testing/mapFixtures';
 import { legendEntries } from '../ui/legendEntries';
 import {
-  BASEMAP_MODES, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant, labStands, readLabQuery,
+  BASEMAP_MODES, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant, labStands,
+  readLabQuery,
 } from './scenes';
 
 // The lab's stands as the map lab shows them: read at the scene's instant (useStandDisplay).
@@ -21,8 +25,8 @@ describe('map lab scenes', () => {
   it('every scene id is unique, names a known view and kind and reads at a fixed instant', () => {
     const ids = SCENES.map(scene => scene.id);
     expect(ids).toEqual([
-      'ramp-states', 'ramp-selected', 'airfield', 'approach', 'region', 'unavailable-fallback', 'basemap-degraded',
-      'layout-qa',
+      'ramp-states', 'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'airfield', 'approach', 'region',
+      'unavailable-fallback', 'basemap-degraded', 'layout-qa',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -40,7 +44,11 @@ describe('map lab scenes', () => {
     // 11:00 in Punta Cana, the frozen clock of the visual suite.
     expect(new Date(SCENE_INSTANT).toISOString()).toBe('2026-11-13T15:00:00.000Z');
     expect(findScene('ramp-selected').selection).toEqual({ kind: 'stand', id: 'A5' });
-    expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual(['ramp-selected']);
+    expect(findScene('ramp-combined-selected').selection).toEqual({ kind: 'stand', id: 'A10' });
+    expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id))
+      .toEqual(['ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost']);
+    // One scene places a stand; every other places nothing.
+    expect(SCENES.filter(scene => scene.placing !== null).map(scene => scene.id)).toEqual(['ramp-placing-ghost']);
     expect(findScene('unavailable-fallback').webgl).toBe(false);
     expect(SCENES.filter(scene => !scene.webgl).map(scene => scene.id)).toEqual(['unavailable-fallback']);
     expect(findScene('basemap-degraded').basemap).toBe('cut');
@@ -111,6 +119,7 @@ describe('map lab scenes', () => {
       selection: null,
       basemap: 'on',
       webgl: true,
+      placing: null,
     });
     expect(Object.isFrozen(review) && Object.isFrozen(review.stands)).toBe(true);
     expect(SCENES.filter(scene => scene.kind !== 'map').map(scene => scene.id)).toEqual(['layout-qa']);
@@ -122,6 +131,31 @@ describe('map lab scenes', () => {
     expect(reached.filter(file => file.startsWith('src/features/maps/lab/'))).toEqual([]);
     // Nor the fixtures the lab builds its board with.
     expect(reached).not.toContain('src/features/maps/testing/mapFixtures.js');
+  });
+
+  it('ramp-combined-selected selects the cancelled stand of the combined pair, and ramp-placing-ghost places a free stand', () => {
+    const stands = shown();
+    // A10 reads «Inhabilitada», cancelled by A9, and its agent covers other stands: the same-agent marks show.
+    const cancelled = byId(stands, findScene('ramp-combined-selected').selection.id);
+    expect(cancelled).toMatchObject({ id: 'A10', displayStatus: 'disabled', coveredBy: [SCENARIO_AGENTS.ana] });
+    expect(cancelled.display.cancelledBy).toBe('A9');
+    expect(stands.filter(stand => stand.id !== 'A10' && (stand.coveredBy ?? []).includes(SCENARIO_AGENTS.ana)).length)
+      .toBeGreaterThan(2);
+
+    // The placing scene: a free stand nobody covers, selected while it is placed, with a pending location south of its
+    // reference point, past the snap and close enough for the layout's box to move rigidly there.
+    const placing = findScene('ramp-placing-ghost');
+    expect(placing.placing).toEqual({ code: PLACING_STAND, sizeHint: null, pending: expect.objectContaining({ snapped: false }) });
+    expect(placing.selection).toEqual({ kind: 'stand', id: PLACING_STAND });
+    expect(byId(stands, PLACING_STAND)).toMatchObject({ displayStatus: 'available', coveredBy: [] });
+    const reference = STAND_REFERENCE.find(stand => stand.code === PLACING_STAND);
+    const { latitude, longitude } = placing.placing.pending;
+    const offset = haversineM([reference.longitude, reference.latitude], [longitude, latitude]);
+    expect(offset).toBeCloseTo(PLACING_OFFSET_M, 0);
+    expect(offset).toBeGreaterThan(PLACING_SNAP_M);
+    expect(offset).toBeLessThan(MAX_TRANSLATION_M);
+    expect(latitude).toBeLessThan(reference.latitude);
+    expect(Object.isFrozen(placing.placing.pending)).toBe(true);
   });
 
   it('each terminal view frames its own stands and a part of the legend of its own', () => {

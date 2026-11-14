@@ -1,26 +1,29 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import PlanningMap from './PlanningMap';
 import { standPoint } from '../../maps/testing/mapFixtures';
 import { loadOccPositions } from '../../../services/occPositionsService';
 
-vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, onSelectPosition }) {
-  return <div data-testid="map">{positions.map(position => <button key={position.id} type="button"
+vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, selectedPositionId, onSelectPosition }) {
+  return <div data-testid="map" data-selected={selectedPositionId ?? ''}>{positions.map(position => <button key={position.id} type="button"
     data-state={position.displayStatus} onClick={() => onSelectPosition(position.id)}>{`pin ${position.id}`}</button>)}</div>;
 } }));
 vi.mock('../../../services/occPositionsService', () => ({ loadOccPositions: vi.fn() }));
 
 const stationId = '20000000-0000-7000-8000-000000000003';
+const PAGE = '/admin-occ/planning?stationId=s-1';
 const parked = { turnaroundId: 't1', operationCode: 'OP-1', airlineName: 'Arajet', aircraftRegistration: null,
   arrivalFlightNumber: 'DM161', departureFlightNumber: 'DM162', arrivalScheduledAt: '2026-11-03T14:00:00Z', arrivedAt: null,
   departureScheduledAt: '2026-11-03T15:00:00Z', assignedFrom: '2026-11-03T13:30:00Z', status: 'Planned' };
 const waiting = { ...parked, turnaroundId: 't2', operationCode: 'OP-2', arrivalFlightNumber: 'DM300' };
 const board = { stationId, stationCode: 'PUJ', operationDate: '2026-11-03', asOf: '2026-11-03T12:00:00Z', canAssign: true,
   positions: [{ standId: 's1', code: 'A01', terminalCode: 'A', standType: 'Contact', status: 'planned', turnarounds: [parked],
-    latitude: standPoint('A1')[1], longitude: standPoint('A1')[0] }],
+    latitude: standPoint('A1')[1], longitude: standPoint('A1')[0], coveredBy: ['Ana Ruiz'] }],
   unassigned: [waiting] };
+const query = () => new URLSearchParams(window.location.search);
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+beforeEach(() => { window.history.replaceState({}, '', PAGE); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); window.history.replaceState({}, '', '/'); });
 
 it('shows the stands with flights and opens a flight in planning', async () => {
   loadOccPositions.mockResolvedValue(board);
@@ -40,6 +43,32 @@ it('shows the stands with flights and opens a flight in planning', async () => {
   expect(onSelectFlight).toHaveBeenCalledWith('t1');
   fireEvent.click(screen.getByRole('button', { name: /DM300/ }));
   expect(onSelectFlight).toHaveBeenLastCalledWith('t2');
+});
+
+it('a stand click writes stand= and shows its flights', async () => {
+  loadOccPositions.mockResolvedValue(board);
+  render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }, { id: 't2' }]} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'pin A1' }));
+  // The selection is the URL's, as on the positions map; the other keys stay.
+  expect(query().get('stand')).toBe('A1');
+  expect(query().get('stationId')).toBe('s-1');
+  expect(screen.getByTestId('map')).toHaveAttribute('data-selected', 'A1');
+  // The panel says what the stand says on the map, then its flights.
+  const facts = screen.getByRole('list', { name: 'Estado en el mapa' });
+  expect(within(facts).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+    'Llegando', 'Cubre Ana Ruiz', 'Ubicada por OCC',
+  ]);
+  expect(screen.getByRole('button', { name: /DM161/ })).toBeInTheDocument();
+  // «Ver todas» clears the selection.
+  fireEvent.click(screen.getByRole('button', { name: 'Ver todas' }));
+  expect(query().has('stand')).toBe(false);
+  expect(screen.getByText('Posiciones con vuelos (1)')).toBeInTheDocument();
+  cleanup();
+
+  // A link with stand= opens on that stand.
+  window.history.replaceState({}, '', `${PAGE}&stand=A01`);
+  render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }]} />);
+  expect(await screen.findByText('Posición A1')).toBeInTheDocument();
 });
 
 it('reports a board error', async () => {

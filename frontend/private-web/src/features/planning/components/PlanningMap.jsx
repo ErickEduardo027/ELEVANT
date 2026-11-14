@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { RAMP_POSITIONS } from '../../dashboard/positionsData';
-import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
+import { mapOccupancyToRampPositions, mapStandCode } from '../../positions-map/positionsMapMappers';
 import { loadOccPositions } from '../../../services/occPositionsService';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { useMapSelection } from '../../maps/core/useMapSelection';
 import { useStandDisplay } from '../../maps/stands/useStandDisplay';
+import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import { planningMessages } from '../planningMessages';
 
 // MapLibre needs the browser: the map loads only on the client.
@@ -24,11 +26,13 @@ function time(value, timeZone) {
  * Planning on the map (ADR-0027): the station's stands with the day's flights, from the same
  * OCC positions board the positions map reads. Selecting a flight opens it in the planning drawer.
  * Stands use the location OCC saved; the rest fall back to the unverified internal reference.
+ * The selected stand lives in the URL (`stand=`, contracts 2.1), as on the positions map.
  */
 export default function PlanningMap({ stationId, date, flights = [], timeZone, onSelectFlight, dataRevision = 0 }) {
   const { t } = useTranslation(planningMessages);
   const [state, setState] = useState({ status: 'loading' });
-  const [selectedId, setSelectedId] = useState(null);
+  const { selection, selectStand, clear } = useMapSelection();
+  const selectedCode = selection?.kind === 'stand' ? selection.id : null;
   const mapRef = useRef(null);
 
   useEffect(() => {
@@ -43,12 +47,14 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
   const plannedIds = useMemo(() => new Set(flights.map(flight => flight.id)), [flights]);
   const positions = useMemo(() => state.board ? mapOccupancyToRampPositions(RAMP_POSITIONS, state.board) : [],
     [state.board]);
-  // The map draws each stand as it reads now; the lists beside it keep the board.
+  // The map draws each stand as it reads now, and the panel says it; the lists beside it keep the board.
   const mapPositions = useStandDisplay(positions);
   const withFlights = positions.filter(position => position.turnarounds.length > 0);
-  const selected = positions.find(position => position.id === selectedId) ?? null;
+  const selected = selectedCode === null ? null
+    : mapPositions.find(position => mapStandCode(position.id) === selectedCode) ?? null;
   const unassigned = (state.board?.unassigned ?? []).filter(item => plannedIds.has(item.turnaroundId));
   const located = positions.filter(position => position.locationSource === 'occ').length;
+  const selectPosition = id => (id == null ? clear() : selectStand(id));
 
   if (state.status === 'loading') return <p role="status" className={`${panelClass} p-5 text-sm`}>{t('map.loading')}</p>;
   if (state.status === 'error') return <p role="alert" className={`${panelClass} p-5 text-sm text-status-danger`}>{state.error.message}</p>;
@@ -66,8 +72,8 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
   return (
     <section aria-label={t('map.label')} className="grid gap-4 lg:grid-cols-[7fr_minmax(16rem,3fr)]">
       <div className={`${panelClass} relative min-h-[460px] overflow-hidden`}>
-        <PositionMap ref={mapRef} positions={mapPositions} selectedPositionId={selectedId} onSelectPosition={setSelectedId}
-          theme="dark" viewMode="2d" />
+        <PositionMap ref={mapRef} positions={mapPositions} selectedPositionId={selected?.id ?? selectedCode}
+          onSelectPosition={selectPosition} theme="dark" viewMode="2d" />
       </div>
       <aside className={`${panelClass} space-y-3 p-4 text-sm`}>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
@@ -75,15 +81,16 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
         {selected ? <div className="space-y-2">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">{t('map.stand', { code: selected.id })}</h3>
-            <button type="button" className="text-xs text-accent-600" onClick={() => setSelectedId(null)}>{t('map.showAll')}</button>
+            <button type="button" className="text-xs text-accent-600" onClick={clear}>{t('map.showAll')}</button>
           </div>
+          <StandDetailFacts position={selected} />
           {selected.turnarounds.length ? <ul>{selected.turnarounds.map(flightButton)}</ul>
             : <p className="text-xs">{t('map.standFree')}</p>}
         </div> : <>
           <h3 className="font-semibold">{t('map.standsWithFlights', { count: withFlights.length })}</h3>
           {withFlights.length ? <ul className="space-y-1">{withFlights.map(position => (
             <li key={position.id}>
-              <button type="button" onClick={() => { setSelectedId(position.id); mapRef.current?.flyToPosition?.(position.id); }}
+              <button type="button" onClick={() => { selectStand(position.id); mapRef.current?.flyToPosition?.(position.id); }}
                 className="w-full rounded-lg px-2 py-1.5 text-left text-xs hover:bg-accent-600/10">
                 <span className="font-mono font-semibold">{position.id}</span>
                 {' · '}{position.turnarounds.map(item => item.arrivalFlightNumber ?? item.operationCode).join(', ')}

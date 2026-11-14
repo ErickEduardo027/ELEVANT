@@ -107,6 +107,66 @@ test.describe('map lab', () => {
     expect(new URL(page.url()).searchParams.get('terminal')).toBe('A');
   });
 
+  test('a stand under the pointer shows its tooltip; selecting it explains the ring of the stands its agent covers', async ({ page }) => {
+    await openLab(page, `scene=ramp-states&view=ramp&terminal=A&t=${NOON}`);
+    await labIdle(page);
+    await foldLegend(page);
+    // A1 is free and Marta covers it: its code and state, and who covers it.
+    const a1 = await page.evaluate(() => window.__occMapLab.project('A1'));
+    const box = await labCanvas(page).boundingBox();
+    await page.mouse.move(box.x + a1.x, box.y + a1.y);
+    const card = page.getByRole('tooltip');
+    await expect(card).toHaveAttribute('data-kind', 'stand');
+    await expect(card).toContainText('A1 · Libre');
+    await expect(card).toContainText('Cubre Marta Castillo');
+    await expect(labCanvas(page)).toHaveCSS('cursor', 'pointer');
+    // A3: arriving, covered by nobody: the reason of its signal with its shape.
+    const a3 = await page.evaluate(() => window.__occMapLab.project('A3'));
+    await page.mouse.move(box.x + a3.x, box.y + a3.y);
+    await expect(card).toContainText('A3 · Llegando');
+    await expect(card.getByRole('img', { name: 'Atención' })).toBeVisible();
+    // Selected, A1's agent's other stands are ringed, and the legend explains the ring.
+    await clickStand(page, 'A1');
+    await expect.poll(() => new URL(page.url()).searchParams.get('stand')).toBe('A1');
+    const toggle = page.getByRole('button', { name: 'Leyenda', exact: true });
+    await toggle.click();
+    await expect(page.getByRole('list', { name: 'Leyenda' }).getByRole('listitem')).toContainText(['Mismo agente que la posición elegida']);
+    // Off the map, no tooltip is left.
+    await page.mouse.move(box.x + box.width / 2, box.y - 20);
+    await expect(card).toHaveCount(0);
+  });
+
+  test('the placing scene: the box snaps to the stand\'s outline within 15 m and a click sets the pending location; Esc stops it', async ({ page }) => {
+    await openLab(page, `scene=ramp-placing-ghost&t=${NOON}`);
+    await labIdle(page);
+    await foldLegend(page);
+    const placing = await page.evaluate(() => window.__occMapLab.placing());
+    expect(placing).toMatchObject({ code: 'B27', pending: { snapped: false } });
+    const centre = LAYOUT.stands.find(item => item.code === 'B27').center;
+    // Up close on B27, where 15 m is many pixels.
+    await page.evaluate(([at]) => window.__occMapLab.jumpTo({ center: at, zoom: 18 }), [centre]);
+    await labIdle(page);
+    await expect(labCanvas(page)).toHaveCSS('cursor', 'crosshair');
+
+    // 8 m north of its centre in the layout: the click puts the stand exactly there.
+    await pointAt(page, [centre[0], centre[1] + 8 / METRES_PER_DEGREE_LAT], { click: true });
+    await expect.poll(() => page.evaluate(() => window.__occMapLab.placing().pending))
+      .toEqual({ latitude: centre[1], longitude: centre[0], snapped: true });
+    // 40 m north: the box follows the pointer, and the click gives that point.
+    const away = [centre[0], centre[1] + 40 / METRES_PER_DEGREE_LAT];
+    await pointAt(page, away, { click: true });
+    await expect.poll(() => page.evaluate(() => window.__occMapLab.placing().pending.snapped)).toBe(false);
+    const pending = await page.evaluate(() => window.__occMapLab.placing().pending);
+    expect(Math.abs(pending.latitude - away[1]) * METRES_PER_DEGREE_LAT).toBeLessThan(1);
+    // Esc stops the placing and keeps B27 selected; the next one clears the selection.
+    await labCanvas(page).focus();
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => window.__occMapLab.placing())).toBeNull();
+    expect(new URL(page.url()).searchParams.get('stand')).toBe('B27');
+    await page.keyboard.press('Escape');
+    await expect.poll(() => new URL(page.url()).searchParams.has('stand')).toBe(false);
+  });
+
   test('the legend lists the states, signals and marks on screen, the chips below the polygons and the airfield items', async ({ page }) => {
     const map = await openLab(page, `scene=ramp-states&t=${NOON}`);
     // What the map draws is read back once it settles: the legend is asserted after that.

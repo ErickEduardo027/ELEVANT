@@ -8,6 +8,7 @@ import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
 import PositionActions from './PositionActions';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import { positionsMapMessages } from '../positionsMapMessages';
 
 function Field({ label, children }) {
@@ -74,6 +75,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <StandDetailFacts position={position} />
           <CombinedPositionBanner position={position} />
 
           {hasFlight ? (

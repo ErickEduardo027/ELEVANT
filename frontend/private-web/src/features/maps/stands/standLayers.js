@@ -12,13 +12,16 @@ import { SELECTION_SOURCE } from '../style/selectionLayers';
 // threshold up to the stand polygons; the polygons, their marks and signals from `polygons` (the airfield fit − 0.3);
 // codes, flights and lead-ins from `codes` (the ramp fit − 0.3; the console's apron shows its codes from `polygons`);
 // the three-line labels from `threeLine` (the ramp fit + 0.8). Hover, selection, related and same-agent marks are
-// feature-state, so a pointer or a selection never rewrites the data. Pure: OccMap adds the overlay and fills the four
-// sources with stands/standFeatures.js.
+// feature-state, so a pointer or a selection never rewrites the data. «Ubicar en el mapa» draws its boxes from a source
+// of its own in the top slot. Pure: OccMap adds the overlay, fills the four stand sources with stands/standFeatures.js
+// and the placing source with stands/placing.js.
 
 export const STAND_SOURCE = 'occ-stands';
 export const STAND_AUX_SOURCE = 'occ-stand-aux';
 export const STAND_LABEL_SOURCE = 'occ-stand-labels';
 export const STAND_GROUP_SOURCE = 'occ-stand-groups';
+/** The source of «Ubicar en el mapa»: the box that follows the pointer and the pending location (stands/placing.js). */
+export const STAND_GHOST_SOURCE = 'occ-stand-ghost';
 /** The source of each collection of buildStandFeatures (stands/standFeatures.js). */
 export const STAND_SOURCES = Object.freeze({
   polygons: STAND_SOURCE, aux: STAND_AUX_SOURCE, labels: STAND_LABEL_SOURCE, groups: STAND_GROUP_SOURCE,
@@ -57,6 +60,16 @@ const SELECTED_LABEL_PADDING = 44;
 
 // The marks the vocabulary's `extra` of a state asks the polygon layers for.
 const AIRCRAFT_EXTRAS = new Set(['footprint-progress', 'clock']);
+
+/**
+ * How «Ubicar en el mapa» draws, in the actionable colour (cyan): the box that follows the pointer is dashed while it
+ * floats and solid once it fits the stand's outline in the layout; the pending location is a solid, wider outline over
+ * a light wash, with a dot at its centre. Widths and dashes in pixels.
+ */
+export const PLACING_PAINT = Object.freeze({
+  ghost: Object.freeze({ width: 2, dash: Object.freeze([4, 3]) }),
+  pending: Object.freeze({ width: 2.5, fillOpacity: 0.2, centreRadius: 3 }),
+});
 
 function dashName(dash) {
   if (dash === null) return 'solid';
@@ -379,17 +392,61 @@ function labelLayers(labels) {
   ];
 }
 
+// The placing layers, in the top slot above everything of the stands and the selection ring, at every zoom: a person
+// may place a stand from the airfield view as well.
+function placingLayers() {
+  const accent = occColor('accent');
+  const { ghost, pending } = PLACING_PAINT;
+  const snapped = ['==', ['get', 'snapped'], true];
+  const layer = (id, type, { filter, layout, paint }) => ({
+    slot: 'selection', id, type, source: STAND_GHOST_SOURCE, filter, ...(layout ? { layout } : {}), paint,
+    metadata: { 'occ:group': STAND_GROUP },
+  });
+  return [
+    layer('occ-stand-ghost-fill', 'fill', {
+      filter: ['==', KIND, 'pending'],
+      paint: { 'fill-color': accent, 'fill-opacity': pending.fillOpacity },
+    }),
+    layer('occ-stand-ghost-pending', 'line', {
+      filter: ['==', KIND, 'pending'],
+      layout: { 'line-join': 'miter' },
+      paint: { 'line-color': accent, 'line-width': pending.width },
+    }),
+    layer('occ-stand-ghost-outline', 'line', {
+      filter: ['all', ['==', KIND, 'ghost'], ['!', snapped]],
+      layout: { 'line-join': 'miter' },
+      paint: { 'line-color': accent, 'line-width': ghost.width, 'line-dasharray': ghost.dash.map(length => length / ghost.width) },
+    }),
+    layer('occ-stand-ghost-snapped', 'line', {
+      filter: ['all', ['==', KIND, 'ghost'], snapped],
+      layout: { 'line-join': 'miter' },
+      paint: { 'line-color': accent, 'line-width': ghost.width },
+    }),
+    layer('occ-stand-ghost-centre', 'circle', {
+      filter: ['==', KIND, 'centre'],
+      paint: {
+        'circle-radius': pending.centreRadius,
+        'circle-color': accent,
+        'circle-stroke-color': occColor('nav'),
+        'circle-stroke-width': 1.5,
+      },
+    }),
+  ];
+}
+
 function assertLabels(labels) {
   if (!STAND_LABEL_MODES.includes(labels)) throw new RangeError(`Unknown stand label mode: ${String(labels)}`);
 }
 
 /**
- * The overlay of the stands for buildOccStyle: the four sources (the polygons `occ-stands`, their lines
- * `occ-stand-aux`, the label points `occ-stand-labels` and the terminal chips `occ-stand-groups`, each keyed by the
- * property buildStandFeatures promotes) and their layers. In the `stands` slot: the fill (the pick target), the hatch,
- * one outline per dash, the lead-ins, the combined links, the narrow-body boxes and the three casings of the feature
- * state. In the `standLabels` slot: the chips, the aircraft, the clock, the labels in two variants, the selected
- * stand's label (from the selection source) and the signals. `labels: 'dashboard'` starts the codes at the polygons.
+ * The overlay of the stands for buildOccStyle: the five sources (the polygons `occ-stands`, their lines
+ * `occ-stand-aux`, the label points `occ-stand-labels`, the terminal chips `occ-stand-groups`, each keyed by the
+ * property buildStandFeatures promotes, and the placing boxes `occ-stand-ghost`) and their layers. In the `stands`
+ * slot: the fill (the pick target), the hatch, one outline per dash, the lead-ins, the combined links, the narrow-body
+ * boxes and the three casings of the feature state. In the `standLabels` slot: the chips, the aircraft, the clock, the
+ * labels in two variants, the selected stand's label (from the selection source) and the signals. In the `selection`
+ * slot: the pending location of «Ubicar en el mapa» and the box that follows the pointer. `labels: 'dashboard'` starts
+ * the codes at the polygons.
  */
 export function standOverlay({ labels = 'default' } = {}) {
   assertLabels(labels);
@@ -399,8 +456,9 @@ export function standOverlay({ labels = 'default' } = {}) {
       [STAND_AUX_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_LABEL_SOURCE]: { type: 'geojson', promoteId: 'code' },
       [STAND_GROUP_SOURCE]: { type: 'geojson', promoteId: 'terminal' },
+      [STAND_GHOST_SOURCE]: { type: 'geojson', promoteId: 'id' },
     },
-    layers: [...polygonLayers(), ...labelLayers(labels)],
+    layers: [...polygonLayers(), ...labelLayers(labels), ...placingLayers()],
   };
 }
 

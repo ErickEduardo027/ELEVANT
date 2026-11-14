@@ -58,17 +58,19 @@ const feature = (id, properties, geometry) => ({ type: 'Feature', id, properties
 const collection = features => ({ type: 'FeatureCollection', features });
 const hasAircraft = state => standPaint(state).glyph === 'aircraft';
 
-// «Llega 14:20 · en 12 min», «Llega 14:20», «Sale 15:05 · en 8 min» or «Sale 15:05», and the covering agents'
-// initials: the departure of an aircraft on the stand, the arrival of one to come, counted down at `now`. Only for a
-// visit of the board.
+// «Llega 14:20 · en 12 min», «Llega 14:20», «Sale 15:05 · en 8 min» or «Sale 15:05» (the departure of an aircraft on
+// the stand, the arrival of one to come, counted down at `now`; only for a visit of the board), then the covering
+// agents' initials, which a stand without a visit shows alone: who covers a stand is a fact of the stand, and the
+// tooltip and the drawer say it in full («Cubre M. Castillo»).
 function timeLine(stand, { t, clock, now }) {
-  if (stand.display.visit == null) return null;
-  const onStand = hasAircraft(stand.state);
-  const at = onStand ? stand.display.departureAt : stand.display.arrivalAt;
-  const minutes = minutesUntil(at, now);
-  const verb = onStand ? 'departs' : 'arrives';
   let time = null;
-  if (Number.isFinite(at)) time = minutes > 0 ? t(`stand.${verb}In`, { time: clock(at), minutes }) : t(`stand.${verb}`, { time: clock(at) });
+  if (stand.display.visit != null) {
+    const onStand = hasAircraft(stand.state);
+    const at = onStand ? stand.display.departureAt : stand.display.arrivalAt;
+    const minutes = minutesUntil(at, now);
+    const verb = onStand ? 'departs' : 'arrives';
+    if (Number.isFinite(at)) time = minutes > 0 ? t(`stand.${verb}In`, { time: clock(at), minutes }) : t(`stand.${verb}`, { time: clock(at) });
+  }
   const line = [time, coverageInitials(stand.position.coveredBy)].filter(Boolean).join(SEPARATOR);
   return line === '' ? null : line;
 }
@@ -282,10 +284,17 @@ export function featuresIn(featureCollection, bounds, { kind } = {}) {
   });
 }
 
-function sameProperties(first = {}, second = {}) {
-  const keys = Object.keys(first ?? {});
-  if (keys.length !== Object.keys(second ?? {}).length) return false;
-  return keys.every(key => Object.hasOwn(second, key) && Object.is(first[key], second[key]));
+// The properties that differ between two features: the keys that went (`removeProperties`) and the keys that came or
+// changed (`addOrUpdateProperties`).
+function propertyChanges(first, second) {
+  const before = first ?? {};
+  const after = second ?? {};
+  return {
+    removeProperties: Object.keys(before).filter(key => !Object.hasOwn(after, key)),
+    addOrUpdateProperties: Object.entries(after)
+      .filter(([key, value]) => !Object.hasOwn(before, key) || !Object.is(before[key], value))
+      .map(([key, value]) => ({ key, value })),
+  };
 }
 
 const sameGeometry = (first, second) => first?.type === second?.type
@@ -293,9 +302,10 @@ const sameGeometry = (first, second) => first?.type === second?.type
 
 /**
  * What changed between two FeatureCollections whose features carry unique ids, as a MapLibre GeoJSONSourceDiff:
- * `{ add, remove, update: [{ id, newGeometry?, removeAllProperties?, addOrUpdateProperties? }] }`, where an update
- * carries the new geometry only when it moved and the whole new properties only when one of them changed; `null` when
- * nothing changed.
+ * `{ add, remove, update: [{ id, newGeometry?, removeProperties?, addOrUpdateProperties? }] }`, where an update
+ * carries the new geometry only when it moved, and only the properties that went or changed; `null` when nothing
+ * changed. Never `removeAllProperties`: MapLibre 6.16 drops the `addOrUpdateProperties` that come with it, and the
+ * feature would lose every property it is drawn by.
  */
 export function diffFeatureCollections(previous, next) {
   const before = new Map((previous?.features ?? []).map(item => [item.id, item]));
@@ -310,14 +320,12 @@ export function diffFeatureCollections(previous, next) {
       continue;
     }
     const moved = !sameGeometry(old.geometry, item.geometry);
-    const changed = !sameProperties(old.properties, item.properties);
-    if (!moved && !changed) continue;
+    const { removeProperties, addOrUpdateProperties } = propertyChanges(old.properties, item.properties);
+    if (!moved && removeProperties.length === 0 && addOrUpdateProperties.length === 0) continue;
     const entry = { id };
     if (moved) entry.newGeometry = item.geometry;
-    if (changed) {
-      entry.removeAllProperties = true;
-      entry.addOrUpdateProperties = Object.entries(item.properties ?? {}).map(([key, value]) => ({ key, value }));
-    }
+    if (removeProperties.length > 0) entry.removeProperties = removeProperties;
+    if (addOrUpdateProperties.length > 0) entry.addOrUpdateProperties = addOrUpdateProperties;
     update.push(entry);
   }
   return add.length === 0 && remove.length === 0 && update.length === 0 ? null : { add, remove, update };

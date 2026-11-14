@@ -355,6 +355,51 @@ describe('MapLegend', () => {
     expect(legendItems()).not.toContain('Pista');
   });
 
+  it('explains the ring of the stands the selected one\'s agent covers and the boxes of a stand being placed', () => {
+    const stands = scenarioStands();
+    const view = render(
+      <OccMap stands={stands} frozenAt={NOW} selection={{ kind: 'stand', id: 'A4' }}>
+        <MapLegend />
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    // A4 is Luis's, who covers A5 and B22 too: their ring is explained, under the stand marks.
+    const SAME_AGENT = 'Mismo agente que la posición elegida';
+    expect(legendItems()).toContain(SAME_AGENT);
+    expect(legendItems().indexOf(SAME_AGENT)).toBeGreaterThan(legendItems().indexOf(COMBINED));
+    expect(legendItems().indexOf(SAME_AGENT)).toBeLessThan(legendItems().indexOf(UNOFFICIAL));
+    const ring = screen.getByTestId('map-legend').querySelector('svg[data-swatch="sameAgent"]');
+    expect([...ring.querySelectorAll('rect')].map(rect => rect.style.stroke)).toEqual(['var(--occ-line-strong)', 'var(--occ-muted)']);
+
+    // Placing A1 with a pending location: the box at true size, solid over a wash, with its centre; the selection's
+    // ring is still explained. Without the pointer over the map there is no box at the pointer to explain.
+    const pending = { latitude: standPoint('A1')[1], longitude: standPoint('A1')[0] };
+    view.rerender(
+      <OccMap stands={stands} frozenAt={NOW} selection={{ kind: 'stand', id: 'A4' }} placingStand={{ code: 'A1', sizeHint: null }}
+        pendingLocation={pending} onMapClick={() => {}}>
+        <MapLegend />
+      </OccMap>,
+    );
+    expect(legendItems()).toEqual(expect.arrayContaining([SAME_AGENT, 'Ubicación sin guardar']));
+    expect(legendItems()).not.toContain('Posición que estás ubicandoA tamaño real; se ajusta al plano a menos de 15 m');
+    const box = screen.getByTestId('map-legend').querySelector('svg[data-swatch="pending"] rect');
+    expect([box.style.stroke, box.style.strokeWidth, box.style.fillOpacity]).toEqual(['var(--occ-accent)', '2.5', '0.2']);
+
+    // In English.
+    cleanup();
+    resetLanguageForTests('en');
+    render(
+      <LanguageScope>
+        <OccMap stands={stands} frozenAt={NOW} selection={{ kind: 'stand', id: 'A4' }}>
+          <MapLegend />
+        </OccMap>
+      </LanguageScope>,
+    );
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(legendItems()).toContain('Same agent as the selected stand');
+  });
+
   it('renders nothing when no stand is on screen', async () => {
     // Nothing to explain: no stands, or none with a place on the map.
     const { rerender } = render(<MapLegend stands={[]} />);

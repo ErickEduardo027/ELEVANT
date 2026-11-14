@@ -15,9 +15,11 @@ import { FONT_STACKS, buildOccStyle } from '../style/occStyle';
 import { SELECTION_SOURCE, selectionOverlay } from '../style/selectionLayers';
 import { createMapStands } from '../testing/mapFixtures';
 import { buildStandFeatures } from './standFeatures';
+import { ghostFeatures, placingGhost } from './placing';
 import {
-  STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES, STAND_FILL_LAYER, STAND_GROUP_SOURCE, STAND_LABEL_MODES,
-  STAND_LABEL_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay, standPaint,
+  PLACING_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES, STAND_FILL_LAYER, STAND_GHOST_SOURCE,
+  STAND_GROUP_SOURCE, STAND_LABEL_MODES, STAND_LABEL_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay,
+  standPaint,
 } from './standLayers';
 import { attachStandGeometry } from './standModel';
 
@@ -93,12 +95,14 @@ describe('standOverlay', () => {
       expect(validateStyleMin(styleWith(labels)), labels).toEqual([]);
       expect(validateStyleMin(buildOccStyle({ overlays: [selectionOverlay(), standOverlay({ labels })] })), labels).toEqual([]);
     }
-    // Four sources, each keyed by the property its collection promotes, and no cluster any more.
+    // Four sources, each keyed by the property its collection promotes, and no cluster any more; and the boxes of
+    // «Ubicar en el mapa».
     expect(standOverlay().sources).toEqual({
       [STAND_SOURCE]: { type: 'geojson', promoteId: 'code' },
       [STAND_AUX_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_LABEL_SOURCE]: { type: 'geojson', promoteId: 'code' },
       [STAND_GROUP_SOURCE]: { type: 'geojson', promoteId: 'terminal' },
+      [STAND_GHOST_SOURCE]: { type: 'geojson', promoteId: 'id' },
     });
     expect(STAND_SOURCES).toEqual({ polygons: STAND_SOURCE, aux: STAND_AUX_SOURCE, labels: STAND_LABEL_SOURCE, groups: STAND_GROUP_SOURCE });
     // The stands slot holds the polygons and their lines; the labels slot the chips, marks, labels and signals.
@@ -243,10 +247,15 @@ describe('standOverlay', () => {
         expect(evaluate(layerOf({ layers }, STAND_FILL_LAYER), 'paint', 'fill-color', { state }), state).toEqual(Color.parse(occColor(fill.token)));
       }
     }
-    // Normal states carry no hue: cyan only in the selection, amber and red only in the signals.
+    // Normal states carry no hue: cyan only in the selection and in what can be acted on (the boxes of a stand being
+    // placed), amber and red only in the signals.
     const hues = new Set(['accent', 'warn', 'danger'].map(occColor));
     const withHue = layers.filter(layer => coloursIn(Object.values(layer.paint ?? {})).some(colour => hues.has(colour))).map(layer => layer.id);
-    expect(withHue).toEqual(['occ-stands-selection', 'occ-stands-related', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal']);
+    expect(withHue).toEqual([
+      'occ-stands-selection', 'occ-stands-related', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
+      'occ-stand-ghost-fill', 'occ-stand-ghost-pending', 'occ-stand-ghost-outline', 'occ-stand-ghost-snapped',
+      'occ-stand-ghost-centre',
+    ]);
     const signal = layerOf({ layers }, 'occ-stand-signal');
     expect(evaluate(signal, 'paint', 'icon-color', { signal: 'attention' })).toEqual(Color.parse(occColor(SIGNALS.attention.colorToken)));
     expect(evaluate(signal, 'paint', 'icon-color', { signal: 'urgent' })).toEqual(Color.parse(occColor(SIGNALS.urgent.colorToken)));
@@ -347,6 +356,49 @@ describe('standOverlay', () => {
       const gap = evaluate(layerOf({ layers }, 'occ-stands-selection'), 'paint', 'line-gap-width', { state }, { type: 2 });
       expect(gap, state).toBe(STAND_STATES[state].outline.width + 1);
     }
+  });
+
+  it('placing layers: the box at the pointer is dashed until it snaps, the pending location solid over a wash, in the top slot at every zoom', () => {
+    const style = styleWith();
+    const ids = style.layers.map(layer => layer.id);
+    expect(ids.slice(ids.indexOf('slot-selection') + 1)).toEqual([
+      'occ-selection-ring', 'occ-stand-ghost-fill', 'occ-stand-ghost-pending', 'occ-stand-ghost-outline',
+      'occ-stand-ghost-snapped', 'occ-stand-ghost-centre',
+    ]);
+    const layers = standLayers().filter(layer => layer.source === STAND_GHOST_SOURCE);
+    // At every zoom: a stand may be placed from the airfield view; no threshold and no fixed zoom.
+    for (const layer of layers) {
+      expect(layer.metadata, layer.id).toEqual({ 'occ:group': 'stands' });
+      expect(layer, layer.id).not.toHaveProperty('minzoom');
+    }
+    // The features of a real ghost and a pending location (a stand of the layout, read from the dataset).
+    const center = MDPC_LAYOUT.stands.find(stand => stand.code === 'B27').center;
+    const away = [center[0] + 0.0004, center[1]];
+    const features = ghostFeatures({
+      ghost: placingGhost({ code: 'B27', pointer: away, layout: MDPC_LAYOUT }),
+      pending: placingGhost({ code: 'B27', pointer: center, layout: MDPC_LAYOUT }),
+    }).features;
+    const drawnBy = id => features.filter(item => passes(layerOf({ layers }, id), item.properties, {
+      type: item.geometry.type === 'Point' ? 1 : 3,
+    })).map(item => item.id);
+    expect(drawnBy('occ-stand-ghost-outline')).toEqual(['ghost']);
+    expect(drawnBy('occ-stand-ghost-snapped')).toEqual([]);
+    expect(drawnBy('occ-stand-ghost-fill')).toEqual(['pending']);
+    expect(drawnBy('occ-stand-ghost-pending')).toEqual(['pending']);
+    expect(drawnBy('occ-stand-ghost-centre')).toEqual(['pending-centre']);
+    // The same box snapped to the stand's outline is drawn solid instead.
+    const snapped = { kind: 'ghost', snapped: true };
+    expect(passes(layerOf({ layers }, 'occ-stand-ghost-snapped'), snapped)).toBe(true);
+    expect(passes(layerOf({ layers }, 'occ-stand-ghost-outline'), snapped)).toBe(false);
+    // Cyan, the colour of what can be acted on; the dash in line widths; the pending outline wider than the ghost's.
+    const { ghost, pending } = PLACING_PAINT;
+    const paintOf = (id, name) => evaluate(layerOf({ layers }, id), 'paint', name, { kind: 'ghost' }, { type: 2 });
+    expect(paintOf('occ-stand-ghost-outline', 'line-color')).toEqual(Color.parse(occColor('accent')));
+    expect(layerOf({ layers }, 'occ-stand-ghost-outline').paint['line-dasharray']).toEqual(ghost.dash.map(length => length / ghost.width));
+    expect([paintOf('occ-stand-ghost-outline', 'line-width'), paintOf('occ-stand-ghost-pending', 'line-width')])
+      .toEqual([ghost.width, pending.width]);
+    expect(layerOf({ layers }, 'occ-stand-ghost-fill').paint['fill-opacity']).toBe(pending.fillOpacity);
+    expect(validateStyleMin(style)).toEqual([]);
   });
 
   it('never imports the dataset (source text guard)', () => {

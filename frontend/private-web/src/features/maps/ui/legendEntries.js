@@ -7,8 +7,11 @@ import { flightsInView } from '../traffic/flightLayers';
 
 /** The signals a stand can carry on the map, in the order of the vocabulary (SIGNALS): attention, then urgent. */
 export const STAND_SIGNAL_KEYS = Object.freeze(['attention', 'urgent']);
-/** The marks of the stands the legend explains: the link of a cancelled stand and the narrow-body box. */
-export const STAND_MARKS = Object.freeze(['combined', 'narrowbody']);
+/**
+ * The marks of the stands the legend explains: the link of a cancelled stand, the narrow-body box, the stands covered
+ * by the same agent as the selected one, and while a stand is placed, its box at the pointer and the pending location.
+ */
+export const STAND_MARKS = Object.freeze(['combined', 'narrowbody', 'sameAgent', 'ghost', 'pending']);
 
 // A stand that is drawn: its polygon (or, outside a map, its location) inside `bounds`; without bounds, every drawn
 // stand. A retired stand is never drawn.
@@ -34,7 +37,8 @@ const listed = (value, order) => {
  * - `chips`: whether a terminal chip is drawn (`chips`, the terminals OccMap draws a chip for on screen);
  * - `signals`: the signals the drawn stands carry (`attention`, `urgent`), in the vocabulary's order;
  * - `tags`: «No oficial» when a drawn stand is not placed by OCC (it sits at an internal reference location);
- * - `marks`: the stand marks drawn on screen (`combined`, `narrowbody`, as OccMap reads them), in that order;
+ * - `marks`: the stand marks drawn on screen (`combined`, `narrowbody`, `sameAgent`, `ghost`, `pending`, as OccMap
+ *   reads them), in that order;
  * - `airfield`: the airfield items drawn on screen (`runway`, `taxiway`, `holdBar`, `apron`, `terminal`), in that order.
  * Stands and flights count inside `bounds` when given. Pure.
  */

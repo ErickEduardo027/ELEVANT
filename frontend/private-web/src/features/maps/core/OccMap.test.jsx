@@ -10,13 +10,15 @@ import { readSource } from '../../../styles/occSourceScan';
 import { occColor } from '../../occ-ui/occPalette';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { destinationPoint } from '../airport/geo';
 import { AIRFIELD_LAYER_IDS } from '../style/airfieldLayers';
 import { referenceFeatures } from '../style/referenceLayers';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
+import { ghostFeatures, placingGhost } from '../stands/placing';
 import { buildStandFeatures, diffStandFeatures } from '../stands/standFeatures';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
-import { createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
+import { SCENARIO_AGENTS, createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import MapLegend from '../ui/MapLegend';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
 import { boundsCenter, presetTargets } from './cameraPresets';
@@ -590,7 +592,12 @@ describe('OccMap', () => {
     // The casing is the polygon's feature state, cyan; the selected label is cyan too; a ring is for anything else.
     expect(map.featureStateOf('occ-stands', 'A5')).toEqual({ selected: true });
     const ids = map.layerIds();
-    expect(ids.slice(ids.indexOf('slot-selection') + 1)).toEqual(['occ-selection-ring']);
+    // The top slot: the ring, then the boxes of «Ubicar en el mapa» (empty until a stand is placed).
+    expect(ids.slice(ids.indexOf('slot-selection') + 1)).toEqual([
+      'occ-selection-ring', 'occ-stand-ghost-fill', 'occ-stand-ghost-pending', 'occ-stand-ghost-outline',
+      'occ-stand-ghost-snapped', 'occ-stand-ghost-centre',
+    ]);
+    expect(map.getSource('occ-stand-ghost').data.features).toEqual([]);
     expect(map.getLayer('occ-stands-selection').paint['line-color']).toBe(occColor('accent'));
     expect(map.getLayer('occ-stand-label-selected').paint['text-color']).toBe(occColor('accent'));
     expect(map.getLayer('occ-selection-ring').paint['circle-stroke-color']).toBe(occColor('accent'));
@@ -830,11 +837,27 @@ describe('OccMap', () => {
     const [polygonDiff] = polygons.updateDataCalls;
     expect(polygonDiff).toEqual({
       add: [], remove: [],
-      update: [{ id: 'A2', removeAllProperties: true, addOrUpdateProperties: expect.arrayContaining([{ key: 'state', value: 'releasing' }]) }],
+      update: [{ id: 'A2', addOrUpdateProperties: [{ key: 'state', value: 'releasing' }] }],
     });
+    // Applied as MapLibre 6.16 applies it, the stand keeps every property it is drawn by.
+    expect(polygons.data.features.find(feature => feature.id === 'A2').properties)
+      .toEqual({ code: 'A2', terminal: 'A', state: 'releasing', unofficial: false });
     expect(labels.updateDataCalls.map(diff => diff.update.map(item => item.id))).toEqual([['A2']]);
     expect(map.getSource('occ-stand-aux').updateDataCalls.map(diff => diff.update.map(item => item.id))).toEqual([['leadIn:A2']]);
     expect(groups.updateDataCalls.map(diff => diff.update.map(item => item.id))).toEqual([['A']]);
+    // OCC places A5 30 m east («Ubicar en el mapa»): its box moves rigidly and keeps everything it is drawn by, and its
+    // label moves with it with its texts.
+    const [placedLng, placedLat] = destinationPoint(standPoint('A5'), 90, 30);
+    const placed = createMapStands({ A2: { status: 'releasing' }, A5: { latitude: placedLat, longitude: placedLng, locationSource: 'occ' } });
+    rerender({ overlays: [EXTRA_OVERLAY], stands: placed });
+    const a5 = attachStandGeometry(placed, MDPC_LAYOUT).find(stand => stand.id === 'A5');
+    expect(polygons.data.features.find(feature => feature.id === 'A5')).toEqual({
+      type: 'Feature', id: 'A5', properties: { code: 'A5', terminal: 'A', state: 'available', unofficial: false },
+      geometry: { type: 'Polygon', coordinates: [a5.geometry.polygon] },
+    });
+    expect(labels.data.features.find(feature => feature.id === 'A5')).toMatchObject({
+      properties: { code: 'A5', label1: 'A5' }, geometry: { coordinates: a5.geometry.center },
+    });
     expect(fake.state.maps).toEqual([map]);
     cleanup();
 
@@ -1180,6 +1203,209 @@ describe('OccMap', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent('Runway 08/26 · 3100 m × 45 m');
   });
 
+  it('hover shows the stand tooltip and sets hover and sameAgent feature-state, never setData', () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const stands = scenarioStands();
+    const { map, rerender } = renderMap({ stands, frozenAt: NOW });
+    loadStyle(map);
+    const sourceIds = ['occ-stands', 'occ-stand-aux', 'occ-stand-labels', 'occ-stand-groups', 'occ-stand-ghost', 'occ-selection'];
+    const writes = () => sourceIds.map(id => map.getSource(id).setDataCalls.length + map.getSource(id).updateDataCalls.length);
+    const before = writes();
+    const card = () => screen.queryByRole('tooltip');
+    const stateOf = code => map.featureStateOf('occ-stands', code) ?? {};
+    const pick = code => ({ id: code, layer: { id: 'occ-stands-fill' }, properties: { code } });
+    let under = [];
+    fake.state.setRenderedFeatures(map, (_geometry, options) => under.filter(feature => options.layers.includes(feature.layer.id)));
+    const hover = (features, originalEvent) => {
+      under = features;
+      act(() => {
+        fake.state.emit(map, 'mousemove', { point: { x: 500, y: 400 }, lngLat: { lng: -68.36, lat: 18.564 }, originalEvent });
+        frames.shift()?.(0);
+      });
+    };
+
+    // A1: Marta covers it and A2 and A6 too. The card says its code, state and agent; the marks are feature-state.
+    hover([pick('A1')]);
+    expect(card()).toHaveAttribute('data-kind', 'stand');
+    expect(card()).toHaveTextContent('A1 · Libre');
+    expect(card()).toHaveTextContent('Cubre Marta Castillo');
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    // Under or over A1's box, never on the stand or its label: A1 is the stand furthest east, so the card starts at the
+    // box's east side and runs west, towards the middle of the map.
+    const pixels = attachStandGeometry(stands, MDPC_LAYOUT).find(stand => stand.id === 'A1').geometry.polygon
+      .map(point => map.project(point));
+    const ys = pixels.map(point => point.y);
+    expect(card().style.left).toBe(`${Math.max(...pixels.map(point => point.x))}px`);
+    expect([`${Math.min(...ys)}px`, `${Math.max(...ys)}px`]).toContain(card().style.top);
+    expect(card().style.transform).toMatch(/^translate\(calc\(-100% - 12px\), /);
+    expect(stateOf('A1')).toEqual({ hover: true });
+    expect([stateOf('A2'), stateOf('A6')]).toEqual([{ sameAgent: true }, { sameAgent: true }]);
+    // The selection casing shows lighter under the pointer: the same layer reads the hover.
+    expect(map.getLayer('occ-stands-selection').paint['line-opacity']).toEqual(expect.arrayContaining([['boolean', ['feature-state', 'hover'], false]]));
+    // Up close, where A1's box fills more than half the map, the card goes back to the pointer.
+    const ramp = map.getCenter().toArray();
+    const rampZoom = map.getZoom();
+    hover([]);
+    act(() => map.jumpTo({ center: standPoint('A1'), zoom: 19.5 }));
+    hover([pick('A1')]);
+    expect(card()).toHaveStyle({ left: '500px', top: '400px' });
+    hover([]);
+    act(() => map.jumpTo({ center: ramp, zoom: rampZoom }));
+    hover([pick('A1')]);
+
+    // A3: arriving and covered by nobody: its signal in the card; Marta's marks go.
+    hover([pick('A3')]);
+    expect(card()).toHaveTextContent('A3 · Llegando');
+    expect(within(card()).getByRole('img', { name: 'Atención' })).toBeInTheDocument();
+    expect(card()).toHaveTextContent('Sin agente que la cubra');
+    expect([stateOf('A1'), stateOf('A2'), stateOf('A6'), stateOf('A3')]).toEqual([{}, {}, {}, { hover: true }]);
+    // A drag shows no card and marks nothing; leaving the map clears everything.
+    hover([pick('A1')], new MouseEvent('mousemove', { buttons: 1 }));
+    expect(card()).toBeNull();
+    expect(stateOf('A1')).toEqual({});
+    hover([pick('A1')]);
+    act(() => {
+      fake.state.emit(map, 'mouseout');
+      frames.shift()?.(0);
+    });
+    expect(card()).toBeNull();
+    expect([stateOf('A1'), stateOf('A2'), stateOf('A6')]).toEqual([{}, {}, {}]);
+    // Never a write to a source: the pointer only changes feature-state.
+    expect(writes()).toEqual(before);
+
+    // With A4 selected (Luis covers A4, A5 and B22), the pointer over A1 shows Marta's stands and leaving gives the
+    // marks back to the selection, which the legend explains.
+    rerender({ stands, frozenAt: NOW, selection: { kind: 'stand', id: 'A4' } });
+    expect([stateOf('A4'), stateOf('A5'), stateOf('B22')]).toEqual([{ selected: true }, { sameAgent: true }, { sameAgent: true }]);
+    expect(probe().marks).toContain('sameAgent');
+    hover([pick('A1')]);
+    expect([stateOf('A5'), stateOf('A2'), stateOf('A6')]).toEqual([{}, { sameAgent: true }, { sameAgent: true }]);
+    hover([]);
+    expect([stateOf('A5'), stateOf('B22'), stateOf('A2')]).toEqual([{ sameAgent: true }, { sameAgent: true }, {}]);
+    // A refresh with new coverage moves the marks: B22 is no longer Luis's.
+    rerender({
+      stands: stands.map(stand => (stand.id === 'B22' ? { ...stand, coveredBy: [SCENARIO_AGENTS.ana] } : stand)),
+      frozenAt: NOW, selection: { kind: 'stand', id: 'A4' },
+    });
+    expect([stateOf('A5'), stateOf('B22')]).toEqual([{ sameAgent: true }, {}]);
+    rerender({ stands, frozenAt: NOW, selection: null });
+    expect(probe().marks).not.toContain('sameAgent');
+    expect([stateOf('A4'), stateOf('A5')]).toEqual([{}, {}]);
+  });
+
+  it('selecting a visible stand does not move the camera; one outside the safe area eases to it', () => {
+    // A stand selected when the map starts is framed by the view: no move of its own.
+    window.history.replaceState({}, '', PAGE);
+    const { map, rerender, ref } = renderMap({ selection: { kind: 'stand', id: 'B21' } });
+    loadStyle(map);
+    const moves = () => map.cameraCalls.filter(call => call.method !== 'setPadding' && call.method !== 'jumpTo');
+    expect(moves()).toEqual([]);
+    // In the ramp view every stand is in sight: selecting one moves nothing.
+    rerender({ selection: { kind: 'stand', id: 'A1' } });
+    rerender({ selection: { kind: 'stand', id: 'BN13' } });
+    expect(moves()).toEqual([]);
+
+    // Up close on A2: A3 is in sight, B21 is not.
+    act(() => map.jumpTo({ center: standPoint('A2'), zoom: 18 }));
+    rerender({ selection: { kind: 'stand', id: 'A3' } });
+    expect(moves()).toEqual([]);
+    rerender({ selection: { kind: 'stand', id: 'B21' } });
+    const b21 = DRAWN.find(stand => stand.id === 'B21').geometry.center;
+    // It eases, keeping the zoom, inside the insets.
+    expect(moves()).toEqual([{
+      method: 'easeTo',
+      options: { center: b21, zoom: 18, padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: 600, essential: false },
+    }]);
+    expect(map.getZoom()).toBe(18);
+    // The same selection again, or a re-read of the stands, moves nothing more.
+    rerender({ selection: { kind: 'stand', id: 'B21' } });
+    rerender({ selection: { kind: 'stand', id: 'B21' }, stands: createMapStands() });
+    expect(moves()).toHaveLength(1);
+
+    // A stand the page flies to itself (the search): the selection that follows adds no move of its own.
+    act(() => ref.current.flyToStand('BN9'));
+    rerender({ selection: { kind: 'stand', id: 'BN9' } });
+    expect(moves()).toHaveLength(2);
+    expect(moves()[1].options.center).toEqual(DRAWN.find(stand => stand.id === 'BN9').geometry.center);
+    // A stand the map does not draw, or a flight, moves nothing.
+    act(() => map.jumpTo({ center: standPoint('A2'), zoom: 18 }));
+    rerender({ selection: { kind: 'stand', id: 'Z9' } });
+    rerender({ selection: { kind: 'flight', id: 'leg-1' } });
+    expect(moves()).toHaveLength(2);
+  });
+
+  it('while placing, the pointer moves the ghost once per frame and the click reports the snapped point', async () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const onMapClick = vi.fn();
+    const onSelect = vi.fn();
+    const placingStand = { code: 'A5', sizeHint: null };
+    const { map, rerender } = renderMap({ placingStand, onMapClick, onSelect, children: <MapLegend /> });
+    loadStyle(map);
+    const ghostSource = map.getSource('occ-stand-ghost');
+    const a5 = MDPC_LAYOUT.stands.find(stand => stand.code === 'A5');
+    fake.state.setRenderedFeatures(map, () => [{ id: 'A5', layer: { id: 'occ-stands-fill' }, properties: { code: 'A5' } }]);
+    const lngLatOfPoint = point => ({ lng: point[0], lat: point[1] });
+    expect(map.getCanvas().style.cursor).toBe('crosshair');
+
+    // Three moves in one frame: one setData of the ghost source, with the box at the last pointer.
+    const points = [10, 20, 40].map(metres => destinationPoint(a5.center, 90, metres));
+    act(() => {
+      for (const point of points) fake.state.emit(map, 'mousemove', { point: { x: 400, y: 300 }, lngLat: lngLatOfPoint(point) });
+    });
+    expect(frames).toHaveLength(1);
+    expect(ghostSource.setDataCalls).toHaveLength(0);
+    act(() => frames.shift()(0));
+    expect(ghostSource.setDataCalls).toHaveLength(1);
+    const last = placingGhost({ code: 'A5', pointer: points[2], layout: MDPC_LAYOUT });
+    expect(ghostSource.data.features).toEqual(ghostFeatures({ ghost: last }).features);
+    expect(ghostSource.data.features[0].properties).toMatchObject({ kind: 'ghost', snapped: false });
+    // No tooltip and no hover mark while placing; the legend explains the box.
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(map.featureStateOf('occ-stands', 'A5') ?? {}).toEqual({});
+    expect(probe().marks).toContain('ghost');
+    // The same pointer again writes nothing; near the centre the box snaps to the layout's outline.
+    act(() => {
+      fake.state.emit(map, 'mousemove', { point: { x: 400, y: 300 }, lngLat: lngLatOfPoint(points[2]) });
+      frames.shift()(16);
+    });
+    expect(ghostSource.setDataCalls).toHaveLength(1);
+    act(() => {
+      fake.state.emit(map, 'mousemove', { point: { x: 400, y: 300 }, lngLat: lngLatOfPoint(points[0]) });
+      frames.shift()(32);
+    });
+    expect(ghostSource.data.features[0]).toMatchObject({ properties: { kind: 'ghost', snapped: true }, geometry: { coordinates: [a5.polygon] } });
+
+    // The click gives the layout's centre when the box snapped, the pointer otherwise, and selects nothing.
+    const click = point => act(async () => fake.state.emit(map, 'click', { point: { x: 400, y: 300 }, lngLat: lngLatOfPoint(point) }));
+    await click(points[0]);
+    expect(onMapClick).toHaveBeenLastCalledWith({ latitude: a5.center[1], longitude: a5.center[0], snapped: true });
+    await click(points[2]);
+    expect(onMapClick).toHaveBeenLastCalledWith({ latitude: points[2][1], longitude: points[2][0], snapped: false });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // The pending location the page keeps: its box and its centre, with the ghost.
+    rerender({ placingStand, onMapClick, onSelect, children: <MapLegend />, pendingLocation: { latitude: points[2][1], longitude: points[2][0] } });
+    expect(ghostSource.data.features.map(feature => feature.id)).toEqual(['pending', 'pending-centre', 'ghost']);
+    expect(probe().marks).toEqual(expect.arrayContaining(['ghost', 'pending']));
+    // The pointer leaving the map takes the ghost away and keeps the pending box.
+    act(() => {
+      fake.state.emit(map, 'mouseout');
+      frames.shift()(48);
+    });
+    expect(ghostSource.data.features.map(feature => feature.id)).toEqual(['pending', 'pending-centre']);
+    expect(probe().marks).not.toContain('ghost');
+    // The placing ends: nothing left in the source, the cursor and the clicks are the map's again.
+    rerender({ onMapClick, onSelect, children: <MapLegend /> });
+    expect(ghostSource.data.features).toEqual([]);
+    expect(map.getCanvas().style.cursor).toBe('');
+    expect(probe().marks).not.toContain('pending');
+    await click(points[2]);
+    expect(onMapClick).toHaveBeenCalledTimes(2);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'A5' });
+  });
+
   it('imports occ-map.css and uses only occ-* classes (no opacity modifier)', () => {
     const component = readSource('src/features/maps/core/OccMap.jsx');
     expect(component).toMatch(/^import 'maplibre-gl\/dist\/maplibre-gl\.css';$/m);
@@ -1187,7 +1413,7 @@ describe('OccMap', () => {
     const files = [
       'src/features/maps/core/OccMap.jsx', 'src/features/maps/core/MapUnavailable.jsx',
       'src/features/maps/ui/MapLegend.jsx', 'src/features/maps/ui/MapPresetSwitcher.jsx', 'src/features/maps/ui/MapDock.jsx',
-      'src/features/maps/ui/MapTooltip.jsx',
+      'src/features/maps/ui/MapTooltip.jsx', 'src/features/maps/ui/StandDetailFacts.jsx',
       'src/features/positions-map/components/PositionMap.jsx', 'src/features/flight-monitoring/components/FlightMap.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));

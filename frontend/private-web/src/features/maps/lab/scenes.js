@@ -1,4 +1,5 @@
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
+import { destinationPoint, roundCoord } from '../airport/geo';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 
@@ -7,7 +8,7 @@ import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures'
 // without a session, the API or the network; the layout review shows the generated MDPC dataset itself. Pure data.
 // Later PRs add their scenes here (traffic, the demo flight, 3D).
 //
-// A scene is `{ id, kind, title, description, view, stands, at, selection, basemap, webgl }`:
+// A scene is `{ id, kind, title, description, view, stands, at, selection, basemap, webgl, placing }`:
 // - `kind`: `map`, the OCC map with the scene's stands (MapLab.jsx), or `layout-qa`, the review screen of the MDPC
 //   airport layout (LayoutQaScene.jsx), which draws the layout itself and has no stands of its own;
 // - `view`: the view the map opens on when the URL names none (region · approach · airfield · ramp);
@@ -17,7 +18,10 @@ import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures'
 // - `selection`: `{ kind, id }`, written to the URL when the scene opens and the URL selects nothing, or `null`;
 // - `basemap`: `on` (the vector tiles of OpenFreeMap), `none` (the style without them, as `?basemap=none`) or `cut`
 //   (the style with them, but the lab makes every base-map request fail, so the map shows its degraded notice);
-// - `webgl`: `false` makes the browser refuse WebGL while the scene is open, so the map shows its fallback list.
+// - `webgl`: `false` makes the browser refuse WebGL while the scene is open, so the map shows its fallback list;
+// - `placing`: `{ code, sizeHint, pending }`, a stand being placed («Ubicar en el mapa»): its box follows the pointer,
+//   `pending` (`{ latitude, longitude, snapped }` or `null`) is the location waiting to be saved and a click moves it;
+//   `null` for none.
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
 export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
@@ -122,10 +126,25 @@ export function labStands() {
 const STANDS = deepFreeze(labStands());
 const NO_STANDS = Object.freeze([]);
 
-function scene(id, { kind = 'map', title, description, view, selection = null, basemap = 'on', webgl = true }) {
+/** The stand the placing scene places: free, at its reference point, with nobody covering it. */
+export const PLACING_STAND = 'B27';
+/** How far south of its reference point the placing scene's pending location sits: past the snap, inside a box. */
+export const PLACING_OFFSET_M = 35;
+
+// The pending location of the placing scene, from the stand's point in the internal reference catalogue.
+function placingScene() {
+  const reference = STAND_REFERENCE.find(stand => stand.code === PLACING_STAND);
+  const [longitude, latitude] = roundCoord(destinationPoint([reference.longitude, reference.latitude], 180, PLACING_OFFSET_M));
+  return { code: PLACING_STAND, sizeHint: null, pending: { latitude, longitude, snapped: false } };
+}
+
+function scene(id, {
+  kind = 'map', title, description, view, selection = null, basemap = 'on', webgl = true, placing = null,
+}) {
   const map = kind === 'map';
   return {
     id, kind, title, description, view, stands: map ? STANDS : NO_STANDS, at: map ? SCENE_INSTANT : null, selection, basemap, webgl,
+    placing,
   };
 }
 
@@ -141,6 +160,21 @@ export const SCENES = deepFreeze([
     description: 'La A5 elegida, con su borde cian y su rótulo por delante de los demás.',
     view: 'ramp',
     selection: { kind: 'stand', id: 'A5' },
+  }),
+  scene('ramp-combined-selected', {
+    title: 'Rampa: pareja combinada elegida',
+    description: 'La A10, anulada por la combinada A9, elegida: su borde cian, el enlace a la A9, «Anulada por A9» y las '
+      + 'posiciones que cubre el mismo agente.',
+    view: 'ramp',
+    selection: { kind: 'stand', id: 'A10' },
+  }),
+  scene('ramp-placing-ghost', {
+    title: 'Rampa: ubicar una posición',
+    description: `La ${PLACING_STAND} se está ubicando: su caja a tamaño real sigue al puntero y la ubicación pendiente `
+      + `queda ${PLACING_OFFSET_M} m al sur, a la espera de «Guardar ubicación».`,
+    view: 'ramp',
+    selection: { kind: 'stand', id: PLACING_STAND },
+    placing: placingScene(),
   }),
   scene('airfield', {
     title: 'Aeródromo',

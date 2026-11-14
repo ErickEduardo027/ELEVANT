@@ -92,7 +92,7 @@ describe('buildStandFeatures', () => {
     const heading = code => positions.find(item => item.id === code).geometry.headingTrue;
     expect(label('A1')).toEqual({
       code: 'A1', state: 'available', signal: null, glyph: null, clock: false, heading: heading('A1'), sortKey: 4,
-      label1: 'A1', label2: 'A1', label3: 'A1',
+      label1: 'A1', label2: 'A1', label3: 'A1\nMC',
     });
     expect(label('A2')).toMatchObject({
       label1: 'A2', label2: 'A2\nDM201', label3: 'A2\nDM201\nLlega 15:37 · en 90 min · MC', sortKey: 3,
@@ -108,9 +108,11 @@ describe('buildStandFeatures', () => {
     expect(label('A5')).toMatchObject({ label3: 'A5\nDM210\nSale 14:17 · en 10 min · LP', glyph: 'aircraft', clock: true });
     // The demo flight carries «Demo» and, from the map flights, its aircraft type.
     expect(label('A6')).toMatchObject({ label2: 'A6\nZZ9001 · Demo', label3: 'A6\nZZ9001 · B38M · Demo\nLlega 14:10 · en 3 min · MC' });
-    expect(label('A10')).toMatchObject({ label2: 'A10\nAnulada por A9', label3: 'A10\nAnulada por A9', sortKey: 1 });
+    expect(label('A10')).toMatchObject({ label2: 'A10\nAnulada por A9', label3: 'A10\nAR\nAnulada por A9', sortKey: 1 });
     expect(label('B21').label3).toBe('B21\nDM214\nSale 14:02 · AR\nPasó su hora de salida');
-    expect(label('B22')).toMatchObject({ label2: 'B22', label3: 'B22\nSolo fuselaje estrecho' });
+    // Who covers a stand is on its third line with or without a flight; a stand nobody covers says nothing of it.
+    expect(label('B22')).toMatchObject({ label2: 'B22', label3: 'B22\nLP\nSolo fuselaje estrecho' });
+    expect(label('BN6').label3).toBe('BN6\nSolo fuselaje estrecho');
     expect(label('A7')).toMatchObject({ label1: 'A7', label2: 'A7', label3: 'A7', sortKey: 5 });
     for (const point of features.labels.features) {
       expect(point.geometry).toEqual({ type: 'Point', coordinates: [...positions.find(item => item.id === point.id).geometry.center] });
@@ -215,21 +217,27 @@ describe('buildStandFeatures', () => {
       : stand)));
     const diff = diffStandFeatures(before, planned);
     expect(diff.groups).toBeNull();
-    expect(diff.polygons).toEqual({
-      add: [],
-      remove: [],
-      update: [{ id: 'A1', removeAllProperties: true, addOrUpdateProperties: expect.arrayContaining([{ key: 'state', value: 'planned' }]) }],
-    });
-    expect(diff.polygons.update[0].addOrUpdateProperties).toHaveLength(Object.keys(propertiesOf(planned.polygons, 'A1')).length);
+    // Only the property that changed: MapLibre 6.16 drops the properties that come with removeAllProperties.
+    expect(diff.polygons).toEqual({ add: [], remove: [], update: [{ id: 'A1', addOrUpdateProperties: [{ key: 'state', value: 'planned' }] }] });
     expect(diff.aux.update.map(item => item.id)).toEqual(['leadIn:A1']);
     expect(diff.labels.update.map(item => item.id)).toEqual(['A1']);
+    expect(diff.labels.update[0].addOrUpdateProperties.map(item => item.key)).toEqual(expect.arrayContaining(['state', 'label2', 'label3']));
+    expect(diff.labels.update[0].addOrUpdateProperties.map(item => item.key)).not.toContain('code');
+    for (const update of Object.values(diff).filter(Boolean).flatMap(collection => collection.update)) {
+      expect(update, update.id).not.toHaveProperty('removeAllProperties');
+    }
+    // A property that goes is named in removeProperties.
+    const withExtra = { ...before.polygons, features: before.polygons.features.map(item => (item.id === 'A1'
+      ? { ...item, properties: { ...item.properties, extra: true } } : item)) };
+    expect(diffFeatureCollections(withExtra, before.polygons).update).toEqual([{ id: 'A1', removeProperties: ['extra'] }]);
 
     // OCC places A1 20 m east: its box and label move; the label's texts stay as they were.
     const [longitude, latitude] = destinationPoint(MDPC_LAYOUT.stands.find(stand => stand.code === 'A1').center, 90, 20);
     const placed = build(board.positions.map(stand => (stand.code === 'A01' ? { ...stand, latitude, longitude } : stand)));
     const moved = diffStandFeatures(before, placed);
-    expect(moved.polygons.update).toEqual([expect.objectContaining({ id: 'A1', newGeometry: expect.objectContaining({ type: 'Polygon' }) })]);
-    expect(moved.polygons.update[0].addOrUpdateProperties).toContainEqual({ key: 'unofficial', value: false });
+    expect(moved.polygons.update).toEqual([{
+      id: 'A1', newGeometry: expect.objectContaining({ type: 'Polygon' }), addOrUpdateProperties: [{ key: 'unofficial', value: false }],
+    }]);
     expect(moved.labels.update).toEqual([{ id: 'A1', newGeometry: { type: 'Point', coordinates: [longitude, latitude] } }]);
 
     // A stand that is no longer drawn is removed, and comes back as an addition; its terminal's chip changes.

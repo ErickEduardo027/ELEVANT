@@ -5,7 +5,7 @@ import { sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { standPoint } from '../testing/mapFixtures';
 import MapLab, { MAP_LAB_MARKER } from './MapLab';
-import { SCENES } from './scenes';
+import { SCENES, findScene } from './scenes';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
 
@@ -109,6 +109,35 @@ describe('MapLab', () => {
     fake.state.setRenderedFeatures(map, () => [{ layer: { id: 'occ-stands-fill' }, properties: { code: 'B21' } }]);
     act(() => fake.state.emit(map, 'click', { point: { x: 10, y: 10 }, lngLat: { lng: -68.369, lat: 18.563 } }));
     expect(query().get('stand')).toBe('B21');
+  });
+
+  it('places the stand of the placing scene: its pending box, a click moves it and Esc stops the placing first', () => {
+    const scene = findScene('ramp-placing-ghost');
+    const { map } = open(`?scene=ramp-placing-ghost&t=${NOON}`);
+    loadStyle(map);
+    // The stand is selected while it is placed, and the header says what to do.
+    expect(query().get('stand')).toBe(scene.placing.code);
+    expect(screen.getByText(`Ubicando ${scene.placing.code}: haz clic en el mapa; Esc lo deja`)).toBeInTheDocument();
+    expect(map.getCanvas().style.cursor).toBe('crosshair');
+    const boxes = map.getSource('occ-stand-ghost');
+    expect(boxes.data.features.map(feature => feature.id)).toEqual(['pending', 'pending-centre']);
+    expect(boxes.data.features[1].geometry.coordinates).toEqual([scene.placing.pending.longitude, scene.placing.pending.latitude]);
+    expect(window.__occMapLab.placing()).toEqual(scene.placing);
+
+    // A click at the stand's reference point (its centre in the layout) snaps the pending location there.
+    const [longitude, latitude] = standPoint(scene.placing.code);
+    act(() => fake.state.emit(map, 'click', { point: { x: 10, y: 10 }, lngLat: { lng: longitude, lat: latitude } }));
+    expect(window.__occMapLab.placing().pending).toEqual({ latitude, longitude, snapped: true });
+    expect(boxes.data.features[0].properties).toMatchObject({ kind: 'pending', snapped: true });
+
+    // Esc stops the placing and keeps the selection; the next one clears it.
+    fireEvent.keyDown(map.getCanvas(), { key: 'Escape' });
+    expect(window.__occMapLab.placing()).toBeNull();
+    expect(boxes.data.features).toEqual([]);
+    expect(map.getCanvas().style.cursor).toBe('');
+    expect(query().get('stand')).toBe(scene.placing.code);
+    fireEvent.keyDown(map.getCanvas(), { key: 'Escape' });
+    expect(query().has('stand')).toBe(false);
   });
 
   it('re-reads the same stands without a new map or a new write, and exposes the lab handle', async () => {

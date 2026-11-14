@@ -81,14 +81,20 @@ function turnaround(index, now, { arrived, arrivalInMin = arrived ? -40 : 50, de
   };
 }
 
-/** GET occ/positions?stationId=&date=: the board of the station for that operation date, as of `now`. */
-export function positionsBoard({ stationId = STATION.stationId, date, now = Date.now() } = {}) {
+/**
+ * GET occ/positions?stationId=&date=: the board of the station for that operation date, as of `now`. `located` maps a
+ * stand id to the location OCC saved for it (`{ latitude, longitude }`, «Ubicar en el mapa»); every other stand has
+ * none.
+ */
+export function positionsBoard({ stationId = STATION.stationId, date, now = Date.now(), located = new Map() } = {}) {
   return {
     stationId,
     stationCode: STATION.stationCode,
     operationDate: date,
     asOf: new Date(now).toISOString(),
     positions: STANDS.map(([code, terminalCode, standType], index) => {
+      const standId = uuid('5e4d3c2b', index + 1);
+      const place = located.get(standId) ?? null;
       let visit = null;
       if (OCCUPIED.has(code)) visit = turnaround(OCCUPIED.get(code), now, { arrived: true });
       else if (RELEASING.has(code)) visit = turnaround(RELEASING.get(code), now, { arrived: true, arrivalInMin: -50, departureInMin: 10 });
@@ -97,14 +103,14 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
         visit = turnaround(visitIndex, now, { arrived: false, arrivalInMin, departureInMin: arrivalInMin + 60 });
       } else if (PLANNED.has(code)) visit = turnaround(PLANNED.get(code), now, { arrived: false });
       return {
-        standId: uuid('5e4d3c2b', index + 1),
+        standId,
         code,
         terminalCode,
         standType,
         status: visit === null ? 'available' : visit.arrivedAt ? 'occupied' : 'planned',
         turnarounds: visit ? [visit] : [],
-        latitude: null,
-        longitude: null,
+        latitude: place?.latitude ?? null,
+        longitude: place?.longitude ?? null,
         hasBoardingBridge: false,
         isRemote: standType === 'Remote',
         maxAircraftSize: null,
@@ -118,20 +124,35 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
   };
 }
 
+const LOCATION_PATH = /^\/api\/v1\/occ\/stands\/([^/]+)\/location$/;
+
 /**
- * The API handler for support/isolate.mjs: the access and the positions board; every other path answers the
- * Problem Details 404 of the isolation. `reads` counts the boards served.
+ * The API handler for support/isolate.mjs: the access, the positions board and «Ubicar en el mapa» (PUT
+ * occ/stands/{standId}/location, ADR-0027), which keeps the location and answers the board with it, as the API does;
+ * every other path answers the Problem Details 404 of the isolation. `reads` counts the boards served, `locates` lists
+ * the locations sent (`{ standId, latitude, longitude, operationDate }`) and `located` keeps them by stand.
  */
 export function createOccApi() {
-  const api = { reads: 0 };
+  const api = { reads: 0, locates: [], located: new Map() };
   api.handle = (request, url) => {
+    const location = request.method() === 'PUT' ? LOCATION_PATH.exec(url.pathname) : null;
+    if (location) {
+      const { latitude = null, longitude = null, operationDate } = JSON.parse(request.postData() ?? '{}');
+      const standId = decodeURIComponent(location[1]);
+      api.locates.push({ standId, latitude, longitude, operationDate });
+      if (latitude === null || longitude === null) api.located.delete(standId);
+      else api.located.set(standId, { latitude, longitude });
+      return { status: 200, json: positionsBoard({ date: operationDate, located: api.located }) };
+    }
     if (request.method() !== 'GET') return null;
     if (url.pathname === '/api/v1/governance/me/access') return { status: 200, json: OCC_ACCESS };
     if (url.pathname === '/api/v1/occ/positions') {
       api.reads += 1;
       return {
         status: 200,
-        json: positionsBoard({ stationId: url.searchParams.get('stationId'), date: url.searchParams.get('date') }),
+        json: positionsBoard({
+          stationId: url.searchParams.get('stationId'), date: url.searchParams.get('date'), located: api.located,
+        }),
       };
     }
     return null;

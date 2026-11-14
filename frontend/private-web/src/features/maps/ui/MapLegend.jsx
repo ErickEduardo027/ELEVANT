@@ -95,8 +95,11 @@ function ChipSwatch() {
   );
 }
 
-// The marks of the stands: the dashed link from a cancelled stand to the one that cancels it, and the dotted code-C
-// box inside a larger stand limited to narrow-body aircraft.
+// The marks of the stands: the dashed link from a cancelled stand to the one that cancels it, the dotted code-C box
+// inside a larger stand limited to narrow-body aircraft, the thin ring around the stands covered by the same agent as
+// the selected one (stands/standLayers.js: the same-agent casing), and while a stand is placed, its box at the pointer
+// (dashed cyan) and the pending location (solid cyan over a wash, with its centre).
+const ACCENT = tokenColour('--occ-accent');
 const MARK_SWATCHES = Object.freeze({
   combined: (
     <>
@@ -111,8 +114,27 @@ const MARK_SWATCHES = Object.freeze({
       <rect x="6.5" y="5.5" width="7" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1, strokeDasharray: '1 2' }} />
     </>
   ),
+  sameAgent: (
+    <>
+      <rect x="5.5" y="5.5" width="9" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+      <rect x="2.5" y="2.5" width="15" height="15" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1 }} />
+    </>
+  ),
+  ghost: (
+    <rect x="3" y="3" width="14" height="14" style={{ fill: 'none', stroke: ACCENT, strokeWidth: 2, strokeDasharray: '4 3' }} />
+  ),
+  pending: (
+    <>
+      <rect x="3.25" y="3.25" width="13.5" height="13.5" style={{ fill: ACCENT, fillOpacity: 0.2, stroke: ACCENT, strokeWidth: 2.5 }} />
+      <circle cx="10" cy="10" r="2.5" style={{ fill: ACCENT, stroke: tokenColour('--occ-nav'), strokeWidth: 1 }} />
+    </>
+  ),
 });
-const MARK_MESSAGES = Object.freeze({ combined: 'legend.combined', narrowbody: 'legend.narrowbody' });
+const MARK_MESSAGES = Object.freeze({
+  combined: 'legend.combined', narrowbody: 'legend.narrowbody', sameAgent: 'legend.sameAgent', ghost: 'legend.ghost',
+  pending: 'legend.pending',
+});
+const MARK_HINTS = Object.freeze({ ghost: 'legend.ghostHint' });
 
 // A flight as the map draws it (traffic/flightLayers.js): the solid silhouette, nose up, in the text colour with a 1 px
 // halo of the nav colour, here 16 px long. The halo is a 2 px line drawn under the fill, so 1 px of it shows outside.
@@ -197,7 +219,8 @@ function WideEntry({ swatch, name, hint }) {
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
  * the flights drawn there, the terminal chips (below the stand polygons), the states of the stands whose polygon is
  * drawn there with the signals they carry and the marks drawn there (the link of a cancelled stand, the narrow-body
- * box), «No oficial» for a stand at its reference location, and the airfield items drawn there (runway, taxiway,
+ * box, the ring of the stands the selected one's agent covers, the boxes of a stand being placed), «No oficial» for a
+ * stand at its reference location, and the airfield items drawn there (runway, taxiway,
  * holding point, apron, terminal), set apart below the rest; or the `stands` given (inside `bounds` when given). The
  * stand states use the words of the vocabulary (STAND_STATES) and the signals theirs (SIGNALS). The short entries (the
  * states, the signals and the airfield items) sit two to a row, so the open legend stays low over the map. It folds
@@ -238,7 +261,8 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
             </li>
           ))}
           {marks.map(mark => (
-            <WideEntry key={mark} swatch={<svg {...SWATCH_PROPS} data-swatch={mark}>{MARK_SWATCHES[mark]}</svg>} name={t(MARK_MESSAGES[mark])} />
+            <WideEntry key={mark} swatch={<svg {...SWATCH_PROPS} data-swatch={mark}>{MARK_SWATCHES[mark]}</svg>} name={t(MARK_MESSAGES[mark])}
+              hint={MARK_HINTS[mark] ? t(MARK_HINTS[mark]) : null} />
           ))}
           {tags.map(tag => (
             <li key={tag} className="col-span-2 flex items-center gap-2">

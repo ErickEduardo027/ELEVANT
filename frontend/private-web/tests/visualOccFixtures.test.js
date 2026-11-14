@@ -61,4 +61,33 @@ describe('visual suite OCC fixtures', () => {
     expect(await answer('/api/v1/occ/planning')).toBeNull();
     expect(api.handle({ method: () => 'POST' }, new URL('https://api.elevant.test/api/v1/occ/positions'))).toBeNull();
   });
+
+  it('«Ubicar en el mapa» keeps the location, answers the board with it as the client expects, and the next read keeps it', async () => {
+    const api = createOccApi();
+    const standId = positionsBoard({ date: DATE, now: NOW }).positions.find(stand => stand.code === 'B27').standId;
+    // 25 m south of B27's reference point: a point the map would send.
+    const reference = RAMP_POSITIONS.find(position => position.id === 'B27');
+    const body = { latitude: Number((reference.lat - 25 / 111_195).toFixed(6)), longitude: reference.lon, operationDate: DATE };
+    const put = { method: () => 'PUT', postData: () => JSON.stringify(body) };
+    const url = new URL(`https://api.elevant.test/api/v1/occ/stands/${standId}/location`);
+    const placed = api.handle(put, url);
+    expect(placed.status).toBe(200);
+    expect(api.locates).toEqual([{ standId, ...body }]);
+    expect(placed.json.positions.find(stand => stand.standId === standId)).toMatchObject({
+      code: 'B27', latitude: body.latitude, longitude: body.longitude,
+    });
+    // The shared client's command accepts that answer.
+    await expect(clientAnswering(placed.json).locateOccStand(standId, body)).resolves.toEqual(placed.json);
+
+    // The next read keeps it: the positions map draws B27 where OCC put it, every other stand at its reference.
+    const read = api.handle({ method: () => 'GET' }, new URL(`https://api.elevant.test/api/v1/occ/positions?stationId=${STATION.stationId}&date=${DATE}`));
+    const positions = mapOccupancyToRampPositions(RAMP_POSITIONS, read.json, new Date(NOW).toISOString());
+    expect(positions.filter(position => position.locationSource === 'occ').map(position => position.id)).toEqual(['B27']);
+    expect(positions.find(position => position.id === 'B27')).toMatchObject({ latitude: body.latitude, longitude: body.longitude });
+
+    // A location cleared with nulls is forgotten.
+    api.handle({ method: () => 'PUT', postData: () => JSON.stringify({ latitude: null, longitude: null, operationDate: DATE }) }, url);
+    expect(api.located.size).toBe(0);
+    expect(api.handle({ method: () => 'PUT', postData: () => '{}' }, new URL('https://api.elevant.test/api/v1/occ/stands'))).toBeNull();
+  });
 });

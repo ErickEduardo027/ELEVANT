@@ -14,6 +14,10 @@ export const mapMessages = {
       chipHint: 'Ocupadas del total; acerca el mapa para ver cada una',
       combined: 'Enlace con la posición que la anula',
       narrowbody: 'Caja de fuselaje estrecho',
+      sameAgent: 'Mismo agente que la posición elegida',
+      ghost: 'Posición que estás ubicando',
+      ghostHint: 'A tamaño real; se ajusta al plano a menos de 15 m',
+      pending: 'Ubicación sin guardar',
       flight: 'Vuelo',
       flightHint: 'Apunta según su rumbo; al norte si no se conoce',
       runway: 'Pista',
@@ -28,6 +32,19 @@ export const mapMessages = {
       size: '{length} m × {width} m',
       taxiway: 'Calle de rodaje {ref}',
       unnamed: 'Calle de rodaje sin nombre',
+    },
+    // «Ubicar en el mapa» with its confirmation (design D5): the notice over the map and what it says while saving.
+    placing: {
+      label: 'Ubicar {code} en el mapa',
+      prompt: 'Haz clic en el centro de la posición {code}.',
+      save: 'Guardar ubicación',
+      cancel: 'Cancelar',
+      saving: 'Guardando la ubicación de {code}…',
+      saved: '{code} quedó ubicada en el mapa.',
+    },
+    // The facts of a stand in its drawer and beside the planning map.
+    facts: {
+      label: 'Estado en el mapa',
     },
     // What a stand says of itself: its times, who covers it, its signals and where its location comes from. The map
     // draws some of these in its labels, so they keep to Latin-1 characters (no «…», «→» or «–»).
@@ -79,6 +96,10 @@ export const mapMessages = {
       chipHint: 'Occupied of the total; zoom in to see each one',
       combined: 'Link to the stand that cancels it',
       narrowbody: 'Narrow-body box',
+      sameAgent: 'Same agent as the selected stand',
+      ghost: 'Stand you are placing',
+      ghostHint: 'At true size; it snaps to the layout within 15 m',
+      pending: 'Location not saved yet',
       flight: 'Flight',
       flightHint: 'Points along its heading; north when unknown',
       runway: 'Runway',
@@ -92,6 +113,17 @@ export const mapMessages = {
       size: '{length} m × {width} m',
       taxiway: 'Taxiway {ref}',
       unnamed: 'Unnamed taxiway',
+    },
+    placing: {
+      label: 'Place {code} on the map',
+      prompt: 'Click the centre of stand {code}.',
+      save: 'Save location',
+      cancel: 'Cancel',
+      saving: 'Saving the location of {code}…',
+      saved: '{code} is now placed on the map.',
+    },
+    facts: {
+      label: 'State on the map',
     },
     stand: {
       arrives: 'Arrives {time}',

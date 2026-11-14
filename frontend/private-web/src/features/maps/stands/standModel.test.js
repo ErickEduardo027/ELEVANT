@@ -344,6 +344,12 @@ describe('coverage', () => {
     expect(unlocatedStands([], positions)).toEqual([]);
     expect(unlocatedStands(board.positions, positions.map(position => ({ ...position, geometry: null }))))
       .toHaveLength(board.positions.length);
+    // The positions of a screen carry no geometry (they never import the layout): one with a location is drawn.
+    const screenPositions = mapOccupancyToRampPositions(REFERENCES, board, board.asOf);
+    expect(screenPositions.every(position => !('geometry' in position))).toBe(true);
+    expect(unlocatedStands(board.positions, screenPositions).map(position => position.id)).toEqual(['Z1']);
+    const withoutLocation = screenPositions.map(position => (position.id === 'A5' ? { ...position, latitude: null, longitude: null } : position));
+    expect(unlocatedStands(board.positions, withoutLocation).map(position => position.id)).toEqual(['A5', 'Z1']);
   });
 
   it('never imports the dataset (source text guard)', () => {

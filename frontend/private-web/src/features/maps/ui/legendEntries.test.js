@@ -72,8 +72,10 @@ describe('legend entries', () => {
     expect(legendEntries({ chips: ['A', 'B'] })).toEqual({ ...NOTHING, chips: true });
     expect(legendEntries({ chips: [] }).chips).toBe(false);
     expect(legendEntries({ chips: 'A' }).chips).toBe(false);
-    expect(STAND_MARKS).toEqual(['combined', 'narrowbody']);
+    expect(STAND_MARKS).toEqual(['combined', 'narrowbody', 'sameAgent', 'ghost', 'pending']);
     expect(legendEntries({ marks: ['narrowbody', 'combined', 'narrowbody'] }).marks).toEqual(['combined', 'narrowbody']);
+    // The same-agent ring of a selection and the boxes of a stand being placed, in the order of the legend.
+    expect(legendEntries({ marks: ['pending', 'sameAgent', 'ghost'] }).marks).toEqual(['sameAgent', 'ghost', 'pending']);
     expect(legendEntries({ marks: ['clusters', 'hatch'] }).marks).toEqual([]);
     expect(legendEntries({ marks: null }).marks).toEqual([]);
   });

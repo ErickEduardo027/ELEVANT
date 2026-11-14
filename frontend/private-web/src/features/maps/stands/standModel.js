@@ -249,7 +249,11 @@ export function withStandDisplay(positions = [], { nowMs, flightsByTurnaround, a
 // The index of each layout, built once per layout object.
 const INDEX_CACHE = new WeakMap();
 
-function layoutIndexOf(layout) {
+/**
+ * The index of `layout` (layoutIndex.js: indexLayout), built once per layout object and kept while the layout lives;
+ * `null` for anything that is not a layout with stands. A layout without a taxi graph gets an empty one.
+ */
+export function standLayoutIndex(layout) {
   if (layout === null || typeof layout !== 'object' || !Array.isArray(layout.stands)) return null;
   let index = INDEX_CACHE.get(layout);
   if (index === undefined) {
@@ -268,7 +272,7 @@ function layoutIndexOf(layout) {
  * The positions map, the planning map and (from PR U3) the console's apron all take this one path.
  */
 export function attachStandGeometry(positions = [], layout = null, { index = null } = {}) {
-  const layoutIndex = index ?? layoutIndexOf(layout);
+  const layoutIndex = index ?? standLayoutIndex(layout);
   const attached = [];
   for (const position of positions ?? []) {
     if (position === null || typeof position !== 'object' || position.retired === true) continue;
@@ -322,14 +326,22 @@ export function sameAgentCodes(positions = [], code) {
   return codes;
 }
 
+// A position the map draws: one attachStandGeometry gave a geometry; or, for the positions of a screen, which never
+// carry one because they never import the layout, one with a location (every stand of the reference list is in the
+// layout, and a location OCC saved always gets a box of its own).
+const isDrawn = position => (position?.geometry === undefined
+  ? locationPoint(position) !== null
+  : position.geometry !== null);
+
 /**
  * The stands of the positions board (`boardStands`, the board's `positions`) that no drawn position shows (a position
- * of `positions` with a geometry), as positions of the mapper with `latitude` and `longitude` `null`, `geometry`
- * `null` and `locationSource: 'none'`: the screens list them as «Sin ubicar», each with «Ubicar en el mapa». A code
- * seen twice keeps its first stand. `asOf` stamps their `updatedAt`, as the board's `asOf` does.
+ * of `positions` with a geometry, or, without a `geometry` key, with a location), as positions of the mapper with
+ * `latitude` and `longitude` `null`, `geometry` `null` and `locationSource: 'none'`: the screens list them as «Sin
+ * ubicar», each with «Ubicar en el mapa». A code seen twice keeps its first stand. `asOf` stamps their `updatedAt`, as
+ * the board's `asOf` does.
  */
 export function unlocatedStands(boardStands = [], positions = [], { asOf } = {}) {
-  const drawn = new Set((positions ?? []).filter(position => position?.geometry != null).map(codeOf));
+  const drawn = new Set((positions ?? []).filter(isDrawn).map(codeOf));
   const seen = new Set();
   const missing = [];
   for (const stand of boardStands ?? []) {

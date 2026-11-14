@@ -13,10 +13,14 @@ import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { mapMessages } from '../mapMessages';
+import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
 import {
-  STAND_FEATURE_COLLECTIONS, buildStandFeatures, diffStandFeatures, featuresIn, standsDrawnIn,
+  STAND_FEATURE_COLLECTIONS, boxOfPoints, boxesMeet, buildStandFeatures, diffStandFeatures, featuresIn, standsDrawnIn,
 } from '../stands/standFeatures';
-import { STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay } from '../stands/standLayers';
+import {
+  featureStatePlan, findStandByCode, isOutsideSafeArea, standFlags, standTooltip,
+} from '../stands/standInteractions';
+import { STAND_GHOST_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay } from '../stands/standLayers';
 import { attachStandGeometry, standStateOf } from '../stands/standModel';
 import {
   AIRFIELD_LAYER_IDS, AIRFIELD_SOURCE, airfieldKindsOnScreen, airfieldOverlay, airfieldTooltip,
@@ -33,7 +37,7 @@ import {
   sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
 import { createMapEngine } from './mapEngine';
-import { matchFlight } from './mapSelection';
+import { matchFlight, relatedEntities } from './mapSelection';
 import MapUnavailable from './MapUnavailable';
 import { OccMapContext } from './OccMapContext';
 import { useMapSelection } from './useMapSelection';
@@ -48,11 +52,17 @@ import { useMinuteClock } from './useMinuteClock';
 // the map tooltip, and a click holds it. Given `stands` it draws them as polygons with their state (PR M4): where each
 // one is comes from the layout or from the location OCC saved (stands/standModel.js: attachStandGeometry), how it
 // reads from the display the screen derived (useStandDisplay) or its board status, and its countdowns follow the
-// map's minute clock. Given `flights` it draws those with a position. Their overlays are part of the style from the
-// start, so the first data is one setData per source and every later change one updateData with what changed: the
-// map is never re-created. A screen's own overlays get their data through `overlayData`.
+// map's minute clock. A stand under the pointer shows its tooltip and, as the selected one does, marks the stands
+// covered by the same agent; selecting a stand outside the area in sight eases the camera to it; and while a stand is
+// placed («Ubicar en el mapa», design D5) its box follows the pointer and a click gives a pending location (all
+// feature-state or one source of their own: stands/standInteractions.js, stands/placing.js). Given `flights` it draws
+// those with a position. Their overlays are part of the style from the start, so the first data is one setData per
+// source and every later change one updateData with what changed: the map is never re-created. A screen's own overlays
+// get their data through `overlayData`.
 
 const EMPTY = Object.freeze([]);
+const NO_FLAGS = Object.freeze({ hover: null, selected: null, related: null, sameAgent: Object.freeze(new Set()) });
+const NO_CODES = Object.freeze(new Set());
 const NO_GROUPS = Object.freeze({});
 const INSET_SIDES = Object.freeze(['top', 'right', 'bottom', 'left']);
 const SELECTABLE_KINDS = new Set(['stand', 'flight', 'aircraft']);
@@ -99,6 +109,25 @@ function tooltipPlacement(engine, padding, point) {
     alignX: middle !== null && point.x > middle.x ? 'end' : 'start',
     alignY: middle !== null && point.y > middle.y ? 'end' : 'start',
   };
+}
+
+// Where the tooltip of a stand sits: under the stand's box on screen (its polygon's pixels), or over it when the stand
+// is in the lower half of the visible area, starting at the box's outer side and running towards the middle. A stand's
+// label is centred on its box and may be wider than it, so the card never covers the stand or its label. `null`
+// without a polygon, or when the box takes more than half the height in sight (the card then follows the pointer).
+function standTooltipPlacement(engine, padding, polygon) {
+  const points = (Array.isArray(polygon) ? polygon : []).map(point => engine.project(point)).filter(Boolean);
+  const bounds = engine.getVisibleBounds(padding);
+  if (points.length === 0 || bounds === null) return null;
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  const [left, right, top, bottom] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const corners = [bounds[0], bounds[1]].map(corner => engine.project(corner)).filter(Boolean);
+  const middle = engine.project(boundsCenter(bounds));
+  if (corners.length < 2 || !middle || bottom - top > Math.abs(corners[0].y - corners[1].y) / 2) return null;
+  const toRight = (left + right) / 2 > middle.x;
+  const above = (top + bottom) / 2 > middle.y;
+  return { x: toRight ? right : left, y: above ? top : bottom, alignX: toRight ? 'end' : 'start', alignY: above ? 'end' : 'start' };
 }
 
 // Whether the map has drawn everything it was given, on its root: `false` from a camera move or a data write until the
@@ -183,10 +212,16 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   `stands` and `flights` are given and `standLabels`;
  * - `overlayData` (`{ [sourceId]: FeatureCollection }`): the data of the sources of `overlays`, one setData for each
  *   source whose features change, as for the stands and the flights;
- * - `selection` (`{ kind, id }` or null) and `onSelect({ kind, id } | null)`; a click on a terminal chip opens that
- *   terminal's view; `onPick(hit)` for a click on anything else a layer lets pick (`{ kind, id, feature }` as the
- *   engine answers it: not a stand, a flight, an aircraft, a terminal, a runway or a taxiway);
- *   `onMapClick({ latitude, longitude })` while `placing`; `initialCamera` and `onCameraChange(camera)`;
+ * - `selection` (`{ kind, id }` or null) and `onSelect({ kind, id } | null)`; a selected stand outside the area in
+ *   sight brings the camera to it at the same zoom (never the stand flyToStand was just asked for); a click on a
+ *   terminal chip opens that terminal's view; `onPick(hit)` for a click on anything else a layer lets pick
+ *   (`{ kind, id, feature }` as the engine answers it: not a stand, a flight, an aircraft, a terminal, a runway or a
+ *   taxiway); `initialCamera` and `onCameraChange(camera)`;
+ * - placing a stand (ADR-0027): `placing` (a crosshair, and a click gives `onMapClick({ latitude, longitude })`), or
+ *   `placingStand` (`{ code, sizeHint }`: also the stand's box at the pointer, and the click gives
+ *   `onMapClick({ latitude, longitude, snapped })`, the layout's centre when the box snapped to it), `pendingLocation`
+ *   (`{ latitude, longitude }`, the pending box) and `onCancelPlacing()`, which Esc calls before it would clear the
+ *   selection;
  * - `pitchMode` ('2d' | '3d'), `groups` ({ 'buildings-3d': true }), `insets` ({ top, right, bottom, left } in px);
  * - `testId` of the host that holds the canvas, `labels` ({ unavailableTitle, unavailableDescription,
  *   unavailableList, map }), `fallbackItems` ([{ id, label, kind }]) and `onFallbackSelect(id, item)`;
@@ -207,6 +242,9 @@ const OccMap = forwardRef(function OccMap({
   onPick,
   onMapClick,
   placing = false,
+  placingStand = null,
+  pendingLocation = null,
+  onCancelPlacing,
   initialCamera,
   onCameraChange,
   pitchMode = '2d',
@@ -253,13 +291,17 @@ const OccMap = forwardRef(function OccMap({
   // What the current engine was given or drew last; reset whenever an engine starts.
   const appliedRef = useRef({ padding: null, pitchMode: null, groups: null, selection: null });
   const pointerRef = useRef({ event: null, frame: 0 });
+  // The stand flyToStand was last asked for: when the selection then comes to it, the camera is already on its way.
+  const focusRef = useRef(null);
+  const placingNow = placing || placingStand !== null;
 
   // The newest props for engine callbacks and imperative calls; assigned after each render, never during it.
   useLayoutEffect(() => {
     latest.current = {
       stands, attached, standFeatures, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onPick,
-      onMapClick, placing, onCameraChange, isShortcutBlocked, pitchMode, padding, targets, urlView, urlTerminal,
-      defaultView, initialCamera, basemap, overlays, interactive, mapOptions, layout,
+      onMapClick, placing: placingNow, placingStand, onCancelPlacing, onCameraChange, isShortcutBlocked, pitchMode,
+      padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap, overlays, interactive, mapOptions,
+      layout, t, language,
       locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
@@ -321,6 +363,7 @@ const OccMap = forwardRef(function OccMap({
     if (!point || !camera) return false;
     const fits = store.get().fits;
     const focus = Number.isFinite(minZoom) ? minZoom : fits ? fits.ramp + STAND_FOCUS_OVER_RAMP : camera.zoom;
+    focusRef.current = mapStandCode(code) || null;
     moveCamera({ center: point, zoom: Math.max(camera.zoom, focus), padding: inset });
     return true;
   }, [moveCamera, store]);
@@ -395,9 +438,18 @@ const OccMap = forwardRef(function OccMap({
     // The narrow-body boxes are drawn from the codes threshold on, the combined links with the polygons.
     const codesShown = !Number.isFinite(thresholds?.codes) || zoom >= thresholds.codes;
     const drawsAux = (kind, from) => from && featuresIn(features.aux, bounds, { kind }).length > 0;
+    // The ring of the stands the selected one's agent covers is explained with the polygons it is drawn around (the
+    // pointer's are a passing hint); the placing boxes at every zoom, while they are in sight.
+    const { selectionSameAgent = NO_CODES, ghost, pendingGhost } = appliedRef.current;
+    const marked = polygons && selectionSameAgent.size > 0
+      && standsDrawnIn(drawnStands.filter(stand => selectionSameAgent.has(mapStandCode(standCodeOf(stand)))), bounds).length > 0;
+    const boxInSight = box => bounds !== null && Array.isArray(box?.polygon) && boxesMeet(boxOfPoints(box.polygon), bounds);
     const marks = [
       ...(drawsAux('combinedLink', polygons) ? ['combined'] : []),
       ...(drawsAux('narrowInner', polygons && codesShown) ? ['narrowbody'] : []),
+      ...(marked ? ['sameAgent'] : []),
+      ...(boxInSight(ghost) ? ['ghost'] : []),
+      ...(boxInSight(pendingGhost) ? ['pending'] : []),
     ];
     // Only a map that started with flights draws them.
     const flights = bounds === null || !drawsFlights ? EMPTY : flightsInView(latest.current.flights, bounds);
@@ -470,21 +522,106 @@ const OccMap = forwardRef(function OccMap({
     store.set({ engineStatus: status.engine, basemapStatus: status.basemap });
   }, [store]);
 
-  // Shows the tooltip of a runway or a taxiway picked at `point` (a pixel of the map) and `lngLat`.
+  // Shows the tooltip of a runway, a taxiway or a stand picked at `point` (a pixel of the map) and `lngLat`: next to the
+  // pointer, or beside the stand's box for a stand.
   const showTooltip = useCallback((info, point, lngLat, pinned) => {
     const engine = engineRef.current;
     if (!engine || !point || !lngLat) return;
-    store.set({ tooltip: { ...info, pinned, lngLat, ...tooltipPlacement(engine, latest.current.padding, point) } });
+    const { padding, attached: drawn } = latest.current;
+    const polygon = info.kind === 'stand' ? findStandByCode(drawn, info.id)?.geometry?.polygon : null;
+    const placement = standTooltipPlacement(engine, padding, polygon) ?? tooltipPlacement(engine, padding, point);
+    store.set({ tooltip: { ...info, pinned, lngLat, ...placement } });
   }, [store]);
+
+  // The tooltip of the stand `code` among the stands drawn now, in the screen's language (null when none is drawn).
+  const standTooltipOf = useCallback(code => {
+    const { attached: drawn, t: translate, language: words } = latest.current;
+    return standTooltip(code, drawn, translate, words);
+  }, []);
+
+  // A stand's tooltip says what the stand says now: a board refresh, the minute or the language change its words, and a
+  // stand that is no longer drawn closes it.
+  const refreshStandTooltip = useCallback(() => {
+    const tooltip = store.get().tooltip;
+    if (tooltip?.kind !== 'stand') return;
+    const info = standTooltipOf(tooltip.id);
+    if (info === null) {
+      store.set({ tooltip: null });
+      return;
+    }
+    if (info.title === tooltip.title && info.detail === tooltip.detail
+      && JSON.stringify(info.reasons) === JSON.stringify(tooltip.reasons)) return;
+    store.set({ tooltip: { ...tooltip, ...info } });
+  }, [store, standTooltipOf]);
+
+  // The flags of the stand polygons (hover, selected, related, same agent), written as their feature-state: only what
+  // changed (stands/standInteractions.js: featureStatePlan), so a pointer or a selection never rewrites the data.
+  const applyStandFlags = useCallback(next => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsStands) return;
+    const plan = featureStatePlan(applied.standFlags, next);
+    applied.standFlags = next;
+    if (plan.length === 0) return;
+    for (const step of plan) {
+      if (step.op === 'remove') engine.removeFeatureState(STAND_SOURCE, step.id, step.key);
+      else engine.setFeatureState(STAND_SOURCE, step.id, step.state);
+    }
+    markSettled(rootRef.current, false);
+  }, []);
+
+  // The stand under the pointer (`null` when there is none, or a drag), with the stands its agent covers.
+  const hoverStand = useCallback(code => {
+    const current = appliedRef.current.standFlags ?? NO_FLAGS;
+    const hover = code == null ? null : mapStandCode(code) || null;
+    if (hover === current.hover) return;
+    applyStandFlags(standFlags({ hover, selected: current.selected, related: current.related, stands: latest.current.attached }));
+  }, [applyStandFlags]);
+
+  // The boxes of «Ubicar en el mapa» (the one at the pointer and the pending location): one setData of their own source
+  // when they change, never one of the stand sources.
+  const writeGhost = useCallback(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsStands) return;
+    const data = ghostFeatures({ ghost: applied.ghost, pending: applied.pendingGhost });
+    const key = JSON.stringify(data.features);
+    if (applied.ghostKey === key) return;
+    applied.ghostKey = key;
+    engine.setData(STAND_GHOST_SOURCE, data);
+    markSettled(rootRef.current, false);
+  }, []);
+
+  // The box of the stand being placed at the pointer of `event` (none when the pointer left the map); the legend hears
+  // when it comes or goes.
+  const moveGhost = useCallback(event => {
+    const { placingStand: stand, layout: plan } = latest.current;
+    const applied = appliedRef.current;
+    const ghost = stand && event?.lngLat
+      ? placingGhost({ code: stand.code, pointer: event.lngLat, layout: plan, sizeHint: stand.sizeHint })
+      : null;
+    const shown = (ghost !== null) !== (applied.ghost !== null);
+    applied.ghost = ghost;
+    writeGhost();
+    if (shown) updateOnScreen();
+  }, [writeGhost, updateOnScreen]);
 
   const handleClick = useCallback(({ point, lngLat, hit }) => {
     const props = latest.current;
     if (props.placing) {
-      if (lngLat) props.onMapClick?.({ latitude: lngLat[1], longitude: lngLat[0] });
+      if (!lngLat) return;
+      // The click gives the centre of the box at the pointer: the layout's centre when it snapped to the stand's outline.
+      // Without a stand to place (`placing` alone) it gives the clicked point, as it always did.
+      if (props.placingStand) {
+        const ghost = placingGhost({
+          code: props.placingStand.code, pointer: lngLat, layout: props.layout, sizeHint: props.placingStand.sizeHint,
+        });
+        props.onMapClick?.(placedLocation(ghost) ?? { latitude: lngLat[1], longitude: lngLat[0], snapped: false });
+      } else props.onMapClick?.({ latitude: lngLat[1], longitude: lngLat[0] });
       return;
     }
     // A click on a runway or a taxiway holds its tooltip, so nothing depends on hovering alone; a click anywhere else
-    // closes it.
+    // closes it (a stand's says what its drawer says).
     const info = airfieldTooltip(hit);
     if (info !== null) {
       showTooltip(info, point, lngLat, true);
@@ -499,21 +636,23 @@ const OccMap = forwardRef(function OccMap({
     else props.onPick?.(hit);
   }, [store, showTooltip, requestView]);
 
-  // The tooltip of what is under the pointer, unless a click holds one: written to the store only when the runway or
-  // the taxiway under the pointer changes, never on every frame. A drag (a button held down) shows none.
+  // The tooltip of what is under the pointer, unless a click holds one: written to the store only when the runway, the
+  // taxiway or the stand under the pointer changes, never on every frame. A drag (a button held down) shows none.
   const hoverTooltip = useCallback((event, hit) => {
     const current = store.get().tooltip;
     if (current?.pinned) return;
-    const info = event && !event.originalEvent?.buttons ? airfieldTooltip(hit) : null;
+    let info = null;
+    if (event && !event.originalEvent?.buttons) info = hit?.kind === 'stand' ? standTooltipOf(hit.id) : airfieldTooltip(hit);
     if (info === null) {
       if (current !== null) store.set({ tooltip: null });
       return;
     }
     if (current?.kind === info.kind && current.id === info.id) return;
     showTooltip(info, event.point, event.lngLat, false);
-  }, [store, showTooltip]);
+  }, [store, showTooltip, standTooltipOf]);
 
-  // The cursor and the hover tooltip follow what is under the pointer, picked once per frame.
+  // The cursor, the hover tooltip and the hovered stand follow what is under the pointer, picked once per frame; while a
+  // stand is placed, its box follows the pointer instead.
   const handlePointer = useCallback(event => {
     const pointer = pointerRef.current;
     pointer.event = event;
@@ -524,6 +663,7 @@ const OccMap = forwardRef(function OccMap({
       if (!engine) return;
       if (latest.current.placing) {
         engine.setCursor('crosshair');
+        moveGhost(pointer.event);
         return;
       }
       const hit = pointer.event?.hit;
@@ -531,8 +671,23 @@ const OccMap = forwardRef(function OccMap({
       const clickable = hit && (POINTER_KINDS.has(hit.kind) || (hit.id != null && latest.current.onPick));
       engine.setCursor(clickable ? 'pointer' : '');
       hoverTooltip(pointer.event, hit);
+      const dragging = Boolean(pointer.event?.originalEvent?.buttons);
+      hoverStand(hit?.kind === 'stand' && hit.id != null && !dragging ? String(hit.id) : null);
     });
-  }, [hoverTooltip]);
+  }, [hoverTooltip, hoverStand, moveGhost]);
+
+  // A stand selected outside the area in sight brings the camera to it at the same zoom, inside the insets
+  // (stands/standInteractions.js: isOutsideSafeArea); one in sight leaves the camera where it is.
+  const easeToStand = useCallback(code => {
+    const engine = engineRef.current;
+    const { attached: drawn, padding: inset } = latest.current;
+    const geometry = findStandByCode(drawn, code)?.geometry;
+    const camera = engine?.getCamera();
+    if (!camera || !Array.isArray(geometry?.polygon)) return false;
+    if (!isOutsideSafeArea(boxOfPoints(geometry.polygon), engine.getVisibleBounds(inset))) return false;
+    moveCamera({ center: geometry.center, zoom: camera.zoom, padding: inset });
+    return true;
+  }, [moveCamera]);
 
   // One engine for the life of the component. A StrictMode remount destroys the first one before the second starts.
   useEffect(() => {
@@ -540,10 +695,15 @@ const OccMap = forwardRef(function OccMap({
     const pointer = pointerRef.current;
     store.set(initialSnapshot(props.basemap));
     appliedRef.current = {
-      padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null, selectedStand: null,
-      standFeatures: null, flights: null, overlayData: {}, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights,
-      standLabels: props.standLabels, drawsAirfield: Boolean(props.layout),
+      padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null, standFeatures: null, flights: null,
+      overlayData: {}, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights, standLabels: props.standLabels,
+      drawsAirfield: Boolean(props.layout),
+      // The feature-state flags of the stands, the stands the selected one's agent covers (for the legend), and the
+      // placing boxes; the stand selected when the map starts is framed by the view, not eased to.
+      standFlags: NO_FLAGS, selectionSameAgent: NO_CODES, ghost: null, pendingGhost: null, ghostKey: '[]', placingCode: null,
+      easedFor: props.selection?.kind === 'stand' ? mapStandCode(props.selection.id) || null : null,
     };
+    focusRef.current = null;
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
     const initialView = props.urlView ?? (props.initialCamera ? null : props.defaultView);
@@ -630,10 +790,12 @@ const OccMap = forwardRef(function OccMap({
     refit();
   }, [targets, refit]);
 
-  // New stands or flights may change what is on screen: a flight that moves in or out of sight changes the legend.
+  // New stands or flights may change what is on screen: a flight that moves in or out of sight changes the legend, and
+  // a stand's tooltip says what the stand says now.
   useEffect(() => {
     updateOnScreen();
-  }, [attached, standFeatures, flights, updateOnScreen]);
+    refreshStandTooltip();
+  }, [attached, standFeatures, flights, updateOnScreen, refreshStandTooltip]);
 
   // The drawn stands: one setData per source when the map starts, then one updateData per source with only the
   // features that changed (a board refresh, a minute's countdowns), never a new map. A re-read of the same positions
@@ -688,8 +850,9 @@ const OccMap = forwardRef(function OccMap({
   }, [overlayData]);
 
   // The selection: one feature in the selection source (a stand's label point with its texts, a flight's ring),
-  // written only when it changes, and the casing of a selected stand through its polygon's feature state, moved only
-  // when another stand is selected.
+  // written only when it changes; the flags of the stands as feature state (the casing of the selected stand, the stand
+  // of a selected flight, and the stands covered by the same agent as the hovered or selected one), written only where
+  // they change; and, once per newly selected stand, the camera when that stand lies outside the area in sight.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -703,13 +866,22 @@ const OccMap = forwardRef(function OccMap({
       engine.setData(SELECTION_SOURCE, data);
       markSettled(rootRef.current, false);
     }
-    const code = selection?.kind === 'stand' && applied.drawsStands ? mapStandCode(selection.id) || null : null;
-    if (code === applied.selectedStand) return;
-    if (applied.selectedStand !== null) engine.removeFeatureState(STAND_SOURCE, applied.selectedStand, 'selected');
-    if (code !== null) engine.setFeatureState(STAND_SOURCE, code, { selected: true });
-    applied.selectedStand = code;
-    markSettled(rootRef.current, false);
-  }, [selection, attached, presetStands, flights, standFeatures]);
+    if (!applied.drawsStands) return;
+    const code = selection?.kind === 'stand' ? mapStandCode(selection.id) || null : null;
+    const related = selection?.kind === 'flight' ? relatedEntities(selection, { flights }).standCode : null;
+    const { hover } = applied.standFlags ?? NO_FLAGS;
+    applyStandFlags(standFlags({ hover, selected: code, related, stands: attached }));
+    const marked = standFlags({ selected: code, stands: attached }).sameAgent;
+    if ([...marked].sort().join('|') !== [...applied.selectionSameAgent].sort().join('|')) {
+      applied.selectionSameAgent = marked.size === 0 ? NO_CODES : marked;
+      updateOnScreen();
+    }
+    if (code === applied.easedFor) return;
+    applied.easedFor = code;
+    const focused = focusRef.current;
+    focusRef.current = null;
+    if (code !== null && focused !== code) easeToStand(code);
+  }, [selection, attached, presetStands, flights, standFeatures, applyStandFlags, updateOnScreen, easeToStand]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -730,14 +902,42 @@ const OccMap = forwardRef(function OccMap({
     appliedRef.current.groups = Object.fromEntries(Object.entries(next).map(([group, visible]) => [group, Boolean(visible)]));
   }, [groupsKey]);
 
-  // While a stand is being placed a click gives its point: no tooltip stays open over the map.
+  // While a stand is being placed a click gives its point: no tooltip stays open over the map and no stand stays marked
+  // as under the pointer.
   useEffect(() => {
-    engineRef.current?.setCursor(placing ? 'crosshair' : '');
-    if (placing) store.set({ tooltip: null });
-  }, [placing, store]);
+    engineRef.current?.setCursor(placingNow ? 'crosshair' : '');
+    if (!placingNow) return;
+    store.set({ tooltip: null });
+    hoverStand(null);
+  }, [placingNow, store, hoverStand]);
+
+  // The pending location of the stand being placed, drawn as its box, and the box at the pointer, which goes when the
+  // placing ends or moves to another stand (the next pointer move draws that one).
+  const pendingKey = placingStand && pendingLocation
+    ? `${pendingLocation.longitude}|${pendingLocation.latitude}`
+    : null;
+  const placingCode = placingStand ? mapStandCode(placingStand.code) || null : null;
+  const placingSize = placingStand?.sizeHint ?? null;
+  useEffect(() => {
+    const applied = appliedRef.current;
+    if (!engineRef.current || !applied.drawsStands) return;
+    const point = pendingKey === null ? null : pendingKey.split('|').map(Number);
+    const pending = point === null || placingCode === null
+      ? null
+      : placingGhost({ code: placingCode, pointer: point, layout, sizeHint: placingSize });
+    const shown = (pending !== null) !== (applied.pendingGhost !== null) || (placingCode !== applied.placingCode && applied.ghost !== null);
+    applied.pendingGhost = pending;
+    if (placingCode !== applied.placingCode) {
+      applied.placingCode = placingCode;
+      applied.ghost = null;
+    }
+    writeGhost();
+    if (shown) updateOnScreen();
+  }, [pendingKey, placingCode, placingSize, layout, writeGhost, updateOnScreen]);
 
   // The map keys (contracts 2.2) on keydown at the map's root, in the bubble phase, never on document. 1 to 4 are
-  // the views while the map can draw; Esc clears a selection, after a drawer or dialog has closed on its own Esc.
+  // the views while the map can draw; Esc cancels the placing of a stand first, then clears a selection, after a drawer
+  // or dialog has closed on its own Esc. No key of its own is added for the placing.
   useEffect(() => {
     const root = rootRef.current;
     const handlers = {};
@@ -750,7 +950,8 @@ const OccMap = forwardRef(function OccMap({
     Object.defineProperty(handlers, 'clearSelection', {
       enumerable: true,
       get: () => {
-        const { selection: current, onSelect: select } = latest.current ?? {};
+        const { selection: current, onSelect: select, placing: placingStandNow, onCancelPlacing: cancel } = latest.current ?? {};
+        if (placingStandNow && cancel) return () => cancel();
         return current && select ? () => select(null) : undefined;
       },
     });
