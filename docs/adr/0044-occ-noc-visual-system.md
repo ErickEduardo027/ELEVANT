@@ -509,6 +509,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
 - **Cobertura de posiciones** (`position-coverage/CoverageRoute.jsx`, plantilla C).
   - La barra lleva el título, la fecha y la navegación «Terminal y vista», con la terminal y la vista («Cobertura» o «Configuración») como `OccSegmented`.
   - En «Cobertura», el tablero «Posiciones de la terminal» es una `OccDataTable`: la posición en placa, «Puente» y «Estrecho» con glifo y palabra, quién la cubre y «Desactivada». «Coberturas del día» es una lista con placas, el horario en mono, el mentor, el vehículo y «Liberar».
+  - Cada uno lleva su leyenda en la cabecera (`OccStatusLegend`, punto 8), porque un tablero con estados muestra su leyenda (sección 5). La leyenda «Atributos y estado», de «Posiciones de la terminal», muestra el círculo hueco de un atributo («Atributo») y el círculo tachado de «Desactivada». La leyenda «Tipo de cobertura», de «Coberturas del día», muestra el círculo hueco de «Refuerzo». Las pastillas y las leyendas toman el tono de cada marca de una sola tabla (`MARK_TONES`), así que dibujan las mismas formas.
   - El formulario «Asignar posiciones» queda a la derecha desde 1280 px, con `OccField`, las condiciones del agente como `OccStatusPill` (lo que bloquea, en atención) y «Asignar posiciones» como tecla clara.
   - En «Configuración», «Atributos de las posiciones» es una tabla de filas editables, cada una con su clave de intento y su versión, junto a «Reglas de la terminal» y «Posiciones combinadas». Los motivos de un rechazo van en una caja de atención.
   - Los textos pasan a `coverageMessages.js`, con inglés.
@@ -595,7 +596,8 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
   - `muted`, un círculo tachado, en el tenue (cancelado, revocado);
   - `attention` y `urgent`, con el triángulo y el octágono de `SIGNALS`: son los únicos con losa.
 
-  Admite las marcas «Demo» y «est.».
+  Admite las marcas «Demo» y «est.». Su glifo también se exporta solo, como `OccStatusGlyph`.
+- `OccStatusLegend`: la leyenda de un tablero con estados, para su cabecera (sección 5). Es una lista con nombre (`label`) con una entrada por marca del tablero, en su orden, cada una con el glifo de su tono (`OccStatusGlyph`, el mismo de la pastilla) y su palabra, en el texto secundario, como la leyenda «Prioridad» de Notificaciones. Los glifos van ocultos para los lectores de pantalla, que leen las palabras.
 - `classes.js` (`OCC_CLASSES`): las cadenas de clases que Cobertura, Datos maestros, Tablets, Contratos listos y Reportes definían por su cuenta, dibujadas con los tokens. Fueron el primer paso, mecánico, de su migración (diseño E.2).
 - `occ.css` suma lo que la tabla necesita fuera de su JSX:
   - en las tarjetas apiladas, rótulos de 12 px en frase normal, altura libre, valores a la izquierda, el detalle plegado oculto y la señal de una fila encendida;
@@ -625,6 +627,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
 - *El chat no llena el alto.* La nota de U2 (punto 9) pedía pasar Chat interno a `mainVariant: 'fill'` al rehacerlo. Sigue en `'scroll'`, con el margen de `main`: su sección mide el alto que queda, y cada panel se desplaza solo. `AdminOccLayout`, que elige la variante, no cambia en U6.
 - *El corte a 1280 px.* El diseño (H.3) apila la lista y el detalle entre 1024 y 1279 px y los separa en dos vistas por debajo de 1024. El chat muestra una vista a la vez por debajo de 1280 px; Revisión y Cobertura apilan el detalle bajo la lista a cualquier ancho menor.
 - *`OccStatusPill`* recibe `tone` y `label`, no `domain` y `status`: cada pantalla traduce sus estados a un tono (`review/reviewStatusTone.js`, o `DEVICE_STATUS_TONES` en Tablets). El tono que el diseño B.4 llama `critical` es `urgent`, como en `SIGNALS` y en `OccStatTile`.
+- *`OccStatusLegend`* no está en el diseño F, y su fila de Cobertura (E.2) no pide leyenda. La pide la regla de la página de contratos (2.4), a pedido del dueño: cada tablero con estados muestra su leyenda en la cabecera (punto 2).
 - *`OccDataTable`* suma el modo lista, la fila desplegable y los estados remotos, y no tiene `density`: las filas miden 32 px con ratón y 44 px con puntero táctil (H.2). Contratos listos no es una tabla con una fila desplegable (E.2), sino una lista con un botón que despliega los servicios de cada contrato, porque las pruebas y el E2E del ciclo la leen como lista.
 - *La fila elegida* de `OccDataTable`, en la tabla y en la tarjeta, lleva la losa cian tenue (`--occ-accent-soft`), como la conversación abierta del chat: cian es lo elegido (contratos 2.4). No lleva `--occ-panel-raised`, que la tabla de tokens de la sección «Decisión» y el diseño (B.2) le daban.
 - *`OccDialog`* se dibuja en su sitio y no en un portal (punto 8).
@@ -662,7 +665,7 @@ U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tiene
   - las pruebas de las ocho rutas suman casos de la disposición, del inglés y de los estados; fuera de los cambios de esta lista, conservan los que ya tenían;
   - se borra `ExportButton.test.jsx`.
 - Pruebas nuevas:
-  - en `occ-ui/`: `OccDataTable`, `OccToolbar`, `OccButton`, `OccField`, `OccDialog`, `OccStatusPill` y `classes`;
+  - en `occ-ui/`: `OccDataTable`, `OccToolbar`, `OccButton`, `OccField`, `OccDialog`, `OccStatusPill`, `OccStatusLegend` y `classes`;
   - la paridad de los mensajes de Revisión, Cobertura, Datos maestros, Tablets, Contratos listos y Reportes, y `review/reviewStatusTone.test.js`;
   - `tests/visualScreensFixtures.test.js`, que valida las respuestas sintéticas de las pantallas con los validadores estrictos del cliente compartido;
   - en la suite visual, ocho pruebas en `tests/visual/occ/` (`review`, `coverage`, `notifications`, `chat`, `master-data`, `devices`, `contracts` y `reports`), sobre `occScreen.mjs` y `fixtures/screensApi.mjs`: los datos, el vacío, el error o la falta de permiso y los diálogos de cada pantalla, a 1920×1080 y a 1440×900, y el chat en su ancho estrecho, a 1024×768. Revisión suma la operación que sigue en rampa sin entrega, con su panel de incidencias dentro del detalle acoplado, y la revisión reabierta. La sesión sintética es la de un administrador del OCC, que también gestiona incidencias. Como el resto de la suite, corre fuera del CI.

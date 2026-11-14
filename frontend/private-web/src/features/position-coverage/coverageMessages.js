@@ -37,6 +37,11 @@ export const coverageMessages = {
       narrowbody: 'Estrecho',
       noAgent: 'Sin agente',
       inactive: 'Desactivada',
+      // The legend in the board's header: an attribute's mark, then «Desactivada» (board.inactive).
+      legend: {
+        label: 'Atributos y estado',
+        attribute: 'Atributo',
+      },
     },
     coverages: {
       title: 'Coberturas del día',
@@ -50,6 +55,10 @@ export const coverageMessages = {
       },
       reinforcement: 'Refuerzo',
       release: 'Liberar',
+      // The legend in the list's header names its one mark, «Refuerzo» (coverages.reinforcement).
+      legend: {
+        label: 'Tipo de cobertura',
+      },
     },
     form: {
       label: 'Asignar posiciones',
@@ -164,6 +173,10 @@ export const coverageMessages = {
       narrowbody: 'Narrowbody',
       noAgent: 'No agent',
       inactive: 'Deactivated',
+      legend: {
+        label: 'Attributes and state',
+        attribute: 'Attribute',
+      },
     },
     coverages: {
       title: 'Coverage of the day',
@@ -177,6 +190,9 @@ export const coverageMessages = {
       },
       reinforcement: 'Reinforcement',
       release: 'Release',
+      legend: {
+        label: 'Coverage type',
+      },
     },
     form: {
       label: 'Assign stands',

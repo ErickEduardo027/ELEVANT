@@ -18,6 +18,17 @@ const PRIMARY_KEY = 'rgb(232, 238, 241)';
 const rowOf = (page, table, code) => table.getByRole('row')
   .filter({ has: page.locator('[data-occ-plate]', { hasText: new RegExp(`^${code}$`) }) });
 
+// A board's legend (contratos 2.4): in its header, on the line of its title, with the shape and the word of each mark.
+async function expectLegend(region, title, name, entries) {
+  const legend = region.getByRole('list', { name });
+  await expect(legend.getByRole('listitem')).toHaveText(entries.map(([word]) => word));
+  const shapes = await legend.getByRole('listitem').evaluateAll(items => items.map(item => item.querySelector('svg').dataset.shape));
+  expect(shapes).toEqual(entries.map(([, shape]) => shape));
+  const legendBox = await legend.boundingBox();
+  const titleBox = await region.getByRole('heading', { name: title }).boundingBox();
+  expect(Math.abs((legendBox.y + legendBox.height / 2) - (titleBox.y + titleBox.height / 2))).toBeLessThan(4);
+}
+
 async function openCoverage(page, isolation, viewport, scenario = 'data') {
   const api = createScreensApi(scenario);
   const main = await openOccScreen(page, isolation, { path: PAGE, api, viewport });
@@ -41,6 +52,8 @@ for (const viewport of SCREEN_VIEWPORTS) {
       await expect(rowOf(page, table, 'AN5')).toContainText('Estrecho');
       await expect(rowOf(page, table, 'A1')).toContainText('Agente de prueba Uno, Agente de prueba Seis');
       await expect(rowOf(page, table, 'A4')).toContainText('Sin agente');
+      await expectLegend(board, 'Posiciones de la terminal', 'Atributos y estado',
+        [['Atributo', 'hollow-circle'], ['Desactivada', 'slashed-circle']]);
 
       // The form docked at the right of the board, from the same top, from 1280 px.
       const form = main.getByRole('form', { name: 'Asignar posiciones' });
@@ -68,7 +81,10 @@ for (const viewport of SCREEN_VIEWPORTS) {
       const uno = day.getByRole('listitem').filter({ hasText: 'Agente de prueba Uno' });
       await expect(uno).toContainText('VH-07');
       await expect(uno).toContainText('06:00–14:00');
-      await expect(day.getByRole('listitem').filter({ hasText: 'Refuerzo' })).toContainText('12:00–17:00');
+      // «Refuerzo» is also the word of the list's legend: the reinforcement is the item of the list of coverages.
+      await expect(day.getByRole('list', { name: 'Coberturas del día' }).getByRole('listitem')
+        .filter({ hasText: 'Refuerzo' })).toContainText('12:00–17:00');
+      await expectLegend(day, 'Coberturas del día', 'Tipo de cobertura', [['Refuerzo', 'hollow-circle']]);
       await shoot(page, testInfo, `cobertura-coberturas-${viewport.width}`);
 
       // Terminal B: its bridge stands, and the rule the form states for it.

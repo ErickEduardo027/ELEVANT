@@ -43,11 +43,29 @@ function NormalGlyph({ shape, className }) {
   );
 }
 
+const assertTone = tone => {
+  if (!OCC_STATUS_TONE_KEYS.includes(tone)) throw new RangeError(`Unknown OCC status tone: ${String(tone)}`);
+};
+
+/**
+ * The glyph of a status tone alone (design B.4): the one OccStatusPill draws before its word, and OccStatusLegend
+ * before the word of each mark a board draws, so a legend shows exactly the board's shapes. The four normal tones
+ * draw their own shape in their glyph token; `attention` and `urgent` draw the triangle or the octagon of OccGlyph. It
+ * always stands next to its word, so it is hidden from assistive technology. `className` adds to the glyph's classes;
+ * an unknown tone throws.
+ */
+export function OccStatusGlyph({ tone = 'neutral', className = '' }) {
+  assertTone(tone);
+  if (tone === 'attention' || tone === 'urgent') return <OccGlyph name={tone} className={className} />;
+  const glyphClasses = [TONE_CLASSES[tone].glyph, className].filter(Boolean).join(' ');
+  return <NormalGlyph shape={STATUS_TONES[tone].shape} className={glyphClasses} />;
+}
+
 /**
  * The state of a row or a record (design F): its glyph and its word, never a colour alone (contratos 2.4).
  * - `tone`: one of STATUS_TONES. The four normal tones draw their own shape in currentColor; `attention` and `urgent`
  *   draw the triangle or the octagon of OccGlyph and are the only ones on a slab (`rounded` and their soft token). The
- *   glyph is hidden from assistive technology: the word next to it says the state.
+ *   glyph (OccStatusGlyph) is hidden from assistive technology: the word next to it says the state.
  * - `label`: the word, always written as text («Planificada», «Revocada», «Sin agente»).
  * - `demo` adds the «Demo» tag and `estimated` the «est.» tag, after the word.
  * - `size`: `md` (14 px text) or `sm` (12 px, for dense tables).
@@ -57,16 +75,14 @@ function NormalGlyph({ shape, className }) {
 export default function OccStatusPill({
   tone = 'neutral', label, demo = false, estimated = false, size = 'md', className = '', 'data-testid': testId,
 }) {
-  if (!OCC_STATUS_TONE_KEYS.includes(tone)) throw new RangeError(`Unknown OCC status tone: ${String(tone)}`);
+  assertTone(tone);
   if (!OCC_STATUS_PILL_SIZES.includes(size)) throw new RangeError(`Unknown OCC status pill size: ${String(size)}`);
-  const { shape } = STATUS_TONES[tone];
   const classes = TONE_CLASSES[tone];
-  const signal = tone === 'attention' || tone === 'urgent';
 
   return (
     <span data-occ-status="" data-tone={tone} data-testid={testId}
       className={`inline-flex max-w-full items-center gap-1.5 font-medium ${SIZE_CLASSES[size]} ${classes.container} ${classes.text} ${className}`}>
-      {signal ? <OccGlyph name={tone} /> : <NormalGlyph shape={shape} className={classes.glyph} />}
+      <OccStatusGlyph tone={tone} />
       <span className="min-w-0">{label}</span>
       {demo ? <DemoTag /> : null}
       {estimated ? <EstimatedTag /> : null}

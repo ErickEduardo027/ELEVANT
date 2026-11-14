@@ -1027,8 +1027,12 @@ escriben.
   ([ruta](../../frontend/private-web/src/features/position-coverage/CoverageRoute.jsx)).
   La barra lleva la fecha y «Terminal y vista». El tablero «Posiciones de la
   terminal» es una tabla, «Coberturas del día» es una lista y el formulario
-  «Asignar posiciones» queda a la derecha desde 1280 px. En «Configuración»,
-  los atributos de las posiciones son filas editables. Sus textos ganan inglés
+  «Asignar posiciones» queda a la derecha desde 1280 px. Cada tablero lleva su
+  leyenda en la cabecera, con la forma y la palabra de sus marcas: «Atributos y
+  estado» (atributo y «Desactivada») y «Tipo de cobertura» («Refuerzo»)
+  ([leyenda](../../frontend/private-web/src/features/occ-ui/OccStatusLegend.jsx)).
+  En «Configuración», los atributos de las posiciones son filas editables. Sus
+  textos ganan inglés
   ([mensajes](../../frontend/private-web/src/features/position-coverage/coverageMessages.js)).
 - **Notificaciones**
   ([ruta](../../frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx)).

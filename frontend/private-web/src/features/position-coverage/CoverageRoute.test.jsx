@@ -308,6 +308,42 @@ it('shows the board as a table and the day coverages as a list', async () => {
   expect(within(form).getByRole('button', { name: 'Asignar posiciones' })).toBeEnabled();
 });
 
+it('shows in the header of each board the legend of the marks it draws (contratos 2.4)', async () => {
+  loadOccCoverage.mockResolvedValue({ ...board,
+    stands: [stand('A01', 't-a', { hasBoardingBridge: true }), stand('A02', 't-a', { maxAircraftSize: 'Narrowbody' }),
+      stand('A03', 't-a', { isActive: false }), ...board.stands.slice(2)],
+    coverages: [{ id: 'cv-1', agentId: 'ag-1', agentName: 'Riley Ramp', terminalId: 't-a', terminalCode: 'A',
+      stands: [{ standId: 's-A01', code: 'A01' }], startsAt: '2026-08-19T10:00:00Z', endsAt: '2026-08-19T18:00:00Z',
+      mentorAgentId: null, mentorName: null, vehicleCode: null, isReinforcement: true }] });
+  render(<CoverageRoute />);
+  const shapeOf = element => element.querySelector('svg').dataset.shape;
+  const entriesOf = legend => within(legend).getAllByRole('listitem')
+    .map(item => [item.textContent, item.dataset.tone, shapeOf(item)]);
+
+  // «Posiciones de la terminal»: the legend sits in the board's header, beside its title, with the board's two shapes
+  // in order: the hollow circle of an attribute, then the slashed circle of a deactivated stand.
+  const stands = await screen.findByRole('region', { name: 'Posiciones de la terminal' });
+  const legend = within(stands).getByRole('list', { name: 'Atributos y estado' });
+  expect(legend.closest('header')).toContainElement(within(stands).getByRole('heading', { name: 'Posiciones de la terminal' }));
+  expect(entriesOf(legend)).toEqual([['Atributo', 'neutral', 'hollow-circle'], ['Desactivada', 'muted', 'slashed-circle']]);
+  // Each entry is the shape the board draws for its mark.
+  const table = within(stands).getByRole('table', { name: 'Posiciones de la terminal' });
+  const pillOf = text => within(table).getByText(text).closest('[data-occ-status]');
+  for (const attribute of ['Puente', 'Estrecho']) expect(shapeOf(pillOf(attribute)), attribute).toBe('hollow-circle');
+  expect(shapeOf(pillOf('Desactivada'))).toBe('slashed-circle');
+  // The legend names the kind of mark: «Puente» stays the only one of the board.
+  expect(within(stands).getAllByText('Puente')).toHaveLength(1);
+
+  // «Coberturas del día»: its one mark, «Refuerzo», with the same hollow circle, in its header and not in the list.
+  const day = screen.getByRole('region', { name: 'Coberturas del día' });
+  const dayLegend = within(day).getByRole('list', { name: 'Tipo de cobertura' });
+  expect(dayLegend.closest('header')).toContainElement(within(day).getByRole('heading', { name: 'Coberturas del día' }));
+  expect(entriesOf(dayLegend)).toEqual([['Refuerzo', 'neutral', 'hollow-circle']]);
+  const items = within(within(day).getByRole('list', { name: 'Coberturas del día' })).getAllByRole('listitem');
+  expect(items).toHaveLength(1);
+  expect(shapeOf(within(items[0]).getByText('Refuerzo').closest('[data-occ-status]'))).toBe('hollow-circle');
+});
+
 describe('CoverageRoute in English', () => {
   afterEach(() => act(() => resetLanguageForTests('es')));
 
@@ -319,12 +355,17 @@ describe('CoverageRoute in English', () => {
     const nav = screen.getByRole('navigation', { name: 'Terminal and view' });
     expect(within(nav).getByRole('button', { name: 'Terminal A' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(nav).getByRole('button', { name: 'Coverage' })).toBeInTheDocument();
-    const table = within(screen.getByRole('region', { name: 'Terminal stands' })).getByRole('table');
+    const standsRegion = screen.getByRole('region', { name: 'Terminal stands' });
+    const table = within(standsRegion).getByRole('table');
     expect(within(table).getAllByRole('columnheader').map(header => header.textContent))
       .toEqual(['Stand', 'Attributes', 'Covered by', 'State']);
     expect(within(table).getAllByText('No agent')).toHaveLength(2);
-    expect(within(screen.getByRole('region', { name: 'Coverage of the day' }))
-      .getByText('No agents are assigned in this terminal yet.')).toBeInTheDocument();
+    // The legends speak English too, with the pills' own words.
+    expect(within(within(standsRegion).getByRole('list', { name: 'Attributes and state' })).getAllByRole('listitem')
+      .map(item => item.textContent)).toEqual(['Attribute', 'Deactivated']);
+    const day = screen.getByRole('region', { name: 'Coverage of the day' });
+    expect(within(day).getByRole('list', { name: 'Coverage type' })).toHaveTextContent('Reinforcement');
+    expect(within(day).getByText('No agents are assigned in this terminal yet.')).toBeInTheDocument();
     const form = screen.getByRole('form', { name: 'Assign stands' });
     expect(within(form).getByText('Up to 3 per agent. The window is the agent’s whole shift.')).toBeInTheDocument();
     fireEvent.change(within(form).getByLabelText('Agent'), { target: { value: 'ag-1' } });
