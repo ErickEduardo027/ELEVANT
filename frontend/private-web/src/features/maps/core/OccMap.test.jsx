@@ -13,6 +13,7 @@ import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint, haversineM } from '../airport/geo';
 import { runwayEnd } from '../airport/runwayInUse';
+import { FOLLOW_ZOOM } from '../kinematics/followCamera';
 import { AIRFIELD_LAYER_IDS } from '../style/airfieldLayers';
 import { referenceFeatures } from '../style/referenceLayers';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
@@ -30,7 +31,7 @@ import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situa
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 import MapLegend from '../ui/MapLegend';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
-import { boundsCenter, presetTargets } from './cameraPresets';
+import { boundsCenter, isInBounds, presetTargets } from './cameraPresets';
 import { createRenderClock, metresPerPixel } from './frameLoop';
 import { liveEngineCount } from './mapEngine';
 import OccMap from './OccMap';
@@ -2057,8 +2058,20 @@ const THRESHOLD_08 = runwayEnd(MDPC_LAYOUT, '08').threshold;
 const FOLLOW_INSETS = Object.freeze({ top: 64, right: 0, bottom: 120, left: 400 });
 const NO_INSETS = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
 const DEMO_SELECTION = Object.freeze({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival });
+// Its departure ZZ9002, which leaves A6 on time an hour after its on-block (createDemoBlock's offBlockAfterMin): the
+// visit's aircraft goes by its key from the push-back on, and lifts off five minutes later.
+const DEPARTURE_SELECTION = Object.freeze({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture });
+const DEMO_DEPARTURE_ID = `f:${TRAFFIC_FLIGHT_KEY.demoDeparture}`;
+const DEMO_TAKEOFF_S = (8 + 60 + 5) * 60;
 const midpointOf = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 const cameraMoves = map => map.cameraCalls.filter(call => call.method === 'flyTo' || call.method === 'easeTo');
+const cameraJumps = map => map.cameraCalls.filter(call => call.method === 'jumpTo').length;
+// Reduced motion asked for (jsdom has no matchMedia): the loop then ticks once a second, on a timer the test runs.
+function reduceMotion() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.stubGlobal('matchMedia', media => ({ matches: media === '(prefers-reduced-motion: reduce)', addEventListener() {},
+    removeEventListener() {} }));
+}
 
 function FollowProbe() {
   const { follow } = useOccMap();
@@ -2067,9 +2080,11 @@ function FollowProbe() {
 }
 const followProbe = () => JSON.parse(screen.getByTestId('follow-probe').textContent);
 
-function renderFollow({ appearS = 10, imported = true, insets = FOLLOW_INSETS, selection = DEMO_SELECTION, routeAt } = {}) {
+function renderFollow({
+  appearS = 10, imported = true, offBlockAfterMin = null, insets = FOLLOW_INSETS, selection = DEMO_SELECTION, routeAt,
+} = {}) {
   const frames = controlledFrames();
-  const block = createDemoBlock({ appearAt: Date.parse(TRAFFIC_NOON) - appearS * 1_000, imported });
+  const block = createDemoBlock({ appearAt: Date.parse(TRAFFIC_NOON) - appearS * 1_000, imported, offBlockAfterMin });
   const scene = motionTraffic({ flights: demoPairOnly(block, { imported, standCode: imported ? 'A6' : 'B21' }) });
   const withRoute = traffic => (routeAt ? { ...traffic, routeAt } : traffic);
   const ref = createRef();
@@ -2096,6 +2111,11 @@ function renderFollow({ appearS = 10, imported = true, insets = FOLLOW_INSETS, s
         scene.server.at += 1_000;
         frames.run();
       }
+    },
+    // Under reduced motion (reduceMotion): the server's time a second on, and the loop's tick at it.
+    tick: () => {
+      scene.server.at += 1_000;
+      act(() => { vi.advanceTimersByTime(1_000); });
     },
   };
 }
@@ -2245,20 +2265,14 @@ describe('OccMap route and follow mode (PR M6)', () => {
   });
 
   it('under reduced motion it re-centres only near the edge', () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    vi.stubGlobal('matchMedia', media => ({ matches: media === '(prefers-reduced-motion: reduce)', addEventListener() {},
-      removeEventListener() {} }));
+    reduceMotion();
     // Taxiing to A6 a minute and a half after its touchdown: framed on itself.
-    const { map, root, aircraftAt, server, frames } = renderFollow({ appearS: 354, insets: NO_INSETS });
-    const tick = () => {
-      server.at += 1_000;
-      act(() => { vi.advanceTimersByTime(1_000); });
-    };
+    const { map, root, aircraftAt, frames, tick } = renderFollow({ appearS: 354, insets: NO_INSETS });
     press(root, 's');
     // The frame of the key: one jump, no animation.
     frames.run();
     expect(cameraMoves(map)).toEqual([]);
-    const jumps = () => map.cameraCalls.filter(call => call.method === 'jumpTo').length;
+    const jumps = () => cameraJumps(map);
     const framed = jumps();
     expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(1);
     // Once a second it moves on, in the middle of the map: the camera stays where it is.
@@ -2278,6 +2292,96 @@ describe('OccMap route and follow mode (PR M6)', () => {
     // Back in the middle, the ticks leave it alone again.
     tick();
     expect(jumps()).toBe(framed + 2);
+  });
+
+  it('under reduced motion it re-centres before a departure flying away from its threshold leaves the view', () => {
+    reduceMotion();
+    // ZZ9002 climbing out of 08 ten seconds after its lift-off, followed: the camera frames it with the threshold.
+    const { map, root, aircraftAt, frames, tick } = renderFollow({ appearS: DEMO_TAKEOFF_S + 10, offBlockAfterMin: 60,
+      selection: DEPARTURE_SELECTION, insets: NO_INSETS });
+    const fit = vi.spyOn(map, 'cameraForBounds');
+    press(root, 's');
+    frames.run();
+    expect(cameraMoves(map)).toEqual([]);
+    // The box of the aircraft and the threshold, fitted inside the insets and 24 px more with the final's zoom as its
+    // cap: MapLibre keeps both in sight even once the climb turns off the runway's axis (the fake only fits widths).
+    const [bounds, options] = fit.mock.calls.filter(([, given]) => given?.maxZoom !== undefined).at(-1);
+    expect(isInBounds(aircraftAt(DEMO_DEPARTURE_ID), bounds) && isInBounds(THRESHOLD_08, bounds)).toBe(true);
+    expect(options).toMatchObject({ absolutePadding: true, padding: { top: 24, right: 24, bottom: 24, left: 24 } });
+    expect(options.maxZoom).toBeGreaterThan(FOLLOW_ZOOM.finalFrom);
+    expect(options.maxZoom).toBeLessThan(FOLLOW_ZOOM.finalTo);
+    // Each second it climbs on and turns north. The middle of the two moves at half its speed: watched alone it would
+    // leave the aircraft off the map for many seconds. The camera stays put until the aircraft itself nears the edge,
+    // then one jump frames it again: a few jumps in 75 s, never a glide, and the aircraft always on the map.
+    const onMap = ({ x, y }) => x >= 0 && x <= 1440 && y >= 0 && y <= 900;
+    let jumps = 0;
+    for (let second = 1; second <= 75; second += 1) {
+      const before = cameraJumps(map);
+      tick();
+      jumps += cameraJumps(map) - before;
+      expect(onMap(map.project(aircraftAt(DEMO_DEPARTURE_ID))), `${second} s after the key`).toBe(true);
+    }
+    expect(haversineM(aircraftAt(DEMO_DEPARTURE_ID), THRESHOLD_08)).toBeGreaterThan(6_500);
+    expect(jumps).toBeGreaterThanOrEqual(2);
+    expect(jumps).toBeLessThanOrEqual(5);
+    expect(cameraMoves(map)).toEqual([]);
+  });
+
+  it('2D or 3D while following frames the aircraft again with the new tilt, at the person\'s zoom', () => {
+    // Taxiing to A6 a minute and a half after its touchdown, followed in 2D: framed on itself, flat.
+    const { map, root, aircraftAt, frames, seconds, rerender } = renderFollow({ appearS: 354, insets: NO_INSETS });
+    press(root, 's');
+    seconds(1);
+    expect(cameraMoves(map)).toHaveLength(1);
+    expect(map.getPitch()).toBe(0);
+    // The person zooms in with the wheel: their zoom from now on.
+    const zoom = map.getZoom() + 1;
+    act(() => map.jumpTo({ zoom, originalEvent: new WheelEvent('wheel') }));
+    seconds(1);
+    // The page turns 3D on (its 2D/3D control; the D key once PR M7 wires it): one move of the map's own to the aircraft
+    // with the ground's tilt, as when follow mode engages, at the person's zoom; then the frames follow on at that tilt.
+    rerender({ pitchMode: '3d' });
+    frames.run();
+    expect(cameraMoves(map)).toHaveLength(2);
+    expect(cameraMoves(map).at(-1).options).toMatchObject({ pitch: FOLLOW_ZOOM.ground3dPitch, zoom: expect.closeTo(zoom, 9) });
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    seconds(2);
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    expect(map.getZoom()).toBeCloseTo(zoom, 9);
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(30);
+    expect(query().get('follow')).toBe('1');
+    // Back to 2D: flat again, the same way.
+    rerender({ pitchMode: '2d' });
+    frames.run();
+    expect(cameraMoves(map)).toHaveLength(3);
+    expect(map.getPitch()).toBe(0);
+  });
+
+  it('under reduced motion 2D or 3D while following jumps to the new tilt at once', () => {
+    reduceMotion();
+    // Taxiing to A6, followed in 2D: framed on itself, in the middle of the map, far from any edge.
+    const { map, root, aircraftAt, frames, tick, rerender } = renderFollow({ appearS: 354, insets: NO_INSETS });
+    press(root, 's');
+    frames.run();
+    const framed = cameraJumps(map);
+    expect(map.getPitch()).toBe(0);
+    // The page turns 3D on: one jump to the ground's tilt, without animation and without waiting for the aircraft to
+    // near the edge.
+    rerender({ pitchMode: '3d' });
+    frames.run();
+    expect(cameraJumps(map)).toBe(framed + 1);
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(1);
+    // The ticks leave it there, tilted, as before.
+    tick();
+    expect(cameraJumps(map)).toBe(framed + 1);
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    // Back to 2D: flat again at once.
+    rerender({ pitchMode: '2d' });
+    frames.run();
+    expect(cameraJumps(map)).toBe(framed + 2);
+    expect(map.getPitch()).toBe(0);
+    expect(cameraMoves(map)).toEqual([]);
   });
 
   it('following survives the import of the flight (same flightKey) and a 3-N07 link (proposalId)', () => {

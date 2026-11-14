@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { destinationPoint, haversineM } from '../airport/geo.js';
 import { runwayEnd } from '../airport/runwayInUse.js';
 import {
-  FOLLOW_RANGES, FOLLOW_TAU_S, FOLLOW_ZOOM, RECENTRE_SHARE, followCamera, needsRecentre, stepCamera,
+  FOLLOW_RANGES, FOLLOW_TAU_S, FOLLOW_ZOOM, RECENTRE_EDGE_SHARE, RECENTRE_SHARE, followCamera, needsReframe, needsRecentre,
+  stepCamera,
 } from './followCamera.js';
 import { createKinematicsLayout } from './kinematicsFixtures.js';
 import { angleDiff } from './smoothing.js';
@@ -72,31 +73,42 @@ describe('follow camera', () => {
     expect(span).toBeLessThan(nmToM(30) * 1.21);
   });
 
-  it('on final the zoom goes from 12.5 to 13.8 as it nears the threshold', () => {
+  it('on final the zoom goes up to 12.5 to 13.8 as it nears the threshold, with both in the box', () => {
     const zooms = [];
+    const centreOf = ([[west, south], [east, north]]) => [(west + east) / 2, (south + north) / 2];
     for (const nm of [10, 8, 5, 2, 0.5, 0]) {
       const point = onFinal(nm);
       const camera = followCamera({ aircraft: flying(point, ktToMs(150)), phase: 'final', targets: TARGETS, mode3d: true });
-      expect(camera, `${nm} NM`).toMatchObject({ kind: 'center', pitch: 0 });
-      // Half way between the aircraft and the threshold, so both are in sight.
-      const toAircraft = haversineM(camera.center, point);
-      const toThreshold = haversineM(camera.center, THRESHOLD);
+      // A box the map fits in the area in sight, so both stay in it even where that zoom would not hold them.
+      expect(camera, `${nm} NM`).toMatchObject({ kind: 'bounds', pitch: 0 });
+      expect(inside(point, camera.bounds) && inside(THRESHOLD, camera.bounds), `${nm} NM`).toBe(true);
+      // Centred half way between the aircraft and the threshold.
+      const toAircraft = haversineM(centreOf(camera.bounds), point);
+      const toThreshold = haversineM(centreOf(camera.bounds), THRESHOLD);
       expect(Math.abs(toAircraft - toThreshold), `${nm} NM`).toBeLessThan(1);
       expect(toAircraft + toThreshold - haversineM(point, THRESHOLD), `${nm} NM`).toBeLessThan(1);
-      zooms.push(camera.zoom);
+      zooms.push(camera.maxZoom);
     }
     expect(zooms[0]).toBeCloseTo(12.5, 9);
     expect(zooms[2]).toBeCloseTo(12.5 + 1.3 / 2, 9);
     expect(zooms[zooms.length - 1]).toBeCloseTo(13.8, 9);
     for (let at = 1; at < zooms.length; at += 1) expect(zooms[at]).toBeGreaterThan(zooms[at - 1]);
-    // The initial climb is the same the other way round: from 13.8 at the runway to 12.5 at 10 NM.
-    const outbound = [0.2, 3, 6, 9.99].map(nm => followCamera({
-      aircraft: flying(away(THRESHOLD, END_09.headingTrue, nm)), phase: 'climb', targets: TARGETS,
-    }));
-    expect(outbound.every(camera => camera.kind === 'center')).toBe(true);
-    for (let at = 1; at < outbound.length; at += 1) expect(outbound[at].zoom).toBeLessThan(outbound[at - 1].zoom);
-    expect(outbound[0].zoom).toBeLessThanOrEqual(13.8);
-    expect(outbound[outbound.length - 1].zoom).toBeGreaterThanOrEqual(12.5);
+    // The initial climb is the same the other way round: from 13.8 at the runway to 12.5 at 10 NM, and also after a
+    // turn off the runway's axis, where the box is taller than wide.
+    const outbound = [0.2, 3, 6, 9.99].map(nm => away(THRESHOLD, END_09.headingTrue, nm));
+    const turned = away(outbound[1], END_09.headingTrue - 90, 5);
+    expect(haversineM(turned, THRESHOLD)).toBeLessThan(nmToM(10));
+    const climbs = [...outbound, turned].map(point => [point, followCamera({ aircraft: flying(point), phase: 'climb',
+      targets: TARGETS })]);
+    for (const [point, camera] of climbs) {
+      expect(camera).toMatchObject({ kind: 'bounds', pitch: 0 });
+      expect(inside(point, camera.bounds) && inside(THRESHOLD, camera.bounds)).toBe(true);
+    }
+    for (let at = 1; at < outbound.length; at += 1) expect(climbs[at][1].maxZoom).toBeLessThan(climbs[at - 1][1].maxZoom);
+    expect(climbs[0][1].maxZoom).toBeLessThanOrEqual(13.8);
+    expect(climbs[outbound.length - 1][1].maxZoom).toBeGreaterThanOrEqual(12.5);
+    const [[west, south], [east, north]] = climbs.at(-1)[1].bounds;
+    expect(haversineM([west, south], [west, north])).toBeGreaterThan(haversineM([west, south], [east, south]));
   });
 
   it('rolling and taxiing it centres on the aircraft between 14.5 and 15.5', () => {
@@ -150,7 +162,9 @@ describe('follow camera', () => {
     // A departure leaving its stand is shown the same way, the other way round.
     expect(followCamera({ aircraft: rolling(destinationPoint(STAND, 0, 40), 1.5), phase: 'pushback', targets: TARGETS }).zoom).toBe(17);
     // In the air the stand does not count.
-    expect(followCamera({ aircraft: flying(STAND), phase: 'final', targets: TARGETS }).zoom).toBeLessThan(14);
+    const overStand = followCamera({ aircraft: flying(STAND), phase: 'final', targets: TARGETS });
+    expect(overStand).toMatchObject({ kind: 'bounds' });
+    expect(overStand.maxZoom).toBeLessThan(14);
   });
 
   it('stepCamera approaches the target exponentially and never overshoots', () => {
@@ -230,5 +244,36 @@ describe('follow camera', () => {
     expect(needsRecentre({ pointPx: { x: 10, y: 10 }, viewport: null })).toBe(true);
     expect(needsRecentre({ pointPx: { x: 10, y: 10 }, viewport, insets: { left: 600, right: 400 } })).toBe(true);
     expect(needsRecentre()).toBe(true);
+  });
+
+  it('needsReframe watches the framing\'s centre in the central 60 % and the aircraft near the edge', () => {
+    expect(RECENTRE_EDGE_SHARE).toBe(0.9);
+    // The map of the test above: the area in sight runs from x 0 to 800 and from y 100 to 700; its central 60 % from
+    // x 160 to 640 and from y 220 to 580, its central 90 % from x 40 to 760 and from y 130 to 670.
+    const viewport = { width: 1000, height: 800 };
+    const insets = { top: 100, right: 200, bottom: 100, left: 0 };
+    const reframes = (centerPx, aircraftPx) => needsReframe({ centerPx, aircraftPx, viewport, insets });
+    const middle = { x: 400, y: 400 };
+    // A framing of two points leaves its aircraft off its centre: the camera stays put while that centre is in the
+    // central 60 % and the aircraft is clear of the edge, its edge included.
+    for (const aircraft of [middle, { x: 700, y: 400 }, { x: 40, y: 600 }, { x: 760, y: 670 }, { x: 400, y: 130 }]) {
+      expect(reframes(middle, aircraft), JSON.stringify(aircraft)).toBe(false);
+    }
+    // An aircraft flying away from its objective nears the edge first: a jump, even with the centre in the middle.
+    for (const aircraft of [{ x: 761, y: 400 }, { x: 39, y: 400 }, { x: 400, y: 129 }, { x: 400, y: 671 }, { x: 900, y: 400 }]) {
+      expect(reframes(middle, aircraft), JSON.stringify(aircraft)).toBe(true);
+    }
+    // A centre past the central 60 % jumps as needsRecentre says, wherever the aircraft is.
+    expect(reframes({ x: 650, y: 400 }, middle)).toBe(true);
+    expect(reframes({ x: 400, y: 215 }, middle)).toBe(true);
+    // Without panels the edge is the map's: from x 50 to 950 and from y 40 to 760.
+    expect(needsReframe({ centerPx: middle, aircraftPx: { x: 950, y: 760 }, viewport })).toBe(false);
+    expect(needsReframe({ centerPx: middle, aircraftPx: { x: 951, y: 400 }, viewport })).toBe(true);
+    // What cannot be told re-frames: no pixel for either, no viewport, no room left by the panels.
+    expect(reframes(null, middle)).toBe(true);
+    expect(reframes(middle, null)).toBe(true);
+    expect(needsReframe({ centerPx: middle, aircraftPx: middle, viewport: null })).toBe(true);
+    expect(needsReframe({ centerPx: middle, aircraftPx: middle, viewport, insets: { left: 600, right: 400 } })).toBe(true);
+    expect(needsReframe()).toBe(true);
   });
 });

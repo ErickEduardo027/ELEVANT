@@ -14,7 +14,7 @@ import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM } from '../airport/geo';
-import { followCamera, needsRecentre, stepCamera } from '../kinematics/followCamera';
+import { followCamera, needsReframe, stepCamera } from '../kinematics/followCamera';
 import { mapMessages } from '../mapMessages';
 import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
 import {
@@ -393,10 +393,11 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   3-N07 link (its old key resolves through its proposalId), and a selection that names nothing or a stand ends it. It
  *   engages with one move of the map to the aircraft and its next objective, then each frame eases the camera there
  *   (kinematics/followCamera.js: followCamera, stepCamera; a 'bounds' framing fitted with cameraForBounds inside the
- *   insets and its zoom capped). Under reduced motion it re-centres only when the aircraft nears the edge
- *   (needsRecentre). A person's drag ends it with «Dejaste de seguir a … Pulsa Seguir para volver.», as does a view
- *   asked for; a person's zoom or tilt keeps following with that zoom or tilt; nothing moves the camera while a person
- *   moves the map.
+ *   insets and its zoom capped). Under reduced motion it jumps there only when the framing's centre leaves the middle of
+ *   the area in sight or the aircraft nears its edge (needsReframe). A person's drag ends it with «Dejaste de seguir a
+ *   … Pulsa Seguir para volver.», as does a view asked for; a person's zoom or tilt keeps following with that zoom or
+ *   tilt; a change of `pitchMode` engages it again with the new tilt; nothing moves the camera while a person moves the
+ *   map.
  * - The stands fed by the flights (PR M6, design D1 to D3): a stand whose display names an aircraft type draws it to
  *   scale from the codes threshold on (solid on the stand, dashed while it comes) and, with an aircraft on it, the
  *   progress of its turnaround from the three-line labels on; the legend explains both while they are in sight. One
@@ -1091,8 +1092,8 @@ const OccMap = forwardRef(function OccMap({
   // and its next objective (kinematics/followCamera.js, the targets of the motion store), the zoom or tilt a person set
   // kept. Engaging is one move of the map's own (instant under reduced motion), whose end gives the camera to the frames;
   // then each frame eases it there by the time since the last one (a frame without time jumps: the clock is paused or
-  // frozen); under reduced motion it re-centres only when what it frames nears the edge. Nothing moves while a person
-  // moves the map, and nothing without a drawn aircraft.
+  // frozen); under reduced motion it jumps there only when the framing's centre leaves the middle of the area in sight
+  // or the aircraft nears its edge. Nothing moves while a person moves the map, and nothing without a drawn aircraft.
   const followFrame = useCallback((tMs, { dtMs = 0, reduced = false } = {}) => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
@@ -1131,9 +1132,12 @@ const OccMap = forwardRef(function OccMap({
     }
     if (state.transition) return;
     // Under reduced motion the camera stays put until the point the framing centres on (the aircraft, or the middle
-    // between it and its objective) leaves the central 60 % of the area in sight: then one jump frames it again.
+    // between it and its objective) leaves the central 60 % of the area in sight, or until the aircraft itself nears the
+    // edge of that area (needsReframe): then one jump frames it again. The middle of two points moves at half the speed
+    // of an aircraft flying away from its objective, a departure climbing out, which would otherwise leave the screen.
     if (reduced) {
-      if (needsRecentre({ pointPx: engine.project(target.center), viewport: engine.getViewport(), insets: inset })) {
+      if (needsReframe({ centerPx: engine.project(target.center), aircraftPx: engine.project([item.lon, item.lat]),
+        viewport: engine.getViewport(), insets: inset })) {
         jump(target);
       }
       state.converged = true;
@@ -1527,9 +1531,11 @@ const OccMap = forwardRef(function OccMap({
     const applied = appliedRef.current;
     if (!engine || applied.pitchMode === pitchMode) return;
     applied.pitchMode = pitchMode;
-    // While following, the tilt of 2D or 3D is follow mode's to set, frame by frame (PR M6).
+    // While following, the tilt of 2D or 3D is follow mode's to set (PR M6): the change a person asked for engages it
+    // again, one move of the map's own to the aircraft's framing with the new tilt (one jump under reduced motion, whose
+    // frames would otherwise wait for the aircraft to near the edge). A tilt the person set gives way; their zoom stays.
     if (applied.follow?.on) {
-      Object.assign(applied.follow, { converged: false, pitchFrozen: false });
+      Object.assign(applied.follow, { engage: true, converged: false, pitchFrozen: false });
       applied.loop?.wake();
       return;
     }

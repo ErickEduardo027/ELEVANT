@@ -4,10 +4,11 @@ import { expect, production, test } from '../support/test.mjs';
 // The route of the chosen flight and follow mode of PR M6 in Chrome: the map lab's scenes (synthetic data, no provider,
 // the clock frozen at the lab's noon), photographed at the laptop sizes of the presentation, 1440 × 900 and
 // 1920 × 1080, for a person to review in test-results/visual. Beside the pictures it checks what must hold: the legend
-// names the parts of the route on screen, a followed aircraft is framed inside the map, S and «Seguir» (one switch,
-// pressed while the map follows) write `follow=1`, and a drag takes it away and says so at the bottom left, clear of the
-// dock, the credit, the open legend and the data block. The suite runs with reduced motion, so follow mode jumps instead
-// of gliding.
+// names the parts of the route on screen, a followed aircraft is framed inside the map (on final, on the taxiway, and a
+// departure climbing out after it turns off the runway's axis, which the fake map of vitest cannot fit), S and «Seguir»
+// (one switch, pressed while the map follows) write `follow=1`, and a drag takes it away and says so at the bottom left,
+// clear of the dock, the credit, the open legend and the data block. The suite runs with reduced motion, so follow mode
+// jumps instead of gliding.
 
 const SIZES = Object.freeze([[1440, 900], [1920, 1080]]);
 // The demo pair of the fixtures (src/features/maps/testing/trafficFixtures.js) as the traffic draws it.
@@ -22,6 +23,10 @@ const ROUTE_SCENES = Object.freeze([
 ]);
 // Each follow scene with the aircraft it follows.
 const FOLLOW_SCENES = Object.freeze([['approach-follow-final', DEMO_ARRIVAL], ['airfield-follow-taxi', DEMO_ARRIVAL]]);
+// The departure of airfield-departure-route lifts off from 08 three minutes after the lab's noon (it left A6 two minutes
+// before it, and the server gives its taxi-out five): the frozen clock `seconds` after that.
+const DEPARTURE_LIFTOFF_S = 180;
+const climbAt = seconds => new Date(Date.parse(NOON) + (DEPARTURE_LIFTOFF_S + seconds) * 1_000).toISOString();
 
 const legendItems = page => page.getByRole('list', { name: 'Leyenda' }).getByRole('listitem');
 const legendPanel = page => page.getByRole('list', { name: 'Leyenda' }).locator('..');
@@ -101,6 +106,26 @@ test.describe('map lab route and follow mode', () => {
         // Framed: the aircraft in sight, well clear of the map's edges.
         await expect.poll(() => inSight(page, aircraft, 80)).toBe(true);
         await shoot(page, testInfo, `${scene}-${width}`);
+      }
+    }
+  });
+
+  test('a departure followed in its climb stays in sight after it turns off the runway at 1440 × 900 and 1920 × 1080', async ({ page }, testInfo) => {
+    for (const [width, height] of SIZES) {
+      await page.setViewportSize({ width, height });
+      // A minute after its lift-off, near the runway's axis; two and a half, some 12 km out after its turn north, where
+      // the final's zoom on the middle of it and the threshold would leave it above the map: the framing is a box the
+      // map fits, so both stay in sight.
+      for (const seconds of [60, 150]) {
+        await openLab(page, `scene=airfield-departure-route&t=${climbAt(seconds)}`);
+        await expect(page.getByRole('dialog', { name: 'Vuelo ZZ9002' })).toBeVisible();
+        await labIdle(page);
+        await labCanvas(page).focus();
+        await page.keyboard.press('s');
+        await expect.poll(() => urlKey(page, 'follow')).toBe('1');
+        await labIdle(page);
+        await expect.poll(() => inSight(page, DEMO_DEPARTURE, 40), `${seconds} s after its lift-off at ${width}`).toBe(true);
+        await shoot(page, testInfo, `airfield-departure-climb-${seconds}-following-${width}`);
       }
     }
   });

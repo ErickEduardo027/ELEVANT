@@ -495,7 +495,8 @@ visual.
   lo que dice el bloque de datos de cada una, y «Pausar movimiento».
   [`map-lab.route-follow.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.route-follow.spec.mjs)
   fotografía la ruta de una llegada y la de una salida y el modo seguir en
-  final y en rodaje, y comprueba que `S` y «Seguir» escriben `follow=1` y que un
+  final, en rodaje y en el ascenso de una salida que gira tras despegar, con el
+  avión a la vista, y comprueba que `S` y «Seguir» escriben `follow=1` y que un
   arrastre deja de seguir y lo dice. En el proyecto `occ`,
   [`planning-map.spec.mjs`](../../frontend/private-web/tests/visual/occ/planning-map.spec.mjs)
   y [`positions-map.spec.mjs`](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)
