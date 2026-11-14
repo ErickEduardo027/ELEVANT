@@ -264,6 +264,38 @@ Desde la imagen aérea y los vuelos del mapa (PR A3 del mismo plan, código de
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.MapFlights.cs)),
   y las del cliente compartido.
 
+Desde el clima del aeródromo por la API (PR M8 del mismo plan, código de
+`65f9446f` y `eeac6d1e`, también posterior al commit verificado;
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)):
+
+- **Fixtures sintéticos.** Las respuestas de prueba de la fuente tienen la
+  forma real de las respuestas `metar` y `taf` de la Data API de
+  aviationweather.gov, con valores inventados
+  ([METAR](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/awc-metar.synthetic.json)
+  y [TAF](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/awc-taf.synthetic.json));
+  ninguna respuesta real se versiona. El HTTP se simula con un manejador de
+  prueba, y ninguna prueba ni workflow de CI llama a aviationweather.gov.
+- **Prueba en vivo opcional.**
+  [`AviationWeatherLiveTests`](../../backend/tests/Elevant.UnitTests/Infrastructure/AviationWeatherLiveTests.cs)
+  hace una consulta de METAR y una de TAF de Punta Cana (MDPC) y solo corre
+  con `ELEVANT_LIVE_AVIATION_WEATHER=1`. Informa conteos y la antigüedad del
+  METAR, nunca la respuesta. Como las de AeroDataBox y del tráfico, CI nunca la
+  activa.
+- **La E2E no enciende el clima.** El overlay del arnés lo deja apagado salvo
+  que `ELEVANT_E2E_AVIATION_WEATHER_ENABLED` lo encienda, así que el recorrido
+  nunca lee el servicio real; la lectura a mano es un paso aparte y deliberado
+  ([guía local](../../docs/workflows/local-development.md)). El PR no suma
+  pasos al arnés porque no tiene pantallas.
+- **Pruebas automáticas.** Unitarias de la fuente y su parser, las esperas, la
+  configuración y el manejador de la lectura. De la API, montando el host sin
+  SQL: la validación, los códigos y los títulos, el estado en el 200, el lector
+  solo de planificación y la imagen de Development, que enciende el clima. De
+  arquitectura: contratos sin `long`, enumeraciones ni ids internos, y una sola
+  lectura bajo `occ/weather`. Una prueba SQL del código OACI del aeropuerto de
+  la estación
+  ([prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Weather.cs)),
+  y las del cliente compartido.
+
 ## Suite visual de los mapas del OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código del

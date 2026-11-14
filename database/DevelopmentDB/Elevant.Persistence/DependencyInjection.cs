@@ -133,6 +133,8 @@ public static class DependencyInjection
         services.AddScoped<EfOccMapFlightStore>();
         services.AddScoped<IOccMapFlightStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
         services.AddScoped<IOccMapFlightMatchKeyStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
+        // ADR-0043 (contracts 1.4): the ICAO code of a station's airport, which the OCC's weather is read by.
+        services.AddScoped<IOccStationAirportStore, EfOccStationAirportStore>();
         // Defaults when Infrastructure is not composed (tests, database tool); its registrations win.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);

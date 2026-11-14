@@ -146,6 +146,23 @@ se comprueban como posiciones de la Tierra, sin caja. El código nuevo es
 `invalid_map_query`; una estación fuera de alcance o un avión que ninguna
 lectura vio responden `not_found`. La app móvil no lee estas respuestas.
 
+Clima del OCC (ADR-0043, los mismos lectores del mapa):
+`getOccAerodromeWeather({ stationId })` lee el METAR (lo básico decodificado y
+el texto en bruto) y el TAF (en bruto y por periodos) del aeropuerto de la
+estación, que la API trae de aviationweather.gov y guarda unos minutos; vale
+para cualquier estación del alcance (Punta Cana lee MDPC). Su estado llega
+siempre en un 200: `Live` (un METAR de como mucho 90 minutos frente a
+`serverTime`), `Stale` (uno más viejo, o el guardado tras un fallo del
+servicio), `Unavailable` (sin METAR; el TAF puede venir) o `Disabled` (sin
+servicio: sin informes ni `retrievedAt`), con el crédito del servicio en
+`source`, que toda pantalla muestra. La consulta se valida antes de enviarse
+y `isOccAerodromeWeather` es estricto en cada nivel: listas cerradas
+(`OCC_AERODROME_WEATHER_STATUSES`, `OCC_WEATHER_FLIGHT_CATEGORIES`,
+`OCC_TAF_CHANGES`), los rangos que acepta el servidor y un estado que
+concuerda con sus partes. El código nuevo es `invalid_weather_query`; una
+estación fuera de alcance, desconocida o cuyo aeropuerto no tiene código OACI
+responde `not_found`. La app móvil no lee esta respuesta.
+
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,
