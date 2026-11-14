@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readSource, sourceFilesUnder } from '../../../styles/occSourceScan';
 
@@ -8,8 +7,9 @@ import { readSource, sourceFilesUnder } from '../../../styles/occSourceScan';
 const AIRCRAFT = 'src/features/maps/aircraft';
 const CHUNK = `${AIRCRAFT}/aircraft3dChunk.js`;
 const LOADER = `${AIRCRAFT}/loadAircraft3d.js`;
-// The modules that take three as a parameter; the layer joins them in the next step of PR M7.
-const PARAMETER_MODULES = [`${AIRCRAFT}/aircraftGeometry.js`, `${AIRCRAFT}/aircraft3dLayer.js`];
+// The modules that take three as a parameter: the models and the layer.
+const LAYER = `${AIRCRAFT}/aircraft3dLayer.js`;
+const PARAMETER_MODULES = [`${AIRCRAFT}/aircraftGeometry.js`, LAYER];
 const SCRIPT = /\.(?:js|jsx|mjs)$/;
 const REGEX_CAN_FOLLOW = '(,=:[!&|?{};';
 
@@ -83,6 +83,7 @@ function importsOf(source) {
 const isThree = specifier => specifier === 'three' || specifier.startsWith('three/');
 const isMapLibre = specifier => specifier === 'maplibre-gl' || specifier.startsWith('maplibre-gl/');
 const isChunk = specifier => /(?:^|\/)aircraft3dChunk(?:\.js)?$/.test(specifier);
+const isLayer = specifier => /(?:^|\/)aircraft3dLayer(?:\.js)?$/.test(specifier);
 
 // Every script the application ships: src and app, without tests.
 const shippedScripts = () => ['src', 'app'].flatMap(root => sourceFilesUnder(root)).filter(file => SCRIPT.test(file));
@@ -106,12 +107,15 @@ describe('three stays in its own chunk (design J)', () => {
     const reachingTheChunk = imports.flatMap(entry => entry.imports.filter(item => isChunk(item.specifier))
       .map(item => ({ file: entry.file, kind: item.kind })));
     expect(reachingTheChunk).toEqual([{ file: LOADER, kind: 'dynamic' }]);
+
+    // The layer names three's renderer (its default createRenderer): only the chunk may carry it.
+    const reachingTheLayer = imports.filter(entry => entry.imports.some(item => isLayer(item.specifier)))
+      .map(entry => entry.file);
+    expect(reachingTheLayer).toEqual([CHUNK]);
   });
 
   it('aircraftGeometry.js and aircraft3dLayer.js take three as a parameter and import neither three nor maplibre-gl', () => {
-    const modules = PARAMETER_MODULES.filter(file => existsSync(file));
-    expect(modules).toContain(`${AIRCRAFT}/aircraftGeometry.js`);
-    for (const file of modules) {
+    for (const file of PARAMETER_MODULES) {
       const source = readSource(file);
       expect(importsOf(source).filter(item => isThree(item.specifier) || isMapLibre(item.specifier)), file).toEqual([]);
       // Its exported builders receive three: as their first parameter or inside their options.

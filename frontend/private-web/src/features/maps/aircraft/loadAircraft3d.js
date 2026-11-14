@@ -13,17 +13,30 @@ const importAircraft3dChunk = () => (typeof window === 'undefined'
   ? Promise.reject(new Error('The 3D aircraft load in the browser only.'))
   : import('./aircraft3dChunk'));
 
+// What a map takes from the chunk; a chunk without its layer is a failed load.
+function modulesOf(chunk) {
+  if (chunk?.THREE_PARTS == null || typeof chunk.createAircraft3dLayer !== 'function'
+    || typeof chunk.buildAircraftGeometry !== 'function' || typeof chunk.sceneLighting !== 'function') {
+    throw new TypeError('The 3D chunk does not carry the aircraft layer.');
+  }
+  return Object.freeze({
+    three: chunk.THREE_PARTS,
+    buildAircraftGeometry: chunk.buildAircraftGeometry,
+    createAircraft3dLayer: chunk.createAircraft3dLayer,
+    sceneLighting: chunk.sceneLighting,
+    AIRCRAFT_3D_LAYER_ID: chunk.AIRCRAFT_3D_LAYER_ID,
+  });
+}
+
 /**
- * The 3D aircraft modules, loaded once: `Promise<{ three, buildAircraftGeometry, createAircraft3dLayer? }>`, `three`
- * being the parts of three the modules take as their parameter (THREE_PARTS). `importChunk` and `warn` are for tests.
+ * The 3D aircraft modules, loaded once: `Promise<{ three, buildAircraftGeometry, createAircraft3dLayer,
+ * sceneLighting, AIRCRAFT_3D_LAYER_ID }>`, `three` being the parts of three the modules take as their parameter
+ * (THREE_PARTS) and the rest the exports of aircraft/aircraftGeometry.js and aircraft/aircraft3dLayer.js. `importChunk`
+ * and `warn` are for tests.
  */
 export function loadAircraft3d({ importChunk = importAircraft3dChunk, warn = console.warn } = {}) {
   if (pending === null) {
-    pending = importChunk().then(chunk => Object.freeze({
-      three: chunk.THREE_PARTS,
-      buildAircraftGeometry: chunk.buildAircraftGeometry,
-      ...(typeof chunk.createAircraft3dLayer === 'function' ? { createAircraft3dLayer: chunk.createAircraft3dLayer } : {}),
-    }), error => {
+    pending = importChunk().then(modulesOf).catch(error => {
       pending = null;
       if (!warned) {
         warned = true;

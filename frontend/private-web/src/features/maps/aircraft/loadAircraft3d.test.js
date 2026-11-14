@@ -1,12 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { triangleCount } from './aircraftGeometry';
+import { planInstances } from './instancePlan';
 import { loadAircraft3d, resetAircraft3dLoaderForTests } from './loadAircraft3d';
 import { AIRCRAFT_TYPES } from './types';
 
 // A chunk as the bundler hands it over: its exports, nothing more.
 const FAKE_THREE = Object.freeze({ name: 'three parts' });
-const fakeBuild = () => 'model';
-const fakeChunk = (extra = {}) => ({ THREE_PARTS: FAKE_THREE, buildAircraftGeometry: fakeBuild, ...extra });
+const fakeChunk = (extra = {}) => ({
+  THREE_PARTS: FAKE_THREE,
+  buildAircraftGeometry: () => 'model',
+  createAircraft3dLayer: () => ({ id: 'occ-aircraft-3d' }),
+  sceneLighting: () => ({ phase: 'day' }),
+  AIRCRAFT_3D_LAYER_ID: 'occ-aircraft-3d',
+  ...extra,
+});
+const modulesOf = chunk => ({
+  three: chunk.THREE_PARTS,
+  buildAircraftGeometry: chunk.buildAircraftGeometry,
+  createAircraft3dLayer: chunk.createAircraft3dLayer,
+  sceneLighting: chunk.sceneLighting,
+  AIRCRAFT_3D_LAYER_ID: chunk.AIRCRAFT_3D_LAYER_ID,
+});
 
 afterEach(() => resetAircraft3dLoaderForTests());
 
@@ -18,27 +33,18 @@ describe('the 3D chunk loader (design G1)', () => {
     // A second map asking while the chunk travels shares the same load.
     expect(loadAircraft3d({ importChunk })).toBe(first);
     const loaded = await first;
-    expect(loaded).toEqual({ three: chunk.THREE_PARTS, buildAircraftGeometry: chunk.buildAircraftGeometry });
+    expect(loaded).toEqual(modulesOf(chunk));
     expect(Object.isFrozen(loaded)).toBe(true);
     expect(await loadAircraft3d({ importChunk })).toBe(loaded);
     expect(importChunk).toHaveBeenCalledTimes(1);
 
-    // The layer factory travels along once the chunk exports it.
+    // A chunk without the layer is a failed load: the map keeps its 2D aircraft.
     resetAircraft3dLoaderForTests();
-    const createAircraft3dLayer = () => ({ id: 'occ-aircraft-3d' });
-    await expect(loadAircraft3d({ importChunk: () => Promise.resolve(fakeChunk({ createAircraft3dLayer })) })).resolves
-      .toEqual({ three: chunk.THREE_PARTS, buildAircraftGeometry: chunk.buildAircraftGeometry, createAircraft3dLayer });
-
-    // The real chunk: the parts of three that the geometry module needs, and the module itself.
-    resetAircraft3dLoaderForTests();
-    const real = await loadAircraft3d();
-    expect(Object.keys(real).sort()).toEqual(['buildAircraftGeometry', 'three']);
-    expect(Object.keys(real.three).sort()).toEqual([
-      'BoxGeometry', 'BufferGeometry', 'Color', 'CylinderGeometry', 'ExtrudeGeometry', 'Float32BufferAttribute',
-      'LatheGeometry', 'Matrix4', 'Shape', 'Vector2', 'Vector3', 'mergeGeometries',
-    ]);
-    expect(Object.isFrozen(real.three)).toBe(true);
-    expect(triangleCount(real.buildAircraftGeometry(real.three, AIRCRAFT_TYPES.A320))).toBeGreaterThanOrEqual(1500);
+    const warn = vi.fn();
+    const broken = loadAircraft3d({ importChunk: () => Promise.resolve(fakeChunk({ createAircraft3dLayer: undefined })), warn });
+    await expect(broken).rejects.toThrow(TypeError);
+    expect(warn).toHaveBeenCalledTimes(1);
+    await expect(loadAircraft3d({ importChunk })).resolves.toEqual(modulesOf(chunk));
   });
 
   it('a failed chunk load rejects, warns once and is retried on the next call', async () => {
@@ -77,5 +83,46 @@ describe('the 3D chunk loader (design G1)', () => {
     } finally {
       consoleWarn.mockRestore();
     }
+  });
+
+  it('the loaded chunk carries the layer, the lighting and the geometry builder', async () => {
+    // The real chunk, through the real import().
+    const loaded = await loadAircraft3d();
+    expect(Object.keys(loaded).sort()).toEqual([
+      'AIRCRAFT_3D_LAYER_ID', 'buildAircraftGeometry', 'createAircraft3dLayer', 'sceneLighting', 'three',
+    ]);
+    // The parts of three that the models and the layer use, by name.
+    expect(Object.keys(loaded.three).sort()).toEqual([
+      'BoxGeometry', 'BufferGeometry', 'Camera', 'Color', 'CylinderGeometry', 'DirectionalLight', 'DynamicDrawUsage',
+      'ExtrudeGeometry', 'Float32BufferAttribute', 'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh',
+      'LatheGeometry', 'LineBasicMaterial', 'LineSegments', 'Matrix4', 'MeshLambertMaterial', 'Raycaster', 'Scene',
+      'Shape', 'Vector2', 'Vector3', 'WebGLRenderer', 'mergeGeometries',
+    ]);
+    expect(Object.isFrozen(loaded.three)).toBe(true);
+    expect(triangleCount(loaded.buildAircraftGeometry(loaded.three, AIRCRAFT_TYPES.A320))).toBeGreaterThanOrEqual(1500);
+    expect(loaded.sceneLighting({ azimuthDeg: 120, elevationDeg: 40 }).phase).toBe('day');
+    expect(loaded.sceneLighting({ azimuthDeg: 300, elevationDeg: -40 }).phase).toBe('night');
+
+    // The layer the map adds, drawn once with a stand-in renderer: one mesh for the one type planned.
+    const arp = MDPC_LAYOUT.meta.arp;
+    const plan = planInstances([{ id: 'f:p:demo', kind: 'aviam', lon: arp[0], lat: arp[1], onGround: true, altM: 0,
+      trackDeg: 80, typeIcao: 'A320' }], [], { zoom: 16, minZoom: 14, originLngLat: arp });
+    const drawn = [];
+    const layer = loaded.createAircraft3dLayer({
+      three: loaded.three,
+      originLngLat: arp,
+      getInstances: () => ({ revision: 1, plan }),
+      createRenderer: () => ({ resetState() {}, setViewport() {}, render: scene => drawn.push(scene), dispose() {} }),
+      now: () => 0,
+    });
+    expect(layer).toMatchObject({ id: loaded.AIRCRAFT_3D_LAYER_ID, type: 'custom', renderingMode: '3d' });
+    expect(loaded.AIRCRAFT_3D_LAYER_ID).toBe('occ-aircraft-3d');
+    const map = { on() {}, off() {}, getCanvas: () => ({ clientWidth: 800, clientHeight: 600 }), triggerRepaint() {} };
+    layer.onAdd(map, { drawingBufferWidth: 800, drawingBufferHeight: 600 });
+    layer.render({ drawingBufferWidth: 800, drawingBufferHeight: 600 },
+      { defaultProjectionData: { mainMatrix: Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1) } });
+    expect(drawn).toHaveLength(1);
+    expect(layer.stats()).toMatchObject({ meshes: 1, instances: 2, drawCalls: 1, lost: false });
+    layer.onRemove(map);
   });
 });

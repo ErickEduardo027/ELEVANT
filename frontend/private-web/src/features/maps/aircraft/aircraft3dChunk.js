@@ -1,6 +1,7 @@
 import {
-  BoxGeometry, BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Float32BufferAttribute, LatheGeometry, Matrix4,
-  Shape, Vector2, Vector3,
+  BoxGeometry, BufferGeometry, Camera, Color, CylinderGeometry, DirectionalLight, DynamicDrawUsage, ExtrudeGeometry,
+  Float32BufferAttribute, HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LineBasicMaterial,
+  LineSegments, Matrix4, MeshLambertMaterial, Raycaster, Scene, Shape, Vector2, Vector3, WebGLRenderer,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -10,9 +11,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // aircraft use; no Draco, KTX2 or workers.
 
 export { buildAircraftGeometry } from './aircraftGeometry';
+export { AIRCRAFT_3D_LAYER_ID, createAircraft3dLayer, sceneLighting } from './aircraft3dLayer';
 
-/** The parts of three that the aircraft modules take as their `three` parameter. */
+/** The parts of three that the aircraft modules take as their `three` parameter: the models' and the layer's. */
 export const THREE_PARTS = Object.freeze({
-  BoxGeometry, BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Float32BufferAttribute, LatheGeometry, Matrix4,
-  Shape, Vector2, Vector3, mergeGeometries,
+  BoxGeometry, BufferGeometry, Camera, Color, CylinderGeometry, DirectionalLight, DynamicDrawUsage, ExtrudeGeometry,
+  Float32BufferAttribute, HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LineBasicMaterial,
+  LineSegments, Matrix4, MeshLambertMaterial, Raycaster, Scene, Shape, Vector2, Vector3, WebGLRenderer, mergeGeometries,
 });
