@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -216,9 +216,9 @@ describe('OccFloatingPanel', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(isOverlayOpen(document)).toBe(false);
 
-    toggle.focus();
+    act(() => toggle.focus());
     await user.keyboard('{Escape}dsl');
-    screen.getByRole('button', { name: 'ZZ9001' }).focus();
+    act(() => screen.getByRole('button', { name: 'ZZ9001' }).focus());
     await user.keyboard('{Escape}');
     // Every key arrived at the map, not yet handled by anyone, and the map ran its action.
     expect(reached).toEqual([['Escape', false], ['d', false], ['s', false], ['l', false], ['Escape', false]]);

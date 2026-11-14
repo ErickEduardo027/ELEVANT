@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
@@ -32,7 +32,7 @@ describe('OccSkeleton', () => {
     // A panel names what loads; English inside the language scope.
     rerender(<OccSkeleton label="Cargando avisos…" />);
     expect(screen.getByRole('status')).toHaveTextContent('Cargando avisos…');
-    resetLanguageForTests('en');
+    act(() => resetLanguageForTests('en'));
     rerender(<LanguageScope><OccSkeleton /></LanguageScope>);
     expect(screen.getByRole('status')).toHaveTextContent('Loading…');
   });

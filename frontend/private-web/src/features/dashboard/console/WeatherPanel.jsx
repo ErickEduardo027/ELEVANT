@@ -7,35 +7,12 @@ import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 import ConsolePanel from './ConsolePanel';
 import MapExpandDialog, { ExpandButton } from './MapExpandDialog';
 import { formatTime } from './format';
+import { describeClouds, describeVisibility, describeWeather, describeWind } from '../noc/weatherWords';
 
 const GoesCloudMap = dynamic(() => import('../../maps/GoesCloudMap'), { ssr: false });
 
 function utcTime(iso, locale) {
   return formatTime(iso, locale, 'UTC');
-}
-
-export function describeWeather(t, item) {
-  const parts = [];
-  if (item.intensity) parts.push(t(`weather.intensity.${item.intensity}`));
-  if (item.descriptor) parts.push(t(`weather.descriptor.${item.descriptor}`));
-  item.phenomena.forEach(code => parts.push(t(`weather.phenomena.${code}`)));
-  return parts.join(' ');
-}
-
-function describeClouds(t, clouds) {
-  if (!clouds.length) return t('weather.noClouds');
-  return clouds.map(layer => {
-    const cover = t(`weather.cover.${layer.cover}`);
-    const base = layer.baseFt != null ? ` ${layer.baseFt.toLocaleString('en-US')} ft` : '';
-    return `${cover}${base}${layer.convective ? ` ${layer.convective}` : ''}`;
-  }).join(' · ');
-}
-
-function describeVisibility(t, visibility) {
-  if (!visibility) return '—';
-  const km = visibility.meters / 1000;
-  const value = km >= 5 ? Math.round(km) : Math.round(km * 10) / 10;
-  return visibility.orMore ? t('weather.visibilityOrMore', { km: value }) : `${value} km`;
 }
 
 function WindArrow({ directionDeg }) {
@@ -47,17 +24,6 @@ function WindArrow({ directionDeg }) {
       <path d="M12 3v16M6 13l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
-}
-
-function describeWind(t, wind) {
-  if (!wind) return '—';
-  if (wind.speedKt === 0) return t('weather.windCalm');
-  const direction = wind.variable ? t('weather.windVariable') : `${String(wind.directionDeg).padStart(3, '0')}°`;
-  const extras = [
-    wind.gustKt ? t('weather.gust', { speed: wind.gustKt }) : null,
-    wind.variableFrom != null ? t('weather.variableSector', { from: wind.variableFrom, to: wind.variableTo }) : null,
-  ].filter(Boolean);
-  return `${direction} · ${wind.speedKt} kt${extras.length ? ` · ${extras.join(' · ')}` : ''}`;
 }
 
 function useNow(intervalMs = 60_000) {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
@@ -82,7 +82,7 @@ describe('OccMilestoneStrip', () => {
     expect(screen.getByText('Los hitos aparecen cuando la escala tiene una operación.')).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
 
-    resetLanguageForTests('en');
+    act(() => resetLanguageForTests('en'));
     rerender(
       <LanguageScope>
         <OccMilestoneStrip phases={buildMilestonePhases(RECORDED, 'en')} variant="full" timeZone={ZONE} />
