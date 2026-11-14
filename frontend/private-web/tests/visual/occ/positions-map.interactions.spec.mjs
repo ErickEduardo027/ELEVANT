@@ -1,3 +1,4 @@
+import { OCC_BOOT_SEEN_KEY } from '../../../src/features/admin-occ/boot/occBootSession.js';
 import { AUTH_STORAGE_KEY, createOccApi, occSession, positionsBoard } from './fixtures/occApi.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
@@ -13,13 +14,17 @@ const PAGE = '/admin-occ/positions-map';
 async function openPositionsMap(page, isolation, query = '') {
   const api = createOccApi();
   isolation.setApi(api.handle);
-  await page.addInitScript(([key, session]) => {
-    window.localStorage.setItem(key, JSON.stringify(session));
-  }, [AUTH_STORAGE_KEY, occSession()]);
+  // A later OCC entry of the tab (occBootSession.js keeps the account id under OCC_BOOT_SEEN_KEY): the boot screen of
+  // PR U4 stays away, so the pointer and the screenshots reach the map at once.
+  await page.addInitScript(([authKey, bootSeenKey, session]) => {
+    window.localStorage.setItem(authKey, JSON.stringify(session));
+    window.sessionStorage.setItem(bootSeenKey, String(session.accountId));
+  }, [AUTH_STORAGE_KEY, OCC_BOOT_SEEN_KEY, occSession()]);
   const response = await page.goto(`${PAGE}${query}`);
   expect(response?.status(), `GET ${PAGE}${query}`).toBe(200);
   const map = page.getByTestId('occ-map');
   await mapReady(map);
+  await expect(page.getByTestId('occ-boot-screen'), 'the OCC boot screen').toHaveCount(0, { timeout: 1_000 });
   await expect.poll(() => api.reads, { message: 'the positions board was read' }).toBeGreaterThan(0);
   return { api, map };
 }

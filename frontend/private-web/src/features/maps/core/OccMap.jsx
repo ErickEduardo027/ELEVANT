@@ -8,6 +8,7 @@ import * as maplibre from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../../../styles/occ-map.css';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { useOccBoot } from '../../admin-occ/boot/occBootContext';
 import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
@@ -262,6 +263,7 @@ const OccMap = forwardRef(function OccMap({
   children,
 }, ref) {
   const { t, language } = useTranslation(mapMessages);
+  const { markReady } = useOccBoot();
   const { view: urlView, terminal: urlTerminal, setView } = useMapSelection();
   const [store] = useState(() => createViewStore(initialSnapshot(basemap)));
   const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
@@ -1009,6 +1011,13 @@ const OccMap = forwardRef(function OccMap({
     if (onFallbackSelect) onFallbackSelect(id, item);
     else onSelect?.({ kind: item?.kind ?? 'stand', id });
   };
+  // Contract 2.6: the OCC boot screen (PR U4) waits for the first screen with its data on screen. The map reports
+  // once its engine settles: `ready` (the style loaded, so the airfield and the stands draw even without the base map)
+  // or `unavailable` (the fallback list is what the screen shows). Outside the OCC frame markReady is a no-op, and
+  // the provider counts only the first report.
+  useEffect(() => {
+    if (engineStatus === 'ready' || engineStatus === 'unavailable') markReady('map');
+  }, [engineStatus, markReady]);
   const unavailable = engineStatus === 'unavailable';
 
   return (

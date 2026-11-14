@@ -486,8 +486,9 @@ M4 «Posiciones en rampa» dibuja cada posición como un polígono con su estado
 - Cada módulo nuevo o cambiado tiene su prueba al lado, con el mapa falso compartido y fixtures sintéticos.
 - No cambian la API, el OpenAPI, el cliente compartido ni la base; no hay migración, dependencia nueva ni origen nuevo, y la CSP no cambia. Solo se despliega AVIAM Web (`frontend/private-web`).
 
+- **Aviso a la pantalla de arranque** (contratos 2.6). Al integrar U4, `OccMap` llama `useOccBoot().markReady('map')` cuando su motor queda `ready` (el estilo cargó: el aeródromo y las posiciones se dibujan aunque falte el mapa base) o `unavailable` (lo que la pantalla muestra es la lista de respaldo). Así, Mapa de posiciones, Planificación y Monitoreo ya no esperan los 6 s del tope después del acceso; fuera del marco del OCC el aviso no hace nada. Lo cubre una prueba de `OccMap.test.jsx`, y las dos pruebas visuales de Mapa de posiciones abren la página como una entrada posterior de la pestaña, sin la pantalla.
+
 **Queda pendiente**
-- **`useOccBoot().markReady('map')`** (contratos 2.6). U4 crea `useOccBoot` y no estaba en la base de M4, así que el motor de mapas todavía no avisa a la pantalla de arranque. La llamada se conecta cuando M4 integre U4.
 - **Lo vinculado entre vuelos y posiciones.** El borde de la posición del vuelo elegido (`related`) existe, pero ninguna pantalla de M4 dibuja a la vez vuelos y posiciones, así que elegir una posición todavía no marca su vuelo en el mapa, ni un vuelo su posición. Lo usará la consola de U3 con los vuelos de M5.
 - **La plataforma de la consola** adopta `useStandDisplay` con U3.
 - **Lo que pasa a M5**, arriba.

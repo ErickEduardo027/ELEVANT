@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
+import { OccBootContext } from '../../admin-occ/boot/occBootContext';
 import tailwindConfig from '../../../../tailwind.config.js';
 import { findLegacyColourClasses } from '../../../styles/occLegacyBridge';
 import { readSource } from '../../../styles/occSourceScan';
@@ -220,6 +221,28 @@ describe('OccMap', () => {
     // The view keys do nothing without a map.
     expect(press(alert, '2').defaultPrevented).toBe(false);
     expect(query().has('view')).toBe(false);
+  });
+
+  it('tells the OCC boot screen the map is ready once its engine settles, ready or unavailable (contract 2.6)', async () => {
+    const markReady = vi.fn();
+    const boot = { markReady };
+    const inFrame = () => <OccBootContext.Provider value={boot}><OccMap stands={STANDS} /></OccBootContext.Provider>;
+
+    // Ready on style.load: the airfield and the stands draw from ELEVANT's own data, with or without the base map.
+    const first = render(inFrame());
+    expect(markReady).not.toHaveBeenCalled();
+    loadStyle(fake.state.liveMaps().at(-1));
+    expect(markReady).toHaveBeenCalledWith('map');
+    expect(markReady.mock.calls.every(([source]) => source === 'map')).toBe(true);
+    first.unmount();
+
+    // Without WebGL the fallback list is what the screen shows: the boot screen need not wait its 6 s for it either.
+    markReady.mockClear();
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    render(inFrame());
+    await screen.findByRole('alert');
+    expect(markReady).toHaveBeenCalledWith('map');
+    expect(markReady.mock.calls.every(([source]) => source === 'map')).toBe(true);
   });
 
   it('shows the degraded base-map chip and keeps the map usable', () => {

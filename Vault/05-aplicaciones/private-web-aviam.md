@@ -957,9 +957,12 @@ ninguna pantalla: Panorama solo gana el aviso de que ya muestra sus datos.
   [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
 
 Límites: la pantalla no precarga datos. La consola lee los suyos debajo, como
-siempre, y si tarda más de 6 s se abre con su estado de carga. Todavía no
-existe el aviso del motor de mapas (`markReady('map')`): según el plan, lo
-añadirá el PR M4, y la consola de U3 conservará el de Panorama. La pantalla no
+siempre, y si tarda más de 6 s se abre con su estado de carga. Posterior al
+commit verificado, desde el PR M4 el motor de mapas también avisa
+(`markReady('map')` en
+[`OccMap.jsx`](../../frontend/private-web/src/features/maps/core/OccMap.jsx))
+cuando su mapa queda listo o sin cartografía, así que las pantallas con mapa no
+esperan los 6 s; la consola de U3 conservará el aviso de Panorama. La pantalla no
 está en el HTML del servidor, así que el primer pintado sigue siendo
 «Comprobando sesión…» sobre el azul marino de `body`, y en las entradas
 siguientes no hay pantalla de arranque. Mientras espera, cubre la página y

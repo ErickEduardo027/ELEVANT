@@ -20,7 +20,7 @@ async function openPositionsMap(page, isolation, query = '') {
   isolation.setApi(api.handle);
   // The tab already showed the boot screen to this account (occBootSession.js keeps the account id under
   // OCC_BOOT_SEEN_KEY), as when Mapa de posiciones is opened from another module. Without the mark the screen would
-  // cover the map until 6 s after the access: nothing on this page reports ready yet.
+  // cover the map until its engine reports ready (markReady('map'), contract 2.6) and then fade out.
   await page.addInitScript(([authKey, bootSeenKey, session]) => {
     window.localStorage.setItem(authKey, JSON.stringify(session));
     window.sessionStorage.setItem(bootSeenKey, String(session.accountId));
