@@ -475,7 +475,8 @@ describe('the OCC console', () => {
     expect(board()).toHaveTextContent('Llegada sin posición asignada');
     await userEvent.click(within(status).getByRole('button', { name: 'Ver y seguir' }));
     await waitFor(() => expect(search().get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival));
-    expect(search().get('follow')).toBe('1');
+    // follow=1 once the URL has the flight and its view: a view the page asks for ends follow mode (PR M6).
+    await waitFor(() => expect(search().get('follow')).toBe('1'));
     // The map flies to the view that follows it: a demo flight in approach.
     expect(search().get('view')).toBe('approach');
     expect(screen.queryByText('Llegada nueva: ZZ9001')).not.toBeInTheDocument();
@@ -498,7 +499,8 @@ describe('the OCC console', () => {
     const pill = (await screen.findByText('Llegada nueva: ZZ9001')).closest('[role="status"]');
     await userEvent.click(within(pill).getByRole('button', { name: 'Ver y seguir' }));
     await waitFor(() => expect(search().get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival));
-    expect(search().get('follow')).toBe('1');
+    // follow=1 once the URL has the flight and its view: a view the page asks for ends follow mode (PR M6).
+    await waitFor(() => expect(search().get('follow')).toBe('1'));
     expect(search().get('view')).toBe('approach');
     expect(screen.queryByText(/Llegada nueva/)).not.toBeInTheDocument();
     // «Ver y seguir» closed it for the tab: opening the console again does not announce it, though the board lists it.

@@ -251,9 +251,11 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       if (chosenInSight(room, REVEAL_MARGIN_PX) === false) bringIntoSight();
       return;
     }
-    // «Ver y seguir»: the view, then the flight once the map settles there, unless a person moved the camera or chose
-    // something else meanwhile. A flight whose aircraft the map does not draw stays where the view puts it.
-    if (pending.viewShown || !map.flyToPreset(pending.view)) {
+    // «Ver y seguir»: the map takes the view from the URL, and the console centres the flight once the map settles there,
+    // unless a person moved the camera or chose something else meanwhile. The console never flies to the view itself: a
+    // move of the page's own ends follow mode (PR M6), which frames the aircraft from the view on (its flyToFlight then
+    // does nothing). A flight whose aircraft the map does not draw stays where the view puts it.
+    if (pending.viewShown || pending.view === null) {
       map.flyToFlight(pending.id);
       return;
     }
@@ -350,15 +352,27 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
     selectStand(code);
     aimAt({ kind: 'reveal', key: aimKeyOf('stand', code) });
   }, [aimAt, selectStand]);
-  // «Ver y seguir»: the flight, follow=1 and the view that follows it, written by the console's one store in a row;
-  // `viewShown` says that the map already shows that view.
+  // «Ver y seguir»: the flight and the view that follows it, written by the console's one store in a row, then follow=1
+  // in a later render, once the URL has them (followNext): the map takes the view first, because a view the page asks
+  // for ends follow mode (PR M6). `viewShown` says that the map already shows that view.
+  const followNext = useRef(null);
   const follow = useCallback((flight, view, { viewShown = false } = {}) => {
+    const key = aimKeyOf('flight', flight.flightKey);
+    followNext.current = { key, from: selectionKeyOf(latest.current.chosen), view: view ?? null };
     selectFlight(flight.flightKey);
-    setFollow(true);
     if (view) setView(view);
-    aimAt({ kind: 'follow', key: aimKeyOf('flight', flight.flightKey), id: flight.flightKey, view: view ?? null,
-      viewShown: viewShown === true });
-  }, [aimAt, selectFlight, setFollow, setView]);
+    aimAt({ kind: 'follow', key, id: flight.flightKey, view: view ?? null, viewShown: viewShown === true });
+  }, [aimAt, selectFlight, setView]);
+  // follow=1 once the URL selects the flight and shows its view; another selection meanwhile drops it.
+  useEffect(() => {
+    const next = followNext.current;
+    if (!next) return;
+    const verdict = aimVerdict(next, chosen);
+    if (verdict === 'drop') followNext.current = null;
+    if (verdict !== 'go' || (next.view !== null && selection.view !== next.view)) return;
+    followNext.current = null;
+    setFollow(true);
+  });
   const reread = useCallback(() => {
     planning.refresh?.();
     positions.refresh?.();
