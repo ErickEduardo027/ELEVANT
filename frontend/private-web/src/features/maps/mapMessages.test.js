@@ -81,6 +81,10 @@ describe('map messages', () => {
     expect(es('source.delayed', { age: es('source.ageMinutes', { count: 4 }) }))
       .toBe('Tráfico con retraso: último dato hace 4 min.');
     expect(en('source.delayed', { age: en('source.ageSeconds', { count: 45 }) })).toBe('Traffic delayed: last data 45 s ago.');
+    // The notice of the AVIAM flights, apart from the traffic's chip.
+    expect([es('source.flights.label'), es('source.flights.unavailable'), en('source.flights.unavailable')])
+      .toEqual(['Estado de los vuelos de AVIAM', 'No se pudieron cargar los vuelos de AVIAM.',
+        'The AVIAM flights could not be loaded.']);
     for (const reason of OCC_AIR_PICTURE_REASONS) {
       expect(es(`source.reason.${reason}`), reason).toMatch(/^La fuente de tráfico .+\.$/);
       expect(en(`source.reason.${reason}`), reason).toMatch(/^The traffic source .+\.$/);

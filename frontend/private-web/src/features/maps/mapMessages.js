@@ -86,6 +86,11 @@ export const mapMessages = {
         unauthorized: 'La fuente de tráfico rechazó la consulta.',
         provider_error: 'La fuente de tráfico no respondió.',
       },
+      // The notice of the AVIAM flights of the map, apart from the traffic's chip: their read failed.
+      flights: {
+        label: 'Estado de los vuelos de AVIAM',
+        unavailable: 'No se pudieron cargar los vuelos de AVIAM.',
+      },
     },
     // The data block of the chosen aircraft (ui/FlightDataBlock.jsx). «est.» and its sentence come from TAGS.estimated.
     dataBlock: {
@@ -221,6 +226,10 @@ export const mapMessages = {
         rate_limited: 'The traffic source asked to wait before the next query.',
         unauthorized: 'The traffic source refused the query.',
         provider_error: 'The traffic source did not answer.',
+      },
+      flights: {
+        label: 'AVIAM flights status',
+        unavailable: 'The AVIAM flights could not be loaded.',
       },
     },
     dataBlock: {

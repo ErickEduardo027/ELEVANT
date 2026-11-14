@@ -1257,6 +1257,13 @@ de posiciones, Planificación y la consola lo harán con los PR M6 y U3.
   imagen aérea falla, el mapa conserva los vuelos de ELEVANT y ofrece
   «Reintentar»; en una estación sin tráfico en vivo dice que la fuente no está
   configurada, y la lista de fuentes, «Sin configurar», no «Sin permiso».
+  Ese estado sale solo de la imagen aérea, como en la lista de fuentes: si no
+  se pueden cargar los vuelos de AVIAM, el tráfico sigue en el mapa y un aviso
+  aparte, bajo el del tráfico, dice «No se pudieron cargar los vuelos de
+  AVIAM.», con «Reintentar»; si solo falla una relectura de los vuelos, el
+  mapa conserva los anteriores sin avisar. La antigüedad de «Tráfico con
+  retraso» avanza con el reloj del servidor, segundo a segundo, también entre
+  dos lecturas que fallan.
 - **Menú de capas.** El botón «Capas» del mapa, o la tecla `L`, abre el
   [menú](../../frontend/private-web/src/features/maps/ui/MapLayersMenu.jsx)
   con el grupo Tráfico: «Vuelos de AVIAM», siempre visible, «Otro tráfico»,

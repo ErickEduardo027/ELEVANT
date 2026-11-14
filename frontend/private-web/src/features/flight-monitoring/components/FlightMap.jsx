@@ -118,7 +118,8 @@ function FlightMapView({
  * picture and the map flights, at the cadences of contracts 2.7). The page's flights (ids are leg ids) are joined to
  * the map flights with matchFlight: a flight whose aircraft the traffic draws is drawn once, as traffic, and a click on
  * it selects the page's flight; one with no page row is selected by its key. A click on other traffic writes `hex=`.
- * The state of the traffic and the credit of its source sit over the map (MapSourceStatus). The chosen flight or
+ * The state of the traffic (from the air picture alone, its age on the server's clock), the credit of its source and,
+ * apart, a failed read of the AVIAM flights sit over the map (MapSourceStatus). The chosen flight or
  * aircraft has its data block docked at the top left (FlightDataBlock) and its route on the map; a flight of the page
  * the map does not know (outside its window, or while the map cannot read its flights) keeps the page's own card, as
  * does every flight of the page while the map cannot draw.
@@ -168,14 +169,13 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
     onSelectFlight?.(page?.id ?? next.id);
   };
 
-  const nowMs = Math.max(live.picture?.serverTime ?? 0, live.flights?.serverTime ?? 0) || null;
   // The page's card only once the map has answered: for a page flight it does not know, or while it cannot draw.
   const pageDetail = selectedFlightId != null && live.status !== 'loading' ? detail : null;
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
       drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
-      <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
-        refreshFailed={live.refreshFailed} nowMs={nowMs} onRetry={live.retry} />
+      <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
+        onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry}
         station={live.flights?.stationAirport ?? null} stationId={stationId} onClose={() => handleSelect(null)} />
     </FlightMapView>

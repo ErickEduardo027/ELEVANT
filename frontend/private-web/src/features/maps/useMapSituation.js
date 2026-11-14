@@ -105,6 +105,8 @@ function situationStatus({ reading, access, granted, picture, flights, situation
  * situationModel.js, the trails as a FeatureCollection, the chosen aircraft's track (or null), what the selection names
  * (or null), its route (traffic/routeFeatures.js: buildRoute, with the trail and the track it has), the telemetry
  * store the data block reads (traffic/telemetryStore.js, fed with every situation) and the clock the reads feed.
+ * `sourceState` is the state of the air traffic from the picture's read alone, for its chip (ui/MapSourceStatus.jsx)
+ * and the shell; `refreshing` and `refreshFailed` speak of the two reads together, so they never describe the traffic.
  */
 export function useMapSituation({ stationId = null, enabled = true, service = occMapService, selectedHex = null,
   selection = null, estimates = NO_ESTIMATES, allTrails = false } = {}) {

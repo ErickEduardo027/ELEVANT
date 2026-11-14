@@ -11,7 +11,7 @@ import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { OPENFREEMAP_TILEJSON } from '../../maps/style/occStyle';
 import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
-import { OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
+import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
 import {
   createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_STATION_ID,
 } from '../../maps/testing/trafficFixtures';
@@ -23,10 +23,18 @@ vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre
 vi.mock('../../auth/AuthContext', () => ({
   useAuth: () => ({ session: { stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] } }),
 }));
+// The reads of the synthetic service a test makes fail (a 503) from then on, and how many failed.
+const failing = vi.hoisted(() => ({ airPicture: false, mapFlights: false, failed: { airPicture: 0, mapFlights: 0 } }));
 vi.mock('../../../services/occMapService', async () => {
   const actual = await vi.importActual('../../../services/occMapService');
   const { createTrafficScenario } = await import('../../maps/testing/trafficFixtures');
-  return { ...actual, occMapService: actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() }) };
+  const simulated = actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() });
+  const failable = read => async input => {
+    if (!failing[read]) return simulated[read === 'airPicture' ? 'getAirPicture' : 'getMapFlights'](input);
+    failing.failed[read] += 1;
+    throw Object.assign(new Error('The synthetic service is unavailable.'), { status: 503 });
+  };
+  return { ...actual, occMapService: { ...simulated, getAirPicture: failable('airPicture'), getMapFlights: failable('mapFlights') } };
 });
 
 const fake = sharedFakeMapLibre();
@@ -304,10 +312,11 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     heading: null, ...extra });
   const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
-  function renderLive(props = {}) {
+  // `shell` (createOccShellValue) lets a test announce `occ_planning` and read the shell's list of sources.
+  function renderLive(props = {}, { shell } = {}) {
     const element = next => (
       <DepartmentAccessProvider initialAccess={ACCESS} load={vi.fn().mockResolvedValue(ACCESS)} observe={false}>
-        <OccShellTestProvider>
+        <OccShellTestProvider value={shell}>
           <FlightMap flights={[pageFlight(arrivalRow), pageFlight(departureRow)]} selectedFlightId={null}
             onSelectFlight={() => {}} theme="dark" {...next} />
         </OccShellTestProvider>
@@ -316,10 +325,15 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     const view = render(element(props));
     return { ...view, map: fake.state.liveMaps().at(-1), rerender: next => view.rerender(element({ ...props, ...next })) };
   }
+  const drawnIds = map => map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id));
+  const airTrafficSource = shell => shell.sourceStore.getSnapshot().find(item => item.id === 'airTraffic') ?? null;
+  const trafficChip = () => within(screen.getByTestId('map-source-status')).queryByRole('status', { name: 'Estado del tráfico' });
+  const flightsNotice = () => screen.queryByRole('status', { name: 'Estado de los vuelos de AVIAM' });
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(Date.parse(TRAFFIC_NOON));
+    Object.assign(failing, { airPicture: false, mapFlights: false, failed: { airPicture: 0, mapFlights: 0 } });
   });
 
   afterEach(() => {
@@ -344,6 +358,72 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(attribution.options.customAttribution).toContain('Datos de aeronaves');
     // The legend explains the traffic on screen.
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
+  });
+
+  it('keeps the traffic chip on the air picture when the AVIAM flights fail, and says that apart', async () => {
+    const shell = createOccShellValue();
+    failing.mapFlights = true;
+    const { map } = renderLive({}, { shell });
+    loadStyle(map);
+    await flush();
+    expect(failing.failed.mapFlights).toBe(1);
+    // The picture is Live: its aircraft are drawn, as other traffic while no flight names them, with their credit.
+    expect(drawnIds(map)).toContain(`h:${TRAFFIC_HEX.arrival}`);
+    const status = screen.getByTestId('map-source-status');
+    expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toBeInTheDocument();
+    // No chip says that the traffic is down or late: the chip and the shell's list of sources agree that it is live.
+    expect(trafficChip()).not.toBeInTheDocument();
+    expect(status).not.toHaveTextContent(/No hay tráfico en vivo|Tráfico con retraso/);
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'ok' });
+    // The AVIAM flights say it on their own, and «Reintentar» reads them again.
+    const notice = flightsNotice();
+    expect(notice).toHaveTextContent('No se pudieron cargar los vuelos de AVIAM.');
+    failing.mapFlights = false;
+    fireEvent.click(within(notice).getByRole('button', { name: 'Reintentar' }));
+    await flush();
+    expect(flightsNotice()).not.toBeInTheDocument();
+    expect(drawnIds(map)).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(trafficChip()).not.toBeInTheDocument();
+  });
+
+  it('says nothing of the traffic when a refresh of the AVIAM flights fails', async () => {
+    const shell = createOccShellValue();
+    const { map } = renderLive({}, { shell });
+    loadStyle(map);
+    await flush();
+    failing.mapFlights = true;
+    act(() => shell.announce(['occ_planning']));
+    await flush(3_000);
+    expect(failing.failed.mapFlights).toBe(1);
+    // The map keeps the flights of its last read and the traffic stays live: no chip and no notice.
+    expect(within(screen.getByTestId('map-source-status')).queryByRole('status')).not.toBeInTheDocument();
+    expect(drawnIds(map)).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'ok' });
+  });
+
+  it('ages the picture on the server clock after a refresh of it fails', async () => {
+    const shell = createOccShellValue();
+    const { map } = renderLive({}, { shell });
+    loadStyle(map);
+    await flush();
+    expect(trafficChip()).not.toBeInTheDocument();
+    // The next picture, 10 s later, fails. The one on screen was 2 s old when the server answered it at noon.
+    failing.airPicture = true;
+    await flush(10_000);
+    expect(failing.failed.airPicture).toBe(1);
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'delayed' });
+    expect(trafficChip()).toHaveTextContent('Tráfico con retraso: último dato hace 12 s.');
+    // It keeps counting with the server's clock between two reads, never from the instant of the last answer.
+    await flush(5_000);
+    expect(trafficChip()).toHaveTextContent('Tráfico con retraso: último dato hace 17 s.');
+    await flush(20_000);
+    expect(failing.failed.airPicture).toBe(2);
+    expect(trafficChip()).toHaveTextContent('Tráfico con retraso: último dato hace 37 s.');
+    // The picture answers again: the chip goes.
+    failing.airPicture = false;
+    await flush(40_000);
+    expect(trafficChip()).not.toBeInTheDocument();
+    expect(airTrafficSource(shell)).toMatchObject({ state: 'ok' });
   });
 
   it('draws a flight the traffic shows once, as traffic, and selects the page\'s flight from its aircraft', async () => {
