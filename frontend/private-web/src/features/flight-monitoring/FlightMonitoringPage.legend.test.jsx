@@ -75,10 +75,13 @@ describe('FlightMonitoringPage with its map', () => {
       .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
   });
 
-  it('has no legend while no flight has a position, and the page says why', () => {
+  it('has no legend while no flight has a position, and leaves the explaining to the map', () => {
     renderPage({ station: { code: 'PUJ' }, flights: [flight({ latitude: null, longitude: null })] });
     expect(screen.queryByRole('button', { name: 'Leyenda' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Sin posición de aeronaves en vivo/)).toBeInTheDocument();
+    // The page no longer adds its own notice: inside the OCC frame the map says how its traffic is
+    // (maps/ui/MapSourceStatus.jsx), and every flight reaches the map, placed or not.
+    expect(screen.queryByText(/Sin posición de aeronaves en vivo/)).not.toBeInTheDocument();
+    expect(fake.state.liveMaps().at(-1).getSource('occ-flights').data.features).toEqual([]);
   });
 
   it('shows the map\'s legend in English', () => {

@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { occColor } from '../../occ-ui/occPalette';
 import { SIGNALS } from '../../occ-ui/statusVocabulary';
+import { CATEGORY_OUTLINES, silhouettePath } from '../aircraft/silhouette';
+import { ICON_CATEGORIES } from '../aircraft/types';
 import { AIRCRAFT_SILHOUETTE_PATH } from '../aircraftSilhouette';
 import {
   MAP_IMAGE_IDS, MAP_IMAGE_SHAPES, createImageResolver, isSdfImage, rasterizeWithCanvas,
 } from './mapImages';
 import { maskToSdf } from './sdf';
+import {
+  AIRCRAFT_ICON_INSET, AIRCRAFT_ICON_SIZES, DEMO_PLATE, HOLLOW_LINE_WIDTH, TRAFFIC_IMAGE_SHAPES, aircraftImage,
+} from './trafficImages';
 
 // jsdom has no canvas: this stand-in covers the middle half of every image.
 function centreRasterizer() {
@@ -65,7 +70,8 @@ describe('map images', () => {
     for (const id of MAP_IMAGE_IDS) {
       // Fixed names: one palette, and the colour of an icon comes from its layer.
       expect(id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-      expect(id).not.toMatch(/dark|light|#|\d{3,}/);
+      // «light» in ac-light-… is the light-aircraft category, not a theme.
+      expect(id).not.toMatch(/dark|(?<!ac-)light|#|\d{3,}/);
       const shape = MAP_IMAGE_SHAPES[id];
       expect(Number.isInteger(shape.width) && Number.isInteger(shape.height), id).toBe(true);
       expect(shape.ops.length, id).toBeGreaterThan(0);
@@ -74,15 +80,19 @@ describe('map images', () => {
         if (op.stroke !== undefined) expect(op.lineWidth, id).toBeGreaterThan(0);
       }
     }
-    // The only pattern is the hatch; everything else is an icon.
-    expect(MAP_IMAGE_IDS.filter(id => !isSdfImage(id))).toEqual(['stand-hatch-pattern']);
+    // The patterns painted here are the hatch and the plain marks of the traffic; everything else is an icon.
+    expect(MAP_IMAGE_IDS.filter(id => !isSdfImage(id))).toEqual([
+      'stand-hatch-pattern', ...Object.keys(TRAFFIC_IMAGE_SHAPES).filter(id => TRAFFIC_IMAGE_SHAPES[id].sdf === false),
+    ]);
     // The silhouette is the one the DOM legends draw.
     expect(MAP_IMAGE_SHAPES['aircraft-solid'].ops[0].fill).toBe(AIRCRAFT_SILHOUETTE_PATH);
     expect(MAP_IMAGE_SHAPES['glyph-aircraft'].ops[0].fill).toBe(AIRCRAFT_SILHOUETTE_PATH);
 
     const rasterize = centreRasterizer();
     const resolve = createImageResolver({ rasterize });
-    for (const id of MAP_IMAGE_IDS) {
+    // The plain images of the traffic are drawn apart (see «plain images keep their own colours»).
+    const sdfIds = MAP_IMAGE_IDS.filter(id => MAP_IMAGE_SHAPES[id].sdf !== false);
+    for (const id of sdfIds) {
       const shape = MAP_IMAGE_SHAPES[id];
       const image = resolve(id);
       expect(image, id).toMatchObject({ width: shape.width * 2, height: shape.height * 2, pixelRatio: 2, sdf: isSdfImage(id) });
@@ -92,7 +102,7 @@ describe('map images', () => {
       if (isSdfImage(id)) expect([image.data[0], image.data[1], image.data[2]]).toEqual([255, 255, 255]);
       expect(resolve(id)).toBe(image);
     }
-    expect(rasterize).toHaveBeenCalledTimes(MAP_IMAGE_IDS.length);
+    expect(rasterize).toHaveBeenCalledTimes(sdfIds.length);
 
     // Another resolver draws the same pixels; at pixel ratio 1 the image has the declared size.
     const again = createImageResolver({ rasterize: centreRasterizer() });
@@ -292,5 +302,182 @@ describe('map images', () => {
         throw new Error('no canvas');
       },
     })).toBeNull();
+  });
+});
+
+// The points a path's ink can reach: every vertex of a fill; for a stroke of width `width`, the corners of each
+// segment's band (butt caps) and every join grown by half the width on both axes (round or right-angle joins).
+// Absolute M, L, H, V and Z commands only.
+function inkExtent(path, width = 0) {
+  const polylines = [];
+  let current = null;
+  let point = [0, 0];
+  const tokens = path.match(/[MLHVZ]|-?\d+(?:\.\d+)?/g);
+  let command = null;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (/[MLHVZ]/.test(token)) {
+      command = token;
+      if (command === 'Z' && current) current.closed = true;
+      continue;
+    }
+    const value = Number(token);
+    if (command === 'M' || command === 'L') {
+      point = [value, Number(tokens[index + 1])];
+      index += 1;
+    } else if (command === 'H') point = [value, point[1]];
+    else if (command === 'V') point = [point[0], value];
+    if (command === 'M') {
+      current = { points: [], closed: false };
+      polylines.push(current);
+    }
+    current.points.push(point);
+  }
+  const reach = [];
+  for (const { points, closed } of polylines) {
+    if (width === 0) {
+      reach.push(...points);
+      continue;
+    }
+    const half = width / 2;
+    const ring = closed ? [...points, points[0]] : points;
+    for (let index = 0; index + 1 < ring.length; index += 1) {
+      const [x1, y1] = ring[index];
+      const [x2, y2] = ring[index + 1];
+      const length = Math.hypot(x2 - x1, y2 - y1);
+      const [nx, ny] = [(-(y2 - y1) / length) * half, ((x2 - x1) / length) * half];
+      reach.push([x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny]);
+    }
+    const joins = closed ? points : points.slice(1, -1);
+    for (const [x, y] of joins) reach.push([x - half, y - half], [x + half, y + half]);
+  }
+  return reach;
+}
+
+const TRAFFIC_IDS = Object.keys(TRAFFIC_IMAGE_SHAPES);
+
+describe('traffic images (PR M5)', () => {
+  it('lists a solid and a hollow silhouette per icon category, the ring and the plain images at the end', () => {
+    expect(MAP_IMAGE_IDS.slice(-TRAFFIC_IDS.length)).toEqual(TRAFFIC_IDS);
+    expect(TRAFFIC_IDS).toEqual([
+      ...ICON_CATEGORIES.flatMap(category => [`ac-${category}-solid`, `ac-${category}-hollow`]),
+      'traffic-ring-est', 'glyph-arrival', 'glyph-departure', 'glyph-arrow-right', 'plate-demo',
+    ]);
+    expect(aircraftImage('narrow')).toBe('ac-narrow-solid');
+    expect(aircraftImage('heavy4', { hollow: true })).toBe('ac-heavy4-hollow');
+    expect(aircraftImage('zeppelin')).toBe('ac-unknown-solid');
+    // Each category draws its generic airframe, larger airframes in larger squares.
+    for (const category of ICON_CATEGORIES) {
+      const { width, height, ops: [op] } = MAP_IMAGE_SHAPES[aircraftImage(category)];
+      expect([width, height], category).toEqual([AIRCRAFT_ICON_SIZES[category], AIRCRAFT_ICON_SIZES[category]]);
+      expect(op.fill, category).toBe(silhouettePath(CATEGORY_OUTLINES[category], { size: width, inset: AIRCRAFT_ICON_INSET }));
+    }
+    expect(AIRCRAFT_ICON_SIZES.heavy4).toBeGreaterThan(AIRCRAFT_ICON_SIZES.narrow);
+    expect(AIRCRAFT_ICON_SIZES.narrow).toBeGreaterThan(AIRCRAFT_ICON_SIZES.light);
+  });
+
+  it('arrivals and departures use different images, not only colour', () => {
+    for (const category of ICON_CATEGORIES) {
+      // The departing ELEVANT flight is the same silhouette as an outline: its shape differs, whatever the colour.
+      const solid = MAP_IMAGE_SHAPES[aircraftImage(category)].ops;
+      const hollow = MAP_IMAGE_SHAPES[aircraftImage(category, { hollow: true })].ops;
+      expect(solid, category).toEqual([{ fill: expect.any(String) }]);
+      expect(hollow, category).toEqual([{ stroke: solid[0].fill, lineWidth: HOLLOW_LINE_WIDTH, join: 'round' }]);
+    }
+    // The glyphs of the tags: an arrow coming down onto the ground line and one leaving it, in the same colour.
+    const arrival = MAP_IMAGE_SHAPES['glyph-arrival'].ops;
+    const departure = MAP_IMAGE_SHAPES['glyph-departure'].ops;
+    expect(arrival.map(op => op.fill ?? op.stroke)).not.toEqual(departure.map(op => op.fill ?? op.stroke));
+    expect(new Set([...arrival, ...departure].map(op => op.color))).toEqual(new Set(['--occ-text']));
+    // Drawn left to right, the arrival's shaft goes down the image and the departure's goes up.
+    const [[, arrivalFrom], [, arrivalTo]] = inkExtent(arrival[0].stroke);
+    const [[, departureFrom], [, departureTo]] = inkExtent(departure[0].stroke);
+    expect(arrivalTo).toBeGreaterThan(arrivalFrom);
+    expect(departureTo).toBeLessThan(departureFrom);
+  });
+
+  it('every traffic image keeps 3 px clear', () => {
+    for (const id of TRAFFIC_IDS) {
+      const { width, height, ops } = MAP_IMAGE_SHAPES[id];
+      for (const op of ops) {
+        const path = op.fill ?? op.stroke;
+        if (path.includes('A')) continue; // the ring, measured below
+        const reach = inkExtent(path, op.stroke === undefined ? 0 : op.lineWidth);
+        expect(Math.min(...reach.map(([x]) => x)), id).toBeGreaterThanOrEqual(3 - 1e-9);
+        expect(Math.min(...reach.map(([, y]) => y)), id).toBeGreaterThanOrEqual(3 - 1e-9);
+        expect(Math.max(...reach.map(([x]) => x)), id).toBeLessThanOrEqual(width - 3 + 1e-9);
+        expect(Math.max(...reach.map(([, y]) => y)), id).toBeLessThanOrEqual(height - 3 + 1e-9);
+      }
+    }
+    const { width, ops: [ring] } = MAP_IMAGE_SHAPES['traffic-ring-est'];
+    const [right, centreY, radius] = ring.stroke.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    expect([right - radius, centreY]).toEqual([width / 2, width / 2]);
+    expect(width / 2 - radius - ring.lineWidth / 2).toBeGreaterThanOrEqual(3);
+    // The plate's word has its slab: 38 × 16 px inside the 3 px margin.
+    expect([MAP_IMAGE_SHAPES['plate-demo'].width, MAP_IMAGE_SHAPES['plate-demo'].height])
+      .toEqual([DEMO_PLATE.width + 6, DEMO_PLATE.height + 6]);
+  });
+
+  it('the estimated ring is dashed', () => {
+    const shape = MAP_IMAGE_SHAPES['traffic-ring-est'];
+    expect(shape.sdf).toBeUndefined();
+    expect(shape.ops).toHaveLength(1);
+    const [ring] = shape.ops;
+    expect(ring.fill).toBeUndefined();
+    expect(ring.stroke).toMatch(/^M[\d.]+ [\d.]+ A/);
+    expect(ring.dash).toHaveLength(2);
+    expect(ring.dash.every(length => length > 0)).toBe(true);
+    // Clear of the largest silhouette at the same scale: the heavy's half diagonal is inside the ring.
+    const radius = Number(ring.stroke.match(/A(\d+(?:\.\d+)?)/)[1]);
+    expect(radius - ring.lineWidth / 2).toBeGreaterThan((AIRCRAFT_ICON_SIZES.heavy4 - 2 * AIRCRAFT_ICON_INSET) / 2);
+  });
+
+  it('plain images keep their own colours, laid over one another in order', () => {
+    const rasterize = centreRasterizer();
+    const resolve = createImageResolver({ rasterize });
+    const arrow = resolve('glyph-arrow-right');
+    expect(arrow).toMatchObject({ width: 32, height: 32, pixelRatio: 2, sdf: false });
+    // One mask per operation, each drawn alone in the image's box.
+    expect(rasterize).toHaveBeenCalledTimes(MAP_IMAGE_SHAPES['glyph-arrow-right'].ops.length);
+    expect(rasterize.mock.calls.map(([shape]) => shape.ops)).toEqual(MAP_IMAGE_SHAPES['glyph-arrow-right'].ops.map(op => [op]));
+    const pixelAt = (image, x, y) => Array.from(image.data.slice((y * image.width + x) * 4, (y * image.width + x) * 4 + 4));
+    expect(pixelAt(arrow, 16, 16)).toEqual([0xe8, 0xee, 0xf1, 255]);
+    expect(pixelAt(arrow, 1, 1)).toEqual([0, 0, 0, 0]);
+    expect(resolve('glyph-arrow-right')).toBe(arrow);
+    // The plate: the frame, drawn last, covers the middle in this stand-in; the slab and stripes lie under it.
+    expect(pixelAt(resolve('plate-demo'), 44, 22)).toEqual([0x76, 0x82, 0x89, 255]);
+
+    // Half-covered operations blend like a canvas: the later colour over the earlier one, in straight RGBA.
+    const half = vi.fn((shape, pixelRatio) => {
+      const width = Math.round(shape.width * pixelRatio);
+      const height = Math.round(shape.height * pixelRatio);
+      return { width, height, alpha: new Uint8ClampedArray(width * height).fill(128) };
+    });
+    const blended = createImageResolver({ rasterize: half })('glyph-arrow-right');
+    const cover = 128 / 255;
+    const total = cover + cover * (1 - cover);
+    const [r, g, b, a] = pixelAt(blended, 0, 0);
+    expect(a).toBe(Math.round(total * 255));
+    expect([r, g, b]).toEqual([0xe8, 0xee, 0xf1]);
+    // Without a canvas there is no plain image either.
+    expect(createImageResolver({ rasterize: () => null })('plate-demo')).toBeNull();
+  });
+
+  it('draws the hollow silhouettes with round joins and the other strokes with mitres', () => {
+    vi.stubGlobal('Path2D', class {
+      constructor(data) {
+        this.data = data;
+      }
+    });
+    const joins = [];
+    const context = {
+      scale: () => {}, translate: () => {}, save: () => {}, restore: () => {}, setLineDash: () => {}, fill: () => {},
+      stroke: () => joins.push(context.lineJoin),
+      getImageData: (x, y, width, height) => ({ data: new Uint8ClampedArray(width * height * 4) }),
+    };
+    const canvasFactory = () => ({ getContext: () => context });
+    rasterizeWithCanvas(MAP_IMAGE_SHAPES['ac-narrow-hollow'], 2, { canvasFactory });
+    rasterizeWithCanvas(MAP_IMAGE_SHAPES['traffic-ring-est'], 2, { canvasFactory });
+    expect(joins).toEqual(['round', 'miter']);
   });
 });

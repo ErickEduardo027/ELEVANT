@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FlightMonitoringPage from './FlightMonitoringPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 
+// The map decides where the page's card of the selected flight goes (components/FlightMap.test.jsx): the stub shows it.
 vi.mock('./components/FlightMap', () => ({
   default: function FlightMapStub(props) {
-    return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)}
-      data-popover-position={typeof props.onPopoverPosition} />;
+    return (
+      <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)}
+        data-popover-position={typeof props.onPopoverPosition} data-flights={String(props.flights.length)}>
+        {props.detail}
+      </div>
+    );
   },
 }));
 
@@ -77,7 +82,16 @@ describe('FlightMonitoringPage', () => {
     expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
   });
 
-  it('shows the empty state and explains the absence of telemetry when there are no flights', () => {
+  it('passes every flight of the list to the map, with a position or without one', () => {
+    render(
+      <FlightMonitoringPage status="success" connection="connected" lastUpdatedAt={null} onRetry={() => {}} error={null}
+        data={{ station: { code: 'PUJ' }, flights: [flight({ id: 1 }), flight({ id: 2, flightNumber: 'AA904', latitude: null, longitude: null })] }} />
+    );
+    // The live map places what the air picture sees and lists every flight when it cannot draw.
+    expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-flights', '2');
+  });
+
+  it('shows the empty state when there are no flights, with the map and without a notice of its own', () => {
     render(
       <FlightMonitoringPage
         status="success"
@@ -90,7 +104,8 @@ describe('FlightMonitoringPage', () => {
     );
     expect(screen.getByText('Sin vuelos para mostrar')).toBeInTheDocument();
     expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
-    expect(screen.getByText(/Sin posición de aeronaves en vivo/)).toBeInTheDocument();
+    // The map explains its traffic itself (maps/ui/MapSourceStatus.jsx): the page adds no notice of its own.
+    expect(screen.queryByText(/Sin posición de aeronaves en vivo/)).not.toBeInTheDocument();
   });
 
   it('does not center another station on PUJ', () => {
@@ -101,16 +116,29 @@ describe('FlightMonitoringPage', () => {
     expect(screen.queryByText(/el mapa muestra PUJ/)).not.toBeInTheDocument();
   });
 
-  it('selects a flight when its list item is clicked, opening the detail popover and passing the id to the map', async () => {
+  it('selects a flight when its list item is clicked, passing its id and the page\'s card to the map', async () => {
     render(
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
     );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await userEvent.click(screen.getByText('DM161'));
-    expect(screen.getByRole('dialog', { name: /DM161/ })).toBeInTheDocument();
-    expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-selected', '1');
-    // The card is docked at the top left of the map: the map no longer reports a screen position for it.
+    const map = screen.getByTestId('flight-map-stub');
+    expect(map).toHaveAttribute('data-selected', '1');
+    // With the map, the page mounts no card of its own: it hands its card to the map, which docks the flight's data
+    // block instead and keeps this card for a flight it does not know (components/FlightMap.test.jsx).
+    expect(screen.getAllByRole('dialog')).toEqual([within(map).getByRole('dialog', { name: /DM161/ })]);
+    expect(within(map).getByRole('dialog', { name: /DM161/ })).toHaveStyle({ top: '12px', left: '12px' });
+    expect(map).toHaveAttribute('data-popover-position', 'undefined');
+  });
+
+  it('keeps the page\'s card of the selected flight where there is no map', async () => {
+    render(
+      <FlightMonitoringPage status="success" data={{ station: { code: 'SDQ' }, source: 'planning', flights: DATA.flights }}
+        error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    await userEvent.click(screen.getByText('DM161'));
+    expect(screen.queryByTestId('flight-map-stub')).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: /DM161/ })).toHaveStyle({ top: '12px', left: '12px' });
-    expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-popover-position', 'undefined');
   });
 
   it('honors the monitoringEmpty forceState override from the dev preview panel', () => {

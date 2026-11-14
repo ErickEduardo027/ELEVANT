@@ -32,12 +32,21 @@ import { buildOccStyle } from '../style/occStyle';
 import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
+import { trailsBesideRoute } from '../traffic/routeFeatures';
+import {
+  ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, isEmptyDiff, onScreenKey, selectedAircraftId, trafficDiff,
+  trafficFeatures, trafficOnScreen as trafficOnScreenOf,
+} from '../traffic/trafficFeatures';
+import { trafficOverlay } from '../traffic/trafficLayers';
 import MapTooltip from '../ui/MapTooltip';
 import { buildAttribution } from './attribution';
 import {
   VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom, presetTargets,
   sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
+import {
+  availableLayerKeys, engineGroupsFor, readLayerOverrides, resolveLayers, setLayerOverride, writeLayerOverrides,
+} from './layersMenu';
 import { createMapEngine } from './mapEngine';
 import { matchFlight, relatedEntities } from './mapSelection';
 import MapUnavailable from './MapUnavailable';
@@ -98,6 +107,28 @@ const sameList = (first, second) => first.join('|') === second.join('|');
 const flightsKey = flights => flights.map(flight => String(flight.id)).join('|');
 // Thresholds for a map without the airfield overlay: the tile aeroway then keeps every zoom.
 const withoutAirfield = ({ airfield, ...rest }) => rest;
+// The traffic (PR M5): nothing on screen, an empty source, and the key of a traffic source's credit.
+const NO_TRAFFIC_ON_SCREEN = Object.freeze({ kinds: EMPTY, tags: EMPTY, trails: EMPTY, route: EMPTY });
+const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: EMPTY });
+const creditKeyOf = source => (source && typeof source.name === 'string' && source.name.trim() !== ''
+  ? JSON.stringify([source.name, source.homeUrl ?? null, source.licenseName ?? null, source.licenseUrl ?? null])
+  : '');
+// Where the layers menu keeps a browser's choices (core/layersMenu.js); a browser that refuses storage keeps none.
+function layerStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Where the traffic draws the ELEVANT aircraft a flight id names (any id matchFlight reads), as `[lng, lat]`, or null.
+function trafficPoint(traffic, id) {
+  const aircraft = traffic?.aircraft ?? EMPTY;
+  const chosen = selectedAircraftId(aircraft, { kind: 'flight', id });
+  const item = chosen === null ? null : aircraft.find(entry => entry.id === chosen);
+  return item ? [item.lon, item.lat] : null;
+}
 
 // Where the tooltip of the airfield sits: at the pixel it points at, on the side of the visible area's middle that has
 // room for it, so the card stays inside the map.
@@ -156,6 +187,10 @@ const initialSnapshot = basemap => ({
   airfieldOnScreen: EMPTY,
   // The map tooltip of a runway or a taxiway: what it shows, where, and whether a click holds it.
   tooltip: null,
+  // The traffic drawn in the area the insets leave in sight (PR M5): its kinds, tags and trails.
+  trafficOnScreen: NO_TRAFFIC_ON_SCREEN,
+  // The keys of the layers menu this map's style has layers for (PR M5, core/layersMenu.js).
+  layerKeys: EMPTY,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -227,6 +262,19 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  * - `testId` of the host that holds the canvas, `labels` ({ unavailableTitle, unavailableDescription,
  *   unavailableList, map }), `fallbackItems` ([{ id, label, kind }]) and `onFallbackSelect(id, item)`;
  * - `isShortcutBlocked()` (an open drawer that is not a modal dialog), `className`, `children` (DOM overlays).
+ * - `traffic` (PR M5): `{ aircraft, trails, route, source }` from the map situation (useMapSituation: the aircraft of
+ *   traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route and the air picture's source).
+ *   Whether it is given is read at start, as for the stands and the flights: the map then draws the traffic overlay,
+ *   one updateData per change of the aircraft (a selection, the aircraft under the pointer and the shown groups
+ *   included), lists the traffic on screen for the legend, and credits the source in the attribution while traffic
+ *   is on screen. The chosen aircraft is drawn larger in cyan with the selection ring, both layers of the traffic
+ *   overlay in the selection slot (traffic/trafficLayers.js), so they move in the aircraft's own updateData and the
+ *   selection source keeps the stands and the flights; while its route shows, its trail gives way to the route's flown
+ *   part.
+ * - The layers menu (PR M5, core/layersMenu.js, ui/MapLayersMenu.jsx): the map keeps the person's choices (only what
+ *   differs from the defaults of the view on screen, in `localStorage`) and shows or hides the groups they name, except
+ *   a group the page sets in `groups`, which wins. The menu reads them from OccMapContext; L opens and closes a menu on
+ *   screen and Esc closes an open one before it clears the selection.
  */
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
@@ -236,6 +284,7 @@ const OccMap = forwardRef(function OccMap({
   standLabels = 'default',
   frozenAt = null,
   flights: flightsProp,
+  traffic,
   overlays = EMPTY,
   overlayData,
   selection = null,
@@ -282,6 +331,35 @@ const OccMap = forwardRef(function OccMap({
   const targets = useMemo(() => presetTargets({ stands: referenceStands, layout }), [referenceStands, layout]);
   const groupsKey = JSON.stringify(groups ?? NO_GROUPS);
 
+  // The layers menu (PR M5, core/layersMenu.js): the person's choices, read from the browser once, resolved for the
+  // view on screen. The groups they show join the page's own `groups`, which win for a group the page sets itself.
+  const [layerOverrides, setLayerOverrides] = useState(() => readLayerOverrides(layerStorage()));
+  const [layersMenuOpen, setLayersMenuOpenState] = useState(false);
+  const layersMenusRef = useRef(0);
+  const setLayersMenuOpen = useCallback(open => setLayersMenuOpenState(open === true), []);
+  // A menu on screen registers itself: L opens one only while one is there, and the last one to go closes it.
+  const registerLayersMenu = useCallback(() => {
+    layersMenusRef.current += 1;
+    return () => {
+      layersMenusRef.current -= 1;
+      if (layersMenusRef.current === 0) setLayersMenuOpenState(false);
+    };
+  }, []);
+  const layerView = snapshot.activeView ?? defaultView;
+  const resolvedLayers = useMemo(() => resolveLayers(layerView, layerOverrides), [layerView, layerOverrides]);
+  const menuGroups = useMemo(() => engineGroupsFor(resolvedLayers), [resolvedLayers]);
+  const menuGroupsKey = JSON.stringify(menuGroups);
+  const shownGroups = useMemo(() => ({ ...JSON.parse(menuGroupsKey), ...JSON.parse(groupsKey) }),
+    [menuGroupsKey, groupsKey]);
+  const shownGroupsKey = JSON.stringify(shownGroups);
+  // The trails and the chosen flight's route (PR M5): while the route shows, the chosen aircraft's trail gives way to
+  // its flown part, so it is drawn once, in the selection's cyan.
+  const trafficTrails = traffic?.trails ?? null;
+  const trafficRoute = traffic?.route ?? null;
+  const routeShown = shownGroups.route !== false;
+  const shownTrails = useMemo(() => (routeShown ? trailsBesideRoute(trafficTrails, trafficRoute) : trafficTrails),
+    [routeShown, trafficTrails, trafficRoute]);
+
   const rootRef = useRef(null);
   const hostRef = useRef(null);
   const engineRef = useRef(null);
@@ -308,7 +386,23 @@ const OccMap = forwardRef(function OccMap({
       aircraftDataLabel: t('attribution.aircraftData'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
     };
+    // The traffic (PR M5): what it draws, the groups the map shows (the page's and the layers menu's), the words of its
+    // tags, the trails it draws beside the chosen flight's route, and the layers menu the map keys open and close.
+    Object.assign(latest.current, { traffic: traffic ?? null, drawsTraffic: traffic !== undefined, groups: shownGroups,
+      language, shownTrails, layersMenuOpen, setLayersMenuOpen });
   });
+
+  // A choice of the layers menu: a difference from the defaults of the view on screen, kept in the browser.
+  const setLayer = useCallback((key, on) => {
+    const view = store.get().activeView ?? latest.current?.defaultView ?? null;
+    setLayerOverrides(current => setLayerOverride(current, view, key, on));
+  }, [store]);
+  const writtenLayersRef = useRef(layerOverrides);
+  useEffect(() => {
+    if (writtenLayersRef.current === layerOverrides) return;
+    writtenLayersRef.current = layerOverrides;
+    writeLayerOverrides(layerStorage(), layerOverrides);
+  }, [layerOverrides]);
 
   // The camera that frames `bounds` in the area the insets leave free, plus `extra` pixels on every side.
   const cameraFor = useCallback((bounds, extra = 0) => {
@@ -375,7 +469,8 @@ const OccMap = forwardRef(function OccMap({
     const engine = engineRef.current;
     const { flights: current, padding: inset } = latest.current ?? {};
     const flight = matchFlight(current ?? EMPTY, id);
-    const point = lngLatOf(flight?.position ?? flight);
+    // A flight the traffic draws (PR M5) is where its aircraft is.
+    const point = lngLatOf(flight?.position ?? flight) ?? trafficPoint(latest.current?.traffic, id);
     const camera = engine?.getCamera();
     if (!point || !camera) return false;
     const zoom = Number.isFinite(minZoom) ? Math.max(camera.zoom, minZoom) : camera.zoom;
@@ -417,6 +512,36 @@ const OccMap = forwardRef(function OccMap({
   }, []);
   // Resolves true once the map has drawn a frame with nothing left to load or move, false without a map.
   const whenIdle = useCallback(() => engineRef.current?.whenIdle() ?? Promise.resolve(false), []);
+
+  // The traffic (PR M5). The aircraft of other traffic under the pointer, whose tag shows while it is there.
+  const trafficFocusRef = useRef(null);
+
+  // The traffic's features from the newest props: one updateData with what changed since the last write.
+  const writeTraffic = useCallback(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsTraffic) return;
+    const { traffic: current, selection: chosen, groups: shown, language: words } = latest.current;
+    const data = trafficFeatures(current?.aircraft ?? EMPTY, {
+      selection: chosen, focusId: trafficFocusRef.current, labelsOn: shown?.['traffic.labels'] === true, language: words,
+    });
+    const diff = trafficDiff(applied.trafficById, data.features);
+    if (isEmptyDiff(diff)) return;
+    applied.trafficById = featuresById(data);
+    engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
+  }, []);
+
+  // The traffic drawn in `bounds` (the area the insets leave in sight), for the legend and the credit.
+  const updateTrafficOnScreen = useCallback((bounds, zoom, thresholds) => {
+    const current = latest.current?.traffic;
+    const next = appliedRef.current.drawsTraffic && bounds !== null
+      ? trafficOnScreenOf(current?.aircraft ?? EMPTY, bounds, {
+        groups: latest.current.groups, zoom, thresholds, trails: latest.current.shownTrails ?? null,
+        route: current?.route ?? null,
+      })
+      : NO_TRAFFIC_ON_SCREEN;
+    if (onScreenKey(next) !== onScreenKey(store.get().trafficOnScreen)) store.set({ trafficOnScreen: next });
+  }, [store]);
 
   // What is drawn in the area the insets leave in sight (the page's panels hide what lies under them), for the legend,
   // which explains only what is on screen (contracts 2.4): the stands whose polygon reaches into that area from the
@@ -476,7 +601,8 @@ const OccMap = forwardRef(function OccMap({
         : { flightsOnScreen: flights.length === 0 ? EMPTY : flights }),
       ...(sameList(airfield, previous.airfieldOnScreen) ? {} : { airfieldOnScreen: airfield.length === 0 ? EMPTY : airfield }),
     });
-  }, [store]);
+    updateTrafficOnScreen(bounds, zoom, thresholds);
+  }, [store, updateTrafficOnScreen]);
 
   // The fitted zoom of each view in the room the insets leave; the thresholds follow them (contracts 2.3).
   const refit = useCallback(() => {
@@ -666,8 +792,16 @@ const OccMap = forwardRef(function OccMap({
     showTooltip(info, event.point, event.lngLat, false);
   }, [store, showTooltip, standTooltipOf]);
 
-  // The cursor, the hover tooltip and the hovered stand follow what is under the pointer, picked once per frame; while a
-  // stand is placed, its box follows the pointer instead.
+  // Other traffic shows its tag while the pointer is on it (contracts 2.4: tag on demand), written with updateData.
+  const focusTraffic = useCallback(hit => {
+    const next = hit?.kind === 'aircraft' ? hit.feature?.properties?.id ?? null : null;
+    if (trafficFocusRef.current === next) return;
+    trafficFocusRef.current = next;
+    writeTraffic();
+  }, [writeTraffic]);
+
+  // The cursor, the hover tooltip, the hovered stand and the focused traffic follow what is under the pointer, picked
+  // once per frame; while a stand is placed, its box follows the pointer instead.
   const handlePointer = useCallback(event => {
     const pointer = pointerRef.current;
     pointer.event = event;
@@ -686,10 +820,11 @@ const OccMap = forwardRef(function OccMap({
       const clickable = hit && (POINTER_KINDS.has(hit.kind) || (hit.id != null && latest.current.onPick));
       engine.setCursor(clickable ? 'pointer' : '');
       hoverTooltip(pointer.event, hit);
+      focusTraffic(pointer.event ? hit : null);
       const dragging = Boolean(pointer.event?.originalEvent?.buttons);
       hoverStand(hit?.kind === 'stand' && hit.id != null && !dragging ? String(hit.id) : null);
     });
-  }, [hoverTooltip, hoverStand, moveGhost]);
+  }, [hoverTooltip, focusTraffic, hoverStand, moveGhost]);
 
   // A stand selected outside the area in sight brings the camera to it at the same zoom, inside the insets
   // (stands/standInteractions.js: isOutsideSafeArea); one in sight leaves the camera where it is.
@@ -718,6 +853,9 @@ const OccMap = forwardRef(function OccMap({
       standFlags: NO_FLAGS, ghost: null, pendingGhost: null, ghostKey: '[]', placingCode: null,
       easedFor: props.selection?.kind === 'stand' ? mapStandCode(props.selection.id) || null : null,
     };
+    // The traffic of this engine: what its source holds, the trails and route written, and the credit shown.
+    Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null, route: null,
+      credit: '' });
     focusRef.current = null;
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
@@ -737,8 +875,11 @@ const OccMap = forwardRef(function OccMap({
       referenceOverlay(),
       ...(props.drawsStands ? [standOverlay({ labels: props.standLabels })] : []),
       ...(props.drawsFlights ? [flightOverlay()] : []),
+      ...(props.drawsTraffic ? [trafficOverlay()] : []),
       ...props.overlays,
     ];
+    // The keys of the layers menu this style has layers for (PR M5).
+    store.set({ layerKeys: availableLayerKeys({ layers: overlays.flatMap(overlay => overlay.layers ?? []) }) });
     const engine = createMapEngine({
       maplibre,
       host: hostRef.current,
@@ -850,6 +991,49 @@ const OccMap = forwardRef(function OccMap({
     markSettled(rootRef.current, false);
   }, [flights]);
 
+  // The traffic (PR M5): the aircraft, again whenever the selection, the shown groups or the language change what
+  // they draw, then what is on screen. A read that moved nothing writes nothing.
+  const trafficAircraft = traffic?.aircraft ?? EMPTY;
+  useEffect(() => {
+    writeTraffic();
+    updateOnScreen();
+  }, [trafficAircraft, selection, shownGroupsKey, language, writeTraffic, updateOnScreen]);
+
+  // The trails and the chosen flight's route: one setData when what they draw changes.
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.drawsTraffic) return;
+    for (const [sourceId, slot, data] of [[TRAILS_SOURCE, 'trails', shownTrails], [ROUTE_SOURCE, 'route', trafficRoute]]) {
+      const collection = data ?? EMPTY_COLLECTION;
+      const key = JSON.stringify(collection.features ?? EMPTY);
+      if (applied[slot] === key) continue;
+      applied[slot] = key;
+      engine.setData(sourceId, collection);
+    }
+    updateOnScreen();
+  }, [shownTrails, trafficRoute, updateOnScreen]);
+
+  // The credit of the aircraft data (owner decision 6, contracts 2.5): «Datos de aeronaves: {source}» with its links
+  // in the attribution while traffic is on screen, and out of it when none is.
+  const trafficShown = snapshot.trafficOnScreen;
+  const creditKey = trafficShown.kinds.length > 0 ? creditKeyOf(traffic?.source) : '';
+  const trafficSource = useMemo(() => {
+    if (creditKey === '') return null;
+    const [name, homeUrl, licenseName, licenseUrl] = JSON.parse(creditKey);
+    return Object.freeze({ name, homeUrl, licenseName, licenseUrl });
+  }, [creditKey]);
+  const aircraftDataLabel = t('attribution.aircraftData');
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    // What the attribution shows: nothing of the traffic, or this source in this language.
+    const key = creditKey === '' ? '' : `${creditKey}|${aircraftDataLabel}`;
+    if (!engine || !applied.drawsTraffic || applied.credit === key) return;
+    applied.credit = key;
+    engine.setAttribution(buildAttribution(trafficSource === null ? [] : [trafficSource], { aircraftDataLabel }));
+  }, [creditKey, trafficSource, aircraftDataLabel]);
+
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
   useEffect(() => {
     const engine = engineRef.current;
@@ -912,6 +1096,22 @@ const OccMap = forwardRef(function OccMap({
     appliedRef.current.groups = Object.fromEntries(Object.entries(next).map(([group, visible]) => [group, Boolean(visible)]));
   }, [groupsKey]);
 
+  // The groups the layers menu shows or hides (PR M5), except those the page sets itself: one call per change. A group
+  // the page lets go is the menu's again.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const page = JSON.parse(groupsKey);
+    const applied = appliedRef.current.menuGroups ?? {};
+    const next = {};
+    for (const [group, visible] of Object.entries(JSON.parse(menuGroupsKey))) {
+      if (Object.hasOwn(page, group)) continue;
+      if (applied[group] !== visible) engine.setGroupVisibility(group, visible);
+      next[group] = visible;
+    }
+    appliedRef.current.menuGroups = next;
+  }, [groupsKey, menuGroupsKey]);
+
   // While a stand is being placed a click gives its point: no tooltip stays open over the map and no stand stays marked
   // as under the pointer.
   useEffect(() => {
@@ -957,9 +1157,19 @@ const OccMap = forwardRef(function OccMap({
         get: () => (store.get().engineStatus === 'unavailable' ? undefined : () => requestView(view)),
       });
     }
+    // The layers menu (PR M5): L opens and closes it while the map shows one and can draw.
+    Object.defineProperty(handlers, 'toggleLayers', {
+      enumerable: true,
+      get: () => (layersMenusRef.current > 0 && store.get().engineStatus !== 'unavailable'
+        ? () => latest.current?.setLayersMenuOpen(!latest.current.layersMenuOpen)
+        : undefined),
+    });
     Object.defineProperty(handlers, 'clearSelection', {
       enumerable: true,
       get: () => {
+        // An open layers menu closes first (PR M5); then Esc stops the placing of a stand (PR M4); the selection waits
+        // for the next Esc.
+        if (latest.current?.layersMenuOpen) return () => latest.current.setLayersMenuOpen(false);
         const { selection: current, onSelect: select, placing: placingStandNow, onCancelPlacing: cancel } = latest.current ?? {};
         if (placingStandNow && cancel) return () => cancel();
         return current && select ? () => select(null) : undefined;
@@ -1001,6 +1211,13 @@ const OccMap = forwardRef(function OccMap({
     engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, chipsOnScreen, standMarksOnScreen,
     flightsOnScreen, airfieldOnScreen, requestView, flyToPreset, flyToStand, flyToFlight,
   ]);
+  // With the traffic on screen and its source (PR M5), for the legend and the status over the map, and the layers menu.
+  const { layerKeys } = snapshot;
+  const layers = useMemo(() => Object.freeze({ keys: layerKeys, values: resolvedLayers }), [layerKeys, resolvedLayers]);
+  const mapContext = useMemo(() => ({
+    ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
+    registerLayersMenu,
+  }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;
@@ -1021,7 +1238,7 @@ const OccMap = forwardRef(function OccMap({
   const unavailable = engineStatus === 'unavailable';
 
   return (
-    <OccMapContext.Provider value={context}>
+    <OccMapContext.Provider value={mapContext}>
       <div
         ref={rootRef}
         data-testid="occ-map"

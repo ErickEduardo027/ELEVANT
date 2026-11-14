@@ -1,3 +1,4 @@
+import { OCC_AIR_PICTURE_REASONS } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { OCC_SHORTCUTS } from '../occ-ui/occShortcuts';
@@ -128,6 +129,57 @@ describe('map messages', () => {
     for (const { action, es, en } of OCC_SHORTCUTS.filter(row => row.action.startsWith('view.'))) {
       expect(texts, action).not.toContain(es);
       expect(texts, action).not.toContain(en);
+    }
+  });
+
+  it('names the traffic of the legend, the words of a tag and the states of the air traffic in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect(['aviamArrival', 'aviamDeparture', 'other', 'otherGround', 'trail', 'trailEstimated']
+      .map(key => es(`legend.traffic.${key}`))).toEqual(['Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale',
+      'Otro tráfico', 'Otro tráfico en tierra', 'Estela', 'Estela estimada']);
+    expect(en('legend.traffic.aviamDeparture')).toBe('AVIAM departure');
+    // The tag: GND on the ground. «est.» and «Sin actualizar desde las {time}» are the vocabulary's (TAGS), so the map
+    // has no words of its own for a stale position: no age, no «Sin señal».
+    expect(es('traffic.ground')).toBe('GND');
+    expect([es('legend.traffic.staleHint'), en('legend.traffic.staleHint')])
+      .toEqual(['Atenuado, con la hora de su última posición', 'Dimmed, with the time of its last position']);
+    for (const language of ['es', 'en']) {
+      const texts = leafPaths(mapMessages[language]).map(path => createTranslator(mapMessages, language)(path));
+      expect(texts.filter(text => /sin señal|no signal|sin actualizar|not updated|^· \{count\}/i.test(text)), language)
+        .toEqual([]);
+    }
+    // The chips over the map, word for word, and a reason for every one the air picture may give.
+    expect([es('source.loading'), es('source.empty'), es('source.unavailable'), es('source.retry'), es('source.forbidden')])
+      .toEqual(['Cargando tráfico…', 'No hay aviones en la zona', 'No hay tráfico en vivo en este momento.', 'Reintentar',
+        'Tu acceso no incluye el tráfico en vivo.']);
+    expect(es('source.delayed', { age: es('source.ageMinutes', { count: 4 }) }))
+      .toBe('Tráfico con retraso: último dato hace 4 min.');
+    expect(en('source.delayed', { age: en('source.ageSeconds', { count: 45 }) })).toBe('Traffic delayed: last data 45 s ago.');
+    // The notice of the AVIAM flights, apart from the traffic's chip.
+    expect([es('source.flights.label'), es('source.flights.unavailable'), en('source.flights.unavailable')])
+      .toEqual(['Estado de los vuelos de AVIAM', 'No se pudieron cargar los vuelos de AVIAM.',
+        'The AVIAM flights could not be loaded.']);
+    for (const reason of OCC_AIR_PICTURE_REASONS) {
+      expect(es(`source.reason.${reason}`), reason).toMatch(/^La fuente de tráfico .+\.$/);
+      expect(en(`source.reason.${reason}`), reason).toMatch(/^The traffic source .+\.$/);
+    }
+    // The data block and the layers menu (PR M5 step c), in plain words.
+    expect([es('dataBlock.label', { id: 'ZZ161' }), es('dataBlock.live', { age: es('dataBlock.seconds', { count: 4 }) }),
+      es('dataBlock.noPosition'), es('dataBlock.demo'), es('dataBlock.notImported'), es('dataBlock.cancelledDemo')])
+      .toEqual(['Vuelo ZZ161', 'En vivo · hace 4 s', 'Sin posición todavía', 'Vuelo demo', 'Sin importar',
+        'Cancelado por el proveedor (demo)']);
+    expect([es('dataBlock.viewTurnaround'), es('dataBlock.viewStand'), es('dataBlock.close')])
+      .toEqual(['Ver escala', 'Ver posición', 'Cerrar']);
+    expect(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route'].map(key => es(`layers.key.${key}`)))
+      .toEqual(['Vuelos de AVIAM', 'Otro tráfico', 'Etiquetas de todo el tráfico', 'Estelas de todo el tráfico',
+        'Ruta del vuelo elegido']);
+    expect([es('layers.group.traffic'), es('layers.locked'), en('layers.group.traffic'), en('layers.key.traffic.aviam')])
+      .toEqual(['Tráfico', 'Siempre visible', 'Traffic', 'AVIAM flights']);
+    // The words the server writes never reach the screen: no reason names the provider or repeats a code.
+    for (const language of ['es', 'en']) {
+      const texts = OCC_AIR_PICTURE_REASONS.map(reason => createTranslator(mapMessages, language)(`source.reason.${reason}`));
+      expect(texts.join(' '), language).not.toMatch(/_|adsb|provider_error|rate_limited/i);
     }
   });
 });

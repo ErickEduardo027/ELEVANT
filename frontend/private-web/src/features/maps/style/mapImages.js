@@ -1,11 +1,13 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { maskToSdf } from './sdf';
+import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
 
 // The images of the OCC map style. There is no sprite: each image is drawn on demand from the path data below and
 // handed to MapLibre. An icon becomes an SDF, which MapLibre paints in the colour of its layer (icon-color) with an
 // optional halo, so one image serves every colour and the ids are fixed strings with no theme or colour in them. A
 // pattern (fill-pattern) cannot be an SDF: it is painted here, in the one OCC token it carries (`sdf: false`).
+// The plain marks of the traffic (PR M5, style/trafficImages.js) are painted here too, a token per operation.
 //
 // Sizes are CSS pixels. Every icon keeps at least 3 px clear of the image border: the SDF reaches 6 image pixels (3 CSS
 // px at the default pixel ratio of 2) outside the shape, and a halo needs that room. A pattern fills its tile edge to
@@ -22,6 +24,8 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'signal-urgent',
   'aircraft-solid',
   'airport-arp',
+  // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
+  ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
 
 function deepFreeze(value) {
@@ -64,8 +68,10 @@ const CHIP_PLATE = 'M5 3 H15 A2 2 0 0 1 17 5 V11 A2 2 0 0 1 15 13 H5 A2 2 0 0 1 
  * What each image draws: `width` × `height` CSS px and a list of operations in that space. An operation fills a path
  * (`fill`), strokes one (`stroke`, with `lineWidth`, an optional `dash` [dash, gap] and `cap`) or cuts one out of what
  * is drawn (`clear`); `scale` and `translate` place path data drawn in another unit, such as the 64-unit silhouette.
- * A pattern says `sdf: false` and the `color` it is painted in. An image MapLibre stretches around a text
- * (icon-text-fit) says where: `stretchX` and `stretchY` (`[[from, to]]`) and `content` (`[left, top, right, bottom]`).
+ * A stroke may also name its `join` (miter by default). A pattern says `sdf: false` and the `color` it is painted in; a
+ * plain image in several colours (the traffic marks, PR M5) says `sdf: false` and names on each of its operations the
+ * OCC colour token it is painted in (`color`). An image MapLibre stretches around a text (icon-text-fit) says where:
+ * `stretchX` and `stretchY` (`[[from, to]]`) and `content` (`[left, top, right, bottom]`).
  */
 export const MAP_IMAGE_SHAPES = deepFreeze({
   // The hatch of «Inhabilitada»: stripes at 45° every 8 px, in the token of the vocabulary's hatch (--occ-line-strong).
@@ -127,6 +133,7 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
       { stroke: 'M3.2 11.6 L24.8 8.4', lineWidth: 2 },
     ],
   },
+  ...TRAFFIC_IMAGE_SHAPES,
 });
 
 /** Whether an image is an SDF (an icon the layer paints) rather than a pattern painted here. */
@@ -168,7 +175,7 @@ export function rasterizeWithCanvas(shape, pixelRatio, { canvasFactory = createC
     if (op.stroke !== undefined) {
       context.lineWidth = op.lineWidth / scale;
       context.lineCap = op.cap ?? 'butt';
-      context.lineJoin = 'miter';
+      context.lineJoin = op.join ?? 'miter';
       context.setLineDash((op.dash ?? []).map(length => length / scale));
       context.stroke(new Path2D(op.stroke));
     }
@@ -203,7 +210,8 @@ const scaled = (values, pixelRatio) => values.map(value => (Array.isArray(value)
  * The resolver the map engine hands to MapLibre for images the style names and the map does not have yet. For a known
  * id it answers `{ width, height, data, pixelRatio, sdf }` (RGBA data) and, for an image MapLibre stretches around a
  * text, its `stretchX`, `stretchY` and `content` in image pixels: an icon is an SDF in white with the field in the alpha
- * channel (`sdf: true`), a pattern its colour with the drawing's coverage as alpha (`sdf: false`). Any other id, or
+ * channel (`sdf: true`), a pattern its colour with the drawing's coverage as alpha (`sdf: false`), and a plain image
+ * whose operations carry their own colours is laid over operation by operation (drawPlainImage). Any other id, or
  * nothing to draw with, answers `null`. Results are kept, so an id is drawn once. `rasterize(shape, pixelRatio)` is
  * injectable because jsdom has no canvas.
  */
@@ -213,6 +221,13 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
     if (drawn.has(id)) return drawn.get(id);
     if (!Object.hasOwn(MAP_IMAGE_SHAPES, id)) return null;
     const shape = MAP_IMAGE_SHAPES[id];
+    // A plain image whose operations carry their own colours (the traffic marks, PR M5) is laid over op by op; a
+    // pattern in one colour (`color` on the shape, PR M4) is drawn below with its coverage as alpha.
+    if (shape.sdf === false && shape.color === undefined) {
+      const plain = drawPlainImage(id, shape, { rasterize, pixelRatio });
+      if (plain) drawn.set(id, plain);
+      return plain;
+    }
     const raster = rasterize(shape, pixelRatio);
     if (!raster) return null;
 
@@ -241,4 +256,54 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
     drawn.set(id, image);
     return image;
   };
+}
+
+// The red, green and blue of an OCC colour token written as #rrggbb.
+function tokenRgb(token) {
+  const value = occColor(token);
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
+  if (!match) throw new RangeError(`A plain map image needs a #rrggbb token, not ${token} (${value})`);
+  return match.slice(1).map(hex => parseInt(hex, 16));
+}
+
+/**
+ * A plain image (`sdf: false` in its shape): each operation drawn alone as an alpha mask, then laid over the ones
+ * before it in its own `color` (an OCC token), as a canvas would paint it. Answers `{ width, height, data, pixelRatio,
+ * sdf: false }` with straight (not premultiplied) RGBA, as MapLibre takes it, or `null` when nothing can be drawn.
+ */
+function drawPlainImage(id, shape, { rasterize, pixelRatio }) {
+  const width = Math.round(shape.width * pixelRatio);
+  const height = Math.round(shape.height * pixelRatio);
+  const size = width * height;
+  const red = new Float64Array(size);
+  const green = new Float64Array(size);
+  const blue = new Float64Array(size);
+  const alpha = new Float64Array(size);
+  for (const op of shape.ops) {
+    const raster = rasterize({ width: shape.width, height: shape.height, ops: [op] }, pixelRatio);
+    if (!raster) return null;
+    if (raster.width !== width || raster.height !== height) {
+      throw new RangeError(`Image ${id} was drawn at ${raster.width} × ${raster.height}, not ${width} × ${height}`);
+    }
+    const [r, g, b] = tokenRgb(op.color);
+    for (let index = 0; index < size; index += 1) {
+      const cover = raster.alpha[index] / 255;
+      if (cover === 0) continue;
+      // Source over, with premultiplied channels.
+      red[index] = r * cover + red[index] * (1 - cover);
+      green[index] = g * cover + green[index] * (1 - cover);
+      blue[index] = b * cover + blue[index] * (1 - cover);
+      alpha[index] = cover + alpha[index] * (1 - cover);
+    }
+  }
+  const data = new Uint8ClampedArray(size * 4);
+  for (let index = 0; index < size; index += 1) {
+    const cover = alpha[index];
+    if (cover === 0) continue;
+    data[index * 4] = Math.round(red[index] / cover);
+    data[index * 4 + 1] = Math.round(green[index] / cover);
+    data[index * 4 + 2] = Math.round(blue[index] / cover);
+    data[index * 4 + 3] = Math.round(cover * 255);
+  }
+  return Object.freeze({ width, height, data, pixelRatio, sdf: false });
 }

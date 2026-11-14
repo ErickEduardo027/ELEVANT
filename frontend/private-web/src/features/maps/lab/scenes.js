@@ -2,6 +2,8 @@ import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMap
 import { destinationPoint, roundCoord } from '../airport/geo';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
+import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
+import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
 // catalogue of Punta Cana, the same on every run, so the visual suite (tests/visual) drives and photographs each one
@@ -22,6 +24,9 @@ import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures'
 // - `placing`: `{ code, sizeHint, pending }`, a stand being placed («Ubicar en el mapa»): its box follows the pointer,
 //   `pending` (`{ latitude, longitude, snapped }` or `null`) is the location waiting to be saved and a click moves it;
 //   `null` for none.
+// A traffic scene (PR M5) also has `traffic`: the synthetic air picture, map flights and tracks of
+// lab/trafficScenes.js, which the lab draws at the frozen clock for the URL's selection (MapLab.jsx), without polling;
+// with `layersMenu: true` it opens with the layers menu open.
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
 export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
@@ -148,6 +153,10 @@ function scene(id, {
   };
 }
 
+// A map scene with the synthetic traffic of its id (lab/trafficScenes.js).
+const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[id],
+  ...(options.layersMenu === true ? { layersMenu: true } : {}) });
+
 export const SCENES = deepFreeze([
   scene('ramp-states', {
     title: 'Rampa: posiciones y estados',
@@ -210,6 +219,51 @@ export const SCENES = deepFreeze([
     description: 'El plano generado tal como sale de OpenStreetMap y los puntos de ELEVANT: cada posición con su código, '
       + 'su rumbo y sus marcas, las puertas de OSM, el grafo de rodaje y una sonda de rutas entre dos nodos.',
     view: 'airfield',
+  }),
+  trafficScene('region-traffic-mixed', {
+    title: 'Región: tráfico mixto',
+    description: 'Hasta 250 NM alrededor de PUJ: un vuelo de AVIAM en final y otro que sale, una docena de aviones de '
+      + 'otras líneas de todas las categorías y uno sin actualizar desde hace 45 s.',
+    view: 'region',
+  }),
+  trafficScene('approach-traffic-demo', {
+    title: 'Aproximación: llegada demo',
+    description: 'El vuelo demo en final de la 08 con su placa «Demo», su anillo «est.» y su recorrido estimado, con la '
+      + 'llegada de AVIAM en base y otro tráfico alrededor.',
+    view: 'approach',
+  }),
+  trafficScene('ramp-traffic-ground', {
+    title: 'Rampa: tráfico en tierra',
+    description: 'La llegada de AVIAM rodando a la A4, una salida en la A6, otro avión rodando por la calle B y un '
+      + 'transpondedor oculto en la A1, que ocupa una visita de AVIAM.',
+    view: 'ramp',
+  }),
+  trafficScene('approach-traffic-estimated-stale', {
+    title: 'Aproximación: estimado y sin actualizar',
+    description: 'La imagen aérea con cuatro minutos de retraso, cada avión atenuado con la hora de su última '
+      + 'posición, y un vuelo de AVIAM dibujado con su posición estimada.',
+    view: 'approach',
+  }),
+  trafficScene('region-traffic-selected', {
+    title: 'Región: vuelo elegido',
+    description: 'ZZ161 elegido en final de la 08: en cian, más grande y con su anillo, su recorrido observado y la línea '
+      + 'recta hasta su posición A5, con su bloque de datos acoplado arriba a la izquierda.',
+    view: 'region',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival },
+  }),
+  trafficScene('approach-traffic-hex-selected', {
+    title: 'Aproximación: otro tráfico elegido',
+    description: 'Un avión de otra línea elegido por su dirección ADS-B: su bloque dice «Otro tráfico» y su ruta es lo '
+      + 'que voló, sin punto siguiente.',
+    view: 'approach',
+    selection: { kind: 'aircraft', id: LAB_CHOSEN_HEX },
+  }),
+  trafficScene('region-layers-menu', {
+    title: 'Región: menú de capas',
+    description: 'El tráfico mixto de la región con el menú de capas abierto: el grupo Tráfico, con los vuelos de AVIAM '
+      + 'siempre visibles.',
+    view: 'region',
+    layersMenu: true,
   }),
 ]);
 

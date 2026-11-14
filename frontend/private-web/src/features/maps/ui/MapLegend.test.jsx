@@ -521,4 +521,52 @@ describe('MapLegend', () => {
     expect(await screen.findByTestId('map-unavailable')).toBeInTheDocument();
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
   });
+
+  it('lists the traffic on screen first, each kind, tag and trail drawn as the map draws it', () => {
+    const onScreen = { kinds: ['aviamArrival', 'aviamDeparture', 'other', 'otherGround'], tags: ['demo', 'estimated', 'stale'],
+      trails: ['live', 'estimated'] };
+    const withTraffic = (trafficOnScreen, element = <MapLegend />) => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, flightsOnScreen: FLIGHTS.slice(0, 1), trafficOnScreen }}>
+        {element}
+      </OccMapContext.Provider>
+    );
+    const { rerender } = render(withTraffic(onScreen));
+    const legend = screen.getByTestId('map-legend');
+    expect(legendItems()).toEqual([
+      'Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale', 'Otro tráfico', 'Otro tráfico en tierra',
+      `${TAGS.demo.es}Vuelo simulado`, `${TAGS.estimated.es}Calculada con el horario`,
+      `${TAGS.stale.short.es}Atenuado, con la hora de su última posición`, 'Estela', 'Estela estimada',
+      FLIGHT_ENTRY,
+    ]);
+    // Short over the map: the two trails share a line, everything else of the traffic takes one each.
+    const spans = [...legend.querySelectorAll('[data-legend-traffic]')].map(item => item.classList.contains('col-span-2'));
+    expect(spans).toEqual([true, true, true, true, true, true, true, false, false]);
+    // The arrival solid, the departure hollow, other traffic muted; the plate striped; the estimated trail dashed.
+    const swatch = kind => legend.querySelector(`[data-traffic-swatch="${kind}"] path`);
+    expect(swatch('aviamArrival').style.fill).toBe('var(--occ-text)');
+    expect(swatch('aviamDeparture').style.fill).toBe('none');
+    expect(swatch('aviamDeparture').style.stroke).toBe('var(--occ-text)');
+    expect(swatch('other').style.fill).toBe('var(--occ-faint)');
+    expect(legend.querySelector('[data-traffic-swatch="estimated"] circle').style.strokeDasharray).toBe('2.2 1.6');
+    expect(swatch('stale').style.opacity).toBe('0.5');
+    expect(legend.querySelector('[data-legend-traffic="demo"] [data-tag="demo"]')).not.toBeNull();
+    expect(swatch('trailEstimated').style.strokeDasharray).toBe('3 3');
+
+    // Only what is on screen: other traffic alone, and nothing at all without traffic or flights.
+    rerender(withTraffic({ kinds: ['other'], tags: [], trails: [] }));
+    expect(legendItems()).toEqual(['Otro tráfico', FLIGHT_ENTRY]);
+    rerender(
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, trafficOnScreen: { kinds: [], tags: [], trails: [] } }}>
+        <MapLegend />
+      </OccMapContext.Provider>,
+    );
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    // Traffic alone is something to explain: the legend shows for it.
+    rerender(
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, trafficOnScreen: { kinds: ['aviamArrival'], tags: [], trails: [] } }}>
+        <MapLegend />
+      </OccMapContext.Provider>,
+    );
+    expect(legendItems()).toEqual(['Vuelo de AVIAM que llega']);
+  });
 });

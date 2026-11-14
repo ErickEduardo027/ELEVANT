@@ -229,6 +229,58 @@ describe('MapLab', () => {
     expect(window.__occMapLab.qaFlagged().length).toBeGreaterThan(0);
   });
 
+  it('draws the synthetic traffic of a traffic scene once, with its credit and its state, and exposes where it is', () => {
+    const { map } = open(`?scene=approach-traffic-estimated-stale&t=${NOON}`);
+    expect(map.options.style.sources['occ-traffic']).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    expect(source.updateDataCalls).toHaveLength(1);
+    expect(source.updateDataCalls[0].add.length).toBeGreaterThan(3);
+    // The picture is four minutes late: the chip says so, and the credit of its (invented) source is a link.
+    const status = screen.getByTestId('map-source-status');
+    expect(within(status).getByRole('status')).toHaveTextContent('Tráfico con retraso: último dato hace 4 min.');
+    expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toHaveAttribute('href', 'https://example.org/adsb');
+    // The handle answers where an aircraft is drawn, and nothing for one the map does not draw.
+    const [first] = source.updateDataCalls[0].add;
+    expect(window.__occMapLab.aircraftAt(first.properties.id)).toEqual(first.geometry.coordinates);
+    expect(window.__occMapLab.aircraftAt('h:000000')).toBeNull();
+    cleanup();
+
+    // A scene without traffic has no traffic layers.
+    const plain = open(`?scene=ramp-states&t=${NOON}`);
+    expect(plain.map.options.style.sources['occ-traffic']).toBeUndefined();
+    expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
+  });
+
+  it('shows the data block of the scene\'s selection and its layers menu, on the lab\'s frozen clock', () => {
+    open(`?scene=region-traffic-selected&t=${NOON}`);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    // The scene chose ZZ161: its key is in the URL, its block docked, its age frozen with the clock.
+    expect(query().get('flightId')).toMatch(/^p:/);
+    const block = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });
+    expect(block.querySelector('[data-source-line]')).toHaveTextContent('En vivo · hace 4 s');
+    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part)).toEqual(['flown', 'next']);
+    expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }))
+      .toHaveAttribute('aria-expanded', 'false');
+    // «Cerrar» clears the selection, and with it the block and the route.
+    fireEvent.click(within(block).getByRole('button', { name: 'Cerrar' }));
+    expect(query().get('flightId')).toBeNull();
+    expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
+    expect(map.getSource('occ-route').data.features).toEqual([]);
+    cleanup();
+
+    // The layers-menu scene opens with its menu open; a scene without traffic has no menu.
+    open(`?scene=region-layers-menu&t=${NOON}`);
+    loadStyle(fake.state.liveMaps().at(-1));
+    expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('group', { name: 'Tráfico' })).toBeInTheDocument();
+    cleanup();
+    open(`?scene=ramp-states&t=${NOON}`);
+    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+  });
+
   it('uses only occ-* classes', async () => {
     const { readSource } = await import('../../../styles/occSourceScan');
     const { findLegacyColourClasses } = await import('../../../styles/occLegacyBridge');

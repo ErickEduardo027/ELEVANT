@@ -10,6 +10,7 @@ import { buildStandFeatures } from '../stands/standFeatures';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS } from '../testing/mapFixtures';
+import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { legendEntries } from '../ui/legendEntries';
 import {
   BASEMAP_MODES, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant, labStands,
@@ -26,7 +27,9 @@ describe('map lab scenes', () => {
     const ids = SCENES.map(scene => scene.id);
     expect(ids).toEqual([
       'ramp-states', 'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'airfield', 'approach', 'region',
-      'unavailable-fallback', 'basemap-degraded', 'layout-qa',
+      'unavailable-fallback', 'basemap-degraded', 'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo',
+      'ramp-traffic-ground', 'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected',
+      'region-layers-menu',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -45,8 +48,15 @@ describe('map lab scenes', () => {
     expect(new Date(SCENE_INSTANT).toISOString()).toBe('2026-11-13T15:00:00.000Z');
     expect(findScene('ramp-selected').selection).toEqual({ kind: 'stand', id: 'A5' });
     expect(findScene('ramp-combined-selected').selection).toEqual({ kind: 'stand', id: 'A10' });
-    expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id))
-      .toEqual(['ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost']);
+    expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual([
+      'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'region-traffic-selected',
+      'approach-traffic-hex-selected',
+    ]);
+    // The traffic scenes that choose an aircraft: an AVIAM flight by its key and other traffic by its address.
+    expect(findScene('region-traffic-selected').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
+    expect(findScene('approach-traffic-hex-selected').selection).toEqual({ kind: 'aircraft', id: 'f0c002' });
+    // Only the layers-menu scene opens with its menu open.
+    expect(SCENES.filter(scene => scene.layersMenu === true).map(scene => scene.id)).toEqual(['region-layers-menu']);
     // One scene places a stand; every other places nothing.
     expect(SCENES.filter(scene => scene.placing !== null).map(scene => scene.id)).toEqual(['ramp-placing-ghost']);
     expect(findScene('unavailable-fallback').webgl).toBe(false);
