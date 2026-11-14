@@ -285,6 +285,9 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y, posterior al commit verificado (PR U4, `bcfd6fd7`), la pantalla de
   arranque del OCC sobre Panorama
   ([prueba](../../frontend/private-web/tests/visual/occ/boot-screen.spec.mjs)).
+  Desde el PR U3 recorre también la consola de Panorama
+  ([prueba](../../frontend/private-web/tests/visual/occ/console.spec.mjs); ver
+  [La consola del OCC (PR U3)](#la-consola-del-occ-pr-u3)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
   `view=`; un clic en una posición escribe `stand=` y `Esc` lo limpia; la
   leyenda lista solo lo que hay en pantalla, y en Mapa de posiciones es la
@@ -310,8 +313,11 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   las tres lecturas de Panorama, con datos sintéticos que pasan los validadores
   estrictos del cliente compartido, y, sin salir del equipo, los tres orígenes
   que todavía usa Panorama (los estilos publicados de OpenFreeMap, NASA GIBS e
-  IEM), con un estilo vacío, un 404 y un 503. Además, su Chrome no resuelve
-  ningún nombre salvo `localhost`.
+  IEM), con un estilo vacío, un 404 y un 503. Desde el PR U3, esa prueba
+  responde las lecturas de la consola, las mismas de su propia prueba, y de los
+  orígenes ajenos solo queda IEM, con un 503; la prueba de la consola responde
+  IEM con un METAR sintético. Además, su Chrome no resuelve ningún nombre salvo
+  `localhost`.
   Ninguna prueba llama a OpenFreeMap, a la API real ni a un proveedor.
 - **Cómo corre.** `npm run test:visual`, desde `frontend/private-web`, levanta
   `next dev` en el puerto 4186 con los tres `NEXT_PUBLIC_*` de Development y
@@ -325,7 +331,10 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   `frontend/private-web/test-results/visual/`, que Git ignora. Desde U4 se
   suman las de la pantalla de arranque: al empezar, mientras espera a Panorama
   y la consola después, a 1440×900 y a 1920×1080, y con movimiento reducido a
-  1440×900. La de Mapa de posiciones muestra el mapa sin la pantalla de
+  1440×900. Desde U3 se suman las de la consola: al abrir, con los paneles
+  plegados y abiertos, con un vuelo y una posición elegidos y sin motor de
+  mapa, a 1440×900 y a 1920×1080, y una llegada demo antes y después de «Ver y
+  seguir», a 1920×1080. La de Mapa de posiciones muestra el mapa sin la pantalla de
   arranque: sus pruebas entran como una entrada posterior de la misma pestaña,
   con la marca de la cuenta ya puesta, y fallan si la pantalla sigue encima
   cuando el mapa ya está listo. Las revisa una persona: no hay líneas base de
@@ -414,6 +423,62 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   y «Etiquetas de todo el tráfico» sobrevive a una recarga, con
   `elevant-occ-map-layers:v1` vacío al volver al valor por omisión. Como el
   resto de la suite, corre fuera del CI y una persona revisa sus capturas.
+
+## La consola del OCC (PR U3)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U3 «Consola del OCC con el mapa a pantalla completa» (`94e60144`,
+`de08535e`, `582077b1` y `bc8bc5f5`), que esa verificación no cubre
+([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)). Las pruebas de
+vitest corren con `npm test`; la spec visual, con la suite visual.
+
+- **Presupuesto con los hooks reales.**
+  [`useConsoleData.budget.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)
+  monta las lecturas de la consola sobre adaptadores contados que responden a
+  los 200 ms, el hook del mapa sobre su adaptador simulado y las lecturas del
+  marco, y repite con relojes falsos, después de un minuto de calentamiento, un
+  minuto en reposo y el minuto demo del
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js).
+  Falla por encima de 40 o de 70 peticiones: hoy son 16 y 38. Comprueba
+  también que los ocho `occ_planning` solo releen los vuelos del mapa, que la
+  cola relee con `occ_review` y que veinte toques de la tablet en diez segundos
+  no cambian ninguna lectura propia de la consola.
+  [`occRequestBudget.test.js`](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  exige además que la consola planificada coincida con las tablas de lecturas
+  de la consola y del mapa.
+- **Piezas de la consola.** Junto a cada módulo de `dashboard/noc`: los modelos
+  puros (tablero, cifras, alertas, pendientes, banda, hitos, llegada nueva y
+  palabras del METAR), las lecturas
+  ([`useConsoleData.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.test.jsx):
+  sin fecha del navegador, nada sin el alcance PUJ, un 403 que solo apaga su
+  panel, el último dato tras una relectura fallida y una respuesta de otra
+  estación que falla entera), los márgenes del mapa, la línea de procedencia,
+  la paridad de claves de los textos, la página y la ruta
+  ([`ConsolePage.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/ConsolePage.test.jsx)
+  y [`ConsoleRoute.test.jsx`](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.test.jsx)),
+  con las afirmaciones de honestidad del panorama anterior y el aviso a la
+  pantalla de arranque. El mapa se simula con el MapLibre falso de
+  `tests/fakeMapLibre.js`, y jsdom recibe un `ResizeObserver` falso.
+- **Datos sintéticos validados.**
+  [`visualConsoleFixtures.test.js`](../../frontend/private-web/tests/visualConsoleFixtures.test.js)
+  pasa cada respuesta de
+  [`consoleApi.mjs`](../../frontend/private-web/tests/visual/occ/fixtures/consoleApi.mjs),
+  el día sintético de Punta Cana con su mapa, por los validadores estrictos del
+  cliente compartido. Ningún identificador, nombre ni posición sale de un
+  proveedor.
+- **Spec visual.**
+  [`console.spec.mjs`](../../frontend/private-web/tests/visual/occ/console.spec.mjs),
+  del proyecto `occ`, abre la consola como una entrada posterior de la pestaña,
+  sin pantalla de arranque, a 1920×1080 y a 1440×900. Comprueba que abre en
+  Rampa con «Cifras de la jornada» plegada por debajo de 1600 px y
+  «Posiciones» siempre; que con los paneles plegados el mapa no pierde ancho y
+  abiertos sí; que una tira elige su vuelo (`flightId=`) y abre el inspector
+  con su bloque de datos y sus hitos, y una barra de la banda, su posición
+  (`stand=`); que sin WebGL los paneles pasan a la cuadrícula; y, a
+  1920×1080, que «Recibido» envía el recibo, que un vuelo demo nuevo muestra
+  «Llegada nueva» y que «Ver y seguir» escribe `flightId` y `follow=1` y lleva
+  el mapa a Aproximación. Como el resto de la suite, corre fuera del CI y una
+  persona revisa sus capturas.
 
 ## Qué agrega cada workflow activo
 

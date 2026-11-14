@@ -50,6 +50,10 @@ Pendiente: enlazar OpenSky con los vuelos importados y mostrar el consumo en Sup
 imagen aérea del mapa del OCC reconoce sus aviones (adsb.fi, con adsb.lol de
 relevo) como vuelos de ELEVANT por matrícula y por *callsign*; el tráfico de
 OpenSky sigue sin enlazar ([Tráfico aéreo en vivo](#tráfico-aéreo-en-vivo-adsbfi-y-adsblol)).
+Desde el PR U3, también posterior, ninguna pantalla lee el tráfico de OpenSky:
+su único consumidor, el mapa regional de Panorama, se retiró, y
+`GET occ/traffic/aircraft` queda sin uso hasta que un paso aparte lo retire
+([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)).
 
 ### Fase 2: feed ampliado y proveedor simulado
 
@@ -167,9 +171,11 @@ esa verificación no cubre
   El nombre y las URL llegan en `source`; el texto se escapa y solo una URL
   `https:` se vuelve enlace
   ([atribución](../../frontend/private-web/src/features/maps/core/attribution.js)).
-  Hoy lo muestra Monitoreo de vuelos, el único mapa que dibuja el tráfico, y el
-  laboratorio de mapas, con una red sintética. El navegador nunca llama a
-  adsb.fi ni a adsb.lol: lee `occ/map/air-picture` de la API, y la CSP no
+  En M5 lo mostraban Monitoreo de vuelos, el único mapa que dibujaba el
+  tráfico, y el laboratorio de mapas, con una red sintética. Desde el PR U3 lo
+  muestra también la consola de Panorama, que además nombra la red en su línea
+  de procedencia, bajo el mapa («Aviones: {red}, hace N s.»). El navegador nunca
+  llama a adsb.fi ni a adsb.lol: lee `occ/map/air-picture` de la API, y la CSP no
   cambia.
 - **Solo con demanda.** Sin nadie leyendo la imagen no hay ninguna llamada.
   Mientras alguien la lee, y hasta 15 minutos después, hay una lectura de la
@@ -179,6 +185,9 @@ esa verificación no cubre
   adsb.lol, además, se detiene en 450 lecturas por día UTC sin clave. Desde el
   PR M5, quien la lee es el mapa de Monitoreo de vuelos en el OCC, cada 10
   segundos mientras su pestaña se ve; con la pestaña oculta deja de leerla.
+  Desde el PR U3 la lee también, al mismo ritmo, la consola de Panorama, la
+  pantalla con la que abre el OCC: con el tráfico encendido, iniciar sesión
+  como OCC ya basta para que la API lea la red.
 - **Nada se guarda.** La imagen y las estelas viven en la memoria de la API:
   no hay tabla, registro de uso ni migración.
 - **Vuelos de ELEVANT.** La imagen reconoce los vuelos de ELEVANT por
@@ -209,12 +218,12 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | FlightAware/AeroAPI | Objetivo con shell | Binding de opciones únicamente | No hay `HttpClient`, adapter, autenticación, request, respuesta, caché o tráfico real. |
 | Puerto `IFlightInformationProvider` | Implementado como interfaz | Ningún consumidor/implementación registrado | La existencia del puerto no devuelve vuelos ni valida el contrato del proveedor. |
 | Referencias externas en turnaround/flight leg | Implementadas | La importación de OCC las completa con `AeroDataBox` y la referencia del tramo; las lecturas posteriores actualizan horas estimadas y reales. Con el proveedor simulado del arnés E2E, el proveedor es `Simulated` | No hay reconciliación automática con escalas manuales. *Posterior al commit verificado: desde la fase 3, la importación se vincula a la escala abierta del mismo vuelo y día local, y no se actualiza un tramo cuya llegada registró OCC.* |
-| OpenFreeMap/OpenMapTiles/MapLibre demo | Implementado en Private Web | El navegador carga estilos/tiles para mapas; CSP permite orígenes concretos. *Posterior al commit verificado:* desde el PR M2 ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)), teselas vectoriales por TileJSON y glifos Noto Sans de `tiles.openfreemap.org`; el estilo es propio y va en el bundle. El estilo de demostración de MapLibre ya no se usa, aunque su origen siga en la CSP, y los dos mapas auxiliares del dashboard conservan los estilos publicados de OpenFreeMap hasta U3 | No son fuente de estado operativo ni integración de vuelos. OpenFreeMap es un servicio público sin acuerdo de servicio. |
+| OpenFreeMap/OpenMapTiles/MapLibre demo | Implementado en Private Web | El navegador carga estilos/tiles para mapas; CSP permite orígenes concretos. *Posterior al commit verificado:* desde el PR M2 ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)), teselas vectoriales por TileJSON y glifos Noto Sans de `tiles.openfreemap.org`; el estilo es propio y va en el bundle. El estilo de demostración de MapLibre ya no se usa, aunque su origen siga en la CSP, y los dos mapas auxiliares del dashboard conservan los estilos publicados de OpenFreeMap hasta U3. Desde U3 solo los usa el mapa satelital del detalle de meteorología de Panorama, mientras ese detalle está abierto | No son fuente de estado operativo ni integración de vuelos. OpenFreeMap es un servicio público sin acuerdo de servicio. |
 | OpenStreetMap (ODbL) y OurAirports | *Posterior al commit verificado:* fuentes en tiempo de build del plano de MDPC (PR M3, [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)) | Dos scripts manuales las extraen una vez; el plano generado se versiona y va en el bundle de Private Web ([datos](../../frontend/private-web/src/features/maps/airport/data/README.md)) | Que el navegador o la API las consulten: no hay llamada en tiempo de ejecución, ni origen nuevo, ni cambio de la CSP. |
 | Object storage S3-compatible | *Posterior al commit verificado:* implementado | La API escribe medios, PDF financieros y evidencias de rampa en un bucket privado y guarda metadatos y hash en SQL ([medios](medios-comerciales-privados.md)) | Que el bucket de un ambiente vivo esté configurado; la retención sigue abierta. |
 | Chat y notificaciones | *Posterior al commit verificado:* internos de ELEVANT | Chat, notificaciones y correo SMTP salen de la API; los hubs solo envían `ChangedV1` ([feed de cambios](feed-de-cambios-operativos.md)) | Que exista un proveedor externo de mensajería o notificaciones push con la app cerrada. |
 | Vuelos demo | *Posterior al commit verificado:* simulados por la propia API y apagados por defecto ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)) | Superadministración dispara dos propuestas del proveedor `Demo`; tras la importación de OCC, un worker marca el aterrizaje y el despegue como lo haría el feed | Que exista un proveedor externo, una llamada de red o un gasto de unidades de AeroDataBox. |
-| adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta. Desde el PR M5, el mapa de Monitoreo de vuelos la dibuja con ese crédito a la vista | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
+| adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta. Desde el PR M5, el mapa de Monitoreo de vuelos la dibuja con ese crédito a la vista, y desde el PR U3, también la consola de Panorama | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
 | adsb.lol (relevo) | *Posterior al commit verificado:* implementado como relevo, con la misma activación ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | Toma el turno tras tres fallos seguidos de adsb.fi y se detiene en 450 lecturas por día UTC sin clave | Que haya una clave configurada, trazas o un ritmo según su cuota. |
 | Pasarela de tarjeta | *Posterior al commit verificado:* simulada y apagada por defecto ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md), [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) | `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; `Simulated` solo arranca en Development, Test o Testing y aprueba o rechaza en memoria las tarjetas de prueba, sin red | Que exista una pasarela real o que un cobro mueva dinero. |
 | Proveedor fiscal (DGII) | *Posterior al commit verificado:* sin integración | La simulación fiscal de ADR-0018 (modos `LocalSimulation` y `ProviderSandbox`) salió del producto en la fase 4; la factura es un e-CF simulado que nada transmite ([Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md)) | Transmisión, firma o aceptación de la DGII. |
@@ -308,7 +317,7 @@ Posterior al commit verificado de esta nota: esta sección describe el código d
 - **Qué pide el navegador.** Monitoreo, Mapa de posiciones, Planificación y la plataforma de la consola dibujan con un solo motor y un estilo propio, construido en código y servido en el bundle ([estilo](../../frontend/private-web/src/features/maps/style/occStyle.js)). A `tiles.openfreemap.org` el navegador solo le pide la TileJSON del planeta, sus teselas vectoriales y los glifos Noto Sans (Regular, Bold e Italic, las únicas familias que sirve). No hay sprite ni estilo remoto en esos mapas.
 - **Sin variables de estilo.** Se retiraron `NEXT_PUBLIC_FLIGHT_MAP_STYLE_LIGHT`, `NEXT_PUBLIC_FLIGHT_MAP_STYLE_DARK`, `NEXT_PUBLIC_POSITIONS_MAP_STYLE_LIGHT` y `NEXT_PUBLIC_POSITIONS_MAP_STYLE_DARK`, que podían apuntar a un origen fuera de la CSP ([`.env.example`](../../frontend/private-web/.env.example)). Cambiar de proveedor de teselas es ahora un cambio de código y de la CSP.
 - **El estilo de demostración de MapLibre ya no se usa.** Monitoreo dejó `demotiles.maplibre.org`, que sigue en la CSP hasta que un cambio aparte lo retire de los tres archivos que la afirman ([política](../../frontend/private-web/src/config/securityHeaders.mjs)).
-- **Excepción hasta U3.** Los dos mapas auxiliares del dashboard (región y meteorología) conservan los estilos publicados de OpenFreeMap, con su sprite, hasta que se retire el dashboard actual.
+- **Excepción hasta U3.** Los dos mapas auxiliares del dashboard (región y meteorología) conservan los estilos publicados de OpenFreeMap, con su sprite, hasta que se retire el dashboard actual. *Desde el PR U3* ya no hay mapa regional, y el de meteorología vive dentro del detalle de la píldora del clima de Panorama: con el estilo publicado y su sprite, solo se monta mientras ese detalle está abierto. El plan pasa el satélite a una capa del mapa único en M8.
 - **Si OpenFreeMap falla,** el mapa sigue con las posiciones y los datos de ELEVANT y lo avisa. Los créditos de OpenStreetMap, OpenFreeMap y OpenMapTiles están en cada mapa.
 - **Sin Google Maps.** Las variantes de Google y `@googlemaps/js-api-loader` se retiraron del código y de las dependencias: ningún otro proveedor de mapas llega al navegador.
 
