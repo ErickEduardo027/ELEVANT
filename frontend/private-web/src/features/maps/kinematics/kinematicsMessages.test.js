@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import { TAGS } from '../../occ-ui/statusVocabulary';
-import { STATUS_MESSAGES, formatTimeScale, kinematicsMessages } from './kinematicsMessages.js';
+import { ROUTE_LABELS, STATUS_MESSAGES, formatTimeScale, kinematicsMessages } from './kinematicsMessages.js';
 
 // Every leaf of a message tree as `a.b.c`.
 function leafPaths(tree, prefix = '') {
@@ -25,12 +25,24 @@ describe('kinematics messages', () => {
       }
     }
     const es = createTranslator(kinematicsMessages, 'es');
+    const en = createTranslator(kinematicsMessages, 'en');
     expect(es('demo.awaitingStandNotImported')).toBe('Esperando posición · sin importar');
     expect(es('demo.awaitingStand')).toBe('Esperando posición');
     expect(es('demo.cancelled')).toBe('Cancelado por el proveedor (demo)');
-    // Every status a trajectory sample can carry has its words in both languages.
-    expect(Object.keys(STATUS_MESSAGES).sort()).toEqual(['awaitingStand', 'awaitingStandNotImported', 'cancelledByProvider']);
+    // The hand-off's words for an aircraft without a recent signal, and the route's labels.
+    expect(es('track.noSignal', { seconds: 45 })).toBe('Sin señal desde hace 45 s');
+    expect(en('track.noSignal', { seconds: 45 })).toBe('No signal for 45 s');
+    expect(es('route.flownEstimated')).toBe('Trayecto estimado');
+    expect(es('route.positionPending')).toBe('Posición por asignar');
+    expect(en('route.flownEstimated')).toBe('Estimated path');
+    expect(en('route.positionPending')).toBe('Stand to be assigned');
+    // Every status a trajectory sample or a track render can carry, and every label of a route feature, has its
+    // words in both languages.
+    expect(Object.keys(STATUS_MESSAGES).sort())
+      .toEqual(['awaitingStand', 'awaitingStandNotImported', 'cancelledByProvider', 'noSignal']);
     for (const path of Object.values(STATUS_MESSAGES)) expect(spanish).toContain(path);
+    expect(Object.keys(ROUTE_LABELS).sort()).toEqual(['flownEstimated', 'positionPending']);
+    for (const path of Object.values(ROUTE_LABELS)) expect(spanish).toContain(path);
     // The tags keep their one source: no message repeats «Demo» or «est.» on its own.
     const texts = ['es', 'en'].flatMap(language => leafPaths(kinematicsMessages[language])
       .map(path => createTranslator(kinematicsMessages, language)(path)));
