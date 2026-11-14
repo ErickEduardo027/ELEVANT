@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -146,4 +146,43 @@ it('shows unread counts and the agent, marks the open thread read and shows seen
   expect(receipts).toEqual(['✓✓ Visto', '✓ Enviado']);
   await waitFor(() => expect(mocks.read).toHaveBeenCalledWith(operation.operationId, later.id));
   expect(mocks.read).toHaveBeenCalledTimes(1);
+});
+
+it('marks the open conversation with aria-current in the accent token', async () => {
+  const other = { ...operation, operationId: '70000000-0000-0000-0000-000000000002', operationCode: 'DEV-CHAT-02' };
+  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001',
+    stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }] } });
+  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
+  mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation, { ...other, unreadCount: 2 }], hasMore: false });
+  mocks.messages.mockReset().mockResolvedValue({ messages: [], hasMore: false });
+  window.history.replaceState({}, '', `/admin-occ/chat?operationId=${operationId}`);
+  render(<CanonicalChatRoute />);
+
+  const list = await screen.findByRole('region', { name: 'Conversaciones' });
+  const open = await within(list).findByRole('button', { name: /DEV-CHAT-01/ });
+  const rest = within(list).getByRole('button', { name: /DEV-CHAT-02/ });
+  expect(open).toHaveAttribute('aria-current', 'true');
+  expect(rest).not.toHaveAttribute('aria-current');
+  // The selection is cyan, in occ tokens: the soft slab, a cyan joint and a cyan code. No legacy blue is left.
+  expect(open).toHaveClass('bg-occ-accent-soft', 'border-occ-accent');
+  expect(within(open).getByText('DEV-CHAT-01')).toHaveClass('text-occ-accent');
+  expect(rest).toHaveClass('border-transparent');
+  expect(rest).not.toHaveClass('bg-occ-accent-soft');
+  expect(within(rest).getByText('DEV-CHAT-02')).toHaveClass('text-occ-text');
+  expect(`${open.className} ${rest.className}`).not.toMatch(/accent-600|#145dc4|aria-\[current/i);
+  // The unread count sits on a neutral plate with its spoken count; the open conversation has none.
+  expect(within(rest).getByLabelText('2 mensajes sin leer')).toHaveClass('bg-occ-panel-raised', 'font-mono');
+  expect(open.querySelector('[data-unread-badge]')).toBeNull();
+  // The list's head shows the legend of the presence shapes, and the thread its operation on a plate.
+  expect(within(list).getByRole('list', { name: 'Presencia' })).toBeInTheDocument();
+  const thread = screen.getByRole('region', { name: 'Mensajes' });
+  expect(within(thread).getByText('DEV-CHAT-01')).toHaveAttribute('data-occ-plate', 'code');
+  expect(await within(thread).findByText('Sin mensajes todavía.')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 1, name: 'Chat operativo' })).toBeInTheDocument();
+  // Choosing the other conversation moves the mark.
+  fireEvent.click(rest);
+  await waitFor(() => expect(rest).toHaveAttribute('aria-current', 'true'));
+  expect(open).not.toHaveAttribute('aria-current');
+  expect(rest).toHaveClass('bg-occ-accent-soft', 'border-occ-accent');
+  expect(open).not.toHaveClass('bg-occ-accent-soft');
 });

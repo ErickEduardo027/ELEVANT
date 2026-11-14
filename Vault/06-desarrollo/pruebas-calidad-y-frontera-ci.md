@@ -304,6 +304,19 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   clics desde el primer instante de su salida; que una recarga de la misma
   pestaña no la repite; y que con movimiento reducido solo se mueve la línea de
   progreso.
+- **Las demás pantallas del OCC (PR U6).** Posterior al commit verificado, el
+  proyecto `occ` recorre también Revisión, Cobertura de posiciones,
+  Notificaciones, Chat interno, Datos maestros, Tablets, Contratos listos y
+  Reportes, con una prueba por pantalla (por ejemplo, la de
+  [Revisión](../../frontend/private-web/tests/visual/occ/review.spec.mjs)).
+  Entran como una entrada posterior de la pestaña, sin la pantalla de arranque,
+  sobre una API simulada cuyas respuestas sintéticas pasan los validadores
+  estrictos del cliente compartido
+  ([validación](../../frontend/private-web/tests/visualScreensFixtures.test.js)).
+  Fotografían los datos, el vacío, el error o la falta de permiso y los
+  diálogos de cada pantalla, a 1440×900 y a 1920×1080, y el chat también a
+  1024×768, donde la lista y el hilo se ven de a uno. Ver
+  [Resto de pantallas del OCC (PR U6)](../05-aplicaciones/private-web-aviam.md#resto-de-pantallas-del-occ-pr-u6).
 - **Sin red.** Cada petición a otro origen se responde desde la suite o se
   aborta, y la prueba falla si una salió hacia un origen que la suite no
   responde. La TileJSON es sintética; las teselas son un mundo inventado

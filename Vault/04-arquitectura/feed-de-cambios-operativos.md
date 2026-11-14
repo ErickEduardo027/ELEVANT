@@ -389,6 +389,15 @@ guardar un recibo, y el marco agrupa esa relectura como una pista: como mucho
 una cada 3 segundos. Esto tampoco demuestra latencia en el VPS ni entrega entre
 navegadores.
 
+Desde el PR U6, también posterior, Cobertura de posiciones, Datos maestros,
+Tablets, Chat interno y Notificaciones ya se dibujan con las primitivas del
+OCC, pero conservan su propio observador, con los mismos recursos y ritmos: U6
+cambió su aspecto y no sus lecturas, y el
+[inventario del plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+los sigue contando. Pasarlos al observador del marco queda para un PR posterior
+([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 14 de
+noviembre de 2026 sobre U6).
+
 ## Posiciones de Punta Cana (OCC a nivel NOC, PR A2)
 
 Posterior al commit verificado de esta nota: esta sección describe el código de

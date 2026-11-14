@@ -1,9 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import AppLink from '../../components/AppLink';
+import { useTranslation } from '../../i18n/LanguageScope';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
-import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { useOccStation } from '../admin-occ/useOccStation';
+import { OCC_CLASSES } from '../occ-ui/classes';
+import OccButton from '../occ-ui/OccButton';
+import OccDataTable from '../occ-ui/OccDataTable';
+import OccEmptyState from '../occ-ui/OccEmptyState';
+import { OccSelectField, OccTextField, occControlClass } from '../occ-ui/OccField';
+import OccGlyph from '../occ-ui/OccGlyph';
+import OccPanel, { OccRemoteView } from '../occ-ui/OccPanel';
+import OccPlate from '../occ-ui/OccPlate';
+import OccSegmented from '../occ-ui/OccSegmented';
+import OccStatusPill from '../occ-ui/OccStatusPill';
+import OccToolbar from '../occ-ui/OccToolbar';
+import { formatClock } from '../occ-ui/occTime';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict } from '../../services/problemMessages';
 import { stationDate } from '../../services/positionsMapService';
@@ -11,36 +24,63 @@ import {
   addOccStandConstraint, createOccCoverage, describeReasons, loadOccCoverage, releaseOccCoverage,
   removeOccStandConstraint, updateOccStandAttributes, updateOccTerminalRules,
 } from '../../services/occCoverageService';
+import { coverageMessages } from './coverageMessages';
 
-const card = 'rounded-2xl border border-black/5 bg-white/80 p-5 dark:border-white/5 dark:bg-surface-dark-card';
-const muted = 'text-text-secondary-light dark:text-text-secondary-dark';
-const button = 'inline-flex min-h-11 items-center justify-center rounded-lg px-4 text-sm font-semibold disabled:opacity-50';
-const primary = `${button} bg-accent-600 text-white`;
-const secondary = `${button} border border-accent-600/40 text-accent-600`;
-const input = 'min-h-11 w-full rounded-lg border border-black/10 bg-white px-3 text-sm dark:border-white/10 dark:bg-surface-dark';
-const TIME = new Intl.DateTimeFormat('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santo_Domingo' });
-const time = value => TIME.format(new Date(value));
-const KINDS = { Cancels: 'anula', NarrowbodyOnly: 'limita a estrecho' };
-const SIZES = { Narrowbody: 'Solo estrecho', Widebody: 'Hasta ancho' };
+// Template C of the design («Mesa de trabajo»): the toolbar with the page title and the date, the terminal and the view
+// as segmented controls, then the board at the left and the form docked at the right from 1280 px.
+const MASTER_DETAIL = 'grid min-w-0 items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]';
+// The states of the page without a board (loading, refused, failed, without terminals) sit on one panel slab.
+const STATE_SLAB = 'rounded-md border border-occ-line bg-occ-panel text-occ-text';
+// A check box on its label: the box in cyan once ticked (it is chosen), 32 px high with a mouse and 44 px on touch.
+const CHECK = 'inline-flex min-h-8 items-start gap-2 py-1.5 text-sm text-occ-text [@media(pointer:coarse)]:min-h-11';
+const CHECKBOX = 'mt-0.5 h-4 w-4 shrink-0 accent-occ-accent';
+// The same box inside a table row, beside its short word.
+const FLAG = 'inline-flex items-center gap-1.5 text-sm text-occ-text [@media(pointer:coarse)]:min-h-11';
+const FLAG_BOX = 'h-4 w-4 shrink-0 accent-occ-accent';
+// A stand to hand to the agent: a toggle with its code in the identifiers' face, chosen = cyan on its soft slab.
+const STAND_TOGGLE = 'inline-flex h-8 min-w-12 items-center justify-center gap-1 rounded border px-2 font-mono text-sm '
+  + 'font-semibold [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:min-w-11';
+const STAND_ON = 'border-occ-accent bg-occ-accent-soft text-occ-accent';
+const STAND_OFF = 'border-occ-line-strong text-occ-text hover:bg-occ-panel-raised';
+const LINK = 'font-semibold text-occ-accent underline underline-offset-2';
+const ROW_ERROR = 'flex items-start gap-1.5 text-xs text-occ-text';
+const ATTRIBUTE_KEYS = Object.freeze(['hasBoardingBridge', 'isRemote', 'maxAircraftSize', 'isActive']);
 
-function Badge({ tone = 'neutral', children }) {
-  const tones = {
-    neutral: 'bg-black/5 dark:bg-white/10',
-    accent: 'bg-accent-600/10 text-accent-600',
-    warning: 'bg-status-warning/15 text-status-warning',
-    danger: 'bg-status-danger/10 text-status-danger',
-  };
-  return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${tones[tone]}`}>{children}</span>;
-}
+// An agent's shift or a coverage's window, «06:00–14:00» in the station's time.
+const shiftWindow = (start, end, locale) =>
+  `${formatClock(start, locale, BUSINESS_TIME_ZONE)}–${formatClock(end, locale, BUSINESS_TIME_ZONE)}`;
 
+/** What a refused command breaks: the amber slab with its triangle, the service's sentence and each broken rule. */
 function Reasons({ error }) {
   if (!error) return null;
   const reasons = describeReasons(error.reasons);
   return (
-    <div role="alert" className="rounded-xl border border-status-danger/30 bg-status-danger/5 p-3 text-sm">
-      <p className="font-semibold text-status-danger">{error.message}</p>
-      {reasons.length > 0 && <ul className="mt-1 list-disc space-y-0.5 pl-5">{reasons.map(text => <li key={text}>{text}</li>)}</ul>}
+    <div role="alert" className="flex items-start gap-2 rounded-md border border-occ-line bg-occ-warn-soft px-3 py-2 text-sm text-occ-text">
+      <OccGlyph name="attention" className="mt-0.5" />
+      <div className="min-w-0">
+        <p className="font-semibold">{error.message}</p>
+        {reasons.length > 0 && <ul className="mt-1 list-disc space-y-0.5 pl-5">{reasons.map(text => <li key={text}>{text}</li>)}</ul>}
+      </div>
     </div>
+  );
+}
+
+/** The conditions of the chosen agent, each with its glyph and its word: what blocks a coverage asks for attention. */
+function AgentConditions({ agent }) {
+  const { t } = useTranslation(coverageMessages);
+  const conditions = [
+    agent.isJunior && { key: 'junior', tone: 'attention', label: t('form.badges.junior') },
+    { key: 'license', tone: agent.hasDriverLicense ? 'active' : 'neutral',
+      label: t(agent.hasDriverLicense ? 'form.badges.license' : 'form.badges.noLicense') },
+    { key: 'bridge', tone: agent.hasBridgeQualification ? 'active' : 'neutral',
+      label: t(agent.hasBridgeQualification ? 'form.badges.bridge' : 'form.badges.noBridge') },
+    !agent.hasAirportPermit && { key: 'permit', tone: 'attention', label: t('form.badges.permitExpired') },
+    agent.isAbsent && { key: 'absent', tone: 'attention', label: t('form.badges.absent') },
+  ].filter(Boolean);
+  return (
+    <ul aria-label={t('form.badges.label')} className="flex flex-wrap gap-x-3 gap-y-1.5">
+      {conditions.map(item => <li key={item.key}><OccStatusPill size="sm" tone={item.tone} label={item.label} /></li>)}
+    </ul>
   );
 }
 
@@ -50,6 +90,8 @@ function Reasons({ error }) {
  * into «El agente ya cubre posiciones en ese horario».
  */
 function CoverageForm({ board, terminal, date, onDone, onStale }) {
+  const { t, locale } = useTranslation(coverageMessages);
+  const bridgeMarkId = useId();
   const agents = board.agents.filter(agent => agent.terminalId === terminal.terminalId || terminal.code === 'B');
   const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId && stand.isActive);
   const [agentId, setAgentId] = useState('');
@@ -82,63 +124,78 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
     } finally { setBusy(false); }
   };
 
+  const rules = terminal.requiresBridgeQualification ? 'form.rulesWithBridge' : 'form.rules';
   return (
-    <form onSubmit={submit} className={`${card} space-y-4`} aria-label="Asignar posiciones">
-      <div>
-        <h2 className="text-base font-semibold">Asignar posiciones · Terminal {terminal.code}</h2>
-        <p className={`text-xs ${muted}`}>Máximo {terminal.maxStandsPerAgent} por agente
-          {terminal.requiresBridgeQualification ? ' · exige habilitación de puente' : ''}. El horario es el turno completo del agente.</p>
-      </div>
-      <label className="block space-y-1 text-sm font-medium">Agente
-        <select className={input} value={agentId} onChange={event => setAgentId(event.target.value)} required>
-          <option value="">Elige un agente con turno</option>
-          {agents.map(item => <option key={item.agentId} value={item.agentId}>
-            {item.name} · {time(item.shiftStartsAt)}–{time(item.shiftEndsAt)}{item.isJunior ? ' · menos de 3 meses' : ''}</option>)}
-        </select>
-      </label>
-      {agent && <div className="flex flex-wrap gap-1.5">
-        {agent.isJunior && <Badge tone="warning">Menos de 3 meses: va con mentor</Badge>}
-        <Badge tone={agent.hasDriverLicense ? 'accent' : 'neutral'}>{agent.hasDriverLicense ? 'Licencia de conducir' : 'Sin licencia de conducir'}</Badge>
-        <Badge tone={agent.hasBridgeQualification ? 'accent' : 'neutral'}>{agent.hasBridgeQualification ? 'Habilitado en puente' : 'Sin habilitación de puente'}</Badge>
-        {!agent.hasAirportPermit && <Badge tone="danger">Carnet aeroportuario vencido</Badge>}
-        {agent.isAbsent && <Badge tone="danger">Ausencia aprobada</Badge>}
-      </div>}
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">Posiciones ({selected.length}/{terminal.maxStandsPerAgent})</legend>
-        {stands.length === 0 ? <p className={`text-sm ${muted}`}>Esta terminal no tiene posiciones activas.</p> :
-          <div className="flex flex-wrap gap-2">{stands.map(stand => {
-            const on = selected.includes(stand.standId);
-            return <button key={stand.standId} type="button" aria-pressed={on} onClick={() => toggle(stand.standId)}
-              className={`min-h-11 min-w-16 rounded-lg border px-3 text-sm font-semibold ${on ? 'border-accent-600 bg-accent-600 text-white'
-                : 'border-black/10 dark:border-white/10'}`}>
-              {stand.code}{stand.hasBoardingBridge ? ' ⌁' : ''}</button>;
-          })}</div>}
-      </fieldset>
-      {(agent?.isJunior || mentorId) && <label className="block space-y-1 text-sm font-medium">Mentor
-        <select className={input} value={mentorId} onChange={event => setMentorId(event.target.value)}>
-          <option value="">Sin mentor</option>
-          {/* 2-N23: a mentor who is absent or without a current airport permit cannot accompany anyone. */}
-          {mentors.map(item => <option key={item.agentId} value={item.agentId}
-            disabled={item.isAbsent || !item.hasAirportPermit}>
-            {item.name}{item.isAbsent ? ' · ausencia aprobada' : ''}{!item.hasAirportPermit ? ' · carnet vencido' : ''}</option>)}
-        </select>
-      </label>}
-      {selected.length > 2 && <label className="block space-y-1 text-sm font-medium">Vehículo asignado
-        <input className={input} value={vehicle} maxLength={32} onChange={event => setVehicle(event.target.value)}
-          placeholder="Ej. VH-07" />
-      </label>}
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input type="checkbox" checked={reinforcement} onChange={event => setReinforcement(event.target.checked)} />
-        Refuerzo (segundo agente en posiciones ya cubiertas, p. ej. sábados de 12:00 a 17:00)
-      </label>
-      <Reasons error={error} />
-      <button type="submit" className={primary} disabled={busy || !agentId || selected.length === 0}>
-        {busy ? 'Guardando…' : 'Asignar posiciones'}</button>
-    </form>
+    <OccPanel title={t('form.label')} meta={t('terminal', { code: terminal.code })}>
+      <form onSubmit={submit} aria-label={t('form.label')} className="flex flex-col gap-3 p-3">
+        <p className="text-xs text-occ-muted">{t(rules, { max: terminal.maxStandsPerAgent })}</p>
+        <OccSelectField label={t('form.agent')} value={agentId} onChange={event => setAgentId(event.target.value)} required>
+          <option value="">{t('form.chooseAgent')}</option>
+          {agents.map(item => (
+            <option key={item.agentId} value={item.agentId}>
+              {t(item.isJunior ? 'form.juniorAgentOption' : 'form.agentOption', {
+                name: item.name, start: formatClock(item.shiftStartsAt, locale, BUSINESS_TIME_ZONE),
+                end: formatClock(item.shiftEndsAt, locale, BUSINESS_TIME_ZONE),
+              })}
+            </option>
+          ))}
+        </OccSelectField>
+        {agent && <AgentConditions agent={agent} />}
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-medium text-occ-muted">
+            {t('form.stands', { selected: selected.length, max: terminal.maxStandsPerAgent })}
+          </legend>
+          {stands.length === 0 ? <p className="text-sm text-occ-muted">{t('form.noStands')}</p> : (
+            <div className="flex flex-wrap gap-1.5">
+              {stands.map(stand => {
+                const on = selected.includes(stand.standId);
+                // The name is the stand's code alone (the cycle E2E presses it); the bridge mark describes it.
+                return (
+                  <button key={stand.standId} type="button" aria-pressed={on} onClick={() => toggle(stand.standId)}
+                    aria-describedby={stand.hasBoardingBridge ? bridgeMarkId : undefined}
+                    className={`${STAND_TOGGLE} ${on ? STAND_ON : STAND_OFF}`}>
+                    {stand.code}{stand.hasBoardingBridge ? <span aria-hidden="true">⌁</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {stands.some(stand => stand.hasBoardingBridge) && (
+            <p className="text-xs text-occ-muted"><span aria-hidden="true">⌁ </span><span id={bridgeMarkId}>{t('form.bridgeMark')}</span></p>
+          )}
+        </fieldset>
+        {(agent?.isJunior || mentorId) && (
+          <OccSelectField label={t('form.mentor')} value={mentorId} onChange={event => setMentorId(event.target.value)}>
+            <option value="">{t('form.noMentor')}</option>
+            {/* 2-N23: a mentor who is absent or without a current airport permit cannot accompany anyone. */}
+            {mentors.map(item => (
+              <option key={item.agentId} value={item.agentId} disabled={item.isAbsent || !item.hasAirportPermit}>
+                {item.name}{item.isAbsent ? t('form.mentorAbsent') : ''}{!item.hasAirportPermit ? t('form.mentorWithoutPermit') : ''}
+              </option>
+            ))}
+          </OccSelectField>
+        )}
+        {selected.length > 2 && (
+          <OccTextField label={t('form.vehicle')} value={vehicle} maxLength={32} onChange={event => setVehicle(event.target.value)}
+            placeholder={t('form.vehiclePlaceholder')} />
+        )}
+        <label className={CHECK}>
+          <input type="checkbox" className={CHECKBOX} checked={reinforcement} onChange={event => setReinforcement(event.target.checked)} />
+          {t('form.reinforcement')}
+        </label>
+        <Reasons error={error} />
+        <OccButton type="submit" variant="primary" className="self-start" busy={busy} busyLabel={t('form.saving')}
+          disabled={!agentId || selected.length === 0}>
+          {t('form.submit')}
+        </OccButton>
+      </form>
+    </OccPanel>
   );
 }
 
+/** The terminal's stands with who covers each, and the coverages of the day with their «Liberar». */
 function CoverageBoard({ board, terminal, date, onChange, onStale }) {
+  const { t, locale } = useTranslation(coverageMessages);
   const [error, setError] = useState(null);
   const releases = useRef(createCommandKeyHolder());
   const coverages = board.coverages.filter(item => item.terminalId === terminal.terminalId);
@@ -154,137 +211,259 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
       if (failure?.status === 409) onStale?.();
     }
   };
+  const meta = t('terminal', { code: terminal.code });
+
+  // No header is called «Puente»: the attribute's word is the only «Puente» of the board.
+  const standColumns = [
+    { key: 'stand', header: t('board.columns.stand'), width: '6rem', render: stand => <OccPlate kind="stand">{stand.code}</OccPlate> },
+    {
+      key: 'attributes', header: t('board.columns.attributes'), width: '10rem',
+      render: stand => (
+        <span className="flex flex-wrap gap-x-3 gap-y-1">
+          {stand.hasBoardingBridge && <OccStatusPill size="sm" label={t('board.bridge')} />}
+          {stand.maxAircraftSize === 'Narrowbody' && <OccStatusPill size="sm" label={t('board.narrowbody')} />}
+        </span>
+      ),
+    },
+    {
+      key: 'coveredBy', header: t('board.columns.coveredBy'),
+      render: stand => {
+        if (stand.coveredBy.length > 0) return stand.coveredBy.join(', ');
+        return <span className="text-occ-muted">{stand.isActive ? t('board.noAgent') : '—'}</span>;
+      },
+    },
+    {
+      key: 'state', header: t('board.columns.state'), width: '8.5rem',
+      // A normal stand carries nothing: only a deactivated one says so.
+      render: stand => (stand.isActive ? null : <OccStatusPill size="sm" tone="muted" label={t('board.inactive')} />),
+    },
+  ];
+
+  const coverageColumns = [
+    {
+      key: 'agent', header: t('coverages.columns.agent'), width: 'minmax(0,1.2fr)',
+      render: item => (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <strong className="font-semibold">{item.agentName}</strong>
+          {item.isReinforcement && <OccStatusPill size="sm" label={t('coverages.reinforcement')} />}
+        </span>
+      ),
+    },
+    {
+      key: 'stands', header: t('coverages.columns.stands'), width: 'minmax(0,1fr)',
+      render: item => (
+        <span className="flex flex-wrap gap-1">
+          {item.stands.map(stand => <OccPlate key={stand.standId} kind="stand">{stand.code}</OccPlate>)}
+        </span>
+      ),
+    },
+    {
+      key: 'window', header: t('coverages.columns.window'), width: '7.5rem', mono: true,
+      render: item => <span className="whitespace-nowrap">{shiftWindow(item.startsAt, item.endsAt, locale)}</span>,
+    },
+    {
+      key: 'support', header: t('coverages.columns.support'), width: 'minmax(0,1fr)',
+      render: item => (item.mentorName || item.vehicleCode ? (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          {item.mentorName ? <span>{item.mentorName}</span> : null}
+          {item.vehicleCode ? <OccPlate kind="code">{item.vehicleCode}</OccPlate> : null}
+        </span>
+      ) : <span className="text-occ-muted">—</span>),
+    },
+    ...(board.canAssign ? [{
+      key: 'release', header: '', width: '6rem', align: 'end',
+      render: item => <OccButton size="sm" onClick={() => void release(item)}>{t('coverages.release')}</OccButton>,
+    }] : []),
+  ];
+
   return (
-    <div className="space-y-4">
-      <section className={card} aria-label="Posiciones de la terminal">
-        <h2 className="mb-3 text-base font-semibold">Posiciones · Terminal {terminal.code}</h2>
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-          {stands.map(stand => <li key={stand.standId} data-stand={stand.code}
-            className={`rounded-xl border p-3 ${stand.coveredBy.length ? 'border-accent-600/40 bg-accent-600/5' : 'border-black/10 dark:border-white/10'}
-              ${stand.isActive ? '' : 'opacity-50'}`}>
-            <p className="flex items-center justify-between font-mono text-sm font-semibold">{stand.code}
-              <span className="flex gap-1">{stand.hasBoardingBridge && <Badge>Puente</Badge>}
-                {stand.maxAircraftSize === 'Narrowbody' && <Badge tone="warning">Estrecho</Badge>}</span></p>
-            <p className={`mt-1 truncate text-xs ${stand.coveredBy.length ? '' : muted}`}>
-              {stand.isActive ? (stand.coveredBy.join(', ') || 'Sin agente') : 'Desactivada'}</p>
-          </li>)}
-        </ul>
-      </section>
-      <section className={card} aria-label="Coberturas del día">
-        <h2 className="mb-3 text-base font-semibold">Coberturas del día</h2>
-        <Reasons error={error} />
-        {coverages.length === 0 ? <p className={`text-sm ${muted}`}>Aún no hay agentes asignados en esta terminal.</p> :
-          <ul className="divide-y divide-black/5 dark:divide-white/5">
-            {coverages.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-              <div>
-                <p className="font-semibold">{item.agentName}
-                  {item.isReinforcement && <span className="ml-2"><Badge tone="warning">Refuerzo</Badge></span>}</p>
-                <p className={`text-xs ${muted}`}>{item.stands.map(stand => stand.code).join(' · ')} · {time(item.startsAt)}–{time(item.endsAt)}
-                  {item.mentorName ? ` · mentor ${item.mentorName}` : ''}{item.vehicleCode ? ` · vehículo ${item.vehicleCode}` : ''}</p>
-              </div>
-              {board.canAssign && <button type="button" className={secondary} onClick={() => void release(item)}>Liberar</button>}
-            </li>)}
-          </ul>}
-      </section>
+    <div className="flex min-w-0 flex-col gap-3">
+      <OccPanel title={t('board.title')} meta={meta}>
+        <OccDataTable caption={t('board.title')} columns={standColumns} rows={stands} getRowId={stand => stand.standId} />
+      </OccPanel>
+      <OccPanel title={t('coverages.title')} meta={meta}>
+        {error ? <div className="p-3 pb-0"><Reasons error={error} /></div> : null}
+        <OccDataTable as="list" caption={t('coverages.title')} columns={coverageColumns} rows={coverages}
+          emptyState={<OccEmptyState title={t('coverages.empty')} description={t('coverages.about')} />} />
+      </OccPanel>
     </div>
   );
 }
 
+// A stand's row as the board has it now: a new version, a change here or in «Datos maestros», starts the row's draft
+// and its intent again from the board.
+const standSignature = stand => [stand.standId, stand.version, stand.hasBoardingBridge, stand.isRemote,
+  stand.maxAircraftSize, stand.isActive].join('|');
+
 /**
- * One stand's attributes (2-A). The change carries the stand's version on the board, the one «Datos maestros» shows,
- * and the intent's key: a retry after no answer replays the first result. A stand changed meanwhile, here or in «Datos
- * maestros», reads the board again; the row's error lives in the parent so it survives that re-read.
+ * The attributes of the terminal's stands (2-A), one editable row each. The change carries the stand's version on the
+ * board, the one «Datos maestros» shows, and the intent's key of that row: a retry after no answer replays the first
+ * result. A stand changed meanwhile, here or in «Datos maestros», reads the board again; the row's error is kept by the
+ * stand, so it survives that re-read.
  */
-function StandRow({ stand, date, error, onError, onChange, onStale }) {
-  const [draft, setDraft] = useState(stand);
-  const keys = useRef(createCommandKeyHolder());
-  const dirty = ['hasBoardingBridge', 'isRemote', 'maxAircraftSize', 'isActive'].some(key => draft[key] !== stand[key]);
-  const save = async () => {
-    onError(null);
+function StandAttributes({ stands, date, onChange, onStale }) {
+  const { t } = useTranslation(coverageMessages);
+  const [drafts, setDrafts] = useState({});
+  const [errors, setErrors] = useState({});
+  const intents = useRef(new Map());
+  const draftOf = stand => drafts[standSignature(stand)] ?? stand;
+  const edit = (stand, change) => {
+    const signature = standSignature(stand);
+    setDrafts(all => ({ ...all, [signature]: { ...(all[signature] ?? stand), ...change } }));
+  };
+  const intentOf = stand => {
+    const signature = standSignature(stand);
+    if (!intents.current.has(signature)) intents.current.set(signature, createCommandKeyHolder());
+    return intents.current.get(signature);
+  };
+  const save = async stand => {
+    const draft = draftOf(stand);
+    setErrors(all => ({ ...all, [stand.standId]: null }));
     const attributes = { date, hasBoardingBridge: draft.hasBoardingBridge, isRemote: draft.isRemote,
       maxAircraftSize: draft.maxAircraftSize ?? null, isActive: draft.isActive, expectedVersion: stand.version };
     try {
-      onChange(await keys.current.run('stand-attributes', attributes,
+      onChange(await intentOf(stand).run('stand-attributes', attributes,
         key => updateOccStandAttributes(stand.standId, attributes, key)));
     } catch (failure) {
-      onError(failure);
+      setErrors(all => ({ ...all, [stand.standId]: failure }));
       if (isConflict(failure)) onStale();
     }
   };
-  const flag = (key, label) => <label className="flex items-center gap-1.5 text-xs">
-    <input type="checkbox" checked={draft[key]} onChange={event => setDraft(value => ({ ...value, [key]: event.target.checked }))} />{label}</label>;
-  return (
-    <li className="flex flex-wrap items-center gap-3 py-2">
-      <span className="w-16 font-mono font-semibold">{stand.code}</span>
-      {flag('hasBoardingBridge', 'Puente')}{flag('isRemote', 'Remota')}{flag('isActive', 'Activa')}
-      <select aria-label={`Tamaño máximo de ${stand.code}`} className={`${input} w-40`} value={draft.maxAircraftSize ?? ''}
-        onChange={event => setDraft(value => ({ ...value, maxAircraftSize: event.target.value || null }))}>
-        <option value="">Cualquier tamaño</option>
-        {Object.entries(SIZES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-      {dirty && <button type="button" className={secondary} onClick={() => void save()}>Guardar</button>}
-      {error && <span role="alert" className="text-xs text-status-danger">{error.message}</span>}
-    </li>
+  const flag = (stand, key, label) => (
+    <label className={FLAG}>
+      <input type="checkbox" className={FLAG_BOX} checked={draftOf(stand)[key]}
+        onChange={event => edit(stand, { [key]: event.target.checked })} />
+      {label}
+    </label>
   );
+
+  const columns = [
+    { key: 'stand', header: t('configuration.attributes.columns.stand'), width: '6rem', render: stand => <OccPlate kind="stand">{stand.code}</OccPlate> },
+    {
+      key: 'attributes', header: t('configuration.attributes.columns.attributes'), width: '18rem',
+      render: stand => (
+        <span className="flex flex-wrap items-center gap-x-4">
+          {flag(stand, 'hasBoardingBridge', t('configuration.attributes.bridge'))}
+          {flag(stand, 'isRemote', t('configuration.attributes.remote'))}
+          {flag(stand, 'isActive', t('configuration.attributes.active'))}
+        </span>
+      ),
+    },
+    {
+      key: 'size', header: t('configuration.attributes.columns.size'), width: '11rem',
+      render: stand => (
+        <select aria-label={t('configuration.attributes.size', { code: stand.code })}
+          className={`${occControlClass({ kind: 'select' })} w-40`} value={draftOf(stand).maxAircraftSize ?? ''}
+          onChange={event => edit(stand, { maxAircraftSize: event.target.value || null })}>
+          <option value="">{t('configuration.attributes.anySize')}</option>
+          {Object.entries(t('sizes')).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      ),
+    },
+    {
+      key: 'change', header: '',
+      render: stand => {
+        const draft = draftOf(stand);
+        const error = errors[stand.standId];
+        return (
+          <span className="flex flex-col items-start gap-1">
+            {ATTRIBUTE_KEYS.some(key => draft[key] !== stand[key]) && (
+              <OccButton size="sm" onClick={() => void save(stand)}>{t('configuration.attributes.save')}</OccButton>
+            )}
+            {error && (
+              <span role="alert" className={ROW_ERROR}>
+                <OccGlyph name="attention" className="mt-px" />
+                <span className="min-w-0">{error.message}</span>
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+  ];
+  return <OccDataTable caption={t('configuration.attributes.title')} columns={columns} rows={stands} getRowId={stand => stand.standId} />;
 }
 
 /** OCC loads the real PUJ layout here: stand attributes, terminal limits and combined stands. */
 function Configuration({ board, terminal, date, onChange, onStale }) {
+  const { t } = useTranslation(coverageMessages);
   const access = useOptionalDepartmentAccess();
   const [max, setMax] = useState(String(terminal.maxStandsPerAgent));
   const [bridge, setBridge] = useState(terminal.requiresBridgeQualification);
   const [rule, setRule] = useState({ standId: '', kind: 'Cancels', affectedStandId: '' });
   const [error, setError] = useState(null);
-  const [standErrors, setStandErrors] = useState({});
   const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId);
+  const kinds = t('kinds');
   const run = async action => { setError(null); try { onChange(await action()); } catch (failure) { setError(failure); } };
+  const [linkBefore, linkAfter] = t('configuration.attributes.masterData').split('{link}');
   return (
-    <div className="space-y-4">
-      <section className={`${card} space-y-3`} aria-label="Reglas de la terminal">
-        <h2 className="text-base font-semibold">Reglas de la Terminal {terminal.code}</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1 text-sm font-medium">Máximo de posiciones por agente
-            <input className={`${input} w-28`} type="number" min={1} max={6} value={max} onChange={event => setMax(event.target.value)} />
-          </label>
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="checkbox" checked={bridge} onChange={event => setBridge(event.target.checked)} />Exige habilitación de puente</label>
-          <button type="button" className={secondary} onClick={() => void run(() => updateOccTerminalRules(terminal.terminalId,
-            { date, maxStandsPerAgent: Number(max), requiresBridgeQualification: bridge }))}>Guardar reglas</button>
+    <div className={MASTER_DETAIL}>
+      <OccPanel title={t('configuration.attributes.title')}>
+        <div className="space-y-1 px-3 pt-3 text-xs text-occ-muted">
+          <p>{t('configuration.attributes.hint')}</p>
+          {access?.can('operations.master_data.read') && (
+            <p>{linkBefore}<AppLink href="/admin-occ/master-data" className={LINK}>{t('configuration.attributes.masterDataLink')}</AppLink>{linkAfter}</p>
+          )}
         </div>
-      </section>
-      <section className={card} aria-label="Atributos de las posiciones">
-        <h2 className="text-base font-semibold">Posiciones</h2>
-        <p className={`text-xs ${muted}`}>Marca las posiciones con puente, las remotas y el tamaño máximo de avión que admiten.</p>
-        {access?.can('operations.master_data.read') && <p className={`text-xs ${muted}`}>Las terminales y las posiciones nuevas
-          se crean, renombran o desactivan en <AppLink href="/admin-occ/master-data" className="font-semibold text-accent-600 underline">Datos maestros</AppLink>.</p>}
-        <ul className="divide-y divide-black/5 dark:divide-white/5">
-          {/* A new version on the board (a change here or in «Datos maestros») starts the row again from it. */}
-          {stands.map(stand => <StandRow key={`${stand.standId}-${stand.version}-${stand.hasBoardingBridge}-${stand.isRemote}-${stand.maxAircraftSize}-${stand.isActive}`}
-            stand={stand} date={date} onChange={onChange} onStale={onStale} error={standErrors[stand.standId] ?? null}
-            onError={failure => setStandErrors(all => ({ ...all, [stand.standId]: failure }))} />)}
-        </ul>
-      </section>
-      <section className={`${card} space-y-3`} aria-label="Posiciones combinadas">
-        <h2 className="text-base font-semibold">Posiciones combinadas</h2>
-        <p className={`text-xs ${muted}`}>Las fija el aeropuerto: «9A anula la 10», «23A limita la 25 a estrecho». Se avisa a OCC en el mapa.</p>
-        <ul className="space-y-1">{board.constraints.map(item => <li key={item.id} className="flex items-center justify-between gap-2 text-sm">
-          <span><strong className="font-mono">{item.standCode}</strong> {KINDS[item.kind]} <strong className="font-mono">{item.affectedStandCode}</strong></span>
-          <button type="button" className="text-xs font-semibold text-status-danger underline"
-            onClick={() => void run(() => removeOccStandConstraint(item.id, date))}>Quitar</button></li>)}</ul>
-        <div className="flex flex-wrap items-end gap-2">
-          {[['standId', 'Si se ocupa'], ['affectedStandId', 'entonces']].map(([key, label]) => <label key={key} className="space-y-1 text-sm font-medium">{label}
-            <select className={`${input} w-32`} value={rule[key]} onChange={event => setRule(value => ({ ...value, [key]: event.target.value }))}>
-              <option value="">—</option>{board.stands.map(stand => <option key={stand.standId} value={stand.standId}>{stand.code}</option>)}
-            </select></label>)}
-          <label className="space-y-1 text-sm font-medium">Efecto
-            <select className={`${input} w-44`} value={rule.kind} onChange={event => setRule(value => ({ ...value, kind: event.target.value }))}>
-              <option value="Cancels">queda anulada</option><option value="NarrowbodyOnly">solo admite estrecho</option>
-            </select></label>
-          <button type="button" className={secondary} disabled={!rule.standId || !rule.affectedStandId || rule.standId === rule.affectedStandId}
-            onClick={() => void run(() => addOccStandConstraint({ date, ...rule }))}>Añadir regla</button>
-        </div>
-      </section>
-      <Reasons error={error} />
+        {/* A new version on the board (a change here or in «Datos maestros») starts the row again from it. */}
+        <StandAttributes stands={stands} date={date} onChange={onChange} onStale={onStale} />
+      </OccPanel>
+      <div className="flex min-w-0 flex-col gap-3">
+        <OccPanel title={t('configuration.rules.title')} meta={t('terminal', { code: terminal.code })}>
+          <div className="flex flex-wrap items-end gap-3 p-3">
+            <OccTextField type="number" label={t('configuration.rules.max')} className="w-56" min={1} max={6} value={max}
+              onChange={event => setMax(event.target.value)} />
+            <label className={CHECK}>
+              <input type="checkbox" className={CHECKBOX} checked={bridge} onChange={event => setBridge(event.target.checked)} />
+              {t('configuration.rules.bridge')}
+            </label>
+            <OccButton onClick={() => void run(() => updateOccTerminalRules(terminal.terminalId,
+              { date, maxStandsPerAgent: Number(max), requiresBridgeQualification: bridge }))}>
+              {t('configuration.rules.save')}
+            </OccButton>
+          </div>
+        </OccPanel>
+        <OccPanel title={t('configuration.combined.title')}>
+          <div className="flex flex-col gap-3 p-3">
+            <p className="text-xs text-occ-muted">{t('configuration.combined.hint')}</p>
+            {board.constraints.length > 0 && (
+              <ul className="divide-y divide-occ-line">
+                {board.constraints.map(item => (
+                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <OccPlate kind="stand">{item.standCode}</OccPlate>
+                      <span>{kinds[item.kind]}</span>
+                      <OccPlate kind="stand">{item.affectedStandCode}</OccPlate>
+                    </span>
+                    <OccButton size="sm" onClick={() => void run(() => removeOccStandConstraint(item.id, date))}>
+                      {t('configuration.combined.remove')}
+                    </OccButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex flex-wrap items-end gap-2">
+              {[['standId', t('configuration.combined.when')], ['affectedStandId', t('configuration.combined.then')]].map(([key, label]) => (
+                <OccSelectField key={key} label={label} className="w-28" value={rule[key]}
+                  onChange={event => setRule(value => ({ ...value, [key]: event.target.value }))}>
+                  <option value="">{t('configuration.combined.none')}</option>
+                  {board.stands.map(stand => <option key={stand.standId} value={stand.standId}>{stand.code}</option>)}
+                </OccSelectField>
+              ))}
+              <OccSelectField label={t('configuration.combined.effect')} className="w-44" value={rule.kind}
+                onChange={event => setRule(value => ({ ...value, kind: event.target.value }))}>
+                <option value="Cancels">{t('configuration.combined.effects.Cancels')}</option>
+                <option value="NarrowbodyOnly">{t('configuration.combined.effects.NarrowbodyOnly')}</option>
+              </OccSelectField>
+              <OccButton disabled={!rule.standId || !rule.affectedStandId || rule.standId === rule.affectedStandId}
+                onClick={() => void run(() => addOccStandConstraint({ date, ...rule }))}>
+                {t('configuration.combined.add')}
+              </OccButton>
+            </div>
+          </div>
+        </OccPanel>
+        <Reasons error={error} />
+      </div>
     </div>
   );
 }
@@ -294,6 +473,7 @@ function Configuration({ board, terminal, date, onChange, onStale }) {
  * the rules OCC applies today (Pillier) checked by the API, and the stand configuration of PUJ.
  */
 export default function CoverageRoute() {
+  const { t } = useTranslation(coverageMessages);
   const station = useOccStation();
   const [date, setDate] = useState(() => stationDate());
   const [state, setState] = useState({ status: 'loading' });
@@ -334,45 +514,59 @@ export default function CoverageRoute() {
   // A refused change because the data moved meanwhile reads the board again before a new attempt.
   const onStale = useCallback(() => { void live.current(); }, []);
 
-  let body;
-  if (!station.stationId) body = <p role="alert" className={card}>Tu cuenta no tiene una estación OCC autorizada.</p>;
-  else if (state.status === 'loading') body = <p role="status" className={card}>Cargando la cobertura de posiciones…</p>;
-  else if (state.status === 'forbidden') body = <p role="alert" className={card}>Tu acceso no permite ver la cobertura de posiciones de esta estación.</p>;
-  else if (state.status === 'error') body = <div role="alert" className={`${card} flex flex-wrap items-center gap-3`}>
-    <p>{state.error?.message}</p><button type="button" className={secondary} onClick={() => setAttempt(value => value + 1)}>Reintentar</button></div>;
-  else if (!terminal) body = <p role="status" className={card}>La estación no tiene terminales activas. OCC las crea en «Datos maestros».</p>;
-  else if (tab === 'configuration') body = <Configuration key={`${terminal.terminalId}-${terminal.maxStandsPerAgent}-${terminal.requiresBridgeQualification}`}
-    board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />;
-  else body = <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
-    <CoverageBoard board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />
-    {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date} onDone={onChange}
-      onStale={onStale} />
-      : <p className={card}>Tu acceso permite ver la cobertura, no asignarla.</p>}
-  </div>;
+  // The read as one of the states of OccRemoteView: a station without terminals is an empty board.
+  let view = 'success';
+  if (state.status === 'loading') view = 'loading';
+  else if (state.status === 'forbidden') view = 'forbidden';
+  else if (state.status === 'error') view = 'error';
+  else if (!terminal) view = 'empty';
 
+  let body = null;
+  if (view === 'success' && tab === 'configuration') {
+    body = <Configuration key={`${terminal.terminalId}-${terminal.maxStandsPerAgent}-${terminal.requiresBridgeQualification}`}
+      board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />;
+  } else if (view === 'success') {
+    body = (
+      <div className={MASTER_DETAIL}>
+        <CoverageBoard board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />
+        {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date} onDone={onChange}
+          onStale={onStale} />
+          : <p className={OCC_CLASSES.card}>{t('states.readOnly')}</p>}
+      </div>
+    );
+  }
+
+  const labels = {
+    loading: t('states.loading'), forbidden: t('states.forbidden'), retry: t('states.retry'),
+    // The service's own sentence (services/occCoverageService.js), never the server's title.
+    error: state.error?.message || t('states.error'), empty: t('states.noTerminals'),
+  };
+  const views = [{ id: 'coverage', label: t('tabs.coverage') }];
+  if (board?.canConfigure) views.push({ id: 'configuration', label: t('tabs.configuration') });
+
+  // The station is in the status bar of the OCC frame: the page has no badge of its own, nor a line under its title.
+  // The terminal and the view sit on the toolbar's line, after the date, so no line is left half empty.
   return (
-    <section className="space-y-4">
-      <header data-occ-header className={`${card} flex flex-wrap items-center justify-between gap-3`}>
-        <div><h1 className="text-xl font-semibold">Cobertura de posiciones</h1>
-          <p className={`text-sm ${muted}`}>Qué agente cubre cada posición durante su turno. Los vuelos que bloquean en esas posiciones le llegan solos.</p></div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-sm font-medium">Fecha <input type="date" className={`${input} ml-1 w-auto`} value={date}
-            onChange={event => setDate(event.target.value)} /></label>
-          <OccStationBadge />
-        </div>
-      </header>
-      {board && <nav className="flex flex-wrap items-center gap-2" aria-label="Terminal y vista">
-        {board.terminals.map(item => <button key={item.terminalId} type="button" aria-pressed={item.terminalId === terminal?.terminalId}
-          onClick={() => setTerminalCode(item.code)}
-          className={`min-h-11 rounded-lg px-4 text-sm font-semibold ${item.terminalId === terminal?.terminalId ? 'bg-accent-600 text-white' : 'border border-black/10 dark:border-white/10'}`}>
-          Terminal {item.code}</button>)}
-        <span className="mx-2 h-6 w-px bg-black/10 dark:bg-white/10" aria-hidden="true" />
-        <button type="button" aria-pressed={tab === 'coverage'} onClick={() => setTab('coverage')}
-          className={`min-h-11 rounded-lg px-4 text-sm font-semibold ${tab === 'coverage' ? 'bg-black/5 dark:bg-white/10' : ''}`}>Cobertura</button>
-        {board.canConfigure && <button type="button" aria-pressed={tab === 'configuration'} onClick={() => setTab('configuration')}
-          className={`min-h-11 rounded-lg px-4 text-sm font-semibold ${tab === 'configuration' ? 'bg-black/5 dark:bg-white/10' : ''}`}>Configuración</button>}
-      </nav>}
-      {body}
+    <section className="flex min-w-0 flex-col gap-3 text-occ-text">
+      <OccToolbar title={t('title')}>
+        <OccTextField type="date" label={t('date')} className="w-44" value={date} onChange={event => setDate(event.target.value)} />
+        {station.stationId && board ? (
+          <nav aria-label={t('nav.label')} className="flex flex-wrap items-end gap-x-4 gap-y-2">
+            {board.terminals.length > 0 && (
+              <OccSegmented label={t('nav.terminal')} value={terminal?.terminalId}
+                onChange={id => setTerminalCode(board.terminals.find(item => item.terminalId === id)?.code ?? terminalCode)}
+                options={board.terminals.map(item => ({ id: item.terminalId, label: t('terminal', { code: item.code }) }))} />
+            )}
+            <OccSegmented label={t('nav.view')} value={tab} onChange={setTab} options={views} />
+          </nav>
+        ) : null}
+      </OccToolbar>
+      {!station.stationId ? <p role="alert" className={OCC_CLASSES.card}>{t('states.noStation')}</p> : (
+        <OccRemoteView status={view} labels={labels} onRetry={() => setAttempt(value => value + 1)}
+          className={view === 'success' ? 'min-w-0' : STATE_SLAB}>
+          {body}
+        </OccRemoteView>
+      )}
     </section>
   );
 }

@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { XIcon, CheckCircleIcon, CornerUpLeftIcon, HistoryIcon, MoreVerticalIcon, CameraIcon, FileTextIcon, ScaleIcon } from './icons';
-
-const ICONS = { XIcon, CheckCircleIcon, CornerUpLeftIcon, HistoryIcon, MoreVerticalIcon, CameraIcon, FileTextIcon, ScaleIcon };
+import { XIcon } from './icons';
 
 describe('review icon set', () => {
-  it.each(Object.entries(ICONS))('%s renders a decorative inline SVG', (name, Icon) => {
-    const { container } = render(<Icon className="h-4 w-4" />);
+  it('XIcon renders a decorative inline SVG', () => {
+    const { container } = render(<XIcon className="h-4 w-4" />);
     const svg = container.querySelector('svg');
     expect(svg).toBeInTheDocument();
     expect(svg).toHaveAttribute('aria-hidden', 'true');

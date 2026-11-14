@@ -124,10 +124,6 @@ export function computeNotificationCounts(notifications) {
   };
 }
 
-export function getNotificationFilterOptions() {
-  return { categories: NOTIFICATION_CATEGORIES, severities: NOTIFICATION_SEVERITIES };
-}
-
 export function matchesNotificationSearch(notification, query) {
   if (!query) return true;
   const haystack = [

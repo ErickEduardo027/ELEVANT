@@ -17,9 +17,9 @@ describe('occUiMessages', () => {
   it('es and en carry the same keys and no empty text', () => {
     const paths = leafPaths(occUiMessages.es);
     expect(leafPaths(occUiMessages.en)).toEqual(paths);
-    // The primitives of the console and the ones that were already there.
+    // The primitives of the console, the ones of the work screens and registers, and the ones that were already there.
     for (const section of ['legend', 'alerts', 'drawer', 'toasts', 'panel', 'skeleton', 'stat', 'time', 'flightStrip',
-      'timeline', 'milestones']) {
+      'timeline', 'milestones', 'table', 'dialog']) {
       expect(paths.some(path => path.startsWith(`${section}.`)), section).toBe(true);
     }
     for (const path of paths) {
