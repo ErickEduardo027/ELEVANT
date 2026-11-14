@@ -1,58 +1,155 @@
 import { useId, useMemo, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
-import { STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
+import { SIGNALS, STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
-import { standAppearance } from '../stands/standLayers';
+import { standPaint } from '../stands/standLayers';
+import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
 
-// The swatch is the map's stand at half its size: the 24 px stand square of mapImages.js is the 12 px square at 4–16.
-// The diagonal hatch of «Inhabilitada» at 45°, like the map's stand-hatch image.
-const HATCH_PATH = 'M4 7 L7 4 M4 10 L10 4 M4 13 L13 4 M4 16 L16 4 M7 16 L16 7 M10 16 L16 10 M13 16 L16 13';
-// The aircraft of a stand a visit holds, and the axis of an empty stand, where the map's glyph images put them.
-const AIRCRAFT_TRANSFORM = `translate(5 5) scale(${10 / AIRCRAFT_SILHOUETTE_VIEWBOX})`;
-const AXIS_PATH = 'M10 6.5 V13.5';
 const tokenColour = token => `var(${token})`;
+const SWATCH_PROPS = Object.freeze({
+  width: 20, height: 20, viewBox: '0 0 20 20', 'aria-hidden': 'true', focusable: 'false', className: 'shrink-0',
+});
 
-// A stand drawn as the map draws it: fill, outline and dash from the vocabulary, the glyph inside it (an aircraft
-// while a visit holds the stand, the axis of an empty one) and the clock of «Por liberar» on its corner. The glyphs
-// are what tell «Ocupada» from «Llegando» and «Por liberar» from «Ocupada» without colour, on the map and here.
+// Diagonal lines x + y = c every `step` px, clipped to the square from `min` to `max`: the hatch of «Inhabilitada».
+function hatchPath(min, max, step) {
+  const segments = [];
+  for (let sum = 2 * min + step; sum < 2 * max; sum += step) {
+    const fromX = Math.max(min, sum - max);
+    const toX = Math.min(max, sum - min);
+    segments.push(`M${fromX} ${sum - fromX} L${toX} ${sum - toX}`);
+  }
+  return segments.join(' ');
+}
+
+// A stand of the swatch: a 14 px box in the middle, the map's polygon at a size the legend can hold.
+const BOX = Object.freeze({ x: 3, y: 3, size: 14 });
+const HATCH_PATH = hatchPath(BOX.x, BOX.x + BOX.size, 3.5);
+// The aircraft of a stand with an aircraft on it, 10 px long in the middle of the box, nose up.
+const AIRCRAFT_TRANSFORM = `translate(5 5) scale(${10 / AIRCRAFT_SILHOUETTE_VIEWBOX})`;
+
+/**
+ * A stand state as the map draws it (stands/standLayers.js: standPaint): the box filled with its tint or slab, or
+ * hatched, its outline at the vocabulary's width and dash, the aircraft of a stand with an aircraft on it, the clock of
+ * «Por liberar» on its corner and the emphasised lead-in of «Llegando». Each state differs from every other in at least
+ * one of these, never in colour alone.
+ */
 function StateSwatch({ state }) {
-  const { fill, outline, dash } = STAND_STATES[state];
-  const { glyph, badge } = standAppearance(state);
-  const mark = tokenColour(outline.token);
+  const paint = standPaint(state);
+  const line = tokenColour(paint.outline.token);
+  const filled = paint.fill.kind === 'tint' || paint.fill.kind === 'solid';
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0">
+    <svg {...SWATCH_PROPS} data-swatch="state" data-fill={paint.fill.kind}>
       <rect
-        x="4"
-        y="4"
-        width="12"
-        height="12"
+        x={BOX.x}
+        y={BOX.y}
+        width={BOX.size}
+        height={BOX.size}
         style={{
-          fill: fill.kind === 'tint' || fill.kind === 'solid' ? tokenColour(fill.token) : 'none',
-          stroke: mark,
-          strokeWidth: outline.width,
-          strokeDasharray: dash ? dash.join(' ') : 'none',
+          fill: filled ? tokenColour(paint.fill.token) : 'none',
+          stroke: line,
+          strokeWidth: paint.outline.width,
+          strokeDasharray: paint.outline.dash ? paint.outline.dash.join(' ') : 'none',
         }}
       />
-      {fill.kind === 'hatch' && <path d={HATCH_PATH} style={{ fill: 'none', stroke: tokenColour(fill.token), strokeWidth: 1 }} />}
-      {glyph?.image === 'glyph-aircraft' && (
-        <path data-glyph="aircraft" d={AIRCRAFT_SILHOUETTE_PATH} transform={AIRCRAFT_TRANSFORM} style={{ fill: mark }} />
+      {paint.fill.kind === 'hatch' && (
+        <path data-glyph="hatch" d={HATCH_PATH} style={{ fill: 'none', stroke: tokenColour(paint.fill.token), strokeWidth: 1 }} />
       )}
-      {glyph?.image === 'glyph-axis' && (
-        <path data-glyph="axis" d={AXIS_PATH} style={{ fill: 'none', stroke: mark, strokeWidth: 1 }} />
+      {paint.leadIn && (
+        <path data-glyph="leadin" d="M10 20 V10" style={{ fill: 'none', stroke: line, strokeWidth: paint.outline.width }} />
       )}
-      {badge?.image === 'glyph-clock' && (
-        <g data-glyph="clock" style={{ fill: tokenColour('--occ-panel-raised'), stroke: mark, strokeWidth: 1, strokeLinecap: 'round' }}>
-          <circle cx="15" cy="5" r="3.5" />
-          <path d="M15 3.4 V5 L16.2 5.7" style={{ fill: 'none' }} />
+      {paint.glyph === 'aircraft' && (
+        <path data-glyph="aircraft" d={AIRCRAFT_SILHOUETTE_PATH} transform={AIRCRAFT_TRANSFORM} style={{ fill: line }} />
+      )}
+      {paint.clock && (
+        <g data-glyph="clock" style={{ fill: tokenColour('--occ-panel-raised'), stroke: tokenColour('--occ-text'), strokeWidth: 1, strokeLinecap: 'round' }}>
+          <circle cx="15.5" cy="4.5" r="3.5" />
+          <path d="M15.5 2.9 V4.5 L16.7 5.2" style={{ fill: 'none' }} />
         </g>
       )}
     </svg>
   );
 }
+
+// A signal as the map draws it (style/mapImages.js): its shape filled in its colour, the «!» in the dark of the halo.
+function SignalSwatch({ signal }) {
+  const [shape, ...cuts] = MAP_IMAGE_SHAPES[`signal-${signal}`].ops;
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="signal" data-shape={SIGNALS[signal].shape}>
+      <path d={shape.fill} style={{ fill: tokenColour(SIGNALS[signal].colorToken), stroke: tokenColour('--occ-nav'), strokeWidth: 1 }} />
+      <path data-glyph="exclamation" d={cuts.map(cut => cut.clear).join(' ')} style={{ fill: tokenColour('--occ-nav') }} />
+    </svg>
+  );
+}
+
+// The chip of a terminal as the map draws it: the raised slab with a 1 px joint around its text.
+function ChipSwatch() {
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="chip">
+      <rect x="1.5" y="5.5" width="17" height="9" rx="2" style={{ fill: tokenColour('--occ-panel-raised'), stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+      <path d="M5 10 H15" style={{ fill: 'none', stroke: tokenColour('--occ-text'), strokeWidth: 1.5 }} />
+    </svg>
+  );
+}
+
+// The marks of the stands: the arrow over the chip of a terminal with a flight arriving at one of its stands, pointing
+// down at it as the map draws it (style/mapImages.js: glyph-arriving, in --occ-text), the dashed link from a cancelled
+// stand to the one that cancels it, the dotted code-C box inside a larger stand limited to narrow-body aircraft, the
+// thin ring around the stands covered by the same agent as the selected one or the one under the pointer
+// (stands/standLayers.js: the same-agent casing, one ring drawn the same way for both; the entry says which stand it
+// follows), and while a stand is placed, its box at the pointer (dashed cyan) and the pending location (solid cyan over
+// a wash, with its centre).
+const ACCENT = tokenColour('--occ-accent');
+const [ARRIVING_SHAFT, ARRIVING_HEAD] = MAP_IMAGE_SHAPES['glyph-arriving'].ops;
+const SAME_AGENT_RING = (
+  <>
+    <rect x="5.5" y="5.5" width="9" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    <rect x="2.5" y="2.5" width="15" height="15" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1 }} />
+  </>
+);
+const MARK_SWATCHES = Object.freeze({
+  chipArriving: (
+    <>
+      <g data-glyph="arriving" transform="translate(2 -3.5)">
+        <path d={ARRIVING_SHAFT.stroke} style={{ fill: 'none', stroke: tokenColour('--occ-text'), strokeWidth: ARRIVING_SHAFT.lineWidth }} />
+        <path d={ARRIVING_HEAD.fill} style={{ fill: tokenColour('--occ-text') }} />
+      </g>
+      <rect x="2.5" y="13.5" width="15" height="5" rx="2" style={{ fill: tokenColour('--occ-panel-raised'), stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    </>
+  ),
+  combined: (
+    <>
+      <rect x="1.5" y="6.5" width="6" height="7" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1.5, strokeDasharray: '2 2' }} />
+      <rect x="12.5" y="6.5" width="6" height="7" style={{ fill: tokenColour('--occ-panel-raised'), stroke: tokenColour('--occ-text'), strokeWidth: 1.5 }} />
+      <path d="M7.5 10 H12.5" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1.5, strokeDasharray: '2 1' }} />
+    </>
+  ),
+  narrowbody: (
+    <>
+      <rect x="2.5" y="2.5" width="15" height="15" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+      <rect x="6.5" y="5.5" width="7" height="9" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1, strokeDasharray: '1 2' }} />
+    </>
+  ),
+  sameAgent: SAME_AGENT_RING,
+  sameAgentHover: SAME_AGENT_RING,
+  ghost: (
+    <rect x="3" y="3" width="14" height="14" style={{ fill: 'none', stroke: ACCENT, strokeWidth: 2, strokeDasharray: '4 3' }} />
+  ),
+  pending: (
+    <>
+      <rect x="3.25" y="3.25" width="13.5" height="13.5" style={{ fill: ACCENT, fillOpacity: 0.2, stroke: ACCENT, strokeWidth: 2.5 }} />
+      <circle cx="10" cy="10" r="2.5" style={{ fill: ACCENT, stroke: tokenColour('--occ-nav'), strokeWidth: 1 }} />
+    </>
+  ),
+});
+const MARK_MESSAGES = Object.freeze({
+  chipArriving: 'legend.chipArriving', combined: 'legend.combined', narrowbody: 'legend.narrowbody',
+  sameAgent: 'legend.sameAgent', sameAgentHover: 'legend.sameAgentHover', ghost: 'legend.ghost', pending: 'legend.pending',
+});
+const MARK_HINTS = Object.freeze({ ghost: 'legend.ghostHint' });
 
 // A flight as the map draws it (traffic/flightLayers.js): the solid silhouette, nose up, in the text colour with a 1 px
 // halo of the nav colour, here 16 px long. The halo is a 2 px line drawn under the fill, so 1 px of it shows outside.
@@ -62,7 +159,7 @@ const FLIGHT_HALO_UNITS = (2 * AIRCRAFT_SILHOUETTE_VIEWBOX) / FLIGHT_SIZE_PX;
 
 function FlightSwatch() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0">
+    <svg {...SWATCH_PROPS}>
       <path
         data-glyph="flight"
         d={AIRCRAFT_SILHOUETTE_PATH}
@@ -75,15 +172,6 @@ function FlightSwatch() {
           paintOrder: 'stroke',
         }}
       />
-    </svg>
-  );
-}
-
-// A cluster of stands as the map draws it: a circle on the raised slab with a strong line.
-function GroupSwatch() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0">
-      <circle cx="10" cy="10" r="7" style={{ fill: tokenColour('--occ-panel-raised'), stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
     </svg>
   );
 }
@@ -122,66 +210,80 @@ const AIRFIELD_MESSAGES = Object.freeze({
 
 function AirfieldSwatch({ kind }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0" data-swatch={kind}>
+    <svg {...SWATCH_PROPS} data-swatch={kind}>
       <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: BASEMAP_COLORS.land }} />
       {AIRFIELD_SWATCHES[kind]}
     </svg>
   );
 }
 
+// An entry with a hint below its name, across the whole legend.
+function WideEntry({ swatch, name, hint }) {
+  return (
+    <li className="col-span-2 flex items-center gap-2">
+      {swatch}
+      <span>
+        <span className="block">{name}</span>
+        {hint && <span className="block text-occ-muted">{hint}</span>}
+      </span>
+    </li>
+  );
+}
+
 /**
  * The legend of a map (owner request: every map shows its legend). It lists only what is on screen: inside an OccMap
- * the flights drawn on screen, the stands drawn one by one there (also those the map draws on their own next to its
- * clusters), when a cluster of stands is drawn there what a cluster is, and the airfield items the map draws there
- * (runway, taxiway, holding point, apron, terminal), apart below the rest; or the `stands` given (inside `bounds` when
- * given). The short entries (the stand states and the airfield items) sit two to a row, so the open legend stays low
- * over the stands it explains. It folds through its own button, whose name stays «Leyenda» while `aria-expanded`
- * tells whether it is open, and it renders nothing when there is nothing to explain.
+ * the flights drawn there, the terminal chips (below the stand polygons), the states of the stands whose polygon is
+ * drawn there with the signal the map draws on each and the marks drawn there (the arrow over a chip whose terminal has
+ * a flight arriving, the link of a cancelled stand, the narrow-body box, the ring of the stands covered by the agent of
+ * the selected stand or of the one under the pointer, the boxes of a stand being placed), «No oficial» for a stand at
+ * its reference location, and the airfield items drawn there (runway, taxiway, holding point, apron, terminal), set
+ * apart below the rest; or the `stands` given (inside `bounds` when given). The stand states use the words of the
+ * vocabulary (STAND_STATES) and the signals theirs (SIGNALS). The short entries (the states, the signals and the
+ * airfield items) sit two to a row, so the open legend stays low over the map. It folds through its own button, whose
+ * name stays «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to
+ * explain.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
-  const { standsOnScreen, standsGrouped, flightsOnScreen, airfieldOnScreen } = useOccMap();
+  const { standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
-  const { flights, states, tags, grouped, airfield } = useMemo(() => (stands === undefined
-    ? legendEntries({ stands: standsOnScreen, flights: flightsOnScreen, grouped: standsGrouped, airfield: airfieldOnScreen })
-    : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, standsGrouped, flightsOnScreen, airfieldOnScreen]);
+  const { flights, states, chips, signals, tags, marks, airfield } = useMemo(() => (stands === undefined
+    ? legendEntries({
+      stands: standsOnScreen, flights: flightsOnScreen, chips: chipsOnScreen, marks: standMarksOnScreen, airfield: airfieldOnScreen,
+    })
+    : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen]);
 
-  const listsOthers = flights || grouped || states.length > 0 || tags.length > 0;
+  const word = entry => entry[language] ?? entry.es;
+  const listsOthers = flights || chips || states.length > 0 || signals.length > 0 || marks.length > 0 || tags.length > 0;
   if (!listsOthers && airfield.length === 0) return null;
 
   return (
     <div data-testid="map-legend" className={`relative ${className}`.trim()}>
       <div id={panelId} hidden={!open} className="absolute bottom-full right-0 mb-2 w-max max-w-xs rounded-md border border-occ-line bg-occ-panel-float p-3">
-        <ul aria-label={t('legend.title')} className="grid grid-cols-2 gap-y-2 text-sm text-occ-text">
-          {flights && (
-            <li className="col-span-2 flex items-center gap-2">
-              <FlightSwatch />
-              <span>
-                <span className="block">{t('legend.flight')}</span>
-                <span className="block text-occ-muted">{t('legend.flightHint')}</span>
-              </span>
-            </li>
-          )}
-          {grouped && (
-            <li className="col-span-2 flex items-center gap-2">
-              <GroupSwatch />
-              <span>
-                <span className="block">{t('legend.group')}</span>
-                <span className="block text-occ-muted">{t('legend.groupHint')}</span>
-              </span>
-            </li>
-          )}
+        <ul aria-label={t('legend.title')} className="grid grid-cols-2 gap-y-1.5 text-sm text-occ-text">
+          {flights && <WideEntry swatch={<FlightSwatch />} name={t('legend.flight')} hint={t('legend.flightHint')} />}
+          {chips && <WideEntry swatch={<ChipSwatch />} name={t('legend.chip')} hint={t('legend.chipHint')} />}
           {states.map(state => (
-            <li key={state} className="flex items-center gap-2 pr-3">
+            <li key={state} data-state={state} className="flex items-center gap-2 pr-3">
               <StateSwatch state={state} />
-              <span>{STAND_STATES[state][language] ?? STAND_STATES[state].es}</span>
+              <span>{word(STAND_STATES[state])}</span>
             </li>
+          ))}
+          {signals.map(signal => (
+            <li key={signal} data-signal={signal} className="flex items-center gap-2 pr-3">
+              <SignalSwatch signal={signal} />
+              <span>{word(SIGNALS[signal])}</span>
+            </li>
+          ))}
+          {marks.map(mark => (
+            <WideEntry key={mark} swatch={<svg {...SWATCH_PROPS} data-swatch={mark}>{MARK_SWATCHES[mark]}</svg>} name={t(MARK_MESSAGES[mark])}
+              hint={MARK_HINTS[mark] ? t(MARK_HINTS[mark]) : null} />
           ))}
           {tags.map(tag => (
             <li key={tag} className="col-span-2 flex items-center gap-2">
               <span className="shrink-0 rounded-sm border border-occ-line-strong px-1 text-xs font-semibold text-occ-muted">
-                {TAGS[tag][language] ?? TAGS[tag].es}
+                {word(TAGS[tag])}
               </span>
               <span className="text-occ-muted">{t(`legend.${tag}`)}</span>
             </li>

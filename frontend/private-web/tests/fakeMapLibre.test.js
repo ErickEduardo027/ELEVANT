@@ -218,6 +218,30 @@ describe('fake MapLibre', () => {
     expect(map.layerIds()).toEqual(['land', 'dots']);
   });
 
+  it('updateData applies the diff as MapLibre 6.16 does, where removeAllProperties drops the properties it comes with', async () => {
+    const { fake, map } = newMap();
+    fake.state.emit(map, 'style.load');
+    const source = map.getSource('points');
+    const point = (id, x, properties) => ({ type: 'Feature', id, properties, geometry: { type: 'Point', coordinates: [x, 0] } });
+    source.setData({ type: 'FeatureCollection', features: [point('a', 1, { state: 'free', code: 'a' }), point('b', 2, { state: 'free', code: 'b' })] });
+
+    await source.updateData({
+      add: [point('c', 3, { state: 'free', code: 'c' })],
+      remove: ['b'],
+      update: [{ id: 'a', newGeometry: { type: 'Point', coordinates: [9, 9] }, removeProperties: ['code'], addOrUpdateProperties: [{ key: 'state', value: 'busy' }] }],
+    });
+    expect(source.data.features).toEqual([
+      { type: 'Feature', id: 'a', properties: { state: 'busy' }, geometry: { type: 'Point', coordinates: [9, 9] } },
+      point('c', 3, { state: 'free', code: 'c' }),
+    ]);
+    expect(source.updateDataCalls).toHaveLength(1);
+    // The trap: removeAllProperties with additions leaves the feature with no property at all.
+    await source.updateData({ update: [{ id: 'c', removeAllProperties: true, addOrUpdateProperties: [{ key: 'state', value: 'busy' }] }] });
+    expect(source.data.features[1].properties).toEqual({});
+    await source.updateData({ removeAll: true, add: [point('d', 4, {})] });
+    expect(source.data.features.map(feature => feature.id)).toEqual(['d']);
+  });
+
   it('removeFeatureState refuses a key without a feature id and removes nothing, like MapLibre 6.16', () => {
     const { fake, map } = newMap();
     fake.state.emit(map, 'style.load');

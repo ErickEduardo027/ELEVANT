@@ -487,3 +487,7 @@ U4 añade la pantalla de arranque del OCC que pidió el dueño (decisión 14). V
   - en `admin-occ/boot/`: `occBootMachine`, `occBootSession`, `OccBootProvider` y `OccBootScreen`;
   - `tests/visualBootFixtures.test.js`, que valida las respuestas sintéticas de la suite visual con los validadores estrictos del cliente compartido;
   - en la suite visual, `tests/visual/occ/boot-screen.spec.mjs`, con `fixtures/bootApi.mjs`: la primera entrada a 1440×900 y a 1920×1080, la salida a los 6 s del acceso cuando nadie avisa, una recarga sin pantalla y el movimiento reducido. Como el resto de la suite, corre fuera del CI.
+
+## Nota del 13 de noviembre de 2026: el mapa también avisa a la pantalla de arranque (PR M4)
+
+Lo que la nota de U4 dejó para después ya está: al integrar U4, el PR M4 hace que el motor de mapas (`OccMap`) llame `useOccBoot().markReady('map')` cuando su mapa queda listo o sin cartografía (entonces se ve la lista de respaldo). Mapa de posiciones, Planificación y Monitoreo de vuelos ya no esperan los 6 s del tope. Panorama sigue avisando con `markReady('console')`, y la consola de U3 lo conservará. Los detalles están en la nota de M4 de [ADR-0043](0043-occ-maps-one-engine.md).
