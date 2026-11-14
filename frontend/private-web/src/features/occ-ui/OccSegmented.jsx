@@ -25,8 +25,9 @@ function Segment({ option, chosen, size, ...control }) {
     <button type="button" disabled={option.disabled === true} {...control}
       className={`${SEGMENT} ${SEGMENT_SIZE[size]} ${chosen ? CHOSEN : UNCHOSEN}`}>
       {option.label}
-      {/* The count is part of the name, after a space: «Llegadas 4». */}
-      {hasCount ? <>{' '}<span className="font-mono text-xs font-medium">{option.count}</span></> : null}
+      {/* The count is part of the name, after a space: «Llegadas 4». Manrope with tabular figures, never mono: a count
+          is not an identifier (contratos 2.4). */}
+      {hasCount ? <>{' '}<span className="text-xs font-medium tabular-nums">{option.count}</span></> : null}
     </button>
   );
 }
@@ -40,8 +41,8 @@ function Segment({ option, chosen, size, ...control }) {
  *   `aria-controls={panelIdFor(id)}` (`tabIdFor(id)` gives it an id the panel can name). Only the chosen tab (or the
  *   first that can be chosen) is a stop for Tab; ArrowLeft and ArrowRight move to the previous or next tab and choose
  *   it, wrapping around and skipping disabled ones, and Home and End go to the first and the last.
- * A disabled option can never be chosen. `count` is written in mono inside the option's name. `size` is `md` or `sm`.
- * An unknown kind or size throws.
+ * A disabled option can never be chosen. `count` is written inside the option's name, with tabular figures and never
+ * in mono (it is not an identifier). `size` is `md` or `sm`. An unknown kind or size throws.
  */
 export default function OccSegmented({
   label, options = NO_OPTIONS, value, onChange, as = 'group', panelIdFor, tabIdFor, size = 'md', className = '',

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { occUiMessages } from './occUiMessages';
-import { barGeometry, hourTicks, TIMELINE_BAR_STATES, timelineBarName, timeToFraction } from './occTimelineModel';
+import {
+  barGeometry, hourTicks, TIMELINE_BAR_STATES, TIMELINE_CONFLICT_SIGNALS, timelineBarName, timelineConflictSignal,
+  timeToFraction,
+} from './occTimelineModel';
 
 // Punta Cana is UTC−4: the window 12:00–16:00 at the station is 16:00–20:00 UTC.
 const ZONE = 'America/Santo_Domingo';
@@ -92,13 +95,13 @@ describe('occTimelineModel', () => {
     expect(TIMELINE_BAR_STATES).toEqual(['planned', 'onStand', 'departed']);
     expect(timelineBarName(AA904, { label: 'A5' }, words))
       .toBe('AA904 a AA905, posición A5, llega 14:40 estimada, sale 15:35 programada, en operación');
-    // Not in operation: its state; then demo, estimated position and the conflict's own words.
+    // Not in operation: its state; then demo, estimated position and the conflict, its signal's word before its words.
     expect(timelineBarName({
       ...AA904, arrivalFlight: 'ZZ9001', departureFlight: 'ZZ9002', startAt: '2026-11-14T18:44:00Z', endAt: null,
       endKind: null, state: 'planned', inOperation: false, demo: true, estimated: true,
-      conflict: { label: 'Otra aeronave llega a esta posición' },
+      conflict: { label: 'Otra aeronave llega a esta posición', signal: 'urgent' },
     }, { label: 'A7' }, words)).toBe('ZZ9001 a ZZ9002, posición A7, llega 14:44 estimada, sin salida, planificada, demo, '
-      + 'posición estimada, Otra aeronave llega a esta posición');
+      + 'posición estimada, Urgente: Otra aeronave llega a esta posición');
     expect(timelineBarName({
       ...AA904, startAt: null, startKind: null, endKind: 'actual', state: 'departed', inOperation: false,
     }, { label: 'A5' }, words)).toBe('AA904 a AA905, posición A5, sin llegada, sale 15:35 real, salió');
@@ -110,5 +113,40 @@ describe('occTimelineModel', () => {
     expect(timelineBarName(AA904, { label: 'A5' }, { t: english, locale: 'en-US', timeZone: ZONE }))
       .toBe('AA904 to AA905, stand A5, arrives 14:40 estimated, departs 15:35 scheduled, in operation');
     expect(() => timelineBarName({ ...AA904, state: 'parked' }, { label: 'A5' }, words)).toThrow(RangeError);
+  });
+
+  it('timelineBarName reads a conflict as the word of its signal, «Atención» when it names none, then its own words', () => {
+    const words = { t: spanish, locale: 'es-DO', timeZone: ZONE };
+    const named = conflict => timelineBarName({ ...AA904, conflict }, { label: 'A5' }, words);
+    const head = 'AA904 a AA905, posición A5, llega 14:40 estimada, sale 15:35 programada, en operación';
+    expect(named({ label: 'Pasó su hora de salida', signal: 'attention' })).toBe(`${head}, Atención: Pasó su hora de salida`);
+    expect(named({ label: 'Sin agente que la cubra' })).toBe(`${head}, Atención: Sin agente que la cubra`);
+    expect(named({ label: 'Otra aeronave llega a esta posición', signal: 'urgent' }))
+      .toBe(`${head}, Urgente: Otra aeronave llega a esta posición`);
+    // A conflict without words of its own still says its signal: the bar draws its glyph either way.
+    expect(named({ signal: 'urgent' })).toBe(`${head}, Urgente`);
+    expect(named(null)).toBe(head);
+    // The signal's word follows the language; the reason is the caller's own words.
+    expect(timelineBarName({ ...AA904, conflict: { label: 'Another aircraft arrives at this stand', signal: 'urgent' } },
+      { label: 'A5' }, { t: english, language: 'en', locale: 'en-US', timeZone: ZONE }))
+      .toBe('AA904 to AA905, stand A5, arrives 14:40 estimated, departs 15:35 scheduled, in operation, '
+        + 'Urgent: Another aircraft arrives at this stand');
+    expect(() => named({ label: 'Aviso', signal: 'notice' })).toThrow(RangeError);
+  });
+
+  it('timelineConflictSignal gives a conflict its signal, attention by default, and rejects any other', () => {
+    expect(TIMELINE_CONFLICT_SIGNALS).toEqual(['attention', 'urgent']);
+    expect(timelineConflictSignal(AA904)).toBeNull();
+    expect(timelineConflictSignal({ ...AA904, conflict: undefined })).toBeNull();
+    expect(timelineConflictSignal({ ...AA904, conflict: { label: 'Sin agente que la cubra' } })).toBe('attention');
+    expect(timelineConflictSignal({ ...AA904, conflict: { label: 'Sin agente que la cubra', signal: null } })).toBe('attention');
+    expect(timelineConflictSignal({ ...AA904, conflict: { label: 'Pasó su hora de salida', signal: 'attention' } }))
+      .toBe('attention');
+    expect(timelineConflictSignal({ ...AA904, conflict: { label: 'Otra aeronave llega a esta posición', signal: 'urgent' } }))
+      .toBe('urgent');
+    // A plain notice is not a conflict, and a typo never draws a silent one.
+    for (const signal of ['notice', 'Urgent', 'danger']) {
+      expect(() => timelineConflictSignal({ ...AA904, conflict: { label: 'x', signal } }), signal).toThrow(RangeError);
+    }
   });
 });

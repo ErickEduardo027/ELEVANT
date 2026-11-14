@@ -39,9 +39,25 @@ const ROWS = Object.freeze([
   { id: 'B21', label: 'B21', bars: [
     visit({ id: 'tat-2', arrivalFlight: 'DM161', departureFlight: 'DM162', startAt: '2026-11-14T18:55:00Z',
       startKind: 'estimated', endAt: null, endKind: null, state: 'planned', estimated: true,
-      conflict: { label: 'Otra aeronave llega a esta posición' } }),
+      conflict: { label: 'Otra aeronave llega a esta posición', signal: 'urgent' } }),
     visit({ id: 'tat-out', arrivalFlight: 'AA700', departureFlight: 'AA701', startAt: '2026-11-14T21:00:00Z',
       endAt: '2026-11-14T22:00:00Z', state: 'planned' }),
+  ] },
+]);
+
+// A conflict in each tone of contratos 2.4: attention (named, and the default) and urgent.
+const CONFLICT_ROWS = Object.freeze([
+  { id: 'B20', label: 'B20', bars: [
+    visit({ id: 'late', arrivalFlight: 'AA900', departureFlight: 'AA901', startAt: '2026-11-14T16:10:00Z',
+      startKind: 'actual', endAt: '2026-11-14T18:20:00Z', state: 'onStand',
+      conflict: { label: 'Pasó su hora de salida', signal: 'attention' } }),
+    visit({ id: 'uncovered', arrivalFlight: 'AA910', departureFlight: 'AA911', startAt: '2026-11-14T19:10:00Z',
+      endAt: '2026-11-14T19:50:00Z', state: 'planned', conflict: { label: 'Sin agente que la cubra' } }),
+  ] },
+  { id: 'B21', label: 'B21', bars: [
+    visit({ id: 'clash', arrivalFlight: 'DM161', departureFlight: 'DM162', startAt: '2026-11-14T18:55:00Z',
+      endAt: '2026-11-14T19:45:00Z', state: 'planned',
+      conflict: { label: 'Otra aeronave llega a esta posición', signal: 'urgent' } }),
   ] },
 ]);
 
@@ -51,7 +67,7 @@ const NAMES = Object.freeze({
   'demo-1': 'ZZ9001 a ZZ9002, posición A7, llega 14:44 estimada, sale 15:44 programada, planificada, demo, posición estimada',
   'tat-3': 'AA910 a AA911, posición B20, llega 15:10 programada, sale 15:50 programada, planificada',
   'tat-2': 'DM161 a DM162, posición B21, llega 14:55 estimada, sin salida, planificada, posición estimada, '
-    + 'Otra aeronave llega a esta posición',
+    + 'Urgente: Otra aeronave llega a esta posición',
 });
 
 function band(props) {
@@ -125,7 +141,7 @@ describe('OccTimeline', () => {
     expect(onSelectBar).toHaveBeenCalledTimes(3);
   });
 
-  it('tells bars apart by texture: planned outline, estimated dashed, on stand solid, departed dim, demo stripes, conflict amber with its triangle', () => {
+  it('tells bars apart by texture: planned outline, estimated dashed, on stand solid, departed dim, demo stripes, conflict in its signal', () => {
     render(band({ selectedBarId: 'tat-3' }));
     const { states } = OCC_TIMELINE_TEXTURES;
     // Planned: a solid strong outline on nothing.
@@ -145,17 +161,24 @@ describe('OccTimeline', () => {
     expect(stripes.querySelector('line').style.stroke).toBe('var(--occ-line)');
     expect(stripes.querySelector('rect')).toHaveAttribute('fill', `url(#${stripes.querySelector('pattern').id})`);
     expect(document.querySelectorAll('svg[data-occ-stripes]')).toHaveLength(1);
-    // Conflict: the amber outline instead of the state's, and the triangle next to the words.
-    expect(classesOf(barOf('tat-2'))).toContain('border-occ-warn');
+    // Conflict: another aircraft arriving at the stand is urgent, the red outline instead of the state's and the octagon
+    // next to the words (both tones in the next test).
+    expect(classesOf(barOf('tat-2'))).toContain('border-occ-danger');
     expect(classesOf(barOf('tat-2'))).not.toContain(states.planned.border);
-    expect(barOf('tat-2').querySelector('[data-occ-glyph]')).toHaveAttribute('data-shape', 'triangle');
+    expect(barOf('tat-2')).toHaveAttribute('data-conflict', 'urgent');
+    expect(barOf('tat-2').querySelector('[data-occ-glyph]')).toHaveAttribute('data-shape', 'octagon');
     expect(barOf('tat-2').querySelector('[data-occ-glyph]')).toHaveAttribute('aria-hidden', 'true');
-    // Cyan for the selection only; amber for the conflict only; no bar is red.
+    // Cyan for the selection only; red for the urgent conflict only; nothing here asks for attention in amber; a bar
+    // without a conflict has no glyph.
     for (const id of Object.keys(NAMES)) {
       const classes = classesOf(barOf(id));
       expect(classes.includes('outline-occ-accent'), id).toBe(id === 'tat-3');
-      expect(classes.includes('border-occ-warn'), id).toBe(id === 'tat-2');
-      expect(classes.filter(name => name.includes('danger')), id).toEqual([]);
+      expect(classes.includes('border-occ-danger'), id).toBe(id === 'tat-2');
+      expect(classes.filter(name => name.includes('warn')), id).toEqual([]);
+      if (id !== 'tat-2') {
+        expect(barOf(id).querySelector('[data-occ-glyph]'), id).toBeNull();
+        expect(barOf(id), id).not.toHaveAttribute('data-conflict');
+      }
       // Text never drops under 12 px.
       expect(classes).toContain('text-xs');
     }
@@ -166,6 +189,59 @@ describe('OccTimeline', () => {
       expect(() => render(band({ density: 'tiny' }))).toThrow(RangeError);
       expect(() => render(band({ rows: [{ id: 'A5', label: 'A5', bars: [visit({ id: 'x', state: 'parked' })] }] })))
         .toThrow(RangeError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('draws a conflict in the tone of its signal: amber triangle for attention, the default, red octagon for urgent', () => {
+    render(band({ rows: CONFLICT_ROWS, selectedBarId: 'clash' }));
+    const { conflict, states } = OCC_TIMELINE_TEXTURES;
+    expect(conflict).toEqual({ attention: 'border-occ-warn', urgent: 'border-occ-danger' });
+    const tones = [
+      ['late', 'attention', 'triangle', states.onStand.border,
+        'AA900 a AA901, posición B20, llega 12:10 real, sale 14:20 programada, en posición, Atención: Pasó su hora de salida'],
+      ['uncovered', 'attention', 'triangle', states.planned.border,
+        'AA910 a AA911, posición B20, llega 15:10 programada, sale 15:50 programada, planificada, '
+          + 'Atención: Sin agente que la cubra'],
+      ['clash', 'urgent', 'octagon', states.planned.border,
+        'DM161 a DM162, posición B21, llega 14:55 programada, sale 15:45 programada, planificada, '
+          + 'Urgente: Otra aeronave llega a esta posición'],
+    ];
+    for (const [id, signal, shape, stateBorder, name] of tones) {
+      // Named with the word of its signal before its reason.
+      const bar = screen.getByRole('button', { name });
+      expect(bar, id).toBe(barOf(id));
+      expect(bar, id).toHaveAttribute('data-conflict', signal);
+      // One border colour per bar: the signal's, instead of the state's.
+      const classes = classesOf(bar);
+      expect(classes, id).not.toContain(stateBorder);
+      expect(classes.filter(item => item.startsWith('border-occ-')), id).toEqual([conflict[signal]]);
+      // The glyph of the signal next to the words, hidden from assistive technology.
+      const glyphs = bar.querySelectorAll('[data-occ-glyph]');
+      expect(glyphs, id).toHaveLength(1);
+      expect(glyphs[0]).toHaveAttribute('data-occ-glyph', signal);
+      expect(glyphs[0]).toHaveAttribute('data-shape', shape);
+      expect(glyphs[0]).toHaveAttribute('aria-hidden', 'true');
+    }
+    // The selection keeps its cyan casing on the red outline: an outline and a border, never the same property.
+    expect(classesOf(barOf('clash'))).toEqual(expect.arrayContaining(['outline-occ-accent', 'border-occ-danger']));
+    cleanup();
+
+    // The word of the signal follows the language; the reason is the console's own words.
+    resetLanguageForTests('en');
+    render(<LanguageScope>{band({ rows: CONFLICT_ROWS })}</LanguageScope>);
+    expect(barOf('uncovered')).toHaveAccessibleName(/, planned, Attention: Sin agente que la cubra$/);
+    expect(barOf('clash')).toHaveAccessibleName(/, planned, Urgent: Otra aeronave llega a esta posición$/);
+    cleanup();
+
+    // A plain notice is not a conflict, and a typo never draws a silent one.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const signal of ['notice', 'danger']) {
+        const rows = [{ id: 'B21', label: 'B21', bars: [visit({ ...CONFLICT_ROWS[1].bars[0], conflict: { label: 'x', signal } })] }];
+        expect(() => render(band({ rows })), signal).toThrow(RangeError);
+      }
     } finally {
       consoleError.mockRestore();
     }

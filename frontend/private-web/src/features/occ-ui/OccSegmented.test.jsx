@@ -74,9 +74,10 @@ describe('OccSegmented', () => {
       { id: 'toImport', label: 'Por importar', count: 1 }]} />);
     const tablist = screen.getByRole('tablist', { name: 'Tablero' });
     const tab = name => within(tablist).getByRole('tab', { name });
-    // The count is part of the name, in mono.
+    // The count is part of the name, in Manrope with tabular figures: never mono, because it is not an identifier.
     expect(tab('Llegadas 4')).toHaveAttribute('aria-selected', 'true');
-    expect(within(tab('Llegadas 4')).getByText('4')).toHaveClass('font-mono');
+    expect(within(tab('Llegadas 4')).getByText('4')).toHaveClass('text-xs', 'font-medium', 'tabular-nums');
+    expect(within(tab('Llegadas 4')).getByText('4')).not.toHaveClass('font-mono');
     expect(tab('Llegadas 4')).toHaveAttribute('aria-controls', 'board-arrivals');
     expect(tab('Llegadas 4')).toHaveAttribute('id', 'board-tab-arrivals');
     expect(screen.getByRole('tabpanel', { name: 'Llegadas 4' })).toHaveTextContent('arrivals');

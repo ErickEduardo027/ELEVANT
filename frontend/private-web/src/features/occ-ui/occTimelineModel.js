@@ -1,9 +1,17 @@
 // The geometry and the words of the stand band (OccTimeline): where a visit falls in the time window, the full hours of
 // the station on its axis, and the name a bar is read out with. Pure: the window and `now` come from the caller.
 import { formatClock, toInstantMs } from './occTime';
+import { SIGNALS } from './statusVocabulary';
 
 /** The states of a visit on the band: planned, the aircraft on its stand, or already gone. */
 export const TIMELINE_BAR_STATES = Object.freeze(['planned', 'onStand', 'departed']);
+
+/**
+ * The signals a conflict can carry (contratos 2.4, overlays on any state): `attention`, the amber triangle («Sin
+ * agente que la cubra», «Pasó su hora de salida»), and `urgent`, the red octagon («Otra aeronave llega a esta
+ * posición»). A plain notice is not a conflict.
+ */
+export const TIMELINE_CONFLICT_SIGNALS = Object.freeze(['attention', 'urgent']);
 
 const TIME_KINDS = Object.freeze(['actual', 'estimated', 'scheduled']);
 const MINUTE_MS = 60_000;
@@ -77,6 +85,26 @@ export function hourTicks(windowStart, windowEnd, timeZone, locale) {
   return ticks;
 }
 
+/**
+ * The signal a bar's conflict carries: `null` for a bar without a conflict, `attention` when the conflict names no
+ * signal, else its own. An unknown signal throws, so a typo in the console's model never draws a silent conflict.
+ */
+export function timelineConflictSignal(bar) {
+  if (!bar?.conflict) return null;
+  const signal = bar.conflict.signal ?? 'attention';
+  if (!TIMELINE_CONFLICT_SIGNALS.includes(signal)) throw new RangeError(`Unknown OCC timeline conflict signal: ${String(signal)}`);
+  return signal;
+}
+
+// «Urgente: Otra aeronave llega a esta posición»: the word of the signal, then the conflict's own words, if any.
+function conflictWords(bar, language) {
+  const signal = timelineConflictSignal(bar);
+  if (signal === null) return '';
+  const word = SIGNALS[signal][language];
+  const reason = bar.conflict.label;
+  return typeof reason === 'string' && reason.length > 0 ? `${word}: ${reason}` : word;
+}
+
 // «AA904 a AA905», or the one flight there is.
 function flightsOf(bar, t) {
   const { arrivalFlight, departureFlight } = bar;
@@ -94,10 +122,12 @@ function endWords(key, at, kind, { t, locale, timeZone }) {
 /**
  * How a bar of the band is read out: «AA904 a AA905, posición A5, llega 14:40 estimada, sale 15:35 programada, en
  * operación». An open end says «sin llegada» or «sin salida»; a visit in operation says so, any other says its state
- * («planificada», «en posición», «salió»); then «demo», «posición estimada» and the conflict's own words when they apply.
- * `row.label` is the stand code; `t` translates occUiMessages. An unknown state throws.
+ * («planificada», «en posición», «salió»); then «demo» and «posición estimada» when they apply, and a conflict last, the
+ * word of its signal before its own words («Urgente: Otra aeronave llega a esta posición»).
+ * `row.label` is the stand code; `t` translates occUiMessages and `language` (`es` by default) picks the signal's word.
+ * An unknown state or conflict signal throws.
  */
-export function timelineBarName(bar, row, { t, locale, timeZone = 'UTC' }) {
+export function timelineBarName(bar, row, { t, language = 'es', locale, timeZone = 'UTC' }) {
   if (!TIMELINE_BAR_STATES.includes(bar?.state)) throw new RangeError(`Unknown OCC timeline bar state: ${String(bar?.state)}`);
   const words = { t, locale, timeZone };
   const parts = [
@@ -110,7 +140,7 @@ export function timelineBarName(bar, row, { t, locale, timeZone = 'UTC' }) {
     bar.inOperation ? t('timeline.inOperation') : t(`timeline.state.${bar.state}`),
     bar.demo ? t('timeline.demo') : '',
     bar.estimated ? t('timeline.estimated') : '',
-    bar.conflict?.label ?? '',
+    conflictWords(bar, language),
   ];
   return parts.filter(part => typeof part === 'string' && part.length > 0).join(', ');
 }

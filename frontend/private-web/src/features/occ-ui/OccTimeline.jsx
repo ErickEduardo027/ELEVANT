@@ -4,7 +4,7 @@ import { useId, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n/LanguageScope';
 import OccGlyph from './OccGlyph';
 import OccPlate from './OccPlate';
-import { barGeometry, hourTicks, TIMELINE_BAR_STATES, timelineBarName } from './occTimelineModel';
+import { barGeometry, hourTicks, TIMELINE_BAR_STATES, timelineBarName, timelineConflictSignal } from './occTimelineModel';
 import { formatClock, toInstantMs } from './occTime';
 import { occUiMessages } from './occUiMessages';
 
@@ -28,8 +28,9 @@ export const OCC_TIMELINE_LAYOUT = Object.freeze({
 /**
  * The textures that tell visits apart without a hue (design F, D21). Planned is an outline on nothing; on stand a
  * raised slab with a light outline; departed the same slab, dimmed. An estimated visit draws its outline dashed, the
- * texture of «est.»; a demo visit adds the 45° stripes of «Demo»; a conflict takes the amber outline and its triangle;
- * the selected bar the cyan casing.
+ * texture of «est.»; a demo visit adds the 45° stripes of «Demo»; the selected bar the cyan casing. A conflict takes the
+ * outline and the glyph of its signal (contratos 2.4, over design F's amber for every conflict): amber with the
+ * triangle for attention, red with the octagon for urgent, such as another aircraft arriving at the same stand.
  */
 export const OCC_TIMELINE_TEXTURES = Object.freeze({
   states: Object.freeze({
@@ -39,7 +40,7 @@ export const OCC_TIMELINE_TEXTURES = Object.freeze({
   }),
   solid: 'border-solid',
   estimated: 'border-dashed',
-  conflict: 'border-occ-warn',
+  conflict: Object.freeze({ attention: 'border-occ-warn', urgent: 'border-occ-danger' }),
   selected: 'outline outline-2 -outline-offset-2 outline-occ-accent',
 });
 
@@ -52,11 +53,12 @@ const BAR_INSET = Object.freeze({ normal: 'inset-y-1', compact: 'inset-y-0.5' })
 const percent = fraction => `${Math.round(fraction * 100_000) / 1_000}%`;
 const middleOf = ({ geometry }) => geometry.left + geometry.width / 2;
 
-// One border colour and one border style per bar, so no two classes of the same property meet on it.
-function barClassName(bar, selected, density) {
+// One border colour and one border style per bar, so no two classes of the same property meet on it. `signal` is the
+// bar's conflict signal, or null.
+function barClassName(bar, signal, selected, density) {
   const drawing = OCC_TIMELINE_TEXTURES.states[bar.state];
   return [
-    BAR, BAR_INSET[density], bar.conflict ? OCC_TIMELINE_TEXTURES.conflict : drawing.border, drawing.surface,
+    BAR, BAR_INSET[density], signal ? OCC_TIMELINE_TEXTURES.conflict[signal] : drawing.border, drawing.surface,
     bar.estimated ? OCC_TIMELINE_TEXTURES.estimated : OCC_TIMELINE_TEXTURES.solid,
     selected ? OCC_TIMELINE_TEXTURES.selected : '',
   ].filter(Boolean).join(' ');
@@ -101,28 +103,31 @@ function DemoStripes() {
  * their times fall in the window, under an axis of the station's full hours and the «ahora» line.
  * - `rows` are `{ id, label, bars }`: `label` is the stand code; each bar is `{ id, arrivalFlight, departureFlight,
  *   startAt, startKind, endAt, endKind, state: 'planned' | 'onStand' | 'departed', estimated, demo,
- *   conflict: { label } | null, inOperation }`. A missing `startAt` or `endAt` leaves that end open to the window's
- *   edge; a bar outside the window is not drawn. The console's model builds the rows (filters and window included).
+ *   conflict: { label, signal: 'attention' | 'urgent' } | null, inOperation }`, the signal `attention` when it is left
+ *   out. A missing `startAt` or `endAt` leaves that end open to the window's edge; a bar outside the window is not
+ *   drawn. The console's model builds the rows (filters, window and the conflict's words included).
  * - The root is a `group` named `label`. Every bar is a toggle button named in full words (timelineBarName), with
  *   `aria-pressed` for `selectedBarId`; a click, Enter or Space calls `onSelectBar(bar, row)`. Its visible text is
- *   «AA904 → AA905». Textures tell the visits apart (OCC_TIMELINE_TEXTURES).
+ *   «AA904 → AA905». Textures tell the visits apart (OCC_TIMELINE_TEXTURES); a conflict adds the glyph of its signal,
+ *   and `data-conflict` says which.
  * - One stop for Tab: the selected bar, else the first. ArrowLeft and ArrowRight move between the bars of a row,
  *   ArrowUp and ArrowDown to the bar nearest in time in the row above or below that has any, Home and End to the first
  *   and last bar of the row. Moving does not select.
  * - The «ahora» line is drawn at `now` with its time («ahora 14:32»), only inside the window, and never moves on its
  *   own: it follows `now`. The axis and the line are hidden from assistive technology.
- * Times are in `timeZone`, for `locale` (the language's by default). An unknown density or bar state throws.
+ * Times are in `timeZone`, for `locale` (the language's by default). An unknown density, bar state or conflict signal
+ * throws.
  */
 export default function OccTimeline({
   label, rows = NO_ROWS, windowStart, windowEnd, now, timeZone = 'UTC', locale, selectedBarId = null, onSelectBar,
   density = 'normal', className = '',
 }) {
-  const { t, locale: languageLocale } = useTranslation(occUiMessages);
+  const { t, language, locale: languageLocale } = useTranslation(occUiMessages);
   const [focusedId, setFocusedId] = useState(null);
   const barElements = useRef(new Map());
   if (!OCC_TIMELINE_DENSITIES.includes(density)) throw new RangeError(`Unknown OCC timeline density: ${String(density)}`);
   const timeLocale = locale ?? languageLocale;
-  const names = { t, locale: timeLocale, timeZone };
+  const names = { t, language, locale: timeLocale, timeZone };
 
   // Each row with the bars that fall in the window, in time order: the order of the keyboard and of a screen reader.
   const lanes = rows.map(row => ({
@@ -130,7 +135,7 @@ export default function OccTimeline({
     bars: (row.bars ?? NO_BARS)
       .map(bar => {
         if (!TIMELINE_BAR_STATES.includes(bar.state)) throw new RangeError(`Unknown OCC timeline bar state: ${String(bar.state)}`);
-        return { bar, geometry: barGeometry(bar, windowStart, windowEnd) };
+        return { bar, signal: timelineConflictSignal(bar), geometry: barGeometry(bar, windowStart, windowEnd) };
       })
       .filter(item => item.geometry !== null)
       .sort((a, b) => a.geometry.left - b.geometry.left),
@@ -196,13 +201,13 @@ export default function OccTimeline({
             <OccPlate kind="stand">{lane.row.label}</OccPlate>
           </div>
           <div data-occ-timeline-track="" className={OCC_TIMELINE_LAYOUT.track[density]} style={{ gridRow: laneIndex + 2 }}>
-            {lane.bars.map(({ bar, geometry }, barIndex) => {
+            {lane.bars.map(({ bar, signal, geometry }, barIndex) => {
               const selected = bar.id === selectedBarId;
               return (
                 <button key={bar.id} type="button" aria-pressed={selected} aria-label={timelineBarName(bar, lane.row, names)}
                   tabIndex={bar.id === tabStop ? 0 : -1} data-occ-bar={bar.id} data-state={bar.state}
                   data-estimated={bar.estimated ? 'true' : undefined} data-demo={bar.demo ? 'true' : undefined}
-                  data-conflict={bar.conflict ? 'true' : undefined}
+                  data-conflict={signal ?? undefined}
                   ref={element => {
                     if (element) barElements.current.set(bar.id, element);
                     else barElements.current.delete(bar.id);
@@ -210,9 +215,9 @@ export default function OccTimeline({
                   onClick={() => onSelectBar?.(bar, lane.row)} onFocus={() => setFocusedId(bar.id)}
                   onKeyDown={event => onBarKeyDown(event, laneIndex, barIndex)}
                   style={{ left: percent(geometry.left), width: percent(geometry.width) }}
-                  className={barClassName(bar, selected, density)}>
+                  className={barClassName(bar, signal, selected, density)}>
                   {bar.demo ? <DemoStripes /> : null}
-                  {bar.conflict ? <OccGlyph name="attention" /> : null}
+                  {signal ? <OccGlyph name={signal} /> : null}
                   <span className="min-w-0 truncate">
                     {bar.arrivalFlight}
                     {bar.arrivalFlight && bar.departureFlight ? <span aria-hidden="true">{' → '}</span> : null}
