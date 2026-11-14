@@ -5,15 +5,20 @@ import { VIEW_NAMES } from './cameraPresets';
 // the view on screen is stored (`localStorage`, LAYERS_STORAGE_KEY), so a new default reaches everyone who never
 // touched that key. Pure: OccMap holds the choices and ui/MapLayersMenu.jsx draws them.
 //
-// M5 ships the «Tráfico» group alone. The reference overlays (rings, centrelines, airports, FIR, navaids, day and
-// night) and the weather come with PR M8 and the ramp keys with PR M6: each adds its group here, its defaults in
-// ON_IN and, when its keys depend on another, a line in engineGroupsFor.
+// M5 ships the «Tráfico» group. PR M8 adds «Referencias» (rings, centrelines, airports, navaids, day and night; the FIR
+// waits for an extract of its boundary) and the weather, and PR M6 the ramp keys: each adds its group here, its
+// defaults in ON_IN and, when its keys depend on another, a line in engineGroupsFor.
 
 /** The groups of the menu and their keys, in the order the menu lists them. */
 export const LAYER_GROUPS = Object.freeze([
   Object.freeze({
     id: 'traffic',
     keys: Object.freeze(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route']),
+  }),
+  // The references of PR M8 (design E6, style/referenceLayers.js).
+  Object.freeze({
+    id: 'reference',
+    keys: Object.freeze(['rings', 'centrelines', 'airports', 'navaids', 'daynight']),
   }),
 ]);
 
@@ -33,6 +38,11 @@ const ON_IN = Object.freeze({
   'traffic.labels': Object.freeze([]),
   'traffic.trails': Object.freeze([]),
   route: VIEW_NAMES,
+  rings: Object.freeze(['region', 'approach']),
+  centrelines: Object.freeze(['approach']),
+  airports: Object.freeze(['region', 'approach']),
+  navaids: Object.freeze(['approach', 'airfield']),
+  daynight: Object.freeze(['region', 'approach']),
 });
 
 /**
@@ -114,6 +124,12 @@ export function engineGroupsFor(resolved) {
     'traffic.labels': on('traffic.labels') && on('traffic.other'),
     'traffic.trails': on('traffic.trails') && on('traffic.other'),
     route: on('route'),
+    // The references (PR M8): each key is its own group.
+    rings: on('rings'),
+    centrelines: on('centrelines'),
+    airports: on('airports'),
+    navaids: on('navaids'),
+    daynight: on('daynight'),
   });
 }
 

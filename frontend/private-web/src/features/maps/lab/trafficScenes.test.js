@@ -28,8 +28,12 @@ describe('the traffic scenes of the map lab', () => {
         if (item.registration !== null) expect(item.registration, id).toMatch(/^ZZ-/);
       }
     }
-    // Each traffic scene names its scenario; no other scene has traffic.
-    expect(SCENES.filter(scene => scene.traffic).map(scene => scene.id)).toEqual(Object.keys(TRAFFIC_SCENARIOS));
+    // Each traffic scene names its scenario; the reference scenes of PR M8, the ones with weather, borrow two of them;
+    // no other scene has traffic.
+    expect(SCENES.filter(scene => scene.traffic && scene.weather === undefined).map(scene => scene.id))
+      .toEqual(Object.keys(TRAFFIC_SCENARIOS));
+    expect(SCENES.filter(scene => scene.traffic && scene.weather !== undefined).map(scene => scene.id))
+      .toEqual(['region-references', 'approach-references']);
     expect(findScene('ramp-traffic-ground').traffic).toBe(TRAFFIC_SCENARIOS['ramp-traffic-ground']);
   });
 

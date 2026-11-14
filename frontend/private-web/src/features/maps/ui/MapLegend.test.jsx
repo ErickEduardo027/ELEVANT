@@ -569,4 +569,55 @@ describe('MapLegend', () => {
     );
     expect(legendItems()).toEqual(['Vuelo de AVIAM que llega']);
   });
+  it('lists each reference only while it is on screen, set apart with the airfield, each drawn as the map draws it', () => {
+    const ALL = { kinds: ['rings', 'centrelines', 'runwayInUse', 'airports', 'counterparts', 'vor', 'ndb', 'night'],
+      runway: { arrival: '08', source: 'wind' } };
+    const withReferences = (referencesOnScreen, extra = {}) => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, referencesOnScreen, ...extra }}>
+        <MapLegend />
+      </OccMapContext.Provider>
+    );
+    const { rerender } = render(withReferences(ALL));
+    expect(legendItems()).toEqual(['Anillos de distancia', 'Eje de pista extendido (marca cada NM)',
+      'Pista 08 (estimada por el viento)', 'Aeropuerto de la región', 'Origen o destino de un vuelo de hoy',
+      'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)']);
+    const legend = screen.getByTestId('map-legend');
+    // Each takes the whole row, with the swatch of what the map draws: the runway in use wider and lighter than the
+    // other centrelines, a counterpart filled and any other airport a ring, the chart symbols of the navaids.
+    const items = [...legend.querySelectorAll('[data-legend-reference]')];
+    expect(items.map(item => item.dataset.legendReference)).toEqual(ALL.kinds);
+    expect(items.every(item => item.classList.contains('col-span-2'))).toBe(true);
+    const swatch = kind => legend.querySelector('[data-reference-swatch="' + kind + '"]');
+    expect(swatch('runwayInUse').querySelector('g').style.stroke).toBe('var(--occ-text)');
+    expect(swatch('runwayInUse').querySelector('g').style.strokeWidth).toBe('1.5');
+    expect(swatch('centrelines').querySelector('g').style.stroke).toBe('var(--occ-line-strong)');
+    expect(swatch('rings').querySelectorAll('circle')).toHaveLength(2);
+    expect(swatch('airports').querySelector('circle').style.fill).toBe('var(--occ-nav)');
+    expect(swatch('counterparts').querySelector('circle').style.fill).toBe('var(--occ-text)');
+    expect(swatch('vor').querySelectorAll('path')).toHaveLength(3);
+    expect(swatch('ndb').querySelectorAll('path')).toHaveLength(2);
+    expect(swatch('night').querySelector('path').style.fillOpacity).toBe('0.45');
+    expect([...legend.querySelectorAll('[data-reference-swatch]')].every(svg => svg.getAttribute('aria-hidden') === 'true')).toBe(true);
+    // Alone, nothing sets them apart.
+    expect(legend.querySelector('[data-legend-rule]')).toBeNull();
+
+    // With traffic and the airfield: the traffic first, then the rule, the references and the airfield.
+    rerender(withReferences({ kinds: ['rings', 'vor'], runway: null },
+      { trafficOnScreen: { kinds: ['other'], tags: [], trails: [] }, airfieldOnScreen: ['runway'] }));
+    expect(legendItems()).toEqual(['Otro tráfico', 'Anillos de distancia', 'Radioayuda VOR-DME', 'Pista']);
+    expect(screen.getByTestId('map-legend').querySelector('[data-legend-rule]').nextElementSibling)
+      .toHaveTextContent('Anillos de distancia');
+    // The runway in use is listed only with its runway; nothing of them on screen, no legend.
+    rerender(withReferences({ kinds: ['centrelines', 'runwayInUse'], runway: null }));
+    expect(legendItems()).toEqual(['Eje de pista extendido (marca cada NM)']);
+    rerender(withReferences({ kinds: [], runway: null }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    // In English.
+    resetLanguageForTests('en');
+    render(<LanguageScope>{withReferences(ALL)}</LanguageScope>);
+    expect(legendItems().slice(0, 3)).toEqual(['Range rings', 'Extended runway centreline (a tick per NM)',
+      'Runway 08 (estimated from the wind)']);
+  });
 });

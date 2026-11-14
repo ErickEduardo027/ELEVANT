@@ -8,6 +8,7 @@ import * as maplibre from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../../../styles/occ-map.css';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { serverClock } from '../../../services/serverClock';
 import { useOccBoot } from '../../admin-occ/boot/occBootContext';
 import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
@@ -29,9 +30,13 @@ import {
 } from '../style/airfieldLayers';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
-import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
+import {
+  NIGHT_SOURCE, REFERENCE_SOURCE, referenceFeatures, referenceLayersShown, referenceOverlay,
+} from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
+import { nightShadeFeatures } from '../traffic/nightShade';
+import { counterpartCodes, mapRunwayInUse, referencesOnScreen as referencesOnScreenOf } from '../traffic/referenceFeatures';
 import { trailsBesideRoute } from '../traffic/routeFeatures';
 import {
   ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, isEmptyDiff, onScreenKey, selectedAircraftId, trafficDiff,
@@ -69,7 +74,9 @@ import { useMinuteClock } from './useMinuteClock';
 // feature-state or one source of their own: stands/standInteractions.js, stands/placing.js). Given `flights` it draws
 // those with a position. Their overlays are part of the style from the start, so the first data is one setData per
 // source and every later change one updateData with what changed: the map is never re-created. A screen's own overlays
-// get their data through `overlayData`.
+// get their data through `overlayData`. The references of PR M8 (range rings, extended centrelines with the runway in
+// use, the region's airports, the navaids and the night) are part of every map: one setData when what they draw changes,
+// and the night on the minute of the server's clock.
 
 const EMPTY = Object.freeze([]);
 const NO_FLAGS = Object.freeze({ hover: null, selected: null, related: null, sameAgent: Object.freeze(new Set()) });
@@ -109,6 +116,9 @@ const flightsKey = flights => flights.map(flight => String(flight.id)).join('|')
 const withoutAirfield = ({ airfield, ...rest }) => rest;
 // The traffic (PR M5): nothing on screen, an empty source, and the key of a traffic source's credit.
 const NO_TRAFFIC_ON_SCREEN = Object.freeze({ kinds: EMPTY, tags: EMPTY, trails: EMPTY, route: EMPTY });
+// The references (PR M8): nothing on screen, and what the legend reads of what is.
+const NO_REFERENCES_ON_SCREEN = Object.freeze({ kinds: EMPTY, runway: null });
+const referencesKey = ({ kinds, runway }) => `${kinds.join('|')}#${runway ? `${runway.arrival}:${runway.source}` : ''}`;
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: EMPTY });
 const creditKeyOf = source => (source && typeof source.name === 'string' && source.name.trim() !== ''
   ? JSON.stringify([source.name, source.homeUrl ?? null, source.licenseName ?? null, source.licenseUrl ?? null])
@@ -191,6 +201,8 @@ const initialSnapshot = basemap => ({
   trafficOnScreen: NO_TRAFFIC_ON_SCREEN,
   // The keys of the layers menu this map's style has layers for (PR M5, core/layersMenu.js).
   layerKeys: EMPTY,
+  // The references drawn in that area (PR M8): their legend kinds and the runway in use.
+  referencesOnScreen: NO_REFERENCES_ON_SCREEN,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -262,8 +274,9 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  * - `testId` of the host that holds the canvas, `labels` ({ unavailableTitle, unavailableDescription,
  *   unavailableList, map }), `fallbackItems` ([{ id, label, kind }]) and `onFallbackSelect(id, item)`;
  * - `isShortcutBlocked()` (an open drawer that is not a modal dialog), `className`, `children` (DOM overlays).
- * - `traffic` (PR M5): `{ aircraft, trails, route, source }` from the map situation (useMapSituation: the aircraft of
- *   traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route and the air picture's source).
+ * - `traffic` (PR M5): `{ aircraft, trails, route, source, flights }` from the map situation (useMapSituation: the
+ *   aircraft of traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route, the air picture's
+ *   source and, from PR M8, the rows of the map flights, whose counterparts the references emphasise).
  *   Whether it is given is read at start, as for the stands and the flights: the map then draws the traffic overlay,
  *   one updateData per change of the aircraft (a selection, the aircraft under the pointer and the shown groups
  *   included), lists the traffic on screen for the legend, and credits the source in the attribution while traffic
@@ -275,6 +288,11 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   differs from the defaults of the view on screen, in `localStorage`) and shows or hides the groups they name, except
  *   a group the page sets in `groups`, which wins. The menu reads them from OccMapContext; L opens and closes a menu on
  *   screen and Esc closes an open one before it clears the selection.
+ * - The references (PR M8, style/referenceLayers.js): `weather` (what useMdpcWeather answers, or null) gives the wind of
+ *   a live METAR for the runway in use, after the recent live arrivals of `traffic` and before the usual 08 (contracts
+ *   2.3); `traffic.flights` the counterparts of today's flights. The reference source is written again only when the
+ *   runway in use, the counterparts or the language change, and the night shade on the minute of the server's clock
+ *   (`frozenAt` holds it in the map lab). The legend lists the references on screen, read back from the map.
  */
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
@@ -285,6 +303,7 @@ const OccMap = forwardRef(function OccMap({
   frozenAt = null,
   flights: flightsProp,
   traffic,
+  weather = null,
   overlays = EMPTY,
   overlayData,
   selection = null,
@@ -324,6 +343,24 @@ const OccMap = forwardRef(function OccMap({
   const clock = useMinuteClock({ frozenAt: standsProp === undefined ? NO_CLOCK : frozenAt });
   const standFeatures = useMemo(() => buildStandFeatures(attached, { nowMs: clock, language, labels: standLabels }),
     [attached, clock, language, standLabels]);
+  // The references (PR M8): the runway in use from the recent live arrivals of the traffic, then the wind of a live
+  // METAR (no older than the API's live limit at the server's minute), then the usual 08; the counterparts of today's
+  // flights; and the night shade at the server's minute (the map lab's frozen instant when it has one). The reference
+  // features are built again only when the runway in use, the counterparts or the language change.
+  const referenceMinute = useMinuteClock({ frozenAt, clock: serverClock });
+  const referenceAircraft = traffic?.aircraft ?? EMPTY;
+  const runway = useMemo(() => mapRunwayInUse({ layout, aircraft: referenceAircraft, weather, nowMs: referenceMinute }),
+    [layout, referenceAircraft, weather, referenceMinute]);
+  const { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource } = runway;
+  const counterpartsKey = counterpartCodes(traffic?.flights).join('|');
+  const referenceData = useMemo(() => referenceFeatures({
+    layout,
+    runway: { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource },
+    counterparts: counterpartsKey === '' ? EMPTY : counterpartsKey.split('|'),
+    language,
+  }), [layout, runwayArrival, runwayDeparture, runwaySource, counterpartsKey, language]);
+  const nightWord = t('reference.night');
+  const nightData = useMemo(() => nightShadeFeatures(referenceMinute, { label: nightWord }), [referenceMinute, nightWord]);
 
   const paddingKey = insetsKey(normalizeInsets(insets));
   const padding = useMemo(() => insetsFromKey(paddingKey), [paddingKey]);
@@ -591,6 +628,11 @@ const OccMap = forwardRef(function OccMap({
     // Below its threshold the airfield is not drawn: nothing to ask the map.
     const airfieldDrawn = drawsAirfield && bounds !== null && !(zoom < thresholds?.airfield);
     const airfield = airfieldDrawn ? airfieldKindsOnScreen(engine.renderedFeatures(AIRFIELD_LAYER_IDS, padding)) : EMPTY;
+    // The references drawn there (PR M8), read back from the map as the airfield is, for the groups that are shown.
+    const referenceIds = bounds === null ? EMPTY : referenceLayersShown(latest.current.groups);
+    const references = referenceIds.length === 0
+      ? NO_REFERENCES_ON_SCREEN
+      : referencesOnScreenOf(engine.renderedFeatures(referenceIds, padding));
     const previous = store.get();
     store.set({
       ...(standsKey(next) === standsKey(previous.standsOnScreen) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
@@ -600,6 +642,9 @@ const OccMap = forwardRef(function OccMap({
         ? {}
         : { flightsOnScreen: flights.length === 0 ? EMPTY : flights }),
       ...(sameList(airfield, previous.airfieldOnScreen) ? {} : { airfieldOnScreen: airfield.length === 0 ? EMPTY : airfield }),
+      ...(referencesKey(references) === referencesKey(previous.referencesOnScreen)
+        ? {}
+        : { referencesOnScreen: references.kinds.length === 0 ? NO_REFERENCES_ON_SCREEN : references }),
     });
     updateTrafficOnScreen(bounds, zoom, thresholds);
   }, [store, updateTrafficOnScreen]);
@@ -901,7 +946,6 @@ const OccMap = forwardRef(function OccMap({
       onPointerMove: handlePointer,
     });
     engineRef.current = engine;
-    engine.setData(REFERENCE_SOURCE, referenceFeatures());
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
     engine.setInsets(props.padding);
     refit();
@@ -990,6 +1034,25 @@ const OccMap = forwardRef(function OccMap({
     engine.setData(FLIGHT_SOURCE, data);
     markSettled(rootRef.current, false);
   }, [flights]);
+
+  // The references (PR M8): one setData of their source when the map starts, and again only when the runway in use,
+  // the counterparts or the language change what they draw; the night shade once a minute. Never a new map.
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || applied.references === referenceData) return;
+    applied.references = referenceData;
+    engine.setData(REFERENCE_SOURCE, referenceData);
+    markSettled(rootRef.current, false);
+  }, [referenceData]);
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || applied.night === nightData) return;
+    applied.night = nightData;
+    engine.setData(NIGHT_SOURCE, nightData);
+    markSettled(rootRef.current, false);
+  }, [nightData]);
 
   // The traffic (PR M5): the aircraft, again whenever the selection, the shown groups or the language change what
   // they draw, then what is on screen. A read that moved nothing writes nothing.
@@ -1211,13 +1274,15 @@ const OccMap = forwardRef(function OccMap({
     engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, chipsOnScreen, standMarksOnScreen,
     flightsOnScreen, airfieldOnScreen, requestView, flyToPreset, flyToStand, flyToFlight,
   ]);
-  // With the traffic on screen and its source (PR M5), for the legend and the status over the map, and the layers menu.
-  const { layerKeys } = snapshot;
+  // With the traffic on screen and its source (PR M5), for the legend and the status over the map, and the layers menu;
+  // and the references on screen (PR M8), for the legend.
+  const { layerKeys, referencesOnScreen } = snapshot;
   const layers = useMemo(() => Object.freeze({ keys: layerKeys, values: resolvedLayers }), [layerKeys, resolvedLayers]);
   const mapContext = useMemo(() => ({
     ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
-    registerLayersMenu,
-  }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu]);
+    registerLayersMenu, referencesOnScreen,
+  }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu,
+    referencesOnScreen]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;

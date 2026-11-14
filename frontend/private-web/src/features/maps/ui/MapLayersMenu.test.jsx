@@ -6,6 +6,7 @@ import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { LAYERS_STORAGE_KEY } from '../core/layersMenu';
 import OccMap from '../core/OccMap';
+import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import {
   createAirPicture, createEstimates, createMapFlights, TRAFFIC_HEX as HEX, TRAFFIC_NOON,
 } from '../testing/trafficFixtures';
@@ -92,15 +93,17 @@ describe('MapLayersMenu', () => {
     expect(layersButton()).toHaveAttribute('aria-expanded', 'false');
     cleanup();
 
-    // A map that shows no menu leaves L alone, and so does a map without traffic, which has no layers to offer.
+    // A map that shows no menu leaves L alone.
     const plain = renderMap({ menu: false });
     expect(press(plain.map.getCanvas(), 'l').defaultPrevented).toBe(false);
     cleanup();
+    // A map without traffic still has the references of PR M8 to offer: L opens their group alone.
     const empty = render(<OccMap defaultView="region"><MapDock><MapLayersMenu /></MapDock></OccMap>);
     const bare = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(bare, 'style.load'));
-    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
-    expect(press(bare.getCanvas(), 'l').defaultPrevented).toBe(false);
+    expect(press(bare.getCanvas(), 'l').defaultPrevented).toBe(true);
+    expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
+    expect(trafficGroup()).toBeNull();
     empty.unmount();
 
     // A map that cannot draw shows its fallback list, without the menu.
@@ -179,6 +182,44 @@ describe('MapLayersMenu', () => {
     // The route of the chosen flight hides with its key.
     await user.click(checkbox('Ruta del vuelo elegido'));
     expect([visibilityOf(second.map, 'occ-route-flown'), visibilityOf(second.map, 'occ-route-next')]).toEqual(['none', 'none']);
+  });
+
+  it('lists the Referencias group after Tráfico, only with its layers in the style, and its keys work', async () => {
+    const user = userEvent.setup();
+    const { map } = renderMap();
+    await user.click(layersButton());
+    // Below Tráfico, the five keys of design E7 with the defaults of the Región view.
+    const groups = within(screen.getByRole('group', { name: 'Capas del mapa' })).getAllByRole('group');
+    expect(groups.map(group => group.querySelector('legend').textContent))
+      .toEqual(['Tráfico', 'Referencias']);
+    const references = screen.getByRole('group', { name: 'Referencias' });
+    const boxes = within(references).getAllByRole('checkbox');
+    expect(boxes.map(box => box.labels[0].textContent)).toEqual(['Anillos de distancia', 'Ejes de pista',
+      'Aeropuertos de la región', 'Radioayudas', 'Día y noche']);
+    expect(boxes.map(box => box.checked)).toEqual([true, false, true, false, true]);
+    expect(boxes.some(box => box.disabled)).toBe(false);
+    // Turning the rings off hides their layers and keeps the choice; turning the centrelines on shows theirs.
+    expect(visibilityOf(map, 'occ-reference-rings-region')).toBe('visible');
+    await user.click(within(references).getByRole('checkbox', { name: 'Anillos de distancia' }));
+    for (const id of ['occ-reference-rings-region', 'occ-reference-ring-labels-region', 'occ-reference-rings-approach']) {
+      expect(visibilityOf(map, id), id).toBe('none');
+    }
+    await user.click(within(references).getByRole('checkbox', { name: 'Ejes de pista' }));
+    expect(visibilityOf(map, 'occ-reference-centrelines')).toBe('visible');
+    expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBe('{"centrelines":true,"rings":false}');
+    // The mark of PUJ is no key of the menu: it always shows.
+    expect(visibilityOf(map, 'occ-reference-arp')).not.toBe('none');
+    cleanup();
+
+    // A map whose style has no reference layers (the menu reads the keys the map offers) shows no Referencias group.
+    render(
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, engineStatus: 'ready', layersMenuOpen: true,
+        layers: { keys: ['traffic.aviam', 'traffic.other'], values: { 'traffic.aviam': true, 'traffic.other': true } } }}>
+        <MapLayersMenu />
+      </OccMapContext.Provider>,
+    );
+    expect(screen.getByRole('group', { name: 'Tráfico' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Referencias' })).not.toBeInTheDocument();
   });
 
   it('speaks English inside a translated scope', async () => {

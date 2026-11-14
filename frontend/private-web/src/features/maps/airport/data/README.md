@@ -30,9 +30,20 @@ código del mapa. Los servicios nunca lo importan: usan la lista corta
 [`standReference.js`](../../stands/standReference.js).
 
 **`region.context.json`**: 32 aeropuertos grandes y medianos a 300 NM o menos,
-MDPC incluido, y las radioayudas PNA (VOR-DME 112,7) y PCA (NDB 425). Ninguna
-pantalla lo lee todavía: está pensado para los aeropuertos de la región (M5) y
-las radioayudas (M8).
+MDPC incluido, y las radioayudas PNA (VOR-DME 112,7) y PCA (NDB 425). Lo lee
+[`regionContext.js`](../regionContext.js) (`REGION_CONTEXT`). Desde el PR M8,
+los mapas del OCC dibujan con él los aeropuertos de la región, con sus códigos
+OACI e IATA, y las dos radioayudas
+([`referenceFeatures.js`](../../traffic/referenceFeatures.js)). El mapa base
+deja fuera la etiqueta de las teselas de esos aeropuertos, así que cada uno se
+escribe una sola vez.
+
+**El límite de la FIR Santo Domingo (MDCS) no está en esta carpeta.** El plan
+permitía extraerlo una sola vez del proyecto VATSpy (`FIRBoundaries.dat`,
+CC BY-SA 4.0). El 14 de noviembre de 2026 ese archivo ya no estaba en su
+repositorio público: GitHub respondió 404. Sin un extracto del límite, el mapa
+no dibuja la FIR ni la ofrece en el menú de capas, porque un límite nunca se
+inventa.
 
 Las coordenadas van como `[lng, lat]`, con 6 decimales. Los dos archivos usan
 LF, dos espacios de sangría y un salto de línea final.

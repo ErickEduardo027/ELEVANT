@@ -238,7 +238,8 @@ describe('OCC map style', () => {
   });
 
   it('the tile aeroway ends at the derived airfield threshold (metadata) and keeps no fixed maxzoom', () => {
-    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield']);
+    // The boundary of Aeródromo for the airfield, and from PR M8 the boundary of Aproximación for the range rings.
+    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield', 'approach']);
     const style = buildOccStyle();
     const aeroway = style.layers.filter(layer => layer['source-layer'] === 'aeroway');
     expect(aeroway).toHaveLength(5);
@@ -256,6 +257,10 @@ describe('OCC map style', () => {
       layers: [{ slot: 'airfield', id: 'extra', type: 'line', source: 'extra', metadata: { 'occ:group': 'x', 'occ:minThreshold': 'airfield' } }],
     };
     expect(validateStyleMin(buildOccStyle({ overlays: [overlay] }))).toEqual([]);
+    const rings = { ...overlay, layers: [{ ...overlay.layers[0], metadata: { 'occ:group': 'x', 'occ:maxThreshold': 'approach' } }] };
+    expect(validateStyleMin(buildOccStyle({ overlays: [rings] }))).toEqual([]);
+    const unknown = { ...overlay, layers: [{ ...overlay.layers[0], metadata: { 'occ:group': 'x', 'occ:maxThreshold': 'region' } }] };
+    expect(() => buildOccStyle({ overlays: [unknown] })).toThrow(/unknown threshold in occ:maxThreshold: region/);
   });
 
   it('overlay colours are OCC palette values and base-map colours come from mapTheme (parity)', () => {

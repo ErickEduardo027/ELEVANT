@@ -184,6 +184,37 @@ describe('map messages', () => {
     }
   });
 
+  it('names the references of the layers menu and the legend, and the runway in use, in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    // The group and keys of design E7.
+    expect([es('layers.group.reference'), en('layers.group.reference')]).toEqual(['Referencias', 'References']);
+    const keys = ['rings', 'centrelines', 'airports', 'navaids', 'daynight'];
+    expect(keys.map(key => es(`layers.key.${key}`)))
+      .toEqual(['Anillos de distancia', 'Ejes de pista', 'Aeropuertos de la región', 'Radioayudas', 'Día y noche']);
+    expect(keys.map(key => en(`layers.key.${key}`)))
+      .toEqual(['Range rings', 'Runway centrelines', 'Airports in the region', 'Navaids', 'Day and night']);
+    // The legend: what each reference on screen is.
+    const entries = ['rings', 'centrelines', 'airports', 'counterparts', 'vor', 'ndb', 'night'];
+    expect(entries.map(key => es(`legend.reference.${key}`))).toEqual([
+      'Anillos de distancia', 'Eje de pista extendido (marca cada NM)', 'Aeropuerto de la región',
+      'Origen o destino de un vuelo de hoy', 'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)',
+    ]);
+    expect(en('legend.reference.night')).toBe('Night (after civil twilight)');
+    // The runway in use and where it comes from (contracts 2.3), in the words the map draws: Latin-1 only.
+    expect(['live', 'wind', 'default', 'flight'].map(key => es(`reference.runway.${key}`, { ident: '08' }))).toEqual([
+      'Pista 08 (según las llegadas)', 'Pista 08 (estimada por el viento)', 'Pista 08 (habitual)', 'Pista 08',
+    ]);
+    expect(en('reference.runway.wind', { ident: '26' })).toBe('Runway 26 (estimated from the wind)');
+    // The word on the night side of the night's edge.
+    expect([es('reference.night'), en('reference.night')]).toEqual(['Noche', 'Night']);
+    for (const language of ['es', 'en']) {
+      for (const path of leafPaths(mapMessages[language].reference)) {
+        expect(createTranslator(mapMessages, language)(`reference.${path}`), path).toMatch(/^[ -ÿ]+$/u);
+      }
+    }
+  });
+
   it('names the states of the aerodrome weather, its credit, the TAF and the wind in both languages', () => {
     const es = createTranslator(mapMessages, 'es');
     const en = createTranslator(mapMessages, 'en');

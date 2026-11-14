@@ -20,7 +20,7 @@ import MapPresetSwitcher from '../ui/MapPresetSwitcher';
 import MapSourceStatus from '../ui/MapSourceStatus';
 import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
 import LayoutQaScene from './LayoutQaScene';
-import { SCENES, readLabQuery } from './scenes';
+import { SCENES, labWeather, readLabQuery } from './scenes';
 import { labTraffic } from './trafficScenes';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
@@ -35,7 +35,8 @@ import { labTraffic } from './trafficScenes';
 // review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
 // A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), the data block of
 // the aircraft the URL selects (flightId= or hex=) and the layers menu, and the handle adds aircraftAt(id), where the
-// map draws one of its aircraft.
+// map draws one of its aircraft. A reference scene (PR M8) draws the references with its synthetic weather, read once,
+// and the night scene at its own instant.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -111,6 +112,10 @@ function LabScene({ scene, basemap, frozenAt }) {
   const traffic = useMemo(() => (scene.traffic
     ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true })
     : null), [scene.traffic, frozenAt, selection]);
+  // What the map draws of it, with the map flights whose counterparts the references emphasise (PR M8).
+  const mapTraffic = useMemo(() => (traffic ? { ...traffic.map, flights: traffic.situation.flights } : undefined), [traffic]);
+  // The weather of a reference scene (PR M8), read once as useMdpcWeather would answer it: the lab never polls.
+  const weather = useMemo(() => labWeather(scene.weather ?? null), [scene.weather]);
   // The data block's telemetry on the lab's own clock: frozen, so the age of a position stays what the scene says.
   const [telemetry] = useState(() => {
     const labNow = frozenAt ?? parseInstant(scene.traffic?.at ?? null) ?? 0;
@@ -228,7 +233,8 @@ function LabScene({ scene, basemap, frozenAt }) {
           onCancelPlacing={stopPlacing}
           basemap={basemap !== 'none'}
           mapOptions={mapOptions}
-          traffic={traffic?.map}
+          traffic={mapTraffic}
+          weather={weather}
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           {traffic?.target && (

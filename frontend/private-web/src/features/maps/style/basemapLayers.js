@@ -1,4 +1,5 @@
 import { occColor } from '../../occ-ui/occPalette';
+import { REGION_AIRPORT_IATAS } from '../airport/regionContext';
 import { BASEMAP_COLORS } from './mapTheme';
 
 // The NOC base map on the OpenMapTiles schema of the OpenFreeMap vector tiles: water, land, coast, borders, the main
@@ -11,6 +12,12 @@ export const BASEMAP_SOURCE_ID = 'openmaptiles';
 
 /** The airport of the OCC: style/referenceLayers.js draws it at its reference point, so its tile label is left out. */
 export const HOME_AIRPORT_IATA = 'PUJ';
+
+/**
+ * The airports whose tile label the base map leaves out: the home airport and the airports of the region, which the
+ * reference overlays draw with their ICAO and IATA codes (PR M8, airport/regionContext.js), so none is written twice.
+ */
+export const OWN_AIRPORT_IATAS = Object.freeze([...new Set([HOME_AIRPORT_IATA, ...REGION_AIRPORT_IATAS])]);
 
 // The OpenFreeMap glyph server serves these three stacks and nothing else, so no other font may appear in the style.
 export const FONT_STACKS = Object.freeze({
@@ -145,7 +152,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       type: 'symbol',
       minzoom: 7,
       maxzoom: 12,
-      filter: ['all', ['has', 'iata'], ['!=', ['get', 'iata'], HOME_AIRPORT_IATA]],
+      filter: ['all', ['has', 'iata'], ['match', ['get', 'iata'], [...OWN_AIRPORT_IATAS], false, true]],
       layout: {
         'icon-image': 'airport-arp',
         'text-field': ['get', 'iata'],

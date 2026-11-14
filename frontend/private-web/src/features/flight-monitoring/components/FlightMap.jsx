@@ -17,6 +17,7 @@ import MapLegend from '../../maps/ui/MapLegend';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
 import { useMapSituation } from '../../maps/useMapSituation';
+import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
 import { CrosshairIcon, RotateCcwIcon } from './icons';
 
@@ -38,8 +39,8 @@ const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded bo
 // (LiveFlightMap). `detail` is the page's own card of its selected flight: the plain map shows it, the live map only
 // for a flight it does not know. `theme` is accepted and ignored: the OCC maps are dark only.
 function FlightMapView({
-  flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, drawnFlights, selection: chosen, onSelect,
-  framePoints = EMPTY, children,
+  flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather = null, drawnFlights, selection: chosen,
+  onSelect, framePoints = EMPTY, children,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -86,6 +87,7 @@ function FlightMapView({
       presetStands={STAND_REFERENCE}
       flights={drawnFlights ?? flights}
       traffic={traffic}
+      weather={weather}
       selection={selection}
       onSelect={onSelect ?? handleSelect}
       labels={{
@@ -118,6 +120,8 @@ function FlightMapView({
  * picture and the map flights, at the cadences of contracts 2.7). The page's flights (ids are leg ids) are joined to
  * the map flights with matchFlight: a flight whose aircraft the traffic draws is drawn once, as traffic, and a click on
  * it selects the page's flight; one with no page row is selected by its key. A click on other traffic writes `hex=`.
+ * It also reads the aerodrome weather of the station (useMdpcWeather, its own 10-minute poll), whose live wind the map
+ * uses for the runway in use, and gives the map its flights, whose counterparts the references emphasise (PR M8).
  * The state of the traffic (from the air picture alone, its age on the server's clock), the credit of its source and,
  * apart, a failed read of the AVIAM flights sit over the map (MapSourceStatus). The chosen flight or
  * aircraft has its data block docked at the top left (FlightDataBlock) and its route on the map; a flight of the page
@@ -135,11 +139,12 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
   }, [selectedFlightId, selectedHex]);
   // Every trail is read: the layers menu shows the other traffic's only while «Estelas de todo el tráfico» is on.
   const live = useMapSituation({ stationId, selectedHex, selection, allTrails: true });
+  const weather = useMdpcWeather({ stationId, enabled: Boolean(stationId) });
   const { situation, trails, target, route } = live;
   const mapFlights = situation.flights;
 
-  const traffic = useMemo(() => ({ aircraft: situation.aircraft, trails, route, source: situation.source }),
-    [route, situation, trails]);
+  const traffic = useMemo(() => ({ aircraft: situation.aircraft, trails, route, source: situation.source,
+    flights: situation.flights }), [route, situation, trails]);
   // The ELEVANT flights the traffic draws, by key: the page does not draw them a second time.
   const drawnKeys = useMemo(() => new Set(situation.aircraft
     .filter(item => item.kind === 'aviam' && isDrawn(item)).map(item => item.flightKey)), [situation]);
@@ -173,7 +178,7 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
   const pageDetail = selectedFlightId != null && live.status !== 'loading' ? detail : null;
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
-      drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
+      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry}

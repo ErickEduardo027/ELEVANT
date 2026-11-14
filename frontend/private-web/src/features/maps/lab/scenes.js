@@ -1,8 +1,11 @@
+import { parseInstant } from '../../../services/serverClock';
+import { toWeatherReading } from '../../../services/weatherService';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { destinationPoint, roundCoord } from '../airport/geo';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
+import { createAerodromeWeather } from '../testing/weatherFixtures';
 import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
@@ -26,7 +29,9 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 //   `null` for none.
 // A traffic scene (PR M5) also has `traffic`: the synthetic air picture, map flights and tracks of
 // lab/trafficScenes.js, which the lab draws at the frozen clock for the URL's selection (MapLab.jsx), without polling;
-// with `layersMenu: true` it opens with the layers menu open.
+// with `layersMenu: true` it opens with the layers menu open. A reference scene (PR M8) has `weather`, a synthetic
+// answer of GET occ/weather (testing/weatherFixtures.js) that the lab reads once (labWeather), and may have `traffic`
+// too; the night scene reads at an instant of its own, dusk in Punta Cana.
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
 export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
@@ -157,6 +162,52 @@ function scene(id, {
 const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[id],
   ...(options.layersMenu === true ? { layersMenu: true } : {}) });
 
+/** The instant of the night scene: 18:15 in Punta Cana, at dusk, the edge of the civil twilight crossing the region. */
+export const NIGHT_SCENE_INSTANT = Date.parse('2026-11-13T22:15:00.000Z');
+
+const isoAt = (ms, minutes = 0) => new Date(ms + minutes * 60_000).toISOString();
+
+// The region's mixed traffic of lab/trafficScenes.js, with ZZ500 (en route, not drawn) coming from Santo Domingo
+// instead of Miami: an airport of the region, which the references emphasise as the counterpart of a flight of today.
+const SANTO_DOMINGO = Object.freeze({ iataCode: 'SDQ', icaoCode: 'MDSD', name: 'Las Américas International',
+  latitude: 18.429701, longitude: -69.6689 });
+function withCounterpart(scenario, flightKey, counterpart) {
+  const rows = scenario.flights.flights.map(row => (row.flightKey === flightKey ? { ...row, counterpart } : row));
+  return { ...scenario, flights: { ...scenario.flights, flights: rows } };
+}
+
+// A map scene with the references of PR M8: its synthetic weather, its traffic when it has one, and its own instant.
+function referenceScene(id, { weather, traffic = null, at = null, ...options }) {
+  return {
+    ...scene(id, options),
+    ...(at === null ? {} : { at }),
+    weather,
+    ...(traffic === null ? {} : { traffic }),
+  };
+}
+
+/**
+ * The weather of a scene as useMdpcWeather answers it (the `weather` of OccMap), read once from its synthetic answer of
+ * GET occ/weather: the lab never polls. `null` without one.
+ */
+export function labWeather(answer) {
+  if (!answer) return null;
+  const reading = toWeatherReading(answer, { receivedAt: parseInstant(answer.serverTime) });
+  return Object.freeze({
+    status: reading.observation ? 'success' : 'empty',
+    data: reading.observation,
+    fetchedAt: reading.receivedAt,
+    refreshFailed: false,
+    refreshing: false,
+    refresh: () => {},
+    apiStatus: reading.apiStatus,
+    taf: reading.taf,
+    retrievedAt: reading.retrievedAt,
+    source: reading.source,
+    error: null,
+  });
+}
+
 export const SCENES = deepFreeze([
   scene('ramp-states', {
     title: 'Rampa: posiciones y estados',
@@ -193,12 +244,14 @@ export const SCENES = deepFreeze([
   }),
   scene('approach', {
     title: 'Aproximación',
-    description: 'Hasta 40 NM alrededor de PUJ: el punto de referencia del aeropuerto, sin posiciones.',
+    description: 'Hasta 40 NM alrededor de PUJ: el punto de referencia del aeropuerto, los anillos, los ejes de pista con la '
+      + '08 habitual y las radioayudas, sin posiciones.',
     view: 'approach',
   }),
   scene('region', {
     title: 'Región',
-    description: 'Hasta 250 NM alrededor de PUJ: el punto de referencia del aeropuerto, sin posiciones.',
+    description: 'Hasta 250 NM alrededor de PUJ: el punto de referencia del aeropuerto, los anillos y los aeropuertos de '
+      + 'la región, sin posiciones.',
     view: 'region',
   }),
   scene('unavailable-fallback', {
@@ -264,6 +317,31 @@ export const SCENES = deepFreeze([
       + 'siempre visibles.',
     view: 'region',
     layersMenu: true,
+  }),
+  referenceScene('region-references', {
+    title: 'Región: referencias',
+    description: 'Hasta 250 NM alrededor de PUJ a las 11:00: los anillos de distancia, los aeropuertos de la región con '
+      + 'Santo Domingo resaltado por un vuelo de hoy y el tráfico mixto encima.',
+    view: 'region',
+    weather: createAerodromeWeather(),
+    traffic: withCounterpart(TRAFFIC_SCENARIOS['region-traffic-mixed'], TRAFFIC_FLIGHT_KEY.noFix, SANTO_DOMINGO),
+  }),
+  referenceScene('region-references-night', {
+    title: 'Región: referencias de noche',
+    description: 'La región a las 18:15 de Punta Cana: pasado el crepúsculo civil, la noche cubre ya Puerto Rico y su '
+      + 'borde se acerca a PUJ.',
+    view: 'region',
+    at: NIGHT_SCENE_INSTANT,
+    weather: createAerodromeWeather({ serverTime: isoAt(NIGHT_SCENE_INSTANT), observedAt: isoAt(NIGHT_SCENE_INSTANT, -10),
+      retrievedAt: isoAt(NIGHT_SCENE_INSTANT, -3) }),
+  }),
+  referenceScene('approach-references', {
+    title: 'Aproximación: ejes de pista y radioayudas',
+    description: 'Hasta 40 NM alrededor de PUJ: los anillos, los ejes de pista extendidos con la 08 en uso estimada por '
+      + 'el viento del METAR, las radioayudas PNA y PCA y la llegada demo en final.',
+    view: 'approach',
+    weather: createAerodromeWeather(),
+    traffic: TRAFFIC_SCENARIOS['approach-traffic-demo'],
   }),
 ]);
 

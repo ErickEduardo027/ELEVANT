@@ -34,10 +34,11 @@ export const SLOT_GROUP = 'slot';
 
 /**
  * Zoom thresholds derived at run time from the fitted views (contracts 2.3), named in layer metadata: `polygons`,
- * `codes` and `threeLine` for the stands, and `airfield`, the boundary of the Aeródromo view, where the airfield of the
- * own dataset takes over from the tiles.
+ * `codes` and `threeLine` for the stands, `airfield`, the boundary of the Aeródromo view, where the airfield of the
+ * own dataset takes over from the tiles, and `approach`, the boundary between Región and Aproximación, where the range
+ * rings of one view give way to the other's (PR M8).
  */
-export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 'airfield']);
+export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 'airfield', 'approach']);
 
 const THRESHOLD_KEYS = ['occ:minThreshold', 'occ:maxThreshold'];
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });

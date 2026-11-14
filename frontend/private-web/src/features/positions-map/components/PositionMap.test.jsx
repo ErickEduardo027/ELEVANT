@@ -168,8 +168,10 @@ describe('PositionMap on the map engine', () => {
       properties: { code: 'A1', terminal: 'A', state: 'occupied', unofficial: false },
       geometry: { type: 'Polygon', coordinates: [DRAWN.find(stand => stand.id === 'A1').geometry.polygon] },
     });
-    // PUJ is marked by its reference point.
-    expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
+    // PUJ is marked by its reference point, the first of the references every map has (PR M8: the rings, centrelines,
+    // airports and navaids around it, which the ramp view does not show).
+    const [arp] = map.getSource('occ-reference').data.features;
+    expect(arp.properties).toEqual({ kind: 'arp', label: 'PUJ' });
 
     // The same positions read again in new objects write nothing; a changed state is one update of that stand.
     rerender({ positions: createMapStands() });

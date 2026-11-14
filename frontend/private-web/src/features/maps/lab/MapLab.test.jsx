@@ -270,15 +270,19 @@ describe('MapLab', () => {
     expect(map.getSource('occ-route').data.features).toEqual([]);
     cleanup();
 
-    // The layers-menu scene opens with its menu open; a scene without traffic has no menu.
+    // The layers-menu scene opens with its menu open; a scene without traffic offers only the references (PR M8).
     open(`?scene=region-layers-menu&t=${NOON}`);
     loadStyle(fake.state.liveMaps().at(-1));
     expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }))
       .toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('group', { name: 'Tráfico' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
     cleanup();
     open(`?scene=ramp-states&t=${NOON}`);
-    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    loadStyle(fake.state.liveMaps().at(-1));
+    fireEvent.click(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }));
+    expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Tráfico' })).not.toBeInTheDocument();
   });
 
   it('uses only occ-* classes', async () => {

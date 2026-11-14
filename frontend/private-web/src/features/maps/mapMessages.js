@@ -42,6 +42,16 @@ export const mapMessages = {
         routeFlown: 'Recorrido del vuelo elegido',
         routeNext: 'Hasta su próximo punto, en línea recta',
       },
+      // The references on screen (ui/referenceLegend.js, PR M8); the runway in use takes its words from reference.runway.
+      reference: {
+        rings: 'Anillos de distancia',
+        centrelines: 'Eje de pista extendido (marca cada NM)',
+        airports: 'Aeropuerto de la región',
+        counterparts: 'Origen o destino de un vuelo de hoy',
+        vor: 'Radioayuda VOR-DME',
+        ndb: 'Radioayuda NDB',
+        night: 'Noche (tras el crepúsculo civil)',
+      },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
@@ -180,7 +190,7 @@ export const mapMessages = {
       show: 'Mostrar las capas',
       hide: 'Ocultar las capas',
       locked: 'Siempre visible',
-      group: { traffic: 'Tráfico' },
+      group: { traffic: 'Tráfico', reference: 'Referencias' },
       key: {
         traffic: {
           aviam: 'Vuelos de AVIAM',
@@ -189,7 +199,25 @@ export const mapMessages = {
           trails: 'Estelas de todo el tráfico',
         },
         route: 'Ruta del vuelo elegido',
+        // The references of PR M8 (design E7).
+        rings: 'Anillos de distancia',
+        centrelines: 'Ejes de pista',
+        airports: 'Aeropuertos de la región',
+        navaids: 'Radioayudas',
+        daynight: 'Día y noche',
       },
+    },
+    // The words the map draws by its references (traffic/referenceFeatures.js): the runway in use and where it comes
+    // from (contracts 2.3). Map labels keep to Latin-1 characters.
+    reference: {
+      runway: {
+        live: 'Pista {ident} (según las llegadas)',
+        wind: 'Pista {ident} (estimada por el viento)',
+        default: 'Pista {ident} (habitual)',
+        flight: 'Pista {ident}',
+      },
+      // The word on the night side of the edge of the night shade (traffic/nightShade.js).
+      night: 'Noche',
     },
     // The aerodrome weather (features/weather/useMdpcWeather.js, services/weatherService.js; contracts 1.4 and 2.5).
     // Its stale state says «Sin actualizar desde las 14:02» with the vocabulary's words (TAGS.stale, through
@@ -253,6 +281,15 @@ export const mapMessages = {
         trailEstimated: 'Estimated trail',
         routeFlown: 'Route flown by the selected flight',
         routeNext: 'To its next point, in a straight line',
+      },
+      reference: {
+        rings: 'Range rings',
+        centrelines: 'Extended runway centreline (a tick per NM)',
+        airports: 'Airport in the region',
+        counterparts: 'Origin or destination of a flight today',
+        vor: 'VOR-DME navaid',
+        ndb: 'NDB navaid',
+        night: 'Night (after civil twilight)',
       },
     },
     airfield: {
@@ -377,7 +414,7 @@ export const mapMessages = {
       show: 'Show the layers',
       hide: 'Hide the layers',
       locked: 'Always shown',
-      group: { traffic: 'Traffic' },
+      group: { traffic: 'Traffic', reference: 'References' },
       key: {
         traffic: {
           aviam: 'AVIAM flights',
@@ -386,7 +423,21 @@ export const mapMessages = {
           trails: 'Trails for all traffic',
         },
         route: 'Route of the selected flight',
+        rings: 'Range rings',
+        centrelines: 'Runway centrelines',
+        airports: 'Airports in the region',
+        navaids: 'Navaids',
+        daynight: 'Day and night',
       },
+    },
+    reference: {
+      runway: {
+        live: 'Runway {ident} (from the arrivals)',
+        wind: 'Runway {ident} (estimated from the wind)',
+        default: 'Runway {ident} (usual)',
+        flight: 'Runway {ident}',
+      },
+      night: 'Night',
     },
     weather: {
       status: {

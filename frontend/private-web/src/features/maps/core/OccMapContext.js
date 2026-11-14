@@ -18,6 +18,10 @@ import { createContext, useContext } from 'react';
 // - traffic (PR M5): `trafficOnScreen`, the aircraft kinds, tags, trails and parts of the chosen flight's route drawn in
 //   that area (traffic/trafficFeatures.js: trafficOnScreen), and `trafficSource`, the air picture's source while traffic
 //   is on screen (`{ name, homeUrl, licenseName, licenseUrl }` or null), whose credit the map shows.
+// - references (PR M8): `referencesOnScreen`, the references drawn in that area, read back from the map
+//   (traffic/referenceFeatures.js: referencesOnScreen): `{ kinds, runway }`, the legend kinds on screen (`rings`,
+//   `centrelines`, `runwayInUse`, `airports`, `counterparts`, `vor`, `ndb`, `night`, in that order) and the runway in
+//   use its emphasised centreline says (`{ arrival, source }` or null).
 // - layers menu (PR M5, core/layersMenu.js): `layers` (`{ keys, values }`: the keys the map can show and whether each is
 //   on now), `setLayer(key, on)`, `layersMenuOpen`, `setLayersMenuOpen(open)` and `registerLayersMenu()`, which a menu
 //   on screen calls (it returns the call that unregisters it): the L key opens a menu only while one is registered.
@@ -43,6 +47,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   trafficOnScreen: Object.freeze({ kinds: Object.freeze([]), tags: Object.freeze([]), trails: Object.freeze([]),
     route: Object.freeze([]) }),
   trafficSource: null,
+  referencesOnScreen: Object.freeze({ kinds: Object.freeze([]), runway: null }),
   layers: Object.freeze({ keys: Object.freeze([]), values: Object.freeze({}) }),
   setLayer: doNothing,
   layersMenuOpen: false,

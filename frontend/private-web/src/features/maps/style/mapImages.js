@@ -1,6 +1,7 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { maskToSdf } from './sdf';
+import { REFERENCE_IMAGE_SHAPES } from './referenceImages';
 import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
 
 // The images of the OCC map style. There is no sprite: each image is drawn on demand from the path data below and
@@ -24,6 +25,8 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'signal-urgent',
   'aircraft-solid',
   'airport-arp',
+  // The navaids of the references (PR M8, style/referenceImages.js).
+  ...Object.keys(REFERENCE_IMAGE_SHAPES),
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
   ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
@@ -133,6 +136,7 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
       { stroke: 'M3.2 11.6 L24.8 8.4', lineWidth: 2 },
     ],
   },
+  ...REFERENCE_IMAGE_SHAPES,
   ...TRAFFIC_IMAGE_SHAPES,
 });
 

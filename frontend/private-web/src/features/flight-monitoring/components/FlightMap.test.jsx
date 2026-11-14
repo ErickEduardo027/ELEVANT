@@ -9,6 +9,7 @@ import { PUJ_ARP, presetTargets } from '../../maps/core/cameraPresets';
 import { liveEngineCount } from '../../maps/core/mapEngine';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { OPENFREEMAP_TILEJSON } from '../../maps/style/occStyle';
+import { referenceFeatures } from '../../maps/style/referenceLayers';
 import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
 import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
@@ -25,6 +26,8 @@ vi.mock('../../auth/AuthContext', () => ({
 }));
 // The reads of the synthetic service a test makes fail (a 503) from then on, and how many failed.
 const failing = vi.hoisted(() => ({ airPicture: false, mapFlights: false, failed: { airPicture: 0, mapFlights: 0 } }));
+// A counterpart a test gives the first map flight (an airport of the region the references emphasise), or null.
+const variant = vi.hoisted(() => ({ counterpart: null }));
 vi.mock('../../../services/occMapService', async () => {
   const actual = await vi.importActual('../../../services/occMapService');
   const { createTrafficScenario } = await import('../../maps/testing/trafficFixtures');
@@ -34,7 +37,19 @@ vi.mock('../../../services/occMapService', async () => {
     failing.failed[read] += 1;
     throw Object.assign(new Error('The synthetic service is unavailable.'), { status: 503 });
   };
-  return { ...actual, occMapService: { ...simulated, getAirPicture: failable('airPicture'), getMapFlights: failable('mapFlights') } };
+  const getMapFlights = async input => {
+    const answer = await failable('mapFlights')(input);
+    if (variant.counterpart === null) return answer;
+    return { ...answer, flights: answer.flights.map((row, index) => (index === 0 ? { ...row, counterpart: variant.counterpart } : row)) };
+  };
+  return { ...actual, occMapService: { ...simulated, getAirPicture: failable('airPicture'), getMapFlights } };
+});
+// The aerodrome weather of the station (PR M8), synthetic as well: a live METAR with the wind of 100° at 13 kt, through
+// the simulated adapter, which never touches the network.
+vi.mock('../../../services/weatherService', async () => {
+  const actual = await vi.importActual('../../../services/weatherService');
+  const { createWeatherScenario } = await import('../../maps/testing/weatherFixtures');
+  return { ...actual, weatherService: actual.createSimulatedWeatherAdapter({ scenario: createWeatherScenario() }) };
 });
 
 const fake = sharedFakeMapLibre();
@@ -123,7 +138,10 @@ describe('FlightMap', () => {
     expect(screen.getByTestId('flight-map-container').querySelectorAll('.maplibregl-canvas')).toHaveLength(1);
     expect(document.querySelector('.maplibregl-marker')).toBeNull();
     loadStyle(map);
-    expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
+    // PUJ is its reference point, first among the references of PR M8 (without weather or traffic, the usual 08).
+    const references = map.getSource('occ-reference').data;
+    expect(references.features[0].properties).toEqual({ kind: 'arp', label: 'PUJ' });
+    expect(references).toEqual(referenceFeatures());
     expect(within(screen.getByTestId('map-preset-switcher')).getByRole('button', { name: /Región/ }))
       .toHaveAttribute('aria-pressed', 'true');
     // With no flight on screen the legend has nothing to explain.
@@ -334,6 +352,7 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(Date.parse(TRAFFIC_NOON));
     Object.assign(failing, { airPicture: false, mapFlights: false, failed: { airPicture: 0, mapFlights: 0 } });
+    variant.counterpart = null;
   });
 
   afterEach(() => {
@@ -358,6 +377,36 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(attribution.options.customAttribution).toContain('Datos de aeronaves');
     // The legend explains the traffic on screen.
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
+  });
+
+  it('passes the weather and the map flights to the map', async () => {
+    const features = map => map.getSource('occ-reference').data.features;
+    const runwayOf = map => features(map).filter(item => item.properties.kind === 'centrelineLabel')
+      .map(item => item.properties.label);
+    // The synthetic picture has ZZ161 live on final for 08: the recent live arrivals decide the runway first.
+    const first = renderLive();
+    loadStyle(first.map);
+    await flush();
+    expect(runwayOf(first.map)).toEqual(['Pista 08 (según las llegadas)']);
+    first.unmount();
+
+    // Without the air picture, the live METAR's wind (100° at 13 kt) sets it: 08, estimated from the wind.
+    failing.airPicture = true;
+    // And one of today's flights comes from Santo Domingo (invented), an airport of the region.
+    variant.counterpart = { iataCode: 'SDQ', icaoCode: 'MDSD', name: 'Las Américas', latitude: 18.4297, longitude: -69.6689 };
+    const { map } = renderLive();
+    loadStyle(map);
+    await flush();
+    expect(runwayOf(map)).toEqual(['Pista 08 (estimada por el viento)']);
+    expect(features(map).filter(item => item.properties.kind === 'centreline' && item.properties.inUse)
+      .map(item => [item.properties.ident, item.properties.source])).toEqual([['08', 'wind']]);
+    // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not.
+    const airports = features(map).filter(item => item.properties.kind === 'airport');
+    expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.label)).toEqual(['MDSD SDQ']);
+    // The reference source is written when what it draws changes, not on every read of the traffic or the flights.
+    const writes = map.getSource('occ-reference').setDataCalls.length;
+    await flush(30_000);
+    expect(map.getSource('occ-reference').setDataCalls).toHaveLength(writes);
   });
 
   it('keeps the traffic chip on the air picture when the AVIAM flights fail, and says that apart', async () => {
@@ -469,10 +518,13 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(map.options.style.sources['occ-traffic']).toBeUndefined();
     expect(screen.queryByTestId('map-source-status')).not.toBeInTheDocument();
     expect(TRAFFIC_STATION_ID).toBe('5a000000-0000-4000-8000-000000000001');
-    // Without the traffic there is no data block and no layers menu: the page's own card of its flight shows instead.
+    // Without the traffic there is no data block, and the layers menu offers the references alone (PR M8): the page's
+    // own card of its flight shows instead.
     loadStyle(map);
     expect(screen.queryByTestId('flight-data-block')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }));
+    expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Tráfico' })).not.toBeInTheDocument();
     expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Detalle del vuelo ZZ101' })).toBeInTheDocument();
   });
 

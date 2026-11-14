@@ -8,6 +8,8 @@ import { standPaint } from '../stands/standLayers';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
+import { referenceLegendEntries } from './referenceLegend';
+import ReferenceSwatch from './ReferenceSwatch';
 import { trafficLegendEntries } from './trafficLegend';
 import TrafficSwatch from './TrafficSwatch';
 
@@ -245,11 +247,14 @@ function WideEntry({ swatch, name, hint }) {
  * name stays «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to
  * explain.
  * The traffic an OccMap draws on screen comes first (ui/trafficLegend.js): the kinds of aircraft, their tags (Demo,
- * est., Sin actualizar) and their trails.
+ * est., Sin actualizar) and their trails. The references it draws there (PR M8, ui/referenceLegend.js: rings,
+ * centrelines and the runway in use, the region's airports, the navaids and the night) go with the airfield, below the
+ * rule and before it: what frames the map, apart from what moves and changes on it.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen,
+    referencesOnScreen,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
@@ -261,11 +266,15 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
     : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen]);
   // The traffic on screen (PR M5): the aircraft kinds, their tags and their trails.
   const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language }), [trafficOnScreen, language]);
+  // The references on screen (PR M8).
+  const references = useMemo(() => referenceLegendEntries(referencesOnScreen ?? {}, { language }),
+    [referencesOnScreen, language]);
 
   const word = entry => entry[language] ?? entry.es;
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
     || marks.length > 0 || tags.length > 0;
-  if (!listsOthers && airfield.length === 0) return null;
+  const framesMap = references.length > 0 || airfield.length > 0;
+  if (!listsOthers && !framesMap) return null;
 
   return (
     <div data-testid="map-legend" className={`relative ${className}`.trim()}>
@@ -307,10 +316,16 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
               <span className="text-occ-muted">{t(`legend.${tag}`)}</span>
             </li>
           ))}
-          {/* The airfield, set apart from what moves and changes on it by a rule across the legend. */}
-          {airfield.length > 0 && listsOthers && (
+          {/* The references and the airfield, set apart from what moves and changes on them by a rule across the legend. */}
+          {framesMap && listsOthers && (
             <li role="presentation" aria-hidden="true" data-legend-rule className="col-span-2 border-t border-occ-line" />
           )}
+          {references.map(entry => (
+            <li key={entry.key} data-legend-reference={entry.key} className="col-span-2 flex items-center gap-2">
+              <ReferenceSwatch kind={entry.swatch} />
+              <span>{entry.label}</span>
+            </li>
+          ))}
           {airfield.map(kind => (
             <li key={kind} className="flex items-center gap-2 pr-3">
               <AirfieldSwatch kind={kind} />
