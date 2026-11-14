@@ -376,6 +376,14 @@ peticiones de una pestaña pasa de 40 o de 70 por minuto. También falla si un
 archivo montado bajo `/admin-occ` abre un observador que su inventario no
 registra.
 
+Desde el PR U3, posterior, Panorama ya no abre el suyo: su consola lee con
+`useOccResource` en el observador del marco
+([lecturas](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.js)).
+La planificación, las posiciones, la cola de revisión y la disponibilidad de
+los agentes se releen con su sondeo de 60 segundos y nunca con `occ_planning`;
+la cola, además, con `occ_review`. Los vuelos del mapa se releen con
+`occ_planning`, y un toque en la tablet solo relee esos vuelos.
+
 Un recibo de lectura no genera pista: otra pestaña de la misma cuenta lo ve en
 su siguiente lectura de avisos, como mucho a los 60 segundos. En la misma
 pestaña, la página de Notificaciones pide al marco que relea los avisos al
@@ -421,12 +429,13 @@ de solo lectura.
   vuelo demo y su worker, entre otras. Lo que depende de la hora (la fase de
   una llegada y el reloj de un vuelo demo sin importar) se calcula al leer, y
   los instantes del vuelo demo ya vienen en la respuesta.
-- **Planificado (U3 y M5), no actual:** las pantallas del OCC releerán
-  `flights` con `occ_planning`, como mucho una vez cada 3 segundos, y con un
-  sondeo de seguridad de 60 segundos; un toque en la tablet solo relee esa
-  lectura. El [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
-  ya cuenta esas lecturas en su prueba de presupuesto. Hoy ninguna pantalla lee
-  `occ/map`.
+- **Desde M5 y U3:** en A3 ninguna pantalla leía `occ/map`. Desde el PR M5 lo
+  lee el mapa de Monitoreo de vuelos, y desde el PR U3, la consola de
+  Panorama: releen `flights` con `occ_planning`, como mucho una vez cada 3
+  segundos, y con un sondeo de seguridad de 60 segundos; un toque en la tablet
+  solo relee esa lectura. El
+  [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  cuenta esas lecturas en su prueba de presupuesto.
 - `GET occ/map/air-picture` no depende del feed de cambios: se sirve desde
   memoria
   ([servicio](../../backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs))
