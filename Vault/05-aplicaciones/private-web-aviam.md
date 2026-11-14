@@ -1479,16 +1479,20 @@ lecturas de M5: la API no cambia.
   el anillo discontinuo y «est.». Un vuelo real solo se dibuja estimado si el
   proveedor dice que está en el aire, que aterrizó o que llegó a su posición, y
   una salida importada solo deja su posición con el `PUSHBACK` o con señal
-  real; el vuelo demo siempre se dibuja. Los vuelos reales usan la pista de
-  las llegadas en vivo en final y, si no hay, la 08; el bloque dice «Pista 26
-  (por el tráfico)» o «Pista 08 (habitual)». El viento del METAR llega con M8.
+  real que la muestre en movimiento: un avión parado en su posición se queda en
+  ella aunque su señal envejezca. El vuelo demo siempre se dibuja. Los vuelos
+  reales usan la pista de las llegadas en vivo vistas en final en la última
+  media hora y, si no hay, la 08; el bloque dice «Pista 26 (por el tráfico)» o
+  «Pista 08 (habitual)». El viento del METAR llega con M8.
 - **El vuelo demo.** Sigue los instantes que manda el servidor, siempre por la
   08: aparece en aproximación tan lejos como piden las velocidades reales (5 NM
   como mínimo), aterriza, rueda y se parquea a sus horas, espera en su posición
   hasta que el servidor da su salida y se desvanece al final. Sin importar,
   espera en la plataforma de su terminal con «Esperando posición · sin
-  importar»; importado, rueda a su posición sin saltar; cancelado, se desvanece
-  donde está con «Cancelado por el proveedor (demo)». Si una parte no cabe a
+  importar»; importado, rueda a su posición sin saltar, también cuando después
+  llega su salida o «Terminar demo»; cancelado, se desvanece donde está con
+  «Cancelado por el proveedor (demo)», también cuando el servidor ya dejó de
+  listarlo. Si una parte no cabe a
   velocidad real se acelera, y el bloque lo dice: «Demo acelerada ×1,02». Con 8
   minutos van así B36 y B37, comprimidas menos del 2 %; con 10, los minutos de
   la guía de presentación, todas las posiciones van a velocidad real.

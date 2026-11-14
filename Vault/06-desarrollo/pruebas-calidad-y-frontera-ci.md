@@ -443,8 +443,10 @@ visual.
   AN1 desde la intersección H. Prueba también los seis instantes del servidor,
   con un segundo de margen; que ningún tramo salta; el arranque a 5 NM como
   mínimo; la espera sobre la puerta de aproximación; la 08 con cualquier viento;
-  la espera de plataforma; la posición dada después; la cancelación; y que dos
-  construcciones dan lo mismo.
+  la espera de plataforma; la posición dada después, y que rehecha con su
+  propia continuación conserva el rodaje; la cancelación; el final donde está
+  de un vuelo que las lecturas dejan de listar; y que dos construcciones dan lo
+  mismo.
 - **Pureza.**
   [`purity.test.js`](../../frontend/private-web/src/features/maps/kinematics/purity.test.js)
   recorre las fuentes de `kinematics/` y `airport/runwayInUse.js`, sin sus
@@ -460,11 +462,15 @@ visual.
   [`motionStore.test.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.test.js)
   prueba la caché de trayectorias por sus entradas; el vuelo demo con los
   instantes del servidor en la 08, su espera sin importar, la importación sin
-  salto y la cancelación; la decisión F-1; que una salida importada solo sale con
-  `PUSHBACK` o con señal; la ruta de un vuelo que no se dibuja; el relevo en
-  vivo, sin señal y estimado; un avión por visita; la escala de tiempo;
-  `trackConfigFor`; y el próximo cambio. Las del relevo, la ruta, la cámara de
-  seguimiento y los rodajes están junto a cada módulo de `kinematics/`.
+  salto, que la continuación sobrevive a «Terminar demo» y al final del vuelo, la
+  cancelación y el desvanecimiento de un vuelo demo que las lecturas dejan de
+  listar; la pista de las llegadas vistas en final durante media hora; la
+  decisión F-1; que una salida importada solo sale con `PUSHBACK` o con señal;
+  que una señal parada en la posición no pone nada en marcha al envejecer; la
+  ruta de un vuelo que no se dibuja; el relevo en vivo, sin señal y estimado; un
+  avión por visita; la escala de tiempo; `trackConfigFor`; y el próximo cambio.
+  Las del relevo, la ruta, la cámara de seguimiento y los rodajes están junto a
+  cada módulo de `kinematics/`.
 - **Las posiciones con los vuelos.**
   [`standInputs.test.js`](../../frontend/private-web/src/features/maps/traffic/standInputs.test.js)
   y [`footprint.test.js`](../../frontend/private-web/src/features/maps/aircraft/footprint.test.js)

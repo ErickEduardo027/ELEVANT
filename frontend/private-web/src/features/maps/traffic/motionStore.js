@@ -4,7 +4,7 @@ import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM, initialBearing } from '../airport/geo';
 import { indexLayout, matchStand } from '../airport/layoutIndex';
 import { runwayEnd, runwayEnds, runwayIdsInUse, runwayInUse } from '../airport/runwayInUse';
-import { demoClock, fitDemoTrajectory } from '../kinematics/demoProfile';
+import { demoClock, endDemoTrajectory, fitDemoTrajectory } from '../kinematics/demoProfile';
 import {
   buildArrivalTrajectory, buildDepartureTrajectory, departureAnchors, flightTimesFromRow, shouldEstimate,
 } from '../kinematics/estimator';
@@ -29,18 +29,31 @@ import { claimFixes, fixIdentity } from './situationModel';
 //   the fix alone.
 // - A demo flight follows fitDemoTrajectory with the server's instants on runway 08 (contracts 2.3), its stand only
 //   once OCC imported it, else its terminal's apron hold; imported later it continues from where it is drawn, at the
-//   instant of the flights read that brought the import (every screen that reads that answer draws the same), and
-//   cancelled it fades out where it is.
-// - A real flight lands and departs on the runway in use: the live arrivals on final in the picture, then (from PR M8)
-//   the METAR wind, then the layout's preferred runway (airport/runwayInUse.js).
+//   instant of the flights read that brought the import (every screen that reads that answer draws the same), and what
+//   comes after (its off-block, its state) is rebuilt from that same continuation; cancelled it fades out where it is.
+//   A demo visit a newer read of the station no longer lists (the server dismissed its rows before the import: a
+//   cancellation, OCC's dismissal, «Terminar demo», the worker at vanishAt) fades out where it is too, from that read
+//   on, and is forgotten once its fade is over (leavingDemo).
+// - A real flight lands and departs on the runway in use: the live arrivals seen on final in the newest picture that had
+//   any, for FINAL_VOTE.keepMs after they were seen, then (from PR M8) the METAR wind, then the layout's preferred
+//   runway (airport/runwayInUse.js).
 // - A trajectory is built when its inputs change (planInputsKey), never per frame: a demo flight's takes about 15 ms.
 // - Per sample, a track whose fix aged past its coast is rebuilt once from that fix (handoff.js: needsReplan) at the
-//   instant the coast ended, so every screen blends the same way.
+//   instant the coast ended, so every screen blends the same way. A fix stopped on the ground starts nothing
+//   (estimator.js, Decision F-1): an aircraft parked at its stand, or a departure nothing recorded leaving, waits where
+//   the fix has it, and a departure with its PUSHBACK leaves its stand then.
 
 /** How long the store keeps a track nobody draws any more, from the last read that named it. */
 export const FORGET_AFTER_MS = 10 * 60_000;
-/** A live aircraft «on final» votes for its runway (runwayInUse): this close to the threshold, below this height. */
-export const FINAL_VOTE = Object.freeze({ maxDistanceM: 15 * NM, maxHeightM: ftToM(6_000), maxOffDeg: 20, climbMs: 1 });
+/**
+ * A live aircraft «on final» votes for its runway (runwayInUse): this close to the threshold, below this height, not
+ * climbing, with the threshold ahead within `maxOffDeg`. The votes of the newest picture that had any keep the runway
+ * of real flights for `keepMs` after the newest of them was seen (contracts 2.3: «recent live arrivals»), so the gaps
+ * between arrivals neither turn the runway back to the preferred one nor rebuild the trajectories planned on it.
+ */
+export const FINAL_VOTE = Object.freeze({
+  maxDistanceM: 15 * NM, maxHeightM: ftToM(6_000), maxOffDeg: 20, climbMs: 1, keepMs: 30 * 60_000,
+});
 // The taxi-out a departure nobody imported is placed back from its take-off by: the server's demo constant.
 const NOMINAL_TAXI_OUT_MS = 5 * 60_000;
 // Below this speed an aircraft stands still (a fix on the ground under 2 kt holds its position).
@@ -93,8 +106,9 @@ function standOfCode(layout, code) {
 }
 
 /**
- * The live arrivals of a picture on final for a runway end of the layout, as runwayInUse takes them (`[{ trackDeg }]`):
- * airborne, not climbing, below 6 000 ft, within 15 NM of a threshold that lies ahead of them on that end's heading.
+ * The live arrivals of a picture on final for a runway end of the layout, as runwayInUse takes them, with the instant
+ * each was seen (`[{ trackDeg, positionAt }]`): airborne, not climbing, below 6 000 ft, within 15 NM of a threshold
+ * that lies ahead of them on that end's heading.
  */
 export function arrivalsOnFinal(fixes, layout) {
   const ends = runwayEnds(layout);
@@ -108,9 +122,25 @@ export function arrivalsOnFinal(fixes, layout) {
       if (height > FINAL_VOTE.maxHeightM || haversineM(here, end.threshold) > FINAL_VOTE.maxDistanceM) return false;
       return angleBetween(initialBearing(here, end.threshold), end.headingTrue) <= FINAL_VOTE.maxOffDeg;
     });
-    if (onFinal) votes.push({ trackDeg: fix.trackDeg });
+    if (onFinal) votes.push({ trackDeg: fix.trackDeg, positionAt: fix.positionAt });
   }
   return votes;
+}
+
+/** A trajectory that never moves: a flight a stopped fix holds where it is (estimator.js), which is no route. */
+const holdsStill = trajectory => trajectory.legs.every(leg => leg.kind === 'wait');
+
+/**
+ * A demo row as the map reads it once it took the flight for cancelled at `atMs` (leavingDemo): the flight cancelled,
+ * and its demo clock as the server writes a cancelled one (no departure, vanishing then).
+ */
+function cancelledRow(row, atMs) {
+  if (!row) return row;
+  const demo = row.demo && typeof row.demo === 'object' ? Object.freeze({
+    ...row.demo, state: 'Cancelled', phase: 'Gone', offBlockAt: null, takeoffAt: null,
+    vanishAt: new Date(atMs).toISOString(),
+  }) : row.demo;
+  return Object.freeze({ ...row, phase: 'cancelled', demo });
 }
 
 /** Where a sample of a track moves: it has a speed, a blend or a fade under way, or it is fading out. */
@@ -141,7 +171,9 @@ function trajectoryInstants(trajectory) {
  *   its time), `perf` (perfFor) and `build` (the trajectory builders, for the tests).
  * - `ingest({ picture, flights })`: the models of situationModel.js (toPictureModel, toFlightsModel), after every read;
  *   the same two again change nothing.
- * - `estimatesAt(tMs)`: the positions of the ELEVANT flights it estimates, for buildSituation's `estimates`.
+ * - `estimatesAt(tMs)`: the positions of the ELEVANT flights it estimates, for buildSituation's `estimates`. A demo
+ *   flight a newer read no longer lists, while it fades out (leavingDemo), comes with its last row as `flight`: the
+ *   situation draws it from that row, cancelled when it left before its touchdown.
  * - `sample(aircraft, tMs)`: the aircraft of a situation where they are drawn at `tMs`: each one the store knows takes
  *   its track's render (position, height, speed, heading, phase, mode, ageS, statusKey, opacity, timeScale and, where a
  *   plan places it, quality 'estimated'), `null` when its track draws nothing then; one it does not know is as given.
@@ -155,10 +187,11 @@ function trajectoryInstants(trajectory) {
  *   plans for a flight row, else, for one it does not draw (Decision F-1: merely scheduled, a departure waiting for
  *   its push-back, the other leg of a visit drawn as one aircraft), one built from its schedule for the route alone
  *   (cached by its inputs, never sampled for a position): an arrival from its origin to its stand, a departure from
- *   its stand at its planned off-block. `null` for a cancelled or diverted flight, a demo flight it does not plan, or
- *   without the instants.
- * - `runway()`: the runway in use for real flights (`{ arrival, departure, source }`), `dataAt()`: the server instant of
- *   the last read; `subscribe(listener)` hears every ingest; `clock` is the clock it was given.
+ *   its stand at its planned off-block. A flight a stopped fix holds where it is (estimator.js) takes its visit's plan,
+ *   else its schedule's, as one it does not draw. `null` for a cancelled or diverted flight, a demo flight it does not
+ *   plan or that fades out after it left the reads, or without the instants.
+ * - `runway()`: the runway in use for real flights (`{ arrival, departure, source }`: FINAL_VOTE), `dataAt()`: the
+ *   server instant of the last read; `subscribe(listener)` hears every ingest; `clock` is the clock it was given.
  */
 export function createMotionStore({
   layout = MDPC_LAYOUT, clock = null, perf = perfFor,
@@ -176,6 +209,8 @@ export function createMotionStore({
   let lastPicture;
   let lastFlights;
   let runway = runwayInUse({ layout });
+  // The arrivals on final of the newest picture that had any, and when the newest of them was seen (FINAL_VOTE).
+  let finalVote = null;
   let dataAt = null;
   let lastSample = null;
 
@@ -225,18 +260,26 @@ export function createMotionStore({
   }
 
   // A demo visit's trajectory: fitted to the server's instants, continued from the one drawn when it was imported or
-  // given another stand after the touchdown, and faded where it is when cancelled.
+  // given another stand after the touchdown, and faded where it is when cancelled. A continuation lasts: rebuilt for its
+  // same stand (an off-block, «Terminar demo», a new state), the trajectory continues again from the instant the drawn
+  // one did (its `meta.anchor.continuedAtMs`, before any off-block), so its taxi stays as drawn and only what follows
+  // the arrival changes.
   function demoTrajectory(unit, previous, flights) {
     const clockOfDemo = demoClock(unit.demo, parseInstant);
     if (clockOfDemo === null) return null;
     const imported = unit.arrival.imported === true;
     const stand = standOfCode(layout, unit.arrival.stand?.code ?? unit.departure?.stand?.code);
     const target = imported && stand ? stand.code : null;
+    const old = previous?.trajectory ?? null;
+    const continuedAtMs = old?.meta?.anchor?.continuedAtMs;
     let continueFrom = null;
-    if (previous?.trajectory) {
-      if (clockOfDemo.state === 'Cancelled' && previous.state !== 'Cancelled') continueFrom = { trajectory: previous.trajectory };
-      else if (clockOfDemo.state !== 'Cancelled' && target !== null && previous.target !== target && finite(flights?.serverTime)) {
-        continueFrom = { trajectory: previous.trajectory, atMs: flights.serverTime };
+    if (old !== null) {
+      if (clockOfDemo.state === 'Cancelled') {
+        if (previous.state !== 'Cancelled') continueFrom = { trajectory: old };
+      } else if (target !== null && previous.target !== target && finite(flights?.serverTime)) {
+        continueFrom = { trajectory: old, atMs: flights.serverTime };
+      } else if (target !== null && previous.target === target && finite(continuedAtMs)) {
+        continueFrom = { trajectory: old, atMs: continuedAtMs };
       }
     }
     const trajectory = build.fitDemoTrajectory({
@@ -312,8 +355,45 @@ export function createMotionStore({
     }
   }
 
+  // A demo visit of the last read that a newer read of the same station no longer lists (the server dismissed its rows
+  // before the import: a cancellation, OCC's dismissal, «Terminar demo», the worker at vanishAt): the unit it leaves
+  // as, fading out where it is drawn from `atMs` (the instant of that read; kinematics/demoProfile.js:
+  // endDemoTrajectory), or `null` once nothing of it is left to draw at `nowMs`. Before its touchdown a flight nobody
+  // imported leaves the reads only cancelled (contracts 1.1: «Cancelar vuelo» before it, «Terminar demo» after; OCC's
+  // dismissal cancels it too), so it fades out cancelled by the provider and its rows read as cancelled; after it, or
+  // imported (its rows are never dismissed: OCC cancelled its turnaround), nothing new is said. One that was fading
+  // already (cancelled, past its own vanishAt, or leaving) goes on as it is.
+  function leavingDemo(unit, atMs, nowMs) {
+    const trajectory = unit.plan?.trajectory ?? null;
+    if (trajectory === null) return null;
+    let leaving = unit;
+    if (unit.leaving !== true) {
+      const fade = trajectory.meta?.fade ?? null;
+      if (unit.plan.state === 'Cancelled' || (fade !== null && fade.startMs <= atMs)) {
+        leaving = { ...unit, leaving: true };
+      } else {
+        const clockOfDemo = demoClock(unit.demo, parseInstant);
+        const cancelled = unit.arrival.imported !== true && clockOfDemo !== null && atMs < clockOfDemo.touchdownAtMs;
+        const ended = endDemoTrajectory(trajectory, { atMs, statusKey: cancelled ? 'cancelledByProvider' : null });
+        if (ended === null) return null;
+        leaving = {
+          ...unit,
+          leaving: true,
+          arrival: cancelled ? cancelledRow(unit.arrival, atMs) : unit.arrival,
+          departure: cancelled ? cancelledRow(unit.departure, atMs) : unit.departure,
+          plan: {
+            ...unit.plan, key: `${unit.plan.key}|left`, trajectory: ended, state: cancelled ? 'Cancelled' : unit.plan.state,
+          },
+        };
+      }
+    }
+    return nowMs < leaving.plan.trajectory.endMs ? leaving : null;
+  }
+
   function ingest({ picture = null, flights = null } = {}) {
     if (picture === lastPicture && flights === lastFlights) return;
+    const previousFlights = lastFlights ?? null;
+    const previousUnits = units;
     lastPicture = picture;
     lastFlights = flights;
     config = trackConfigFor(picture?.refreshAfterSeconds);
@@ -334,8 +414,15 @@ export function createMotionStore({
       }, config));
     }
 
-    // The runway in use for real flights, then a plan for every visit the map draws.
-    runway = runwayInUse({ recentLiveArrivals: arrivalsOnFinal(owners.fixes, layout), wind: null, layout });
+    // The runway in use for real flights (FINAL_VOTE): the arrivals on final of the newest picture that had any, while
+    // they are recent; then a plan for every visit the map draws.
+    const onFinal = arrivalsOnFinal(owners.fixes, layout);
+    const seenOnFinal = Math.max(...onFinal.map(vote => vote.positionAt));
+    if (onFinal.length > 0 && (finalVote === null || seenOnFinal >= finalVote.seenAt)) {
+      finalVote = { arrivals: onFinal, seenAt: seenOnFinal };
+    }
+    const recent = finalVote !== null && dataAt !== null && dataAt - finalVote.seenAt <= FINAL_VOTE.keepMs;
+    runway = runwayInUse({ recentLiveArrivals: recent ? finalVote.arrivals : [], wind: null, layout });
     const atMs = finite(flights?.serverTime) ? flights.serverTime : (dataAt ?? 0);
     const next = new Map();
     units = unitsOf(flights, owners.claimed);
@@ -351,6 +438,19 @@ export function createMotionStore({
       next.set(unit.id, unit.plan);
       if (unit.plan !== previous) dispatchPlan(unit, atMs);
       for (const key of keysOf(unit)) current.add(`f:${key}`);
+    }
+    // A demo visit that left the reads of its station fades out where it is before it is forgotten (leavingDemo).
+    if (flights !== null && previousFlights !== null && flights.stationId === previousFlights.stationId) {
+      const listed = new Set(units.map(unit => unit.id));
+      for (const unit of previousUnits) {
+        if (unit.kind !== 'demo' || listed.has(unit.id)) continue;
+        const leaving = leavingDemo(unit, atMs, dataAt ?? atMs);
+        if (leaving === null) continue;
+        units.push(leaving);
+        next.set(leaving.id, leaving.plan);
+        if (leaving.plan !== unit.plan) dispatchPlan(leaving, atMs);
+        for (const key of keysOf(leaving)) current.add(`f:${key}`);
+      }
     }
     plans = next;
     // A route's own trajectory goes with its flight's row.
@@ -377,17 +477,20 @@ export function createMotionStore({
       const flightKey = drawnKeyAt(unit, tMs);
       const render = renderTrack(tracks.get(`f:${flightKey}`), tMs, config);
       if (render === null) continue;
+      // A demo visit no read lists any more brings the row it is drawn from (leavingDemo).
+      const row = unit.leaving === true ? [unit.arrival, unit.departure].find(leg => leg?.flightKey === flightKey) : null;
       estimates.push(Object.freeze({
         flightKey, lon: render.lon, lat: render.lat, altM: render.altM, gsMs: render.gsMs, trackDeg: render.trackDeg,
         vrateMs: render.vrateMs, onGround: render.onGround, positionAt: tMs, statusKey: render.statusKey,
-        timeScale: render.timeScale, opacity: render.opacity, mode: render.mode,
+        timeScale: render.timeScale, opacity: render.opacity, mode: render.mode, ...(row ? { flight: row } : {}),
       }));
     }
     return Object.freeze(estimates);
   }
 
   // A track whose fix aged past its coast gets the trajectory rebuilt from that fix, once, at the instant the coast
-  // ended (handoff.js: needsReplan), so every screen blends the same way.
+  // ended (handoff.js: needsReplan), so every screen blends the same way. The builders keep Decision F-1 with a stopped
+  // fix (estimator.js): the row's times and stand say whether it waits or leaves its stand.
   function replanFromFix(id, track, item) {
     const fix = track.lastFix;
     const row = flightsByKey.get(item?.flightKey) ?? null;
@@ -518,12 +621,15 @@ export function createMotionStore({
     });
   }
 
-  // What the store plans now for a flight it draws: its track's plan (rebuilt from its last fix once that aged), else
-  // its visit's; `null` for a flight no visit of the last read draws.
+  // What the store plans now for a flight it draws: its track's plan (rebuilt from its last fix once that aged) unless
+  // that only holds it where a stopped fix left it, else its visit's; `null` for a flight no visit of the last read
+  // draws, and for a demo visit that left the reads and fades out (leavingDemo).
   function plannedFor(flightKey) {
     const unit = units.find(candidate => keysOf(candidate).includes(flightKey));
-    if (!unit) return null;
-    return tracks.get(`f:${flightKey}`)?.plan?.trajectory ?? unit.plan?.trajectory ?? null;
+    if (!unit || unit.leaving === true) return null;
+    const tracked = tracks.get(`f:${flightKey}`)?.plan?.trajectory ?? null;
+    if (tracked !== null && !holdsStill(tracked)) return tracked;
+    return unit.plan?.trajectory ?? null;
   }
 
   function trajectoryForRoute(row) {

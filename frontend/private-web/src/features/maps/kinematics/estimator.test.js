@@ -361,6 +361,75 @@ describe('estimated trajectories', () => {
     expect(sampleTrajectory(departure, T0 + 60_000).altM).toBeGreaterThan(climbing.altM);
   });
 
+  it('a fix stopped on the ground starts nothing: parked or waiting where it is, or leaving with its record', () => {
+    // Decision F-1: a departure leaves only with a recorded off-block or a live fix that shows it moving.
+    const stand = standOf('A5');
+    const F = T0;
+    const still = { ...lonLat(stand.center), altM: null, gsMs: 0, trackDeg: null, onGround: true, positionAt: F };
+    const noRecord = { offBlockMs: null, takeoffMs: null };
+    const depart = (fix, times = noRecord, extra = {}) => buildDepartureTrajectory({
+      times, destination: MIA, layout: MDPC_LAYOUT, runwayEnd: END_08, stand, perf: PERF, anchor: { kind: 'fix', fix }, ...extra,
+    });
+    // Imported without PUSHBACK, or nobody imported it and the provider says nothing of a take-off: it waits where the
+    // fix has it, parked in its stand, without end, nose north as the map draws a fix without a track.
+    const waiting = depart(still);
+    expect(waiting).toMatchObject({ kind: 'departure', startMs: F, endMs: Infinity, meta: { standCode: 'A5', departureRunwayIdent: '08' } });
+    expect(waiting.meta.anchor).toMatchObject({ kind: 'fix' });
+    expect(waiting.legs.every(leg => leg.kind === 'wait')).toBe(true);
+    for (const later of [0, 30_000, 300_000, 3 * 3_600_000]) {
+      const state = sampleTrajectory(waiting, F + later);
+      expect(haversineM([state.lon, state.lat], stand.center), `${later} ms`).toBeLessThan(0.01);
+      expect(state, `${later} ms`).toMatchObject({ gsMs: 0, onGround: true, phase: 'parked', trackDeg: 0 });
+      expect(state.altM).toBeCloseTo(ELEVATION_08, 6);
+    }
+    // Under 2 kt is stopped too, on its own track; so is a fix without a speed. Outside its stand it holds there.
+    const creeping = depart({ ...still, gsMs: ktToMs(1.5), trackDeg: 175 });
+    expect(sampleTrajectory(creeping, F + 600_000)).toMatchObject({ gsMs: 0, phase: 'parked', trackDeg: 175 });
+    expect(depart({ ...still, gsMs: null }).legs.every(leg => leg.kind === 'wait')).toBe(true);
+    const onTaxiway = { ...still, ...lonLat(standOf('A1').leadIn[0]), trackDeg: 260 };
+    const holding = sampleTrajectory(depart(onTaxiway), F + 600_000);
+    expect(holding).toMatchObject({ gsMs: 0, phase: 'holding', trackDeg: 260 });
+    expect(haversineM([holding.lon, holding.lat], standOf('A1').leadIn[0])).toBeLessThan(0.01);
+    // With its PUSHBACK it leaves its stand then, backwards, never before the fix that had it still in the stand.
+    const pushback = F + 240_000;
+    const pushed = depart(still, { offBlockMs: pushback, takeoffMs: null });
+    expect(pushed.startMs).toBe(pushback);
+    expect(sampleTrajectory(pushed, pushback + 5_000).phase).toBe('pushback');
+    expect(depart(still, { offBlockMs: F - 60_000, takeoffMs: null }).startMs).toBe(F);
+    // Stopped somewhere else after its PUSHBACK (short of the runway, waiting), it taxis on from the fix.
+    const goingOn = depart(onTaxiway, { offBlockMs: F - 300_000, takeoffMs: null });
+    expect(goingOn.startMs).toBe(F);
+    const first = sampleTrajectory(goingOn, F);
+    expect(haversineM([first.lon, first.lat], standOf('A1').leadIn[0])).toBeLessThan(1);
+    expect(goingOn.legs.some(leg => leg.phase === 'takeoff')).toBe(true);
+    // A fix that shows it moving starts the taxi from the fix, record or not.
+    const moving = depart({ ...onTaxiway, gsMs: ktToMs(12) });
+    expect(moving.legs.some(leg => leg.phase === 'takeoff')).toBe(true);
+    expect(sampleTrajectory(moving, F + 1_000).gsMs).toBeGreaterThan(0);
+
+    // An arrival stopped in its stand is parked there, where the fix is; stopped short of it, it taxis on and parks.
+    const arrive = fix => buildArrivalTrajectory({
+      times: null, origin: MIA, layout: MDPC_LAYOUT, runwayEnd: END_08, stand, perf: PERF, anchor: { kind: 'fix', fix },
+    });
+    const parked = arrive({ ...still, trackDeg: 174 });
+    expect(parked).toMatchObject({ kind: 'arrival', startMs: F, endMs: Infinity, meta: { standCode: 'A5', statusKey: null } });
+    for (const later of [30_000, 1_200_000]) {
+      const state = sampleTrajectory(parked, F + later);
+      expect(haversineM([state.lon, state.lat], stand.center)).toBeLessThan(0.01);
+      expect(state).toMatchObject({ gsMs: 0, phase: 'parked', trackDeg: 174 });
+    }
+    // Once its operation records the PUSHBACK the aircraft has left: the arrival's stopped fix places it nowhere.
+    expect(buildArrivalTrajectory({
+      times: { pushbackAtMs: F + 60_000 }, origin: MIA, layout: MDPC_LAYOUT, runwayEnd: END_08, stand, perf: PERF,
+      anchor: { kind: 'fix', fix: still },
+    })).toBeNull();
+    const taxiingOn = arrive(onTaxiway);
+    const end = taxiingOn.legs.find(leg => leg.phase === 'parked');
+    expect(taxiingOn.legs.some(leg => leg.kind === 'move')).toBe(true);
+    const atStand = sampleTrajectory(taxiingOn, end.t0Ms + 1_000);
+    expect(haversineM([atStand.lon, atStand.lat], stand.center)).toBeLessThan(0.5);
+  });
+
   it('every phase samples continuously with no jump at leg boundaries', () => {
     const stand = standOf('B27');
     const arrival = landed('B27', 420);
