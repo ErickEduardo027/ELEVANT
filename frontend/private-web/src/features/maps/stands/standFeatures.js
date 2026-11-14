@@ -49,7 +49,19 @@ function clockOf(language, timeZone) {
   return ms => formatter.format(ms);
 }
 
-function strongestSignal(signals) {
+// The signals a stand of a screen carries: those the screen derived (useStandDisplay), else those of its display.
+function signalsOf(position) {
+  if (Array.isArray(position?.signals)) return position.signals;
+  return Array.isArray(position?.display?.signals) ? position.display.signals : [];
+}
+
+/**
+ * The one signal the map draws on a stand of a screen, its label point's `signal`: `urgent` when one of the signals the
+ * stand carries (those the screen derived, else those of its display) is urgent, else `attention` when one is, else
+ * `null`. A stand with both shows only the red octagon, so the legend explains that one alone (ui/legendEntries.js).
+ */
+export function standSignalOf(position) {
+  const signals = signalsOf(position);
   if (signals.some(signal => signal?.kind === 'urgent')) return 'urgent';
   return signals.some(signal => signal?.kind === 'attention') ? 'attention' : null;
 }
@@ -123,7 +135,7 @@ function drawnStands(stands) {
       geometry: position.geometry,
       terminal: standTerminalOf(position),
       state: standStateOf(position),
-      signals: Array.isArray(position.signals) ? position.signals : display.signals ?? [],
+      signals: signalsOf(position),
       display,
     });
   }
@@ -140,9 +152,9 @@ function drawnStands(stands) {
  *   to the centre of the stand that cancels it, when both are drawn) and `narrowInner` (the code-C box inside a stand
  *   wider than code C limited to narrow-body aircraft; a narrower stand is already that box);
  * - `labels`: a point at each centre with the label variants `label1` (code), `label2` (code and flight, or «Anulada
- *   por …») and `label3` (the full label), its `state`, `signal` (`urgent`, `attention` or `null`), `glyph` (`aircraft`
- *   while an aircraft is on the stand, until the footprints to scale of PR M5), `clock` (Por liberar), `heading` (the
- *   stand's, for the aircraft) and `sortKey` (`labels: 'dashboard'` puts planned stands first);
+ *   por …») and `label3` (the full label), its `state`, `signal` (standSignalOf: `urgent`, `attention` or `null`),
+ *   `glyph` (`aircraft` while an aircraft is on the stand, until the footprints to scale of PR M5), `clock` (Por
+ *   liberar), `heading` (the stand's, for the aircraft) and `sortKey` (`labels: 'dashboard'` puts planned stands first);
  * - `groups`: one point per terminal at the centre of its boxes, `text` «A · 3/16» (aircraft on the stands over the
  *   stands drawn) and `arriving` (a stand of the terminal reads «Llegando»).
  * The countdowns are counted at `nowMs` rounded down to the minute (the current time when it is not given), so they
@@ -162,7 +174,7 @@ export function buildStandFeatures(stands = [], {
   const labelPoints = [];
   const centres = new Map(drawn.map(stand => [stand.code, stand.geometry.center]));
   for (const stand of drawn) {
-    const { code, position, geometry, terminal, state, signals, display } = stand;
+    const { code, position, geometry, terminal, state, display } = stand;
     const paint = standPaint(state);
     polygons.push(feature(code, {
       code,
@@ -192,7 +204,7 @@ export function buildStandFeatures(stands = [], {
     labelPoints.push(feature(code, {
       code,
       state,
-      signal: strongestSignal(signals),
+      signal: standSignalOf(position),
       glyph: paint.glyph,
       clock: paint.clock,
       heading: Number.isFinite(geometry.headingTrue) ? geometry.headingTrue : 0,

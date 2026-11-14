@@ -444,8 +444,8 @@ M4 «Posiciones en rampa» dibuja cada posición como un polígono con su estado
 
 **10. La leyenda de lo que hay en pantalla.**
 - `ui/MapLegend.jsx`, con `ui/legendEntries.js` (decisión 9 de este ADR), suma, siempre dentro del área que dejan a la vista los paneles:
-  - los estados de los polígonos que se ven, desde `polygons`, cada uno como un recorte en SVG de lo que dibuja el mapa (el relleno, el contorno con su ancho y su trazo, el avión, el reloj y la entrada resaltada) y con su palabra de `STAND_STATES`; por debajo de `polygons`, «Posiciones de una terminal», con «Ocupadas del total; acerca el mapa para ver cada una», por las pastillas;
-  - las señales en pantalla, con su forma y la palabra de `SIGNALS`;
+  - los estados de los polígonos que se ven, desde `polygons`, cada uno como un recorte en SVG de lo que dibuja el mapa (el relleno, el contorno con su ancho y su trazo, el avión, el reloj y la entrada resaltada) y con su palabra de `STAND_STATES`; por debajo de `polygons`, «Posiciones de una terminal», con «Ocupadas del total; acerca el mapa para ver cada una», por las pastillas, y justo después «Llega un vuelo a una posición de la terminal», con la flecha, mientras se ve la pastilla de una terminal con una posición en «Llegando»;
+  - las señales que el mapa dibuja en pantalla, con su forma y la palabra de `SIGNALS`: una por posición, la más fuerte (`standSignalOf`, la misma regla que usa la capa de las señales), así que una posición con las dos solo suma «Urgente»;
   - las marcas en pantalla: el enlace de una combinada, la caja de fuselaje estrecho, el anillo del mismo agente de la posición elegida y, al ubicar una posición, su caja y la ubicación sin guardar;
   - «No oficial», como en M2, y los elementos del aeródromo de M3.
 - Se va la entrada de M2 que explicaba un grupo de posiciones.

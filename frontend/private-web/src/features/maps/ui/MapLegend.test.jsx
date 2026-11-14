@@ -34,6 +34,7 @@ const FLIGHTS = [
 const FLIGHT_ENTRY = 'VueloApunta según su rumbo; al norte si no se conoce';
 const UNOFFICIAL = `${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`;
 const CHIP = 'Posiciones de una terminalOcupadas del total; acerca el mapa para ver cada una';
+const CHIP_ARRIVING = 'Llega un vuelo a una posición de la terminal';
 const ATTENTION = SIGNALS.attention.es;
 const URGENT = SIGNALS.urgent.es;
 const COMBINED = 'Enlace con la posición que la anula';
@@ -271,12 +272,71 @@ describe('MapLegend', () => {
     act(() => map.jumpTo({ center: standPoint('BN9'), zoom: 18 }));
     expect(legendItems().some(item => item.startsWith(SIGNALS.attention.es) || item.startsWith(SIGNALS.urgent.es))).toBe(false);
 
-    // Below the polygon threshold the chips stand for the stands: only the chip is explained.
+    // Below the polygon threshold the chips stand for the stands: the chip is explained, and right after it the arrow
+    // over terminal A's, where A3 and A6 read «Llegando».
     const { airfield } = presetTargets({ stands: STANDS, layout: MDPC_LAYOUT });
     act(() => map.jumpTo({ center: boundsCenter(airfield.bounds), zoom: 12.5 }));
-    expect(legendItems()).toEqual([CHIP]);
+    expect(legendItems()).toEqual([CHIP, CHIP_ARRIVING]);
     const chip = screen.getByTestId('map-legend').querySelector('svg[data-swatch="chip"] rect');
     expect([chip.style.fill, chip.style.stroke]).toEqual(['var(--occ-panel-raised)', 'var(--occ-line-strong)']);
+    // The arrow as the map draws it (style/mapImages.js: glyph-arriving), in --occ-text, pointing down at a chip.
+    const arriving = screen.getByTestId('map-legend').querySelector('svg[data-swatch="chipArriving"]');
+    const [shaft, head] = MAP_IMAGE_SHAPES['glyph-arriving'].ops;
+    const arrow = [...arriving.querySelectorAll('[data-glyph="arriving"] path')];
+    expect(arrow.map(path => path.getAttribute('d'))).toEqual([shaft.stroke, head.fill]);
+    expect([arrow[0].style.stroke, arrow[1].style.fill]).toEqual(['var(--occ-text)', 'var(--occ-text)']);
+    expect(arriving.querySelector('rect').style.fill).toBe('var(--occ-panel-raised)');
+
+    // The camera moved west until the right edge falls between the chips of A and B (terminal A lies east of B and the
+    // FBO): the chips of B and the FBO stay in sight without an arrow, so only the chip is explained.
+    const chipPixel = terminal => map.project(map.getSource('occ-stand-groups').data.features
+      .find(item => item.id === terminal).geometry.coordinates);
+    const [a, b] = [chipPixel('A'), chipPixel('B')];
+    expect(a.x).toBeGreaterThan(b.x + 20);
+    act(() => map.jumpTo({ center: map.unproject([(a.x + b.x) / 2 - 720, 450]).toArray() }));
+    expect(chipPixel('B').x).toBeLessThan(1440);
+    expect(legendItems()).toEqual([CHIP]);
+    cleanup();
+
+    // In English.
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMap stands={scenarioStands()} frozenAt={NOW}><MapLegend /></OccMap></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(english, 'style.load'));
+    act(() => english.jumpTo({ center: boundsCenter(airfield.bounds), zoom: 12.5 }));
+    expect(legendItems()).toEqual(['Stands of a terminalOccupied of the total; zoom in to see each one', 'A flight is arriving at a stand of the terminal']);
+  });
+
+  it('explains only the signal the map draws on each stand: a stand with an urgent and an attention signal brings «Urgente»', () => {
+    // A1 has an aircraft on it while another flight arrives, and nobody covers it; no other stand carries a signal.
+    const stands = createMapStands({
+      A1: { signals: [{ kind: 'attention', reason: 'uncovered' }, { kind: 'urgent', reason: 'conflict' }] },
+    });
+    const view = render(
+      <OccMap stands={stands}>
+        <MapLegend />
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    // The map draws only the red octagon on A1, and the legend explains that one alone.
+    expect(map.getSource('occ-stand-labels').data.features.find(item => item.id === 'A1').properties.signal).toBe('urgent');
+    expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), URGENT, UNOFFICIAL]);
+    expect(screen.getByTestId('map-legend').querySelectorAll('svg[data-swatch="signal"]')).toHaveLength(1);
+    // A re-read where A1 keeps only the attention signal: the map draws the triangle, and the legend follows it.
+    const withSignals = signals => createMapStands({ A1: { signals } });
+    view.rerender(<OccMap stands={withSignals([{ kind: 'attention', reason: 'uncovered' }])}><MapLegend /></OccMap>);
+    expect(map.getSource('occ-stand-labels').data.features.find(item => item.id === 'A1').properties.signal).toBe('attention');
+    expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), ATTENTION, UNOFFICIAL]);
+    // The urgent one comes back on top of it: «Urgente» replaces «Atención».
+    view.rerender(<OccMap stands={withSignals([{ kind: 'attention', reason: 'uncovered' }, { kind: 'urgent', reason: 'conflict' }])}><MapLegend /></OccMap>);
+    expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), URGENT, UNOFFICIAL]);
+    view.unmount();
+
+    // A legend given its own stands reads them the same way.
+    render(<MapLegend stands={stands} />);
+    expect(legendItems()).toContain(URGENT);
+    expect(legendItems()).not.toContain(ATTENTION);
   });
 
   it('shows «Pista», «Calle de rodaje» and «Punto de espera» only when on screen, in Spanish and English', () => {

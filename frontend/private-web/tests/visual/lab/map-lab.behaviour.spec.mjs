@@ -21,6 +21,7 @@ const legendOf = (states, extras = []) => [
 ];
 const ALL_STATES = Object.freeze(Object.keys(STATE_LABELS));
 const CHIP = /^Posiciones de una terminal/;
+const CHIP_ARRIVING = /^Llega un vuelo a una posición/;
 const airfieldOf = (...items) => items.map(item => AIRFIELD_LABELS[item]);
 
 // The airport layout the map draws, read in Node as the generator wrote it.
@@ -205,10 +206,11 @@ test.describe('map lab', () => {
     await expect(legend.getByRole('listitem')).toHaveText([
       ...legendOf(ALL_STATES, ['attention', 'urgent', 'combined']), ...ALL_AIRFIELD,
     ]);
-    // Below the polygon threshold (the airfield fit − 0.6) one chip per terminal stands for its stands.
+    // Below the polygon threshold (the airfield fit − 0.6) one chip per terminal stands for its stands, with the arrow
+    // over the chips of A and B, where a flight is arriving (A3, A6 and B25).
     await page.evaluate(zoom => window.__occMapLab.jumpTo({ zoom }), airfieldFit - 0.6);
     await labIdle(page);
-    await expect(legend.getByRole('listitem')).toHaveText([CHIP, ...ALL_AIRFIELD]);
+    await expect(legend.getByRole('listitem')).toHaveText([CHIP, CHIP_ARRIVING, ...ALL_AIRFIELD]);
     // Region and approach draw neither stands nor the airfield of the dataset.
     await settleOn('region');
     await expect(page.getByTestId('map-legend')).toHaveCount(0);

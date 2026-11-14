@@ -1155,10 +1155,11 @@ cambia.
   Las posiciones del tablero que el mapa no dibuja salen en la lista como «Sin
   ubicar» y se ubican desde su cajón.
 - **Leyenda.** Lista solo lo que hay en pantalla: los estados, como recortes
-  del mapa y con las palabras del vocabulario; las señales, con su forma; la
-  pastilla de las terminales; «No oficial»; el enlace de las combinadas; la caja
-  de fuselaje estrecho; el anillo del mismo agente; y, al ubicar, la caja y la
-  ubicación sin guardar.
+  del mapa y con las palabras del vocabulario; las señales, con su forma, una
+  por posición: la más fuerte, la única que el mapa dibuja en ella; la pastilla
+  de las terminales y, mientras se ve una con un vuelo que llega, su flecha;
+  «No oficial»; el enlace de las combinadas; la caja de fuselaje estrecho; el
+  anillo del mismo agente; y, al ubicar, la caja y la ubicación sin guardar.
 - **Laboratorio y suite visual.** La escena `ramp-states`, con los siete
   estados, reemplaza a `ramp-points`, y llegan `ramp-combined-selected` y
   `ramp-placing-ghost`. La suite visual suma los

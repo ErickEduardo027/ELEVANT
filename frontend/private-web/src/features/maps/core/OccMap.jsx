@@ -15,7 +15,8 @@ import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { mapMessages } from '../mapMessages';
 import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
 import {
-  STAND_FEATURE_COLLECTIONS, boxOfPoints, boxesMeet, buildStandFeatures, diffStandFeatures, featuresIn, standsDrawnIn,
+  STAND_FEATURE_COLLECTIONS, boxOfPoints, boxesMeet, buildStandFeatures, diffStandFeatures, featuresIn, standSignalOf,
+  standsDrawnIn,
 } from '../stands/standFeatures';
 import {
   featureStatePlan, findStandByCode, isOutsideSafeArea, standFlags, standTooltip,
@@ -86,12 +87,11 @@ const insetsFromKey = key => Object.fromEntries(key.split('|').map((value, index
 const insetVariables = insets => Object.fromEntries(INSET_SIDES.map(side => [`--occ-map-inset-${side}`, `${insets[side]}px`]));
 const addPadding = (insets, extra) => Object.fromEntries(INSET_SIDES.map(side => [side, insets[side] + extra]));
 const viewKey = (view, terminal) => `${view}:${terminal ?? ''}`;
-// What the legend reads of a stand on screen: its state, its signals and where its location comes from.
+// What the legend reads of a stand on screen: its state, the signal the map draws on it and where its location comes
+// from.
 const standsKey = stands => stands
-  .map(stand => [
-    standCodeOf(stand), standStateOf(stand), (stand.signals ?? []).map(signal => signal?.kind).join(','),
-    stand.locationSource ?? '',
-  ].join(':')).join('|');
+  .map(stand => [standCodeOf(stand), standStateOf(stand), standSignalOf(stand) ?? '', stand.locationSource ?? ''].join(':'))
+  .join('|');
 const sameList = (first, second) => first.join('|') === second.join('|');
 // The legend shows one entry for every drawn flight, so which flights are on screen is all that counts.
 const flightsKey = flights => flights.map(flight => String(flight.id)).join('|');
@@ -418,12 +418,12 @@ const OccMap = forwardRef(function OccMap({
 
   // What is drawn in the area the insets leave in sight (the page's panels hide what lies under them), for the legend,
   // which explains only what is on screen (contracts 2.4): the stands whose polygon reaches into that area from the
-  // polygon threshold on, the terminal chips drawn there below it, the combined links and narrow-body boxes drawn
-  // there, the flights drawn there and the airfield items drawn there. The stands are known from their own geometry;
-  // the airfield is read back from the map from its threshold on, and right after a move the tiles of the new zoom may
-  // still be loading, so it is read again when the map settles (onIdle). They change only when the camera, the insets,
-  // the thresholds, the stands, the flights or what the map draws do, and a list keeps its identity while what the
-  // legend reads of it stays the same.
+  // polygon threshold on, the terminal chips drawn there below it with the arrow over a chip whose terminal has a stand
+  // in «Llegando», the combined links and narrow-body boxes drawn there, the flights drawn there and the airfield items
+  // drawn there. The stands and the chips are known from their own geometry; the airfield is read back from the map
+  // from its threshold on, and right after a move the tiles of the new zoom may still be loading, so it is read again
+  // when the map settles (onIdle). They change only when the camera, the insets, the thresholds, the stands, the
+  // flights or what the map draws do, and a list keeps its identity while what the legend reads of it stays the same.
   const updateOnScreen = useCallback(() => {
     const engine = engineRef.current;
     const { padding, attached: drawnStands, standFeatures: features } = latest.current;
@@ -434,7 +434,8 @@ const OccMap = forwardRef(function OccMap({
     const display = bounds === null || !drawsStands ? 'hidden' : standDisplayAt(zoom, thresholds);
     const polygons = display === 'polygons';
     const next = polygons ? standsDrawnIn(drawnStands, bounds) : EMPTY;
-    const chips = display === 'chips' ? featuresIn(features.groups, bounds).map(chip => chip.id) : EMPTY;
+    const chipsInSight = display === 'chips' ? featuresIn(features.groups, bounds) : EMPTY;
+    const chips = chipsInSight.map(chip => chip.id);
     // The narrow-body boxes are drawn from the codes threshold on, the combined links with the polygons.
     const codesShown = !Number.isFinite(thresholds?.codes) || zoom >= thresholds.codes;
     const drawsAux = (kind, from) => from && featuresIn(features.aux, bounds, { kind }).length > 0;
@@ -445,6 +446,8 @@ const OccMap = forwardRef(function OccMap({
       && standsDrawnIn(drawnStands.filter(stand => selectionSameAgent.has(mapStandCode(standCodeOf(stand)))), bounds).length > 0;
     const boxInSight = box => bounds !== null && Array.isArray(box?.polygon) && boxesMeet(boxOfPoints(box.polygon), bounds);
     const marks = [
+      // The arrow over a chip is drawn with the chips (stands/standLayers.js: occ-stand-groups-arriving).
+      ...(chipsInSight.some(chip => chip.properties?.arriving === true) ? ['chipArriving'] : []),
       ...(drawsAux('combinedLink', polygons) ? ['combined'] : []),
       ...(drawsAux('narrowInner', polygons && codesShown) ? ['narrowbody'] : []),
       ...(marked ? ['sameAgent'] : []),

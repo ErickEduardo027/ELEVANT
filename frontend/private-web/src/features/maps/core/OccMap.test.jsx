@@ -540,6 +540,38 @@ describe('OccMap', () => {
       .toEqual(['Stands of a terminalOccupied of the total; zoom in to see each one']);
   });
 
+  it('counts the arrow over a terminal chip as a mark on screen only while a chip with a stand in «Llegando» is in sight', () => {
+    // The ramp scenario: A3 and A6 read «Llegando», so only the chip of terminal A carries the arrow.
+    const stands = scenarioStands();
+    const { map } = renderMap({ stands, frozenAt: NOW });
+    loadStyle(map);
+    const chipOf = terminal => map.getSource('occ-stand-groups').data.features.find(item => item.id === terminal);
+    expect(['A', 'B', 'FBO'].map(terminal => chipOf(terminal).properties.arriving)).toEqual([true, false, false]);
+    // The ramp view draws the polygons and no chip: no arrow either.
+    expect(probe()).toMatchObject({ activeView: 'ramp', chips: [] });
+    expect(probe().marks).not.toContain('chipArriving');
+
+    // Below the polygon threshold: the three chips, and the arrow over A's.
+    const { fits, thresholds } = probe();
+    act(() => map.jumpTo({ center: boundsCenter(targetsOf().airfield.bounds), zoom: fits.airfield - 0.6 }));
+    expect(probe()).toMatchObject({ onScreen: [], chips: ['A', 'B', 'FBO'], marks: ['chipArriving'] });
+
+    // The right edge between the chips of A and B (terminal A lies east of B and the FBO): B's and the FBO's chips stay
+    // in sight, without an arrow. The left edge between them: A's chip alone, with its arrow.
+    const pixel = terminal => map.project(chipOf(terminal).geometry.coordinates);
+    const between = () => (pixel('A').x + pixel('B').x) / 2;
+    expect(pixel('A').x).toBeGreaterThan(Math.max(pixel('B').x, pixel('FBO').x) + 20);
+    act(() => map.jumpTo({ center: map.unproject([between() - 720, 450]).toArray() }));
+    expect(probe()).toMatchObject({ chips: ['B', 'FBO'], marks: [] });
+    act(() => map.jumpTo({ center: map.unproject([between() + 720, 450]).toArray() }));
+    expect(probe()).toMatchObject({ chips: ['A'], marks: ['chipArriving'] });
+
+    // From the polygon threshold the chips go, and their arrow with them.
+    act(() => map.jumpTo({ zoom: thresholds.polygons }));
+    expect(probe().chips).toEqual([]);
+    expect(probe().marks).not.toContain('chipArriving');
+  });
+
   it('counts on screen the flights it draws in the area the insets leave in sight', () => {
     const screenWith = (props = {}) => (
       <OccMap flights={FLIGHTS} defaultView="region" {...props}>

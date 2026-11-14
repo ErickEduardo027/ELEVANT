@@ -10,7 +10,7 @@ import { mapMessages } from '../mapMessages';
 import { SCENARIO_AGENTS, boardStand, boardVisit, createMapStands, createRampScenario } from '../testing/mapFixtures';
 import {
   STAND_FEATURE_COLLECTIONS, STAND_FEATURE_KEYS, STAND_FEATURE_LABEL_MODES, boxOfPoints, boxesMeet, buildStandFeatures,
-  diffFeatureCollections, diffStandFeatures, featuresIn, standsDrawnIn,
+  diffFeatureCollections, diffStandFeatures, featuresIn, standSignalOf, standsDrawnIn,
 } from './standFeatures';
 import { STAND_LABEL_MODES } from './standLayers';
 import { attachStandGeometry, withStandDisplay } from './standModel';
@@ -126,6 +126,34 @@ describe('buildStandFeatures', () => {
     expect(propertiesOf(buildStandFeatures(positions, { nowMs: NOW, labels: 'dashboard' }).labels, 'A2').sortKey).toBe(0);
     expect(STAND_FEATURE_LABEL_MODES).toEqual(STAND_LABEL_MODES);
     expect(() => buildStandFeatures(positions, { nowMs: NOW, labels: 'wall' })).toThrow(RangeError);
+  });
+
+  it('the one signal the map draws on a stand: urgent over attention, whatever their order', () => {
+    const urgent = { kind: 'urgent', reason: 'conflict' };
+    const attention = { kind: 'attention', reason: 'uncovered' };
+    expect(standSignalOf({ signals: [urgent, attention] })).toBe('urgent');
+    expect(standSignalOf({ signals: [attention, urgent] })).toBe('urgent');
+    expect(standSignalOf({ signals: [attention, { kind: 'attention', reason: 'overdue' }] })).toBe('attention');
+    expect(standSignalOf({ signals: [{ kind: 'notice' }, null] })).toBeNull();
+    // The signals the screen derived, else those of the stand's display; without either, none.
+    expect(standSignalOf({ display: { signals: [attention] } })).toBe('attention');
+    expect(standSignalOf({ signals: [], display: { signals: [urgent] } })).toBeNull();
+    for (const stand of [{ display: { signals: 'urgent' } }, { signals: 'urgent' }, {}, null]) {
+      expect(standSignalOf(stand), JSON.stringify(stand)).toBeNull();
+    }
+
+    // A4 has an aircraft on it while another flight arrives and, uncovered, it carries both signals: its label point
+    // carries only the urgent one, and the reason on its third line is that one's.
+    const { board } = createRampScenario(NOW);
+    const positions = positionsOf({ ...board, positions: board.positions.map(stand => (stand.code === 'A04' ? { ...stand, coveredBy: [] } : stand)) });
+    const a4 = positions.find(item => item.id === 'A4');
+    expect(a4.signals.map(signal => signal.kind)).toEqual(['urgent', 'attention']);
+    const features = buildStandFeatures(positions, { nowMs: NOW });
+    expect(propertiesOf(features.labels, 'A4')).toMatchObject({ signal: 'urgent', label3: expect.stringMatching(/\nOtra aeronave llega a esta posición$/) });
+    // Every label point carries the signal standSignalOf gives its stand.
+    for (const point of features.labels.features) {
+      expect(point.properties.signal, point.id).toBe(standSignalOf(positions.find(item => item.id === point.id)));
+    }
   });
 
   it('map texts use only Latin-1 characters', () => {

@@ -55,7 +55,7 @@ describe('legend entries', () => {
     expect(legendEntries({ stands: points, bounds: viewOf('BN6') }).states).toEqual([]);
   });
 
-  it('lists the signals the stands on screen carry, attention before urgent', () => {
+  it('lists the signals the map draws on the stands on screen, attention before urgent', () => {
     expect(STAND_SIGNAL_KEYS).toEqual(['attention', 'urgent']);
     const signalled = [
       { ...byId('A3'), signals: [{ kind: 'urgent', reason: 'conflict' }] },
@@ -68,11 +68,36 @@ describe('legend entries', () => {
     expect(legendEntries({ stands: [{ ...byId('A1'), signals: [{ kind: 'notice' }] }] }).signals).toEqual([]);
   });
 
+  it('lists one signal per stand, the strongest, as the map draws only that one', () => {
+    // A1 has an aircraft on it while another flight arrives, and nobody covers it: urgent and attention, in either
+    // order. The map draws only the red octagon on it, so «Atención» is not on screen; A2 carries no signal.
+    const urgent = { kind: 'urgent', reason: 'conflict' };
+    const attention = { kind: 'attention', reason: 'uncovered' };
+    for (const signals of [[urgent, attention], [attention, urgent]]) {
+      const stands = [{ ...byId('A1'), signals }, { ...byId('A2'), signals: [] }];
+      expect(legendEntries({ stands }), JSON.stringify(signals)).toEqual({
+        ...NOTHING, states: ['available', 'occupied'], signals: ['urgent'],
+      });
+    }
+    // Another stand on screen with attention alone brings the triangle back.
+    const both = [{ ...byId('A1'), signals: [urgent, attention] }, { ...byId('A3'), signals: [{ kind: 'attention', reason: 'overdue' }] }];
+    expect(legendEntries({ stands: both }).signals).toEqual(['attention', 'urgent']);
+    expect(legendEntries({ stands: both, bounds: around('A1') }).signals).toEqual(['urgent']);
+    // The signals are read as the map reads them: those the screen derived, else those of the stand's display.
+    const fromDisplay = { ...byId('A1'), signals: undefined, display: { ...byId('A1').display, signals: [attention] } };
+    expect(legendEntries({ stands: [fromDisplay] }).signals).toEqual(['attention']);
+    expect(legendEntries({ stands: [{ ...fromDisplay, signals: [] }] }).signals).toEqual([]);
+  });
+
   it('lists the terminal chip and the stand marks only when the map draws them on screen', () => {
     expect(legendEntries({ chips: ['A', 'B'] })).toEqual({ ...NOTHING, chips: true });
     expect(legendEntries({ chips: [] }).chips).toBe(false);
     expect(legendEntries({ chips: 'A' }).chips).toBe(false);
-    expect(STAND_MARKS).toEqual(['combined', 'narrowbody', 'sameAgent', 'ghost', 'pending']);
+    expect(STAND_MARKS).toEqual(['chipArriving', 'combined', 'narrowbody', 'sameAgent', 'ghost', 'pending']);
+    // The arrow over a chip whose terminal has a flight arriving comes first: with the chips no state or signal is
+    // listed, so it follows the chip's entry, before the boxes of a stand being placed.
+    expect(legendEntries({ chips: ['A', 'B'], marks: ['chipArriving'] })).toEqual({ ...NOTHING, chips: true, marks: ['chipArriving'] });
+    expect(legendEntries({ chips: ['A'], marks: ['pending', 'ghost', 'chipArriving'] }).marks).toEqual(['chipArriving', 'ghost', 'pending']);
     expect(legendEntries({ marks: ['narrowbody', 'combined', 'narrowbody'] }).marks).toEqual(['combined', 'narrowbody']);
     // The same-agent ring of a selection and the boxes of a stand being placed, in the order of the legend.
     expect(legendEntries({ marks: ['pending', 'sameAgent', 'ghost'] }).marks).toEqual(['sameAgent', 'ghost', 'pending']);
