@@ -1,9 +1,9 @@
 /* Identity of the OCC workspace (operations control centre). It applies only
    inside `[data-department="occ"]`, which ShellFrame sets when AdminOccLayout
    asks for it; the other departments never see these variables.
-   The OCC is dark only: one token block, with no light values and no
-   dependency on the `dark` class. The `*-occ-*` classes of tailwind.config.js
-   read these values, and src/features/occ-ui/occPalette.js mirrors the colours
+   Two token blocks: the dark one, the default, on the scope itself, and the
+   light one below it, which applies while <html> has no `dark` class. The
+   `*-occ-*` classes of tailwind.config.js read these values, and src/features/occ-ui/occPalette.js mirrors the colours
    for JavaScript consumers (a parity test compares the two files). */
 [data-department='occ'] {
   color-scheme: dark;
@@ -75,6 +75,55 @@
 
   font-family: var(--font-manrope), system-ui, 'Segoe UI', sans-serif;
   font-weight: 500;
+}
+
+/* The light theme of the OCC (ADR-0044, note of 2026-11-15): the same tokens
+   with light values, applied while <html> does not carry the `dark` class. The
+   dark block above stays the default (the boot script and ThemeProvider add the
+   class on OCC routes unless the account chose light). Every text token keeps
+   at least 4.5:1 on every surface (primary text 10:1, secondary 7:1) and the
+   control boundaries 3:1; occPalette.test.js checks both themes. */
+:root:not(.dark) [data-department='occ'] {
+  color-scheme: light;
+
+  --occ-nav: #e3e9ec;
+  --occ-canvas: #e9eef1;
+  --occ-panel: #ffffff;
+  --occ-panel-raised: #e4eaed;
+  --occ-panel-float: rgb(255 255 255 / 0.94);
+  --occ-field: #f4f7f8;
+
+  --occ-arriving-fill: rgb(196 207 213 / 0.4);
+
+  --occ-line: #c9d3d8;
+  --occ-line-strong: #6f7b82;
+  --occ-text: #11181c;
+  --occ-muted: #3b474e;
+  --occ-faint: #56636a;
+
+  --occ-accent: #054e66;
+  --occ-accent-soft: #d4ebf3;
+  --occ-on-accent: #ffffff;
+  --occ-primary: #1b2328;
+  --occ-primary-hover: #323d43;
+  --occ-on-primary: #ffffff;
+
+  --occ-warn: #634000;
+  --occ-warn-fill: #f2b340;
+  --occ-warn-soft: #f8ecd0;
+  --occ-on-warn: #11181c;
+  --occ-danger: #b0241a;
+  --occ-danger-fill: #c62f24;
+  --occ-danger-soft: #f9e1df;
+  --occ-on-danger: #ffffff;
+  --occ-scrim: rgb(17 24 28 / 0.45);
+
+  --occ-nav-line: #cdd7dc;
+  --occ-nav-text: #1f2a30;
+  --occ-nav-muted: #4c5960;
+  --occ-nav-hover: #d8e0e4;
+  --occ-nav-active: #cdd7dc;
+  --occ-nav-accent: #075d76;
 }
 
 [data-department='occ'] :focus-visible {

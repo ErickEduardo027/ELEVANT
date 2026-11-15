@@ -18,7 +18,7 @@ const EMPTY = Object.freeze([]);
 // replaces, so its pages need no change. The stands are polygons with their state (PR M4), with a tooltip, the marks of
 // the agent who covers them and the camera brought to a selected stand out of sight; the map opens on the ramp of the
 // reference catalogue (contracts 2.3), with the view selector and the legend at the bottom. `theme` is accepted and
-// ignored: the OCC maps have one dark style and never swap it. Placing a stand (ADR-0027, Decision D-2): `placing` with
+// ignored: OccMap follows the shell theme on its own. Placing a stand (ADR-0027, Decision D-2): `placing` with
 // `onMapClick` gives the clicked point; `placingCode` also draws that stand's box at the pointer and a click gives the
 // point it snapped to (`{ latitude, longitude, snapped }`), `pendingLocation` draws the location waiting for «Guardar
 // ubicación» and `onCancelPlacing` is what Esc on the map does first.

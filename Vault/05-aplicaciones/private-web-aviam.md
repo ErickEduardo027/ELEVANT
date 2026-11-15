@@ -718,8 +718,9 @@ añadirán los PR siguientes están en
 estructura de ninguna pantalla: los textos, roles, nombres accesibles y
 `data-testid` del OCC son los mismos, salvo el botón de tema, que desaparece.
 
-- **Solo oscuro, sin botón de tema.** Bajo `/admin-occ` el tema es siempre
-  oscuro desde el primer pintado.
+- **Solo oscuro, sin botón de tema** (revertido el 15 de noviembre de 2026:
+  ver [Tema claro y oscuro del OCC](#tema-claro-y-oscuro-del-occ)). Bajo
+  `/admin-occ` el tema era siempre oscuro desde el primer pintado.
   [`app/layout.jsx`](../../frontend/private-web/app/layout.jsx) pone en
   `<head>` un script con el nonce de la petición que añade la clase `dark` solo
   en rutas del OCC ([`occTheme.js`](../../frontend/private-web/src/features/shell/occTheme.js));
@@ -1833,6 +1834,40 @@ npm run build
 - *posterior al commit verificado (PR U3):* las pruebas de la consola de Panorama, junto a cada módulo de `dashboard/noc`, entre ellas la que repite con los hooks reales un minuto en reposo y uno de vuelo demo y falla por encima de 40 o de 70 peticiones ([presupuesto](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)), y las respuestas sintéticas de la consola en la suite visual, que pasan los validadores estrictos del cliente compartido ([datos](../../frontend/private-web/tests/visualConsoleFixtures.test.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#la-consola-del-occ-pr-u3).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
+
+## Tema claro y oscuro del OCC
+
+Posterior al commit verificado de esta nota. Desde el 15 de noviembre de 2026, el
+OCC vuelve a tener tema claro y sigue siendo oscuro por defecto. Revierte el
+«solo oscuro» del PR U1; las decisiones están en la nota de esa fecha de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md).
+
+- **Un solo tema guardado.** El OCC lee y escribe `elevant-theme`, como los
+  demás departamentos. Sin elección guardada, el OCC es oscuro y los demás
+  siguen la preferencia del sistema. Solo se guarda lo que la cuenta elige. El
+  script de arranque aplica el tema guardado (u oscuro) en las rutas del OCC
+  antes del primer pintado.
+- **Botón de tema.** Está en la barra de estado desde 1024 px y, por debajo, en
+  el menú de la cuenta. Se llama «Cambiar a tema claro» o «Cambiar a tema
+  oscuro».
+- **Tokens.** [`occ.css`](../../frontend/private-web/src/styles/occ.css) tiene
+  dos bloques: el oscuro sobre `[data-department='occ']` y el claro bajo
+  `:root:not(.dark) [data-department='occ']`, cada uno con su
+  `color-scheme`.
+  [`occPalette.js`](../../frontend/private-web/src/features/occ-ui/occPalette.js)
+  exporta `OCC_PALETTES = { dark, light }` y `occPaletteFor(theme)`. Los dos
+  temas cumplen AA: texto a 4.5:1 o más sobre los paneles.
+- **Mapa.** [`mapTheme.js`](../../frontend/private-web/src/features/maps/style/mapTheme.js)
+  añade un mapa base claro (tierra gris azulado claro, mar azul claro), y
+  `buildOccStyle({ theme })` pinta con el mapa base y la paleta del tema. Al
+  cambiar el tema,
+  [`OccMap`](../../frontend/private-web/src/features/maps/core/OccMap.jsx)
+  vuelve a crear el mapa sin `setStyle`, en la misma cámara y con la misma
+  selección (la de la URL). Lo hace en Mapa de posiciones, Monitoreo de vuelos
+  y Planificación.
+- **Límite.** Un navegador que ya guardó `elevant-theme=light` (antes, los
+  demás departamentos guardaban el tema resuelto al montar) abre el OCC en
+  claro. Basta un clic para volver a oscuro.
 
 ## Configuración segura
 

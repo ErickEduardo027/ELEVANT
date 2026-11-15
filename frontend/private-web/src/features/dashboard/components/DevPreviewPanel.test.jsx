@@ -21,7 +21,7 @@ describe('DevPreviewPanel', () => {
   it('offers no theme toggle', async () => {
     const onToggleTheme = vi.fn();
     const onSetForceState = vi.fn();
-    // The OCC is dark only: a caller that still sends the old props gets no button for them.
+    // The theme button lives in the OCC top bar: a caller that still sends the old props gets no button for them.
     render(
       <DevPreviewPanel theme="dark" onToggleTheme={onToggleTheme} forceState="default" onSetForceState={onSetForceState} />
     );

@@ -101,7 +101,7 @@ function PlanningMapView({ stationId, date, flights = [], timeZone, onSelectFlig
     <section aria-label={t('map.label')} className="grid gap-4 lg:grid-cols-[7fr_minmax(16rem,3fr)]">
       <div className={`${panelClass} relative min-h-[460px] overflow-hidden`}>
         <PositionMap ref={mapRef} positions={mapPositions} selectedPositionId={selected?.id ?? selectedCode}
-          onSelectPosition={selectPosition} theme="dark" viewMode="2d" traffic={live?.traffic}
+          onSelectPosition={selectPosition} viewMode="2d" traffic={live?.traffic}
           trafficSelection={trafficSelection} onSelectTraffic={live ? selectTraffic : undefined}>
           <MapSituationOverlays live={live} onClose={clear} />
         </PositionMap>

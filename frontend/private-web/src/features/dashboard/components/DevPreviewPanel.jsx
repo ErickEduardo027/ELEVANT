@@ -23,7 +23,7 @@ const STATE_BUTTONS = [
   { state: 'chatDisconnected', label: 'Chat: desconectado' },
 ];
 
-// Development-only preview of forced screen states. It offers no theme toggle: the OCC is dark only.
+// Development-only preview of forced screen states. It offers no theme toggle: the OCC top bar has it.
 export default function DevPreviewPanel({ forceState, onSetForceState, defaultOpen = true }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return defaultOpen;

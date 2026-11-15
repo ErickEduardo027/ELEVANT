@@ -1,6 +1,6 @@
 import { BREAKPOINTS } from '../../../../config/breakpoints';
 
-// Where each element of the OCC status bar shows (design C.3, without the theme button, wall mode and search), in one
+// Where each element of the OCC status bar shows (design C.3, without wall mode and search; the theme button came back on 2026-11-15), in one
 // pure map: the bar's components take their classes from here, and statusBarLayout.test.js checks that the classes
 // say what the widths say. jsdom applies no CSS, so the rules are tested on this map and not on the rendered bar.
 //
@@ -37,6 +37,7 @@ export const STATUS_BAR_LAYOUT = Object.freeze({
   utcClock: rule({ from: BREAKPOINTS.lg, bar: 'hidden lg:flex' }),
   language: rule({ from: BREAKPOINTS.lg, menuBelow: BREAKPOINTS.lg, bar: 'hidden lg:flex', menu: 'lg:hidden' }),
   legend: rule({ from: BREAKPOINTS.lg, menuBelow: BREAKPOINTS.lg, bar: 'hidden lg:flex', menu: 'lg:hidden' }),
+  theme: rule({ from: BREAKPOINTS.lg, menuBelow: BREAKPOINTS.lg, bar: 'hidden lg:flex', menu: 'lg:hidden' }),
   account: rule({}),
 });
 
