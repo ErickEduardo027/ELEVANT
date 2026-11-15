@@ -40,6 +40,7 @@ import {
   trafficDiff, trafficFeatures, trafficOnScreen as trafficOnScreenOf,
 } from '../traffic/trafficFeatures';
 import { trafficOverlay } from '../traffic/trafficLayers';
+import AltitudeLegend from '../ui/AltitudeLegend';
 import MapTooltip from '../ui/MapTooltip';
 import { buildAttribution } from './attribution';
 import {
@@ -1747,6 +1748,8 @@ const OccMap = forwardRef(function OccMap({
             {t('follow.stopped', { id: followNotice.name })}
           </p>
         )}
+        {/* The altitude scale of the traffic (owner request of 2026-11-15), under the page's overlays and its dock. */}
+        {!unavailable && traffic !== undefined && <AltitudeLegend />}
         {children}
         {!unavailable && <MapTooltip tooltip={snapshot.tooltip} />}
       </div>

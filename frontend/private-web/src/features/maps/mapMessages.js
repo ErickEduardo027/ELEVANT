@@ -53,6 +53,35 @@ export const mapMessages = {
         routeMarkHint: 'Toma de pista, salida y posición',
       },
     },
+    // The altitude scale of the traffic (ui/AltitudeLegend.jsx, style/mapColors.js).
+    altitude: {
+      title: 'ALTITUD (ft)',
+      label: 'Escala de colores por altitud, en pies',
+      show: 'Mostrar la escala de altitud',
+      hide: 'Ocultar la escala de altitud',
+      ground: 'En tierra',
+    },
+    // The card of an aircraft under the pointer (ui/MapTooltip.jsx, ui/aircraftCard.js).
+    aircraftCard: {
+      registration: 'Matrícula',
+      type: 'Tipo',
+      airline: 'Aerolínea',
+      route: 'Ruta',
+      altitude: 'Altitud',
+      speed: 'Velocidad',
+      source: 'Fuente',
+      ground: 'En tierra',
+      unknown: '—',
+      // A demo flight's source is the vocabulary's «Demo» (TAGS.demo).
+      sources: { adsb: 'ADS-B', estimated: 'Estimada' },
+    },
+    // The region's airports (style/referenceLayers.js), in the legend.
+    airports: {
+      home: 'Punta Cana (MDPC)',
+      international: 'Aeropuerto internacional',
+      regional: 'Aeropuerto regional',
+      other: 'Otro aeródromo',
+    },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
       runway: 'Pista {id}',
@@ -215,8 +244,9 @@ export const mapMessages = {
       show: 'Mostrar las capas',
       hide: 'Ocultar las capas',
       locked: 'Siempre visible',
-      group: { traffic: 'Tráfico' },
+      group: { traffic: 'Tráfico', reference: 'Referencias' },
       key: {
+        reference: { airports: 'Aeropuertos de la región' },
         traffic: {
           aviam: 'Vuelos de AVIAM',
           other: 'Otro tráfico',
@@ -273,6 +303,31 @@ export const mapMessages = {
         routeMark: 'Route points',
         routeMarkHint: 'Touchdown, runway exit and stand',
       },
+    },
+    altitude: {
+      title: 'ALTITUDE (ft)',
+      label: 'Colour scale by altitude, in feet',
+      show: 'Show the altitude scale',
+      hide: 'Hide the altitude scale',
+      ground: 'On the ground',
+    },
+    aircraftCard: {
+      registration: 'Registration',
+      type: 'Type',
+      airline: 'Airline',
+      route: 'Route',
+      altitude: 'Altitude',
+      speed: 'Speed',
+      source: 'Source',
+      ground: 'On the ground',
+      unknown: '—',
+      sources: { adsb: 'ADS-B', estimated: 'Estimated' },
+    },
+    airports: {
+      home: 'Punta Cana (MDPC)',
+      international: 'International airport',
+      regional: 'Regional airport',
+      other: 'Other aerodrome',
     },
     airfield: {
       runway: 'Runway {id}',
@@ -414,8 +469,9 @@ export const mapMessages = {
       show: 'Show the layers',
       hide: 'Hide the layers',
       locked: 'Always shown',
-      group: { traffic: 'Traffic' },
+      group: { traffic: 'Traffic', reference: 'References' },
       key: {
+        reference: { airports: 'Airports of the region' },
         traffic: {
           aviam: 'AVIAM flights',
           other: 'Other traffic',
