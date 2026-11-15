@@ -1763,9 +1763,14 @@ despliegue ni una revisión visual en el VPS.
   También muestran la siguiente escala. Todo sale de lo ya leído; la API no
   cambia.
 
-Límites: aún no se muestra el turno del agente, la paleta clara no llega a las
-capas hasta que llegue el tema claro, y la tarjeta del avión no se actualiza
-mientras él se mueve. Los detalles están en el
+Con el tema claro (ver «Tema claro y oscuro del OCC»), estos colores también
+tienen su versión clara: altitud un paso más oscura con halo oscuro, códigos de
+aeropuerto en ámbar oscuro y rellenos de posición del tema. El crédito
+«Datos de aeronaves» aparece una sola vez, en la línea de abajo a la izquierda;
+la atribución del mapa guarda solo los créditos del mapa base.
+
+Límites: aún no se muestra el turno del agente, y la tarjeta del avión no se
+actualiza mientras él se mueve. Los detalles están en el
 [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
 
 ## Estado de integración
@@ -1858,8 +1863,11 @@ OCC vuelve a tener tema claro y sigue siendo oscuro por defecto. Revierte el
   exporta `OCC_PALETTES = { dark, light }` y `occPaletteFor(theme)`. Los dos
   temas cumplen AA: texto a 4.5:1 o más sobre los paneles.
 - **Mapa.** [`mapTheme.js`](../../frontend/private-web/src/features/maps/style/mapTheme.js)
-  añade un mapa base claro (tierra gris azulado claro, mar azul claro), y
-  `buildOccStyle({ theme })` pinta con el mapa base y la paleta del tema. Al
+  toma el mapa base claro de la paleta `light` de
+  [`mapColors.js`](../../frontend/private-web/src/features/maps/style/mapColors.js)
+  (tierra clara, mar azul claro), y `buildOccStyle({ theme })` pinta con el
+  mapa base y la paleta del tema; el tráfico, los aeropuertos, los rellenos de
+  posición y la leyenda también toman los colores del tema. Al
   cambiar el tema,
   [`OccMap`](../../frontend/private-web/src/features/maps/core/OccMap.jsx)
   vuelve a crear el mapa sin `setStyle`, en la misma cámara y con la misma
