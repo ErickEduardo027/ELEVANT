@@ -40,6 +40,7 @@ import {
   trafficDiff, trafficFeatures, trafficOnScreen as trafficOnScreenOf,
 } from '../traffic/trafficFeatures';
 import { trafficOverlay } from '../traffic/trafficLayers';
+import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
 import AltitudeLegend from '../ui/AltitudeLegend';
 import MapTooltip from '../ui/MapTooltip';
 import { buildAttribution } from './attribution';
@@ -1027,20 +1028,38 @@ const OccMap = forwardRef(function OccMap({
     else props.onPick?.(hit);
   }, [store, showTooltip, requestView]);
 
+  // The card of the aircraft whose traffic feature is `id`, as the last write drew it (owner request of 2026-11-15:
+  // ui/aircraftCard.js), with its flight among the screen's map flights; null when the map draws no such aircraft.
+  const aircraftTooltipOf = useCallback(id => {
+    const { traffic: current, flights: rows, t: translate, language: words } = latest.current ?? {};
+    const drawn = appliedRef.current.sampledAircraft ?? current?.aircraft ?? EMPTY;
+    const item = id == null ? null : drawn.find(candidate => candidate?.id === id) ?? null;
+    if (item === null) return null;
+    const flight = flightRowOf(rows, item.flightKey) ?? flightRowOf(current?.flights, item.flightKey);
+    return aircraftCard(item, flight, { t: translate, language: words, locale: words === 'en' ? 'en-US' : 'es-DO' });
+  }, []);
+
   // The tooltip of what is under the pointer, unless a click holds one: written to the store only when the runway, the
-  // taxiway or the stand under the pointer changes, never on every frame. A drag (a button held down) shows none.
+  // taxiway, the stand or the aircraft under the pointer changes, never on every frame. A drag (a button held down)
+  // shows none.
   const hoverTooltip = useCallback((event, hit) => {
     const current = store.get().tooltip;
     if (current?.pinned) return;
     let info = null;
-    if (event && !event.originalEvent?.buttons) info = hit?.kind === 'stand' ? standTooltipOf(hit.id) : airfieldTooltip(hit);
+    const fromTraffic = hit?.feature?.source === TRAFFIC_SOURCE
+      || String(hit?.feature?.layer?.id ?? '').startsWith('occ-traffic-');
+    const trafficId = fromTraffic ? hit.feature?.properties?.id ?? null : null;
+    if (event && !event.originalEvent?.buttons) {
+      if (trafficId !== null) info = aircraftTooltipOf(trafficId);
+      else info = hit?.kind === 'stand' ? standTooltipOf(hit.id) : airfieldTooltip(hit);
+    }
     if (info === null) {
       if (current !== null) store.set({ tooltip: null });
       return;
     }
     if (current?.kind === info.kind && current.id === info.id) return;
     showTooltip(info, event.point, event.lngLat, false);
-  }, [store, showTooltip, standTooltipOf]);
+  }, [store, showTooltip, standTooltipOf, aircraftTooltipOf]);
 
   // Other traffic shows its tag while the pointer is on it (contracts 2.4: tag on demand), written with updateData.
   const focusTraffic = useCallback(hit => {

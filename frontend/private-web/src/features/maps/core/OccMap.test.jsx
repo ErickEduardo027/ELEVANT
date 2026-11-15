@@ -1680,6 +1680,43 @@ describe('OccMap traffic (PR M5)', () => {
     expect(without.calls.filter(call => call.method === 'updateData')).toEqual([]);
   });
 
+  it('an aircraft under the pointer shows its card: callsign, address and its facts', () => {
+    const traffic = noonTraffic();
+    const flights = createMapFlights().flights;
+    render(<OccMap defaultView="region" traffic={traffic} flights={flights} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const hover = feature => {
+      fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes(feature.layer.id) ? [feature] : []));
+      fake.state.emit(map, 'mousemove', { point: { x: 100, y: 100 }, lngLat: { lng: -68.4, lat: 18.4 } });
+      act(() => frames.shift()(0));
+    };
+    const other = traffic.aircraft.find(item => item.hex === TRAFFIC_HEX.overflight);
+    hover({ layer: { id: 'occ-traffic-other' }, properties: { id: other.id, hex: other.hex } });
+    let card = screen.getByTestId('map-tooltip');
+    expect(card).toHaveAttribute('data-kind', 'aircraft');
+    expect(card).toHaveAttribute('data-source', 'adsb');
+    expect(card).toHaveTextContent(other.callsign ?? other.hex.toUpperCase());
+    expect(card).toHaveTextContent(other.hex.toUpperCase());
+    for (const label of ['Matrícula', 'Tipo', 'Aerolínea', 'Ruta', 'Altitud', 'Velocidad', 'Fuente']) {
+      expect(card).toHaveTextContent(label);
+    }
+    expect(within(card).getByText('ADS-B')).toBeInTheDocument();
+    // An ELEVANT flight's card carries its route through PUJ; the demo flight's source is «Demo».
+    const demo = traffic.aircraft.find(item => item.kind === 'aviam' && item.isDemo === true);
+    hover({ layer: { id: 'occ-traffic-aviam' }, properties: { id: demo.id, flightKey: demo.flightKey } });
+    card = screen.getByTestId('map-tooltip');
+    expect(card).toHaveAttribute('data-source', 'demo');
+    expect(card.querySelector('[data-fact="route"]')).toHaveTextContent(/PUJ/);
+    // Off the aircraft, the card goes.
+    fake.state.setRenderedFeatures(map, () => []);
+    fake.state.emit(map, 'mousemove', { point: { x: 5, y: 5 }, lngLat: { lng: -68.1, lat: 18.1 } });
+    act(() => frames.shift()(0));
+    expect(screen.queryByTestId('map-tooltip')).toBeNull();
+  });
+
   it('a click on an AVIAM aircraft selects its flight key and on other traffic its hex', async () => {
     const onSelect = vi.fn();
     const ref = createRef();
