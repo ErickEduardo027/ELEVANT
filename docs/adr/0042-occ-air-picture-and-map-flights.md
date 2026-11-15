@@ -167,3 +167,7 @@ Las revisiones del plan pidieron además un relevo por si adsb.fi rechaza la dir
 - El retiro de `GET occ/traffic/aircraft` y de los orígenes que ya no use la CSP, cuando ninguna pantalla los lea.
 - Un receptor ADS-B propio en la rampa, la ruta profesional para la cobertura en tierra.
 - El clima por la API (`occ/weather`), que entra con el PR M8.
+
+## Actualización (14 de noviembre de 2026). PR M8 (API)
+
+El clima por la API que «Queda fuera» dejaba para el PR M8 ya existe: `GET occ/weather?stationId=` (`GetOccAerodromeWeather`), con el acceso de los mapas (`OccMapAccess`, sección 10) y su estado en el 200, como la imagen aérea. Sus decisiones están en la nota del 14 de noviembre de 2026 de [ADR-0043](0043-occ-maps-one-engine.md), el ADR de los PR de mapas M2 a M8.

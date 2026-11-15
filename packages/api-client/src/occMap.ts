@@ -9,13 +9,19 @@
  * - `flights`: the ELEVANT flights of the station, one row per leg, with keys that do not change when OCC imports the
  *   flight, the normalized phase, the recorded milestones and the demo clock.
  *
+ * Its weather (ADR-0043, contracts 1.4), for the same readers: `occ/weather`, the METAR and the TAF of the station's
+ * airport from aviationweather.gov, with its state in a 200 (`Live`, `Stale`, `Unavailable`, `Disabled`) and the credit
+ * of the weather service.
+ *
  * The validators are strict at every level; a key may be missing or null only where the contract says null. Latitudes
  * and longitudes are checked as positions on Earth, never against a box: the picture reaches 250 NM around the station.
  */
 import type {
+  GetOccAerodromeWeatherParams,
   GetOccAirPictureParams,
   GetOccAircraftTrackParams,
   GetOccMapFlightsParams,
+  OccAerodromeWeatherResponse,
   OccAircraftTrackResponse,
   OccAirPictureResponse,
   OccMapFlightsResponse,
@@ -385,4 +391,123 @@ export function normalizedOccMapFlightsQuery(query: OccMapFlightsQuery): GetOccM
     params.hoursAhead = hours(query.hoursAhead, OCC_MAP_FLIGHT_WINDOW.minHoursAhead, OCC_MAP_FLIGHT_WINDOW.maxHoursAhead,
       "hoursAhead");
   return params;
+}
+
+/**
+ * The state of the weather: Live (a METAR at most 90 minutes older than the server's time), Stale (an older METAR, or the
+ * one kept after the service failed), Unavailable (no METAR; the TAF may still come), Disabled (no weather service).
+ */
+export const OCC_AERODROME_WEATHER_STATUSES = ["Live", "Stale", "Unavailable", "Disabled"] as const;
+export type OccAerodromeWeatherStatus = (typeof OCC_AERODROME_WEATHER_STATUSES)[number];
+
+/** The flight categories a METAR may carry. */
+export const OCC_WEATHER_FLIGHT_CATEGORIES = ["VFR", "MVFR", "IFR", "LIFR"] as const;
+export type OccWeatherFlightCategory = (typeof OCC_WEATHER_FLIGHT_CATEGORIES)[number];
+
+/** How a period of a TAF starts; the first one has none. */
+export const OCC_TAF_CHANGES = ["FM", "BECMG", "TEMPO", "PROB"] as const;
+export type OccTafChange = (typeof OCC_TAF_CHANGES)[number];
+
+/** The oldest a live METAR may be, and the most cloud layers (of a report or a period) and TAF periods the server sends. */
+export const OCC_AERODROME_WEATHER_LIMITS = Object.freeze({
+  liveMetarMinutes: 90,
+  maxClouds: 8,
+  maxTafPeriods: 30,
+});
+
+/** The weather of a station's airport: the station only; the server knows its airport. */
+export interface OccAerodromeWeatherQuery {
+  readonly stationId: string;
+}
+
+/** An ICAO location indicator, four letters in upper case. */
+const ICAO_CODE = /^[A-Z]{4}$/;
+/** A cloud cover as the report codes it: FEW, SCT, BKN, OVC, VV, CAVOK… */
+const CLOUD_COVER = /^[A-Z]{2,5}$/;
+/** The longest raw METAR, raw TAF and present weather the server reads. */
+const MAX_METAR_LENGTH = 1_000;
+const MAX_TAF_LENGTH = 4_000;
+const MAX_PRESENT_WEATHER_LENGTH = 64;
+
+const WEATHER_KEYS = ["stationId", "icaoCode", "status", "serverTime", "retrievedAt", "source", "metar", "taf"] as const;
+const WEATHER_SOURCE_KEYS = ["name", "homeUrl"] as const;
+const METAR_KEYS = ["raw", "observedAt", "flightCategory", "windDirectionDegrees", "windVariable", "windSpeedKnots",
+  "windGustKnots", "visibilityStatuteMiles", "temperatureCelsius", "dewpointCelsius", "altimeterHectopascals", "weather",
+  "clouds"] as const;
+const CLOUD_KEYS = ["cover", "baseFeet"] as const;
+const TAF_KEYS = ["raw", "issuedAt", "validFrom", "validTo", "periods"] as const;
+const TAF_PERIOD_KEYS = ["from", "to", "change", "probabilityPercent", "windDirectionDegrees", "windVariable",
+  "windSpeedKnots", "windGustKnots", "visibilityStatuteMiles", "weather", "clouds"] as const;
+
+const isOptionalNumberIn = (value: unknown, min: number, max: number) => absent(value) || isNumberIn(value, min, max);
+
+/** The credit of the weather service: its name and its home page. */
+const isWeatherSource = (value: unknown) => isRecord(value) && hasOnlyKeys(value, WEATHER_SOURCE_KEYS) &&
+  isText(value.name, 80) && isHttpsUrl(value.homeUrl);
+
+/** A cloud layer: its cover and its base in feet (0 to 100 000), or no base. */
+const isCloudLayer = (value: unknown) => isRecord(value) && hasOnlyKeys(value, CLOUD_KEYS) &&
+  matches(value.cover, CLOUD_COVER) && isOptionalWhole(value.baseFeet, 0, 100_000);
+
+const isClouds = (value: unknown) => isListOf(value, OCC_AERODROME_WEATHER_LIMITS.maxClouds, isCloudLayer);
+
+/**
+ * The wind of a report or a period: a direction from 0 to 360 degrees and a speed up to 300 knots, as the server bounds
+ * them, and a gust up to 400 (the server sends at most 300); a variable wind has no direction.
+ */
+const isWind = (value: Record<string, unknown>) => isOptionalWhole(value.windDirectionDegrees, 0, 360) &&
+  typeof value.windVariable === "boolean" && isOptionalWhole(value.windSpeedKnots, 0, 300) &&
+  isOptionalWhole(value.windGustKnots, 0, 400) && (!value.windVariable || absent(value.windDirectionDegrees));
+
+/**
+ * A METAR: its raw text and instant, a known flight category, the wind, a visibility up to 100 statute miles, a
+ * temperature and a dewpoint from −100 to 100 °C (the server's own bounds), an altimeter from 800 to 1 100 hPa, the
+ * present weather and up to eight cloud layers.
+ */
+const isMetar = (value: unknown) => isRecord(value) && hasOnlyKeys(value, METAR_KEYS) &&
+  isText(value.raw, MAX_METAR_LENGTH) && isInstant(value.observedAt) &&
+  (absent(value.flightCategory) || isOneOf(value.flightCategory, OCC_WEATHER_FLIGHT_CATEGORIES)) && isWind(value) &&
+  isOptionalNumberIn(value.visibilityStatuteMiles, 0, 100) && isOptionalNumberIn(value.temperatureCelsius, -100, 100) &&
+  isOptionalNumberIn(value.dewpointCelsius, -100, 100) && isOptionalNumberIn(value.altimeterHectopascals, 800, 1_100) &&
+  isOptionalText(value.weather, MAX_PRESENT_WEATHER_LENGTH) && isClouds(value.clouds);
+
+/** One period of a TAF: it ends no earlier than it starts, starts with a known change (or none) and is bounded as a METAR. */
+const isTafPeriod = (value: unknown) => isRecord(value) && hasOnlyKeys(value, TAF_PERIOD_KEYS) &&
+  isInstant(value.from) && isInstant(value.to) && instantOf(value.from) <= instantOf(value.to) &&
+  (absent(value.change) || isOneOf(value.change, OCC_TAF_CHANGES)) && isOptionalWhole(value.probabilityPercent, 0, 100) &&
+  isWind(value) && isOptionalNumberIn(value.visibilityStatuteMiles, 0, 100) &&
+  isOptionalText(value.weather, MAX_PRESENT_WEATHER_LENGTH) && isClouds(value.clouds);
+
+/** A TAF: its raw text, when it was issued, a validity that ends no earlier than it starts and up to thirty periods. */
+const isTaf = (value: unknown) => isRecord(value) && hasOnlyKeys(value, TAF_KEYS) && isText(value.raw, MAX_TAF_LENGTH) &&
+  isInstant(value.issuedAt) && isInstant(value.validFrom) && isInstant(value.validTo) &&
+  instantOf(value.validFrom) <= instantOf(value.validTo) &&
+  isListOf(value.periods, OCC_AERODROME_WEATHER_LIMITS.maxTafPeriods, isTafPeriod);
+
+/**
+ * The weather of the station asked for (when `stationId` is given). Beyond each field, the state and its parts agree:
+ * Live and Stale show a METAR, and a live one is at most 90 minutes older than `serverTime`; Unavailable and Disabled
+ * have none; Disabled has no TAF and was never retrieved either. The credit always comes.
+ */
+export function isOccAerodromeWeather(value: unknown, stationId?: string): value is OccAerodromeWeatherResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, WEATHER_KEYS) || !isUuid(value.stationId) ||
+      (stationId !== undefined && !sameId(value.stationId, stationId)) || !matches(value.icaoCode, ICAO_CODE) ||
+      !isOneOf(value.status, OCC_AERODROME_WEATHER_STATUSES) || !isInstant(value.serverTime) ||
+      !isOptionalInstant(value.retrievedAt) || !isWeatherSource(value.source) ||
+      !(absent(value.metar) || isMetar(value.metar)) || !(absent(value.taf) || isTaf(value.taf)))
+    return false;
+
+  const status = value.status;
+  const metar = value.metar as { observedAt: string } | null | undefined;
+  if ((status === "Live" || status === "Stale") === absent(metar)) return false;
+  if (status === "Disabled" && (!absent(value.taf) || !absent(value.retrievedAt))) return false;
+  return status !== "Live" || instantOf(value.serverTime as string) - instantOf(metar!.observedAt) <=
+    OCC_AERODROME_WEATHER_LIMITS.liveMetarMinutes * 60_000;
+}
+
+/** The weather's query: the station in lower case, and nothing else. */
+export function normalizedOccAerodromeWeatherQuery(query: OccAerodromeWeatherQuery): GetOccAerodromeWeatherParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId"]))
+    throw new TypeError("The aerodrome weather query has unknown or invalid fields.");
+  return { stationId: id(query.stationId, "stationId") };
 }

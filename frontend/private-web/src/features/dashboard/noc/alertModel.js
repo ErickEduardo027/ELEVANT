@@ -91,6 +91,25 @@ export function buildAlertQueue(items = [], { limitReceived = 10, limitRecent = 
 }
 
 /**
+ * The alerts of the console's floating panel «Alertas» (contratos 2.5): only the urgent and attention notices of
+ * `stationCode` that the account has not received, the most pressing first and then the newest (compareAlertEntries).
+ * Received alerts and plain notices stay in the shell's drawer. Each entry is `{ id, priority, receivedAt, notice }`,
+ * as in buildAlertQueue, with the server's notice as it is; `unreceivedCount` is how many there are. Without a station
+ * nothing is listed: the console never shows another station's alerts.
+ */
+export function consoleAlerts(items = [], { stationCode } = {}) {
+  const entries = [];
+  if (typeof stationCode !== 'string' || stationCode === '') return { entries, unreceivedCount: 0 };
+  for (const notice of items ?? NO_ENTRIES) {
+    if (notice === null || typeof notice !== 'object' || notice.stationCode !== stationCode || isReceived(notice)) continue;
+    const priority = alertPriority(notice.kind);
+    if (priority !== 'notice') entries.push(Object.freeze({ id: notice.id, priority, receivedAt: null, notice }));
+  }
+  entries.sort(compareAlertEntries);
+  return { entries, unreceivedCount: entries.length };
+}
+
+/**
  * What the status bar says about the notices: how many urgent and attention alerts the account has not received, and
  * the highest priority among them (`null` when there is none). Plain notices never count as alerts.
  */

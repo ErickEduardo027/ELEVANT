@@ -95,7 +95,7 @@ La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 | Responsabilidad UI | Presentar vistas internas, capturar intenciones y manejar estados de interacción. |
 | Autoridad real | Debe residir en la API para identidad, roles, station scope, reglas y datos. |
 | Persistencia del cliente | La sesión del prototipo usa almacenamiento del navegador; no es una frontera de autorización. |
-| Integración externa | El navegador no conecta directamente a SQL Server, FlightAware ni proveedores de datos aeronáuticos. Como excepción visual verificable, los mapas cargan estilos y teselas cartográficas públicas de MapLibre/OpenFreeMap permitidas explícitamente por CSP. *Posterior al commit verificado (PR M2):* los mapas del OCC llevan su propio estilo en el bundle y de OpenFreeMap solo piden teselas y glifos; los dos mapas auxiliares del dashboard conservan los estilos publicados hasta U3. |
+| Integración externa | El navegador no conecta directamente a SQL Server, FlightAware ni proveedores de datos aeronáuticos. Como excepción visual verificable, los mapas cargan estilos y teselas cartográficas públicas de MapLibre/OpenFreeMap permitidas explícitamente por CSP. *Posterior al commit verificado (PR M2):* los mapas del OCC llevan su propio estilo en el bundle y de OpenFreeMap solo piden teselas y glifos; los dos mapas auxiliares del dashboard conservan los estilos publicados hasta U3. Desde U3 solo los usa el mapa satelital del detalle de meteorología de Panorama, mientras ese detalle está abierto; el plan pasa el satélite a una capa del mapa único en M8. |
 | Madurez | Preview técnico ejecutable con cobertura de UI amplia e integración de negocio incompleta. |
 
 ## Stack actual
@@ -135,7 +135,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
-El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Desde el PR U4, también posterior al commit verificado, la primera entrada al OCC de cada pestaña después de iniciar sesión pasa por una pantalla de arranque: ver [Pantalla de arranque del OCC (PR U4)](#pantalla-de-arranque-del-occ-pr-u4). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
+El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Desde el PR U4, también posterior al commit verificado, la primera entrada al OCC de cada pestaña después de iniciar sesión pasa por una pantalla de arranque: ver [Pantalla de arranque del OCC (PR U4)](#pantalla-de-arranque-del-occ-pr-u4). Desde el PR U3, también posterior, Panorama es la consola del OCC, un mapa a pantalla completa con paneles que se pliegan, y solo ella llena el espacio del marco sin margen: ver [Consola del OCC (PR U3)](#consola-del-occ-pr-u3). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
 En el árbol local posterior al commit verificado, «Estación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
 
@@ -143,33 +143,25 @@ OCC opera solo Punta Cana: todas sus rutas toman el alcance `PUJ` que trae la se
 
 El idioma elegido en el login se comparte con OCC mediante un único store. Solo los espacios envueltos en `LanguageScope` (hoy OCC) lo aplican; fuera de él la interfaz sigue en español, por lo que los componentes compartidos con otros departamentos no quedan a medio traducir. Fuentes: [store](../../frontend/private-web/src/i18n/languageStore.js) y [scope](../../frontend/private-web/src/i18n/LanguageScope.jsx).
 
-El Dashboard OCC es una consola de la fecha local de PUJ, calculada con la zona IANA de la cola de revisión:
-- **Resumen**: escalas, en operación, sin recursos (escalas abiertas sin posición o sin agente), por revisar y completadas. Cada cifra muestra su definición.
-- **Mapa de plataforma**: referencia cartográfica de PUJ con escalas planificadas. Varias escalas en la misma posición se conservan juntas, y el mapa se amplía en un diálogo accesible.
-- **Escalas del día**: tabla con filtros derivados del estado y de los recursos.
-- **Requiere atención**: solo entregas `PendingReview` o `InReview` y escalas sin recursos.
-- **Avisos recientes**: con el vocabulario canónico de notificaciones.
+En el commit verificado, Panorama (`/admin-occ/dashboard`) era un tablero de la fecha local de PUJ: un resumen de cifras, el mapa de plataforma, la tabla de escalas del día, «Requiere atención» y los avisos recientes, armados con una sola lectura que se repetía con `notifications` u `occ_planning`, al recuperar el foco o la conexión y cada 25 segundos con la pestaña visible. *Posterior al commit verificado:* desde el PR U3, Panorama es la consola del OCC: el mapa único a pantalla completa, abierto en la vista Rampa, con los paneles «Tablero», «Cifras de la jornada», «Alertas», «Posiciones» e «Inspector» flotando encima, cada uno plegable; ver [Consola del OCC (PR U3)](#consola-del-occ-pr-u3). Nada de lo que mostraba se perdió: la tabla de escalas es la pestaña «Escalas» del tablero, con los mismos filtros; «Requiere atención» es «Pendientes de la jornada»; el resumen es «Cifras de la jornada», y los avisos recientes están en el cajón «Alertas y avisos» del marco.
 
-Las cifras son conteos de consultas acotadas (cola de 100 y avisos recientes), no totales históricos, y se calculan en el cliente a partir de planificación, revisión y notificaciones. Una revalidación del mismo alcance conserva los datos visibles e indica si falló. Perder autorización o cambiar de cuenta los retira. Revalida tras `notifications` u `occ_planning`, al recuperar foco o conexión y cada 25 segundos con la pestaña visible. La consola distingue las fuentes de meteorología y telemetría del estado de pistas y la ocupación física, que carecen de fuente conectada. Fuentes: [adaptador del dashboard](../../frontend/private-web/src/services/dashboardService.js), [modelo](../../frontend/private-web/src/features/dashboard/dashboardModel.js), [ruta](../../frontend/private-web/src/features/dashboard/DashboardRoute.jsx) y [vista](../../frontend/private-web/src/features/dashboard/DashboardPage.jsx).
+Desde U3, las cifras siguen siendo conteos de consultas acotadas (la planificación del día, la cola de revisión, que trae hasta 100 operaciones, y los vuelos del mapa), no totales históricos. Se calculan en el cliente con las reglas de clasificación de escalas del [modelo del panorama](../../frontend/private-web/src/features/dashboard/dashboardModel.js); si la cola trae menos operaciones de las que hay, «Por revisar» se marca como mínimo. Cada panel tiene su propia lectura y su propio estado: una relectura del mismo alcance conserva los datos visibles e indica si falló, y perder la autorización o cambiar de cuenta los retira. La planificación, las posiciones, la cola de revisión y la disponibilidad de los agentes se releen con un sondeo de seguridad de 60 segundos y nunca con `occ_planning`; la cola, además, con `occ_review`. Los vuelos del mapa se releen con `occ_planning`, y los avisos son los que el marco lee una sola vez. Con la pestaña oculta, lo que vence espera y se lee una vez al volver. Fuentes: [ruta](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.jsx), [vista](../../frontend/private-web/src/features/dashboard/noc/ConsolePage.jsx), [lecturas](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.js) y [cifras](../../frontend/private-web/src/features/dashboard/noc/consoleModel.js).
 
-> [!NOTE]
-> El rediseño descrito a continuación está en el árbol local, sin commit ni despliegue. La metadata de verificación superior sigue referida al commit histórico; sus nuevas fuentes no pueden agregarse al inventario verificado antes de un commit revisado.
+El catálogo de referencia de las posiciones ([datos](../../frontend/private-web/src/features/dashboard/positionsData.js) y [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js)) recupera las 42 ubicaciones internas originales: 41 se dibujan y B33 permanece como registro histórico fuera de la vista operativa. Incluye B34–B37 y conserva las 13 coordenadas internas de B20–B32. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) y la [enmienda de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf) sirven solo como referencias de conciliación. La enmienda retira B33; las coordenadas internas difieren de la documentación AIP, especialmente B20–B32, y **no se declaran oficiales ni verificadas**. No consta permiso de IDAC para procesar coordenadas AIP, de acuerdo con su [política de uso](https://aip.sna.gob.do/Aip/CircularSerA); el frontend ya no contiene la transcripción previa. Los códigos planificados sin coincidencia exacta en el catálogo activo, incluido B33, se listan sin ubicación. No hay alias automáticos entre A1 y 1 ni entre códigos parecidos.
 
-En el rediseño local posterior, la consola usa una superficie NOC única: plataforma PUJ amplia, dos mapas auxiliares y franja operacional. El mapa principal integra pistas, rodajes y plataforma de OpenStreetMap. Las siluetas vectoriales indican **asignación planificada** y no confirman ocupación física. El modo nocturno inclina la cámara; los edificios se extruyen solo si la tesela aporta altura. Manrope se aloja mediante `next/font` y se aplica explícitamente al dashboard, mientras IBM Plex Mono se usa para horas y cifras. Ambas paletas tienen estilos cartográficos y etiquetas propios.
-
-El catálogo activo del dashboard recupera las 42 ubicaciones internas originales: 41 se dibujan y B33 permanece como registro histórico fuera de la vista operativa. Incluye B34–B37 y conserva las 13 coordenadas internas de B20–B32. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) y la [enmienda de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf) sirven solo como referencias de conciliación. La enmienda retira B33; las coordenadas internas difieren de la documentación AIP, especialmente B20–B32, y **no se declaran oficiales ni verificadas**. No consta permiso de IDAC para procesar coordenadas AIP, de acuerdo con su [política de uso](https://aip.sna.gob.do/Aip/CircularSerA); el frontend ya no contiene la transcripción previa. Los códigos planificados sin coincidencia exacta en el catálogo activo, incluido B33, se listan sin ubicación. No hay alias automáticos entre A1 y 1 ni entre códigos parecidos.
-
-Los dos mapas auxiliares se amplían:
-- **Meteorología MDPC:** el METAR de Iowa Environmental Mesonet es una réplica no oficial. La interfaz separa la hora observada de la recepción local, avisa tras 75 minutos y conserva el aviso de un refresco fallido. Humedad relativa, sensación térmica y precipitación horaria procedentes de campos IEM se rotulan como derivados. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa.
-- **Región de República Dominicana:** cartografía OpenStreetMap/OpenFreeMap con referencia PUJ. La rama local consulta el nuevo endpoint OCC y dibuja una marca por ICAO24 con posición OpenSky disponible; rumbo y otros campos pueden ser nulos. Seleccionar una marca abre la ficha de telemetría, separada de los vuelos y stands de planificación. No se infiere aterrizaje, destino ni ocupación por callsign o proximidad.
+**Meteorología MDPC.** Desde el PR U3 se abre desde la píldora del clima, bajo el mapa de Panorama; antes era uno de los dos mapas auxiliares del rediseño anterior, que se describe más abajo como registro. El METAR de Iowa Environmental Mesonet es una réplica no oficial. La interfaz separa la hora observada de la recepción local, avisa tras 75 minutos y conserva el aviso de un refresco fallido. Humedad relativa, sensación térmica y precipitación horaria procedentes de campos IEM se rotulan como derivados. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa. Fuentes: [píldora](../../frontend/private-web/src/features/dashboard/noc/WeatherPill.jsx), [palabras del METAR](../../frontend/private-web/src/features/dashboard/noc/weatherWords.js) y [teselas](../../frontend/private-web/src/services/satelliteService.js).
 
 En esta rama local, la certificación de la imagen AVIAM compara la CSP generada con una lista cerrada que incluye la API certificada, su WebSocket, dos orígenes cartográficos, IEM y NASA GIBS. Rechaza fuentes adicionales o ausentes; la prueba usa la política que genera la aplicación para evitar otra divergencia. Fuentes: [validador](../../frontend/scripts/deployment/csp-tool.mjs), [pruebas](../../frontend/tests/deployment/test-csp-tool.mjs) y [política AVIAM](../../frontend/private-web/src/config/securityHeaders.mjs).
 
-La CSP permite los orígenes GIBS e IEM; OpenSky solo se consulta desde el servidor. `GET /api/v1/occ/traffic/aircraft` exige personal AVIAM con `operations.planning.read` y alcance PUJ. El recuadro 17–21° N, 73–67° O es fijo, la caché por instancia impone 120 segundos entre consultas y permite hasta 10 minutos de copia desactualizada durante fallos. OAuth2 usa configuración privada, desactivada por defecto; no se han aportado credenciales ni se ha validado una conexión OpenSky real en esta rama. El acuerdo escrito para uso operacional y su alcance deben verificarse antes de activarla. La API sanitiza errores y no expone secretos. No cambia esquema ni permisos de negocio. Fuentes locales: [controlador](../../backend/Elevant.Api/Controllers/OccTrafficController.cs), [adaptador](../../backend/Elevant.Infrastructure/Integrations/OpenSky/OpenSkyAircraftTrafficSource.cs), [cliente](../../packages/api-client/src/client.ts) y [panel](../../frontend/private-web/src/features/dashboard/console/RegionalTrafficPanel.jsx).
+La CSP permite los orígenes GIBS e IEM; OpenSky solo se consulta desde el servidor. `GET /api/v1/occ/traffic/aircraft` exige personal AVIAM con `operations.planning.read` y alcance PUJ. El recuadro 17–21° N, 73–67° O es fijo, la caché por instancia impone 120 segundos entre consultas y permite hasta 10 minutos de copia desactualizada durante fallos. OAuth2 usa configuración privada, desactivada por defecto; no se han aportado credenciales ni se ha validado una conexión OpenSky real en esta rama. El acuerdo escrito para uso operacional y su alcance deben verificarse antes de activarla. La API sanitiza errores y no expone secretos. No cambia esquema ni permisos de negocio. Fuentes locales: [controlador](../../backend/Elevant.Api/Controllers/OccTrafficController.cs), [adaptador](../../backend/Elevant.Infrastructure/Integrations/OpenSky/OpenSkyAircraftTrafficSource.cs), [cliente](../../packages/api-client/src/client.ts) y [servicio](../../frontend/private-web/src/services/trafficService.js). *Posterior al commit verificado:* desde el PR U3 ninguna pantalla lee ese endpoint; su único consumidor era el mapa regional de Panorama, y el servicio queda sin uso hasta que un paso aparte retire el endpoint.
 
-Fuentes de implementación local: [vista](../../frontend/private-web/src/features/dashboard/DashboardPage.jsx), [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js), [meteorología](../../frontend/private-web/src/features/dashboard/console/WeatherPanel.jsx), [teselas](../../frontend/private-web/src/services/satelliteService.js), [capas de posiciones](../../frontend/private-web/src/features/maps/stands/standLayers.js) y [CSP](../../frontend/private-web/src/config/securityHeaders.mjs).
+Fuentes de implementación: [vista](../../frontend/private-web/src/features/dashboard/noc/ConsolePage.jsx), [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js), [meteorología](../../frontend/private-web/src/features/dashboard/noc/WeatherPill.jsx), [teselas](../../frontend/private-web/src/services/satelliteService.js), [capas de posiciones](../../frontend/private-web/src/features/maps/stands/standLayers.js) y [CSP](../../frontend/private-web/src/config/securityHeaders.mjs).
 
-La validación del rediseño anterior (27/27 pruebas enfocadas, test:delivery 22/22, lint, typecheck y build; navegador 375–1440 px) precede a esta integración. Sus resultados no acreditan las pruebas ni una conexión OpenSky real de esta rama. Los controles nuevos se registran en el handoff; la metadata de verificación superior conserva su commit histórico. Ninguno de estos cambios locales se ha desplegado.
+> [!NOTE]
+> El párrafo siguiente describe la superficie NOC del rediseño local anterior al PR U3, que U3 retiró: ya no hay mapas auxiliares ni siluetas de asignación en Panorama, y ningún cliente dibuja el tráfico regional de OpenSky. Se conserva como registro.
+
+En aquel rediseño, la consola usaba una superficie NOC única: plataforma PUJ amplia, dos mapas auxiliares ampliables (la meteorología de MDPC y la región de República Dominicana) y una franja operacional. El mapa principal integraba pistas, rodajes y plataforma de OpenStreetMap; las siluetas vectoriales indicaban **asignación planificada** y no confirmaban ocupación física. El modo nocturno inclinaba la cámara, y los edificios se extruían solo si la tesela aportaba altura. Manrope se aplicaba explícitamente al dashboard e IBM Plex Mono a horas y cifras. El mapa de la región, con cartografía OpenStreetMap/OpenFreeMap y referencia PUJ, dibujaba una marca por ICAO24 con posición OpenSky disponible; seleccionarla abría la ficha de telemetría, separada de los vuelos y stands de planificación, sin inferir aterrizaje, destino ni ocupación por callsign o proximidad. Su validación (27/27 pruebas enfocadas, test:delivery 22/22, lint, typecheck y build; navegador 375–1440 px) no acredita una conexión OpenSky real.
+
 Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estación. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
 
 En esta rama, las vistas de PUJ usan MapLibre. *Posterior al commit verificado:*
@@ -804,7 +796,8 @@ siguen hasta que cada una se migre. Las leyendas, el
 resumen y los marcadores de Monitoreo de vuelos y del mapa de posiciones aún
 pintan sus colores de estado en línea, y el tablero de escalas del dashboard
 marca en cian los estados planificados; los rehacen el carril de mapas, U3 y
-U5. El contraste se
+U5. Desde el PR U3, posterior al commit verificado, ese tablero ya no existe:
+la pestaña «Escalas» de la consola no pinta los estados. El contraste se
 comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
 mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
 revisión visual en el VPS.
@@ -906,7 +899,8 @@ página le pide que relea los avisos, como mucho una vez cada 3 s. Lo que se
 marca en otra pestaña llega con el siguiente aviso o, como mucho, a los 60 s.
 Panorama, Monitoreo de vuelos, Mapa de posiciones, Planificación, Cobertura de
 posiciones, Datos maestros, Tablets, Chat interno y Notificaciones conservan su
-propio observador hasta U3, U5 o U6, y Usuarios y Mis gastos, el suyo. Quedan
+propio observador hasta U3, U5 o U6, y Usuarios y Mis gastos, el suyo (desde
+U3, Panorama ya no: lee con el observador del marco). Quedan
 aplazados el modo muro, la búsqueda, los atajos con su diálogo, el aviso de
 desfase del reloj, la severidad de cada incidencia y el acuse compartido por
 estación. Las pruebas cubren el marco en jsdom; nada de esto acredita un
@@ -950,8 +944,9 @@ ninguna pantalla: Panorama solo gana el aviso de que ya muestra sus datos.
   espera el acceso del departamento sin límite de tiempo y, después, el primer
   aviso de una pantalla lista (`useOccBoot().markReady`) o 6 s, lo que llegue
   antes. Si el acceso falla, cede al instante a su error. Hoy solo avisa
-  Panorama, cuando deja de cargar
-  ([ruta](../../frontend/private-web/src/features/dashboard/DashboardRoute.jsx)):
+  Panorama, cuando la consola está en pantalla y llegaron sus primeros datos,
+  los vuelos del mapa
+  ([ruta](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.jsx)):
   en los demás módulos la pantalla espera los 6 s. Desde que empieza a irse,
   deja pasar los clics.
 - **Lectores de pantalla.** La pantalla está oculta para ellos y no añade un
@@ -973,7 +968,9 @@ commit verificado, desde el PR M4 el motor de mapas también avisa
 (`markReady('map')` en
 [`OccMap.jsx`](../../frontend/private-web/src/features/maps/core/OccMap.jsx))
 cuando su mapa queda listo o sin cartografía, así que las pantallas con mapa no
-esperan los 6 s; la consola de U3 conservará el aviso de Panorama. La pantalla no
+esperan los 6 s. La consola de U3 conserva el aviso de Panorama y no deja que
+el de su propio mapa termine la espera: la pantalla da paso a una consola con
+datos. La pantalla no
 está en el HTML del servidor, así que el primer pintado sigue siendo
 «Comprobando sesión…» sobre el azul marino de `body`, y en las entradas
 siguientes no hay pantalla de arranque. Mientras espera, cubre la página y
@@ -1048,7 +1045,8 @@ Los aviones 3D llegan con M7.
   ya existe. En M2 las pantallas seguían pasando al mapa su propia selección;
   desde el PR M4, Mapa de posiciones y Planificación escriben en él la posición
   elegida (`stand=`), y Monitoreo de vuelos sigue con la suya hasta que U3 y U5
-  lo adopten.
+  lo adopten. Desde el PR U3, la consola de Panorama ya elige solo a través de
+  ese almacén.
 - **Leyenda.** Un mapa con posiciones o vuelos en pantalla muestra el botón
   «Leyenda»
   ([`MapLegend.jsx`](../../frontend/private-web/src/features/maps/ui/MapLegend.jsx)),
@@ -1061,6 +1059,8 @@ Los aviones 3D llegan con M7.
   única leyenda del mapa: las páginas ya no muestran la suya, que explicaba con
   colores por estado lo que el mapa ya no dibuja así. La plataforma de la
   consola conserva su leyenda en línea hasta que U3 retire el dashboard actual.
+  Desde el PR U3, la consola usa la leyenda del mapa, plegada al abrir, y la
+  banda de «Posiciones» lleva la suya en su encabezado.
 - **Relectura sin remontar el mapa.** Al releer la misma estación (por foco,
   sondeo u `occ_planning`), Mapa de posiciones y Monitoreo conservan sus datos
   en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
@@ -1090,7 +1090,9 @@ posiciones, que siguen siendo una referencia interna no oficial salvo las que
 ubicó OCC; y los datos que leen las pantallas, sin endpoints nuevos ni cambios
 en la API. Los dos mapas auxiliares del dashboard (región y meteorología)
 conservan su ciclo de vida y los estilos publicados de OpenFreeMap hasta que U3
-retire el dashboard actual.
+retire el dashboard actual. Desde el PR U3 el mapa regional ya no existe, y
+el de meteorología solo aparece dentro del detalle de la píldora del clima de
+Panorama, mientras está abierto.
 
 Límites: a 1440×900 el resumen de Mapa de posiciones tapa la escala, los
 créditos y las posiciones A1 a A5, y todavía pinta sus colores de estado; lo
@@ -1176,8 +1178,9 @@ cambió ninguna pantalla. Desde el PR M5, también posterior a ese commit, los u
 el mapa de Monitoreo de vuelos dentro del marco del OCC (ver
 [Tráfico real en el mapa (PR M5)](#tráfico-real-en-el-mapa-pr-m5)), y desde el
 PR M6, también Mapa de posiciones y la vista «Mapa» de Planificación (ver
-[Cinemática y vuelo demo en el mapa (PR M6)](#cinemática-y-vuelo-demo-en-el-mapa-pr-m6));
-lo marcado como planificado es el plan del PR U3, no comportamiento actual.
+[Cinemática y vuelo demo en el mapa (PR M6)](#cinemática-y-vuelo-demo-en-el-mapa-pr-m6)),
+y desde el PR U3, la consola de Panorama (ver
+[Consola del OCC (PR U3)](#consola-del-occ-pr-u3)).
 
 - **Lo que ya existe.** El cliente compartido ofrece `getOccAirPicture`,
   `getOccAircraftTrack` y `getOccMapFlights`, con validadores estrictos y el
@@ -1208,13 +1211,13 @@ lo marcado como planificado es el plan del PR U3, no comportamiento actual.
   enlazó a un vuelo planificado (3-N07) se resuelve por `proposalId`. Desde
   M6, «Seguir» no se suelta al importar, porque la clave de un vuelo no cambia
   con una importación normal.
-- **Desde M6: hitos y vuelo demo.** La barra de avance de cada posición sale
-  de `milestones`, y el avión demo se ajusta a los instantes del bloque `demo`,
-  sin derivar los suyos. *Planificado (U3):* la tira de hitos también saldrá
-  de `milestones`.
-- **El panel regional actual** del Panorama sigue con
-  `GET occ/traffic/aircraft` (OpenSky, apagado sin credenciales) y sin
-  reconocer vuelos de ELEVANT hasta que U3 lo retire.
+- **Desde M6 y U3: hitos y vuelo demo.** La barra de avance de cada posición
+  sale de `milestones`, y el avión demo se ajusta a los instantes del bloque
+  `demo`, sin derivar los suyos. Desde U3, la tira de hitos del inspector de
+  Panorama también sale de `milestones`, sin otra lectura.
+- **El panel regional** del Panorama leía `GET occ/traffic/aircraft` (OpenSky,
+  apagado sin credenciales) sin reconocer vuelos de ELEVANT. Desde el PR U3 ya
+  no existe: el tráfico de la región es la imagen aérea del mapa único.
 
 ## Posiciones en rampa (PR M4)
 
@@ -1328,7 +1331,11 @@ Desde M6, en Mapa de posiciones y en Planificación, elegir un vuelo marca su
 posición; elegir una posición todavía no resalta su avión en el mapa. Pasar de
 posición en posición con `[` y `]` y girar una posición al ubicarla quedan
 aplazados. Las capturas se revisaron en local; nada de esto acredita un
-despliegue ni una revisión visual en el VPS.
+despliegue ni una revisión visual en el VPS. *Posterior:* desde el PR U3, la
+consola de Panorama dibuja las posiciones con sus siete estados y sus señales,
+a partir del tablero de posiciones y de los vuelos del mapa, junto con el
+tráfico; elegir una posición marca su vuelo en el tablero y lo muestra en el
+inspector (ver [Consola del OCC (PR U3)](#consola-del-occ-pr-u3)).
 
 ## Tráfico real en el mapa (PR M5)
 
@@ -1340,7 +1347,8 @@ En M5 solo Monitoreo de vuelos, dentro del marco del OCC, dibujaba el tráfico.
 Desde el PR M6 lo dibujan también Mapa de posiciones y la vista «Mapa» de
 Planificación (ver
 [Cinemática y vuelo demo en el mapa (PR M6)](#cinemática-y-vuelo-demo-en-el-mapa-pr-m6)),
-y la consola lo hará con el PR U3.
+y desde el PR U3, la consola de Panorama (ver
+[Consola del OCC (PR U3)](#consola-del-occ-pr-u3)).
 
 - **De dónde salen los aviones.**
   [`useMapSituation.js`](../../frontend/private-web/src/features/maps/useMapSituation.js)
@@ -1449,7 +1457,172 @@ solo trae el grupo Tráfico. Desde M5, con el tráfico encendido (como en
 Development), abrir Monitoreo de vuelos en el OCC hace que la API lea la red de
 tráfico mientras la pestaña se ve y hasta 15 minutos después. Las capturas se
 revisaron en local, en el laboratorio; nada de esto acredita un despliegue ni
-una revisión visual en el VPS.
+una revisión visual en el VPS. *Posterior:* desde el PR U3, la consola de
+Panorama también dibuja el tráfico, y abrirla, que es la primera pantalla del
+OCC al iniciar sesión, también hace que la API lea la red.
+
+## Consola del OCC (PR U3)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U3 «Consola del OCC con el mapa a pantalla completa» (`94e60144`, `de08535e`,
+`582077b1` y `bc8bc5f5`), que esa verificación no cubre. Las decisiones, el
+presupuesto de peticiones y las diferencias con el diseño están en la nota del
+14 de noviembre de 2026 de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U3 cambia solo
+Panorama (`/admin-occ/dashboard`): la API no cambia, y las demás pantallas
+tampoco.
+
+- **Qué se ve.** El mapa único del OCC llena el espacio bajo la barra de
+  estado y abre en la vista Rampa
+  ([vista](../../frontend/private-web/src/features/dashboard/noc/ConsolePage.jsx)).
+  Encima flotan «Tablero» (arriba a la izquierda), «Cifras de la jornada»
+  (arriba al centro), «Alertas» (arriba a la derecha), el «Inspector» (debajo
+  de «Alertas», cuando hay algo elegido) y «Posiciones» (abajo). Entre
+  «Posiciones» y el mapa quedan «Capas», el selector de vistas y «Leyenda»,
+  que son del mapa. Cada panel se pliega a una pastilla con su título, que es
+  un botón, y el pliegue se recuerda en la pestaña
+  ([panel flotante](../../frontend/private-web/src/features/occ-ui/OccFloatingPanel.jsx)).
+  «Posiciones» abre plegada, «Cifras de la jornada» también por debajo de
+  1600 px, y «Tablero» y «Alertas» por debajo de 1280 px. «Ocultar paneles»,
+  bajo el mapa, deja solo el mapa (`focus=map`), y «Mostrar paneles» los
+  devuelve. Los paneles son casi opacos y sin desenfoque. La consola los mide y
+  el mapa encuadra sus vistas en lo que queda a la vista. Lo elegido no queda
+  debajo de un panel: la cámara se mueve después de medir el inspector que se
+  abre con la selección, y si después un panel se despliega o se pliega, o
+  cambia la ventana, y eso tapa lo elegido que estaba a la vista, la consola lo
+  trae al centro de lo que queda a la vista, con el mismo acercamiento
+  ([cámara](../../frontend/private-web/src/features/dashboard/noc/consoleCamera.js)).
+  Lo que la persona sacó de la vista se queda donde lo dejó.
+- **Tablero.** «Llegadas» y «Salidas» son los vuelos del mapa como tiras de
+  vuelo ordenadas por su mejor hora: la hora con «real», «est.» o «prog.», el
+  vuelo, el aeropuerto, la posición, el estado y la cuenta atrás. Debajo, «Por
+  importar» lista los vuelos que el proveedor propone y OCC no importó, cada
+  uno con «Importar». «Escalas» es la tabla de escalas del día, con los
+  filtros «Todas», «En operación», «Sin recursos» y «Completadas». Un vuelo
+  demo lleva «Demo», y «est.» marca una tira solo cuando su avión está en una
+  posición estimada. Una llegada sin posición dice «Llegada sin posición
+  asignada», con el triángulo ámbar si llega en menos de 60 minutos. Una tira
+  dice «En posición» con la regla de los estados de las posiciones: el instante
+  de calzos del vuelo demo, el hito `BLOCK_ON` o la hora de calzos que escribe
+  «Registrar llegada»; el «Arrived» del proveedor solo dice «Aterrizó»
+  ([tablero](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
+  El encabezado del tablero lleva su leyenda, solo con lo que dibuja la pestaña
+  a la vista: el triángulo de «Atención» y el octágono de «Urgente» con su
+  palabra, y «Demo» y «est.» con lo que significan, con las palabras de
+  «Leyenda» de la barra de estado.
+- **Alertas.** Las alertas urgentes y de atención de la estación que la cuenta
+  no recibió, cada una con «Recibido», el recibo de lectura por cuenta, y
+  «Abrir»; plegado, el panel dice cuántas son. Debajo, «Pendientes de la
+  jornada»: lo que sigue abierto del día (una llegada sin posición o sin
+  agente, un agente asignado que no puede operar, un vuelo por importar, una
+  entrega por revisar o una salida que pasó su hora), con la acción que lo
+  cierra cuando la hay: «Elegir posición», «Asignar agente», «Revisar» o
+  «Importar»
+  ([pendientes](../../frontend/private-web/src/features/dashboard/noc/pendingModel.js)).
+  Esos pendientes salen de cuatro lecturas (la planificación, la disponibilidad
+  de los agentes, los vuelos del mapa y la cola de revisión), y cada una apaga
+  solo lo suyo: la que no respondió, falló, fue rechazada o muestra datos
+  viejos deja una línea que lo dice, con «Reintentar» si falló, encima de lo
+  que trajeron las demás. «No hay pendientes.» solo aparece cuando respondieron
+  todas, así que un día sin escalas sigue mostrando el vuelo demo por importar.
+  Los avisos simples y las alertas ya recibidas siguen en el cajón «Alertas y
+  avisos» del marco.
+- **Cifras de la jornada.** Escalas, en operación, llegan en 60 min, sin
+  recursos, por revisar y completadas, cada una con su definición. Una cifra
+  cuya consulta no respondió muestra «—», nunca un cero; un día sin escalas
+  sí respondió, y sus cifras son ceros contados. Un panel que la cuenta no
+  puede leer dice «No tienes permiso para ver esta información.»; solo la
+  planificación, que lee el día de la estación, dice «No hay una estación OCC
+  autorizada para consultar este panorama.».
+- **Posiciones.** Plegado, dice las escalas del día, las que están en operación
+  y cuántas posiciones hay en cada estado. Abierto, la banda de las posiciones en
+  el tiempo, una fila por posición con sus escalas bajo la línea «ahora», con
+  «4 h», «8 h» o «Día», «Con vuelos» o «Todas» y su leyenda en el encabezado
+  ([banda](../../frontend/private-web/src/features/dashboard/noc/standTimeline.js)).
+- **Una sola selección.** Elegir una tira, una escala, un pendiente o una barra
+  de la banda escribe la selección en la URL (`flightId=` o `stand=`) y la
+  lleva al mapa; elegir en el mapa pone al frente la pestaña del vuelo y marca
+  su tira. El «Inspector» muestra el bloque de datos del vuelo o del avión, o
+  los datos de la posición con su vuelo actual o el siguiente, más la tira de
+  hitos de su operación, que sale de los hitos que trae cada vuelo del mapa.
+  Ofrece «Importar» o «Asignar agente» cuando corresponde, y deja quitar la
+  selección.
+- **Importar y asignar sobre el mapa.** «Importar vuelos» abre el diálogo de
+  importación de Planificación sobre la consola, y «Asignar agente», el panel
+  de asignación de Planificación, con sus mismas opciones y comandos: OCC no
+  sale de Panorama. Después, la consola relee una vez su planificación, sus
+  posiciones y la disponibilidad de los agentes, y el panel de asignación sus
+  opciones; el sondeo de 60 s de la planificación no las relee, así que la
+  lista de agentes no se vacía mientras OCC elige
+  ([asignación](../../frontend/private-web/src/features/dashboard/noc/ConsoleAssignDrawer.jsx)).
+- **Llegada nueva.** Cuando aparece en los vuelos del mapa una llegada demo
+  nueva, una pastilla dice «Llegada nueva: {vuelo}» con la placa «Demo», «Ver
+  y seguir» y «Cerrar». «Ver y seguir» elige el vuelo, escribe `follow=1` y la
+  vista que lo sigue, y lleva la cámara a esa vista; cuando el mapa se asienta,
+  centra el avión del vuelo si el mapa lo dibuja y nadie movió la cámara
+  entretanto. El avión de un vuelo demo se dibuja desde M6, y que el mapa siga
+  el vuelo también llega con M6. Al abrir la consola, recargarla o volver de
+  otro módulo, la pastilla
+  también anuncia la llegada demo que ya venía y todavía no está en su
+  posición, porque Superadministración suele dispararla antes. «Cerrar» y «Ver
+  y seguir» la cierran para la pestaña, y una pastilla cerrada no vuelve
+  ([pastilla](../../frontend/private-web/src/features/dashboard/noc/NewArrivalPill.jsx)).
+- **Procedencia y clima.** Bajo el mapa, una línea dice de dónde sale lo que
+  muestra, solo lo que aplica: «Posiciones: referencia interna sin
+  verificar.», «Aviones: {red}, hace N s.» (o «sin tráfico en vivo»), cuántas
+  posiciones son estimadas e «Incluye un vuelo demo.»
+  ([línea](../../frontend/private-web/src/features/dashboard/noc/ProvenanceLine.jsx)).
+  A su derecha, la píldora del clima (viento, QNH, antigüedad y «No oficial»)
+  abre el detalle de MDPC (ver [OCC / Administración](#occ--administración)).
+- **Sin mapa.** Si el navegador no puede dibujar el mapa (sin WebGL2), queda la
+  lista de posiciones del mapa y los mismos paneles se ordenan debajo, en una
+  cuadrícula.
+- **Lecturas y presupuesto.** Cada panel lee y falla por su cuenta, con sus
+  cinco estados
+  ([lecturas](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.js)).
+  La planificación, las posiciones, la cola de revisión y la disponibilidad de
+  los agentes se releen cada 60 segundos, nunca con `occ_planning`; la cola,
+  además, con `occ_review`. Los vuelos y los aviones son los del mapa, leídos
+  una sola vez para el mapa y los paneles, y los avisos, los del marco. La
+  posición de una escala que traen esos vuelos es la de ellos, que se releen
+  con `occ_planning`: una posición asignada, cambiada o liberada en otra
+  pantalla se ve enseguida igual en el tablero, en «Sin recursos» (el filtro y
+  la cifra) y en «Pendientes de la jornada», y la banda dibuja cada escala una
+  sola vez; la planificación pone los agentes.
+  Panorama ya no abre su propio observador. Una consola en reposo hace 16
+  peticiones por minuto, y 38 durante un minuto de vuelo demo, por debajo de
+  40 y de 70; una
+  [prueba](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)
+  lo repite con los hooks reales.
+- **Arranque.** La pantalla de arranque del OCC espera a que la consola esté en
+  pantalla con sus primeros datos, los vuelos del mapa; sin el alcance PUJ,
+  cede enseguida
+  ([ruta](../../frontend/private-web/src/features/dashboard/noc/ConsoleRoute.jsx)).
+- **Lo que se retiró.** El panorama anterior (su vista, su ruta, su lectura,
+  el panel del tráfico regional de OpenSky con su mapa, su adaptador y sus
+  textos) y el bloque de `occ.css` que lo disponía. La carpeta
+  `dashboard/noc` entra en `MIGRATED_FOLDERS` del
+  [manifiesto del puente](../../frontend/private-web/src/styles/occLegacyBridgeMap.js).
+  Las pruebas están en
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#la-consola-del-occ-pr-u3).
+
+Límites: el mapa todavía no sigue un vuelo ni dibuja los aviones estimados y
+demo, la ruta del vuelo elegido hasta su posición o la barra de avance de las
+posiciones, que llegan con M6, ni el 3D, que llega con M7. Lo elegido vuelve a
+la vista cuando los paneles cambian el espacio, no cuando se mueve: un avión
+elegido que vuela hasta quedar debajo de un panel sigue ahí hasta que la
+persona mueva la cámara o el mapa lo siga (M6). Un avión de otro tráfico, sin
+vuelo de ELEVANT, vuelve a la vista de un salto, sin animación. El clima sigue
+leyendo el METAR de IEM desde el navegador, y el detalle monta un segundo mapa,
+pequeño, para las imágenes satelitales mientras está abierto; el plan pasa el
+satélite a una capa del mapa único en M8. «Importar» abre el diálogo con todo
+el día, no en el vuelo de la tira. Los conteos de «Alertas» salen de los 100
+avisos más recientes que lee el marco. El dibujo de las posiciones en el mapa
+sale del tablero de posiciones, que se relee cada 60 segundos: una escala
+movida o liberada en otra pantalla cambia en el mapa hasta un minuto después
+que en los paneles, y una liberada sigue en su fila de la banda hasta entonces.
+Las capturas se revisaron en local, con una API simulada; nada de esto acredita
+un despliegue ni una revisión visual en el VPS.
 
 ## Cinemática y vuelo demo en el mapa (PR M6)
 
@@ -1554,8 +1727,8 @@ cambiando con el minuto del navegador, y las cuentas regresivas de los rótulos
 también dentro de él; un vuelo demo importado tarde puede
 llegar a su posición después de que esta diga «Ocupada»; elegir una posición
 no resalta su avión en el mapa; y el presupuesto de cuadros del plan (60 por
-segundo, con 4 ms de código propio) no se midió. La plataforma de la consola
-sigue sin tráfico hasta U3. Los aviones 3D y sus sombras llegan con M7, y el
+segundo, con 4 ms de código propio) no se midió. La consola de U3 dibuja el
+tráfico, pero sin el movimiento de M6: sus aviones se colocan en cada lectura. Los aviones 3D y sus sombras llegan con M7, y el
 viento del METAR y las capas de referencia, con M8. Con el tráfico encendido
 (como en Development), abrir Mapa de posiciones o la vista «Mapa» de
 Planificación en el OCC también hace que la API lea la red de tráfico mientras
@@ -1626,6 +1799,7 @@ npm run build
 - *posterior al commit verificado (PR M4):* las pruebas de las posiciones en rampa, junto a cada módulo, entre ellas la que exige que cada par de estados se distinga por algo que no es el color ([capas de las posiciones](../../frontend/private-web/src/features/maps/stands/standLayers.test.js)).
 - *posterior al commit verificado (PR M5):* la prueba de presupuesto del mapa, que repite un minuto demo y falla por encima de las 70 peticiones ([presupuesto](../../frontend/private-web/src/features/maps/useMapSituation.budget.test.jsx)), y el tráfico sintético que pasa los validadores estrictos del cliente compartido ([datos](../../frontend/private-web/src/features/maps/testing/trafficFixtures.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#tráfico-real-en-los-mapas-del-occ-pr-m5).
 - *posterior al commit verificado (PR M6):* la prueba del contrato del vuelo demo, que con 8 minutos lleva a las 41 posiciones activas por la 08 con un rodaje ajustado de 25 kt o menos ([perfil demo](../../frontend/private-web/src/features/maps/kinematics/demoProfile.test.js)), la que exige que la cinemática no lea reloj, azar ni JSON ([pureza](../../frontend/private-web/src/features/maps/kinematics/purity.test.js)) y las del bucle por mapa ([bucle](../../frontend/private-web/src/features/maps/core/frameLoop.test.js)) y del almacén de movimiento ([almacén](../../frontend/private-web/src/features/maps/traffic/motionStore.test.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6).
+- *posterior al commit verificado (PR U3):* las pruebas de la consola de Panorama, junto a cada módulo de `dashboard/noc`, entre ellas la que repite con los hooks reales un minuto en reposo y uno de vuelo demo y falla por encima de 40 o de 70 peticiones ([presupuesto](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)), y las respuestas sintéticas de la consola en la suite visual, que pasan los validadores estrictos del cliente compartido ([datos](../../frontend/private-web/tests/visualConsoleFixtures.test.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#la-consola-del-occ-pr-u3).
 
 La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negocio. Para un cambio que cruza HTTP también deben cambiar OpenAPI, el cliente generado y las pruebas de integración del backend.
 

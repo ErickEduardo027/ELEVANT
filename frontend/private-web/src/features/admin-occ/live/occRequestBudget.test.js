@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { CONSOLE_READS } from '../../dashboard/noc/consoleReads';
+import { airPictureDelayMs, MAP_SITUATION_READS } from '../../maps/useMapSituation';
 import { occMountedFiles, readSource } from '../../../styles/occSourceScan';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import { OCC_COALESCE_MS, OCC_OBSERVER_POLL_MS } from './occCadence';
@@ -178,7 +181,6 @@ describe('OCC request budget', () => {
       + 'and nothing else is').toEqual({ notListed: [], notFound: [] });
 
     expect(SITES.filter(([, site]) => site.mode === 'screen').map(([file, site]) => `${file} → ${site.movesIn}`)).toEqual([
-      'src/features/dashboard/useDashboardData.js → U3',
       'src/features/flight-monitoring/FlightMonitoringRoute.jsx → U5',
       'src/features/positions-map/PositionsMapRoute.jsx → U5',
       'src/features/planning/PlanningRoute.jsx → U5',
@@ -210,7 +212,8 @@ describe('OCC request budget', () => {
     expect(rest.total, breakdown(rest)).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.rest);
     // What the minute holds: two cursor polls, the air picture every 10 s, every 60 s read once, the presence lease.
     expect(rest.byKey).toEqual({ 'shell:cursor': 2, airPicture: 6, mapFlights: 1, planning: 1, positions: 1,
-      reviewQueue: 1, notices: 1, presence: 2 });
+      reviewQueue: 1, readiness: 1, notices: 1, presence: 2 });
+    expect(rest.total).toBe(16);
   });
 
   it('the planned console stays within 70 requests during a demo minute', () => {
@@ -220,10 +223,40 @@ describe('OCC request budget', () => {
     expect(demo.total, breakdown(demo)).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.demo);
     // Eleven hints, eight flight re-reads, two notice re-reads and one queue re-read on top of the minute at rest.
     expect(demo.byKey).toEqual({ 'shell:cursor': 13, airPicture: 6, mapFlights: 9, planning: 1, positions: 1,
-      reviewQueue: 2, notices: 3, presence: 2 });
+      reviewQueue: 2, readiness: 1, notices: 3, presence: 2 });
+    expect(demo.total).toBe(38);
     // The secondary reads never follow occ_planning.
-    expect(demo.byKey.planning).toBe(plannedConsole([]).byKey.planning);
-    expect(demo.byKey.positions).toBe(plannedConsole([]).byKey.positions);
+    for (const key of ['planning', 'positions', 'readiness']) {
+      expect(demo.byKey[key], key).toBe(plannedConsole([]).byKey[key]);
+    }
+  });
+
+  it('the planned console is what useConsoleData and useMapSituation read', () => {
+    const reads = { ...MAP_SITUATION_READS, ...CONSOLE_READS };
+    // One plan entry per read of the two hooks, and nothing else.
+    expect(OCC_REQUEST_PLAN.console.map(entry => entry.key).sort()).toEqual(Object.keys(reads).sort());
+    for (const entry of OCC_REQUEST_PLAN.console) {
+      const own = reads[entry.key];
+      expect(entry.read, entry.key).toBe(own.read);
+      expect(entry.resources, entry.key).toEqual(own.resources);
+      expect(entry.coalesceMs, entry.key).toBe(own.coalesceMs);
+      // The air picture keeps the pace the server asks for: 10 s before its first answer and after each one of 10 s.
+      if (typeof own.pollMs === 'function') {
+        expect(own.pollMs(null), entry.key).toBe(entry.pollMs);
+        expect(own.pollMs({ refreshAfterSeconds: 10 }), entry.key).toBe(entry.pollMs);
+      } else {
+        expect(entry.pollMs, entry.key).toBe(own.pollMs);
+      }
+      // The file that issues the read is the hook that holds its table.
+      expect(existsSync(entry.owner), entry.owner).toBe(true);
+      const table = Object.hasOwn(CONSOLE_READS, entry.key) ? 'CONSOLE_READS' : 'MAP_SITUATION_READS';
+      expect(readSource(entry.owner), `${entry.owner}: ${table}`).toContain(`${table}.${entry.key}`);
+    }
+    expect(MAP_SITUATION_READS.airPicture.pollMs).toBe(airPictureDelayMs);
+    // Only the review queue follows an announcement among the console's own reads, and none follows occ_planning.
+    expect(Object.entries(CONSOLE_READS).filter(([, read]) => read.resources.length > 0).map(([key]) => key))
+      .toEqual(['reviewQueue']);
+    for (const read of Object.values(CONSOLE_READS)) expect(read.resources).not.toContain('occ_planning');
   });
 
   describe('every OCC screen as it is today, with its remaining observer, stays within the budget', () => {

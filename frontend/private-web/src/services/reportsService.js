@@ -16,7 +16,7 @@ import { downloadTabularReport } from '../utils/reportDownloads';
 // coherentes entre reportes (el mismo vuelo puede aparecer en cierre, tiempo en
 // tierra y en el resumen operativo con los mismos datos).
 
-// PUJ / Atlantic Standard Time — mismo criterio que dashboardService/reviewService.
+// PUJ / Atlantic Standard Time — mismo criterio que reviewService.
 const STATION_UTC_OFFSET_MS = 4 * 60 * 60 * 1000;
 
 function pad(value) {
