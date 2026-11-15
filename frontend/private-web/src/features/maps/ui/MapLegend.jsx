@@ -4,7 +4,7 @@ import { SIGNALS, STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
-import { FOOTPRINT_PAINT, PROGRESS_PAINT, standPaint } from '../stands/standLayers';
+import { FOOTPRINT_PAINT, PROGRESS_PAINT, standFill, standPaint } from '../stands/standLayers';
 import { MILESTONES_TOTAL } from '../stands/standModel';
 import { mapColorsFor } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
@@ -45,7 +45,8 @@ const AIRCRAFT_TRANSFORM = `translate(5 5) scale(${10 / AIRCRAFT_SILHOUETTE_VIEW
 function StateSwatch({ state }) {
   const paint = standPaint(state);
   const line = tokenColour(paint.outline.token);
-  const filled = paint.fill.kind === 'tint' || paint.fill.kind === 'solid';
+  // Its own colour (owner request of 2026-11-15), as the map fills it.
+  const fill = standFill(state);
   return (
     <svg {...SWATCH_PROPS} data-swatch="state" data-fill={paint.fill.kind}>
       <rect
@@ -54,7 +55,8 @@ function StateSwatch({ state }) {
         width={BOX.size}
         height={BOX.size}
         style={{
-          fill: filled ? tokenColour(paint.fill.token) : 'none',
+          fill: fill.color,
+          fillOpacity: fill.opacity,
           stroke: line,
           strokeWidth: paint.outline.width,
           strokeDasharray: paint.outline.dash ? paint.outline.dash.join(' ') : 'none',

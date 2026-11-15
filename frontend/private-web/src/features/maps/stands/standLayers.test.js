@@ -9,6 +9,7 @@ import { SIGNALS, STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVoca
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import { createMapEngine } from '../core/mapEngine';
+import { MAP_COLORS } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES, isSdfImage } from '../style/mapImages';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { FONT_STACKS, buildOccStyle } from '../style/occStyle';
@@ -19,7 +20,7 @@ import { ghostFeatures, placingGhost } from './placing';
 import {
   FOOTPRINT_GROUP, FOOTPRINT_PAINT, PLACING_PAINT, PROGRESS_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES,
   STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_MODES, STAND_LABEL_SOURCE,
-  STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay, standPaint,
+  STAND_SOURCE, STAND_SOURCES, standDisplayAt, standFill, standOverlay, standPaint,
 } from './standLayers';
 import { attachStandGeometry } from './standModel';
 
@@ -65,7 +66,7 @@ function channelsOf(state) {
   const colour = evaluate(fill, 'paint', 'fill-color', polygon);
   let fillKind = 'none';
   if (passes(layerOf({ layers }, 'occ-stands-hatch'), polygon)) fillKind = 'hatch';
-  else if (opacity > 0) fillKind = colour.a < 1 ? 'tint' : 'solid';
+  else if (opacity > 0) fillKind = colour.a < 1 || opacity < 1 ? 'tint' : 'solid';
   const outlines = layers.filter(layer => layer.id.startsWith('occ-stands-outline-') && passes(layer, polygon, { type: 2 }));
   const marks = ['occ-stand-glyph', 'occ-stand-clock'].filter(id => passes(layerOf({ layers }, id), label, { type: 1 }));
   if (leadIn && passes(layerOf({ layers }, 'occ-stands-leadin-arriving'), leadIn, { type: 2 })) marks.push('leadin-arriving');
@@ -191,10 +192,11 @@ describe('standOverlay', () => {
 
   it('every pair of states differs in a channel that is not colour (dash, outline width, fill kind, glyph or extra mark)', () => {
     const channels = Object.fromEntries(STAND_STATE_KEYS.map(state => [state, channelsOf(state)]));
-    // What the layers draw is what the vocabulary says.
+    // What the layers draw is what the vocabulary says; every state is a tint of its own colour (mapColors.js), the
+    // hatch of «Inhabilitada» over it, so the fill tells no state apart by itself.
     for (const state of STAND_STATE_KEYS) {
       const { fill, outline } = STAND_STATES[state];
-      expect(channels[state].fillKind, state).toBe(fill.kind);
+      expect(channels[state].fillKind, state).toBe(fill.kind === 'hatch' ? 'hatch' : 'tint');
       expect(channels[state].width, state).toBe(outline.width);
       expect(channels[state].outline, state).toEqual([standPaint(state).outline.layer]);
     }
@@ -234,8 +236,8 @@ describe('standOverlay', () => {
     }
   });
 
-  it('colours come from STAND_STATES and occColor; no base-map colour and no hard-coded hex', () => {
-    const palette = new Set(Object.values(OCC_PALETTE));
+  it('colours come from STAND_STATES, occColor and the stand fills of mapColors; no base-map colour and no hard-coded hex', () => {
+    const palette = new Set([...Object.values(OCC_PALETTE), ...STAND_STATE_KEYS.map(state => standFill(state).color)]);
     const basemap = new Set(Object.values(BASEMAP_COLORS));
     for (const labels of STAND_LABEL_MODES) {
       const colours = standLayers(labels).flatMap(layer => coloursIn(Object.values(layer.paint ?? {})));
@@ -251,9 +253,11 @@ describe('standOverlay', () => {
       const { fill, outline } = STAND_STATES[state];
       const outlineLayer = layers.find(layer => layer.id === standPaint(state).outline.layer);
       expect(evaluate(outlineLayer, 'paint', 'line-color', { state }), state).toEqual(Color.parse(occColor(outline.token)));
-      if (fill.kind === 'tint' || fill.kind === 'solid') {
-        expect(evaluate(layerOf({ layers }, STAND_FILL_LAYER), 'paint', 'fill-color', { state }), state).toEqual(Color.parse(occColor(fill.token)));
-      }
+      // Each state fills in its own colour and opacity (style/mapColors.js), whatever the vocabulary's fill kind.
+      expect(fill.kind, state).toBeDefined();
+      const fillLayer = layerOf({ layers }, STAND_FILL_LAYER);
+      expect(evaluate(fillLayer, 'paint', 'fill-color', { state }), state).toEqual(Color.parse(MAP_COLORS.dark.stands[state].color));
+      expect(evaluate(fillLayer, 'paint', 'fill-opacity', { state }), state).toBe(MAP_COLORS.dark.stands[state].opacity);
     }
     // Normal states carry no hue: cyan only in the selection and in what can be acted on (the boxes of a stand being
     // placed), amber and red only in the signals.

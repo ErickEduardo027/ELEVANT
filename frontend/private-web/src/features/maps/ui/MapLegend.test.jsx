@@ -13,6 +13,7 @@ import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import { standPaint } from '../stands/standLayers';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
+import { MAP_COLORS } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
@@ -77,14 +78,16 @@ describe('MapLegend', () => {
     // The words of the vocabulary, in its order, and the «No oficial» plate with what it means.
     expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL]);
     expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
-    // Each state is drawn as the map draws it: its outline token and its dash, the slab of «Ocupada», the hatch of
-    // «Inhabilitada» and the aircraft of a stand with an aircraft on it.
+    // Each state is drawn as the map draws it: its outline token and its dash, its own fill colour (mapColors.js), the
+    // hatch of «Inhabilitada» and the aircraft of a stand with an aircraft on it.
     const outlines = stateSwatches().map(svg => svg.querySelector('rect'));
     expect(outlines.map(rect => rect.style.stroke)).toEqual([
       'var(--occ-line-strong)', 'var(--occ-muted)', 'var(--occ-text)', 'var(--occ-line-strong)', 'var(--occ-faint)',
     ]);
     expect(outlines.map(rect => rect.style.strokeDasharray)).toEqual(['none', '4 3', 'none', '2 2', '1 3']);
-    expect(outlines[2].style.fill).toBe('var(--occ-panel-raised)');
+    const rgb = hex => `rgb(${[1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
+    expect(outlines.map(rect => rect.style.fill)).toEqual(RAMP_ORDER.map(state => rgb(MAP_COLORS.dark.stands[state].color)));
+    expect(new Set(outlines.map(rect => rect.style.fill)).size).toBe(outlines.length);
     expect(stateSwatches().map(glyphsOf)).toEqual(['', '', 'aircraft', 'hatch', '']);
     expect(legend.querySelector('[data-glyph="aircraft"]').style.fill).toBe('var(--occ-text)');
 
