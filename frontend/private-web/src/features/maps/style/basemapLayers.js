@@ -1,5 +1,5 @@
 import { occColor } from '../../occ-ui/occPalette';
-import { BASEMAP_COLORS } from './mapTheme';
+import { basemapColorsFor } from './mapTheme';
 
 // The NOC base map on the OpenMapTiles schema of the OpenFreeMap vector tiles: water, land, coast, borders, the main
 // roads (dim, from zoom 8), buildings, a few labels and, as context below the airfield view, the airfield as the tiles
@@ -58,7 +58,7 @@ function labelPaint(colour, halo) {
  * The tile airfield ends at the derived `airfield` threshold (`occ:maxThreshold`, never a fixed zoom): from there the
  * airfield of the own MDPC dataset (airfieldLayers.js) takes over, so the two are never drawn together.
  */
-export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
+export function basemapLayers({ theme = 'dark', colors = basemapColorsFor(theme) } = {}) {
   const base = [
     { id: 'base-background', type: 'background', paint: { 'background-color': colors.land }, metadata: { 'occ:group': 'basemap' } },
     tileLayer('water', 'basemap', { id: 'base-water', type: 'fill', filter: IS_POLYGON, paint: { 'fill-color': colors.sea } }),
@@ -72,7 +72,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       id: 'base-boundary-country',
       type: 'line',
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]],
-      paint: { 'line-color': colors.boundary, 'line-width': 1, 'line-dasharray': [3, 2] },
+      paint: { 'line-color': colors.boundary, 'line-width': 1.2, 'line-dasharray': [3, 2] },
     }),
     tileLayer('boundary', 'basemap', {
       id: 'base-boundary-maritime',
@@ -115,7 +115,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
     tileLayer('place', 'basemap.labels', {
       id: 'base-label-city',
       type: 'symbol',
-      filter: ['all', classIs('city'), ['!=', ['get', 'capital'], 2]],
+      filter: ['all', classIs('city', 'town'), ['!=', ['get', 'capital'], 2]],
       layout: { 'text-field': NAME, 'text-font': fonts('regular'), 'text-size': LABEL_SIZE, 'text-max-width': 8 },
       paint: labelPaint(colors.placeLabel, colors.labelHalo),
     }),
@@ -210,7 +210,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
         'text-font': fonts('bold'),
         'text-size': LABEL_SIZE,
       },
-      paint: labelPaint(occColor('muted'), colors.labelHalo),
+      paint: labelPaint(occColor('text', theme), colors.labelHalo),
       metadata: UNTIL_AIRFIELD,
     }),
   ];

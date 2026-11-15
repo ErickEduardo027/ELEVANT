@@ -232,6 +232,129 @@ describe('FlightDataBlock', () => {
     expect(dataBlockLinks(null)).toEqual({ turnaround: null, stand: null });
   });
 
+  it('says what the motion knows: the plan\'s status, a scaled part, the runway and a fix without a new one', () => {
+    // The telemetry where the map draws each aircraft (PR M6: the motion store through the telemetry store's sampler).
+    const moving = (selection, fields, situation = noonSituation()) => {
+      const target = selectionTarget(selection, situation);
+      const store = createTelemetryStore({ clock: { now: () => Date.now() },
+        sample: (id, tMs, aircraft) => ({ ...aircraft, ...fields }) });
+      store.set(situation);
+      return render(<FlightDataBlock target={target} telemetry={store} station={STATION} stationId={TRAFFIC_STATION_ID}
+        onClose={() => {}} />);
+    };
+    const statusText = () => block().querySelector('[data-status-line]')?.textContent ?? null;
+    const scaleText = () => block().querySelector('[data-time-scale]')?.textContent ?? null;
+
+    // The demo flight nobody imported, waiting at terminal B's apron hold.
+    moving({ kind: 'flight', id: KEY.demoArrival }, { statusKey: 'awaitingStandNotImported', mode: 'estimate', gsMs: 0 });
+    expect(statusText()).toBe('Esperando posición · sin importar');
+    expect(scaleText()).toBeNull();
+    cleanup();
+    // Imported without a stand: waiting all the same.
+    moving({ kind: 'flight', id: KEY.demoArrival }, { statusKey: 'awaitingStand' });
+    expect(statusText()).toBe('Esperando posición');
+    cleanup();
+    // In a part that had to be compressed, it says by how much, with two decimals near real time.
+    moving({ kind: 'flight', id: KEY.demoArrival }, { timeScale: 1.019 });
+    expect(scaleText()).toBe('Demo acelerada ×1,02');
+    expect(statusText()).toBeNull();
+    cleanup();
+    moving({ kind: 'flight', id: KEY.demoArrival }, { timeScale: 2.36 });
+    expect(scaleText()).toBe('Demo acelerada ×2,4');
+    cleanup();
+    // Cancelled by the provider while it fades out: said once, by the time line.
+    const cancelled = noonSituation(row => (row.flightKey === KEY.demoArrival
+      ? { ...row, phase: 'cancelled', providerStatus: 'Canceled', demo: { ...row.demo, state: 'Cancelled', phase: 'Gone' } }
+      : null));
+    moving({ kind: 'flight', id: KEY.demoArrival }, { statusKey: 'cancelledByProvider', opacity: 0.5 }, cancelled);
+    expect(block().textContent.match(/Cancelado por el proveedor \(demo\)/g)).toHaveLength(1);
+    expect(statusText()).toBeNull();
+    cleanup();
+
+    // ZZ161's fix 20 s old on a live picture: carried on, without a signal for 20 s; once it is older than the stale
+    // limit, since when it is not updated, as its tag says.
+    moving({ kind: 'flight', id: KEY.arrival }, { mode: 'coast', positionAt: NOON - 20_000 });
+    expect(block()).toHaveAttribute('data-source', 'coast');
+    expect(sourceLine()).toHaveTextContent('Sin señal desde hace 20 s');
+    cleanup();
+    moving({ kind: 'flight', id: KEY.arrival }, { mode: 'coast', quality: 'stale', positionAt: NOON - 45_000 });
+    expect(block()).toHaveAttribute('data-source', 'stale');
+    expect(sourceLine()).toHaveTextContent('Sin actualizar desde las 10:59');
+    expect(sourceLine()).not.toHaveTextContent('Sin señal');
+    cleanup();
+
+    // A real flight's runway, from what its estimated path lands on, and where that choice comes from.
+    moving({ kind: 'flight', id: KEY.arrival }, { runwayIdent: '08', runwaySource: 'live' });
+    expect(block()).toHaveTextContent('Posición A5 · Pista 08 (por el tráfico)');
+    cleanup();
+    moving({ kind: 'flight', id: KEY.arrival }, { runwayIdent: '08', runwaySource: 'default' });
+    expect(block()).toHaveTextContent('Posición A5 · Pista 08 (habitual)');
+    cleanup();
+    // A demo flight always names 08, without a reason: every screen agrees on it.
+    moving({ kind: 'flight', id: KEY.demoArrival }, { runwayIdent: '08', runwaySource: 'demo' });
+    expect(block()).toHaveTextContent('Posición sugerida B21 · Pista 08');
+    expect(block()).not.toHaveTextContent('(');
+    cleanup();
+
+    // In English.
+    act(() => resetLanguageForTests('en'));
+    const english = (selection, fields) => {
+      const situation = noonSituation();
+      const store = createTelemetryStore({ clock: { now: () => Date.now() }, sample: (id, tMs, aircraft) => ({ ...aircraft, ...fields }) });
+      store.set(situation);
+      return render(<LanguageScope><FlightDataBlock target={selectionTarget(selection, situation)} telemetry={store}
+        station={STATION} onClose={() => {}} /></LanguageScope>);
+    };
+    english({ kind: 'flight', id: KEY.demoArrival }, { statusKey: 'awaitingStandNotImported', timeScale: 1.019 });
+    expect(statusText()).toBe('Waiting for a stand · not imported');
+    expect(scaleText()).toBe('Accelerated demo ×1.02');
+    cleanup();
+    english({ kind: 'flight', id: KEY.arrival }, { mode: 'coast', positionAt: NOON - 20_000, runwayIdent: '26', runwaySource: 'live' });
+    expect(sourceLine()).toHaveTextContent('No signal for 20 s');
+    expect(block()).toHaveTextContent('Stand A5 · Runway 26 (from the traffic)');
+  });
+
+  it('offers «Seguir» first when the screen follows, pressed while it follows (PR M6)', () => {
+    const situation = noonSituation();
+    const onFollow = vi.fn();
+    const blockOf = (selection, props) => (
+      <FlightDataBlock target={selectionTarget(selection, situation)} telemetry={storeOf(situation)} station={STATION}
+        stationId={TRAFFIC_STATION_ID} {...props} />
+    );
+    // Without onFollow the card has no such action (screens that do not follow).
+    const view = render(blockOf({ kind: 'flight', id: KEY.arrival }));
+    expect(within(block()).queryByRole('button', { name: 'Seguir' })).not.toBeInTheDocument();
+    view.rerender(blockOf({ kind: 'flight', id: KEY.arrival }, { onFollow }));
+    // The first of the card's actions, before «Ver escala»; the S key does the same.
+    const actions = within(block()).getAllByRole('button').filter(button => button.getAttribute('aria-label') === null)
+      .map(button => button.textContent);
+    const follow = within(block()).getByRole('button', { name: 'Seguir' });
+    expect(follow).toHaveAttribute('aria-pressed', 'false');
+    expect(follow).toHaveAttribute('aria-keyshortcuts', 'S');
+    expect(follow.compareDocumentPosition(within(block()).getByRole('link', { name: 'Ver escala' })) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(actions[0]).toBe('Seguir');
+    fireEvent.click(follow);
+    expect(onFollow).toHaveBeenCalledTimes(1);
+    // Following: the same switch, pressed, and pressing it again stops.
+    view.rerender(blockOf({ kind: 'flight', id: KEY.arrival }, { onFollow, following: true }));
+    const stop = within(block()).getByRole('button', { name: 'Seguir' });
+    expect(stop).toHaveAttribute('aria-pressed', 'true');
+    expect(within(block()).queryByRole('button', { name: 'Dejar de seguir' })).toBeNull();
+    fireEvent.click(stop);
+    expect(onFollow).toHaveBeenCalledTimes(2);
+    // Other traffic can be followed too; a flight without a position on the map not yet.
+    view.rerender(blockOf({ kind: 'aircraft', id: HEX.overflight }, { onFollow }));
+    expect(within(block()).getByRole('button', { name: 'Seguir' })).toBeEnabled();
+    view.rerender(blockOf({ kind: 'flight', id: KEY.departure }, { onFollow }));
+    expect(within(block()).getByRole('button', { name: 'Seguir' })).toBeDisabled();
+    // In English.
+    cleanup();
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope>{blockOf({ kind: 'flight', id: KEY.arrival }, { onFollow, following: true })}</LanguageScope>);
+    expect(within(block()).getByRole('button', { name: 'Follow' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('is a dialog named with the flight number and closes with its button', () => {
     const { onClose } = renderBlock({ kind: 'flight', id: KEY.arrival });
     const dialog = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });

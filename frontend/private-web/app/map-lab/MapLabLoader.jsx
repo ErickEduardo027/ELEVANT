@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 const MapLab = dynamic(() => import('../../src/features/maps/lab/MapLab'), {
   ssr: false,
   loading: () => (
-    <main role="status" data-department="occ" className="dark flex h-screen items-center justify-center bg-occ-canvas text-sm text-occ-muted">
+    <main role="status" data-department="occ" className="flex h-screen items-center justify-center bg-occ-canvas text-sm text-occ-muted">
       Cargando el laboratorio de mapas…
     </main>
   ),

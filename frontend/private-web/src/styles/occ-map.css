@@ -53,6 +53,11 @@
   filter: invert(1);
 }
 
+/* In the light theme the panel is light, so the dark icons stay as they come. */
+.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: none;
+}
+
 /* In forced colours MapLibre swaps its control icons for the system's own colours: they stay as they come. */
 @media (forced-colors: active) {
   .occ-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
@@ -102,6 +107,17 @@
   filter: invert(1);
 }
 
+/* MapLibre draws its «i» dark: inverted on the dark panel, as it comes on the light one. */
+.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl-attrib-button,
+.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  filter: none;
+}
+
+/* Opened, the credits wrap in the corner instead of running left under the dock of the map's controls. */
+.occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  max-width: min(20rem, calc(100% - 20px));
+}
+
 /* The nautical scale. */
 .occ-map .maplibregl-ctrl-scale {
   border-color: var(--occ-line-strong);
@@ -111,7 +127,9 @@
 }
 
 /* The group of map controls at the bottom centre of the visible area (contracts 2.5): the view selector and the
-   legend now, then 2D/3D, follow and layers. Only its children take the pointer. */
+   legend now, then 2D/3D, follow and layers. Only its children take the pointer. Its own width is its content's, up to
+   the visible area (a box placed at the middle would otherwise get half of it, and fold its items); there they shrink.
+   */
 .occ-map .occ-map-dock {
   position: absolute;
   z-index: 10;
@@ -119,6 +137,7 @@
   left: calc(var(--occ-map-inset-left, 0px)
     + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
   display: flex;
+  width: max-content;
   max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 2 * var(--occ-map-gap));
   align-items: flex-end;
   gap: 8px;
@@ -128,6 +147,41 @@
 
 .occ-map .occ-map-dock > * {
   pointer-events: auto;
+}
+
+/* The altitude scale of the traffic (ui/AltitudeLegend.jsx): at the left of the visible area, above the dock (its 44 px
+   buttons and the gap) and above the credit line MapLibre stacks there (about 40 px), as wide as its ticks need and
+   never wider than the area in sight. The legend and the layers menu open at the right of the dock, mostly clear of
+   it; where they meet, they open over it. */
+.occ-map .occ-map-altitude {
+  position: absolute;
+  z-index: 9;
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + 2 * var(--occ-map-gap) + 88px);
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
+  width: min(30rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
+    - 2 * var(--occ-map-gap)));
+}
+
+.occ-map .occ-map-altitude[data-open="false"] {
+  width: max-content;
+}
+
+/* A narrow area in sight writes fewer ticks, so their numbers never run into each other: the minor ones go first, then
+   all but 0, 10 000 and 40 000+. The gradient keeps every stop. */
+.occ-map .occ-map-altitude {
+  container-type: inline-size;
+}
+
+@container (max-width: 27rem) {
+  .occ-map .occ-map-altitude [data-altitude-level="minor"] {
+    visibility: hidden;
+  }
+}
+
+@container (max-width: 18rem) {
+  .occ-map .occ-map-altitude [data-altitude-level="middle"] {
+    visibility: hidden;
+  }
 }
 
 /* A short state of the map itself, such as a base map that did not load, at the top centre of the visible area. */
@@ -164,6 +218,20 @@
 
 .occ-map .occ-map-chip ~ .occ-map-source-status .occ-map-source-chips {
   top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem);
+}
+
+/* A short notice of the map that answers something just done, such as «Dejaste de seguir a …» (follow mode, PR M6):
+   at the bottom left of the visible area, over the credit of the aircraft data (one 24 px line over the dock's row),
+   where neither the dock's row nor the legend, open by default over the dock's right end, lie; up to 28rem wide, the
+   room a narrow map leaves beside the legend. The dock's own panels, opened by a person, stay over it (it comes first,
+   at the dock's level). */
+.occ-map .occ-map-notice {
+  position: absolute;
+  z-index: 10;
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 52px + 24px + 8px);
+  max-width: min(28rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
+    - 2 * var(--occ-map-gap)));
 }
 
 .occ-map .occ-map-credit {

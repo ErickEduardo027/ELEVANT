@@ -1,10 +1,26 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { isOccPath } from './occTheme';
-
-const STORAGE_KEY = 'elevant-theme';
+import { OCC_DEFAULT_THEME, THEME_STORAGE_KEY, isOccPath } from './occTheme';
 
 const ThemeContext = createContext(null);
+const isTheme = value => value === 'light' || value === 'dark';
+
+function readStored() {
+  try {
+    const value = window.localStorage?.getItem(THEME_STORAGE_KEY);
+    return isTheme(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(value) {
+  try {
+    window.localStorage?.setItem(THEME_STORAGE_KEY, value);
+  } catch {
+    // A browser that refuses storage keeps the choice for this visit only.
+  }
+}
 
 // Same mechanism as the Admin/OCC reference shell: a single `theme` value
 // toggles the `dark` class on the document root, which Tailwind's
@@ -17,48 +33,45 @@ const ThemeContext = createContext(null);
 // montaje. Un solo Provider en la raíz del árbol resuelve esto sin cambiar la
 // API pública de useTheme().
 //
-// The OCC is dark only: while the route is under /admin-occ the theme is
-// `dark`, `toggleTheme` does nothing and `elevant-theme` is not written.
-// Every other department keeps the account's own theme.
+// Every department, the OCC included, reads and writes the same stored theme
+// (`elevant-theme`). Only the default differs when nothing is stored: the OCC is
+// dark, the other departments follow the system preference. Only a choice the
+// account makes (toggleTheme) is written: a default never is, so the OCC stays
+// dark for an account that has not chosen.
 export function ThemeProvider({ children }) {
   const occ = isOccPath(usePathname());
-  // The account's own theme. It is light on the server and on the first client
-  // render; the stored choice arrives after mount.
-  const [userTheme, setUserTheme] = useState('light');
-  const theme = occ ? 'dark' : userTheme;
+  // The stored choice and the system preference arrive after mount: the server
+  // and the first client render know neither.
+  const [stored, setStored] = useState(null);
+  const [system, setSystem] = useState('light');
+  const theme = stored ?? (occ ? OCC_DEFAULT_THEME : system);
 
-  // Keep this effect ahead of the one that stores the theme: it has to read the
-  // stored choice before the first light render is written over it. The guard
-  // against the first render's value also keeps that choice when Strict Mode
-  // runs the effects twice.
-  useEffect(() => {
-    const stored = window.localStorage?.getItem(STORAGE_KEY);
-    const preferred = stored === 'light' || stored === 'dark'
-      ? stored
-      : window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    if (preferred !== userTheme) setUserTheme(preferred);
+  // Before paint and ahead of the effect that applies the class, so a stored
+  // light theme in the OCC (the boot script already applied it) is never
+  // painted over with the dark default. The guard keeps the value when Strict
+  // Mode runs the effects twice.
+  useLayoutEffect(() => {
+    const value = readStored();
+    if (value !== null) setStored(current => current ?? value);
+    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) setSystem('dark');
   }, []);
 
-  // Before paint, so a client navigation into the OCC never shows a light frame
-  // (app/layout.jsx covers the first load with a boot script). The route is a
-  // dependency because the Contracts, Finance and Governance shells switch the
-  // class on their own: entering the OCC puts it back even when the value did
-  // not change. As an effect it also runs again when React remounts the tree in
-  // development, which can reset the attributes of <html> and drop the class
-  // the boot script added.
+  // Before paint, so a client navigation into the OCC never shows a frame of
+  // the other theme (app/layout.jsx covers the first load with a boot script).
+  // The route is a dependency because the Contracts, Finance and Governance
+  // shells switch the class on their own: entering the OCC puts it back even
+  // when the value did not change. As an effect it also runs again when React
+  // remounts the tree in development, which can reset the attributes of <html>
+  // and drop the class the boot script added.
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme, occ]);
 
-  // Only the account's own theme is stored, and never from the OCC.
-  useEffect(() => {
-    if (!occ) window.localStorage?.setItem(STORAGE_KEY, userTheme);
-  }, [occ, userTheme]);
-
   const toggleTheme = useCallback(() => {
-    if (occ) return;
-    setUserTheme(value => (value === 'light' ? 'dark' : 'light'));
-  }, [occ]);
+    const next = theme === 'light' ? 'dark' : 'light';
+    writeStored(next);
+    setStored(next);
+  }, [theme]);
 
   // The provider renders again on every navigation: keep the value stable so
   // its consumers do not.

@@ -172,11 +172,12 @@ esa verificación no cubre
   `https:` se vuelve enlace
   ([atribución](../../frontend/private-web/src/features/maps/core/attribution.js)).
   En M5 lo mostraban Monitoreo de vuelos, el único mapa que dibujaba el
-  tráfico, y el laboratorio de mapas, con una red sintética. Desde el PR U3 lo
-  muestra también la consola de Panorama, que además nombra la red en su línea
-  de procedencia, bajo el mapa («Aviones: {red}, hace N s.»). El navegador nunca
-  llama a adsb.fi ni a adsb.lol: lee `occ/map/air-picture` de la API, y la CSP no
-  cambia.
+  tráfico, y el laboratorio de mapas, con una red sintética. Desde el PR M6 lo
+  muestran también, dentro del marco del OCC, Mapa de posiciones y la vista
+  «Mapa» de Planificación. Desde el PR U3 lo muestra también la consola de
+  Panorama, que además nombra la red en su línea de procedencia, bajo el mapa
+  («Aviones: {red}, hace N s.»). El navegador nunca llama a adsb.fi ni a
+  adsb.lol: lee `occ/map/air-picture` de la API, y la CSP no cambia.
 - **Solo con demanda.** Sin nadie leyendo la imagen no hay ninguna llamada.
   Mientras alguien la lee, y hasta 15 minutos después, hay una lectura de la
   red cada 10 segundos para todas las pantallas, con esperas tras un rechazo o
@@ -185,9 +186,11 @@ esa verificación no cubre
   adsb.lol, además, se detiene en 450 lecturas por día UTC sin clave. Desde el
   PR M5, quien la lee es el mapa de Monitoreo de vuelos en el OCC, cada 10
   segundos mientras su pestaña se ve; con la pestaña oculta deja de leerla.
-  Desde el PR U3 la lee también, al mismo ritmo, la consola de Panorama, la
-  pantalla con la que abre el OCC: con el tráfico encendido, iniciar sesión
-  como OCC ya basta para que la API lea la red.
+  Desde el PR M6 la leen también, al mismo ritmo, Mapa de posiciones y la vista
+  «Mapa» de Planificación, esta solo mientras muestra su mapa. Desde el PR U3 la
+  lee también, al mismo ritmo, la consola de Panorama, la pantalla con la que
+  abre el OCC: con el tráfico encendido, iniciar sesión como OCC ya basta para
+  que la API lea la red.
 - **Nada se guarda.** La imagen y las estelas viven en la memoria de la API:
   no hay tabla, registro de uso ni migración.
 - **Vuelos de ELEVANT.** La imagen reconoce los vuelos de ELEVANT por
@@ -264,7 +267,7 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | Object storage S3-compatible | *Posterior al commit verificado:* implementado | La API escribe medios, PDF financieros y evidencias de rampa en un bucket privado y guarda metadatos y hash en SQL ([medios](medios-comerciales-privados.md)) | Que el bucket de un ambiente vivo esté configurado; la retención sigue abierta. |
 | Chat y notificaciones | *Posterior al commit verificado:* internos de ELEVANT | Chat, notificaciones y correo SMTP salen de la API; los hubs solo envían `ChangedV1` ([feed de cambios](feed-de-cambios-operativos.md)) | Que exista un proveedor externo de mensajería o notificaciones push con la app cerrada. |
 | Vuelos demo | *Posterior al commit verificado:* simulados por la propia API y apagados por defecto ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)) | Superadministración dispara dos propuestas del proveedor `Demo`; tras la importación de OCC, un worker marca el aterrizaje y el despegue como lo haría el feed | Que exista un proveedor externo, una llamada de red o un gasto de unidades de AeroDataBox. |
-| adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta. Desde el PR M5, el mapa de Monitoreo de vuelos la dibuja con ese crédito a la vista, y desde el PR U3, también la consola de Panorama | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
+| adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta. Desde el PR M5, el mapa de Monitoreo de vuelos la dibuja con ese crédito a la vista; desde el PR M6, también Mapa de posiciones y la vista «Mapa» de Planificación, y desde el PR U3, la consola de Panorama | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
 | adsb.lol (relevo) | *Posterior al commit verificado:* implementado como relevo, con la misma activación ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | Toma el turno tras tres fallos seguidos de adsb.fi y se detiene en 450 lecturas por día UTC sin clave | Que haya una clave configurada, trazas o un ritmo según su cuota. |
 | aviationweather.gov (METAR y TAF) | *Posterior al commit verificado:* implementado en la API; apagado por defecto y encendido en Development ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)) | La API lee el METAR y el TAF del aeropuerto de la estación solo cuando alguien pide `occ/weather`, los guarda unos minutos en memoria y los sirve con el crédito de NOAA y su estado en un 200 | Que una pantalla ya lo muestre (el navegador sigue con Iowa Mesonet), que sea apto para despacho o que se guarde. |
 | Pasarela de tarjeta | *Posterior al commit verificado:* simulada y apagada por defecto ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md), [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) | `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; `Simulated` solo arranca en Development, Test o Testing y aprueba o rechaza en memoria las tarjetas de prueba, sin red | Que exista una pasarela real o que un cobro mueva dinero. |

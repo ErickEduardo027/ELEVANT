@@ -13,6 +13,7 @@ import OccMap from '../../maps/core/OccMap';
 import MapDock from '../../maps/ui/MapDock';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
+import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
 import { notificationTargetPath } from '../../notifications/notificationKinds';
@@ -141,8 +142,12 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const mapFlights = flightRows ?? EMPTY;
   const aircraft = live.situation.aircraft;
   const flightsByTurnaround = flightsByTurnaroundOf(flightRows);
-  const traffic = useMemo(() => ({ aircraft, trails: live.trails, route: live.route, source: live.situation.source }),
-    [aircraft, live.route, live.situation.source, live.trails]);
+  // The traffic with its motion (PR M6): the hook's own, whose frames move the demo flight on its render clock (it
+  // approaches, lands, taxis and parks between two reads) and rebuild the chosen flight's route where it is drawn.
+  // A situation without it (a test's) is drawn where it says, as in PR M5.
+  const liveTraffic = live.traffic ?? null;
+  const traffic = useMemo(() => liveTraffic ?? { aircraft, trails: live.trails, route: live.route,
+    source: live.situation.source }, [aircraft, live.route, live.situation.source, live.trails, liveTraffic]);
 
   const planningFlights = useMemo(() => withAssignmentReadiness(planning.data?.flights ?? EMPTY, readiness.data),
     [planning.data, readiness.data]);
@@ -476,6 +481,8 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
             <MapDock>
               <MapLayersMenu />
               <MapPresetSwitcher />
+              {/* «Seguir» is the S key, «Ver y seguir» and the inspector's flight: the dock keeps to the pause. */}
+              <MapMotionControl compact className="shrink-0" />
               {/* Folded at first: the console's map is the ramp under the panels, and the legend opens over it. */}
               <MapLegend defaultOpen={false} />
             </MapDock>

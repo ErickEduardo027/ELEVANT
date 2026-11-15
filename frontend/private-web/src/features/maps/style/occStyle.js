@@ -1,9 +1,13 @@
+import { occThemeColor } from '../../occ-ui/occPalette';
 import { BASEMAP_SOURCE_ID, FONT_STACKS, basemapLayers } from './basemapLayers';
+import { basemapThemeColor } from './mapTheme';
 
 // The one style document of the OCC maps, built in code and handed to the map as an object: the NOC base map over
 // the OpenFreeMap vector tiles, an invisible marker at the base of every slot, and the overlay layers of the screen
-// with their GeoJSON sources born empty (the map engine fills them). There is no theme parameter and no sprite: the
-// OCC is dark only, icons are generated as SDF images (mapImages.js), and the style is never swapped after start.
+// with their GeoJSON sources born empty (the map engine fills them). `theme` (dark by default, or light) picks the
+// base-map colours (mapTheme.js) and the OCC palette: the overlays are written with the dark palette, and every colour
+// of theirs is carried to the same token (or base-map key) of the theme. There is no sprite: icons are generated as
+// SDF images (mapImages.js), and the style is never swapped after start: a theme change re-creates the map (OccMap).
 
 export { BASEMAP_SOURCE_ID, FONT_STACKS };
 
@@ -41,6 +45,37 @@ export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 
 
 const THRESHOLD_KEYS = ['occ:minThreshold', 'occ:maxThreshold'];
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
+
+const RGBA = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/;
+const hexOf = channels => `#${channels.map(value => Number(value).toString(16).padStart(2, '0')).join('')}`;
+
+// One colour written with the dark palette or the dark base map, as `theme` paints it. An `rgba()` colour (the fading
+// trails) keeps its alpha.
+function themeColour(value, theme) {
+  const rgba = RGBA.exec(value);
+  if (rgba === null) return basemapThemeColor(occThemeColor(value, theme), theme);
+  const swapped = themeColour(hexOf(rgba.slice(1, 4)), theme);
+  if (swapped === hexOf(rgba.slice(1, 4))) return value;
+  const [red, green, blue] = [1, 3, 5].map(start => Number.parseInt(swapped.slice(start, start + 2), 16));
+  return `rgba(${red}, ${green}, ${blue}, ${rgba[4]})`;
+}
+
+// Every string of a paint or layout value (expressions included), carried to `theme`.
+function themed(value, theme) {
+  if (typeof value === 'string') return themeColour(value, theme);
+  if (Array.isArray(value)) return value.map(item => themed(item, theme));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, themed(item, theme)]));
+  }
+  return value;
+}
+
+const themedLayer = (layer, theme) => (theme !== 'light' ? layer : {
+  ...layer,
+  ...(layer.paint ? { paint: themed(layer.paint, theme) } : {}),
+  // A formatted label carries its colours in the layout (`format` sections).
+  ...(layer.layout ? { layout: themed(layer.layout, theme) } : {}),
+});
 
 function slotIndex(slot) {
   const index = SLOT_ORDER.indexOf(slot);
@@ -90,10 +125,10 @@ function overlayLayerProblem(layer, slot) {
  * its slot and its `metadata['occ:group']`, may name a threshold in `occ:minThreshold` / `occ:maxThreshold`, and
  * keeps its order inside the slot. Duplicate ids, unknown slots or thresholds and missing sources throw.
  */
-export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
+export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark' } = {}) {
   const sources = {};
   const slots = new Map(SLOT_ORDER.map(slot => [slot, []]));
-  const layers = basemapLayers();
+  const layers = basemapLayers({ theme });
 
   if (basemap) {
     sources[BASEMAP_SOURCE_ID] = { type: 'vector', url: OPENFREEMAP_TILEJSON, attribution: OPENFREEMAP_ATTRIBUTION };
@@ -119,7 +154,7 @@ export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
       if (layer.source !== undefined && !Object.hasOwn(sources, layer.source)) {
         throw new Error(`Overlay layer ${layer.id} reads a source the style does not have: ${layer.source}`);
       }
-      slots.get(slot).push(layer);
+      slots.get(slot).push(themedLayer(layer, theme));
     }
   }
 

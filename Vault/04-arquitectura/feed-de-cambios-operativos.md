@@ -429,13 +429,15 @@ de solo lectura.
   vuelo demo y su worker, entre otras. Lo que depende de la hora (la fase de
   una llegada y el reloj de un vuelo demo sin importar) se calcula al leer, y
   los instantes del vuelo demo ya vienen en la respuesta.
-- **Desde M5 y U3:** en A3 ninguna pantalla leía `occ/map`. Desde el PR M5 lo
-  lee el mapa de Monitoreo de vuelos, y desde el PR U3, la consola de
-  Panorama: releen `flights` con `occ_planning`, como mucho una vez cada 3
-  segundos, y con un sondeo de seguridad de 60 segundos; un toque en la tablet
-  solo relee esa lectura. El
+- **Desde M5, M6 y U3:** en A3 ninguna pantalla leía `occ/map`. Desde el PR M5
+  lo lee el mapa de Monitoreo de vuelos; desde el PR M6, también Mapa de
+  posiciones y la vista «Mapa» de Planificación, dentro del marco del OCC; y
+  desde el PR U3, la consola de Panorama: releen `flights` con `occ_planning`,
+  como mucho una vez cada 3 segundos, y con un sondeo de seguridad de 60
+  segundos ([lecturas del mapa](../../frontend/private-web/src/features/maps/useMapSituation.js));
+  en la consola un toque en la tablet solo relee esa lectura. El
   [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
-  cuenta esas lecturas en su prueba de presupuesto.
+  cuenta las lecturas de la consola en su prueba de presupuesto.
 - `GET occ/map/air-picture` no depende del feed de cambios: se sirve desde
   memoria
   ([servicio](../../backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs))

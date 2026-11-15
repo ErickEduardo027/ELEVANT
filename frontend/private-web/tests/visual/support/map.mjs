@@ -54,8 +54,9 @@ export async function clickStand(page, code) {
   await page.mouse.click(box.x + point.x, box.y + point.y);
 }
 
-/** The path of a screenshot for review: test-results/visual/<name>.png. */
-export const screenshotPath = (testInfo, name) => path.join(testInfo.project.outputDir, `${name}.png`);
+/** The path of a screenshot for review: test-results/visual/<name>.png, or <name>-light.png in the light run. */
+export const screenshotPath = (testInfo, name) => path.join(testInfo.project.outputDir,
+  `${name}${process.env.OCC_VISUAL_THEME === 'light' ? '-light' : ''}.png`);
 
 // The indicator `next dev` puts in a corner of every page is not part of the screen under review.
 const WITHOUT_DEV_INDICATOR = 'nextjs-portal { display: none !important; }';

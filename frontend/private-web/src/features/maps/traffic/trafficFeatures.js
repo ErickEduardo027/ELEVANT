@@ -15,7 +15,10 @@ import { staleWords } from './stationTime';
 // larger than the rest and always tagged; other traffic is small and muted, tagged on demand; an estimated position
 // carries a dashed ring and «est.», a position without recent signal is dimmed and says since when, in the words of the
 // vocabulary («Sin actualizar desde las 14:02», traffic/stationTime.js), a demo flight its «Demo» plate. Other traffic
-// on the ground inside a stand an ELEVANT visit holds is not drawn.
+// on the ground inside a stand an ELEVANT visit holds is not drawn. One owner per aircraft (PR M6, design F4): an
+// ELEVANT aircraft parked in the stand that shows it is the stand's (stands/standFeatures.js: parkedAircraftIds), so
+// where the stands are drawn its symbol gives way to the stand's footprint or glyph (`parkedOnStand`); its dashed ring
+// and its «Demo» plate stay, so an estimated or demo aircraft on its stand keeps its mark.
 
 export const TRAFFIC_SOURCE = 'occ-traffic';
 export const TRAILS_SOURCE = 'occ-trails';
@@ -28,8 +31,11 @@ export const TRAFFIC_SCALES = Object.freeze({ aviam: 1.25, other: 0.85, otherGro
 export const TRAFFIC_KINDS = Object.freeze(['aviamArrival', 'aviamDeparture', 'other', 'otherGround']);
 export const TRAFFIC_TAGS = Object.freeze(['demo', 'estimated', 'stale']);
 export const TRAIL_KINDS = Object.freeze(['live', 'estimated']);
-/** The parts of the chosen flight's route (traffic/routeFeatures.js), in the legend's order. */
-export const ROUTE_KINDS = Object.freeze(['flown', 'next']);
+/**
+ * The parts of the chosen flight's route (traffic/routeFeatures.js, kinematics/flightRoute.js), in the legend's order:
+ * flown as observed, flown as estimated, still to fly, and the points marked on it.
+ */
+export const ROUTE_KINDS = Object.freeze(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
 
 const FEET_PER_METRE = 1 / 0.3048;
 const KNOTS_PER_MPS = 3_600 / 1_852;
@@ -57,6 +63,16 @@ export function selectedAircraftId(aircraft, selection) {
 }
 
 /** Altitude in hundreds of feet, three digits («026» for 2 600 ft), or `null`. */
+/**
+ * The altitude the traffic is coloured by (style/mapColors.js), in feet rounded to the hundred: 0 on the ground, -1
+ * without an altitude, so a frame that moves an aircraft a few feet writes nothing new.
+ */
+export function altitudeFeet(item) {
+  if (item?.onGround === true) return 0;
+  if (!finite(item?.altM)) return -1;
+  return Math.max(0, Math.round((item.altM * FEET_PER_METRE) / 100) * 100);
+}
+
 export function flightLevelText(altM) {
   if (!finite(altM)) return null;
   return String(Math.max(0, Math.round((altM * FEET_PER_METRE) / 100))).padStart(3, '0');
@@ -88,8 +104,14 @@ function tagLines(item, type, { t, language }) {
   };
 }
 
+// The opacity of an aircraft in hundredths, so a fade writes a hundred steps at most; 1 when it says none.
+const opacityOf = item => (finite(item.opacity) ? Math.round(Math.min(1, Math.max(0, item.opacity)) * 100) / 100 : 1);
+
+const NO_IDS = Object.freeze(new Set());
+const idsOf = value => (value instanceof Set ? value : NO_IDS);
+
 /** One feature of the traffic source; see trafficFeatures for its properties. */
-function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
+function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked }) {
   const aviam = item.kind === 'aviam';
   const departure = aviam && item.direction === 'Departure';
   const ground = item.onGround === true;
@@ -123,6 +145,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
       estimated: item.quality === 'estimated',
       demo: aviam && item.isDemo === true,
       ground,
+      // The altitude in feet the icon is coloured by (style/mapColors.js): 0 on the ground, -1 when unknown.
+      altFt: altitudeFeet(item),
       selected,
       forceTag,
       showTag: forceTag || labelsOn === true,
@@ -130,6 +154,10 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
       suffix,
       tag2,
       tagStand: aviam && !departure ? (filled(item.standCode) ?? '') : '',
+      // How much of it shows (PR M6): 1, or less while it fades out (a cancelled demo, traffic that lost its signal).
+      opacity: opacityOf(item),
+      // Parked in the stand that shows it (PR M6): its symbol gives way to the stand's footprint or glyph.
+      parkedOnStand: aviam && parked.has(item.id),
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -138,8 +166,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
 /**
  * The traffic source's data: one point per drawn aircraft (isDrawn), keyed by its id (`f:<flightKey>` or `h:<hex>`,
  * the source's promoted id), with
- * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground,
- * selected, forceTag, showTag, tag1, suffix, tag2, tagStand }`:
+ * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground, altFt,
+ * selected, forceTag, showTag, tag1, suffix, tag2, tagStand, opacity }`:
  * - `icon`: the solid silhouette of the aircraft's category, hollow for a departing ELEVANT flight;
  * - `scale`: 1.25 for ELEVANT flights, 0.85 for other traffic, 0.6 for other traffic on the ground, 1.4 when chosen;
  * - `tag1` the flight number (other traffic: callsign, registration or address), `suffix` «est.», or for a stale
@@ -147,16 +175,25 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t }) {
  *   new position comes), `tag2` type, altitude in hundreds of feet (GND on the ground) and knots (none while standing
  *   on the ground), `tagStand` the stand an arriving flight goes to;
  * - `forceTag`: the tag is always on (ELEVANT flights, the chosen aircraft, the one under the pointer); `showTag`:
- *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»).
- * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`.
+ *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»);
+ * - `opacity`: the aircraft's own (PR M6, the motion store), in hundredths: 1, or less while it fades out; the layers
+ *   multiply it into the dimming of a stale position;
+ * - `parkedOnStand` (PR M6): an ELEVANT aircraft of `parkedIds` (a Set of ids), parked in the stand that draws it to
+ *   scale or as its glyph; the layers then leave its symbol and tag to the stand, except as the chosen aircraft, and
+ *   keep its estimated ring and «Demo» plate.
+ * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`,
+ * `parkedIds`.
  */
-export function trafficFeatures(aircraft = [], { selection = null, focusId = null, labelsOn = false, language = 'es' } = {}) {
+export function trafficFeatures(aircraft = [], {
+  selection = null, focusId = null, labelsOn = false, language = 'es', parkedIds = null,
+} = {}) {
   const list = (Array.isArray(aircraft) ? aircraft : []).filter(isDrawn);
   const selectedId = selectedAircraftId(list, selection);
   const t = createTranslator(mapMessages, language);
+  const parked = idsOf(parkedIds);
   return {
     type: 'FeatureCollection',
-    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t })),
+    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })),
   };
 }
 
@@ -248,18 +285,29 @@ const lineInBounds = (points, bounds) => points.some(point => isInBounds(point, 
  *   `traffic.trails` (the trails of the rest of the traffic) only when `true`, as the style starts them.
  * - `zoom` and `thresholds`: other traffic on the ground is drawn only from the airfield threshold up.
  * - `trails`: the trails FeatureCollection (traffic/trailStore.js: trailFeatures).
- * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute), its parts drawn inside `bounds` or
- *   across them.
+ * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute): its lines drawn inside `bounds` or across
+ *   them, and its marks (points) inside them.
+ * - `parkedIds` (PR M6): the ELEVANT aircraft a stand draws instead (trafficFeatures' `parkedOnStand`): the stands'
+ *   legend explains them, so they bring no kind of traffic; their «est.» ring and «Demo» plate stay drawn, so they
+ *   still bring the tags `estimated` and `demo`.
  */
 export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null,
-  route = null } = {}) {
+  route = null, parkedIds = null } = {}) {
   const kinds = new Set();
   const tags = new Set();
   const groundHidden = finite(zoom) && finite(thresholds?.airfield) && zoom < thresholds.airfield;
+  const parked = idsOf(parkedIds);
   for (const item of Array.isArray(aircraft) ? aircraft : []) {
     if (!isDrawn(item) || (bounds !== null && !isInBounds([item.lon, item.lat], bounds))) continue;
     const aviam = item.kind === 'aviam';
     if (!visibleGroup(groups, aviam ? 'traffic.aviam' : 'traffic.other')) continue;
+    // A parked one is drawn by its stand, whose legend explains it, but its estimated ring and «Demo» plate stay.
+    const isParked = aviam && parked.has(item.id);
+    if (isParked) {
+      if (item.isDemo === true) tags.add('demo');
+      if (item.quality === 'estimated') tags.add('estimated');
+      continue;
+    }
     if (aviam) kinds.add(item.direction === 'Departure' ? 'aviamDeparture' : 'aviamArrival');
     else if (item.onGround === true) {
       if (groundHidden) continue;
@@ -281,8 +329,15 @@ export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoo
   if (visibleGroup(groups, 'route')) {
     for (const feature of route?.features ?? []) {
       const part = feature?.properties?.part;
-      const points = feature?.geometry?.coordinates ?? [];
-      if (!ROUTE_KINDS.includes(part) || points.length < 2) continue;
+      const geometry = feature?.geometry;
+      if (!ROUTE_KINDS.includes(part)) continue;
+      if (geometry?.type === 'Point') {
+        const point = geometry.coordinates;
+        if (finite(point?.[0]) && finite(point?.[1]) && (bounds === null || isInBounds(point, bounds))) routeParts.add(part);
+        continue;
+      }
+      const points = geometry?.coordinates ?? [];
+      if (points.length < 2) continue;
       if (bounds === null || lineInBounds(points, bounds)) routeParts.add(part);
     }
   }

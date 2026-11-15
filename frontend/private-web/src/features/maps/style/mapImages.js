@@ -1,4 +1,4 @@
-import { occColor } from '../../occ-ui/occPalette';
+import { occColor, occThemeColor } from '../../occ-ui/occPalette';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { maskToSdf } from './sdf';
 import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
@@ -22,6 +22,7 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'glyph-arriving',
   'signal-attention',
   'signal-urgent',
+  'signal-notice',
   'aircraft-solid',
   'airport-arp',
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
@@ -122,6 +123,13 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
     height: 20,
     ops: [{ fill: octagonPath(10, 10, 7) }, ...exclamation(5.6, 11.2, 12.4)],
   },
+  // The plain notice of the vocabulary (SIGNALS.notice, PR M6): a diamond without colour, only its outline; the layer
+  // paints it in the text colour, never a hue.
+  'signal-notice': {
+    width: 20,
+    height: 20,
+    ops: [{ stroke: 'M10 4 L16 10 L10 16 L4 10 Z', lineWidth: 1.6 }],
+  },
   'aircraft-solid': { width: 40, height: 40, ops: [silhouette(32, 4)] },
   // Aerodrome reference point: a ring crossed by a runway bar that runs well past it, nearly level (a generic runway,
   // not a bearing). A bar kept inside the ring reads as a «no entry» sign, so the image is wider than tall.
@@ -215,7 +223,7 @@ const scaled = (values, pixelRatio) => values.map(value => (Array.isArray(value)
  * nothing to draw with, answers `null`. Results are kept, so an id is drawn once. `rasterize(shape, pixelRatio)` is
  * injectable because jsdom has no canvas.
  */
-export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRatio = 2 } = {}) {
+export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRatio = 2, theme = 'dark' } = {}) {
   const drawn = new Map();
   return function resolveMapImage(id) {
     if (drawn.has(id)) return drawn.get(id);
@@ -224,7 +232,7 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
     // A plain image whose operations carry their own colours (the traffic marks, PR M5) is laid over op by op; a
     // pattern in one colour (`color` on the shape, PR M4) is drawn below with its coverage as alpha.
     if (shape.sdf === false && shape.color === undefined) {
-      const plain = drawPlainImage(id, shape, { rasterize, pixelRatio });
+      const plain = drawPlainImage(id, shape, { rasterize, pixelRatio, theme });
       if (plain) drawn.set(id, plain);
       return plain;
     }
@@ -237,7 +245,7 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
       throw new RangeError(`Image ${id} was drawn at ${raster.width} × ${raster.height}, not ${width} × ${height}`);
     }
     const sdf = shape.sdf !== false;
-    const [red, green, blue] = sdf ? [255, 255, 255] : rgbOf(shape.color);
+    const [red, green, blue] = sdf ? [255, 255, 255] : rgbOf(occThemeColor(shape.color, theme));
     const alpha = sdf ? maskToSdf(raster.alpha, width, height) : raster.alpha;
     const data = new Uint8ClampedArray(width * height * 4);
     for (let index = 0; index < alpha.length; index += 1) {
@@ -259,8 +267,8 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
 }
 
 // The red, green and blue of an OCC colour token written as #rrggbb.
-function tokenRgb(token) {
-  const value = occColor(token);
+function tokenRgb(token, theme = 'dark') {
+  const value = occColor(token, theme);
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
   if (!match) throw new RangeError(`A plain map image needs a #rrggbb token, not ${token} (${value})`);
   return match.slice(1).map(hex => parseInt(hex, 16));
@@ -271,7 +279,7 @@ function tokenRgb(token) {
  * before it in its own `color` (an OCC token), as a canvas would paint it. Answers `{ width, height, data, pixelRatio,
  * sdf: false }` with straight (not premultiplied) RGBA, as MapLibre takes it, or `null` when nothing can be drawn.
  */
-function drawPlainImage(id, shape, { rasterize, pixelRatio }) {
+function drawPlainImage(id, shape, { rasterize, pixelRatio, theme }) {
   const width = Math.round(shape.width * pixelRatio);
   const height = Math.round(shape.height * pixelRatio);
   const size = width * height;
@@ -285,7 +293,7 @@ function drawPlainImage(id, shape, { rasterize, pixelRatio }) {
     if (raster.width !== width || raster.height !== height) {
       throw new RangeError(`Image ${id} was drawn at ${raster.width} × ${raster.height}, not ${width} × ${height}`);
     }
-    const [r, g, b] = tokenRgb(op.color);
+    const [r, g, b] = tokenRgb(op.color, theme);
     for (let index = 0; index < size; index += 1) {
       const cover = raster.alpha[index] / 255;
       if (cover === 0) continue;

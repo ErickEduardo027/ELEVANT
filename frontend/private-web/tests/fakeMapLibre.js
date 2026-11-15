@@ -11,7 +11,9 @@
 //   object (MapLibre would read it as the options) throw;
 // - `updateData` applies its diff to the source's `data` as MapLibre 6.16 does, `removeAllProperties` dropping the
 //   properties that come with it.
-// Camera moves are applied at once and fire `moveend` synchronously.
+// Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
+// pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
+// ended with `emit(map, 'moveend', { originalEvent })`.
 //
 // Engine tests create one fake per test and inject `module`. Component tests share one fake through vi.mock:
 //   vi.mock('maplibre-gl', async () => (await import('<path>/tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -382,13 +384,23 @@ function createModule(state) {
       if (pitch !== undefined) this.camera.pitch = Math.min(Math.max(pitch, 0), this.options.maxPitch ?? 60);
     }
 
+    // As MapLibre 6.16's jumpTo and easeTo: movestart, then zoomstart/rotatestart/pitchstart (each with its end) for what
+    // changes, then moveend. Every event carries `originalEvent` only when the move does (a test standing in for a
+    // person's gesture passes one in the options); the moves code makes carry none.
     _move(method, options, camera = options) {
       this._record(method, [options]);
       this.cameraCalls.push({ method, options });
       if (camera.padding !== undefined) this.padding = paddingOf(camera.padding);
+      const before = { zoom: this.camera.zoom, bearing: this.camera.bearing, pitch: this.camera.pitch };
       this._setCamera(camera);
-      this._fire('movestart', { originalEvent: options?.originalEvent });
-      this._fire('moveend', { originalEvent: options?.originalEvent });
+      const originalEvent = options?.originalEvent;
+      this._fire('movestart', { originalEvent });
+      for (const [key, type] of [['zoom', 'zoom'], ['bearing', 'rotate'], ['pitch', 'pitch']]) {
+        if (this.camera[key] === before[key]) continue;
+        this._fire(`${type}start`, { originalEvent });
+        this._fire(`${type}end`, { originalEvent });
+      }
+      this._fire('moveend', { originalEvent });
       return this;
     }
 
