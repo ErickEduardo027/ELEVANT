@@ -5,6 +5,7 @@ import OccPopover from '../../../occ-ui/OccPopover';
 import { occShellMessages } from '../occShellMessages';
 import OccLanguageToggle from './OccLanguageToggle';
 import OccLegendButton from './OccLegendButton';
+import OccThemeToggle from './OccThemeToggle';
 import { COARSE_TARGET, STATUS_BAR_LAYOUT } from './statusBarLayout';
 
 // The legend opens from inside this menu, whose panel scrolls: from 640 px it is fixed to the screen, 8 px under the
@@ -17,10 +18,10 @@ function initialsOf(name = '') {
 
 /**
  * The account, at every width: a plate with the initials that opens the name, the role and «Cerrar sesión». Below
- * 1024 px it also holds «Leyenda» and the language, which leave the bar there. They mount only while the panel is
+ * 1024 px it also holds «Leyenda», the language and the theme, which leave the bar there. They mount only while the panel is
  * open and hide from 1024 px, so their accessible names never appear twice.
  */
-export default function OccUserMenu({ user, onLogout, className = '' }) {
+export default function OccUserMenu({ user, onLogout, theme, onToggleTheme, className = '' }) {
   const { t } = useTranslation(occShellMessages);
   const name = t('userMenu', { name: user?.name ?? '' });
   return (
@@ -35,6 +36,7 @@ export default function OccUserMenu({ user, onLogout, className = '' }) {
           </div>
           <OccLegendButton className={STATUS_BAR_LAYOUT.legend.menu} panelClassName={NESTED_LEGEND_PANEL} />
           <OccLanguageToggle className={`w-max ${STATUS_BAR_LAYOUT.language.menu}`} />
+          <OccThemeToggle theme={theme} onToggle={onToggleTheme} className={STATUS_BAR_LAYOUT.theme.menu} />
           {onLogout ? (
             <div className="border-t border-occ-line pt-2">
               <button type="button" onClick={() => { close(); onLogout(); }}

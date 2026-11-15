@@ -78,7 +78,7 @@ describe('OCC routes', () => {
 });
 
 describe('OCC boot script', () => {
-  it('the boot script adds the dark class on OCC paths and leaves every other path untouched', () => {
+  it('the boot script adds the dark class on OCC paths when nothing is stored and leaves every other path untouched', () => {
     for (const [route, occ] of ROUTES) {
       const { window, html, errors } = parseDocument(route);
       const className = occ ? 'font-a font-b dark' : 'font-a font-b';
@@ -93,31 +93,38 @@ describe('OCC boot script', () => {
     }
   });
 
-  it('the boot script reads no storage and cannot close its script tag', () => {
+  it('the boot script applies the stored theme on OCC paths before <body> exists', () => {
+    for (const [stored, dark] of [['light', false], ['dark', true], ['sepia', true]]) {
+      for (const [route, occ] of ROUTES) {
+        const { window, html, errors } = parseDocument(route, {
+          beforeParse(page) { page.localStorage.setItem('elevant-theme', stored); },
+        });
+        const className = occ && dark ? 'font-a font-b dark' : 'font-a font-b';
+
+        expect(errors, `${route} ${stored}`).toEqual([]);
+        expect(attributesOf(html), `${route} ${stored}`).toEqual({ lang: 'es', class: className });
+        expect(window.atEndOfHead, `${route} ${stored}`).toEqual({ className, bodyParsed: false });
+        window.close();
+      }
+    }
+  });
+
+  it('the boot script falls back to dark when storage is blocked and cannot close its script tag', () => {
     const script = occThemeBootScript();
     // One line of printable ASCII without `<`: nothing in it can end the element or open an HTML comment.
     expect(script).toMatch(/^[ -~]+$/);
     expect(script).not.toContain('<');
-    expect(script).not.toMatch(/storage|cookie|indexeddb/i);
+    expect(script).not.toMatch(/sessionStorage|cookie|indexeddb/i);
 
-    const touched = [];
     const { window, html, errors } = parseDocument('/admin-occ/dashboard', {
       beforeParse(page) {
-        for (const name of ['localStorage', 'sessionStorage', 'indexedDB']) {
-          Object.defineProperty(page, name, {
-            configurable: true,
-            get() { touched.push(name); throw new Error(`${name} is blocked`); },
-          });
-        }
-        Object.defineProperty(page.document, 'cookie', {
+        Object.defineProperty(page, 'localStorage', {
           configurable: true,
-          get() { touched.push('cookie'); return ''; },
-          set() { touched.push('cookie'); },
+          get() { throw new Error('localStorage is blocked'); },
         });
       },
     });
 
-    expect(touched).toEqual([]);
     expect(errors).toEqual([]);
     expect(html.classList.contains('dark')).toBe(true);
     window.close();
@@ -142,8 +149,8 @@ describe('OCC boot script', () => {
 });
 
 describe('OCC maps', () => {
-  it('no OCC screen wires a map to a light theme', () => {
-    // The screens the visual lane owns, plus Planning. Their maps follow the shell theme, which is dark.
+  it('no OCC screen wires a map to a fixed theme', () => {
+    // The screens the visual lane owns, plus Planning. Their maps follow the shell theme (light or dark).
     const planningMap = join('src', 'features', 'planning', 'components', 'PlanningMap.jsx');
     const files = ['admin-occ', 'dashboard', 'flight-monitoring', 'planning', 'positions-map']
       .flatMap(name => sourceFiles(join('src', 'features', name)));
@@ -153,6 +160,6 @@ describe('OCC maps', () => {
     const literalTheme = /(?<![\w-])theme=(?:\{\s*)?(['"`])([^'"`]*)\1/g;
     const literals = files.flatMap(file => [...readFileSync(file, 'utf8').matchAll(literalTheme)]
       .map(match => `${file}: ${match[2]}`));
-    expect(literals.filter(entry => !entry.endsWith(': dark'))).toEqual([]);
+    expect(literals).toEqual([]);
   });
 });

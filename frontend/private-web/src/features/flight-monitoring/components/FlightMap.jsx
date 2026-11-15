@@ -39,7 +39,7 @@ const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded bo
 // PUJ». Inside the OCC shell it also draws the live traffic, the data block of the chosen aircraft, the layers menu and
 // (PR M6) follow mode, «Seguir» beside the view selector (LiveFlightMap). `detail` is the page's own card of its selected
 // flight: the plain map shows it, the live map only for a flight it does not know. `theme` is accepted and ignored: the
-// OCC maps are dark only.
+// OCC maps follow the shell theme on their own (OccMap).
 function FlightMapView({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, drawnFlights, selection: chosen, onSelect,
   framePoints = EMPTY, children,
