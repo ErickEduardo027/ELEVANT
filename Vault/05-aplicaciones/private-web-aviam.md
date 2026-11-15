@@ -1322,7 +1322,8 @@ huellas de los aviones a escala, la barra de avance de los hitos, «El avión ya
 está en la posición. Registra la llegada.» y el tipo de avión en el rótulo
 llegaron con M6, no con M5, y solo dentro del marco del OCC; fuera de él, un
 avión sigue marcando las posiciones ocupadas y las por liberar. El reloj del
-servidor para los estados sigue pendiente: cambian con el minuto del navegador.
+servidor para los estados llegó con M6, solo dentro del marco del OCC; fuera
+de él cambian con el minuto del navegador.
 Desde M6, en Mapa de posiciones y en Planificación, elegir un vuelo marca su
 posición; elegir una posición todavía no resalta su avión en el mapa. Pasar de
 posición en posición con `[` y `]` y girar una posición al ubicarla quedan
@@ -1493,8 +1494,9 @@ lecturas de M5: la API no cambia.
   llega su salida o «Terminar demo»; cancelado, se desvanece donde está con
   «Cancelado por el proveedor (demo)», también cuando el servidor ya dejó de
   listarlo. Si una parte no cabe a
-  velocidad real se acelera, y el bloque lo dice: «Demo acelerada ×1,02». Con 8
-  minutos van así B36 y B37, comprimidas menos del 2 %; con 10, los minutos de
+  velocidad real se acelera, y el bloque lo dice con su escala real: con 8
+  minutos, «Demo acelerada ×1,01» en B36 y «Demo acelerada ×1,02» en B37,
+  comprimidas menos del 2 %; con 10, los minutos de
   la guía de presentación, todas las posiciones van a velocidad real.
 - **La ruta del vuelo elegido.** Tiene un solo constructor,
   [`flightRoute.js`](../../frontend/private-web/src/features/maps/kinematics/flightRoute.js),
@@ -1531,7 +1533,12 @@ lecturas de M5: la API no cambia.
   posiciones va en el cajón, junto al formulario «Registrar llegada» de
   siempre. Las dos pantallas dibujan el tráfico en vivo, estimado y demo con su
   bloque de datos, «Seguir» y la pausa, y comparten la selección de la URL
-  (`stand=`, `flightId=` y `hex=`). Fuera del marco no leen nada nuevo.
+  (`stand=`, `flightId=` y `hex=`). Sus posiciones van con el reloj del mapa
+  (el del servidor, pausado con el movimiento): una posición demo pasa a
+  «Ocupada» o queda libre en el mismo segundo en que su avión se para o
+  arranca. Un avión parado en su posición lo dibuja ella, pero si es estimado
+  o demo conserva su anillo «est.» o su placa «Demo». Fuera del marco no leen
+  nada nuevo.
 - **Laboratorio y suite visual.** Diez escenas nuevas: el vuelo demo en final,
   rodando, esperando posición, cancelado y disparado con 2 minutos; un vuelo en
   vivo, otro sin señal y otro estimado; la ruta de una llegada y la de una
@@ -1542,8 +1549,9 @@ lecturas de M5: la API no cambia.
   a 1440×900 y a 1920×1080. Las pruebas están en
   [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6).
 
-Límites: los estados de las posiciones siguen cambiando con el minuto del
-navegador, no con el reloj del servidor; un vuelo demo importado tarde puede
+Límites: fuera del marco del OCC, los estados de las posiciones siguen
+cambiando con el minuto del navegador, y las cuentas regresivas de los rótulos
+también dentro de él; un vuelo demo importado tarde puede
 llegar a su posición después de que esta diga «Ocupada»; elegir una posición
 no resalta su avión en el mapa; y el presupuesto de cuadros del plan (60 por
 segundo, con 4 ms de código propio) no se midió. La plataforma de la consola

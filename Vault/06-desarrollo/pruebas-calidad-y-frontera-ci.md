@@ -437,8 +437,8 @@ visual.
   (216 s de rodaje de llegada), cada una de las 41 posiciones activas se alcanza
   por la 08 con un rodaje ajustado de 25 kt o menos. B36 y B37, las dos que no
   caben a velocidad real, van comprimidas menos del 2 %: la prueba demuestra por
-  geometría que ningún rodaje posible cabe, fija el rótulo «Demo acelerada
-  ×1,02» y comprueba que con 222 s de rodaje o con 10 minutos todas caben. Los
+  geometría que ningún rodaje posible cabe, fija las escalas «×1,01» (B36) y
+  «×1,02» (B37), el rótulo «Demo acelerada ×1,02» y comprueba que con 222 s de rodaje o con 10 minutos todas caben. Los
   5 minutos de rodaje de salida caben a 25 kt o menos desde todas, con A1, A2 y
   AN1 desde la intersección H. Prueba también los seis instantes del servidor,
   con un segundo de margen; que ningún tramo salta; el arranque a 5 NM como
@@ -484,6 +484,13 @@ visual.
   tablero, como antes, y que dentro dibujan el tráfico, sus posiciones leen
   «Llegando» y «Ocupada» de los vuelos y el vuelo o el avión de la URL es lo
   elegido, con su bloque de datos.
+  [`useStandDisplay.test.js`](../../frontend/private-web/src/features/maps/stands/useStandDisplay.test.js)
+  comprueba que con el reloj del mapa las posiciones leen la hora del servidor
+  aunque el equipo vaya desfasado, que la posición demo cambia en el segundo
+  exacto de `onBlockAt` y `offBlockAt` y que la pausa la congela; las pruebas
+  de las capas de tráfico comprueban que un avión estimado o demo parado en su
+  posición conserva su anillo «est.» y su placa «Demo» y sus entradas de la
+  leyenda.
 - **Datos sintéticos validados.**
   [`visualOccFixtures.test.js`](../../frontend/private-web/tests/visualOccFixtures.test.js)
   pasa por los validadores estrictos del cliente compartido la imagen aérea, los
