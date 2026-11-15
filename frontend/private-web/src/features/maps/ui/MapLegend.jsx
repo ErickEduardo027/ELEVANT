@@ -6,7 +6,9 @@ import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
 import { FOOTPRINT_PAINT, PROGRESS_PAINT, standPaint } from '../stands/standLayers';
 import { MILESTONES_TOTAL } from '../stands/standModel';
+import { mapColorsFor } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
+import { AIRPORT_KINDS } from '../style/referenceLayers';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
 import { trafficLegendEntries } from './trafficLegend';
@@ -266,6 +268,22 @@ function AirfieldSwatch({ kind }) {
   );
 }
 
+// The region's airports (style/referenceLayers.js) while the map shows them: from the Región and Aproximación views,
+// with «Aeropuertos de la región» on. Each kind its dot as the map draws it, the home airport larger.
+const AIRPORT_VIEWS = new Set(['region', 'approach']);
+function airportsShown({ layers, activeView }) {
+  return AIRPORT_VIEWS.has(activeView) && layers?.keys?.includes('reference.airports') === true
+    && layers?.values?.['reference.airports'] === true;
+}
+function AirportSwatch({ kind }) {
+  const { airports: colours } = mapColorsFor();
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="airport" data-airport={kind}>
+      <circle cx="10" cy="10" r={kind === 'home' ? 6.5 : 4.5} style={{ fill: colours[kind], stroke: colours.halo, strokeWidth: 1.5 }} />
+    </svg>
+  );
+}
+
 // An entry with a hint below its name, across the whole legend.
 function WideEntry({ swatch, name, hint }) {
   return (
@@ -326,7 +344,8 @@ function useLegendInsideMap(rootRef, panelRef, active) {
 
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const {
-    standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen,
+    standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
+    activeView,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
@@ -342,8 +361,9 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
   const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language }), [trafficOnScreen, language]);
 
   const word = entry => entry[language] ?? entry.es;
+  const airports = stands === undefined && airportsShown({ layers, activeView }) ? AIRPORT_KINDS : [];
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
-    || marks.length > 0 || tags.length > 0;
+    || marks.length > 0 || tags.length > 0 || airports.length > 0;
   const shown = listsOthers || airfield.length > 0;
   useLegendInsideMap(rootRef, panelRef, open && shown);
   if (!shown) return null;
@@ -361,6 +381,12 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
                 {entry.label}
                 {entry.hint !== null && <span className="ml-1.5 text-occ-muted">{entry.hint}</span>}
               </span>
+            </li>
+          ))}
+          {airports.map(kind => (
+            <li key={kind} data-legend-airport={kind} className="flex items-center gap-2 pr-3">
+              <AirportSwatch kind={kind} />
+              <span>{t(`airports.${kind}`)}</span>
             </li>
           ))}
           {flights && <WideEntry swatch={<FlightSwatch />} name={t('legend.flight')} hint={t('legend.flightHint')} />}

@@ -652,3 +652,23 @@ describe('MapLegend', () => {
     }
   });
 });
+
+describe('MapLegend: the airports of the region (owner request of 2026-11-15)', () => {
+  const withAirports = (view, on = true) => ({ ...OCC_MAP_IDLE, activeView: view,
+    layers: { keys: ['reference.airports'], values: { 'reference.airports': on } } });
+
+  it('lists the four kinds of airport while the Región or Aproximación view shows them', () => {
+    const { rerender } = render(<OccMapContext.Provider value={withAirports('region')}><MapLegend /></OccMapContext.Provider>);
+    const entries = [...document.querySelectorAll('[data-legend-airport]')];
+    expect(entries.map(entry => entry.dataset.legendAirport)).toEqual(['home', 'international', 'regional', 'other']);
+    expect(entries.map(entry => entry.textContent)).toEqual(['Punta Cana (MDPC)', 'Aeropuerto internacional',
+      'Aeropuerto regional', 'Otro aeródromo']);
+    // The home airport's dot is the larger one.
+    const radius = kind => Number(document.querySelector(`[data-airport="${kind}"] circle`).getAttribute('r'));
+    expect(radius('home')).toBeGreaterThan(radius('regional'));
+    rerender(<OccMapContext.Provider value={withAirports('ramp')}><MapLegend /></OccMapContext.Provider>);
+    expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+    rerender(<OccMapContext.Provider value={withAirports('approach', false)}><MapLegend /></OccMapContext.Provider>);
+    expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+  });
+});

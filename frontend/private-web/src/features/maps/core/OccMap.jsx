@@ -494,7 +494,9 @@ const OccMap = forwardRef(function OccMap({
   const menuGroupsKey = JSON.stringify(menuGroups);
   const shownGroups = useMemo(() => ({ ...JSON.parse(menuGroupsKey), ...JSON.parse(groupsKey) }),
     [menuGroupsKey, groupsKey]);
-  const shownGroupsKey = JSON.stringify(shownGroups);
+  // What the traffic draws depends on its own groups only: the references (the region's airports, which follow the view)
+  // never rewrite it.
+  const trafficGroupsKey = JSON.stringify(Object.entries(shownGroups).filter(([group]) => !group.startsWith('reference.')));
   // The trails and the chosen flight's route (PR M5): while the route shows, the chosen aircraft's trail gives way to
   // its flown part, so it is drawn once, in the selection's cyan.
   const trafficTrails = traffic?.trails ?? null;
@@ -1260,7 +1262,8 @@ const OccMap = forwardRef(function OccMap({
     const overlays = [
       selectionOverlay(),
       ...(props.layout ? [airfieldOverlay()] : []),
-      referenceOverlay(),
+      // The region's airports with the traffic they are context for (owner request of 2026-11-15).
+      referenceOverlay({ airports: props.drawsTraffic }),
       ...(props.drawsStands ? [standOverlay({ labels: props.standLabels })] : []),
       ...(props.drawsFlights ? [flightOverlay()] : []),
       ...(props.drawsTraffic ? [trafficOverlay()] : []),
@@ -1290,7 +1293,7 @@ const OccMap = forwardRef(function OccMap({
       onUserGesture: handleGesture,
     });
     engineRef.current = engine;
-    engine.setData(REFERENCE_SOURCE, referenceFeatures());
+    engine.setData(REFERENCE_SOURCE, referenceFeatures({ airports: props.drawsTraffic }));
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
     engine.setInsets(props.padding);
     refit();
@@ -1407,7 +1410,7 @@ const OccMap = forwardRef(function OccMap({
     const dataAt = latest.current?.traffic?.motion?.dataAt?.() ?? null;
     const motion = store.get().motion;
     if (motion.dataAt !== dataAt) store.set({ motion: { ...motion, dataAt } });
-  }, [trafficAircraft, selection, shownGroupsKey, language, writeTraffic, updateOnScreen, store]);
+  }, [trafficAircraft, selection, trafficGroupsKey, language, writeTraffic, updateOnScreen, store]);
 
   // A stand that turns occupied or lets its aircraft go changes whose symbol gives way to a footprint (PR M6): the traffic
   // is written again with the stands, which a re-read of the same stands leaves as it is.

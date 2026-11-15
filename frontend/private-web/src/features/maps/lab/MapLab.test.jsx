@@ -282,6 +282,9 @@ describe('MapLab', () => {
     expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }))
       .toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('group', { name: 'Tráfico' })).toBeInTheDocument();
+    // The region's airports under «Referencias», on in the Región view.
+    expect(within(screen.getByRole('group', { name: 'Referencias' })).getByRole('checkbox', { name: 'Aeropuertos de la región' }))
+      .toBeChecked();
     cleanup();
     open(`?scene=ramp-states&t=${NOON}`);
     expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();

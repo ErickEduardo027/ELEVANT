@@ -1095,7 +1095,7 @@ describe('OccMap', () => {
   it('always marks PUJ with its reference point, up to the codes threshold', () => {
     const { map } = renderMap();
     loadStyle(map);
-    expect(map.getSource('occ-reference').data).toEqual(referenceFeatures());
+    expect(map.getSource('occ-reference').data).toEqual(referenceFeatures({ airports: false }));
     expect(map.zoomRangeCalls.find(call => call.id === 'occ-reference-arp'))
       .toEqual({ id: 'occ-reference-arp', minzoom: 0, maxzoom: probe().thresholds.codes });
     // Above the pavement of the tiles, the last layer under the stands.
@@ -1112,7 +1112,8 @@ describe('OccMap', () => {
     expect(source.data).toEqual(airfieldFeatures(MDPC_LAYOUT));
     expect(source.setDataCalls).toHaveLength(1);
     expect(source.spec.attribution).toBe(AIRFIELD_ATTRIBUTION);
-    // In the airfield slot, above the tile aeroway and under the mark of PUJ.
+    // In the airfield slot, above the tile aeroway and under the mark of PUJ (a map without traffic draws no airports
+    // of the region).
     const ids = map.layerIds();
     expect(ids.slice(ids.indexOf('slot-airfield') + 1, ids.indexOf('slot-stands'))).toEqual([
       'airfield-apron', 'airfield-runway-area', 'airfield-taxiway', 'airfield-runway', 'airfield-runway-ref',
@@ -1894,9 +1895,9 @@ describe('OccMap traffic (PR M5)', () => {
     act(() => map.jumpTo({ center: standPoint('A3'), zoom: 17 }));
     expect(trafficProbe().trafficOnScreen.kinds).toEqual(['otherGround']);
     expect(items()).toEqual(['otherGround']);
-    // Nothing of the traffic on screen: no traffic in the legend.
+    // Nothing of the traffic on screen: no traffic in the legend (the region's airports stay while a far view shows them).
     act(() => map.jumpTo(NOWHERE));
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[data-legend-traffic]')).toHaveLength(0);
   });
 });
 
