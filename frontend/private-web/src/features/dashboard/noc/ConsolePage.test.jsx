@@ -211,9 +211,11 @@ const remeasure = () => act(async () => {
 // Where the map draws a stand: the centre of its box in the airport layout (the synthetic day saves no location).
 const standCentre = code => attachStandGeometry([{ id: code, code }], MDPC_LAYOUT)[0].geometry.center;
 // Whether a camera centre (a LngLat or `[lng, lat]`) is at `[lng, lat]`, to a millionth of a degree.
-function near(center, [lng, lat]) {
+// An aircraft is drawn where the motion's frame samples it (PR M6): a few hundred metres on from its fix at most.
+const AIRCRAFT_TOLERANCE = 0.01;
+function near(center, [lng, lat], tolerance = 1e-6) {
   const [x, y] = Array.isArray(center) ? center : [center?.lng, center?.lat];
-  return Math.abs(x - lng) < 1e-6 && Math.abs(y - lat) < 1e-6;
+  return Math.abs(x - lng) < tolerance && Math.abs(y - lat) < tolerance;
 }
 // The fake map's camera put, at its zoom, so that `lngLat` is drawn at the pixel `[x, y]` of its 1440 × 900 viewport.
 function drawAt(map, lngLat, [x, y]) {
@@ -230,8 +232,8 @@ async function clickStand(map, code, [x, y], [lng, lat]) {
 const movesSince = (map, from) => map.cameraCalls.slice(from).filter(call => call.method !== 'setPadding');
 const paddedSince = (map, from, side, value) => map.cameraCalls.slice(from)
   .findIndex(call => call.method === 'setPadding' && call.options[side] === value);
-const movedToSince = (map, from, point) => map.cameraCalls.slice(from)
-  .findIndex(call => call.method !== 'setPadding' && near(call.options.center, point));
+const movedToSince = (map, from, point, tolerance) => map.cameraCalls.slice(from)
+  .findIndex(call => call.method !== 'setPadding' && near(call.options.center, point, tolerance));
 
 beforeEach(() => {
   fake.state.reset();
@@ -741,8 +743,8 @@ describe('the camera around the panels', () => {
     // A move made before the inspector's room would stop half-way at the jump of the new padding.
     const padded = paddedSince(map, from, 'right', 404);
     expect(padded).toBeGreaterThanOrEqual(0);
-    expect(movedToSince(map, from, aircraft)).toBeGreaterThan(padded);
-    expect(near(map.getCenter(), aircraft)).toBe(true);
+    expect(movedToSince(map, from, aircraft, AIRCRAFT_TOLERANCE)).toBeGreaterThan(padded);
+    expect(near(map.getCenter(), aircraft, AIRCRAFT_TOLERANCE)).toBe(true);
   });
 
   /** The console with a demo flight on its way whose aircraft the map draws, and «Ver y seguir» pressed. */
@@ -768,18 +770,31 @@ describe('the camera around the panels', () => {
     return { map, aircraft: [-68.62, 18.48] };
   }
 
-  it('«Ver y seguir» frames the view that follows the flight, then centres its aircraft', async () => {
+  it('«Ver y seguir» frames the view that follows the flight, then follows its aircraft on the frames', async () => {
     const { map, aircraft } = await followDemoArrival();
     const zoom = map.getZoom();
-    expect(near(map.getCenter(), aircraft)).toBe(false);
+    expect(near(map.getCenter(), aircraft, AIRCRAFT_TOLERANCE)).toBe(false);
     await act(async () => fake.state.emit(map, 'idle'));
-    await waitFor(() => expect(near(map.getCenter(), aircraft)).toBe(true));
+    // Follow mode (PR M6) frames the moving aircraft with its next objective, the airport: the camera runs with it,
+    // between the aircraft and PUJ, at the zoom of the view.
+    await waitFor(() => expect(search().get('follow')).toBe('1'));
+    await waitFor(() => {
+      const { lng, lat } = map.getCenter();
+      expect(lng).toBeGreaterThan(aircraft[0]);
+      expect(lng).toBeLessThan(-68.36);
+      expect(lat).toBeGreaterThan(aircraft[1]);
+    });
     expect(map.getZoom()).toBeCloseTo(zoom, 6);
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'approach');
+    // The console's dock moves its traffic like the other OCC maps: «Seguir» pressed, «Pausar movimiento» offered.
+    expect(screen.getByRole('button', { name: /Seguir/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Pausar movimiento' })).toBeInTheDocument();
   });
 
   it('«Ver y seguir» leaves the camera to a person who moves it before the map settles', async () => {
     const { map, aircraft } = await followDemoArrival();
+    // A drag: it ends follow mode too (PR M6), so the frames leave the camera where the person put it.
+    act(() => fake.state.emit(map, 'dragstart', { originalEvent: new MouseEvent('mousedown') }));
     act(() => map.jumpTo({ center: [-68.3, 18.6], originalEvent: { type: 'mousemove' } }));
     const from = map.cameraCalls.length;
     // The map settles, and what waited for it has run by the next task.
@@ -787,7 +802,7 @@ describe('the camera around the panels', () => {
       fake.state.emit(map, 'idle');
       await new Promise(resolve => { setTimeout(resolve, 0); });
     });
-    expect(movedToSince(map, from, aircraft)).toBe(-1);
+    expect(movedToSince(map, from, aircraft, AIRCRAFT_TOLERANCE)).toBe(-1);
     expect(near(map.getCenter(), [-68.3, 18.6])).toBe(true);
   });
 });

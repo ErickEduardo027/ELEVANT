@@ -9,6 +9,7 @@ import { useOccStation } from '../../admin-occ/useOccStation';
 import { useAuth } from '../../auth/AuthContext';
 import { useMapSelection } from '../../maps/core/useMapSelection';
 import { useStandDisplay } from '../../maps/stands/useStandDisplay';
+import { standInputsOf } from '../../maps/traffic/standInputs';
 import { useMapSituation } from '../../maps/useMapSituation';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { consoleMessages } from './consoleMessages';
@@ -56,7 +57,13 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
   // The weather is read only with the PUJ scope.
   const weather = useMdpcWeather({ enabled: ready });
   const flightsByTurnaround = flightsByTurnaroundOf(live.flights?.flights);
-  const stands = useStandDisplay(data.positions.data?.stands ?? NO_STANDS, { flightsByTurnaround });
+  // The stands read on the clock the map draws its aircraft at (PR M6, the render clock, paused with the motion) and
+  // with the aircraft inside their box, so a demo stand turns Ocupada in the moment its aircraft parks.
+  const { aircraftByTurnaround } = standInputsOf(live.situation);
+  const standClock = live.renderClock ?? null;
+  const standOptions = useMemo(() => ({ flightsByTurnaround, aircraftByTurnaround, clock: standClock }),
+    [aircraftByTurnaround, flightsByTurnaround, standClock]);
+  const stands = useStandDisplay(data.positions.data?.stands ?? NO_STANDS, standOptions);
   const stationScope = useMemo(() => ({ stationId: stationId ?? '', stationCode: station.stationCode }),
     [station.stationCode, stationId]);
 
