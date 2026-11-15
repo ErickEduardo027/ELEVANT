@@ -350,12 +350,13 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     const drawn = map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id));
     expect(drawn).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
     expect(drawn).toContain(`h:${TRAFFIC_HEX.overflight}`);
-    // The credit of the aircraft data, as a link over the map and in its attribution; no chip while the picture is Live.
+    // The credit of the aircraft data, once, as a link over the map (not in its attribution); no chip while the picture
+    // is Live.
     const status = screen.getByTestId('map-source-status');
     expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toHaveAttribute('href', 'https://example.org/adsb');
     expect(within(status).queryByRole('status')).not.toBeInTheDocument();
     const attribution = map.controls.find(entry => entry.control instanceof fake.module.AttributionControl).control;
-    expect(attribution.options.customAttribution).toContain('Datos de aeronaves');
+    expect(attribution.options.customAttribution).not.toContain('Datos de aeronaves');
     // The legend explains the traffic on screen.
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
   });

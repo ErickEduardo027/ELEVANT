@@ -368,11 +368,11 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route and the air picture's source).
  *   Whether it is given is read at start, as for the stands and the flights: the map then draws the traffic overlay,
  *   one updateData per change of the aircraft (a selection, the aircraft under the pointer and the shown groups
- *   included), lists the traffic on screen for the legend, and credits the source in the attribution while traffic
- *   is on screen. The chosen aircraft is drawn larger in cyan with the selection ring, both layers of the traffic
- *   overlay in the selection slot (traffic/trafficLayers.js), so they move in the aircraft's own updateData and the
- *   selection source keeps the stands and the flights; while its route shows, its trail gives way to the route's flown
- *   part.
+ *   included), lists the traffic on screen for the legend, and names its source for the credit line
+ *   (ui/MapSourceStatus.jsx) while traffic is on screen. The chosen aircraft is drawn larger in cyan with the
+ *   selection ring, both layers of the traffic overlay in the selection slot (traffic/trafficLayers.js), so they move
+ *   in the aircraft's own updateData and the selection source keeps the stands and the flights; while its route
+ *   shows, its trail gives way to the route's flown part.
  * - The layers menu (PR M5, core/layersMenu.js, ui/MapLayersMenu.jsx): the map keeps the person's choices (only what
  *   differs from the defaults of the view on screen, in `localStorage`) and shows or hides the groups they name, except
  *   a group the page sets in `groups`, which wins. The menu reads them from OccMapContext; L opens and closes a menu on
@@ -1211,9 +1211,9 @@ const OccMapView = forwardRef(function OccMapView({
       standFlags: NO_FLAGS, ghost: null, pendingGhost: null, ghostKey: '[]', placingCode: null,
       easedFor: props.selection?.kind === 'stand' ? mapStandCode(props.selection.id) || null : null,
     };
-    // The traffic of this engine: what its source holds, the trails and route written, and the credit shown.
-    Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null, route: null,
-      credit: '' });
+    // The traffic of this engine: what its source holds, and the trails and route written.
+    Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null,
+      route: null });
     // The ELEVANT aircraft the stands draw instead (PR M6), and whether the stands were drawn at the last write.
     Object.assign(appliedRef.current, { parkedIds: NO_IDS, standsShown: null });
     // Its motion (PR M6): one frame loop for the life of the engine, on the render clock of the motion it was given.
@@ -1494,8 +1494,9 @@ const OccMapView = forwardRef(function OccMapView({
     latest.current.followInfo = followInfo;
   });
 
-  // The credit of the aircraft data (owner decision 6, contracts 2.5): «Datos de aeronaves: {source}» with its links
-  // in the attribution while traffic is on screen, and out of it when none is.
+  // The source of the aircraft data on screen (owner decision 6, contracts 2.5), while traffic is on screen. Its credit,
+  // «Datos de aeronaves: {source}» with its links, is the one line ui/MapSourceStatus.jsx draws at the bottom left of
+  // the map: the attribution keeps the base map's credits only, so the credit shows once and the dock never covers it.
   const trafficShown = snapshot.trafficOnScreen;
   const creditKey = trafficShown.kinds.length > 0 ? creditKeyOf(traffic?.source) : '';
   const trafficSource = useMemo(() => {
@@ -1503,16 +1504,6 @@ const OccMapView = forwardRef(function OccMapView({
     const [name, homeUrl, licenseName, licenseUrl] = JSON.parse(creditKey);
     return Object.freeze({ name, homeUrl, licenseName, licenseUrl });
   }, [creditKey]);
-  const aircraftDataLabel = t('attribution.aircraftData');
-  useEffect(() => {
-    const engine = engineRef.current;
-    const applied = appliedRef.current;
-    // What the attribution shows: nothing of the traffic, or this source in this language.
-    const key = creditKey === '' ? '' : `${creditKey}|${aircraftDataLabel}`;
-    if (!engine || !applied.drawsTraffic || applied.credit === key) return;
-    applied.credit = key;
-    engine.setAttribution(buildAttribution(trafficSource === null ? [] : [trafficSource], { aircraftDataLabel }));
-  }, [creditKey, trafficSource, aircraftDataLabel]);
 
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
   useEffect(() => {

@@ -1846,39 +1846,27 @@ describe('OccMap traffic (PR M5)', () => {
     expect(trafficProbe().trafficOnScreen.route).toEqual([]);
   });
 
-  it('adds the aircraft credit while traffic is on screen and drops it when none is', () => {
+  it('names the source while traffic is on screen and keeps the aircraft credit out of the attribution', () => {
     const { rerender } = render(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
     const map = fake.state.liveMaps().at(-1);
-    // The map starts with the fixed credit only, and credits the source once it knows traffic is on screen.
-    const created = map.calls.find(call => call.method === 'addControl' && call.args[0] instanceof fake.module.AttributionControl);
-    expect(created.args[0].options.customAttribution).not.toMatch(/Datos de aeronaves/);
     loadStyle(map);
-    // The region view holds the traffic: «Datos de aeronaves» links the source and names its licence.
-    expect(attributionOf(map)).toContain('Datos de aeronaves: <a href="https://example.org/adsb" target="_blank" '
-      + 'rel="noopener noreferrer">Red ADS-B de prueba</a> (Datos sintéticos)');
+    // The region view holds the traffic: its source reaches the credit line (ui/MapSourceStatus.jsx), the one place the
+    // aircraft data is credited; the attribution keeps the base map's credits only and is never written again.
     expect(trafficProbe().trafficSource).toEqual(TRAFFIC_SOURCE);
-    // Away from every aircraft the credit goes, and comes back with them.
+    expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
+    const writes = map.calls.filter(call => call.method === 'removeControl').length;
+    // Away from every aircraft the source goes, and comes back with them.
     act(() => map.jumpTo(NOWHERE));
     expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
-    expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
     expect(trafficProbe().trafficSource).toBeNull();
     act(() => map.jumpTo({ center: [-68.36, 18.56], zoom: 7 }));
-    expect(attributionOf(map)).toContain('Datos de aeronaves');
-    // A credit is written once: re-reads of the same source write nothing.
-    const writes = map.calls.filter(call => call.method === 'removeControl').length;
+    expect(trafficProbe().trafficSource).toEqual(TRAFFIC_SOURCE);
     rerender(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
-    expect(map.calls.filter(call => call.method === 'removeControl')).toHaveLength(writes);
     // Without a source (the provider is off) there is nothing to credit.
     rerender(<OccMap defaultView="region" traffic={noonTraffic({ source: null })}><TrafficProbe /></OccMap>);
+    expect(trafficProbe().trafficSource).toBeNull();
+    expect(map.calls.filter(call => call.method === 'removeControl')).toHaveLength(writes);
     expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
-    cleanup();
-
-    // In English the credit speaks English.
-    act(() => resetLanguageForTests('en'));
-    render(<LanguageScope><OccMap defaultView="region" traffic={noonTraffic()} /></LanguageScope>);
-    const english = fake.state.liveMaps().at(-1);
-    loadStyle(english);
-    expect(attributionOf(english)).toContain('Aircraft data: <a href="https://example.org/adsb"');
   });
 
   it('the legend lists the aircraft kinds, tags and trails on screen', () => {
