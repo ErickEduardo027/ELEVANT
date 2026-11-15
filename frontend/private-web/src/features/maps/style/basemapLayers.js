@@ -72,7 +72,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       id: 'base-boundary-country',
       type: 'line',
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]],
-      paint: { 'line-color': colors.boundary, 'line-width': 1, 'line-dasharray': [3, 2] },
+      paint: { 'line-color': colors.boundary, 'line-width': 1.2, 'line-dasharray': [3, 2] },
     }),
     tileLayer('boundary', 'basemap', {
       id: 'base-boundary-maritime',
@@ -115,7 +115,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
     tileLayer('place', 'basemap.labels', {
       id: 'base-label-city',
       type: 'symbol',
-      filter: ['all', classIs('city'), ['!=', ['get', 'capital'], 2]],
+      filter: ['all', classIs('city', 'town'), ['!=', ['get', 'capital'], 2]],
       layout: { 'text-field': NAME, 'text-font': fonts('regular'), 'text-size': LABEL_SIZE, 'text-max-width': 8 },
       paint: labelPaint(colors.placeLabel, colors.labelHalo),
     }),
@@ -210,7 +210,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
         'text-font': fonts('bold'),
         'text-size': LABEL_SIZE,
       },
-      paint: labelPaint(occColor('muted'), colors.labelHalo),
+      paint: labelPaint(occColor('text'), colors.labelHalo),
       metadata: UNTIL_AIRFIELD,
     }),
   ];

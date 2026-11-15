@@ -268,10 +268,10 @@ describe('OCC map style', () => {
         else expect(baseValues.has(colour) || tokenValues.has(colour), `${layer.id}: ${colour}`).toBe(true);
       }
     }
-    // The only token a tile layer paints is the runway designator, in --occ-muted.
+    // The only token a tile layer paints is the runway designator, in --occ-text (it reads on the lighter runway).
     const tokensOnTiles = style.layers.filter(layer => !OVERLAY_IDS.has(layer.id))
       .flatMap(layer => paintColours(layer).filter(colour => !baseValues.has(colour)).map(colour => [layer.id, colour]));
-    expect(tokensOnTiles).toEqual([['airfield-runway-ref', occColor('muted')]]);
+    expect(tokensOnTiles).toEqual([['airfield-runway-ref', occColor('text')]]);
 
     const paintOf = (id, property) => style.layers.find(layer => layer.id === id).paint[property];
     expect(paintOf('base-background', 'background-color')).toBe(BASEMAP_COLORS.land);
@@ -293,7 +293,7 @@ describe('OCC map style', () => {
     const marked = Object.fromEntries(Object.keys(BASEMAP_COLORS).map((key, index) => [key, `#0000${String(index).padStart(2, '0')}`]));
     const markedValues = new Set(Object.values(marked));
     const drawn = Object.values(basemapLayers({ colors: marked })).flat().flatMap(paintColours);
-    expect(drawn.filter(colour => !markedValues.has(colour))).toEqual([occColor('muted')]);
+    expect(drawn.filter(colour => !markedValues.has(colour))).toEqual([occColor('text')]);
   });
 
   it('every icon-image and fill-pattern the style names resolves through createImageResolver', () => {
