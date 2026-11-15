@@ -70,7 +70,11 @@ function PlanningMapView({ stationId, date, flights = [], timeZone, onSelectFlig
   const placedPositions = useMemo(() => (layout ? attachStandGeometry(positions, layout) : positions),
     [positions, layout]);
   const standInputs = useMemo(() => standInputsOf(situation), [situation]);
-  const mapPositions = useStandDisplay(placedPositions, standInputs);
+  // On the clock the map draws its aircraft at (the server's, paused with the motion), so a demo stand changes state
+  // when its aircraft parks or leaves.
+  const standClock = live?.renderClock ?? null;
+  const standOptions = useMemo(() => ({ ...standInputs, clock: standClock }), [standInputs, standClock]);
+  const mapPositions = useStandDisplay(placedPositions, standOptions);
   const withFlights = positions.filter(position => position.turnarounds.length > 0);
   const selected = selectedCode === null ? null
     : mapPositions.find(position => mapStandCode(position.id) === selectedCode) ?? null;

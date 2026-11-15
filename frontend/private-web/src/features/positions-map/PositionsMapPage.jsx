@@ -122,7 +122,11 @@ function PositionsMapScreen({
   const placedPositions = useMemo(() => (layout ? attachStandGeometry(positions, layout) : positions),
     [positions, layout]);
   const standInputs = useMemo(() => standInputsOf(situation), [situation]);
-  const displayedPositions = useStandDisplay(placedPositions, standInputs);
+  // On the clock the map draws its aircraft at (the server's, paused with the motion), so a demo stand changes state
+  // when its aircraft parks or leaves.
+  const standClock = live?.renderClock ?? null;
+  const standOptions = useMemo(() => ({ ...standInputs, clock: standClock }), [standInputs, standClock]);
+  const displayedPositions = useStandDisplay(placedPositions, standOptions);
   const { search, setSearch, terminalFilter, setTerminalFilter, filteredPositions } = usePositionsMapFilters(displayedPositions);
   const { toasts, dismissToast } = usePositionAlerts(positions, displayConnection);
 

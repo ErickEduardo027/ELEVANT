@@ -40,7 +40,9 @@ const isNot = key => ['!=', get(key), true];
 const AVIAM = ['==', get('kind'), 'aviam'];
 const OTHER = ['==', get('kind'), 'other'];
 // An ELEVANT aircraft parked in the stand that shows it is the stand's (PR M6, design F4: one owner per aircraft): its
-// symbol, ring, tag and plate give way to the stand's footprint or glyph; the chosen aircraft is drawn all the same.
+// symbol and tag give way to the stand's footprint or glyph; the chosen aircraft is drawn all the same. Its marks stay:
+// an estimated position keeps its dashed ring and a demo flight its «Demo» plate over the stand (contracts 2.4, «Tags»:
+// whatever is estimated or simulated carries its mark on screen).
 const NOT_PARKED = isNot('parkedOnStand');
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
@@ -309,7 +311,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-estimated-ring',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', is('estimated'), NOT_PARKED],
+        filter: is('estimated'),
         layout: {
           'icon-image': ESTIMATED_RING_IMAGE,
           'icon-size': get('scale'),
@@ -342,7 +344,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-demo-plate',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', is('demo'), NOT_PARKED],
+        filter: is('demo'),
         layout: {
           'icon-image': DEMO_PLATE_IMAGE,
           'icon-anchor': 'center',

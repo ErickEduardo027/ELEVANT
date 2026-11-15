@@ -273,12 +273,16 @@ describe('traffic layers (design E1 and E3)', () => {
       .toBeGreaterThan(evaluate(other, 'layout', 'symbol-sort-key', stale));
   });
 
-  it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand, unless chosen', () => {
+  it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand, unless chosen, and keeps its marks', () => {
     const parked = { kind: 'aviam', dir: 'arr', parkedOnStand: true, estimated: true, demo: true, selected: false };
-    // Its symbol, its estimated ring, its tag and its «Demo» plate: the stand shows it instead (footprint or glyph).
-    for (const id of ['occ-traffic-aviam', 'occ-traffic-estimated-ring', 'occ-traffic-tags', 'occ-traffic-demo-plate']) {
+    // Its symbol and its tag: the stand shows it instead (footprint or glyph).
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-tags']) {
       expect(accepts(layerOf(id), parked), id).toBe(false);
       expect(accepts(layerOf(id), { ...parked, parkedOnStand: false }), id).toBe(true);
+    }
+    // Its marks stay over the stand: the dashed ring of an estimated position and the «Demo» plate (contracts 2.4).
+    for (const id of ['occ-traffic-estimated-ring', 'occ-traffic-demo-plate']) {
+      expect(accepts(layerOf(id), parked), id).toBe(true);
     }
     // Chosen, it is drawn all the same, in cyan with its ring, so the person sees what they chose.
     for (const id of ['occ-traffic-selected-ring', 'occ-traffic-selected']) {

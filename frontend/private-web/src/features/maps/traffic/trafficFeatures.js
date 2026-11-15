@@ -17,7 +17,8 @@ import { staleWords } from './stationTime';
 // vocabulary («Sin actualizar desde las 14:02», traffic/stationTime.js), a demo flight its «Demo» plate. Other traffic
 // on the ground inside a stand an ELEVANT visit holds is not drawn. One owner per aircraft (PR M6, design F4): an
 // ELEVANT aircraft parked in the stand that shows it is the stand's (stands/standFeatures.js: parkedAircraftIds), so
-// where the stands are drawn its symbol gives way to the stand's footprint or glyph (`parkedOnStand`).
+// where the stands are drawn its symbol gives way to the stand's footprint or glyph (`parkedOnStand`); its dashed ring
+// and its «Demo» plate stay, so an estimated or demo aircraft on its stand keeps its mark.
 
 export const TRAFFIC_SOURCE = 'occ-traffic';
 export const TRAILS_SOURCE = 'occ-trails';
@@ -166,7 +167,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
  * - `opacity`: the aircraft's own (PR M6, the motion store), in hundredths: 1, or less while it fades out; the layers
  *   multiply it into the dimming of a stale position;
  * - `parkedOnStand` (PR M6): an ELEVANT aircraft of `parkedIds` (a Set of ids), parked in the stand that draws it to
- *   scale or as its glyph; the layers then leave it to the stand, except as the chosen aircraft.
+ *   scale or as its glyph; the layers then leave its symbol and tag to the stand, except as the chosen aircraft, and
+ *   keep its estimated ring and «Demo» plate.
  * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`,
  * `parkedIds`.
  */
@@ -274,7 +276,8 @@ const lineInBounds = (points, bounds) => points.some(point => isInBounds(point, 
  * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute): its lines drawn inside `bounds` or across
  *   them, and its marks (points) inside them.
  * - `parkedIds` (PR M6): the ELEVANT aircraft a stand draws instead (trafficFeatures' `parkedOnStand`): the stands'
- *   legend explains them, so they bring no traffic entry.
+ *   legend explains them, so they bring no kind of traffic; their «est.» ring and «Demo» plate stay drawn, so they
+ *   still bring the tags `estimated` and `demo`.
  */
 export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null,
   route = null, parkedIds = null } = {}) {
@@ -284,9 +287,15 @@ export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoo
   const parked = idsOf(parkedIds);
   for (const item of Array.isArray(aircraft) ? aircraft : []) {
     if (!isDrawn(item) || (bounds !== null && !isInBounds([item.lon, item.lat], bounds))) continue;
-    if (item.kind === 'aviam' && parked.has(item.id)) continue;
     const aviam = item.kind === 'aviam';
     if (!visibleGroup(groups, aviam ? 'traffic.aviam' : 'traffic.other')) continue;
+    // A parked one is drawn by its stand, whose legend explains it, but its estimated ring and «Demo» plate stay.
+    const isParked = aviam && parked.has(item.id);
+    if (isParked) {
+      if (item.isDemo === true) tags.add('demo');
+      if (item.quality === 'estimated') tags.add('estimated');
+      continue;
+    }
     if (aviam) kinds.add(item.direction === 'Departure' ? 'aviamDeparture' : 'aviamArrival');
     else if (item.onGround === true) {
       if (groundHidden) continue;
