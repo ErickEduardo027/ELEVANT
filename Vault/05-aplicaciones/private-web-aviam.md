@@ -1728,13 +1728,44 @@ también dentro de él; un vuelo demo importado tarde puede
 llegar a su posición después de que esta diga «Ocupada»; elegir una posición
 no resalta su avión en el mapa; y el presupuesto de cuadros del plan (60 por
 segundo, con 4 ms de código propio) no se midió. La consola de U3 dibuja el
-tráfico, pero sin el movimiento de M6: sus aviones se colocan en cada lectura. Los aviones 3D y sus sombras llegan con M7, y el
+tráfico con el movimiento de M6 (ver «Consola en movimiento y mapa con más color»). Los aviones 3D y sus sombras llegan con M7, y el
 viento del METAR y las capas de referencia, con M8. Con el tráfico encendido
 (como en Development), abrir Mapa de posiciones o la vista «Mapa» de
 Planificación en el OCC también hace que la API lea la red de tráfico mientras
 la pestaña se ve y hasta 15 minutos después. Las capturas se revisaron en
 local, en el laboratorio y con la API simulada; nada de esto acredita un
 despliegue ni una revisión visual en el VPS.
+
+### Consola en movimiento y mapa con más color (PR M6, 15 de noviembre de 2026)
+
+- La consola mueve el vuelo demo como Mapa de posiciones: se acerca, aterriza,
+  rueda y estaciona entre lecturas. «Ver y seguir» lo sigue, y el dock suma
+  «Seguir» y «Pausar movimiento». No se añade ninguna lectura.
+- Los colores nuevos de los mapas están en
+  [`mapColors.js`](../../frontend/private-web/src/features/maps/style/mapColors.js),
+  con una paleta oscura, la que se usa hoy, y una clara. El tráfico toma el
+  color de su altitud, de naranja a 0 ft hasta violeta a 40 000 ft; en tierra
+  es gris claro y el avión elegido sigue cian. La escala «ALTITUD (ft)» se
+  puede plegar y va encima del dock.
+- Al pasar el puntero sobre un avión se ve su tarjeta: callsign, dirección
+  ADS-B, matrícula, tipo, aerolínea, ruta, altitud, velocidad y fuente.
+- El mapa base oscuro tiene más color: mar azul marino, tierra gris azulada,
+  fronteras y nombres visibles, y pistas y calles de rodaje con más contraste.
+- Los 32 aeropuertos de la región se ven en Región y Aproximación, con su
+  código OACI/IATA en amarillo y el color de su tipo. Están en el menú de
+  capas, grupo «Referencias», y en la leyenda.
+- Cada estado de posición tiene su propio relleno de color. Se siguen
+  distinguiendo sin color por el trazo, el guion y las marcas.
+- El cajón de la posición y el inspector de la consola muestran la terminal, el
+  puente o si es remota, el avión máximo y la escala actual: vuelo, aerolínea,
+  avión, origen y destino, horas, cuenta regresiva, agente, operación e hitos.
+  También muestran la siguiente escala. Todo sale de lo ya leído; la API no
+  cambia.
+
+Límites: aún no se muestra el turno del agente, la paleta clara no llega a las
+capas hasta que llegue el tema claro, y la tarjeta del avión no se actualiza
+mientras él se mueve. Los detalles están en el
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
 
 ## Estado de integración
 
