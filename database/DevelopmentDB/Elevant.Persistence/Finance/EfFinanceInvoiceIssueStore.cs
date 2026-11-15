@@ -102,6 +102,9 @@ internal sealed class EfFinanceInvoiceIssueStore(
             .Select(o => new { o.PublicId, o.Code, o.LegalName, o.DisplayName }).SingleOrDefaultAsync(cancellationToken);
         var customer = await context.Organizations.AsNoTracking().Where(o => o.Id == scope.AirlineOrganizationId)
             .Select(o => new { o.PublicId, o.Code, o.LegalName, o.DisplayName }).SingleAsync(cancellationToken);
+        // The buyer's tax identifier (RNC or foreign id) as its organization has it at issue: frozen in the snapshot.
+        var customerTax = await context.Organizations.AsNoTracking().Where(o => o.Id == scope.AirlineOrganizationId)
+            .Select(o => new { o.TaxRegistration, o.TaxRegistrationCountryCode }).SingleAsync(cancellationToken);
         var airlineIdentity = await context.Airlines.AsNoTracking().Where(a => a.Id == scope.AirlineId)
             .Select(a => new { a.PublicId, a.Name, a.IataCode, a.IcaoCode }).SingleAsync(cancellationToken);
         var stationIdentity = await context.Stations.AsNoTracking().Where(s => s.Id == scope.StationId)
@@ -139,8 +142,9 @@ internal sealed class EfFinanceInvoiceIssueStore(
             invoice.CurrencyCode, invoice.PaymentTermDays, invoice.DueDate,
             net = invoice.NetTotal, discount = invoice.DiscountTotal, tax = invoice.TaxTotal, gross = invoice.Total,
             treatmentsConfigured = invoice.TaxTreatmentsConfigured,
-            // The shared commercial model has no reviewed tax-registration/address source.
-            issuerTaxRegistration = FinanceInvoicePolicy.SimulatedIssuerRnc, customerTaxRegistration = (string?)null,
+            issuerTaxRegistration = FinanceInvoicePolicy.SimulatedIssuerRnc,
+            customerTaxRegistration = customerTax.TaxRegistration,
+            customerTaxRegistrationCountryCode = customerTax.TaxRegistrationCountryCode?.Trim(),
             fiscalDisclaimer = FinanceInvoicePolicy.Disclaimer,
         });
         // ADR-0035: every new invoice gets the next simulated e-NCF; the serializable transaction and

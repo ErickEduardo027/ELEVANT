@@ -317,6 +317,12 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(request => request.ProposedAirlineIataCode).HasMaxLength(2);
             builder.Property(request => request.ProposedAirlineIcaoCode).HasMaxLength(3);
             builder.Property(request => request.ProposedAirlineWebsiteUrl).HasMaxLength(512);
+            builder.Property(request => request.TaxRegistration).HasMaxLength(32);
+            builder.Property(request => request.TaxRegistrationCountryCode).HasMaxLength(2).IsFixedLength().IsUnicode(false);
+            builder.Property(request => request.RegistryStatus).HasMaxLength(16);
+            builder.Property(request => request.RegistrySource).HasMaxLength(48);
+            builder.Property(request => request.RegistryCheckedAt).HasPrecision(3);
+            builder.Property(request => request.RegistryDetail).HasMaxLength(500);
             builder.HasIndex(request => request.RequestCode).IsUnique();
             builder.HasIndex(request => new { request.AirlineId, request.Status, request.SubmittedAt });
             AddNoActionReference<Airline, ServiceRequest>(builder, request => request.AirlineId);

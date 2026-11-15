@@ -40,6 +40,9 @@ public sealed class PublicCommercialRequestsController(
                     (404, "La aerolínea ya no está disponible.", "airline_unavailable"),
                 CommercialSubmissionFailure.ServiceUnavailable =>
                     (409, "Un servicio seleccionado ya no está disponible.", "service_unavailable"),
+                CommercialSubmissionFailure.InvalidTaxRegistration => (400,
+                    "El identificador fiscal de la aerolínea no es válido: una aerolínea dominicana indica su RNC.",
+                    "invalid_tax_registration"),
                 CommercialSubmissionFailure.Conflict =>
                     (409, "El identificador ya se usó en otra solicitud.", "idempotency_conflict"),
                 _ => throw new InvalidOperationException("Unsupported commercial submission failure."),
@@ -68,7 +71,7 @@ public sealed class PublicCommercialRequestsController(
         var result = await handler.LookupReceiptAsync(Command(request), cancellationToken);
         if (result.IsSuccess)
             return Ok(new SubmitCommercialRequestResponse(result.Reference!, true));
-        return result.Failure == CommercialSubmissionFailure.InvalidRequest
+        return result.Failure is CommercialSubmissionFailure.InvalidRequest or CommercialSubmissionFailure.InvalidTaxRegistration
             ? Coded(400, "La solicitud no es válida.", "invalid_application")
             : Coded(404, "No se encontró un envío con estos datos.", "receipt_not_found");
     }
@@ -85,7 +88,8 @@ public sealed class PublicCommercialRequestsController(
         request.ProposedAirline is { } proposed
             ? new CommercialAirlineProposal(proposed.Name, proposed.CountryCode, proposed.IataCode,
                 proposed.IcaoCode, proposed.WebsiteUrl)
-            : null);
+            : null,
+        request.TaxRegistration, request.TaxRegistrationCountryCode);
 
     private ObjectResult Coded(int status, string title, string code) =>
         new(new ProblemDetails

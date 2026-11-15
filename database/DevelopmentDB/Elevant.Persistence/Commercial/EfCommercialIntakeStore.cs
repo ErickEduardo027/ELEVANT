@@ -6,6 +6,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
+using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Finance;
 using Elevant.Persistence.Realtime;
@@ -59,6 +60,10 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                             profile.IsPublished, cancellationToken);
                     if (proposal is null && airline is null)
                         return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.AirlineUnavailable);
+                    // A Dominican catalog airline is identified by its RNC.
+                    if (airline?.CountryCode == TaxRegistrations.DominicanRepublic &&
+                        command.TaxRegistrationCountryCode != TaxRegistrations.DominicanRepublic)
+                        return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.InvalidTaxRegistration);
 
                     var services = await context.ServiceDefinitions.AsNoTracking()
                         .Where(PublicCommercialServiceVisibility.PublishedActive)
@@ -79,6 +84,13 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                         ProposedAirlineIataCode = proposal?.IataCode,
                         ProposedAirlineIcaoCode = proposal?.IcaoCode,
                         ProposedAirlineWebsiteUrl = proposal?.WebsiteUrl,
+                        TaxRegistration = command.TaxRegistration,
+                        TaxRegistrationCountryCode = command.TaxRegistrationCountryCode,
+                        // ADR-0023: the automatic check of a proposed airline, shown to Contratos.
+                        RegistryStatus = command.RegistryCheck?.Status,
+                        RegistrySource = Truncate(command.RegistryCheck?.Source, 48),
+                        RegistryCheckedAt = command.RegistryCheck?.CheckedAt,
+                        RegistryDetail = command.RegistryCheck is { } check ? AirlineRegistryChecks.Detail(check) : null,
                         SubmissionHash = hash,
                         Type = CommercialRequestType.Affiliation,
                         Status = CommercialRequestStatus.Pending,
@@ -165,8 +177,14 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
         if (command.ProposedAirline is { } proposal)
             canonical += string.Join('\n', "", "proposal", proposal.Name, proposal.CountryCode,
                 proposal.IataCode ?? string.Empty, proposal.IcaoCode, proposal.WebsiteUrl ?? string.Empty);
+        // Appended only when present so requests sent before the tax identifier existed keep their hash.
+        if (Optional(command.TaxRegistration) is { } tax)
+            canonical += string.Join('\n', "", "tax", tax, command.TaxRegistrationCountryCode ?? string.Empty);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
+
+    private static string? Truncate(string? value, int length) =>
+        value is null || value.Length <= length ? value : value[..length];
 
     private static string? Optional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
