@@ -1740,13 +1740,13 @@ despliegue ni una revisión visual en el VPS.
 
 - La consola mueve el vuelo demo como Mapa de posiciones: se acerca, aterriza,
   rueda y estaciona entre lecturas. «Ver y seguir» lo sigue, y el dock suma
-  «Seguir» y «Pausar movimiento». No se añade ninguna lectura.
+  «Pausar movimiento». No se añade ninguna lectura.
 - Los colores nuevos de los mapas están en
   [`mapColors.js`](../../frontend/private-web/src/features/maps/style/mapColors.js),
   con una paleta oscura, la que se usa hoy, y una clara. El tráfico toma el
   color de su altitud, de naranja a 0 ft hasta violeta a 40 000 ft; en tierra
   es gris claro y el avión elegido sigue cian. La escala «ALTITUD (ft)» se
-  puede plegar y va encima del dock.
+  puede plegar y va a la izquierda, por encima del dock.
 - Al pasar el puntero sobre un avión se ve su tarjeta: callsign, dirección
   ADS-B, matrícula, tipo, aerolínea, ruta, altitud, velocidad y fuente.
 - El mapa base oscuro tiene más color: mar azul marino, tierra gris azulada,
