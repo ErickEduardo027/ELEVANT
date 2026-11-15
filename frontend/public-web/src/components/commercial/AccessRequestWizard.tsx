@@ -22,8 +22,9 @@ type Catalog = PublicCommercialCatalog;
 type Representative = RepresentativeDraft;
 const emptyRepresentative: Representative = {
   name: "", titleOption: "", titleCustom: "", email: "", phone: "", authorityDeclared: false,
-  nationalityCode: "", address: "", country: "", province: "",
-  municipality: "", district: "", documentType: "", documentNumber: "",
+  // A Dominican passport by default: the representative types only the digits after RD.
+  nationalityCode: "DO", address: "", country: "", province: "",
+  municipality: "", district: "", documentType: "Passport", documentNumber: "",
 };
 const SERVICES_PER_PAGE = 6;
 const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passport: "Pasaporte" };
@@ -35,6 +36,10 @@ export function formatDocumentNumber(type: string, value: string): string {
     return [digits.slice(0, 3), digits.slice(3, 10), digits.slice(10)].filter(Boolean).join("-");
   }
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9);
+}
+/** A Dominican passport typed as digits gets its RD; a pasted «RD1234567» or any other value is left as is. */
+export function withDominicanPassportPrefix(type: string, nationality: string, value: string): string {
+  return type === "Passport" && nationality === "DO" && /^\d/.test(value) ? `RD${value}`.slice(0, 9) : value;
 }
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
 const proposalId = (field: AirlineProposalField) => `proposal-${field}`;
@@ -480,7 +485,7 @@ export function AccessRequestWizard() {
             <select {...control("documentType")} className="access-select" required value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value, documentNumber: formatDocumentNumber(event.target.value, representative.documentNumber) })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option></select>
           </FormField>
           <FormField field="documentNumber" label="Número de documento" error={fieldError("documentNumber")}>
-            <input {...control("documentNumber")} required maxLength={13} autoCapitalize="characters" inputMode={representative.documentType === "NationalId" ? "numeric" : "text"} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: formatDocumentNumber(representative.documentType, event.target.value) })} />
+            <input {...control("documentNumber")} required maxLength={13} autoCapitalize="characters" inputMode={representative.documentType === "NationalId" ? "numeric" : "text"} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: withDominicanPassportPrefix(representative.documentType, representative.nationalityCode, formatDocumentNumber(representative.documentType, event.target.value)) })} />
             {documentPlaceholder && <small className="access-field-hint">Formato: {documentPlaceholder}</small>}
             {documentRequirements.length > 0 && <ul className="access-doc-checklist" aria-live="polite" aria-label="Requisitos del número de documento">
               {documentRequirements.map((item) => <li key={item.label.replace(/ \(.*\)$/, "")} data-met={item.met}>

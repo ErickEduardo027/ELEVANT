@@ -129,6 +129,25 @@ it("formats the cédula key by key without repeating dashes", async () => {
   expect(formatDocumentNumber("NationalId", "402-")).toBe("402");
 });
 
+it("starts with a Dominican passport and writes its RD for the representative", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard, withDominicanPassportPrefix } = await import("@/components/commercial/AccessRequestWizard");
+  expect(withDominicanPassportPrefix("Passport", "DO", "1234567")).toBe("RD1234567");
+  expect(withDominicanPassportPrefix("Passport", "DO", "RD1234567")).toBe("RD1234567");
+  expect(withDominicanPassportPrefix("Passport", "US", "123456789")).toBe("123456789");
+  expect(withDominicanPassportPrefix("NationalId", "DO", "001")).toBe("001");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await openRepresentativeStep();
+  expect(field("Tipo de documento")).toHaveValue("Passport");
+  expect(field("Nacionalidad del pasaporte")).toHaveValue("DO");
+  const number = screen.getByRole("textbox", { name: "Número de documento" });
+  fireEvent.change(number, { target: { value: "1234567" } });
+  expect(number).toHaveValue("RD1234567");
+  fireEvent.change(number, { target: { value: "rd7654321" } });
+  expect(number).toHaveValue("RD7654321");
+});
+
 it("shows the document requirements while typing and turns them green as they are met", async () => {
   vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
   const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");

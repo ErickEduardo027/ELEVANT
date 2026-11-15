@@ -7,10 +7,12 @@ import EmployeesPage from './EmployeesPage';
 import PositionsPage from './PositionsPage';
 import RequisitionsPage, { RequisitionCard } from './RequisitionsPage';
 import ActivityPanel, { actionLabel } from './ActivityPanel';
+import { EmployeeDrawer, RegisterDrawer } from './EmployeeForms';
+import { joinDominicanPassport, dominicanPassportDigits } from './identityDocumentValue';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import {
-  changeRequisitionStatus, createEmployee, getEmployee, getEmployeeOptions, governanceMessage, listEmployees,
+  changeRequisitionStatus, createEmployee, getEmployee, registerEmployee, getEmployeeOptions, governanceMessage, listEmployees,
   listPositions, listRequisitions, savePosition, terminateEmployee, transferEmployee, updateEmployee,
 } from '../../services/humanResourcesEmployeesService';
 import { businessToday } from '../../services/businessDay';
@@ -20,7 +22,7 @@ vi.mock('../../services/humanResourcesEmployeesService', async importOriginal =>
   listEmployees: vi.fn(), getEmployee: vi.fn(), getEmployeeOptions: vi.fn(), createEmployee: vi.fn(),
   terminateEmployee: vi.fn(), listUnregisteredPersons: vi.fn().mockResolvedValue([]), listPositions: vi.fn(),
   savePosition: vi.fn(), listRequisitions: vi.fn(), changeRequisitionStatus: vi.fn(), updateEmployee: vi.fn(),
-  transferEmployee: vi.fn(),
+  transferEmployee: vi.fn(), registerEmployee: vi.fn(),
 }));
 vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
@@ -53,6 +55,7 @@ describe('EmployeesPage', () => {
     const drawer = screen.getByRole('dialog', { name: 'Registrar empleado' });
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Nombre' }), 'Valeria');
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Apellido' }), 'Nueva');
+    await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: 'Documento' }), 'CEDULA');
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Número de documento' }), '001-0000001-7');
     await userEvent.type(within(drawer).getByRole('textbox', { name: /Número de empleado/ }), 'fin-020');
     await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: 'Departamento' }), 'finance');
@@ -287,5 +290,76 @@ describe('employee identification and phone rules', () => {
     expect(identificationProblem('CEDULA', '001-12345A7-8')).toBe('La posición 9 de la cédula debe ser un dígito; encontramos «A».');
     expect(phoneProblem('849-246-3371')).toBe('');
     expect(phoneProblem('555-0100')).toMatch(/10 dígitos/);
+  });
+});
+
+describe('Dominican passport by default', () => {
+  const documentInput = () => screen.getByRole('textbox', { name: 'Número de documento' });
+  const fillEmployee = async () => {
+    await userEvent.type(screen.getByRole('textbox', { name: 'Nombre' }), 'Valeria');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Apellido' }), 'Nueva');
+    await userEvent.type(screen.getByRole('textbox', { name: /Número de empleado/ }), 'fin-020');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Departamento' }), 'finance');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Puesto' }), 'pos-1');
+  };
+
+  it('joins and splits the RD prefix without doubling a pasted one', () => {
+    expect(joinDominicanPassport('1234567')).toBe('RD1234567');
+    expect(joinDominicanPassport('rd 123-4567')).toBe('RD1234567');
+    expect(joinDominicanPassport('')).toBe('');
+    expect(dominicanPassportDigits('RD1234567')).toBe('1234567');
+  });
+
+  it('starts a new employee with a passport, shows a fixed RD and submits RD plus the digits', async () => {
+    createEmployee.mockResolvedValue({ id: 'emp-2' });
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByRole('combobox', { name: 'Documento' })).toHaveValue('PASAPORTE');
+    expect(screen.getByText('RD')).toBeInTheDocument();
+    await userEvent.type(documentInput(), 'RD1234567');
+    expect(documentInput()).toHaveValue('1234567');
+    await fillEmployee();
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(createEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'PASAPORTE', identificationNumber: 'RD1234567' }));
+  });
+
+  it('accepts a foreign passport without the prefix', async () => {
+    createEmployee.mockResolvedValue({ id: 'emp-2' });
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Pasaporte extranjero' }));
+    expect(screen.queryByText('RD')).not.toBeInTheDocument();
+    await userEvent.type(documentInput(), 'X1234567');
+    await fillEmployee();
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(createEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'PASAPORTE', identificationNumber: 'X1234567' }));
+  });
+
+  it('keeps cédula unchanged and never sends the RD the form wrote', async () => {
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.type(documentInput(), '123');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Documento' }), 'CEDULA');
+    expect(documentInput()).toHaveValue('123');
+    expect(screen.queryByRole('checkbox', { name: 'Pasaporte extranjero' })).not.toBeInTheDocument();
+  });
+
+  it('splits a stored Dominican passport and opens a stored foreign one as foreign', async () => {
+    const detail = { summary, identificationType: 'PASAPORTE', identificationNumber: 'RD7654321', identificationIsPlaceholder: false,
+      phoneNumber: null };
+    const { rerender } = render(<EmployeeDrawer open employee={detail} options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(documentInput()).toHaveValue('7654321');
+    expect(screen.getByRole('checkbox', { name: 'Pasaporte extranjero' })).not.toBeChecked();
+    rerender(<EmployeeDrawer open employee={{ ...detail, identificationNumber: 'X7654321' }} options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(documentInput()).toHaveValue('X7654321');
+    expect(screen.getByRole('checkbox', { name: 'Pasaporte extranjero' })).toBeChecked();
+  });
+
+  it('registers a legacy account with a Dominican passport by default', async () => {
+    registerEmployee.mockResolvedValue({ id: 'emp-3' });
+    const person = { accountId: 'acc-9', firstName: 'Ana', lastName: 'Sin', department: 'finance', employeeNumber: 'FIN-099', stations: [station] };
+    render(<RegisterDrawer person={person} options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByRole('combobox', { name: 'Documento' })).toHaveValue('PASAPORTE');
+    await userEvent.type(documentInput(), '1234567');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Puesto' }), 'pos-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar' }));
+    expect(registerEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'PASAPORTE', identificationNumber: 'RD1234567', accountId: 'acc-9' }));
   });
 });
