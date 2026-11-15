@@ -258,6 +258,10 @@ describe('standOverlay', () => {
       const fillLayer = layerOf({ layers }, STAND_FILL_LAYER);
       expect(evaluate(fillLayer, 'paint', 'fill-color', { state }), state).toEqual(Color.parse(MAP_COLORS.dark.stands[state].color));
       expect(evaluate(fillLayer, 'paint', 'fill-opacity', { state }), state).toBe(MAP_COLORS.dark.stands[state].opacity);
+      // In the light theme, the light fill of the same state.
+      const lightFill = layerOf(standOverlay({ theme: 'light' }), STAND_FILL_LAYER);
+      expect(evaluate(lightFill, 'paint', 'fill-color', { state }), state).toEqual(Color.parse(MAP_COLORS.light.stands[state].color));
+      expect(evaluate(lightFill, 'paint', 'fill-opacity', { state }), state).toBe(MAP_COLORS.light.stands[state].opacity);
     }
     // Normal states carry no hue: cyan only in the selection and in what can be acted on (the boxes of a stand being
     // placed), amber and red only in the signals.

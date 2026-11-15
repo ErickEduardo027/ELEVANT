@@ -15,6 +15,8 @@ import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { MAP_COLORS } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
+import { THEME_STORAGE_KEY } from '../../shell/occTheme';
+import { ThemeProvider } from '../../shell/useTheme';
 import { createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
 
@@ -24,6 +26,7 @@ const fake = sharedFakeMapLibre();
 // Synthetic states over the reference points: A1 occupied, A3 planned, B21 disabled and BN6 unverified, the rest free;
 // only A1 to A3 were placed by OCC.
 const STANDS = createMapStands();
+const rgbOf = hex => `rgb(${[1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
 const DRAWN = attachStandGeometry(STANDS, MDPC_LAYOUT);
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
 const RAMP_ORDER = ['available', 'planned', 'occupied', 'disabled', 'unverified'];
@@ -673,5 +676,26 @@ describe('MapLegend: the airports of the region (owner request of 2026-11-15)', 
     expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
     rerender(<OccMapContext.Provider value={withAirports('approach', false)}><MapLegend /></OccMapContext.Provider>);
     expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+  });
+
+  it('one airport to a row, and in the light theme the dots and the stand fills of the light palette', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    try {
+      render(
+        <ThemeProvider>
+          <OccMapContext.Provider value={withAirports('region')}><MapLegend /></OccMapContext.Provider>
+          <MapLegend stands={STANDS} />
+        </ThemeProvider>,
+      );
+      for (const entry of document.querySelectorAll('[data-legend-airport]')) expect(entry.className).toContain('col-span-2');
+      const dot = kind => document.querySelector(`[data-airport="${kind}"] circle`).style.fill;
+      for (const kind of ['home', 'international', 'regional', 'other']) expect(dot(kind), kind).toBe(rgbOf(MAP_COLORS.light.airports[kind]));
+      const fills = [...document.querySelectorAll('[data-swatch="state"] rect')].map(rect => rect.style.fill);
+      expect(fills.length).toBeGreaterThan(0);
+      const light = new Set(Object.values(MAP_COLORS.light.stands).map(fill => rgbOf(fill.color)));
+      for (const fill of fills) expect(light.has(fill), fill).toBe(true);
+    } finally {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    }
   });
 });

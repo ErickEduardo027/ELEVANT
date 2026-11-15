@@ -216,7 +216,7 @@ function casingLayer(id, { color, width, clearance, opacity, dash }) {
   });
 }
 
-function polygonLayers() {
+function polygonLayers(theme) {
   const hatched = statesWhere(paint => paint.fill.kind === 'hatch');
   const emphasised = statesWhere(paint => paint.leadIn);
   const linked = statesWhere(paint => paint.link);
@@ -226,8 +226,8 @@ function polygonLayers() {
     // Every state, so every stand is a pick target, in its own colour (standFill); the hatch has a layer of its own.
     standLayer(STAND_FILL_LAYER, 'fill', {
       paint: {
-        'fill-color': byState(STAND_STATE_KEYS, state => standFill(state).color),
-        'fill-opacity': byState(STAND_STATE_KEYS, state => standFill(state).opacity),
+        'fill-color': byState(STAND_STATE_KEYS, state => standFill(state, theme).color),
+        'fill-opacity': byState(STAND_STATE_KEYS, state => standFill(state, theme).opacity),
       },
       meta: { 'occ:pick': 'stand', 'occ:pickId': 'code' },
     }),
@@ -564,7 +564,7 @@ function assertLabels(labels) {
  * `selection` slot: the pending location of «Ubicar en el mapa» and the box that follows the pointer.
  * `labels: 'dashboard'` starts the codes at the polygons.
  */
-export function standOverlay({ labels = 'default' } = {}) {
+export function standOverlay({ labels = 'default', theme = 'dark' } = {}) {
   assertLabels(labels);
   return {
     sources: {
@@ -575,7 +575,7 @@ export function standOverlay({ labels = 'default' } = {}) {
       [STAND_FOOTPRINT_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_GHOST_SOURCE]: { type: 'geojson', promoteId: 'id' },
     },
-    layers: [...polygonLayers(), ...footprintLayers(), ...labelLayers(labels), ...placingLayers()],
+    layers: [...polygonLayers(theme), ...footprintLayers(), ...labelLayers(labels), ...placingLayers()],
   };
 }
 

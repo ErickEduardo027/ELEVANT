@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { OCC_PALETTE } from '../../occ-ui/occPalette';
+import { OCC_PALETTES, OCC_THEMES } from '../../occ-ui/occPalette';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { ALTITUDE_STOPS_FT, MAP_COLORS, altitudeColourExpression, altitudeGradient, mapColorsFor } from './mapColors';
+import { contrastRatio, relativeLuminance } from './mapTheme';
 
 const HEX = /^#[0-9a-f]{6}$/;
 // Every colour of a palette with its path, the stand fills by their colour.
@@ -29,8 +30,8 @@ describe('map colours (owner request of 2026-11-15)', () => {
     }
   });
 
-  it('copies no OCC token value', () => {
-    const tokens = new Set(Object.values(OCC_PALETTE).map(value => value.toLowerCase()));
+  it('copies no OCC token value of either theme', () => {
+    const tokens = new Set(OCC_THEMES.flatMap(theme => Object.values(OCC_PALETTES[theme])).map(value => value.toLowerCase()));
     for (const theme of ['dark', 'light']) {
       expect(coloursOf(MAP_COLORS[theme]).filter(([, colour]) => tokens.has(String(colour).toLowerCase()))).toEqual([]);
     }
@@ -51,6 +52,39 @@ describe('map colours (owner request of 2026-11-15)', () => {
     expect(expression.at(-1).slice(0, 3)).toEqual(['interpolate', ['linear'], ['get', 'altFt']]);
     expect(altitudeGradient()).toMatch(/^linear-gradient\(to right, #f06a20 0%, .* #b020e0 100%\)$/);
     expect(altitudeGradient('dark', ALTITUDE_STOPS_FT.map((_, index) => index * 5))).toContain('#b020e0 50%');
+  });
+
+  it('the light scale keeps the stops and the hues of the dark one, each a step deeper', () => {
+    const light = MAP_COLORS.light.altitude.stops;
+    const dark = MAP_COLORS.dark.altitude.stops;
+    expect(light.map(([feet]) => feet)).toEqual([...ALTITUDE_STOPS_FT]);
+    for (const [index, [feet, colour]] of light.entries()) {
+      expect(relativeLuminance(colour), `${feet} ft`).toBeLessThan(relativeLuminance(dark[index][1]));
+    }
+    expect(altitudeGradient('light')).toContain(`${light[0][1]} 0%`);
+    expect(altitudeGradient('light')).toContain(`${light.at(-1)[1]} 100%`);
+    expect(altitudeColourExpression('light')[2]).toBe(MAP_COLORS.light.altitude.ground);
+  });
+
+  it.each(OCC_THEMES)('aircraft, airports and their codes read on the base map (%s)', theme => {
+    const { basemap, altitude, airports } = MAP_COLORS[theme];
+    // The halo edges every aircraft: on the light map a dark line that stands well off the land and the sea.
+    if (theme === 'light') {
+      for (const ground of [basemap.land, basemap.sea]) expect(contrastRatio(altitude.halo, ground)).toBeGreaterThanOrEqual(7);
+      // Every stop of the scale stands at least 2.5:1 off the light land.
+      for (const [feet, colour] of altitude.stops) {
+        expect(contrastRatio(colour, basemap.land), `${feet} ft`).toBeGreaterThanOrEqual(2.5);
+      }
+    }
+    // An aircraft on the ground reads on the land, and apart from one without an altitude.
+    expect(contrastRatio(altitude.ground, basemap.land)).toBeGreaterThanOrEqual(4);
+    expect(contrastRatio(altitude.ground, altitude.unknown)).toBeGreaterThan(1.3);
+    // The airport codes reach 4.5:1 on their halo and on the land, and every dot 3:1 on the land.
+    expect(contrastRatio(airports.label, airports.halo)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(airports.label, basemap.land)).toBeGreaterThanOrEqual(4.5);
+    for (const kind of ['home', 'international', 'regional', 'other']) {
+      expect(contrastRatio(airports[kind], basemap.land), kind).toBeGreaterThanOrEqual(3);
+    }
   });
 
   it('one fill per stand state, each its own colour', () => {

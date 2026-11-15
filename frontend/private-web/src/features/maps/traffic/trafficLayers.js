@@ -1,6 +1,6 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
-import { altitudeColourExpression } from '../style/mapColors';
+import { altitudeColourExpression, mapColorsFor } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
 import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
@@ -73,9 +73,9 @@ const iconLayout = (extra = {}) => ({
   ...extra,
 });
 
-const iconPaint = (colour, haloWidth) => ({
+const iconPaint = (colour, haloWidth, halo = occColor('nav')) => ({
   'icon-color': colour,
-  'icon-halo-color': occColor('nav'),
+  'icon-halo-color': halo,
   'icon-halo-width': haloWidth,
   'icon-opacity': DIMMED,
 });
@@ -145,8 +145,9 @@ const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLA
 const ems = pixels => Math.round((pixels / PLATE_TEXT_SIZE) * 1000) / 1000;
 
 const ACCENT = occColor('accent');
-// The colour of every aircraft but the chosen one: its altitude (style/mapColors.js).
-const ALTITUDE = altitudeColourExpression();
+// Every aircraft but the chosen one in the colour of its altitude, edged by the halo of the theme (style/mapColors.js).
+const altitudePaint = (theme, haloWidth) => iconPaint(altitudeColourExpression(theme), haloWidth,
+  mapColorsFor(theme).altitude.halo);
 // The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
 // cyan clear of the silhouette.
 const SELECTED_RING_RADIUS_PX = 18;
@@ -187,8 +188,8 @@ export const ROUTE_LAYER_IDS = Object.freeze({
   mark: 'occ-route-marks',
 });
 
-/** The overlay of the traffic for buildOccStyle; its three sources start empty. */
-export function trafficOverlay() {
+/** The overlay of the traffic for buildOccStyle, in the colours of `theme`; its three sources start empty. */
+export function trafficOverlay({ theme = 'dark' } = {}) {
   return {
     sources: {
       [TRAFFIC_SOURCE]: { type: 'geojson', promoteId: 'id' },
@@ -274,7 +275,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', OTHER, is('ground')],
         layout: otherLayout(),
-        paint: { ...iconPaint(ALTITUDE, 1), ...tagPaint(occColor('muted')) },
+        paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
           'occ:minThreshold': 'airfield' },
       },
@@ -285,7 +286,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', OTHER, isNot('ground')],
         layout: otherLayout(),
-        paint: { ...iconPaint(ALTITUDE, 1), ...tagPaint(occColor('muted')) },
+        paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
       },
       // Above the icons of other traffic, so MapLibre places these tags before them: a tag keeps off the ELEVANT
@@ -307,7 +308,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', AVIAM, NOT_PARKED],
         layout: iconLayout(),
-        paint: iconPaint(ALTITUDE, 1.5),
+        paint: altitudePaint(theme, 1.5),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:pick': 'flight', 'occ:pickId': 'flightKey' },
       },
       {

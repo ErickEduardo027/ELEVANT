@@ -203,6 +203,14 @@ describe('traffic layers (design E1 and E3)', () => {
     // or red.
     for (const id of ['occ-traffic-aviam', 'occ-traffic-other', 'occ-traffic-other-ground']) {
       expect(layerOf(id).paint['icon-color'], id).toEqual(altitudeColourExpression());
+      expect(layerOf(id).paint['icon-halo-color'], id).toBe(MAP_COLORS.dark.altitude.halo);
+    }
+    // In the light theme the same layers take the light scale and its dark halo.
+    const light = trafficOverlay({ theme: 'light' }).layers;
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-other', 'occ-traffic-other-ground']) {
+      const paint = light.find(layer => layer.id === id).paint;
+      expect(paint['icon-color'], id).toEqual(altitudeColourExpression('light'));
+      expect(paint['icon-halo-color'], id).toBe(MAP_COLORS.light.altitude.halo);
     }
     const paints = JSON.stringify(trafficOverlay().layers.filter(layer => !layer.id.startsWith('occ-route')
       && !['occ-traffic-selected', 'occ-traffic-selected-ring'].includes(layer.id)).map(layer => layer.paint));

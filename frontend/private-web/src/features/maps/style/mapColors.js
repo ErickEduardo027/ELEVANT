@@ -21,9 +21,10 @@ export const ALTITUDE_STOPS_FT = deepFreeze([0, 500, 1000, 2000, 4000, 6000, 800
 
 const ALTITUDE_DARK = ['#f06a20', '#f08a20', '#f0a020', '#f0b420', '#e0c800', '#b8d000', '#60c820', '#20c060',
   '#20b8c8', '#3060f0', '#b020e0'];
-// On the light land the same hues, a step darker where yellow would wash out.
-const ALTITUDE_LIGHT = ['#d85a10', '#d87410', '#d08810', '#c89a00', '#b8a400', '#94aa00', '#4aa618', '#18a050',
-  '#1898a8', '#2850d8', '#9418c4'];
+// On the light land and sea the same hues, deeper so they hold on a light ground: the yellows go to a dark gold and
+// the greens and cyan a step darker; a dark halo (altitude.halo) edges every aircraft in this theme.
+const ALTITUDE_LIGHT = ['#d4500a', '#d0640a', '#c87800', '#bb8a00', '#a39600', '#7f9c00', '#3a9418', '#0f8c48',
+  '#0d8496', '#2448c8', '#8a14b8'];
 
 const stops = colours => ALTITUDE_STOPS_FT.map((feet, index) => [feet, colours[index]]);
 
@@ -47,7 +48,8 @@ export const MAP_COLORS = deepFreeze({
       waterLabel: '#7fa6d0',
       labelHalo: '#07111f',
     },
-    altitude: { stops: stops(ALTITUDE_DARK), ground: '#c4ccd2', unknown: '#8d989f' },
+    // The halo edges each aircraft: almost the colour of the dark land, a dark line on the light one.
+    altitude: { stops: stops(ALTITUDE_DARK), ground: '#c4ccd2', unknown: '#8d989f', halo: '#0b1218' },
     // The region's airports (style/referenceLayers.js): the home airport in cyan and larger, international airports
     // green, regional ones blue, the rest white; every code in yellow.
     airports: {
@@ -67,9 +69,9 @@ export const MAP_COLORS = deepFreeze({
   light: {
     basemap: {
       land: '#eef1f3',
-      sea: '#b9d3ea',
-      coastline: '#8fb0cc',
-      boundary: '#7d8a96',
+      sea: '#b0d0ee',
+      coastline: '#7ea6cb',
+      boundary: '#5b6875',
       road: '#d9dee3',
       roadMajor: '#cdd4da',
       building: '#dfe4e8',
@@ -78,12 +80,14 @@ export const MAP_COLORS = deepFreeze({
       taxiway: '#bcc5cc',
       apron: '#d6dce1',
       placeLabel: '#2c3a46',
-      waterLabel: '#2f5c86',
+      waterLabel: '#22507c',
       labelHalo: '#fdfefe',
     },
-    altitude: { stops: stops(ALTITUDE_LIGHT), ground: '#7a858c', unknown: '#9aa4aa' },
+    // On the light land: a mid grey on the ground, and every aircraft edged in a dark halo.
+    altitude: { stops: stops(ALTITUDE_LIGHT), ground: '#69747b', unknown: '#a3acb2', halo: '#1c2830' },
+    // Darker dots, and the codes in a dark amber on a light halo: yellow does not read on a light map.
     airports: {
-      home: '#0a86b0', international: '#1f9a4c', regional: '#2a6fd0', other: '#3a4650', label: '#8a6a00', halo: '#fdfefe',
+      home: '#0a7fa8', international: '#16893f', regional: '#2a62c8', other: '#3a4650', label: '#6e5200', halo: '#fdfefe',
     },
     stands: {
       available: { color: '#2f9a58', opacity: 0.2 },

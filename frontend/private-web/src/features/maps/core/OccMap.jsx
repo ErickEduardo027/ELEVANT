@@ -1270,10 +1270,10 @@ const OccMapView = forwardRef(function OccMapView({
       selectionOverlay(),
       ...(props.layout ? [airfieldOverlay()] : []),
       // The region's airports with the traffic they are context for (owner request of 2026-11-15).
-      referenceOverlay({ airports: props.drawsTraffic }),
-      ...(props.drawsStands ? [standOverlay({ labels: props.standLabels })] : []),
+      referenceOverlay({ airports: props.drawsTraffic, theme: props.theme }),
+      ...(props.drawsStands ? [standOverlay({ labels: props.standLabels, theme: props.theme })] : []),
       ...(props.drawsFlights ? [flightOverlay()] : []),
-      ...(props.drawsTraffic ? [trafficOverlay()] : []),
+      ...(props.drawsTraffic ? [trafficOverlay({ theme: props.theme })] : []),
       ...props.overlays,
     ];
     // The keys of the layers menu this style has layers for (PR M5).
@@ -1781,7 +1781,7 @@ const OccMapView = forwardRef(function OccMapView({
           </p>
         )}
         {/* The altitude scale of the traffic (owner request of 2026-11-15), under the page's overlays and its dock. */}
-        {!unavailable && traffic !== undefined && <AltitudeLegend />}
+        {!unavailable && traffic !== undefined && <AltitudeLegend theme={theme} />}
         {children}
         {!unavailable && <MapTooltip tooltip={snapshot.tooltip} />}
       </div>

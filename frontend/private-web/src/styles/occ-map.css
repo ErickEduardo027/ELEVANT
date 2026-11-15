@@ -53,6 +53,11 @@
   filter: invert(1);
 }
 
+/* In the light theme the panel is light, so the dark icons stay as they come. */
+.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: none;
+}
+
 /* In forced colours MapLibre swaps its control icons for the system's own colours: they stay as they come. */
 @media (forced-colors: active) {
   .occ-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
@@ -100,6 +105,17 @@
   border-radius: 4px;
   background-color: transparent;
   filter: invert(1);
+}
+
+/* MapLibre draws its «i» dark: inverted on the dark panel, as it comes on the light one. */
+.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl-attrib-button,
+.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  filter: none;
+}
+
+/* Opened, the credits wrap in the corner instead of running left under the dock of the map's controls. */
+.occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  max-width: min(20rem, calc(100% - 20px));
 }
 
 /* The nautical scale. */
