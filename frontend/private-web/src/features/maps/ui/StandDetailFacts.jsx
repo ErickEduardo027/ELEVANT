@@ -48,6 +48,14 @@ export default function StandDetailFacts({ position, className = '' }) {
     && display.milestonesTotal > 0 ? { done: display.milestonesDone, total: display.milestonesTotal } : null;
   const cancelledBy = state === 'disabled' ? display.cancelledBy : null;
   const origin = locationOrigin(position);
+  // What the stand is (owner request of 2026-11-15): its terminal, a bridge or remote, the largest aircraft it takes.
+  const terminal = typeof position.terminal === 'string' && position.terminal !== '' ? position.terminal : null;
+  let access = null;
+  if (position.hasBoardingBridge === true) access = 'bridge';
+  else if (position.isRemote === true) access = 'remote';
+  else if (position.isRemote === false && position.standId != null) access = 'contact';
+  const maxAircraft = typeof position.maxAircraftSize === 'string' && position.maxAircraftSize !== ''
+    ? position.maxAircraftSize : null;
 
   return (
     <ul aria-label={t('facts.label')} data-testid="stand-detail-facts"
@@ -68,6 +76,13 @@ export default function StandDetailFacts({ position, className = '' }) {
         </li>
       ))}
       {progress !== null && <li data-fact="progress">{t('stand.progress', progress)}</li>}
+      {(terminal || access) && (
+        <li data-fact="kind" className="text-occ-muted">
+          {[terminal ? t('standInfo.terminal', { terminal }) : null, access ? t(`standInfo.${access}`) : null]
+            .filter(Boolean).join(' · ')}
+        </li>
+      )}
+      {maxAircraft && <li data-fact="max-aircraft" className="text-occ-muted">{t('standInfo.maxAircraft', { size: maxAircraft })}</li>}
       {cancelledBy && <li data-fact="cancelled">{t('stand.cancelledBy', { code: cancelledBy })}</li>}
       {position.narrowbodyOnly === true && <li data-fact="narrowbody">{t('stand.narrowbodyOnly')}</li>}
       <li data-fact="location" data-origin={origin} className="flex items-center gap-2 text-occ-muted">

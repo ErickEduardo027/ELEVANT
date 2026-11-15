@@ -94,7 +94,7 @@ describe('StandDetailFacts', () => {
     const { rerender } = render(<StandDetailFacts position={fed} />);
     expect(within(facts()).getAllByRole('listitem').map(item => item.textContent)).toEqual([
       STAND_STATES.occupied.es, 'Cubre Ana Ruiz', `${SIGNALS.notice.es}El avión ya está en la posición. Registra la llegada.`,
-      'Hitos registrados: 3 de 25', `${TAGS.unofficial.es}Referencia interna sin verificar`,
+      'Hitos registrados: 3 de 25', 'Terminal A · De contacto', `${TAGS.unofficial.es}Referencia interna sin verificar`,
     ]);
     // The notice with its diamond, named with the vocabulary's word.
     expect(within(factsOf('signal')[0]).getByRole('img', { hidden: true, name: 'Aviso' })).toBeInTheDocument();

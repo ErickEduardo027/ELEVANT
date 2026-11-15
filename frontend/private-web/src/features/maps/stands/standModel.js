@@ -164,6 +164,36 @@ function describeVisit(turnaround, legs, aircraft, polygon, now, exactNow = now)
     // there: no BLOCK_ON and no on-block time. A demo flight's time is the server's, so it never asks.
     arrivalNotRecorded: !isDemo && inBox && !isMovingFast(aircraft?.gsMs) && !blockOn && !onBlockRecorded,
     isDemo,
+    // What the stand's detail says of the visit (owner request of 2026-11-15), from what the screen already read:
+    // where its aircraft comes from and goes to, its scheduled, estimated and actual times, its aircraft and its legs
+    // (their milestones make the progress strip).
+    detail: visitDetail(turnaround, arrival, departure, legs, { touchdownAt, onBlockAt, offBlockAt }),
+  };
+}
+
+const counterpartOf = leg => leg?.counterpart?.iataCode ?? leg?.counterpart?.icaoCode ?? null;
+
+// The facts of a visit for the stand's detail: `{ airline, registration, origin, destination, arrival, departure,
+// operationStatus, legs }`, `arrival` and `departure` as `{ scheduledAt, estimatedAt, actualAt }` (ms or null).
+function visitDetail(turnaround, arrival, departure, legs, demo) {
+  return {
+    airline: turnaround.airlineName ?? arrival?.airline?.name ?? departure?.airline?.name ?? null,
+    registration: turnaround.aircraftRegistration ?? arrival?.aircraft?.registration ?? departure?.aircraft?.registration
+      ?? null,
+    origin: counterpartOf(arrival),
+    destination: counterpartOf(departure),
+    arrival: {
+      scheduledAt: timeOf(arrival?.scheduledAt) ?? timeOf(turnaround.arrivalScheduledAt),
+      estimatedAt: timeOf(arrival?.estimatedAt),
+      actualAt: timeOf(turnaround.arrivedAt) ?? timeOf(arrival?.actualAt) ?? demo.onBlockAt ?? demo.touchdownAt,
+    },
+    departure: {
+      scheduledAt: timeOf(departure?.scheduledAt) ?? timeOf(turnaround.departureScheduledAt),
+      estimatedAt: timeOf(departure?.estimatedAt),
+      actualAt: timeOf(departure?.actualAt) ?? demo.offBlockAt,
+    },
+    operationStatus: turnaround.status ?? null,
+    legs,
   };
 }
 
@@ -206,6 +236,9 @@ function display(state, extra = {}) {
     milestonesTotal: MILESTONES_TOTAL,
     isDemo: false,
     cancelledBy: null,
+    // The facts of the visit shown (visitDetail) and the next visit while an aircraft is on the stand.
+    detail: null,
+    next: null,
     ...extra,
   };
 }
@@ -318,6 +351,16 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
     milestonesDone: shown.milestonesDone,
     isDemo: shown.isDemo,
     cancelledBy,
+    detail: shown.detail,
+    // The visit that comes next onto the stand once the aircraft on it leaves.
+    next: current !== null && next !== null ? {
+      turnaround: next.turnaround,
+      flightNumber: next.arrivalFlight ?? next.departureFlight,
+      arrivalAt: next.arrivalAt,
+      minutesToArrival: minutesUntil(next.arrivalAt, now),
+      airline: next.detail.airline,
+      origin: next.detail.origin,
+    } : null,
   });
 }
 

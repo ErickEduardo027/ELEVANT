@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
+import StandTurnaround from '../../maps/ui/StandTurnaround';
 import OccFlightStrip from '../../occ-ui/OccFlightStrip';
 import OccFloatingPanel from '../../occ-ui/OccFloatingPanel';
 import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
@@ -60,6 +61,8 @@ export default function InspectorPanel({
           {clear}
         </div>
         <StandDetailFacts position={stand} />
+        {/* The inspector draws the milestones of the stand's flight below, once. */}
+        <StandTurnaround position={stand} milestones={false} />
         <section aria-labelledby={standFlightTitleId} className="space-y-2">
           <h3 id={standFlightTitleId} className={`${CONSOLE_SECTION_TITLE} px-0 pt-0`}>{t('inspector.standFlight')}</h3>
           {strip ? <OccFlightStrip flight={strip} now={nowMs} timeZone={timeZone} locale={locale} /> : null}

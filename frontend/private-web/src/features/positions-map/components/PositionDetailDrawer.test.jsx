@@ -67,7 +67,8 @@ it('shows the stand facts and keeps its test id and «Ubicar en el mapa»', asyn
   const drawer = screen.getByTestId('position-detail-drawer');
   const facts = within(drawer).getByRole('list', { name: 'Estado en el mapa' });
   expect(within(facts).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-    'Inhabilitada', 'Cubre Ana Ruiz', 'Anulada por A9', 'Solo fuselaje estrecho', 'No oficialReferencia interna sin verificar',
+    'Inhabilitada', 'Cubre Ana Ruiz', 'Terminal A', 'Anulada por A9', 'Solo fuselaje estrecho',
+    'No oficialReferencia interna sin verificar',
   ]);
   // The existing explanation of the combined configuration stays, and so does the action that places the stand.
   expect(within(drawer).getByTestId('combined-position-banner')).toBeInTheDocument();
@@ -104,4 +105,22 @@ it('says the state in the English words of the map on the English screens', () =
   const drawer = screen.getByTestId('position-detail-drawer');
   expect(within(drawer).getAllByText('Arriving')).toHaveLength(1);
   expect(drawer).not.toHaveTextContent('Planned');
+});
+
+it('says the turnaround on the stand: flight, airline, aircraft, times, countdown, agent and operation (owner request)', () => {
+  const stand = rampStands().find(item => item.id === 'A5');
+  render(<PositionDetailDrawer position={stand} onClose={() => {}} onViewFlightInMonitoring={() => {}} />);
+  const drawer = screen.getByTestId('position-detail-drawer');
+  const section = within(drawer).getByTestId('stand-turnaround');
+  expect(section).toHaveTextContent('Escala en la posición');
+  const fact = name => section.querySelector(`[data-fact="${name}"]`);
+  for (const name of ['flight', 'airline', 'aircraft', 'route', 'arrival', 'departure', 'agent', 'operation']) {
+    expect(fact(name), name).not.toBeNull();
+  }
+  expect(fact('flight')).toHaveTextContent(stand.display.visit.arrivalFlightNumber);
+  expect(fact('departure')).toHaveTextContent(/Prog\. \d\d:\d\d/);
+  // «Por liberar»: its aircraft leaves in about 10 minutes.
+  expect(fact('countdown')).toHaveTextContent(/^Sale en \d+ min$/);
+  // The existing facts, the close button and the drawer's test id stay.
+  expect(within(drawer).getByRole('button', { name: 'Cerrar detalle' })).toBeInTheDocument();
 });

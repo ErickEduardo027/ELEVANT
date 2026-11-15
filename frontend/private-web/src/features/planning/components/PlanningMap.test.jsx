@@ -75,7 +75,7 @@ it('a stand click writes stand= and shows its flights', async () => {
   // The panel says what the stand says on the map, then its flights.
   const facts = screen.getByRole('list', { name: 'Estado en el mapa' });
   expect(within(facts).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-    'Llegando', 'Cubre Ana Ruiz', 'Ubicada por OCC',
+    'Llegando', 'Cubre Ana Ruiz', 'Terminal A · De contacto', 'Ubicada por OCC',
   ]);
   expect(screen.getByRole('button', { name: /DM161/ })).toBeInTheDocument();
   // «Ver todas» clears the selection.
