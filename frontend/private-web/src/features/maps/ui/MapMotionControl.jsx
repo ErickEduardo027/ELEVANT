@@ -23,8 +23,11 @@ function MotionGlyph({ paused }) {
   );
 }
 
-/** The pause control of an OccMap; nothing on a map that does not move its traffic, or that cannot draw. */
-export default function MapMotionControl({ className = '' }) {
+/**
+ * The pause control of an OccMap; nothing on a map that does not move its traffic, or that cannot draw. `compact`
+ * (the console's crowded dock) leaves out the status line: the button's name and icon say «Reanudar movimiento».
+ */
+export default function MapMotionControl({ compact = false, className = '' }) {
   const { motion, engineStatus } = useOccMap();
   const { t, locale } = useTranslation(mapMessages);
   if (!motion?.available || engineStatus === 'unavailable') return null;
@@ -33,7 +36,7 @@ export default function MapMotionControl({ className = '' }) {
   const time = stationTime(motion.dataAt ?? motion.pausedAt, locale);
   return (
     <div data-testid="map-motion-control" className={`flex min-w-0 items-end gap-2 ${className}`.trim()}>
-      {paused && (
+      {paused && !compact && (
         <p
           role="status"
           className="flex min-h-11 min-w-0 items-center rounded border border-occ-line bg-occ-panel-float px-3 text-sm text-occ-text"

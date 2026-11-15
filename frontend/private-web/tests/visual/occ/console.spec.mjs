@@ -42,10 +42,18 @@ async function openConsole(page, isolation, query = '', { demo = false } = {}) {
 }
 
 // The console with its data on screen and its map still: the board answered, the band and the map drew everything.
-async function settled(page, map) {
+async function settled(page, map, { pause = false } = {}) {
   await expect(panel(page, 'Tablero').getByRole('tablist', { name: 'Vista del tablero' })).toBeVisible();
   await expect(page.getByTestId('occ-console-provenance')).toContainText('Aviones: Red ADS-B de prueba');
   await mapReady(map);
+  // Without reduced motion the console moves its traffic on every frame (PR M6), so its map settles only once
+  // «Pausar movimiento» holds the aircraft where they are; the reads go on meanwhile.
+  if (pause) {
+    const button = page.getByTestId('map-motion-control').getByRole('button');
+    if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(button).toHaveAccessibleName('Reanudar movimiento');
+  }
   await expect(map).toHaveAttribute('data-occ-settled', 'true');
 }
 
@@ -163,7 +171,7 @@ test.describe('the OCC console on the map engine', () => {
 
     test('a new demo arrival: «Llegada nueva» with «Ver y seguir», and «Recibido»', async ({ page, isolation }, testInfo) => {
       const { api, map } = await openConsole(page, isolation);
-      await settled(page, map);
+      await settled(page, map, { pause: true });
       // «Recibido» is the account's read receipt: the PUT, and the alert leaves the panel.
       const alerts = panel(page, 'Alertas');
       await alerts.getByRole('button', { name: 'Recibido' }).click();
@@ -184,7 +192,8 @@ test.describe('the OCC console on the map engine', () => {
       await expect.poll(() => new URL(page.url()).searchParams.get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival);
       // follow=1 once the URL has the flight and its view: a view the page asks for ends follow mode (PR M6).
       await expect.poll(() => new URL(page.url()).searchParams.get('follow')).toBe('1');
-      await expect(map).toHaveAttribute('data-occ-view', 'approach');
+      // Follow mode frames the aircraft with the airport (PR M6): the view is the one that holds both.
+      await expect(map).toHaveAttribute('data-occ-view', /^(approach|airfield)$/);
       await expect(page.getByTestId('occ-console-provenance')).toContainText('Incluye un vuelo demo.');
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       await shoot(page, testInfo, 'u3-consola-ver-y-seguir-1920');
@@ -197,7 +206,7 @@ test.describe('the OCC console on the map engine', () => {
       async ({ page, isolation }, testInfo) => {
         await page.setViewportSize({ width: 1440, height: 900 });
         const { map } = await openConsole(page, isolation);
-        await settled(page, map);
+        await settled(page, map, { pause: true });
         await setOpen(page, 'Alertas', false);
         await expect.poll(() => map.evaluate(node => node.style.getPropertyValue('--occ-map-inset-right'))).toBe('0px');
         await panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ }).click();

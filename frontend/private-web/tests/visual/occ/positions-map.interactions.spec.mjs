@@ -86,7 +86,7 @@ test.describe('Mapa de posiciones: what a person does with the stands', () => {
     await settled(page);
     const facts = drawer(page).getByRole('list', { name: 'Estado en el mapa' });
     await expect(facts.getByRole('listitem')).toHaveText([
-      'Ocupada', 'Cubre Agente de prueba', 'Hitos registrados: 9 de 25', /^No oficial/,
+      'Ocupada', 'Cubre Agente de prueba', 'Hitos registrados: 9 de 25', /^Terminal A/, /^No oficial/,
     ]);
     await shoot(page, testInfo, 'positions-interactions-drawer');
 

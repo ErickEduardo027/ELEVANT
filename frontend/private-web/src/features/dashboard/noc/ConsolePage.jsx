@@ -11,7 +11,6 @@ import { STATION_TIME_ZONE } from '../../admin-occ/shell/status/OccClocks';
 import { matchFlight, relatedEntities } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
 import MapDock from '../../maps/ui/MapDock';
-import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
@@ -482,8 +481,8 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
             <MapDock>
               <MapLayersMenu />
               <MapPresetSwitcher />
-              <MapFollowButton />
-              <MapMotionControl />
+              {/* «Seguir» is the S key, «Ver y seguir» and the inspector's flight: the dock keeps to the pause. */}
+              <MapMotionControl compact />
               {/* Folded at first: the console's map is the ramp under the panels, and the legend opens over it. */}
               <MapLegend defaultOpen={false} />
             </MapDock>

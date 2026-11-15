@@ -786,9 +786,11 @@ describe('the camera around the panels', () => {
     });
     expect(map.getZoom()).toBeCloseTo(zoom, 6);
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'approach');
-    // The console's dock moves its traffic like the other OCC maps: «Seguir» pressed, «Pausar movimiento» offered.
-    expect(screen.getByRole('button', { name: /Seguir/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Pausar movimiento' })).toBeInTheDocument();
+    // The console's dock moves its traffic like the other OCC maps and offers «Pausar movimiento»; paused, the button
+    // says «Reanudar movimiento» without a status line, so the dock stays one row beside the panels.
+    await userEvent.click(screen.getByRole('button', { name: 'Pausar movimiento' }));
+    expect(screen.getByRole('button', { name: 'Reanudar movimiento' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByTestId('map-motion-control')).queryByRole('status')).toBeNull();
   });
 
   it('«Ver y seguir» leaves the camera to a person who moves it before the map settles', async () => {
