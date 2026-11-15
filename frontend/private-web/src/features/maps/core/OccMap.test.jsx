@@ -1564,8 +1564,9 @@ describe('OccMap', () => {
     const stylesheet = readSource('src/styles/occ-map.css');
     const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
     const preludes = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim());
-    // The only at-rule keeps MapLibre's own icons in forced colours.
-    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)']);
+    // The at-rules keep MapLibre's own icons in forced colours and thin the ticks of a narrow altitude scale.
+    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)',
+      '@container (max-width: 27rem)', '@container (max-width: 18rem)']);
     const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
     expect(selectors.length).toBeGreaterThan(10);
     for (const selector of selectors) expect(selector.startsWith('.occ-map'), selector).toBe(true);
