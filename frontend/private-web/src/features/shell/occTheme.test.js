@@ -16,6 +16,10 @@ const ROUTES = [
   ['/admin-occ/review/operations/42', true],
   ['/admin-occ/no-such-screen', true],
   ['/admin-occ/flight-monitoring?stationId=1&flightId=2#map', true],
+  // The OCC's map lab takes the OCC's theme.
+  ['/map-lab', true],
+  ['/map-lab?scene=region-traffic-mixed', true],
+  ['/map-labs', false],
   ['/', false],
   ['/login', false],
   ['/login?next=/admin-occ/dashboard', false],
@@ -58,7 +62,7 @@ function sourceFiles(folder) {
 }
 
 describe('OCC routes', () => {
-  it('isOccPath accepts /admin-occ and its sub-routes only', () => {
+  it('isOccPath accepts /admin-occ and its sub-routes, and the map lab, only', () => {
     for (const [route, occ] of ROUTES) {
       expect(isOccPath(new URL(route, ORIGIN).pathname), route).toBe(occ);
     }

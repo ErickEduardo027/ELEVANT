@@ -319,11 +319,12 @@ export default function MapLab() {
     screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
   }
 
+  // The OCC's theme (dark unless the account chose light): ThemeProvider sets it on the document, as in the OCC.
   return (
     <div
       {...{ [MAP_LAB_MARKER]: 'v1' }}
       data-department="occ"
-      className="dark flex h-screen flex-col overflow-hidden bg-occ-canvas text-occ-text"
+      className="flex h-screen flex-col overflow-hidden bg-occ-canvas text-occ-text"
     >
       {screen}
     </div>

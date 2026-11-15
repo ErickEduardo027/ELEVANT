@@ -13,6 +13,8 @@ import { defineConfig } from 'playwright/test';
 // Against a production build (lesson 4 of M1): build with the three NEXT_PUBLIC_* values of `webServer.env` below
 // (proxy.js requires an HTTPS API origin), then OCC_VISUAL_TARGET=production npm run test:visual. There the lab
 // project only checks that /map-lab answers the not-found page.
+// In the light theme (ADR-0044, note of 2026-11-15):  OCC_VISUAL_THEME=light npm run test:visual
+// stores the light theme before every page loads; its screenshots end in `-light` (tests/visual/support).
 const port = Number(process.env.OCC_VISUAL_PORT ?? 4186);
 const production = process.env.OCC_VISUAL_TARGET === 'production';
 const baseURL = `http://localhost:${port}`;

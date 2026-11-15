@@ -38,7 +38,9 @@ describe('MapLab', () => {
     const root = document.querySelector(`[${MAP_LAB_MARKER}]`);
     expect(root).toHaveAttribute(MAP_LAB_MARKER, 'v1');
     expect(root).toHaveAttribute('data-department', 'occ');
-    expect(root).toHaveClass('dark', 'bg-occ-canvas');
+    expect(root).toHaveClass('bg-occ-canvas');
+    // The theme is the document's (ThemeProvider, as in the OCC), not a class of its own.
+    expect(root).not.toHaveClass('dark');
     expect(screen.getByRole('heading', { level: 1, name: 'Laboratorio de mapas' })).toBeInTheDocument();
     const links = within(screen.getByRole('list', { name: 'Escenas' })).getAllByRole('link');
     expect(links.map(link => link.getAttribute('href'))).toEqual(SCENES.map(scene => `/map-lab?scene=${scene.id}`));

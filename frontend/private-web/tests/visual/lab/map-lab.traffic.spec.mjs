@@ -59,7 +59,7 @@ test.describe('map lab traffic', () => {
     await expect(legendItems(page)).toContainText(['Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale', 'Otro tráfico',
       'Sin actualizar', 'Estela']);
     // One credit of the aircraft data, the line at the bottom left: the attribution keeps the base map's credits.
-    await expect(page.getByTestId('map-lab-map').locator('a', { hasText: CREDIT })).toHaveCount(1);
+    await expect(page.locator('a', { hasText: CREDIT })).toHaveCount(1);
     await expect(page.getByTestId('map-lab-map').locator('.maplibregl-ctrl-attrib-inner')).not.toContainText('Datos de aeronaves');
 
     // Other traffic shows its tag while the pointer is on it.
