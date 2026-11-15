@@ -217,7 +217,7 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     expect(moved.newGeometry.coordinates[1]).toBeCloseTo(before.features
       .find(feature => feature.properties.id === `f:${KEY.arrival}`).geometry.coordinates[1] + 0.01, 6);
     // Only what changed: the tag's second line.
-    expect(moved.addOrUpdateProperties).toEqual([{ key: 'tag2', value: 'B38M 022 150' }]);
+    expect(moved.addOrUpdateProperties).toEqual([{ key: 'altFt', value: 2200 }, { key: 'tag2', value: 'B38M 022 150' }]);
     expect(moved.removeProperties).toBeUndefined();
 
     // A selection changes properties only; a property that goes away is removed.

@@ -63,6 +63,16 @@ export function selectedAircraftId(aircraft, selection) {
 }
 
 /** Altitude in hundreds of feet, three digits («026» for 2 600 ft), or `null`. */
+/**
+ * The altitude the traffic is coloured by (style/mapColors.js), in feet rounded to the hundred: 0 on the ground, -1
+ * without an altitude, so a frame that moves an aircraft a few feet writes nothing new.
+ */
+export function altitudeFeet(item) {
+  if (item?.onGround === true) return 0;
+  if (!finite(item?.altM)) return -1;
+  return Math.max(0, Math.round((item.altM * FEET_PER_METRE) / 100) * 100);
+}
+
 export function flightLevelText(altM) {
   if (!finite(altM)) return null;
   return String(Math.max(0, Math.round((altM * FEET_PER_METRE) / 100))).padStart(3, '0');
@@ -135,6 +145,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
       estimated: item.quality === 'estimated',
       demo: aviam && item.isDemo === true,
       ground,
+      // The altitude in feet the icon is coloured by (style/mapColors.js): 0 on the ground, -1 when unknown.
+      altFt: altitudeFeet(item),
       selected,
       forceTag,
       showTag: forceTag || labelsOn === true,
@@ -154,7 +166,7 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
 /**
  * The traffic source's data: one point per drawn aircraft (isDrawn), keyed by its id (`f:<flightKey>` or `h:<hex>`,
  * the source's promoted id), with
- * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground,
+ * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground, altFt,
  * selected, forceTag, showTag, tag1, suffix, tag2, tagStand, opacity }`:
  * - `icon`: the solid silhouette of the aircraft's category, hollow for a departing ELEVANT flight;
  * - `scale`: 1.25 for ELEVANT flights, 0.85 for other traffic, 0.6 for other traffic on the ground, 1.4 when chosen;

@@ -1,13 +1,15 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
+import { altitudeColourExpression } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
 import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 
 // The traffic of the OCC maps as one overlay for buildOccStyle (design E1, contracts 2.4), fed by OccMap: the aircraft
 // (traffic/trafficFeatures.js) with updateData, their trails (traffic/trailStore.js) and the chosen flight's route
-// with setData. «Cabina oscura»: normal traffic carries no hue (ELEVANT flights in the text colour, the rest faint);
-// only the chosen aircraft is cyan. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
+// with setData. Every aircraft is coloured by its altitude (owner request of 2026-11-15, style/mapColors.js: orange near
+// the ground to violet at 40 000 ft, light grey on the ground, ui/AltitudeLegend.jsx explains it); only the chosen
+// aircraft is cyan, with its ring. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
 // striped plate, never by colour alone. Pure.
 //
 // Layers bottom to top. In the `routes` slot the chosen flight's route (PR M6, traffic/routeFeatures.js), in the
@@ -143,6 +145,8 @@ const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLA
 const ems = pixels => Math.round((pixels / PLATE_TEXT_SIZE) * 1000) / 1000;
 
 const ACCENT = occColor('accent');
+// The colour of every aircraft but the chosen one: its altitude (style/mapColors.js).
+const ALTITUDE = altitudeColourExpression();
 // The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
 // cyan clear of the silhouette.
 const SELECTED_RING_RADIUS_PX = 18;
@@ -270,7 +274,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', OTHER, is('ground')],
         layout: otherLayout(),
-        paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
+        paint: { ...iconPaint(ALTITUDE, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
           'occ:minThreshold': 'airfield' },
       },
@@ -281,7 +285,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', OTHER, isNot('ground')],
         layout: otherLayout(),
-        paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
+        paint: { ...iconPaint(ALTITUDE, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
       },
       // Above the icons of other traffic, so MapLibre places these tags before them: a tag keeps off the ELEVANT
@@ -303,7 +307,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', AVIAM, NOT_PARKED],
         layout: iconLayout(),
-        paint: iconPaint(occColor('text'), 1.5),
+        paint: iconPaint(ALTITUDE, 1.5),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:pick': 'flight', 'occ:pickId': 'flightKey' },
       },
       {
