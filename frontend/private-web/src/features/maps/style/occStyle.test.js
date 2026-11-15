@@ -1,10 +1,10 @@
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
-import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
+import { OCC_PALETTES, OCC_THEMES, occColor } from '../../occ-ui/occPalette';
 import { qaPoint } from '../testing/mapFixtures';
 import { basemapLayers } from './basemapLayers';
 import { createImageResolver } from './mapImages';
-import { BASEMAP_COLORS } from './mapTheme';
+import { BASEMAP_COLORS, BASEMAP_THEMES } from './mapTheme';
 import {
   BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, SLOT_GROUP, SLOT_ORDER, THRESHOLD_NAMES,
   buildOccStyle, groupLayerIds, nextSlot, slotMarkerId,
@@ -125,7 +125,8 @@ const resourceUrls = style => [
 
 describe('OCC map style', () => {
   it('the style passes the MapLibre style validator with and without the base map (validateStyleMin from @maplibre/maplibre-gl-style-spec)', () => {
-    for (const options of [{}, { basemap: false }, { overlays: [STAND_OVERLAY] }, { basemap: false, overlays: [STAND_OVERLAY] }]) {
+    for (const options of [{}, { basemap: false }, { overlays: [STAND_OVERLAY] }, { basemap: false, overlays: [STAND_OVERLAY] },
+      { theme: 'light', overlays: [STAND_OVERLAY] }]) {
       expect(validateStyleMin(buildOccStyle(options)), JSON.stringify(Object.keys(options))).toEqual([]);
     }
     // The validator is not a rubber stamp: a broken layer is reported.
@@ -258,10 +259,11 @@ describe('OCC map style', () => {
     expect(validateStyleMin(buildOccStyle({ overlays: [overlay] }))).toEqual([]);
   });
 
-  it('overlay colours are OCC palette values and base-map colours come from mapTheme (parity)', () => {
-    const style = buildOccStyle({ overlays: [STAND_OVERLAY] });
-    const tokenValues = new Set(Object.values(OCC_PALETTE));
-    const baseValues = new Set(Object.values(BASEMAP_COLORS));
+  it.each(OCC_THEMES)('overlay colours are OCC palette values and base-map colours come from mapTheme (%s)', theme => {
+    const style = buildOccStyle({ overlays: [STAND_OVERLAY], theme });
+    const colours = BASEMAP_THEMES[theme];
+    const tokenValues = new Set(Object.values(OCC_PALETTES[theme]));
+    const baseValues = new Set(Object.values(colours));
     for (const layer of style.layers) {
       for (const colour of paintColours(layer)) {
         if (OVERLAY_IDS.has(layer.id)) expect(tokenValues.has(colour), `${layer.id}: ${colour}`).toBe(true);
@@ -271,24 +273,50 @@ describe('OCC map style', () => {
     // The only token a tile layer paints is the runway designator, in --occ-muted.
     const tokensOnTiles = style.layers.filter(layer => !OVERLAY_IDS.has(layer.id))
       .flatMap(layer => paintColours(layer).filter(colour => !baseValues.has(colour)).map(colour => [layer.id, colour]));
-    expect(tokensOnTiles).toEqual([['airfield-runway-ref', occColor('muted')]]);
+    expect(tokensOnTiles).toEqual([['airfield-runway-ref', occColor('muted', theme)]]);
 
     const paintOf = (id, property) => style.layers.find(layer => layer.id === id).paint[property];
-    expect(paintOf('base-background', 'background-color')).toBe(BASEMAP_COLORS.land);
-    expect(paintOf('base-water', 'fill-color')).toBe(BASEMAP_COLORS.sea);
-    expect(paintOf('base-coastline', 'line-color')).toBe(BASEMAP_COLORS.coastline);
-    expect(paintOf('base-boundary-country', 'line-color')).toBe(BASEMAP_COLORS.boundary);
-    expect(paintOf('base-road', 'line-color')).toBe(BASEMAP_COLORS.road);
-    expect(paintOf('base-road-major', 'line-color')).toBe(BASEMAP_COLORS.roadMajor);
-    expect(paintOf('base-building', 'fill-color')).toBe(BASEMAP_COLORS.building);
-    expect(paintOf('building-3d', 'fill-extrusion-color')).toBe(BASEMAP_COLORS.buildingExtrusion);
-    expect(paintOf('airfield-runway', 'line-color')).toBe(BASEMAP_COLORS.runway);
-    expect(paintOf('airfield-taxiway', 'line-color')).toBe(BASEMAP_COLORS.taxiway);
-    expect(paintOf('airfield-apron', 'fill-color')).toBe(BASEMAP_COLORS.apron);
-    expect(paintOf('base-label-city', 'text-color')).toBe(BASEMAP_COLORS.placeLabel);
-    expect(paintOf('base-label-water', 'text-color')).toBe(BASEMAP_COLORS.waterLabel);
-    expect(paintOf('base-label-water', 'text-halo-color')).toBe(BASEMAP_COLORS.labelHalo);
+    expect(paintOf('base-background', 'background-color')).toBe(colours.land);
+    expect(paintOf('base-water', 'fill-color')).toBe(colours.sea);
+    expect(paintOf('base-coastline', 'line-color')).toBe(colours.coastline);
+    expect(paintOf('base-boundary-country', 'line-color')).toBe(colours.boundary);
+    expect(paintOf('base-road', 'line-color')).toBe(colours.road);
+    expect(paintOf('base-road-major', 'line-color')).toBe(colours.roadMajor);
+    expect(paintOf('base-building', 'fill-color')).toBe(colours.building);
+    expect(paintOf('building-3d', 'fill-extrusion-color')).toBe(colours.buildingExtrusion);
+    expect(paintOf('airfield-runway', 'line-color')).toBe(colours.runway);
+    expect(paintOf('airfield-taxiway', 'line-color')).toBe(colours.taxiway);
+    expect(paintOf('airfield-apron', 'fill-color')).toBe(colours.apron);
+    expect(paintOf('base-label-city', 'text-color')).toBe(colours.placeLabel);
+    expect(paintOf('base-label-water', 'text-color')).toBe(colours.waterLabel);
+    expect(paintOf('base-label-water', 'text-halo-color')).toBe(colours.labelHalo);
 
+  });
+
+  it('carries every overlay colour of the dark palette, an rgba() trail included, to the light theme', () => {
+    const accent = OCC_PALETTES.dark['--occ-accent'];
+    const [red, green, blue] = [1, 3, 5].map(index => Number.parseInt(accent.slice(index, index + 2), 16));
+    const overlay = {
+      sources: { trail: { type: 'geojson' } },
+      layers: [{
+        slot: 'traffic', id: 'trail', type: 'line', source: 'trail', metadata: { 'occ:group': 'traffic' },
+        paint: { 'line-color': ['case', ['get', 'x'], `rgba(${red}, ${green}, ${blue}, 0.5)`, occColor('nav')] },
+        layout: { 'text-field': ['format', 'A', { 'text-color': occColor('muted') }] },
+      }],
+    };
+    const paint = theme => buildOccStyle({ basemap: false, overlays: [overlay], theme }).layers.find(layer => layer.id === 'trail');
+    expect(paint('dark').paint['line-color']).toEqual(overlay.layers[0].paint['line-color']);
+    const light = paint('light');
+    const lightAccent = OCC_PALETTES.light['--occ-accent'];
+    const channels = [1, 3, 5].map(index => Number.parseInt(lightAccent.slice(index, index + 2), 16));
+    expect(light.paint['line-color']).toEqual(['case', ['get', 'x'], `rgba(${channels.join(', ')}, 0.5)`, occColor('nav', 'light')]);
+    expect(light.layout['text-field'][2]).toEqual({ 'text-color': occColor('muted', 'light') });
+    // The base map of the light theme is its own.
+    const background = buildOccStyle({ theme: 'light' }).layers.find(layer => layer.id === 'base-background');
+    expect(background.paint['background-color']).toBe(BASEMAP_THEMES.light.land);
+  });
+
+  it('basemapLayers draws whatever palette it is given', () => {
     // basemapLayers draws whatever palette it is given: no base-map colour is written into the layers.
     const marked = Object.fromEntries(Object.keys(BASEMAP_COLORS).map((key, index) => [key, `#0000${String(index).padStart(2, '0')}`]));
     const markedValues = new Set(Object.values(marked));

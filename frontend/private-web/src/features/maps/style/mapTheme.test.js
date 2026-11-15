@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
-import { BASEMAP_COLORS, contrastRatio, relativeLuminance } from './mapTheme';
+import { OCC_PALETTES, OCC_THEMES, occColor } from '../../occ-ui/occPalette';
+import {
+  BASEMAP_COLORS, BASEMAP_THEMES, basemapColorsFor, basemapThemeColor, contrastRatio, relativeLuminance,
+} from './mapTheme';
 
 const BASE_MAP_KEYS = [
   'land', 'sea', 'coastline', 'boundary', 'road', 'roadMajor', 'building', 'buildingExtrusion', 'runway', 'taxiway',
@@ -24,8 +26,8 @@ function hueAndSaturation(hex) {
 }
 
 // Slate sits with the OCC tokens: little saturation, on the hue of --occ-canvas. Navy is a saturated blue past 215°.
-function slateProblems(colours) {
-  const canvasHue = hueAndSaturation(occColor('canvas')).hue;
+function slateProblems(colours, theme = 'dark') {
+  const canvasHue = hueAndSaturation(occColor('canvas', theme)).hue;
   return Object.entries(colours).flatMap(([name, value]) => {
     const { hue, saturation } = hueAndSaturation(value);
     const problems = [];
@@ -37,32 +39,47 @@ function slateProblems(colours) {
 }
 
 describe('base-map theme', () => {
-  it('base-map colours are a neutral slate: low saturation and no navy hue', () => {
-    expect(Object.isFrozen(BASEMAP_COLORS)).toBe(true);
-    expect(Object.values(BASEMAP_COLORS).every(value => /^#[0-9a-f]{6}$/.test(value))).toBe(true);
-    expect(slateProblems(BASEMAP_COLORS)).toEqual([]);
+  it('keeps one base map per theme, dark by default', () => {
+    expect(Object.keys(BASEMAP_THEMES)).toEqual(OCC_THEMES);
+    expect(BASEMAP_COLORS).toBe(BASEMAP_THEMES.dark);
+    expect(basemapColorsFor('light')).toBe(BASEMAP_THEMES.light);
+    for (const other of ['dark', undefined, 'sepia']) expect(basemapColorsFor(other)).toBe(BASEMAP_THEMES.dark);
+    expect(basemapThemeColor(BASEMAP_COLORS.runway, 'light')).toBe(BASEMAP_THEMES.light.runway);
+    expect(basemapThemeColor(BASEMAP_COLORS.runway, 'dark')).toBe(BASEMAP_COLORS.runway);
+    expect(basemapThemeColor('#123456', 'light')).toBe('#123456');
+  });
+
+  it.each(OCC_THEMES)('base-map colours are a neutral slate: low saturation and no navy hue (%s)', theme => {
+    const colours = BASEMAP_THEMES[theme];
+    expect(Object.isFrozen(colours)).toBe(true);
+    expect(Object.keys(colours)).toEqual(BASE_MAP_KEYS);
+    expect(Object.values(colours).every(value => /^#[0-9a-f]{6}$/.test(value))).toBe(true);
+    expect(slateProblems(colours, theme)).toEqual([]);
     // The check bites: the navy sea and land of the first map design, and plain navy, fail it.
     for (const navy of ['#07111f', '#101d2e', '#000080']) expect(slateProblems({ navy }), navy).not.toEqual([]);
   });
 
-  it('the sea is darker than --occ-canvas and the land sits close to it', () => {
-    expect(relativeLuminance(BASEMAP_COLORS.sea)).toBeLessThan(relativeLuminance(occColor('canvas')));
-    expect(contrastRatio(BASEMAP_COLORS.land, occColor('canvas'))).toBeLessThanOrEqual(1.15);
-    // Water and land stay apart, and the pavement reads on the land.
-    expect(contrastRatio(BASEMAP_COLORS.land, BASEMAP_COLORS.sea)).toBeGreaterThan(1.05);
-    expect(relativeLuminance(BASEMAP_COLORS.runway)).toBeGreaterThan(relativeLuminance(BASEMAP_COLORS.taxiway));
-    expect(relativeLuminance(BASEMAP_COLORS.taxiway)).toBeGreaterThan(relativeLuminance(BASEMAP_COLORS.apron));
-    expect(relativeLuminance(BASEMAP_COLORS.apron)).toBeGreaterThan(relativeLuminance(BASEMAP_COLORS.land));
+  it.each(OCC_THEMES)('the sea is darker than --occ-canvas and the land sits close to it (%s)', theme => {
+    const colours = BASEMAP_THEMES[theme];
+    expect(relativeLuminance(colours.sea)).toBeLessThan(relativeLuminance(occColor('canvas', theme)));
+    expect(contrastRatio(colours.land, occColor('canvas', theme))).toBeLessThanOrEqual(1.15);
+    // Water and land stay apart, and the pavement reads on the land: lighter than it in the dark theme, darker in
+    // the light one.
+    expect(contrastRatio(colours.land, colours.sea)).toBeGreaterThan(1.05);
+    const ladder = ['runway', 'taxiway', 'apron', 'land'].map(key => relativeLuminance(colours[key]));
+    const steps = ladder.slice(1).map((value, index) => Math.sign(ladder[index] - value));
+    expect(steps).toEqual(Array(3).fill(theme === 'dark' ? 1 : -1));
   });
 
-  it('labels reach 4.5:1 on the colour they sit on (place on land, water names on sea, --occ-text codes on land and apron)', () => {
+  it.each(OCC_THEMES)('labels reach 4.5:1 on the colour they sit on (%s)', theme => {
+    const colours = BASEMAP_THEMES[theme];
     const pairs = [
-      ['place label on land', BASEMAP_COLORS.placeLabel, BASEMAP_COLORS.land],
-      ['water name on sea', BASEMAP_COLORS.waterLabel, BASEMAP_COLORS.sea],
-      ['--occ-text code on land', occColor('text'), BASEMAP_COLORS.land],
-      ['--occ-text code on apron', occColor('text'), BASEMAP_COLORS.apron],
+      ['place label on land', colours.placeLabel, colours.land],
+      ['water name on sea', colours.waterLabel, colours.sea],
+      ['--occ-text code on land', occColor('text', theme), colours.land],
+      ['--occ-text code on apron', occColor('text', theme), colours.apron],
       // The runway designators of the tiles are drawn in --occ-muted on the runway.
-      ['--occ-muted runway designator on runway', occColor('muted'), BASEMAP_COLORS.runway],
+      ['--occ-muted runway designator on runway', occColor('muted', theme), colours.runway],
     ];
     for (const [name, foreground, background] of pairs) {
       expect(contrastRatio(foreground, background), name).toBeGreaterThanOrEqual(4.5);
@@ -80,13 +97,15 @@ describe('base-map theme', () => {
   });
 
   it('mapTheme copies no OCC token value: state colours are imported from occPalette.js', () => {
-    expect(Object.keys(BASEMAP_COLORS)).toEqual(BASE_MAP_KEYS);
-    const tokenValues = new Set(Object.values(OCC_PALETTE).map(value => value.toLowerCase()));
-    expect(Object.entries(BASEMAP_COLORS).filter(([, value]) => tokenValues.has(value))).toEqual([]);
+    const tokenValues = new Set(OCC_THEMES.flatMap(theme => Object.values(OCC_PALETTES[theme]))
+      .map(value => value.toLowerCase()));
+    for (const theme of OCC_THEMES) {
+      expect(Object.entries(BASEMAP_THEMES[theme]).filter(([, value]) => tokenValues.has(value)), theme).toEqual([]);
+    }
 
     const source = readFileSync('src/features/maps/style/mapTheme.js', 'utf8');
     const literals = source.match(/#[0-9a-f]{6}\b|rgba?\([^)]*\)/gi) ?? [];
-    expect(literals.length).toBe(BASE_MAP_KEYS.length);
+    expect(literals.length).toBe(BASE_MAP_KEYS.length * OCC_THEMES.length);
     expect(literals.filter(literal => tokenValues.has(literal.toLowerCase()))).toEqual([]);
   });
 });

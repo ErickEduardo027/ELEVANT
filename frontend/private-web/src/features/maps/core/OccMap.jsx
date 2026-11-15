@@ -9,6 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import '../../../styles/occ-map.css';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { useOccBoot } from '../../admin-occ/boot/occBootContext';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
@@ -407,7 +408,9 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   symbol gives way, unless it is the chosen one; a zoom across the polygons threshold, a new fit or new stands write
  *   the traffic again for it.
  */
-const OccMap = forwardRef(function OccMap({
+const OccMapView = forwardRef(function OccMapView({
+  theme = 'dark',
+  resumeCameraRef,
   defaultView = 'ramp',
   layout = MDPC_LAYOUT,
   presetStands,
@@ -522,7 +525,7 @@ const OccMap = forwardRef(function OccMap({
       stands, attached, standFeatures, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onPick,
       onMapClick, placing: placingNow, placingStand, onCancelPlacing, onCameraChange, isShortcutBlocked, pitchMode,
       padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap, overlays, interactive, mapOptions,
-      layout, t, language,
+      layout, t, language, theme, resumeCameraRef,
       locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
@@ -1226,13 +1229,17 @@ const OccMap = forwardRef(function OccMap({
     const stopClock = motionClock?.subscribe?.(() => store.set({ motion: motionState() }));
     focusRef.current = null;
     pendingViewRef.current = null;
-    // The URL view, else the camera the page kept, else the default view.
-    const initialView = props.urlView ?? (props.initialCamera ? null : props.defaultView);
+    // The camera of the map this one replaces after a theme change (OccMap), else the URL view, else the camera the
+    // page kept, else the default view.
+    const kept = props.resumeCameraRef?.current;
+    const resume = kept && kept.theme !== props.theme && kept.camera ? kept.camera : null;
+    if (props.resumeCameraRef) props.resumeCameraRef.current = null;
+    const initialView = resume ? null : props.urlView ?? (props.initialCamera ? null : props.defaultView);
     const initialTerminal = props.urlView ? props.urlTerminal : null;
     const angles = cameraAngles(initialView ?? props.defaultView, props.pitchMode);
     // A view starts over its target, so a map that has no size yet waits there and not at MapLibre's [0, 0].
     const start = initialView === null
-      ? { ...angles, ...props.initialCamera }
+      ? { ...angles, ...(resume ?? props.initialCamera) }
       : { ...angles, center: boundsCenter(targetFor(props.targets, initialView, initialTerminal)?.bounds) ?? undefined };
 
     // The airfield goes before the references: they share the airfield slot, and the mark of PUJ stays above the
@@ -1251,11 +1258,11 @@ const OccMap = forwardRef(function OccMap({
     const engine = createMapEngine({
       maplibre,
       host: hostRef.current,
-      style: buildOccStyle({ basemap: props.basemap, overlays }),
+      style: buildOccStyle({ basemap: props.basemap, overlays, theme: props.theme }),
       camera: start,
       interactive: props.interactive,
       attribution: buildAttribution([], { aircraftDataLabel: props.aircraftDataLabel }),
-      imageResolver: createImageResolver(),
+      imageResolver: createImageResolver({ theme: props.theme }),
       mapOptions: { ...props.mapOptions, locale: props.locale },
       onStatus: handleStatus,
       onCamera: handleCamera,
@@ -1289,6 +1296,9 @@ const OccMap = forwardRef(function OccMap({
       reduced?.removeEventListener?.('change', onReducedMotion);
       loop?.dispose();
       if (appliedRef.current.loop === loop) appliedRef.current.loop = null;
+      // Read before teardown: a map re-created for another theme opens where this one was.
+      const resumeRef = latest.current?.resumeCameraRef;
+      if (resumeRef) resumeRef.current = { theme: latest.current.theme, camera: engine.getCamera() };
       engine.destroy();
       if (engineRef.current === engine) engineRef.current = null;
     };
@@ -1752,6 +1762,17 @@ const OccMap = forwardRef(function OccMap({
       </div>
     </OccMapContext.Provider>
   );
+});
+
+/**
+ * The OCC map in the theme of the shell (light or dark, dark by default and outside a ThemeProvider). The style is
+ * never swapped (contracts 2.4: no setStyle): a theme change re-creates the map, keyed by the theme, and the new one
+ * opens on the camera the old one had when it was torn down; the selection lives in the URL and stays.
+ */
+const OccMap = forwardRef(function OccMap(props, ref) {
+  const theme = useOptionalTheme()?.theme === 'light' ? 'light' : 'dark';
+  const resumeCameraRef = useRef(null);
+  return <OccMapView key={theme} ref={ref} {...props} theme={theme} resumeCameraRef={resumeCameraRef} />;
 });
 
 export default OccMap;

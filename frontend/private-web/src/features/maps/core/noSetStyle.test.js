@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readSource, sourceFilesUnder } from '../../../styles/occSourceScan';
 
-// Contracts 2.4: the OCC maps have one dark palette and never swap the style after start. This scan reads the whole
+// Contracts 2.4: the OCC maps never swap the style after start; a theme change (light or dark) re-creates the map. This scan reads the whole
 // map stack: everything under src/features/maps (engine, style, ui, lab and what later PRs add), the map-lab route
 // and the PositionMap and FlightMap adapters.
 const MAP_ROOTS = ['src/features/maps', 'app/map-lab'];

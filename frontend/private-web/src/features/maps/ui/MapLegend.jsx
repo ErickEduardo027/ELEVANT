@@ -7,7 +7,8 @@ import { mapMessages } from '../mapMessages';
 import { FOOTPRINT_PAINT, PROGRESS_PAINT, standPaint } from '../stands/standLayers';
 import { MILESTONES_TOTAL } from '../stands/standModel';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
-import { BASEMAP_COLORS } from '../style/mapTheme';
+import { useOptionalTheme } from '../../shell/useTheme';
+import { basemapColorsFor } from '../style/mapTheme';
 import { legendEntries } from './legendEntries';
 import { trafficLegendEntries } from './trafficLegend';
 import TrafficSwatch from './TrafficSwatch';
@@ -232,35 +233,40 @@ const MARK = tokenColour('--occ-text');
 const AIRFIELD_SWATCHES = Object.freeze({
   runway: (
     <>
-      <rect x="1" y="6.5" width="18" height="7" style={{ fill: BASEMAP_COLORS.runway }} />
+      <rect x="1" y="6.5" width="18" height="7" style={{ fill: 'var(--occ-swatch-runway)' }} />
       <path d="M2.5 7.8 V12.2 M17.5 7.8 V12.2" style={{ fill: 'none', stroke: MARK, strokeWidth: 1 }} />
       <path d="M4.5 10 H15.5" style={{ fill: 'none', stroke: MARK, strokeWidth: 1, strokeDasharray: '2.5 2' }} />
     </>
   ),
   taxiway: (
-    <path d="M2 15.5 C7.5 15.5 11 4.5 18 4.5" style={{ fill: 'none', stroke: BASEMAP_COLORS.taxiway, strokeWidth: 4, strokeLinecap: 'round' }} />
+    <path d="M2 15.5 C7.5 15.5 11 4.5 18 4.5" style={{ fill: 'none', stroke: 'var(--occ-swatch-taxiway)', strokeWidth: 4, strokeLinecap: 'round' }} />
   ),
   holdBar: (
     <>
-      <path d="M10 1 V19" style={{ fill: 'none', stroke: BASEMAP_COLORS.taxiway, strokeWidth: 4 }} />
+      <path d="M10 1 V19" style={{ fill: 'none', stroke: 'var(--occ-swatch-taxiway)', strokeWidth: 4 }} />
       <path d="M5 10 H15" style={{ fill: 'none', stroke: MARK, strokeWidth: 2 }} />
     </>
   ),
   apron: (
-    <rect x="3.5" y="4.5" width="13" height="11" style={{ fill: BASEMAP_COLORS.apron, stroke: tokenColour('--occ-line'), strokeWidth: 1 }} />
+    <rect x="3.5" y="4.5" width="13" height="11" style={{ fill: 'var(--occ-swatch-apron)', stroke: tokenColour('--occ-line'), strokeWidth: 1 }} />
   ),
   terminal: (
-    <rect x="4.5" y="5.5" width="11" height="9" style={{ fill: BASEMAP_COLORS.building, stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    <rect x="4.5" y="5.5" width="11" height="9" style={{ fill: 'var(--occ-swatch-building)', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
   ),
 });
 const AIRFIELD_MESSAGES = Object.freeze({
   runway: 'legend.runway', taxiway: 'legend.taxiway', holdBar: 'legend.hold', apron: 'legend.apron', terminal: 'legend.terminal',
 });
 
+// The base-map colours of the shell theme (light or dark) reach the swatches as variables of the svg.
+const SWATCH_KEYS = Object.freeze(['runway', 'taxiway', 'apron', 'building']);
+
 function AirfieldSwatch({ kind }) {
+  const colours = basemapColorsFor(useOptionalTheme()?.theme);
+  const variables = Object.fromEntries(SWATCH_KEYS.map(key => [`--occ-swatch-${key}`, colours[key]]));
   return (
-    <svg {...SWATCH_PROPS} data-swatch={kind}>
-      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: BASEMAP_COLORS.land }} />
+    <svg {...SWATCH_PROPS} data-swatch={kind} style={variables}>
+      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: colours.land }} />
       {AIRFIELD_SWATCHES[kind]}
     </svg>
   );
