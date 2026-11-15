@@ -133,22 +133,39 @@
   pointer-events: auto;
 }
 
-/* The altitude scale of the traffic (ui/AltitudeLegend.jsx): centred in the visible area just above the dock (its 44 px
-   buttons and the gap), as wide as its ticks need and never wider than the area in sight. The dock's panels open over
-   it. */
+/* The altitude scale of the traffic (ui/AltitudeLegend.jsx): at the left of the visible area, above the dock (its 44 px
+   buttons and the gap) and above the credit line MapLibre stacks there (about 40 px), as wide as its ticks need and
+   never wider than the area in sight. The legend and the layers menu open at the right of the dock, mostly clear of
+   it; where they meet, they open over it. */
 .occ-map .occ-map-altitude {
   position: absolute;
   z-index: 9;
-  bottom: calc(var(--occ-map-inset-bottom, 0px) + 2 * var(--occ-map-gap) + 44px);
-  left: calc(var(--occ-map-inset-left, 0px)
-    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + 2 * var(--occ-map-gap) + 88px);
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
   width: min(30rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
     - 2 * var(--occ-map-gap)));
-  transform: translateX(-50%);
 }
 
 .occ-map .occ-map-altitude[data-open="false"] {
   width: max-content;
+}
+
+/* A narrow area in sight writes fewer ticks, so their numbers never run into each other: the minor ones go first, then
+   all but 0, 10 000 and 40 000+. The gradient keeps every stop. */
+.occ-map .occ-map-altitude {
+  container-type: inline-size;
+}
+
+@container (max-width: 27rem) {
+  .occ-map .occ-map-altitude [data-altitude-level="minor"] {
+    visibility: hidden;
+  }
+}
+
+@container (max-width: 18rem) {
+  .occ-map .occ-map-altitude [data-altitude-level="middle"] {
+    visibility: hidden;
+  }
 }
 
 /* A short state of the map itself, such as a base map that did not load, at the top centre of the visible area. */

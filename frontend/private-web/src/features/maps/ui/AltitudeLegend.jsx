@@ -14,6 +14,13 @@ import { ALTITUDE_STOPS_FT, altitudeGradient, mapColorsFor } from '../style/mapC
 // the ADS-B maps the OCC knows draw it: the low altitudes, where the airport works, get as much room as the high ones.
 
 const THIN_SPACE = ' ';
+// Which ticks a narrow scale leaves out first (occ-map.css): the minor ones, then all but the ends and 10 000 ft.
+const MINOR_TICKS = new Set([500, 2000, 6000, 30000]);
+const MAJOR_TICKS = new Set([0, 10000, 40000]);
+const levelOf = feet => {
+  if (MAJOR_TICKS.has(feet)) return 'major';
+  return MINOR_TICKS.has(feet) ? 'minor' : 'middle';
+};
 const tickText = (feet, last) => `${String(feet).replace(/\B(?=(\d{3})+(?!\d))/g, THIN_SPACE)}${last ? '+' : ''}`;
 
 /** The ticks of the scale: `[{ feet, text, at }]`, `at` the share of the bar in percent. */
@@ -55,7 +62,7 @@ export default function AltitudeLegend({ theme = 'dark', defaultOpen = true }) {
           <div data-altitude-bar="" className="h-2 rounded-sm" style={{ backgroundImage: altitudeGradient(theme) }} />
           <div aria-hidden="true" className="relative mt-0.5 h-3.5 font-mono text-[10px] leading-none text-occ-muted">
             {ticks.map(tick => (
-              <span key={tick.feet} data-altitude-tick={tick.feet}
+              <span key={tick.feet} data-altitude-tick={tick.feet} data-altitude-level={levelOf(tick.feet)}
                 className="absolute top-0 -translate-x-1/2 whitespace-nowrap" style={{ left: `${tick.at}%` }}>
                 {tick.text}
               </span>

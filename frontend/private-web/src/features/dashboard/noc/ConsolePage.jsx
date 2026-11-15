@@ -482,7 +482,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
               <MapLayersMenu />
               <MapPresetSwitcher />
               {/* «Seguir» is the S key, «Ver y seguir» and the inspector's flight: the dock keeps to the pause. */}
-              <MapMotionControl compact />
+              <MapMotionControl compact className="shrink-0" />
               {/* Folded at first: the console's map is the ramp under the panels, and the legend opens over it. */}
               <MapLegend defaultOpen={false} />
             </MapDock>
