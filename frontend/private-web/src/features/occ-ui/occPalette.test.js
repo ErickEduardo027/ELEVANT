@@ -2,9 +2,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import tailwindConfig from '../../../tailwind.config.js';
-import { OCC_PALETTE, occColor } from './occPalette';
+import {
+  OCC_PALETTE, OCC_PALETTES, OCC_THEMES, occColor, occPaletteFor, occThemeColor, occTokenOfDarkValue,
+} from './occPalette';
 
 const OCC_SCOPE = "[data-department='occ']";
+const LIGHT_SCOPE = ":root:not(.dark) [data-department='occ']";
 
 const stripComments = css => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
@@ -26,8 +29,11 @@ const aliasTarget = value => /^var\((--occ-[a-z0-9-]+)\)$/.exec(value)?.[1] ?? n
 const occCss = stripComments(readFileSync('src/styles/occ.css', 'utf8'));
 const rules = parseRules(occCss);
 const scopeRules = rules.filter(rule => rule.selector === OCC_SCOPE);
+const lightRules = rules.filter(rule => rule.selector === LIGHT_SCOPE);
 const tokens = new Map(scopeRules.flatMap(customProperties));
 const colourTokens = new Map([...tokens].filter(([, value]) => isColour(value)));
+const lightTokens = new Map(lightRules.flatMap(customProperties));
+const cssColours = { dark: colourTokens, light: new Map([...lightTokens].filter(([, value]) => isColour(value))) };
 const aliases = new Map([...tokens]
   .filter(([, value]) => aliasTarget(value) !== null)
   .map(([name, value]) => [name, aliasTarget(value)]));
@@ -51,18 +57,36 @@ function contrast(foreground, background) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-const tokenContrast = (foreground, background) =>
-  contrast(channels(OCC_PALETTE[foreground]), channels(OCC_PALETTE[background]));
+const tokenContrastIn = palette => (foreground, background) =>
+  contrast(channels(palette[foreground]), channels(palette[background]));
 
 describe('OCC palette', () => {
-  it('holds every colour token of occ.css with the same value', () => {
-    expect(colourTokens.size).toBeGreaterThan(0);
-    for (const [name, value] of colourTokens) expect(OCC_PALETTE[name], name).toBe(value);
+  it.each(OCC_THEMES)('holds every colour token of the %s block of occ.css with the same value', theme => {
+    const css = cssColours[theme];
+    expect(css.size).toBeGreaterThan(0);
+    for (const [name, value] of css) expect(OCC_PALETTES[theme][name], `${theme} ${name}`).toBe(value);
+    expect(Object.keys(OCC_PALETTES[theme]).filter(name => !css.has(name))).toEqual([]);
+    expect(Object.isFrozen(OCC_PALETTES[theme])).toBe(true);
   });
 
-  it('has no key that occ.css does not define', () => {
-    expect(Object.keys(OCC_PALETTE).filter(name => !colourTokens.has(name))).toEqual([]);
-    expect(Object.isFrozen(OCC_PALETTE)).toBe(true);
+  it('gives both themes the same tokens, with dark as the default', () => {
+    expect(Object.keys(OCC_PALETTES.light)).toEqual(Object.keys(OCC_PALETTES.dark));
+    expect(OCC_PALETTE).toBe(OCC_PALETTES.dark);
+    expect(occPaletteFor('light')).toBe(OCC_PALETTES.light);
+    for (const other of ['dark', undefined, null, 'sepia']) expect(occPaletteFor(other)).toBe(OCC_PALETTES.dark);
+    expect(occColor('accent', 'light')).toBe(OCC_PALETTES.light['--occ-accent']);
+  });
+
+  it('maps a dark colour to the same token of the light theme and leaves any other value alone', () => {
+    expect(occThemeColor(OCC_PALETTE['--occ-accent'], 'light')).toBe(OCC_PALETTES.light['--occ-accent']);
+    expect(occThemeColor(OCC_PALETTE['--occ-nav'], 'light')).toBe(OCC_PALETTES.light['--occ-nav']);
+    expect(occThemeColor(OCC_PALETTE['--occ-warn'], 'light')).toBe(OCC_PALETTES.light['--occ-warn-fill']);
+    expect(occThemeColor(OCC_PALETTE['--occ-accent'], 'dark')).toBe(OCC_PALETTE['--occ-accent']);
+    expect(occThemeColor('#123456', 'light')).toBe('#123456');
+    expect(occTokenOfDarkValue('#123456')).toBeNull();
+    for (const [name, value] of Object.entries(OCC_PALETTE)) {
+      expect(OCC_PALETTE[occTokenOfDarkValue(value)], name).toBe(value);
+    }
   });
 
   it('matches the sixteen values of the contracts page', () => {
@@ -90,7 +114,8 @@ describe('OCC palette', () => {
     }
   });
 
-  it('keeps text, signals and control boundaries readable on every surface', () => {
+  it.each(OCC_THEMES)('keeps text, signals and control boundaries readable on every surface (%s)', theme => {
+    const tokenContrast = tokenContrastIn(OCC_PALETTES[theme]);
     // Floors: 10:1 primary text, 7:1 secondary text, 4.5:1 any other text (WCAG AA), 3:1 control boundaries.
     const surfaces = ['--occ-panel', '--occ-panel-raised', '--occ-canvas', '--occ-field'];
     const onSurfaces = {
@@ -126,30 +151,41 @@ describe('OCC palette', () => {
     }
   });
 
-  it('keeps the floating panel near-opaque, so its text stays readable over any map', () => {
-    const float = /^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/.exec(OCC_PALETTE['--occ-panel-float']);
+  it.each(OCC_THEMES)('keeps the floating panel near-opaque, so its text stays readable over any map (%s)', theme => {
+    const palette = OCC_PALETTES[theme];
+    const float = /^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/.exec(palette['--occ-panel-float']);
     const [red, green, blue, alpha] = float.slice(1).map(Number);
-    expect([red, green, blue]).toEqual(channels(OCC_PALETTE['--occ-panel']));
+    expect([red, green, blue]).toEqual(channels(palette['--occ-panel']));
     expect(alpha).toBeGreaterThanOrEqual(0.9);
 
-    // The worst case for light text: the panel floats over a white backdrop.
-    const overWhite = [red, green, blue].map(channel => channel * alpha + 255 * (1 - alpha));
+    // The worst case: the panel floats over a white backdrop (dark theme) or a black one (light theme).
+    const backdrop = theme === 'dark' ? 255 : 0;
+    const behind = [red, green, blue].map(channel => channel * alpha + backdrop * (1 - alpha));
     const floors = { '--occ-text': 7, '--occ-muted': 4.5, '--occ-accent': 4.5, '--occ-warn': 4.5, '--occ-danger': 4.5 };
     for (const [foreground, floor] of Object.entries(floors)) {
-      expect(contrast(channels(OCC_PALETTE[foreground]), overWhite), foreground).toBeGreaterThanOrEqual(floor);
+      expect(contrast(channels(palette[foreground]), behind), foreground).toBeGreaterThanOrEqual(floor);
     }
   });
 });
 
 describe('occ.css tokens', () => {
-  it('occ.css defines its tokens once on the OCC scope, without the dark class', () => {
+  it('occ.css defines the dark tokens on the OCC scope and the light ones where <html> has no dark class', () => {
     expect(scopeRules).toHaveLength(1);
+    expect(lightRules).toHaveLength(1);
     expect(new Map(scopeRules[0].declarations).get('color-scheme')).toBe('dark');
-    expect(occCss).not.toMatch(/\.dark\b/);
+    expect(new Map(lightRules[0].declarations).get('color-scheme')).toBe('light');
+    // The dark class appears in the light selector only.
+    expect(occCss.match(/\.dark\b/g)).toHaveLength(1);
 
-    // No token is declared twice in the file, so no other rule (or theme) redefines one.
-    const declared = rules.flatMap(customProperties).map(([name]) => name);
-    expect(declared.filter((name, index) => declared.indexOf(name) !== index)).toEqual([]);
+    // The light block redefines every colour token of the dark one and nothing else; no other rule redefines one.
+    expect([...cssColours.light.keys()].sort()).toEqual([...colourTokens.keys()].sort());
+    expect([...lightTokens.keys()].filter(name => !cssColours.light.has(name))).toEqual([]);
+    const others = rules.filter(rule => rule !== scopeRules[0] && rule !== lightRules[0]);
+    expect(others.flatMap(customProperties).filter(([name]) => colourTokens.has(name))).toEqual([]);
+    for (const rule of [scopeRules[0], lightRules[0]]) {
+      const declared = customProperties(rule).map(([name]) => name);
+      expect(declared.filter((name, index) => declared.indexOf(name) !== index)).toEqual([]);
+    }
   });
 
   it('every alias in occ.css resolves to a defined token (ok, panel-muted and the six chat aliases)', () => {
