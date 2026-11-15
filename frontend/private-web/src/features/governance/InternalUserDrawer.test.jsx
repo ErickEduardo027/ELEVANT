@@ -73,3 +73,13 @@ it('opens with a Dominican passport whose «RD» the form writes', async () => {
   await userEvent.click(screen.getByRole('checkbox', { name: 'Pasaporte extranjero' }));
   expect(screen.getByLabelText('Número de documento')).toHaveValue('1234567');
 });
+
+it('grants a member one level per option in the superadmin matrix', async () => {
+  render(<InternalUserDrawer open initialDepartment="contracts" onClose={vi.fn()} onCreated={vi.fn()} />);
+  const services = await screen.findByRole('radiogroup', { name: 'Acceso: Servicios' });
+  expect(within(services).getAllByRole('radio').map(radio => radio.textContent)).toEqual(['Sin acceso', 'Ver', 'Crear']);
+  await userEvent.click(within(services).getByRole('radio', { name: 'Crear' }));
+  expect(within(services).getByRole('radio', { name: 'Crear' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('checkbox', { name: 'Servicios: Crear' })).toBeChecked();
+  expect(within(screen.getByRole('radiogroup', { name: 'Acceso: Inicio' })).getAllByRole('radio')).toHaveLength(2);
+});
