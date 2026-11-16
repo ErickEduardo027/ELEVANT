@@ -80,3 +80,40 @@ describe('Superadministrador Aerolíneas', () => {
     expect(await screen.findByText(/el registro muestra «Copa Airlines»/)).toBeInTheDocument();
   });
 });
+
+describe('Superadministrador Aerolíneas · identificador fiscal', () => {
+  it('defaults the tax country to the airline, masks the RNC and saves its 9 digits', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[{ ...airline, countryCode: 'DO' }]} onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    expect(screen.getByRole('textbox', { name: 'País del identificador fiscal' })).toHaveValue('DO');
+    const rnc = screen.getByRole('textbox', { name: 'RNC' });
+    expect(rnc).toHaveAttribute('inputMode', 'numeric');
+    fireEvent.change(rnc, { target: { value: '131234568' } });
+    expect(rnc).toHaveValue('1-31-23456-8');
+    expect(screen.getByText(/dígito verificador/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.change(rnc, { target: { value: '131234569' } });
+    expect(screen.getByText('✓ RNC válido')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).toMatchObject({ taxRegistration: '131234569', taxRegistrationCountryCode: 'DO',
+      isVerified: false, version: airline.version });
+  });
+
+  it('shows a stored RNC with its dashes and takes a foreign identifier as written', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[{ ...airline, countryCode: 'ES', taxRegistration: '131234569',
+      taxRegistrationCountryCode: 'DO' }, { ...airline, id: 'other', displayName: 'Iberia Test', countryCode: 'ES' }]}
+    onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    expect(screen.getByRole('textbox', { name: 'RNC' })).toHaveValue('1-31-23456-9');
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Iberia Test' }));
+    expect(screen.getByRole('textbox', { name: 'País del identificador fiscal' })).toHaveValue('ES');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Identificador fiscal' }), { target: { value: ' B85850394 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).toMatchObject({ taxRegistration: 'B85850394', taxRegistrationCountryCode: 'ES' });
+  });
+});

@@ -184,8 +184,17 @@ it('creates the verified profile of a proposed airline without IATA and flags a 
   verifyCommercialRequestAirline.mockResolvedValue({ id: 'req-1' });
   const review = await open(proposal);
   expect(within(review).getByRole('note')).toHaveTextContent('gmail.com');
-  await userEvent.type(within(review).getByRole('textbox', { name: 'Razón social' }), 'Caribe Cargo Express S.R.L.');
-  await userEvent.type(within(review).getByRole('textbox', { name: 'Fuente HTTPS' }), 'https://aoc.example.gob.do/ccx');
+  // The form starts from what the applicant proposed: its name, country, codes and website.
+  const legalName = within(review).getByRole('textbox', { name: 'Razón social' });
+  const source = within(review).getByRole('textbox', { name: 'Fuente HTTPS' });
+  expect(legalName).toHaveValue('Caribe Cargo Express');
+  expect(within(review).getByRole('textbox', { name: 'País (2 letras)' })).toHaveValue('DO');
+  expect(within(review).getByRole('textbox', { name: 'ICAO (3 letras)' })).toHaveValue('CCX');
+  expect(source).toHaveValue('https://caribecargo.example.com');
+  await userEvent.clear(legalName);
+  await userEvent.type(legalName, 'Caribe Cargo Express S.R.L.');
+  await userEvent.clear(source);
+  await userEvent.type(source, 'https://aoc.example.gob.do/ccx');
   await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
   expect(await screen.findByRole('status')).toHaveTextContent('Aerolínea verificada');
   expect(verifyCommercialRequestAirline).toHaveBeenCalledWith('req-1', { expectedVersion: 'AAAAAAAAB9E=',
@@ -329,4 +338,44 @@ it('corrects the RNC while verifying and refuses an invalid one before sending',
   await waitFor(() => expect(verifyCommercialRequestAirline).toHaveBeenCalled());
   expect(verifyCommercialRequestAirline.mock.calls[0][1]).toMatchObject({ taxRegistration: '130000001',
     taxRegistrationCountryCode: 'DO' });
+});
+
+it('shows the RNC with its dashes, masks what is typed and says at once whether it is valid', async () => {
+  const review = await open({ ...base, countryCode: 'DO',
+    taxRegistration: { number: '131000029', countryCode: 'DO', display: 'RNC 1-31-00002-9' } });
+  const rnc = within(review).getByRole('textbox', { name: 'RNC' });
+  expect(rnc).toHaveValue('1-31-00002-9');
+  expect(rnc).toHaveAttribute('inputMode', 'numeric');
+  await userEvent.clear(rnc);
+  await userEvent.type(rnc, '13123');
+  expect(rnc).toHaveValue('1-31-23');
+  expect(within(review).queryByText('✓ RNC válido')).not.toBeInTheDocument();
+  await userEvent.type(rnc, '4569');
+  expect(rnc).toHaveValue('1-31-23456-9');
+  expect(within(review).getByText('✓ RNC válido')).toBeInTheDocument();
+  await userEvent.type(rnc, '{backspace}8');
+  expect(within(review).getByText(/dígito verificador del RNC/)).toBeInTheDocument();
+  expect(rnc).toHaveAttribute('aria-invalid', 'true');
+});
+
+it('drops the registry refusal once Superadministración verified the airline and Contratos updates', async () => {
+  const ready = { ...base, status: 'InReview', airlineVerified: true, verificationSourceUrl: 'https://registry.example.test',
+    representativeConfirmation: { confirmedAt: '2026-11-05T12:10:00Z', note: 'Confirmado por teléfono.' },
+    taxRegistration: { number: '131234569', countryCode: 'DO', display: 'RNC 1-31-23456-9' },
+    registryCheck: { status: 'NotFound', source: 'OpenFlights', checkedAt: '2026-11-05T12:01:00Z', detail: null, fromCatalog: false } };
+  decideCommercialRequest.mockRejectedValue(failure(409, 'airline_not_in_public_registry'));
+  const review = await open(ready);
+  await userEvent.click(within(review).getByRole('checkbox', { name: /PUJ/ }));
+  await userEvent.click(within(review).getByRole('button', { name: 'Aprobar y crear borrador' }));
+  const alert = await within(review).findByRole('alert');
+  expect(alert).toHaveTextContent(/registros públicos/);
+  // The re-read after the refusal keeps it on screen.
+  await waitFor(() => expect(getCommercialRequestInbox.mock.calls.length).toBeGreaterThan(1));
+  expect(within(review).getByRole('alert')).toBe(alert);
+
+  getCommercialRequestInbox.mockResolvedValue(inboxOf([{ ...ready, version: 'AAAAAAAAB+E=',
+    manualVerification: { verifiedAt: '2026-11-05T12:30:00Z', verificationSourceUrl: 'https://aoc.example.test/cmp' } }]));
+  await userEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+  expect(await within(review).findByText(/✓ Verificada a mano por Superadmin/)).toBeInTheDocument();
+  expect(within(review).queryByRole('alert')).not.toBeInTheDocument();
 });
