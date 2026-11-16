@@ -1783,7 +1783,7 @@ diferencias con el diseño están en la nota del 16 de noviembre de 2026 del
 
 - **2D o 3D.** El 3D (inclinación 55 y rumbo −17 en Rampa, 40 en Aeródromo)
   está encendido por defecto donde el navegador tiene WebGL2, y el navegador
-  recuerda la elección. La cambian la tecla `D` y el control «2D | 3D» junto
+  recuerda la elección. La cambian la tecla `D` y el botón «3D» junto
   al selector de vistas
   ([`Map3dToggle.jsx`](../../frontend/private-web/src/features/maps/ui/Map3dToggle.jsx)).
   Mapa de posiciones conserva su propio botón 2D/3D y Planificación queda en

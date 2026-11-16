@@ -130,11 +130,12 @@ describe('OccMap 3D aircraft (PR M7)', () => {
     // Contracts 2.3: pitch 55 and bearing −17 in Rampa.
     expect(map.getPitch()).toBe(55);
     expect(map.getBearing()).toBe(-17);
-    const toggle = within(screen.getByTestId('map-3d-toggle'));
-    expect(toggle.getByRole('button', { name: '3D' })).toHaveAttribute('aria-pressed', 'true');
-    expect(toggle.getByRole('button', { name: '3D' })).toHaveAttribute('aria-keyshortcuts', 'D');
+    const toggle = screen.getByRole('button', { name: '3D' });
+    expect(toggle).toHaveAttribute('data-testid', 'map-3d-toggle');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveAttribute('aria-keyshortcuts', 'D');
     expect(press(root, 'd').defaultPrevented).toBe(true);
-    expect(toggle.getByRole('button', { name: '2D' })).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
     expect(window.localStorage.getItem(MODE_3D_STORAGE_KEY)).toBe('2d');
     expect(root).toHaveAttribute('data-occ-3d', 'off');
     unmount();
@@ -143,7 +144,7 @@ describe('OccMap 3D aircraft (PR M7)', () => {
     const again = renderConsole();
     loadStyle(again.map);
     expect(again.map.getPitch()).toBe(0);
-    act(() => within(screen.getByTestId('map-3d-toggle')).getByRole('button', { name: '3D' }).click());
+    act(() => screen.getByRole('button', { name: '3D' }).click());
     expect(window.localStorage.getItem(MODE_3D_STORAGE_KEY)).toBe('3d');
     // Aeródromo tilts to 40.
     act(() => press(again.root, '3'));
