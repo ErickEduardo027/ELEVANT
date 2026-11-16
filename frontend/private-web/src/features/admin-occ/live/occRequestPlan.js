@@ -71,8 +71,9 @@ const site = fields => Object.freeze({ mountedWhen: null, ...fields, resources: 
  * Every file mounted under /admin-occ that creates an account-change observer, keyed by path, with the cadences
  * read from that file. `screen` is the navigation id of the OCC screen that mounts it.
  * - `shell`: the tab's single observer.
- * - `screen`: a screen's own observer, kept until the PR that restyles the screen (`movesIn`) moves it onto
- *   useOccResource. Each one costs a cursor read per announcement and its own poll.
+ * - `screen`: a screen's own observer, kept until the PR that restyles the screen (`movesIn`) moves it onto the
+ *   frame's: useOccResource, or the shell's channel (OCC_SHELL_LISTENERS). Each one costs a cursor read per
+ *   announcement and its own poll.
  * - `shared-page`: a page of another department that the OCC mounts (Usuarios, Mis gastos, the services tab of
  *   Notificaciones); it keeps its observer while mounted.
  * - `outside-shell-fallback`: uses the shell's observer inside the OCC frame and its own only outside it.
@@ -107,17 +108,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
   'src/features/planning/attendance/useAttendanceDraft.js': site({ mode: 'screen', screen: 'planning', movesIn: 'U5',
     resources: ['attendance_draft'], pollMs: 25_000, readsPerRefresh: 1,
     mountedWhen: 'the attendance panel of an operation is open' }),
-  'src/features/position-coverage/CoverageRoute.jsx': site({ mode: 'screen', screen: 'coverage', movesIn: 'U6',
-    resources: ['occ_planning'], pollMs: null, readsPerRefresh: 1 }),
-  'src/features/master-data/MasterDataRoute.jsx': site({ mode: 'screen', screen: 'master-data', movesIn: 'U6',
-    resources: ['occ_planning'], pollMs: null, readsPerRefresh: 1 }),
-  'src/features/devices/DevicesRoute.jsx': site({ mode: 'screen', screen: 'devices', movesIn: 'U6',
-    resources: ['mobile_devices'], pollMs: null, readsPerRefresh: 1 }),
-  // The conversations and the open conversation's messages.
-  'src/features/chat/CanonicalChatRoute.jsx': site({ mode: 'screen', screen: 'chat', movesIn: 'U6',
-    resources: ['operation_messages'], pollMs: null, readsPerRefresh: 2 }),
-  'src/features/notifications/CanonicalNotificationsRoute.jsx': site({ mode: 'screen', screen: 'notifications',
-    movesIn: 'U6', resources: ['notifications'], pollMs: 20_000, readsPerRefresh: 1 }),
   // The closures and the published services.
   'src/features/contracts/catalog/ServiceClosurePanel.jsx': site({ mode: 'shared-page', screen: 'notifications',
     movesIn: null, resources: ['service_closures', 'commercial_catalog'], pollMs: null, readsPerRefresh: 2,
@@ -145,3 +135,24 @@ export const OCC_SCREEN_POLLS = Object.freeze([
   Object.freeze({ screen: 'chat', key: 'operationPresence', pollMs: 15_000, file: 'src/features/chat/useOperationPresence.js' }),
   Object.freeze({ screen: 'chat', key: 'ownPresence', pollMs: 30_000, file: 'src/features/chat/useOwnPresence.js' }),
 ]);
+
+/**
+ * The screens that hear the feed on the shell's channel themselves (`useOccShellChannel().subscribe`), outside
+ * useOccResource, keyed by path. Each matching announcement re-reads at once, uncoalesced, as the screen's own observer
+ * did until the PR that restyled it (`movedIn`) put it on the frame's: it opens no observer and sends no cursor read,
+ * but its re-reads still count. `resources`, `pollMs` and `readsPerRefresh` as in OCC_OBSERVER_SITES.
+ */
+export const OCC_SHELL_LISTENERS = Object.freeze({
+  'src/features/position-coverage/CoverageRoute.jsx': site({ screen: 'coverage', movedIn: 'U6',
+    resources: ['occ_planning'], pollMs: null, readsPerRefresh: 1 }),
+  'src/features/master-data/MasterDataRoute.jsx': site({ screen: 'master-data', movedIn: 'U6',
+    resources: ['occ_planning'], pollMs: null, readsPerRefresh: 1 }),
+  'src/features/devices/DevicesRoute.jsx': site({ screen: 'devices', movedIn: 'U6',
+    resources: ['mobile_devices'], pollMs: null, readsPerRefresh: 1 }),
+  // The conversations and the open conversation's messages.
+  'src/features/chat/CanonicalChatRoute.jsx': site({ screen: 'chat', movedIn: 'U6',
+    resources: ['operation_messages'], pollMs: null, readsPerRefresh: 2 }),
+  // The history of notices, with its own poll; the services tab (ServiceClosurePanel) keeps its observer.
+  'src/features/notifications/CanonicalNotificationsRoute.jsx': site({ screen: 'notifications', movedIn: 'U6',
+    resources: ['notifications'], pollMs: 20_000, readsPerRefresh: 1 }),
+});

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
@@ -69,6 +69,46 @@ describe('ReopenReviewSection (3-H)', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar reapertura' }));
     await waitFor(() => expect(onRefused).toHaveBeenCalledWith('Ya hay servicios facturados: corrija con una nota de crédito.'));
     expect(screen.queryByLabelText('Motivo de la reapertura (8 a 2000 caracteres)')).not.toBeInTheDocument();
+  });
+
+  it('confirms the reopening in a dialog with the same reason field and key', async () => {
+    const user = userEvent.setup();
+    mocks.reopen.mockRejectedValueOnce(failure(null, 'unknown-outcome',
+      'No fue posible confirmar la reapertura. Actualiza el detalle antes de intentarlo de nuevo.'))
+      .mockResolvedValueOnce({ operationId, submissionId: '70000000-0000-0000-0000-000000000021', revisionNumber: 3,
+        status: 'PendingReview', reviewVersion: '"reopened-token"' });
+    const { onReopened } = renderSection();
+    const section = screen.getByRole('region', { name: 'Reabrir revisión' });
+    const open = within(section).getByRole('button', { name: 'Reabrir revisión' });
+    await user.click(open);
+    // The dialog is drawn inside the section, so «Detalle de entrega» still holds it; it says what reopening does.
+    const dialog = within(section).getByRole('dialog', { name: 'Reabrir revisión' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAccessibleDescription(/Finanzas deja de verla por facturar/);
+    const reason = within(dialog).getByLabelText('Motivo de la reapertura (8 a 2000 caracteres)');
+    expect(reason).toHaveFocus();
+    expect(within(dialog).getByRole('button', { name: 'Confirmar reapertura' })).toBeDisabled();
+
+    // Cancelar closes it and forgets the reason; focus goes back to the button that opened it.
+    await user.type(reason, 'Un motivo que se descarta');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(open).toHaveFocus();
+    expect(mocks.reopen).not.toHaveBeenCalled();
+
+    await user.click(open);
+    const again = screen.getByRole('dialog', { name: 'Reabrir revisión' });
+    expect(within(again).getByLabelText('Motivo de la reapertura (8 a 2000 caracteres)')).toHaveValue('');
+    await user.type(within(again).getByLabelText('Motivo de la reapertura (8 a 2000 caracteres)'), 'La aerolínea disputó el GPU');
+    await user.click(within(again).getByRole('button', { name: 'Confirmar reapertura' }));
+    // An answer that never arrived keeps the dialog open with its reason; the retry sends the same key.
+    expect(await within(again).findByRole('alert')).toHaveTextContent(/No fue posible confirmar la reapertura/);
+    expect(within(again).getByLabelText('Motivo de la reapertura (8 a 2000 caracteres)')).toHaveValue('La aerolínea disputó el GPU');
+    await user.click(within(again).getByRole('button', { name: 'Confirmar reapertura' }));
+    await waitFor(() => expect(onReopened).toHaveBeenCalledWith('Revisión reabierta como revisión 3: vuelve a Pendiente de revisión.'));
+    expect(mocks.reopen.mock.calls[1][3]).toBe(mocks.reopen.mock.calls[0][3]);
+    expect(mocks.reopen.mock.calls[0][3]).toMatch(UUID);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('keeps the form and the key after an answer that never arrived', async () => {

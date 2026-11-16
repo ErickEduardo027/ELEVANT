@@ -6,19 +6,27 @@ import tailwindcss from 'tailwindcss';
 import { describe, expect, it } from 'vitest';
 import tailwindConfig from '../../tailwind.config.js';
 import FlightListItem from '../features/flight-monitoring/components/FlightListItem';
+import { OCC_ROW_TONES } from '../features/occ-ui/OccDataTable';
 import { OCC_PALETTES, OCC_THEMES } from '../features/occ-ui/occPalette';
 import FlightCard from '../features/planning/components/FlightCard';
 import { createPlanningFlight } from '../features/planning/testing/planningFixtures';
 import PositionListItem from '../features/positions-map/components/PositionListItem';
 import { bridgeSelector, findLegacyColourClasses, generateOccLegacyBridgeCss } from './occLegacyBridge';
 import {
-  MIGRATED_FOLDERS, OCC_BRIDGE_DEFAULTS, OCC_BRIDGE_SCOPE, OCC_BRIDGE_UNMAPPED, OCC_LEGACY_BRIDGE,
+  MIGRATED_FILES, MIGRATED_FOLDERS, OCC_BRIDGE_DEFAULTS, OCC_BRIDGE_SCOPE, OCC_BRIDGE_UNMAPPED, OCC_LEGACY_BRIDGE,
 } from './occLegacyBridgeMap';
 import { globalStylesheets, occMountedFiles, readSource, sourceFilesUnder } from './occSourceScan';
 
 const BRIDGE_CSS = 'src/styles/occ-legacy-bridge.css';
 // The OCC boot screen (U4): it renders outside ShellFrame and paints only with the tokens of the scope it carries.
 const BOOT_FOLDER = 'src/features/admin-occ/boot';
+// The OCC screens U6 rebuilt with occ-ui, one per step: they draw as occ-ui does (contratos 2.4). Each also enters
+// MIGRATED_FOLDERS, which forbids its legacy colour classes; a route rebuilt inside a folder other departments share
+// enters MIGRATED_FILES instead.
+const REBUILT_SCREEN_FOLDERS = Object.freeze([
+  'src/features/review', 'src/features/position-coverage', 'src/features/chat', 'src/features/master-data',
+  'src/features/devices', 'src/features/ready-contracts', 'src/features/reports',
+]);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
@@ -56,25 +64,16 @@ const GLOBAL_LEGACY_RULES = {
   },
 };
 
-// The rules of the chat stylesheet that paint a fixed colour (the legacy blue #145dc4), the element each one paints in
-// the chat's markup, and the rule that outweighs it there under the OCC. U6 rebuilds the chat with occ-ui.
-const CHAT_STYLESHEET = 'src/features/chat/ChatWorkspace.module.css';
-const CHAT_FIXED_COLOURS = [
-  {
-    rule: ".workspace [aria-current='true']", element: 'button', property: 'border-color',
-    repair: "[data-department='occ'] [data-occ-chat-layout] [aria-label] button[aria-current='true']",
-    value: 'var(--occ-accent)',
-  },
-  {
-    rule: '.workspace .composerInput:focus-visible', element: 'textarea', property: 'outline-color',
-    repair: "[data-department='occ'] [data-occ-chat-layout] textarea:focus-visible", value: 'var(--occ-accent)',
-  },
-  {
-    // The own message also carries `border-black/10`, which the bridge repaints at a greater weight.
-    rule: ".history article[data-own='true']", element: 'article', property: 'border-color',
-    repair: `${OCC_BRIDGE_SCOPE} ${bridgeSelector('border-black/10').selector}`, value: 'var(--occ-line)',
-  },
-];
+// The chat's stylesheets (CSS Modules, which the bridge cannot reach): U6 rebuilt them on the OCC tokens, so they paint
+// no colour of their own. The properties that carry a colour, and what such a value may hold besides a custom property:
+// the keywords of a token-less paint and the system colours of forced-colours mode.
+const CHAT_FOLDER = 'src/features/chat';
+const COLOUR_PROPERTY = /^(?:color|background(?:-color)?|border(?:-(?:top|right|bottom|left|inline|block))?-color|outline-color|fill|stroke|scrollbar-color|caret-color|accent-color|--[\w-]*surface)$/;
+const COLOUR_KEYWORDS = new Set(['transparent', 'currentColor', 'currentcolor', 'none', 'inherit', 'Canvas', 'CanvasText',
+  'Field', 'FieldText']);
+// The radius of each role (contratos 2.4): plates 2 px, controls 4 px, panels and bubbles 6 px, overlays 8 px.
+const RADIUS_TOKENS = new Set(['var(--occ-radius-plate)', 'var(--occ-radius-control)', 'var(--occ-radius-panel)',
+  'var(--occ-radius-overlay)']);
 
 const stripComments = css => css.replace(/\/\*[\s\S]*?\*\//g, '');
 // A script without its comments: block and JSX comments, then line comments (a `//` after a colon is a URL).
@@ -507,6 +506,191 @@ describe('OCC legacy bridge', () => {
     document.body.replaceChildren();
   });
 
+  it('the stacked table labels inside the OCC are 12 px sentence case without tracking', async () => {
+    const LABEL = '.table-stack tbody > tr > td::before';
+    const REPAIR = "[data-department='occ'] table.table-stack tbody > tr > td::before";
+    const TYPE = ['font-size', 'line-height', 'font-weight', 'text-transform', 'letter-spacing'];
+    // What tokens.css gives the label of a stacked cell, its dark variant included.
+    const compiled = await compileStylesheet('src/styles/tokens.css');
+    const global = new Map();
+    compiled.walkRules(rule => {
+      const plain = rule.selectors.map(item => item.replace(':is(.dark *)', '').replace(/\s+/g, ' '));
+      if (plain.includes(LABEL)) rule.walkDecls(declaration => {
+        if (TYPE.includes(declaration.prop)) global.set(declaration.prop, declaration.value);
+      });
+    });
+    // The guard bites: outside the OCC the label is 11 px, upper case and tracked.
+    expect(Object.fromEntries(global)).toMatchObject({ 'font-size': '11px', 'text-transform': 'uppercase' });
+    expect(global.get('letter-spacing')).not.toBe('normal');
+
+    // Inside the OCC, in the same container query and with more weight, every one of them is set again.
+    let repair;
+    postcss.parse(occCss).walkRules(rule => { if (rule.selector.replace(/\s+/g, ' ') === REPAIR) repair = rule; });
+    expect(repair, REPAIR).toBeDefined();
+    expect(atRulesAround(repair)).toEqual(['@container (max-width: 39.98rem)']);
+    const declared = new Map(repair.nodes.filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
+    expect([...global.keys()].filter(property => !declared.has(property))).toEqual([]);
+    expect(Object.fromEntries(TYPE.map(property => [property, declared.get(property)]))).toEqual({
+      'font-size': '0.75rem', 'line-height': '1rem', 'font-weight': '500', 'text-transform': 'none',
+      'letter-spacing': 'normal',
+    });
+    let heaviest = [0, 0, 0];
+    compiled.walkRules(rule => {
+      const plain = rule.selectors.map(item => item.replace(':is(.dark *)', '').replace(/\s+/g, ' '));
+      if (plain.includes(LABEL)) {
+        for (const weight of rule.selectors.map(specificity)) {
+          if (compareSpecificity(weight, heaviest) > 0) heaviest = weight;
+        }
+      }
+    });
+    expect(compareSpecificity(specificity(REPAIR), heaviest)).toBeGreaterThan(0);
+  });
+
+  it('the stacked cards of OccDataTable keep their height, their alignment, their folded details and the signal of a lit row', async () => {
+    const CARD = '.table-stack tbody > tr';
+    const OCC_CARD = "[data-department='occ'] table.table-stack tbody > tr";
+    const rules = new Map();
+    postcss.parse(occCss).walkRules(rule => rules.set(rule.selector.replace(/\s+/g, ' '), rule));
+    const declarationsAt = selector => Object.fromEntries((rules.get(selector)?.nodes ?? [])
+      .filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
+
+    // tokens.css makes the card a block, with a weight that outweighs `[hidden]`: the rules below answer it.
+    const compiled = await compileStylesheet('src/styles/tokens.css');
+    let heaviest = [0, 0, 0];
+    let display;
+    compiled.walkRules(rule => {
+      const plain = rule.selectors.map(item => item.replace(':is(.dark *)', '').replace(/\s+/g, ' '));
+      if (!plain.includes(CARD)) return;
+      rule.walkDecls('display', declaration => { display = declaration.value; });
+      for (const weight of rule.selectors.map(specificity)) {
+        if (compareSpecificity(weight, heaviest) > 0) heaviest = weight;
+      }
+    });
+    expect(display).toBe('block');
+    expect(compareSpecificity(heaviest, specificity('[hidden]'))).toBeGreaterThan(0);
+
+    // A card grows with its content, whatever the row's own height, and starts every label and value at the left,
+    // also in a column the table sets on the right.
+    expect(declarationsAt(OCC_CARD).height).toBe('auto');
+    const cell = `${OCC_CARD} > td`;
+    expect(declarationsAt(cell)).toEqual({ 'text-align': 'start' });
+    expect(atRulesAround(rules.get(cell))).toEqual(['@container (max-width: 39.98rem)']);
+    expect(compareSpecificity(specificity(cell), specificity('.text-right'))).toBeGreaterThan(0);
+    const folded = `${OCC_CARD}[hidden]`;
+    expect(declarationsAt(folded)).toEqual({ display: 'none' });
+    const lit = Object.fromEntries(OCC_ROW_TONES.map(tone => [tone, `${OCC_CARD}[data-occ-tone='${tone}']`]));
+    expect(Object.fromEntries(Object.entries(lit).map(([tone, selector]) => [tone, declarationsAt(selector)]))).toEqual({
+      attention: { 'border-left-width': '3px', 'border-left-color': 'var(--occ-warn)', 'background-color': 'var(--occ-warn-soft)' },
+      urgent: { 'border-left-width': '3px', 'border-left-color': 'var(--occ-danger)', 'background-color': 'var(--occ-danger-soft)' },
+    });
+    for (const selector of [folded, ...Object.values(lit)]) {
+      expect(atRulesAround(rules.get(selector)), selector).toEqual(['@container (max-width: 39.98rem)']);
+      // Heavier than the card of tokens.css and than the OCC's own card slab, which they refine.
+      expect(compareSpecificity(specificity(selector), heaviest), selector).toBeGreaterThan(0);
+      expect(compareSpecificity(specificity(selector), specificity(OCC_CARD)), selector).toBeGreaterThan(0);
+    }
+
+    // They select the folded detail and the lit rows of a stacked table inside the OCC frame only.
+    document.body.innerHTML = ['<div data-department="occ">', '<div>'].map(open => `${open}<table class="table-stack"><tbody>`
+      + '<tr data-occ-tone="attention"><td>AA904</td></tr><tr data-occ-tone="urgent"><td>DL611</td></tr>'
+      + '<tr hidden><td>Servicios</td></tr></tbody></table></div>').join('');
+    const [inside, outside] = document.querySelectorAll('table');
+    for (const table of [inside, outside]) {
+      const [attention, urgent, detail] = table.querySelectorAll('tr');
+      const expected = table === inside;
+      expect(attention.matches(lit.attention), 'attention').toBe(expected);
+      expect(urgent.matches(lit.urgent), 'urgent').toBe(expected);
+      expect(detail.matches(folded), 'folded').toBe(expected);
+      expect(attention.matches(lit.urgent)).toBe(false);
+    }
+    document.body.replaceChildren();
+  });
+
+  it('the chosen row of OccDataTable stays chosen in a stacked card, over a lit one, together with its detail', () => {
+    const OCC_CARD = "[data-department='occ'] table.table-stack tbody > tr";
+    const CHOSEN = `${OCC_CARD}[aria-selected='true']`;
+    const CHOSEN_DETAIL = `${CHOSEN} + tr[data-occ-row-detail]`;
+    const UNLIT = ':not([data-occ-tone])';
+    const order = [];
+    const bySelector = new Map();
+    postcss.parse(occCss).walkRules(rule => {
+      order.push(rule);
+      for (const selector of rule.selectors) bySelector.set(selector.replace(/\s+/g, ' '), rule);
+    });
+    const declarationsOf = rule => Object.fromEntries((rule?.nodes ?? [])
+      .filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
+
+    // In a card the cells lose their borders, and the card's own slab outweighs `bg-occ-accent-soft`: the card of the
+    // chosen row, and the card of its detail, take the cyan slab and a cyan joint at the top, the right and the bottom.
+    const slab = bySelector.get(CHOSEN);
+    expect(slab, CHOSEN).toBeDefined();
+    expect(bySelector.get(CHOSEN_DETAIL), CHOSEN_DETAIL).toBe(slab);
+    expect(declarationsOf(slab)).toEqual({
+      'border-top-color': 'var(--occ-accent)', 'border-right-color': 'var(--occ-accent)',
+      'border-bottom-color': 'var(--occ-accent)', 'background-color': 'var(--occ-accent-soft)',
+    });
+    // The left joint too, unless the row is lit: then it keeps the 3 px bar of its signal, as in the table.
+    const left = bySelector.get(`${CHOSEN}${UNLIT}`);
+    expect(left, `${CHOSEN}${UNLIT}`).toBeDefined();
+    expect(bySelector.get(`${CHOSEN_DETAIL}${UNLIT}`)).toBe(left);
+    expect(declarationsOf(left)).toEqual({ 'border-left-color': 'var(--occ-accent)' });
+    for (const rule of [slab, left]) expect(atRulesAround(rule)).toEqual(['@container (max-width: 39.98rem)']);
+
+    // Heavier than the card. As heavy as a lit row and written after every one, so the cyan slab wins over the slab of
+    // a signal as it does in the table; the detail's selector is heavier than a lit row's outright.
+    expect(compareSpecificity(specificity(CHOSEN), specificity(OCC_CARD))).toBeGreaterThan(0);
+    for (const tone of OCC_ROW_TONES) {
+      const lit = `${OCC_CARD}[data-occ-tone='${tone}']`;
+      expect(bySelector.get(lit), lit).toBeDefined();
+      expect(compareSpecificity(specificity(CHOSEN), specificity(lit)), lit).toBe(0);
+      expect(order.indexOf(slab), lit).toBeGreaterThan(order.indexOf(bySelector.get(lit)));
+      expect(compareSpecificity(specificity(CHOSEN_DETAIL), specificity(lit)), lit).toBeGreaterThan(0);
+    }
+    expect(compareSpecificity(specificity(`${CHOSEN}${UNLIT}`), specificity(CHOSEN))).toBeGreaterThan(0);
+    expect(compareSpecificity(specificity(`${CHOSEN_DETAIL}${UNLIT}`), specificity(CHOSEN_DETAIL))).toBeGreaterThan(0);
+
+    // They select the chosen row and the detail under it, never another row or its detail, and inside the OCC only.
+    document.body.innerHTML = ['<div data-department="occ">', '<div>'].map(open => `${open}<table class="table-stack"><tbody>`
+      + '<tr aria-selected="false"><td>AA904</td></tr><tr data-occ-row-detail hidden><td>Servicios</td></tr>'
+      + '<tr aria-selected="true"><td>DL611</td></tr><tr data-occ-row-detail><td>Servicios</td></tr>'
+      + '<tr aria-selected="true" data-occ-tone="attention"><td>UA120</td></tr>'
+      + '<tr data-occ-row-detail data-occ-tone="attention"><td>Servicios</td></tr></tbody></table></div>').join('');
+    const [inside, outside] = document.querySelectorAll('table');
+    const slabSelectors = [CHOSEN, CHOSEN_DETAIL].join(', ');
+    const leftSelectors = [`${CHOSEN}${UNLIT}`, `${CHOSEN_DETAIL}${UNLIT}`].join(', ');
+    const cards = table => [...table.querySelectorAll('tr')];
+    expect(cards(inside).map(row => row.matches(slabSelectors))).toEqual([false, false, true, true, true, true]);
+    expect(cards(inside).map(row => row.matches(leftSelectors))).toEqual([false, false, true, true, false, false]);
+    expect(cards(outside).some(row => row.matches(slabSelectors) || row.matches(leftSelectors))).toBe(false);
+    document.body.replaceChildren();
+  });
+
+  it('a focused row of OccDataTable draws its ring inside, and a field error reads in the red of the OCC', () => {
+    const rules = parseRules(occCss);
+    const at = selector => rules.find(rule => rule.selectors.includes(selector));
+    const FOCUS = "[data-department='occ'] :focus-visible";
+    const ROW_FOCUS = "[data-department='occ'] [data-occ-row]:focus-visible";
+    expect(Object.fromEntries(at(ROW_FOCUS).declarations)).toEqual({ 'outline-offset': '-2px' });
+    expect(compareSpecificity(specificity(ROW_FOCUS), specificity(FOCUS))).toBeGreaterThan(0);
+    // The colour and width of the ring stay the OCC's.
+    expect(Object.fromEntries(at(FOCUS).declarations)).toMatchObject({ outline: '2px solid var(--occ-accent)' });
+
+    // The system's validation message is pink in the dark theme of app/globals.css; in the OCC it is the red token.
+    const globalRule = parseRules(readSource('app/globals.css'))
+      .find(rule => rule.selectors.includes('.dark .form-validation-message'));
+    expect(globalRule.declarations.some(([property]) => property === 'color')).toBe(true);
+    const MESSAGE = "[data-department='occ'] .form-validation-message";
+    expect(Object.fromEntries(at(MESSAGE).declarations)).toEqual({ color: 'var(--occ-danger)' });
+    // As heavy, and loaded later, so it wins.
+    expect(compareSpecificity(specificity(MESSAGE), specificity('.dark .form-validation-message'))).toBe(0);
+    const stylesheets = globalStylesheets();
+    expect(stylesheets.indexOf('src/styles/occ.css')).toBeGreaterThan(stylesheets.indexOf('app/globals.css'));
+    // The red on the surfaces a message sits on keeps 4.5:1.
+    for (const surface of ['--occ-canvas', '--occ-panel', '--occ-panel-raised']) {
+      expect(contrast('--occ-danger', surface), surface).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('the manifest maps no class twice and only to tokens that occ.css defines', () => {
     // The guard reads the token block of occ.css; an empty parse would let everything below pass.
     expect(occScopeTokens.size).toBeGreaterThan(30);
@@ -696,6 +880,20 @@ describe('OCC legacy bridge', () => {
     expect(legacyClassesIn(sourceFilesUnder('src/features/admin-occ')).length).toBeGreaterThan(0);
   });
 
+  it('migrated files of a folder still on the bridge use no legacy colour class', () => {
+    expect(Object.isFrozen(MIGRATED_FILES)).toBe(true);
+    expect(MIGRATED_FILES).toEqual(['src/features/notifications/CanonicalNotificationsRoute.jsx']);
+    for (const file of MIGRATED_FILES) {
+      expect(existsSync(file), `${file} does not exist`).toBe(true);
+      // A file of a migrated folder is that folder's; this list is for the folders that stay on the bridge.
+      expect(MIGRATED_FOLDERS.some(folder => file.startsWith(`${folder}/`)), file).toBe(false);
+      expect(occMountedFiles(), file).toContain(file);
+      expect(legacyClassesIn([file]), file).toEqual([]);
+    }
+    // Its folder stays on the bridge: the components other departments draw still use legacy classes.
+    expect(legacyClassesIn(sourceFilesUnder('src/features/notifications')).length).toBeGreaterThan(0);
+  });
+
   it('occ-ui and the boot screen use no backdrop-filter, no gradient and no opacity modifier on an occ colour', () => {
     for (const folder of ['src/features/occ-ui', BOOT_FOLDER]) {
       const files = sourceFilesUnder(folder);
@@ -745,6 +943,44 @@ describe('OCC legacy bridge', () => {
     // occPalette.js may hold colours; nothing else may.
     expect(occUiStyleFindings("'#0f161a'", { colours: false })).toEqual([]);
     expect(occUiStyleFindings("'#0f161a'")).toEqual(['colour: #0f161a']);
+  });
+
+  it('rebuilt OCC screens draw no shadow, upper case, tracking, text under 12 px or literal colour', () => {
+    const rebuiltFiles = [];
+    for (const folder of REBUILT_SCREEN_FOLDERS) {
+      expect(MIGRATED_FOLDERS, folder).toContain(folder);
+      const files = sourceFilesUnder(folder).filter(file => SCRIPT_FILE.test(file));
+      expect(files.length, folder).toBeGreaterThan(0);
+      rebuiltFiles.push(...files);
+    }
+    for (const file of [...rebuiltFiles, ...MIGRATED_FILES]) {
+      expect(occUiStyleFindings(stripScriptComments(readSource(file))), file).toEqual([]);
+      const source = readSource(file);
+      expect(source, file).not.toMatch(/backdrop-filter|backdropFilter|backdrop-blur/);
+      expect(source, file).not.toMatch(/gradient/i);
+    }
+    // Cobertura's route and its message file are among the files read.
+    expect(sourceFilesUnder('src/features/position-coverage')).toEqual(expect.arrayContaining([
+      'src/features/position-coverage/CoverageRoute.jsx', 'src/features/position-coverage/coverageMessages.js',
+    ]));
+    // The review's route and the sections it restyled are among the files read.
+    expect(sourceFilesUnder('src/features/review')).toEqual(expect.arrayContaining([
+      'src/features/review/CanonicalReviewRoute.jsx', 'src/features/review/components/OperationCloseSection.jsx',
+      'src/features/review/components/OperationDocumentsSection.jsx',
+      'src/features/review/components/ReopenReviewSection.jsx',
+    ]));
+    // So are the chat with its presence, Datos maestros, Tablets, Contratos listos and Reportes, with their message
+    // files.
+    expect(rebuiltFiles).toEqual(expect.arrayContaining([
+      'src/features/chat/CanonicalChatRoute.jsx', 'src/features/chat/PresencePeople.jsx',
+      'src/features/chat/PresenceStatusPicker.jsx', 'src/features/chat/presenceStatus.js',
+      'src/features/master-data/MasterDataRoute.jsx', 'src/features/master-data/masterDataMessages.js',
+      'src/features/devices/DevicesRoute.jsx', 'src/features/devices/devicesMessages.js',
+      'src/features/ready-contracts/ReadyContractsRoute.jsx', 'src/features/ready-contracts/readyContractsMessages.js',
+      'src/features/reports/CanonicalReportsRoute.jsx', 'src/features/reports/reportsMessages.js',
+    ]));
+    // Reportes keeps no export button of its own: its actions are OccButtons in the panel's header.
+    expect(existsSync('src/features/reports/components')).toBe(false);
   });
 
   it('the boot screen styles use only occ tokens defined on the OCC scope', () => {
@@ -814,71 +1050,72 @@ describe('OCC legacy bridge', () => {
         .map(name => `${file}: ${name}`);
     });
     expect(missing).toEqual([]);
-    // The --occ-ui-* aliases the chat reads live on the OCC scope, so every chat element inherits them.
-    const aliases = readVariables(stylesheets.map(file => readSource(file)).join('\n')).filter(name => name.startsWith('--occ-'));
-    expect(aliases.filter(alias => !occScopeTokens.has(alias))).toEqual([]);
+    // The tokens the chat reads live on the OCC scope, so every chat element inherits them.
+    const tokens = readVariables(stylesheets.map(file => readSource(file)).join('\n')).filter(name => name.startsWith('--occ-'));
+    expect(tokens.length).toBeGreaterThan(10);
+    expect(tokens.filter(token => !occScopeTokens.has(token))).toEqual([]);
   });
 
-  it('the chat shows its selection and focus in cyan, above the fixed legacy blue of its stylesheet', () => {
-    const FIXED_COLOUR = /#[0-9a-f]{3,8}\b|rgba?\(/i;
-    const paintsFixed = rule => rule.declarations.some(([, value]) => FIXED_COLOUR.test(value));
-    // No chat stylesheet draws a focus or a selection with a fixed colour, apart from the rules listed above.
-    const STATE = /:focus|\[aria-(?:current|selected|checked|pressed)/;
-    const chat = 'src/features/chat';
-    const stateRules = readdirSync(chat).filter(name => name.endsWith('.module.css'))
-      .flatMap(name => parseRules(readSource(`${chat}/${name}`)).filter(paintsFixed).flatMap(rule => rule.selectors))
-      .filter(selector => STATE.test(selector));
-    expect(stateRules).toEqual(CHAT_FIXED_COLOURS.map(row => row.rule).filter(selector => STATE.test(selector)));
-    // And every fixed colour of the workspace stylesheet has its row.
-    const fixed = parseRules(readSource(CHAT_STYLESHEET)).filter(paintsFixed);
-    expect(fixed.flatMap(rule => rule.selectors)).toEqual(CHAT_FIXED_COLOURS.map(row => row.rule));
-
-    // The chat's markup, with the classes of its route (the module's own classes are plain names here).
-    const route = readSource('src/features/chat/CanonicalChatRoute.jsx');
-    const conversation = /aria-current=\{[^}]*\} className="([^"]+)"/.exec(route)?.[1];
-    const message = /data-own=\{[^}]*\} className="([^"]+)"/.exec(route)?.[1];
-    expect([conversation, message].every(Boolean)).toBe(true);
-    expect(route).toMatch(/<div data-occ-chat-layout className=\{styles\.layout\}>/);
-    expect(route).toMatch(/<section data-occ-surface aria-label=\{t\('conversations'\)\}/);
-    expect(route).toMatch(/<ChatComposerInput id="occ-chat-draft"/);
-    expect(readSource('src/features/chat/ChatComposerInput.jsx')).toMatch(/<textarea [^>]*className=\{styles\.composerInput\}/);
-    document.body.innerHTML = `<div data-department="occ" data-occ-bridge=""><section class="workspace">
-      <div data-occ-chat-layout="" class="layout">
-        <section data-occ-surface="" aria-label="Conversaciones"><ul><li>
-          <button type="button" aria-current="true" class="${conversation}"></button></li></ul></section>
-        <section data-occ-surface="" aria-label="Mensajes"><div class="history">
-          <article data-own="true" class="${message}"></article></div>
-          <form><textarea id="occ-chat-draft" class="composerInput"></textarea></form></section>
-      </div></section></div>`;
-
-    const atRest = selector => selector.replace(/(?<!\\):(?:hover|focus-visible|focus)\b/g, '');
-    const occRules = parseRules(occCss);
-    const bridgeRules = parseRules(readSource(BRIDGE_CSS));
-    for (const row of CHAT_FIXED_COLOURS) {
-      const element = document.querySelector(row.element);
-      // The module paints this element with a fixed colour…
-      const rule = fixed.find(item => item.selectors.includes(row.rule));
-      const paints = ([property, value]) => (property === row.property || row.property.startsWith(`${property}-`))
-        && FIXED_COLOUR.test(value);
-      expect(rule.declarations.some(paints), row.rule).toBe(true);
-      expect(element.matches(atRest(row.rule)), row.rule).toBe(true);
-      // …and the repair paints the same element with a token, at a greater weight.
-      const repair = [...occRules, ...bridgeRules].find(item => item.selectors.includes(row.repair)
-        && item.declarations.some(([property, value]) => property === row.property && value === row.value));
-      expect(repair, row.repair).toBeDefined();
-      expect(element.matches(atRest(row.repair)), row.repair).toBe(true);
-      expect(compareSpecificity(specificity(row.repair), specificity(row.rule)), row.repair).toBeGreaterThan(0);
-      // occ.css loads before the bridge, so a repair there also outweighs the bridge rules of the element's classes
-      // that set the same property (the hover border of the conversation).
-      if (!occRules.includes(repair)) continue;
-      const competing = [...element.classList].filter(className => Object.hasOwn(declarationsOf(className) ?? {}, row.property));
-      expect(competing, row.repair).toEqual(row.element === 'button' ? ['hover:border-accent-600/40'] : []);
-      for (const className of competing) {
-        const weight = specificity(`${OCC_BRIDGE_SCOPE} ${bridgeSelector(className).selector}`);
-        expect(compareSpecificity(specificity(row.repair), weight), `${row.repair} against ${className}`).toBeGreaterThan(0);
+  it('no chat stylesheet paints a fixed colour or a shadow, and the selection uses occ tokens', () => {
+    const FIXED_COLOUR = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch|color-mix)\(/i;
+    const pixels = value => {
+      const [, amount, unit] = /^([\d.]+)(px|rem)$/.exec(value) ?? [];
+      return unit === 'rem' ? Number(amount) * 16 : Number(amount);
+    };
+    const colourParts = value => value.replace(/var\(|\)|,/g, ' ').split(/\s+/).filter(Boolean);
+    // What a stylesheet breaks, as `selector → declaration`.
+    const findings = css => parseRules(stripComments(css)).flatMap(rule => rule.declarations.flatMap(([property, value]) => {
+      const broken = [];
+      if (FIXED_COLOUR.test(value)) broken.push('a fixed colour');
+      if (/shadow/.test(property) || /shadow|gradient|blur\(/.test(value) || property.startsWith('backdrop')) {
+        broken.push('a shadow, gradient or blur');
       }
+      if (/var\(\s*--occ-ui-/.test(value)) broken.push('an --occ-ui-* alias');
+      if (COLOUR_PROPERTY.test(property)
+        && colourParts(value).some(part => !part.startsWith('--') && !COLOUR_KEYWORDS.has(part))) broken.push('a named colour');
+      if (property === 'font-size' && !(pixels(value) >= 12)) broken.push('text under 12 px');
+      if (/^border(?:-[a-z]+)*-radius$/.test(property) && !RADIUS_TOKENS.has(value)) broken.push('a radius off its role');
+      if (rule.selectors.some(selector => /:focus/.test(selector))) broken.push('a focus ring of its own');
+      return broken.map(what => `${rule.selectors.join(', ')} → ${property}: ${value} (${what})`);
+    }));
+
+    const stylesheets = sourceFilesUnder(CHAT_FOLDER).filter(file => file.endsWith('.module.css'));
+    expect(stylesheets).toEqual(['src/features/chat/ChatWorkspace.module.css', 'src/features/chat/PresencePeople.module.css']);
+    for (const file of stylesheets) {
+      expect(findings(readSource(file)), file).toEqual([]);
+      // Every radius of the chat is a role's token, and the bubbles and the composer have theirs.
+      expect(parseRules(stripComments(readSource(file))).some(rule => rule.declarations
+        .some(([property]) => property === 'border-radius')), file).toBe(true);
     }
-    document.body.replaceChildren();
+    const workspace = parseRules(stripComments(readSource(`${CHAT_FOLDER}/ChatWorkspace.module.css`)));
+    const radiusOf = selector => workspace.find(rule => rule.selectors.includes(selector))?.declarations
+      .find(([property]) => property === 'border-radius')?.[1];
+    expect([radiusOf('.message'), radiusOf('.composerInput')]).toEqual(['var(--occ-radius-panel)', 'var(--occ-radius-control)']);
+
+    // The selection is cyan in occ tokens, on the conversation itself: the soft slab, a cyan joint and a cyan code.
+    // occ.css no longer repairs the chat's legacy blue.
+    const route = readSource(`${CHAT_FOLDER}/CanonicalChatRoute.jsx`);
+    expect(route).toMatch(/aria-current=\{open \? 'true' : undefined\}/);
+    expect(/const CONVERSATION_OPEN = '([^']+)'/.exec(route)?.[1].split(' ')).toEqual(expect.arrayContaining([
+      'border-occ-accent', 'bg-occ-accent-soft',
+    ]));
+    expect(route).toMatch(/open \? 'text-occ-accent' : 'text-occ-text'/);
+    expect(occCss).not.toMatch(/data-occ-chat-layout/);
+    expect(route).not.toMatch(/data-occ-chat-layout|#145dc4/i);
+
+    // The guard bites: the chat's old rules break it.
+    expect(findings(`.workspace [aria-current='true'] { border: 1px solid #145dc4; }
+      .dot { box-shadow: 0 0 0 2px var(--occ-ui-solid); font-size: 10px; border-radius: 50%; }
+      .dot[data-presence='available'] { background: green; }
+      .composerInput:focus-visible { outline: 2px solid var(--occ-accent); }`)).toEqual([
+      ".workspace [aria-current='true'] → border: 1px solid #145dc4 (a fixed colour)",
+      '.dot → box-shadow: 0 0 0 2px var(--occ-ui-solid) (a shadow, gradient or blur)',
+      '.dot → box-shadow: 0 0 0 2px var(--occ-ui-solid) (an --occ-ui-* alias)',
+      '.dot → font-size: 10px (text under 12 px)',
+      '.dot → border-radius: 50% (a radius off its role)',
+      ".dot[data-presence='available'] → background: green (a named colour)",
+      '.composerInput:focus-visible → outline: 2px solid var(--occ-accent) (a focus ring of its own)',
+    ]);
   });
 
   it('occ.css, the bridge and the Tailwind occ colours reference only defined variables', () => {

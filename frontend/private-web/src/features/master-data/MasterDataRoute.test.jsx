@@ -1,6 +1,12 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
 import MasterDataRoute from './MasterDataRoute';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
+import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../access/testAccess';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import {
   createOccAircraftType, createOccStand, createOccTerminal, loadOccMasterData, updateOccStand, updateOccTerminal,
 } from '../../services/occMasterDataService';
@@ -8,8 +14,11 @@ import {
 const stationId = '20000000-0000-7000-8000-000000000003';
 const auth = vi.hoisted(() => ({ scopes: [] }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: { stationScopes: auth.scopes } }) }));
+// A spy: the page must not open an observer of its own (contratos 2.7).
 vi.mock('../../services/accountChangeObserver', () => ({
-  createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
+  createPrivateWebAccountChangeObserver: vi.fn(() => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 vi.mock('../../services/occMasterDataService', async importOriginal => ({
   ...(await importOriginal()),
@@ -27,7 +36,15 @@ const data = (extra = {}) => ({ stationId, stationCode: 'PUJ', terminals: [termi
   aircraftTypes: [a320], canCreate: true, canUpdate: true, ...extra });
 const failure = (status, code) => Object.assign(new Error('The stand is in use.'), { status, code, title: 'The stand is in use.' });
 
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7).
+let shell;
+beforeEach(() => { shell = createOccShellValue(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); auth.scopes = []; });
+
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
 
 function signedIn() { auth.scopes = [{ stationId, stationCode: 'PUJ' }]; }
 
@@ -98,7 +115,7 @@ it('deactivates a terminal with the version on screen', async () => {
   updateOccTerminal.mockResolvedValue({ ...terminalC, isActive: false, version: 'v-tc2' });
   render(<MasterDataRoute />);
   const terminals = await screen.findByRole('region', { name: 'Terminales' });
-  const row = within(terminals).getByLabelText('Nombre de la terminal C').closest('li');
+  const row = within(terminals).getByLabelText('Nombre de la terminal C').closest('tr');
   fireEvent.click(within(row).getByLabelText('Activa'));
   fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
   expect(await screen.findByText('Terminal C desactivada.')).toBeInTheDocument();
@@ -139,4 +156,123 @@ it('shows the empty, read-only, unauthorized, error and no-station states', asyn
   expect(await screen.findByRole('alert')).toHaveTextContent('No fue posible completar la acción');
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByRole('region', { name: 'Terminales' })).toBeInTheDocument();
+});
+
+it('links each stand to the positions map with stand=<code>', async () => {
+  signedIn();
+  const b21 = { ...a01, id: 's-b21', code: 'B21', hasHistory: false, version: 'v-b21' };
+  loadOccMasterData.mockResolvedValue(data({ stands: [a01, b21] }));
+  const access = administratorAccess('operations', DepartmentPermissionCodes.operations);
+  const { unmount } = render(<DepartmentAccessProvider initialAccess={access} observe={false}><MasterDataRoute /></DepartmentAccessProvider>);
+  const stands = await screen.findByRole('region', { name: 'Posiciones' });
+  // The URL carries the code as the map's selection reads it (contratos 2.1): A01 is the stand A1.
+  expect(within(stands).getByRole('link', { name: 'Ver A01 en el mapa' })).toHaveAttribute('href', '/admin-occ/positions-map?stand=A1');
+  expect(within(stands).getByRole('link', { name: 'Ver B21 en el mapa' })).toHaveAttribute('href', '/admin-occ/positions-map?stand=B21');
+  expect(within(stands).getAllByRole('link').map(link => link.textContent)).toEqual(['Ver en el mapa', 'Ver en el mapa']);
+  // Each link sits on its stand's row, and only stands have one.
+  expect(within(within(stands).getByLabelText('Código de la posición B21').closest('tr')).getByRole('link'))
+    .toHaveAccessibleName('Ver B21 en el mapa');
+  expect(within(screen.getByRole('region', { name: 'Terminales' })).queryByRole('link')).toBeNull();
+  // Following one reads nothing: it is a link, not a command.
+  expect(loadOccMasterData).toHaveBeenCalledTimes(1);
+  unmount();
+
+  // An account that cannot read the positions map gets no link.
+  const withoutMap = { ...access, permissions: access.permissions.filter(code => code !== 'operations.positions_map.read') };
+  render(<DepartmentAccessProvider initialAccess={withoutMap} observe={false}><MasterDataRoute /></DepartmentAccessProvider>);
+  expect(within(await screen.findByRole('region', { name: 'Posiciones' })).queryByRole('link')).toBeNull();
+});
+
+it('shows a record out of use dimmed, with its muted pill, and still lets it be reactivated', async () => {
+  signedIn();
+  const a11 = { ...a01, id: 's-a11', code: 'A11', isActive: false, hasHistory: false, version: 'v-a11' };
+  loadOccMasterData.mockResolvedValue(data({ stands: [a01, a11] }));
+  updateOccStand.mockResolvedValue({ ...a11, isActive: true, version: 'v-a11b' });
+  render(<MasterDataRoute />);
+  const stands = await screen.findByRole('region', { name: 'Posiciones' });
+  const row = within(stands).getByLabelText('Código de la posición A11').closest('tr');
+  const pill = within(row).getByText('Inactiva').closest('[data-occ-status]');
+  expect(pill).toHaveAttribute('data-tone', 'muted');
+  // The row's controls are dimmed; the pill keeps its full contrast.
+  expect(within(row).getByLabelText('Código de la posición A11').closest('.opacity-70')).not.toBeNull();
+  expect(pill.closest('.opacity-70')).toBeNull();
+  const active = within(stands).getByLabelText('Código de la posición A01').closest('tr');
+  expect(within(active).queryByText('Inactiva')).toBeNull();
+  expect(active.querySelector('.opacity-70')).toBeNull();
+  // A stand with history says so beside its code, and the note under the table says what it means.
+  expect(within(active).getByText('Con historial')).toBeInTheDocument();
+  expect(within(stands).getByLabelText('Código de la posición A01'))
+    .toHaveAccessibleDescription('Con historial: el código y la terminal no cambian.');
+  fireEvent.click(within(row).getByLabelText('Activa'));
+  fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Posición A11 reactivada.')).toBeInTheDocument();
+  expect(updateOccStand).toHaveBeenCalledWith('s-a11', expect.objectContaining({ isActive: true, expectedVersion: 'v-a11' }),
+    expect.stringMatching(/^[0-9a-f-]{36}$/));
+});
+
+it('reads the layout again when the frame announces occ_planning, without an observer of its own', async () => {
+  signedIn();
+  const terminalD = { ...terminalC, id: 't-d', code: 'D', name: 'Terminal D', version: 'v-td' };
+  // The first read, then the layout with the terminal another seat added.
+  loadOccMasterData.mockResolvedValue(data({ terminals: [terminalA, terminalC, terminalD] })).mockResolvedValueOnce(data());
+  const view = render(<MasterDataRoute />);
+  const terminals = await screen.findByRole('region', { name: 'Terminales' });
+  // It listens on the shell's channel, to occ_planning only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['occ_planning']);
+  expect(createPrivateWebAccountChangeObserver).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['mobile_devices', 'operation_messages']));
+  expect(loadOccMasterData).toHaveBeenCalledTimes(1);
+
+  // Another OCC seat added a terminal: the page reads the station's layout again and shows it.
+  act(() => shell.announce(['occ_planning']));
+  expect(await within(terminals).findByLabelText('Nombre de la terminal D')).toHaveValue('Terminal D');
+  expect(loadOccMasterData.mock.calls.map(([id]) => id)).toEqual([stationId, stationId]);
+
+  // Leaving the page stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
+});
+
+describe('MasterDataRoute in English', () => {
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  it('renders the master data in English inside the OCC scope', async () => {
+    act(() => resetLanguageForTests('en'));
+    signedIn();
+    const a11 = { ...a01, id: 's-a11', code: 'A11', isActive: false, hasHistory: false, version: 'v-a11' };
+    loadOccMasterData.mockResolvedValue(data({ stands: [a01, a11] }));
+    createOccTerminal.mockResolvedValue({ ...terminalC, id: 't-d', code: 'D', name: 'Terminal D' });
+    render(<LanguageScope><MasterDataRoute /></LanguageScope>);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading the master data…');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Master data' })).toBeInTheDocument();
+
+    const terminals = screen.getByRole('region', { name: 'Terminals' });
+    expect(within(terminals).getByText('Nothing is deleted: what is no longer used is deactivated.')).toBeInTheDocument();
+    expect(within(within(terminals).getByRole('table', { name: 'Terminals' })).getAllByRole('columnheader')
+      .map(header => header.textContent)).toEqual(['Code', 'Name', 'Status', '']);
+    expect(within(terminals).getByLabelText('Code of terminal A')).toBeDisabled();
+    expect(within(terminals).getByText('With history: the code does not change.')).toBeInTheDocument();
+
+    const stands = screen.getByRole('region', { name: 'Stands' });
+    expect(within(within(stands).getByRole('table', { name: 'Stands' })).getAllByRole('columnheader')
+      .map(header => header.textContent)).toEqual(['Code', 'Terminal', 'Attributes', 'Maximum size', 'Status', '']);
+    const a11Row = within(stands).getByLabelText('Code of stand A11').closest('tr');
+    expect(within(a11Row).getByText('Inactive')).toBeInTheDocument();
+    expect(within(a11Row).getByLabelText('Bridge')).not.toBeChecked();
+    expect(within(stands).getByRole('combobox', { name: 'Maximum size of stand A01' })).toHaveDisplayValue('Any size');
+    expect(within(stands).getByRole('form', { name: 'New stand' })).toBeInTheDocument();
+
+    const types = screen.getByRole('region', { name: 'Aircraft types' });
+    expect(within(types).getByRole('combobox', { name: 'Size of A320' })).toHaveDisplayValue('Narrow-body');
+    expect(within(types).getByRole('form', { name: 'New aircraft type' })).toBeInTheDocument();
+
+    const form = within(terminals).getByRole('form', { name: 'New terminal' });
+    fireEvent.change(within(form).getByLabelText('Code'), { target: { value: 'd' } });
+    fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Terminal D' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Create terminal' }));
+    expect(await screen.findByText('Terminal D created.')).toBeInTheDocument();
+    expect(screen.queryByText(/Datos maestros|Terminales|Posiciones|Tipos de avión|Guardar|Crear/)).toBeNull();
+  });
 });

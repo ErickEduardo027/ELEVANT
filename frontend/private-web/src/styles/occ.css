@@ -65,7 +65,9 @@
   --occ-ok: var(--occ-text);
   --occ-panel-muted: var(--occ-panel-raised);
 
-  /* The chat stylesheets read these names and nothing else defines them. */
+  /* The aliases that repaired the chat (contratos 2.4). Since U6 rebuilt it
+     with the tokens above, no stylesheet reads them; they stay until the
+     plan retires them. */
   --occ-ui-soft: var(--occ-panel-raised);
   --occ-ui-line: var(--occ-line);
   --occ-ui-glass: var(--occ-field);
@@ -135,28 +137,19 @@
   outline-color: var(--occ-nav-accent);
 }
 
-/* The chat stylesheet (src/features/chat/ChatWorkspace.module.css, rebuilt in
-   U6) draws the selected conversation and the focused composer in the legacy
-   blue #145dc4, 2.4:1 on the panel and 1.7:1 on the selected row. Under the
-   OCC both are cyan. The selection rule (0,4,1) outweighs the module (0,2,0)
-   and the bridge's hover border (0,4,0); the focus rule (0,3,1) outweighs the
-   module (0,3,0). */
-[data-department='occ'] [data-occ-chat-layout] [aria-label] button[aria-current='true'] {
-  border-color: var(--occ-accent);
-}
-
-[data-department='occ'] [data-occ-chat-layout] textarea:focus-visible {
-  outline-color: var(--occ-accent);
-}
-
 /* Stacked tables (src/styles/tokens.css): below 40rem each row of a
    `table-stack` becomes a card through @apply, which copies the legacy white
    or navy card, its shadow and its 12 px radius into `.table-stack tbody > tr`,
    where the bridge cannot reach them. Under the OCC the card is a flat panel
    slab and its labels are secondary text. `table.` outweighs the dark variant
-   of those rules: (0,2,3) against (0,2,2), and (0,2,5) against (0,2,4). */
+   of those rules: (0,2,3) against (0,2,2), and (0,2,5) against (0,2,4).
+   The card's height follows its content: the 2rem of a table row
+   (OccDataTable's `h-8`) would cut a card short. Its labels are 12 px in
+   sentence case, as every OCC label is (contratos 2.4); tokens.css sets them
+   at 11 px, upper case and tracked. */
 @container (max-width: 39.98rem) {
   [data-department='occ'] table.table-stack tbody > tr {
+    height: auto;
     border-color: var(--occ-line);
     border-radius: var(--occ-radius-panel);
     background-color: var(--occ-panel);
@@ -166,7 +159,73 @@
 
   [data-department='occ'] table.table-stack tbody > tr > td::before {
     color: var(--occ-muted);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
   }
+
+  /* In a card every label and value starts at the left, also those of a
+     column the table sets on the right (OccDataTable's `align: 'end'`). */
+  [data-department='occ'] table.table-stack tbody > tr > td {
+    text-align: start;
+  }
+
+  /* A folded detail row of OccDataTable stays folded in a card: the card's
+     `display: block` (0,1,2) would outweigh `[hidden]`. */
+  [data-department='occ'] table.table-stack tbody > tr[hidden] {
+    display: none;
+  }
+
+  /* A lit row keeps its signal in a card: the cells lose their borders there,
+     so the card carries the 3 px bar and the soft slab of its tone. */
+  [data-department='occ'] table.table-stack tbody > tr[data-occ-tone='attention'] {
+    border-left-width: 3px;
+    border-left-color: var(--occ-warn);
+    background-color: var(--occ-warn-soft);
+  }
+
+  [data-department='occ'] table.table-stack tbody > tr[data-occ-tone='urgent'] {
+    border-left-width: 3px;
+    border-left-color: var(--occ-danger);
+    background-color: var(--occ-danger-soft);
+  }
+
+  /* The chosen row stays chosen in a card: the card's slab above outweighs
+     its `bg-occ-accent-soft`. The card of the chosen row and the card of its
+     detail take the cyan slab and, since the cells lose their borders, a cyan
+     joint. As heavy as a lit row and written after it, the cyan slab wins over
+     the slab of a signal, as in the table, and a lit card keeps the 3 px bar
+     of its signal on the left. */
+  [data-department='occ'] table.table-stack tbody > tr[aria-selected='true'],
+  [data-department='occ'] table.table-stack tbody > tr[aria-selected='true'] + tr[data-occ-row-detail] {
+    border-top-color: var(--occ-accent);
+    border-right-color: var(--occ-accent);
+    border-bottom-color: var(--occ-accent);
+    background-color: var(--occ-accent-soft);
+  }
+
+  [data-department='occ'] table.table-stack tbody > tr[aria-selected='true']:not([data-occ-tone]),
+  [data-department='occ'] table.table-stack tbody > tr[aria-selected='true'] + tr[data-occ-row-detail]:not([data-occ-tone]) {
+    border-left-color: var(--occ-accent);
+  }
+}
+
+/* A row of OccDataTable that takes focus draws its ring inside itself: the
+   2 px outside would be clipped by the scrolling wrapper and hidden under the
+   sticky header. */
+[data-department='occ'] [data-occ-row]:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The system's message of an invalid field (src/components/formValidation.js)
+   in the red of the OCC, like the field's own border in the bridge. OccField
+   draws its own error with occ classes, never with this class, whose observer
+   would remove it. It weighs as much as `.dark .form-validation-message`
+   (0,2,0) and loads after app/globals.css, so it wins. */
+[data-department='occ'] .form-validation-message {
+  color: var(--occ-danger);
 }
 
 @media (prefers-reduced-motion: reduce) {

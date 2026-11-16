@@ -620,6 +620,197 @@ U3 rehace Panorama (`/admin-occ/dashboard`): la consola del OCC es el mapa únic
   - `tests/visualConsoleFixtures.test.js`, que valida las respuestas sintéticas de la consola con los validadores estrictos del cliente compartido;
   - en la suite visual, `tests/visual/occ/console.spec.mjs`, con `fixtures/consoleApi.mjs`: los paneles al abrir, plegados y abiertos, un vuelo y una posición elegidos, un vuelo demo que ya venía al abrir con la leyenda del tablero y el respaldo sin motor de mapa, a 1920×1080 y a 1440×900; una llegada demo con «Ver y seguir» y «Recibido»; y, con movimiento y a 1440×900, una tira elegida con «Alertas» plegada, cuyo avión queda a la vista junto al inspector (la leyenda del mapa, que solo nombra lo que queda a la vista, lo nombra). Como el resto de la suite, corre fuera del CI.
 
+## Nota del 14 de noviembre de 2026: U6 «Resto de pantallas del OCC»
+
+U6 rehace con las primitivas de `occ-ui` las ocho pantallas del OCC que no tienen mapa ni son de otro departamento: Revisión, Cobertura de posiciones, Notificaciones, Chat interno, Datos maestros, Tablets, Contratos listos y Reportes. Cambia cómo se ven y cómo se recorren, no lo que leen ni lo que escriben. El código llegó en cinco pasos: las primitivas de los registros (`5eb212ac`), Revisión (`fae769ea`), Cobertura y Notificaciones (`1219657d`), Chat, Datos maestros y Tablets (`87daab94`), y Contratos listos y Reportes con la limpieza del código muerto (`2be6c178`). La rama parte de la primera parte de U3, las primitivas de la consola (`94e60144`, con su revisión `de08535e`), y las usa sin cambiar la interfaz de ninguna. El diseño del sistema visual es anterior a varias decisiones del dueño, entre ellas la 16 (el OCC solo en oscuro). Esta nota amplía las decisiones de arriba sin reescribirlas y dice dónde U6 se aparta del diseño y de la página de contratos del plan; donde el diseño y la página de contratos difieren, manda la página de contratos.
+
+**1. Dos plantillas para ocho pantallas** (diseño E.1 y E.2).
+- La plantilla C, «Mesa de trabajo», es una barra con el título de la página y, desde 1280 px, la lista y el detalle lado a lado, cada uno con su propio desplazamiento. La usan Revisión, Cobertura de posiciones y Chat interno, y Notificaciones, que no tiene detalle: su historial ocupa el ancho.
+- La plantilla D, «Registro», es una barra, una tabla densa y, si los hay, sus diálogos. La usan Datos maestros, Tablets, Contratos listos y Reportes.
+- En las dos, `OccToolbar` dibuja el `h1` de la página. No hay antetítulo, ni párrafo bajo el título, ni la insignia de la estación (`OccStationBadge`): la estación vive en la barra de estado (nota de U2, punto 4), y lo que explica un módulo, en su estado vacío.
+- Cada lectura muestra los cinco estados de `OccRemoteView` u `OccPanel`, de U3 (carga; datos; vacío; error recuperable, con «Reintentar»; y sin permiso o con la sesión vencida, sin «Reintentar»), con los textos de siempre en `labels`.
+
+**2. Pantalla por pantalla.**
+- **Revisión** (`review/CanonicalReviewRoute.jsx`, plantilla C).
+  - La barra lleva el `h1` «Revisión OCC» y los filtros «Todas» (por defecto) y «Por revisar», con su cuenta. Debajo, las tres cifras («Pendientes visibles», «Entregas visibles» y «Estación») son `OccStatTile`.
+  - La cola es una `OccDataTable` en el panel «Entregas»: el código de la operación en placa, la hora de envío en la zona de la estación, el estado con su glifo y su palabra y «Ver detalle» en cada fila; Enter también elige la fila. El tono de cada estado sale de `review/reviewStatusTone.js`: una entrega devuelta, y una revisión reabierta mientras espera su decisión, piden atención.
+  - Si la API corta la cola en 100 entregas, la nota «Hay más entregas fuera de esta vista.» va bajo la lista, fuera de la tabla. Así sigue a la vista cuando «Por revisar» no deja filas, porque más allá de esas 100 puede haber entregas esperando.
+  - Desde 1280 px, el «Detalle de entrega» queda acoplado a la derecha; por debajo se apila bajo la cola y se trae a la vista al elegir una entrega. La barra de decisión queda fija al pie del detalle.
+  - La decisión, la reapertura y los cambios de recargos se confirman en `OccDialog`, dibujado dentro del detalle.
+  - Los textos de «Formularios AVIAM» pasan al archivo de mensajes, con inglés.
+- **Cobertura de posiciones** (`position-coverage/CoverageRoute.jsx`, plantilla C).
+  - La barra lleva el título, la fecha y la navegación «Terminal y vista», con la terminal y la vista («Cobertura» o «Configuración») como `OccSegmented`.
+  - En «Cobertura», el tablero «Posiciones de la terminal» es una `OccDataTable`: la posición en placa, «Puente» y «Estrecho» con glifo y palabra, quién la cubre y «Desactivada». «Coberturas del día» es una lista con placas, el horario en mono, el mentor, el vehículo y «Liberar».
+  - Cada uno lleva su leyenda en la cabecera (`OccStatusLegend`, punto 8), porque un tablero con estados muestra su leyenda (sección 5). La leyenda «Atributos y estado», de «Posiciones de la terminal», muestra el círculo hueco de un atributo («Atributo») y el círculo tachado de «Desactivada». La leyenda «Tipo de cobertura», de «Coberturas del día», muestra el círculo hueco de «Refuerzo». Las pastillas y las leyendas toman el tono de cada marca de una sola tabla (`MARK_TONES`), así que dibujan las mismas formas.
+  - El formulario «Asignar posiciones» queda a la derecha desde 1280 px, con `OccField`, las condiciones del agente como `OccStatusPill` (lo que bloquea, en atención) y «Asignar posiciones» como tecla clara.
+  - En «Configuración», «Atributos de las posiciones» es una tabla de filas editables, cada una con su clave de intento y su versión, junto a «Reglas de la terminal» y «Posiciones combinadas». Los motivos de un rechazo van en una caja de atención.
+  - Los textos pasan a `coverageMessages.js`, con inglés.
+- **Notificaciones** (`notifications/CanonicalNotificationsRoute.jsx`, plantilla C, «Historial de avisos»).
+  - La barra lleva el título, las secciones («Avisos» y «Servicios») y «Actualizar».
+  - El panel «Historial de avisos» dice cuántos avisos siguen sin leer y muestra en su cabecera la leyenda «Prioridad», con el glifo y la palabra de cada prioridad: un tablero con estados muestra su leyenda (sección 5).
+  - Los filtros «Todo», «Sin leer» y «Alertas» llevan su cuenta, filtran en el navegador y tienen cada uno su estado vacío.
+  - Cada aviso lleva el glifo de su prioridad (la de la sección 1, con `alertPriority` de `dashboard/noc/alertModel.js`), con su palabra como nombre accesible, «Sin leer» hasta que la cuenta lo marque como leído, la placa de la operación y la fecha y la hora en mono, en la hora de Punta Cana. Una alerta sin leer se enciende con la losa tenue y la barra de 3 px de su señal, y el recibo la apaga, como en «Alertas y avisos». «Abrir», «Marcar leída» y «Marcar no leída» conservan su texto.
+  - La pestaña «Servicios» sigue siendo `ServiceClosurePanel`, de Contratos (punto 6).
+- **Chat interno** (`chat/CanonicalChatRoute.jsx`, plantilla C).
+  - La barra lleva el título y el estado propio (`PresenceStatusPicker`).
+  - «Conversaciones» y «Mensajes» son dos `OccPanel`, lado a lado desde 1280 px. Por debajo se ve uno a la vez: el hilo reemplaza la lista al elegir una operación, y el botón «Conversaciones», con el nombre accesible «Volver a las conversaciones», la devuelve.
+  - La conversación abierta es la selección, dibujada con tokens: la losa cian tenue, la junta y el código en cian, con `aria-current`. Los mensajes sin leer se cuentan en una placa neutra, como en el riel, y las horas van en la hora de Punta Cana. La presencia está en el punto 3.
+- **Datos maestros** (`master-data/MasterDataRoute.jsx`, plantilla D).
+  - Bajo la barra, tres `OccPanel` («Terminales», «Posiciones» y «Tipos de avión»), cada uno con su `OccDataTable` de filas editables (una intención por fila, con su versión) y su formulario de alta con `OccField`.
+  - Una fila inactiva se atenúa y lleva la pastilla «Inactiva» o «Inactivo». Cada posición tiene «Ver en el mapa» (punto 5).
+  - Los textos pasan a `masterDataMessages.js`, con inglés.
+- **Tablets** (`devices/DevicesRoute.jsx`, plantilla D).
+  - El panel «Tablets de la estación» es una `OccDataTable`: la tablet, el agente, la última conexión y el estado con `OccStatusPill` («En uso», «Libre» o «Revocada», y «Operación en curso» en atención).
+  - Liberar y revocar se confirman en `OccDialog`. Liberar empieza en su motivo, como antes; revocar, que no se deshace, es un `alertdialog` que empieza en «Cancelar».
+  - Los textos pasan a `devicesMessages.js`, con inglés.
+- **Contratos listos** (`ready-contracts/ReadyContractsRoute.jsx`, plantilla D).
+  - El `h1` «Contratos listos para operar» nombra la sección (`ready-contracts-title`), la cuenta del día va en su línea con `role="status"`, y debajo está el campo «Fecha de operación».
+  - Los contratos son una `OccDataTable` en lista, que conserva la lista «Contratos listos para operar» con un elemento por contrato: la aerolínea, el contrato con su versión, la vigencia («{desde} a {hasta}» o «Desde {desde}, sin fecha fin»), la renovación y los vuelos del día.
+  - Cada fila muestra sus servicios debajo, a la vista al llegar, como los fotografía la guía de presentación (paso 15). «Servicios contratados (n)» los pliega y los vuelve a abrir, y una fila plegada sigue plegada mientras la página está abierta, también en otra fecha. El detalle está siempre montado y queda oculto mientras está plegado.
+  - «Planificar vuelos» conserva su texto y su destino.
+- **Reportes** (`reports/CanonicalReportsRoute.jsx`, plantilla D).
+  - La barra «Reporte y período» lleva el formulario con «Generar», y debajo va la descripción del reporte elegido. Mientras llega la lista de reportes, en la primera lectura y al reintentarla, un esqueleto de dos líneas bajo la barra lo dice («Cargando reportes…»), y la lista «Reporte» y «Generar» esperan desactivados. La lista se puede reintentar si falla.
+  - El resultado es un `OccPanel` con «Exportar Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la tabla densa (los números a la derecha, sin ordenar y sin columnas de más) y las páginas al pie. Desde 1280 px, las filas se desplazan dentro del panel.
+
+**3. La presencia por forma** (diseño D28; sección 1).
+- `chat/presenceStatus.js` exporta `PRESENCE_SHAPES` y `PRESENCE_LEGEND`. Cada presencia es un glifo neutro, sin tono, junto a su palabra:
+  - «Disponible», lleno;
+  - «Ocupado» y «No molestar», lleno con una barra;
+  - «Ausente» y «Vuelvo enseguida», a medias;
+  - «Desconectado», también quien eligió mostrarse desconectado, hueco;
+  - sin información de presencia, a trazos.
+- `PresenceDot` (`chat/PresencePeople.jsx`) dibuja el glifo en SVG, con `data-shape`, oculto para los lectores de pantalla, que leen la palabra. `PresenceLegend` lista las cinco formas con su palabra, bajo el título de «Conversaciones»: es la leyenda «Presencia».
+- *Por qué:* «Ocupado» en rojo y «Disponible» en verde se distinguían solo por el tono; el rojo es la señal urgente del OCC y el verde no existe en su paleta.
+- Las dos hojas del chat (`ChatWorkspace.module.css` y `PresencePeople.module.css`) pintan solo con tokens `--occ-*`: sin el azul `#145dc4` y sin los alias `--occ-ui-*`, sin sombras, con los radios por papel y sin texto de menos de 12 px. Por eso `occ.css` ya no repara el chat (sección 4, «Lo que repara `occ.css` fuera del puente»): sus dos reglas `[data-occ-chat-layout]` se borraron. Los alias `--occ-ui-*` siguen definidos, pero ninguna hoja los lee.
+
+**4. La tira de hitos en el cierre de Revisión.**
+- «Cierre de la operación» (`review/components/OperationCloseSection.jsx`) dibuja `OccMilestoneStrip` completa, bajo «Hitos del Reporte de Vuelo»: las cuatro fases con su avance («1 de 6») y los 25 hitos, cada uno con su hora en la zona de la estación o «Pendiente». Sin hitos, dice «Sin hitos registrados.».
+- Las fases salen de `buildMilestonePhases` (`occ-ui/milestonePhases.js`) sobre `close.milestones`, que el detalle de la revisión ya traía: no hay lectura nueva.
+- El exceso del paquete («Paquete excedido por {n} min») es una `OccStatusPill` de atención, con el triángulo.
+
+**5. «Ver en el mapa» con `stand=`** (contratos 2.1). En Datos maestros, cada posición tiene el enlace «Ver en el mapa», con el nombre accesible «Ver {código} en el mapa», a `/admin-occ/positions-map?stand=<código>`. La consulta la arma `writeSelection` de `maps/core/mapSelection.js`, que normaliza el código. Es solo navegación: no lee nada.
+
+**6. Lo que queda en el puente, y por qué.** Lo que estas pantallas montan pero también dibujan otros departamentos no se edita para el OCC (diseño E.3, regla 4):
+- Usuarios (`DepartmentUsersPage`) y Mis gastos (`DepartmentExpensesPage`), que son de Gestión Humana y de Finanzas (diseño E.2).
+- `ServiceClosurePanel` (`contracts/catalog/`), la pestaña «Servicios» de Notificaciones. Es de Contratos y conserva su observador mientras está abierta (nota de U2, punto 2).
+- `OperationIncidentsPanel` (`src/features/incidents`), que Revisión muestra en el detalle y Planificación en el suyo.
+- `notifications/components/*` y `DepartmentNotificationCenter`, que dibujan Gestión Humana, Finanzas, Contratos y la barra de `AppShell`. El ícono de Revisión que todavía usan, `XIcon`, queda solo en `review/components/icons.jsx`.
+- Los componentes compartidos de `src/components/` (`Modal`, `StatusBadge`, `EmptyState` y los demás): las pantallas de U6 ya no los dibujan, pero Usuarios y los demás departamentos sí.
+- `OccStationBadge`, en `admin-occ/OccQueueState.jsx`. El diseño lo convertía en la placa de la estación, pero ninguna pantalla lo dibuja ya, porque la estación está en la barra de estado. El archivo, con su `OccQueueState`, que ya nadie importaba, conserva sus clases heredadas y queda sin importadores hasta que se borre.
+- Las correspondencias de clases del puente no cambian en U6, y tampoco la hoja que se genera con ellas (`occ-legacy-bridge.css`). Del manifiesto (`src/styles/occLegacyBridgeMap.js`) cambian solo las listas: suma carpetas a `MIGRATED_FOLDERS` y crea `MIGRATED_FILES` (punto 7). Las clases del puente las siguen usando el panorama anterior, hasta que U3 lo borre; Monitoreo de vuelos, Mapa de posiciones y Planificación, hasta U5; y las páginas compartidas.
+
+**7. `MIGRATED_FOLDERS` y `MIGRATED_FILES`** (sección 4).
+- Entran siete carpetas, cada una en el paso que la rehízo: `src/features/review`, `src/features/position-coverage`, `src/features/chat`, `src/features/master-data`, `src/features/devices`, `src/features/ready-contracts` y `src/features/reports`. Allí no se admite ninguna clase de color heredada.
+- `src/features/notifications` no entra. Su ruta es del OCC, pero el resto de la carpeta lo dibujan otros departamentos, y la pestaña de servicios es de Contratos (punto 6). Por eso solo la ruta, `CanonicalNotificationsRoute.jsx`, entra en una lista nueva, `MIGRATED_FILES`, con la misma regla. Una prueba exige que cada archivo de la lista exista, esté montado bajo `/admin-occ`, no esté dentro de una carpeta migrada y no use clases heredadas, y que su carpeta todavía las use.
+- Quedan fuera `src/features/incidents` y las páginas compartidas (punto 6).
+- Dos guardas nuevas de `occStyleGuard.test.js`:
+  - las siete carpetas y los archivos de `MIGRATED_FILES` dibujan como `occ-ui`: sin sombras, sin mayúsculas ni espaciado en los rótulos, sin texto de menos de 12 px, sin colores literales, sin desenfoque y sin degradados;
+  - las hojas del chat (punto 3) no pintan colores fijos ni con nombre, sombras, alias `--occ-ui-*`, texto de menos de 12 px, radios fuera de su papel ni un anillo de foco propio. Reemplaza a la guarda que comprobaba que `occ.css` ganaba al azul del chat.
+
+**8. Las primitivas nuevas de `occ-ui`** (diseño F). Siguen el modelo de U3: aceptan `className` y reenvían `data-testid`, sus vocabularios están congelados y lanzan `RangeError` ante un valor desconocido, pintan solo con tokens `occ-*` y sus textos están en `occUiMessages.js`, que suma las secciones `table` y `dialog` en español y en inglés.
+- `OccDataTable`, el registro denso, en dos modos:
+  - `as="table"`, por defecto: una tabla de verdad, con su `caption`, la cabecera fija, el orden por columna con `aria-sort`, filas de 32 px (44 px con puntero táctil) y, con `onSelectRow`, la elección con el ratón, Enter, Espacio y las flechas;
+  - `as="list"`: una lista (`ul`, con un `li` por fila) sobre una cuadrícula de las mismas columnas, para los registros que las pruebas y el E2E del ciclo leen como lista. No ordena ni elige.
+
+  En los dos, `mono` pone en IBM Plex Mono los identificadores y las horas y `align: 'end'` pone los números a la derecha; una fila encendida (`rowTone`: `attention` o `urgent`) lleva la losa tenue, la barra de 3 px y el glifo de su señal; una fila desplegable (`renderExpanded`) está siempre montada y oculta mientras está plegada; los cinco estados son los de `OccRemoteView`; y por debajo de 40 rem cada fila es una tarjeta apilada (`table-stack`).
+- `OccToolbar`: el `h1` de la página, con un resumen opcional en su línea y, debajo, una barra con nombre (`role="toolbar"`), con los controles al inicio y las acciones al final. Sin controles no hay barra. `titleId`, opcional, da un id al `h1`, para que una sección se nombre con él.
+- `OccButton` y `occButtonClass`: la tecla clara (`primary`, una por vista), `secondary`, `ghost` (texto cian) y `danger`, de 32 px con ratón (28 px en el tamaño `sm`) y 44 px con puntero táctil; ocupado, con `aria-busy` y su texto. `occButtonClass` viste como botón un enlace a otra pantalla.
+  - Ocupado no se deshabilita: queda `aria-disabled`, conserva el foco e ignora el clic, Enter y Espacio. Un botón de envío tampoco envía su formulario, ni con Enter en uno de sus campos. *Por qué:* el navegador saca el foco de un control que se deshabilita y lo deja en la página. El teclado perdería su lugar y, en un `OccDialog`, Esc y la trampa del foco dejarían de funcionar si el comando falla y el diálogo sigue abierto.
+  - Si recibe a la vez `busy` y `disabled`, manda `busy`.
+- `OccField`, con `OccTextField`, `OccSelectField`, `OccTextareaField` y `occControlClass`: la etiqueta con el texto exacto (sin asterisco, porque las pruebas y el E2E buscan los campos por su nombre), una pista opcional y el error. El pozo del control es `--occ-field` (abajo, «`tailwind.config.js`»).
+  - El error es un párrafo propio con `role="alert"` (`data-occ-field-error`), en el rojo del OCC.
+  - No lleva la clase `form-validation-message`. *Por qué:* `app/layout.jsx` monta en todas las rutas el observador de `src/components/formValidation.js`, que borra cada mensaje de esa clase cuyo id no nombra ninguno de sus propios campos. Borraría el error de React, y React fallaría después al quitarlo.
+- `OccDialog`: `dialog`, o `alertdialog` con `tone="danger"`, que empieza en «Cancelar». Se dibuja donde se monta, nunca en un portal: así una región como «Detalle de entrega» sigue conteniendo los botones que el E2E del ciclo busca en ella. Atrapa el foco y lo devuelve al cerrar; se cierra con su botón, con el velo o con Esc, que marca con `preventDefault` (contratos 2.2), y no se cierra mientras trabaja. Mientras trabaja, el foco sigue en su botón de confirmar ocupado (`OccButton`). Por debajo de 640 px es una hoja inferior.
+- `OccStatusPill`: el estado de una fila, con su glifo y su palabra, en uno de los seis tonos de `STATUS_TONES` (`statusVocabulary.js`, que también exporta `OCC_STATUS_TONE_KEYS`):
+  - `neutral`, un círculo hueco (planificado, programado, libre);
+  - `active`, un círculo lleno (en operación, en uso);
+  - `done`, una marca, en el secundario (completado, aprobado);
+  - `muted`, un círculo tachado, en el tenue (cancelado, revocado);
+  - `attention` y `urgent`, con el triángulo y el octágono de `SIGNALS`: son los únicos con losa.
+
+  Admite las marcas «Demo» y «est.». Su glifo también se exporta solo, como `OccStatusGlyph`.
+- `OccStatusLegend`: la leyenda de un tablero con estados, para su cabecera (sección 5). Es una lista con nombre (`label`) con una entrada por marca del tablero, en su orden, cada una con el glifo de su tono (`OccStatusGlyph`, el mismo de la pastilla) y su palabra, en el texto secundario, como la leyenda «Prioridad» de Notificaciones. Los glifos van ocultos para los lectores de pantalla, que leen las palabras.
+- `classes.js` (`OCC_CLASSES`): las cadenas de clases que Cobertura, Datos maestros, Tablets, Contratos listos y Reportes definían por su cuenta, dibujadas con los tokens. Fueron el primer paso, mecánico, de su migración (diseño E.2).
+- `occ.css` suma lo que la tabla necesita fuera de su JSX:
+  - en las tarjetas apiladas, rótulos de 12 px en frase normal, altura libre, valores a la izquierda, el detalle plegado oculto y la señal de una fila encendida;
+  - también en las tarjetas, la fila elegida, que si no perdería la losa de la tabla: su tarjeta y la de su detalle llevan la losa cian tenue y la junta cian. Como en la tabla, la losa de la elección gana a la de una señal, y una fila elegida y encendida conserva a la izquierda la barra de su señal;
+  - el anillo de foco de una fila hacia adentro, para que no lo recorten el desplazamiento ni la cabecera fija;
+  - y el mensaje de validación del sistema (`form-validation-message`) en el rojo del OCC.
+- `tailwind.config.js`: `colors.occ` suma la llave `field`, para el pozo de `OccField`.
+  - Esto corrige la sección «Decisión» de arriba, que cuenta `--occ-field` entre los tokens sin clase, y el punto 10 de la nota de U2.
+  - Siguen sin llave, y por tanto sin clase, `--occ-arriving-fill`, `--occ-on-accent`, `--occ-on-warn`, `--occ-on-danger`, `--occ-warn-fill` y `--occ-danger-fill`.
+- *No llegan* `OccTag` ni `OccToast` del diseño F, porque estas pantallas no los usan: «Demo» y «est.» ya son `DemoTag` y `EstimatedTag`, y los toasts del OCC los dibuja el marco (`OccToastStack`, nota de U2, punto 7).
+
+**9. Las lecturas, los comandos y los textos no cambian de contrato.**
+- Cada pantalla conserva sus lecturas y sus ritmos (contratos 2.7). Cobertura y Datos maestros releen con `occ_planning`; Tablets, con `mobile_devices`; Chat interno, con `operation_messages`, más sus sondeos de 10 s (mensajes), 20 s (conversaciones), 15 s (presencia de los participantes) y 30 s (presencia propia); y Notificaciones, con `notifications` y su sondeo de 20 s. Revisión sigue con `useOccReviewChangeVersion`, sobre el observador del marco.
+- Las cinco pantallas de U6 que abrían un observador propio ya no lo abren (contratos 2.7). Escuchan sus recursos en el canal del marco (`useOccShellChannel().subscribe`), sobre el único observador de la pestaña: Cobertura de posiciones y Datos maestros, `occ_planning`; Tablets, `mobile_devices`; Chat interno, `operation_messages`; y Notificaciones, `notifications`. Releen como antes, en el acto y sin agrupar, y Notificaciones vuelve a empezar su sondeo de 20 s con cada aviso.
+  - Toman la parte estable del marco, así que no se vuelven a pintar cuando cambian el enlace en vivo o los avisos. Solo se montan dentro del marco, que les da el canal. Notificaciones ya no mira la sesión para escuchar: el observador del marco solo observa con una cuenta válida.
+  - El inventario de `admin-occ/live/occRequestPlan.js` las saca de `OCC_OBSERVER_SITES`, donde ya no queda ningún `movesIn: 'U6'`, y las nombra en `OCC_SHELL_LISTENERS`, con el sondeo de Notificaciones. La prueba de presupuesto sigue contando sus relecturas.
+  - Sin el observador de la pantalla, la pestaña ya no lee el cursor una vez más con cada aviso y con cada sondeo de 25 s. Por minuto, Cobertura de posiciones y Datos maestros pasan de 7 a 5 peticiones en reposo y de 39 a 26 en el minuto demo; Tablets, de 7 a 5 y de 31 a 18; Chat interno, de 22 a 20 y de 46 a 33; y Notificaciones, de 12 a 10 y de 49 a 36. Las cifras de Notificaciones cuentan la pestaña «Servicios» abierta: `ServiceClosurePanel` es de Contratos y conserva su observador (punto 6).
+- Los filtros filtran en el navegador y «Ver en el mapa» solo navega: no hay lecturas nuevas. De las cifras del presupuesto de la nota de U2 (punto 2) solo cambia la de Chat interno en reposo, que baja de 22 a 20 (punto anterior); sigue siendo la pantalla más cargada en reposo.
+- Los comandos conservan su recibo de idempotencia: la clave de una intención (`createCommandKeyHolder`) se repite solo con el mismo cuerpo tras un resultado incierto, la versión esperada es la que está en pantalla, y un `409` o un `412` relee antes de formar otra intención.
+- Los errores siguen saliendo en español de los servicios (`occReviewService.js`, `occMasterDataService.js`, `deviceProblemMessages.js`, `occCoverageService.js` y `operationalCommunicationService.js`). La interfaz nunca muestra el título del servidor, y U6 no crea códigos.
+- Los textos que leen las pruebas, el E2E del ciclo y la guía de presentación del bloque Z se copiaron letra por letra. Cobertura, Datos maestros y Tablets, que no tenían archivo de mensajes, ganan el suyo, con inglés; las otras cinco pantallas ya eran bilingües. Los mensajes de Revisión, Cobertura, Datos maestros, Tablets, Contratos listos y Reportes tienen su prueba de paridad de claves, y la de Notificaciones va en la prueba de su ruta; los del chat no tienen una propia.
+
+**10. La fila «U6» de «Lo que añadirán U2 a U6».** La tabla no cambia; esta nota la completa:
+- «Cobertura, Revisión, Notificaciones, Chat, Datos maestros, Tablets, Contratos listos y Reportes con `occ-ui`»: hecho (puntos 1 a 5).
+- «Limpia el código muerto»: se borraron `reports/components/ExportButton.jsx` con su prueba, y con ellos la carpeta `reports/components` y el `data-testid` `export-spinner`; los siete íconos sin uso de `review/components/icons.jsx`; las claves `close.source` de `reviewMessages.js`; y `getNotificationFilterOptions` de `notifications/notificationsMappers.js`. Queda `admin-occ/OccQueueState.jsx` (punto 6).
+- «Deja el puente solo para las páginas compartidas»: todavía no. Sus correspondencias de clases no cambian (punto 6) y se podan cuando U3 y U5 hayan rehecho lo suyo, junto con la limpieza del puente que la nota de U3 deja para U6: el alias `--occ-panel-muted`, su llave de Tailwind y la entrada de `bg-occ-panel/90` y `bg-occ-panel/95`. En esta rama, el panorama anterior todavía usa esas clases.
+
+**11. Diferencias con el diseño y con la página de contratos.** El diseño (secciones E, F, H e I) es anterior a varias decisiones del dueño y a la página de contratos, que mandan:
+- *Los dos temas, a dos anchos.* Al cerrarse, U6 era solo oscuro (decisión 16). La nota del 15 de noviembre revierte esa decisión, y al unirse con ella las ocho pantallas y las primitivas de `occ-ui` que U6 añade se leen en los dos temas: pintan solo con los tokens `--occ-*`, sin colores escritos a mano, así que el bloque claro de `occ.css` las cubre sin reglas propias. Las capturas se toman en oscuro y, con `OCC_VISUAL_THEME=light`, en claro, a 1920×1080 y a 1440×900, y las del chat también a 1024×768: no hay capturas a 1366×768 ni a 768×1024 (diseño I.1). Se toman en el proyecto `occ` de la única configuración de Playwright, con una sesión sintética y la API simulada, y no con un script propio (D29).
+- *En el canal del marco, no en `useOccResource`.* La página de contratos (2.7) pasa cada pantalla al observador del marco en el PR que la rehace, y la nota de U2 (puntos 2 y 3) le asignaba a U6 Cobertura de posiciones, Datos maestros, Tablets, Chat interno y Notificaciones, con `useOccResource`.
+  - U6 pasa las cinco al observador del marco, como pide la página de contratos: escuchan en su canal (punto 9), y ninguna sigue con un observador propio.
+  - No las lleva a `useOccResource`, como pedía la nota de U2 (punto 3). El hook lee solo con el permiso de `useDepartmentAccess()`, agrupa los avisos (como mucho una lectura cada 3 s) y deja de escuchar tras un 401 o un 403, y cada pantalla conserva sus lecturas y sus ritmos (contratos 2.7).
+- *El chat no llena el alto.* La nota de U2 (punto 9) pedía pasar Chat interno a `mainVariant: 'fill'` al rehacerlo. Sigue en `'scroll'`, con el margen de `main`: su sección mide el alto que queda, y cada panel se desplaza solo. `AdminOccLayout`, que elige la variante, no cambia en U6.
+- *El corte a 1280 px.* El diseño (H.3) apila la lista y el detalle entre 1024 y 1279 px y los separa en dos vistas por debajo de 1024. El chat muestra una vista a la vez por debajo de 1280 px; Revisión y Cobertura apilan el detalle bajo la lista a cualquier ancho menor.
+- *`OccStatusPill`* recibe `tone` y `label`, no `domain` y `status`: cada pantalla traduce sus estados a un tono (`review/reviewStatusTone.js`, o `DEVICE_STATUS_TONES` en Tablets). El tono que el diseño B.4 llama `critical` es `urgent`, como en `SIGNALS` y en `OccStatTile`.
+- *`OccStatusLegend`* no está en el diseño F, y su fila de Cobertura (E.2) no pide leyenda. La pide la regla de la página de contratos (2.4), a pedido del dueño: cada tablero con estados muestra su leyenda en la cabecera (punto 2).
+- *`OccDataTable`* suma el modo lista, la fila desplegable y los estados remotos, y no tiene `density`: las filas miden 32 px con ratón y 44 px con puntero táctil (H.2). Contratos listos no es una tabla con una fila desplegable (E.2), sino una lista con un botón que pliega y despliega los servicios de cada contrato, porque las pruebas y el E2E del ciclo la leen como lista. Los servicios empiezan a la vista: la guía de presentación del bloque Z los promete en su paso 15 sin pulsar nada.
+- *La fila elegida* de `OccDataTable`, en la tabla y en la tarjeta, lleva la losa cian tenue (`--occ-accent-soft`), como la conversación abierta del chat: cian es lo elegido (contratos 2.4). No lleva `--occ-panel-raised`, que la tabla de tokens de la sección «Decisión» y el diseño (B.2) le daban.
+- *`OccDialog`* se dibuja en su sitio y no en un portal (punto 8).
+- *Las alturas* no usan `--occ-control-h` ni una variante `coarse:` (B.5): son `h-8` y `[@media(pointer:coarse)]:h-11`.
+- *Una quinta forma de presencia,* a trazos, para la falta de información; D28 tenía cuatro.
+- *Reportes* pone sus exportaciones en la cabecera del resultado, no en la barra, y no ordena columnas.
+- *Los íconos* (D24) no se unen en un solo juego: U6 solo quita los que Revisión ya no usaba, y los juegos de cada carpeta siguen.
+- *El puente* no se reduce a las páginas compartidas (plan, bloque U6; diseño J): ver el punto 10.
+- *`?sel=stand:`* (diseño E.2) es `stand=` (contratos 2.1).
+- *`OccStationBadge`* no pasa a ser la placa de la estación: sale de las pantallas (punto 6).
+- *Los estados fotografiados* son los que tiene la prueba visual de cada pantalla (consecuencias). Del diseño I.1 faltan la pestaña «Servicios» de Notificaciones, que es de Contratos, y el diálogo de Datos maestros, Contratos listos y Reportes, que no tienen diálogos.
+
+**12. Límites.**
+- La pestaña «Servicios» de Notificaciones (`ServiceClosurePanel`, de Contratos) abre su propio observador, con dos hubs y su sondeo, mientras está abierta (punto 6).
+- `OperationIncidentsPanel` y `ServiceClosurePanel` se ven con el puente dentro de pantallas ya rehechas: conservan su disposición, con los colores de los tokens.
+- `admin-occ/OccQueueState.jsx` queda sin importadores y con clases heredadas, y los alias `--occ-ui-*` quedan definidos sin uso, hasta su limpieza.
+- Usuarios y Mis gastos siguen con el puente, que no cambia el tamaño del texto ni las mayúsculas (sección 4, «Lo que el puente no hace»).
+- Las capturas se revisaron en local, con una API simulada. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+
+**Consecuencias de U6.**
+- Para el OCC, las ocho pantallas se leen como la consola: losas planas, placas para los identificadores, estados con glifo y palabra, el `h1` en la barra y sin subtítulos ni la insignia de la estación. Su texto ya no baja de 12 px ni usa rótulos en mayúsculas (sección 7), y una guarda lo exige (punto 7). Chat interno ya no pinta la presencia en verde y rojo, y Revisión deja de pedir desplazarse entre la cola y el detalle desde 1280 px.
+- Los demás departamentos no cambian: los componentes compartidos y las carpetas que dibujan siguen igual (punto 6).
+- Sin cambios fuera de AVIAM Web:
+  - no cambian la API, el OpenAPI, el cliente compartido ni la base, y no hay migración;
+  - no hay dependencias ni orígenes nuevos en el navegador, así que la CSP no cambia;
+  - solo se despliega AVIAM Web.
+- Ningún `data-testid` de las pantallas cambia ni se añade; con `ExportButton` desaparece `export-spinner`, que solo usaba su propia prueba. Se conservan los textos, roles y nombres accesibles que usan el E2E del ciclo (`fase2-preoperacion.spec.ts`, `fase3-operacion.spec.ts` y `demo-vuelo.spec.ts`) y la guía de presentación del bloque Z.
+- Pruebas que cambian:
+  - `CoverageRoute.test.jsx`: las filas de «Atributos de las posiciones» se buscan con `closest('tr')`, porque ya son filas de tabla, y el estado sin permiso ya no es `role="alert"`;
+  - `MasterDataRoute.test.jsx`: las filas editables también se buscan con `closest('tr')`;
+  - `CoverageRoute.test.jsx`, `MasterDataRoute.test.jsx`, `DevicesRoute.test.jsx`, `CanonicalChatRoute.test.jsx`, `CanonicalNotificationsRoute.test.jsx` y `admin-occ/CanonicalReadRoutes.test.jsx` dibujan esas rutas dentro del marco (`OccShellTestProvider`; la prueba del recibo de Notificaciones ya montaba el `OccShellProvider` de verdad), y los casos de `CanonicalReadRoutes.test.jsx` en que el chat y Notificaciones releen con el feed anuncian por el canal del marco y no por un observador propio;
+  - `occRequestBudget.test.js`: la lista de observadores que quedan pierde las cinco pantallas de U6, y el minuto de cada pantalla cuenta también las relecturas y el sondeo de `OCC_SHELL_LISTENERS`;
+  - `OperationCloseSection.test.jsx`: el hito «Bloqueo · {hora}» pasa a la tira de hitos, con «Bloqueo», su hora y «1 de 6», y el exceso del paquete se lee en su pastilla de atención;
+  - `review/components/icons.test.jsx` prueba solo `XIcon`;
+  - `occUiMessages.test.js` suma las secciones `table` y `dialog`, y `statusVocabulary.test.js`, los tonos de estado;
+  - `occStyleGuard.test.js` cambia la guarda del azul del chat por la de sus hojas, y suma las de las tarjetas apiladas (con la fila elegida), del foco de fila y del mensaje de validación, de `MIGRATED_FILES` y de las pantallas rehechas;
+  - las pruebas de las ocho rutas suman casos de la disposición, del inglés y de los estados; fuera de los cambios de esta lista, conservan los que ya tenían;
+  - se borra `ExportButton.test.jsx`.
+- Pruebas nuevas:
+  - en `occ-ui/`: `OccDataTable`, `OccToolbar`, `OccButton`, `OccField`, `OccDialog`, `OccStatusPill`, `OccStatusLegend` y `classes`;
+  - la paridad de los mensajes de Revisión, Cobertura, Datos maestros, Tablets, Contratos listos y Reportes, y `review/reviewStatusTone.test.js`;
+  - en las pruebas de Cobertura de posiciones, Datos maestros, Tablets, Chat interno y Notificaciones, un caso por pantalla: escucha solo su recurso en el canal del marco, relee con su anuncio y no con el de otro módulo, no abre un observador y deja de escuchar al salir; y en `occRequestBudget.test.js`, la prueba de `OCC_SHELL_LISTENERS`, que exige que estén las cinco, que no quede ningún `movesIn: 'U6'` y que cada una tome el canal, nombre sus recursos y su sondeo, no abra un observador y siga contando sus relecturas;
+  - `tests/visualScreensFixtures.test.js`, que valida las respuestas sintéticas de las pantallas con los validadores estrictos del cliente compartido;
+  - en la suite visual, ocho pruebas en `tests/visual/occ/` (`review`, `coverage`, `notifications`, `chat`, `master-data`, `devices`, `contracts` y `reports`), sobre `occScreen.mjs` y `fixtures/screensApi.mjs`: los datos, el vacío, el error o la falta de permiso y los diálogos de cada pantalla, a 1920×1080 y a 1440×900, y el chat en su ancho estrecho, a 1024×768. Revisión suma la operación que sigue en rampa sin entrega, con su panel de incidencias dentro del detalle acoplado, y la revisión reabierta; Reportes, la primera carga de su lista de reportes, y Contratos listos, una fila plegada. La sesión sintética es la de un administrador del OCC, que también gestiona incidencias. Como el resto de la suite, corre fuera del CI.
+
 ## Nota del 15 de noviembre de 2026: el OCC vuelve a tener tema claro, oscuro por defecto
 
 El dueño lo pidió para la presentación del 16 de noviembre. Esta nota revierte la decisión de U1 «solo oscuro, sin botón de tema» (`91cc9675`); el resto del sistema visual no cambia.

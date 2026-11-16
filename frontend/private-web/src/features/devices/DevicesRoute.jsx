@@ -1,84 +1,81 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import EmptyState from '../../components/EmptyState';
-import Modal from '../../components/Modal';
-import StatusBadge from '../../components/StatusBadge';
-import { OccStationBadge } from '../admin-occ/OccQueueState';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from '../../i18n/LanguageScope';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { OCC_CLASSES } from '../occ-ui/classes';
+import OccButton from '../occ-ui/OccButton';
+import OccDataTable from '../occ-ui/OccDataTable';
+import OccDialog from '../occ-ui/OccDialog';
+import OccEmptyState from '../occ-ui/OccEmptyState';
+import { OccTextareaField } from '../occ-ui/OccField';
+import OccGlyph from '../occ-ui/OccGlyph';
+import OccPanel, { OccRemoteView } from '../occ-ui/OccPanel';
+import OccSkeleton from '../occ-ui/OccSkeleton';
+import OccStatusPill from '../occ-ui/OccStatusPill';
+import OccToolbar from '../occ-ui/OccToolbar';
+import { formatClock } from '../occ-ui/occTime';
+import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { deviceProblemMessage } from '../../services/deviceProblemMessages';
-import { DEVICE_STATUSES, loadOccDevices, revokeOccDevice, unbindOccDevice } from '../../services/occDevicesService';
+import { loadOccDevices, revokeOccDevice, unbindOccDevice } from '../../services/occDevicesService';
 import { isConflict, isForbidden } from '../../services/problemMessages';
-import { IdCardIcon } from '../shell/components/icons';
+import { devicesMessages } from './devicesMessages';
 
-const card = 'rounded-2xl border border-black/5 bg-white/80 p-5 dark:border-white/5 dark:bg-surface-dark-card';
-const muted = 'text-text-secondary-light dark:text-text-secondary-dark';
-const button = 'inline-flex min-h-11 items-center justify-center rounded-lg px-4 text-sm font-semibold disabled:opacity-50';
-const secondary = `${button} border border-accent-600/40 text-accent-600`;
-const danger = `${button} border border-status-danger/40 text-status-danger`;
-const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
-
+// Template D of the design («Registro»): the toolbar with the page title, the register of the station's tablets as a
+// dense table, and the dialogs of its two commands.
 const PLATFORMS = Object.freeze({ Android: 'Android', Ios: 'iOS' });
-const formatLocalDateTime = value => (value
-  ? new Date(value).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
-
-const nameOf = device => device.deviceName || `Tablet ${PLATFORMS[device.platform] ?? device.platform}`;
-const agentOf = device => device.agent?.name || 'su último agente';
-
 /**
- * What the dialog of a command explains, and whether its reason is required. Revoking ends the sessions of the
- * tablet's last agent, also when OCC had freed it, unless that agent signed out of it (2-N02): the copy only claims
- * what the server does.
+ * The tone of who holds a tablet, with its word in devicesMessages: in an agent's hands is the active state, free is the
+ * neutral one and revoked the muted one. A tablet whose agent is in the middle of an operation asks for attention: no
+ * other agent can take it until that one signs out or OCC frees it.
  */
+export const DEVICE_STATUS_TONES = Object.freeze({ Bound: 'active', Unbound: 'neutral', Revoked: 'muted' });
+const STATE_SLAB = 'rounded-md border border-occ-line bg-occ-panel text-occ-text';
+const days = new Map();
+
+/** What a command needs: whether its reason is required (5 to 500 characters), as the service checks it. */
 const COMMANDS = Object.freeze({
-  unbind: {
-    title: tablet => `Liberar ${tablet}`,
-    description: () => 'La tablet queda libre: el próximo agente que inicie sesión en ella la tomará, aunque el anterior tenga una operación en curso. El agente anterior ya no podrá enviar desde ella.',
-    reasonLabel: 'Motivo (opcional)',
-    submit: 'Liberar tablet',
-    required: false,
-    done: tablet => `${tablet} quedó libre para el próximo agente.`,
-  },
-  revoke: {
-    title: tablet => `Revocar ${tablet}`,
-    description: device => (device.status === 'Bound'
-      ? `Úsalo solo con una tablet perdida o robada: nunca más podrá vincularse con ELEVANT y se cierran todas las sesiones de ${agentOf(device)}. No se puede deshacer.`
-      : `Úsalo solo con una tablet perdida o robada: nunca más podrá vincularse con ELEVANT. Si ${agentOf(device)} no cerró sesión en ella, se cierran todas sus sesiones. No se puede deshacer.`),
-    reasonLabel: 'Motivo',
-    submit: 'Revocar tablet',
-    required: true,
-    done: tablet => `${tablet} quedó revocada; ya no queda ninguna sesión abierta en ella.`,
-  },
+  unbind: Object.freeze({ required: false }),
+  revoke: Object.freeze({ required: true }),
 });
 
-function DeviceRow({ device, canUnbind, canRevoke, onCommand }) {
-  const status = DEVICE_STATUSES[device.status] ?? { label: device.status, tone: 'neutral' };
-  const since = device.status === 'Revoked' ? device.revokedAt : device.status === 'Unbound' ? device.unboundAt : device.boundAt;
-  const holder = device.agent
-    ? `${device.agent.name}${device.agent.employeeNumber ? ` · ${device.agent.employeeNumber}` : ''}`
-    : 'Sin agente';
-  return (
-    <li className="flex flex-wrap items-start justify-between gap-3 py-3">
-      <div className="min-w-0 space-y-0.5">
-        <p className="font-semibold">{nameOf(device)}</p>
-        <p className={`text-xs ${muted}`}>{PLATFORMS[device.platform] ?? device.platform}
-          {device.operatingSystemVersion ? ` ${device.operatingSystemVersion}` : ''} · App {device.appVersion} · Última conexión {formatLocalDateTime(device.lastSeenAt)}</p>
-        <p className="text-sm">{device.status === 'Bound' ? 'En manos de ' : 'Último agente: '}<strong>{holder}</strong>
-          {since && <span className={`text-xs ${muted}`}> · desde {formatLocalDateTime(since)}</span>}</p>
-        {device.agentHasOperationInProgress && <p className="text-xs font-semibold text-status-warning">
-          Operación en curso: otro agente no puede tomarla hasta que este cierre sesión o la liberes.</p>}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge tone={status.tone} label={status.label} />
-        {canUnbind && device.status === 'Bound' && (
-          <button type="button" className={secondary} onClick={() => onCommand('unbind', device)}>Liberar</button>
-        )}
-        {canRevoke && device.status !== 'Revoked' && (
-          <button type="button" className={danger} onClick={() => onCommand('revoke', device)}>Revocar</button>
-        )}
-      </div>
-    </li>
-  );
+/**
+ * «13/11 08:20» in the station's time, with the year when it is not this one («13/11/2025 08:20»), or «—». Day and
+ * month always take two digits (es-DO would write «1/9»), so the column of times keeps one width.
+ */
+function formatInstant(value, locale) {
+  const ms = Date.parse(value ?? '');
+  if (!Number.isFinite(ms)) return '—';
+  if (!days.has(locale)) {
+    days.set(locale, new Intl.DateTimeFormat(locale, {
+      day: '2-digit', month: '2-digit', year: 'numeric', timeZone: BUSINESS_TIME_ZONE,
+    }));
+  }
+  const format = days.get(locale);
+  const yearOf = instant => format.formatToParts(instant).find(part => part.type === 'year')?.value;
+  const withYear = yearOf(ms) !== yearOf(Date.now());
+  // Both languages write the year last: without it, the separator before it goes too.
+  const parts = format.formatToParts(ms);
+  const day = parts.filter((part, index) => withYear || (part.type !== 'year' && parts[index + 1]?.type !== 'year'))
+    .map(part => (part.type === 'day' || part.type === 'month' ? part.value.padStart(2, '0') : part.value)).join('');
+  return `${day} ${formatClock(ms, locale, BUSINESS_TIME_ZONE)}`;
+}
+
+/** Who holds the tablet: its word with the glyph of its tone, and why a busy one asks for attention. */
+function DeviceStatus({ device }) {
+  const { t } = useTranslation(devicesMessages);
+  const busy = device.status === 'Bound' && device.agentHasOperationInProgress;
+  if (busy) {
+    return (
+      <span className="flex flex-col items-start gap-1">
+        <OccStatusPill size="sm" tone="attention" label={t('inProgress')} />
+        <span className="text-xs text-occ-muted">{t('inProgressHint')}</span>
+      </span>
+    );
+  }
+  const known = Object.hasOwn(DEVICE_STATUS_TONES, device.status);
+  return <OccStatusPill size="sm" tone={known ? DEVICE_STATUS_TONES[device.status] : 'neutral'}
+    label={known ? t(`status.${device.status}`) : device.status} />;
 }
 
 /**
@@ -87,7 +84,10 @@ function DeviceRow({ device, canUnbind, canRevoke, onCommand }) {
  * revokes a lost one. Each command carries its Idempotency-Key and the binding token on screen.
  */
 export default function DevicesRoute() {
+  const { t, locale } = useTranslation(devicesMessages);
   const station = useOccStation();
+  // The frame's stable channel: listening on it does not re-render the page when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [state, setState] = useState({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [feedback, setFeedback] = useState({ tone: '', text: '' });
@@ -97,6 +97,8 @@ export default function DevicesRoute() {
   const [error, setError] = useState('');
   const keys = useRef(createCommandKeyHolder());
   const live = useRef(() => {});
+  const reasonRef = useRef(null);
+  const descriptionId = useId();
 
   useEffect(() => {
     if (!station.stationId) return undefined;
@@ -112,14 +114,12 @@ export default function DevicesRoute() {
     return () => controller.abort();
   }, [station.stationId, attempt]);
 
-  // A tablet changed hands somewhere (sign-in, sign-out, another OCC seat): re-read under current permissions.
-  useEffect(() => {
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('mobile_devices')) void live.current();
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, []);
+  // A tablet changed hands somewhere (sign-in, sign-out, another OCC seat): re-read under current permissions. The
+  // announcement comes from the tab's single account-change observer, the OCC frame's (contratos 2.7).
+  useEffect(() => subscribe(['mobile_devices'], () => { void live.current(); }), [subscribe]);
+
+  const nameOf = device => device.deviceName || t('unnamed', { platform: PLATFORMS[device.platform] ?? device.platform });
+  const agentOf = device => device.agent?.name || t('commands.lastAgent');
 
   const open = useCallback((kind, device) => {
     setCommand({ kind, device });
@@ -140,7 +140,7 @@ export default function DevicesRoute() {
       await keys.current.run(`device.${kind}`, { id: device.id, ...body }, key => (kind === 'revoke'
         ? revokeOccDevice(device.id, body, key) : unbindOccDevice(device.id, body, key)));
       setCommand(null);
-      setFeedback({ tone: 'success', text: COMMANDS[kind].done(nameOf(device)) });
+      setFeedback({ tone: 'success', text: t(`commands.${kind}.done`, { tablet: nameOf(device) }) });
       void live.current();
     } catch (failure) {
       if (isConflict(failure) || failure?.status === 404) {
@@ -155,60 +155,119 @@ export default function DevicesRoute() {
   }
 
   const data = state.data;
+  const columns = data ? [
+    {
+      key: 'tablet', header: t('list.columns.tablet'),
+      render: device => (
+        <span className="flex min-w-0 flex-col">
+          <span className="font-semibold text-occ-text">{nameOf(device)}</span>
+          <span className="flex flex-wrap gap-x-3 text-xs text-occ-muted">
+            <span>{PLATFORMS[device.platform] ?? device.platform}{device.operatingSystemVersion ? ` ${device.operatingSystemVersion}` : ''}</span>
+            <span>{t('app', { version: device.appVersion })}</span>
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: 'agent', header: t('list.columns.agent'),
+      render: device => {
+        const since = device.status === 'Revoked' ? device.revokedAt : device.status === 'Unbound' ? device.unboundAt : device.boundAt;
+        const holder = device.agent
+          ? `${device.agent.name}${device.agent.employeeNumber ? ` · ${device.agent.employeeNumber}` : ''}`
+          : t('noAgent');
+        return (
+          <span className="flex min-w-0 flex-col">
+            <span className="text-xs text-occ-muted">{device.status === 'Bound' ? t('holding') : t('lastAgent')}</span>
+            <strong className="font-semibold text-occ-text">{holder}</strong>
+            {since && <span className="text-xs text-occ-muted">{t('since', { date: formatInstant(since, locale) })}</span>}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'lastSeen', header: t('list.columns.lastSeen'), width: '9.5rem', mono: true,
+      render: device => <time dateTime={device.lastSeenAt} className="whitespace-nowrap">{formatInstant(device.lastSeenAt, locale)}</time>,
+    },
+    { key: 'status', header: t('list.columns.status'), width: '15rem', render: device => <DeviceStatus device={device} /> },
+    {
+      key: 'actions', header: '', width: '11rem',
+      render: device => (
+        <span className="flex flex-wrap gap-2">
+          {data.canUnbind && device.status === 'Bound' && (
+            <OccButton size="sm" onClick={() => open('unbind', device)}>{t('unbind')}</OccButton>
+          )}
+          {data.canRevoke && device.status !== 'Revoked' && (
+            <OccButton size="sm" variant="danger" onClick={() => open('revoke', device)}>{t('revoke')}</OccButton>
+          )}
+        </span>
+      ),
+    },
+  ] : [];
+
   let body;
-  if (!station.stationId) body = <p role="alert" className={card}>Tu cuenta no tiene una estación OCC autorizada.</p>;
-  else if (state.status === 'loading') body = <p role="status" className={card}>Cargando las tablets…</p>;
-  else if (state.status === 'error' && isForbidden(state.error)) body = <p role="alert" className={card}>
-    Tu acceso no permite ver las tablets de esta estación.</p>;
-  else if (state.status === 'error') body = <div role="alert" className={`${card} flex flex-wrap items-center gap-3`}>
-    <p>{deviceProblemMessage(state.error)}</p>
-    <button type="button" className={secondary} onClick={() => setAttempt(value => value + 1)}>Reintentar</button></div>;
-  else if (data.devices.length === 0) body = <div className={card}>
-    <EmptyState icon={IdCardIcon} title="Sin tablets registradas"
-      description="Una tablet aparece aquí cuando un agente de la estación inicia sesión en ella." /></div>;
-  else body = (
-    <section className={`${card} space-y-2`} aria-label="Tablets de la estación">
-      {!data.canUnbind && !data.canRevoke && <p role="status" className={`text-sm ${muted}`}>
-        Tu acceso permite consultar las tablets, no liberarlas ni revocarlas.</p>}
-      <ul className="divide-y divide-black/5 dark:divide-white/5">
-        {data.devices.map(device => (
-          <DeviceRow key={`${device.id}-${device.version}`} device={device} canUnbind={data.canUnbind}
-            canRevoke={data.canRevoke} onCommand={open} />
-        ))}
-      </ul>
-    </section>
+  if (!station.stationId) body = <p role="alert" className={`${OCC_CLASSES.card} text-sm`}>{t('states.noStation')}</p>;
+  else if (state.status === 'loading') {
+    body = <OccRemoteView status="loading" className={STATE_SLAB}
+      skeleton={<OccSkeleton rows={4} label={t('states.loading')} />} />;
+  } else if (state.status === 'error' && isForbidden(state.error)) {
+    body = <p role="alert" className={`${OCC_CLASSES.card} text-sm`}>{t('states.forbidden')}</p>;
+  } else if (state.status === 'error') {
+    // The service's own sentence for the failure (deviceProblemMessage), never the server's title.
+    body = <OccRemoteView status="error" className={STATE_SLAB} onRetry={() => setAttempt(value => value + 1)}
+      labels={{ error: deviceProblemMessage(state.error), retry: t('states.retry') }} />;
+  } else body = (
+    <OccPanel title={t('list.title')} meta={t('list.about')}>
+      {!data.canUnbind && !data.canRevoke && data.devices.length > 0 && (
+        <p role="status" className="border-b border-occ-line px-3 py-2 text-sm text-occ-muted">{t('states.readOnly')}</p>
+      )}
+      <OccDataTable caption={t('list.title')} columns={columns} rows={data.devices} getRowId={device => device.id}
+        emptyState={<OccEmptyState title={t('list.emptyTitle')} description={t('list.emptyDescription')} />} />
+    </OccPanel>
   );
 
   const spec = command ? COMMANDS[command.kind] : null;
+  const commandText = key => (command ? t(`commands.${command.kind}.${key}`, { tablet: nameOf(command.device), agent: agentOf(command.device) }) : '');
+  let description = '';
+  if (command?.kind === 'unbind') description = commandText('description');
+  else if (command) description = commandText(command.device.status === 'Bound' ? 'descriptionBound' : 'descriptionFree');
+  // The station is in the status bar of the OCC frame: the page has no badge of its own, nor a line under its title.
   return (
-    <section className="space-y-4">
-      <header data-occ-header className={`${card} flex flex-wrap items-center justify-between gap-3`}>
-        <div><h1 className="text-xl font-semibold">Tablets</h1>
-          <p className={`text-sm ${muted}`}>Las tablets son compartidas: cerrar sesión las libera y el siguiente agente las toma. Nada se borra; cada cambio queda auditado.</p></div>
-        <OccStationBadge />
-      </header>
-      {feedback.text && (feedback.tone === 'danger'
-        ? <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{feedback.text}</p>
-        : <p role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{feedback.text}</p>)}
+    <section className="flex min-w-0 flex-col gap-3 text-occ-text">
+      <OccToolbar title={t('title')} />
+      {feedback.text && (
+        <p role={feedback.tone === 'danger' ? 'alert' : 'status'}
+          className={`flex items-start gap-2 rounded-md border border-occ-line px-3 py-2 text-sm text-occ-text ${feedback.tone === 'danger' ? 'bg-occ-warn-soft' : 'bg-occ-panel-raised'}`}>
+          {feedback.tone === 'danger' ? <OccGlyph name="attention" className="mt-0.5" /> : null}
+          <span className="min-w-0">{feedback.text}</span>
+        </p>
+      )}
       {body}
-      <Modal open={Boolean(command)} onClose={() => setCommand(null)} tone={command?.kind === 'revoke' ? 'danger' : 'default'}
-        title={spec ? spec.title(nameOf(command.device)) : ''} busy={busy}
+      {/* Freeing a tablet starts on its reason, as before; revoking cannot be undone, so its alertdialog starts on
+          «Cancelar». */}
+      <OccDialog open={Boolean(command)} onClose={() => setCommand(null)} tone={command?.kind === 'revoke' ? 'danger' : 'default'}
+        title={commandText('title')} busy={busy} descriptionId={descriptionId}
+        initialFocusRef={command?.kind === 'unbind' ? reasonRef : undefined}
         footer={<>
-          <button type="button" onClick={() => setCommand(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
-          <button type="submit" form="occ-device-command" disabled={busy || (spec?.required && reason.trim().length < 5)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${command?.kind === 'revoke' ? 'bg-status-danger' : 'bg-accent-600'}`}>
-            {busy ? 'Guardando…' : spec?.submit}</button>
+          <OccButton data-occ-dialog-cancel="" disabled={busy} onClick={() => setCommand(null)}>{t('cancel')}</OccButton>
+          <OccButton type="submit" form="occ-device-command" variant={command?.kind === 'revoke' ? 'danger' : 'primary'}
+            busy={busy} busyLabel={t('saving')} disabled={spec?.required && reason.trim().length < 5}>
+            {commandText('submit')}
+          </OccButton>
         </>}>
         {spec && (
-          <form id="occ-device-command" onSubmit={submit} className="space-y-3">
-            {error && <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-            <p>{spec.description(command.device)}</p>
-            <label className="block text-sm font-semibold">{spec.reasonLabel}
-              <textarea rows={3} maxLength={500} required={spec.required} value={reason}
-                onChange={event => setReason(event.target.value)} className={field} /></label>
+          <form id="occ-device-command" onSubmit={submit} className="flex flex-col gap-3">
+            {error && (
+              <p role="alert" className="flex items-start gap-2 rounded-md border border-occ-line bg-occ-warn-soft px-3 py-2 text-sm text-occ-text">
+                <OccGlyph name="attention" className="mt-0.5" />
+                <span className="min-w-0">{error}</span>
+              </p>
+            )}
+            <p id={descriptionId} className="text-sm text-occ-text">{description}</p>
+            <OccTextareaField ref={reasonRef} label={commandText('reasonLabel')} rows={3} maxLength={500} required={spec.required} value={reason}
+              onChange={event => setReason(event.target.value)} />
           </form>
         )}
-      </Modal>
+      </OccDialog>
     </section>
   );
 }

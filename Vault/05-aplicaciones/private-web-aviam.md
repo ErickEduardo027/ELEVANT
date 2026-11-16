@@ -39,6 +39,15 @@ sources:
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/src/config/securityHeaders.mjs
+  - frontend/private-web/src/features/review/CanonicalReviewRoute.jsx
+  - frontend/private-web/src/features/review/components/OperationCloseSection.jsx
+  - frontend/private-web/src/features/position-coverage/CoverageRoute.jsx
+  - frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx
+  - frontend/private-web/src/features/chat/CanonicalChatRoute.jsx
+  - frontend/private-web/src/features/chat/PresencePeople.jsx
+  - frontend/private-web/src/features/chat/presenceStatus.js
+  - frontend/private-web/src/features/ready-contracts/ReadyContractsRoute.jsx
+  - frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx
 tags:
   - aplicaciones
   - private-web
@@ -82,7 +91,9 @@ que usan tanto Tailwind como los hooks; incluye `3xl` (1920 px).
 - Los paneles laterales y los dashboards 3/2 se separan desde 1024 px. Para
   pantallas nuevas existen `PageHeader`, `SplitLayout` y `FilterBar` en
   `src/components`. Los modales son hojas inferiores en teléfono.
-- El chat OCC funciona como lista/detalle por debajo de 1024 px.
+- El chat OCC funciona como lista/detalle por debajo de 1024 px. Posterior al
+  commit verificado, desde el PR U6, el corte es 1280 px
+  ([Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6)).
 
 La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 1920 px contra la API Development. No acredita un despliegue en el VPS.
@@ -138,6 +149,8 @@ Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vue
 El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Desde el PR U4, también posterior al commit verificado, la primera entrada al OCC de cada pestaña después de iniciar sesión pasa por una pantalla de arranque: ver [Pantalla de arranque del OCC (PR U4)](#pantalla-de-arranque-del-occ-pr-u4). Desde el PR U3, también posterior, Panorama es la consola del OCC, un mapa a pantalla completa con paneles que se pliegan, y solo ella llena el espacio del marco sin margen: ver [Consola del OCC (PR U3)](#consola-del-occ-pr-u3). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
 En el árbol local posterior al commit verificado, «Estación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
+
+Desde el PR U6, también posterior al commit verificado, Revisión, Cobertura de posiciones, Notificaciones, Chat interno, Datos maestros, Tablets, Contratos listos y Reportes se dibujan con las primitivas del OCC; Usuarios y Mis gastos, que comparten otros departamentos, siguen con el puente de estilos. Ver [Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6).
 
 OCC opera solo Punta Cana: todas sus rutas toman el alcance `PUJ` que trae la sesión y ya no ofrecen selector de estación. Si la cuenta no tiene ese alcance, cada módulo muestra su estado sin estación autorizada y no consulta la API; la autorización sigue en el servidor. Fuente: [alcance PUJ](../../frontend/private-web/src/features/admin-occ/useOccStation.js).
 
@@ -544,6 +557,10 @@ presentación anterior, incluidos sus mapas. Del #156 se mantienen:
 La presencia vive en memoria de un solo proceso de la API: se pierde al
 reiniciar y no se comparte entre réplicas.
 
+Posterior al commit verificado, desde el PR U6, la presencia se dibuja por su
+forma y sin color, con su leyenda: ver
+[Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6).
+
 ## Ciclo comercial: Contratos, Finanzas y Superadministración (fase 1)
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
@@ -742,12 +759,13 @@ estructura de ninguna pantalla: los textos, roles, nombres accesibles y
   definiera son ahora alias de los tokens: el chat vuelve a tener fondos y
   bordes. [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js)
   suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`, y
-  retira `signal`. No todos los tokens tienen clase: `--occ-field`,
-  `--occ-primary`, `--occ-primary-hover`, los `--occ-on-*`, los `--occ-*-fill`
-  y `--occ-scrim` solo existen como variables CSS hasta que un PR añada su
-  llave, y una guarda falla si una clase de color `occ-*` nombra un color sin
-  llave. Una clase `occ-*` nunca lleva modificador de opacidad: Tailwind no la
-  genera.
+  retira `signal`. No todos los tokens tienen clase: después de U1, U2 sumó
+  las llaves `primary`, `primary-hover`, `on-primary` y `scrim`, y U6, `field`.
+  `--occ-arriving-fill`, `--occ-on-accent`, `--occ-on-warn`, `--occ-on-danger`,
+  `--occ-warn-fill` y `--occ-danger-fill` siguen existiendo solo como
+  variables CSS hasta que un PR añada su llave, y una guarda falla si una clase
+  de color `occ-*` nombra un color sin llave. Una clase `occ-*` nunca lleva
+  modificador de opacidad: Tailwind no la genera.
 - **Puente de estilos heredados.** La mayoría de las pantallas del OCC todavía
   usa clases heredadas (`bg-white`, `dark:bg-surface-dark-card`,
   `text-text-secondary-*`…). La hoja
@@ -907,6 +925,12 @@ desfase del reloj, la severidad de cada incidencia y el acuse compartido por
 estación. Las pruebas cubren el marco en jsdom; nada de esto acredita un
 despliegue ni una revisión visual en el VPS.
 
+Desde el PR U6, posterior al commit verificado, Cobertura de posiciones, Datos
+maestros, Tablets, Chat interno y Notificaciones ya se dibujan con las
+primitivas del OCC, y U6 no cambió sus lecturas. Las cinco escuchan ya en el
+observador del marco y no abren uno propio
+([Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6)).
+
 ## Pantalla de arranque del OCC (PR U4)
 
 Posterior al commit verificado de esta nota: esta sección describe el código del
@@ -977,6 +1001,151 @@ está en el HTML del servidor, así que el primer pintado sigue siendo
 siguientes no hay pantalla de arranque. Mientras espera, cubre la página y
 recibe los clics. Nada de esto acredita un despliegue ni una revisión visual
 en el VPS.
+
+## Resto de pantallas del OCC (PR U6)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U6 «Resto de pantallas del OCC» (`5eb212ac`, `fae769ea`, `1219657d`,
+`87daab94` y `2be6c178`), que esa verificación no cubre. Las plantillas, lo que
+queda en el puente y las diferencias con el diseño y con el plan están en la
+nota del 14 de noviembre de 2026 sobre U6 de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U6 cambia cómo se ven
+y se recorren ocho pantallas del OCC; no cambia la API ni lo que leen o
+escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
+`--occ-*`, así que se leen en los dos temas del OCC.
+
+- **Dos plantillas.** Revisión, Cobertura de posiciones y Chat interno son una
+  mesa de trabajo: una barra con el título y, desde 1280 px, la lista y el
+  detalle lado a lado, cada uno con su propio desplazamiento. Notificaciones
+  también, sin detalle. Datos maestros, Tablets, Contratos listos y Reportes
+  son un registro: la barra, una tabla densa y, si los hay, sus diálogos. La
+  [barra](../../frontend/private-web/src/features/occ-ui/OccToolbar.jsx) lleva
+  el título de la página, sin subtítulo ni la insignia de la estación, que ya
+  está en la barra de estado. Cada lectura muestra sus cinco estados, y sin
+  permiso no ofrece «Reintentar».
+- **Revisión**
+  ([ruta](../../frontend/private-web/src/features/review/CanonicalReviewRoute.jsx)).
+  La barra filtra «Todas» o «Por revisar», con su cuenta; debajo van las tres
+  cifras y la cola «Entregas», una tabla con «Ver detalle» en cada fila. Si la
+  API corta la cola en 100 entregas, una nota bajo la lista lo dice, también
+  cuando el filtro no deja filas. Desde 1280 px el «Detalle de entrega» queda a
+  la derecha, con la barra de decisión fija al pie; por debajo se apila bajo la
+  cola. La decisión, la reapertura y los cambios de recargos se confirman en un
+  [diálogo](../../frontend/private-web/src/features/occ-ui/OccDialog.jsx)
+  dentro del detalle. «Cierre de la operación» muestra la tira completa de los
+  hitos del Reporte de Vuelo, en la hora de la estación, con los datos que el
+  detalle ya traía, y el exceso del paquete con el triángulo de atención
+  ([cierre](../../frontend/private-web/src/features/review/components/OperationCloseSection.jsx)).
+- **Cobertura de posiciones**
+  ([ruta](../../frontend/private-web/src/features/position-coverage/CoverageRoute.jsx)).
+  La barra lleva la fecha y «Terminal y vista». El tablero «Posiciones de la
+  terminal» es una tabla, «Coberturas del día» es una lista y el formulario
+  «Asignar posiciones» queda a la derecha desde 1280 px. Cada tablero lleva su
+  leyenda en la cabecera, con la forma y la palabra de sus marcas: «Atributos y
+  estado» (atributo y «Desactivada») y «Tipo de cobertura» («Refuerzo»)
+  ([leyenda](../../frontend/private-web/src/features/occ-ui/OccStatusLegend.jsx)).
+  En «Configuración», los atributos de las posiciones son filas editables. Sus
+  textos ganan inglés
+  ([mensajes](../../frontend/private-web/src/features/position-coverage/coverageMessages.js)).
+- **Notificaciones**
+  ([ruta](../../frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx)).
+  El «Historial de avisos» lleva la leyenda «Prioridad» en su cabecera y los
+  filtros «Todo», «Sin leer» y «Alertas», con su cuenta. Cada aviso lleva el
+  glifo de su prioridad; una alerta sin leer se enciende hasta que se marca
+  como leída. La pestaña «Servicios» sigue siendo el panel de Contratos.
+- **Chat interno**
+  ([ruta](../../frontend/private-web/src/features/chat/CanonicalChatRoute.jsx)).
+  «Conversaciones» y «Mensajes» van lado a lado desde 1280 px; por debajo se ve
+  una vista a la vez, y el botón «Conversaciones» («Volver a las
+  conversaciones» para los lectores de pantalla) devuelve la lista. La
+  conversación abierta va en cian. La presencia ya no va en verde y rojo: cada
+  estado es un glifo neutro que se distingue por su forma, junto a su palabra
+  (lleno, disponible; con una barra, ocupado o no molestar; a medias, ausente o
+  vuelvo enseguida; hueco, desconectado; a trazos, sin información), con la
+  leyenda «Presencia» sobre la lista
+  ([formas](../../frontend/private-web/src/features/chat/presenceStatus.js) y
+  [glifo y leyenda](../../frontend/private-web/src/features/chat/PresencePeople.jsx)).
+  Las hojas del chat pintan solo con los tokens del OCC, así que `occ.css` ya
+  no las repara.
+- **Datos maestros**
+  ([ruta](../../frontend/private-web/src/features/master-data/MasterDataRoute.jsx)).
+  «Terminales», «Posiciones» y «Tipos de avión» son tablas de filas editables,
+  con su formulario de alta; las filas inactivas se atenúan. Cada posición
+  tiene «Ver en el mapa», que abre Mapa de posiciones en ella
+  (`/admin-occ/positions-map?stand=A1`, con el código normalizado) y no lee
+  nada. Sus textos ganan inglés.
+- **Tablets**
+  ([ruta](../../frontend/private-web/src/features/devices/DevicesRoute.jsx)).
+  Una tabla con el estado de cada tablet («En uso», «Libre» o «Revocada»), y
+  liberar y revocar en diálogos; el de revocar, que no se deshace, empieza en
+  «Cancelar». Sus textos ganan inglés.
+- **Contratos listos**
+  ([ruta](../../frontend/private-web/src/features/ready-contracts/ReadyContractsRoute.jsx)).
+  La cuenta del día junto al título, «Fecha de operación» y los contratos como
+  lista; cada uno muestra sus servicios a la vista, que «Servicios contratados
+  (n)» pliega y vuelve a abrir, y conserva «Planificar vuelos».
+- **Reportes**
+  ([ruta](../../frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx)).
+  La barra «Reporte y período» lleva «Generar»; mientras llega la lista de
+  reportes, un esqueleto bajo la barra dice «Cargando reportes…». El resultado
+  lleva «Exportar Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la
+  tabla densa y las páginas al pie. El botón de exportar, que tenía carpeta
+  propia, se borró.
+- **Primitivas y guardas.** U6 suma a `src/features/occ-ui` la
+  [tabla densa](../../frontend/private-web/src/features/occ-ui/OccDataTable.jsx),
+  que se dibuja como tabla o como lista, con filas encendidas, filas
+  desplegables y tarjetas apiladas en pantallas estrechas, donde la fila
+  elegida sigue en cian; la barra; el
+  [botón](../../frontend/private-web/src/features/occ-ui/OccButton.jsx), que
+  conserva el foco mientras su comando está en camino; el
+  [campo](../../frontend/private-web/src/features/occ-ui/OccField.jsx), que
+  dibuja su propio mensaje de error y cuyo pozo es `--occ-field`, con la llave
+  `field` nueva en
+  [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js); el
+  diálogo; la
+  [pastilla de estado](../../frontend/private-web/src/features/occ-ui/OccStatusPill.jsx),
+  con los tonos de
+  [`statusVocabulary.js`](../../frontend/private-web/src/features/occ-ui/statusVocabulary.js);
+  y las [clases](../../frontend/private-web/src/features/occ-ui/classes.js) de
+  los registros. Las carpetas de las siete pantallas que no comparte nadie
+  entran en `MIGRATED_FOLDERS` del
+  [manifiesto del puente](../../frontend/private-web/src/styles/occLegacyBridgeMap.js),
+  y la ruta de Notificaciones, en `MIGRATED_FILES`, porque el resto de su
+  carpeta lo dibujan otros departamentos. Las
+  [guardas](../../frontend/private-web/src/styles/occStyleGuard.test.js)
+  exigen que esas pantallas dibujen como `occ-ui` y que las hojas del chat usen
+  solo tokens.
+- **El observador del marco.** Cobertura de posiciones, Datos maestros,
+  Tablets, Chat interno y Notificaciones ya no abren su propio observador de
+  cambios: escuchan en el canal del marco `occ_planning` (las dos primeras),
+  `mobile_devices`, `operation_messages` y `notifications`, y releen en el
+  acto, como antes; Notificaciones conserva su sondeo de 20 s. El
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  las cuenta aparte de los observadores que quedan, entre los que ya no hay
+  ninguno de U6, y la
+  [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  falla si una vuelve a abrir el suyo.
+- **Lo que sigue en el puente.** Usuarios, Mis gastos, el panel de servicios de
+  Contratos, el panel de incidencias que Revisión comparte con Planificación y
+  los componentes de avisos que usan Gestión Humana, Finanzas y Contratos no se
+  editan para el OCC. Las correspondencias de clases del puente no cambian: del
+  manifiesto cambian solo las listas `MIGRATED_FOLDERS` y `MIGRATED_FILES`.
+- **Pruebas.** Vitest cubre cada primitiva nueva, la paridad de los mensajes y
+  las ocho rutas. La suite visual suma una prueba en Chrome por pantalla, a
+  1920×1080 y a 1440×900, con una API simulada cuyas respuestas sintéticas
+  pasan los validadores estrictos del cliente compartido
+  ([validación](../../frontend/private-web/tests/visualScreensFixtures.test.js));
+  cómo corre está en
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
+
+Límites: la pestaña de servicios de Notificaciones, que es de Contratos,
+conserva su propio observador de cambios, con su sondeo, mientras está
+abierta. Chat interno conserva el margen de las
+demás pantallas y no llena el alto. La insignia de la estación
+(`OccStationBadge`) queda sin uso, y los alias `--occ-ui-*` del chat,
+definidos sin que nadie los lea, hasta su limpieza. Las capturas se revisaron
+en local, con una API simulada; nada de esto acredita un despliegue ni una
+revisión visual en el VPS.
 
 ## Mapas del OCC en un solo motor (PR M2)
 

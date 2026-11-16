@@ -43,6 +43,8 @@ export default {
           'panel-raised': 'var(--occ-panel-raised)',
           'panel-float': 'var(--occ-panel-float)',
           'panel-muted': 'var(--occ-panel-muted)',
+          // The well of a form control (occ-ui/OccField.jsx).
+          field: 'var(--occ-field)',
           line: 'var(--occ-line)',
           'line-strong': 'var(--occ-line-strong)',
           text: 'var(--occ-text)',

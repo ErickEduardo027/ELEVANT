@@ -9,6 +9,16 @@ import styles from './PresencePeople.module.css';
 const ownPresence = own => own?.availability === 'appearOffline' ? 'offline'
   : own?.availability ?? resolvePresence(own ? { state: own.state } : null);
 
+// The chosen status, also by shape: a check after its word, not only the cyan slab of the selection.
+function CheckGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true" className={styles.check}>
+      <path d="M3.4 8.6 6.5 11.6 12.6 4.6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"
+        strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function PresenceStatusPicker() {
   const { t } = useTranslation(presenceMessages);
   const presence = useOwnPresence();
@@ -47,7 +57,7 @@ export default function PresenceStatusPicker() {
     <button ref={trigger} type="button" className={styles.trigger} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       disabled={presence.status === 'loading'} onClick={() => setOpen(value => !value)}
       aria-label={t('myStatus') + ': ' + t('status.' + current) + (own?.message ? ' · ' + own.message : '')}>
-      <span className={styles.triggerDot}><PresenceDot presence={current} /></span>
+      <PresenceDot presence={current} className={styles.inlineDot} />
       <span className={styles.triggerText}>{t('status.' + current)}<small>{own?.availability ? own.message || t('myStatus') : t('automatic')}</small></span>
     </button>
     {open && <section ref={panel} id={id} role="dialog" aria-label={t('myStatus')} className={styles.panel}>
@@ -57,7 +67,8 @@ export default function PresenceStatusPicker() {
           <button key={value} type="button" role="radio" aria-checked={own?.availability === value} disabled={presence.saving}
             tabIndex={(own?.availability ?? SELECTABLE_AVAILABILITIES[0]) === value ? 0 : -1}
             className={styles.option} onClick={() => choose(value)}>
-            <span className={styles.triggerDot}><PresenceDot presence={value === 'appearOffline' ? 'offline' : value} /></span>{t('choose.' + value)}
+            <PresenceDot presence={value === 'appearOffline' ? 'offline' : value} className={styles.inlineDot} />{t('choose.' + value)}
+            {own?.availability === value ? <CheckGlyph /> : null}
           </button>)}</div>
         {own?.availability && <button type="button" className={styles.option} disabled={presence.saving} onClick={() => choose(null)}>{t('reset')}</button>}
         <div className={styles.separator} />

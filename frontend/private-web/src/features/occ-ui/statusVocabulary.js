@@ -95,6 +95,36 @@ export const SIGNALS = deepFreeze({
   notice: { colorToken: null, shape: 'diamond', es: 'Aviso', en: 'Notice' },
 });
 
+/**
+ * The tones a status takes in a list or a register (design B.4): the four normal ones carry no hue and tell themselves
+ * apart by their shape, and the two signals keep the shape of SIGNALS. `urgent` is the name SIGNALS and OccStatTile
+ * use for what the design calls «critical».
+ */
+export const OCC_STATUS_TONE_KEYS = Object.freeze(['neutral', 'active', 'done', 'muted', 'attention', 'urgent']);
+
+/**
+ * How each status tone is drawn: its glyph (`shape`), the slab behind it (`container`, a token, or null) and the
+ * tokens of its word (`textToken`) and of its glyph (`glyphToken`). Only `attention` and `urgent` get a container, so
+ * an abnormal state stands out by the shape of the row as well as by its colour; their word stays plain text and the
+ * colour lives in the glyph.
+ * - `neutral` (planned, scheduled, free): a hollow circle. `active` (in operation, on stand, live): a filled circle.
+ * - `done` (completed, closed, approved): a check, in secondary text. `muted` (cancelled, offline): a slashed circle.
+ */
+export const STATUS_TONES = deepFreeze({
+  neutral: { shape: 'hollow-circle', container: null, textToken: '--occ-text', glyphToken: '--occ-muted' },
+  active: { shape: 'filled-circle', container: null, textToken: '--occ-text', glyphToken: '--occ-text' },
+  done: { shape: 'check', container: null, textToken: '--occ-muted', glyphToken: '--occ-muted' },
+  muted: { shape: 'slashed-circle', container: null, textToken: '--occ-faint', glyphToken: '--occ-faint' },
+  attention: {
+    shape: SIGNALS.attention.shape, container: '--occ-warn-soft', textToken: '--occ-text',
+    glyphToken: SIGNALS.attention.colorToken,
+  },
+  urgent: {
+    shape: SIGNALS.urgent.shape, container: '--occ-danger-soft', textToken: '--occ-text',
+    glyphToken: SIGNALS.urgent.colorToken,
+  },
+});
+
 const normalizeStatus = status => String(status ?? '').replace(/[\s_-]+/g, '').toLowerCase();
 const ACTIVE_OPERATION_STATES = new Set(['inprogress', 'returned']);
 

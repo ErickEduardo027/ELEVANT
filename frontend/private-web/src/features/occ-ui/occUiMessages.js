@@ -3,8 +3,9 @@
 // tag means, so the status bar's «Leyenda» and the legends that maps and boards add later (contratos 2.4) read alike.
 // `alerts` belongs to OccAlertQueue, `drawer` to OccDrawer and `toasts` to OccToastStack; `panel` to OccPanel and its
 // OccRemoteView, `skeleton` to OccSkeleton, `stat` to OccStatTile, `time` to occTime.js, `flightStrip` to
-// OccFlightStrip, `timeline` to OccTimeline and occTimelineModel.js, and `milestones` to OccMilestoneStrip and
-// milestonePhases.js. The stale notice and the relative words are the ones the dashboard and the maps' data block use.
+// OccFlightStrip, `timeline` to OccTimeline and occTimelineModel.js, `milestones` to OccMilestoneStrip and
+// milestonePhases.js, `table` to OccDataTable and `dialog` to OccDialog. The stale notice and the relative words are the
+// ones the dashboard and the maps' data block use.
 export const occUiMessages = {
   es: {
     legend: {
@@ -113,6 +114,16 @@ export const occUiMessages = {
         pushback: 'Retroempuje',
       },
     },
+    table: {
+      expand: 'Mostrar detalle',
+      collapse: 'Ocultar detalle',
+      sortAscending: 'orden ascendente',
+      sortDescending: 'orden descendente',
+      sortBy: 'Ordenar por {column}',
+    },
+    dialog: {
+      close: 'Cerrar',
+    },
   },
   en: {
     legend: {
@@ -220,6 +231,16 @@ export const occUiMessages = {
         departure: 'Departure',
         pushback: 'Pushback',
       },
+    },
+    table: {
+      expand: 'Show details',
+      collapse: 'Hide details',
+      sortAscending: 'ascending order',
+      sortDescending: 'descending order',
+      sortBy: 'Sort by {column}',
+    },
+    dialog: {
+      close: 'Close',
     },
   },
 };
