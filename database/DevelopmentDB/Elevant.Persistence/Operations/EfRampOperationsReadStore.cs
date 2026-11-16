@@ -1,0 +1,374 @@
+using System.Data;
+using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Operations;
+using Elevant.Domain.Entities.Operations;
+using Elevant.Domain.Entities.Workforce;
+using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Elevant.Persistence.Operations;
+
+/// <summary>
+/// Builds the ramp agent's read-only work queue from the authenticated account profile.
+/// Every assignment and station boundary is enforced by the database query. The queue holds the operations the agent
+/// works or handed over (assigned, in progress, pending or in review, returned) and the ones OCC approved in the last
+/// <see cref="ApprovedWindow"/>, counted from the approval (its status event), not from the operation's end: a review
+/// done days after the flight still shows «Aprobada». The active ones first (3-N01): an agent with a long history still
+/// sees today's flight.
+/// An operation that already started stays in its agent's scope until it ends, even if its stand is deactivated or the
+/// flight moved to a terminal the agent has no scope in (3-N03).
+/// </summary>
+internal sealed class EfRampOperationsReadStore(ElevantDbContext context, TimeProvider timeProvider)
+    : IRampOperationsReadStore
+{
+    private const int MaximumOperations = 100;
+
+    /// <summary>How long an approved operation stays on the tablet («Aprobada») after OCC approved it.</summary>
+    private static readonly TimeSpan ApprovedWindow = TimeSpan.FromHours(48);
+
+    public async Task<RampOperationsReadResult> GetActiveAssignedOperationsAsync(
+        Guid accountId,
+        IReadOnlyCollection<Guid> allowedStationIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(allowedStationIds);
+
+        var stationIds = allowedStationIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (stationIds.Length == 0)
+        {
+            return RampOperationsReadResult.Success([]);
+        }
+
+        var strategy = context.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+            var result = await GetActiveAssignedOperationsInsideTransactionAsync(
+                accountId,
+                stationIds,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        });
+    }
+
+    private async Task<RampOperationsReadResult> GetActiveAssignedOperationsInsideTransactionAsync(
+        Guid accountId,
+        Guid[] stationIds,
+        CancellationToken cancellationToken)
+    {
+
+        var agentProfiles = await (
+                from account in context.Users.AsNoTracking()
+                join agent in context.RampAgents.AsNoTracking()
+                    on account.PersonId equals agent.PersonId
+                where account.PublicId == accountId && agent.IsActive
+                select new
+                {
+                    agent.Id,
+                    agent.PublicId,
+                })
+            .Take(2)
+            .ToArrayAsync(cancellationToken);
+        if (agentProfiles.Length != 1)
+        {
+            return RampOperationsReadResult.Failed(
+                RampOperationsReadFailure.AgentProfileUnavailable);
+        }
+
+        var agentProfile = agentProfiles[0];
+        var approvedSince = timeProvider.GetUtcNow() - ApprovedWindow;
+        var operations = await (
+                from assignment in context.OperationAgentAssignments.AsNoTracking()
+                join operation in context.GroundOperations.AsNoTracking()
+                    on assignment.GroundOperationId equals operation.Id
+                join turnaround in context.Turnarounds.AsNoTracking()
+                    on operation.TurnaroundId equals turnaround.Id
+                join station in context.Stations.AsNoTracking()
+                    on turnaround.StationId equals station.Id
+                join airline in context.Airlines.AsNoTracking()
+                    on turnaround.AirlineId equals airline.Id
+                join aircraftCandidate in context.AircraftTypes.AsNoTracking()
+                    on turnaround.AircraftTypeId equals aircraftCandidate.Id into aircraftTypes
+                from aircraft in aircraftTypes.DefaultIfEmpty()
+                join positionCandidate in context.OperationalPositions.AsNoTracking()
+                    on assignment.OperationalPositionId equals positionCandidate.Id into positions
+                from position in positions.DefaultIfEmpty()
+                where assignment.RampAgentId == agentProfile.Id &&
+                      assignment.ReleasedAt == null &&
+                      // Enums stored as text: explicit comparisons, never an array Contains.
+                      (operation.CurrentStatus == GroundOperationStatus.Assigned ||
+                       operation.CurrentStatus == GroundOperationStatus.InProgress ||
+                       operation.CurrentStatus == GroundOperationStatus.PendingReview ||
+                       operation.CurrentStatus == GroundOperationStatus.InReview ||
+                       operation.CurrentStatus == GroundOperationStatus.Returned ||
+                       // 3-N01: the window opens when OCC approves (a reopened and approved again one, at the last
+                       // approval), whatever the operation's recorded or planned end.
+                       (operation.CurrentStatus == GroundOperationStatus.Approved &&
+                        context.Set<GroundOperationStatusEvent>().AsNoTracking().Any(statusEvent =>
+                            statusEvent.GroundOperationId == operation.Id &&
+                            statusEvent.ToStatus == GroundOperationStatus.Approved &&
+                            statusEvent.OccurredAt >= approvedSince))) &&
+                      station.IsActive &&
+                      stationIds.Contains(station.PublicId) &&
+                      context.Set<RampAgentStationScope>().AsNoTracking().Any(scope =>
+                          scope.RampAgentId == agentProfile.Id &&
+                          scope.StationId == station.Id &&
+                          scope.ValidFrom <= turnaround.OperationDate &&
+                          (scope.ValidTo == null ||
+                           scope.ValidTo >= turnaround.OperationDate)) &&
+                      // 3-N03: once started, the operation is authorized by its open assignment and the station scope.
+                      (operation.ActualStartAt != null ||
+                       context.Set<StandAssignment>().AsNoTracking()
+                          .Where(standAssignment =>
+                              standAssignment.TurnaroundId == turnaround.Id &&
+                              standAssignment.AssignedTo == null)
+                          .All(standAssignment => context.Stands.AsNoTracking().Any(stand =>
+                              stand.Id == standAssignment.StandId &&
+                              stand.IsActive &&
+                              stand.StationId == station.Id &&
+                              (stand.TerminalId == null ||
+                               context.Terminals.AsNoTracking().Any(terminal =>
+                                   terminal.Id == stand.TerminalId &&
+                                   terminal.IsActive &&
+                                   terminal.StationId == station.Id &&
+                                   context.Set<RampAgentTerminalScope>()
+                                       .AsNoTracking()
+                                       .Any(scope =>
+                                           scope.RampAgentId == agentProfile.Id &&
+                                           scope.TerminalId == terminal.Id &&
+                                           scope.ValidFrom <= turnaround.OperationDate &&
+                                           (scope.ValidTo == null ||
+                                            scope.ValidTo >= turnaround.OperationDate)))))))
+                // The active ones first; the approved ones (kept for 48 h after the approval) after them.
+                orderby operation.CurrentStatus == GroundOperationStatus.Approved,
+                    operation.PlannedStartAt == null,
+                    operation.PlannedStartAt,
+                    turnaround.OperationDate,
+                    turnaround.OperationCode,
+                    turnaround.PublicId
+                select new
+                {
+                    Assignment = new RampAgentAssignmentData(
+                        assignment.PublicId,
+                        agentProfile.PublicId,
+                        position == null
+                            ? null
+                            : new RampOperationalPositionData(
+                                position.PublicId,
+                                position.Code,
+                                position.Name),
+                        assignment.AssignmentRole,
+                        assignment.AssignedAt),
+                    OperationInternalId = operation.Id,
+                    Operation = new RampGroundOperationData(
+                        operation.PublicId,
+                        operation.CurrentStatus.ToString(),
+                        operation.PlannedStartAt,
+                        operation.PlannedEndAt,
+                        operation.ActualStartAt,
+                        operation.ActualEndAt,
+                        operation.PassengersIn,
+                        operation.PassengersOut,
+                        operation.MtowKg),
+                    TurnaroundInternalId = turnaround.Id,
+                    turnaround.PublicId,
+                    turnaround.OperationCode,
+                    turnaround.OperationDate,
+                    TurnaroundStatus = turnaround.CurrentStatus,
+                    Station = new RampStationData(
+                        station.PublicId,
+                        station.Code,
+                        station.Name,
+                        station.IanaTimeZone),
+                    Airline = new RampAirlineData(
+                        airline.PublicId,
+                        airline.IataCode ?? string.Empty,
+                        airline.IcaoCode,
+                        airline.Name),
+                    Aircraft = aircraft == null
+                        ? null
+                        : new RampAircraftData(
+                            aircraft.PublicId,
+                            aircraft.IcaoCode,
+                            aircraft.IataCode,
+                            aircraft.Manufacturer,
+                            aircraft.Model,
+                            turnaround.AircraftRegistration),
+                })
+            .Take(MaximumOperations)
+            .ToArrayAsync(cancellationToken);
+        if (operations.Length == 0)
+        {
+            return RampOperationsReadResult.Success([]);
+        }
+
+        var turnaroundIds = operations
+            .Select(item => item.TurnaroundInternalId)
+            .Distinct()
+            .ToArray();
+        var operationIds = operations
+            .Select(item => item.OperationInternalId)
+            .Distinct()
+            .ToArray();
+
+        var stands = await (
+                from assignment in context.Set<StandAssignment>().AsNoTracking()
+                join turnaround in context.Turnarounds.AsNoTracking()
+                    on assignment.TurnaroundId equals turnaround.Id
+                join station in context.Stations.AsNoTracking()
+                    on turnaround.StationId equals station.Id
+                join stand in context.Stands.AsNoTracking()
+                    on assignment.StandId equals stand.Id
+                join terminalCandidate in context.Terminals.AsNoTracking()
+                    on stand.TerminalId equals terminalCandidate.Id into terminals
+                from terminal in terminals.DefaultIfEmpty()
+                // The stand of an operation listed above, active or not: a started one keeps showing its stand (3-N03).
+                where turnaroundIds.Contains(assignment.TurnaroundId) &&
+                      assignment.AssignedTo == null &&
+                      station.IsActive &&
+                      stationIds.Contains(station.PublicId) &&
+                      stand.StationId == station.Id &&
+                      (terminal == null || terminal.StationId == station.Id)
+                select new
+                {
+                    assignment.TurnaroundId,
+                    Stand = new RampStandData(
+                        stand.PublicId,
+                        stand.Code,
+                        terminal == null
+                            ? null
+                            : new RampTerminalData(
+                                terminal.PublicId,
+                                terminal.Code,
+                                terminal.Name)),
+                })
+            .ToDictionaryAsync(
+                item => item.TurnaroundId,
+                item => item.Stand,
+                cancellationToken);
+
+        var legs = await (
+                from leg in context.FlightLegs.AsNoTracking()
+                join origin in context.Airports.AsNoTracking()
+                    on leg.OriginAirportId equals origin.Id
+                join destination in context.Airports.AsNoTracking()
+                    on leg.DestinationAirportId equals destination.Id
+                where turnaroundIds.Contains(leg.TurnaroundId)
+                orderby leg.ScheduledAt, leg.PublicId
+                select new FlightLegProjection(
+                    leg.TurnaroundId,
+                    leg.Direction,
+                    new RampFlightLegData(
+                        leg.PublicId,
+                        leg.FlightNumber,
+                        new RampAirportData(
+                            origin.PublicId,
+                            origin.IataCode,
+                            origin.IcaoCode,
+                            origin.Name),
+                        new RampAirportData(
+                            destination.PublicId,
+                            destination.IataCode,
+                            destination.IcaoCode,
+                            destination.Name),
+                        leg.ScheduledAt,
+                        leg.EstimatedAt,
+                        leg.ActualAt)))
+            .ToArrayAsync(cancellationToken);
+
+        var services = await (
+                from service in context.OperationServices.AsNoTracking()
+                join definition in context.ServiceDefinitions.AsNoTracking()
+                    on service.ServiceDefinitionId equals definition.Id
+                where operationIds.Contains(service.GroundOperationId)
+                orderby service.LineNumber, service.PublicId
+                select new OperationServiceProjection(
+                    service.GroundOperationId,
+                    new RampOperationServiceData(
+                        service.PublicId,
+                        service.LineNumber,
+                        definition.PublicId,
+                        definition.Code,
+                        definition.Name,
+                        service.ContractedQuantity,
+                        service.ExecutedQuantity,
+                        service.BillingUnitSnapshot,
+                        service.CurrentStatus.ToString())))
+            .ToArrayAsync(cancellationToken);
+
+        var reviews = await (
+                from submission in context.OperationSubmissions.AsNoTracking()
+                join decisionCandidate in context.ReviewDecisions.AsNoTracking()
+                    on submission.Id equals decisionCandidate.OperationSubmissionId into decisions
+                from decision in decisions.DefaultIfEmpty()
+                where operationIds.Contains(submission.GroundOperationId) &&
+                      !context.OperationSubmissions.AsNoTracking().Any(other =>
+                          other.GroundOperationId == submission.GroundOperationId &&
+                          other.RevisionNumber > submission.RevisionNumber)
+                select new
+                {
+                    submission.GroundOperationId,
+                    Review = new RampReviewFeedbackData(
+                        submission.PublicId, submission.RevisionNumber,
+                        submission.Status.ToString(),
+                        decision == null ? null : decision.Reason),
+                })
+            .ToDictionaryAsync(item => item.GroundOperationId,
+                item => item.Review, cancellationToken);
+
+        var legsByTurnaround = legs.ToLookup(item => item.TurnaroundId);
+        var servicesByOperation = services.ToLookup(
+            item => item.GroundOperationId,
+            item => item.Service);
+        // Flight Report milestones recorded on the ramp (ADR-0031), in the form's order.
+        var milestoneOrder = FlightReportMilestones.All.ToDictionary(item => item.Code, item => item.SortOrder);
+        var milestones = (await context.Set<OperationMilestone>().AsNoTracking()
+                .Where(item => operationIds.Contains(item.GroundOperationId) && item.ActualAt != null)
+                .Select(item => new { item.GroundOperationId, item.Code, item.ActualAt })
+                .ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.GroundOperationId,
+                item => new RampMilestoneData(item.Code, item.ActualAt!.Value));
+        var result = operations.Select(item =>
+        {
+            var turnaroundLegs = legsByTurnaround[item.TurnaroundInternalId];
+            return new RampAssignedOperationData(
+                item.Assignment,
+                item.Operation,
+                new RampTurnaroundData(
+                    item.PublicId,
+                    item.OperationCode,
+                    item.OperationDate,
+                    item.TurnaroundStatus.ToString(),
+                    item.Station,
+                    item.Airline,
+                    item.Aircraft,
+                    stands.GetValueOrDefault(item.TurnaroundInternalId),
+                    turnaroundLegs.SingleOrDefault(
+                        leg => leg.Direction == FlightDirection.Arrival)?.Leg,
+                    turnaroundLegs.SingleOrDefault(
+                        leg => leg.Direction == FlightDirection.Departure)?.Leg),
+                servicesByOperation[item.OperationInternalId].ToArray(),
+                reviews.GetValueOrDefault(item.OperationInternalId),
+                milestones[item.OperationInternalId]
+                    .OrderBy(milestone => milestoneOrder.GetValueOrDefault(milestone.Code, int.MaxValue)).ToArray());
+        }).ToArray();
+
+        return RampOperationsReadResult.Success(result);
+    }
+
+    private sealed record FlightLegProjection(
+        long TurnaroundId,
+        FlightDirection Direction,
+        RampFlightLegData Leg);
+
+    private sealed record OperationServiceProjection(
+        long GroundOperationId,
+        RampOperationServiceData Service);
+}

@@ -1,0 +1,271 @@
+import { describe, expect, it } from 'vitest';
+import {
+  matchesTerminalFilter,
+  mapOccupancyToRampPositions,
+  mapTurnaroundsToRampPositions,
+  matchesPositionSearch,
+  findPositionByQuery,
+  computePositionsSummary,
+  getCombinedConfigExplanation,
+  buildDisabledToast,
+} from './positionsMapMappers';
+import { RAMP_POSITIONS } from '../dashboard/positionsData';
+import { DASHBOARD_POSITIONS } from '../dashboard/dashboardPositions';
+import { MDPC_LAYOUT } from '../maps/airport/airportLayout';
+import { layoutStandReferences } from '../maps/airport/layoutIndex';
+import { boardStand, createRampScenario } from '../maps/testing/mapFixtures';
+
+function position(overrides) {
+  return {
+    id: 'A1',
+    terminal: 'A',
+    latitude: 18.56,
+    longitude: -68.36,
+    status: 'available',
+    flightId: null,
+    flightNumber: null,
+    airline: null,
+    aircraftRegistration: null,
+    aircraftType: null,
+    combinedConfiguration: null,
+    linkedPositionId: null,
+    ...overrides,
+  };
+}
+
+describe('matchesTerminalFilter', () => {
+  it('matches everything for "all"', () => {
+    expect(matchesTerminalFilter(position({ terminal: 'B' }), 'all')).toBe(true);
+  });
+
+  it('matches only the requested terminal', () => {
+    expect(matchesTerminalFilter(position({ terminal: 'A' }), 'A')).toBe(true);
+    expect(matchesTerminalFilter(position({ terminal: 'B' }), 'A')).toBe(false);
+  });
+});
+
+describe('matchesPositionSearch', () => {
+  it('matches by position id case-insensitively', () => {
+    expect(matchesPositionSearch(position({ id: 'BN8' }), 'bn8')).toBe(true);
+  });
+
+  it('matches by flight number or registration', () => {
+    const occupied = position({ id: 'A5', flightNumber: 'AC1876', aircraftRegistration: 'C-1876AC' });
+    expect(matchesPositionSearch(occupied, 'AC1876')).toBe(true);
+    expect(matchesPositionSearch(occupied, 'c-1876ac')).toBe(true);
+  });
+
+  it('is permissive (matches everything) for an empty query', () => {
+    expect(matchesPositionSearch(position(), '')).toBe(true);
+  });
+
+  it('returns false when nothing matches', () => {
+    expect(matchesPositionSearch(position({ id: 'A1' }), 'ZZZ')).toBe(false);
+  });
+});
+
+describe('findPositionByQuery', () => {
+  const positions = [
+    position({ id: 'A1' }),
+    position({ id: 'B24', terminal: 'B', flightNumber: 'DM161', aircraftRegistration: 'HI1024' }),
+  ];
+
+  it('finds an exact position id', () => {
+    expect(findPositionByQuery(positions, 'a1')?.id).toBe('A1');
+  });
+
+  it('finds by flight number', () => {
+    expect(findPositionByQuery(positions, 'dm161')?.id).toBe('B24');
+  });
+
+  it('finds by aircraft registration', () => {
+    expect(findPositionByQuery(positions, 'HI1024')?.id).toBe('B24');
+  });
+
+  it('returns null when nothing matches', () => {
+    expect(findPositionByQuery(positions, 'ZZZ99')).toBeNull();
+  });
+
+  it('returns null for an empty query', () => {
+    expect(findPositionByQuery(positions, '   ')).toBeNull();
+  });
+});
+
+describe('computePositionsSummary', () => {
+  it('computes totals dynamically from the given positions', () => {
+    const summary = computePositionsSummary([
+      position({ status: 'available' }),
+      position({ status: 'available' }),
+      position({ status: 'occupied' }),
+      position({ status: 'disabled' }),
+      position({ status: 'releasing' }),
+    ]);
+    expect(summary).toEqual({ total: 5, planned: 0, unverified: 0, available: 2, occupied: 1, disabled: 1, releasing: 1 });
+  });
+
+  it('returns all-zero totals for an empty list', () => {
+    expect(computePositionsSummary([])).toEqual({ total: 0, planned: 0, unverified: 0, available: 0, occupied: 0, disabled: 0, releasing: 0 });
+  });
+});
+
+describe('getCombinedConfigExplanation', () => {
+  it('returns null for a position that is not disabled', () => {
+    expect(getCombinedConfigExplanation(position({ status: 'occupied', combinedConfiguration: '9-Alfa' }))).toBeNull();
+  });
+
+  it('returns null for a disabled position with no combined configuration', () => {
+    expect(getCombinedConfigExplanation(position({ status: 'disabled' }))).toBeNull();
+  });
+
+  it('derives the exact reason/relation text from combinedConfiguration and linkedPositionId only', () => {
+    const explanation = getCombinedConfigExplanation(
+      position({ id: 'A10', status: 'disabled', combinedConfiguration: '9-Alfa', linkedPositionId: 'A9' })
+    );
+    expect(explanation).toEqual({
+      reason: 'Configuración 9-Alfa activa.',
+      relation: 'Esta configuración utiliza A9 y bloquea temporalmente A10.',
+    });
+  });
+});
+
+describe('buildDisabledToast', () => {
+  it('builds the two-line toast copy from the position id and its combined configuration', () => {
+    expect(buildDisabledToast(position({ id: 'B30', combinedConfiguration: '29-Bravo' }))).toEqual({
+      title: 'Posición B30 inhabilitada',
+      description: 'Configuración 29-Bravo activa.',
+    });
+  });
+});
+describe('mapOccupancyToRampPositions with OCC locations (ADR-0027)', () => {
+  const reference = [{ id: 'A1', terminal: 'A', lat: 18.5641, lon: -68.3602 }];
+  const stand = (code, extra = {}) => ({ standId: `id-${code}`, code, terminalCode: 'A', standType: 'Contact', status: 'available',
+    turnarounds: [], ...extra });
+
+  it('prefers the coordinates OCC saved and marks the source', () => {
+    const [placed] = mapOccupancyToRampPositions(reference, { positions: [stand('A01', { latitude: 18.6, longitude: -68.4 })] });
+    expect(placed).toMatchObject({ id: 'A1', latitude: 18.6, longitude: -68.4, locationSource: 'occ' });
+    const [fallback] = mapOccupancyToRampPositions(reference, { positions: [stand('A01')] });
+    expect(fallback).toMatchObject({ latitude: 18.5641, longitude: -68.3602, locationSource: 'reference' });
+  });
+
+  it('adds stands OCC placed that the reference does not know, and skips unplaced unknown ones', () => {
+    const positions = mapOccupancyToRampPositions(reference, {
+      positions: [stand('A01'), stand('C07', { latitude: 18.57, longitude: -68.37 }), stand('C08')] });
+    expect(positions.map(item => item.id)).toEqual(['A1', 'C7']);
+    expect(positions[1]).toMatchObject({ standId: 'id-C07', locationSource: 'occ' });
+  });
+});
+
+describe('the retired reference row on the maps (ADR-0041)', () => {
+  const stand = (code, extra = {}) => ({ standId: `id-${code}`, code, terminalCode: 'B', standType: 'Remote', status: 'available',
+    turnarounds: [], ...extra });
+  const drawnIds = DASHBOARD_POSITIONS.map(position => position.id);
+
+  it('never draws B33 from the reference: the map draws the 41 stands of the Punta Cana catalogue', () => {
+    const empty = mapOccupancyToRampPositions(RAMP_POSITIONS, { positions: [] });
+    expect(empty).toHaveLength(41);
+    expect(empty.map(item => item.id)).toEqual(drawnIds);
+    expect(empty.every(item => item.status === 'unverified')).toBe(true);
+    // A row with that code that OCC did not place is not drawn either: the catalogue does not locate it.
+    const unplaced = mapOccupancyToRampPositions(RAMP_POSITIONS, { positions: [stand('B033'), stand('B032')] });
+    expect(unplaced.map(item => item.id)).toEqual(drawnIds);
+    expect(unplaced.find(item => item.id === 'B32')).toMatchObject({ standId: 'id-B032', status: 'available' });
+  });
+
+  it('draws a B33 that OCC placed, once and where OCC put it', () => {
+    const positions = mapOccupancyToRampPositions(RAMP_POSITIONS, { positions: [
+      stand('B033', { latitude: 18.5643, longitude: -68.3727, status: 'planned' })] });
+    expect(positions).toHaveLength(42);
+    expect(positions.filter(item => item.id === 'B33')).toEqual([expect.objectContaining({ standId: 'id-B033', terminal: 'B',
+      latitude: 18.5643, longitude: -68.3727, locationSource: 'occ', status: 'planned' })]);
+  });
+
+  it('keeps it off the dashboard ramp map too, whatever list the caller passes', () => {
+    const turnarounds = [{ id: 't-1', operationCode: 'OP-1', stand: { code: 'B33' } }];
+    expect(mapTurnaroundsToRampPositions(RAMP_POSITIONS, turnarounds).map(item => item.id)).toEqual(drawnIds);
+  });
+});
+
+describe('mapOccupancyToRampPositions with coverage and combined stands (ADR-0030)', () => {
+  const reference = [{ id: 'A1', terminal: 'A', lat: 18.5641, lon: -68.3602 }, { id: 'A2', terminal: 'A', lat: 18.5642, lon: -68.3603 }];
+  const stand = (code, extra = {}) => ({ standId: `id-${code}`, code, terminalCode: 'A', standType: 'Contact', status: 'available',
+    turnarounds: [], hasBoardingBridge: false, isRemote: false, maxAircraftSize: null, cancelledBy: null, narrowbodyOnly: false,
+    coveredBy: [], ...extra });
+
+  it('disables a free stand cancelled by an occupied combined stand and names the covering agent', () => {
+    const [a1, a2] = mapOccupancyToRampPositions(reference, { positions: [
+      stand('A01', { status: 'occupied', coveredBy: ['Riley Ramp'] }), stand('A02', { cancelledBy: 'A01' })] });
+    expect(a1).toMatchObject({ status: 'occupied', assignedAgent: 'Riley Ramp' });
+    expect(a2).toMatchObject({ status: 'disabled', combinedConfiguration: 'A01', linkedPositionId: 'A1' });
+  });
+});
+
+describe('mapOccupancyToRampPositions with demo flights (ADR-0041)', () => {
+  const reference = [{ id: 'A1', terminal: 'A', lat: 18.5641, lon: -68.3602 }, { id: 'A2', terminal: 'A', lat: 18.5642, lon: -68.3603 },
+    { id: 'A3', terminal: 'A', lat: 18.5643, lon: -68.3604 }];
+  const turnaround = (id, extra = {}) => ({ turnaroundId: id, operationCode: `PUJ-${id}`, airlineName: 'Demo Airlines',
+    arrivalFlightNumber: 'ZZ9001', departureFlightNumber: 'ZZ9002', arrivedAt: null, status: 'Confirmed', ...extra });
+  const stand = (code, turnarounds) => ({ standId: `id-${code}`, code, terminalCode: 'A', status: turnarounds.length ? 'planned' : 'available',
+    turnarounds });
+
+  it('carries isDemo from the flight the stand shows, and only when the server marks it true', () => {
+    const [demo, real, free] = mapOccupancyToRampPositions(reference, { positions: [
+      // The parked flight is the one the stand shows, even when a demo flight comes next.
+      stand('A01', [turnaround('t-1', { isDemo: true })]),
+      stand('A02', [turnaround('t-2', { arrivedAt: '2026-11-12T14:00:00Z' }), turnaround('t-3', { isDemo: true })]),
+      stand('A03', [])] });
+    expect(demo).toMatchObject({ id: 'A1', isDemo: true });
+    expect(real).toMatchObject({ id: 'A2', isDemo: false, flightNumber: 'ZZ9001' });
+    expect(free).toMatchObject({ id: 'A3', isDemo: false });
+    // The listed turnarounds keep their own mark for the drawer.
+    expect(real.turnarounds.map(item => item.isDemo === true)).toEqual([false, true]);
+  });
+});
+
+describe('mapOccupancyToRampPositions over the airport layout (PR M4)', () => {
+  const nowIso = '2026-11-13T18:07:00.000Z';
+
+  it('gives the same positions from layoutStandReferences(MDPC_LAYOUT) as from RAMP_POSITIONS', () => {
+    const references = layoutStandReferences(MDPC_LAYOUT);
+    const { board } = createRampScenario(Date.parse(nowIso));
+    const b33 = RAMP_POSITIONS.find(position => position.id === 'B33');
+    const boards = [
+      board,
+      { positions: [] },
+      null,
+      // The retired B33, placed by OCC, and a stand of an unknown code that OCC did not place.
+      { positions: [boardStand('B033', { latitude: b33.lat, longitude: b33.lon }), boardStand('Q01')] },
+    ];
+    for (const candidate of boards) {
+      expect(mapOccupancyToRampPositions(references, candidate, nowIso))
+        .toEqual(mapOccupancyToRampPositions(RAMP_POSITIONS, candidate, nowIso));
+    }
+    // The 41 drawn stands of the catalogue and C7, which OCC placed; Z1 is neither in the layout nor placed.
+    expect(mapOccupancyToRampPositions(references, board, nowIso).map(position => position.id))
+      .toEqual([...DASHBOARD_POSITIONS.map(position => position.id), 'C7']);
+  });
+
+  it('carries coveredBy, maxAircraftSize and cancelledBy from the board', () => {
+    const reference = layoutStandReferences(MDPC_LAYOUT).filter(item => ['A1', 'A2', 'A3'].includes(item.id));
+    const covered = ['Marta Castillo', 'Luis Peña'];
+    const board = { positions: [
+      boardStand('A01', { coveredBy: covered, maxAircraftSize: 'Widebody' }),
+      boardStand('A02', { cancelledBy: 'A01', narrowbodyOnly: true, maxAircraftSize: 'Narrowbody', standType: 'Remote', isRemote: true }),
+    ] };
+    const [a1, a2, a3] = mapOccupancyToRampPositions(reference, board, nowIso);
+    expect(a1).toMatchObject({
+      coveredBy: covered, assignedAgent: 'Marta Castillo, Luis Peña', maxAircraftSize: 'Widebody', standType: 'Contact',
+      isRemote: false, cancelledBy: null, linkedPositionId: null,
+    });
+    // A copy: the position never shares the board's list.
+    expect(a1.coveredBy).not.toBe(board.positions[0].coveredBy);
+    expect(a2).toMatchObject({
+      status: 'disabled', coveredBy: [], maxAircraftSize: 'Narrowbody', standType: 'Remote', isRemote: true,
+      narrowbodyOnly: true, cancelledBy: 'A01', linkedPositionId: 'A1', combinedConfiguration: 'A01',
+    });
+    // Without a stand row nothing is known: the coverage is unknown, not empty.
+    expect(a3).toMatchObject({
+      status: 'unverified', coveredBy: null, maxAircraftSize: null, standType: null, isRemote: false, cancelledBy: null,
+    });
+  });
+});

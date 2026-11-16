@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Elevant.Application\Elevant.Application.csproj" />
+    <ProjectReference Include="..\..\Elevant.Domain\Elevant.Domain.csproj" />
+    <ProjectReference Include="..\..\Elevant.Infrastructure\Elevant.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- One stand-code rule for the API and the web (ADR-0041): both test suites read the same vectors. -->
+    <None Include="..\..\Elevant.Application\Operations\StandCodes.vectors.json" Link="Fixtures\StandCodes.vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ADR-0042: synthetic readsb v2 answers (invented addresses, flights and positions); no test calls a network. -->
+    <None Update="Infrastructure\Fixtures\*.synthetic.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

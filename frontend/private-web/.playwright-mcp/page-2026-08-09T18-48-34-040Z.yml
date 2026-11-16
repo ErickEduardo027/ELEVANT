@@ -1,0 +1,194 @@
+- generic [ref=f4e3]:
+  - complementary [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - generic [ref=f4e6]:
+        - generic [ref=f4e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=f4e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=f4e12]:
+        - link "Dashboard" [ref=f4e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=f4e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=f4e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=f4e34]: Habilitaciones y certificaciones
+          - generic [ref=f4e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=f4e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=f4e43]: Carnets y permisos aeroportuarios
+          - generic [ref=f4e44]: "2"
+        - link "Horarios y disponibilidad" [ref=f4e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=f4e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=f4e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=f4e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=f4e68]: Notificaciones
+          - generic [ref=f4e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=f4e72] [cursor=pointer]:
+        - generic [ref=f4e73]: CR
+        - generic [ref=f4e74]:
+          - generic [ref=f4e75]: Camila Reyes
+          - generic [ref=f4e76]: Gestión Humana
+  - generic [ref=f4e77]:
+    - banner [ref=f4e78]:
+      - generic [ref=f4e79]: Gestión Humana
+      - generic [ref=f4e80]:
+        - button "Notificaciones" [ref=f4e81] [cursor=pointer]:
+          - generic [ref=f4e85]: "4"
+        - button "Cambiar a modo oscuro" [ref=f4e86] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=f4e90] [cursor=pointer]:
+          - generic [ref=f4e91]: CR
+          - generic [ref=f4e92]: Camila Reyes
+    - main [ref=f4e93]:
+      - generic [ref=f4e94]:
+        - generic [ref=f4e95]:
+          - generic [ref=f4e96]:
+            - heading "Habilitaciones y certificaciones" [level=1] [ref=f4e97]
+            - paragraph [ref=f4e98]: "Habilitaciones por agente, cobertura por tipo de equipo y vencimientos: vigentes, próximos a vencer y vencidos."
+          - generic [ref=f4e99]:
+            - button "Actualizar" [ref=f4e100] [cursor=pointer]
+            - button "Agregar habilitación" [ref=f4e106] [cursor=pointer]
+        - tablist [ref=f4e114]:
+          - tab "Por agente" [selected] [ref=f4e115] [cursor=pointer]
+          - tab "Por tipo de equipo" [ref=f4e116] [cursor=pointer]
+        - generic [ref=f4e117]:
+          - generic [ref=f4e118]:
+            - searchbox "Buscar agentes" [ref=f4e120]
+            - combobox "Terminal" [ref=f4e121]:
+              - option "Terminal" [selected]
+              - option "Terminal A"
+              - option "Terminal B"
+            - combobox "Estado" [ref=f4e122]:
+              - option "Estado" [selected]
+              - option "Vigente"
+              - option "Próxima a vencer"
+              - option "Vencida"
+            - combobox "Tipo de equipo" [ref=f4e123]:
+              - option "Tipo de equipo" [selected]
+            - combobox "Ordenar por" [ref=f4e124]:
+              - option "Orden predeterminado" [selected]
+              - option "Agente"
+              - option "Terminal"
+              - option "Habilitaciones vigentes"
+              - option "Próximo vencimiento"
+              - option "Cantidad de vencidas"
+              - option "Última actualización"
+            - button "Limpiar filtros" [disabled] [ref=f4e125]
+          - table [ref=f4e130]:
+            - rowgroup [ref=f4e131]:
+              - row [ref=f4e132]:
+                - columnheader "Agente" [ref=f4e133]
+                - columnheader "Terminal" [ref=f4e134]
+                - columnheader "Habilitaciones" [ref=f4e135]
+                - columnheader "Próxima expiración" [ref=f4e136]
+                - columnheader "Estado general" [ref=f4e137]
+                - columnheader "Última actualización" [ref=f4e138]
+                - columnheader "Acciones" [ref=f4e139]
+            - rowgroup [ref=f4e140]:
+              - row [ref=f4e141]:
+                - cell [ref=f4e142]
+                - cell [ref=f4e144]
+                - cell [ref=f4e146]
+                - cell [ref=f4e148]
+                - cell [ref=f4e150]
+                - cell [ref=f4e152]
+                - cell [ref=f4e154]
+              - row [ref=f4e156]:
+                - cell [ref=f4e157]
+                - cell [ref=f4e159]
+                - cell [ref=f4e161]
+                - cell [ref=f4e163]
+                - cell [ref=f4e165]
+                - cell [ref=f4e167]
+                - cell [ref=f4e169]
+              - row [ref=f4e171]:
+                - cell [ref=f4e172]
+                - cell [ref=f4e174]
+                - cell [ref=f4e176]
+                - cell [ref=f4e178]
+                - cell [ref=f4e180]
+                - cell [ref=f4e182]
+                - cell [ref=f4e184]
+              - row [ref=f4e186]:
+                - cell [ref=f4e187]
+                - cell [ref=f4e189]
+                - cell [ref=f4e191]
+                - cell [ref=f4e193]
+                - cell [ref=f4e195]
+                - cell [ref=f4e197]
+                - cell [ref=f4e199]
+              - row [ref=f4e201]:
+                - cell [ref=f4e202]
+                - cell [ref=f4e204]
+                - cell [ref=f4e206]
+                - cell [ref=f4e208]
+                - cell [ref=f4e210]
+                - cell [ref=f4e212]
+                - cell [ref=f4e214]
+        - generic:
+          - dialog:
+            - generic:
+              - button
+        - generic:
+          - dialog:
+            - generic:
+              - button
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Agregar habilitación
+                - paragraph: Registra una nueva habilitación otorgada por la entidad certificadora.
+              - button
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: Agente
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - text: Tipo de equipo
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - generic:
+                      - text: Fecha de entrenamiento
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de obtención
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de vencimiento
+                      - generic: "*"
+                    - textbox
+                - generic:
+                  - generic:
+                    - text: Entidad certificadora
+                    - generic: "*"
+                  - textbox: ALC
+                - generic:
+                  - generic:
+                    - text: Instructor / evaluador
+                    - generic: "*"
+                  - textbox
+                - generic:
+                  - generic: Observaciones
+                  - textbox
+                - generic:
+                  - generic: Documento de soporte (opcional)
+                  - textbox
+                  - generic: Se adjuntará cuando exista almacenamiento de archivos en el backend.
+            - generic:
+              - generic:
+                - button: Cancelar
+                - button [disabled]: Registrar habilitación

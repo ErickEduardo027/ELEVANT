@@ -1,0 +1,103 @@
+'use client';
+
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { alertSummary } from '../../dashboard/noc/alertModel';
+import OccPlate from '../../occ-ui/OccPlate';
+import { MenuIcon } from '../../shell/components/icons';
+import { useOccShell, useOptionalOccShellToasts } from './occShellContext';
+import { occNavLabel } from './occNavLabel';
+import OccShellOverlays from './OccShellOverlays';
+import { occShellMessages } from './occShellMessages';
+import OccAlertsButton from './status/OccAlertsButton';
+import OccClocks from './status/OccClocks';
+import OccLanguageToggle from './status/OccLanguageToggle';
+import OccLegendButton from './status/OccLegendButton';
+import OccLiveIndicator from './status/OccLiveIndicator';
+import OccSourcesButton from './status/OccSourcesButton';
+import OccThemeToggle from './status/OccThemeToggle';
+import OccUserMenu from './status/OccUserMenu';
+import { COARSE_TARGET, STATUS_BAR_LAYOUT as LAYOUT } from './status/statusBarLayout';
+
+const isCurrent = (pathname, item) => pathname === item.path || pathname?.startsWith(`${item.path}/`);
+
+/**
+ * The OCC status bar (design C.3), 48 px high on every OCC screen. It answers what time it is, whether the picture is
+ * live, whether the sources can be trusted and whether anything needs the controller: the station, the module, the
+ * live link, the sources, the alerts, the two clocks, the language, «Leyenda», the theme (light or dark, dark by
+ * default: `theme` and `onToggleTheme` from AppShell) and the account. The notification props AppShell sends go
+ * unread: the bar reads the notices of OccShellProvider (useOccShell). Which element shows at which
+ * width comes from status/statusBarLayout.js. The alerts open «Alertas y avisos» (OccAlertsDrawer), whose open state
+ * lives here and which OccShellOverlays draws in the shell root.
+ */
+export default function OccTopbar({ navigation = [], user, theme, onToggleTheme, onOpenMenu, onLogout }) {
+  const { t } = useTranslation(occShellMessages);
+  const pathname = usePathname();
+  const { live, sources, notices } = useOccShell();
+  const current = navigation.find(item => isCurrent(pathname, item));
+  const summary = useMemo(() => alertSummary(notices.items), [notices.items]);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const alertsButton = useRef(null);
+  const drawerId = useId();
+  // The drawer shows every notice the toasts stand for: opening it takes them away. What arrives while it is open is
+  // shown and read out inside it (OccShellOverlays), so closing it takes those toasts away too: none shows afterwards
+  // with its time cut short.
+  const dismissAllToasts = useOptionalOccShellToasts()?.dismissAllToasts;
+  const openAlerts = useCallback(() => {
+    setAlertsOpen(true);
+    dismissAllToasts?.();
+  }, [dismissAllToasts]);
+  const closeAlerts = useCallback(() => {
+    setAlertsOpen(false);
+    dismissAllToasts?.();
+  }, [dismissAllToasts]);
+  const alerts = useMemo(() => ({ open: alertsOpen, id: drawerId, onClose: closeAlerts, returnFocusRef: alertsButton }),
+    [alertsOpen, closeAlerts, drawerId]);
+
+  // The browser's back and forward buttons leave the screen the drawer was opened on: they close it.
+  useEffect(() => {
+    if (!alertsOpen) return undefined;
+    window.addEventListener('popstate', closeAlerts);
+    return () => window.removeEventListener('popstate', closeAlerts);
+  }, [alertsOpen, closeAlerts]);
+
+  return (
+    <header className="relative z-nav flex h-12 shrink-0 items-center gap-1 border-b border-occ-line bg-occ-panel px-2 sm:gap-1.5 sm:px-3 xl:gap-2 xl:px-4">
+      {onOpenMenu && (
+        <button type="button" onClick={onOpenMenu} aria-label={t('openMenu')}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded text-occ-text hover:bg-occ-panel-raised ${COARSE_TARGET} ${LAYOUT.menu.bar}`}>
+          <MenuIcon className="h-5 w-5" />
+        </button>
+      )}
+
+      <p className="flex min-w-0 items-center gap-2 text-sm">
+        <OccPlate kind="station">PUJ</OccPlate>
+        <span className={`shrink-0 text-occ-muted ${LAYOUT.stationCity.bar}`}>{t('stationCity')}</span>
+        <span className={`min-w-0 truncate font-semibold text-occ-text ${LAYOUT.module.bar}`}>
+          {current ? occNavLabel(t, current) : t('department')}
+        </span>
+      </p>
+
+      <span aria-hidden="true" className="min-w-0 flex-1" />
+
+      <OccLiveIndicator live={live} className={LAYOUT.live.bar} labelClassName={LAYOUT.live.label} />
+      <OccSourcesButton sources={sources} className={LAYOUT.sources.bar} labelClassName={LAYOUT.sources.label} />
+      {/* Without the notices permission there is nothing to count, and the notifications page is not open to the
+          account either. A failed refresh keeps the last count, marked with the time of that read, as the drawer
+          does. */}
+      {notices.status !== 'forbidden' && (
+        <OccAlertsButton ref={alertsButton} summary={summary} status={notices.status}
+          staleSince={notices.refreshFailed ? notices.fetchedAt : null} onOpen={openAlerts} expanded={alertsOpen}
+          controls={alertsOpen ? drawerId : undefined} className={LAYOUT.alerts.bar}
+          labelClassName={LAYOUT.alerts.label} detailClassName={LAYOUT.alerts.detail} />
+      )}
+      <OccClocks className={LAYOUT.localClock.bar} utcClassName={LAYOUT.utcClock.bar} />
+      <OccLanguageToggle className={LAYOUT.language.bar} />
+      <OccLegendButton className={LAYOUT.legend.bar} />
+      <OccThemeToggle theme={theme} onToggle={onToggleTheme} className={LAYOUT.theme.bar} />
+      <OccUserMenu user={user} onLogout={onLogout} theme={theme} onToggleTheme={onToggleTheme} className={LAYOUT.account.bar} />
+      <OccShellOverlays alerts={alerts} />
+    </header>
+  );
+}

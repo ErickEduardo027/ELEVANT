@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly APPLICATION="${1:-}"
+readonly SOURCE_COMMIT="${2:-}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly PATH_OWNERSHIP="$SCRIPT_DIR/../../../scripts/release/path-ownership.sh"
+
+[[ "$APPLICATION" == aviam-web || "$APPLICATION" == public-web ]] || {
+  echo "Application must be aviam-web or public-web." >&2
+  exit 1
+}
+[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "A canonical source commit is required." >&2
+  exit 1
+}
+[[ -n "${REPOSITORY_TOKEN:-}" ]] || {
+  echo "REPOSITORY_TOKEN is required." >&2
+  exit 1
+}
+[[ -f "$PATH_OWNERSHIP" && ! -L "$PATH_OWNERSHIP" ]] || {
+  echo "The reviewed release path policy is unavailable." >&2
+  exit 1
+}
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../../../scripts/release/path-ownership.sh
+source "$PATH_OWNERSHIP"
+
+authorization="$(printf 'x-access-token:%s' "$REPOSITORY_TOKEN" | base64 -w 0)"
+git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $authorization" \
+  fetch --no-tags origin \
+  '+refs/heads/Development:refs/remotes/origin/Development'
+unset authorization REPOSITORY_TOKEN
+
+development_tip="$(git rev-parse refs/remotes/origin/Development)"
+if [[ "$development_tip" == "$SOURCE_COMMIT" ]]; then
+  printf '%s\n' "$development_tip"
+  exit 0
+fi
+
+git merge-base --is-ancestor "$SOURCE_COMMIT" "$development_tip" || {
+  echo "Development no longer contains this workflow revision." >&2
+  exit 1
+}
+
+changed_file_list="$(mktemp)"
+trap 'rm -f -- "$changed_file_list"' EXIT
+git diff --name-only --no-renames -z \
+  "$SOURCE_COMMIT" "$development_tip" > "$changed_file_list"
+
+while IFS= read -r -d '' path; do
+  if elevant_is_web_release_input_path "$APPLICATION" "$path"; then
+    echo "A newer Development commit changes $APPLICATION release input path: $path" >&2
+    echo "This older run will not move the mutable Development web alias." >&2
+    exit 1
+  fi
+done < "$changed_file_list"
+
+printf '%s\n' "$development_tip"

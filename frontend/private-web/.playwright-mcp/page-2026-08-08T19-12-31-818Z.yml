@@ -1,0 +1,163 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=e12]:
+        - button "Dashboard" [ref=e13] [cursor=pointer]
+        - button "Planificación operativa" [ref=e21] [cursor=pointer]
+        - button "Monitoreo de vuelos" [ref=e28] [cursor=pointer]
+        - button "Mapa de posiciones" [ref=e36] [cursor=pointer]
+        - button "Revisión 4" [ref=e42] [cursor=pointer]:
+          - generic [ref=e47]: Revisión
+          - generic [ref=e48]: "4"
+        - button "Reportes" [ref=e49] [cursor=pointer]
+        - button "Notificaciones 5" [ref=e54] [cursor=pointer]:
+          - generic [ref=e59]: Notificaciones
+          - generic [ref=e60]: "5"
+        - button "Chat interno 2" [ref=e61] [cursor=pointer]:
+          - generic [ref=e65]: Chat interno
+          - generic [ref=e66]: "2"
+      - button "LR Laisha Ramírez Administrador OCC" [ref=e69] [cursor=pointer]:
+        - generic [ref=e70]: LR
+        - generic [ref=e71]:
+          - generic [ref=e72]: Laisha Ramírez
+          - generic [ref=e73]: Administrador OCC
+  - generic [ref=e74]:
+    - banner [ref=e75]:
+      - button "PUJ" [ref=e76] [cursor=pointer]
+      - generic [ref=e79]:
+        - generic [ref=e80]: AST 14:32
+        - generic [ref=e81]: ·
+        - generic [ref=e82]: UTC 18:32
+      - generic [ref=e83]:
+        - button "Notificaciones" [ref=e84] [cursor=pointer]:
+          - generic [ref=e88]: "5"
+        - button "Cambiar a modo oscuro" [ref=e89] [cursor=pointer]
+        - button "LR Laisha Ramírez" [ref=e93] [cursor=pointer]:
+          - generic [ref=e94]: LR
+          - generic [ref=e95]: Laisha Ramírez
+    - main [ref=e96]:
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e99]:
+            - generic [ref=e100]: Vuelos programados hoy
+            - generic [ref=e104]: "0"
+          - generic [ref=e105]:
+            - generic [ref=e106]: "Servicios: pendientes vs. ejecutados"
+            - generic [ref=e112]:
+              - generic [ref=e113]: 84%
+              - generic [ref=e118]:
+                - generic [ref=e119]: 96 ejecutados
+                - generic [ref=e120]: 18 pendientes
+          - generic [ref=e121]:
+            - generic [ref=e122]: Agentes en operaciones activas
+            - generic [ref=e129]: "0"
+          - generic [ref=e130]:
+            - generic [ref=e131]: Aprobaciones pendientes
+            - generic [ref=e136]: "0"
+        - status [ref=e137]:
+          - generic [ref=e142]: FlyAware en línea
+          - generic [ref=e143]: Última sincronización hace 2 min
+        - generic [ref=e144]:
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - heading "Distribución de vuelos por estado" [level=2] [ref=e147]
+              - generic [ref=e148]:
+                - generic [ref=e149]: "42"
+                - list [ref=e159]:
+                  - listitem [ref=e160]:
+                    - generic [ref=e161]: Programado
+                    - generic [ref=e163]: "14"
+                  - listitem [ref=e164]:
+                    - generic [ref=e165]: En ruta
+                    - generic [ref=e167]: "9"
+                  - listitem [ref=e168]:
+                    - generic [ref=e169]: Aterrizado
+                    - generic [ref=e171]: "11"
+                  - listitem [ref=e172]:
+                    - generic [ref=e173]: Retrasado
+                    - generic [ref=e175]: "5"
+                  - listitem [ref=e176]:
+                    - generic [ref=e177]: Desviado
+                    - generic [ref=e179]: "1"
+                  - listitem [ref=e180]:
+                    - generic [ref=e181]: Cancelado
+                    - generic [ref=e183]: "2"
+            - generic [ref=e184]:
+              - generic [ref=e185]:
+                - heading "Mapa de posiciones" [level=2] [ref=e186]
+                - button "Ver mapa completo" [ref=e190] [cursor=pointer]
+              - img "Esquema simplificado de posiciones de la rampa de PUJ" [ref=e191]:
+                - generic [ref=e237]: A
+                - generic [ref=e238]: B
+                - generic [ref=e239]: FBO
+          - generic [ref=e240]:
+            - generic [ref=e241]:
+              - generic [ref=e242]:
+                - heading "Aprobaciones pendientes" [level=2] [ref=e243]
+                - button "Ver todas" [ref=e244] [cursor=pointer]
+              - generic [ref=e245]:
+                - generic [ref=e246]:
+                  - generic [ref=e247]:
+                    - generic [ref=e248]: DM161 · DM
+                    - generic [ref=e249]: PUJ · J. Ramírez
+                  - generic [ref=e250]: Pendiente de revisión
+                  - generic [ref=e252]: 13:50
+                - generic [ref=e253]:
+                  - generic [ref=e254]:
+                    - generic [ref=e255]: AA904 · AA
+                    - generic [ref=e256]: PUJ · M. Castillo
+                  - generic [ref=e257]: Pendiente de revisión
+                  - generic [ref=e259]: 13:35
+                - generic [ref=e260]:
+                  - generic [ref=e261]:
+                    - generic [ref=e262]: DL2210 · DL
+                    - generic [ref=e263]: PUJ · R. Peña
+                  - generic [ref=e264]: Pendiente de revisión
+                  - generic [ref=e266]: 13:10
+                - generic [ref=e267]:
+                  - generic [ref=e268]:
+                    - generic [ref=e269]: UA1470 · UA
+                    - generic [ref=e270]: PUJ · K. Objío
+                  - generic [ref=e271]: Pendiente de revisión
+                  - generic [ref=e273]: 12:55
+            - generic [ref=e274]:
+              - heading "Alertas y notificaciones" [level=2] [ref=e275]
+              - generic [ref=e276]:
+                - generic [ref=e277]:
+                  - generic [ref=e278]: Vuelo DM161 no llegó a la posición asignada según hora estimada
+                  - generic [ref=e280]: 14:20
+                - generic [ref=e281]:
+                  - generic [ref=e282]: Posición 10 inhabilitada automáticamente por configuración 9-Alfa
+                  - generic [ref=e284]: 13:58
+                - generic [ref=e285]:
+                  - generic [ref=e286]: Vuelo AA904 marcado como desviado por FlyAware
+                  - generic [ref=e288]: 13:40
+                - generic [ref=e289]:
+                  - generic [ref=e290]: Agente K. Objío excede el tiempo estimado de servicio en DL2210
+                  - generic [ref=e292]: 13:22
+  - generic [ref=e293]:
+    - paragraph [ref=e294]: Vista previa (solo desarrollo)
+    - 'button "Tema: claro" [ref=e295] [cursor=pointer]'
+    - generic [ref=e296]:
+      - button "Normal" [ref=e297] [cursor=pointer]
+      - button "Carga" [ref=e298] [cursor=pointer]
+      - button "FlyAware caído" [ref=e299] [cursor=pointer]
+      - button "Sin aprobaciones" [ref=e300] [cursor=pointer]
+      - 'button "Planificación: sin vuelos" [ref=e301] [cursor=pointer]'
+      - 'button "Planificación: sin resultados" [ref=e302] [cursor=pointer]'
+      - 'button "Planificación: error" [ref=e303] [cursor=pointer]'
+      - 'button "Monitoreo: sin vuelos" [ref=e304] [cursor=pointer]'
+      - 'button "Monitoreo: error" [ref=e305] [cursor=pointer]'
+      - 'button "Monitoreo: FlyAware desconectado" [ref=e306] [cursor=pointer]'
+      - 'button "Revisión: sin operaciones" [ref=e307] [cursor=pointer]'
+      - 'button "Revisión: error" [ref=e308] [cursor=pointer]'
+      - 'button "Reportes: sin datos" [ref=e309] [cursor=pointer]'
+      - 'button "Reportes: error" [ref=e310] [cursor=pointer]'
+      - 'button "Notificaciones: sin datos" [ref=e311] [cursor=pointer]'
+      - 'button "Notificaciones: error" [ref=e312] [cursor=pointer]'
+      - 'button "Chat: sin conversaciones" [ref=e313] [cursor=pointer]'
+      - 'button "Chat: error" [ref=e314] [cursor=pointer]'
+      - 'button "Chat: desconectado" [ref=e315] [cursor=pointer]'

@@ -1,0 +1,169 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=e12]:
+        - button "Dashboard" [ref=e13] [cursor=pointer]
+        - button "Planificación operativa" [ref=e21] [cursor=pointer]
+        - button "Monitoreo de vuelos" [ref=e28] [cursor=pointer]
+        - button "Mapa de posiciones" [ref=e36] [cursor=pointer]
+        - button "Revisión 4" [ref=e42] [cursor=pointer]:
+          - generic [ref=e47]: Revisión
+          - generic [ref=e48]: "4"
+        - button "Reportes" [ref=e49] [cursor=pointer]
+        - button "Notificaciones 5" [ref=e54] [cursor=pointer]:
+          - generic [ref=e59]: Notificaciones
+          - generic [ref=e60]: "5"
+        - button "Chat interno 3" [active] [ref=e316] [cursor=pointer]:
+          - generic [ref=e65]: Chat interno
+          - generic [ref=e66]: "3"
+      - button "LR Laisha Ramírez Administrador OCC" [ref=e69] [cursor=pointer]:
+        - generic [ref=e70]: LR
+        - generic [ref=e71]:
+          - generic [ref=e72]: Laisha Ramírez
+          - generic [ref=e73]: Administrador OCC
+  - generic [ref=e74]:
+    - banner [ref=e75]:
+      - button "PUJ" [ref=e76] [cursor=pointer]
+      - generic [ref=e79]:
+        - generic [ref=e80]: AST 14:32
+        - generic [ref=e81]: ·
+        - generic [ref=e82]: UTC 18:32
+      - generic [ref=e83]:
+        - button "Notificaciones" [ref=e84] [cursor=pointer]:
+          - generic [ref=e88]: "5"
+        - button "Cambiar a modo oscuro" [ref=e89] [cursor=pointer]
+        - button "LR Laisha Ramírez" [ref=e93] [cursor=pointer]:
+          - generic [ref=e94]: LR
+          - generic [ref=e95]: Laisha Ramírez
+    - main [ref=e516]:
+      - generic [ref=e518]:
+        - generic [ref=e519]:
+          - generic [ref=e520]:
+            - heading "Chat interno" [level=1] [ref=e521]
+            - button "Nueva conversación" [ref=e522] [cursor=pointer]
+          - generic [ref=e525]:
+            - generic [ref=e526]: Buscar conversaciones
+            - textbox "Buscar conversaciones" [ref=e528]:
+              - /placeholder: Vuelo, aerolínea, agente, referencia...
+          - tablist "Filtros de conversaciones" [ref=e529]:
+            - tab "Todas" [selected] [ref=e530] [cursor=pointer]
+            - tab "No leídas(3)" [ref=e531] [cursor=pointer]:
+              - text: No leídas
+              - generic [ref=e532]: (3)
+            - tab "En curso(4)" [ref=e533] [cursor=pointer]:
+              - text: En curso
+              - generic [ref=e534]: (4)
+            - tab "Pendientes(2)" [ref=e535] [cursor=pointer]:
+              - text: Pendientes
+              - generic [ref=e536]: (2)
+            - tab "Cerradas(1)" [ref=e537] [cursor=pointer]:
+              - text: Cerradas
+              - generic [ref=e538]: (1)
+          - generic [ref=e539]:
+            - button "MC AA904 American Airlines Justo ahora MIA → PUJ · Pos. B21 · María Castillo Necesitamos apoyo adicional en posición. 1" [ref=e540] [cursor=pointer]:
+              - generic [ref=e541]: MC
+              - generic [ref=e543]:
+                - generic [ref=e544]:
+                  - generic [ref=e545]:
+                    - generic [ref=e546]: AA904
+                    - generic [ref=e547]: American Airlines
+                  - generic [ref=e548]: Justo ahora
+                - paragraph [ref=e549]: MIA → PUJ · Pos. B21 · María Castillo
+                - generic [ref=e550]:
+                  - paragraph [ref=e551]: Necesitamos apoyo adicional en posición.
+                  - generic [ref=e552]: "1"
+            - button "MC WG654 Sunwing hace 1 min PUJ → YYZ · Pos. B32 · María Castillo hola" [ref=e553] [cursor=pointer]:
+              - generic [ref=e554]: MC
+              - generic [ref=e555]:
+                - generic [ref=e556]:
+                  - generic [ref=e557]:
+                    - generic [ref=e558]: WG654
+                    - generic [ref=e559]: Sunwing
+                  - generic [ref=e560]: hace 1 min
+                - paragraph [ref=e561]: PUJ → YYZ · Pos. B32 · María Castillo
+                - paragraph [ref=e563]: hola
+            - button "CM DM161 Arajet Requiere atención hace 1 min MIA → PUJ · Pos. A5 · Carlos Medina Servicio en progreso, sin novedades. 1" [ref=e564] [cursor=pointer]:
+              - generic [ref=e565]: CM
+              - generic [ref=e567]:
+                - generic [ref=e568]:
+                  - generic [ref=e569]:
+                    - generic [ref=e570]: DM161
+                    - generic [ref=e571]: Arajet
+                    - generic "Requiere atención" [ref=e572]
+                  - generic [ref=e573]: hace 1 min
+                - paragraph [ref=e574]: MIA → PUJ · Pos. A5 · Carlos Medina
+                - generic [ref=e575]:
+                  - paragraph [ref=e576]: Servicio en progreso, sin novedades.
+                  - generic [ref=e577]: "1"
+            - button "KO DL2210 Delta Air Lines Requiere atención hace 2 h ATL → PUJ · Pos. B21 · Katherine Objío Confirmo, tuvimos que reubicar a B32 por mantenimiento en B21. 1" [ref=e578] [cursor=pointer]:
+              - generic [ref=e579]: KO
+              - generic [ref=e581]:
+                - generic [ref=e582]:
+                  - generic [ref=e583]:
+                    - generic [ref=e584]: DL2210
+                    - generic [ref=e585]: Delta Air Lines
+                    - generic "Requiere atención" [ref=e586]
+                  - generic [ref=e587]: hace 2 h
+                - paragraph [ref=e588]: ATL → PUJ · Pos. B21 · Katherine Objío
+                - generic [ref=e589]:
+                  - paragraph [ref=e590]: Confirmo, tuvimos que reubicar a B32 por mantenimiento en B21.
+                  - generic [ref=e591]: "1"
+            - button "RP CM345 Copa Airlines hace 7 h PTY → PUJ · Pos. BN8 · Rafael Peña Gracias, quedo pendiente del reporte final." [ref=e592] [cursor=pointer]:
+              - generic [ref=e593]: RP
+              - generic [ref=e595]:
+                - generic [ref=e596]:
+                  - generic [ref=e597]:
+                    - generic [ref=e598]: CM345
+                    - generic [ref=e599]: Copa Airlines
+                  - generic [ref=e600]: hace 7 h
+                - paragraph [ref=e601]: PTY → PUJ · Pos. BN8 · Rafael Peña
+                - paragraph [ref=e603]: Gracias, quedo pendiente del reporte final.
+            - button "CM UA1470 United Airlines hace 8 h PUJ → EWR · Pos. A1 · Carlos Medina La operación fue creada y asignada a Carlos Medina." [ref=e604] [cursor=pointer]:
+              - generic [ref=e605]: CM
+              - generic [ref=e606]:
+                - generic [ref=e607]:
+                  - generic [ref=e608]:
+                    - generic [ref=e609]: UA1470
+                    - generic [ref=e610]: United Airlines
+                  - generic [ref=e611]: hace 8 h
+                - paragraph [ref=e612]: PUJ → EWR · Pos. A1 · Carlos Medina
+                - paragraph [ref=e614]: La operación fue creada y asignada a Carlos Medina.
+            - button "JF B6812 JetBlue ayer PUJ → BOS · Pos. A1 · José Fermín La conversación fue marcada como cerrada." [ref=e615] [cursor=pointer]:
+              - generic [ref=e616]: JF
+              - generic [ref=e618]:
+                - generic [ref=e619]:
+                  - generic [ref=e620]:
+                    - generic [ref=e621]: B6812
+                    - generic [ref=e622]: JetBlue
+                  - generic [ref=e623]: ayer
+                - paragraph [ref=e624]: PUJ → BOS · Pos. A1 · José Fermín
+                - paragraph [ref=e626]: La conversación fue marcada como cerrada.
+        - generic [ref=e628]:
+          - paragraph [ref=e631]: Selecciona una conversación para comenzar
+          - paragraph [ref=e632]: Elija una conversación de la lista para ver el historial y responder al agente.
+  - generic [ref=e293]:
+    - paragraph [ref=e294]: Vista previa (solo desarrollo)
+    - 'button "Tema: claro" [ref=e295] [cursor=pointer]'
+    - generic [ref=e296]:
+      - button "Normal" [ref=e297] [cursor=pointer]
+      - button "Carga" [ref=e298] [cursor=pointer]
+      - button "FlyAware caído" [ref=e299] [cursor=pointer]
+      - button "Sin aprobaciones" [ref=e300] [cursor=pointer]
+      - 'button "Planificación: sin vuelos" [ref=e301] [cursor=pointer]'
+      - 'button "Planificación: sin resultados" [ref=e302] [cursor=pointer]'
+      - 'button "Planificación: error" [ref=e303] [cursor=pointer]'
+      - 'button "Monitoreo: sin vuelos" [ref=e304] [cursor=pointer]'
+      - 'button "Monitoreo: error" [ref=e305] [cursor=pointer]'
+      - 'button "Monitoreo: FlyAware desconectado" [ref=e306] [cursor=pointer]'
+      - 'button "Revisión: sin operaciones" [ref=e307] [cursor=pointer]'
+      - 'button "Revisión: error" [ref=e308] [cursor=pointer]'
+      - 'button "Reportes: sin datos" [ref=e309] [cursor=pointer]'
+      - 'button "Reportes: error" [ref=e310] [cursor=pointer]'
+      - 'button "Notificaciones: sin datos" [ref=e311] [cursor=pointer]'
+      - 'button "Notificaciones: error" [ref=e312] [cursor=pointer]'
+      - 'button "Chat: sin conversaciones" [ref=e313] [cursor=pointer]'
+      - 'button "Chat: error" [ref=e314] [cursor=pointer]'
+      - 'button "Chat: desconectado" [ref=e315] [cursor=pointer]'

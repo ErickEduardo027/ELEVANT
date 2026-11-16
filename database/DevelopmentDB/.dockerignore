@@ -1,0 +1,8 @@
+diagrams
+documentation
+seeds
+test-data
+README.md
+**/*.bak
+**/*.mdf
+**/*.ldf

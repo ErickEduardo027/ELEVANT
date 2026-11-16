@@ -1,0 +1,18 @@
+.workspace { display: grid; grid-template-rows: auto minmax(0,1fr); height: 100%; gap: 12px; min-width: 0; min-height: 0; }
+.layout { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr); gap: 12px; min-width: 0; min-height: 0; }
+.workspace .layout > section[data-occ-surface] { min-width: 0; min-height: 0; border-radius: 24px; padding: 12px; }
+.workspace .layout > section:first-child { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.workspace [aria-label] ul li button { border-radius: 16px; padding: 12px; }
+.workspace [aria-current='true'] { border: 1px solid #145dc4; }
+.workspace [aria-label] article { width: fit-content; max-width: 94%; background: var(--occ-ui-soft); border-radius: 4px 16px 16px; padding: 12px; }
+.workspace [data-occ-header] > div > p { font-size: 12px; }
+.history { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; padding: 12px 4px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+.history p { overflow-wrap: anywhere; }
+.workspace form { flex-shrink: 0; }
+.workspace .composerInput.composerInput { display: block; width: 100%; box-sizing: border-box; min-height: 44px; max-height: 144px; resize: none; padding: 10px 12px; line-height: 22px; border: 1px solid var(--occ-ui-line); border-radius: 16px; background: var(--occ-ui-glass); color: var(--occ-ui-text); overflow-y: hidden; font-size: 14px; }
+.workspace .composerInput:focus-visible { outline: 2px solid #145dc4; outline-offset: 2px; }
+.workspace .composerInput:disabled { opacity: .7; }
+.history article[data-own='true'] { margin-inline-start: auto; background: var(--occ-ui-solid); border-color: #145dc4; border-radius: 16px 4px 16px 16px; }
+@media(min-width:1024px) { .layout { grid-template-columns: clamp(240px,26%,320px) minmax(0,1fr); } }
+@media(max-width:767px) { .workspace .composerInput { font-size: 16px; } }
+@media(forced-colors:active) { .workspace .composerInput { background: Field; color: FieldText; border-color: FieldText; } }

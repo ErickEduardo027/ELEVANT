@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Ilustración: Aire acondicionado">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B2A5B"/><stop offset="1" stop-color="#123F86"/></linearGradient></defs>
+  <rect width="640" height="360" fill="url(#g)"/>
+  <path d="M0 300C160 250 320 330 640 270V360H0z" fill="#F26B1D" opacity=".18"/>
+  <circle cx="520" cy="70" r="140" fill="#FFFFFF" opacity=".05"/>
+  <g transform="translate(220 50) scale(1)"><path d="M100 25v150M35 62l130 76M35 138l130-76" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/><path d="M85 35l15 15 15-15M85 165l15-15 15 15" fill="none" stroke="#F26B1D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <text x="320" y="315" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF" letter-spacing="1">AIRE ACONDICIONADO</text>
+</svg>

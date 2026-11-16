@@ -1,0 +1,13 @@
+[Unit]
+Description=Ten-minute safety rollback for the ELEVANT firewall
+Documentation=file:/usr/local/share/doc/elevant-firewall/README.md
+
+[Timer]
+OnActiveSec=10min
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=elevant-firewall-rollback.service
+RemainAfterElapse=no
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+MODE=host
+CONTAINER=dokploy
+die() { printf '%s: ERROR: %s\n' "$PROGRAM_NAME" "$*" >&2; exit 1; }
+
+while (( $# > 0 )); do
+  case "$1" in
+    --host-container) (( $# >= 2 )) || die "--host-container requires a name"; MODE=host; CONTAINER="$2"; shift 2 ;;
+    --inside) MODE=inside; shift ;;
+    -h|--help) printf '%s\n' 'Usage: verify-runtime [--host-container NAME | --inside]'; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+# Expansion intentionally occurs inside the private Dokploy container.
+# shellcheck disable=SC2016
+readonly CHECK='set -eu
+for command_name in bash docker node flock sha256sum stat install awk chmod date dirname id mktemp mv rm sleep touch; do
+  command -v "$command_name" >/dev/null 2>&1 || { printf "missing runtime command: %s\n" "$command_name" >&2; exit 1; }
+done
+docker version >/dev/null
+docker compose version >/dev/null
+compose_help="$(docker compose config --help)"
+for option in --format --no-env-resolution --no-interpolate --no-path-resolution; do
+  case "$compose_help" in *"$option"*) ;; *) printf "missing Compose option: %s\n" "$option" >&2; exit 1 ;; esac
+done
+test -d /etc/dokploy; test ! -L /etc/dokploy
+test -d /root/.docker; test ! -L /root/.docker
+for file in \
+  /etc/dokploy/elevant/api-cd/elevant-api-cd \
+  /etc/dokploy/elevant/api-cd/manifest-tool.mjs \
+  /etc/dokploy/elevant/api-cd/state-tool.mjs \
+  /etc/dokploy/elevant/api-cd/compose-model-tool.mjs \
+  /etc/dokploy/elevant/api-cd/env-tool.mjs \
+  /etc/dokploy/elevant/api-cd/jobs/poll.job.sh \
+  /etc/dokploy/elevant/database-cd/manifest-tool.mjs; do
+  test -f "$file"; test ! -L "$file"
+done
+bash -n /etc/dokploy/elevant/api-cd/elevant-api-cd
+node --check /etc/dokploy/elevant/api-cd/manifest-tool.mjs >/dev/null
+node --check /etc/dokploy/elevant/api-cd/state-tool.mjs >/dev/null
+node --check /etc/dokploy/elevant/api-cd/compose-model-tool.mjs >/dev/null
+node --check /etc/dokploy/elevant/api-cd/env-tool.mjs >/dev/null
+/bin/sh -n /etc/dokploy/elevant/api-cd/jobs/poll.job.sh
+printf "%s\n" RUNTIME_OK'
+
+if [[ "$MODE" == inside ]]; then /bin/sh -c "$CHECK"; exit; fi
+command -v docker >/dev/null 2>&1 || die "host docker command is unavailable"
+[[ "$CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "invalid container or service name"
+TARGET=""
+if exact="$(docker container inspect --format '{{.Id}} {{.State.Running}}' "$CONTAINER" 2>/dev/null)"; then
+  [[ "$exact" =~ ^([0-9a-f]{64})[[:space:]](true|false)$ ]] || die "Docker returned invalid exact-container state"
+  [[ "${BASH_REMATCH[2]}" == true ]] || die "exact Dokploy container is not running"
+  TARGET="${BASH_REMATCH[1]}"
+else
+  tasks="$(docker container ls --quiet --no-trunc --filter "label=com.docker.swarm.service.name=$CONTAINER" --filter status=running)" || die "could not enumerate Dokploy tasks"
+  while IFS= read -r task; do
+    [[ -z "$task" ]] || {
+      [[ "$task" =~ ^[0-9a-f]{64}$ ]] || die "Docker returned invalid task ID"
+      [[ -z "$TARGET" ]] || die "Dokploy service must have exactly one running task"
+      TARGET="$task"
+    }
+  done <<< "$tasks"
+  [[ -n "$TARGET" ]] || die "Dokploy service must have exactly one running task"
+fi
+docker container exec "$TARGET" /bin/sh -c "$CHECK"

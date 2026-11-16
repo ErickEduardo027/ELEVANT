@@ -1,0 +1,41 @@
+name: elevant-dev-media
+
+services:
+  media:
+    image: "dxflrs/garage@${ELEVANT_GARAGE_IMAGE_DIGEST:?Set the reviewed immutable sha256 digest of Garage 2.3 or newer}"
+    pull_policy: always
+    command: ["/garage", "server", "--single-node"]
+    volumes:
+      - "${ELEVANT_GARAGE_CONFIG_FILE:?Set the private absolute garage.toml path}:/etc/garage.toml:ro"
+      - media-metadata:/var/lib/garage/meta
+      - media-data:/var/lib/garage/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 0.60
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    networks:
+      data:
+        aliases:
+          - elevant-dev-media
+
+volumes:
+  media-metadata:
+    external: true
+    name: elevant-dev-media-metadata
+  media-data:
+    external: true
+    name: elevant-dev-media-data
+
+networks:
+  data:
+    external: true
+    name: elevant-dev-data

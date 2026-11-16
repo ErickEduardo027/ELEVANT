@@ -1,0 +1,250 @@
+- generic [ref=f6e3]:
+  - complementary [ref=f6e4]:
+    - generic [ref=f6e5]:
+      - generic [ref=f6e6]:
+        - generic [ref=f6e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=f6e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=f6e12]:
+        - link "Dashboard" [ref=f6e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=f6e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=f6e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=f6e34]: Habilitaciones y certificaciones
+          - generic [ref=f6e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=f6e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=f6e43]: Carnets y permisos aeroportuarios
+          - generic [ref=f6e44]: "2"
+        - link "Horarios y disponibilidad" [ref=f6e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=f6e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=f6e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=f6e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=f6e68]: Notificaciones
+          - generic [ref=f6e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=f6e72] [cursor=pointer]:
+        - generic [ref=f6e73]: CR
+        - generic [ref=f6e74]:
+          - generic [ref=f6e75]: Camila Reyes
+          - generic [ref=f6e76]: Gestión Humana
+  - generic [ref=f6e77]:
+    - banner [ref=f6e78]:
+      - generic [ref=f6e79]: Gestión Humana
+      - generic [ref=f6e80]:
+        - button "Notificaciones" [ref=f6e81] [cursor=pointer]:
+          - generic [ref=f6e85]: "4"
+        - button "Cambiar a modo claro" [ref=f6e86] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=f6e91] [cursor=pointer]:
+          - generic [ref=f6e92]: CR
+          - generic [ref=f6e93]: Camila Reyes
+    - main [ref=f6e94]:
+      - generic [ref=f6e95]:
+        - generic [ref=f6e96]:
+          - generic [ref=f6e97]:
+            - heading "Gestión de usuarios y cuentas" [level=1] [ref=f6e98]
+            - paragraph [ref=f6e99]: Administra las cuentas, roles y accesos de los usuarios de ELEVANT.
+          - generic [ref=f6e100]:
+            - button "Actualizar" [ref=f6e101] [cursor=pointer]
+            - button "Crear usuario" [ref=f6e107] [cursor=pointer]
+        - generic [ref=f6e115]:
+          - searchbox "Buscar usuarios" [ref=f6e117]
+          - combobox "Tipo de usuario" [ref=f6e118]:
+            - option "Tipo de usuario" [selected]
+            - option "Administrador/OCC"
+            - option "Contratos"
+            - option "Finanzas"
+            - option "Gestión Humana"
+            - option "Agente de Rampa"
+            - option "Cliente / Aerolínea"
+          - combobox "Portal" [ref=f6e119]:
+            - option "Portal" [selected]
+            - option "Back-office"
+            - option "Aplicación móvil de Agente"
+            - option "Portal de Aerolínea"
+          - combobox "Estado" [ref=f6e120]:
+            - option "Estado" [selected]
+            - option "Activa"
+            - option "Pendiente de activación"
+            - option "Invitación enviada"
+            - option "Deshabilitada"
+            - option "Bloqueada"
+          - button "Limpiar filtros" [disabled] [ref=f6e121]
+        - table [ref=f6e126]:
+          - rowgroup [ref=f6e127]:
+            - row [ref=f6e128]:
+              - columnheader [ref=f6e129]:
+                - checkbox "Seleccionar todas las filas visibles" [ref=f6e130]
+              - columnheader "Usuario" [ref=f6e131]
+              - columnheader "Identificación" [ref=f6e132]
+              - columnheader "Tipo de usuario" [ref=f6e133]
+              - columnheader "Portal" [ref=f6e134]
+              - columnheader "Rol" [ref=f6e135]
+              - columnheader "Estación / depto. / aerolínea" [ref=f6e136]
+              - columnheader "Estado" [ref=f6e137]
+              - columnheader "Fecha de creación" [ref=f6e138]
+              - columnheader "Último acceso" [ref=f6e139]
+              - columnheader "Acciones" [ref=f6e140]
+          - rowgroup [ref=f6e141]:
+            - row [ref=f6e142]:
+              - cell [ref=f6e143]
+              - cell [ref=f6e145]
+              - cell [ref=f6e147]
+              - cell [ref=f6e149]
+              - cell [ref=f6e151]
+              - cell [ref=f6e153]
+              - cell [ref=f6e155]
+              - cell [ref=f6e157]
+              - cell [ref=f6e159]
+              - cell [ref=f6e161]
+              - cell [ref=f6e163]
+            - row [ref=f6e165]:
+              - cell [ref=f6e166]
+              - cell [ref=f6e168]
+              - cell [ref=f6e170]
+              - cell [ref=f6e172]
+              - cell [ref=f6e174]
+              - cell [ref=f6e176]
+              - cell [ref=f6e178]
+              - cell [ref=f6e180]
+              - cell [ref=f6e182]
+              - cell [ref=f6e184]
+              - cell [ref=f6e186]
+            - row [ref=f6e188]:
+              - cell [ref=f6e189]
+              - cell [ref=f6e191]
+              - cell [ref=f6e193]
+              - cell [ref=f6e195]
+              - cell [ref=f6e197]
+              - cell [ref=f6e199]
+              - cell [ref=f6e201]
+              - cell [ref=f6e203]
+              - cell [ref=f6e205]
+              - cell [ref=f6e207]
+              - cell [ref=f6e209]
+            - row [ref=f6e211]:
+              - cell [ref=f6e212]
+              - cell [ref=f6e214]
+              - cell [ref=f6e216]
+              - cell [ref=f6e218]
+              - cell [ref=f6e220]
+              - cell [ref=f6e222]
+              - cell [ref=f6e224]
+              - cell [ref=f6e226]
+              - cell [ref=f6e228]
+              - cell [ref=f6e230]
+              - cell [ref=f6e232]
+            - row [ref=f6e234]:
+              - cell [ref=f6e235]
+              - cell [ref=f6e237]
+              - cell [ref=f6e239]
+              - cell [ref=f6e241]
+              - cell [ref=f6e243]
+              - cell [ref=f6e245]
+              - cell [ref=f6e247]
+              - cell [ref=f6e249]
+              - cell [ref=f6e251]
+              - cell [ref=f6e253]
+              - cell [ref=f6e255]
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Crear usuario
+                - paragraph: "Paso 1: seleccione el tipo de usuario para adaptar el formulario."
+              - button
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=3]: Tipo de usuario / rol
+                  - generic:
+                    - button [pressed]: Administrador/OCC
+                    - button: Contratos
+                    - button: Finanzas
+                    - button: Gestión Humana
+                    - button: Agente de Rampa
+                    - button: Cliente / Aerolínea
+                - generic:
+                  - heading [level=3]: Datos generales
+                  - generic:
+                    - generic:
+                      - generic:
+                        - text: Nombre
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic:
+                        - text: Apellido
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic:
+                        - text: Correo electrónico
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic: Teléfono
+                      - textbox
+                    - generic:
+                      - generic: Tipo de identificación
+                      - combobox
+                    - generic:
+                      - generic: Número de identificación
+                      - textbox
+                    - generic:
+                      - generic: URL de foto de perfil (opcional)
+                      - textbox
+                      - generic: Se usará como avatar cuando exista almacenamiento de archivos en el backend.
+                - generic:
+                  - heading [level=3]: Back-office
+                  - generic:
+                    - generic:
+                      - generic:
+                        - text: Departamento
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic:
+                        - text: Cargo
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic: Nivel de acceso (si aplica)
+                      - textbox
+                - generic:
+                  - heading [level=3]: Roles y permisos
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - text: Rol
+                          - generic: "*"
+                        - combobox
+                      - generic:
+                        - generic: Portal
+                        - textbox [disabled]: —
+                    - generic:
+                      - paragraph: Permisos heredados del rol
+                      - generic:
+                        - paragraph: Seleccione un rol para ver sus permisos.
+                - generic:
+                  - heading [level=3]: Acceso y credenciales
+                  - generic:
+                    - generic:
+                      - paragraph: Enviar invitación por correo
+                    - paragraph: El usuario establecerá su contraseña mediante el proceso seguro de activación. ELEVANT no solicita ni almacena contraseñas desde este formulario.
+                    - generic:
+                      - generic: Portal de acceso
+                      - generic: —
+            - generic:
+              - generic:
+                - button: Cancelar
+                - button [disabled]: Crear usuario
+        - generic:
+          - dialog:
+            - generic:
+              - button

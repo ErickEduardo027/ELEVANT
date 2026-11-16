@@ -1,0 +1,41 @@
+name: elevant-dev-aviam-web
+
+services:
+  aviam-web:
+    image: "${ELEVANT_AVIAM_WEB_IMAGE:?Set an immutable GHCR AVIAM Web image including @sha256 digest}"
+    pull_policy: always
+    init: true
+    user: "101:101"
+    ports:
+      - "127.0.0.1:18081:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1700
+      - /app/frontend/private-web/.next/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 0.35
+    healthcheck:
+      test: ["CMD", "node", "/app/healthcheck.mjs"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    networks:
+      - runtime
+
+networks:
+  runtime:
+    external: true
+    name: elevant-dev-aviam-web-runtime

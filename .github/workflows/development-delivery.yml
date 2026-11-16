@@ -1,0 +1,100 @@
+name: Development delivery
+
+on:
+  push:
+    branches:
+      - Development
+    paths:
+      - "backend/**"
+      - "database/**"
+      - "frontend/private-web/**"
+      - "frontend/public-web/**"
+      - "frontend/scripts/deployment/**"
+      - "frontend/tests/deployment/**"
+      - "packages/api-client/**"
+      - "ops/dokploy/api-cd/**"
+      - "ops/dokploy/web-cd/**"
+      - "scripts/release/**"
+      - ".dockerignore"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "dotnet-tools.json"
+      - "global.json"
+      - ".github/workflows/development-delivery.yml"
+      - ".github/workflows/backend-ci.yml"
+      - ".github/workflows/web-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-delivery-${{ github.ref }}
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    name: Classify validation and release inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      backend_validate: ${{ steps.paths.outputs.backend_validate }}
+      web_validate: ${{ steps.paths.outputs.web_validate }}
+      api_release: ${{ steps.paths.outputs.api_release }}
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed paths once
+        id: paths
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -Eeuo pipefail
+          changed_file_list="$(mktemp)"
+          trap 'rm -f -- "$changed_file_list"' EXIT
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            git ls-tree -r --name-only -z "$GITHUB_SHA" > "$changed_file_list"
+          else
+            git diff --name-only --no-renames -z "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_file_list"
+          fi
+          classification="$(bash scripts/release/classify-changes.sh < "$changed_file_list")"
+          {
+            echo "backend_validate=$(jq -r '.backend_validate' <<< "$classification")"
+            echo "web_validate=$(jq -r '.aviam_validate or .public_validate' <<< "$classification")"
+            echo "api_release=$(jq -r '.api_release' <<< "$classification")"
+          } >> "$GITHUB_OUTPUT"
+          echo "## Development path classification" >> "$GITHUB_STEP_SUMMARY"
+          echo "$(jq -c 'del(.validation_matrix,.release_matrix)' <<< "$classification")" >> "$GITHUB_STEP_SUMMARY"
+
+  backend:
+    name: Validate and deliver backend/DB when owned
+    needs: classify
+    if: needs.classify.outputs.backend_validate == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+    permissions:
+      contents: read
+      packages: write
+
+  web:
+    name: Validate and deliver selected web apps
+    needs:
+      - classify
+      - backend
+    if: >-
+      always() &&
+      needs.classify.result == 'success' &&
+      needs.classify.outputs.web_validate == 'true' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+    uses: ./.github/workflows/web-ci.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      same_run_api_manifest: ${{ needs.backend.outputs.api_manifest_ref }}
+      api_release_expected: ${{ needs.classify.outputs.api_release == 'true' }}

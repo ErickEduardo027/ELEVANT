@@ -1,0 +1,238 @@
+using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Finance;
+using Elevant.Application.Abstractions.Integration;
+using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Abstractions.Realtime;
+using Elevant.Infrastructure.Identity;
+using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Identity;
+using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Finance;
+using Elevant.Persistence.Integration;
+using Elevant.Persistence.Operations;
+using Elevant.Persistence.Realtime;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+namespace Elevant.Persistence;
+
+/// <summary>Registers the shared SQL Server persistence layer.</summary>
+public static class DependencyInjection
+{
+    private const string DatabaseConnectionName = "ElevantDatabase";
+
+    /// <summary>Adds the Elevant database context and readiness check.</summary>
+    public static IServiceCollection AddPersistence(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // Portal account emails (ADR-0022): links point at the public portal origin.
+        services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.AccountEmails.AccountEmailOptions.SectionName)
+            .Get<Elevant.Application.Identity.AccountEmails.AccountEmailOptions>() ?? new());
+        // Daily sweep of ramp agents' documents (2-N25): HumanResources:DocumentExpiryNoticeDays, 30 by default.
+        services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.HumanResourcesDocumentOptions.SectionName)
+            .Get<Elevant.Application.Identity.HumanResourcesDocumentOptions>() ?? new());
+
+        var connectionString = configuration.GetConnectionString(DatabaseConnectionName);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                $"ConnectionStrings:{DatabaseConnectionName} must be supplied by the environment or secret store.");
+        }
+
+        services.AddDbContext<ElevantDbContext>(options =>
+            options.UseSqlServer(connectionString, ElevantSqlServerOptions.Configure));
+
+        services
+            .AddIdentityCore<ApplicationUser>(options =>
+            {
+                options.Password.RequiredLength = 14;
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireNonAlphanumeric = true;
+                options.User.RequireUniqueEmail = true;
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+                options.Lockout.MaxFailedAccessAttempts = 5;
+            })
+            .AddRoles<ApplicationRole>()
+            .AddEntityFrameworkStores<ElevantDbContext>();
+
+        services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
+        services.AddScoped<ISessionSecurityVersionStore, EfSessionSecurityVersionStore>();
+        services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
+        services.AddScoped<IAccountEmailStore, EfAccountEmailStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Messaging.IEmailOutboxStore, EfEmailOutboxStore>();
+        services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
+        services.AddScoped<IActorContextResolver, EfActorContextResolver>();
+        services.AddScoped<IGovernanceStore, EfGovernanceStore>();
+        services.AddScoped<EfDepartmentGovernanceStore>();
+        services.AddScoped<IDepartmentGovernanceStore>(provider => provider.GetRequiredService<EfDepartmentGovernanceStore>());
+        services.AddScoped<IEmployeeGovernanceStore>(provider => provider.GetRequiredService<EfDepartmentGovernanceStore>());
+        services.AddScoped<IDepartmentNotificationStore, EfDepartmentNotificationStore>();
+        services.AddScoped<IRampProfileStore, EfRampProfileStore>();
+        services.AddScoped<IRampMobileAccessRequestStore, EfRampMobileAccessRequestStore>();
+        services.AddScoped<IHumanResourcesQualificationReadStore, EfHumanResourcesQualificationReadStore>();
+        services.AddScoped<IHumanResourcesQualificationWriteStore, EfHumanResourcesQualificationWriteStore>();
+        services.AddScoped<IHumanResourcesPermitReadStore, EfHumanResourcesPermitReadStore>();
+        services.AddScoped<IHumanResourcesPermitWriteStore, EfHumanResourcesPermitWriteStore>();
+        services.AddScoped<IHumanResourcesShiftReadStore, EfHumanResourcesShiftReadStore>();
+        services.AddScoped<IHumanResourcesScheduleWarningStore, EfHumanResourcesScheduleWarningStore>();
+        services.AddScoped<IHumanResourcesShiftWriteStore, EfHumanResourcesShiftWriteStore>();
+        services.AddScoped<IHumanResourcesAvailabilityReadStore, EfHumanResourcesAvailabilityReadStore>();
+        services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
+        services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
+        services.AddScoped<IHumanResourcesDocumentSweepStore, EfHumanResourcesDocumentSweepStore>();
+        services.AddScoped<IOccAssignmentReadinessStore, EfOccAssignmentReadinessStore>();
+        services.AddScoped<IOccReportStore, EfOccReportStore>();
+        services.AddScoped<IOccPositionStore, EfOccPositionStore>();
+        // 3-A, 3-N21: a turnaround OCC reschedules, cancels or diverts, and the minimal carrier of a charter.
+        services.AddScoped<IOccTurnaroundStore, EfOccTurnaroundStore>();
+        // 3-B: the aircraft types the tablet offers.
+        services.AddScoped<IRampReferenceStore, EfRampReferenceStore>();
+        // Master data (2-A): stations by the superadministrator, terminals, stands and aircraft types by OCC.
+        services.AddScoped<IStationCatalogStore, EfStationCatalogStore>();
+        services.AddScoped<IOccMasterDataStore, EfOccMasterDataStore>();
+        services.AddScoped<IPositionCoverageStore, EfPositionCoverageStore>();
+        services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
+        services.AddScoped<IAirlinePortalStandingStore, EfAirlinePortalStandingStore>();
+        services.AddScoped<IAffiliationStore, EfAffiliationStore>();
+        services.AddScoped<ICommercialIntakeStore, EfCommercialIntakeStore>();
+        services.AddScoped<ICommercialCatalogStore, EfCommercialCatalogStore>();
+        services.AddScoped<CommercialPermissionGuard>();
+        services.AddScoped<ICommercialCatalogManagementStore, EfCommercialCatalogManagementStore>();
+        services.AddScoped<IServiceClosureStore, EfServiceClosureStore>();
+        services.AddScoped<ICommercialAirlineManagementStore, EfCommercialAirlineManagementStore>();
+        services.AddScoped<ICommercialMediaStore>(provider => new EfCommercialMediaStore(
+            provider.GetRequiredService<ElevantDbContext>(),
+            provider.GetRequiredService<CommercialPermissionGuard>(),
+            provider.GetRequiredService<IActorContextResolver>(), configuration));
+        services.AddScoped<ICommercialWorkflowStore, EfCommercialWorkflowStore>();
+        services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
+        services.AddScoped<IContractDraftStore, EfContractDraftStore>();
+        services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
+        services.AddScoped<IWorkforceReadinessStore, EfWorkforceReadinessStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Operations.IOccReadyContractsStore, EfOccReadyContractsStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Integration.IFlightFeedSyncStore, Elevant.Persistence.Integration.EfFlightFeedSyncStore>();
+        // ADR-0028 (note of 15 November 2026): the on-demand reference reads share the usage ledger.
+        services.AddScoped<Elevant.Application.Abstractions.Integration.IProviderUsageLedger, Elevant.Persistence.Integration.EfProviderUsageLedger>();
+        services.AddScoped<Elevant.Application.Abstractions.Operations.IOccFlightFeedStore, Elevant.Persistence.Integration.EfOccFlightFeedStore>();
+        // ADR-0041: the demo flights the superadministrator triggers; whether they run here is DemoFlights:Mode.
+        services.AddScoped<IDemoFlightStore, EfDemoFlightStore>();
+        // ADR-0041: «Cargar posiciones de Punta Cana», which only creates the catalogue's terminals and stands.
+        services.AddScoped<IDemoStationStore, EfDemoStationStore>();
+        // ADR-0042: the ELEVANT flights of the map and the keys the live aircraft are matched against come from one read,
+        // so both ports share the store of the scope.
+        services.AddScoped<EfOccMapFlightStore>();
+        services.AddScoped<IOccMapFlightStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
+        services.AddScoped<IOccMapFlightMatchKeyStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
+        // ADR-0043 (contracts 1.4): the ICAO code of a station's airport, which the OCC's weather is read by.
+        services.AddScoped<IOccStationAirportStore, EfOccStationAirportStore>();
+        // Defaults when Infrastructure is not composed (tests, database tool); its registrations win.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);
+        services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource, Elevant.Persistence.Integration.ObservedAirlineRegistrySource>();
+        // What the simulated flight feed of Development and Test reports (2-B); only read when it is enabled.
+        services.AddSingleton<Elevant.Application.Abstractions.Integrations.ISimulatedFlightFeedCatalog, Elevant.Persistence.Integration.EfSimulatedFlightFeedCatalog>();
+        services.AddScoped<EfContractDocumentStore>();
+        services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
+        // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.
+        services.AddScoped<Elevant.Application.Abstractions.Messaging.IEmailAttachmentResolver>(provider =>
+            new Elevant.Persistence.Finance.CompositeEmailAttachmentResolver([
+                new EfContractAttachmentResolver(provider.GetRequiredService<EfContractDocumentStore>(),
+                    provider.GetRequiredService<Elevant.Application.Abstractions.Commercial.IContractPdfRenderer>()),
+                new Elevant.Persistence.Finance.EfInvoiceAttachmentResolver(
+                    provider.GetRequiredService<Elevant.Persistence.Finance.EfNonFiscalInvoiceReadStore>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+                new Elevant.Persistence.Finance.EfCardReceiptAttachmentResolver(
+                    provider.GetRequiredService<Elevant.Persistence.Finance.EfCardPaymentStore>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+                // 4-N23: the PDF of the credit or debit note its email announces.
+                new Elevant.Persistence.Finance.EfAdjustmentNoteAttachmentResolver(
+                    provider.GetRequiredService<ElevantDbContext>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+            ]));
+        services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
+        services.AddScoped<IAirlinePortalUserStore, EfAirlinePortalUserStore>();
+        services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
+        // 4-N23: the one notice of each invoice that passed its due date with a balance.
+        services.AddScoped<Elevant.Application.Finance.IInvoiceOverdueNoticeStore, EfInvoiceOverdueNoticeStore>();
+        services.AddScoped<Elevant.Application.Finance.IFinancePendingOperationsReadStore, EfFinancePendingOperationsReadStore>();
+        services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
+        services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();
+        services.AddScoped<IFinancePackageStore, EfFinancePackageStore>();
+        services.AddScoped<IFinancePayablesStore, FinancePayablesStore>();
+        services.AddScoped<IFinanceTreasuryStore, FinanceTreasuryStore>();
+        services.AddScoped<IFinanceInvoiceLedgerStore, EfFinanceInvoiceLedgerStore>();
+        services.AddScoped<IFinanceReportStore, EfFinanceReportStore>();
+        services.AddScoped<IFinanceHomeStore, EfFinanceHomeStore>();
+        services.AddScoped<IFinanceReportExportAudit, EfFinanceReportExportAudit>();
+        // ADR-0035, block 3: the internal draft and its invoice exist only inside the issuance of «Por facturar».
+        services.AddScoped<EfPreinvoiceDraftStore>();
+        services.AddScoped<EfFinanceInvoiceIssueStore>();
+        services.AddScoped<EfNonFiscalInvoiceReadStore>();
+        services.AddScoped<INonFiscalInvoiceReadStore>(provider => provider.GetRequiredService<EfNonFiscalInvoiceReadStore>());
+        services.AddScoped<Elevant.Application.Finance.IInvoiceIssuanceStore, EfInvoiceIssuanceStore>();
+        services.AddScoped<Elevant.Application.Finance.IInvoiceEmailStatusStore, EfInvoiceEmailStatusStore>();
+        // ADR-0036: the gateway lives in Infrastructure (simulated card processor).
+        // A factory, like the PDF renderer: hosts without Infrastructure (tools, tests) stay valid.
+        services.AddScoped(provider => new EfCardPaymentStore(provider.GetRequiredService<ElevantDbContext>(),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<Elevant.Application.Finance.ICardPaymentGateway>()));
+        services.AddScoped<Elevant.Application.Finance.ICardPaymentStore>(provider => provider.GetRequiredService<EfCardPaymentStore>());
+        services.AddScoped<INonFiscalPaymentReadStore, EfNonFiscalPaymentReadStore>();
+        services.AddScoped<IPrivateFinancialObjectStore>(
+            _ => new S3PrivateFinancialObjectStore(configuration));
+        services.AddScoped<IFinancialDocumentStore>(provider => new EfFinancialDocumentStore(
+            provider.GetRequiredService<ElevantDbContext>(),
+            provider.GetRequiredService<IPrivateFinancialObjectStore>(),
+            provider.GetRequiredService<IFinancialDocumentPdfRenderer>(),
+            provider.GetRequiredService<TimeProvider>()));
+        services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
+        services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
+        services.AddScoped<IManualTurnaroundStore, EfManualTurnaroundStore>();
+        services.AddScoped<IManualTurnaroundOptionsStore, EfManualTurnaroundOptionsStore>();
+        services.AddScoped<IOccShiftProgrammingStore, EfOccShiftProgrammingStore>();
+        services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
+        services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
+        services.AddScoped<IMobileDeviceAdministrationStore, EfMobileDeviceAdministrationStore>();
+        services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();
+        services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
+        services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();
+        services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
+        services.AddScoped<Elevant.Application.Operations.IRampExecutionCommandStore, EfRampExecutionCommandStore>();
+        services.AddScoped<Elevant.Application.Operations.IOperationDocumentStore, EfOperationDocumentStore>();
+        services.AddScoped<Elevant.Application.Operations.ICharterStore, EfCharterStore>();
+        services.AddScoped<Elevant.Application.Finance.IFinanceCloseRulesStore, Elevant.Persistence.Finance.EfFinanceCloseRulesStore>();
+        services.AddScoped<IOperationalEvidenceStore>(_ => new S3OperationalEvidenceStore(configuration));
+        services.AddScoped<IRampServiceChargeStore, EfRampServiceChargeStore>();
+        services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();
+        services.AddScoped<IAttendanceDraftStore, EfAttendanceDraftStore>();
+        services.AddScoped<IAttendanceValidationStore, EfAttendanceValidationStore>();
+        services.AddScoped<IRampOperationSubmissionStore, EfRampOperationSubmissionStore>();
+        services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
+        services.AddScoped<IOccReviewStore, EfOccReviewStore>();
+        services.AddScoped<Elevant.Application.Operations.IOccIncidentStore, EfOccIncidentStore>();
+        services.AddScoped<IOperationalCommunicationStore, EfOperationalCommunicationStore>();
+        services.AddScoped<IAccountChangeDispatcherStore, EfAccountChangeDispatcherStore>();
+        services.AddScoped<IAccountChangeReadStore, EfAccountChangeReadStore>();
+
+        services
+            .AddHealthChecks()
+            .AddDbContextCheck<ElevantDbContext>(
+                name: "sql-server",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: ["ready"]);
+
+        return services;
+    }
+}

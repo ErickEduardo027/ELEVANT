@@ -1,0 +1,73 @@
+filters:
+  or:
+    - 'file.inFolder("Vault/01-historia")'
+    - 'file.inFolder("Vault/02-producto")'
+    - 'file.inFolder("Vault/03-dominio")'
+properties:
+  file.name:
+    displayName: Nota
+  note.title:
+    displayName: Título
+  note.area:
+    displayName: Lente
+  note.type:
+    displayName: Tipo
+  note.status:
+    displayName: Estado
+  note.maturity:
+    displayName: Madurez
+  note.evidence:
+    displayName: Evidencia
+  note.last_verified:
+    displayName: Verificada
+  note.verified_commit:
+    displayName: Commit
+views:
+  - type: cards
+    name: Cerebro ELEVANT
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.evidence
+      - note.maturity
+  - type: table
+    name: Producto y dominio
+    filters:
+      or:
+        - 'note.area == "product"'
+        - 'note.area == "domain"'
+    order:
+      - note.title
+      - note.area
+      - note.type
+      - note.status
+      - note.maturity
+      - note.evidence
+      - note.last_verified
+  - type: table
+    name: Historia verificable
+    filters:
+      and:
+        - 'note.area == "history"'
+    order:
+      - note.title
+      - note.type
+      - note.status
+      - note.evidence
+      - note.last_verified
+      - note.verified_commit
+  - type: list
+    name: Incertidumbre visible
+    filters:
+      or:
+        - 'note.status == "draft"'
+        - 'note.evidence == "unknown"'
+        - 'note.status == "deferred"'
+        - 'note.type == "backlog"'
+        - 'file.hasTag("unknown")'
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.evidence

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 3,
+  "createdAt": null,
+  "updatedAt": null,
+  "users": [
+    {
+      "id": "USR-ADMIN-OCC",
+      "email": "admin@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Laisha Ramírez",
+      "role": "ADMIN_OCC",
+      "roleLabel": "Administrador OCC",
+      "active": true
+    },
+    {
+      "id": "USR-GESTION-HUMANA",
+      "email": "gestionhumana@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Camila Reyes",
+      "role": "GESTION_HUMANA",
+      "roleLabel": "Gestión Humana",
+      "active": true
+    },
+    {
+      "id": "USR-CONTRATOS",
+      "email": "contratos@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Marcos Silva",
+      "role": "CONTRATOS",
+      "roleLabel": "Contratos",
+      "active": true
+    },
+    {
+      "id": "USR-FINANZAS",
+      "email": "finanzas@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Elena Rojas",
+      "role": "FINANZAS",
+      "roleLabel": "Finanzas",
+      "active": true
+    }
+  ],
+  "airlines": [],
+  "serviceRequests": [],
+  "contracts": [],
+  "contractServices": [],
+  "personnel": [],
+  "qualifications": [],
+  "qualificationHistory": [],
+  "permits": [],
+  "permitHistory": [],
+  "shifts": [],
+  "availabilityRequests": [],
+  "flights": [],
+  "assignments": [],
+  "operations": [],
+  "incidents": [],
+  "reports": [],
+  "preinvoices": [],
+  "chats": [],
+  "messages": [],
+  "departmentMessages": [],
+  "notifications": [],
+  "syncReceipts": [],
+  "audit": []
+}

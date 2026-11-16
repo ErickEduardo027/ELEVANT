@@ -1,0 +1,81 @@
+name: elevant-dev-api
+
+services:
+  api:
+    image: "${ELEVANT_API_IMAGE:?Set an immutable GHCR API image including @sha256 digest}"
+    pull_policy: always
+    init: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      DOTNET_EnableDiagnostics: "0"
+      AllowedHosts: "${ELEVANT_API_ALLOWED_HOSTS:?Set the private Tailscale API host plus localhost and 127.0.0.1}"
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ConnectionStrings__ElevantDatabase: "${ELEVANT_API_DATABASE_CONNECTION_STRING:?Set the elevant_dev_app connection string}"
+      Authentication__Issuer: "${ELEVANT_API_AUTH_ISSUER:?Set the Development JWT issuer}"
+      Authentication__Audience: "${ELEVANT_API_AUTH_AUDIENCE:?Set the Development JWT audience}"
+      Authentication__SigningKeyBase64: "${ELEVANT_API_AUTH_SIGNING_KEY_BASE64:?Set a base64 key that decodes to 32-128 random bytes in the deployment secret store}"
+      Authentication__AccessTokenMinutes: "${ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES:-15}"
+      MediaStorage__Endpoint: "${ELEVANT_MEDIA_ENDPOINT:?Set the private S3 endpoint on elevant-dev-data}"
+      MediaStorage__Region: "${ELEVANT_MEDIA_REGION:-garage}"
+      MediaStorage__Bucket: "${ELEVANT_MEDIA_BUCKET:?Set the private media bucket}"
+      MediaStorage__AccessKey: "${ELEVANT_MEDIA_ACCESS_KEY:?Set the scoped S3 access key}"
+      MediaStorage__SecretKey: "${ELEVANT_MEDIA_SECRET_KEY:?Set the scoped S3 secret key}"
+      Smtp__Host: "${ELEVANT_SMTP_HOST:-}"
+      Smtp__Port: "${ELEVANT_SMTP_PORT:-587}"
+      Smtp__UseTls: "${ELEVANT_SMTP_USE_TLS:-true}"
+      Smtp__Username: "${ELEVANT_SMTP_USERNAME:-}"
+      Smtp__Password: "${ELEVANT_SMTP_PASSWORD:-}"
+      Smtp__FromAddress: "${ELEVANT_SMTP_FROM_ADDRESS:-}"
+      Smtp__FromName: "${ELEVANT_SMTP_FROM_NAME:-ELEVANT}"
+      # Paid flight feed (ADR-0028): off unless the key is set; the worker spends within these limits.
+      AeroDataBox__Enabled: "${ELEVANT_AERODATABOX_ENABLED:-false}"
+      AeroDataBox__ApiKey: "${ELEVANT_AERODATABOX_API_KEY}"
+      AeroDataBox__DailyUnitLimit: "${ELEVANT_AERODATABOX_DAILY_UNITS:-1200}"
+      AeroDataBox__MonthlyUnitLimit: "${ELEVANT_AERODATABOX_MONTHLY_UNITS:-38000}"
+      AccountEmail__PublicWebBaseUrl: "${ELEVANT_API_PUBLIC_WEB_ORIGIN:?Set the exact public-web HTTPS origin without a trailing slash}"
+      Cors__AllowedOrigins__0: "${ELEVANT_API_PRIVATE_WEB_ORIGIN:?Set the exact private-web HTTPS origin without a trailing slash}"
+      Cors__AllowedOrigins__1: "${ELEVANT_API_PUBLIC_WEB_ORIGIN:?Set the exact public-web HTTPS origin without a trailing slash}"
+      Cors__AllowedOrigins__2: "http://localhost:5173"
+      Cors__AllowedOrigins__3: "http://localhost:3000"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__KnownProxies__0: "${ELEVANT_API_TRUSTED_PROXY:?Set the exact runtime network gateway IP}"
+      ForwardedHeaders__ForwardLimit: "1"
+      HttpsRedirection__Enabled: "false"
+      Swagger__Enabled: "true"
+    ports:
+      - "127.0.0.1:18080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 0.60
+    healthcheck:
+      test: ["CMD", "dotnet", "Elevant.Api.dll", "--health-probe"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    networks:
+      - runtime
+      - data
+
+networks:
+  runtime:
+    external: true
+    name: elevant-dev-api-runtime
+  data:
+    external: true
+    name: elevant-dev-data

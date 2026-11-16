@@ -1,0 +1,513 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly APPLY_SCRIPT="$SCRIPT_DIR/elevant-firewall-apply"
+readonly ROLLBACK_SCRIPT="$SCRIPT_DIR/elevant-firewall-rollback"
+
+fail() {
+  printf '%s: FAIL: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+snapshot_ruleset() {
+  nft list ruleset
+}
+
+assert_equal() {
+  local expected="$1" actual="$2" message="$3"
+  [[ "$actual" == "$expected" ]] || fail "$message"
+}
+
+assert_unit_state() {
+  local expected_active="$1" expected_enabled="$2"
+  assert_equal "$expected_active" "$(<"$UNIT_STATE_DIR/active")" \
+    "unexpected mocked active state"
+  assert_equal "$expected_enabled" "$(<"$UNIT_STATE_DIR/enabled")" \
+    "unexpected mocked enabled state"
+}
+
+assert_command_allowed() {
+  local message="$1"
+  shift
+  "$@" >/dev/null || fail "$message"
+}
+
+assert_command_blocked() {
+  local message="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    fail "$message"
+  fi
+}
+
+tcp_connect() {
+  local namespace="$1" family="$2" address="$3" port="$4"
+
+  ip netns exec "$namespace" python3 - "$family" "$address" "$port" <<'PY'
+import socket
+import sys
+
+family = socket.AF_INET if sys.argv[1] == "4" else socket.AF_INET6
+with socket.socket(family, socket.SOCK_STREAM) as client:
+    client.settimeout(2.5)
+    client.connect((sys.argv[2], int(sys.argv[3])))
+PY
+}
+
+SERVER_PIDS=()
+
+start_tcp_server() {
+  local namespace="$1" family="$2" address="$3" port="$4"
+  local server_number="${#SERVER_PIDS[@]}" attempt pid
+  local ready_file="$TEST_TMP/server-$server_number.ready"
+  local error_file="$TEST_TMP/server-$server_number.err"
+  local -a command=(
+    python3 "$SERVER_SCRIPT" "$family" "$address" "$port"
+  )
+
+  if [[ "$namespace" == "root" ]]; then
+    "${command[@]}" > "$ready_file" 2> "$error_file" &
+  else
+    ip netns exec "$namespace" "${command[@]}" \
+      > "$ready_file" 2> "$error_file" &
+  fi
+  pid="$!"
+  SERVER_PIDS+=("$pid")
+
+  for (( attempt = 0; attempt < 100; attempt += 1 )); do
+    if grep -Fxq READY "$ready_file" 2>/dev/null; then
+      return 0
+    fi
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      sed 's/^/server: /' "$error_file" >&2 || true
+      fail "test TCP server failed to start on $address:$port"
+    fi
+    sleep 0.02
+  done
+
+  fail "test TCP server did not become ready on $address:$port"
+}
+
+stop_tcp_servers() {
+  local pid
+
+  for pid in "${SERVER_PIDS[@]}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" 2>/dev/null || true
+  done
+  SERVER_PIDS=()
+}
+
+if [[ "${ELEVANT_FIREWALL_TEST_ISOLATED:-0}" != "1" ]]; then
+  (( EUID == 0 )) || fail "run this integration test as root"
+  require_command unshare
+  exec unshare --net --mount --mount-proc \
+    env ELEVANT_FIREWALL_TEST_ISOLATED=1 bash "$0" "$@"
+fi
+
+(( EUID == 0 )) || fail "isolated integration test lost root privileges"
+for command_name in awk flock ip iptables ip6tables nft ping python3 stat \
+  sysctl; do
+  require_command "$command_name"
+done
+
+REAL_NFT="$(command -v nft)"
+TEST_TMP="$(mktemp -d /tmp/elevant-firewall-test.XXXXXX)"
+[[ "$TEST_TMP" == /tmp/elevant-firewall-test.* ]] || fail "unsafe temp path"
+
+cleanup() {
+  stop_tcp_servers
+  for namespace in public docker tailnet; do
+    ip netns delete "$namespace" >/dev/null 2>&1 || true
+  done
+  rm -rf -- "$TEST_TMP"
+}
+
+trap cleanup EXIT
+
+CONFIG_FILE="$TEST_TMP/firewall.env"
+MOCK_BIN="$TEST_TMP/bin"
+SERVER_SCRIPT="$TEST_TMP/tcp-server.py"
+UNIT_STATE_DIR="$TEST_TMP/unit-state"
+export UNIT_STATE_DIR
+mkdir -p "$MOCK_BIN" "$UNIT_STATE_DIR"
+
+cat > "$SERVER_SCRIPT" <<'PY'
+import socket
+import sys
+
+family = socket.AF_INET if sys.argv[1] == "4" else socket.AF_INET6
+with socket.socket(family, socket.SOCK_STREAM) as server:
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if family == socket.AF_INET6:
+        server.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+    server.bind((sys.argv[2], int(sys.argv[3])))
+    server.listen(16)
+    print("READY", flush=True)
+    while True:
+        connection, _ = server.accept()
+        connection.close()
+PY
+
+printf '%s\n' \
+  'ELEVANT_PUBLIC_INTERFACE=public0' \
+  'ELEVANT_FIREWALL_PHASE=transitional' > "$CONFIG_FILE"
+chmod 0600 "$CONFIG_FILE"
+
+ip link set lo up
+for namespace in public docker tailnet; do
+  ip netns add "$namespace"
+  ip -n "$namespace" link set lo up
+  ip netns exec "$namespace" \
+    sysctl -q -w net.ipv6.conf.all.disable_ipv6=0
+  ip netns exec "$namespace" \
+    sysctl -q -w net.ipv6.conf.all.accept_dad=0
+done
+
+ip link add public0 type veth peer name public_peer
+ip link set public_peer netns public
+ip link add docker0 type veth peer name docker_peer
+ip link set docker_peer netns docker
+ip link add tailscale0 type veth peer name tailnet_peer
+ip link set tailnet_peer netns tailnet
+
+ip address add 192.0.2.1/24 dev public0
+ip -n public address add 192.0.2.254/24 dev public_peer
+ip address add 172.18.0.1/24 dev docker0
+ip -n docker address add 172.18.0.2/24 dev docker_peer
+ip address add 100.64.0.1/24 dev tailscale0
+ip -n tailnet address add 100.64.0.2/24 dev tailnet_peer
+
+ip address add 2001:db8:1::1/64 dev public0 nodad
+ip -n public address add 2001:db8:1::fe/64 dev public_peer nodad
+ip address add 2001:db8:2::1/64 dev docker0 nodad
+ip -n docker address add 2001:db8:2::2/64 dev docker_peer nodad
+ip address add fd7a:115c:a1e0::1/64 dev tailscale0 nodad
+ip -n tailnet address add fd7a:115c:a1e0::2/64 dev tailnet_peer nodad
+
+for interface in public0 docker0 tailscale0; do
+  ip link set "$interface" up
+done
+ip -n public link set public_peer up
+ip -n docker link set docker_peer up
+ip -n tailnet link set tailnet_peer up
+
+ip -4 route add default via 192.0.2.254 dev public0
+ip -6 route add default via 2001:db8:1::fe dev public0
+ip -n public -4 route add default via 192.0.2.1
+ip -n public -6 route add default via 2001:db8:1::1
+ip -n docker -4 route add default via 172.18.0.1
+ip -n docker -6 route add default via 2001:db8:2::1
+ip -n tailnet -4 route add default via 100.64.0.1
+ip -n tailnet -6 route add default via fd7a:115c:a1e0::1
+
+sysctl -q -w net.ipv4.ip_forward=1
+sysctl -q -w net.ipv6.conf.all.forwarding=1
+
+# Warm ARP/NDP in the isolated topology so a one-shot policy probe measures
+# firewall behavior rather than first-neighbor-discovery latency.
+for address in 192.0.2.254 172.18.0.2 100.64.0.2; do
+  ping -4 -c 1 -W 1 "$address" >/dev/null
+done
+for address in 2001:db8:1::fe 2001:db8:2::2 fd7a:115c:a1e0::2; do
+  ping -6 -c 1 -W 1 "$address" >/dev/null
+done
+
+for tool in iptables ip6tables; do
+  "$tool" -N ts-input
+  "$tool" -N ts-forward
+  "$tool" -N DOCKER-USER
+  "$tool" -A INPUT -j ts-input
+  "$tool" -A FORWARD -j ts-forward
+  "$tool" -A FORWARD -j DOCKER-USER
+  "$tool" -A ts-input -i tailscale0 -j ACCEPT
+  "$tool" -A ts-forward -i tailscale0 \
+    -j MARK --set-mark 0x40000/0xff0000
+  "$tool" -A ts-forward -m mark --mark 0x40000/0xff0000 -j ACCEPT
+  if [[ "$tool" == "iptables" ]]; then
+    "$tool" -A ts-forward -o tailscale0 -s 100.64.0.0/10 -j DROP
+  fi
+  "$tool" -A ts-forward -o tailscale0 -j ACCEPT
+  "$tool" -A DOCKER-USER -j RETURN
+  "$tool" -P INPUT ACCEPT
+  "$tool" -P FORWARD ACCEPT
+done
+
+nft add table ip test_nat4
+nft 'add chain ip test_nat4 prerouting { type nat hook prerouting priority dstnat; policy accept; }'
+nft add rule ip test_nat4 prerouting iifname public0 \
+  ip daddr 192.0.2.1 tcp dport 80 dnat to 172.18.0.2:8080
+nft add rule ip test_nat4 prerouting iifname public0 \
+  ip daddr 192.0.2.1 tcp dport 443 dnat to 172.18.0.2:8443
+
+nft add table ip6 test_nat6
+nft 'add chain ip6 test_nat6 prerouting { type nat hook prerouting priority dstnat; policy accept; }'
+nft add rule ip6 test_nat6 prerouting iifname public0 \
+  ip6 daddr 2001:db8:1::1 tcp dport 80 \
+  dnat to '[2001:db8:2::2]:8082'
+nft add rule ip6 test_nat6 prerouting iifname public0 \
+  ip6 daddr 2001:db8:1::1 tcp dport 443 \
+  dnat to '[2001:db8:2::2]:8444'
+
+cat > "$MOCK_BIN/systemctl" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+case "${1:-}" in
+  is-active)
+    state="$(<"$UNIT_STATE_DIR/active")"
+    printf '%s\n' "$state"
+    [[ "$state" == "active" ]]
+    ;;
+  is-enabled)
+    state="$(<"$UNIT_STATE_DIR/enabled")"
+    printf '%s\n' "$state"
+    [[ "$state" == "enabled" ]]
+    ;;
+  disable)
+    printf '%s\n' inactive > "$UNIT_STATE_DIR/active"
+    printf '%s\n' disabled > "$UNIT_STATE_DIR/enabled"
+    [[ ! -e "$UNIT_STATE_DIR/fail-disable" ]]
+    ;;
+  enable)
+    printf '%s\n' enabled > "$UNIT_STATE_DIR/enabled"
+    ;;
+  start)
+    printf '%s\n' active > "$UNIT_STATE_DIR/active"
+    ;;
+  *)
+    printf 'unexpected mocked systemctl operation: %s\n' "$*" >&2
+    exit 64
+    ;;
+esac
+EOF
+chmod 0755 "$MOCK_BIN/systemctl"
+printf '%s\n' active > "$UNIT_STATE_DIR/active"
+printf '%s\n' enabled > "$UNIT_STATE_DIR/enabled"
+
+nft add table ip elevant_firewall
+foreign_family_ruleset="$(snapshot_ruleset)"
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" >/dev/null 2>&1; then
+  fail "apply accepted the ELEVANT table name in a foreign family"
+fi
+if PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" \
+     --config "$CONFIG_FILE" >/dev/null 2>&1; then
+  fail "rollback accepted the ELEVANT table name in a foreign family"
+fi
+assert_equal "$foreign_family_ruleset" "$(snapshot_ruleset)" \
+  "foreign-family rejection mutated the ruleset"
+assert_unit_state active enabled
+nft delete table ip elevant_firewall
+
+baseline="$(snapshot_ruleset)"
+"$APPLY_SCRIPT" --config "$CONFIG_FILE" --dry-run > "$TEST_TMP/dry-run.out"
+grep -Fq 'validated atomic nft transaction' "$TEST_TMP/dry-run.out" || \
+  fail "dry-run did not print the validated transaction"
+assert_equal "$baseline" "$(snapshot_ruleset)" "dry-run mutated the ruleset"
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active \
+     >/dev/null 2>&1; then
+  fail "verify-active accepted an absent ELEVANT table"
+fi
+assert_equal "$baseline" "$(snapshot_ruleset)" \
+  "absent verify-active mutated the ruleset"
+
+"$APPLY_SCRIPT" --config "$CONFIG_FILE"
+transitional="$(nft list table inet elevant_firewall)"
+grep -Fq 'priority filter - 10' <<< "$transitional" || \
+  fail "canonical hook priority is missing"
+grep -Fq 'ct direction original ct status dnat meta l4proto tcp ct original proto-dst 80' \
+  <<< "$transitional" || fail "canonical DNAT/original-port rule is missing"
+"$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active
+assert_equal "$transitional" "$(nft list table inet elevant_firewall)" \
+  "verify-active mutated the canonical table"
+
+exec 8>/run/lock/elevant-firewall.lock
+flock -n 8 || fail "could not acquire firewall lock for contention test"
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active \
+     >/dev/null 2>&1; then
+  fail "verify-active ignored an active ELEVANT operation lock"
+fi
+flock -u 8
+
+"$APPLY_SCRIPT" --config "$CONFIG_FILE"
+assert_equal "$transitional" "$(nft list table inet elevant_firewall)" \
+  "second apply was not idempotent"
+
+start_tcp_server docker 4 172.18.0.2 8080
+start_tcp_server docker 4 172.18.0.2 8443
+start_tcp_server docker 6 2001:db8:2::2 8082
+start_tcp_server docker 6 2001:db8:2::2 8444
+start_tcp_server root 4 192.0.2.1 22
+start_tcp_server root 6 2001:db8:1::1 22
+assert_command_allowed "transitional IPv4 DNAT port 80 was blocked" \
+  tcp_connect public 4 192.0.2.1 80
+assert_command_allowed "transitional IPv6 DNAT port 80 was blocked" \
+  tcp_connect public 6 2001:db8:1::1 80
+assert_command_blocked "transitional IPv4 DNAT port 443 was allowed" \
+  tcp_connect public 4 192.0.2.1 443
+assert_command_blocked "transitional IPv6 DNAT port 443 was allowed" \
+  tcp_connect public 6 2001:db8:1::1 443
+assert_command_allowed "transitional IPv4 host port 22 was blocked" \
+  tcp_connect public 4 192.0.2.1 22
+assert_command_allowed "transitional IPv6 host port 22 was blocked" \
+  tcp_connect public 6 2001:db8:1::1 22
+stop_tcp_servers
+
+nft add table inet foreign_owner
+nft add chain inet foreign_owner marker
+sed -i 's/transitional/final/' "$CONFIG_FILE"
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active \
+     >/dev/null 2>&1; then
+  fail "verify-active accepted a table from the wrong configured phase"
+fi
+assert_equal "$transitional" "$(nft list table inet elevant_firewall)" \
+  "phase-mismatch verify-active mutated the table"
+"$APPLY_SCRIPT" --config "$CONFIG_FILE"
+nft list table inet foreign_owner >/dev/null || fail "apply changed a foreign table"
+"$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active
+
+assert_command_allowed "final IPv4 ICMP input was blocked" \
+  ip netns exec public ping -4 -c 1 -W 1 192.0.2.1
+assert_command_allowed "final IPv6 ICMP input was blocked" \
+  ip netns exec public ping -6 -c 1 -W 1 2001:db8:1::1
+assert_command_allowed "IPv4 Tailscale input was changed" \
+  ip netns exec tailnet ping -4 -c 1 -W 1 100.64.0.1
+assert_command_allowed "IPv6 Tailscale input was changed" \
+  ip netns exec tailnet ping -6 -c 1 -W 1 fd7a:115c:a1e0::1
+
+start_tcp_server root 4 192.0.2.1 22
+start_tcp_server root 6 2001:db8:1::1 22
+assert_command_blocked "final IPv4 host port 22 was allowed" \
+  tcp_connect public 4 192.0.2.1 22
+assert_command_blocked "final IPv6 host port 22 was allowed" \
+  tcp_connect public 6 2001:db8:1::1 22
+stop_tcp_servers
+
+iptables -t mangle -A PREROUTING -i public0 -d 172.18.0.2 \
+  -j MARK --set-mark 0x40000/0xff0000
+ip6tables -t mangle -A PREROUTING -i public0 -d 2001:db8:2::2 \
+  -j MARK --set-mark 0x40000/0xff0000
+assert_command_blocked "pre-marked IPv4 public traffic bypassed ELEVANT" \
+  ip netns exec public ping -4 -c 1 -W 1 172.18.0.2
+assert_command_blocked "pre-marked IPv6 public traffic bypassed ELEVANT" \
+  ip netns exec public ping -6 -c 1 -W 1 2001:db8:2::2
+assert_command_blocked "IPv4 public traffic escaped through tailscale0" \
+  ip netns exec public ping -4 -c 1 -W 1 100.64.0.2
+assert_command_blocked "IPv6 public traffic escaped through tailscale0" \
+  ip netns exec public ping -6 -c 1 -W 1 fd7a:115c:a1e0::2
+assert_command_allowed "IPv4 tailnet-to-Docker traffic was changed" \
+  ip netns exec tailnet ping -4 -c 1 -W 1 172.18.0.2
+assert_command_allowed "IPv6 tailnet-to-Docker traffic was changed" \
+  ip netns exec tailnet ping -6 -c 1 -W 1 2001:db8:2::2
+
+iptables -I FORWARD 1 -j ACCEPT
+ip6tables -I FORWARD 1 -j ACCEPT
+iptables -D FORWARD -j ts-forward
+iptables -I FORWARD 1 -j ts-forward
+ip6tables -D FORWARD -j ts-forward
+ip6tables -I FORWARD 1 -j ts-forward
+assert_command_blocked "filter-priority IPv4 ACCEPT bypassed ELEVANT" \
+  ip netns exec public ping -4 -c 1 -W 1 100.64.0.2
+assert_command_blocked "filter-priority IPv6 ACCEPT bypassed ELEVANT" \
+  ip netns exec public ping -6 -c 1 -W 1 fd7a:115c:a1e0::2
+
+rollback_dry_run_ruleset="$(snapshot_ruleset)"
+PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" \
+  --config "$CONFIG_FILE" --dry-run > "$TEST_TMP/rollback-dry-run.out"
+assert_equal "$rollback_dry_run_ruleset" "$(snapshot_ruleset)" \
+  "canonical rollback dry-run mutated the ruleset"
+assert_unit_state active enabled
+
+final_policy="$(nft list table inet elevant_firewall)"
+malformed_batch="delete table inet elevant_firewall"$'\n'\
+"table inet elevant_firewall { chain broken { this is not valid; } }"
+if printf '%s\n' "$malformed_batch" | nft -f - >/dev/null 2>&1; then
+  fail "malformed nft transaction unexpectedly succeeded"
+fi
+assert_equal "$final_policy" "$(nft list table inet elevant_firewall)" \
+  "failed transaction did not retain the prior table"
+
+nft add rule inet elevant_firewall public_input \
+  iifname public0 accept comment foreign-drift
+drifted_ruleset="$(snapshot_ruleset)"
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" --dry-run >/dev/null 2>&1; then
+  fail "apply dry-run accepted foreign drift"
+fi
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" >/dev/null 2>&1; then
+  fail "apply accepted foreign drift"
+fi
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active \
+     >/dev/null 2>&1; then
+  fail "verify-active accepted foreign drift"
+fi
+if PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" \
+     --config "$CONFIG_FILE" --dry-run >/dev/null 2>&1; then
+  fail "rollback dry-run accepted foreign drift"
+fi
+assert_equal "$drifted_ruleset" "$(snapshot_ruleset)" \
+  "drift rejection mutated the ruleset"
+assert_unit_state active enabled
+
+nft delete table inet elevant_firewall
+"$APPLY_SCRIPT" --config "$CONFIG_FILE"
+final_policy="$(nft list table inet elevant_firewall)"
+
+cat > "$MOCK_BIN/nft" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "list" && "\${2:-}" == "tables" ]]; then
+  exit 70
+fi
+exec "$REAL_NFT" "\$@"
+EOF
+chmod 0755 "$MOCK_BIN/nft"
+before_list_failure="$(snapshot_ruleset)"
+if PATH="$MOCK_BIN:$PATH" "$APPLY_SCRIPT" \
+     --config "$CONFIG_FILE" >/dev/null 2>&1; then
+  fail "apply treated nft list failure as an absent table"
+fi
+if PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" \
+     --config "$CONFIG_FILE" >/dev/null 2>&1; then
+  fail "rollback treated nft list failure as an absent table"
+fi
+assert_equal "$before_list_failure" "$(snapshot_ruleset)" \
+  "nft list failure mutated the ruleset"
+assert_unit_state active enabled
+rm -f "$MOCK_BIN/nft"
+
+touch "$UNIT_STATE_DIR/fail-disable"
+if PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" \
+     --config "$CONFIG_FILE" >/dev/null 2>&1; then
+  fail "rollback unexpectedly succeeded when unit deactivation failed"
+fi
+assert_equal "$final_policy" "$(nft list table inet elevant_firewall)" \
+  "rollback did not compensate the policy after deactivation failure"
+assert_unit_state active enabled
+rm -f "$UNIT_STATE_DIR/fail-disable"
+
+PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" --config "$CONFIG_FILE"
+if nft list table inet elevant_firewall >/dev/null 2>&1; then
+  fail "successful rollback left the ELEVANT table"
+fi
+if "$APPLY_SCRIPT" --config "$CONFIG_FILE" --verify-active \
+     >/dev/null 2>&1; then
+  fail "verify-active accepted the post-rollback absent table"
+fi
+nft list table inet foreign_owner >/dev/null || fail "rollback changed a foreign table"
+assert_unit_state inactive disabled
+
+PATH="$MOCK_BIN:$PATH" "$ROLLBACK_SCRIPT" --config "$CONFIG_FILE"
+if nft list table inet elevant_firewall >/dev/null 2>&1; then
+  fail "idempotent rollback recreated the ELEVANT table"
+fi
+nft list table inet foreign_owner >/dev/null || \
+  fail "idempotent rollback changed a foreign table"
+assert_unit_state inactive disabled
+
+printf '%s: PASS\n' "$PROGRAM_NAME"

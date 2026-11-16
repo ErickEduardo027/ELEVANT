@@ -1,0 +1,391 @@
+import { ElevantApiError } from '@elevant/api-client';
+import { createPrivateWebApiClient, setAccessTokenRenewer } from '../../config/elevantApiClient';
+import { clearOccBootSeen } from '../admin-occ/boot/occBootSession';
+import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
+
+export const AUTH_STORAGE_KEY = 'elevant-auth-session';
+export const AUTH_EXPIRED_EVENT = 'elevant-auth-expired';
+export const MOCK_PASSWORD = 'Elevant2026!';
+export const PROTOTYPE_API_URL = String(
+  process.env.NEXT_PUBLIC_PROTOTYPE_API_URL || ''
+).replace(/\/$/, '');
+
+const SUPPORTED_BACK_OFFICE_ROLES = new Set(Object.values(ROLE_KEYS));
+const MOCK_SESSION_LIFETIME_MS = 60 * 60 * 1000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const GENERIC_AUTH_ERROR = 'No fue posible completar la autenticación.';
+let sessionExpirationTimer = null;
+
+export class PasswordChangeRequiredError extends Error {
+  constructor() {
+    super('Debes cambiar tu contraseña temporal para continuar.');
+    this.name = 'PasswordChangeRequiredError';
+  }
+}
+
+const MOCK_USERS = process.env.NODE_ENV === 'test'
+  ? {
+      'admin@elevant.test': {
+        email: 'admin@elevant.test',
+        name: 'Laisha Ramírez',
+        role: ROLE_KEYS.ADMIN_OCC,
+        roleLabel: 'Administrador OCC',
+      },
+      'gestionhumana@elevant.test': {
+        email: 'gestionhumana@elevant.test',
+        name: 'Camila Reyes',
+        role: ROLE_KEYS.GESTION_HUMANA,
+        roleLabel: 'Gestión Humana',
+      },
+      'contratos@elevant.test': {
+        email: 'contratos@elevant.test',
+        name: 'Marcos Silva',
+        role: ROLE_KEYS.CONTRATOS,
+        roleLabel: 'Contratos',
+      },
+      'finanzas@elevant.test': {
+        email: 'finanzas@elevant.test',
+        name: 'Elena Rojas',
+        role: ROLE_KEYS.FINANZAS,
+        roleLabel: 'Finanzas',
+      },
+    }
+  : {};
+
+function safeStorage(storage) {
+  try {
+    return storage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readFrom(storage) {
+  const store = safeStorage(storage);
+  if (!store) return null;
+  try {
+    const raw = store.getItem(AUTH_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeTo(storage, session) {
+  const store = safeStorage(storage);
+  if (!store) return;
+  try {
+    store.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Authentication still succeeds when browser storage is unavailable.
+  }
+}
+
+function removeFrom(storage) {
+  const store = safeStorage(storage);
+  if (!store) return;
+  try {
+    store.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // There is no local state to recover when browser storage is unavailable.
+  }
+}
+
+function cancelSessionExpiration() {
+  if (sessionExpirationTimer === null) return;
+  globalThis.clearTimeout(sessionExpirationTimer);
+  sessionExpirationTimer = null;
+}
+
+function expireActiveSession() {
+  clearSession();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+}
+
+// A session with a refresh token renews itself this long before the access token expires,
+// so one login lasts until logout (ADR-0021). Without one it still ends at expiresAt.
+export const RENEW_BEFORE_MS = 60_000;
+let renewal = null;
+
+function canRenew(session) {
+  const refreshUntil = Date.parse(session?.refreshExpiresAt);
+  return typeof session?.refreshToken === 'string' && session.refreshToken.length > 0 &&
+    Number.isFinite(refreshUntil) && refreshUntil > Date.now();
+}
+
+function scheduleSessionExpiration(session) {
+  cancelSessionExpiration();
+  const expiresAt = Date.parse(session?.expiresAt);
+  if (!Number.isFinite(expiresAt)) return;
+  const renewable = canRenew(session);
+  const deadline = renewable ? expiresAt - RENEW_BEFORE_MS : expiresAt;
+
+  const scheduleNextCheck = () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      if (renewable) void renewSession();
+      else expireActiveSession();
+      return;
+    }
+
+    sessionExpirationTimer = globalThis.setTimeout(() => {
+      sessionExpirationTimer = null;
+      scheduleNextCheck();
+    }, Math.min(remaining, MAX_TIMEOUT_MS));
+  };
+
+  scheduleNextCheck();
+}
+
+function isFreshSupportedSession(session) {
+  if (!session || typeof session !== 'object') return false;
+  if (typeof session.token !== 'string' || !session.token) return false;
+  if (typeof session.email !== 'string' || !session.email) return false;
+  if (typeof session.name !== 'string' || !session.name) return false;
+  if (!SUPPORTED_BACK_OFFICE_ROLES.has(session.role) && !session.role?.startsWith('CUSTOM_')) return false;
+
+  const expiresAt = Date.parse(session.expiresAt);
+  // An expired access token is still a session while its refresh token can renew it.
+  return (Number.isFinite(expiresAt) && expiresAt > Date.now()) || canRenew(session);
+}
+
+function storedIn() {
+  if (readFrom(window.localStorage)) return window.localStorage;
+  return window.sessionStorage;
+}
+
+async function withRenewalLock(work) {
+  // Tabs share localStorage: only one renews at a time, the others reuse its result.
+  const locks = globalThis.navigator?.locks;
+  return locks?.request ? locks.request('elevant-session-renewal', work) : work();
+}
+
+/**
+ * Renews the access token with the refresh token, once at a time across tabs. Resolves to the
+ * current session, or null when the server ended it (logout, password change, account disabled).
+ * A network failure keeps the session and retries at the next call.
+ */
+export function renewSession({ force = false } = {}) {
+  renewal ??= withRenewalLock(async () => {
+    const session = readFrom(storedIn());
+    if (!session || !canRenew(session)) return null;
+    const expiresAt = Date.parse(session.expiresAt);
+    if (!force && Number.isFinite(expiresAt) && expiresAt - Date.now() > RENEW_BEFORE_MS) return session;
+    try {
+      const response = await createPrivateWebApiClient().refreshSession(session.refreshToken);
+      const renewed = { ...session, ...mapApiSession(response) };
+      writeTo(storedIn(), renewed);
+      scheduleSessionExpiration(renewed);
+      return renewed;
+    } catch (error) {
+      if (error instanceof ElevantApiError && error.status === 409) {
+        // Another tab renewed first and already stored the new tokens.
+        const latest = readFrom(storedIn());
+        if (latest) scheduleSessionExpiration(latest);
+        return latest;
+      }
+      if (error instanceof ElevantApiError && error.status === 401) {
+        expireActiveSession();
+        return null;
+      }
+      return session;
+    }
+  }).finally(() => { renewal = null; });
+  return renewal;
+}
+
+setAccessTokenRenewer(() => renewSession());
+
+function readFreshFrom(storage) {
+  const session = readFrom(storage);
+  if (!session) return null;
+  if (!isFreshSupportedSession(session)) {
+    removeFrom(storage);
+    return null;
+  }
+  return {
+    ...session,
+    homePath: getRoleHomePath(session.role),
+  };
+}
+
+// Machine-readable code so the UI can translate without matching message text.
+function coded(message, code) {
+  return Object.assign(new Error(message), { code });
+}
+
+function mapApiSession(response) {
+  const roles = Array.isArray(response?.actor?.roles) ? response.actor.roles : [];
+  const role = roles.find(candidate =>
+    candidate?.portal === 'back_office' &&
+    (SUPPORTED_BACK_OFFICE_ROLES.has(candidate.code) || candidate.code?.startsWith('CUSTOM_'))
+  );
+
+  if (!role) {
+    throw coded('Esta cuenta no tiene acceso a AVIAM Web.', 'no_access');
+  }
+
+  return {
+    token: response.accessToken,
+    expiresAt: response.expiresAt,
+    refreshToken: response.refreshToken ?? null,
+    refreshExpiresAt: response.refreshExpiresAt ?? null,
+    accountId: response.actor.accountId,
+    email: response.actor.email,
+    name: response.actor.displayName,
+    role: role.code,
+    roleLabel: role.name,
+    homePath: getRoleHomePath(role.code),
+    memberships: Array.isArray(response.actor.memberships) ? response.actor.memberships : [],
+    stationScopes: Array.isArray(response.actor.stationScopes) ? response.actor.stationScopes : [],
+  };
+}
+
+function createMockSession(email, password) {
+  const normalizedEmail = String(email ?? '').trim().toLowerCase();
+  const testUser = MOCK_USERS[normalizedEmail];
+  if (!testUser || password !== MOCK_PASSWORD) {
+    throw coded('Credenciales inválidas.', 'invalid_credentials');
+  }
+
+  return {
+    token: 'test-session-token',
+    expiresAt: new Date(Date.now() + MOCK_SESSION_LIFETIME_MS).toISOString(),
+    accountId: `test-${testUser.role.toLowerCase()}`,
+    email: testUser.email,
+    name: testUser.name,
+    role: testUser.role,
+    roleLabel: testUser.roleLabel,
+    homePath: getRoleHomePath(testUser.role),
+    memberships: [],
+    stationScopes: [],
+  };
+}
+
+export function getMockUsers() {
+  return Object.values(MOCK_USERS).map(({ email, name, roleLabel }) => ({ email, name, roleLabel }));
+}
+
+export function readSession() {
+  const session = readFreshFrom(window.localStorage) ?? readFreshFrom(window.sessionStorage);
+  if (session) scheduleSessionExpiration(session);
+  else cancelSessionExpiration();
+  return session;
+}
+
+export function persistSession(session, remember = false) {
+  removeFrom(window.localStorage);
+  removeFrom(window.sessionStorage);
+  // Every login shows the OCC boot screen again on its first OCC entry (contratos 2.6).
+  clearOccBootSeen();
+  writeTo(remember ? window.localStorage : window.sessionStorage, session);
+  scheduleSessionExpiration(session);
+  return session;
+}
+
+export function clearSession() {
+  cancelSessionExpiration();
+  removeFrom(window.localStorage);
+  removeFrom(window.sessionStorage);
+  clearOccBootSeen();
+}
+
+export function handleUnauthorizedResponse(response) {
+  if (response?.status !== 401) return false;
+  // A renewable session gets one forced renewal; only a refused renewal ends it.
+  const session = readFrom(storedIn());
+  if (canRenew(session)) {
+    void renewSession({ force: true });
+    return true;
+  }
+  clearSession();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  return true;
+}
+
+export function logout() {
+  // Manual sign-out must report a failed removal; expiration/401 cleanup keeps
+  // its existing best-effort behavior in clearSession(). Capture both stores
+  // before changing either, and restore the snapshot if cleanup fails.
+  const session = readFrom(storedIn());
+  let snapshots = [];
+  try {
+    const stores = [window.localStorage, window.sessionStorage];
+    snapshots = stores.map(store => ({ store, value: store.getItem(AUTH_STORAGE_KEY) }));
+    for (const { store, value } of snapshots) {
+      if (value !== null) store.removeItem(AUTH_STORAGE_KEY);
+    }
+    if (stores.some(store => store.getItem(AUTH_STORAGE_KEY) !== null)) {
+      throw new Error('Session cleanup was not confirmed.');
+    }
+  } catch {
+    for (const { store, value } of snapshots) {
+      try {
+        if (value !== null && store.getItem(AUTH_STORAGE_KEY) !== value) {
+          store.setItem(AUTH_STORAGE_KEY, value);
+        }
+      } catch { /* The caller reports failure; never publish successful logout. */ }
+    }
+    throw coded('No fue posible completar el cierre de sesión.', 'logout_failed');
+  }
+  // Signed out: the next login shows the OCC boot screen again.
+  clearOccBootSeen();
+  cancelSessionExpiration();
+  // Revoke the refresh chain on the server (ADR-0021); the local session is already gone either way.
+  if (session?.refreshToken && process.env.NODE_ENV !== 'test') {
+    try {
+      void createPrivateWebApiClient().endSession(session.refreshToken).catch(() => {});
+    } catch {
+      // Without an API URL there is no server session to end.
+    }
+  }
+}
+
+export async function login({ email, password, remember = false }, injectedApiClient = null) {
+  if (process.env.NODE_ENV === 'test' && !injectedApiClient) {
+    return persistSession(createMockSession(email, password), remember);
+  }
+
+  try {
+    const apiClient = injectedApiClient ?? createPrivateWebApiClient();
+    const response = await apiClient.createSession({
+      email: String(email ?? '').trim(),
+      password: String(password ?? ''),
+    });
+    const session = mapApiSession(response);
+
+    if (!isFreshSupportedSession(session)) {
+      clearSession();
+      throw coded(GENERIC_AUTH_ERROR, 'generic');
+    }
+
+    return persistSession(session, remember);
+  } catch (error) {
+    clearSession();
+    if (error instanceof ElevantApiError && error.status === 401) {
+      throw coded('Credenciales inválidas.', 'invalid_credentials');
+    }
+    if (error instanceof ElevantApiError && error.status === 409) {
+      throw new PasswordChangeRequiredError();
+    }
+    if (error instanceof Error && error.message === 'Esta cuenta no tiene acceso a AVIAM Web.') {
+      throw error;
+    }
+    throw coded(GENERIC_AUTH_ERROR, 'generic');
+  }
+}
+
+export async function changePassword({ email, currentPassword, newPassword }, injectedApiClient = null) {
+  try {
+    const client = injectedApiClient ?? createPrivateWebApiClient();
+    await client.changePassword({ email: String(email ?? '').trim(), currentPassword, newPassword });
+  } catch (error) {
+    if (error instanceof ElevantApiError && error.status === 401) {
+      throw coded('La contraseña actual no es válida.', 'invalid_current_password');
+    }
+    if (error instanceof ElevantApiError && error.status === 400) {
+      throw coded('La nueva contraseña no cumple la política: mínimo 14 caracteres, mayúscula, minúscula, número y símbolo.', 'password_policy');
+    }
+    throw coded(GENERIC_AUTH_ERROR, 'generic');
+  }
+}

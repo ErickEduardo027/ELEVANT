@@ -1,0 +1,665 @@
+{
+  "nodes": [
+    {
+      "id": "d300000000000001",
+      "type": "text",
+      "text": "# ELEVANT · Del sistema al cambio seguro\n\nArquitectura → aplicaciones → contrato y datos → desarrollo → evidencia. Abre cada tarjeta para profundizar.",
+      "x": -2200,
+      "y": -880,
+      "width": 3260,
+      "height": 220,
+      "color": "6"
+    },
+    {
+      "id": "d300000000000002",
+      "type": "group",
+      "label": "01 · ARQUITECTURA — límites y dependencias",
+      "x": -2200,
+      "y": -540,
+      "width": 600,
+      "height": 1900,
+      "color": "4"
+    },
+    {
+      "id": "d300000000000003",
+      "type": "group",
+      "label": "02 · APLICACIONES — quién consume",
+      "x": -1540,
+      "y": -540,
+      "width": 600,
+      "height": 1900,
+      "color": "5"
+    },
+    {
+      "id": "d300000000000004",
+      "type": "group",
+      "label": "03 · CONTRATO Y DATOS — verdad ejecutable",
+      "x": -880,
+      "y": -540,
+      "width": 600,
+      "height": 1900,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000005",
+      "type": "group",
+      "label": "04 · DESARROLLO — cómo cambiar",
+      "x": -220,
+      "y": -540,
+      "width": 600,
+      "height": 1900,
+      "color": "6"
+    },
+    {
+      "id": "d300000000000006",
+      "type": "group",
+      "label": "05 · EVIDENCIA — cómo confiar",
+      "x": 440,
+      "y": -540,
+      "width": 600,
+      "height": 1900,
+      "color": "2"
+    },
+    {
+      "id": "d300000000000007",
+      "type": "file",
+      "file": "Vault/04-arquitectura/README.md",
+      "x": -2140,
+      "y": -400,
+      "width": 480,
+      "height": 210,
+      "color": "4"
+    },
+    {
+      "id": "d300000000000008",
+      "type": "file",
+      "file": "Vault/04-arquitectura/sistema-y-fronteras-de-confianza.md",
+      "x": -2140,
+      "y": -110,
+      "width": 480,
+      "height": 210,
+      "color": "4"
+    },
+    {
+      "id": "d300000000000009",
+      "type": "file",
+      "file": "Vault/04-arquitectura/backend-dotnet-capas-y-dependencias.md",
+      "x": -2140,
+      "y": 180,
+      "width": 480,
+      "height": 210,
+      "color": "4"
+    },
+    {
+      "id": "d30000000000000a",
+      "type": "file",
+      "file": "Vault/04-arquitectura/integraciones-externas.md",
+      "x": -2140,
+      "y": 470,
+      "width": 480,
+      "height": 210,
+      "color": "4"
+    },
+    {
+      "id": "d30000000000000b",
+      "type": "file",
+      "file": "Vault/04-arquitectura/decisiones-restricciones-y-riesgos.md",
+      "x": -2140,
+      "y": 760,
+      "width": 480,
+      "height": 210,
+      "color": "1"
+    },
+    {
+      "id": "d30000000000000c",
+      "type": "file",
+      "file": "Vault/diagrams/arquitectura-contexto.md",
+      "x": -2140,
+      "y": 1050,
+      "width": 480,
+      "height": 220,
+      "color": "4"
+    },
+    {
+      "id": "d30000000000000d",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/README.md",
+      "x": -1480,
+      "y": -400,
+      "width": 480,
+      "height": 200,
+      "color": "5"
+    },
+    {
+      "id": "d30000000000000e",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/private-web-aviam.md",
+      "x": -1480,
+      "y": -120,
+      "width": 480,
+      "height": 200,
+      "color": "5"
+    },
+    {
+      "id": "d30000000000000f",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/public-web-portal.md",
+      "x": -1480,
+      "y": 160,
+      "width": 480,
+      "height": 200,
+      "color": "5"
+    },
+    {
+      "id": "d300000000000010",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/mobile-agent.md",
+      "x": -1480,
+      "y": 440,
+      "width": 480,
+      "height": 200,
+      "color": "5"
+    },
+    {
+      "id": "d300000000000011",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/api-compartida.md",
+      "x": -1480,
+      "y": 720,
+      "width": 480,
+      "height": 200,
+      "color": "4"
+    },
+    {
+      "id": "d300000000000012",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/developmentdb-compartida.md",
+      "x": -1480,
+      "y": 1000,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000013",
+      "type": "file",
+      "file": "Vault/04-arquitectura/openapi-http-y-signalr.md",
+      "x": -820,
+      "y": -400,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000014",
+      "type": "file",
+      "file": "Vault/06-desarrollo/openapi-y-cliente-compartido.md",
+      "x": -820,
+      "y": -120,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000015",
+      "type": "file",
+      "file": "packages/api-client/README.md",
+      "x": -820,
+      "y": 160,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000016",
+      "type": "file",
+      "file": "Vault/04-arquitectura/datos-ef-migraciones-y-persistencia.md",
+      "x": -820,
+      "y": 440,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000017",
+      "type": "file",
+      "file": "Vault/05-aplicaciones/developmentdb-compartida.md",
+      "x": -820,
+      "y": 720,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000018",
+      "type": "file",
+      "file": "Vault/03-dominio/entidades-y-relaciones-v1.md",
+      "x": -820,
+      "y": 1000,
+      "width": 480,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "d300000000000019",
+      "type": "file",
+      "file": "Vault/06-desarrollo/README.md",
+      "x": -160,
+      "y": -400,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d30000000000001a",
+      "type": "file",
+      "file": "Vault/06-desarrollo/preparacion-del-entorno-local.md",
+      "x": -160,
+      "y": -180,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d30000000000001b",
+      "type": "file",
+      "file": "Vault/06-desarrollo/comandos-locales-por-subarbol.md",
+      "x": -160,
+      "y": 40,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d30000000000001c",
+      "type": "file",
+      "file": "Vault/06-desarrollo/flujo-de-rama-y-pull-request.md",
+      "x": -160,
+      "y": 260,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d30000000000001d",
+      "type": "file",
+      "file": "Vault/06-desarrollo/cambio-seguro-por-tipo.md",
+      "x": -160,
+      "y": 480,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d30000000000001e",
+      "type": "file",
+      "file": "Vault/06-desarrollo/migraciones-y-datos.md",
+      "x": -160,
+      "y": 700,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d30000000000001f",
+      "type": "file",
+      "file": "Vault/06-desarrollo/pruebas-calidad-y-frontera-ci.md",
+      "x": -160,
+      "y": 920,
+      "width": 480,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "d300000000000020",
+      "type": "file",
+      "file": "Vault/06-desarrollo/definition-of-done-y-handoff.md",
+      "x": -160,
+      "y": 1140,
+      "width": 480,
+      "height": 170,
+      "color": "4"
+    },
+    {
+      "id": "d300000000000021",
+      "type": "file",
+      "file": "Vault/diagrams/arquitectura-aplicaciones-desarrollo.md",
+      "x": 500,
+      "y": -400,
+      "width": 480,
+      "height": 200,
+      "color": "2"
+    },
+    {
+      "id": "d300000000000022",
+      "type": "file",
+      "file": "Vault/diagrams/arquitectura-aplicaciones-desarrollo.base",
+      "x": 500,
+      "y": -120,
+      "width": 480,
+      "height": 200,
+      "color": "2"
+    },
+    {
+      "id": "d300000000000023",
+      "type": "file",
+      "file": "Vault/00-inicio/home.md",
+      "x": 500,
+      "y": 160,
+      "width": 480,
+      "height": 200,
+      "color": "2"
+    },
+    {
+      "id": "d300000000000024",
+      "type": "file",
+      "file": "Vault/00-inicio/estado-inicial.md",
+      "x": 500,
+      "y": 440,
+      "width": 480,
+      "height": 200,
+      "color": "2"
+    },
+    {
+      "id": "d300000000000025",
+      "type": "file",
+      "file": "Vault/08-gobernanza/fuentes-y-evidencia.md",
+      "x": 500,
+      "y": 720,
+      "width": 480,
+      "height": 200,
+      "color": "2"
+    },
+    {
+      "id": "d300000000000026",
+      "type": "file",
+      "file": "Vault/00-inicio/roadmap-del-vault.md",
+      "x": 500,
+      "y": 1000,
+      "width": 480,
+      "height": 200,
+      "color": "1"
+    }
+  ],
+  "edges": [
+    {
+      "id": "d3e0000000000001",
+      "fromNode": "d300000000000007",
+      "fromSide": "bottom",
+      "toNode": "d300000000000008",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "ubica confianza"
+    },
+    {
+      "id": "d3e0000000000002",
+      "fromNode": "d300000000000008",
+      "fromSide": "bottom",
+      "toNode": "d300000000000009",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "entra al núcleo"
+    },
+    {
+      "id": "d3e0000000000003",
+      "fromNode": "d300000000000009",
+      "fromSide": "bottom",
+      "toNode": "d30000000000000a",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "aísla adapters"
+    },
+    {
+      "id": "d3e0000000000004",
+      "fromNode": "d30000000000000a",
+      "fromSide": "bottom",
+      "toNode": "d30000000000000b",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "expone riesgo"
+    },
+    {
+      "id": "d3e0000000000005",
+      "fromNode": "d30000000000000b",
+      "fromSide": "bottom",
+      "toNode": "d30000000000000c",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "resume visualmente"
+    },
+    {
+      "id": "d3e0000000000006",
+      "fromNode": "d30000000000000d",
+      "fromSide": "bottom",
+      "toNode": "d30000000000000e",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "abre perfil"
+    },
+    {
+      "id": "d3e0000000000007",
+      "fromNode": "d30000000000000e",
+      "fromSide": "bottom",
+      "toNode": "d30000000000000f",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "siguiente perfil"
+    },
+    {
+      "id": "d3e0000000000008",
+      "fromNode": "d30000000000000f",
+      "fromSide": "bottom",
+      "toNode": "d300000000000010",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "siguiente perfil"
+    },
+    {
+      "id": "d3e0000000000009",
+      "fromNode": "d300000000000010",
+      "fromSide": "bottom",
+      "toNode": "d300000000000011",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "usa frontera API"
+    },
+    {
+      "id": "d3e000000000000a",
+      "fromNode": "d300000000000011",
+      "fromSide": "bottom",
+      "toNode": "d300000000000012",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "accede por Persistence"
+    },
+    {
+      "id": "d3e000000000000b",
+      "fromNode": "d300000000000013",
+      "fromSide": "bottom",
+      "toNode": "d300000000000014",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "guía el cambio"
+    },
+    {
+      "id": "d3e000000000000c",
+      "fromNode": "d300000000000014",
+      "fromSide": "bottom",
+      "toNode": "d300000000000015",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "regenera"
+    },
+    {
+      "id": "d3e000000000000d",
+      "fromNode": "d300000000000015",
+      "fromSide": "bottom",
+      "toNode": "d300000000000016",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "separa de EF"
+    },
+    {
+      "id": "d3e000000000000e",
+      "fromNode": "d300000000000016",
+      "fromSide": "bottom",
+      "toNode": "d300000000000017",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "aterriza frontera"
+    },
+    {
+      "id": "d3e000000000000f",
+      "fromNode": "d300000000000017",
+      "fromSide": "bottom",
+      "toNode": "d300000000000018",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "explica relaciones"
+    },
+    {
+      "id": "d3e0000000000010",
+      "fromNode": "d300000000000019",
+      "fromSide": "bottom",
+      "toNode": "d30000000000001a",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "prepara"
+    },
+    {
+      "id": "d3e0000000000011",
+      "fromNode": "d30000000000001a",
+      "fromSide": "bottom",
+      "toNode": "d30000000000001b",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "elige comandos"
+    },
+    {
+      "id": "d3e0000000000012",
+      "fromNode": "d30000000000001b",
+      "fromSide": "bottom",
+      "toNode": "d30000000000001c",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "abre rama"
+    },
+    {
+      "id": "d3e0000000000013",
+      "fromNode": "d30000000000001c",
+      "fromSide": "bottom",
+      "toNode": "d30000000000001d",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "acota cambio"
+    },
+    {
+      "id": "d3e0000000000014",
+      "fromNode": "d30000000000001d",
+      "fromSide": "bottom",
+      "toNode": "d30000000000001e",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "protege datos"
+    },
+    {
+      "id": "d3e0000000000015",
+      "fromNode": "d30000000000001e",
+      "fromSide": "bottom",
+      "toNode": "d30000000000001f",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "valida"
+    },
+    {
+      "id": "d3e0000000000016",
+      "fromNode": "d30000000000001f",
+      "fromSide": "bottom",
+      "toNode": "d300000000000020",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "entrega evidencia"
+    },
+    {
+      "id": "d3e0000000000017",
+      "fromNode": "d300000000000021",
+      "fromSide": "bottom",
+      "toNode": "d300000000000022",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "ofrece vistas"
+    },
+    {
+      "id": "d3e0000000000018",
+      "fromNode": "d300000000000022",
+      "fromSide": "bottom",
+      "toNode": "d300000000000023",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "vuelve al inicio"
+    },
+    {
+      "id": "d3e0000000000019",
+      "fromNode": "d300000000000023",
+      "fromSide": "bottom",
+      "toNode": "d300000000000024",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "acota presente"
+    },
+    {
+      "id": "d3e000000000001a",
+      "fromNode": "d300000000000024",
+      "fromSide": "bottom",
+      "toNode": "d300000000000025",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "exige prueba"
+    },
+    {
+      "id": "d3e000000000001b",
+      "fromNode": "d300000000000025",
+      "fromSide": "bottom",
+      "toNode": "d300000000000026",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "separa futuro"
+    },
+    {
+      "id": "d3e000000000001c",
+      "fromNode": "d300000000000007",
+      "fromSide": "right",
+      "toNode": "d30000000000000d",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "se materializa en"
+    },
+    {
+      "id": "d3e000000000001d",
+      "fromNode": "d30000000000000d",
+      "fromSide": "right",
+      "toNode": "d300000000000013",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "cruza contrato"
+    },
+    {
+      "id": "d3e000000000001e",
+      "fromNode": "d300000000000013",
+      "fromSide": "right",
+      "toNode": "d300000000000019",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "guía el cambio"
+    },
+    {
+      "id": "d3e000000000001f",
+      "fromNode": "d300000000000019",
+      "fromSide": "right",
+      "toNode": "d300000000000021",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "deja evidencia"
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+import { BREAKPOINTS } from './src/config/breakpoints.js';
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: 'class',
+  content: ['./app/**/*.{js,jsx}', './src/**/*.{js,jsx}'],
+  theme: {
+    screens: Object.fromEntries(Object.entries(BREAKPOINTS).map(([name, px]) => [name, `${px}px`])),
+    extend: {
+      // Capas con nombre: navegación < overlay del menú < drawers/modales < toasts.
+      zIndex: {
+        nav: '30',
+        overlay: '40',
+        drawer: '50',
+        modal: '60',
+        toast: '70',
+      },
+      fontFamily: {
+        sans: ['system-ui', 'sans-serif'],
+        mono: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
+      },
+      colors: {
+        'ink-900': '#0B1F3F',
+        'accent-600': '#145DC4',
+        'signal-500': '#F2661E',
+        surface: {
+          light: '#F7F9FB',
+          'light-card': '#FFFFFF',
+          dark: '#0A1220',
+          'dark-card': 'rgba(11,31,63,0.55)',
+        },
+        text: {
+          'primary-light': '#0B1F3F',
+          'secondary-light': '#6B7684',
+          'primary-dark': '#F4F6F9',
+          'secondary-dark': '#94A3B8',
+        },
+        // OCC workspace colours: single values (dark only), defined once in src/styles/occ.css.
+        // Never put an opacity modifier on these classes: Tailwind generates none for a var() colour.
+        occ: {
+          canvas: 'var(--occ-canvas)',
+          panel: 'var(--occ-panel)',
+          'panel-raised': 'var(--occ-panel-raised)',
+          'panel-float': 'var(--occ-panel-float)',
+          'panel-muted': 'var(--occ-panel-muted)',
+          line: 'var(--occ-line)',
+          'line-strong': 'var(--occ-line-strong)',
+          text: 'var(--occ-text)',
+          muted: 'var(--occ-muted)',
+          faint: 'var(--occ-faint)',
+          accent: 'var(--occ-accent)',
+          'accent-soft': 'var(--occ-accent-soft)',
+          ok: 'var(--occ-ok)',
+          warn: 'var(--occ-warn)',
+          'warn-soft': 'var(--occ-warn-soft)',
+          danger: 'var(--occ-danger)',
+          'danger-soft': 'var(--occ-danger-soft)',
+          // The primary action is a light key, with its own ink («Recibido» in the alerts).
+          primary: 'var(--occ-primary)',
+          'primary-hover': 'var(--occ-primary-hover)',
+          'on-primary': 'var(--occ-on-primary)',
+          // The veil under an overlay (the rail's menu below 1024 px, the alerts drawer).
+          scrim: 'var(--occ-scrim)',
+          nav: 'var(--occ-nav)',
+          'nav-line': 'var(--occ-nav-line)',
+          'nav-text': 'var(--occ-nav-text)',
+          'nav-muted': 'var(--occ-nav-muted)',
+          'nav-hover': 'var(--occ-nav-hover)',
+          'nav-active': 'var(--occ-nav-active)',
+          'nav-accent': 'var(--occ-nav-accent)',
+        },
+        status: {
+          info: '#145DC4',
+          active: '#F2661E',
+          success: '#1E9E6B',
+          warning: '#D9A441',
+          danger: '#C4453C',
+          neutral: '#6B7684',
+        },
+      },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(-4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'slide-in-right': {
+          '0%': { opacity: '0', transform: 'translateX(16px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        'slide-in-left': {
+          '0%': { opacity: '0', transform: 'translateX(-16px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        // The one blink of the OCC: the glyph of an unreceived urgent alert (src/features/occ-ui/OccGlyph.jsx), lit
+        // half of each second. Only through `motion-safe:`, so reduced motion never sees it.
+        'occ-alarm-blink': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.25' },
+        },
+      },
+      animation: {
+        'fade-in': 'fade-in 180ms ease-out',
+        'slide-in-right': 'slide-in-right 220ms ease-out',
+        'slide-in-left': 'slide-in-left 220ms ease-out',
+        'occ-alarm-blink': 'occ-alarm-blink 1s steps(1, end) infinite',
+      },
+    },
+  },
+  plugins: [],
+};

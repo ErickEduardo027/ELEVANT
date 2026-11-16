@@ -1,0 +1,177 @@
+using Elevant.Application.Commercial;
+using Elevant.Application.Common;
+using Elevant.Application.Identity.AccountEmails;
+using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Identity;
+using Elevant.Persistence.Operations;
+using Elevant.Persistence.Realtime;
+using Microsoft.EntityFrameworkCore;
+
+namespace Elevant.Persistence.Commercial;
+
+/// <summary>
+/// The single place a contract becomes active (ADR-0024): Finance approved the version that is in
+/// force or about to start, both parties signed that same content (2-N28), and the airline holds a
+/// verified operating permit that has not expired. A contract the sweep suspended for an expired permit
+/// resumes once a new permit is verified, with the version that governs it (2-C): a renewal waiting for
+/// its signatures never blocks it. Days are AVIAM's business days (2-F).
+/// </summary>
+internal static class ContractActivation
+{
+    public const string PermitSuspensionReason = "Permiso de operación vencido o sin verificar.";
+
+    /// <summary>
+    /// Reason of the suspension a revocation causes (2-N09): written by the system in the revocation's own
+    /// transaction, so verifying a new operating permit resumes the contract like after an expired one.
+    /// </summary>
+    public const string PermitRevokedSuspensionReason = "Contratos revocó la verificación del permiso de operación.";
+
+    /// <summary>Activates the ready contracts of one airline (or of all when null) and saves.</summary>
+    public static async Task<int> ActivateReadyAsync(ElevantDbContext context, long? airlineId, long? actorAccountId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var today = BusinessCalendar.Today(now);
+        var candidates = await context.Contracts
+            .Where(contract => (airlineId == null || contract.AirlineId == airlineId) &&
+                (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Expired ||
+                 contract.Status == ContractStatus.Suspended) &&
+                // A contract whose scheduled termination already took effect never comes back (2-N14).
+                (contract.TerminatedOn == null || contract.TerminatedOn > today))
+            .ToArrayAsync(cancellationToken);
+        var activated = 0;
+        foreach (var contract in candidates)
+        {
+            if (contract.Status == ContractStatus.Suspended && !await SuspendedForPermitAsync(context, contract.Id, cancellationToken))
+                continue;
+            // A new or expired contract activates only with a version both parties signed over the same
+            // content; a suspended one resumes with the version that governs it, legacy ones included.
+            var source = contract.Status == ContractStatus.Suspended
+                ? GoverningContractVersions.Of(context) : GoverningContractVersions.SignedByBoth(context);
+            var version = await source.AsNoTracking()
+                .Where(item => item.ContractId == contract.Id && (item.ValidTo == null || item.ValidTo >= today))
+                .OrderByDescending(item => item.ValidFrom).FirstOrDefaultAsync(cancellationToken);
+            if (version is null || !await HasUsablePermitAsync(context, contract.AirlineId, today, cancellationToken)) continue;
+
+            var from = contract.Status;
+            contract.Status = ContractStatus.Active;
+            // 2-N05: SignedOn is the business day the contract first became active; renewals never move it.
+            contract.SignedOn ??= today;
+            contract.UpdatedAt = now;
+            context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
+            {
+                ContractId = contract.Id, FromStatus = from, ToStatus = ContractStatus.Active, OccurredAt = now,
+                ActorAccountId = actorAccountId,
+                Reason = from == ContractStatus.Suspended
+                    ? "Reanudado: la aerolínea tiene un permiso de operación verificado y vigente."
+                    : "Aprobado por Finanzas, firmado por ambas partes y con permiso de operación vigente.",
+            });
+            await AnnounceAsync(context, contract, "contract_activated", now, cancellationToken);
+            // A resumed contract keeps the PDF it already sent; a newly active one sends the signed copy.
+            if (from != ContractStatus.Suspended)
+                await QueueSignedContractEmailsAsync(context, contract.Id, version.Id, now, cancellationToken);
+            activated++;
+        }
+        if (activated > 0) await context.SaveChangesAsync(cancellationToken);
+        return activated;
+    }
+
+    public static Task<bool> HasUsablePermitAsync(ElevantDbContext context, long airlineId, DateOnly today,
+        CancellationToken cancellationToken) =>
+        context.AirlinePermits.AsNoTracking().AnyAsync(permit => permit.AirlineId == airlineId &&
+            permit.Kind == AirlinePermitKind.OperatingPermit && permit.Review == AirlinePermitReview.Verified &&
+            permit.ExpiresOn >= today, cancellationToken);
+
+    /// <summary>
+    /// Contratos and the airline's portal accounts learn about a lifecycle change. When the change takes the contract
+    /// out of force (suspended, terminated or expired: the sweep, a revoked permit or Contratos' own action), OCC hears it
+    /// for each operation that can no longer start (3-N04).
+    /// </summary>
+    public static async Task AnnounceAsync(ElevantDbContext context, Contract contract, string kind, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (LeftForce(context, contract, kind))
+            await ContractOperationsNotice.NotifyOccAsync(context, contract, now, cancellationToken);
+        var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == contract.AirlineId)
+            .Select(item => new { item.Name, item.OrganizationId }).SingleAsync(cancellationToken);
+        await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts, "contracts.agreements.read", kind,
+            contract.PublicId, $"{contract.ContractCode} · {airline.Name}", now, cancellationToken);
+        var accounts = await context.OrganizationMemberships.AsNoTracking()
+            .Where(item => item.OrganizationId == airline.OrganizationId && item.Kind == MembershipKind.AirlineClient &&
+                item.Status == MembershipStatus.Active)
+            .Select(item => item.AccountId).Distinct().ToArrayAsync(cancellationToken);
+        foreach (var account in accounts)
+            AccountChangeOutboxWriter.Add(context, account, null, "airline_contracts", contract.PublicId, now);
+    }
+
+    /// <summary>
+    /// The change being announced took the contract out of force: it was active and now it is suspended, terminated or
+    /// expired. The manual actions announce «contract_lifecycle», so the status decides, not the kind; a contract that
+    /// was already out of force told OCC when it left. An untracked contract falls back to the kind.
+    /// </summary>
+    private static bool LeftForce(ElevantDbContext context, Contract contract, string kind)
+    {
+        if (contract.Status is not (ContractStatus.Suspended or ContractStatus.Terminated or ContractStatus.Expired))
+            return false;
+        var entry = context.ChangeTracker.Entries<Contract>().FirstOrDefault(item => ReferenceEquals(item.Entity, contract));
+        return entry is null
+            ? kind is "contract_suspended" or "contract_terminated" or "contract_expired"
+            : entry.Property(item => item.Status).OriginalValue == ContractStatus.Active;
+    }
+
+    /// <summary>
+    /// Queues the activation email with the signed PDF (ADR-0025) for the airline's active portal
+    /// accounts and the AVIAM signer. The PDF is rendered when the email is sent, never stored.
+    /// </summary>
+    public static async Task QueueSignedContractEmailsAsync(ElevantDbContext context, long contractId, long versionId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var head = await (from version in context.ContractVersions.AsNoTracking()
+                          join contract in context.Contracts.AsNoTracking() on version.ContractId equals contract.Id
+                          join airline in context.Airlines.AsNoTracking() on contract.AirlineId equals airline.Id
+                          where version.Id == versionId && contract.Id == contractId
+                          select new { version.PublicId, version.ValidFrom, version.ValidTo, contract.ContractCode,
+                              airline.Name, airline.OrganizationId })
+            .SingleAsync(cancellationToken);
+        var airlineAccounts = context.OrganizationMemberships.AsNoTracking()
+            .Where(item => item.OrganizationId == head.OrganizationId && item.Kind == MembershipKind.AirlineClient &&
+                item.Status == MembershipStatus.Active)
+            .Select(item => item.AccountId);
+        var signers = context.ContractSignatures.AsNoTracking().Where(item => item.ContractVersionId == versionId)
+            .Select(item => item.SignerAccountId);
+        var emails = await context.Users.AsNoTracking()
+            .Where(user => (airlineAccounts.Contains(user.Id) || signers.Contains(user.Id)) &&
+                user.Status == AccountLifecycleStatus.Active && user.Email != null)
+            .Select(user => user.Email!).ToArrayAsync(cancellationToken);
+        foreach (var email in emails.Distinct(StringComparer.OrdinalIgnoreCase))
+            EfEmailOutboxStore.Add(context,
+                // 2-N30: a version that starts later is signed, not in force; the email says from when it is.
+                AccountEmailTemplates.ContractActivated(email, head.Name, head.ContractCode, head.ValidFrom, head.ValidTo,
+                    BusinessCalendar.Today(now)),
+                EmailPurpose.ContractActivated, now, EfContractDocumentStore.AttachmentPrefix + head.PublicId);
+    }
+
+    /// <summary>
+    /// Queues the suspension email for the airline's portal accounts (2-N12). A manual suspension never
+    /// carries the internal reason of Contratos.
+    /// </summary>
+    public static Task<int> QueueSuspensionEmailsAsync(ElevantDbContext context, Contract contract,
+        ContractSuspensionCause cause, DateTimeOffset now, CancellationToken cancellationToken) =>
+        AirlineNoticeEmails.QueueAsync(context, contract.AirlineId, EmailPurpose.ContractSuspended,
+            (email, airline) => AccountEmailTemplates.ContractSuspended(email, airline, contract.ContractCode, cause), now,
+            cancellationToken);
+
+    /// <summary>
+    /// A contract the system suspended for its operating permit (expired, or revoked by Contratos, 2-N09)
+    /// resumes once a new one is verified; one Contratos suspended by hand waits for a manual reactivation.
+    /// </summary>
+    private static async Task<bool> SuspendedForPermitAsync(ElevantDbContext context, long contractId,
+        CancellationToken cancellationToken)
+    {
+        var last = await context.Set<ContractStatusEvent>().AsNoTracking().Where(item => item.ContractId == contractId)
+            .OrderByDescending(item => item.OccurredAt).ThenByDescending(item => item.Id).FirstOrDefaultAsync(cancellationToken);
+        return last is { ToStatus: ContractStatus.Suspended, ActorAccountId: null } &&
+            last.Reason is PermitSuspensionReason or PermitRevokedSuspensionReason;
+    }
+}

@@ -1,0 +1,434 @@
+---
+id: dominio-turnaround-operacion
+title: "Turnaround y operación en tierra"
+type: capability
+area: domain
+status: verified
+maturity: evolving
+evidence: repo-verified
+owner: equipo-elevant
+last_verified: "2026-11-05"
+verified_commit: "b506e91b33570d387ceb70f7fda5b7c1b0c5381c"
+sources:
+  - docs/architecture/database-v1.md
+  - docs/database/schema-v1.md
+  - backend/Elevant.Domain/Entities/Operations/Turnaround.cs
+  - backend/Elevant.Domain/Entities/Operations/FlightLeg.cs
+  - backend/Elevant.Domain/Entities/Operations/GroundOperation.cs
+  - backend/Elevant.Domain/Entities/Operations/OperationService.cs
+  - backend/Elevant.Domain/Entities/Operations/ChecklistAnswer.cs
+  - backend/Elevant.Domain/Entities/Operations/OperationSubmission.cs
+  - backend/Elevant.Domain/Enumerations/OperationsEnums.cs
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
+  - database/DevelopmentDB/scripts/bootstrap/provision-development.sql
+  - frontend/mobile-agent/README.md
+  - docs/adr/0030-position-coverage-per-shift-and-combined-stands.md
+  - backend/Elevant.Application/Operations/PositionCoveragePolicy.cs
+  - backend/Elevant.Application/Operations/StandConstraintPolicy.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfPositionCoverageStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/CoverageReassignment.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs
+  - docs/adr/0032-aviam-forms-signatures-and-walkaround.md
+  - backend/Elevant.Application/Operations/OperationDocuments.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/OperationDocumentAssembler.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfOperationDocumentStore.cs
+  - backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Documents.cs
+  - docs/adr/0033-charter-flights-without-contract.md
+  - docs/adr/0034-operational-close-occ-to-finance.md
+  - backend/Elevant.Application/Operations/AutomaticSurcharges.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/AutomaticSurchargeApplier.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.OperationalClose.cs
+  - backend/Elevant.Application/Operations/Charters.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfCharterStore.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Charter.cs
+tags:
+  - turnaround
+  - operaciones
+  - ground-handling
+  - estados
+---
+
+# Turnaround y operación en tierra
+
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](../05-aplicaciones/correcciones-revision-docente-2026-10.md).
+
+`Turnaround` representa la escala completa que AVIAM planifica en una estación. `GroundOperation` representa su ejecución en tierra. La separación permite conservar horarios y procedencia de los vuelos sin mezclar asignaciones, servicios, checklist, incidentes o revisión.
+
+## Anatomía de una escala
+
+```mermaid
+flowchart LR
+    PLAN[Turnaround · aerolínea · estación · fecha] --> ARR[FlightLeg Arrival]
+    PLAN --> DEP[FlightLeg Departure]
+    PLAN --> STAND[Historia de stand]
+    PLAN --> EXEC[GroundOperation]
+    EXEC --> TEAM[Asignaciones de agentes]
+    EXEC --> EQUIP[Asignaciones de equipos]
+    EXEC --> SERVICES[Servicios e hitos]
+    EXEC --> CHECK[Checklist y respuestas]
+    EXEC --> INCIDENTS[Incidentes]
+    CHECK --> SUBMIT[Envío revisionado]
+    SUBMIT --> REVIEW[Decisión OCC]
+```
+
+Un turnaround guarda código de operación, aerolínea, estación, fecha civil, tipo/matrícula opcionales, estado actual y procedencia. Cada tramo guarda dirección, número de vuelo, origen, destino y sus tiempos programado, estimado y real. La unicidad turnaround-dirección materializa como máximo una llegada y una salida.
+
+## Vocabulario de estado persistido
+
+Los siguientes son conjuntos de valores, no una matriz de transición:
+
+| Objeto | Estados disponibles |
+| --- | --- |
+| Turnaround | `Scheduled`, `Confirmed`, `InProgress`, `Completed`, `Cancelled`, `Diverted` |
+| Operación en tierra | `Planned`, `Assigned`, `InProgress`, `PendingReview`, `InReview`, `Approved`, `Returned`, `Cancelled` |
+| Servicio ejecutado | `Planned`, `InProgress`, `Completed`, `NotPerformed`, `Exception` |
+| Hito | `Pending`, `Estimated`, `Actual`, `Missed` |
+| Checklist | `NotStarted`, `InProgress`, `Submitted` |
+| Envío | `PendingReview`, `InReview`, `Approved`, `Returned` |
+| Incidente | `Open`, `InReview`, `Resolved`, `Closed` |
+
+```mermaid
+flowchart TB
+    ENUM[Enum persistido] --> CURRENT[Estado actual en la entidad]
+    CURRENT --> EVENT[Evento histórico cuando existe]
+    EVENT --> AUDIT[Auditoría transversal]
+    RULES[Transiciones autorizadas] -.-> GAP[Pendientes de casos de uso y pruebas]
+    GAP -.-> CURRENT
+```
+
+El modelo dispone de historias explícitas para turnaround, operación y servicio. Checklist, envío, decisión e incidente conservan sus propios registros. No hay código de aplicación que defina de forma completa qué actor puede mover cada estado, las precondiciones ni las transiciones prohibidas.
+
+## Planificación y recursos
+
+- Un turnaround sólo puede tener una asignación de stand abierta.
+- Una operación sólo puede asignar una vez al mismo agente mientras la relación permanezca abierta.
+- Un activo de equipo sólo puede participar en una asignación abierta a la vez.
+- `OperationalPosition` expresa la función/habilitación requerida; `AssignmentRole` es un texto contextual de la asignación y su taxonomía aún no está cerrada.
+- Los intervalos de asignación no pueden terminar antes de empezar, pero el esquema no impide todos los solapamientos entre operaciones o recursos.
+- Un vuelo solo se planifica si un contrato `Active`, firmado y no terminado tiene una versión `Approved` o `Superseded` que cubre esa fecha en esa estación; es una sola regla para Planificación, vuelos manuales y asignación ([ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md)). El vuelo manual guarda esa versión en `contract_version_id`; los vuelos anteriores quedan sin ella. Desde la fase 2 la versión `Approved` debe estar firmada por ambas partes: ver [Pre-operación](#pre-operación-fase-2-del-ciclo).
+- Una posición (`ref.stands`) puede tener latitud y longitud WGS84 que OCC ubicó en el mapa; sin ellas, el mapa usa una referencia interna sin verificar.
+- *Posterior al commit verificado de esta nota (mapas del OCC, PR M4, código de `40597917` a `714dc4a3`; [ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md) y [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)):* el mapa decide dónde dibujar una posición en este orden. Primero, la ubicación que OCC guardó con «Ubicar en el mapa»: a 80 m o menos del centro que le da el plano de MDPC, traslada sin deformarla la caja del plano hasta ese punto; más lejos, o si el plano no conoce la posición, el mapa dibuja allí una caja propia. Después, el documento de coordenadas del dueño del producto, a través del plano: el centro de cada caja es el punto de la posición en ese documento, una referencia que sigue sin verificar. Sin ninguna de las dos, la posición no se dibuja y Mapa de posiciones la lista «Sin ubicar». El 13 de noviembre de 2026 el dueño del producto decidió que su documento manda sobre OpenStreetMap, que está desactualizado en el aeropuerto: ninguna posición se mueve, se gira ni cambia de tamaño hacia la geometría de OSM, y solo OCC mueve una, al ubicarla.
+
+## Servicios e hitos
+
+Cada línea de `OperationService` exige una definición canónica y posee una FK opcional `ContractServiceRateId`. También conserva cantidad contratada, cantidad ejecutada y unidad obligatoria; precio y moneda snapshot son opcionales. La FK y esas columnas independientes no demuestran por sí solas procedencia contractual ni que el snapshot se haya copiado de esa tarifa.
+
+Antes de tratar una tarifa como origen autorizado, un caso de uso debe validar y probar que:
+
+- precio y moneda están ambos ausentes o ambos presentes, y una línea con precio contractual referencia una tarifa;
+- la tarifa corresponde al mismo `ServiceDefinitionId` de la línea;
+- su versión contractual cubre la estación de la operación, pertenece a la misma aerolínea del turnaround, está `Approved` y es vigente en la fecha acordada;
+- unidad y precio se copian de la tarifa y moneda de su versión de forma consistente al crear la línea, y el snapshot histórico no se revaloriza después.
+
+Ninguna de esas coherencias cruzadas está materializada hoy por las FKs o constraints de `OperationService`.
+
+Los hitos separan tiempo planeado, estimado y real e identifican su procedencia. La definición de los códigos de hito, SLA y reglas de cumplimiento aún necesita contrato de aplicación; un dashboard no debe inventarlos como columnas autoritativas.
+
+## Checklist, incidentes y revisión
+
+1. Un template posee versiones con vigencia e ítems ordenados; el código y el orden son únicos dentro de cada versión.
+2. La pareja operación-versión identifica una instancia de checklist y la pareja checklist-ítem identifica una respuesta. Las FKs no prueban que el ítem respondido pertenezca a la versión instanciada.
+3. Un envío numera la revisión y conserva quién/cuándo la presentó. Sus FKs no prueban que el checklist y el envío apunten a la misma operación.
+4. Una cuenta revisora emite como máximo una decisión por envío: aprobar o devolver. El esquema no alinea automáticamente el outcome con el estado actual del envío.
+5. `OperationSubmission` no captura un snapshot de respuestas: varios envíos pueden referenciar el mismo checklist y `ChecklistAnswer` sigue siendo mutable. Conservar una corrección como nueva revisión sin alterar contenido o decisión anterior es el diseño esperado, pero la unicidad y `NO ACTION` no impiden un `UPDATE` o `DELETE`. El comportamiento append-only aún necesita enforcement y una estrategia de versionado o snapshot.
+
+Las pruebas negativas deben rechazar, como mínimo, una respuesta con un ítem de otra versión, un envío con el checklist de otra operación, la mutación de respuestas ya enviadas y una decisión incompatible con el estado del envío.
+
+Los incidentes registran tipo, severidad, descripción y tiempos de ocurrencia, reporte y resolución. Las fotografías o archivos reales no están resueltos en v1 y no deben guardarse como blobs improvisados.
+
+## Procedencia de datos de vuelo
+
+`OperationalDataSource` admite `Internal`, `Manual`, `AirlineClient` y `ExternalProvider`. Turnaround, tramo, hito y eventos relevantes conservan fuente y, cuando corresponde, referencia/observación externa. El enum no decide precedencia, reconciliación ni confianza entre fuentes; esa política sigue abierta.
+
+Los vuelos que informa el proveedor (AeroDataBox) entran como **propuestas**, nunca como escalas. Una escala importada guarda `Source = ExternalProvider`, `ExternalProvider = AeroDataBox` y la referencia del tramo; sus tramos reciben después las horas revisadas y reales del proveedor. La escala solo se crea cuando OCC confirma la llegada con su salida ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). La fase 2 amplió qué se propone y qué se importa: ver [Pre-operación](#pre-operación-fase-2-del-ciclo).
+
+## Estado de disponibilidad
+
+En el commit histórico indicado en el frontmatter, Mobile Agent y Private Web presentaban recorridos prototípicos y la API todavía no ofrecía esos casos de uso. Esa observación no describe por sí sola la rama de integración posterior ni certifica un ciclo end-to-end desplegado.
+
+### Cambio en la rama de integración de Development
+
+La rama `feat/integrated-cycle-realtime` añade un caso de uso para que OCC cree una escala manual desde planificación. La API deriva el alcance de estación de la cuenta vigente, exige una única versión contractual aprobada y vigente para aerolínea/estación/fecha, valida ruta y fecha local, reserva una posición activa sin solapamiento y registra llegada, salida, operación planificada, historia, auditoría y aviso recuperable para la aerolínea en una transacción. El UUID de intención permite repetir el mismo cuerpo sin duplicar la escala. Un segundo comando OCC programa un turno local de agente para la estación y terminal derivadas de la escala; exige cobertura de toda la operación, aptitud vigente y ausencia de otro turno para el día. Después OCC refresca elegibilidad y usa el ETag nuevo para el despacho habitual. Programar el turno no asigna por sí solo, no factura y no debe confundirse con una promoción al VPS; el resto del ciclo continúa en implementación.
+
+## Cobertura de posiciones por turno
+
+En la rama de la fase 3, bloque 2 ([ADR-0030](../../docs/adr/0030-position-coverage-per-shift-and-combined-stands.md)), OCC asigna a cada agente **las posiciones que cubre durante una ventana de su turno**, en lugar de asignar vuelo a vuelo.
+
+**Reglas.** Las aplica [PositionCoveragePolicy](../../backend/Elevant.Application/Operations/PositionCoveragePolicy.cs):
+- máximo de posiciones por terminal (3 por defecto; la Terminal B del ejemplo, 2);
+- licencia de conducir y vehículo para más de 2 posiciones;
+- habilitación de puente en la Terminal B y en las posiciones con puente;
+- mentor para agentes con menos de 3 meses;
+- turno que cubra toda la ventana;
+- sin ausencias aprobadas ni solapes.
+
+Cada rechazo devuelve el código de la regla incumplida.
+
+**Posiciones combinadas.** Son reglas entre posiciones que OCC configura y aplica [StandConstraintPolicy](../../backend/Elevant.Application/Operations/StandConstraintPolicy.cs):
+- «X ocupada anula Y»;
+- «X ocupada limita Y a estrecho».
+
+Una colocación imposible se rechaza. En el mapa, la posición anulada aparece inhabilitada con la posición que la anula.
+
+**El vuelo sigue a la posición.** Cuando la posición de una escala cambia antes de iniciar la operación, [CoverageReassignment](../../database/DevelopmentDB/Elevant.Persistence/Operations/CoverageReassignment.cs) mueve la operación al agente que cubre la nueva posición a la hora del bloqueo:
+- libera la asignación anterior;
+- avisa a los dos agentes;
+- respeta el máximo de 3 operaciones simultáneas.
+
+OCC también puede liberar al agente manualmente; la operación vuelve a `Planned`.
+
+Desde la fase 3 del ciclo, la reasignación aplica toda la elegibilidad de la asignación y una operación iniciada se releva en lugar de liberarse: ver [La operación](#la-operación-fase-3-del-ciclo).
+
+**Verificación.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) cubre:
+- reglas;
+- configuración;
+- liberación;
+- reasignación por cambio de posición;
+- rechazo por posición anulada.
+
+No se ha verificado en el VPS.
+
+## Formularios AVIAM y firmas
+
+Los formularios de AVIAM ya no se transcriben: se generan desde el registro de la operación ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)).
+
+- **Orden de Servicio en Rampa** (F-RAM-AVL-MAG 04): firman el representante de la aerolínea y AVIAM.
+- **Reporte de Vuelo** (F-OCC-AVL-6.2.12/A9): firma el coordinador.
+- **Check-List y Reporte Diario del Puente** (F-MGO-AVL 8.14.1/A1-A2): firma el operador; solo existe si la operación tiene el checklist del puente.
+
+**Contenido y huella.**
+- El [ensamblador](../../database/DevelopmentDB/Elevant.Persistence/Operations/OperationDocumentAssembler.cs) arma un contenido determinista; su JSON canónico se hashea con SHA-256.
+- Las tres hojas comparten un número: estación + id interno con 9 dígitos (`PUJ000000123`).
+- Una firma solo se acepta contra la huella que vio el firmante; si el contenido cambió, la API responde 409.
+- Solo se guarda la versión firmada (`ops.operation_document_versions`, inmutable). Las firmas (`ops.operation_document_signatures`) son de solo inserción, una por rol y versión.
+- Si cambia un dato facturable, ese formulario tiene otra huella y pide firmar de nuevo; los demás conservan sus firmas.
+
+**PDF.** El [renderizador](../../backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs) dibuja cada hoja como el papel, con la firma en trazos y la huella en el pie. OCC los descarga desde la revisión; la aerolínea ve y descarga en su portal solo la última Orden de Servicio firmada por completo.
+
+**Walk-around.** `ops.operation_damage_marks` guarda la posición en la silueta (0–1), la nota y, opcionalmente, una foto JPEG o PNG en almacenamiento privado con su SHA-256. Las fotos no entran en la huella: se anexan al PDF del Reporte de Vuelo.
+
+**Fuera de este bloque:** la valoración de recargos (bloque 5).
+
+## Charter sin contrato
+
+Una aerolínea sin contrato se opera como charter ([ADR-0033](../../docs/adr/0033-charter-flights-without-contract.md)). La Solicitud de Servicio firmada hace de contrato de ese vuelo.
+
+- **OCC** da de alta la escala con «Vuelo charter». Solo se ofrecen aerolíneas activas sin contrato, y la escala queda con su `ops.charter_agreements` y sin versión de contrato. Se asigna sin contrato ni servicios previos.
+- **El agente**, en la tablet:
+  - agrega los servicios a la tarifa base de Finanzas (precio y moneda en instantánea, una línea por definición);
+  - registra la dirección del transportista y quién paga.
+- **La Solicitud de Servicio** (`CharterServiceRequest`) la firman el representante y AVIAM. El representante deja su cédula o pasaporte, que solo llega al PDF. La Orden de Servicio sale como «Vuelo Charter» y «Al Contado».
+- **El PDF** reproduce literalmente la página 1. Para las páginas 2 y 3 (términos IATA 2018 con modificaciones de AVIAM) incluye una nota, sin inventar el texto.
+- **Finanzas** ve el total de servicios y si la Solicitud está firmada, y confirma el prepago con monto y referencia.
+
+No se ha verificado en el VPS.
+
+## Cierre OCC → Finanzas
+
+El cierre de la operación ([ADR-0034](../../docs/adr/0034-operational-close-occ-to-finance.md)) une la entrega del agente, la revisión de OCC y Finanzas.
+
+**Recargos automáticos.** Al entregar, ELEVANT marca en los servicios completados los recargos que describe la Orden de Servicio de AVIAM. Cada marca guarda su origen (agente, automático u OCC). Los recargos son:
+
+- **Nocturno:** inicio (bloqueo) entre las 22:00 y las 05:59, hora de la estación.
+- **Domingo o festivo:** entre las 06:00 y las 21:59; nunca se suma al nocturno.
+- **Tiempo extra (paquete excedido):** de bloqueo a push-back por encima del tiempo permitido por Finanzas para la categoría del avión, más la tolerancia del recargo.
+- **Demora** de llegada, más la tolerancia del recargo.
+
+La [política](../../backend/Elevant.Application/Operations/AutomaticSurcharges.cs) solo decide los códigos: los porcentajes y las tarifas son del tarifario y del contrato. Se respetan las exclusiones del contrato, no se duplican marcas y un recargo que OCC quitó no vuelve a marcarse. La evidencia (versión 4) congela el tiempo en tierra, el permitido, la categoría y la demora.
+
+**Revisión de OCC.** El detalle muestra los hitos, el tiempo en tierra frente al permitido, la demora, los daños, los recargos con su origen y los códigos IATA. Mientras la entrega está pendiente, OCC agrega o quita recargos con un motivo auditado. Cada ajuste mueve la versión de la revisión.
+
+**Al aprobar:**
+
+- `ops.review_decisions.approved_evidence_json` guarda lo aprobado, y de ahí lo valoran Finanzas y el portal.
+- Las incidencias quedan resueltas.
+- La escala pasa a `Completed` cuando todas sus operaciones están aprobadas.
+
+Desde la fase 3 del ciclo, aprobar exige la Orden de Servicio firmada, y las incidencias abiertas o en revisión se resuelven con la nota fija de la aprobación; las que OCC ya resolvió o cerró conservan su nota y su autor: ver [La operación](#la-operación-fase-3-del-ciclo).
+
+**Cierre operacional del día.** El reporte `daily-close` de OCC muestra, por vuelo:
+
+- horarios programados y reales;
+- posición inicial y final, con los minutos entre el último cambio y el bloqueo;
+- tiempo en tierra frente al permitido;
+- demoras IATA y desviaciones.
+
+No se ha verificado en el VPS.
+
+## Pre-operación (fase 2 del ciclo)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+- **Qué contrato cubre un vuelo.** La versión que cubre es la que rige:
+  `Approved` y firmada por ambas partes sobre la misma huella, `Superseded` en
+  las fechas que conservó, o la primera versión heredada de un contrato que ya
+  salió de `Draft`. Una versión que Finanzas aprobó y nadie firmó no cubre nada.
+  `TerminatedOn` es el primer día sin cobertura. En la segunda firma de una
+  versión nueva, los vuelos `Scheduled` o `Confirmed` que la anterior cubría y
+  cuyas operaciones no empezaron pasan a la versión firmada; si sus líneas no
+  coinciden con las tarifas firmadas, se replanifican sobre ellas en el orden en
+  que OCC las materializa (auditoría `occ.operation.services_replanned` y aviso
+  a la tablet del agente asignado).
+- **Datos maestros.** OCC crea, edita y desactiva terminales, posiciones y tipos
+  de avión, y el superadministrador las estaciones; nada en uso se desactiva y
+  nada se borra. El vuelo manual y la importación del feed aceptan el tipo de
+  avión, y con él un avión ancho no entra en una posición limitada a estrecho.
+- **Feed de vuelos.** Se guardan también los tramos de las aerolíneas activas
+  registradas sin contrato en vigor, que OCC revisa como candidatas a charter.
+  Las aerolíneas con un contrato suspendido o vencido en la estación no se
+  proponen. La importación acepta tipo de avión, posición y modo charter, y
+  una propuesta descartada se restaura mientras su vuelo no haya pasado. Para
+  el ciclo local hay un proveedor simulado que nunca llama a AeroDataBox; las
+  escalas importadas de él guardan `ExternalProvider = Simulated`.
+- **Liberación del agente.** La baja, el traslado fuera de rampa, el paso a
+  oficina, la desactivación del perfil y una ausencia aprobada liberan las
+  coberturas del agente, sus asignaciones en las operaciones que no empezaron
+  (una operación que se queda sin agentes vuelve a `Planned`) y sus turnos no
+  iniciados, dentro de la misma transacción
+  ([ruta única](../../database/DevelopmentDB/Elevant.Persistence/Operations/RampAgentRelease.cs)).
+  Una operación en curso o devuelta para corrección bloquea la liberación. OCC
+  recibe `agent_released` por cada operación que debe reasignar.
+- **Cobertura y aptitud.** La cobertura comprueba también la ausencia y el
+  carnet del mentor. Planificación marca al agente asignado que ya no está
+  apto (inactivo, ausente o sin carnet o licencia vigente) mediante una
+  proyección que no libera nada.
+
+*Posterior al commit verificado de esta nota (vuelos demo, código de
+`cba00f73`; [ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)):*
+una propuesta descartada del proveedor «Demo» nunca se restaura, aunque su vuelo
+no haya pasado (`flight_proposal_passed`): pertenece a un vuelo demo que ya se
+canceló o terminó. Las propuestas de los demás proveedores siguen la regla de
+arriba
+([revisión del feed](../../database/DevelopmentDB/Elevant.Persistence/Integration/EfOccFlightFeedStore.cs)).
+
+No se ha verificado en el VPS.
+
+## La operación (fase 3 del ciclo)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`) y las correcciones de la revisión de sus
+bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- **Cambios de una escala.** OCC reprograma, cancela o desvía una escala antes
+  de que su operación inicie, con motivo, la versión que vio y el permiso
+  `operations.planning.update`. Cancelar o desviar cierra la posición, libera a
+  los agentes y deja la operación `Cancelled`; nada se borra. El mismo vuelo de
+  la aerolínea se planifica una sola vez por día local: el alta manual y
+  «Editar vuelo» rechazan un número que ya vuela otra escala abierta ese día
+  (`flight_already_planned`), y la importación del feed se vincula a la escala
+  que ya existe. Las escalas nuevas reciben el código
+  `{ESTACIÓN}-{AAAAMMDD}-{NNN}`.
+- **Llegada.** OCC la registra con la hora local que escribe (si no la toca y el
+  vuelo aún no tiene hora, la del servidor al guardar) y, si quiere, el tipo de
+  avión; desde ese registro el tramo es `Manual` y el feed ya no reescribe su
+  hora real. Reemplazar una hora que el tramo ya tiene pide motivo (la de OCC
+  siempre; la del feed, si se cambia). Registrar o corregir la llegada solo vale
+  hasta la primera entrega (`arrival_locked`). Con la llegada registrada (escala
+  `InProgress`), la operación todavía se asigna mientras siga `Planned`.
+- **Ocupación.** Una sola regla
+  ([`OperationOccupancyRules`](../../backend/Elevant.Application/Operations/OperationOccupancyRules.cs)):
+  un agente lleva hasta tres operaciones simultáneas (con ventanas que se
+  solapan) asignadas, en curso o devueltas, y una posición queda tomada salvo
+  que la operación esté aprobada o cancelada o la escala cerrada. Desde la
+  entrega la operación ya no ocupa al agente, y al aprobar deja libre la
+  posición por el estado, sin cerrar las filas. Asignar una posición en el mapa
+  la bloquea dentro de una transacción serializable, así que dos vuelos nunca
+  toman la misma.
+- **El vuelo sigue a la posición solo con un agente elegible.** La
+  reasignación aplica toda la elegibilidad. Si nadie la cumple, la operación se
+  queda con el agente anterior si sigue siendo elegible; si no, vuelve a
+  `Planned` y OCC recibe `stand_change_unassigned`. La cobertura exige el
+  alcance del agente en la terminal.
+- **Relevo.** OCC pasa una operación en curso o devuelta a otro agente
+  elegible, con motivo; la operación conserva su estado y su evidencia. Una
+  operación iniciada sigue a su agente aunque cambien su posición o su terminal.
+- **Contrato.** La tablet no inicia una operación si ningún contrato cubre ya su
+  fecha, salvo un charter, y OCC recibe un aviso por cada operación sin iniciar
+  cuando un contrato deja de estar en vigor.
+- **Evidencia.** Hitos, daños e incidencias caen en la ventana de la operación,
+  desde el inicio o la llegada registrada hasta su cierre, y el bloqueo nunca va
+  después del push-back. Una transición de servicio va de la apertura de esa
+  ventana a ahora más 2 minutos, sin el cierre, y nunca es anterior a la
+  transición previa del servicio (`service_time_out_of_order`). Mientras OCC
+  revisa se acepta la evidencia capturada antes de la entrega, que recalcula los
+  recargos y obliga a releer; el reenvío de una corrección mide el tiempo en
+  tierra hasta la primera entrega y los servicios con las transiciones
+  registradas hasta el reenvío, las de la corrección incluidas. En la ronda de
+  corrección los hitos cierran en la primera entrega, y los daños, las
+  incidencias y las desviaciones se aceptan con la hora actual.
+- **Revisión.** Aprobar exige la Orden de Servicio firmada o corregida por OCC,
+  y una corrección de OCC después de la firma queda como una versión corregida
+  con su motivo. OCC excluye de la facturación un servicio en excepción con
+  cantidad ejecutada, reabre como revisión nueva una aprobación de la que nada
+  se facturó y gestiona las incidencias con nota e historial
+  (`ops.incident_status_events`). Al aprobar, las incidencias abiertas o en
+  revisión se resuelven con la nota fija de la aprobación; las que OCC ya
+  resolvió o cerró conservan su nota y su autor. Desde la aprobación o la
+  cancelación OCC solo resuelve o cierra las incidencias, sin pasarlas a
+  revisión, así que la resolución de la aprobación se mantiene hasta que OCC
+  reabra la revisión.
+- **Charter.** Un servicio no realizado no suma al prepago, y con el prepago
+  confirmado no se agregan servicios hasta que Finanzas reabra la cotización.
+  OCC da de alta la aerolínea mínima de un charter, que una aprobación
+  comercial posterior completa.
+
+No se ha verificado en el VPS.
+
+## Posiciones de Punta Cana y liberación con el push-back (OCC a nivel NOC, PR A2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código
+del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
+([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)).
+
+- **La posición queda libre con el push-back.** Una asignación deja de ocupar
+  su posición en cuanto la operación de la escala tiene el hito `PUSHBACK` con
+  hora real: el avión ya salió
+  ([`OperationOccupancyRules.HasLeftStand`](../../backend/Elevant.Application/Operations/OperationOccupancyRules.cs)
+  y su única forma SQL,
+  [`StandAvailability.PushedBackTurnarounds`](../../database/DevelopmentDB/Elevant.Persistence/Operations/StandAvailability.cs)).
+  Desde ese momento otro vuelo puede tomar la posición; el tablero la da libre,
+  o con su vuelo siguiente, y no lista el vuelo que salió ni entre los vuelos
+  sin posición; y una posición cuyo único vuelo ya salió se puede desactivar. La
+  regla vale para todos los vuelos, no solo para los demo, y completa la de
+  ocupación de arriba: antes de este PR la posición solo quedaba libre con
+  «Liberar», la aprobación, la cancelación o el cierre de la escala.
+- **La asignación sigue abierta.** El push-back no cierra la fila de la
+  asignación: los documentos de la operación, la tablet, Planificación, los
+  candidatos del relevo y la programación del turno siguen nombrando la
+  posición del vuelo, y «Liberar» de OCC la sigue cerrando. Corregir la hora del
+  push-back mantiene libre la posición.
+- **Plano de Punta Cana.** Donde están encendidos los vuelos demo, el
+  superadministrador crea las terminales y las posiciones del catálogo de Punta
+  Cana que faltan (41, sin la B33), activas, sin coordenadas y sin cambiar,
+  desactivar ni borrar lo que ya existe: una posición que ya está se adopta por
+  su código normalizado (`A01` es la `A1` del catálogo). Sus atributos son
+  provisionales y OCC los revisa en la configuración de la cobertura.
+- **La posición del vuelo demo.** «Al azar» sortea, con la `Idempotency-Key`
+  como semilla, entre las posiciones elegibles: ubicadas en el mapa, libres
+  durante la escala y cubiertas a la hora de llegada por un agente que pasa la
+  regla real de asignación. Una posición elegida a mano también tiene que ser
+  elegible
+  ([elegibilidad](../../backend/Elevant.Application/Operations/DemoStation/DemoStandEligibility.cs)).
+
+No se ha verificado en el VPS.
+
+## Relacionados
+
+- [Glosario canónico](glosario-canonico.md)
+- [Entidades y relaciones v1](entidades-y-relaciones-v1.md)
+- [Tiempo, estados y trazabilidad](tiempo-estados-y-trazabilidad.md)
+- [Brechas y preguntas abiertas](brechas-y-preguntas-abiertas.md)
+
+## Fuentes
+
+- [Decisiones de base v1](../../docs/architecture/database-v1.md)
+- [Entidad Turnaround](../../backend/Elevant.Domain/Entities/Operations/Turnaround.cs)
+- [Enums operativos](../../backend/Elevant.Domain/Enumerations/OperationsEnums.cs)
+- [Restricciones EF de operaciones](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs)
+- [Permisos de la aplicación en Development](../../database/DevelopmentDB/scripts/bootstrap/provision-development.sql)
+- [Recorrido observado en Mobile Agent](../../frontend/mobile-agent/README.md)

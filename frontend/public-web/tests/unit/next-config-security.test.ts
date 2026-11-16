@@ -1,0 +1,68 @@
+// @vitest-environment node
+
+import { describe, expect, it, vi } from "vitest";
+
+import nextConfig, { buildContentSecurityPolicy } from "../../next.config";
+
+describe("Next Content-Security-Policy", () => {
+  it("allows React debugging eval only during local development", () => {
+    const policy = buildContentSecurityPolicy(
+      "https://api.development.elevant.test",
+      "development",
+    );
+
+    expect(policy).toContain(
+      "script-src 'self' 'unsafe-inline' blob: 'unsafe-eval'",
+    );
+  });
+
+  it("never enables eval in the production runtime policy", () => {
+    const policy = buildContentSecurityPolicy(
+      "https://api.development.elevant.test",
+      "production",
+    );
+
+    expect(policy).toContain("script-src 'self' 'unsafe-inline' blob:");
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).toContain("img-src 'self' data: blob: https://api.development.elevant.test");
+    expect(policy).toContain("media-src 'self' blob: https://api.development.elevant.test");
+    // The print button frames the generated PDF as a blob: URL.
+    expect(policy).toContain("frame-src 'self' blob:");
+  });
+
+  it("allows only the matching API websocket origin for the durable change feed", () => {
+    const policy = buildContentSecurityPolicy(
+      "https://api.development.elevant.test",
+      "production",
+    );
+
+    expect(policy).toContain(
+      "connect-src 'self' https://api.development.elevant.test wss://api.development.elevant.test;",
+    );
+    expect(policy).not.toContain("connect-src 'self' wss:");
+  });
+
+  it("does not consume Next.js reserved NEXT_DEPLOYMENT_ID state", async () => {
+    const revision = "a".repeat(40);
+    vi.stubEnv("ELEVANT_DEPLOYMENT_ID", revision);
+    vi.stubEnv("NEXT_DEPLOYMENT_ID", "next-internal-build-state");
+    vi.resetModules();
+
+    try {
+      const isolated = await import("../../next.config");
+      expect(isolated.default.deploymentId).toBe(revision);
+      expect(await isolated.default.generateBuildId?.()).toBe(revision);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
+  it("uses custom release provenance or the deterministic local fallback", async () => {
+    const configured = process.env.ELEVANT_DEPLOYMENT_ID;
+    expect(nextConfig.deploymentId).toBe(configured);
+    expect(await nextConfig.generateBuildId?.()).toBe(
+      configured ?? "local-development",
+    );
+  });
+});

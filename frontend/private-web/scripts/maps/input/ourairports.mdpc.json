@@ -1,0 +1,540 @@
+{
+  "meta": {
+    "source": "OurAirports",
+    "url": "https://davidmegginson.github.io/ourairports-data",
+    "license": "public domain",
+    "fetchedAt": "2026-11-13T17:35:18Z"
+  },
+  "airport": {
+    "ident": "MDPC",
+    "type": "large_airport",
+    "name": "Punta Cana International Airport",
+    "icao": "MDPC",
+    "iata": "PUJ",
+    "municipality": "Punta Cana",
+    "country": "DO",
+    "lat": 18.567093,
+    "lon": -68.364558,
+    "elevationFt": 47
+  },
+  "runways": [
+    {
+      "leIdent": "08",
+      "heIdent": "26",
+      "lengthM": 3100.1,
+      "widthM": 45.1,
+      "surface": "ASP",
+      "le": {
+        "ident": "08",
+        "lat": 18.57029914855957,
+        "lon": -68.38310241699219,
+        "elevationFt": 43,
+        "headingTrue": 74,
+        "displacedThresholdM": 0
+      },
+      "he": {
+        "ident": "26",
+        "lat": 18.578100204467773,
+        "lon": -68.35479736328125,
+        "elevationFt": 37,
+        "headingTrue": 254,
+        "displacedThresholdM": 0
+      }
+    },
+    {
+      "leIdent": "09",
+      "heIdent": "27",
+      "lengthM": 3100.1,
+      "widthM": 45.1,
+      "surface": "ASP",
+      "le": {
+        "ident": "09",
+        "lat": 18.566099166870117,
+        "lon": -68.37809753417969,
+        "elevationFt": 47,
+        "headingTrue": 83,
+        "displacedThresholdM": 0
+      },
+      "he": {
+        "ident": "27",
+        "lat": 18.568599700927734,
+        "lon": -68.34880065917969,
+        "elevationFt": 36,
+        "headingTrue": 263,
+        "displacedThresholdM": 0
+      }
+    }
+  ],
+  "frequencies": [
+    {
+      "type": "A/D",
+      "description": "APP",
+      "frequencyMhz": 119.7
+    },
+    {
+      "type": "APP",
+      "description": "LAS AMERICAS APP",
+      "frequencyMhz": 119.3
+    },
+    {
+      "type": "ATIS",
+      "description": null,
+      "frequencyMhz": 132.85
+    },
+    {
+      "type": "DLV",
+      "description": "DELIVERY",
+      "frequencyMhz": 121.65
+    },
+    {
+      "type": "GND",
+      "description": "GROUND",
+      "frequencyMhz": 121.9
+    },
+    {
+      "type": "TWR",
+      "description": "TWR",
+      "frequencyMhz": 118.8
+    }
+  ],
+  "navaids": [
+    {
+      "ident": "PNA",
+      "name": "Punta Cana",
+      "type": "VOR-DME",
+      "frequencyKhz": 112700,
+      "lat": 18.56730079650879,
+      "lon": -68.38330078125,
+      "elevationFt": 40,
+      "country": "DO"
+    },
+    {
+      "ident": "PCA",
+      "name": "Punta Cana",
+      "type": "NDB",
+      "frequencyKhz": 425,
+      "lat": 18.564300537109375,
+      "lon": -68.37139892578125,
+      "elevationFt": 40,
+      "country": "DO"
+    }
+  ],
+  "regionalAirports": [
+    {
+      "ident": "MDPC",
+      "type": "large_airport",
+      "name": "Punta Cana International Airport",
+      "icao": "MDPC",
+      "iata": "PUJ",
+      "municipality": "Punta Cana",
+      "country": "DO",
+      "lat": 18.567093,
+      "lon": -68.364558,
+      "elevationFt": 47,
+      "distanceNm": 0
+    },
+    {
+      "ident": "MDLR",
+      "type": "large_airport",
+      "name": "Casa De Campo International Airport",
+      "icao": "MDLR",
+      "iata": "LRM",
+      "municipality": "La Romana",
+      "country": "DO",
+      "lat": 18.452222,
+      "lon": -68.911111,
+      "elevationFt": 213,
+      "distanceNm": 31.9
+    },
+    {
+      "ident": "TJBQ",
+      "type": "medium_airport",
+      "name": "Rafael Hernández International Airport",
+      "icao": "TJBQ",
+      "iata": "BQN",
+      "municipality": "Aguadilla",
+      "country": "PR",
+      "lat": 18.4949,
+      "lon": -67.129402,
+      "elevationFt": 237,
+      "distanceNm": 70.4
+    },
+    {
+      "ident": "TJMZ",
+      "type": "medium_airport",
+      "name": "Eugenio Maria De Hostos Airport",
+      "icao": "TJMZ",
+      "iata": "MAZ",
+      "municipality": "Mayaguez",
+      "country": "PR",
+      "lat": 18.255699,
+      "lon": -67.148499,
+      "elevationFt": 28,
+      "distanceNm": 71.8
+    },
+    {
+      "ident": "MDSD",
+      "type": "large_airport",
+      "name": "Las Américas International Airport",
+      "icao": "MDSD",
+      "iata": "SDQ",
+      "municipality": "Santo Domingo",
+      "country": "DO",
+      "lat": 18.42970085144,
+      "lon": -69.668899536133,
+      "elevationFt": 59,
+      "distanceNm": 74.7
+    },
+    {
+      "ident": "MDSI",
+      "type": "medium_airport",
+      "name": "San Isidro Air Base",
+      "icao": "MDSI",
+      "iata": null,
+      "municipality": "San Isidro",
+      "country": "DO",
+      "lat": 18.503700256347656,
+      "lon": -69.76170349121094,
+      "elevationFt": 111,
+      "distanceNm": 79.6
+    },
+    {
+      "ident": "MDCY",
+      "type": "medium_airport",
+      "name": "Samaná El Catey International Airport",
+      "icao": "MDCY",
+      "iata": "AZS",
+      "municipality": "Samana",
+      "country": "DO",
+      "lat": 19.269259,
+      "lon": -69.737405,
+      "elevationFt": 30,
+      "distanceNm": 88.6
+    },
+    {
+      "ident": "MDJB",
+      "type": "medium_airport",
+      "name": "La Isabela International Airport",
+      "icao": "MDJB",
+      "iata": "JBQ",
+      "municipality": "La Isabela",
+      "country": "DO",
+      "lat": 18.572500228881836,
+      "lon": -69.98560333251953,
+      "elevationFt": 98,
+      "distanceNm": 92.3
+    },
+    {
+      "ident": "TJAB",
+      "type": "medium_airport",
+      "name": "Antonio Nery Juarbe Pol Airport",
+      "icao": "TJAB",
+      "iata": "ARE",
+      "municipality": "Arecibo",
+      "country": "PR",
+      "lat": 18.45085,
+      "lon": -66.675768,
+      "elevationFt": 23,
+      "distanceNm": 96.4
+    },
+    {
+      "ident": "TJPS",
+      "type": "medium_airport",
+      "name": "Mercedita International Airport",
+      "icao": "TJPS",
+      "iata": "PSE",
+      "municipality": "Ponce",
+      "country": "PR",
+      "lat": 18.008301,
+      "lon": -66.563004,
+      "elevationFt": 29,
+      "distanceNm": 108
+    },
+    {
+      "ident": "TJIG",
+      "type": "medium_airport",
+      "name": "Fernando Luis Ribas Dominicci Airport",
+      "icao": "TJIG",
+      "iata": "SIG",
+      "municipality": "San Juan",
+      "country": "PR",
+      "lat": 18.45680046081543,
+      "lon": -66.09809875488281,
+      "elevationFt": 10,
+      "distanceNm": 129.2
+    },
+    {
+      "ident": "TJSJ",
+      "type": "large_airport",
+      "name": "Luis Munoz Marin International Airport",
+      "icao": "TJSJ",
+      "iata": "SJU",
+      "municipality": "San Juan",
+      "country": "PR",
+      "lat": 18.4394,
+      "lon": -66.001801,
+      "elevationFt": 9,
+      "distanceNm": 134.7
+    },
+    {
+      "ident": "MDST",
+      "type": "large_airport",
+      "name": "Cibao International Airport",
+      "icao": "MDST",
+      "iata": "STI",
+      "municipality": "Santiago",
+      "country": "DO",
+      "lat": 19.40406,
+      "lon": -70.604431,
+      "elevationFt": 565,
+      "distanceNm": 136.7
+    },
+    {
+      "ident": "MDPP",
+      "type": "medium_airport",
+      "name": "Gregorio Luperon International Airport",
+      "icao": "MDPP",
+      "iata": "POP",
+      "municipality": "Puerto Plata",
+      "country": "DO",
+      "lat": 19.7579,
+      "lon": -70.57,
+      "elevationFt": 15,
+      "distanceNm": 144.1
+    },
+    {
+      "ident": "TJRV",
+      "type": "medium_airport",
+      "name": "José Aponte de la Torre Airport",
+      "icao": "TJRV",
+      "iata": "NRR",
+      "municipality": "Ceiba",
+      "country": "PR",
+      "lat": 18.247262,
+      "lon": -65.63979,
+      "elevationFt": 38,
+      "distanceNm": 156.4
+    },
+    {
+      "ident": "MDBH",
+      "type": "medium_airport",
+      "name": "Maria Montez International Airport",
+      "icao": "MDBH",
+      "iata": "BRX",
+      "municipality": "Barahona",
+      "country": "DO",
+      "lat": 18.25149917602539,
+      "lon": -71.12039947509766,
+      "elevationFt": 10,
+      "distanceNm": 158.1
+    },
+    {
+      "ident": "TJVQ",
+      "type": "medium_airport",
+      "name": "Antonio Rivera Rodriguez Airport",
+      "icao": "TJVQ",
+      "iata": "VQS",
+      "municipality": "Vieques",
+      "country": "PR",
+      "lat": 18.1348,
+      "lon": -65.493599,
+      "elevationFt": 49,
+      "distanceNm": 165.7
+    },
+    {
+      "ident": "TJCP",
+      "type": "medium_airport",
+      "name": "Benjamin Rivera Noriega Airport",
+      "icao": "TJCP",
+      "iata": "CPX",
+      "municipality": "Culebra",
+      "country": "PR",
+      "lat": 18.312954,
+      "lon": -65.303893,
+      "elevationFt": 49,
+      "distanceNm": 175
+    },
+    {
+      "ident": "MDCR",
+      "type": "medium_airport",
+      "name": "Cabo Rojo Airport",
+      "icao": "MDCR",
+      "iata": "CBJ",
+      "municipality": "Cabo Rojo",
+      "country": "DO",
+      "lat": 17.929000854492188,
+      "lon": -71.6447982788086,
+      "elevationFt": 262,
+      "distanceNm": 190.9
+    },
+    {
+      "ident": "TIST",
+      "type": "large_airport",
+      "name": "Cyril E. King Airport",
+      "icao": "TIST",
+      "iata": "STT",
+      "municipality": "Charlotte Amalie",
+      "country": "VI",
+      "lat": 18.337091,
+      "lon": -64.977251,
+      "elevationFt": 23,
+      "distanceNm": 193.4
+    },
+    {
+      "ident": "TISX",
+      "type": "medium_airport",
+      "name": "Henry E. Rohlsen Airport",
+      "icao": "TISX",
+      "iata": "STX",
+      "municipality": "Christiansted",
+      "country": "VI",
+      "lat": 17.701413,
+      "lon": -64.802608,
+      "elevationFt": 74,
+      "distanceNm": 209.8
+    },
+    {
+      "ident": "TUPJ",
+      "type": "large_airport",
+      "name": "Terrance B. Lettsome International Airport",
+      "icao": "TUPJ",
+      "iata": "EIS",
+      "municipality": "Beef Island",
+      "country": "VG",
+      "lat": 18.445492,
+      "lon": -64.541707,
+      "elevationFt": 15,
+      "distanceNm": 217.8
+    },
+    {
+      "ident": "MTPP",
+      "type": "large_airport",
+      "name": "Toussaint Louverture International Airport",
+      "icao": "MTPP",
+      "iata": "PAP",
+      "municipality": "Port-au-Prince",
+      "country": "HT",
+      "lat": 18.580023,
+      "lon": -72.292596,
+      "elevationFt": 122,
+      "distanceNm": 223.6
+    },
+    {
+      "ident": "TUPW",
+      "type": "medium_airport",
+      "name": "Virgin Gorda Airport",
+      "icao": "TUPW",
+      "iata": "VIJ",
+      "municipality": "Spanish Town",
+      "country": "VG",
+      "lat": 18.446634,
+      "lon": -64.427932,
+      "elevationFt": 9,
+      "distanceNm": 224.2
+    },
+    {
+      "ident": "MTCH",
+      "type": "large_airport",
+      "name": "Cap Haitien International Airport",
+      "icao": "MTCH",
+      "iata": "CAP",
+      "municipality": "Cap Haitien",
+      "country": "HT",
+      "lat": 19.725547,
+      "lon": -72.20071,
+      "elevationFt": 10,
+      "distanceNm": 228.4
+    },
+    {
+      "ident": "MBGT",
+      "type": "medium_airport",
+      "name": "JAGS McCartney International Airport",
+      "icao": "MBGT",
+      "iata": "GDT",
+      "municipality": "Cockburn Town",
+      "country": "TC",
+      "lat": 21.4445,
+      "lon": -71.142303,
+      "elevationFt": 13,
+      "distanceNm": 233.2
+    },
+    {
+      "ident": "MTJA",
+      "type": "medium_airport",
+      "name": "Jacmel Airport",
+      "icao": "MTJA",
+      "iata": "JAK",
+      "municipality": "Jacmel",
+      "country": "HT",
+      "lat": 18.2411,
+      "lon": -72.518501,
+      "elevationFt": 167,
+      "distanceNm": 237.5
+    },
+    {
+      "ident": "MBSC",
+      "type": "medium_airport",
+      "name": "South Caicos Airport",
+      "icao": "MBSC",
+      "iata": "XSC",
+      "municipality": "South Caicos",
+      "country": "TC",
+      "lat": 21.515699,
+      "lon": -71.528503,
+      "elevationFt": 6,
+      "distanceNm": 251.4
+    },
+    {
+      "ident": "MTPX",
+      "type": "medium_airport",
+      "name": "Port-de-Paix Airport",
+      "icao": "MTPX",
+      "iata": "PAX",
+      "municipality": "Port-de-Paix",
+      "country": "HT",
+      "lat": 19.934045,
+      "lon": -72.84801,
+      "elevationFt": 9,
+      "distanceNm": 267
+    },
+    {
+      "ident": "MBNC",
+      "type": "medium_airport",
+      "name": "North Caicos Airport",
+      "icao": "MBNC",
+      "iata": "NCA",
+      "municipality": "North Caicos",
+      "country": "TC",
+      "lat": 21.916094,
+      "lon": -71.942954,
+      "elevationFt": 10,
+      "distanceNm": 284.7
+    },
+    {
+      "ident": "MBPV",
+      "type": "large_airport",
+      "name": "Providenciales International Airport",
+      "icao": "MBPV",
+      "iata": "PLS",
+      "municipality": "Providenciales",
+      "country": "TC",
+      "lat": 21.773697,
+      "lon": -72.268321,
+      "elevationFt": 15,
+      "distanceNm": 292.3
+    },
+    {
+      "ident": "TNCS",
+      "type": "medium_airport",
+      "name": "Juancho E. Yrausquin Airport",
+      "icao": "TNCS",
+      "iata": "SAB",
+      "municipality": "Zion's Hill",
+      "country": "BQ",
+      "lat": 17.64533,
+      "lon": -63.220514,
+      "elevationFt": 60,
+      "distanceNm": 298.7
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Ilustración: Limpieza">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B2A5B"/><stop offset="1" stop-color="#123F86"/></linearGradient></defs>
+  <rect width="640" height="360" fill="url(#g)"/>
+  <path d="M0 300C160 250 320 330 640 270V360H0z" fill="#F26B1D" opacity=".18"/>
+  <circle cx="520" cy="70" r="140" fill="#FFFFFF" opacity=".05"/>
+  <g transform="translate(220 50) scale(1)"><path d="M120 30l-40 95" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 125h70l15 45H35z" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/><path d="M60 170l5-30M85 170l2-30M110 170l-2-30" fill="none" stroke="#F26B1D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <text x="320" y="315" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF" letter-spacing="1">LIMPIEZA</text>
+</svg>

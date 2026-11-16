@@ -1,0 +1,137 @@
+name: elevant-dev-observability
+
+services:
+  beszel-volume-init:
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    pull_policy: always
+    user: "0:0"
+    network_mode: none
+    entrypoint:
+      - /bin/chown
+    command:
+      - -R
+      - "65532:0"
+      - /beszel_data
+      - /var/lib/beszel-agent
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - beszel_data:/beszel_data
+      - beszel_agent_data:/var/lib/beszel-agent
+    cpus: "0.05"
+    mem_limit: 32m
+    pids_limit: 16
+    logging: &rotated-logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  beszel-hub:
+    image: docker.io/henrygd/beszel:0.18.8@sha256:4c51486968efa0b0a702c1b0967966a2e06fb250b7418f3072d2488faea27c51
+    pull_policy: always
+    user: "65532:0"
+    depends_on:
+      beszel-volume-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_URL: ${BESZEL_APP_URL:?BESZEL_APP_URL is required}
+      CHECK_UPDATES: "false"
+      CONTAINER_DETAILS: "false"
+      HEARTBEAT_INTERVAL: "60"
+      HEARTBEAT_METHOD: HEAD
+      HEARTBEAT_URL: ${BESZEL_HEARTBEAT_URL:?BESZEL_HEARTBEAT_URL is required}
+      SHARE_ALL_SYSTEMS: "false"
+      USER_CREATION: "false"
+    ports:
+      - "127.0.0.1:18083:8090/tcp"
+    volumes:
+      - beszel_data:/beszel_data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=65532,gid=0
+    healthcheck:
+      test:
+        - CMD
+        - /beszel
+        - health
+        - --url
+        - http://127.0.0.1:8090
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    cpus: "0.20"
+    mem_limit: 256m
+    pids_limit: 128
+    stop_grace_period: 30s
+    logging: *rotated-logs
+
+  beszel-agent:
+    image: docker.io/henrygd/beszel-agent:0.18.8@sha256:3b1939746690e423072b4a99bf4c4af6dd9562a68978a33738a3c4a4cc000c39
+    pull_policy: always
+    user: "65532:0"
+    hostname: elevant-dev-host
+    network_mode: host
+    depends_on:
+      beszel-volume-init:
+        condition: service_completed_successfully
+      beszel-hub:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DATA_DIR: /var/lib/beszel-agent
+      DISABLE_SSH: "true"
+      DOCKER_HOST: ""
+      FILESYSTEM: ${BESZEL_FILESYSTEM:-}
+      HUB_URL: http://127.0.0.1:18083
+      KEY: ${BESZEL_AGENT_KEY:?BESZEL_AGENT_KEY is required}
+      LOG_LEVEL: info
+      TOKEN: ${BESZEL_AGENT_TOKEN:?BESZEL_AGENT_TOKEN is required}
+    volumes:
+      - beszel_agent_data:/var/lib/beszel-agent
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=0
+    healthcheck:
+      test:
+        - CMD
+        - /agent
+        - health
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    cpus: "0.10"
+    mem_limit: 128m
+    pids_limit: 64
+    stop_grace_period: 15s
+    logging: *rotated-logs
+
+networks:
+  default:
+    name: elevant-dev-observability-runtime
+    driver: bridge
+
+volumes:
+  beszel_data:
+    external: true
+    name: elevant-dev-beszel-data
+  beszel_agent_data:
+    external: true
+    name: elevant-dev-beszel-agent-data

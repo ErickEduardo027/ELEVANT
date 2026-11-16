@@ -1,0 +1,492 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - generic [ref=f5e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=f5e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=f5e12]:
+        - link "Dashboard" [ref=f5e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=f5e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=f5e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=f5e34]: Habilitaciones y certificaciones
+          - generic [ref=f5e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=f5e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=f5e43]: Carnets y permisos aeroportuarios
+          - generic [ref=f5e44]: "2"
+        - link "Horarios y disponibilidad" [ref=f5e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=f5e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=f5e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=f5e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=f5e68]: Notificaciones
+          - generic [ref=f5e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=f5e72] [cursor=pointer]:
+        - generic [ref=f5e73]: CR
+        - generic [ref=f5e74]:
+          - generic [ref=f5e75]: Camila Reyes
+          - generic [ref=f5e76]: Gestión Humana
+  - generic [ref=f5e77]:
+    - banner [ref=f5e78]:
+      - generic [ref=f5e79]: Gestión Humana
+      - generic [ref=f5e80]:
+        - button "Notificaciones" [ref=f5e81] [cursor=pointer]:
+          - generic [ref=f5e85]: "4"
+        - button "Cambiar a modo oscuro" [ref=f5e86] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=f5e90] [cursor=pointer]:
+          - generic [ref=f5e91]: CR
+          - generic [ref=f5e92]: Camila Reyes
+    - main [ref=f5e93]:
+      - generic [ref=f5e94]:
+        - generic [ref=f5e95]:
+          - generic [ref=f5e96]:
+            - heading "Habilitaciones y certificaciones" [level=1] [ref=f5e97]
+            - paragraph [ref=f5e98]: "Habilitaciones por agente, cobertura por tipo de equipo y vencimientos: vigentes, próximos a vencer y vencidos."
+          - generic [ref=f5e99]:
+            - button "Actualizar" [ref=f5e100] [cursor=pointer]
+            - button "Agregar habilitación" [ref=f5e106] [cursor=pointer]
+        - generic [ref=f5e109]:
+          - generic [ref=f5e110]:
+            - generic [ref=f5e216]: Habilitaciones vigentes
+            - generic [ref=f5e221]: "10"
+          - generic [ref=f5e111]:
+            - generic [ref=f5e222]: Próximas a vencer
+            - generic [ref=f5e227]: "5"
+          - generic [ref=f5e112]:
+            - generic [ref=f5e228]: Vencidas
+            - generic [ref=f5e232]: "4"
+          - generic [ref=f5e113]:
+            - generic [ref=f5e233]: Agentes con alguna habilitación vencida
+            - generic [ref=f5e240]: "3"
+        - tablist [ref=f5e114]:
+          - tab "Por agente" [selected] [ref=f5e115] [cursor=pointer]
+          - tab "Por tipo de equipo" [ref=f5e116] [cursor=pointer]
+        - generic [ref=f5e117]:
+          - generic [ref=f5e118]:
+            - searchbox "Buscar agentes" [ref=f5e120]
+            - combobox "Terminal" [ref=f5e121]:
+              - option "Terminal" [selected]
+              - option "Terminal A"
+              - option "Terminal B"
+            - combobox "Estado" [ref=f5e122]:
+              - option "Estado" [selected]
+              - option "Vigente"
+              - option "Próxima a vencer"
+              - option "Vencida"
+            - combobox "Tipo de equipo" [ref=f5e123]:
+              - option "Tipo de equipo" [selected]
+              - option "Puente de abordaje"
+              - option "Cinta transportadora / Belt Loader"
+              - option "Loader"
+              - option "Escaleras de pasajeros"
+              - option "Club Car"
+              - option "Tractor / Pushback"
+              - option "Baggage Cart"
+              - option "Dollies"
+              - option "GPU"
+              - option "ACU"
+              - option "ASU"
+            - combobox "Ordenar por" [ref=f5e124]:
+              - option "Orden predeterminado" [selected]
+              - option "Agente"
+              - option "Terminal"
+              - option "Habilitaciones vigentes"
+              - option "Próximo vencimiento"
+              - option "Cantidad de vencidas"
+              - option "Última actualización"
+            - button "Limpiar filtros" [disabled] [ref=f5e125]
+          - table [ref=f5e130]:
+            - rowgroup [ref=f5e131]:
+              - row [ref=f5e132]:
+                - columnheader "Agente" [ref=f5e133]
+                - columnheader "Terminal" [ref=f5e134]
+                - columnheader "Habilitaciones" [ref=f5e135]
+                - columnheader "Próxima expiración" [ref=f5e136]
+                - columnheader "Estado general" [ref=f5e137]
+                - columnheader "Última actualización" [ref=f5e138]
+                - columnheader "Acciones" [ref=f5e139]
+            - rowgroup [ref=f5e140]:
+              - row [ref=f5e241] [cursor=pointer]:
+                - cell [ref=f5e242]:
+                  - generic [ref=f5e243]:
+                    - generic [ref=f5e244]: FO
+                    - generic [ref=f5e245]:
+                      - paragraph [ref=f5e246]: Franklin Ortiz
+                      - paragraph [ref=f5e247]: RA-1103
+                - cell "A / B" [ref=f5e248]
+                - cell [ref=f5e249]:
+                  - generic "1 vigente · 1 próxima a vencer · 1 vencida" [ref=f5e250]:
+                    - generic [ref=f5e251]: "1"
+                    - generic [ref=f5e253]: "1"
+                    - generic [ref=f5e255]: "1"
+                - cell "10 jun de 2026" [ref=f5e257]
+                - cell "Requiere acción" [ref=f5e258]
+                - cell "16 abr de 2026" [ref=f5e261]
+                - cell [ref=f5e262]:
+                  - button "Ver detalle" [ref=f5e264]
+              - row [ref=f5e265] [cursor=pointer]:
+                - cell [ref=f5e266]:
+                  - generic [ref=f5e267]:
+                    - generic [ref=f5e268]: KA
+                    - generic [ref=f5e269]:
+                      - paragraph [ref=f5e270]: Kevin Alexander Díaz
+                      - paragraph [ref=f5e271]: RA-1042
+                - cell "A" [ref=f5e272]
+                - cell [ref=f5e273]:
+                  - generic "1 vigente · 1 próxima a vencer · 1 vencida" [ref=f5e274]:
+                    - generic [ref=f5e275]: "1"
+                    - generic [ref=f5e277]: "1"
+                    - generic [ref=f5e279]: "1"
+                - cell "20 jul de 2026" [ref=f5e281]
+                - cell "Requiere acción" [ref=f5e282]
+                - cell "06 feb de 2026" [ref=f5e285]
+                - cell [ref=f5e286]:
+                  - button "Ver detalle" [ref=f5e288]
+              - row [ref=f5e289] [cursor=pointer]:
+                - cell [ref=f5e290]:
+                  - generic [ref=f5e291]:
+                    - generic [ref=f5e292]: YS
+                    - generic [ref=f5e293]:
+                      - paragraph [ref=f5e294]: Yeimy Santana
+                      - paragraph [ref=f5e295]: RA-0991
+                - cell "A" [ref=f5e296]
+                - cell [ref=f5e297]:
+                  - generic "0 vigentes · 0 próximas a vencer · 2 vencidas" [ref=f5e298]:
+                    - generic [ref=f5e299]: "0"
+                    - generic [ref=f5e301]: "0"
+                    - generic [ref=f5e303]: "2"
+                - cell "18 may de 2026" [ref=f5e305]
+                - cell "Requiere acción" [ref=f5e306]
+                - cell "25 jul de 2025" [ref=f5e309]
+                - cell [ref=f5e310]:
+                  - button "Ver detalle" [ref=f5e312]
+              - row [ref=f5e313] [cursor=pointer]:
+                - cell [ref=f5e314]:
+                  - generic [ref=f5e315]:
+                    - generic [ref=f5e316]: LT
+                    - generic [ref=f5e317]:
+                      - paragraph [ref=f5e318]: Luis Tavárez
+                      - paragraph [ref=f5e319]: RA-1162
+                - cell "A" [ref=f5e320]
+                - cell [ref=f5e321]:
+                  - generic "0 vigentes · 1 próxima a vencer · 0 vencidas" [ref=f5e322]:
+                    - generic [ref=f5e323]: "0"
+                    - generic [ref=f5e325]: "1"
+                    - generic [ref=f5e327]: "0"
+                - cell "27 ago de 2026" [ref=f5e329]
+                - cell "Atención" [ref=f5e330]
+                - cell "23 ago de 2025" [ref=f5e333]
+                - cell [ref=f5e334]:
+                  - button "Ver detalle" [ref=f5e336]
+              - row [ref=f5e337] [cursor=pointer]:
+                - cell [ref=f5e338]:
+                  - generic [ref=f5e339]:
+                    - generic [ref=f5e340]: ML
+                    - generic [ref=f5e341]:
+                      - paragraph [ref=f5e342]: María López
+                      - paragraph [ref=f5e343]: RA-1150
+                - cell "B" [ref=f5e344]
+                - cell [ref=f5e345]:
+                  - generic "0 vigentes · 1 próxima a vencer · 0 vencidas" [ref=f5e346]:
+                    - generic [ref=f5e347]: "0"
+                    - generic [ref=f5e349]: "1"
+                    - generic [ref=f5e351]: "0"
+                - cell "18 ago de 2026" [ref=f5e353]
+                - cell "Atención" [ref=f5e354]
+                - cell "14 ago de 2025" [ref=f5e357]
+                - cell [ref=f5e358]:
+                  - button "Ver detalle" [ref=f5e360]
+              - row [ref=f5e361] [cursor=pointer]:
+                - cell [ref=f5e362]:
+                  - generic [ref=f5e363]:
+                    - generic [ref=f5e364]: RE
+                    - generic [ref=f5e365]:
+                      - paragraph [ref=f5e366]: Rosa Elena Guzmán
+                      - paragraph [ref=f5e367]: RA-1077
+                - cell "B" [ref=f5e368]
+                - cell [ref=f5e369]:
+                  - generic "2 vigentes · 1 próxima a vencer · 0 vencidas" [ref=f5e370]:
+                    - generic [ref=f5e371]: "2"
+                    - generic [ref=f5e373]: "1"
+                    - generic [ref=f5e375]: "0"
+                - cell "30 ago de 2026" [ref=f5e377]
+                - cell "Atención" [ref=f5e378]
+                - cell "11 ene de 2026" [ref=f5e381]
+                - cell [ref=f5e382]:
+                  - button "Ver detalle" [ref=f5e384]
+              - row [ref=f5e385] [cursor=pointer]:
+                - cell [ref=f5e386]:
+                  - generic [ref=f5e387]:
+                    - generic [ref=f5e388]: AF
+                    - generic [ref=f5e389]:
+                      - paragraph [ref=f5e390]: Ana Fermín
+                      - paragraph [ref=f5e391]: RA-1183
+                - cell "B" [ref=f5e392]
+                - cell [ref=f5e393]:
+                  - generic "1 vigente · 0 próximas a vencer · 0 vencidas" [ref=f5e394]:
+                    - generic [ref=f5e395]: "1"
+                    - generic [ref=f5e397]: "0"
+                    - generic [ref=f5e399]: "0"
+                - cell "11 nov de 2026" [ref=f5e401]
+                - cell "Vigente" [ref=f5e402]
+                - cell "07 nov de 2025" [ref=f5e405]
+                - cell [ref=f5e406]:
+                  - button "Ver detalle" [ref=f5e408]
+              - row [ref=f5e409] [cursor=pointer]:
+                - cell [ref=f5e410]:
+                  - generic [ref=f5e411]:
+                    - generic [ref=f5e412]: CN
+                    - generic [ref=f5e413]:
+                      - paragraph [ref=f5e414]: Carlos Núñez
+                      - paragraph [ref=f5e415]: RA-1197
+                - cell "A" [ref=f5e416]
+                - cell [ref=f5e417]:
+                  - generic "1 vigente · 0 próximas a vencer · 0 vencidas" [ref=f5e418]:
+                    - generic [ref=f5e419]: "1"
+                    - generic [ref=f5e421]: "0"
+                    - generic [ref=f5e423]: "0"
+                - cell "28 feb de 2027" [ref=f5e425]
+                - cell "Vigente" [ref=f5e426]
+                - cell "24 feb de 2026" [ref=f5e429]
+                - cell [ref=f5e430]:
+                  - button "Ver detalle" [ref=f5e432]
+              - row [ref=f5e433] [cursor=pointer]:
+                - cell [ref=f5e434]:
+                  - generic [ref=f5e435]:
+                    - generic [ref=f5e436]: JP
+                    - generic [ref=f5e437]:
+                      - paragraph [ref=f5e438]: Juan Pérez
+                      - paragraph [ref=f5e439]: RA-1178
+                - cell "A" [ref=f5e440]
+                - cell [ref=f5e441]:
+                  - generic "2 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e442]:
+                    - generic [ref=f5e443]: "2"
+                    - generic [ref=f5e445]: "0"
+                    - generic [ref=f5e447]: "0"
+                - cell "05 may de 2027" [ref=f5e449]
+                - cell "Vigente" [ref=f5e450]
+                - cell "28 may de 2026" [ref=f5e453]
+                - cell [ref=f5e454]:
+                  - button "Ver detalle" [ref=f5e456]
+              - row [ref=f5e457] [cursor=pointer]:
+                - cell [ref=f5e458]:
+                  - generic [ref=f5e459]:
+                    - generic [ref=f5e460]: KO
+                    - generic [ref=f5e461]:
+                      - paragraph [ref=f5e462]: Katherine Objío
+                      - paragraph [ref=f5e463]: RA-1204
+                - cell "B" [ref=f5e464]
+                - cell [ref=f5e465]:
+                  - generic "2 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e466]:
+                    - generic [ref=f5e467]: "2"
+                    - generic [ref=f5e469]: "0"
+                    - generic [ref=f5e471]: "0"
+                - cell "25 dic de 2026" [ref=f5e473]
+                - cell "Vigente" [ref=f5e474]
+                - cell "14 mar de 2026" [ref=f5e477]
+                - cell [ref=f5e478]:
+                  - button "Ver detalle" [ref=f5e480]
+        - dialog "Franklin Ortiz" [ref=f5e483]:
+          - generic [ref=f5e484]:
+            - generic [ref=f5e485]:
+              - heading "Franklin Ortiz" [level=2] [ref=f5e486]
+              - paragraph [ref=f5e487]: RA-1103 · Terminal A / B
+            - button "Cerrar" [ref=f5e488] [cursor=pointer]
+          - generic [ref=f5e491]:
+            - generic [ref=f5e492]:
+              - generic [ref=f5e493]: FO
+              - generic [ref=f5e494]:
+                - generic [ref=f5e495]: Requiere acción
+                - paragraph [ref=f5e497]: Actualizado 16 abr de 2026
+            - generic [ref=f5e498]:
+              - generic [ref=f5e499]:
+                - heading "Información del agente" [level=4] [ref=f5e500]
+                - generic [ref=f5e501]:
+                  - generic [ref=f5e502]:
+                    - paragraph [ref=f5e503]: Nombre
+                    - paragraph [ref=f5e504]: Franklin Ortiz
+                  - generic [ref=f5e505]:
+                    - paragraph [ref=f5e506]: Identificación
+                    - paragraph [ref=f5e507]: 001-1234567-13
+                  - generic [ref=f5e508]:
+                    - paragraph [ref=f5e509]: Código de empleado
+                    - paragraph [ref=f5e510]: RA-1103
+                  - generic [ref=f5e511]:
+                    - paragraph [ref=f5e512]: Terminal
+                    - paragraph [ref=f5e513]: A / B
+                  - generic [ref=f5e514]:
+                    - paragraph [ref=f5e515]: Fecha de ingreso
+                    - paragraph [ref=f5e516]: 27 jul de 2026
+                  - generic [ref=f5e517]:
+                    - paragraph [ref=f5e518]: Última actualización
+                    - paragraph [ref=f5e519]: 16 abr de 2026
+              - generic [ref=f5e520]:
+                - heading "Resumen" [level=4] [ref=f5e521]
+                - generic [ref=f5e522]:
+                  - generic [ref=f5e523]:
+                    - paragraph [ref=f5e524]: Total
+                    - paragraph [ref=f5e525]: "3"
+                  - generic [ref=f5e526]:
+                    - paragraph [ref=f5e527]: Vigentes
+                    - paragraph [ref=f5e528]: "1"
+                  - generic [ref=f5e529]:
+                    - paragraph [ref=f5e530]: Próximas
+                    - paragraph [ref=f5e531]: "1"
+                  - generic [ref=f5e532]:
+                    - paragraph [ref=f5e533]: Vencidas
+                    - paragraph [ref=f5e534]: "1"
+              - generic [ref=f5e535]:
+                - generic [ref=f5e536]:
+                  - heading "Habilitaciones" [level=4] [ref=f5e537]
+                  - button "Agregar habilitación" [ref=f5e538] [cursor=pointer]
+                - table [ref=f5e542]:
+                  - rowgroup [ref=f5e543]:
+                    - row [ref=f5e544]:
+                      - columnheader "Equipo" [ref=f5e545]
+                      - columnheader "Estado" [ref=f5e546]
+                      - columnheader "Obtención" [ref=f5e547]
+                      - columnheader "Vencimiento" [ref=f5e548]
+                      - columnheader "Entidad" [ref=f5e549]
+                      - columnheader "Acciones" [ref=f5e550]
+                  - rowgroup [ref=f5e551]:
+                    - row [ref=f5e552]:
+                      - cell "Tractor / Pushback" [ref=f5e553]
+                      - cell "Vencida" [ref=f5e554]
+                      - cell "05 jun de 2025" [ref=f5e557]
+                      - cell "10 jun de 2026" [ref=f5e558]
+                      - cell "IDAC" [ref=f5e559]
+                      - cell [ref=f5e560]:
+                        - generic [ref=f5e561]:
+                          - button "Detalle" [active] [ref=f5e562] [cursor=pointer]
+                          - button "Renovar" [ref=f5e563] [cursor=pointer]
+                    - row [ref=f5e564]:
+                      - cell "Baggage Cart" [ref=f5e565]
+                      - cell "Próxima a vencer" [ref=f5e566]
+                      - cell "29 ago de 2025" [ref=f5e569]
+                      - cell "02 sept de 2026" [ref=f5e570]
+                      - cell "ALC" [ref=f5e571]
+                      - cell [ref=f5e572]:
+                        - generic [ref=f5e573]:
+                          - button "Detalle" [ref=f5e574] [cursor=pointer]
+                          - button "Renovar" [ref=f5e575] [cursor=pointer]
+                    - row [ref=f5e576]:
+                      - cell "Dollies" [ref=f5e577]
+                      - cell "Vigente" [ref=f5e578]
+                      - cell "16 abr de 2026" [ref=f5e581]
+                      - cell "20 abr de 2027" [ref=f5e582]
+                      - cell "ALC" [ref=f5e583]
+                      - cell [ref=f5e584]:
+                        - generic [ref=f5e585]:
+                          - button "Detalle" [ref=f5e586] [cursor=pointer]
+                          - button "Renovar" [ref=f5e587] [cursor=pointer]
+        - generic:
+          - dialog:
+            - generic:
+              - button
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Agregar habilitación
+                - paragraph: Registra una nueva habilitación otorgada por la entidad certificadora.
+              - button
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: Agente
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - text: Tipo de equipo
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - generic:
+                      - text: Fecha de entrenamiento
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de obtención
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de vencimiento
+                      - generic: "*"
+                    - textbox
+                - generic:
+                  - generic:
+                    - text: Entidad certificadora
+                    - generic: "*"
+                  - textbox: ALC
+                - generic:
+                  - generic:
+                    - text: Instructor / evaluador
+                    - generic: "*"
+                  - textbox
+                - generic:
+                  - generic: Observaciones
+                  - textbox
+                - generic:
+                  - generic: Documento de soporte (opcional)
+                  - textbox
+                  - generic: Se adjuntará cuando exista almacenamiento de archivos en el backend.
+            - generic:
+              - generic:
+                - button: Cancelar
+                - button [disabled]: Registrar habilitación
+        - dialog "Tractor / Pushback" [ref=f5e590]:
+          - heading "Tractor / Pushback" [level=2] [ref=f5e591]
+          - generic [ref=f5e593]:
+            - generic [ref=f5e594]:
+              - paragraph [ref=f5e595]: Franklin Ortiz · RA-1103
+              - generic [ref=f5e596]: Vencida
+            - generic [ref=f5e598]:
+              - generic [ref=f5e599]:
+                - paragraph [ref=f5e600]: Fecha de entrenamiento
+                - paragraph [ref=f5e601]: 28 may de 2025
+              - generic [ref=f5e602]:
+                - paragraph [ref=f5e603]: Fecha de obtención
+                - paragraph [ref=f5e604]: 05 jun de 2025
+              - generic [ref=f5e605]:
+                - paragraph [ref=f5e606]: Fecha de vencimiento
+                - paragraph [ref=f5e607]: 10 jun de 2026
+              - generic [ref=f5e608]:
+                - paragraph [ref=f5e609]: Entidad certificadora
+                - paragraph [ref=f5e610]: IDAC
+              - generic [ref=f5e611]:
+                - paragraph [ref=f5e612]: Instructor / evaluador
+                - paragraph [ref=f5e613]: Yolanda Cabrera
+              - generic [ref=f5e614]:
+                - paragraph [ref=f5e615]: Terminal
+                - paragraph [ref=f5e616]: A / B
+            - generic [ref=f5e617]:
+              - paragraph [ref=f5e618]: Observaciones
+              - paragraph [ref=f5e619]: Sin observaciones.
+            - generic [ref=f5e620]:
+              - paragraph [ref=f5e621]: Documento de soporte
+              - paragraph [ref=f5e622]: No se adjuntó documento.
+            - generic [ref=f5e623]:
+              - heading "Historial" [level=4] [ref=f5e624]
+              - list [ref=f5e625]:
+                - listitem [ref=f5e626]:
+                  - generic [ref=f5e631]:
+                    - paragraph [ref=f5e632]: Habilitación creada
+                    - paragraph [ref=f5e633]: Camila Reyes · 05 jun de 2025, 00:00
+                - listitem [ref=f5e634]:
+                  - generic [ref=f5e639]:
+                    - paragraph [ref=f5e640]: Entrenamiento completado
+                    - paragraph [ref=f5e641]: Yolanda Cabrera · 28 may de 2025, 00:00
+          - generic [ref=f5e642]:
+            - button "Cerrar" [ref=f5e643] [cursor=pointer]
+            - button "Registrar renovación" [ref=f5e644] [cursor=pointer]

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "selection": {
+    "kind": "procedural",
+    "id": "elevant-procedural-twinjet-v1",
+    "source": "public-web/src/components/three/heroFlightEngine.ts",
+    "status": "active",
+    "reason": "The landing uses an original procedural aircraft so the first release does not depend on an externally hosted model or unverified license metadata."
+  },
+  "license": {
+    "name": "Project source code",
+    "holder": "ELEVANT",
+    "attributionRequired": false
+  },
+  "externalCandidate": {
+    "name": "Airplane by Poly by Google",
+    "url": "https://poly.pizza/m/8ciDd9k8wha",
+    "expectedLicense": "CC BY",
+    "included": false,
+    "note": "No GLB was bundled because its downloadable artifact and accompanying license file were not independently verified for this build."
+  },
+  "geometry": {
+    "format": "runtime Three.js primitives",
+    "features": [
+      "smooth fuselage",
+      "extruded swept wings",
+      "tailplane and vertical stabilizer",
+      "twin nacelles and intakes",
+      "cockpit and cabin glazing",
+      "navigation lights"
+    ]
+  }
+}

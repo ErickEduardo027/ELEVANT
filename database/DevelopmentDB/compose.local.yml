@@ -1,0 +1,201 @@
+name: elevant-local
+
+x-rotated-logs: &rotated-logs
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  backup-storage-init:
+    build:
+      context: ../..
+      dockerfile: database/DevelopmentDB/Dockerfile.ops
+    image: elevant-db-ops:local
+    user: "0:0"
+    command: ["initialize-backup-storage"]
+    volumes:
+      - sql-local-backups:/var/opt/mssql/backups
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    logging: *rotated-logs
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    hostname: elevant-local-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set}"
+      ELEVANT_DB_HEALTH_PASSWORD: "${ELEVANT_DB_HEALTH_PASSWORD:?ELEVANT_DB_HEALTH_PASSWORD must be set}"
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+      TZ: "UTC"
+    ports:
+      - "127.0.0.1:${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - sql-local-data:/var/opt/mssql
+      - sql-local-backups:/var/opt/mssql/backups
+    depends_on:
+      backup-storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          SQLCMD=/opt/mssql-tools18/bin/sqlcmd;
+          if [ ! -x "$$SQLCMD" ]; then SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi;
+          unset HEALTH_PASSWORD SA_PASSWORD;
+          HEALTH_PASSWORD="$${ELEVANT_DB_HEALTH_PASSWORD}";
+          SA_PASSWORD="$${MSSQL_SA_PASSWORD}";
+          unset ELEVANT_DB_HEALTH_PASSWORD MSSQL_SA_PASSWORD;
+          SQLCMDPASSWORD="$${HEALTH_PASSWORD}"
+          "$$SQLCMD" -S localhost -U elevant_dev_health
+          -C -b -Q "SELECT 1" -o /dev/null ||
+          SQLCMDPASSWORD="$${SA_PASSWORD}"
+          "$$SQLCMD" -S localhost -U sa
+          -C -b -Q "SELECT 1" -o /dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    restart: unless-stopped
+    stop_grace_period: 90s
+    logging: *rotated-logs
+    networks:
+      data:
+        aliases:
+          - elevant-local-sql
+
+  provisioner:
+    build:
+      context: ../..
+      dockerfile: database/DevelopmentDB/Dockerfile.ops
+    image: elevant-db-ops:local
+    command: ["provision-development"]
+    environment: &database-credentials
+      ELEVANT_SQL_SERVER: "elevant-local-sql"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set}"
+      ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
+      ELEVANT_DB_MIGRATOR_PASSWORD: "${ELEVANT_DB_MIGRATOR_PASSWORD:?ELEVANT_DB_MIGRATOR_PASSWORD must be set}"
+      ELEVANT_DB_APP_PASSWORD: "${ELEVANT_DB_APP_PASSWORD:?ELEVANT_DB_APP_PASSWORD must be set}"
+      ELEVANT_DB_SEEDER_PASSWORD: "${ELEVANT_DB_SEEDER_PASSWORD:?ELEVANT_DB_SEEDER_PASSWORD must be set}"
+      ELEVANT_DB_HEALTH_PASSWORD: "${ELEVANT_DB_HEALTH_PASSWORD:?ELEVANT_DB_HEALTH_PASSWORD must be set}"
+      ELEVANT_DB_BACKUP_PASSWORD: "${ELEVANT_DB_BACKUP_PASSWORD:?ELEVANT_DB_BACKUP_PASSWORD must be set}"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: "no"
+    logging: *rotated-logs
+    networks:
+      - data
+
+  migrator:
+    build:
+      context: ../..
+      dockerfile: database/DevelopmentDB/Dockerfile.database-release
+    image: elevant-db-release:local
+    command: ["migrate"]
+    environment:
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ConnectionStrings__ElevantDatabase: "Server=elevant-local-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_migrator;Password=${ELEVANT_DB_MIGRATOR_PASSWORD:?ELEVANT_DB_MIGRATOR_PASSWORD must be set};Encrypt=True;TrustServerCertificate=True"
+    depends_on:
+      provisioner:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *rotated-logs
+    networks:
+      - data
+
+  seeder-development:
+    image: elevant-db-release:local
+    command: ["seed-development"]
+    environment:
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD: "${ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD:?ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD must be set}"
+      ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD: "${ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD:?ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD must be set}"
+      ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD: "${ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD:?ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD must be set}"
+      ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD: "${ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD:?ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD must be set}"
+      ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD: "${ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD:?ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD must be set}"
+      ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD: "${ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD:?ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD must be set}"
+      ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD: "${ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD:?ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD must be set}"
+      ConnectionStrings__ElevantDatabase: "Server=elevant-local-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=${ELEVANT_DB_SEEDER_PASSWORD:?ELEVANT_DB_SEEDER_PASSWORD must be set};Encrypt=True;TrustServerCertificate=True"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *rotated-logs
+    networks:
+      - data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    image: elevant-api:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ConnectionStrings__ElevantDatabase: "Server=elevant-local-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_app;Password=${ELEVANT_DB_APP_PASSWORD:?ELEVANT_DB_APP_PASSWORD must be set};Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True"
+      Authentication__Issuer: "${Authentication__Issuer:?Authentication__Issuer must be set}"
+      Authentication__Audience: "${Authentication__Audience:?Authentication__Audience must be set}"
+      Authentication__SigningKeyBase64: "${Authentication__SigningKeyBase64:?Authentication__SigningKeyBase64 must be set}"
+      Authentication__AccessTokenMinutes: "${Authentication__AccessTokenMinutes:-15}"
+      # Portal emails (ADR-0022): Mailpit captures them locally unless real SMTP settings are given.
+      Smtp__Host: "${Smtp__Host:-mailpit}"
+      Smtp__Port: "${Smtp__Port:-1025}"
+      Smtp__UseTls: "${Smtp__UseTls:-false}"
+      Smtp__Username: "${Smtp__Username:-}"
+      Smtp__Password: "${Smtp__Password:-}"
+      Smtp__FromAddress: "${Smtp__FromAddress:-no-reply@elevant.local}"
+      Smtp__FromName: "${Smtp__FromName:-ELEVANT}"
+      # Paid flight feed (ADR-0028): off by default so local runs never spend units.
+      AeroDataBox__Enabled: "${ELEVANT_AERODATABOX_ENABLED:-false}"
+      AeroDataBox__ApiKey: "${ELEVANT_AERODATABOX_API_KEY}"
+      AeroDataBox__DailyUnitLimit: "${ELEVANT_AERODATABOX_DAILY_UNITS:-1200}"
+      AeroDataBox__MonthlyUnitLimit: "${ELEVANT_AERODATABOX_MONTHLY_UNITS:-38000}"
+      AccountEmail__PublicWebBaseUrl: "${AccountEmail__PublicWebBaseUrl:-http://localhost:3000}"
+      Cors__AllowedOrigins__0: "${CORS_ALLOWED_ORIGIN_0:-http://localhost:5173}"
+      Cors__AllowedOrigins__1: "${CORS_ALLOWED_ORIGIN_1:-http://localhost:3000}"
+      HttpsRedirection__Enabled: "false"
+      Swagger__Enabled: "true"
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    depends_on:
+      seeder-development:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    logging: *rotated-logs
+    networks:
+      - edge
+      - data
+
+  # Local email capture: http://127.0.0.1:8025 shows every email the API sends.
+  mailpit:
+    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    restart: unless-stopped
+    logging: *rotated-logs
+    networks:
+      - edge
+
+volumes:
+  sql-local-data:
+    name: elevant-sql-local-data
+  sql-local-backups:
+    name: elevant-sql-local-backups
+
+networks:
+  edge:
+    name: elevant-local-edge
+  data:
+    name: elevant-local-data
+    internal: true

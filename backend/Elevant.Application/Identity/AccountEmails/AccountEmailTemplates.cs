@@ -1,0 +1,475 @@
+using System.Globalization;
+using System.Net;
+using System.Text;
+using Elevant.Application.Abstractions.Messaging;
+using Elevant.Application.Finance;
+
+namespace Elevant.Application.Identity.AccountEmails;
+
+/// <summary>
+/// Spanish ELEVANT emails for portal accounts, as HTML and plain text (ADR-0022). The HTML uses
+/// the brand palette and the real logo as the inline image <see cref="LogoContentId"/>, which the
+/// SMTP sender attaches; tables and inline styles keep it readable in Gmail and Outlook.
+/// </summary>
+public static class AccountEmailTemplates
+{
+    /// <summary>Content-ID of the inline ELEVANT logo the sender embeds.</summary>
+    public const string LogoContentId = "elevant-logo";
+
+    private const string Navy = "#04142e";
+    private const string Ink = "#081b3a";
+    private const string Orange = "#ff5c00";
+    private const string Blue = "#1757d8";
+    private const string Paper = "#f3f6fa";
+    private const string Muted = "#56677c";
+
+    public static EmailMessage Activation(string to, string name, string airline, string link) => Build(to,
+        subject: "Activa tu cuenta del portal ELEVANT",
+        preheader: $"AVIAM creó tu acceso al portal de aerolíneas para {airline}.",
+        kicker: "Portal de aerolíneas",
+        title: "Bienvenido a ELEVANT",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"AVIAM creó tu cuenta del portal de aerolíneas para {airline}. Desde ahí verás tus contratos, operaciones y facturación.",
+            "Confirma tu correo y crea tu contraseña con el botón."],
+        validity: "El enlace vence en 72 horas y sirve una sola vez",
+        code: null,
+        action: ("Activar mi cuenta", link),
+        security: "Si no esperabas este correo, ignóralo: nadie podrá entrar sin este enlace.");
+
+    /// <summary>
+    /// Subject of every login-code email. The code never goes in the subject: the outbox keeps the
+    /// subject after it clears the body, and a code must not outlive its email (1-N09).
+    /// </summary>
+    public const string LoginCodeSubject = "Tu código de acceso ELEVANT";
+
+    public static EmailMessage LoginCode(string to, string code) => Build(to,
+        subject: LoginCodeSubject,
+        preheader: $"Tu código es {code}. Vence en 10 minutos.",
+        kicker: "Seguridad de tu cuenta",
+        title: "Tu código de acceso",
+        greeting: null,
+        paragraphs: ["Escribe este código en el portal para terminar de iniciar sesión."],
+        validity: "Vence en 10 minutos",
+        code: code,
+        action: null,
+        security: "Si no intentaste entrar, cambia tu contraseña: alguien la conoce. Nunca compartas este código.");
+
+    public static EmailMessage PasswordReset(string to, string link) => Build(to,
+        subject: "Restablece tu contraseña del portal ELEVANT",
+        preheader: "Crea una contraseña nueva para tu cuenta del portal.",
+        kicker: "Seguridad de tu cuenta",
+        title: "Restablece tu contraseña",
+        greeting: null,
+        paragraphs: ["Recibimos una solicitud para cambiar la contraseña de tu cuenta del portal de aerolíneas.",
+            "Al guardarla se cerrarán todas las sesiones abiertas."],
+        validity: "El enlace vence en 30 minutos y sirve una sola vez",
+        code: null,
+        action: ("Crear una contraseña nueva", link),
+        security: "Si no lo pediste, ignora este correo: tu contraseña no cambia.");
+
+    /// <summary>
+    /// Both parties signed and the contract is active; the signed PDF travels attached (ADR-0025). A version
+    /// that starts after <paramref name="today"/> (AVIAM's business day) is signed but not in force yet, and
+    /// the email says from when it is (2-N30).
+    /// </summary>
+    public static EmailMessage ContractActivated(string to, string airline, string contractCode, DateOnly validFrom,
+        DateOnly? validTo, DateOnly today)
+    {
+        var upcoming = validFrom > today;
+        return Build(to,
+            subject: upcoming ? $"Contrato {contractCode} firmado · vigente desde el {Day(validFrom)} · ELEVANT"
+                : $"Contrato {contractCode} activo · ELEVANT",
+            preheader: upcoming ? $"El contrato de {airline} con AVIAM entra en vigor el {Day(validFrom)}."
+                : $"El contrato de {airline} con AVIAM ya está en vigor.",
+            kicker: "Contratos",
+            title: upcoming ? "Tu contrato está firmado" : "Tu contrato está activo",
+            greeting: null,
+            paragraphs: [upcoming
+                    ? $"El contrato {contractCode} entre AVIAM y {airline} quedó firmado por ambas partes y entra en vigor " +
+                      $"el {Day(validFrom)}. Hasta esa fecha AVIAM no atiende vuelos con esta versión."
+                    : $"El contrato {contractCode} entre AVIAM y {airline} quedó firmado por ambas partes y está en vigor.",
+                $"Vigencia: del {Day(validFrom)} " + (validTo is { } end ? $"al {Day(end)}." : "sin fecha de fin."),
+                "Adjuntamos el PDF firmado. También puedes consultarlo en el portal de aerolíneas."],
+            validity: "Documento firmado por ambas partes",
+            code: null,
+            action: null,
+            security: "Guarda este documento: su huella SHA-256 identifica el contenido que firmaron ambas partes.");
+    }
+
+    /// <summary>
+    /// Contratos confirmed the validity of a version: the airline can review and sign it in the portal (2-N13).
+    /// <paramref name="contractInForce"/> tells a renewal or amendment of an active contract from a new one.
+    /// </summary>
+    public static EmailMessage ContractReadyToSign(string to, string airline, string contractCode, int versionNumber,
+        DateOnly validFrom, DateOnly? validTo, bool contractInForce) => Build(to,
+        subject: $"Contrato {contractCode} listo para firmar · ELEVANT",
+        preheader: $"AVIAM confirmó la vigencia del contrato de {airline}: ya puedes firmarlo en el portal.",
+        kicker: "Contratos",
+        title: "Tu contrato está listo para firmar",
+        greeting: null,
+        paragraphs: [$"Contratos de AVIAM confirmó la vigencia de la versión {versionNumber} del contrato {contractCode} con " +
+            $"{airline}: del {Day(validFrom)} " + (validTo is { } end ? $"al {Day(end)}." : "sin fecha de fin."),
+            "Entra al portal de aerolíneas, en «Contratos», para revisar el documento y firmarlo con la firma de la persona autorizada.",
+            contractInForce
+                ? $"La nueva versión rige desde el {Day(validFrom)} cuando ambas partes la firman; hasta entonces sigue vigente la versión actual."
+                : "El contrato se activa cuando ambas partes lo firman y tu permiso de operación (JAC) está verificado y vigente."],
+        validity: "Pendiente de tu firma",
+        code: null,
+        action: null,
+        security: "Firma solo si reconoces el contrato. Si tienes dudas, contacta a Contratos de AVIAM antes de firmar.");
+
+    /// <summary>Contratos rejected a permit of the dossier; the airline reads the note it also sees in the portal (2-N13).</summary>
+    public static EmailMessage PermitRejected(string to, string airline, string permitName, string number, string note) =>
+        Build(to,
+            subject: $"Permiso {number} no verificado · ELEVANT",
+            preheader: $"Contratos de AVIAM revisó el {permitName} {number} de {airline}.",
+            kicker: "Permisos de la aerolínea",
+            title: "Tu permiso no fue verificado",
+            greeting: null,
+            paragraphs: [$"Contratos de AVIAM revisó el {permitName} {number} de {airline} y no lo verificó.",
+                $"Motivo: {note}",
+                "Corrige el dato o el documento y envíalo de nuevo desde el portal de aerolíneas, en «Contratos» › «Permisos de la aerolínea»."],
+            validity: "Revisión de Contratos",
+            code: null,
+            action: null,
+            security: "Si no enviaste este permiso, avisa a AVIAM por los canales de contacto de su sitio.");
+
+    /// <summary>
+    /// Contratos revoked the verification of a permit with a reason (2-N09). The contracts it left without a
+    /// usable operating permit were suspended in the same step and are named.
+    /// </summary>
+    public static EmailMessage PermitRevoked(string to, string airline, string permitName, string number, string reason,
+        IReadOnlyCollection<string> suspendedContracts) => Build(to,
+        subject: $"Verificación del permiso {number} revocada · ELEVANT",
+        preheader: $"Contratos de AVIAM revocó la verificación del {permitName} {number} de {airline}.",
+        kicker: "Permisos de la aerolínea",
+        title: "AVIAM revocó la verificación de tu permiso",
+        greeting: null,
+        paragraphs: [$"Contratos de AVIAM revocó la verificación del {permitName} {number} de {airline}: ya no cuenta como permiso válido.",
+            $"Motivo: {reason}",
+            suspendedContracts.Count > 0
+                ? $"Sin otro permiso de operación verificado y vigente, quedaron suspendidos: {string.Join(", ", suspendedContracts)}. " +
+                  "Se reanudan cuando AVIAM verifique un permiso de operación válido."
+                : "Ningún contrato cambió de estado por esta revocación.",
+            "Envía un documento válido desde el portal de aerolíneas, en «Contratos» › «Permisos de la aerolínea»."],
+        validity: "Revisión de Contratos",
+        code: null,
+        action: null,
+        security: "Si no reconoces este permiso, avisa a AVIAM por los canales de contacto de su sitio.");
+
+    /// <summary>A verified permit expires within the notice days (2-N12); the operating permit keeps the contracts active.</summary>
+    public static EmailMessage PermitExpiring(string to, string airline, string permitName, string number, DateOnly expiresOn,
+        bool operatingPermit) => Build(to,
+        subject: $"Tu permiso {number} vence el {Day(expiresOn)} · ELEVANT",
+        preheader: $"El {permitName} {number} de {airline} vence el {Day(expiresOn)}.",
+        kicker: "Permisos de la aerolínea",
+        title: "Tu permiso está por vencer",
+        greeting: null,
+        paragraphs: [$"El {permitName} {number} de {airline} vence el {Day(expiresOn)}.",
+            operatingPermit
+                ? "Envía el permiso renovado desde el portal antes de esa fecha: sin un permiso de operación verificado y vigente, " +
+                  "tus contratos se suspenden hasta que AVIAM verifique uno nuevo."
+                : "Envía el documento renovado desde el portal para mantener al día el expediente de tu aerolínea.",
+            "Si ya enviaste el documento renovado, AVIAM lo está verificando."],
+        validity: $"Vence el {Day(expiresOn)}",
+        code: null,
+        action: null,
+        security: null);
+
+    /// <summary>
+    /// The contract ends within the notice days its version signed (RenewalNoticeDays, 2-N12): the promise of
+    /// the PDF «AVIAM avisa con N días de antelación».
+    /// </summary>
+    public static EmailMessage ContractExpiring(string to, string airline, string contractCode, DateOnly validTo,
+        int? automaticRenewalMonths) => Build(to,
+        subject: $"Tu contrato {contractCode} vence el {Day(validTo)} · ELEVANT",
+        preheader: $"La vigencia del contrato de {airline} con AVIAM termina el {Day(validTo)}.",
+        kicker: "Contratos",
+        title: "Tu contrato está por vencer",
+        greeting: null,
+        paragraphs: [$"La vigencia del contrato {contractCode} entre AVIAM y {airline} termina el {Day(validTo)}.",
+            automaticRenewalMonths is { } months
+                ? $"Se renueva automáticamente por {months} meses: AVIAM prepara la nueva versión, que necesita la firma de ambas partes antes de esa fecha."
+                : "Si deseas continuar con los servicios, contacta a Contratos de AVIAM para renovarlo antes de esa fecha.",
+            "Después del vencimiento, AVIAM no puede atender vuelos nuevos con este contrato."],
+        validity: $"Vence el {Day(validTo)}",
+        code: null,
+        action: null,
+        security: null);
+
+    /// <summary>
+    /// The contract is suspended (2-N12). A manual suspension never carries the internal reason of Contratos;
+    /// a suspension for the operating permit says how it resumes.
+    /// </summary>
+    public static EmailMessage ContractSuspended(string to, string airline, string contractCode,
+        Commercial.ContractSuspensionCause cause) => Build(to,
+        subject: $"Contrato {contractCode} suspendido · ELEVANT",
+        preheader: $"El contrato de {airline} con AVIAM está suspendido.",
+        kicker: "Contratos",
+        title: "Tu contrato está suspendido",
+        greeting: null,
+        paragraphs: [cause switch
+            {
+                Commercial.ContractSuspensionCause.PermitExpired =>
+                    $"El contrato {contractCode} de {airline} quedó suspendido porque venció su permiso de operación. " +
+                    "Envía el permiso renovado desde el portal: cuando AVIAM lo verifique, el contrato se reanuda solo.",
+                Commercial.ContractSuspensionCause.PermitRevoked =>
+                    $"El contrato {contractCode} de {airline} quedó suspendido porque AVIAM revocó la verificación de su permiso de " +
+                    "operación. Envía un permiso válido desde el portal: cuando AVIAM lo verifique, el contrato se reanuda solo.",
+                _ => $"Contratos de AVIAM suspendió el contrato {contractCode} de {airline}. Se pondrá en contacto contigo para " +
+                     "explicarte el motivo y los pasos para reactivarlo.",
+            },
+            "Mientras esté suspendido, AVIAM no puede planificar ni atender vuelos nuevos con este contrato. " +
+            "Tus operaciones, facturas y pagos siguen disponibles en el portal."],
+        validity: "Contrato suspendido",
+        code: null,
+        action: null,
+        security: null);
+
+    /// <summary>
+    /// A portal user of the airline was invited, deactivated, reactivated or got a role changed (2-N20): the airline's
+    /// representatives learn what changed and who did it. <paramref name="change"/> is a full Spanish sentence.
+    /// </summary>
+    public static EmailMessage PortalUserChanged(string to, string airline, string change, string actor) => Build(to,
+        subject: $"Cambio en los usuarios del portal de {airline} · ELEVANT",
+        preheader: change,
+        kicker: "Portal de aerolíneas",
+        title: "Cambió un usuario del portal",
+        greeting: null,
+        paragraphs: [$"{actor} registró este cambio en los usuarios del portal de aerolíneas de {airline}:", change,
+            "Puedes revisar los usuarios del portal, quién firma y quién tiene acceso en «Perfil» del portal de aerolíneas."],
+        validity: "Aviso a los representantes de la aerolínea",
+        code: null,
+        action: null,
+        security: "Si no reconoces este cambio, contacta a AVIAM: solo los representantes de la aerolínea y AVIAM gestionan sus usuarios.");
+
+    /// <summary>
+    /// The simulated e-CF invoice Finance issued, with its PDF attached (ADR-0035). 4-N23: it states only what the
+    /// issuance fixed (the total, the due date and the confirmed prepayment applied), never a balance: the balance moves
+    /// with payments and notes, and the airline reads it in its portal.
+    /// </summary>
+    public static EmailMessage InvoiceIssued(string to, string airline, string fiscalNumber, string currency, decimal total,
+        decimal prepaidApplied, DateOnly? dueDate) => Build(to,
+        subject: $"Factura {fiscalNumber} de AVIAM · ELEVANT",
+        preheader: $"AVIAM emitió la factura {fiscalNumber} a {airline}.",
+        kicker: "Facturación",
+        title: "AVIAM emitió una factura",
+        greeting: null,
+        paragraphs: [
+            $"AVIAM emitió la factura {fiscalNumber} a {airline} por {currency} {Money(total)}" +
+                (dueDate is { } due ? $", con vencimiento el {Day(due)}." : "."),
+            .. prepaidApplied > 0
+                ? new[] { $"Al emitirla se aplicó el prepago confirmado por {currency} {Money(prepaidApplied)}." }
+                : Array.Empty<string>(),
+            "Consulta el saldo vigente y las formas de pago en el portal de aerolíneas.",
+            "Adjuntamos el PDF. Es una simulación de e-CF sin validez fiscal."],
+        validity: FinanceInvoicePolicy.Disclaimer,
+        code: null,
+        action: null,
+        security: "Si no reconoces esta factura, contacta a Finanzas de AVIAM antes de pagar.");
+
+    /// <summary>
+    /// 4-N23: Finance issued a credit or debit note on an invoice of the airline, with the note's PDF attached. Like the
+    /// invoice email it never states a balance.
+    /// </summary>
+    public static EmailMessage AdjustmentNoteIssued(string to, string airline, string noteNumber, bool isCredit,
+        string invoiceLabel, string currency, decimal amount) => Build(to,
+        subject: $"Nota de {(isCredit ? "crédito" : "débito")} {noteNumber} · factura {invoiceLabel} · ELEVANT",
+        preheader: $"AVIAM emitió la nota de {(isCredit ? "crédito" : "débito")} {noteNumber} sobre la factura {invoiceLabel}.",
+        kicker: "Facturación",
+        title: isCredit ? "AVIAM emitió una nota de crédito" : "AVIAM emitió una nota de débito",
+        greeting: null,
+        paragraphs: [
+            $"AVIAM emitió a {airline} la nota de {(isCredit ? "crédito" : "débito")} {noteNumber} por {currency} {Money(amount)}, que modifica la factura {invoiceLabel}.",
+            isCredit ? "La nota reduce lo que se debe de esa factura." : "La nota aumenta lo que se debe de esa factura.",
+            "Consulta el saldo vigente y las formas de pago en el portal de aerolíneas.",
+            "Adjuntamos el PDF de la nota. Es una simulación de e-CF sin validez fiscal."],
+        validity: FinanceInvoicePolicy.Disclaimer,
+        code: null,
+        action: null,
+        security: "Si no reconoces esta nota, contacta a Finanzas de AVIAM.");
+
+    /// <summary>
+    /// 4-N23: the one notice of an invoice that passed its due date with a balance, with the invoice's PDF attached. It
+    /// names no amount, which may change before the email goes out.
+    /// </summary>
+    public static EmailMessage InvoiceOverdue(string to, string airline, string invoiceLabel, DateOnly dueDate) => Build(to,
+        subject: $"Factura {invoiceLabel} vencida · ELEVANT",
+        preheader: $"La factura {invoiceLabel} de {airline} venció el {Day(dueDate)}.",
+        kicker: "Facturación",
+        title: "Tienes una factura vencida",
+        greeting: null,
+        paragraphs: [
+            $"La factura {invoiceLabel} que AVIAM emitió a {airline} venció el {Day(dueDate)} y no estaba saldada al cierre de ese día.",
+            "Consulta el saldo vigente y las formas de pago en el portal de aerolíneas. Si ya la pagaste, ignora este aviso.",
+            "Adjuntamos el PDF de la factura. Es una simulación de e-CF sin validez fiscal."],
+        validity: FinanceInvoicePolicy.Disclaimer,
+        code: null,
+        action: null,
+        security: "Si no reconoces esta factura, contacta a Finanzas de AVIAM antes de pagar.");
+
+    /// <summary>ADR-0036: the approved simulated card payment; only the brand and last four digits are shown.</summary>
+    public static EmailMessage PaymentReceived(string to, string airline, string invoice, string currency, decimal amount,
+        string brand, string last4, string authorizationCode) => Build(to,
+        subject: $"Pago recibido · factura {invoice} · ELEVANT",
+        preheader: $"Recibimos el pago de la factura {invoice}.",
+        kicker: "Facturación",
+        title: "Pago recibido",
+        greeting: null,
+        paragraphs: [$"Recibimos el pago de {airline} por {currency} {amount.ToString("N2", CultureInfo.InvariantCulture)} de la factura {invoice}.",
+            $"Tarjeta {brand} terminada en {last4} · autorización {authorizationCode}.",
+            "Adjuntamos el recibo. Es un pago simulado: no se movió dinero real."],
+        validity: "Simulación — sin validez fiscal",
+        code: null,
+        action: null,
+        security: "Si no reconoces este pago, contacta a Finanzas de AVIAM.");
+
+    /// <summary>Contratos approved the public request; the contract and the portal access follow (1-N02).</summary>
+    public static EmailMessage CommercialRequestApproved(string to, string name, string airline, string reference) => Build(to,
+        subject: "Tu solicitud de servicios a AVIAM fue aprobada · ELEVANT",
+        preheader: $"AVIAM aprobó la solicitud de servicios de {airline}.",
+        kicker: "Solicitud de servicios",
+        title: "Solicitud aprobada",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"Contratos de AVIAM aprobó la solicitud de servicios de rampa de {airline} (referencia {reference}).",
+            "AVIAM preparará el borrador del contrato y el acceso de tu aerolínea al portal. Te escribiremos a este correo con el siguiente paso."],
+        validity: "Decisión de Contratos",
+        code: null,
+        action: null,
+        security: "Si no presentaste esta solicitud, avisa a AVIAM respondiendo por los canales de contacto de su sitio.");
+
+    /// <summary>Contratos rejected the public request; the applicant learns why (1-N02).</summary>
+    public static EmailMessage CommercialRequestRejected(string to, string name, string airline, string reference,
+        string reason) => Build(to,
+        subject: "Tu solicitud de servicios a AVIAM no fue aprobada · ELEVANT",
+        preheader: $"Contratos revisó la solicitud de servicios de {airline}.",
+        kicker: "Solicitud de servicios",
+        title: "Solicitud no aprobada",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"Contratos de AVIAM revisó la solicitud de servicios de {airline} (referencia {reference}) y no la aprobó.",
+            $"Motivo: {reason}",
+            "Si corresponde, puedes enviar una solicitud nueva con los datos corregidos desde el sitio de AVIAM."],
+        validity: "Decisión de Contratos",
+        code: null,
+        action: null,
+        security: "Si no presentaste esta solicitud, ignora este correo.");
+
+    /// <summary>Contratos cancelled the public request, for example a duplicate one (1-A, 1-N02).</summary>
+    public static EmailMessage CommercialRequestCancelled(string to, string name, string airline, string reference,
+        string reason) => Build(to,
+        subject: "Tu solicitud de servicios a AVIAM fue cancelada · ELEVANT",
+        preheader: $"Contratos canceló la solicitud de servicios de {airline}.",
+        kicker: "Solicitud de servicios",
+        title: "Solicitud cancelada",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"Contratos de AVIAM canceló la solicitud de servicios de {airline} (referencia {reference}).",
+            $"Motivo: {reason}",
+            "Si aún necesitas los servicios, puedes enviar una solicitud nueva desde el sitio de AVIAM."],
+        validity: "Cancelada por Contratos",
+        code: null,
+        action: null,
+        security: "Si no presentaste esta solicitud, ignora este correo.");
+
+    public static EmailMessage Test(string to, DateTimeOffset? sentAt = null) => Build(to,
+        subject: "Prueba de correo ELEVANT",
+        preheader: "El remitente no-reply de ELEVANT funciona.",
+        kicker: "Correo del sistema",
+        title: "Prueba de envío correcta",
+        greeting: null,
+        paragraphs: ["Este correo confirma que el servidor de ELEVANT puede enviar mensajes desde la cuenta no-reply.",
+            sentAt is { } at ? $"Solicitado el {at.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)} UTC." : "No hace falta responder."],
+        validity: "Remitente verificado",
+        code: null,
+        action: null,
+        security: null);
+
+    private static EmailMessage Build(string to, string subject, string preheader, string kicker, string title,
+        string? greeting, string[] paragraphs, string validity, string? code, (string Label, string Url)? action,
+        string? security)
+    {
+        var html = new StringBuilder();
+        html.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">")
+            .Append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
+            .Append("<meta name=\"color-scheme\" content=\"light\"><meta name=\"supported-color-schemes\" content=\"light\">")
+            .Append($"<title>{Encode(subject)}</title></head>")
+            .Append($"<body style=\"margin:0;padding:0;background:{Paper};font-family:'Segoe UI',Roboto,Arial,sans-serif;color:{Ink}\">")
+            // Inbox preview text, hidden in the message itself.
+            .Append($"<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:{Paper}\">{Encode(preheader)}</div>")
+            .Append($"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{Paper}\"><tr><td align=\"center\" style=\"padding:28px 12px\">")
+            .Append("<table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(4,20,46,.08)\">");
+
+        // Header: real logo and the brand stripe of the contract PDF.
+        html.Append("<tr><td align=\"center\" style=\"padding:26px 24px 18px;background:#ffffff\">")
+            .Append($"<img src=\"cid:{LogoContentId}\" width=\"150\" alt=\"ELEVANT\" style=\"display:block;width:150px;max-width:150px;height:auto;border:0\">")
+            .Append("</td></tr>")
+            .Append("<tr><td style=\"padding:0;font-size:0;line-height:0\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr>")
+            .Append($"<td width=\"34%\" style=\"height:5px;background:{Orange};font-size:0;line-height:0\">&nbsp;</td>")
+            .Append($"<td style=\"height:5px;background:{Navy};font-size:0;line-height:0\">&nbsp;</td>")
+            .Append("</tr></table></td></tr>");
+
+        // Hero.
+        html.Append($"<tr><td style=\"background:{Navy};padding:30px 36px 32px\">")
+            .Append($"<p style=\"margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:{Orange}\">{Encode(kicker)}</p>")
+            .Append($"<h1 style=\"margin:0;font-size:28px;line-height:1.2;font-weight:800;color:#ffffff\">{Encode(title)}</h1>")
+            .Append("</td></tr>");
+
+        // Body.
+        html.Append("<tr><td style=\"padding:32px 36px 8px\">");
+        if (greeting is not null)
+            html.Append($"<p style=\"margin:0 0 14px;font-size:17px;font-weight:700;color:{Ink}\">{Encode(greeting)}</p>");
+        foreach (var paragraph in paragraphs)
+            html.Append($"<p style=\"margin:0 0 14px;font-size:15px;line-height:1.6;color:#2a3a52\">{Encode(paragraph)}</p>");
+
+        if (code is not null)
+        {
+            html.Append("<table role=\"presentation\" align=\"center\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:22px auto 10px\"><tr>");
+            foreach (var digit in code)
+                html.Append($"<td style=\"padding:0 4px\"><div style=\"width:46px;height:58px;line-height:58px;text-align:center;font-family:'Consolas','Courier New',monospace;font-size:30px;font-weight:800;color:{Navy};background:#eef4ff;border:2px solid {Blue};border-radius:10px\">{Encode(digit.ToString())}</div></td>");
+            html.Append("</tr></table>");
+        }
+
+        html.Append($"<p style=\"margin:16px 0 4px;text-align:{(code is null ? "left" : "center")}\"><span style=\"display:inline-block;padding:6px 12px;border-radius:999px;background:#fff1e9;color:#b54200;font-size:12px;font-weight:700\">&#9201; {Encode(validity)}</span></p>");
+
+        if (action is { } button)
+        {
+            html.Append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0 8px\"><tr>")
+                .Append($"<td align=\"center\" bgcolor=\"{Orange}\" style=\"border-radius:10px;background:{Orange}\">")
+                .Append($"<a href=\"{Encode(button.Url)}\" style=\"display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px\">{Encode(button.Label)} &rarr;</a>")
+                .Append("</td></tr></table>")
+                .Append($"<p style=\"margin:8px 0 0;font-size:12px;line-height:1.5;color:{Muted}\">¿El botón no funciona? Copia este enlace en el navegador:<br>")
+                .Append($"<a href=\"{Encode(button.Url)}\" style=\"color:{Blue};word-break:break-all\">{Encode(button.Url)}</a></p>");
+        }
+
+        if (security is not null)
+            html.Append($"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0 8px\"><tr><td style=\"padding:12px 16px;background:{Paper};border-left:4px solid {Orange};border-radius:6px;font-size:13px;line-height:1.5;color:#2a3a52\">&#128274; {Encode(security)}</td></tr></table>");
+        html.Append("</td></tr>");
+
+        // Footer.
+        html.Append($"<tr><td style=\"padding:24px 36px 28px;background:{Navy};border-top:4px solid {Orange}\">")
+            .Append("<p style=\"margin:0 0 6px;font-size:13px;font-weight:800;letter-spacing:.2em;color:#ffffff\">ELEV<span style=\"color:" + Orange + "\">A</span>NT</p>")
+            .Append("<p style=\"margin:0 0 12px;font-size:12px;color:#aebbd0\">Elevando la gestión de operaciones en tierra.</p>")
+            .Append("<p style=\"margin:0;font-size:11px;line-height:1.5;color:#7f90aa\">Correo automático de ELEVANT · AVIAM. No respondas a este mensaje.</p>")
+            .Append("</td></tr>");
+
+        html.Append("</table></td></tr></table></body></html>");
+
+        var text = new StringBuilder();
+        text.AppendLine($"ELEVANT · {kicker}").AppendLine().AppendLine(title).AppendLine();
+        if (greeting is not null) text.AppendLine(greeting).AppendLine();
+        foreach (var paragraph in paragraphs) text.AppendLine(paragraph).AppendLine();
+        // The code stays alone on its own line so it can be copied (and found) easily.
+        if (code is not null) text.AppendLine(code).AppendLine();
+        text.AppendLine(validity + ".").AppendLine();
+        if (action is { } link) text.AppendLine($"{link.Label}: {link.Url}").AppendLine();
+        if (security is not null) text.AppendLine(security).AppendLine();
+        text.AppendLine("Correo automático de ELEVANT · AVIAM. No respondas a este mensaje.");
+        return new EmailMessage(to, subject, html.ToString(), text.ToString());
+    }
+
+    private static string Encode(string value) => WebUtility.HtmlEncode(value);
+
+    private static string Day(DateOnly day) => day.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+
+    private static string Money(decimal amount) => amount.ToString("N2", CultureInfo.InvariantCulture);
+
+}

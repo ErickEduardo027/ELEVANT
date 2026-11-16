@@ -1,0 +1,373 @@
+{
+  "nodes": [
+    {
+      "id": "c200000000000001",
+      "type": "group",
+      "label": "01 · MEMORIA — qué cambió y qué no sabemos",
+      "x": -1760,
+      "y": -540,
+      "width": 680,
+      "height": 1420,
+      "color": "1"
+    },
+    {
+      "id": "c200000000000002",
+      "type": "group",
+      "label": "02 · PRODUCTO — para quién y para qué",
+      "x": -1020,
+      "y": -540,
+      "width": 680,
+      "height": 1420,
+      "color": "6"
+    },
+    {
+      "id": "c200000000000003",
+      "type": "group",
+      "label": "03 · DOMINIO — lenguaje y reglas",
+      "x": -280,
+      "y": -540,
+      "width": 680,
+      "height": 1420,
+      "color": "4"
+    },
+    {
+      "id": "c200000000000004",
+      "type": "group",
+      "label": "04 · EVIDENCIA — cómo comprobar",
+      "x": 460,
+      "y": -540,
+      "width": 680,
+      "height": 1420,
+      "color": "2"
+    },
+    {
+      "id": "c200000000000005",
+      "type": "text",
+      "text": "# ELEVANT · Cerebro de producto\n\nHistoria observable → intención de producto → modelo de dominio → evidencia reproducible\n\nAbre cualquier tarjeta para profundizar. Las líneas conectan significado; no sustituyen el estado ni los contratos ejecutables.",
+      "x": -1760,
+      "y": -880,
+      "width": 2900,
+      "height": 220,
+      "color": "5"
+    },
+    {
+      "id": "c200000000000006",
+      "type": "file",
+      "file": "Vault/01-historia/README.md",
+      "x": -1660,
+      "y": -400,
+      "width": 480,
+      "height": 240,
+      "color": "1"
+    },
+    {
+      "id": "c200000000000007",
+      "type": "file",
+      "file": "Vault/01-historia/cronologia-versionada.md",
+      "x": -1660,
+      "y": -80,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c200000000000008",
+      "type": "file",
+      "file": "Vault/01-historia/origenes-y-limites-de-evidencia.md",
+      "x": -1660,
+      "y": 250,
+      "width": 480,
+      "height": 240,
+      "color": "3"
+    },
+    {
+      "id": "c200000000000009",
+      "type": "file",
+      "file": "Vault/01-historia/prototipos-y-convergencia.md",
+      "x": -1660,
+      "y": 580,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c20000000000000a",
+      "type": "file",
+      "file": "Vault/02-producto/README.md",
+      "x": -920,
+      "y": -400,
+      "width": 480,
+      "height": 240,
+      "color": "6"
+    },
+    {
+      "id": "c20000000000000b",
+      "type": "file",
+      "file": "Vault/02-producto/vision-y-problema.md",
+      "x": -920,
+      "y": -80,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c20000000000000c",
+      "type": "file",
+      "file": "Vault/02-producto/recorridos-end-to-end.md",
+      "x": -920,
+      "y": 250,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c20000000000000d",
+      "type": "file",
+      "file": "Vault/02-producto/mapa-de-capacidades.md",
+      "x": -920,
+      "y": 580,
+      "width": 480,
+      "height": 240,
+      "color": "3"
+    },
+    {
+      "id": "c20000000000000e",
+      "type": "file",
+      "file": "Vault/03-dominio/README.md",
+      "x": -180,
+      "y": -400,
+      "width": 480,
+      "height": 240,
+      "color": "4"
+    },
+    {
+      "id": "c20000000000000f",
+      "type": "file",
+      "file": "Vault/03-dominio/glosario-canonico.md",
+      "x": -180,
+      "y": -80,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c200000000000010",
+      "type": "file",
+      "file": "Vault/03-dominio/contextos-y-limites.md",
+      "x": -180,
+      "y": 250,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c200000000000011",
+      "type": "file",
+      "file": "Vault/03-dominio/turnaround-y-operacion.md",
+      "x": -180,
+      "y": 580,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c200000000000012",
+      "type": "file",
+      "file": "Vault/diagrams/producto-dominio-historia.md",
+      "x": 560,
+      "y": -400,
+      "width": 480,
+      "height": 240,
+      "color": "2"
+    },
+    {
+      "id": "c200000000000013",
+      "type": "file",
+      "file": "Vault/08-gobernanza/fuentes-y-evidencia.md",
+      "x": 560,
+      "y": -80,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c200000000000014",
+      "type": "file",
+      "file": "Vault/00-inicio/estado-inicial.md",
+      "x": 560,
+      "y": 250,
+      "width": 480,
+      "height": 240
+    },
+    {
+      "id": "c200000000000015",
+      "type": "file",
+      "file": "Vault/diagrams/producto-dominio-historia.base",
+      "x": 560,
+      "y": 580,
+      "width": 480,
+      "height": 240,
+      "color": "5"
+    }
+  ],
+  "edges": [
+    {
+      "id": "c2e0000000000001",
+      "fromNode": "c200000000000005",
+      "fromSide": "bottom",
+      "toNode": "c200000000000006",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "c2e0000000000002",
+      "fromNode": "c200000000000005",
+      "fromSide": "bottom",
+      "toNode": "c20000000000000a",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "c2e0000000000003",
+      "fromNode": "c200000000000005",
+      "fromSide": "bottom",
+      "toNode": "c20000000000000e",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "c2e0000000000004",
+      "fromNode": "c200000000000005",
+      "fromSide": "bottom",
+      "toNode": "c200000000000012",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "c2e0000000000005",
+      "fromNode": "c200000000000006",
+      "fromSide": "bottom",
+      "toNode": "c200000000000007",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "ordena"
+    },
+    {
+      "id": "c2e0000000000006",
+      "fromNode": "c200000000000007",
+      "fromSide": "bottom",
+      "toNode": "c200000000000008",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "declara límites"
+    },
+    {
+      "id": "c2e0000000000007",
+      "fromNode": "c200000000000008",
+      "fromSide": "bottom",
+      "toNode": "c200000000000009",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "c2e0000000000008",
+      "fromNode": "c20000000000000a",
+      "fromSide": "bottom",
+      "toNode": "c20000000000000b",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "propósito"
+    },
+    {
+      "id": "c2e0000000000009",
+      "fromNode": "c20000000000000b",
+      "fromSide": "bottom",
+      "toNode": "c20000000000000c",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "se recorre"
+    },
+    {
+      "id": "c2e000000000000a",
+      "fromNode": "c20000000000000c",
+      "fromSide": "bottom",
+      "toNode": "c20000000000000d",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "mide cobertura"
+    },
+    {
+      "id": "c2e000000000000b",
+      "fromNode": "c20000000000000e",
+      "fromSide": "bottom",
+      "toNode": "c20000000000000f",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "define términos"
+    },
+    {
+      "id": "c2e000000000000c",
+      "fromNode": "c20000000000000f",
+      "fromSide": "bottom",
+      "toNode": "c200000000000010",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "separa contextos"
+    },
+    {
+      "id": "c2e000000000000d",
+      "fromNode": "c200000000000010",
+      "fromSide": "bottom",
+      "toNode": "c200000000000011",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "aterriza operación"
+    },
+    {
+      "id": "c2e000000000000e",
+      "fromNode": "c200000000000012",
+      "fromSide": "bottom",
+      "toNode": "c200000000000013",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "aplica política"
+    },
+    {
+      "id": "c2e000000000000f",
+      "fromNode": "c200000000000013",
+      "fromSide": "bottom",
+      "toNode": "c200000000000014",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "contrasta estado"
+    },
+    {
+      "id": "c2e0000000000010",
+      "fromNode": "c200000000000014",
+      "fromSide": "bottom",
+      "toNode": "c200000000000015",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "consulta"
+    },
+    {
+      "id": "c2e0000000000011",
+      "fromNode": "c200000000000007",
+      "fromSide": "right",
+      "toNode": "c20000000000000b",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "contextualiza"
+    },
+    {
+      "id": "c2e0000000000012",
+      "fromNode": "c20000000000000c",
+      "fromSide": "right",
+      "toNode": "c200000000000011",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "usa el modelo"
+    },
+    {
+      "id": "c2e0000000000014",
+      "fromNode": "c200000000000010",
+      "fromSide": "right",
+      "toNode": "c200000000000013",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "cita fuentes"
+    }
+  ]
+}

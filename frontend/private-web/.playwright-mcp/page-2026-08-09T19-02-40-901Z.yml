@@ -1,0 +1,361 @@
+- generic [ref=f6e3]:
+  - complementary [ref=f6e4]:
+    - generic [ref=f6e5]:
+      - generic [ref=f6e6]:
+        - generic [ref=f6e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=f6e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=f6e12]:
+        - link "Dashboard" [ref=f6e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=f6e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=f6e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=f6e34]: Habilitaciones y certificaciones
+          - generic [ref=f6e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=f6e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=f6e43]: Carnets y permisos aeroportuarios
+          - generic [ref=f6e44]: "2"
+        - link "Horarios y disponibilidad" [ref=f6e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=f6e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=f6e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=f6e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=f6e68]: Notificaciones
+          - generic [ref=f6e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=f6e72] [cursor=pointer]:
+        - generic [ref=f6e73]: CR
+        - generic [ref=f6e74]:
+          - generic [ref=f6e75]: Camila Reyes
+          - generic [ref=f6e76]: Gestión Humana
+  - generic [ref=f6e77]:
+    - banner [ref=f6e78]:
+      - generic [ref=f6e79]: Gestión Humana
+      - generic [ref=f6e80]:
+        - button "Notificaciones" [ref=f6e81] [cursor=pointer]:
+          - generic [ref=f6e85]: "4"
+        - button "Cambiar a modo claro" [ref=f6e86] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=f6e91] [cursor=pointer]:
+          - generic [ref=f6e92]: CR
+          - generic [ref=f6e93]: Camila Reyes
+    - main [ref=f6e94]:
+      - generic [ref=f6e95]:
+        - generic [ref=f6e96]:
+          - generic [ref=f6e97]:
+            - heading "Gestión de usuarios y cuentas" [level=1] [ref=f6e98]
+            - paragraph [ref=f6e99]: Administra las cuentas, roles y accesos de los usuarios de ELEVANT.
+          - generic [ref=f6e100]:
+            - button "Actualizar" [ref=f6e101] [cursor=pointer]
+            - button "Crear usuario" [ref=f6e107] [cursor=pointer]
+        - generic [ref=f6e110]:
+          - generic [ref=f6e111]:
+            - generic [ref=f6e257]: Usuarios activos
+            - generic [ref=f6e264]: "11"
+          - generic [ref=f6e112]:
+            - generic [ref=f6e265]: Cuentas pendientes de activación
+            - generic [ref=f6e270]: "3"
+          - generic [ref=f6e113]:
+            - generic [ref=f6e271]: Cuentas deshabilitadas
+            - generic [ref=f6e276]: "3"
+          - generic [ref=f6e114]:
+            - generic [ref=f6e277]: Usuarios por portal
+            - list [ref=f6e283]:
+              - 'listitem "Back-office: 10" [ref=f6e284]':
+                - generic [ref=f6e285]:
+                  - generic [ref=f6e286]: Back-office
+                  - generic [ref=f6e287]: "10"
+              - 'listitem "Aplicación móvil de Agente: 4" [ref=f6e290]':
+                - generic [ref=f6e291]:
+                  - generic [ref=f6e292]: Aplicación móvil de Agente
+                  - generic [ref=f6e293]: "4"
+              - 'listitem "Portal de Aerolínea: 3" [ref=f6e296]':
+                - generic [ref=f6e297]:
+                  - generic [ref=f6e298]: Portal de Aerolínea
+                  - generic [ref=f6e299]: "3"
+        - generic [ref=f6e115]:
+          - searchbox "Buscar usuarios" [ref=f6e117]
+          - combobox "Tipo de usuario" [ref=f6e118]:
+            - option "Tipo de usuario"
+            - option "Administrador/OCC"
+            - option "Contratos"
+            - option "Finanzas"
+            - option "Gestión Humana"
+            - option "Agente de Rampa" [selected]
+            - option "Cliente / Aerolínea"
+          - combobox "Portal" [ref=f6e119]:
+            - option "Portal" [selected]
+            - option "Back-office"
+            - option "Aplicación móvil de Agente"
+            - option "Portal de Aerolínea"
+          - combobox "Estado" [ref=f6e120]:
+            - option "Estado" [selected]
+            - option "Activa"
+            - option "Pendiente de activación"
+            - option "Invitación enviada"
+            - option "Deshabilitada"
+            - option "Bloqueada"
+          - combobox "Rol" [ref=f6e302]:
+            - option "Rol" [selected]
+            - option "Administrador OCC"
+            - option "Analista OCC"
+            - option "Gestor de Contratos"
+            - option "Analista de Finanzas"
+            - option "Generalista de Gestión Humana"
+            - option "Administrador de Gestión Humana"
+            - option "Agente de Rampa"
+            - option "Usuario de Aerolínea"
+          - combobox "Terminal" [ref=f6e303]:
+            - option "Terminal" [selected]
+            - option "Terminal A"
+            - option "Terminal B"
+          - combobox "Aerolínea" [ref=f6e304]:
+            - option "Aerolínea" [selected]
+            - option "American Airlines"
+            - option "Copa Airlines"
+            - option "LATAM Airlines"
+          - combobox "Departamento" [ref=f6e305]:
+            - option "Departamento" [selected]
+            - option "Operaciones OCC"
+            - option "Contratos"
+            - option "Finanzas"
+            - option "Gestión Humana"
+          - button "Limpiar filtros" [ref=f6e121] [cursor=pointer]
+        - table [ref=f6e126]:
+          - rowgroup [ref=f6e127]:
+            - row [ref=f6e128]:
+              - columnheader [ref=f6e129]:
+                - checkbox "Seleccionar todas las filas visibles" [ref=f6e130]
+              - columnheader "Usuario" [ref=f6e131]
+              - columnheader "Identificación" [ref=f6e132]
+              - columnheader "Tipo de usuario" [ref=f6e133]
+              - columnheader "Portal" [ref=f6e134]
+              - columnheader "Rol" [ref=f6e135]
+              - columnheader "Estación / depto. / aerolínea" [ref=f6e136]
+              - columnheader "Estado" [ref=f6e137]
+              - columnheader "Fecha de creación" [ref=f6e138]
+              - columnheader "Último acceso" [ref=f6e139]
+              - columnheader "Acciones" [ref=f6e140]
+          - rowgroup [ref=f6e141]:
+            - row [ref=f6e595] [cursor=pointer]:
+              - cell [ref=f6e596]:
+                - checkbox "Seleccionar fila" [ref=f6e597]
+              - cell [ref=f6e598]:
+                - generic [ref=f6e599]:
+                  - generic [ref=f6e600]: KA
+                  - generic [ref=f6e601]:
+                    - paragraph [ref=f6e602]: Kevin Alexander Díaz
+                    - paragraph [ref=f6e603]: kevin.diaz@elevant.com
+              - cell "001-1234567-11" [ref=f6e604]
+              - cell "Agente de Rampa" [ref=f6e605]
+              - cell "Aplicación móvil de Agente" [ref=f6e606]
+              - cell "Agente de Rampa" [ref=f6e607]
+              - cell "Terminal A" [ref=f6e609]
+              - cell "Activa" [ref=f6e610]
+              - cell "01 oct de 2024" [ref=f6e613]
+              - cell "Hoy" [ref=f6e614]
+              - cell [ref=f6e615]:
+                - button "Acciones para Kevin Alexander Díaz" [ref=f6e618]
+            - row [ref=f6e623] [cursor=pointer]:
+              - cell [ref=f6e624]:
+                - checkbox "Seleccionar fila" [ref=f6e625]
+              - cell [ref=f6e626]:
+                - generic [ref=f6e627]:
+                  - generic [ref=f6e628]: RE
+                  - generic [ref=f6e629]:
+                    - paragraph [ref=f6e630]: Rosa Elena Guzmán
+                    - paragraph [ref=f6e631]: rosa.guzman@elevant.com
+              - cell "001-1234567-12" [ref=f6e632]
+              - cell "Agente de Rampa" [ref=f6e633]
+              - cell "Aplicación móvil de Agente" [ref=f6e634]
+              - cell "Agente de Rampa" [ref=f6e635]
+              - cell "Terminal B" [ref=f6e637]
+              - cell "Activa" [ref=f6e638]
+              - cell "18 feb de 2025" [ref=f6e641]
+              - cell "Hoy" [ref=f6e642]
+              - cell [ref=f6e643]:
+                - button "Acciones para Rosa Elena Guzmán" [ref=f6e646]
+            - row [ref=f6e651] [cursor=pointer]:
+              - cell [ref=f6e652]:
+                - checkbox "Seleccionar fila" [ref=f6e653]
+              - cell [ref=f6e654]:
+                - generic [ref=f6e655]:
+                  - generic [ref=f6e656]: FO
+                  - generic [ref=f6e657]:
+                    - paragraph [ref=f6e658]: Franklin Ortiz
+                    - paragraph [ref=f6e659]: franklin.ortiz@elevant.com
+              - cell "001-1234567-13" [ref=f6e660]
+              - cell "Agente de Rampa" [ref=f6e661]
+              - cell "Aplicación móvil de Agente" [ref=f6e662]
+              - cell "Agente de Rampa" [ref=f6e663]
+              - cell "Terminal A/B" [ref=f6e665]
+              - cell "Pendiente de activación" [ref=f6e666]
+              - cell "01 ago de 2026" [ref=f6e669]
+              - cell "Nunca" [ref=f6e670]
+              - cell [ref=f6e671]:
+                - button "Acciones para Franklin Ortiz" [ref=f6e674]
+            - row [ref=f6e679] [cursor=pointer]:
+              - cell [ref=f6e680]:
+                - checkbox "Seleccionar fila" [ref=f6e681]
+              - cell [ref=f6e682]:
+                - generic [ref=f6e683]:
+                  - generic [ref=f6e684]: YS
+                  - generic [ref=f6e685]:
+                    - paragraph [ref=f6e686]: Yeimy Santana
+                    - paragraph [ref=f6e687]: yeimy.santana@elevant.com
+              - cell "001-1234567-14" [ref=f6e688]
+              - cell "Agente de Rampa" [ref=f6e689]
+              - cell "Aplicación móvil de Agente" [ref=f6e690]
+              - cell "Agente de Rampa" [ref=f6e691]
+              - cell "Terminal A" [ref=f6e693]
+              - cell "Bloqueada" [ref=f6e694]
+              - cell "12 ene de 2025" [ref=f6e697]
+              - cell "Hace 38 días" [ref=f6e698]
+              - cell [ref=f6e699]:
+                - button "Acciones para Yeimy Santana" [ref=f6e702]
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Crear usuario
+                - paragraph: "Paso 1: seleccione el tipo de usuario para adaptar el formulario."
+              - button
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=3]: Tipo de usuario / rol
+                  - generic:
+                    - button [pressed]: Administrador/OCC
+                    - button: Contratos
+                    - button: Finanzas
+                    - button: Gestión Humana
+                    - button: Agente de Rampa
+                    - button: Cliente / Aerolínea
+                - generic:
+                  - heading [level=3]: Datos generales
+                  - generic:
+                    - generic:
+                      - generic:
+                        - text: Nombre
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic:
+                        - text: Apellido
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic:
+                        - text: Correo electrónico
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic: Teléfono
+                      - textbox
+                    - generic:
+                      - generic: Tipo de identificación
+                      - combobox
+                    - generic:
+                      - generic: Número de identificación
+                      - textbox
+                    - generic:
+                      - generic: URL de foto de perfil (opcional)
+                      - textbox
+                      - generic: Se usará como avatar cuando exista almacenamiento de archivos en el backend.
+                - generic:
+                  - heading [level=3]: Back-office
+                  - generic:
+                    - generic:
+                      - generic:
+                        - text: Departamento
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic:
+                        - text: Cargo
+                        - generic: "*"
+                      - textbox
+                    - generic:
+                      - generic: Nivel de acceso (si aplica)
+                      - textbox
+                - generic:
+                  - heading [level=3]: Roles y permisos
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - text: Rol
+                          - generic: "*"
+                        - combobox
+                      - generic:
+                        - generic: Portal
+                        - textbox [disabled]: —
+                    - generic:
+                      - paragraph: Permisos heredados del rol
+                      - generic:
+                        - paragraph: Seleccione un rol para ver sus permisos.
+                - generic:
+                  - heading [level=3]: Acceso y credenciales
+                  - generic:
+                    - generic:
+                      - paragraph: Enviar invitación por correo
+                    - paragraph: El usuario establecerá su contraseña mediante el proceso seguro de activación. ELEVANT no solicita ni almacena contraseñas desde este formulario.
+                    - generic:
+                      - generic: Portal de acceso
+                      - generic: —
+            - generic:
+              - generic:
+                - button: Cancelar
+                - button [disabled]: Crear usuario
+        - dialog "Franklin Ortiz" [ref=f6e709]:
+          - generic [ref=f6e710]:
+            - generic [ref=f6e711]:
+              - heading "Franklin Ortiz" [level=2] [ref=f6e712]
+              - paragraph [ref=f6e713]: franklin.ortiz@elevant.com
+            - button "Cerrar" [ref=f6e714] [cursor=pointer]
+          - generic [ref=f6e717]:
+            - generic [ref=f6e718]:
+              - generic [ref=f6e719]: FO
+              - generic [ref=f6e720]:
+                - generic [ref=f6e721]:
+                  - generic [ref=f6e722]: Pendiente de activación
+                  - generic [ref=f6e724]: Agente de Rampa
+                - paragraph [ref=f6e725]: Agente de Rampa · Aplicación móvil de Agente
+            - tablist [ref=f6e726]:
+              - tab "Información general" [selected] [ref=f6e727] [cursor=pointer]
+              - tab "Roles y permisos" [ref=f6e728] [cursor=pointer]
+              - tab "Acceso" [ref=f6e729] [cursor=pointer]
+              - tab "Actividad" [ref=f6e730] [cursor=pointer]
+              - tab "Habilitaciones" [ref=f6e731] [cursor=pointer]
+            - generic [ref=f6e733]:
+              - heading "Información general" [level=4] [ref=f6e734]
+              - generic [ref=f6e735]:
+                - generic [ref=f6e736]:
+                  - paragraph [ref=f6e737]: Nombre completo
+                  - paragraph [ref=f6e738]: Franklin Ortiz
+                - generic [ref=f6e739]:
+                  - paragraph [ref=f6e740]: Correo
+                  - paragraph [ref=f6e741]: franklin.ortiz@elevant.com
+                - generic [ref=f6e742]:
+                  - paragraph [ref=f6e743]: Teléfono
+                  - paragraph [ref=f6e744]: +1 809-555-0122
+                - generic [ref=f6e745]:
+                  - paragraph [ref=f6e746]: Identificación
+                  - paragraph [ref=f6e747]: Cédula · 001-1234567-13
+                - generic [ref=f6e748]:
+                  - paragraph [ref=f6e749]: Número de empleado
+                  - paragraph [ref=f6e750]: RA-1103
+                - generic [ref=f6e751]:
+                  - paragraph [ref=f6e752]: Terminal
+                  - paragraph [ref=f6e753]: A / B
+                - generic [ref=f6e754]:
+                  - paragraph [ref=f6e755]: Supervisor
+                  - paragraph [ref=f6e756]: Miguel Ángel Torres
+          - generic [ref=f6e758]:
+            - button "Activar" [ref=f6e759] [cursor=pointer]
+            - button "Reenviar invitación" [ref=f6e760] [cursor=pointer]
+            - button "Restablecer acceso" [ref=f6e761] [cursor=pointer]
+            - button "Editar" [ref=f6e762] [cursor=pointer]

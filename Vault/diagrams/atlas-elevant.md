@@ -1,0 +1,125 @@
+---
+id: diagram-atlas-elevant
+title: "Atlas general de ELEVANT"
+type: diagram
+area: vault
+status: verified
+maturity: evolving
+evidence: repo-verified
+owner: equipo-elevant
+last_verified: "2026-09-12"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+sources:
+  - AGENTS.md
+  - README.md
+  - docs/README.md
+  - docs/architecture/repository-structure.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
+  - Vault/04-arquitectura/README.md
+  - Vault/05-aplicaciones/README.md
+  - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
+  - Vault/diagrams/atlas-elevant.canvas
+  - Vault/diagrams/producto-dominio-historia.md
+  - Vault/diagrams/arquitectura-aplicaciones-desarrollo.md
+  - Vault/diagrams/entrega-operaciones-seguridad.md
+tags:
+  - atlas
+  - conocimiento
+  - navegacion
+---
+
+# Atlas general de ELEVANT
+
+Este mapa conecta las áreas que explican ELEVANT sin convertir la documentación en una segunda fuente de verdad. Empieza en [Home](../00-inicio/home.md), comprueba la vigencia en [Estado inicial](../00-inicio/estado-inicial.md) y termina siempre en una fuente ejecutable o en evidencia explícita.
+
+- [Abrir el Canvas interactivo](atlas-elevant.canvas)
+- [Abrir la Base nativa de conocimiento](atlas-conocimiento.base)
+- [Ver arquitectura y contexto](arquitectura-contexto.md)
+- [Ver navegación y estados](navegacion-estado.md)
+- [Explorar Producto, Dominio e Historia](producto-dominio-historia.md)
+- [Explorar Arquitectura, Aplicaciones y Desarrollo](arquitectura-aplicaciones-desarrollo.md)
+- [Explorar Entrega, Operaciones y Seguridad](entrega-operaciones-seguridad.md)
+
+```mermaid
+flowchart TB
+    H[Home y preguntas] --> P[Producto y dominio]
+    H --> A[Arquitectura y aplicaciones]
+    H --> D[Desarrollo y contratos]
+    H --> O[CI/CD y operaciones]
+    H --> G[Seguridad y gobernanza]
+    H --> E[Estado, historia y backlog]
+    H --> REF[Referencia y fuentes]
+    H --> BACK[Pendientes transversales]
+
+    P --> WEB[Private Web · Public Web]
+    P --> MOB[Mobile Agent]
+    A --> WEB
+    A --> MOB
+    A --> API[API compartida]
+    A --> DB[(Base lógica por ambiente)]
+    D --> API
+    D --> CONTRACT[OpenAPI y cliente generado]
+    CONTRACT --> WEB
+    CONTRACT --> MOB
+    O --> RELEASE[Artefactos inmutables y promoción pull-based]
+    RELEASE --> API
+    RELEASE --> WEB
+    MOB -.->|APK/EAS pendiente| RELEASE
+    RELEASE --> DB
+    G --> TRUST[Fronteras de confianza y evidencia]
+    TRUST --> WEB
+    TRUST --> MOB
+    TRUST --> API
+    TRUST --> DB
+    E --> CHECK{¿Está vigente y demostrado?}
+    REF --> SOURCE
+    BACK --> CHECK
+    CHECK -->|Sí| SOURCE[Fuente versionada u operator-recorded]
+    CHECK -->|No| LABEL[Marcar draft, deferred o unknown]
+
+    classDef entry fill:#6c63ff,color:#fff,stroke:#4b44c7,stroke-width:2px;
+    classDef system fill:#dce8ff,color:#17213a,stroke:#4f75c2;
+    classDef control fill:#e5f7ef,color:#173f31,stroke:#36a579;
+    classDef caution fill:#fff1d6,color:#4d3512,stroke:#d99021;
+    class H entry;
+    class WEB,MOB,API,DB,CONTRACT system;
+    class RELEASE,TRUST,SOURCE control;
+    class CHECK,LABEL caution;
+    class BACK caution;
+    class REF control;
+```
+
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* Mobile Agent consume el contrato OpenAPI como las dos webs; su APK/EAS sigue pendiente.
+
+## Cómo leerlo
+
+1. **Orientación:** Home y los mapas de preguntas indican dónde buscar.
+2. **Explicación:** producto, arquitectura y aplicaciones aportan contexto.
+3. **Cambio:** desarrollo, contratos y CI/CD describen cómo evolucionar el sistema.
+4. **Operación:** despliegue, seguridad y recuperación explican cómo conservarlo sano.
+5. **Prueba:** el estado y la evidencia determinan si una afirmación puede usarse hoy.
+
+La [estructura real del repositorio](../../docs/architecture/repository-structure.md) y las reglas de [`AGENTS.md`](../../AGENTS.md) prevalecen sobre este dibujo.
+
+## Mapas ya materializados
+
+- [Historia](../01-historia/README.md)
+- [Producto](../02-producto/README.md)
+- [Dominio](../03-dominio/README.md)
+- [Arquitectura](../04-arquitectura/README.md)
+- [Aplicaciones](../05-aplicaciones/README.md)
+- [Desarrollo](../06-desarrollo/README.md)
+- [CI/CD y entrega](../07-entrega/README.md)
+- [Operaciones](../09-operaciones/README.md)
+- [Seguridad](../10-seguridad/README.md)
+- [Referencia](../11-referencia/README.md)
+- [Backlog transversal](../12-backlog/README.md)
+
+Referencia señala las fuentes primarias y la [reconciliación de `docs/`](../11-referencia/reconciliacion-docs.md); Backlog guarda las decisiones y pruebas pendientes. El diseño APK permanece diferido aunque su explicación ya sea navegable.

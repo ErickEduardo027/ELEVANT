@@ -1,0 +1,480 @@
+# ELEVANT AVIAM Web
+
+## Introducción y carrusel del acceso
+
+El acceso conserva la marca ELEVANT en ambas paletas. La introducción se
+reproduce una vez por carga completa de página (también al recargar), cuando
+sus dos imágenes están listas; no utiliza un indicador persistido en la
+sesión. Mientras carga el logo el formulario sigue disponible: un clic,
+tecla o foco cancela la introducción pendiente. Una imagen fallida o una
+espera de 20 segundos la omite; nunca demora el inicio de sesión.
+
+El carrusel conserva los seis logos originales en una franja horizontal, con
+desplazamiento automático de 38 segundos por vuelta, pausa/reanudación explícita
+y dos grupos de igual ancho para unir el bucle sin saltos. Por decisión de
+producto, la introducción ELEVANT y el carrusel arrancan también cuando el
+sistema declara `prefers-reduced-motion: reduce`: esa preferencia no los
+oculta ni convierte la franja en cuadrícula. La pausa es voluntaria y su
+control permanece visible; una recarga inicia el carrusel de nuevo.
+
+La certificación de la imagen de producción comprueba los bytes de los
+logos/fotografías y ejecuta `scripts/verify-auth-motion.mjs` con Chromium
+contra el contenedor exacto, antes de publicarlo. Se prueba una carga lenta,
+recarga, interacción con el formulario y unión del bucle. La matriz de escritorio,
+tablet y móvil exige desplazamiento real en ambos temas e idiomas, con movimiento
+reducido, sin él y sin emular la preferencia del sistema. También comprueba que
+pausar realmente detenga los logos y conserve la pausa al cambiar idioma o tema.
+Para repetirla con un servidor de producción local:
+
+```powershell
+npx playwright install chromium
+node scripts/verify-auth-motion.mjs http://127.0.0.1:3022
+```
+
+La prueba no requiere credenciales ni acceso a la API. El servidor debe
+haber sido compilado con las variables documentadas más abajo. La presencia
+de estos checks en un PR no acredita que su imagen ya esté promovida al VPS.
+
+## Alertas preliminares de turnos (rama local)
+
+En **Gestión Humana → Turnos de rampa**, el panel «Alertas de programación»
+consulta `GET /api/v1/human-resources/schedule-warnings` por estación
+autorizada y hasta 30 fechas locales inclusivas. Pagina de 20 en 20 y muestra
+superposición, descanso corto, carga programada de siete días o un intervalo
+no evaluable. La API calcula las reglas y devuelve evidencia visible, fecha,
+versión y hora de consulta; la web no deduce cumplimiento legal, horas
+trabajadas ni pago. Si otra estación influye en el cálculo sin estar concedida
+al usuario, solo se muestra «Evidencia restringida», nunca sus datos. El
+selector de estación, la revalidación y el cambio de sesión retiran de
+inmediato las filas antiguas. La vista mensual de 31 días inicia con 30 para
+respetar el contrato; el día restante se consulta cambiando las fechas. Esta
+ruta de lectura aún requiere CI, promoción y aceptación en Development antes
+de considerarse disponible en el VPS.
+
+## Revisión de asistencia de Gestión Humana (rama local)
+
+La ruta `/gestion-humana/attendance` consulta una página de asignaciones por
+estación autorizada y fechas locales. Presenta por separado los aportes
+inmutables de OCC y agente, con autor, revisión, horas observadas y nota.
+G.H. elige de qué aporte tomar inicio y fin; una discrepancia exige motivo.
+La validación conserva ambas revisiones y muestra si sigue vigente. Ante 409,
+relee el estado sin perder el motivo y exige confirmar las versiones nuevas;
+un resultado incierto solo se reintenta con el mismo UUID y cuerpo. Ante 401/403
+retira los datos anteriores. El feed `attendance_draft` y
+`attendance_validation`, foco, reconexión y sondeo visible de 25 segundos
+invalidan la vista, pero la API REST sigue siendo la autoridad. No hay horas
+extra automáticas ni captura biométrica. Aún falta aceptación de tres sesiones
+contra Development después de promocionar DB, API y web.
+
+**Reportes de personal** en esta rama consulta cuatro informes de la API versionada por estación autorizada: vigencias, movimientos de cuenta con auditoría atribuible, distribución de turnos y cobertura de habilitaciones. Cada página muestra hasta 20 filas, `asOf` y filtros de hasta 30 fechas; no se presenta la página como un total global. La cobertura usa perfiles y ciclos activos actuales y comprueba sus fechas al día final seleccionado; no reconstruye altas o bajas históricas. PDF y XLSX provienen de una exportación completa del servidor (máximo 5 000 filas; un conjunto mayor se rechaza con `report_too_large`, nunca se recorta), no de la tabla visible. La tabla y los archivos muestran clases, documentos y movimientos en español (`src/features/human-resources/reports/reportLabels.js`), fechas dd/mm/aaaa y la hora de cada movimiento y de la consulta en la hora local de la estación; los errores se explican por su `code` (`src/services/reportProblems.js`). La API reautoriza la estación y el rol antes de servir el archivo y audita la exportación. La vista retira datos al perder acceso y reconsulta con pistas durables, foco, reconexión y sondeo visible de 25 segundos. Los movimientos históricos sin estación verificable no se atribuyen retrospectivamente; los comandos de gobierno nuevos asocian la estación verificada al evento de cuentas de rampa. Este cambio aún necesita CI, navegador y promoción antes de considerarse disponible en el VPS.
+
+El informe de vigencias también filtra habilitaciones o permisos y estado de
+vigencia calculado con la fecha local de la estación. PDF y XLSX conservan
+exactamente esos filtros, no solo las filas de la página visible.
+
+## Medios del flujo comercial
+
+Contratos edita cada servicio en un panel lateral con foto y video subidos por
+archivo o arrastre. Superadministración sube los logos de aerolíneas y fotos
+de usuarios; Gestión Humana puede subir fotos de perfiles de rampa. Los
+archivos viajan al endpoint autorizado de la API y las imágenes predefinidas
+de servicios se incluyen como recursos estáticos. Las confirmaciones de
+retirada, archivo y descarte se presentan dentro de la aplicación. La carga
+remota exige preparar el [almacén privado](../../ops/dokploy/media-storage/README.md).
+
+En **Contratos → Servicios → Catálogo**, la lista interna muestra diez servicios
+por página, incluidos los ocultos. Indica el rango y el total, conserva la
+página durante las recargas y la ajusta si desaparecen filas. Al guardar, abre
+la página donde queda el servicio según el orden devuelto por la API. Esta
+paginación se aplica en la vista: el endpoint sigue entregando la lista completa.
+
+Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente usa Next.js App Router, React 19 y Tailwind CSS. El enrutamiento y los guards viven en `app/`; las pantallas funcionales existentes permanecen en `src/features/`.
+
+En OCC, **Estación → Mis gastos** abre `/admin-occ/expenses`. El enlace se muestra en el riel lateral y su versión móvil; la API determina qué gastos y acciones puede ver cada cuenta.
+
+## Ejecutar y validar
+
+Desde `frontend/private-web`:
+
+Si `.env.local` todavía contiene claves `VITE_*`, cambia sus nombres a `NEXT_PUBLIC_*` antes de ejecutar la aplicación. Las variables de Vite ya no configuran el build de Next.js.
+
+```powershell
+npm ci
+npm test
+npm run test:delivery
+npm run lint
+npm run typecheck
+$env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
+$env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
+$env:NEXT_PUBLIC_HR_DEMO_MODE = "dashboard-read-only"
+npm run dev
+npm run build
+```
+
+El desarrollo usa Webpack para evitar el fallo observado de Turbopack en Windows: su proceso de PostCSS puede cerrarse antes de que el compilador se conecte y dejar una ruta en `Compiling`. `npm run dev` aplica `--webpack`; para diagnosticar Turbopack de forma explícita, ejecuta `node scripts/run-next.mjs dev --turbopack`. Este ajuste no cambia el compilador de `npm run build`.
+
+Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/admin-occ/users`. El servidor Next redirige las URL históricas `index.html`, `dashboard.html`, `contracts.html` y `finance.html` a sus rutas equivalentes.
+
+Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
+
+CI y Docker pasan `NEXT_PUBLIC_ELEVANT_API_URL`, `NEXT_PUBLIC_PROTOTYPE_API_URL` y `NEXT_PUBLIC_HR_DEMO_MODE` durante el build. El origen API también permanece fijado como variable pública en el runtime standalone para generar la CSP por solicitud. El cambio de runtime requiere revisar y aplicar el Compose del repositorio antes de promover una imagen nueva; una imagen Next no es compatible con el antiguo contenedor Nginx.
+
+`/healthz` pertenece al Route Handler de Next y devuelve exactamente los dos bytes `ok`. No agregues un archivo `public/healthz`: al copiar los recursos públicos a la imagen puede responder ese archivo en lugar del handler. La certificación compara el cuerpo HTTP byte a byte, como exige el healthcheck del contenedor.
+
+El dashboard de Gestión Humana deriva el total de agentes activos y perfiles sin cuenta vinculada de `GET /api/v1/human-resources/ramp-profiles`; ya no muestra las cifras sintéticas de turnos, habilitaciones o cobertura. Revalida al recibir un cambio durable, al recuperar foco/conexión y cada 25 segundos. **Agentes de rampa** usa perfiles, estaciones y terminales reales de la API; el formulario limita terminales a las estaciones seleccionadas, permite elegir un supervisor activo y distingue perfil sin cuenta de una cuenta IAM activa o deshabilitada. El estado IAM no confirma acceso móvil efectivo. Guardar un perfil no concede acceso ni envía invitaciones. Guardar envía la versión que mostró el perfil con la `Idempotency-Key` de la intención: un resultado incierto se reintenta con la misma clave y la misma foto, y un 409 relee el perfil antes de un nuevo intento. Cada rechazo se explica por su `code`. En esta rama local, una acción separada solicita acceso móvil con UUID de intención estable; el estado se relee por `GET /api/v1/human-resources/ramp-profiles/access-requests`. **Habilitaciones y certificaciones** consulta `GET /api/v1/human-resources/qualifications` en páginas de 20, obtiene un ciclo puntual por agente y equipo, y permite registrar o renovar mediante `PUT /api/v1/human-resources/qualifications/{id}`. Conserva la clave de intención para un reintento incierto y relee el ciclo al recibir 409; no inventa adjuntos.
+
+**Carnets y permisos aeroportuarios** consulta `GET /api/v1/human-resources/permits` en páginas de 20 y permite registrar el primer ciclo o renovarlo con `PUT /api/v1/human-resources/permits/{id}`. Consulta antes el par exacto agente/tipo; una respuesta incierta reutiliza el UUID y un 409 exige relectura. No simula archivos adjuntos. Ambas vistas calculan vigencia por fecha. **Turnos de rampa** consulta `GET /api/v1/human-resources/shifts` por semana local, ventana móvil de 15 días o mes calendario, siempre en páginas de 20; presenta turnos registrados con estación, terminal, horario y posición. No atribuye totales del período a la página visible. Gestión Humana los consulta, pero OCC es el único rol autorizado para registrarlos. El `PUT` heredado se conserva temporalmente con autorización OCC mientras se prepara su calendario general. Las seis opciones del formulario de cobertura por vuelo son sugerencias editables, no plantillas globales persistidas. En la misma ruta, **Ausencias y solicitudes** conserva su consulta semanal sobre la semana que contiene la fecha seleccionada, aunque se vean turnos de 15 días o de un mes. Lista solicitudes reales por ventana y página, registra una intención `Pending` con UUID estable y permite aprobar o rechazar con relectura ante 409 o resultado incierto. Un `ShiftChange` aprobado no reprograma el turno. El feed `hr_absences`, el foco, la reconexión y el sondeo de 25 segundos revalidan la lista; una pérdida de acceso oculta solicitudes y turnos. No calcula disponibilidad ficticia. Las otras rutas profundas aún no conectadas continúan ocultas en este modo.
+
+La lista activa de **Agentes de rampa** revalida perfiles autorizados ante cambios durables, foco, reconexión y cada 25 segundos. Una lectura fallida oculta los perfiles y la edición anteriores, muestra un error recuperable y evita renderizar detalles internos del servidor; una respuesta tardía no reemplaza una lectura más reciente. Si falla guardar, conserva el formulario sin exponer trazas internas.
+
+El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Acepta los roles internos, `SUPERADMIN` y los roles personalizados heredados del portal `back_office`, que abren `/contratos`. Tras iniciar sesión carga `GET /api/v1/governance/me/access` y cada shell muestra sólo los módulos y acciones que concede el acceso por departamento (ver ADR-0015); el servidor sigue siendo la autoridad. Conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
+
+`/superadmin` ofrece **Inicio**, **Usuarios**, **Aerolíneas** y **Configuración**. Inicio permite crear manualmente la cuenta de una aerolínea después de la aprobación por Contratos. En esta rama local, Inicio también muestra solicitudes móviles pendientes de Gestión Humana y permite aprobar creando la cuenta vinculada o rechazar con motivo; no envía invitaciones. Usuarios administra cuentas y roles personalizados con acciones Ver/Crear/Editar/Acceso completo para los módulos comerciales. La creación genérica de cuenta nueva ya no ofrece `RAMP_AGENT` en la interfaz: la bandeja hace visible su solicitud y decisión, aunque la API conserva la ruta genérica compatible cuando no hay petición pendiente. Aerolíneas administra las fichas públicas y ofrece una acción supervisada para completar registros históricos sin sobrescribir ediciones manuales. Configuración muestra auditoría paginada con cambios permitidos, sin contraseñas ni correos en el detalle. Contratos dispone de **Inicio**, **Solicitudes**, **Servicios** y **Borradores** conectados a la API. El borrador exige confirmación explícita de cada tarifa, incluso cuando es cero por cortesía. Inicio resume hasta 200 solicitudes y consulta una proyección de hasta 100 borradores con cinco recientes; no descarga comentarios, tarifas, términos ni el catálogo completo para calcular sus KPI. El detalle está en [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md) y la [guía de rampa](../../docs/workflows/ramp-agent-readiness.md).
+
+**Contratos**, **Servicios pactados** y **Reportes contractuales** leen páginas de acuerdos con versiones publicadas mediante `GET /api/v1/contracts/agreements`. Comparten datos autorizados por `commercial.requests.read`; la tabla distingue tarifas de versiones aprobadas y reemplazadas, muestra sus estaciones y conserva cuatro decimales del precio pactado. El reporte indica que sus indicadores son de la página visible, no del historial completo. Los antiguos formularios de alta/edición y la auditoría ficticia de exportación ya no están montados: se mantienen fuera de la sesión hasta disponer de comandos reales. Las seis vistas visibles de Contratos se recorrieron contra el VPS sin 404/405/5xx observados; eso no equivale a probar sus escrituras comerciales de punta a punta.
+
+«Comunicaciones» de Contratos y Finanzas permanece fuera de la navegación y del montaje activo. Su adaptador heredado usa `/api/internal-chat/messages`, ausente de OpenAPI y sin persistencia en la base compartida; no debe presentarse como chat funcional. El chat operativo OCC–agente sí conserva su contrato `/api/v1` independiente. El chat departamental se retomará en otra entrega.
+
+Estas vistas comerciales y la gobernanza releen HTTP al recuperar foco o conexión y cada 25 segundos mientras están visibles. Es un respaldo del feed de cambios cuando falla una recarga puntual; el socket no reemplaza la API como fuente de verdad.
+
+Si la API devuelve `409 password_change_required`, la web muestra una activación
+sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
+sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
+
+Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
+de API al origen HTTPS privado de Development. Monitoreo, Mapa de posiciones,
+Planificación y la consola de Panorama dibujan sus mapas con un solo motor
+de MapLibre (`src/features/maps/core/mapEngine.js`) y un estilo NOC propio,
+construido en código (`src/features/maps/style/occStyle.js`) sobre las teselas
+vectoriales y los glifos de OpenFreeMap: no hay variables de estilo ni clave de
+Google. `predev` y `prebuild` copian el worker y su módulo compartido desde la
+versión instalada de MapLibre a `public/assets/maplibre/`. La verificación del
+build y la certificación de la imagen comprueban esos dos archivos. Desde
+MapLibre 6.13 el worker es autocontenido y `maplibre-gl-shared.mjs` llega
+vacío (el paquete lo conserva por compatibilidad): es normal que pese 0 bytes.
+La verificación del build falla si el worker vuelve a importar un módulo que
+no se copia. `maplibre-gl` va con versión exacta en `package.json`: el worker
+servido y el bundle deben ser de la misma versión, así que cada subida es un
+cambio deliberado. Si cambias de versión de MapLibre, vuelve a ejecutar
+`npm ci` y el build; no edites los archivos generados. El navegador necesita
+alcanzar `tiles.openfreemap.org`, que la CSP ya permite; si el mapa base no
+carga, el mapa sigue con las posiciones y lo avisa. La única excepción al motor
+y al estilo propios es el mapa satelital del detalle de meteorología de
+Panorama, que conserva el estilo publicado de OpenFreeMap y solo se monta
+mientras ese detalle está abierto.
+
+El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
+indica explícitamente. Otras estaciones no usan el centro de PUJ. Las variantes
+de Google Maps y su cargador se retiraron del código y de las dependencias;
+cualquier experimento futuro con ese proveedor requiere una decisión y una CSP
+revisadas por separado. Las decisiones de los mapas del OCC están en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). El aeródromo de Punta
+Cana se dibuja con un plano propio que se genera a mano con `scripts/maps` y
+se versiona; nada de eso corre en el build. Sus fuentes, sus licencias y cómo
+se regenera están en el
+[README de los datos](src/features/maps/airport/data/README.md).
+
+El laboratorio de mapas (`/map-lab`) solo existe con `next dev`: dibuja el mapa
+del OCC con ocho escenas fijas (los estados de rampa, una posición elegida,
+Aeródromo, Aproximación, Región, un navegador sin WebGL, el mapa base caído y
+la revisión del plano de MDPC), sin sesión ni API. La URL elige la escena
+(`?scene=`), el mapa sin teselas (`?basemap=none`), un reloj del mapa
+congelado (`?t=` con un instante ISO 8601) y las claves de selección del mapa
+(`stand=`, `view=`, `terminal=`). La ruta importa el laboratorio solo dentro de
+la rama de desarrollo, y `npm run build` termina con
+`scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
+al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`). En producción la ruta
+responde la página de no encontrada.
+
+La suite visual del OCC (`tests/visual`, configurada en
+`playwright.occ.config.mjs`) corre con Playwright en el Google Chrome
+instalado, fuera del CI, antes de mergear un cambio de mapas. Tiene dos
+proyectos: `lab`, el laboratorio, y `occ`, las pantallas del OCC (Mapa de
+posiciones, la pantalla de arranque y la consola de Panorama) con una sesión
+sintética y la API simulada. Ninguna petición llega a otro origen: la suite
+responde la TileJSON, las teselas, los glifos (fixtures en
+`tests/visual/fixtures/glyphs`) y la API, aborta lo demás, y su Chrome no
+resuelve otro nombre que `localhost`. `npm test` no la recoge, porque
+`vitest.config.mjs` excluye `tests/visual/**`.
+
+```powershell
+npm run test:visual
+npm run build
+$env:OCC_VISUAL_TARGET = "production"
+npm run test:visual
+Remove-Item Env:OCC_VISUAL_TARGET
+```
+
+La primera corrida levanta su propio `next dev` en el puerto 4186
+(`OCC_VISUAL_PORT` lo cambia) con las tres variables `NEXT_PUBLIC_*` de
+Development; no puede haber otro `next dev` abierto en esta carpeta. La segunda
+usa el build de producción, compilado con las variables del bloque de arriba, y
+allí el laboratorio solo comprueba que `/map-lab` responde la página de no
+encontrada. Las capturas de cada escena quedan en `test-results/visual/`, que
+Git ignora, para revisarlas a mano: no hay líneas base de imagen.
+
+## Layout responsive
+
+Todas las áreas se renderizan dentro de `src/features/shell/ShellFrame.jsx`, con
+sidebar y topbar fijos y scroll solo en el contenido. Los breakpoints salen de
+`src/config/breakpoints.js` (los mismos para Tailwind y para los hooks, más `3xl`
+a 1920 px). Para pantallas nuevas:
+
+- envuelve la cabecera en `PageHeader`, los filtros en `FilterBar` y las vistas
+  lista + panel en `SplitLayout`, que se separa a partir de `lg`;
+- añade la clase `table-stack` a las tablas anchas: se apilan como tarjetas
+  etiquetadas cuando su contenedor mide menos de 40 rem;
+- da a los grids de varias columnas un `grid-cols-1` base y evita anchos fijos.
+
+Comprueba las pantallas a 360, 768, 1024 y 1920 px antes de entregar. Ejecuta
+la app en el puerto 5173 (`npm run dev -- -p 5173`) para no chocar con Public Web.
+
+## Espacio OCC (PUJ)
+
+`AdminOccLayout` monta un marco propio sobre `ShellFrame`: el riel (`OccSidebar`), con los 14 módulos agrupados en «En vivo», «Planificar», «Revisar» y «Estación»; la barra de estado de 48 px (`OccTopbar`), con la estación, el módulo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC, el idioma, «Leyenda» y la cuenta; y tokens `occ-*` definidos en `src/styles/occ.css` bajo `[data-department="occ"]`. `OccShellProvider` (`src/features/admin-occ/shell/`) es el proveedor del marco: abre el único observador de cambios de la pestaña, lee una vez los avisos para la barra, el riel, el cajón «Alertas y avisos» y los toasts, y expone el enlace en vivo, los avisos y las fuentes con `useOccShell()`. Sus lecturas usan `useOccResource` (`src/features/admin-occ/live/`): cada una lee solo con su permiso, se repite como mucho una vez cada 3 s cuando llegan avisos, espera con la pestaña oculta y tiene un sondeo de seguridad de 60 s. `occRequestBudget.test.js` falla si el plan de peticiones de una pestaña pasa de 40 por minuto en reposo o de 70 durante un minuto de vuelo demo. Las pantallas que todavía abren su propio observador pasan al proveedor en el PR que las rehace. El OCC es solo oscuro, con un único juego de tokens y sin botón de tema; la paleta, los estados de posición y las teclas de los mapas viven en `src/features/occ-ui/`, y el puente generado `src/styles/occ-legacy-bridge.css` (manifiesto en `src/styles/occLegacyBridgeMap.js`) repinta con esos tokens las clases heredadas bajo `[data-occ-bridge]` ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)). Los demás departamentos siguen usando `Sidebar`/`Topbar`. Todas las rutas OCC leen el alcance `PUJ` con `useOccStation()`; sin él no consultan la API. El idioma (es/en) comparte el store del login (`src/i18n/languageStore.js`) y solo se aplica dentro de `LanguageScope`, que envuelve OCC; fuera de él la interfaz sigue en español.
+
+Panorama (`/admin-occ/dashboard`) es la consola del OCC (`src/features/dashboard/noc`): el mapa único a pantalla completa, abierto en la vista Rampa, con los paneles flotantes «Tablero», «Cifras de la jornada», «Alertas», «Posiciones» e «Inspector», que se pliegan a una pastilla y le pasan al mapa lo que tapan. Cada panel lee y falla por su cuenta con `useOccResource`: planificación, posiciones, cola de revisión y disponibilidad de los agentes, con un sondeo de 60 s y nunca con `occ_planning` (la cola, además, con `occ_review`); los vuelos y el tráfico son los del mapa (`useMapSituation`), y los avisos, los del marco. Importar un vuelo y asignar un agente se abren sobre la consola, una llegada demo nueva (o la que ya venía al abrir la consola) muestra «Llegada nueva» con «Ver y seguir», y bajo el mapa quedan la línea de procedencia y la píldora del clima. Si el navegador no puede dibujar el mapa (sin WebGL2), los mismos paneles se ordenan en una cuadrícula. `useConsoleData.budget.test.jsx` falla si la consola pasa de 40 peticiones por minuto en reposo o de 70 con un vuelo demo ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)). `dashboardPositions.js` usa las 42 ubicaciones del catálogo **interno original**: 41 se muestran en el mapa y B33 se conserva como registro histórico retirado de la vista operativa por la [enmienda AIP de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf). B34–B37 siguen en el catálogo y B20–B32 mantienen sus 13 coordenadas internas originales. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) sirve para conciliación, pero sus coordenadas no se transcriben en la aplicación: no consta permiso de IDAC para procesarlas y la [política AIP](https://aip.sna.gob.do/Aip/CircularSerA) exige revisar ese uso. Las ubicaciones internas no están verificadas como oficiales; hay discrepancias de códigos y coordenadas, especialmente B20–B32. Los códigos planificados ausentes del catálogo activo, incluido B33, aparecen sin ubicación; no se equiparan A1 y 1 ni otros códigos parecidos. El mapa general de posiciones conserva el catálogo interno y requiere conciliación independiente.
+
+La píldora del clima abre el detalle de meteorología de MDPC. El METAR MDPC de Iowa Environmental Mesonet es una réplica no oficial: distingue hora de observación y recepción, fallos de actualización y valores derivados. GOES-East infrarrojo e [IMERG de 30 minutos](https://gibs.earthdata.nasa.gov/layer-metadata/v1.0/IMERG_Precipitation_Rate_30min.json) usan NASA GIBS; las teselas se fijan al tiempo comunicado por GIBS. Cuando solo se conoce la fecha, se muestra el día sin inventar una hora ni calcular antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. La vista muestra fuente, opacidad y error. `src/config/securityHeaders.mjs` permite los orígenes cartográficos y meteorológicos existentes. Manrope e IBM Plex Mono se sirven como archivos propios mediante `next/font`.
+
+Ninguna pantalla lee ya `GET /api/v1/occ/traffic/aircraft` (OpenSky): su único consumidor era el mapa regional del panorama anterior, que retiró el PR U3, y `src/services/trafficService.js` queda sin uso hasta que un paso aparte retire el endpoint. La API exige personal AVIAM con `operations.planning.read` y alcance PUJ; la conexión real requiere credenciales OAuth privadas y el acuerdo escrito, y el navegador nunca llama directamente a OpenSky.
+
+## Planificación OCC remota
+
+Guardar o desactivar un perfil de rampa invalida la planificación OCC de sus
+estaciones anteriores y solicitadas, sin identidad del agente en la pista
+durable. Una desactivación también avisa a la estación cuyo scope se retira.
+
+La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extremo a extremo con la API de Development. Consume exclusivamente el cliente compartido para consultar:
+
+- `GET /api/v1/occ/planning`, con la estación PUJ tomada de los scopes de la sesión (OCC no ofrece selector de estación) y fecha operativa controlada por el usuario; sin fecha, el servidor abre el día de hoy de la estación;
+- `GET /api/v1/occ/planning/turnarounds/{turnaroundId}`, `PUT .../schedule` y `POST .../status-changes`, para «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» antes de que la operación inicie, con el `ETag` de la escala en `If-Match` y la `Idempotency-Key` de la intención;
+- `POST /api/v1/occ/planning/charter-airlines`, para dar de alta la aerolínea mínima de un charter desde «Nuevo vuelo»;
+- `GET /api/v1/occ/planning/options?turnaroundId={turnaroundId}`, al abrir el detalle de una escala autorizada;
+- `GET /api/v1/occ/planning/manual-options?stationId={stationId}&date={date}`, para elegir aerolínea con contrato vigente, aeropuertos y posición activa en la estación autorizada;
+- `POST /api/v1/occ/planning/turnarounds`, para crear una escala manual con llegada, salida y posición, usando un UUID estable para reintentos ambiguos;
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift`, para programar un turno local de un agente cuyo único impedimento es la cobertura;
+- `GET /api/v1/occ/planning/turnarounds/{turnaroundId}/agents/{agentId}/shift` y `PATCH /api/v1/human-resources/shifts/{id}`, para «Ajustar turno del día» cuando el agente ya tiene turno ese día (el mismo comando que usa Gestión Humana);
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`, para confirmar la asignación inicial de un único agente elegible con el `ETag` fuerte devuelto por la consulta de opciones;
+- `POST .../assignment/release?expectedAssignmentId=`, `GET .../assignment/handover-options` y `POST .../assignment/handover`, para «Liberar agente» antes del inicio y «Relevar agente» de una operación en curso o devuelta.
+
+La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. El manifiesto de despacho permite escoger exclusivamente un agente marcado como elegible; contrato, posición y servicios son decisiones del backend y se muestran como datos bloqueados. La web no reintenta automáticamente el comando. Un `409`, `412`, `404` o resultado de red ambiguo obliga a refrescar opciones y planificación antes de una nueva confirmación.
+
+El alta manual verifica nuevamente en la API el scope OCC, contrato único aprobado y vigente, fecha local, ruta y disponibilidad de la posición. Una respuesta ambigua conserva el mismo UUID para reintentar sin duplicar; editar el formulario inicia una intención nueva. El alta deja la operación en `Planned` y no despacha automáticamente. El panel de cobertura muestra solo agentes cuyo único impedimento es el turno; la API revalida permisos, terminal, jornada de hasta 16 horas y cobertura completa. Tras programar, la web obtiene opciones y ETag nuevos antes de permitir asignar. El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Las horas del alta, de «Editar vuelo» y de la llegada en el mapa de posiciones se escriben en la hora local de la estación (`stationLocalToUtc` y `utcToStationLocalInput` de `src/services/businessDay.js`) y viajan en UTC. «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» aparecen en el detalle de la escala solo con `operations.planning.update` y según las acciones que el servidor permite; un `409`, `412` o `428` relee la escala antes de una nueva intención. En el mapa de posiciones, registrar o corregir la llegada, asignar y liberar esperan la versión del vuelo (el detalle de la escala, que también autoriza `operations.positions_map.assign`) y viajan siempre con su `ETag` en `If-Match` y la `Idempotency-Key` de la intención: mientras se lee no se envían, y si no se puede leer el vuelo muestra «Reintentar» o el permiso que falta. Sin tocar la hora de llegada se registra la del servidor al guardar; reemplazar una hora que el vuelo ya tiene pide motivo. Planificación no ofrece Work Orders ni exportación: esas acciones no tienen backend. Los fixtures del módulo se usan solo en pruebas.
+
+Un agente lleva hasta tres operaciones simultáneas; la elegibilidad muestra «Ya tiene 3 operaciones simultáneas» y, para un agente con menos de tres meses sin cobertura con mentor, «necesita un mentor». Si el agente ya tiene turno ese día, el panel de turno pasa a «Ajustar turno del día»: propone ampliar ese mismo turno hasta cubrir el vuelo, pide motivo y envía la versión leída con su clave de intención; el servidor rechaza un horario que deje sin cubrir sus coberturas u operaciones. «Liberar agente» envía la asignación que OCC ve y conserva su clave ante un resultado incierto; si otro usuario cambió el agente o la operación ya inició, la vista relee la planificación. «Relevar agente» lista los agentes elegibles para lo que queda de la operación, exige motivo y avisa a los dos agentes; la operación conserva su estado y su evidencia. Cada vista explica el código de Problem Details en español.
+
+El formulario OCC de cobertura de rampa ofrece seis horarios precargados por vuelo y permite editar inicio y fin antes de confirmar. No guarda plantillas globales: la API valida la cobertura local, la elegibilidad y los conflictos. Fuera de las escalas manuales todavía no existe un editor general del calendario OCC.
+
+En esta rama, el detalle de una operación con agente asignado muestra un panel
+de **asistencia observada**. OCC puede guardar su propio inicio, fin y nota
+manuales; ve el aporte del agente en solo lectura. El panel consulta la API
+compartida por operación y asignación, y relee ante `attendance_draft`, foco,
+reconexión y cada 25 segundos mientras está visible. Un `409` conserva los
+campos intentados junto a la nueva revisión para decisión explícita. Tras un
+PUT de resultado incierto, el reintento reutiliza el UUID y el mismo cuerpo.
+La hora editada se interpreta en la zona del dispositivo indicada en el panel,
+no como fichaje biométrico ni como hora de estación. La API revalida rol y
+estación; ocultar o mostrar el panel no concede permisos. Esta interfaz aún
+requiere aceptación de dos sesiones contra Development tras la promoción.
+
+Una ausencia o restricción aprobada para un agente con alcance en la estación
+emite `occ_planning` sin detalles laborales. Registrar un turno, carnet o
+habilitación de rampa también la emite sin datos personales. Planificación reconsulta la
+estación y sus opciones de asignación ante la pista durable, foco o conexión
+recuperada y cada 25 segundos si la pestaña está visible. El backend sigue
+revalidando elegibilidad y ETag al confirmar una asignación.
+
+Durante una revalidación de la misma estación y fecha, la ruta conserva el
+último snapshot de planificación para que el panel de una escala abierta no se
+cierre antes de recibir la respuesta. Al cambiar estación o fecha, o si la
+lectura falla, retira el snapshot anterior; una respuesta nueva sin esa escala
+cierra el panel. Este ajuste de la rama de integración aún requiere aceptación
+en navegador tras su promoción.
+
+## Frontera de seguridad
+
+Las rutas canónicas `/admin-occ/chat` y `/admin-occ/notifications` recuperan
+mensajes y avisos persistentes desde la API. En la rama de integración de
+Development también escuchan `ChangedV1` en los hubs autorizados: el aviso
+solo dispara `GET /api/v1/changes`, y el recurso se vuelve a consultar por REST.
+El cursor está en memoria por pantalla, sin reemplazar la autorización del
+servidor. Al reconectar, volver a enfocar la pestaña o recuperar la red se
+reconcilia el feed; una consulta cada 25 segundos respalda WebSocket y los
+sondeos existentes de las pantallas permanecen. No implica entrega con la
+pestaña cerrada ni garantiza la latencia hasta la prueba real del VPS.
+La corrección pendiente de esta rama desactiva los logs internos del transporte
+SignalR en el navegador para que un WebSocket autenticado no registre su URL
+con token; la reconciliación HTTP y el sondeo de respaldo siguen activos.
+Esta corrección no forma parte de la imagen #118 ya promovida.
+
+En esta rama, una asignación OCC agrega en la misma transacción una invalidación
+`occ_planning` limitada a las cuentas OCC vigentes de su estación. Planificación,
+Monitoreo y Mapa de posiciones releen sus snapshots autorizados cuando reciben
+esa señal; foco, reconexión y sondeo visible conservan una ruta de recuperación.
+El aviso no transporta identidad del agente ni estado del vuelo. Esto todavía
+no demuestra latencia en el VPS ni despliegue de esta rama.
+
+La ruta `/admin-occ/review` consume exclusivamente la API canónica de revisión:
+cola limitada por la estación del actor, detalle de la última entrega y decisión
+individual. Muestra checklist, servicios, incidencias y nota del agente sin
+convertir los fixtures históricos en datos reales. Aprobar o devolver requiere
+confirmación; devolver exige un motivo. Cada decisión usa `If-Match` con la
+versión fuerte del detalle y la `Idempotency-Key` de su intención. Ante `409`,
+`412` o un resultado de red ambiguo, la web refresca la cola y el detalle y no
+reenvía el comando automáticamente; un reintento de la misma intención reutiliza
+su clave. La cola y el detalle se releen solos con el aviso `occ_review`.
+No ofrece aprobación masiva ni simula firmas, adjuntos o envío a Finanzas.
+
+«Aprobar» solo se habilita con la Orden de Servicio firmada o corregida por OCC;
+un ajuste de cargos o una exclusión de facturación después de la firma queda
+como corrección de OCC. Un servicio en excepción con cantidad se factura salvo
+que OCC lo excluya con motivo. Con `operations.review.reopen`, OCC reabre una
+aprobación no facturada como una revisión nueva que solo se corrige y aprueba en
+OCC. El panel «Incidencias de la operación» (`operations.incidents.*`) lista las
+incidencias vivas, las cambia de estado con nota y reporta las de OCC en hora
+local de la estación, también desde el detalle del vuelo en Planificación y
+mientras la operación sigue en rampa. Los códigos de estados, servicios,
+checklist, incidencias, hitos y unidades se muestran en español
+(`src/features/operations/operationLabels.js`) y los errores, por su `code` de
+Problem Details.
+
+**Reportes operativos** (`/admin-occ/reports`) lee los seis reportes que calcula
+la API para PUJ y exporta el período completo a Excel, CSV o PDF con
+`operations.reports.export`. Una exportación que supera su límite (25 000 filas
+en Excel y CSV, 5 000 en PDF) se rechaza con `report_too_large` y la pantalla
+sugiere acotar el período o, desde el PDF, exportar a Excel o CSV; los errores se
+explican por su `code` (`src/services/reportProblems.js`). El período por defecto
+es el mes en curso del calendario de la estación y «Generado» se muestra en su
+hora local (`formatBusinessDateTime` de `src/services/businessDay.js`).
+
+La pantalla ofrece carga, cola vacía, error recuperable, sesión caducada,
+permiso denegado y ausencia de scopes. El backend sigue siendo quien impone
+rol, membresía y estación; el selector del navegador solo organiza la vista.
+
+Los roles, tenants y scopes de estación se validan en el servidor. Filtros, menús ocultos y sesiones del prototipo no autorizan datos. La web solo consume la API HTTPS versionada; no accede directamente a SQL Server, proveedores de aviación ni almacenamiento de objetos.
+
+## Módulos observados
+
+- panel OCC y monitoreo de vuelos/turnarounds;
+- planificación, posiciones, agentes, equipos y cobertura;
+- checklists, incidencias, evidencias y revisión;
+- contratos, solicitudes, servicios y tarifas;
+- gestión humana, turnos, disponibilidad, habilitaciones y permisos;
+- finanzas, reportes, notificaciones y chat sujetos a contratos API definitivos.
+
+Los mocks describen flujos de producto, no contratos persistentes ni una frontera de autorización.
+
+En esta rama, **Finanzas → Tarifas** usa `GET /api/v1/finance/tariffs` con
+estación autorizada y páginas de 20 tarifas publicadas. Distingue versiones
+aprobadas e históricas, moneda y cuatro decimales, sin recalcular precios de
+operaciones o facturas ya congeladas. La activación contractual escribe una
+invalidación durable `finance_tariffs`; el cliente también reconsulta al
+recuperar foco/conectividad y cada 25 segundos mientras está visible. Se
+retiró «Programar cambio» porque solo modificaba memoria local. Crear una
+nueva versión contractual con precios futuros todavía requiere un comando
+canónico; esta vista es de solo lectura. La lectura remota carga sin 404, pero
+no se ha probado un cambio futuro de tarifa de punta a punta.
+
+El resumen de Contratos consulta solicitudes y borradores autorizados.
+**Finanzas → Inicio** lee `GET /api/v1/finance/home` (fase 4, bloque B): los
+indicadores que calcula el servidor para la estación autorizada al día hábil de
+Santo Domingo —operaciones por facturar, facturado del mes, por cobrar y
+vencido, cobrado con tarjeta en el mes, contratos por aprobar y charters con
+prepago pendiente—. Cada tarjeta aparece solo si la plantilla incluye su módulo
+y abre ese módulo; un 403 muestra el estado sin permiso, nunca «sin estación».
+Revalida con avisos durables, foco, reconexión y cada 25 segundos, y conserva los
+datos visibles mientras lo hace. No lee prefacturas ni listas acotadas.
+Los dos departamentos mantienen oculto el antiguo buzón `/api/notifications`,
+ausente del OpenAPI canónico.
+El icono de notificaciones de esos dos departamentos permanece oculto hasta
+que exista un feed autorizado para sus roles. Los módulos que aún dependan de
+endpoints heredados no deben montarse ni interpretarse como parte del circuito.
+
+**Finanzas → Facturación** agrupa «Por facturar», «Facturas» y «Charters»
+(ADR-0035, fase 4). La prefactura ya no es una pantalla, un endpoint ni un
+permiso: queda como paso interno de la emisión, y «Servicios aprobados»,
+«Pre-facturación», «Tratamientos tributarios» y «Documentos fiscales» se
+retiraron con sus rutas. «Facturas» pagina de 25 en 25 con «Anterior» y
+«Siguiente» y busca por e-NCF, número o aerolínea (`search`, hasta 40
+caracteres); los errores se explican por su `code` y una recarga conserva la
+página visible. Sus pestañas «Cobros» y «Estados de cuenta» aparecen con
+`finance.receipts.read` (o `finance.statements.read`), y el estado de cuenta y
+«Aplicar cobro» nombran cada factura por su e-NCF. Las escrituras heredadas
+`POST /api/v1/finance/invoices`, `POST .../invoices/{id}/credit-notes` y
+`POST /api/v1/finance/payments` responden 410 `legacy_finance_route_retired`:
+las facturas se emiten desde «Por facturar», los cobros se registran en
+«Cobros» y las correcciones son notas de ajuste.
+
+### Finanzas: menú, tarifarios y reportes (ADR-0016, ADR-0035)
+
+La navegación de Finanzas se arma con los permisos `finance.*` del acceso
+departamental (`src/features/finance/shell/modules.js`): Inicio · Facturación
+(Por facturar, Facturas, Charters) · Cuentas por pagar (Facturas de proveedores,
+Proveedores, Gastos de empleados) · Reportes · Configuración (Tarifario de
+servicios, Tarifario de cargos, Paquetes, Reglas de cierre, Aprobación de
+contratos, Tasas de cambio, Unidades de cobro) · Usuarios del departamento.
+«Aprobación de contratos» compara cada precio con la base y aprueba o devuelve
+con motivo; Contratos envía a Finanzas en lugar de activar. Reportes lee los
+seis reportes que calcula la API —ingresos, cuentas por cobrar y antigüedad,
+cobranza (con tarjeta), cuentas por pagar, recargos y ventas e-CF— y exporta
+CSV, Excel o PDF con `finance.reports.export`; el PDF lleva «Simulación — sin
+validez fiscal». Los adaptadores están en `src/services/financeBookService.js`.
+Las e-CF son simuladas: nada de esto es facturación fiscal.
+
+### Empleados, puestos y accesos (ADR-0017)
+
+Gestión Humana registra a los empleados (`/gestion-humana/employees`), los
+puestos y las requisiciones. Los administradores de departamento solicitan el
+acceso eligiendo un empleado de su departamento en **Usuarios del departamento**
+y tienen las pestañas Puestos, Requisiciones y Actividad. Las contraseñas
+temporales se generan en el navegador (`temporaryPassword.js`) y no se guardan.
+Los adaptadores están en `src/services/humanResourcesEmployeesService.js`.
+
+Editar el expediente, trasladar y dar de baja envían la versión que muestra el
+expediente con la `Idempotency-Key` de la intención: un resultado incierto se
+reintenta con la misma clave y el mismo cuerpo, y un 409 pide volver a abrirlo.
+Pasar un agente de rampa a un puesto de oficina, trasladarlo fuera de rampa o
+darlo de baja libera sus coberturas, operaciones sin iniciar y turnos futuros;
+OCC recibe un aviso por cada operación liberada. Una operación en curso o
+devuelta para corrección lo impide hasta que el agente la envíe (o la corrija y
+reenvíe) desde la tablet: OCC no tiene una acción que la cierre.
+
+## Imagen de Development
+
+La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:
+
+```powershell
+docker build --file frontend/private-web/Dockerfile `
+  --build-arg ELEVANT_DEPLOYMENT_ID=1111111111111111111111111111111111111111 `
+  --build-arg NEXT_PUBLIC_ELEVANT_API_URL=https://api.elevant.test `
+  --build-arg NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.elevant.test `
+  --build-arg NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only `
+  --tag elevant-private-web:local .
+```
+
+El runtime usa Node 24 sin privilegios, UID `101`, puerto `8080` y raíz de solo lectura con caché Next en tmpfs. `/healthz` responde `ok`, las rutas profundas se renderizan en Next y los recursos versionados `/_next/static/` usan caché inmutable. La CSP se genera con nonce por solicitud y limita conexiones al origen API certificado, su equivalente WebSocket, los proveedores cartográficos revisados, IEM y NASA GIBS.
+
+`compose.development.aviam-web.yml` exige `ELEVANT_AVIAM_WEB_IMAGE` por digest, publica únicamente `127.0.0.1:18081` y conecta solo la red externa `elevant-dev-aviam-web-runtime`. Tailscale termina HTTPS fuera del contenedor. La aplicación no comparte la red de SQL Server.
+
+CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API HTTPS certificada, su equivalente `wss://` para el hub SignalR, los dos proveedores de mapas revisados, IEM y NASA GIBS. No se permite un comodín `wss:` ni otro host de WebSocket.
+El certifier exige además la pantalla conectada de Gestión Humana y rechaza el antiguo rótulo permanente de datos sintéticos. El identificador histórico `dashboard-read-only` sigue delimitando las rutas HR no conectadas; no convierte el dashboard actual en un fixture.
+
+## Promoción en Development
+
+Los cambios de esta aplicación llegan al VPS solo después de fusionarse en
+`Development`, superar el carril AVIAM de CI y producir una imagen y un bundle
+inmutables. El tag `development-certified` sirve únicamente para descubrir el
+bundle; el controlador despliega siempre las referencias `@sha256` validadas.
+
+Antes de habilitar el schedule de una instalación nueva, el operador adopta
+primero la baseline A sana, luego pausa el perfil y lo mantiene pausado mientras
+ejecuta y verifica la promoción con rollback drill documentada por
+`ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
+repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
+
+Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. La consola de Panorama combina la planificación del día de la estación, el tablero de posiciones, la cola de revisión, la disponibilidad de los agentes, los vuelos y el tráfico del mapa y los avisos de la cuenta filtrados por estación. Sus conteos son de consultas acotadas, no totales históricos; cada panel relee con su sondeo de 60 segundos, y solo los vuelos del mapa siguen a `occ_planning`. Monitoreo usa la estación OCC seleccionada tanto en la lectura inicial como en el refresco de 30 segundos; reemplaza el conjunto de vuelos completo y oculta resultados anteriores si el refresco falla. Solo PUJ dispone de coordenadas cartográficas revisadas: otra estación muestra horarios de la API sin un mapa centrado artificialmente en PUJ. Nada de esto demuestra telemetría, disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba; sus rutas de habilitaciones, permisos, turnos y ausencias tienen contratos canónicos acotados, mientras otras rutas profundas permanecen pendientes. Reportes financieros lee los seis reportes que calcula la API sobre las estaciones autorizadas; Facturas y Tarifas son lecturas reales paginadas por estación, pero aún no constituyen conciliación bancaria ni cambios futuros de tarifa. La imagen no incluye ni inicia `backend-prototipo`. La rama de integración anterior se promocionó al VPS mediante #118; las correcciones de esta rama todavía no.
+
+El Mapa de posiciones mantiene la cartografía PUJ revisada con estados derivados de planificación, nunca ocupación física confirmada. Para otra estación autorizada muestra únicamente las posiciones asignadas que devuelve planificación, en una lista sin coordenadas ni mapa de PUJ. El refresco de 30 segundos reemplaza el snapshot completo y retira datos anteriores ante una falla; el enlace a Monitoreo conserva la estación. Sigue pendiente un contrato canónico de coordenadas y ocupación física para las demás estaciones.
+
+En esta rama, OCC puede solicitar una clausura motivada desde **Notificaciones → Servicios**, viendo la oferta publicada y el historial interno. Contratos decide y puede republicar desde **Servicios → Solicitudes de clausura**; su contador lateral refleja pendientes. Los roles personalizados reciben grants separados para ver, solicitar, decidir y republicar. El feed y el sondeo de respaldo refrescan ambas vistas; la API conserva la autoridad sobre permisos y estados. [Recorrido y límites](../../docs/workflows/commercial-intake-and-governance.md#clausura-comercial-solicitada-por-occ-rama-de-implementación).

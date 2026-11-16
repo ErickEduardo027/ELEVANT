@@ -1,0 +1,71 @@
+using System.Text.Json;
+using Elevant.Application.Abstractions.Identity;
+
+namespace Elevant.Persistence.Audit;
+
+internal static class SafeAuditChanges
+{
+    private static readonly HashSet<string> AllowedFields = new(StringComparer.Ordinal)
+    {
+        "role.name", "role.active", "role.permissions", "user.role", "user.status",
+        "airline.country", "airline.iata", "airline.icao", "airline.logo", "airline.published",
+        "airline.verified", "service.name", "service.public", "service.active",
+        "rate.confirmed", "rate.price",
+        // Portal accounts (phase 1, block E): the invitation a temporary password closed, the membership a link reactivated.
+        "user.invitation", "membership.status",
+        // Contract lifecycle (phase 2, block A): a version that started or stopped governing and a scheduled termination.
+        "version.status", "version.valid_to", "contract.terminated_on",
+        // Permit dossier (phase 2, block B): a verification Contratos revoked (2-N09).
+        "permit.review",
+        // Master data and flight feed (phase 2, block C): stations, terminals, stands and aircraft types (2-A) and a
+        // dismissed proposal OCC restored (2-N36).
+        "station.name", "station.time_zone", "station.active",
+        "terminal.code", "terminal.name", "terminal.active",
+        "stand.code", "stand.terminal", "stand.bridge", "stand.remote", "stand.max_size", "stand.active",
+        "aircraft_type.icao", "aircraft_type.iata", "aircraft_type.manufacturer", "aircraft_type.model",
+        "aircraft_type.size", "aircraft_type.active",
+        "flight_proposal.status",
+        // Ramp staff (phase 2, block D): what the release path took off an agent (2-N06, 2-N08) and an approved
+        // absence Gestión Humana cancelled or shortened (2-N22).
+        "coverage.status", "assignment.status", "operation.status", "shift.status",
+        "availability.status", "availability.ends_on",
+        // Planning (phase 3, block A): a flight OCC rescheduled, cancelled or diverted (3-A) and the minimal carrier of a
+        // charter (3-N21).
+        "turnaround.status", "turnaround.arrival_flight", "turnaround.arrival_origin", "turnaround.arrival_scheduled",
+        "turnaround.departure_flight", "turnaround.departure_destination", "turnaround.departure_scheduled",
+        "turnaround.operation_date", "turnaround.aircraft_type", "turnaround.stand", "airline.name",
+        // Agents (phase 3, block B): the agent a handover or a stand change hands the operation to (3-F, 3-N05), by
+        // employee number, and the hours of a shift OCC or Gestión Humana adjusted (3-E).
+        "assignment.agent", "shift.starts_at", "shift.ends_at", "shift.block",
+        // Demo flights (ADR-0041): what the superadministrator triggered and how the flight ended. The state is the
+        // field a cancellation, a «Terminar demo» and the worker's dismissal change.
+        "demo_flight.arrival", "demo_flight.departure", "demo_flight.airline", "demo_flight.origin",
+        "demo_flight.destination", "demo_flight.registration", "demo_flight.minutes_to_on_block",
+        "demo_flight.ground_minutes", "demo_flight.stand", "demo_flight.state",
+        // How the trigger chose the stand (None, Specific or Random), and what «Cargar posiciones de Punta Cana» created
+        // and adopted (ADR-0041, contracts 1.2).
+        "demo_flight.stand_choice",
+        "demo_station.terminals_created", "demo_station.stands_created", "demo_station.stands_adopted",
+        // Professor's review: the airline's tax identifier Contratos corrected on a request and the one an approval
+        // copied to the airline's organization (a company's RNC or foreign tax id, never a person's document).
+        "request.tax_registration", "organization.tax_registration",
+    };
+
+    public static string? Serialize(params AuditFieldChangeData[] changes)
+    {
+        var safe = changes.Where(change => AllowedFields.Contains(change.Field) &&
+            change.Before != change.After).ToArray();
+        return safe.Length == 0 ? null : JsonSerializer.Serialize(safe);
+    }
+
+    public static IReadOnlyList<AuditFieldChangeData> Parse(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<AuditFieldChangeData[]>(json)?
+                .Where(change => AllowedFields.Contains(change.Field)).ToArray() ?? [];
+        }
+        catch (JsonException) { return []; }
+    }
+}

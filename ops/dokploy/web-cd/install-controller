@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly PROGRAM_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+DESTINATION="/etc/dokploy/elevant/web-cd"
+TEST_MODE="${ELEVANT_WEB_CD_INSTALL_TEST_MODE:-0}"
+TEST_ROOT="${ELEVANT_WEB_CD_INSTALL_TEST_ROOT:-}"
+EXPECTED_UID=0
+EXPECTED_GID=0
+PERMISSIONS_EMULATED=0
+
+die() { printf '%s: ERROR: %s\n' "$PROGRAM_NAME" "$*" >&2; exit 1; }
+usage() {
+  cat <<'EOF'
+Usage: install-controller [--destination ABSOLUTE_PATH]
+
+Installs the reviewed generic web CD controller under Dokploy's persistent
+bind. It does not create resources, configure secrets, enable schedules or
+deploy either application. Existing configs and all profile state survive.
+EOF
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --destination) (( $# >= 2 )) || die "--destination requires a path"; DESTINATION="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+if [[ "$TEST_MODE" == 1 ]]; then
+  [[ "$TEST_ROOT" == /* && -d "$TEST_ROOT" && ! -L "$TEST_ROOT" ]] || die "test root must be an existing absolute, non-symlink directory"
+  [[ "$DESTINATION" == "$TEST_ROOT/etc/dokploy/elevant/web-cd" ]] || die "test destination must remain below the explicit test root"
+  EXPECTED_UID="$(id -u)"; EXPECTED_GID="$(id -g)"
+  case "$(uname -s)" in MINGW*|MSYS*) PERMISSIONS_EMULATED=1 ;; esac
+else
+  (( EUID == 0 )) || die "must run as root on the Development VPS"
+  [[ "$DESTINATION" == /etc/dokploy/elevant/web-cd ]] || die "destination must be /etc/dokploy/elevant/web-cd"
+fi
+
+DOKPLOY_ROOT="$(dirname -- "$(dirname -- "$DESTINATION")")"
+[[ -d "$DOKPLOY_ROOT" && ! -L "$DOKPLOY_ROOT" ]] || die "Dokploy persistent bind is unavailable"
+
+readonly FILES=(
+  elevant-web-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs
+  openapi-tool.mjs env-tool.mjs verify-runtime README.md
+  config.aviam-web.env.example config.public-web.env.example
+  jobs/aviam-web-poll.job.sh jobs/public-web-poll.job.sh
+)
+for file in "${FILES[@]}"; do [[ -f "$SCRIPT_DIR/$file" && ! -L "$SCRIPT_DIR/$file" ]] || die "missing installation source: $file"; done
+
+install_directory() {
+  if [[ -e "$1" || -L "$1" ]]; then [[ -d "$1" && ! -L "$1" ]] || die "refusing unsafe installation directory: $1"; fi
+  if [[ "$TEST_MODE" == 1 ]]; then mkdir -p -- "$1"; chmod 0700 -- "$1"; else install -d -o root -g root -m 0700 -- "$1"; fi
+}
+install_file() {
+  local mode="$1" source="$2" destination="$3"
+  if [[ -e "$destination" || -L "$destination" ]]; then [[ -f "$destination" && ! -L "$destination" ]] || die "refusing unsafe installation file: $destination"; fi
+  if [[ "$TEST_MODE" == 1 ]]; then install -m "$mode" -- "$source" "$destination"; else install -o root -g root -m "$mode" -- "$source" "$destination"; fi
+}
+
+for directory in \
+  "$(dirname -- "$DESTINATION")" "$DESTINATION" "$DESTINATION/state" "$DESTINATION/log" "$DESTINATION/jobs" \
+  "$DESTINATION/state/aviam-web" "$DESTINATION/state/aviam-web/attempts" "$DESTINATION/state/aviam-web/tmp" "$DESTINATION/state/aviam-web/compose" "$DESTINATION/state/aviam-web/compose/web" "$DESTINATION/log/aviam-web" \
+  "$DESTINATION/state/public-web" "$DESTINATION/state/public-web/attempts" "$DESTINATION/state/public-web/tmp" "$DESTINATION/state/public-web/compose" "$DESTINATION/state/public-web/compose/web" "$DESTINATION/log/public-web"; do
+  install_directory "$directory"
+done
+
+for file in elevant-web-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs openapi-tool.mjs env-tool.mjs verify-runtime jobs/aviam-web-poll.job.sh jobs/public-web-poll.job.sh; do
+  install_file 0555 "$SCRIPT_DIR/$file" "$DESTINATION/$file"
+done
+for file in README.md config.aviam-web.env.example config.public-web.env.example; do install_file 0444 "$SCRIPT_DIR/$file" "$DESTINATION/$file"; done
+
+for app in aviam-web public-web; do
+  config="$DESTINATION/config.$app.env"
+  if [[ ! -e "$config" ]]; then
+    install_file 0600 "$SCRIPT_DIR/config.$app.env.example" "$config"
+    printf 'Installed placeholder config.%s.env; replace every REPLACE_* value before validation.\n' "$app"
+  else
+    [[ -f "$config" && ! -L "$config" ]] || die "existing config.$app.env is unsafe"
+    if (( ! PERMISSIONS_EMULATED )); then [[ "$(stat -c '%u:%g:%a' -- "$config")" == "$EXPECTED_UID:$EXPECTED_GID:600" ]] || die "existing config.$app.env has invalid ownership or mode"; fi
+    printf 'Preserved existing config.%s.env.\n' "$app"
+  fi
+done
+
+verify_item() {
+  local kind="$1" mode="$2" path="$3"
+  if [[ "$kind" == directory ]]; then [[ -d "$path" && ! -L "$path" ]] || die "installed directory is unavailable"; else [[ -f "$path" && ! -L "$path" ]] || die "installed file is unavailable"; fi
+  (( PERMISSIONS_EMULATED )) || [[ "$(stat -c '%u:%g:%a' -- "$path")" == "$EXPECTED_UID:$EXPECTED_GID:$mode" ]] || die "installed inventory has invalid ownership or mode: $path"
+}
+for directory in \
+  "$(dirname -- "$DESTINATION")" "$DESTINATION" "$DESTINATION/state" "$DESTINATION/log" "$DESTINATION/jobs" \
+  "$DESTINATION/state/aviam-web" "$DESTINATION/state/aviam-web/attempts" "$DESTINATION/state/aviam-web/tmp" "$DESTINATION/state/aviam-web/compose" "$DESTINATION/state/aviam-web/compose/web" "$DESTINATION/log/aviam-web" \
+  "$DESTINATION/state/public-web" "$DESTINATION/state/public-web/attempts" "$DESTINATION/state/public-web/tmp" "$DESTINATION/state/public-web/compose" "$DESTINATION/state/public-web/compose/web" "$DESTINATION/log/public-web"; do
+  verify_item directory 700 "$directory"
+done
+for file in elevant-web-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs openapi-tool.mjs env-tool.mjs verify-runtime jobs/aviam-web-poll.job.sh jobs/public-web-poll.job.sh; do verify_item file 555 "$DESTINATION/$file"; done
+for file in README.md config.aviam-web.env.example config.public-web.env.example; do verify_item file 444 "$DESTINATION/$file"; done
+verify_item file 600 "$DESTINATION/config.aviam-web.env"; verify_item file 600 "$DESTINATION/config.public-web.env"
+
+bash -n "$DESTINATION/elevant-web-cd"
+/bin/sh -n "$DESTINATION/jobs/aviam-web-poll.job.sh"
+/bin/sh -n "$DESTINATION/jobs/public-web-poll.job.sh"
+printf '%s\n' 'Web controller files installed; run verify-runtime next. No schedule or deployment was enabled.'

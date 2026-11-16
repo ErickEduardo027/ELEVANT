@@ -1,0 +1,161 @@
+name: Pull request CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - Development
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    name: Classify PR quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      backend_validate: ${{ steps.paths.outputs.backend_validate }}
+      web_validate: ${{ steps.paths.outputs.web_validate }}
+      api_client_validate: ${{ steps.paths.outputs.api_client_validate }}
+      mobile_validate: ${{ steps.paths.outputs.mobile_validate }}
+      ops_validate: ${{ steps.paths.outputs.ops_validate }}
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select validation owners
+        id: paths
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -Eeuo pipefail
+          changed_file_list="$(mktemp)"
+          trap 'rm -f -- "$changed_file_list"' EXIT
+          git diff --name-only --no-renames -z "$BASE_SHA" "$GITHUB_SHA" > "$changed_file_list"
+          classification="$(bash scripts/release/classify-changes.sh < "$changed_file_list")"
+          {
+            echo "backend_validate=$(jq -r '.backend_validate' <<< "$classification")"
+            echo "web_validate=$(jq -r '.aviam_validate or .public_validate' <<< "$classification")"
+            echo "api_client_validate=$(jq -r '.api_client_validate' <<< "$classification")"
+            echo "mobile_validate=$(jq -r '.mobile_validate' <<< "$classification")"
+            echo "ops_validate=$(jq -r '.ops_validate' <<< "$classification")"
+          } >> "$GITHUB_OUTPUT"
+          echo "$(jq -c 'del(.validation_matrix,.release_matrix)' <<< "$classification")" >> "$GITHUB_STEP_SUMMARY"
+
+  backend:
+    name: Backend and database
+    needs: classify
+    if: needs.classify.outputs.backend_validate == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+    permissions:
+      contents: read
+      packages: write
+
+  web:
+    name: Selected web clients
+    needs: classify
+    if: needs.classify.outputs.web_validate == 'true'
+    uses: ./.github/workflows/web-ci.yml
+    permissions:
+      contents: read
+      packages: write
+
+  api_client:
+    name: OpenAPI and generated client
+    needs: classify
+    if: needs.classify.outputs.api_client_validate == 'true'
+    uses: ./.github/workflows/api-client-ci.yml
+    permissions:
+      contents: read
+
+  mobile:
+    name: Mobile Agent
+    needs: classify
+    if: needs.classify.outputs.mobile_validate == 'true'
+    uses: ./.github/workflows/mobile-ci.yml
+    permissions:
+      contents: read
+
+  ops:
+    name: Operations configuration
+    needs: classify
+    if: needs.classify.outputs.ops_validate == 'true'
+    uses: ./.github/workflows/ops-config-ci.yml
+    permissions:
+      contents: read
+
+  vault:
+    name: Knowledge Vault
+    uses: ./.github/workflows/vault-ci.yml
+    permissions:
+      contents: read
+
+  secrets:
+    name: Secret scan and workflow policy
+    uses: ./.github/workflows/secret-scan.yml
+    permissions:
+      contents: read
+
+  final_gate:
+    name: Final PR quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - classify
+      - backend
+      - web
+      - api_client
+      - mobile
+      - ops
+      - vault
+      - secrets
+    env:
+      CLASSIFY_STATUS: ${{ needs.classify.result }}
+      BACKEND_STATUS: ${{ needs.backend.result }}
+      WEB_STATUS: ${{ needs.web.result }}
+      API_CLIENT_STATUS: ${{ needs.api_client.result }}
+      MOBILE_STATUS: ${{ needs.mobile.result }}
+      OPS_STATUS: ${{ needs.ops.result }}
+      VAULT_STATUS: ${{ needs.vault.result }}
+      SECRETS_STATUS: ${{ needs.secrets.result }}
+      BACKEND_REQUIRED: ${{ needs.classify.outputs.backend_validate }}
+      WEB_REQUIRED: ${{ needs.classify.outputs.web_validate }}
+      API_CLIENT_REQUIRED: ${{ needs.classify.outputs.api_client_validate }}
+      MOBILE_REQUIRED: ${{ needs.classify.outputs.mobile_validate }}
+      OPS_REQUIRED: ${{ needs.classify.outputs.ops_validate }}
+    steps:
+      - name: Require every selected gate to succeed
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          failed=false
+          check() {
+            local job="$1" required="$2" status="$3"
+            echo "$job: required=$required result=$status" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$status" == failure || "$status" == cancelled ]]; then
+              failed=true
+            elif [[ "$required" == true && "$status" != success ]]; then
+              failed=true
+            fi
+          }
+          check classify true "$CLASSIFY_STATUS"
+          check backend "$BACKEND_REQUIRED" "$BACKEND_STATUS"
+          check web "$WEB_REQUIRED" "$WEB_STATUS"
+          check api_client "$API_CLIENT_REQUIRED" "$API_CLIENT_STATUS"
+          check mobile "$MOBILE_REQUIRED" "$MOBILE_STATUS"
+          check ops "$OPS_REQUIRED" "$OPS_STATUS"
+          check vault true "$VAULT_STATUS"
+          check secrets true "$SECRETS_STATUS"
+          [[ "$failed" == false ]] || {
+            echo "A required PR quality gate failed, was cancelled or was skipped." >&2
+            exit 1
+          }

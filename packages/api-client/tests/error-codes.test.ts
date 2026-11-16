@@ -1,0 +1,195 @@
+import { describe, expect, it } from "vitest";
+import { ELEVANT_API_ERROR_CODES, ELEVANT_RULE_REASONS } from "../src/errors";
+
+// Every block adds its own `as const` list to ELEVANT_API_ERROR_CODES; a code lives in one list only.
+describe("Problem Details codes", () => {
+  it("lists every code once, generic command codes included", () => {
+    expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
+    for (const code of ["version_conflict", "idempotency_conflict", "idempotency_key_required", "expected_version_required",
+      "reason_required", "not_found", "airline_already_contracted", "airline_has_portal_account", "airline_code_in_use",
+      "representative_unconfirmed", "request_closed", "email_has_account", "email_in_use_other_airline",
+      "email_in_use_internal", "account_disabled", "account_not_found", "airline_identity_locked"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("keeps the contract lifecycle codes of phase 2 (block A)", () => {
+    for (const code of ["content_changed", "contract_terminated", "termination_scheduled", "termination_not_scheduled",
+      "termination_date_required", "termination_notice_not_met", "immediate_cause_invalid", "version_awaiting_signatures",
+      "version_signed", "airline_signed_other_content", "already_signed", "not_approved", "forbidden"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("names the tablet evidence rules of phase 3 (block C)", () => {
+    for (const code of ["time_outside_operation_window", "milestone_out_of_order", "service_time_out_of_order",
+      "ramp_operation_state_conflict", "invalid_ramp_command", "idempotency_conflict", "not_found"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("keeps the master data and flight feed codes of phase 2 (block C)", () => {
+    for (const code of ["station_code_taken", "airport_has_station", "airport_icao_taken", "invalid_station",
+      "invalid_time_zone", "airport_required", "time_zone_locked", "station_in_use", "terminal_code_taken",
+      "stand_code_taken", "aircraft_type_code_taken", "invalid_terminal", "invalid_stand", "invalid_aircraft_type",
+      "terminal_in_use", "stand_in_use", "aircraft_type_in_use", "terminal_code_locked", "stand_code_locked",
+      "terminal_inactive", "invalid_flight_feed_query", "invalid_flight_import", "flight_proposals_not_pairable",
+      "flight_proposal_closed", "flight_counterpart_unknown", "contract_not_in_force", "contract_ambiguous",
+      "charter_has_contract", "charter_required", "airline_inactive", "flight_proposal_not_dismissed",
+      "flight_proposal_passed", "aircraft_type_unavailable", "stand_unavailable"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A stand in use, or one of an inactive terminal, also comes back as the rule of a rejected coverage configuration
+    // (422).
+    for (const reason of ["stand_in_use", "terminal_inactive"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("keeps the human resources codes of phase 2 (block D)", () => {
+    for (const code of ["agent_has_operation_in_progress", "invalid_availability_request", "agent_unavailable",
+      "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
+      "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
+      "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A mentor on an approved absence or without a current airport permit is a rule of a rejected coverage (2-N23).
+    for (const reason of ["mentor_absent", "mentor_permit_required"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("keeps the airline permit codes of phase 2 (block B)", () => {
+    for (const code of ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
+      "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the planning codes of phase 3 (block A)", () => {
+    for (const code of ["operation_started", "turnaround_closed", "assigned_agent_unavailable", "invalid_turnaround_change",
+      "arrival_locked", "aircraft_type_locked", "flight_already_planned", "invalid_charter_airline", "invalid_position_request",
+      "aircraft_type_unavailable", "stand_unavailable", "contract_not_in_force", "airline_code_in_use"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A rescheduled flight keeps its agent only inside the shift and within three simultaneous operations.
+    for (const reason of ["shift_not_covering", "simultaneous_limit", "stand_taken", "stand_narrowbody_only"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("knows the coverage, assignment and handover codes of phase 3 (block B)", () => {
+    for (const code of ["assignment_changed", "handover_not_allowed", "same_agent", "agent_not_eligible",
+      "invalid_handover", "shift_not_found", "invalid_coverage_request", "coverage_rejected", "operation_started"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // An adjusted shift keeps covering the agent's work and a validated attendance freezes it (3-E).
+    for (const code of ["shift_uncovers_work", "attendance_validated", "shift_day_taken", "shift_in_past"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A coverage needs the agent's scope in its terminal (3-N05); a junior needs a mentor.
+    for (const reason of ["terminal_scope_missing", "mentor_required"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("knows the review, incident and charter codes of phase 3 (block D)", () => {
+    for (const code of ["invalid_review_request", "service_order_unsigned", "service_order_stale", "review_already_decided",
+      "review_not_approved", "reopened_review_cannot_return", "already_invoiced", "billing_exclusion_not_allowed",
+      "charge_excluded_by_contract", "charge_not_applicable", "charge_already_marked", "charge_already_removed",
+      "incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid", "operation_closed",
+      "invalid_incident_request", "charter_prepayment_confirmed", "charter_prepayment_not_confirmed", "review_closed"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // already_invoiced is also the reason the e-CF issuance names (ADR-0035), and so are a charge the contract
+    // excludes (3-N29) and a service OCC excluded from billing (3-N11).
+    for (const reason of ["already_invoiced", "charge_excluded_by_contract", "excluded_in_review"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("knows the report codes of phase 3 (block E)", () => {
+    for (const code of ["report_too_large", "invalid_report_query", "report_not_found", "station_unavailable"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the invoicing and treasury codes of phase 4 (block A)", () => {
+    // 4-N01, 4-N06, 4-N07, 4-N18, 4-N29: every refusal of the issuance, «Por facturar» and the no-charge closure.
+    for (const code of ["invalid_invoice_request", "invalid_pending_query", "invoice_state_changed", "zero_total",
+      "operation_has_charge", "too_many_lines", "too_many_operations", "date_window_exceeded", "station_inactive",
+      "airline_inactive", "mixed_airline", "mixed_currency", "nothing_to_invoice", "operation_not_approved",
+      "already_invoiced", "pending_preinvoice", "exchange_rate_missing", "contract_charge_rate_missing",
+      "charge_definition_missing", "package_scope_has_unissued_preinvoice", "ambiguous_package_coverage",
+      "charge_excluded_by_contract", "invalid_amount", "idempotency_conflict", "version_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // 4-N10: the business day of the invoice or the receipt, and the defaults of treasury.
+    for (const code of ["effective_before_invoice", "effective_before_receipt", "treasury_conflict",
+      "invalid_treasury_request"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the simplified Finance codes of phase 4 (block B)", () => {
+    // 4-N12: a legacy write answers 410; 4-A: a retired report and a bad export format; 4-N21 and 4-A: the queries of
+    // «Facturas» and «Inicio». The report query and the refusal keep their shared codes.
+    for (const code of ["legacy_finance_route_retired", "unknown_finance_report", "invalid_report_export_format",
+      "invalid_invoice_query", "invalid_finance_home_query", "invalid_report_query", "forbidden", "not_found"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows that a card receipt is not reversed from Treasury (phase 4, block C, 4-N09)", () => {
+    for (const code of ["card_payment_not_reversible", "treasury_conflict", "invalid_treasury_request", "version_conflict",
+      "idempotency_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the charter prepayment codes of phase 4 (block C, 4-N22)", () => {
+    // Applied to the invoice, the prepayment is reversed in «Cobros» before it is reopened; the confirmation takes a key,
+    // the version and, to correct it, a reason; a receipt of the airline posted at the same moment has its own code.
+    for (const code of ["charter_prepayment_applied", "invalid_charter_request", "charter_prepayment_not_confirmed",
+      "charter_prepayment_receipt_conflict", "idempotency_key_required", "expected_version_required", "reason_required",
+      "version_conflict", "idempotency_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the card payment codes of phase 4 (block C)", () => {
+    // 4-N05: no card gateway in this environment; every other refusal of the card payment names its cause.
+    for (const code of ["card_payments_unavailable", "card_payment_invalid", "card_payment_conflict", "invoice_paid",
+      "amount_mismatch", "concurrent_payment", "idempotency_conflict", "idempotency_key_required", "not_found", "forbidden"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // Older portals read the reasons: the unavailable gateway is one too.
+    for (const reason of ["card_payments_unavailable", "invoice_paid", "amount_mismatch"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("keeps the demo flight codes (ADR-0041)", () => {
+    // Off in this environment, a request outside the form's rules, an unknown airport, the limit of active flights and
+    // a flight already ended; the station, airline, contract, aircraft type and stand keep the codes of their lists.
+    for (const code of ["demo_flights_unavailable", "invalid_demo_flight", "demo_origin_unknown", "demo_flight_limit_reached",
+      "demo_flight_closed", "station_unavailable", "airline_inactive", "contract_not_in_force", "contract_ambiguous",
+      "aircraft_type_unavailable", "stand_unavailable", "forbidden", "not_found", "version_conflict", "idempotency_conflict",
+      "idempotency_key_required"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A refused stand names the rule it breaks.
+    for (const reason of ["stand_taken", "stand_narrowbody_only", "neighbour_widebody"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("keeps demo_station_unsupported, no_eligible_stand and stand_not_eligible", () => {
+    // PR A2: only Punta Cana has a catalogue to load; «Al azar» with nothing eligible to draw and a stand chosen by hand
+    // that is not eligible.
+    for (const code of ["demo_station_unsupported", "no_eligible_stand", "stand_not_eligible"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // Their reasons survive: the map cannot draw the stand, nobody covers it, or the covering agents fail OCC's rule.
+    for (const reason of ["stand_not_located", "stand_not_covered", "agent_inactive", "mobile_account_unavailable",
+      "station_scope_missing", "terminal_scope_missing", "operational_position_unavailable", "qualification_not_current",
+      "airport_id_not_current", "ramp_driver_license_not_current", "shift_not_compatible", "approved_absence",
+      "mentor_required", "assignment_conflict"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+    // Each reason is listed once.
+    expect(new Set(ELEVANT_RULE_REASONS).size).toBe(ELEVANT_RULE_REASONS.length);
+  });
+
+  it("keeps invalid_map_query of the OCC map (ADR-0042)", () => {
+    // A malformed map query has its own code; a refused reader and a station or aircraft not found keep the common ones.
+    for (const code of ["invalid_map_query", "forbidden", "not_found"]) expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
+  });
+
+  it("keeps invalid_weather_query of the OCC weather (ADR-0043)", () => {
+    // A malformed weather query has its own code; a refused reader and a station without weather keep the common ones.
+    for (const code of ["invalid_weather_query", "forbidden", "not_found"]) expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    expect(ELEVANT_API_ERROR_CODES.filter(code => code === "invalid_weather_query")).toHaveLength(1);
+    expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
+  });
+
+  it("keeps the access codes of phase 2 (block E)", () => {
+    for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
+      "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",
+      "last_representative", "invalid_portal_user", "employee_transferred", "requester_no_longer_administrator",
+      "legacy_governance_retired", "access_request_closed", "invalid_governance_data", "governance_conflict",
+      "protected_user"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+});

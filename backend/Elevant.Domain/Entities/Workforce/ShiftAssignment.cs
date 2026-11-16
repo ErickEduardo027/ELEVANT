@@ -1,0 +1,24 @@
+using Elevant.Domain.Enumerations;
+
+namespace Elevant.Domain.Entities.Workforce;
+
+public sealed class ShiftAssignment : AuditableEntity
+{
+    public long RampAgentId { get; set; }
+
+    public long StationId { get; set; }
+
+    public long TerminalId { get; set; }
+
+    public long? OperationalPositionId { get; set; }
+
+    public DateOnly WorkDate { get; set; }
+
+    public TimeOnly StartsAtLocal { get; set; }
+
+    public TimeOnly EndsAtLocal { get; set; }
+
+    public ShiftBlock Block { get; set; }
+
+    public string? Notes { get; set; }
+}

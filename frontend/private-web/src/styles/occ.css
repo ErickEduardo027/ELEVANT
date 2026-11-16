@@ -1,0 +1,179 @@
+/* Identity of the OCC workspace (operations control centre). It applies only
+   inside `[data-department="occ"]`, which ShellFrame sets when AdminOccLayout
+   asks for it; the other departments never see these variables.
+   Two token blocks: the dark one, the default, on the scope itself, and the
+   light one below it, which applies while <html> has no `dark` class. The
+   `*-occ-*` classes of tailwind.config.js read these values, and src/features/occ-ui/occPalette.js mirrors the colours
+   for JavaScript consumers (a parity test compares the two files). */
+[data-department='occ'] {
+  color-scheme: dark;
+
+  /* Surfaces: rail, page, panels, raised slabs, floating panels, input wells. */
+  --occ-nav: #0f161a;
+  --occ-canvas: #161e22;
+  --occ-panel: #20282d;
+  --occ-panel-raised: #2a3439;
+  --occ-panel-float: rgb(32 40 45 / 0.94);
+  --occ-field: #161e22;
+
+  /* Stand state «Llegando» (src/features/occ-ui/statusVocabulary.js): the raised
+     slab at 40 %, in a token of its own so that maps and HTML legends paint it
+     as it is, with no opacity modifier. */
+  --occ-arriving-fill: rgb(42 52 57 / 0.4);
+
+  /* Joints, control boundaries and text. */
+  --occ-line: #394348;
+  --occ-line-strong: #768289;
+  --occ-text: #e8eef1;
+  --occ-muted: #bcc8ce;
+  --occ-faint: #95a2a9;
+
+  /* Cyan: what is selected or can be acted on. The primary action is a light key. */
+  --occ-accent: #6fd4f5;
+  --occ-accent-soft: #2d444d;
+  --occ-on-accent: #0f161a;
+  --occ-primary: #e8eef1;
+  --occ-primary-hover: #ffffff;
+  --occ-on-primary: #0f161a;
+
+  /* Signals: amber asks for attention, red is urgent. Normal states carry no hue. */
+  --occ-warn: #fdc14f;
+  --occ-warn-fill: #fdc14f;
+  --occ-warn-soft: #434032;
+  --occ-on-warn: #0f161a;
+  --occ-danger: #f5746d;
+  --occ-danger-fill: #f5746d;
+  --occ-danger-soft: #423437;
+  --occ-on-danger: #0f161a;
+  --occ-scrim: rgb(15 22 26 / 0.72);
+
+  /* Navigation rail. */
+  --occ-nav-line: #252c30;
+  --occ-nav-text: #c9d3d8;
+  --occ-nav-muted: #95a2a9;
+  --occ-nav-hover: #1a2227;
+  --occ-nav-active: #252c30;
+  --occ-nav-accent: #6fd4f5;
+
+  /* Radius by role: plates, controls, panels, overlays. */
+  --occ-radius-plate: 2px;
+  --occ-radius-control: 4px;
+  --occ-radius-panel: 6px;
+  --occ-radius-overlay: 8px;
+
+  /* Aliases kept for the classes that still use them. */
+  --occ-ok: var(--occ-text);
+  --occ-panel-muted: var(--occ-panel-raised);
+
+  /* The chat stylesheets read these names and nothing else defines them. */
+  --occ-ui-soft: var(--occ-panel-raised);
+  --occ-ui-line: var(--occ-line);
+  --occ-ui-glass: var(--occ-field);
+  --occ-ui-text: var(--occ-text);
+  --occ-ui-solid: var(--occ-panel);
+  --occ-ui-muted: var(--occ-muted);
+
+  font-family: var(--font-manrope), system-ui, 'Segoe UI', sans-serif;
+  font-weight: 500;
+}
+
+/* The light theme of the OCC (ADR-0044, note of 2026-11-15): the same tokens
+   with light values, applied while <html> does not carry the `dark` class. The
+   dark block above stays the default (the boot script and ThemeProvider add the
+   class on OCC routes unless the account chose light). Every text token keeps
+   at least 4.5:1 on every surface (primary text 10:1, secondary 7:1) and the
+   control boundaries 3:1; occPalette.test.js checks both themes. */
+:root:not(.dark) [data-department='occ'] {
+  color-scheme: light;
+
+  --occ-nav: #e3e9ec;
+  --occ-canvas: #e9eef1;
+  --occ-panel: #ffffff;
+  --occ-panel-raised: #e4eaed;
+  --occ-panel-float: rgb(255 255 255 / 0.94);
+  --occ-field: #f4f7f8;
+
+  --occ-arriving-fill: rgb(196 207 213 / 0.4);
+
+  --occ-line: #c9d3d8;
+  --occ-line-strong: #6f7b82;
+  --occ-text: #11181c;
+  --occ-muted: #3b474e;
+  --occ-faint: #56636a;
+
+  --occ-accent: #054e66;
+  --occ-accent-soft: #d4ebf3;
+  --occ-on-accent: #ffffff;
+  --occ-primary: #1b2328;
+  --occ-primary-hover: #323d43;
+  --occ-on-primary: #ffffff;
+
+  --occ-warn: #634000;
+  --occ-warn-fill: #f2b340;
+  --occ-warn-soft: #f8ecd0;
+  --occ-on-warn: #11181c;
+  --occ-danger: #b0241a;
+  --occ-danger-fill: #c62f24;
+  --occ-danger-soft: #f9e1df;
+  --occ-on-danger: #ffffff;
+  --occ-scrim: rgb(17 24 28 / 0.45);
+
+  --occ-nav-line: #cdd7dc;
+  --occ-nav-text: #1f2a30;
+  --occ-nav-muted: #4c5960;
+  --occ-nav-hover: #d8e0e4;
+  --occ-nav-active: #cdd7dc;
+  --occ-nav-accent: #075d76;
+}
+
+[data-department='occ'] :focus-visible {
+  outline: 2px solid var(--occ-accent);
+  outline-offset: 2px;
+}
+
+[data-department='occ'] [data-occ-nav] :focus-visible {
+  outline-color: var(--occ-nav-accent);
+}
+
+/* The chat stylesheet (src/features/chat/ChatWorkspace.module.css, rebuilt in
+   U6) draws the selected conversation and the focused composer in the legacy
+   blue #145dc4, 2.4:1 on the panel and 1.7:1 on the selected row. Under the
+   OCC both are cyan. The selection rule (0,4,1) outweighs the module (0,2,0)
+   and the bridge's hover border (0,4,0); the focus rule (0,3,1) outweighs the
+   module (0,3,0). */
+[data-department='occ'] [data-occ-chat-layout] [aria-label] button[aria-current='true'] {
+  border-color: var(--occ-accent);
+}
+
+[data-department='occ'] [data-occ-chat-layout] textarea:focus-visible {
+  outline-color: var(--occ-accent);
+}
+
+/* Stacked tables (src/styles/tokens.css): below 40rem each row of a
+   `table-stack` becomes a card through @apply, which copies the legacy white
+   or navy card, its shadow and its 12 px radius into `.table-stack tbody > tr`,
+   where the bridge cannot reach them. Under the OCC the card is a flat panel
+   slab and its labels are secondary text. `table.` outweighs the dark variant
+   of those rules: (0,2,3) against (0,2,2), and (0,2,5) against (0,2,4). */
+@container (max-width: 39.98rem) {
+  [data-department='occ'] table.table-stack tbody > tr {
+    border-color: var(--occ-line);
+    border-radius: var(--occ-radius-panel);
+    background-color: var(--occ-panel);
+    --tw-shadow: 0 0 #0000;
+    --tw-shadow-colored: 0 0 #0000;
+  }
+
+  [data-department='occ'] table.table-stack tbody > tr > td::before {
+    color: var(--occ-muted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-department='occ'] *,
+  [data-department='occ'] *::before,
+  [data-department='occ'] *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

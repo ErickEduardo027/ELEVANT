@@ -1,0 +1,220 @@
+{
+  "schema": 1,
+  "aliases": {},
+  "stands": {
+    "A1": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A2": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A3": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A4": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A5": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A6": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A7": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A8": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A9": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A10": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "A11": {
+      "note": "Terminal A: revisada por el dueño del producto; nariz hacia el edificio.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "AN1": {
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "AN2": {
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "AN3": {
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "AN4": {
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "AN5": {
+      "note": "Terminal A, remota: revisada por el dueño del producto; nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B20": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B21": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B22": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B23": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B24": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B25": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B26": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B27": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B28": {
+      "note": "Terminal B: revisada por el dueño del producto.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B29": {
+      "osmWay": 742027529,
+      "note": "OSM trae dos líneas; el dueño del producto confirmó la que pasa por su coordenada (OpenStreetMap está desactualizado en el aeropuerto).",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B30": {
+      "osmWay": 742027527,
+      "note": "OSM trae dos líneas; el dueño del producto confirmó la que pasa por su coordenada (OpenStreetMap está desactualizado en el aeropuerto).",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B31": {
+      "headingTrue": 175,
+      "note": "Sin geometría OSM: el dueño del producto confirmó su coordenada, al norte del edificio junto a B32, y la nariz al sur (OpenStreetMap está desactualizado en el aeropuerto).",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B32": {
+      "headingTrue": 175,
+      "note": "Sin geometría OSM: el dueño del producto confirmó la nariz al sur, de lado con B31.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B33": {
+      "note": "Retirada: fuera del catálogo de 41 posiciones activas.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B34": {
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B35": {
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B36": {
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "B37": {
+      "note": "Remota sin geometría OSM: el dueño del producto confirmó la nariz al este y la entrada por detrás, desde el oeste.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN6": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN7": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN8": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN9": {
+      "note": "FBO sin geometría OSM: el dueño del producto mantiene su coordenada aunque la calle F de OSM cruce la caja (OpenStreetMap está desactualizado en el aeropuerto); nariz al norte.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN10": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN11": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN12": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    },
+    "BN13": {
+      "note": "FBO sin geometría OSM: el dueño del producto confirmó la nariz al sur.",
+      "reviewedBy": "Dueño del producto",
+      "reviewedOn": "2026-11-13"
+    }
+  }
+}

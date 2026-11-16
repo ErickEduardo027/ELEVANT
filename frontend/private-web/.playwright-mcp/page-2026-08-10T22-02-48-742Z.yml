@@ -1,0 +1,261 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=e12]:
+        - link "Dashboard" [ref=e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=e34]: Habilitaciones y certificaciones
+          - generic [ref=e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=e43]: Carnets y permisos aeroportuarios
+          - generic [ref=e44]: "2"
+        - link "Horarios y disponibilidad" [ref=e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=e68]: Notificaciones
+          - generic [ref=e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=e72] [cursor=pointer]:
+        - generic [ref=e73]: CR
+        - generic [ref=e74]:
+          - generic [ref=e75]: Camila Reyes
+          - generic [ref=e76]: Gestión Humana
+  - generic [ref=e77]:
+    - banner [ref=e78]:
+      - generic [ref=e79]: Gestión Humana
+      - generic [ref=e80]:
+        - button "Notificaciones" [ref=e81] [cursor=pointer]:
+          - generic [ref=e85]: "4"
+        - button "Cambiar a modo oscuro" [ref=e86] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=e90] [cursor=pointer]:
+          - generic [ref=e91]: CR
+          - generic [ref=e92]: Camila Reyes
+    - main [ref=e93]:
+      - generic [ref=e94]:
+        - generic [ref=e95]:
+          - generic [ref=e96]:
+            - heading "Carnets y permisos aeroportuarios" [level=1] [ref=e97]
+            - paragraph [ref=e98]: "Carnet aeroportuario y licencia de conducir en rampa, por agente: vigentes, próximos a vencer y vencidos."
+          - button "Actualizar" [ref=e99] [cursor=pointer]
+        - generic [ref=e105]:
+          - generic [ref=e106]:
+            - heading "Carnet aeroportuario" [level=3] [ref=e107]
+            - generic [ref=e113]:
+              - generic [ref=e114]:
+                - generic [ref=e115]: Vigentes
+                - generic [ref=e120]: "1"
+              - generic [ref=e121]:
+                - generic [ref=e122]: Próximos a vencer
+                - generic [ref=e127]: "1"
+              - generic [ref=e128]:
+                - generic [ref=e129]: Vencidos
+                - generic [ref=e133]: "1"
+          - generic [ref=e134]:
+            - heading "Licencia de conducir en rampa" [level=3] [ref=e135]
+            - generic [ref=e142]:
+              - generic [ref=e143]:
+                - generic [ref=e144]: Vigentes
+                - generic [ref=e149]: "2"
+              - generic [ref=e150]:
+                - generic [ref=e151]: Próximos a vencer
+                - generic [ref=e156]: "1"
+              - generic [ref=e157]:
+                - generic [ref=e158]: Vencidos
+                - generic [ref=e162]: "0"
+        - generic [ref=e163]:
+          - searchbox "Buscar agentes" [ref=e165]
+          - combobox "Terminal" [ref=e166]:
+            - option "Terminal" [selected]
+            - option "Terminal A"
+            - option "Terminal B"
+          - combobox "Estado" [ref=e167]:
+            - option "Estado" [selected]
+            - option "Vigente"
+            - option "Próximo a vencer"
+            - option "Vencido"
+          - combobox "Documento" [ref=e168]:
+            - option "Ambos" [selected]
+            - option "Carnet aeroportuario"
+            - option "Licencia de conducir en rampa"
+          - generic [ref=e169]:
+            - checkbox "Solo vencidos/próximos" [checked] [ref=e170]
+            - text: Solo vencidos/próximos
+          - button "Limpiar filtros" [disabled] [ref=e173]
+        - table [ref=e178]:
+          - rowgroup [ref=e179]:
+            - row [ref=e180]:
+              - columnheader "Agente" [ref=e181]
+              - columnheader "Terminal" [ref=e182]
+              - columnheader "Carnet" [ref=e183]
+              - columnheader "Licencia" [ref=e184]
+              - columnheader "Estado general" [ref=e185]
+              - columnheader "Acciones" [ref=e186]
+          - rowgroup [ref=e187]:
+            - row [ref=e188] [cursor=pointer]:
+              - cell [ref=e189]:
+                - generic [ref=e190]:
+                  - generic [ref=e191]: YS
+                  - generic [ref=e192]:
+                    - paragraph [ref=e193]: Yeimy Santana
+                    - paragraph [ref=e194]: RA-0991
+              - cell "A" [ref=e195]
+              - cell "Vencido 15 jun de 2026" [ref=e196]:
+                - generic [ref=e197]:
+                  - generic [ref=e198]: Vencido
+                  - generic [ref=e200]: 15 jun de 2026
+              - cell "Vencido 01 jul de 2026" [ref=e201]:
+                - generic [ref=e202]:
+                  - generic [ref=e203]: Vencido
+                  - generic [ref=e205]: 01 jul de 2026
+              - cell "Requiere acción" [ref=e206]
+              - cell [ref=e209]:
+                - button "Ver detalle" [ref=e211]
+            - row [ref=e212] [cursor=pointer]:
+              - cell [ref=e213]:
+                - generic [ref=e214]:
+                  - generic [ref=e215]: FO
+                  - generic [ref=e216]:
+                    - paragraph [ref=e217]: Franklin Ortiz
+                    - paragraph [ref=e218]: RA-1103
+              - cell "A / B" [ref=e219]
+              - cell "Vencido 20 jul de 2026" [ref=e220]:
+                - generic [ref=e221]:
+                  - generic [ref=e222]: Vencido
+                  - generic [ref=e224]: 20 jul de 2026
+              - cell "Vigente 01 dic de 2026" [ref=e225]:
+                - generic [ref=e226]:
+                  - generic [ref=e227]: Vigente
+                  - generic [ref=e229]: 01 dic de 2026
+              - cell "Requiere acción" [ref=e230]
+              - cell [ref=e233]:
+                - button "Ver detalle" [ref=e235]
+            - row [ref=e236] [cursor=pointer]:
+              - cell [ref=e237]:
+                - generic [ref=e238]:
+                  - generic [ref=e239]: LT
+                  - generic [ref=e240]:
+                    - paragraph [ref=e241]: Luis Tavárez
+                    - paragraph [ref=e242]: RA-1162
+              - cell "A" [ref=e243]
+              - cell "Próximo a vencer 18 ago de 2026" [ref=e244]:
+                - generic [ref=e245]:
+                  - generic [ref=e246]: Próximo a vencer
+                  - generic [ref=e248]: 18 ago de 2026
+              - cell "Próximo a vencer 22 ago de 2026" [ref=e249]:
+                - generic [ref=e250]:
+                  - generic [ref=e251]: Próximo a vencer
+                  - generic [ref=e253]: 22 ago de 2026
+              - cell "Atención" [ref=e254]
+              - cell [ref=e257]:
+                - button "Ver detalle" [ref=e259]
+            - row [ref=e260] [cursor=pointer]:
+              - cell [ref=e261]:
+                - generic [ref=e262]:
+                  - generic [ref=e263]: JP
+                  - generic [ref=e264]:
+                    - paragraph [ref=e265]: Juan Pérez
+                    - paragraph [ref=e266]: RA-1178
+              - cell "A" [ref=e267]
+              - cell "Próximo a vencer 19 ago de 2026" [ref=e268]:
+                - generic [ref=e269]:
+                  - generic [ref=e270]: Próximo a vencer
+                  - generic [ref=e272]: 19 ago de 2026
+              - cell "Vigente 01 mar de 2027" [ref=e273]:
+                - generic [ref=e274]:
+                  - generic [ref=e275]: Vigente
+                  - generic [ref=e277]: 01 mar de 2027
+              - cell "Atención" [ref=e278]
+              - cell [ref=e281]:
+                - button "Ver detalle" [ref=e283]
+            - row [ref=e284] [cursor=pointer]:
+              - cell [ref=e285]:
+                - generic [ref=e286]:
+                  - generic [ref=e287]: AF
+                  - generic [ref=e288]:
+                    - paragraph [ref=e289]: Ana Fermín
+                    - paragraph [ref=e290]: RA-1183
+              - cell "B" [ref=e291]
+              - cell "Vigente 15 ene de 2027" [ref=e292]:
+                - generic [ref=e293]:
+                  - generic [ref=e294]: Vigente
+                  - generic [ref=e296]: 15 ene de 2027
+              - cell "Próximo a vencer 21 ago de 2026" [ref=e297]:
+                - generic [ref=e298]:
+                  - generic [ref=e299]: Próximo a vencer
+                  - generic [ref=e301]: 21 ago de 2026
+              - cell "Atención" [ref=e302]
+              - cell [ref=e305]:
+                - button "Ver detalle" [ref=e307]
+            - row [ref=e308] [cursor=pointer]:
+              - cell [ref=e309]:
+                - generic [ref=e310]:
+                  - generic [ref=e311]: RE
+                  - generic [ref=e312]:
+                    - paragraph [ref=e313]: Rosa Elena Guzmán
+                    - paragraph [ref=e314]: RA-1077
+              - cell "B" [ref=e315]
+              - cell "Próximo a vencer 25 ago de 2026" [ref=e316]:
+                - generic [ref=e317]:
+                  - generic [ref=e318]: Próximo a vencer
+                  - generic [ref=e320]: 25 ago de 2026
+              - cell "Vigente 01 jun de 2027" [ref=e321]:
+                - generic [ref=e322]:
+                  - generic [ref=e323]: Vigente
+                  - generic [ref=e325]: 01 jun de 2027
+              - cell "Atención" [ref=e326]
+              - cell [ref=e329]:
+                - button "Ver detalle" [ref=e331]
+            - row [ref=e332] [cursor=pointer]:
+              - cell [ref=e333]:
+                - generic [ref=e334]:
+                  - generic [ref=e335]: ML
+                  - generic [ref=e336]:
+                    - paragraph [ref=e337]: María López
+                    - paragraph [ref=e338]: RA-1150
+              - cell "B" [ref=e339]
+              - cell "Vigente 01 may de 2027" [ref=e340]:
+                - generic [ref=e341]:
+                  - generic [ref=e342]: Vigente
+                  - generic [ref=e344]: 01 may de 2027
+              - cell "Próximo a vencer 30 ago de 2026" [ref=e345]:
+                - generic [ref=e346]:
+                  - generic [ref=e347]: Próximo a vencer
+                  - generic [ref=e349]: 30 ago de 2026
+              - cell "Atención" [ref=e350]
+              - cell [ref=e353]:
+                - button "Ver detalle" [ref=e355]
+            - row [ref=e356] [cursor=pointer]:
+              - cell [ref=e357]:
+                - generic [ref=e358]:
+                  - generic [ref=e359]: KO
+                  - generic [ref=e360]:
+                    - paragraph [ref=e361]: Katherine Objío
+                    - paragraph [ref=e362]: RA-1204
+              - cell "B" [ref=e363]
+              - cell "Próximo a vencer 05 sept de 2026" [ref=e364]:
+                - generic [ref=e365]:
+                  - generic [ref=e366]: Próximo a vencer
+                  - generic [ref=e368]: 05 sept de 2026
+              - cell "Vigente 20 feb de 2027" [ref=e369]:
+                - generic [ref=e370]:
+                  - generic [ref=e371]: Vigente
+                  - generic [ref=e373]: 20 feb de 2027
+              - cell "Atención" [ref=e374]
+              - cell [ref=e377]:
+                - button "Ver detalle" [ref=e379]
+        - generic:
+          - dialog:
+            - generic:
+              - button

@@ -1,0 +1,22 @@
+FROM scratch
+
+ARG VCS_REF
+ARG OCI_SOURCE
+ARG OCI_CREATED
+
+LABEL org.opencontainers.image.title="ELEVANT Development database release bundle" \
+      org.opencontainers.image.description="Certified immutable inputs for ELEVANT Development database promotion" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${OCI_SOURCE}" \
+      org.opencontainers.image.created="${OCI_CREATED}" \
+      org.elevant.database.environment="Development" \
+      org.elevant.database.manifest.schema="1" \
+      io.elevant.database-release.schema-version="1" \
+      io.elevant.database-release.bundle-version="1" \
+      io.elevant.database-release.media-type="application/vnd.elevant.database-release-bundle.v1"
+
+COPY manifest.json /manifest.json
+COPY compose/compose.development.database.yml /compose/compose.development.database.yml
+COPY compose/compose.development.release.yml /compose/compose.development.release.yml
+
+CMD ["/manifest.json"]

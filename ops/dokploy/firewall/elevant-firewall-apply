@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+readonly LOCK_FILE="/run/lock/elevant-firewall.lock"
+readonly TABLE_FAMILY="inet"
+readonly TABLE_NAME="elevant_firewall"
+readonly TABLE_COMMENT="elevant-owned-firewall-v1"
+readonly INPUT_CHAIN="public_input"
+readonly FORWARD_CHAIN="public_forward"
+readonly INPUT_CHAIN_COMMENT="elevant-owned-public-input-v1"
+readonly FORWARD_CHAIN_COMMENT="elevant-owned-public-forward-v1"
+
+CONFIG_FILE="/etc/elevant/firewall.env"
+DRY_RUN=0
+VERIFY_ACTIVE=0
+PUBLIC_INTERFACE=""
+FIREWALL_PHASE=""
+TABLE_PRESENT=0
+NFT_BATCH=""
+
+log() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: elevant-firewall-apply [--config ABSOLUTE_PATH] [--dry-run | --verify-active]
+
+Atomically applies the ELEVANT public-interface policy in its own nftables
+inet table. It never changes Docker, Tailscale, iptables, or other nft tables.
+The configuration file must contain exactly the settings documented in
+firewall.env.example.
+
+--verify-active performs the same fail-closed preflight and requires the
+installed table to match the configured phase exactly. It never mutates nftables.
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --config)
+        (( $# >= 2 )) || die "--config requires a path"
+        CONFIG_FILE="$2"
+        shift 2
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      --verify-active)
+        VERIFY_ACTIVE=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+
+  (( ! (DRY_RUN && VERIFY_ACTIVE) )) || \
+    die "--dry-run and --verify-active are mutually exclusive"
+}
+
+load_config() {
+  [[ "$CONFIG_FILE" == /* ]] || die "configuration path must be absolute"
+  [[ -f "$CONFIG_FILE" && ! -L "$CONFIG_FILE" ]] || \
+    die "configuration must be a regular, non-symlink file: $CONFIG_FILE"
+  [[ -r "$CONFIG_FILE" ]] || die "configuration is not readable: $CONFIG_FILE"
+
+  local metadata
+  metadata="$(stat -c '%u:%a' -- "$CONFIG_FILE")" || \
+    die "could not inspect configuration ownership and mode"
+  [[ "$metadata" == "0:600" ]] || \
+    die "configuration must be owned by UID 0 with exact mode 0600"
+
+  local line key value line_number=0
+  local seen_interface=0 seen_phase=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( line_number += 1 ))
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*)=([^[:space:]#]+)$ ]]; then
+      die "invalid configuration syntax at line $line_number"
+    fi
+
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case "$key" in
+      ELEVANT_PUBLIC_INTERFACE)
+        (( seen_interface == 0 )) || die "duplicate setting: $key"
+        PUBLIC_INTERFACE="$value"
+        seen_interface=1
+        ;;
+      ELEVANT_FIREWALL_PHASE)
+        (( seen_phase == 0 )) || die "duplicate setting: $key"
+        FIREWALL_PHASE="$value"
+        seen_phase=1
+        ;;
+      *)
+        die "unsupported configuration setting at line $line_number: $key"
+        ;;
+    esac
+  done < "$CONFIG_FILE"
+
+  (( seen_interface == 1 && seen_phase == 1 )) || \
+    die "configuration is missing one or more required settings"
+  [[ "$PUBLIC_INTERFACE" =~ ^[[:alnum:]_.:-]{1,15}$ ]] || \
+    die "invalid public interface name"
+  [[ "$PUBLIC_INTERFACE" != "lo" && "$PUBLIC_INTERFACE" != "tailscale0" ]] || \
+    die "the public interface cannot be lo or tailscale0"
+  [[ "$FIREWALL_PHASE" == "transitional" || "$FIREWALL_PHASE" == "final" ]] || \
+    die "ELEVANT_FIREWALL_PHASE must be transitional or final"
+}
+
+check_iptables_nft_backend() {
+  local tool="$1" version
+  version="$("$tool" --version)" || die "could not inspect $tool backend"
+  [[ "$version" == *"(nf_tables)"* ]] || \
+    die "$tool is not using the required iptables-nft backend: $version"
+}
+
+require_default_route_interface() {
+  local family_flag="$1" family_name="$2" routes
+
+  routes="$(ip "$family_flag" route show default)" || \
+    die "could not inspect $family_name default routes"
+  [[ -n "$routes" ]] || die "$family_name has no default route"
+
+  awk -v expected="$PUBLIC_INTERFACE" '
+    {
+      route_has_interface = 0
+      for (field_no = 1; field_no <= NF; field_no += 1) {
+        if ($field_no == "dev" && field_no < NF) {
+          route_has_interface = 1
+          if ($(field_no + 1) != expected) {
+            exit 1
+          }
+        }
+      }
+      if (route_has_interface == 0) {
+        exit 1
+      }
+      route_count += 1
+    }
+    END {
+      if (route_count == 0) {
+        exit 1
+      }
+    }
+  ' <<< "$routes" || \
+    die "every $family_name default route must use $PUBLIC_INTERFACE"
+}
+
+render_table_definition() {
+  local phase="$1"
+
+  cat <<EOF
+table $TABLE_FAMILY $TABLE_NAME {
+  comment "$TABLE_COMMENT"
+
+  chain $INPUT_CHAIN {
+    type filter hook input priority filter - 10; policy accept;
+    comment "$INPUT_CHAIN_COMMENT"
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-allow-established"
+    iifname "$PUBLIC_INTERFACE" ip protocol icmp accept comment "elevant-allow-icmp"
+    iifname "$PUBLIC_INTERFACE" meta l4proto ipv6-icmp accept comment "elevant-allow-icmpv6"
+    iifname "$PUBLIC_INTERFACE" udp dport 41641 accept comment "elevant-allow-tailscale-direct"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new tcp dport { 22, 80 } accept comment "elevant-temporary-tcp"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-public-default-deny"
+  }
+
+  chain $FORWARD_CHAIN {
+    type filter hook forward priority filter - 10; policy accept;
+    comment "$FORWARD_CHAIN_COMMENT"
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-forward-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-forward-allow-established"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new ct direction original ct status dnat meta l4proto tcp ct original proto-dst 80 accept comment "elevant-forward-temporary-http"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-forward-default-deny"
+  }
+}
+EOF
+}
+
+# nft list output is intentionally compared exactly after whitespace
+# normalization. This rejects unknown chains, hooks, rules, expressions,
+# comments, priorities, and policies before an existing table is replaced.
+render_canonical_listing() {
+  local phase="$1"
+
+  cat <<EOF
+table $TABLE_FAMILY $TABLE_NAME {
+  comment "$TABLE_COMMENT"
+  chain $INPUT_CHAIN {
+    comment "$INPUT_CHAIN_COMMENT"
+    type filter hook input priority filter - 10; policy accept;
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-allow-established"
+    iifname "$PUBLIC_INTERFACE" ip protocol icmp accept comment "elevant-allow-icmp"
+    iifname "$PUBLIC_INTERFACE" meta l4proto ipv6-icmp accept comment "elevant-allow-icmpv6"
+    iifname "$PUBLIC_INTERFACE" udp dport 41641 accept comment "elevant-allow-tailscale-direct"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new tcp dport { 22, 80 } accept comment "elevant-temporary-tcp"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-public-default-deny"
+  }
+  chain $FORWARD_CHAIN {
+    comment "$FORWARD_CHAIN_COMMENT"
+    type filter hook forward priority filter - 10; policy accept;
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-forward-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-forward-allow-established"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new ct direction original ct status dnat meta l4proto tcp ct original proto-dst 80 accept comment "elevant-forward-temporary-http"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-forward-default-deny"
+  }
+}
+EOF
+}
+
+normalize_listing() {
+  awk 'NF { $1 = $1; print }'
+}
+
+validate_owned_table() {
+  local tables current expected_transitional expected_final
+  local -a families=()
+
+  tables="$(nft list tables)" || die "could not list nft tables"
+  mapfile -t families < <(
+    awk -v table_name="$TABLE_NAME" '
+      $1 == "table" && $3 == table_name { print $2 }
+    ' <<< "$tables"
+  )
+  if (( ${#families[@]} == 0 )); then
+    TABLE_PRESENT=0
+    return 0
+  fi
+
+  if (( ${#families[@]} != 1 )) || [[ "${families[0]}" != "$TABLE_FAMILY" ]]; then
+    die "table name $TABLE_NAME exists in an unexpected family or more than once"
+  fi
+
+  current="$(nft list table "$TABLE_FAMILY" "$TABLE_NAME" | normalize_listing)" || \
+    die "could not inspect existing ELEVANT nft table"
+  expected_transitional="$(render_canonical_listing transitional | normalize_listing)"
+  expected_final="$(render_canonical_listing final | normalize_listing)"
+
+  if [[ "$current" != "$expected_transitional" && "$current" != "$expected_final" ]]; then
+    die "existing nft table $TABLE_FAMILY $TABLE_NAME is not an exact ELEVANT-owned policy; refusing to replace it"
+  fi
+
+  TABLE_PRESENT=1
+}
+
+build_batch() {
+  local definition
+  definition="$(render_table_definition "$FIREWALL_PHASE")"
+
+  if (( TABLE_PRESENT )); then
+    NFT_BATCH="delete table $TABLE_FAMILY $TABLE_NAME"$'\n'"$definition"
+  else
+    NFT_BATCH="$definition"
+  fi
+}
+
+check_batch() {
+  printf '%s\n' "$NFT_BATCH" | nft --check -f - || \
+    die "nft rejected the complete policy transaction"
+}
+
+print_batch() {
+  printf '%s\n' "DRY-RUN: validated atomic nft transaction follows"
+  printf '%s\n' "$NFT_BATCH"
+}
+
+validate_applied_phase() {
+  local current expected
+  current="$(nft list table "$TABLE_FAMILY" "$TABLE_NAME" | normalize_listing)" || \
+    die "applied nft table is unavailable"
+  expected="$(render_canonical_listing "$FIREWALL_PHASE" | normalize_listing)"
+  [[ "$current" == "$expected" ]] || \
+    die "applied nft table does not match the requested canonical phase"
+}
+
+preflight() {
+  (( EUID == 0 )) || die "must run as root"
+
+  require_command awk
+  require_command flock
+  require_command ip
+  require_command iptables
+  require_command ip6tables
+  require_command nft
+  require_command stat
+
+  check_iptables_nft_backend iptables
+  check_iptables_nft_backend ip6tables
+  ip link show dev "$PUBLIC_INTERFACE" >/dev/null 2>&1 || \
+    die "configured public interface does not exist: $PUBLIC_INTERFACE"
+  require_default_route_interface -4 IPv4
+  require_default_route_interface -6 IPv6
+  validate_owned_table
+
+  if (( VERIFY_ACTIVE )); then
+    (( TABLE_PRESENT )) || \
+      die "required nft table $TABLE_FAMILY $TABLE_NAME is absent"
+    validate_applied_phase
+  else
+    build_batch
+    check_batch
+  fi
+}
+
+main() {
+  parse_args "$@"
+  (( EUID == 0 )) || die "must run as root"
+  require_command stat
+  load_config
+
+  require_command flock
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die "another ELEVANT firewall operation is running"
+
+  preflight
+
+  if (( VERIFY_ACTIVE )); then
+    log "verified active phase=$FIREWALL_PHASE interface=$PUBLIC_INTERFACE"
+    return 0
+  fi
+
+  log "applying phase=$FIREWALL_PHASE interface=$PUBLIC_INTERFACE dry_run=$DRY_RUN"
+
+  if (( DRY_RUN )); then
+    print_batch
+  else
+    printf '%s\n' "$NFT_BATCH" | nft -f - || \
+      die "atomic nft transaction failed; the previous ruleset was retained"
+    validate_applied_phase
+  fi
+
+  if (( DRY_RUN )); then
+    log "policy dry-run completed successfully"
+  else
+    log "policy applied successfully"
+  fi
+}
+
+main "$@"
