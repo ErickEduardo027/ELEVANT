@@ -1,6 +1,6 @@
 import {
   normalizedAircraftTypeCreate, normalizedAircraftTypeUpdate, normalizedStandCreate, normalizedStandUpdate,
-  normalizedTerminalCreate, normalizedTerminalUpdate,
+  normalizedStandRequiredPermits, normalizedStandRequiredPermitsBatch, normalizedTerminalCreate, normalizedTerminalUpdate,
 } from '@elevant/api-client';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
@@ -34,6 +34,8 @@ export const MASTER_DATA_MESSAGES = Object.freeze({
   aircraft_type_in_use: 'Hay vuelos sin terminar con ese tipo de avión: no se puede desactivar.',
   terminal_inactive: 'La terminal está desactivada: reactívala antes de crear o reactivar sus posiciones.',
   version_conflict: 'El registro cambió mientras lo editabas. Se actualizó la lista; revisa e intenta de nuevo.',
+  // ADR-0045: the permits a stand requires.
+  invalid_required_permits: 'Elige hasta 10 carnets activos de «Gestión Humana › Configuración» y al menos una posición.',
 });
 
 /**
@@ -94,4 +96,16 @@ export const createOccAircraftType = async (input, idempotencyKey) => {
 export const updateOccAircraftType = async (aircraftTypeId, input, idempotencyKey) => {
   validated(normalizedAircraftTypeUpdate, input, 'invalid_aircraft_type');
   return guarded(() => client().updateOccAircraftType(aircraftTypeId, input, idempotencyKey));
+};
+
+/** The exact permits a stand requires (ADR-0045), with the stand's version on screen. */
+export const setOccStandRequiredPermits = async (standId, input, idempotencyKey) => {
+  validated(normalizedStandRequiredPermits, input, 'invalid_required_permits');
+  return guarded(() => client().setOccStandRequiredPermits(standId, input, idempotencyKey));
+};
+
+/** «Aplicar a varias posiciones» (ADR-0045): every chosen stand requires exactly these permits afterwards. */
+export const applyOccStandRequiredPermits = async (input, idempotencyKey) => {
+  validated(normalizedStandRequiredPermitsBatch, input, 'invalid_required_permits');
+  return guarded(() => client().applyOccStandRequiredPermits(input, idempotencyKey));
 };

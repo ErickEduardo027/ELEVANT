@@ -12,13 +12,11 @@ import DocumentHistoryDrawer from '../documents/DocumentHistoryDrawer';
 import DocumentValiditySummary from '../documents/DocumentValiditySummary';
 import { localToday, validityLabel, validityTone } from '../documents/documentValidity';
 import PermitRecordForm from './PermitRecordForm';
+import usePermitTypeCatalog from './usePermitTypeCatalog';
+import { permitTypeName } from '../../../services/humanResourcesSettingsService';
 
 const PAGE_LIMIT = 20;
 const EMPTY_FILTERS = { search: '', documentType: '', validity: '' };
-const TYPE_LABELS = {
-  AirportId: 'Carnet aeroportuario',
-  RampDriverLicense: 'Licencia de conducir en rampa',
-};
 
 function withoutEmpty(values) {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ''));
@@ -36,6 +34,9 @@ export default function CurrentPermitsPage() {
   const [form, setForm] = useState({ open: false, initialPermit: null });
   const [notice, setNotice] = useState('');
   const requestVersion = useRef(0);
+  // ADR-0045: the names of the system and custom permit types.
+  const permitTypes = usePermitTypeCatalog();
+  const typeLabel = code => permitTypeName(code, permitTypes.names);
   const asOf = localToday();
   const filterKey = JSON.stringify(filters);
 
@@ -128,7 +129,7 @@ export default function CurrentPermitsPage() {
       <DocumentFilters filters={filters} onChange={changeFilters} gender="masculine"
         searchLabel="Agente, empleado o número de documento"
         type={{ key: 'documentType', label: 'Documento',
-          options: Object.entries(TYPE_LABELS).map(([value, label]) => ({ value, label })) }} />
+          options: permitTypes.types.map(type => ({ value: type.code, label: type.name })) }} />
     </>}
 
     {state.status === 'loading' && <p role="status"
@@ -156,13 +157,13 @@ export default function CurrentPermitsPage() {
           </thead><tbody className="divide-y divide-black/5 dark:divide-white/5">
             {state.data.permits.map(item => <tr key={item.id}>
               <td className="px-5 py-4 font-semibold">{item.agentName}<span className="block text-xs font-normal text-text-secondary-light">{item.employeeNumber}</span></td>
-              <td className="px-5 py-4">{TYPE_LABELS[item.documentType]}<span className="block text-xs text-text-secondary-light">Ciclo {item.cycleNumber}</span></td>
+              <td className="px-5 py-4">{typeLabel(item.documentType)}<span className="block text-xs text-text-secondary-light">Ciclo {item.cycleNumber}</span></td>
               <td className="px-5 py-4">{item.documentNumber}</td>
               <td className="px-5 py-4">{item.issuedOn}</td><td className="px-5 py-4">{item.expiresOn}</td>
               <td className="px-5 py-4"><StatusBadge tone={validityTone(item.validity)} label={validityLabel(item.validity, 'masculine')} /></td>
               <td className="px-5 py-4"><div className="flex flex-wrap gap-3">
                 <button type="button" onClick={() => setHistory(item)}
-                  aria-label={`Historial de ${item.agentName} · ${TYPE_LABELS[item.documentType]}`}
+                  aria-label={`Historial de ${item.agentName} · ${typeLabel(item.documentType)}`}
                   className="text-sm font-semibold text-accent-600">Historial</button>
                 {canManage && <button type="button"
                   onClick={() => { setNotice(''); setForm({ open: true, initialPermit: item }); }}
@@ -183,7 +184,7 @@ export default function CurrentPermitsPage() {
 
     <DocumentHistoryDrawer target={history} load={getHumanResourcesPermitHistory}
       onClose={() => setHistory(null)}
-      title={history ? `Historial · ${TYPE_LABELS[history.documentType]}` : 'Historial'}
+      title={history ? `Historial · ${typeLabel(history.documentType)}` : 'Historial'}
       subtitle={history ? `${history.agentName} · ${history.employeeNumber}` : undefined}
       renderCycle={cycle => <dl className="grid grid-cols-3 gap-2 text-xs">
         <div><dt className="text-text-secondary-light">Número</dt><dd>{cycle.documentNumber}</dd></div>

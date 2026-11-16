@@ -3,11 +3,7 @@ import { businessToday } from '../../../services/businessDay';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { getHumanResourcesPermits, recordHumanResourcesPermit } from
   '../../../services/humanResourcesPermitsReadService';
-
-const DOCUMENT_TYPES = [
-  ['AirportId', 'Carnet aeroportuario'],
-  ['RampDriverLicense', 'Licencia de conducir en rampa'],
-];
+import usePermitTypeCatalog from './usePermitTypeCatalog';
 
 export default function PermitRecordForm({ initialPermit, onRecorded, onClose, onDenied }) {
   const [rampProfileId, setRampProfileId] = useState(initialPermit?.rampProfileId ?? '');
@@ -19,6 +15,9 @@ export default function PermitRecordForm({ initialPermit, onRecorded, onClose, o
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // ADR-0045: the system types and the active custom ones of «Configuración» (the system ones without the catalog).
+  const permitTypes = usePermitTypeCatalog();
+  const documentTypes = permitTypes.types.filter(type => type.isActive || type.code === initialPermit?.documentType);
   const mounted = useRef(true);
   // AVIAM's business day, like the server validates it (2-N31).
   const today = businessToday();
@@ -151,7 +150,7 @@ export default function PermitRecordForm({ initialPermit, onRecorded, onClose, o
           onChange={event => changeSelection('documentType', event.target.value)}
           className="mt-1 w-full rounded-lg border p-2 dark:bg-surface-dark">
           <option value="">Selecciona un tipo</option>
-          {DOCUMENT_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {documentTypes.map(type => <option key={type.code} value={type.code}>{type.name}</option>)}
         </select>
       </label>
       {lookup.status === 'loading' && <p role="status" className="md:col-span-2 text-sm">Consultando el ciclo actual…</p>}

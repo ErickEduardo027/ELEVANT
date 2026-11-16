@@ -99,6 +99,9 @@ export const mapMessages = {
       location: 'Ubicación',
       coverage: 'Cobertura',
       noCoverage: 'Sin cobertura registrada',
+      // ADR-0045: the permits the stand requires of who covers it or works a flight on it.
+      requires: 'Exige',
+      requiresValue: 'Exige: {names}',
       directions: { N: 'N', NE: 'NE', E: 'E', SE: 'SE', S: 'S', SW: 'SO', W: 'O', NW: 'NO' },
       coordinate: '{value}° {hemisphere}',
       hemispheres: { N: 'N', S: 'S', E: 'E', W: 'O' },
@@ -521,6 +524,8 @@ export const mapMessages = {
       location: 'Location',
       coverage: 'Coverage',
       noCoverage: 'No coverage recorded',
+      requires: 'Requires',
+      requiresValue: 'Requires: {names}',
       directions: { N: 'N', NE: 'NE', E: 'E', SE: 'SE', S: 'S', SW: 'SW', W: 'W', NW: 'NW' },
       coordinate: '{value}° {hemisphere}',
       hemispheres: { N: 'N', S: 'S', E: 'E', W: 'W' },

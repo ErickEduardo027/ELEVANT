@@ -9,6 +9,7 @@ import CurrentPermitsPage from './permits/CurrentPermitsPage';
 import CurrentShiftsPage from './schedules/CurrentShiftsPage';
 import AttendanceReviewPage from './attendance/AttendanceReviewPage';
 import CurrentReportsPage from './reports/CurrentReportsPage';
+import HumanResourcesSettingsPage from './settings/HumanResourcesSettingsPage';
 import HumanResourcesAuditPage from '../employees/HumanResourcesAuditPage';
 import EmployeesPage from '../employees/EmployeesPage';
 import PositionsPage from '../employees/PositionsPage';
@@ -44,6 +45,7 @@ export default function HRModulePage({ moduleId }) {
   if (moduleId === 'schedules') return <CurrentShiftsPage />;
   if (moduleId === 'attendance') return <AttendanceReviewPage />;
   if (moduleId === 'reports') return <CurrentReportsPage />;
+  if (moduleId === 'settings') return <HumanResourcesSettingsPage />;
   if (moduleId === 'audit') return <HumanResourcesAuditPage />;
   if (moduleId === 'notifications') return <NotificationsRoute />;
   if (moduleId === 'access-requests') return <AccessValidationsPage />;

@@ -49,13 +49,14 @@ export function formatReportDate(value) {
  * @param {string} kind the report (`expirations`, `account-movements`, `staff-distribution`, `qualification-coverage`)
  * @param {string} field the row field of the column
  * @param {Record<string, unknown>} row
- * @param {{ timeZone?: string | null }} [options]
+ * @param {{ timeZone?: string | null, permitNames?: Record<string, string> | null }} [options] `permitNames` names
+ *   the custom permit types of «Configuración» (ADR-0045); the system ones keep their labels.
  */
-export function formatReportCell(kind, field, row, { timeZone = null } = {}) {
+export function formatReportCell(kind, field, row, { timeZone = null, permitNames = null } = {}) {
   const value = row?.[field];
   if (value === null || value === undefined || value === '') return '—';
   if (kind === 'expirations' && field === 'kind') return labelIn(DOCUMENT_LABELS, value);
-  if (kind === 'expirations' && field === 'code') return row.kind === 'Permit' ? labelIn(PERMIT_LABELS, value) : String(value);
+  if (kind === 'expirations' && field === 'code') return row.kind === 'Permit' ? labelIn({ ...(permitNames ?? {}), ...PERMIT_LABELS }, value) : String(value);
   if (kind === 'account-movements' && field === 'kind') return labelIn(MOVEMENT_LABELS, value);
   if (field === 'occurredAt') return formatBusinessDateTime(String(value), { timeZone });
   if (field === 'expiresOn' || field === 'workDate') return formatReportDate(value);

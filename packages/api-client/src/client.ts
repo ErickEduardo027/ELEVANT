@@ -178,6 +178,7 @@ import {
   isEquipmentTypeSettings,
   isMasterStandBatch,
   isPermitNameList,
+  isPermitTypeCode,
   isPermitTypeSetting,
   isPermitTypeSettings,
   normalizedEquipmentTypeCreate,
@@ -4489,7 +4490,7 @@ function validatedHumanResourcesDocumentSummaryQuery<T extends {
       (key === "equipmentTypeId" && query.equipmentTypeId !== undefined &&
         !isUuid(query.equipmentTypeId)) ||
       (key === "documentType" && query.documentType !== undefined &&
-        !["AirportId", "RampDriverLicense"].includes(query.documentType)))
+        !isPermitTypeCode(query.documentType)))
     throw new TypeError("Human Resources document summary filter is invalid.");
   return { ...(query[key] === undefined ? {} : { [key]: query[key] }),
     ...documentFilterParams(query) } as T;
@@ -4546,7 +4547,7 @@ function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPerm
         !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
         !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
         typeof item.documentType !== "string" ||
-        !["AirportId", "RampDriverLicense"].includes(item.documentType) ||
+        !isPermitTypeCode(item.documentType) ||
         !isInt32(item.cycleNumber) || item.cycleNumber < 1 ||
         !isNonEmptyString(item.documentNumber) ||
         !isDateOnly(item.issuedOn) || !isDateOnly(item.expiresOn) ||
@@ -4564,7 +4565,7 @@ function validatedHumanResourcesPermitQuery(
     ["page", "limit", "rampProfileId", "documentType", "search", "validity", "asOf"]) ||
       (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
       (query.documentType !== undefined &&
-        !["AirportId", "RampDriverLicense"].includes(query.documentType)) ||
+        !isPermitTypeCode(query.documentType)) ||
       !isValidHumanResourcesDocumentFilter(query))
     throw new TypeError("Human Resources permit filter is invalid.");
   const paging = validatedHumanResourcesPaging({
@@ -4854,7 +4855,7 @@ function validatedHumanResourcesPermitInput(
   if (!isRecord(request) || !hasOnlyKeys(request,
     ["rampProfileId", "documentType", "expectedCurrentId", "documentNumber", "issuedOn", "expiresOn"]) ||
       !isUuid(request.rampProfileId) ||
-      !["AirportId", "RampDriverLicense"].includes(String(request.documentType)) ||
+      !isPermitTypeCode(request.documentType) ||
       (request.expectedCurrentId != null && !isUuid(request.expectedCurrentId)) ||
       !isNonEmptyString(request.documentNumber) ||
       request.documentNumber.trim().length < 2 || request.documentNumber.trim().length > 64 ||
@@ -6432,7 +6433,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         ["rampProfileId", "agentName", "employeeNumber", "documentType", "cycles"]) ||
           !isUuid(data.rampProfileId) || !isNonEmptyString(data.agentName) ||
           !isNonEmptyString(data.employeeNumber) || typeof data.documentType !== "string" ||
-          !["AirportId", "RampDriverLicense"].includes(data.documentType) ||
+          !isPermitTypeCode(data.documentType) ||
           !isHumanResourcesDocumentCycles(data.cycles, ["id", "cycleNumber", "isCurrent",
             "documentNumber", "issuedOn", "expiresOn", "recordedAt", "recordedByName"], item =>
             isNonEmptyString(item.documentNumber) && isDateOnly(item.issuedOn) &&

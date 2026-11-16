@@ -191,6 +191,8 @@ export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new D
       standType: stand?.standType ?? null,
       isRemote: stand?.isRemote ?? false,
       hasBoardingBridge: stand?.hasBoardingBridge ?? false,
+      // ADR-0045: the names of the permits the stand requires (absent: none or an older server).
+      requiredPermits: Array.isArray(stand?.requiredPermits) ? [...stand.requiredPermits] : [],
       narrowbodyOnly: stand?.narrowbodyOnly ?? false,
       arrivedAt: current?.arrivedAt ?? null,
       turnarounds: parked,
