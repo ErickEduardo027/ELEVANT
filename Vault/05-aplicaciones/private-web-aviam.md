@@ -991,7 +991,8 @@ son polígonos con su estado (ver
 tráfico en vivo: lo dibuja el PR M5 y lo mueve el PR M6 (ver
 [Tráfico real en el mapa (PR M5)](#tráfico-real-en-el-mapa-pr-m5) y
 [Cinemática y vuelo demo en el mapa (PR M6)](#cinemática-y-vuelo-demo-en-el-mapa-pr-m6)).
-Los aviones 3D llegan con M7.
+Desde el PR M7 los aviones se ven en 3D en Aeródromo y Rampa (ver
+[Aviones 3D en Rampa y Aeródromo (PR M7)](#aviones-3d-en-rampa-y-aeródromo-pr-m7)).
 
 - **Un motor y un componente.**
   [`mapEngine.js`](../../frontend/private-web/src/features/maps/core/mapEngine.js)
@@ -1098,7 +1099,7 @@ Panorama, mientras está abierto.
 Límites: a 1440×900 el resumen de Mapa de posiciones tapa la escala, los
 créditos y las posiciones A1 a A5, y todavía pinta sus colores de estado; lo
 rehace U5. El
-3D de M2 es la inclinación de cámara de siempre: los aviones 3D llegan con M7.
+3D de M2 era la inclinación de cámara de siempre; los aviones 3D llegaron con M7.
 En producción, `/map-lab` responde la página de no encontrada con el estado
 200. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
 
@@ -1729,7 +1730,7 @@ también dentro de él; un vuelo demo importado tarde puede
 llegar a su posición después de que esta diga «Ocupada»; elegir una posición
 no resalta su avión en el mapa; y el presupuesto de cuadros del plan (60 por
 segundo, con 4 ms de código propio) no se midió. La consola de U3 dibuja el
-tráfico con el movimiento de M6 (ver «Consola en movimiento y mapa con más color»). Los aviones 3D y sus sombras llegan con M7, y el
+tráfico con el movimiento de M6 (ver «Consola en movimiento y mapa con más color»). Los aviones 3D y sus sombras llegaron con M7, y el
 viento del METAR y las capas de referencia, con M8. Con el tráfico encendido
 (como en Development), abrir Mapa de posiciones o la vista «Mapa» de
 Planificación en el OCC también hace que la API lea la red de tráfico mientras
@@ -1772,6 +1773,55 @@ la atribución del mapa guarda solo los créditos del mapa base.
 Límites: aún no se muestra el turno del agente, y la tarjeta del avión no se
 actualiza mientras él se mueve. Los detalles están en el
 [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+## Aviones 3D en Rampa y Aeródromo (PR M7)
+
+Desde el PR M7 los mapas del OCC dibujan los aviones en 3D en Aeródromo y
+Rampa, en el mismo lienzo y el mismo contexto WebGL. Las decisiones y las
+diferencias con el diseño están en la nota del 16 de noviembre de 2026 del
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+- **2D o 3D.** El 3D (inclinación 55 y rumbo −17 en Rampa, 40 en Aeródromo)
+  está encendido por defecto donde el navegador tiene WebGL2, y el navegador
+  recuerda la elección. La cambian la tecla `D` y el control «2D | 3D» junto
+  al selector de vistas
+  ([`Map3dToggle.jsx`](../../frontend/private-web/src/features/maps/ui/Map3dToggle.jsx)).
+  Mapa de posiciones conserva su propio botón 2D/3D y Planificación queda en
+  2D.
+- **Los modelos.** Salen de la misma
+  [tabla de dimensiones](../../frontend/private-web/src/features/maps/aircraft/types.js)
+  que las siluetas 2D: 34 tipos y una planta genérica por categoría, armados en
+  el navegador, sin archivos de modelo. three 0.187.0 viaja en su propio trozo
+  asíncrono, que se carga la primera vez que la vista llega al umbral de las
+  posiciones; el build falla si una carga inicial lleva su renderizador o si
+  falta el trozo
+  ([`verify-map-chunks.mjs`](../../frontend/private-web/scripts/verify-map-chunks.mjs)).
+  Las medidas marcadas «unconfirmed» siguen sin cotejarse con los documentos
+  de los fabricantes.
+- **Qué se ve.** Los aviones de AVIAM y el otro tráfico en el aire a 6 NM o
+  menos, con su sombra y, en el aire, una línea al suelo; los aviones de las
+  posiciones ocupadas, a la escala de la posición. El elegido va en cian; lo
+  normal, sin tono. La luz es la del sol a la hora del mapa, de día o de
+  noche. Los aviones en movimiento nunca miden menos de 30 px. El otro tráfico
+  en tierra sigue en 2D, y la etiqueta, el anillo «est.» y la placa «Demo»
+  siguen sobre el modelo.
+- **Un solo reloj.** El 3D se alimenta de las mismas escrituras del tráfico
+  que el 2D, en el bucle de cuadros de M6: no añade ninguna lectura
+  ([`aircraft3d.js`](../../frontend/private-web/src/features/maps/core/aircraft3d.js)).
+  Un clic elige primero lo que hay en 3D bajo el puntero.
+- **Fluidez y fallos.** Si los cuadros se vuelven lentos, el regulador quita
+  sombras y líneas, baja la densidad de píxeles y, al final, pausa el 3D con
+  «Pausamos la vista 3D para que el mapa siga fluido.» y «Volver a 3D»;
+  mientras se sigue un vuelo nunca lo pausa. Si el 3D no puede dibujarse, los
+  aviones vuelven al 2D con su aviso. Tras una pérdida del contexto WebGL los
+  modelos vuelven solos.
+- **Laboratorio.** Cuatro escenas 3D (`ramp-3d-parked`, `ramp-3d-selected`,
+  `airfield-3d-final` y `ramp-3d-night`) y su especificación visual,
+  `map-lab.aircraft3d.spec.mjs`.
+
+Límites: no se midió el presupuesto de cuadros en una GPU integrada; las
+capturas se revisaron en local, con WebGL por software y datos sintéticos.
+Nada de esto acredita un despliegue ni una revisión visual en el VPS.
 
 ## AeroDataBox en la consola, Contratos y Superadministración (15 de noviembre de 2026)
 
