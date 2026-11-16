@@ -27,7 +27,8 @@ function Field({ label, children }) {
   return (
     <div className="min-w-0">
       <dt className="text-xs text-occ-muted">{label}</dt>
-      <dd className="mt-0.5 font-mono text-sm text-occ-text">{children}</dd>
+      {/* A missing value reads «—», never an empty line under its label. */}
+      <dd className="mt-0.5 font-mono text-sm text-occ-text">{children ?? '—'}</dd>
     </div>
   );
 }
@@ -89,7 +90,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
         {hasFlight ? (
           <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
             <Field label={t('detail.flight')}>{position.flightNumber}</Field>
-            <Field label={t('detail.airline')}><span className="font-sans">{position.airline}</span></Field>
+            <Field label={t('detail.airline')}>{position.airline ? <span className="font-sans">{position.airline}</span> : null}</Field>
             <Field label={t('detail.registration')}>{position.aircraftRegistration}</Field>
             <Field label={t('detail.aircraftType')}>{position.aircraftType}</Field>
             <Field label={t('detail.agent')}><span className="font-sans">{position.assignedAgent ?? t('detail.unassigned')}</span></Field>
