@@ -56,6 +56,17 @@ public static class DemoFlightNumbering
             ? string.Create(CultureInfo.InvariantCulture, $"HIDM{sequenceOfDay:00}")
             : null;
 
+    /// <summary>
+    /// True for a registration <see cref="Registration"/> writes («HIDM01» to «HIDM99», dashes and case ignored): a demo
+    /// aircraft no registry knows, which the paid reference reads never ask about (ADR-0028, note of 15 November 2026).
+    /// </summary>
+    public static bool IsRegistration(string? registration)
+    {
+        var compact = registration?.Replace("-", string.Empty, StringComparison.Ordinal).Trim().ToUpperInvariant();
+        return compact is { Length: 6 } && compact.StartsWith("HIDM", StringComparison.Ordinal) &&
+            char.IsAsciiDigit(compact[4]) && char.IsAsciiDigit(compact[5]) && compact[4..] != "00";
+    }
+
     /// <summary>The provider reference of one leg: the demo id both legs share and the direction.</summary>
     public static string Reference(Guid demoId, FlightDirection direction) => $"{demoId:N}|{direction}";
 

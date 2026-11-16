@@ -60,7 +60,9 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             .Select(item => new { item.PausedUntil, item.ConsecutiveFailures, item.LastError })
             .SingleOrDefaultAsync(cancellationToken);
         var (dayStart, monthStart) = UsagePeriods(now);
-        var entries = context.Set<ProviderUsageEntry>().AsNoTracking().Where(entry => entry.Provider == provider);
+        // The flight feed's budget counts its own reads: the reference reads have their own caps (ADR-0028).
+        var entries = context.Set<ProviderUsageEntry>().AsNoTracking()
+            .Where(entry => entry.Provider == provider && entry.Operation == FidsOperation);
         var month = await entries.Where(entry => entry.OccurredAt >= monthStart).SumAsync(entry => entry.Units, cancellationToken);
         var today = await entries.Where(entry => entry.OccurredAt >= dayStart).SumAsync(entry => entry.Units, cancellationToken);
         return new FlightFeedProviderState(lease?.PausedUntil, lease?.ConsecutiveFailures ?? 0, lease?.LastError, today, month);
@@ -131,7 +133,8 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
                               select leg.EstimatedAt ?? leg.ScheduledAt).ToArrayAsync(cancellationToken);
         var since = now.AddHours(-48);
         var usage = await context.Set<ProviderUsageEntry>().AsNoTracking()
-            .Where(entry => entry.Provider == provider && entry.StationId == station.StationId && entry.OccurredAt >= since)
+            .Where(entry => entry.Provider == provider && entry.Operation == FidsOperation &&
+                entry.StationId == station.StationId && entry.OccurredAt >= since)
             .Select(entry => new { entry.WindowFrom, entry.WindowTo, entry.OccurredAt, entry.Outcome, entry.Trigger })
             .ToArrayAsync(cancellationToken);
         var fetches = usage

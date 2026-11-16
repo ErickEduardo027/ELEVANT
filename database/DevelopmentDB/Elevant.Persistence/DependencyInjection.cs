@@ -123,6 +123,8 @@ public static class DependencyInjection
         services.AddScoped<IWorkforceReadinessStore, EfWorkforceReadinessStore>();
         services.AddScoped<Elevant.Application.Abstractions.Operations.IOccReadyContractsStore, EfOccReadyContractsStore>();
         services.AddScoped<Elevant.Application.Abstractions.Integration.IFlightFeedSyncStore, Elevant.Persistence.Integration.EfFlightFeedSyncStore>();
+        // ADR-0028 (note of 15 November 2026): the on-demand reference reads share the usage ledger.
+        services.AddScoped<Elevant.Application.Abstractions.Integration.IProviderUsageLedger, Elevant.Persistence.Integration.EfProviderUsageLedger>();
         services.AddScoped<Elevant.Application.Abstractions.Operations.IOccFlightFeedStore, Elevant.Persistence.Integration.EfOccFlightFeedStore>();
         // ADR-0041: the demo flights the superadministrator triggers; whether they run here is DemoFlights:Mode.
         services.AddScoped<IDemoFlightStore, EfDemoFlightStore>();

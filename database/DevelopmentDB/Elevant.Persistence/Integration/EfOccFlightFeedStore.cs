@@ -88,7 +88,9 @@ internal sealed class EfOccFlightFeedStore(
         // status and the runway time of those legs come from the demo clock at this instant.
         var demo = await DemoFlightGroups.ShownAsync(context, listed, now, cancellationToken);
         var (dayStart, monthStart) = EfFlightFeedSyncStore.UsagePeriods(now);
-        var usage = context.Set<ProviderUsageEntry>().AsNoTracking().Where(entry => entry.Provider == feed.Provider);
+        // The flight feed's own reads: the on-demand reference reads have their own caps (ADR-0028).
+        var usage = context.Set<ProviderUsageEntry>().AsNoTracking()
+            .Where(entry => entry.Provider == feed.Provider && entry.Operation == EfFlightFeedSyncStore.FidsOperation);
         var unitsMonth = await usage.Where(entry => entry.OccurredAt >= monthStart).SumAsync(entry => entry.Units, cancellationToken);
         var unitsToday = await usage.Where(entry => entry.OccurredAt >= dayStart).SumAsync(entry => entry.Units, cancellationToken);
         var lease = await context.Set<ProviderSyncLease>().AsNoTracking().Where(item => item.Provider == feed.Provider)
