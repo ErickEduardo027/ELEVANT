@@ -5,7 +5,7 @@ import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
 import { THREE_PARTS } from './aircraft3dChunk';
 import {
-  AIRCRAFT_3D_LAYER_ID, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer, sceneLighting,
+  AIRCRAFT_3D_LAYER_ID, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer, sceneLighting,
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
 import { linearRgb, mercatorFrame, planInstances } from './instancePlan';
@@ -686,5 +686,36 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(lines.visible).toBe(true);
     expect(layer.setQuality()).toEqual({ shadows: true, dropLines: true });
     expect(layer.stats().drawCalls).toBe(3);
+  });
+
+  it("draws the traffic's models no shorter than minModelPx at the zoom of the frame, and parked ones to scale", () => {
+    const { createRenderer } = fakeRenderers();
+    const moving = aircraft('f:p:moving', { bearing: 100, metres: 600, trackDeg: 90 });
+    const parked = { id: 's:A5', lon: moving.lon + 0.002, lat: moving.lat, headingDeg: 0, typeIcao: 'A320', kind: 'aviam' };
+    const plan = planInstances([moving], [parked], { zoom: 16, minZoom: 14, originLngLat: ARP });
+    expect([...plan.get('A320').floorLengths]).toEqual([AIRCRAFT_TYPES.A320.lengthM, 0, AIRCRAFT_TYPES.A320.lengthM, 0]
+      .map(value => Math.fround(value)));
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, getInstances: () => ({ revision: 1, plan }),
+      createRenderer, minModelPx: 30 });
+    const map = { ...fakeMap(), zoom: 14 };
+    map.getZoom = () => map.zoom;
+    layer.onAdd(map, fakeContext('gl'));
+    const { input } = viewOf();
+    layer.render(fakeContext('gl'), input);
+    const mesh = createRenderer.mock.results[0].value.scene.children.find(child => child.isInstancedMesh);
+    // The columns of an instance's rotation: their length is its scale. Instances: moving, parked, then their shadows.
+    const scaleOf = index => Math.hypot(...mesh.instanceMatrix.array.slice(16 * index, 16 * index + 3));
+    const metresPerPixel = zoom => (40_075_016.686 / 512) * Math.cos((ARP[1] * Math.PI) / 180) / 2 ** zoom;
+    expect(scaleOf(0)).toBeCloseTo(Math.min(MAX_MODEL_SCALE, (30 * metresPerPixel(14)) / AIRCRAFT_TYPES.A320.lengthM), 4);
+    expect(scaleOf(1)).toBeCloseTo(1, 6);
+    expect(scaleOf(2)).toBeCloseTo(scaleOf(0), 6);
+    // Closer in, the floor gives way to the true size.
+    map.zoom = 18;
+    layer.render(fakeContext('gl'), input);
+    expect(scaleOf(0)).toBeCloseTo(1, 6);
+    // Far out, never more than MAX_MODEL_SCALE times its size.
+    map.zoom = 11;
+    layer.render(fakeContext('gl'), input);
+    expect(scaleOf(0)).toBeCloseTo(MAX_MODEL_SCALE, 6);
   });
 });

@@ -35,6 +35,18 @@ export const AIRCRAFT_3D_LAYER_ID = 'occ-aircraft-3d';
 /** How long a type's mesh outlives its last aircraft before it is disposed with its model. */
 export const UNUSED_MESH_MS = 300_000;
 
+/**
+ * The size floor of the traffic's models (PR M7): at a far zoom an aircraft of the traffic is drawn at least
+ * `minModelPx` CSS pixels long, as its 2D symbol is never a speck, and at most MAX_MODEL_SCALE times its size; an
+ * aircraft on its stand keeps the stand's scale (instancePlan.js: floorLengths). The floor follows the zoom of every
+ * frame, so a zoom never makes a model jump at its end.
+ */
+export const MAX_MODEL_SCALE = 4;
+// The equator in metres over the 512 px of a MapLibre world at zoom 0.
+const METRES_PER_PIXEL_Z0 = 40_075_016.686 / 512;
+// A floor that moved less than this share is not written again.
+const FLOOR_STEP = 0.01;
+
 /** How far the sun moves, in degrees, before the lights are set again. */
 export const SUN_STEP_DEG = 0.25;
 
@@ -158,6 +170,7 @@ function sameSun(a, b) {
  * - `getInstances()` → `{ revision, plan }`, the plan of instancePlan.js: its matrices are copied when `revision`
  *   changes (compared with Object.is), never otherwise;
  * - `getSun()` → `{ azimuthDeg, elevationDeg }` at the ARP, or null; `palette`: the OCC palette;
+ * - `minModelPx` (PR M7): the size floor of the traffic's models in CSS pixels (MAX_MODEL_SCALE), 0 for none;
  * - `onFailedChange(failed)` hears every change of `stats().failed`, after the lifecycle call that made it, so that a
  *   map that hides its 2D aircraft under the 3D ones shows them again while the layer has failed;
  * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)` and `now()` (milliseconds, monotonic) are
@@ -173,13 +186,14 @@ function sameSun(a, b) {
  * has not failed before onAdd, after onRemove or while the context is lost, when nothing draws, 2D included.
  */
 export function createAircraft3dLayer({
-  three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null, onFailedChange,
+  three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null, onFailedChange, minModelPx = 0,
   createRenderer = ({ canvas, context }) => new three.WebGLRenderer({ canvas, context, antialias: true }),
   buildGeometry = buildAircraftGeometry, now = () => performance.now(),
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
   const frameMatrix = new three.Matrix4().fromArray(mercatorFrame(originLngLat).matrix);
+  const originCos = Math.cos((originLngLat[1] * Math.PI) / 180);
   PALETTE_TOKENS.forEach(token => paletteColour(palette, token));
   const dropLineColour = paletteColour(palette, DROP_LINE_TOKEN);
 
@@ -211,6 +225,8 @@ export function createAircraft3dLayer({
   let appliedSun;
   let warned = false;
   let failed = false;
+  // The floor in metres the matrices were last written with (0: none).
+  let floorM = 0;
 
   function buildScene() {
     scene = new three.Scene();
@@ -309,6 +325,8 @@ export function createAircraft3dLayer({
         held.capacity = nextPowerOfTwo(entry.count);
         held.mesh = instancedMesh(key, held.geometry, held.capacity);
       }
+      held.base = entry.matrices;
+      held.floors = entry.floorLengths ?? null;
       held.mesh.instanceMatrix.array.set(entry.matrices);
       held.mesh.instanceColor.array.set(entry.colors);
       held.mesh.instanceMatrix.needsUpdate = true;
@@ -318,6 +336,7 @@ export function createAircraft3dLayer({
       held.ids = entry.ids;
       held.idleSince = null;
       applyCount(held);
+      if (floorM > 0) scaleHeld(held, floorM);
       if (entry.dropLines?.length > 0) segments.push(entry.dropLines);
     }
     for (const [key, held] of meshes) {
@@ -330,6 +349,37 @@ export function createAircraft3dLayer({
     }
     writeLines(segments);
     return true;
+  }
+
+  // The matrices of a mesh with the traffic's models no shorter than `floor` metres (MAX_MODEL_SCALE at most): the 3 × 3
+  // part of each one with a floor length is scaled about its own origin; the rest stay as planned.
+  function scaleHeld(held, floor) {
+    const { base, floors } = held;
+    if (!base || !floors) return;
+    const target = held.mesh.instanceMatrix.array;
+    for (let index = 0; index < held.instances; index += 1) {
+      const length = floors[index];
+      const offset = 16 * index;
+      const factor = length > 0 ? Math.min(MAX_MODEL_SCALE, Math.max(1, floor / length)) : 1;
+      for (let element = 0; element < 16; element += 1) {
+        const scaled = element < 12 && element % 4 !== 3;
+        target[offset + element] = scaled ? base[offset + element] * factor : base[offset + element];
+      }
+    }
+    held.mesh.instanceMatrix.needsUpdate = true;
+    held.mesh.boundingSphere = null;
+    held.mesh.boundingBox = null;
+  }
+
+  // The floor of the zoom on screen: every mesh again when it moved more than FLOOR_STEP.
+  function syncFloor() {
+    if (!(minModelPx > 0) || typeof map?.getZoom !== 'function') return;
+    const zoom = map.getZoom();
+    if (!finite(zoom)) return;
+    const next = minModelPx * (METRES_PER_PIXEL_Z0 * originCos) / 2 ** zoom;
+    if (floorM > 0 && Math.abs(next - floorM) <= FLOOR_STEP * floorM) return;
+    floorM = next;
+    for (const held of meshes.values()) scaleHeld(held, floorM);
   }
 
   function retireIdle(time) {
@@ -444,6 +494,7 @@ export function createAircraft3dLayer({
       camera.projectionMatrixInverse.copy(projection).invert();
       const time = now();
       syncInstances(time);
+      syncFloor();
       retireIdle(time);
       syncLighting();
       // state.reset() sets the viewport to the canvas: the drawing buffer's is set after it.

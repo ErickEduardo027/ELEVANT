@@ -29,6 +29,13 @@ export const GOVERNOR = Object.freeze({
 /** The last step of the governor: the 3D paused. */
 export const GOVERNOR_PAUSED = 2 + GOVERNOR.pixelRatios.length;
 
+/**
+ * The size floor of the traffic's models, in CSS pixels (aircraft/aircraft3dLayer.js: minModelPx): at the Aeródromo
+ * zoom an airliner is a few pixels long, so an aircraft of the traffic is drawn at least this long, as its 2D symbol;
+ * one on its stand keeps the stand's scale, as its footprint.
+ */
+export const MIN_MODEL_PX = 30;
+
 /** After a failed load of the 3D chunk the map waits this long before it tries again. */
 export const RETRY_LOAD_MS = 30_000;
 
@@ -289,6 +296,7 @@ export function createAircraft3dController({
       originLngLat,
       getInstances: () => current,
       getSun: () => sunPosition(getNow(), originLngLat),
+      minModelPx: MIN_MODEL_PX,
       onFailedChange: failed => {
         layerFailed = failed === true;
         setStatus(layerFailed ? 'failed' : 'ready', layerFailed ? 'failed' : null);

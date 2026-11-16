@@ -174,7 +174,7 @@ const byId = (a, b) => {
  * (traffic/situationModel.js: RenderAircraft); `parkedAircraft` the aircraft standing on their stands,
  * `{ id, lon, lat, headingDeg, typeIcao, model, sizeCategory, kind? }`, each owning the aircraft of the map with its id.
  *
- * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, ids, dropLines }>`, the keys
+ * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, floorLengths, ids, dropLines }>`, the keys
  * (instanceKey) sorted, empty below `minZoom` (the caller's 3D threshold: the airfield fit − 0.3, contracts 2.3):
  * - only aircraft within AIRCRAFT_3D_RADIUS_NM of `originLngLat` (the ARP) that the 2D layers draw (isDrawn); other
  *   traffic on the ground stays 2D, and so does an aircraft in the air without an altitude;
@@ -184,6 +184,8 @@ const byId = (a, b) => {
  * - each entry holds `aircraftCount` aircraft sorted by id, then as many flat dark shadows in the same order
  *   (`count` = 2 × aircraftCount): `matrices` 16 floats and `colors` 3 linear floats per instance, `ids` the
  *   aircraft's id for an aircraft and `null` for a shadow;
+ * - `floorLengths` (PR M7) holds, per instance, the model's length in metres for an aircraft of the traffic and its
+ *   shadow, which the layer may draw larger at a far zoom (aircraft3dLayer.js: minModelPx), and 0 for one on its stand;
  * - colours (`colors` option, AIRCRAFT_3D_COLORS by default): the chosen aircraft (`selectedId`) in `selected`, AVIAM
  *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
@@ -201,7 +203,7 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
   const parked = new Map();
   for (const item of list(parkedAircraft)) {
     if (item?.id == null || !finite(item.lon) || !finite(item.lat)) continue;
-    parked.set(item.id, { item, aviam: item.kind !== 'other', z: 0 });
+    parked.set(item.id, { item, aviam: item.kind !== 'other', z: 0, onStand: true });
   }
   const placed = [...parked.values()];
   for (const item of list(renderAircraft)) {
@@ -222,7 +224,7 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     if (finite(trackDeg)) heading = trackDeg;
     else if (finite(headingDeg)) heading = headingDeg;
     const group = groups.get(key) ?? { resolved, members: [] };
-    group.members.push({ id: entry.item.id, x, y, z: entry.z, headingDeg: heading,
+    group.members.push({ id: entry.item.id, x, y, z: entry.z, headingDeg: heading, onStand: entry.onStand === true,
       colour: entry.item.id === selectedId ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });
     groups.set(key, group);
   }
@@ -233,6 +235,9 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     const aircraftCount = members.length;
     const matrices = new Float32Array(32 * aircraftCount);
     const instanceColors = new Float32Array(6 * aircraftCount);
+    // The length a model may grow from (aircraft3dLayer.js: minModelPx): an aircraft of the traffic, as its 2D symbol,
+    // is never drawn smaller than a few pixels; one on its stand keeps the stand's scale, as its footprint does.
+    const floorLengths = new Float32Array(2 * aircraftCount);
     const ids = [];
     const drops = [];
     members.forEach((member, index) => {
@@ -242,6 +247,9 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       instanceColors.set(colors.shadow, 3 * (aircraftCount + index));
       ids[index] = member.id;
       ids[aircraftCount + index] = null;
+      const floor = member.onStand ? 0 : resolved.spec.lengthM;
+      floorLengths[index] = floor;
+      floorLengths[aircraftCount + index] = floor;
       if (member.z > DROP_LINE_MIN_M) drops.push(member.x, member.y, member.z, member.x, member.y, 0);
     });
     plan.set(key, Object.freeze({
@@ -251,6 +259,7 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       count: 2 * aircraftCount,
       matrices,
       colors: instanceColors,
+      floorLengths,
       ids: Object.freeze(ids),
       dropLines: Float32Array.from(drops),
     }));
