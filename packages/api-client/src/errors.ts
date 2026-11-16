@@ -21,7 +21,9 @@ const COMMERCIAL_REQUEST_CODES = ["request_closed", "airline_unverified", "repre
   "profile_not_found", "invalid_airline", "stations_invalid", "confirmation_note_required",
   "invalid_commercial_request", "invalid_inbox_query", "invalid_application", "airline_unavailable",
   "service_unavailable", "receipt_not_found", "request_unavailable", "email_in_use", "invalid_provisioning",
-  "invitations_unavailable", "invitation_already_accepted", "registry_check_required"] as const;
+  "invitations_unavailable", "invitation_already_accepted", "registry_check_required",
+  // Professor's review: the airline's tax identifier and the public-registry rule of the approval (ADR-0023).
+  "invalid_tax_registration", "airline_not_in_public_registry"] as const;
 /**
  * Contract drafts (phase 1, block B): one code per cause that blocks the submission to Finance (the
  * readiness), the scope, the discard and the observations; the Finance approval codes of each blocking

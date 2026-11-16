@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Domain.Validation;
 
 namespace Elevant.UnitTests.Application;
 
@@ -8,6 +9,27 @@ public sealed class ContractDocumentHashTests
         string? terms = "Pago a 30 días.") => new(Guid.NewGuid(), Guid.NewGuid(), "CT-001", "Active", "Demo Air", "DM", null, 2,
         "Approved", new(2026, 1, 1), null, "USD", stations ?? ["PUJ · Punta Cana", "SDQ · Las Américas"],
         rates ?? [new("RAMP", "Rampa", "operación", 150m, 1m), new("GPU", "Planta eléctrica", "hora", 40m, 1m)], terms, null, []);
+
+    [Fact]
+    public void TheAirlineTaxIdentifierJoinsTheSignedContentOnlyWhenPresent()
+    {
+        var legacy = Document();
+        var withTax = legacy with { AirlineTaxRegistration = new TaxRegistration("131234569", "DO") };
+        // A version without the identifier keeps exactly the hash it had before the identifier existed.
+        Assert.Equal(ContractDocumentHash.Of(legacy), legacy.ContentSha256);
+        Assert.NotEqual(legacy.ContentSha256, withTax.ContentSha256);
+        Assert.NotEqual(withTax.ContentSha256,
+            (legacy with { AirlineTaxRegistration = new TaxRegistration("130000001", "DO") }).ContentSha256);
+
+        // Signed before its organization had an RNC: the document stays the one signed, without the RNC.
+        var signedBefore = withTax with { Signatures = [new("Airline", "Ana", "Gerente", DateTimeOffset.UtcNow, legacy.ContentSha256)] };
+        Assert.Null(ContractDocumentHash.AsSigned(signedBefore).AirlineTaxRegistration);
+        Assert.Equal(legacy.ContentSha256, ContractDocumentHash.AsSigned(signedBefore).ContentSha256);
+        // Signed with it, or not signed yet: the RNC is part of the content.
+        var signedWith = withTax with { Signatures = [new("Airline", "Ana", "Gerente", DateTimeOffset.UtcNow, withTax.ContentSha256)] };
+        Assert.NotNull(ContractDocumentHash.AsSigned(signedWith).AirlineTaxRegistration);
+        Assert.NotNull(ContractDocumentHash.AsSigned(withTax).AirlineTaxRegistration);
+    }
 
     [Fact]
     public void IgnoresOrderAndReadOnlyFacts()

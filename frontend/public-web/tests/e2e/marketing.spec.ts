@@ -85,6 +85,9 @@ test.describe("landing pública", () => {
     await page.getByRole("button", { name: "Añadir servicio +" }).click();
     await page.getByRole("button", { name: /Continuar/i }).click();
     await page.getByRole("combobox", { name: "Seleccione una aerolínea" }).selectOption(airlineId);
+    // The airline's tax identifier: with Dominican Republic as its country it is an RNC.
+    await page.getByRole("combobox", { name: "País del identificador fiscal" }).selectOption("DO");
+    await page.getByRole("textbox", { name: "RNC" }).fill("1-31-23456-9");
     await page.getByRole("button", { name: /Continuar/i }).click();
     await page.getByRole("textbox", { name: "Nombre completo" }).fill("Ana Synthetic");
     await page.getByRole("combobox", { name: "Cargo" }).selectOption("Gerente de operaciones");
@@ -115,7 +118,7 @@ test.describe("landing pública", () => {
       representativeTitle: "Gerente de operaciones", representativeCountry: "República Dominicana",
       representativeProvince: "Santiago", representativeMunicipality: "Santiago de los Caballeros",
       representativeDocumentType: "Passport", representativeDocumentNumber: "RD1234567",
-      representativeNationalityCode: "DO" });
+      representativeNationalityCode: "DO", taxRegistration: "131234569", taxRegistrationCountryCode: "DO" });
     expect(submissions[0]).not.toHaveProperty("password");
   });
 

@@ -34,6 +34,19 @@ public sealed class ContractPdfRendererTests
     }
 
     [Fact]
+    public void TheAirlinePartyShowsItsRncOrForeignTaxIdentifier()
+    {
+        var document = Document("Draft", terms: 3);
+        var dominican = PdfFontInspector.Text(Render(document with
+            { AirlineTaxRegistration = new Elevant.Domain.Validation.TaxRegistration("131234569", "DO") }));
+        Assert.Contains("RNC 1-31-23456-9", dominican);
+        var foreign = PdfFontInspector.Text(Render(document with
+            { AirlineTaxRegistration = new Elevant.Domain.Validation.TaxRegistration("B85850394", "ES") }));
+        Assert.Contains("Id. fiscal B85850394 (ES)", foreign);
+        Assert.DoesNotContain("RNC", PdfFontInspector.Text(Render(document)));
+    }
+
+    [Fact]
     public void ApprovedContractPaginatesWithItsCodeAndNoDraftMark()
     {
         var document = Document("Approved");

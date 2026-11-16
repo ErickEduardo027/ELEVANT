@@ -1,6 +1,7 @@
 using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Finance;
+using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Identity;
 using PdfSharp;
 using PdfSharp.Drawing;
@@ -51,7 +52,9 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
 
         writer.Heading("1", "Objeto");
         writer.Paragraph("AVIAM, operador de servicios de asistencia en tierra (en adelante, «el Prestador»), y " +
-            $"{document.AirlineLegalName ?? document.AirlineName} ({document.AirlineCode}), en adelante «la Aerolínea», " +
+            $"{document.AirlineLegalName ?? document.AirlineName} ({document.AirlineCode}" +
+            (document.AirlineTaxRegistration is { } tax ? $", {TaxRegistrations.Display(tax.Number, tax.CountryCode)}" : string.Empty) +
+            "), en adelante «la Aerolínea», " +
             "acuerdan los servicios, tarifas y condiciones de esta versión del contrato.");
 
         writer.Heading("2", "Vigencia y cobertura");
@@ -263,25 +266,32 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         public void Parties(ContractDocumentData document)
         {
             var column = (Width - 14) / 2;
+            // The airline's tax identifier, when its organization has one: «RNC 1-31-23456-9» or «Id. fiscal … (país)».
+            var tax = document.AirlineTaxRegistration is { } registration
+                ? TaxRegistrations.Display(registration.Number, registration.CountryCode) : null;
+            var height = tax is null ? 58d : 70d;
             var boxes = new[]
             {
-                ("EL PRESTADOR", "AVIAM", "Operador de servicios de asistencia en tierra"),
+                ("EL PRESTADOR", "AVIAM", "Operador de servicios de asistencia en tierra", (string?)null),
                 ("LA AEROLÍNEA", document.AirlineLegalName ?? document.AirlineName,
-                    $"{document.AirlineName} · código {document.AirlineCode}"),
+                    $"{document.AirlineName} · código {document.AirlineCode}", tax),
             };
             for (var index = 0; index < boxes.Length; index++)
             {
-                var (caption, name, detail) = boxes[index];
+                var (caption, name, detail, extra) = boxes[index];
                 var x = Margin + index * (column + 14);
-                graphics.DrawRectangle(new XSolidBrush(Tint), x, y, column, 58);
-                graphics.DrawRectangle(new XSolidBrush(index == 0 ? Navy : Orange), x, y, 3, 58);
+                graphics.DrawRectangle(new XSolidBrush(Tint), x, y, column, height);
+                graphics.DrawRectangle(new XSolidBrush(index == 0 ? Navy : Orange), x, y, 3, height);
                 graphics.DrawString(caption, label, new XSolidBrush(Muted), new XRect(x + 12, y + 9, column - 20, 10), XStringFormats.TopLeft);
                 graphics.DrawString(Fit(name, bodyBold, column - 20), bodyBold, new XSolidBrush(Navy),
                     new XRect(x + 12, y + 22, column - 20, Line), XStringFormats.TopLeft);
                 graphics.DrawString(Fit(detail, small, column - 20), small, new XSolidBrush(Muted),
                     new XRect(x + 12, y + 37, column - 20, Line), XStringFormats.TopLeft);
+                if (extra is not null)
+                    graphics.DrawString(Fit(extra, small, column - 20), small, new XSolidBrush(Navy),
+                        new XRect(x + 12, y + 50, column - 20, Line), XStringFormats.TopLeft);
             }
-            y += 70;
+            y += height + 12;
         }
 
         public void Summary(ContractDocumentData document)

@@ -17,9 +17,26 @@ const request: SubmitCommercialRequestRequest = {
   representativeEmail: "alex@synthetic.example.test",
   representativePhone: "+1 809 555 0100", authorityDeclared: true,
   representativeDocumentType: "NationalId", representativeDocumentNumber: "001-1234567-3",
+  taxRegistration: "131234569", taxRegistrationCountryCode: "DO",
 };
 
 describe("canonical public commercial intake client", () => {
+  it("requires the airline's tax identifier: an RNC for a Dominican airline", async () => {
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ reference: "REQ", replayed: false }),
+        { status: 201, headers: { "content-type": "application/json" } }) });
+    for (const tax of [{ taxRegistration: null, taxRegistrationCountryCode: null },
+      { taxRegistration: "131234568", taxRegistrationCountryCode: "DO" },
+      { taxRegistration: "ab", taxRegistrationCountryCode: "US" }])
+      await expect(client.submitCommercialRequest({ ...request, ...tax })).rejects.toBeInstanceOf(TypeError);
+    // A proposed Dominican airline cannot give a foreign identifier.
+    await expect(client.submitCommercialRequest({ ...request, airlineProfileId: null,
+      proposedAirline: { name: "Caribe Cargo", countryCode: "DO", iataCode: null, icaoCode: "CCX" },
+      taxRegistration: "EIN 12-3456789", taxRegistrationCountryCode: "US" })).rejects.toBeInstanceOf(TypeError);
+    await expect(client.submitCommercialRequest({ ...request, taxRegistration: "EIN 12-3456789",
+      taxRegistrationCountryCode: "US" })).resolves.toEqual({ reference: "REQ", replayed: false });
+  });
+
   it("reads the public catalog anonymously and rejects extra private fields", async () => {
     const calls: Array<{ url: string; method: string | undefined; auth: string | null }> = [];
     const client = createElevantApiClient({
