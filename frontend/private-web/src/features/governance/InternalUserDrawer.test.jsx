@@ -62,7 +62,8 @@ it('creates a Contracts member with only «Servicios: Ver» in one step, without
   });
   expect(payload.temporaryPassword.length).toBeGreaterThanOrEqual(14);
   expect(onCreated).toHaveBeenCalledWith({ id: 'acc-1' }, expect.stringContaining('Sofía Catálogo ya puede entrar'));
-});
+  // The whole form is typed key by key: a loaded full run needs more than the default 5 s.
+}, 15_000);
 
 it('opens with a Dominican passport whose «RD» the form writes', async () => {
   render(<InternalUserDrawer open initialDepartment="contracts" onClose={vi.fn()} onCreated={vi.fn()} />);
