@@ -26,19 +26,19 @@ public sealed class AeroDataBoxOptions
     /// <summary>Units in a UTC month that all AeroDataBox operations together may reach before a reference read is refused.</summary>
     public int PlanMonthlyUnitLimit { get; set; } = 38000;
 
-    public int FleetDailyUnitLimit { get; set; } = 60;
+    public int FleetDailyUnitLimit { get; set; } = 30;
 
-    public int FleetMonthlyUnitLimit { get; set; } = 600;
+    public int FleetMonthlyUnitLimit { get; set; } = 300;
 
-    public int AircraftDailyUnitLimit { get; set; } = 60;
+    public int AircraftDailyUnitLimit { get; set; } = 40;
 
-    public int AircraftMonthlyUnitLimit { get; set; } = 900;
+    public int AircraftMonthlyUnitLimit { get; set; } = 1200;
 
     public int RoutesDailyUnitLimit { get; set; } = 12;
 
     public int RoutesMonthlyUnitLimit { get; set; } = 200;
 
-    public int DelaysDailyUnitLimit { get; set; } = 60;
+    public int DelaysDailyUnitLimit { get; set; } = 48;
 
-    public int DelaysMonthlyUnitLimit { get; set; } = 1200;
+    public int DelaysMonthlyUnitLimit { get; set; } = 1500;
 }

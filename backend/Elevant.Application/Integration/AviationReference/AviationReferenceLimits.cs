@@ -34,14 +34,14 @@ public sealed record AviationReferenceLimits(
     int ProviderMonthlyUnits)
 {
     /// <summary>
-    /// Conservative defaults for the Starter plan (40 000 units a month): at most 2 900 units a month for the four reads
+    /// Conservative defaults for the Starter plan (40 000 units a month): at most 3 200 units a month for the four reads
     /// together, next to the flight feed's own budget.
     /// </summary>
     public static AviationReferenceLimits Default { get; } = new(
-        new AviationReferenceCap(6, 60, 600, TimeSpan.FromDays(7)),
-        new AviationReferenceCap(1, 60, 900, TimeSpan.FromDays(1)),
+        new AviationReferenceCap(6, 30, 300, TimeSpan.FromDays(7)),
+        new AviationReferenceCap(1, 40, 1200, TimeSpan.FromDays(1)),
         new AviationReferenceCap(6, 12, 200, TimeSpan.FromHours(24)),
-        new AviationReferenceCap(6, 60, 1200, TimeSpan.FromHours(1)),
+        new AviationReferenceCap(6, 48, 1500, TimeSpan.FromHours(1)),
         38000);
 
     public AviationReferenceCap For(AviationReferenceKind kind) => kind switch

@@ -186,7 +186,8 @@ public sealed class AviationReferenceReaderTests
         Assert.Equal((TimeSpan.FromDays(7), TimeSpan.FromDays(1), TimeSpan.FromHours(24), TimeSpan.FromHours(1)),
             (limits.AirlineFleet.CacheFor, limits.Aircraft.CacheFor, limits.AirportRoutes.CacheFor, limits.AirportDelays.CacheFor));
         // The Development VPS gives the feed 9 000 units a month: together they stay far below the plan's 40 000.
-        Assert.True(monthly + 9000 <= 12000, $"The reference reads may spend {monthly} units a month.");
+        Assert.True(monthly + 9000 <= 12500, $"The reference reads may spend {monthly} units a month.");
+        Assert.Equal(3200, monthly);
     }
 
     [Fact]
