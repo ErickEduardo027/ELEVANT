@@ -9,7 +9,8 @@ import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { airlineIdentityErrors } from './airlineIdentity';
-import { countryName, documentLabel, requestStatusLabel } from './requestLabels';
+import { checkTaxRegistration } from '@elevant/api-client';
+import { BLOCKING_REGISTRY_STATUSES, countryName, documentLabel, registryVerdictLabel, requestStatusLabel } from './requestLabels';
 import { representativeDomainCheck } from './representativeDomain';
 import { billingUnitLabel } from '../../../services/billingUnits';
 
@@ -178,6 +179,7 @@ function RequestReview({ request, stations, permissions, onCompleted, onRefresh 
     {open && request.existingCustomer && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">La aerolínea ya tiene un contrato vigente o en curso, o cuentas activas en el portal. No admite una segunda afiliación: amplíe los servicios con una enmienda o una renovación de su contrato, o cancele esta solicitud.</p>}
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     <AirlineSection request={request} canVerify={permissions.canVerify && open} busy={busy} onVerify={verify} />
+    <RegistrySection request={request} open={open} />
     <RepresentativeSection request={request} canConfirm={permissions.canVerify && open} busy={busy} onConfirm={confirm} />
     <div><h3 className="text-sm font-bold">Servicios solicitados</h3><ul className="mt-2 space-y-1">{request.services.map((service, index) => <li key={`${service.serviceId}-${index}`} className="rounded bg-accent-600/[.06] px-3 py-2 text-sm">{service.name} <span className="text-xs text-text-secondary-light">· por {billingUnitLabel(service.unit)}</span></li>)}</ul></div>
     {open && (permissions.canApprove || permissions.canReject) && <DecisionSection request={request} stations={stations} canApprove={permissions.canApprove} canReject={permissions.canReject} busy={busy} onDecide={decide} />}
@@ -199,6 +201,9 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
     legalName: request.legalName ?? '', countryCode: request.countryCode ?? '', iataCode: request.iataCode ?? '',
     icaoCode: request.icaoCode ?? '', verificationSourceUrl: request.verificationSourceUrl ?? '',
   });
+  // The airline's tax identifier (an RNC when it is Dominican); Contratos may correct it while verifying.
+  const [tax, setTax] = useState({ number: request.taxRegistration?.number ?? '',
+    countryCode: request.taxRegistration?.countryCode ?? request.countryCode ?? '' });
   const [catalog, setCatalog] = useState({ status: 'idle', airlines: [], error: '' });
   const [profileId, setProfileId] = useState('');
   // After a refused submit the messages follow the typing; `attempt` moves the focus to the first one.
@@ -209,7 +214,10 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
   const linking = !linked && mode === 'link';
   const needsIdentity = !linking || (chosen !== null && !chosen.isVerified);
   const catalogEmpty = catalog.status === 'ready' && catalog.airlines.length === 0;
-  const errors = checked && needsIdentity ? airlineIdentityErrors(identity) : {};
+  // Left empty, the request keeps the identifier it has (older requests may have none).
+  const taxCheck = tax.number.trim() ? checkTaxRegistration(tax.number, tax.countryCode) : null;
+  const errors = { ...(checked && needsIdentity ? airlineIdentityErrors(identity) : {}),
+    ...(checked && taxCheck?.problem ? { taxRegistration: taxCheck.problem } : {}) };
   useEffect(() => {
     if (attempt) formRef.current?.querySelector('[aria-invalid="true"]')?.focus();
   }, [attempt]);
@@ -237,13 +245,15 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
   async function submit(event) {
     event.preventDefault();
     // The identity is explained here, field by field: the api-client would refuse it without sending it.
-    if (needsIdentity && Object.keys(airlineIdentityErrors(identity)).length) {
+    if (needsIdentity && Object.keys(airlineIdentityErrors(identity)).length || taxCheck?.problem) {
       setChecked(true);
       setAttempt(current => current + 1);
       return;
     }
     const command = { expectedVersion: request.version, ...(linking ? { linkProfileId: profileId } : {}),
-      ...(needsIdentity ? identity : {}) };
+      ...(needsIdentity ? identity : {}),
+      ...(taxCheck?.registration ? { taxRegistration: taxCheck.registration.number,
+        taxRegistrationCountryCode: taxCheck.registration.countryCode } : {}) };
     const saved = await onVerify(command, linking
       ? 'Aerolínea verificada y vinculada a la ficha del catálogo. La solicitud está en revisión.'
       : 'Aerolínea verificada. La solicitud está en revisión.');
@@ -253,6 +263,7 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
   return <div className="space-y-3">
     {proposal && <div className="rounded-lg border border-status-warning/40 bg-status-warning/[.06] p-4 text-sm"><strong>Aerolínea propuesta por el solicitante</strong><p className="mt-1 text-xs text-text-secondary-light">No figuraba en el catálogo público. {linked ? 'Contratos ya la vinculó a una ficha del catálogo.' : 'Verifíquela con una fuente oficial: cree su ficha o vincúlela a una existente.'}</p><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Nombre">{proposal.name}</Detail><Detail label="País">{countryName(proposal.countryCode) ?? 'Sin dato'}</Detail><Detail label="IATA">{proposal.iataCode ?? 'Sin IATA'}</Detail><Detail label="ICAO">{proposal.icaoCode}</Detail>{proposal.websiteUrl && <Detail label="Sitio web">{proposal.websiteUrl}</Detail>}</dl></div>}
     {linked && <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>{request.airlineVerified ? 'Identidad verificada por Contratos' : 'Identidad legal pendiente de verificación'}</strong><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Razón social">{request.legalName ?? 'Sin confirmar'}</Detail><Detail label="País">{countryName(request.countryCode) ?? 'Sin confirmar'}</Detail><Detail label="IATA">{request.iataCode ?? (request.airlineVerified ? 'No tiene' : 'Sin confirmar')}</Detail><Detail label="ICAO">{request.icaoCode ?? 'Sin confirmar'}</Detail>{request.verificationSourceUrl && <Detail label="Fuente">{request.verificationSourceUrl}</Detail>}</dl></div>}
+    <dl className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><Detail label="Identificación fiscal">{request.taxRegistration?.display ?? 'Sin registrar en la solicitud'}</Detail></dl>
     {canVerify && !editing && <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-accent-600 underline">Corregir la verificación</button>}
     {canVerify && editing && <form ref={formRef} noValidate onSubmit={submit} className="border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-bold">Verificar identidad de la aerolínea</h3><p className="mt-1 text-xs text-text-secondary-light">Complete los datos con una fuente oficial. La lista histórica de clientes por sí sola no acredita razón social ni códigos. El ICAO es obligatorio; el IATA, solo si la aerolínea lo tiene.</p>
       {!linked && <fieldset className="mt-3 flex flex-wrap gap-4 text-sm"><legend className="sr-only">Cómo registrar la aerolínea</legend><label className="flex items-center gap-2"><input type="radio" name={`airline-mode-${request.id}`} checked={mode === 'create'} onChange={() => chooseMode('create')} />Crear ficha verificada</label><label className="flex items-center gap-2"><input type="radio" name={`airline-mode-${request.id}`} checked={mode === 'link'} disabled={catalogEmpty} onChange={() => chooseMode('link')} />Vincular a una ficha existente</label></fieldset>}
@@ -263,8 +274,35 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
         const message = errors[key];
         return <div key={key} className={wide ? 'sm:col-span-2' : undefined}><label htmlFor={id} className="text-xs font-semibold">{label}</label><input id={id} name={key} {...constraints} value={identity[key]} aria-invalid={message ? true : undefined} aria-describedby={message ? `${id}-error` : undefined} onChange={event => setIdentity(current => ({ ...current, [key]: upper ? event.target.value.toUpperCase() : event.target.value }))} className={field} />{message && <p id={`${id}-error`} className="mt-1 text-xs text-status-danger">{message}</p>}</div>;
       })}</div>}
+      <TaxFields id={`airline-${request.id}`} tax={tax} error={errors.taxRegistration} onChange={changes => setTax(current => ({ ...current, ...changes }))} />
       <div className="mt-3 flex flex-wrap gap-2"><button disabled={busy || (linking && !profileId)} className="rounded-lg border border-accent-600 px-4 py-2 text-xs font-semibold text-accent-600 disabled:opacity-50">{linking ? 'Vincular y verificar' : 'Guardar verificación'}</button>{request.airlineVerified && <button type="button" onClick={close} className="rounded-lg px-4 py-2 text-xs">Descartar cambios</button>}</div>
     </form>}
+  </div>;
+}
+
+/** The airline's tax identifier in the verification form: an RNC for a Dominican airline, otherwise its own id. */
+function TaxFields({ id, tax, error, onChange }) {
+  const dominican = tax.countryCode.trim().toUpperCase() === 'DO';
+  return <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div><label htmlFor={`${id}-taxCountry`} className="text-xs font-semibold">País del identificador fiscal (2 letras)</label><input id={`${id}-taxCountry`} maxLength={2} value={tax.countryCode} onChange={event => onChange({ countryCode: event.target.value.toUpperCase() })} className={field} /></div>
+    <div><label htmlFor={`${id}-taxNumber`} className="text-xs font-semibold">{dominican ? 'RNC' : 'Identificador fiscal'}</label><input id={`${id}-taxNumber`} maxLength={32} value={tax.number} aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-taxNumber-error` : undefined} onChange={event => onChange({ number: event.target.value })} className={field} />{error && <p id={`${id}-taxNumber-error`} className="mt-1 text-xs text-status-danger">{error}</p>}</div>
+  </div>;
+}
+
+/**
+ * The public-registry check of the airline (ADR-0023) in plain Spanish, and the Superadmin exception: an airline
+ * the registries do not confirm is approved only after Superadministración verifies it by hand with a source.
+ */
+function RegistrySection({ request, open }) {
+  const check = request.registryCheck;
+  const manual = request.manualVerification;
+  const blocked = BLOCKING_REGISTRY_STATUSES.includes(check?.status);
+  return <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>Registros públicos</strong>
+    {check ? <p className="mt-1">{registryVerdictLabel(check)} <span className="text-xs text-text-secondary-light">· {check.fromCatalog ? 'comprobación de Superadministración' : 'comprobación automática'} del {dateTime(check.checkedAt)}</span></p>
+      : <p className="mt-1 text-xs text-text-secondary-light">Se comprobará automáticamente al aprobar.</p>}
+    {manual && <p className="mt-2 rounded-lg bg-status-success/10 p-2 text-xs">✓ Verificada a mano por Superadmin · fuente {manual.verificationSourceUrl ?? 'sin dirección'}</p>}
+    {open && blocked && !manual && <p role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">No se puede aprobar mientras los registros públicos no la confirmen. Superadministración debe verificarla a mano con una fuente oficial en Superadministración › Aerolíneas; luego actualice esta solicitud y apruébela.</p>}
+    {open && check?.status === 'Unavailable' && !manual && <p role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">Ningún registro público respondió. Puede aprobar, pero confirme la aerolínea con su fuente oficial.</p>}
   </div>;
 }
 
@@ -308,6 +346,8 @@ function DecisionSection({ request, stations, canApprove, canReject, busy, onDec
     [confirmed, 'Representante confirmado por Contratos'],
     [request.authorityDeclared, 'Autorización declarada por el representante'],
     [!request.existingCustomer, 'La aerolínea no tiene un contrato vigente ni cuentas activas'],
+    [Boolean(request.manualVerification) || !BLOCKING_REGISTRY_STATUSES.includes(request.registryCheck?.status),
+      'Confirmada en registros públicos o verificada a mano por Superadmin (se comprueba al aprobar)'],
     [stationIds.length > 0, 'Al menos una estación elegida'],
   ];
   return <div className="border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-bold">Decisión contractual</h3><p className="mt-1 text-xs text-text-secondary-light">Al aprobar se crea un contrato y versión en borrador. La operación requiere activación posterior. El solicitante recibe un correo con la decisión.</p>
