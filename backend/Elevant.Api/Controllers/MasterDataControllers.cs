@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
+using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -187,6 +188,147 @@ public sealed class OccMasterDataController(IOccMasterDataStore store) : Control
         return MasterDataHttp.Answer(this,
             await store.UpdateAircraftTypeAsync(actorId, aircraftTypeId, input, idempotencyKey, cancellationToken),
             "El tipo de avión");
+    }
+
+    /// <summary>
+    /// The exact permits a stand requires (ADR-0045): the agent who covers it or works a flight there needs a current
+    /// cycle of each. Takes the stand's version and an Idempotency-Key.
+    /// </summary>
+    [HttpPut("master-data/stands/{standId:guid}/required-permits", Name = "SetOccStandRequiredPermits")]
+    [RequestSizeLimit(4096)]
+    [Consumes("application/json")]
+    [ProducesResponseType<MasterStandData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> SetStandRequiredPermits(Guid standId,
+        [FromBody, BindRequired] SetStandRequiredPermitsInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Answer(this,
+            await store.SetStandRequiredPermitsAsync(actorId, standId, input, idempotencyKey, cancellationToken),
+            "La posición");
+    }
+
+    /// <summary>«Aplicar a varias posiciones» (ADR-0045): the same permits on up to 200 stands of one station.</summary>
+    [HttpPost("master-data/stands/required-permits", Name = "ApplyOccStandRequiredPermits")]
+    [RequestSizeLimit(16384)]
+    [Consumes("application/json")]
+    [ProducesResponseType<StandRequiredPermitsBatchData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> ApplyStandRequiredPermits([FromBody, BindRequired] ApplyStandRequiredPermitsInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Answer(this,
+            await store.ApplyStandRequiredPermitsAsync(actorId, input, idempotencyKey, cancellationToken), "La posición");
+    }
+}
+
+/// <summary>
+/// «Gestión Humana › Configuración» (ADR-0045) under <c>human_resources.settings.*</c>: the custom permit types next to
+/// the two system ones, and the qualification equipment types. Every command takes an Idempotency-Key; an update also
+/// the version the caller saw. Nothing is deleted.
+/// </summary>
+[ApiController]
+[ApiVersion("1.0")]
+[Authorize]
+[PrivateResponse]
+[Route("api/v{version:apiVersion}/human-resources/settings")]
+public sealed class HumanResourcesSettingsController(IHumanResourcesSettingsStore store) : ControllerBase
+{
+    [HttpGet("permit-types", Name = "ListHumanResourcesPermitTypes")]
+    [ProducesResponseType<PermitTypeSettingsData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    public async Task<IActionResult> ListPermitTypes(CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Answer(this, await store.ReadPermitTypesAsync(actorId, cancellationToken), "El tipo de carnet");
+    }
+
+    [HttpPost("permit-types", Name = "CreateHumanResourcesPermitType")]
+    [RequestSizeLimit(4096)]
+    [Consumes("application/json")]
+    [ProducesResponseType<PermitTypeSettingData>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<PermitTypeSettingData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> CreatePermitType([FromBody, BindRequired] CreatePermitTypeInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Created(this, await store.CreatePermitTypeAsync(actorId, input, idempotencyKey,
+            cancellationToken), "El tipo de carnet");
+    }
+
+    [HttpPut("permit-types/{permitTypeId:guid}", Name = "UpdateHumanResourcesPermitType")]
+    [RequestSizeLimit(4096)]
+    [Consumes("application/json")]
+    [ProducesResponseType<PermitTypeSettingData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> UpdatePermitType(Guid permitTypeId, [FromBody, BindRequired] UpdatePermitTypeInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Answer(this, await store.UpdatePermitTypeAsync(actorId, permitTypeId, input, idempotencyKey,
+            cancellationToken), "El tipo de carnet");
+    }
+
+    [HttpGet("equipment-types", Name = "ListHumanResourcesEquipmentTypes")]
+    [ProducesResponseType<EquipmentTypeSettingsData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    public async Task<IActionResult> ListEquipmentTypes(CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Answer(this, await store.ReadEquipmentTypesAsync(actorId, cancellationToken), "El equipo");
+    }
+
+    [HttpPost("equipment-types", Name = "CreateHumanResourcesEquipmentType")]
+    [RequestSizeLimit(4096)]
+    [Consumes("application/json")]
+    [ProducesResponseType<EquipmentTypeSettingData>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<EquipmentTypeSettingData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> CreateEquipmentType([FromBody, BindRequired] CreateEquipmentTypeInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Created(this, await store.CreateEquipmentTypeAsync(actorId, input, idempotencyKey,
+            cancellationToken), "El equipo");
+    }
+
+    [HttpPut("equipment-types/{equipmentTypeId:guid}", Name = "UpdateHumanResourcesEquipmentType")]
+    [RequestSizeLimit(4096)]
+    [Consumes("application/json")]
+    [ProducesResponseType<EquipmentTypeSettingData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> UpdateEquipmentType(Guid equipmentTypeId,
+        [FromBody, BindRequired] UpdateEquipmentTypeInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!MasterDataHttp.TryActor(User, out var actorId)) return MasterDataHttp.Unauthenticated(this);
+        return MasterDataHttp.Answer(this, await store.UpdateEquipmentTypeAsync(actorId, equipmentTypeId, input,
+            idempotencyKey, cancellationToken), "El equipo");
     }
 }
 

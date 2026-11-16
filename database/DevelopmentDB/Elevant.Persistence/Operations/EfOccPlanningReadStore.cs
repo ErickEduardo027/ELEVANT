@@ -374,6 +374,7 @@ internal sealed class EfOccPlanningReadStore(
                       standItem.StationId == scope.StationInternalId &&
                       assignment.AssignedTo == null
                 select new StandContextProjection(
+                    standItem.Id,
                     terminal == null ? null : terminal.Id,
                     new OccStandData(
                         standItem.PublicId,
@@ -443,7 +444,8 @@ internal sealed class EfOccPlanningReadStore(
             scope.PlannedEndAt,
             scope.Station.IanaTimeZone,
             null,
-            cancellationToken)).Select(candidate => candidate.Data).ToArray();
+            cancellationToken,
+            stand?.StandInternalId)).Select(candidate => candidate.Data).ToArray();
 
         var options = new OccPlanningOptionsSourceData(
             new OccPlanningTurnaroundContextData(
@@ -483,7 +485,9 @@ internal sealed class EfOccPlanningReadStore(
     /// <paramref name="plannedEndAt"/>) (<see cref="AgentSimultaneity"/>; the operation itself never counts, and without
     /// an operation every overlapping one does). The stand reassignment, the handover and the demo flight options
     /// (ADR-0041, with no operation yet) evaluate only <paramref name="onlyAgentIds"/>, with the same rules as the manual
-    /// assignment.
+    /// assignment. With <paramref name="standId"/>, the permits that stand requires (ADR-0045) are part of the facts and
+    /// each candidate carries the required codes it holds current on <paramref name="operationDate"/>; without it, every
+    /// code it holds current, so a caller can judge several stands (the demo flight options).
     /// </summary>
     internal async Task<AgentCandidate[]> BuildAgentCandidatesAsync(
         long? operationId,
@@ -495,7 +499,8 @@ internal sealed class EfOccPlanningReadStore(
         DateTimeOffset? plannedEndAt,
         string ianaTimeZone,
         IReadOnlyCollection<long>? onlyAgentIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? standId = null)
     {
         var only = onlyAgentIds?.Distinct().ToArray();
         if (only is { Length: 0 })
@@ -752,12 +757,17 @@ internal sealed class EfOccPlanningReadStore(
         var currentQualifications = qualifications
             .Select(item => (item.RampAgentId, item.EquipmentTypeId))
             .ToHashSet();
+        var requiredPermits = standId is { } requiredStand
+            ? await RequiredPermitsAsync(context, [requiredStand], cancellationToken)
+            : null;
+        var required = requiredPermits?.GetValueOrDefault(standId!.Value) ?? [];
+        var permitCodesByAgent = currentPermits.ToLookup(item => item.RampAgentId, item => item.DocumentType);
         var airportIds = currentPermits
-            .Where(item => item.DocumentType == PermitDocumentType.AirportId)
+            .Where(item => item.DocumentType == PermitDocumentTypes.AirportId)
             .Select(item => item.RampAgentId)
             .ToHashSet();
         var driverLicenses = currentPermits
-            .Where(item => item.DocumentType == PermitDocumentType.RampDriverLicense)
+            .Where(item => item.DocumentType == PermitDocumentTypes.RampDriverLicense)
             .Select(item => item.RampAgentId)
             .ToHashSet();
         var accountsByPerson = accounts.ToLookup(account => account.PersonId);
@@ -815,8 +825,32 @@ internal sealed class EfOccPlanningReadStore(
                 position?.PublicId,
                 OperationOccupancyRules.AtCapacity(overlaps.GetValueOrDefault(agent.Id)),
                 hasApprovedAbsence,
-                PositionCoveragePolicy.IsJunior(agent.HireDate, operationDate) && !mentored.Contains(agent.Id)));
+                PositionCoveragePolicy.IsJunior(agent.HireDate, operationDate) && !mentored.Contains(agent.Id),
+                permitCodesByAgent[agent.Id]
+                    .Where(code => standId is null || required.Any(permit => permit.Code == code))
+                    .Distinct().Order(StringComparer.Ordinal).ToArray(),
+                required.Count == 0 ? null : required));
         }).ToArray();
+    }
+
+    /// <summary>
+    /// The permits each of <paramref name="standIds"/> requires (ADR-0045), with their names, in code order; a stand
+    /// that requires none is absent.
+    /// </summary>
+    internal static async Task<Dictionary<long, IReadOnlyList<RequiredPermitFact>>> RequiredPermitsAsync(
+        ElevantDbContext context, IReadOnlyCollection<long> standIds, CancellationToken cancellationToken)
+    {
+        if (standIds.Count == 0) return [];
+        var ids = standIds.Distinct().ToArray();
+        var rows = await context.StandRequiredPermits.AsNoTracking().Where(item => ids.Contains(item.StandId))
+            .Select(item => new { item.StandId, item.DocumentTypeCode }).ToArrayAsync(cancellationToken);
+        if (rows.Length == 0) return [];
+        var names = await Elevant.Persistence.Identity.PermitTypeNames.LoadAsync(context, cancellationToken);
+        return rows.GroupBy(row => row.StandId).ToDictionary(group => group.Key,
+            group => (IReadOnlyList<RequiredPermitFact>)group.Select(row => row.DocumentTypeCode).Distinct()
+                .Order(StringComparer.Ordinal)
+                .Select(code => new RequiredPermitFact(code, Elevant.Persistence.Identity.PermitTypeNames.Name(names, code)))
+                .ToArray());
     }
 
     private static DateTimeOffset GetUtcInstantAtLocalMidnight(
@@ -844,6 +878,7 @@ internal sealed class EfOccPlanningReadStore(
         OccOperationServiceData Service);
 
     private sealed record StandContextProjection(
+        long StandInternalId,
         long? TerminalInternalId,
         OccStandData Stand);
 

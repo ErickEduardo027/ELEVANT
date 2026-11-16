@@ -60,7 +60,7 @@ internal static class CoverageReassignment
         // The same facts and rules as the manual assignment, for these agents only (3-N05).
         var candidates = await new EfOccPlanningReadStore(context, timeProvider).BuildAgentCandidatesAsync(operation.Id,
             stationId, terminalId, flight.OperationDate, at, operation.PlannedStartAt, operation.PlannedEndAt,
-            flight.IanaTimeZone, [.. covering, previous.RampAgentId], cancellationToken);
+            flight.IanaTimeZone, [.. covering, previous.RampAgentId], cancellationToken, standId);
         var eligible = candidates
             .Where(candidate => candidate.Data.OperationalPositionId is not null &&
                 OccAgentEligibilityPolicy.Evaluate(candidate.Data).Eligible)

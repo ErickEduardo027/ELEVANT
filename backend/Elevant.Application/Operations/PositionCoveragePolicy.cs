@@ -4,8 +4,15 @@ namespace Elevant.Application.Operations;
 /// <param name="MaxStandsPerAgent">Most stands one agent covers here; 3 when the terminal does not say.</param>
 public sealed record CoverageTerminalRules(int MaxStandsPerAgent, bool RequiresBridgeQualification);
 
-/// <summary>One requested stand as the store found it.</summary>
-public sealed record CoverageStandFacts(Guid StandId, string Code, bool IsActive, bool InTerminal, bool HasBoardingBridge);
+/// <summary>A permit a stand requires (ADR-0045): its type code and the name the screens show («Le falta: …»).</summary>
+public sealed record RequiredPermitFact(string Code, string Name);
+
+/// <summary>
+/// One requested stand as the store found it. <paramref name="RequiredPermits"/> are the permits it requires
+/// (ADR-0045); null or empty requires none beyond the general rules.
+/// </summary>
+public sealed record CoverageStandFacts(Guid StandId, string Code, bool IsActive, bool InTerminal, bool HasBoardingBridge,
+    IReadOnlyList<RequiredPermitFact>? RequiredPermits = null);
 
 /// <summary>Another active coverage that overlaps the requested window on one of the requested stands.</summary>
 /// <param name="IsMentorPair">It belongs to the mentor of this agent, or this agent mentors it.</param>
@@ -25,7 +32,8 @@ public sealed record CoverageAgentFacts(
     bool ShiftCoversWindow,
     bool HasApprovedAbsence,
     bool HasOverlappingCoverage,
-    bool HasTerminalScope = true);
+    bool HasTerminalScope = true,
+    IReadOnlyCollection<string>? CurrentPermitCodes = null);
 
 /// <summary>
 /// The mentor, when one is named. A mentor on an approved absence or without a current airport permit
@@ -88,6 +96,8 @@ public static class PositionCoveragePolicy
         if (!agent.IsActive) Add("agent_inactive");
         if (!agent.HasTerminalScope) Add("terminal_scope_missing");
         if (!agent.HasAirportPermit) Add("airport_permit_required");
+        // ADR-0045: every permit a requested stand requires, current for the whole window.
+        if (MissingPermits(candidate).Count > 0) Add("required_permit_missing");
         var needsBridge = candidate.Terminal.RequiresBridgeQualification ||
                           candidate.Stands.Any(stand => stand.HasBoardingBridge);
         if (needsBridge && !agent.HasBridgeQualification) Add("bridge_qualification_required");
@@ -114,6 +124,17 @@ public static class PositionCoveragePolicy
         if (!candidate.IsReinforcement && candidate.Overlaps.Any(overlap => !overlap.IsMentorPair))
             Add("stand_taken");
         return reasons;
+    }
+
+    /// <summary>
+    /// The permits the requested stands require that the agent holds no current cycle of (ADR-0045), once each, in
+    /// the stands' order: what «Le falta: …» names.
+    /// </summary>
+    public static IReadOnlyList<RequiredPermitFact> MissingPermits(PositionCoverageCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        return RequiredPermitRules.Missing(candidate.Stands.SelectMany(stand => stand.RequiredPermits ?? []),
+            candidate.Agent.CurrentPermitCodes);
     }
 
     /// <summary>Less than three months since hiring on the work date.</summary>

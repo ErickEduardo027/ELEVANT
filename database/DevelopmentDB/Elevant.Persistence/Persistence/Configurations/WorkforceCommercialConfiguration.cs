@@ -139,7 +139,7 @@ internal static class WorkforceCommercialConfiguration
                 table.HasCheckConstraint("ck_permit_cycle_number", "[cycle_number] > 0");
                 table.HasCheckConstraint("ck_permit_dates", "[expires_on] >= [issued_on]");
             });
-            builder.Property(cycle => cycle.DocumentType).HasConversion<string>().HasMaxLength(32);
+            builder.Property(cycle => cycle.DocumentType).HasMaxLength(32).IsRequired();
             builder.Property(cycle => cycle.DocumentNumber).HasMaxLength(64).IsRequired();
             builder.Property(cycle => cycle.IssuedOn).HasColumnType("date");
             builder.Property(cycle => cycle.ExpiresOn).HasColumnType("date");

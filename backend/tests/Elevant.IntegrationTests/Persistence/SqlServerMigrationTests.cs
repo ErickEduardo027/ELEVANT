@@ -1498,12 +1498,12 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal("AirportId", airportId.DocumentType);
             Assert.Equal("DEV-RA-001", airportId.EmployeeNumber);
             var exact = await store.ListCurrentAsync(hrId, 1, 1,
-                airportId.RampProfileId, PermitDocumentType.AirportId, cancellationToken);
+                airportId.RampProfileId, PermitDocumentTypes.AirportId, cancellationToken);
             Assert.Equal(airportId.Id, Assert.Single(exact!.Permits).Id);
             Assert.Empty((await store.ListCurrentAsync(hrId, 1, 1,
-                Guid.NewGuid(), PermitDocumentType.AirportId, cancellationToken))!.Permits);
+                Guid.NewGuid(), PermitDocumentTypes.AirportId, cancellationToken))!.Permits);
             Assert.Null(await store.ListCurrentAsync(occId, 1, 1,
-                airportId.RampProfileId, PermitDocumentType.AirportId, cancellationToken));
+                airportId.RampProfileId, PermitDocumentTypes.AirportId, cancellationToken));
             var second = await store.ListCurrentAsync(hrId, 2, 1, cancellationToken);
             Assert.NotNull(second);
             Assert.False(second.HasMore);
@@ -1522,7 +1522,7 @@ public sealed partial class SqlServerMigrationTests
             await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
                 link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
             await context.AirportPermitCycles.Where(cycle => cycle.DocumentType ==
-                PermitDocumentType.AirportId).ExecuteUpdateAsync(update => update
+                PermitDocumentTypes.AirportId).ExecuteUpdateAsync(update => update
                     .SetProperty(cycle => cycle.IsCurrent, false), cancellationToken);
         }
         await using (var scope = provider.CreateAsyncScope())
@@ -5455,7 +5455,7 @@ public sealed partial class SqlServerMigrationTests
                 .Where(item => item.PublicId == shiftRequest.AgentId)
                 .Select(item => item.Id).SingleAsync(cancellationToken);
             await context.AirportPermitCycles.Where(item => item.RampAgentId == agentDbId &&
-                item.DocumentType == PermitDocumentType.AirportId)
+                item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ExpiresOn,
                     new DateOnly(2026, 9, 25)), cancellationToken);
             Assert.Equal(OccShiftWriteFailure.Conflict,
@@ -5464,7 +5464,7 @@ public sealed partial class SqlServerMigrationTests
                 item.RampAgentId == agentDbId && item.WorkDate == new DateOnly(2026, 9, 26),
                 cancellationToken));
             await context.AirportPermitCycles.Where(item => item.RampAgentId == agentDbId &&
-                item.DocumentType == PermitDocumentType.AirportId)
+                item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ExpiresOn,
                     new DateOnly(2099, 12, 31)), cancellationToken);
         }

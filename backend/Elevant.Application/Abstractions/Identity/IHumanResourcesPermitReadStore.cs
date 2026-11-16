@@ -13,7 +13,7 @@ public sealed record HumanResourcesPermitPage(int Page, int Limit, bool HasMore,
 
 /// <summary>Filters for current permit cycles; validity is evaluated on <paramref name="AsOf"/>.</summary>
 public sealed record HumanResourcesPermitQuery(DateOnly AsOf, string? Search = null,
-    Guid? RampProfileId = null, PermitDocumentType? DocumentType = null,
+    Guid? RampProfileId = null, string? DocumentType = null,
     DocumentValidity? Validity = null);
 
 public sealed record HumanResourcesPermitCycle(Guid Id, int CycleNumber, bool IsCurrent,
@@ -31,7 +31,7 @@ public interface IHumanResourcesPermitReadStore
 
     /// <summary>Finds the current cycle for one agent and document type before renewal.</summary>
     Task<HumanResourcesPermitPage?> ListCurrentAsync(Guid actorId, int page, int limit,
-        Guid rampProfileId, PermitDocumentType documentType,
+        Guid rampProfileId, string documentType,
         CancellationToken cancellationToken = default);
 
     /// <summary>Lists current cycles matching the query; null when the actor may not read them.</summary>

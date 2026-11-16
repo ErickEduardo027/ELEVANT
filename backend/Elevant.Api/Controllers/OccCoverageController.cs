@@ -194,7 +194,7 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         return Ok(new OccHandoverOptionsResponse(options.TurnaroundId, options.OperationId, options.OperationStatus,
             options.CurrentAssignmentId, options.CurrentAgentId, options.CurrentAgentName, options.RemainingFrom,
             options.RemainingUntil, options.Agents.Select(agent => new OccAgentOptionResponse(agent.Id, agent.DisplayName,
-                agent.EmployeeNumber, agent.Eligible, agent.EligibilityReasons)).ToArray()));
+                agent.EmployeeNumber, agent.Eligible, agent.EligibilityReasons, agent.MissingPermits)).ToArray()));
     }
 
     /// <summary>
@@ -257,17 +257,20 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
             result.Code ?? InvalidCoverageRequestCode),
         PositionCoverageFailure.Conflict => Coded<OccCoverageBoardResponse>(409, "The data changed; read the board again.",
             result.Code ?? "version_conflict"),
-        PositionCoverageFailure.Rejected => Rejected(result.Reasons, result.Code),
+        PositionCoverageFailure.Rejected => Rejected(result.Reasons, result.Code, result.MissingPermits),
         _ => Ok(Board(result.Board!)),
     };
 
-    private ActionResult<OccCoverageBoardResponse> Rejected(IReadOnlyList<string> reasons, string? code)
+    private ActionResult<OccCoverageBoardResponse> Rejected(IReadOnlyList<string> reasons, string? code,
+        IReadOnlyList<string> missingPermits)
     {
         var problem = new ProblemDetails
         {
             Status = 422, Title = "The coverage breaks assignment rules.", Instance = HttpContext.Request.Path,
         };
         problem.Extensions["reasons"] = reasons;
+        // ADR-0045: the names of the permits a stand requires that the agent lacks («Le falta: …»).
+        if (missingPermits.Count > 0) problem.Extensions["missingPermits"] = missingPermits;
         // A stand in use or of an inactive terminal (2-A): the same codes as the master-data screen; the broken rules
         // otherwise (3-J).
         problem.Extensions["code"] = code ?? CoverageRejectedCode;

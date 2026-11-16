@@ -41,6 +41,6 @@ public sealed class OccAssignmentReadinessController(IOccAssignmentReadinessStor
         var data = result.Data!;
         return Ok(new OccAssignmentReadinessResponse(data.StationId, data.Date,
             data.Assignments.Select(item => new OccUnfitAssignmentResponse(item.AssignmentId, item.TurnaroundId,
-                item.AgentId, item.Reasons)).ToArray()));
+                item.AgentId, item.Reasons, item.MissingPermits)).ToArray()));
     }
 }

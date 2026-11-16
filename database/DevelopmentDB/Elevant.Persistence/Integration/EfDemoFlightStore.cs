@@ -799,14 +799,17 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
         // The agents who cover each terminal's stands, judged once for that terminal and this visit.
         var operationDate = BusinessCalendar.Today(onBlockAt, station.IanaTimeZone);
         var planning = new EfOccPlanningReadStore(context, timeProvider);
-        var verdicts = new Dictionary<(long Terminal, long Agent), OccAgentOptionData>();
+        var verdicts = new Dictionary<(long Terminal, long Agent), OccAgentCandidateData>();
+        // ADR-0045: each stand also judges the permits it requires, with the same rule as the assignment.
+        var requiredPermits = await EfOccPlanningReadStore.RequiredPermitsAsync(context,
+            stands.Select(stand => stand.Id).ToArray(), cancellationToken);
         foreach (var terminal in stands.GroupBy(stand => stand.TerminalId))
         {
             var agents = terminal.SelectMany(stand => coverage[stand.Id]).Select(item => item.RampAgentId).Distinct().ToArray();
             if (agents.Length == 0) continue;
             foreach (var candidate in await planning.BuildAgentCandidatesAsync(null, station.Id, terminal.Key, operationDate,
                          onBlockAt, onBlockAt, offBlockAt, station.IanaTimeZone, agents, cancellationToken))
-                verdicts[(terminal.Key, candidate.AgentId)] = OccAgentEligibilityPolicy.Evaluate(candidate.Data);
+                verdicts[(terminal.Key, candidate.AgentId)] = candidate.Data;
         }
 
         return stands.Select(stand =>
@@ -817,8 +820,10 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
             var covering = coverage[stand.Id].DistinctBy(item => item.RampAgentId).ToArray();
             // The rule lists every agent with a scope at the station that day or a shift in the terminal then: one it
             // does not list has neither.
-            var judged = covering.Select(item => verdicts.GetValueOrDefault((stand.TerminalId, item.RampAgentId)) ??
-                new OccAgentOptionData(item.Agent, item.Name, item.EmployeeNumber, false,
+            var required = requiredPermits.GetValueOrDefault(stand.Id);
+            var judged = covering.Select(item => verdicts.GetValueOrDefault((stand.TerminalId, item.RampAgentId)) is { } data
+                ? OccAgentEligibilityPolicy.Evaluate(data with { RequiredPermits = required })
+                : new OccAgentOptionData(item.Agent, item.Name, item.EmployeeNumber, false,
                     ["station_scope_missing", "shift_not_compatible"])).ToArray();
             var (eligible, eligibleAgents, reasons) = DemoStandEligibility.Evaluate(located, free, judged);
             return new EvaluatedStand(stand.Id, new DemoStandOptionData(stand.PublicId, stand.Code, stand.Terminal, located,

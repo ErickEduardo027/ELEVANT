@@ -53,6 +53,10 @@ internal static class SafeAuditChanges
         "airline.tax_registration",
         // A superadministrator's correction of an operating airline's identity (with its reason in the entry).
         "airline.legal_name", "airline.verification_source",
+        // Gestión Humana › Configuración and the permits a stand requires (ADR-0045).
+        "permit_type.code", "permit_type.name", "permit_type.description", "permit_type.active",
+        "equipment_type.code", "equipment_type.name", "equipment_type.qualification", "equipment_type.active",
+        "stand.required_permits",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

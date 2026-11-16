@@ -16,10 +16,11 @@ public sealed record OccPositionTurnaroundData(Guid TurnaroundId, string Operati
 /// <param name="CancelledBy">Code of the occupied stand that cancels this one right now (ADR-0030), an alert to OCC.</param>
 /// <param name="NarrowbodyOnly">Limited to narrow-body now, by its own size or an occupied neighbour.</param>
 /// <param name="CoveredBy">Agents covering the stand on the board's date.</param>
+/// <param name="RequiredPermits">Names of the permits the stand requires (ADR-0045); null when none.</param>
 public sealed record OccPositionData(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
     IReadOnlyList<OccPositionTurnaroundData> Turnarounds, decimal? Latitude = null, decimal? Longitude = null,
     bool HasBoardingBridge = false, bool IsRemote = false, string? MaxAircraftSize = null, string? CancelledBy = null,
-    bool NarrowbodyOnly = false, IReadOnlyList<string>? CoveredBy = null);
+    bool NarrowbodyOnly = false, IReadOnlyList<string>? CoveredBy = null, IReadOnlyList<string>? RequiredPermits = null);
 
 public sealed record OccPositionBoardData(Guid StationId, string StationCode, DateOnly OperationDate, DateTimeOffset AsOf,
     IReadOnlyList<OccPositionData> Positions, IReadOnlyList<OccPositionTurnaroundData> Unassigned, bool CanAssign);

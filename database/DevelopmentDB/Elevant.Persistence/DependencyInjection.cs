@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddScoped<IHumanResourcesQualificationWriteStore, EfHumanResourcesQualificationWriteStore>();
         services.AddScoped<IHumanResourcesPermitReadStore, EfHumanResourcesPermitReadStore>();
         services.AddScoped<IHumanResourcesPermitWriteStore, EfHumanResourcesPermitWriteStore>();
+        services.AddScoped<IHumanResourcesSettingsStore, EfHumanResourcesSettingsStore>();
         services.AddScoped<IHumanResourcesShiftReadStore, EfHumanResourcesShiftReadStore>();
         services.AddScoped<IHumanResourcesScheduleWarningStore, EfHumanResourcesScheduleWarningStore>();
         services.AddScoped<IHumanResourcesShiftWriteStore, EfHumanResourcesShiftWriteStore>();
