@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Commercial;
+using Elevant.Domain.Validation;
 
 namespace Elevant.UnitTests.Application;
 
@@ -231,7 +232,69 @@ public sealed class SubmitCommercialRequestHandlerTests
     private static SubmitCommercialRequestCommand ValidCommand() => new(
         Guid.NewGuid(), Guid.NewGuid(), [Guid.NewGuid()],
         "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true,
-        RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673");
+        RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673",
+        TaxRegistration: "131234569", TaxRegistrationCountryCode: "DO");
+
+    [Fact]
+    public async Task TheTaxIdentifierIsRequiredAndADominicanAirlineGivesAValidRnc()
+    {
+        foreach (var (tax, country) in new[] { ((string?)null, (string?)null), ("131234569", (string?)null),
+                     ("131234568", "DO"), ("12", "US"), (new string('9', 33), "US") })
+        {
+            var store = new RecordingStore();
+            var result = await new SubmitCommercialRequestHandler(store).HandleAsync(ValidCommand() with
+                { TaxRegistration = tax, TaxRegistrationCountryCode = country }, TestContext.Current.CancellationToken);
+            Assert.Equal(CommercialSubmissionFailure.InvalidTaxRegistration, result.Failure);
+            Assert.Null(store.Written);
+        }
+
+        var formatted = new RecordingStore();
+        Assert.True((await new SubmitCommercialRequestHandler(formatted).HandleAsync(ValidCommand() with
+            { TaxRegistration = " 1-31-23456-9 ", TaxRegistrationCountryCode = "do" },
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal(("131234569", "DO"), (formatted.Written!.TaxRegistration, formatted.Written.TaxRegistrationCountryCode));
+
+        // A proposed Dominican airline cannot give a foreign identifier; a foreign one keeps its own as written.
+        var proposal = new CommercialAirlineProposal("Caribe Cargo Express", "DO", null, "CCX");
+        var dominican = await new SubmitCommercialRequestHandler(new RecordingStore()).HandleAsync(ValidCommand() with
+        {
+            AirlineProfileId = Guid.Empty, ProposedAirline = proposal, TaxRegistration = "EIN 12-3456789",
+            TaxRegistrationCountryCode = "US",
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(CommercialSubmissionFailure.InvalidTaxRegistration, dominican.Failure);
+        var foreign = new RecordingStore();
+        Assert.True((await new SubmitCommercialRequestHandler(foreign).HandleAsync(ValidCommand() with
+        {
+            AirlineProfileId = Guid.Empty, ProposedAirline = proposal with { CountryCode = "US" },
+            TaxRegistration = " EIN 12-3456789 ", TaxRegistrationCountryCode = "US",
+        }, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal("EIN 12-3456789", foreign.Written!.TaxRegistration);
+        Assert.Null(foreign.Written.RegistryCheck);
+    }
+
+    [Fact]
+    public async Task AProposedAirlineIsCheckedAgainstTheRegistriesWithoutFailingTheSubmission()
+    {
+        var store = new RecordingStore();
+        var proposal = new CommercialAirlineProposal("Caribe Cargo Express", "DO", null, "CCX");
+        var result = await new SubmitCommercialRequestHandler(store, new ThrowingRegistry()).HandleAsync(ValidCommand() with
+            { AirlineProfileId = Guid.Empty, ProposedAirline = proposal }, TestContext.Current.CancellationToken);
+        Assert.True(result.IsSuccess);
+        // A registry that fails is «Unavailable», never an error of the public form.
+        Assert.Equal(AirlineRegistryCheck.Unavailable, store.Written!.RegistryCheck?.Status);
+    }
+
+    [Theory]
+    [InlineData("131234569", "DO", "RNC 1-31-23456-9")]
+    [InlineData("B85850394", "ES", "Id. fiscal B85850394 (ES)")]
+    public void TheTaxIdentifierIsPrintedAsRncOrForeignId(string number, string country, string expected) =>
+        Assert.Equal(expected, TaxRegistrations.Display(number, country));
+
+    private sealed class ThrowingRegistry : IAirlineRegistryLookup
+    {
+        public Task<AirlineRegistryCheck> CheckAsync(string name, string? iataCode, string? icaoCode,
+            CancellationToken cancellationToken = default) => throw new HttpRequestException("offline");
+    }
 
     private sealed class RecordingStore : ICommercialIntakeStore
     {

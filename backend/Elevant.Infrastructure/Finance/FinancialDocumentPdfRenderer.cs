@@ -5,6 +5,7 @@ using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using Elevant.Application.Finance;
 using Elevant.Application.Abstractions.Finance;
+using Elevant.Domain.Validation;
 
 namespace Elevant.Infrastructure.Finance;
 
@@ -115,6 +116,8 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
 
             DrawText(graphics, "CLIENTE", caption, Muted, Margin, 112, 200);
             DrawText(graphics, fiscal.CustomerName, body, Navy, Margin, 126, 280);
+            if (BuyerTaxRegistration(fiscal) is { } buyerTax)
+                DrawText(graphics, buyerTax, caption, Navy, Margin, 140, 280);
             DrawText(graphics, "EMISIÓN", caption, Muted, 340, 112, 100);
             DrawText(graphics, Date(fiscal.SignedAt ?? invoice.IssuedAt), body, Navy, 340, 126, 100);
             DrawText(graphics, "VENCIMIENTO", caption, Muted, 450, 112, 100);
@@ -166,6 +169,22 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         using var output = new MemoryStream();
         document.Save(output, false);
         return output.ToArray();
+    }
+
+    /// <summary>
+    /// The buyer's identifier frozen at issue: «RNC del comprador 1-31-23456-9», or «Id. fiscal del comprador … (país)»
+    /// for a foreign airline; null for invoices issued before the airline had one.
+    /// </summary>
+    public static string? BuyerTaxRegistration(NonFiscalInvoiceFiscalData fiscal)
+    {
+        ArgumentNullException.ThrowIfNull(fiscal);
+        if (string.IsNullOrWhiteSpace(fiscal.CustomerTaxRegistration) ||
+            string.IsNullOrWhiteSpace(fiscal.CustomerTaxRegistrationCountryCode))
+            return null;
+        var display = TaxRegistrations.Display(fiscal.CustomerTaxRegistration, fiscal.CustomerTaxRegistrationCountryCode);
+        return display.StartsWith("RNC ", StringComparison.Ordinal)
+            ? "RNC del comprador " + display[4..]
+            : "Id. fiscal del comprador " + display["Id. fiscal ".Length..];
     }
 
     /// <summary>A deterministic QR-like 21×21 pattern; it encodes nothing a reader could validate.</summary>

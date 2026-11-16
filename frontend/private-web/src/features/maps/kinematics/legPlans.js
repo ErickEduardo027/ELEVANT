@@ -515,17 +515,19 @@ export function fitGround(path, requiredMs, options) {
 /**
  * The departure on the ground from a stand (pushback, engine start, taxi), from an apron hold (taxi) or from a point
  * (`fromPoint`: `{ point, headingDeg, speedMs }`, a live fix on the ground: taxi), then the hold short of the runway,
- * the line-up and the take-off roll to the lift-off: `{ legs, liftoff, liftoffAlongM, holdingPoint, pushbackEnd }`,
- * frozen, or `null` without a route. All of part 'taxiOut' at the runway's elevation; the pushback is phase
- * 'pushback' (its engine start too), the taxi, the hold and the line-up 'taxiOut', the roll 'takeoff'. With `demo`
- * the engine start is left out and the hold short of the runway is a wait without upper bound that takes the time
- * over (contracts 2.3: no engine start or hold in the demo); otherwise the engine start lasts 60 s and the hold 20 s,
- * both compressible to nothing, and the hold takes the time over. `startHeadingDeg` is where the nose points at an
- * apron hold.
+ * the line-up and the take-off roll to the lift-off: `{ legs, liftoff, liftoffAlongM, holdingPoint, pushbackEnd,
+ * rollFits }`, frozen, or `null` without a route. All of part 'taxiOut' at the runway's elevation; the pushback is
+ * phase 'pushback' (its engine start too), the taxi, the hold and the line-up 'taxiOut', the roll 'takeoff'. With
+ * `demo` the engine start is left out and the hold short of the runway is a wait without upper bound that takes the
+ * time over (contracts 2.3: no engine start or hold in the demo); otherwise the engine start lasts 60 s and the hold
+ * 20 s, both compressible to nothing, and the hold takes the time over. `startHeadingDeg` is where the nose points at
+ * an apron hold. `holdingPointId` names the holding point to taxi to (an intersection, taxiRoute.js:
+ * departureHoldingPoints); without it the one that leaves the full length. `rollFits` says whether the runway left
+ * after the line-up holds the whole take-off roll (the roll is drawn to the runway's end at most).
  */
 export function departureGroundLegs({
   layout, runwayEnd, stand = null, apronHold = null, fromPoint = null, perf, activeRunwayIds = [], demo = false,
-  startHeadingDeg = null,
+  startHeadingDeg = null, holdingPointId = null,
 }) {
   if (!runwayEnd) return null;
   let route = null;
@@ -545,8 +547,8 @@ export function departureGroundLegs({
     heading = fromPoint.headingDeg ?? null;
   } else {
     route = stand
-      ? routeStandToHold(layout, { stand, departureEnd: runwayEnd, activeRunwayIds })
-      : routeFromApronHold(layout, { apronHold, departureEnd: runwayEnd, activeRunwayIds });
+      ? routeStandToHold(layout, { stand, departureEnd: runwayEnd, activeRunwayIds, holdingPointId })
+      : routeFromApronHold(layout, { apronHold, departureEnd: runwayEnd, activeRunwayIds, holdingPointId });
   }
   if (!route || !route.taxi || !route.lineUp) return null;
   const groundAltM = ftToM(runwayEnd.elevationFt);
@@ -602,6 +604,7 @@ export function departureGroundLegs({
     liftoffAlongM: roll.toAlongM,
     holdingPoint: hold,
     pushbackEnd,
+    rollFits: route.lineUp.runwayAlongM + rollM <= runwayEnd.lengthM + 1e-6,
   });
 }
 

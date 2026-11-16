@@ -39,7 +39,9 @@ describe('map lab scenes', () => {
       'unavailable-fallback', 'basemap-degraded', 'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo',
       'ramp-traffic-ground', 'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected',
       'region-layers-menu', 'region-references', 'region-references-night', 'approach-references', 'region-satellite',
-      'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable',
+      'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable', 'approach-demo-final', 'airfield-demo-taxiing',
+      'ramp-demo-awaiting-stand', 'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated',
+      'approach-demo-route', 'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -62,8 +64,21 @@ describe('map lab scenes', () => {
     expect(findScene('ramp-combined-selected').selection).toEqual({ kind: 'stand', id: 'A10' });
     expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual([
       'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'region-traffic-selected',
-      'approach-traffic-hex-selected',
+      'approach-traffic-hex-selected', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
+      'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi',
     ]);
+    // The demo scenes of PR M6 choose the demo flight; the three sources of a position, the one without a signal.
+    for (const id of ['approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'airfield-demo-cancelled',
+      'approach-demo-accelerated', 'approach-demo-route', 'approach-follow-final', 'airfield-follow-taxi']) {
+      expect(findScene(id).selection, id).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival });
+    }
+    // The departure's route chooses the demo departure; two scenes open following (follow=1), every other does not.
+    expect(findScene('airfield-departure-route').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture });
+    expect(SCENES.filter(scene => scene.follow === true).map(scene => scene.id))
+      .toEqual(['approach-follow-final', 'airfield-follow-taxi']);
+    expect(SCENES.every(scene => typeof scene.follow === 'boolean')).toBe(true);
+    expect(findScene('approach-traffic-live-estimated').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.departed });
     // The traffic scenes that choose an aircraft: an AVIAM flight by its key and other traffic by its address.
     expect(findScene('region-traffic-selected').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
     expect(findScene('approach-traffic-hex-selected').selection).toEqual({ kind: 'aircraft', id: 'f0c002' });
@@ -139,6 +154,7 @@ describe('map lab scenes', () => {
       stands: [],
       at: null,
       selection: null,
+      follow: false,
       basemap: 'on',
       webgl: true,
       placing: null,
@@ -219,7 +235,7 @@ describe('map lab scenes', () => {
     const counterparts = counterpartCodes(day.traffic.flights.flights);
     expect(counterparts).toContain('SDQ');
     expect(regionAirportFeatures(undefined, { counterparts }).filter(item => item.properties.counterpart)
-      .map(item => item.properties.label)).toEqual(['MDSD SDQ']);
+      .map(item => item.properties.label)).toEqual(['MDSD/SDQ']);
 
     // At 18:15 in Punta Cana the edge of the civil twilight is inside the 250 NM of the Región view: PUJ and the west of
     // the region are still in the twilight, the east of it in the night.

@@ -12,7 +12,8 @@ const SIZES = Object.freeze([[1440, 900], [1920, 1080]]);
 // 18:15 in Punta Cana: dusk, the edge of the civil twilight inside the Región view (lab/scenes.js).
 const DUSK = '2026-11-13T22:15:00.000Z';
 const RINGS = 'Anillos de distancia';
-const AIRPORT = 'Aeropuerto de la región';
+// The region's airports are listed by kind while their key is on (ui/MapLegend.jsx): Santo Domingo is international.
+const AIRPORT = 'Aeropuerto internacional';
 const COUNTERPART = 'Origen o destino de un vuelo de hoy';
 const CENTRELINES = 'Eje de pista extendido (marca cada NM)';
 const RUNWAY_BY_WIND = 'Pista 08 (estimada por el viento)';

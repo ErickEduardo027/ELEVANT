@@ -278,6 +278,86 @@ function baseFlights() {
   ];
 }
 
+const DEMO_PHASES = Object.freeze(['Approach', 'TaxiIn', 'Parked', 'TaxiOut', 'Departed', 'Gone']);
+
+/**
+ * The demo block of a map flight (contracts 1.3) as the server's DemoFlightTimeline writes it for a demo flight that
+ * appears at `appearAt` (milliseconds, the lab's noon by default) and reaches its stand `minutes` later: the taxi-in
+ * is 45 % of that time, between 90 s and 5 min, in whole milliseconds (touchdownAt); the scheduled off-block is an hour
+ * after the on-block. The off-block is `offBlockAfterMin` after the on-block when given (PUSHBACK or «Terminar demo»),
+ * else the scheduled one when nobody imported it, else null (an imported aircraft waits for its push-back); the
+ * take-off follows 5 minutes later and the aircraft vanishes 10 minutes after that. Cancelled at `cancelAtMs`: no
+ * departure, vanishing then. `phase` is the server's at `nowMs` (the lab's noon by default).
+ */
+export function createDemoBlock({
+  minutes = 8, imported = false, offBlockAfterMin = null, cancelAtMs = null, appearAt = NOON_MS, nowMs = NOON_MS,
+} = {}) {
+  const onBlock = appearAt + minutes * 60_000;
+  const span = onBlock - appearAt;
+  const taxiIn = Math.min(Math.max(Math.floor(span * 0.45), 90_000), 300_000, span);
+  const touchdown = onBlock - taxiIn;
+  const scheduledOffBlock = onBlock + 60 * 60_000;
+  const cancelled = Number.isFinite(cancelAtMs);
+  let offBlock = null;
+  if (!cancelled && offBlockAfterMin !== null) offBlock = onBlock + offBlockAfterMin * 60_000;
+  else if (!cancelled && !imported) offBlock = scheduledOffBlock;
+  const takeoff = offBlock === null ? null : offBlock + 5 * 60_000;
+  const vanish = cancelled ? cancelAtMs : (takeoff === null ? null : takeoff + 10 * 60_000);
+  const reached = [touchdown, onBlock, offBlock ?? Infinity, takeoff ?? Infinity, vanish ?? Infinity]
+    .filter(instant => nowMs >= instant).length;
+  const iso = ms => (ms === null ? null : new Date(ms).toISOString());
+  return {
+    demoFlightId: DEMO_FLIGHT_ID,
+    state: cancelled ? 'Cancelled' : 'Active',
+    phase: cancelled ? 'Gone' : DEMO_PHASES[reached],
+    appearAt: iso(appearAt),
+    touchdownAt: iso(touchdown),
+    onBlockAt: iso(onBlock),
+    scheduledOffBlockAt: iso(scheduledOffBlock),
+    offBlockAt: iso(offBlock),
+    takeoffAt: iso(takeoff),
+    vanishAt: iso(vanish),
+  };
+}
+
+/**
+ * The map flights with the demo pair (ZZ9001/ZZ9002) on `block` (createDemoBlock): imported with `standCode` (its open
+ * assignment, and no suggestion any more), or still a proposal with B21 suggested. The arrival's phase and runway time
+ * are the timeline's at the lab's noon, as the server derives them for a demo flight (contracts 1.3). `overrides`
+ * replace fields of the answer.
+ */
+export function createDemoFlights(block, { imported = false, standCode = 'B21', nowMs = NOON_MS, overrides = {} } = {}) {
+  const base = createMapFlights(overrides);
+  const touchdown = Date.parse(block.touchdownAt);
+  const onBlock = Date.parse(block.onBlockAt);
+  const landed = nowMs >= touchdown && block.state !== 'Cancelled';
+  const arrivalPhase = (() => {
+    if (block.state === 'Cancelled') return 'cancelled';
+    if (!landed) return 'approaching';
+    return nowMs >= onBlock ? 'arrived' : 'landed';
+  })();
+  const assigned = imported && standCode !== null
+    ? { stand: stand(standCode, standCode.startsWith('BN') ? 'FBO' : standCode.charAt(0)), suggestedStandCode: null }
+    : { stand: null, suggestedStandCode: imported ? null : standCode };
+  // The import made a turnaround of the pair; its legs keep the proposals' keys (contracts 1.3).
+  const visit = { id: turnaround(9001), operationCode: 'ZZ9001-1113', status: 'Confirmed', operationId: operation(9001),
+    operationStatus: 'Assigned' };
+  const leg9001 = imported ? { legId: leg(9001), turnaroundId: visit.id, turnaround: visit } : {};
+  const leg9002 = imported ? { legId: leg(9002), turnaroundId: visit.id, turnaround: visit } : {};
+  const flights = base.flights.map(row => {
+    if (row.flightKey === TRAFFIC_FLIGHT_KEY.demoArrival) {
+      return { ...row, ...assigned, ...leg9001, imported, demo: block, phase: arrivalPhase, scheduledAt: block.onBlockAt,
+        estimatedAt: block.onBlockAt, actualAt: landed ? block.touchdownAt : null, actualKind: landed ? 'Runway' : null };
+    }
+    if (row.flightKey === TRAFFIC_FLIGHT_KEY.demoDeparture) {
+      return { ...row, ...assigned, ...leg9002, imported, demo: block, scheduledAt: block.scheduledOffBlockAt,
+        phase: block.state === 'Cancelled' ? 'cancelled' : 'scheduled' };
+    }
+    return row;
+  });
+  return { ...base, flights };
+}
+
 /** The map flights of the lab's station at its noon (window 2 hours back, 12 ahead); `overrides` replace fields. */
 export function createMapFlights(overrides = {}) {
   return {

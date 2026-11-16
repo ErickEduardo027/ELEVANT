@@ -120,22 +120,22 @@ describe('airfield layers', () => {
       'occ-airfield-centreline': [['line-color', occColor('text')]],
       'occ-airfield-threshold': [['line-color', occColor('text')]],
       'occ-airfield-hold': [['line-color', occColor('text')]],
-      'occ-airfield-taxiway-name': [['text-color', occColor('faint')], ['text-halo-color', BASEMAP_COLORS.labelHalo]],
+      'occ-airfield-taxiway-name': [['text-color', occColor('muted')], ['text-halo-color', BASEMAP_COLORS.labelHalo]],
       'occ-airfield-designator': [['text-color', occColor('text')], ['text-halo-color', BASEMAP_COLORS.labelHalo]],
     });
     expect(relativeLuminance(BASEMAP_COLORS.runway)).toBeGreaterThan(relativeLuminance(BASEMAP_COLORS.apron));
-    // No hue: every colour is a slate of the base map or of the OCC tokens.
+    // Little hue: every colour is the blue-grey of the base map (mapColors.js) or a slate of the OCC tokens.
     const used = [...new Set(Object.values(colours).flat().map(([, colour]) => colour))];
     const known = new Set([...Object.values(BASEMAP_COLORS), ...Object.values(OCC_PALETTE)]);
     for (const colour of used) {
       expect(known.has(colour), colour).toBe(true);
-      expect(chroma(colour), colour).toBeLessThan(0.1);
+      expect(chroma(colour), colour).toBeLessThan(0.2);
     }
     // The centreline is dashed; the bars are solid.
     expect(layerOf('occ-airfield-centreline').paint['line-dasharray']).toEqual([6, 5]);
     expect(layerOf('occ-airfield-hold').paint).not.toHaveProperty('line-dasharray');
     // The labels read on the pavement and the land around it.
-    expect(contrastRatio(occColor('faint'), BASEMAP_COLORS.taxiway)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(occColor('muted'), BASEMAP_COLORS.taxiway)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(occColor('faint'), BASEMAP_COLORS.land)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(occColor('text'), BASEMAP_COLORS.runway)).toBeGreaterThanOrEqual(4.5);
     // The designators face their runway end's heading, flat on the map.

@@ -262,6 +262,72 @@
         ]
       }
     },
+    "/api/v1/contracts/airline-fleet": {
+      "get": {
+        "tags": [
+          "AirlineFleet"
+        ],
+        "summary": "The fleet size and type mix of the airline with ICAO (3 letters) or IATA (2 characters) code airlineCode.",
+        "operationId": "GetAirlineFleet",
+        "parameters": [
+          {
+            "name": "airlineCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineFleetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/standing": {
       "get": {
         "tags": [
@@ -4961,7 +5027,7 @@
         "tags": [
           "CommercialRequestsManagement"
         ],
-        "summary": "Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older\nclients exist (expand); a key without the version is rejected. Approval returns the contract.",
+        "summary": "Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older\nclients exist (expand); a key without the version is rejected. Approval returns the contract.\nAn approval checks the airline against the public registries first and answers 409\n`airline_not_in_public_registry` for NotFound, Defunct or Mismatch unless Superadministración\nverified the airline by hand with an official source (ADR-0023).",
         "operationId": "DecideCommercialRequest",
         "parameters": [
           {
@@ -22376,6 +22442,252 @@
         ]
       }
     },
+    "/api/v1/occ/aviation/aircraft": {
+      "get": {
+        "tags": [
+          "OccAviationReference"
+        ],
+        "summary": "The aircraft with the registration (tail number), kept a day. A demo flight's registration answers\n`NotApplicable` and is never asked of the provider.",
+        "operationId": "GetOccAircraftReference",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "registration",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAircraftReferenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/aviation/routes": {
+      "get": {
+        "tags": [
+          "OccAviationReference"
+        ],
+        "summary": "The routes and average daily flights from the station's airport, kept 24 hours.",
+        "operationId": "GetOccAirportRoutes",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAirportRoutesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/aviation/delays": {
+      "get": {
+        "tags": [
+          "OccAviationReference"
+        ],
+        "summary": "The current delays of the station's airport, or of airport (IATA or ICAO) when given: the\norigin or destination of a selected flight. Kept an hour per airport.",
+        "operationId": "GetOccAirportDelays",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "airport",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAirportDelaysResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/coverage": {
       "get": {
         "tags": [
@@ -35297,6 +35609,88 @@
         },
         "additionalProperties": false
       },
+      "AircraftReferenceResponse": {
+        "required": [
+          "active",
+          "isFreighter",
+          "registration"
+        ],
+        "type": "object",
+        "properties": {
+          "registration": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoType": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataType": {
+            "type": "string",
+            "nullable": true
+          },
+          "operator": {
+            "type": "string",
+            "nullable": true
+          },
+          "serial": {
+            "type": "string",
+            "nullable": true
+          },
+          "modeS": {
+            "type": "string",
+            "nullable": true
+          },
+          "seats": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "engines": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "engineType": {
+            "type": "string",
+            "nullable": true
+          },
+          "ageYears": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "firstFlight": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "delivered": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "registered": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "isFreighter": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AirlineApprovedOperationEvidenceResponse": {
         "required": [
           "available",
@@ -35566,6 +35960,74 @@
               }
             ],
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineFleetResponse": {
+        "required": [
+          "airlineCode",
+          "sampledAircraft",
+          "serverTime",
+          "source",
+          "status",
+          "types"
+        ],
+        "type": "object",
+        "properties": {
+          "airlineCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "totalAircraft": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "sampledAircraft": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlineFleetTypeResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineFleetTypeResponse": {
+        "required": [
+          "count",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "icaoType": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -38247,6 +38709,47 @@
           },
           "version": {
             "type": "string"
+          },
+          "taxRegistration": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialTaxRegistrationData"
+              }
+            ],
+            "nullable": true
+          },
+          "registryCheck": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialRegistryCheckData"
+              }
+            ],
+            "nullable": true
+          },
+          "manualVerification": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialManualVerificationData"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialManualVerificationData": {
+        "required": [
+          "verifiedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -38275,6 +38778,35 @@
           "websiteUrl": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialRegistryCheckData": {
+        "required": [
+          "checkedAt",
+          "fromCatalog",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "fromCatalog": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -38468,6 +39000,26 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialTaxRegistrationData": {
+        "required": [
+          "countryCode",
+          "display",
+          "number"
+        ],
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "display": {
             "type": "string"
           }
         },
@@ -48621,6 +49173,49 @@
         },
         "additionalProperties": false
       },
+      "OccAircraftReferenceResponse": {
+        "required": [
+          "registration",
+          "serverTime",
+          "source",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "aircraft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftReferenceResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAircraftResponse": {
         "required": [
           "icaoCode",
@@ -48827,6 +49422,87 @@
         },
         "additionalProperties": false
       },
+      "OccAirportDelayFactsResponse": {
+        "required": [
+          "airportIcao",
+          "arrivals",
+          "departures",
+          "from",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "airportIcao": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arrivals": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccDelayBatchResponse"
+              }
+            ]
+          },
+          "departures": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccDelayBatchResponse"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirportDelaysResponse": {
+        "required": [
+          "airport",
+          "serverTime",
+          "source",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airport": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "delays": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirportDelayFactsResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAirportResponse": {
         "required": [
           "iataCode",
@@ -48848,6 +49524,98 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirportRouteResponse": {
+        "required": [
+          "averageDailyFlights",
+          "name",
+          "operators"
+        ],
+        "type": "object",
+        "properties": {
+          "destinationIata": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationIcao": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "averageDailyFlights": {
+            "type": "number",
+            "format": "double"
+          },
+          "operators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirportRoutesResponse": {
+        "required": [
+          "airportIcao",
+          "routes",
+          "serverTime",
+          "source",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airportIcao": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAirportRouteResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -49427,6 +50195,39 @@
           },
           "requiresBridgeQualification": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccDelayBatchResponse": {
+        "required": [
+          "cancelled",
+          "qualified",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "qualified": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "medianDelayMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "delayIndex": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -57480,6 +58281,14 @@
               }
             ],
             "nullable": true
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -58287,6 +59096,14 @@
           "verificationSourceUrl": {
             "type": "string",
             "nullable": true
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -58326,6 +59143,9 @@
     },
     {
       "name": "AirlineFinancialDocuments"
+    },
+    {
+      "name": "AirlineFleet"
     },
     {
       "name": "AirlinePortal"
@@ -58467,6 +59287,9 @@
     },
     {
       "name": "OccAssignmentReadiness"
+    },
+    {
+      "name": "OccAviationReference"
     },
     {
       "name": "OccCoverage"

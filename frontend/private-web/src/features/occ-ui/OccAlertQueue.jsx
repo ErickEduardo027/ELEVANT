@@ -8,8 +8,11 @@ import OccPlate from './OccPlate';
 import { occUiMessages } from './occUiMessages';
 import { SIGNALS, TAGS } from './statusVocabulary';
 
-/** The places a queue is drawn in. U3 adds the console's alerts panel. */
-export const ALERT_QUEUE_VARIANTS = Object.freeze(['drawer']);
+/**
+ * The places a queue is drawn in: `drawer`, the shell's «Alertas y avisos», and `panel`, the console's floating panel
+ * «Alertas» (contratos 2.5), which names the queue itself and lists only the alerts.
+ */
+export const ALERT_QUEUE_VARIANTS = Object.freeze(['drawer', 'panel']);
 
 const NO_ENTRIES = Object.freeze([]);
 const NO_ROW_STATES = Object.freeze({});
@@ -123,11 +126,15 @@ function QueueNote({ children, role, action }) {
  * - `onAcknowledge(entry)` is the server read receipt and returns a promise. «Recibido» calls it once: it stays
  *   `aria-disabled` (and keeps its focus) until the answer. A failure leaves the alert unreceived with a fixed message
  *   on its row, never the server's text. After a receipt, focus moves to the next «Recibido», or to the «Alertas»
- *   title when none is left.
+ *   title when none is left (to the count line in the `panel` variant).
  * - Only the glyph of an unreceived urgent alert blinks, and never under reduced motion.
  * - `status` is the notices' read status: loading, a recoverable error with «Reintentar» (`onRetry`), no permission, or
  *   the lists. `staleSince` (an ISO instant) says the list is the last one read, with «Reintentar».
  * - Times are «14:32» in `timeZone`, written for `locale` (the language's by default).
+ * - `variant`: `drawer` draws both sections as above. `panel`, inside the console's floating panel «Alertas» that names
+ *   it, draws no title and no «Avisos recientes» (`recent` is ignored): the polite line «2 sin recibir» (or «No hay
+ *   alertas sin atender.»), which takes the focus once the last «Recibido» is gone, and the rows of `alerts`. An unknown
+ *   variant throws.
  */
 export default function OccAlertQueue({
   alerts = NO_ENTRIES, recent = NO_ENTRIES, status = 'success', onAcknowledge, onOpen, onRetry, locale,
@@ -194,16 +201,27 @@ export default function OccAlertQueue({
   else {
     const unreceivedCount = alerts.filter(entry => entry.receivedAt === null).length;
     const row = { rowStates, language, locale: timeLocale, timeZone, t, onAcknowledge: acknowledge, onOpen };
-    body = (
+    const stale = staleSince ? (
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-occ-muted">
+        <p>{TAGS.stale[language].replace('{time}', formatTime(staleSince, timeLocale, timeZone))}</p>
+        {typeof onRetry === 'function'
+          ? <button type="button" onClick={onRetry} className={PLAIN_KEY}>{t('alerts.retry')}</button>
+          : null}
+      </div>
+    ) : null;
+    body = variant === 'panel' ? (
       <>
-        {staleSince ? (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-occ-muted">
-            <p>{TAGS.stale[language].replace('{time}', formatTime(staleSince, timeLocale, timeZone))}</p>
-            {typeof onRetry === 'function'
-              ? <button type="button" onClick={onRetry} className={PLAIN_KEY}>{t('alerts.retry')}</button>
-              : null}
-          </div>
-        ) : null}
+        {stale}
+        {/* The floating panel names the queue, so no title and no plain notices here: one polite line with the count,
+            which says that nothing is waiting once every alert is received and takes the focus of the last «Recibido». */}
+        <p ref={titleRef} tabIndex={-1} aria-live="polite" aria-atomic="true" className="text-sm text-occ-muted">
+          {unreceivedCount > 0 ? t('alerts.unreceived', { count: unreceivedCount }) : t('alerts.empty')}
+        </p>
+        {alerts.length > 0 ? <QueueList entries={alerts} {...row} /> : null}
+      </>
+    ) : (
+      <>
+        {stale}
         <section aria-labelledby={alertsTitleId}>
           <div className="flex items-baseline justify-between gap-3">
             <h3 ref={titleRef} id={alertsTitleId} tabIndex={-1} className="text-sm font-semibold text-occ-text">

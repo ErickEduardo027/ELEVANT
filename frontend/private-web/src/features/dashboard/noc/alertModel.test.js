@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { notificationKindLabel } from '../../notifications/notificationKinds';
-import { ALERT_PRIORITIES, alertPriority, alertSummary, buildAlertQueue, isReceived, receivedAt } from './alertModel';
+import {
+  ALERT_PRIORITIES, alertPriority, alertSummary, buildAlertQueue, consoleAlerts, isReceived, receivedAt,
+} from './alertModel';
 
 // Every kind of the notices catalogue: the keys of its Spanish labels, without the fallback. The catalogue does not
 // export its table, so it is read from the source: a kind added there has to get a priority here.
@@ -197,5 +199,39 @@ describe('buildAlertQueue', () => {
     expect(buildAlertQueue(many).recent).toHaveLength(10);
     expect(buildAlertQueue(many).recent[0].notice).toBe(many[13]);
     expect(ids(buildAlertQueue(notices, { limitRecent: 2 }).recent)).toEqual(['OP-N44', 'OP-N30']);
+  });
+});
+
+describe('consoleAlerts', () => {
+  const at = minute => `2026-11-12T14:${String(minute).padStart(2, '0')}:00Z`;
+  const codes = entries => entries.map(entry => entry.notice.operationCode);
+
+  it('the console lists only unreceived alerts of its station, urgent first', () => {
+    const items = [
+      notice('deviation_reported', { operationCode: 'OP-A10', occurredAt: at(10) }),
+      notice('agent_released', { operationCode: 'OP-A30', occurredAt: at(30) }),
+      notice('incident_reported', { operationCode: 'OP-U05', occurredAt: at(5) }),
+      notice('incident_reported', { operationCode: 'OP-U20', occurredAt: at(20) }),
+      // Received, a plain notice and another station's alert: none of them is the console's.
+      notice('incident_reported', { operationCode: 'OP-R40', occurredAt: at(40), readAt: at(41) }),
+      notice('operation_submitted', { operationCode: 'OP-N50', occurredAt: at(50) }),
+      notice('incident_reported', { operationCode: 'OP-SDQ', occurredAt: at(55), stationCode: 'SDQ' }),
+    ];
+    const queue = consoleAlerts(items, { stationCode: 'PUJ' });
+    // Urgent before attention, the newest first within each.
+    expect(codes(queue.entries)).toEqual(['OP-U20', 'OP-U05', 'OP-A30', 'OP-A10']);
+    expect(queue.unreceivedCount).toBe(4);
+    expect(queue.entries[0]).toEqual({ id: items[3].id, priority: 'urgent', receivedAt: null, notice: items[3] });
+    expect(queue.entries.map(entry => entry.priority)).toEqual(['urgent', 'urgent', 'attention', 'attention']);
+    // The order does not depend on the order of the read.
+    expect(codes(consoleAlerts([...items].reverse(), { stationCode: 'PUJ' }).entries))
+      .toEqual(['OP-U20', 'OP-U05', 'OP-A30', 'OP-A10']);
+
+    // Another station sees only its own; without a station nothing is listed.
+    expect(codes(consoleAlerts(items, { stationCode: 'SDQ' }).entries)).toEqual(['OP-SDQ']);
+    for (const scope of [{}, { stationCode: '' }, undefined]) {
+      expect(consoleAlerts(items, scope), JSON.stringify(scope)).toEqual({ entries: [], unreceivedCount: 0 });
+    }
+    expect(consoleAlerts(null, { stationCode: 'PUJ' })).toEqual({ entries: [], unreceivedCount: 0 });
   });
 });

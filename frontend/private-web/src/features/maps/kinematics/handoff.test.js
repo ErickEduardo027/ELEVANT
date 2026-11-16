@@ -107,8 +107,9 @@ describe('hand-off between live positions and estimates', () => {
     const drawn = renderTrack(withFix(createTrack(), fix), s(5));
     expect(Object.keys(drawn)).toEqual([
       'lon', 'lat', 'altM', 'gsMs', 'trackDeg', 'vrateMs', 'onGround', 'phase', 'mode', 'quality', 'ageS', 'statusKey',
-      'opacity', 'trailEpoch',
+      'opacity', 'timeScale', 'trailEpoch',
     ]);
+    expect(drawn.timeScale).toBe(1);
     expect(Object.isFrozen(drawn)).toBe(true);
     // A fix without speed or track stays where it was seen; so does one stopped on the ground, whatever its track.
     const still = withFix(createTrack(), fixAt(0, { gsMs: null, trackDeg: null }));
@@ -392,6 +393,35 @@ describe('hand-off between live positions and estimates', () => {
     expect(withPlan(createTrack({ kind: 'aviam' }), first, s(0))).toMatchObject({ blend: null, snapAtMs: null, trailEpoch: 0 });
   });
 
+  it('a new plan that puts the aircraft where it is drawn takes over without moving it', () => {
+    // A trajectory continued from the one drawn (a demo flight given its stand, or cancelled): the same place, the same
+    // way. No position blend, so it never cuts across a curve by dead reckoning.
+    const curve = arcPlan();
+    const track = withPlan(createTrack({ id: 'f:p:5', kind: 'aviam' }), curve, s(0));
+    const continued = arcPlan();
+    const atMs = s(30);
+    const next = withPlan(track, continued, atMs);
+    expect(next.plan.trajectory).toBe(continued);
+    expect(next.blend).toBeNull();
+    for (const seconds of [30, 31, 33, 36]) {
+      expect(haversineM(at(renderTrack(next, s(seconds))), at(sampleTrajectory(curve, s(seconds)))), `${seconds} s`)
+        .toBeLessThan(1e-6);
+    }
+    // The same place, fading out from then (a cancelled demo read 2 s late): only the opacity blends, from 1.
+    const fading = assembleTrajectory({
+      kind: 'demo', parts: [{ startMs: s(0), legs: curve.legs.map(leg => ({ ...leg })) }],
+      meta: { fade: { startMs: s(28), endMs: s(36) }, statusKey: 'cancelledByProvider' },
+    });
+    const faded = withPlan(track, fading, atMs);
+    expect(faded.blend).toMatchObject({ startMs: atMs, durationMs: 6_000, opacityOnly: true });
+    const drawn = renderTrack(faded, s(31));
+    expect(haversineM(at(drawn), at(sampleTrajectory(curve, s(31))))).toBeLessThan(1e-6);
+    expect(drawn.opacity).toBeGreaterThan(sampleTrajectory(fading, s(31)).opacity);
+    expect(drawn.opacity).toBeLessThan(1);
+    expect(renderTrack(faded, s(30)).opacity).toBe(1);
+    expect(renderTrack(faded, s(36))).toBeNull();
+  });
+
   it('limits widen to 1.5 × refreshAfterSeconds for a slower feed', () => {
     expect(TRACK_CONFIG).toEqual({
       liveMaxAgeS: 15, coastMaxAgeS: 60, groundCoastMaxAgeS: 20, blendS: 6, snapAirM: 3_704, snapGroundM: 150,
@@ -425,6 +455,35 @@ describe('hand-off between live positions and estimates', () => {
     expect(needsReplan(track, s(80), slow)).toBe(false);
     expect(tick(withFix(createTrack(), fixAt(0)), s(130)).dropped).toBe(true);
     expect(reduceTrack(withFix(createTrack(), fixAt(0)), { type: 'tick', tMs: s(130) }, slow).dropped).toBe(false);
+  });
+
+  it('a render carries the time scale of its plan\'s part', () => {
+    // A plan of two parts, as demoProfile.js fits one: the air part compressed ×1.4, the ground part in real time.
+    const start = kinematicsPoint(0, 0);
+    const turn = destinationPoint(start, 90, 8_000);
+    const air = moveLeg({ phase: 'final', path: [start, turn], v0: 100, v1: 100, alt0: 600, alt1: 600, part: 'air' });
+    const ground = moveLeg({
+      phase: 'taxiIn', path: [turn, destinationPoint(turn, 90, 2_000)], v0: 8, v1: 8, alt0: 0, alt1: 0, onGround: true,
+      part: 'taxiIn',
+    });
+    const fitted = () => assembleTrajectory({
+      kind: 'demo', parts: [{ startMs: s(0), legs: [{ ...air, timeScale: 1.4 }, { ...ground, timeScale: 1 }] }],
+      timeScale: 1.4, scaledParts: ['air'],
+    });
+    const trajectory = fitted();
+    const planned = withPlan(createTrack({ id: 'f:p:9', kind: 'aviam' }), trajectory, s(0));
+    expect(renderTrack(planned, s(10))).toMatchObject({ mode: 'estimate', phase: 'final', timeScale: 1.4 });
+    expect(renderTrack(planned, s(85))).toMatchObject({ mode: 'estimate', phase: 'taxiIn', timeScale: 1 });
+    // A leg without a scale runs in real time.
+    const plain = withPlan(createTrack({ kind: 'aviam' }), straightPlan(), s(0));
+    expect(renderTrack(plain, s(10)).timeScale).toBe(1);
+    // A fix runs in real time, live and coasting; once the plan rebuilt from it places the aircraft, the plan's scale.
+    const fix = fixAt(0, { point: start, gsMs: 100, trackDeg: 90, altM: 600 });
+    const live = withFix(planned, fix, s(0));
+    expect(renderTrack(live, s(5))).toMatchObject({ mode: 'live', timeScale: 1 });
+    expect(renderTrack(live, s(30))).toMatchObject({ mode: 'coast', timeScale: 1 });
+    const rebuilt = reduceTrack(live, { type: 'plan', trajectory: fitted(), atMs: s(61), anchorFixAt: fix.positionAt });
+    expect(renderTrack(rebuilt, s(70))).toMatchObject({ mode: 'estimate', quality: 'estimated', timeScale: 1.4 });
   });
 
   it('an older fix never moves the track back', () => {

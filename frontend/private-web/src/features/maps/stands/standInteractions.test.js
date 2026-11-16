@@ -159,6 +159,17 @@ describe('stand interactions', () => {
     expect(standTooltip('B21', [{ id: 'B21', status: 'occupied', flightNumber: 'DM777' }], spanish))
       .toMatchObject({ title: 'B21 · Ocupada', detail: 'DM777', reasons: [] });
     expect(standTooltip('Z9', stands, spanish)).toBeNull();
+    // A stand with an aircraft standing in it and no arrival recorded (PR M6): the plain notice, after any stronger
+    // reason, with its diamond.
+    const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
+    const waiting = stands.map(stand => (stand.id === 'A9' ? { ...stand, signals: [notice] } : stand));
+    expect(standTooltip('A9', waiting, spanish).reasons)
+      .toEqual([{ signal: 'notice', text: 'El avión ya está en la posición. Registra la llegada.' }]);
+    const uncovered = stands.map(stand => (stand.id === 'A3' ? { ...stand, signals: [...stand.signals, notice] } : stand));
+    expect(standTooltip('A3', uncovered, english, 'en').reasons).toEqual([
+      { signal: 'attention', text: 'No agent covers it' },
+      { signal: 'notice', text: 'The aircraft is already on the stand. Record its arrival.' },
+    ]);
     expect(findStandByCode(stands, 'a-05')?.id).toBe('A5');
     expect(findStandByCode([{ id: 'B33', retired: true }], 'B33')).toBeNull();
   });

@@ -62,6 +62,7 @@ public static class DependencyInjection
         else
             services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed,
                 Elevant.Infrastructure.Integrations.AeroDataBox.DisabledAirportFlightFeed>();
+        AddAviationReference(services, aeroDataBox);
         var openSky = configuration.GetSection(OpenSkyOptions.SectionName).Get<OpenSkyOptions>() ?? new OpenSkyOptions();
         services.AddSingleton<IOccAircraftTrafficSource>(provider =>
             new OpenSkyAircraftTrafficSource(
@@ -93,6 +94,39 @@ public static class DependencyInjection
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
+    }
+
+    /// <summary>
+    /// ADR-0028 (note of 15 November 2026): the on-demand reference reads (airline fleet, aircraft by registration, daily
+    /// routes, current delays) use the feed's key and run only while AeroDataBox is enabled with a key; otherwise the
+    /// provider is the unconfigured one and nothing is ever called. A negative cap stops the start.
+    /// </summary>
+    private static void AddAviationReference(IServiceCollection services,
+        Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions options)
+    {
+        int[] caps =
+        [
+            options.PlanMonthlyUnitLimit, options.FleetDailyUnitLimit, options.FleetMonthlyUnitLimit,
+            options.AircraftDailyUnitLimit, options.AircraftMonthlyUnitLimit, options.RoutesDailyUnitLimit,
+            options.RoutesMonthlyUnitLimit, options.DelaysDailyUnitLimit, options.DelaysMonthlyUnitLimit,
+        ];
+        if (caps.Any(cap => cap < 0))
+            throw new InvalidOperationException("The AeroDataBox reference caps must be zero or more.");
+        var defaults = Elevant.Application.Integration.AviationReference.AviationReferenceLimits.Default;
+        services.AddSingleton(new Elevant.Application.Integration.AviationReference.AviationReferenceLimits(
+            defaults.AirlineFleet with { DailyUnits = options.FleetDailyUnitLimit, MonthlyUnits = options.FleetMonthlyUnitLimit },
+            defaults.Aircraft with { DailyUnits = options.AircraftDailyUnitLimit, MonthlyUnits = options.AircraftMonthlyUnitLimit },
+            defaults.AirportRoutes with { DailyUnits = options.RoutesDailyUnitLimit, MonthlyUnits = options.RoutesMonthlyUnitLimit },
+            defaults.AirportDelays with { DailyUnits = options.DelaysDailyUnitLimit, MonthlyUnits = options.DelaysMonthlyUnitLimit },
+            options.PlanMonthlyUnitLimit, options.DelaysEnabled));
+        if (options.Enabled && !string.IsNullOrWhiteSpace(options.ApiKey))
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider>(_ =>
+                new Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxReferenceProvider(
+                    new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) },
+                    options));
+        else
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider,
+                Elevant.Application.Abstractions.Integrations.UnconfiguredAviationReferenceProvider>();
     }
 
     /// <summary>Configuration section of the card gateway (4-N05).</summary>

@@ -180,9 +180,11 @@ describe('MapLayersMenu', () => {
     expect(visibilityOf(second.map, 'occ-traffic-tags-other')).toBe('visible');
     // Back to the default, the entry goes; the labels stay as the one difference.
     expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBe('{"traffic.labels":true}');
-    // The route of the chosen flight hides with its key.
+    // The route of the chosen flight hides with its key: its four layers (PR M6), observed, estimated, still to fly and
+    // its marked points.
     await user.click(checkbox('Ruta del vuelo elegido'));
-    expect([visibilityOf(second.map, 'occ-route-flown'), visibilityOf(second.map, 'occ-route-next')]).toEqual(['none', 'none']);
+    expect(['occ-route-flown', 'occ-route-flown-estimated', 'occ-route-remaining', 'occ-route-marks']
+      .map(id => visibilityOf(second.map, id))).toEqual(['none', 'none', 'none', 'none']);
   });
 
   it('lists the Referencias group after Tráfico, only with its layers in the style, and its keys work', async () => {
@@ -195,9 +197,9 @@ describe('MapLayersMenu', () => {
       .toEqual(['Tráfico', 'Referencias']);
     const references = screen.getByRole('group', { name: 'Referencias' });
     const boxes = within(references).getAllByRole('checkbox');
-    expect(boxes.map(box => box.labels[0].textContent)).toEqual(['Anillos de distancia', 'Ejes de pista',
-      'Aeropuertos de la región', 'Radioayudas', 'Día y noche']);
-    expect(boxes.map(box => box.checked)).toEqual([true, false, true, false, true]);
+    expect(boxes.map(box => box.labels[0].textContent)).toEqual(['Aeropuertos de la región', 'Anillos de distancia',
+      'Ejes de pista', 'Radioayudas', 'Día y noche']);
+    expect(boxes.map(box => box.checked)).toEqual([true, true, false, false, true]);
     expect(boxes.some(box => box.disabled)).toBe(false);
     // Turning the rings off hides their layers and keeps the choice; turning the centrelines on shows theirs.
     expect(visibilityOf(map, 'occ-reference-rings-region')).toBe('visible');

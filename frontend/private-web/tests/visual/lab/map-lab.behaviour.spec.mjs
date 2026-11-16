@@ -26,7 +26,7 @@ const airfieldOf = (...items) => items.map(item => AIRFIELD_LABELS[item]);
 // The references of PR M8 the legend lists after the rule, before the airfield (ui/referenceLegend.js).
 const REFERENCE_LABELS = Object.freeze({
   rings: 'Anillos de distancia', centrelines: 'Eje de pista extendido (marca cada NM)', usualRunway: 'Pista 08 (habitual)',
-  airports: 'Aeropuerto de la región', vor: 'Radioayuda VOR-DME', ndb: 'Radioayuda NDB',
+  vor: 'Radioayuda VOR-DME', ndb: 'Radioayuda NDB',
 });
 const referencesOf = (...items) => items.map(item => REFERENCE_LABELS[item]);
 
@@ -220,13 +220,13 @@ test.describe('map lab', () => {
     // where the stands turn into polygons, so nothing of them sits over the stands.
     await expect(legend.getByRole('listitem')).toHaveText([CHIP, CHIP_ARRIVING, ...referencesOf('vor', 'ndb'), ...ALL_AIRFIELD]);
     // Region and approach draw neither stands nor the airfield of the dataset, and their legend explains the references
-    // they draw (PR M8): the rings and the airports of the region; on the approach also the centrelines, with the usual
-    // 08 in use (the scene has no weather and no traffic), and the navaids by the mark of PUJ.
+    // they draw (PR M8): the rings; on the approach also the centrelines, with the usual 08 in use (the scene has no
+    // weather and no traffic, so no airports of the region either), and the navaids by the mark of PUJ.
     await settleOn('region');
-    await expect(legend.getByRole('listitem')).toHaveText(referencesOf('rings', 'airports'));
+    await expect(legend.getByRole('listitem')).toHaveText(referencesOf('rings'));
     await settleOn('approach');
     await expect(legend.getByRole('listitem'))
-      .toHaveText(referencesOf('rings', 'centrelines', 'usualRunway', 'airports', 'vor', 'ndb'));
+      .toHaveText(referencesOf('rings', 'centrelines', 'usualRunway', 'vor', 'ndb'));
     await settleOn('ramp');
     await expect(legend.getByRole('listitem')).toHaveCount(17);
 

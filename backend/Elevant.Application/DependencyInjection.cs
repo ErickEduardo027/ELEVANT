@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<GetAirlineOperationHandler>();
         services.AddScoped<GetAirlineOperationalRequestsHandler>();
         services.AddScoped<SubmitCommercialRequestHandler>();
+        services.AddScoped<DecideCommercialRequestHandler>();
         services.AddScoped<GetNonFiscalInvoiceHandler>();
         services.AddScoped<GetNonFiscalPaymentHandler>();
         services.AddScoped<GetAirlineInvoiceStatementHandler>();
@@ -105,6 +106,16 @@ public static class DependencyInjection
             Elevant.Application.Abstractions.Operations.DisabledAerodromeWeatherSource>(services);
         // ADR-0043 (contracts 1.4): the OCC's weather read (occ/weather), for the readers of the map.
         services.AddScoped<Elevant.Application.Operations.Weather.GetOccAerodromeWeatherHandler>();
+        // ADR-0028 (note of 15 November 2026): without Infrastructure there is no provider and nothing is ever called.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider,
+            Elevant.Application.Abstractions.Integrations.UnconfiguredAviationReferenceProvider>(services);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
+            Elevant.Application.Integration.AviationReference.AviationReferenceLimits.Default);
+        // One cache in memory for every screen: a subject is asked of the provider at most once per cache period.
+        services.AddSingleton<Elevant.Application.Integration.AviationReference.AviationReferenceReader>();
+        services.AddScoped<Elevant.Application.Integration.AviationReference.GetAirlineFleetHandler>();
+        services.AddScoped<Elevant.Application.Integration.AviationReference.GetOccAviationReferenceHandler>();
         return services;
     }
 }

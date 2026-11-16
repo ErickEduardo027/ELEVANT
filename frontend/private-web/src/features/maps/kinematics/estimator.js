@@ -1,7 +1,8 @@
-import { measurePolyline, pointAlong } from '../airport/geo.js';
+import { measurePolyline, pointAlong, pointInPolygon } from '../airport/geo.js';
 import { fitLegs, headingAt, legDurationS, legStateAt, waitLeg } from './legs.js';
 import { arrivalAirLegs, climbLegs, climbLegsFrom, departureGroundLegs, fitGround, groundLegs } from './legPlans.js';
 import { defaultLandingExit } from './pathBuilder.js';
+import { HEADING_RATES } from './smoothing.js';
 import { routeFromPoint, routeLandingTaxi } from './taxiRoute.js';
 import { ftToM } from './units.js';
 
@@ -319,6 +320,33 @@ function endWait({ stand, path, legs, statusKey, groundAltM }) {
 
 const totalMs = legs => legs.reduce((sum, leg) => sum + legDurationS(leg), 0) * 1000;
 
+/**
+ * Whether a live fix has its aircraft stopped on the ground: under 2 kt (the speed below which an ADS-B track is
+ * noise, smoothing.js), or with no speed at all. Such a fix starts nothing by estimate (Decision F-1: only a recorded
+ * off-block or a fix that shows it moving does).
+ */
+function isStoppedOnGround(fix) {
+  return fix.onGround === true && !(Number.isFinite(fix.gsMs) && fix.gsMs >= HEADING_RATES.holdBelowMs);
+}
+
+/** Whether `point` (`[lng, lat]`) lies inside the box of the layout's stand `stand`. */
+function isInStand(stand, point) {
+  return Array.isArray(stand?.polygon) && stand.polygon.length >= 4 && pointInPolygon(point, stand.polygon);
+}
+
+/**
+ * A flight a stopped fix holds where it is (isStoppedOnGround), from the fix's instant and without end: exactly where
+ * the fix has it, on the fix's track (north without one, as the map draws a fix without one), so the hand-off moves
+ * nothing when the fix ages and nothing when the next one comes. Phase 'parked' inside its stand, else 'holding'.
+ */
+function stoppedAt({ kind, fix, inStand, groundAltM, meta }) {
+  const wait = waitLeg({
+    phase: inStand ? 'parked' : 'holding', point: [fix.lon, fix.lat], nominalS: Infinity,
+    heading: Number.isFinite(fix.trackDeg) ? fix.trackDeg : 0, alt: groundAltM, part: 'parked',
+  });
+  return assembleTrajectory({ kind, parts: [{ startMs: fix.positionAt, legs: [wait] }], meta });
+}
+
 /** The node an aircraft on the ground taxis to: its stand's, or the apron hold named, or the one the shortest taxi reaches. */
 function groundTarget(layout, { point, headingDeg, stand, apronHold }) {
   if (stand) return routeFromPoint(layout, { point, headingDeg, toNodeId: stand.node });
@@ -340,7 +368,10 @@ function groundTarget(layout, { point, headingDeg, stand, apronHold }) {
  *   runway time and an on-block after it the taxi is fitted between them (5 to 25 kt, the time over spent before the
  *   lead-in); otherwise it runs at its nominal speeds. A real flight is never sped up beyond 25 kt.
  * - `anchor: { kind: 'fix', fix }` (a live fix: `{ lon, lat, altM, gsMs, trackDeg, onGround, positionAt }`): from the
- *   fix's position, height and speed at `fix.positionAt`, forward at nominal speeds.
+ *   fix's position, height and speed at `fix.positionAt`, forward at nominal speeds. A fix stopped on the ground (under
+ *   2 kt) inside the stand's box has it parked there, where the fix is, until the PUSHBACK of `times` (Decision F-1: a
+ *   fix that does not show it moving starts nothing; after the PUSHBACK the aircraft has left and the arrival places
+ *   it nowhere: `null`); stopped anywhere else it taxis on to its stand or apron hold.
  * Either way it ends parked at the stand or holding, without end. `meta.anchor` says which.
  */
 export function buildArrivalTrajectory({
@@ -362,6 +393,11 @@ export function buildArrivalTrajectory({
     if (!fix || !Number.isFinite(fix.lon) || !Number.isFinite(fix.lat) || !Number.isFinite(fix.positionAt)) return null;
     const point = [fix.lon, fix.lat];
     if (fix.onGround === true) {
+      if (toStand && isStoppedOnGround(fix) && isInStand(stand, point)) {
+        // Once its PUSHBACK is recorded the aircraft has left, and an arrival's fix cannot say where to: nothing.
+        if (Number.isFinite(times?.pushbackAtMs)) return null;
+        return stoppedAt({ kind: 'arrival', fix, inStand: true, groundAltM, meta: { ...meta, apronHoldId: null } });
+      }
       const path = groundTarget(layout, { point, headingDeg: fix.trackDeg ?? null, stand: toStand ? stand : null, apronHold });
       const ground = path && groundLegs(path, {
         ...options, landing: false, startSpeed: Math.min(fix.gsMs ?? 0, perf.taxi.maxMs), startHeadingDeg: fix.trackDeg ?? null,
@@ -418,7 +454,11 @@ export function buildArrivalTrajectory({
  * to `runwayEnd`'s holding point, the hold, the line-up, the take-off roll and the climb towards `destination`
  * (`[lng, lat]` or `null`), drawn 250 NM at most. With a known take-off after the off-block the ground part is fitted
  * between them, never sped up beyond 25 kt (when it cannot make it the climb starts late); otherwise nominal speeds.
- * `anchor: { kind: 'fix', fix }`: from a live fix, on the ground (taxi to the holding point) or airborne (climb).
+ * `anchor: { kind: 'fix', fix }`: from a live fix, on the ground (taxi to the holding point) or airborne (climb). A fix
+ * stopped on the ground (under 2 kt) starts nothing (Decision F-1: a departure leaves only with a recorded off-block or
+ * a live fix that shows it moving): with an off-block in `times` (its PUSHBACK, or the take-off of a flight nobody
+ * imported: departureAnchors) it leaves `stand` at that off-block, never before the fix, when the fix is inside the
+ * stand's box, and taxis on from the fix anywhere else; without one it waits where the fix has it, without end.
  * `startHeadingDeg` is where the nose points at an apron hold.
  */
 export function buildDepartureTrajectory({
@@ -430,6 +470,21 @@ export function buildDepartureTrajectory({
   const meta = {
     runwayIdent: null, departureRunwayIdent: runwayEnd.ident, standCode: stand?.code ?? null, destination, anchor,
   };
+  // From the stand (or the apron hold) at `offBlockMs`, fitted to a known take-off after it.
+  const fromOffBlock = offBlockMs => {
+    const ground = departureGroundLegs({ layout, runwayEnd, stand, apronHold, perf, activeRunwayIds: active, startHeadingDeg });
+    if (!ground) return null;
+    const takeoffMs = Number.isFinite(times?.takeoffMs) && times.takeoffMs > offBlockMs ? times.takeoffMs : null;
+    const legs = takeoffMs === null ? ground.legs : fitLegs(ground.legs, takeoffMs - offBlockMs, { compress: false }).legs;
+    return assembleTrajectory({
+      kind: 'departure',
+      parts: [
+        { startMs: offBlockMs, legs },
+        { startMs: takeoffMs, legs: climbLegs({ runwayEnd, liftoff: ground.liftoff, destination, perf }) },
+      ],
+      meta,
+    });
+  };
   if (anchor?.kind === 'fix') {
     const fix = anchor.fix;
     if (!fix || !Number.isFinite(fix.lon) || !Number.isFinite(fix.lat) || !Number.isFinite(fix.positionAt)) return null;
@@ -437,6 +492,14 @@ export function buildDepartureTrajectory({
       return assembleTrajectory({
         kind: 'departure', parts: [{ startMs: fix.positionAt, legs: climbLegsFrom({ fix, destination, perf }) }], meta,
       });
+    }
+    if (isStoppedOnGround(fix)) {
+      const inStand = isInStand(stand, [fix.lon, fix.lat]);
+      const offBlockMs = times?.offBlockMs;
+      if (!Number.isFinite(offBlockMs)) {
+        return stoppedAt({ kind: 'departure', fix, inStand, groundAltM: ftToM(runwayEnd.elevationFt), meta });
+      }
+      if (inStand) return fromOffBlock(Math.max(offBlockMs, fix.positionAt));
     }
     const ground = departureGroundLegs({
       layout, runwayEnd, perf, activeRunwayIds: active,
@@ -451,16 +514,5 @@ export function buildDepartureTrajectory({
   }
   const offBlockMs = times?.offBlockMs;
   if (!Number.isFinite(offBlockMs)) return null;
-  const ground = departureGroundLegs({ layout, runwayEnd, stand, apronHold, perf, activeRunwayIds: active, startHeadingDeg });
-  if (!ground) return null;
-  const takeoffMs = Number.isFinite(times?.takeoffMs) && times.takeoffMs > offBlockMs ? times.takeoffMs : null;
-  const legs = takeoffMs === null ? ground.legs : fitLegs(ground.legs, takeoffMs - offBlockMs, { compress: false }).legs;
-  return assembleTrajectory({
-    kind: 'departure',
-    parts: [
-      { startMs: offBlockMs, legs },
-      { startMs: takeoffMs, legs: climbLegs({ runwayEnd, liftoff: ground.liftoff, destination, perf }) },
-    ],
-    meta,
-  });
+  return fromOffBlock(offBlockMs);
 }

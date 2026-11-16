@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { trafficOverlay } from '../traffic/trafficLayers';
 import { buildOccStyle } from '../style/occStyle';
 import { referenceOverlay } from '../style/referenceLayers';
+import { routesOverlay } from '../style/routeLayers';
 import { weatherOverlay } from '../traffic/weatherLayers';
 import { VIEW_NAMES } from './cameraPresets';
 import {
@@ -10,14 +11,15 @@ import {
 } from './layersMenu';
 
 const TRAFFIC_KEYS = ['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route'];
-const REFERENCE_KEYS = ['rings', 'centrelines', 'airports', 'navaids', 'daynight'];
-// The references of each view (design E7): rings and airports in Región and Aproximación, the centrelines in
-// Aproximación, the navaids in Aproximación and Aeródromo, day and night in Región and Aproximación.
+const REFERENCE_KEYS = ['reference.airports', 'reference.routes', 'rings', 'centrelines', 'navaids', 'daynight'];
+// The references of each view (design E7): rings and airports in Región and Aproximación, the routes from Punta Cana in
+// Región, the centrelines in Aproximación, the navaids in Aproximación and Aeródromo, day and night in Región and
+// Aproximación.
 const REFERENCE_DEFAULTS = Object.freeze({
-  region: { rings: true, centrelines: false, airports: true, navaids: false, daynight: true },
-  approach: { rings: true, centrelines: true, airports: true, navaids: true, daynight: true },
-  airfield: { rings: false, centrelines: false, airports: false, navaids: true, daynight: false },
-  ramp: { rings: false, centrelines: false, airports: false, navaids: false, daynight: false },
+  region: { 'reference.airports': true, 'reference.routes': true, rings: true, centrelines: false, navaids: false, daynight: true },
+  approach: { 'reference.airports': true, 'reference.routes': false, rings: true, centrelines: true, navaids: true, daynight: true },
+  airfield: { 'reference.airports': false, 'reference.routes': false, rings: false, centrelines: false, navaids: true, daynight: false },
+  ramp: { 'reference.airports': false, 'reference.routes': false, rings: false, centrelines: false, navaids: false, daynight: false },
 });
 const NO_REFERENCES = Object.freeze(Object.fromEntries(REFERENCE_KEYS.map(key => [key, false])));
 const WEATHER_KEYS = ['weather.goes', 'weather.imerg', 'weather.wind'];
@@ -54,6 +56,10 @@ describe('layers menu', () => {
     for (const view of VIEW_NAMES) {
       expect(LAYER_DEFAULTS[view], view).toMatchObject({
         'traffic.aviam': true, 'traffic.other': true, 'traffic.labels': false, 'traffic.trails': false, route: true,
+        // The airports from the Región and Aproximación views; closer in, the airfield is on screen.
+        'reference.airports': view === 'region' || view === 'approach',
+        // The routes from Punta Cana (AeroDataBox) in the Región view only.
+        'reference.routes': view === 'region',
       });
     }
     // Before the map knows its view, a key is on only when every view has it on: the traffic keys of every view, and
@@ -81,8 +87,8 @@ describe('layers menu', () => {
     expect(setLayerOverride({ rings: false }, 'region', 'rings', true)).toEqual({});
     expect(resolveLayers('approach', { navaids: false })).toMatchObject({ ...REFERENCE_DEFAULTS.approach, navaids: false });
     // Each key is a group of the map of its own: what the menu shows, the map shows.
-    expect(engineGroupsFor(resolveLayers('approach', { airports: false }))).toMatchObject({
-      rings: true, centrelines: true, airports: false, navaids: true, daynight: true,
+    expect(engineGroupsFor(resolveLayers('approach', { 'reference.airports': false }))).toMatchObject({
+      'reference.airports': false, rings: true, centrelines: true, navaids: true, daynight: true,
     });
     expect(engineGroupsFor(resolveLayers('ramp', {}))).toMatchObject(NO_REFERENCES);
     expect(engineGroupsFor({})).toMatchObject(NO_REFERENCES);
@@ -129,9 +135,9 @@ describe('layers menu', () => {
       ...REFERENCE_DEFAULTS.region, ...WEATHER_DEFAULTS.region,
     });
     expect(engineGroupsFor(resolveLayers('region', { 'traffic.other': false, 'traffic.labels': true, 'traffic.trails': true,
-      route: false }))).toEqual({
+      route: false, 'reference.airports': false }))).toEqual({
       'traffic.aviam': true, 'traffic.other': false, 'traffic.labels': false, 'traffic.trails': false, route: false,
-      ...REFERENCE_DEFAULTS.region, ...WEATHER_DEFAULTS.region,
+      ...REFERENCE_DEFAULTS.region, 'reference.airports': false, ...WEATHER_DEFAULTS.region,
     });
 
     // Kept in the browser as the differences alone, sorted; none left removes the entry.
@@ -169,13 +175,18 @@ describe('layers menu', () => {
   });
 
   it('offers only the keys whose layers the map has', () => {
+    const DRAWN_REFERENCES = REFERENCE_KEYS.filter(key => key !== 'reference.routes');
     expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay()] }))).toEqual(TRAFFIC_KEYS);
-    expect(availableLayerKeys(buildOccStyle({ overlays: [referenceOverlay()] }))).toEqual(REFERENCE_KEYS);
-    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay()] })))
+    expect(availableLayerKeys(buildOccStyle({ overlays: [referenceOverlay()] }))).toEqual(DRAWN_REFERENCES);
+    // A map without traffic draws no region's airports.
+    expect(availableLayerKeys(buildOccStyle({ overlays: [referenceOverlay({ airports: false })] })))
+      .toEqual(DRAWN_REFERENCES.filter(key => key !== 'reference.airports'));
+    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay(), routesOverlay()] })))
       .toEqual([...TRAFFIC_KEYS, ...REFERENCE_KEYS]);
     expect(availableLayerKeys(buildOccStyle({ overlays: [weatherOverlay()] }))).toEqual(WEATHER_KEYS);
-    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay(), weatherOverlay()] })))
-      .toEqual(LAYER_KEYS);
+    expect(availableLayerKeys(buildOccStyle({
+      overlays: [trafficOverlay(), referenceOverlay(), routesOverlay(), weatherOverlay()],
+    }))).toEqual(LAYER_KEYS);
     expect(availableLayerKeys(buildOccStyle({ overlays: [] }))).toEqual([]);
     expect(availableLayerKeys(null)).toEqual([]);
   });

@@ -20,6 +20,8 @@ export const SAFE_AREA_MARGIN = 0.03;
 
 const SEPARATOR = ' · ';
 const NO_CODES = Object.freeze([]);
+// The signals a stand says the reason of, the strongest first: the order deriveDisplayStatus gives them.
+const SIGNAL_KINDS = new Set(['urgent', 'attention', 'notice']);
 const listFormatters = new Map();
 
 // «Marta Castillo y Luis Peña»: the names of the agents in the language's list form.
@@ -49,8 +51,9 @@ export function findStandByCode(stands, code) {
  * - `title`: the code and the state in the words of the vocabulary, «A5 · Ocupada»;
  * - `detail`: the flight (with «Demo» for a demo flight) and who covers the stand, «DM161 · Cubre M. Castillo», or
  *   `null` when there is neither;
- * - `reasons`: `[{ signal, text }]`, the reasons of its signals first (`signal` is `urgent` or `attention`, drawn with
- *   their shape), then «Anulada por …» and «Solo fuselaje estrecho» (`signal` `null`).
+ * - `reasons`: `[{ signal, text }]`, the reasons of its signals first (`signal` is `urgent`, `attention` or, PR M6, the
+ *   plain `notice` «El avión ya está en la posición. Registra la llegada.», drawn with their shape), then «Anulada
+ *   por …» and «Solo fuselaje estrecho» (`signal` `null`).
  * The label of the stand and its drawer carry the same facts, so nothing lives only in the tooltip. `null` for a code
  * the map does not draw.
  */
@@ -67,7 +70,7 @@ export function standTooltip(code, stands, t, language = 'es') {
   const coverage = names.length > 0 ? t('stand.coveredBy', { names: joinNames(names, language) }) : null;
   const signals = Array.isArray(stand.signals) ? stand.signals : display.signals ?? [];
   const reasons = signals
-    .filter(signal => signal?.reason && (signal.kind === 'urgent' || signal.kind === 'attention'))
+    .filter(signal => signal?.reason && SIGNAL_KINDS.has(signal.kind))
     .map(signal => ({ signal: signal.kind, text: t(`stand.${signal.reason}`) }));
   if (state === 'disabled' && display.cancelledBy) reasons.push({ signal: null, text: t('stand.cancelledBy', { code: display.cancelledBy }) });
   if (stand.narrowbodyOnly === true) reasons.push({ signal: null, text: t('stand.narrowbodyOnly') });

@@ -377,16 +377,45 @@ export function routeLandingTaxi(layout, {
   });
 }
 
+const holdsByLayout = new WeakMap();
+
 /**
- * The holding point a departure from `departureEnd` taxis to: the runway's holding point nearest to the threshold
- * (the full length is left), the shorter route deciding between two within 20 m of each other.
+ * The holding points of `departureEnd`'s runway that the taxi graph reaches, nearest to that end's threshold first:
+ * `[{ hold, distanceM }]`, frozen and cached per layout and end, where `hold` is the layout's holding point and
+ * `distanceM` its distance from the threshold (ties by id). The first leaves the whole runway ahead; the others are
+ * intersections (PR M6: a demo departure may take one when the full length does not fit its 5 minutes of taxi).
  */
-function departureHoldingPoint(layout, graph, departureEnd, fromNodeId, costFn) {
-  const holds = (layout?.holdingPoints ?? [])
+export function departureHoldingPoints(layout, departureEnd) {
+  if (!departureEnd?.threshold) return Object.freeze([]);
+  let byEnd = holdsByLayout.get(layout);
+  if (!byEnd) {
+    byEnd = new Map();
+    holdsByLayout.set(layout, byEnd);
+  }
+  const cacheKey = `${departureEnd.runwayId}|${departureEnd.ident}`;
+  if (byEnd.has(cacheKey)) return byEnd.get(cacheKey);
+  const graph = graphFor(layout);
+  const holds = Object.freeze((layout?.holdingPoints ?? [])
     .filter(hold => hold.runway === departureEnd.runwayId && graph.nodes.has(hold.node))
-    .map(hold => ({ hold, distanceM: haversineM(hold.p, departureEnd.threshold) }))
-    .sort((a, b) => a.distanceM - b.distanceM || compareIds(a.hold.id, b.hold.id));
+    .map(hold => Object.freeze({ hold, distanceM: haversineM(hold.p, departureEnd.threshold) }))
+    .sort((a, b) => a.distanceM - b.distanceM || compareIds(a.hold.id, b.hold.id)));
+  byEnd.set(cacheKey, holds);
+  return holds;
+}
+
+/**
+ * The holding point a departure from `departureEnd` taxis to, with its route: `holdingPointId` when it names one of the
+ * runway's (departureHoldingPoints), else the runway's holding point nearest to the threshold (the full length is
+ * left), the shorter route deciding between two within 20 m of each other. `null` without one the route reaches.
+ */
+function departureHoldingPoint(layout, graph, departureEnd, fromNodeId, costFn, holdingPointId = null) {
+  const holds = departureHoldingPoints(layout, departureEnd);
   if (holds.length === 0) return null;
+  if (holdingPointId !== null && holdingPointId !== undefined) {
+    const named = holds.find(candidate => candidate.hold.id === holdingPointId);
+    const route = named ? routeBetween(graph, fromNodeId, named.hold.node, { costFn }) : null;
+    return route ? { hold: named.hold, route } : null;
+  }
   const near = holds.filter(candidate => candidate.distanceM <= holds[0].distanceM + HOLD_TIE_M);
   let best = null;
   for (const { hold } of near) {
@@ -503,7 +532,8 @@ function pushbackStreet(graph, joinId, firstEdge, backward) {
  * The departure from a stand to the departure runway's holding point: `{ pushback, taxi, holdingPoint, lineUp }`, or
  * `null`.
  * - `holdingPoint`: the layout's holding point of `departureEnd`'s runway nearest to its threshold (at Punta Cana
- *   hp-E-08-26, 92 m from the 08 threshold, so the whole runway is left).
+ *   hp-E-08-26, 92 m from the 08 threshold, so the whole runway is left), or the one `holdingPointId` names (an
+ *   intersection: departureHoldingPoints); `null` when it names none of that runway's.
  * - `pushback` (heading 'reverse', the nose held away from the motion): back along the lead-in to the taxi network,
  *   then along the street that leaves it opposite to the first taxi edge, at most 40 m, rounded; behind a dead-end
  *   join, 40 m straight back along the line of the first taxi edge, so the nose always ends on the taxi direction.
@@ -511,7 +541,7 @@ function pushbackStreet(graph, joinId, firstEdge, backward) {
  * - `lineUp` from the holding point to its exit and 60 m onto the centreline (`exit`, `runwayAlongM` added).
  * The departure runway is closed to the taxi (it holds short of it); other runways cost as `taxiCostFn` says.
  */
-export function routeStandToHold(layout, { stand, departureEnd, activeRunwayIds = [] } = {}, options = {}) {
+export function routeStandToHold(layout, { stand, departureEnd, activeRunwayIds = [], holdingPointId = null } = {}, options = {}) {
   const graph = graphFor(layout);
   const parked = resolveStand(layout, stand);
   if (!parked || !departureEnd) return null;
@@ -519,7 +549,7 @@ export function routeStandToHold(layout, { stand, departureEnd, activeRunwayIds 
   if (!leadIn) return null;
   const joinId = leadIn.to;
   const costFn = taxiCostFn({ activeRunwayIds, closedRunwayIds: [departureEnd.runwayId] });
-  const chosen = departureHoldingPoint(layout, graph, departureEnd, joinId, costFn);
+  const chosen = departureHoldingPoint(layout, graph, departureEnd, joinId, costFn, holdingPointId);
   if (chosen === null) return null;
   const settings = { filletM: options.filletM ?? TAXI_FILLET_M, stepM: options.stepM ?? TAXI_STEP_M };
   const plan = pushbackPlan(graph, directedLine(graph, leadIn.edge, parked.node), joinId, chosen.route.edges[0]);
@@ -536,16 +566,17 @@ export function routeStandToHold(layout, { stand, departureEnd, activeRunwayIds 
 
 /**
  * The departure of an aircraft that waited at an apron hold (`apronHold` object or id): as `routeStandToHold`, without
- * a pushback. `{ pushback: null, taxi, holdingPoint, lineUp }`, or `null`.
+ * a pushback, also to the holding point `holdingPointId` names. `{ pushback: null, taxi, holdingPoint, lineUp }`, or
+ * `null`.
  */
-export function routeFromApronHold(layout, { apronHold, departureEnd, activeRunwayIds = [] } = {}, options = {}) {
+export function routeFromApronHold(layout, { apronHold, departureEnd, activeRunwayIds = [], holdingPointId = null } = {}, options = {}) {
   const graph = graphFor(layout);
   const hold = typeof apronHold === 'string'
     ? (layout?.apronHolds ?? []).find(candidate => candidate.id === apronHold || candidate.node === apronHold)
     : apronHold;
   if (!hold || !graph.nodes.has(hold.node) || !departureEnd) return null;
   const costFn = taxiCostFn({ activeRunwayIds, closedRunwayIds: [departureEnd.runwayId] });
-  const chosen = departureHoldingPoint(layout, graph, departureEnd, hold.node, costFn);
+  const chosen = departureHoldingPoint(layout, graph, departureEnd, hold.node, costFn, holdingPointId);
   if (chosen === null) return null;
   const settings = { filletM: options.filletM ?? TAXI_FILLET_M, stepM: options.stepM ?? TAXI_STEP_M };
   const taxi = taxiPath(layout, chosen.route, settings);

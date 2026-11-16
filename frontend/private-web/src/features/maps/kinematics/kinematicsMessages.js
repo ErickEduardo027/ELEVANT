@@ -60,17 +60,30 @@ export const ROUTE_LABELS = Object.freeze({
   positionPending: 'route.positionPending',
 });
 
+/** Between these two scales, both left out, «Demo acelerada» shows two decimals: one would round a small change away. */
+export const TIME_SCALE_FINE = Object.freeze({ below: 1.1, above: 0.9 });
+
 /**
- * A time scale with one decimal, as «Demo acelerada» shows it: '×1,9' in Spanish (decimal comma), '×1.9' in English.
- * A scale off 1 never reads ×1,0 (above it reads ×1,1 at least, below it ×0,9 at most, and never ×0,0), so the label
- * always names a real change of pace; a scale that is not a positive number gives ''.
+ * A time scale as «Demo acelerada» shows it: '×1,9' in Spanish (decimal comma), '×1.9' in English. Between ×0,9 and
+ * ×1,1, both left out, it has two decimals, so a small compression reads as it is ('×1,02', never a rounded-up ×1,1),
+ * and a scale off 1 never reads ×1,00: above 1 it reads ×1,01 at least, below ×0,99 at most. Outside that band it has
+ * one decimal and never reads ×0,0 (×0,1 at least). A scale of exactly 1 reads '×1,0'; one that is not a positive
+ * number gives ''.
  */
 export function formatTimeScale(scale, language = 'es') {
   if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) return '';
-  let value = Math.round(scale * 10) / 10;
-  if (scale > 1 && value <= 1) value = 1.1;
-  if (scale < 1) value = Math.max(0.1, Math.min(0.9, value));
-  const text = value.toFixed(1);
+  const fine = scale !== 1 && scale > TIME_SCALE_FINE.above && scale < TIME_SCALE_FINE.below;
+  let text;
+  if (fine) {
+    let value = Math.round(scale * 100) / 100;
+    if (scale > 1) value = Math.max(1.01, value);
+    else value = Math.min(0.99, value);
+    text = value.toFixed(2);
+  } else {
+    let value = Math.round(scale * 10) / 10;
+    if (scale < 1) value = Math.max(0.1, Math.min(0.9, value));
+    text = value.toFixed(1);
+  }
   return `×${language === 'en' ? text : text.replace('.', ',')}`;
 }
 

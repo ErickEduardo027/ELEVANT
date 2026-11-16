@@ -293,7 +293,7 @@ describe('reference features', () => {
       .toBe('wind');
   });
 
-  it('regional airports from region.context.json without PUJ, labelled ICAO and IATA, counterparts of today\'s flights emphasised', () => {
+  it('regional airports from region.context.json with MDPC as the home one, labelled ICAO/IATA, counterparts of today\'s flights emphasised', () => {
     // Today's flights of the fixtures come from Miami, New York and Toronto; one more, invented, from Santo Domingo.
     const { flights } = createMapFlights();
     const sdq = { ...flights[0], flightKey: 'p:sdq', counterpart: { iataCode: 'SDQ', icaoCode: 'MDSD',
@@ -306,13 +306,15 @@ describe('reference features', () => {
 
     const airports = regionAirportFeatures(REGION_CONTEXT, { counterparts: codes });
     expect(REGION_CONTEXT.airports).toHaveLength(32);
-    expect(airports).toHaveLength(31);
-    expect(airports.map(item => item.properties.icao)).not.toContain('MDPC');
+    expect(airports).toHaveLength(32);
     const byIcao = Object.fromEntries(airports.map(item => [item.properties.icao, item.properties]));
-    expect(byIcao.MDSD).toEqual({ kind: 'airport', icao: 'MDSD', iata: 'SDQ', label: 'MDSD SDQ', counterpart: true });
+    // The home airport is drawn too, by its ICAO code, and never as a counterpart.
+    expect(byIcao.MDPC).toMatchObject({ airportKind: 'home', label: 'MDPC', counterpart: false });
+    expect(byIcao.MDSD).toEqual({ kind: 'airport', airportKind: 'international', icao: 'MDSD', iata: 'SDQ',
+      label: 'MDSD/SDQ', counterpart: true });
     // An airport without IATA keeps its ICAO code alone; one with no flight today is not emphasised.
     expect(byIcao.MDSI).toMatchObject({ iata: null, label: 'MDSI', counterpart: false });
-    expect(byIcao.MDLR).toMatchObject({ label: 'MDLR LRM', counterpart: false });
+    expect(byIcao.MDLR).toMatchObject({ label: 'MDLR/LRM', counterpart: false });
     expect(byIcao.TJSJ.counterpart).toBe(false);
     expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.icao)).toEqual(['MDSD']);
     // Each at its point of the region context.
@@ -362,17 +364,17 @@ describe('reference features', () => {
     const drawn = [...collection.features].reverse().map(item => ({ properties: item.properties }));
     const night = { properties: { kind: 'night' } };
     expect(referenceKindsOnScreen([night, ...drawn, ...drawn, { properties: { kind: 'runway' } }])).toEqual([
-      'rings', 'centrelines', 'runwayInUse', 'airports', 'counterparts', 'vor', 'ndb', 'night',
+      'rings', 'centrelines', 'runwayInUse', 'counterparts', 'vor', 'ndb', 'night',
     ]);
-    expect(REFERENCE_LEGEND_KINDS).toEqual(['rings', 'centrelines', 'runwayInUse', 'airports', 'counterparts', 'vor',
-      'ndb', 'night']);
-    // Only what is there: a ring alone; an airport without a flight today; a centreline that is not the one in use.
+    expect(REFERENCE_LEGEND_KINDS).toEqual(['rings', 'centrelines', 'runwayInUse', 'counterparts', 'vor', 'ndb', 'night']);
+    // Only what is there: a ring alone; a centreline that is not the one in use. An airport without a flight today is
+    // listed by its kind while its layer is on (ui/MapLegend.jsx), not from the map.
     expect(referenceKindsOnScreen([{ properties: { kind: 'ring', scope: 'region' } }])).toEqual(['rings']);
-    expect(referenceKindsOnScreen([{ properties: { kind: 'airport', counterpart: false } }])).toEqual(['airports']);
+    expect(referenceKindsOnScreen([{ properties: { kind: 'airport', counterpart: false } }])).toEqual([]);
     expect(referenceKindsOnScreen([{ properties: { kind: 'tick', inUse: false } }])).toEqual(['centrelines']);
     expect(referenceKindsOnScreen(null)).toEqual([]);
     // With the runway in use its centreline says.
-    expect(referencesOnScreen(drawn)).toEqual({ kinds: ['rings', 'centrelines', 'runwayInUse', 'airports', 'counterparts',
+    expect(referencesOnScreen(drawn)).toEqual({ kinds: ['rings', 'centrelines', 'runwayInUse', 'counterparts',
       'vor', 'ndb'], runway: { arrival: '08', source: 'wind' } });
     expect(referencesOnScreen([{ properties: { kind: 'centreline', ident: '26', inUse: false } }]))
       .toEqual({ kinds: ['centrelines'], runway: null });

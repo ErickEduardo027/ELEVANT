@@ -18,10 +18,13 @@ const TRAIL_ENTRIES = Object.freeze({
   estimated: { key: 'trailEstimated', label: 'legend.traffic.trailEstimated' },
 });
 
-// The chosen flight's route (traffic/routeFeatures.js): what it flew, and the straight line to its next point.
+// The chosen flight's route (traffic/routeFeatures.js): what it flew as observed and as estimated, what it still has to
+// fly, and the points marked on it. «Trayecto estimado» is the label kinematics/kinematicsMessages.js gives that part.
 const ROUTE_ENTRIES = Object.freeze({
-  flown: { key: 'routeFlown', label: 'legend.traffic.routeFlown' },
-  next: { key: 'routeNext', label: 'legend.traffic.routeNext' },
+  flownObserved: { key: 'routeFlownObserved', label: 'legend.traffic.routeFlownObserved' },
+  flownEstimated: { key: 'routeFlownEstimated', label: 'legend.traffic.routeFlownEstimated' },
+  remaining: { key: 'routeRemaining', label: 'legend.traffic.routeRemaining' },
+  mark: { key: 'routeMark', label: 'legend.traffic.routeMark', hint: 'legend.traffic.routeMarkHint' },
 });
 
 const word = (entry, language) => entry?.[language] ?? entry?.es ?? '';
@@ -38,9 +41,10 @@ function tagEntry(tag, t, language) {
  * The legend's traffic entries for `{ kinds, tags, trails, route }` (what trafficOnScreen answers), in that order:
  * each `{ key, swatch, label, hint, span }` with its words in `language`. The legend sits over the map, so it stays
  * short: a kind of aircraft is its swatch and its name on one line, a tag its word with a short hint, and the two trails
- * share a line (`span` 1, half the legend) when both are on screen. The two parts of the chosen flight's route take a
- * line each. The swatch names what ui/TrafficSwatch.jsx draws: the solid and hollow ELEVANT silhouettes, the small muted
- * other traffic, the plate, the ring, the dimmed aircraft, the two trails and the route's solid and dashed lines.
+ * share a line (`span` 1, half the legend) when both are on screen. Each part of the chosen flight's route takes a line:
+ * «Recorrido observado», «Trayecto estimado», «Ruta prevista» and its marked points with a short hint. The swatch names
+ * what ui/TrafficSwatch.jsx draws: the solid and hollow ELEVANT silhouettes, the small muted other traffic, the plate,
+ * the ring, the dimmed aircraft, the two trails and the route's solid, faint and dashed lines and its ring.
  * Nothing on screen, no entry.
  */
 export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route = [] } = {}, { language = 'es' } = {}) {
@@ -59,7 +63,7 @@ export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route
     }),
     ...(Array.isArray(route) ? route : []).filter(part => Object.hasOwn(ROUTE_ENTRIES, part)).map(part => {
       const entry = ROUTE_ENTRIES[part];
-      return { key: entry.key, swatch: entry.key, label: t(entry.label), hint: null, span: 2 };
+      return { key: entry.key, swatch: entry.key, label: t(entry.label), hint: entry.hint ? t(entry.hint) : null, span: 2 };
     }),
   ];
 }

@@ -13,7 +13,7 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 // without a session, the API or the network; the layout review shows the generated MDPC dataset itself. Pure data.
 // Later PRs add their scenes here (traffic, the demo flight, 3D).
 //
-// A scene is `{ id, kind, title, description, view, stands, at, selection, basemap, webgl, placing }`:
+// A scene is `{ id, kind, title, description, view, stands, at, selection, follow, basemap, webgl, placing }`:
 // - `kind`: `map`, the OCC map with the scene's stands (MapLab.jsx), or `layout-qa`, the review screen of the MDPC
 //   airport layout (LayoutQaScene.jsx), which draws the layout itself and has no stands of its own;
 // - `view`: the view the map opens on when the URL names none (region · approach · airfield · ramp);
@@ -21,6 +21,7 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 //   synthetic positions board), with their visits;
 // - `at`: the instant the stands read at (their states and countdowns), unless the URL freezes another one with `?t=`;
 // - `selection`: `{ kind, id }`, written to the URL when the scene opens and the URL selects nothing, or `null`;
+// - `follow`: `true` writes `follow=1` with it (PR M6: follow mode), else `false`;
 // - `basemap`: `on` (the vector tiles of OpenFreeMap), `none` (the style without them, as `?basemap=none`) or `cut`
 //   (the style with them, but the lab makes every base-map request fail, so the map shows its degraded notice);
 // - `webgl`: `false` makes the browser refuse WebGL while the scene is open, so the map shows its fallback list;
@@ -151,12 +152,12 @@ function placingScene() {
 }
 
 function scene(id, {
-  kind = 'map', title, description, view, selection = null, basemap = 'on', webgl = true, placing = null,
+  kind = 'map', title, description, view, selection = null, follow = false, basemap = 'on', webgl = true, placing = null,
 }) {
   const map = kind === 'map';
   return {
-    id, kind, title, description, view, stands: map ? STANDS : NO_STANDS, at: map ? SCENE_INSTANT : null, selection, basemap, webgl,
-    placing,
+    id, kind, title, description, view, stands: map ? STANDS : NO_STANDS, at: map ? SCENE_INSTANT : null, selection,
+    follow: follow === true, basemap, webgl, placing,
   };
 }
 
@@ -302,8 +303,8 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-demo', {
     title: 'Aproximación: llegada demo',
-    description: 'El vuelo demo en final de la 08 con su placa «Demo», su anillo «est.» y su recorrido estimado, con la '
-      + 'llegada de AVIAM en base y otro tráfico alrededor.',
+    description: 'El vuelo demo en final de la 08, donde lo pone su trayectoria ajustada al reloj del servidor, con su '
+      + 'placa «Demo» y su anillo «est.», la llegada de AVIAM en base y otro tráfico alrededor.',
     view: 'approach',
   }),
   trafficScene('ramp-traffic-ground', {
@@ -314,21 +315,22 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-estimated-stale', {
     title: 'Aproximación: estimado y sin actualizar',
-    description: 'La imagen aérea con cuatro minutos de retraso, cada avión atenuado con la hora de su última '
-      + 'posición, y un vuelo de AVIAM dibujado con su posición estimada.',
+    description: 'La imagen aérea con más de un minuto de retraso: cada avión atenuado con la hora de su última '
+      + 'posición, los que llevan más tiempo sin señal desvaneciéndose, y un vuelo de AVIAM con su posición estimada '
+      + 'por el horario.',
     view: 'approach',
   }),
   trafficScene('region-traffic-selected', {
     title: 'Región: vuelo elegido',
-    description: 'ZZ161 elegido en final de la 08: en cian, más grande y con su anillo, su recorrido observado y la línea '
-      + 'recta hasta su posición A5, con su bloque de datos acoplado arriba a la izquierda.',
+    description: 'ZZ161 elegido en final de la 08: en cian, más grande y con su anillo, su recorrido observado, su trayecto '
+      + 'estimado desde Miami y lo que le queda hasta su posición A5, con su bloque de datos acoplado arriba a la izquierda.',
     view: 'region',
     selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival },
   }),
   trafficScene('approach-traffic-hex-selected', {
     title: 'Aproximación: otro tráfico elegido',
-    description: 'Un avión de otra línea elegido por su dirección ADS-B: su bloque dice «Otro tráfico» y su ruta es lo '
-      + 'que voló, sin punto siguiente.',
+    description: 'Un avión de otra línea elegido por su dirección ADS-B: su bloque dice «Otro tráfico» y su ruta es solo '
+      + 'lo que voló.',
     view: 'approach',
     selection: { kind: 'aircraft', id: LAB_CHOSEN_HEX },
   }),
@@ -392,6 +394,81 @@ export const SCENES = deepFreeze([
     description: 'El servicio del clima no tiene METAR: no hay viento en el mapa y el menú de capas dice por qué.',
     view: 'airfield',
     weather: createAerodromeWeather({ status: 'Unavailable' }),
+  }),
+  // The demo flight in motion (PR M6): each scene fires it with the server's timeline so the lab's instant finds it where
+  // the scene says (lab/trafficScenes.js).
+  trafficScene('approach-demo-final', {
+    title: 'Aproximación: vuelo demo en final',
+    description: 'El vuelo demo importado con la A6, en final de la 08 dos minutos antes de tocar pista, elegido: su '
+      + 'bloque dice que su posición es estimada.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('airfield-demo-taxiing', {
+    title: 'Aeródromo: vuelo demo rodando',
+    description: 'El vuelo demo importado rueda por las calles de rodaje hacia la A6, minuto y medio después de tocar '
+      + 'pista en la 08.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('ramp-demo-awaiting-stand', {
+    title: 'Rampa: vuelo demo esperando posición',
+    description: 'Nadie importó el vuelo demo: espera en el punto de espera de la plataforma de la terminal B, con su '
+      + 'bloque «Esperando posición · sin importar».',
+    view: 'ramp',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('approach-traffic-live-estimated', {
+    title: 'Aproximación: en vivo, sin señal y estimado',
+    description: 'ZZ161 en vivo, ZZ700 saliendo sin señal desde hace 20 s y ZZ500 estimado por su horario: el bloque de '
+      + 'cada uno dice de dónde sale su posición. Elegido, ZZ700.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.departed },
+  }),
+  trafficScene('airfield-demo-cancelled', {
+    title: 'Aeródromo: vuelo demo cancelado',
+    description: 'El proveedor canceló el vuelo demo en final corta: se desvanece donde está y su bloque dice «Cancelado '
+      + 'por el proveedor (demo)».',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('approach-demo-accelerated', {
+    title: 'Aproximación: vuelo demo de 2 minutos',
+    description: 'Disparado con 2 minutos hasta la posición: sus 30 s en el aire no alcanzan a velocidad real desde 5 NM, '
+      + 'así que esa parte va comprimida y su bloque dice «Demo acelerada ×N».',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  // The route of the chosen flight and follow mode (PR M6, lab/trafficScenes.js).
+  trafficScene('approach-demo-route', {
+    title: 'Aproximación: ruta del vuelo demo',
+    description: 'El vuelo demo importado con la A6, elegido un minuto después de aparecer: su trayecto estimado desde '
+      + 'Nueva York y lo que le queda por volar, la aproximación, la pista 08, la salida y el rodaje hasta la A6.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('airfield-departure-route', {
+    title: 'Aeródromo: ruta de una salida',
+    description: 'La salida del vuelo demo elegida mientras rueda hacia la 08, dos minutos después de dejar la A6 a su '
+      + 'hora: lo que recorrió desde la posición y lo que le queda, el rodaje, la pista 08, el ascenso y el círculo '
+      + 'máximo hacia Nueva York.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture },
+  }),
+  trafficScene('approach-follow-final', {
+    title: 'Aproximación: seguir al vuelo demo en final',
+    description: 'El vuelo demo en final de la 08, seguido: la cámara lo encuadra con el umbral de la pista, entre los '
+      + 'paneles.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+    follow: true,
+  }),
+  trafficScene('airfield-follow-taxi', {
+    title: 'Aeródromo: seguir al vuelo demo en rodaje',
+    description: 'El vuelo demo rodando hacia la A6, seguido: la cámara lo centra de cerca mientras rueda.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+    follow: true,
   }),
 ]);
 

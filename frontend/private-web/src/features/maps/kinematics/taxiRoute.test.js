@@ -10,6 +10,7 @@ import {
   TAXI_MAX_SHIFT_M,
   TAXI_STEP_M,
   apronHoldFor,
+  departureHoldingPoints,
   graphFor,
   routeExitToApronHold,
   routeExitToStand,
@@ -226,6 +227,41 @@ describe('taxi routes on the MDPC layout', () => {
     expect(departure.taxi.coords[0]).toEqual(layout.apronHolds[1].p);
     expect(departure.taxi.coords.at(-1)).toEqual(departure.holdingPoint.p);
     expect(departure.lineUp.exit.nodeId).toBe('x1');
+  });
+
+  it('lists the holding points of a runway from its threshold and routes to the one named', { timeout: 30_000 }, () => {
+    const end08 = runwayEnd(MDPC_LAYOUT, '08');
+    const holds = departureHoldingPoints(MDPC_LAYOUT, end08);
+    // The five holding points of 08/26 the graph reaches, nearest to the 08 threshold first.
+    expect(holds.map(item => item.hold.id)).toEqual(['hp-E-08-26', 'hp-w812822709-08-26', 'hp-H-08-26', 'hp-A-08-26', 'hp-P-08-26']);
+    expect(holds.map(item => Math.round(item.distanceM))).toEqual([92, 148, 1_484, 2_518, 3_090]);
+    expect(holds.every((item, at) => at === 0 || item.distanceM >= holds[at - 1].distanceM)).toBe(true);
+    expect(Object.isFrozen(holds) && Object.isFrozen(holds[0])).toBe(true);
+    expect(departureHoldingPoints(MDPC_LAYOUT, end08)).toBe(holds);
+    // From the 26 threshold the order turns round; a runway without holding points has none.
+    expect(departureHoldingPoints(MDPC_LAYOUT, runwayEnd(MDPC_LAYOUT, '26')).map(item => item.hold.id)[0]).toBe('hp-P-08-26');
+    expect(departureHoldingPoints(MDPC_LAYOUT, null)).toEqual([]);
+
+    // Named, the route taxis to that holding point and lines up on 08 from its own exit, further along the runway.
+    const a1 = ACTIVE.find(stand => stand.code === 'A1');
+    const full = routeStandToHold(MDPC_LAYOUT, { stand: a1, departureEnd: end08, activeRunwayIds: ['08/26'] });
+    const atH = routeStandToHold(MDPC_LAYOUT, { stand: a1, departureEnd: end08, activeRunwayIds: ['08/26'], holdingPointId: 'hp-H-08-26' });
+    expect(full.holdingPoint.id).toBe('hp-E-08-26');
+    expect(atH.holdingPoint.id).toBe('hp-H-08-26');
+    expect(atH.taxi.coords.at(-1)).toEqual(atH.holdingPoint.p);
+    expect(atH.lineUp.coords[0]).toEqual(atH.holdingPoint.p);
+    expect(atH.lineUp.exit.alongM).toBeGreaterThan(1_400);
+    expect(atH.lineUp.exit.alongM).toBeLessThan(1_600);
+    expect(angleBetween(atH.lineUp.headingsDeg.at(-1), end08.headingTrue)).toBeLessThan(1);
+    // The same pushback, a much shorter taxi: terminal A is at the east end of the airport.
+    expect(atH.pushback.coords).toEqual(full.pushback.coords);
+    expect(atH.taxi.lengthM).toBeLessThan(full.taxi.lengthM - 1_000);
+    // From an apron hold too; a holding point of another runway, or none of the layout's, gives no route.
+    const fromHold = routeFromApronHold(MDPC_LAYOUT, { apronHold: 'ah-a', departureEnd: end08, activeRunwayIds: ['08/26'], holdingPointId: 'hp-H-08-26' });
+    expect(fromHold.holdingPoint.id).toBe('hp-H-08-26');
+    expect(fromHold.taxi.coords.at(-1)).toEqual(fromHold.holdingPoint.p);
+    expect(routeStandToHold(MDPC_LAYOUT, { stand: a1, departureEnd: end08, holdingPointId: 'hp-A-09-27' })).toBeNull();
+    expect(routeFromApronHold(MDPC_LAYOUT, { apronHold: 'ah-a', departureEnd: end08, holdingPointId: 'hp-none' })).toBeNull();
   });
 
   it('routing from a point mid-taxi starts exactly at that point and keeps going forward', () => {

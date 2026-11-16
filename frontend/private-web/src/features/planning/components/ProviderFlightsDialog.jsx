@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFacts';
+import { useAviationReferenceService } from '../../aviation-reference/AviationReferenceContext';
 import DemoTag from '../../occ-ui/DemoTag';
 import {
   dismissOccFlightProposal, FLIGHT_FEED_VIEWS, flightFeedMessage, importOccFlightProposals, loadOccFlightFeed,
@@ -92,6 +94,9 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState({ tone: '', text: '', reasons: [] });
+  // AeroDataBox's aircraft by registration (ADR-0028, note of 15 November 2026): asked only for the arrival OCC opens.
+  const reference = useAviationReferenceService();
+  const [aircraftOf, setAircraftOf] = useState(null);
   const importKeys = useRef(createCommandKeyHolder());
   const restoreKeys = useRef(createCommandKeyHolder());
   const dismissKeys = useRef(createCommandKeyHolder());
@@ -277,6 +282,13 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                       {view === 'Dismissed' && canImport && <button type="button" className={buttonClass} disabled={Boolean(busy)}
                         onClick={() => void restore(arrival)}>{busy === `restore-${arrival.proposalId}` ? 'Restaurando…' : 'Restaurar'}</button>}
                     </div>
+                    {reference && arrival.aircraftRegistration && arrival.isDemo !== true && <div className="mt-1">
+                      <button type="button" className="text-xs font-semibold text-accent-600" aria-expanded={aircraftOf === arrival.proposalId}
+                        onClick={() => setAircraftOf(open => (open === arrival.proposalId ? null : arrival.proposalId))}>
+                        {aircraftOf === arrival.proposalId ? 'Ocultar la aeronave' : `Ver la aeronave ${arrival.aircraftRegistration}`}</button>
+                      {aircraftOf === arrival.proposalId && <AircraftRegistryFacts stationId={stationId}
+                        registration={arrival.aircraftRegistration} className="mt-1" />}
+                    </div>}
                     {view !== 'Dismissed' && !imported && canImport && <div className="mt-2 flex flex-wrap items-end gap-2">
                       <label className="text-xs">Sale como
                         <select className={selectClass} value={choice.departureId}

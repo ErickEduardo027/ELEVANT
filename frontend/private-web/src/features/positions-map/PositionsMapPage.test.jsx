@@ -7,8 +7,14 @@ import PositionsMapPage from './PositionsMapPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { destinationPoint } from '../maps/airport/geo';
-import { boardStand, standPoint } from '../maps/testing/mapFixtures';
 import { WEATHER_STATION_ID } from '../maps/testing/weatherFixtures';
+import { boardStand, boardVisit, standPoint } from '../maps/testing/mapFixtures';
+import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../access/testAccess';
+import { OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { STAND_REFERENCE } from '../maps/stands/standReference';
+import { createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON } from '../maps/testing/trafficFixtures';
+import { mapOccupancyToRampPositions } from './positionsMapMappers';
 
 // The map is a stub that shows what the page gives it and clicks where a test says (`map.next`); the API client is a
 // stub too, so the real positions service translates its errors.
@@ -17,15 +23,27 @@ const api = vi.hoisted(() => ({ locateOccStand: null }));
 vi.mock('../../config/elevantApiClient', async importOriginal => ({
   ...(await importOriginal()), createPrivateWebApiClient: () => api,
 }));
-
-// The page reads the aerodrome weather of the OCC station (PR M8): the session that names it and the weather service
-// are synthetic. Without a PUJ scope in the session (the default here) nothing is read.
+// Inside the OCC frame (PR M6) the page reads the station of the session and the map service: both synthetic here, the
+// station of the traffic fixtures and the simulated adapter over their scenario, without the network. The page also
+// reads the aerodrome weather of that station (PR M8), from the synthetic weather service; a test may take the PUJ
+// scope away (`auth.session`), and then nothing is read.
+const PUJ_SESSION = Object.freeze({ stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] });
 const auth = vi.hoisted(() => ({ session: null }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: auth.session }) }));
+vi.mock('../../services/occMapService', async () => {
+  const actual = await vi.importActual('../../services/occMapService');
+  const { createTrafficScenario } = await import('../maps/testing/trafficFixtures');
+  return { ...actual, occMapService: actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() }) };
+});
+
 vi.mock('../../services/weatherService', async () => {
   const actual = await vi.importActual('../../services/weatherService');
   const { createWeatherScenario } = await import('../maps/testing/weatherFixtures');
   return { ...actual, weatherService: actual.createSimulatedWeatherAdapter({ scenario: createWeatherScenario() }) };
+});
+
+beforeEach(() => {
+  auth.session = PUJ_SESSION;
 });
 
 vi.mock('./components/PositionMap', () => ({
@@ -38,11 +56,17 @@ vi.mock('./components/PositionMap', () => ({
       resetNorth: vi.fn(),
     }));
     const pending = props.pendingLocation;
+    // What the page gives its map: the stands as they read now (`data-state`) and, inside the OCC frame, the traffic it
+    // draws, the chosen flight or aircraft and the overlays it holds.
     return (
       <div data-testid="position-map-stub" data-placing={props.placingCode ?? ''} data-selected={props.selectedPositionId ?? ''}
         data-pending={pending ? `${pending.latitude},${pending.longitude}` : ''} data-weather={props.weather?.apiStatus ?? ''}
-        data-weather-status={props.weather?.status ?? ''}>
+        data-weather-status={props.weather?.status ?? ''}
+        data-traffic={props.traffic ? props.traffic.aircraft.map(item => item.id).join(' ') : ''}
+        data-traffic-selection={props.trafficSelection ? `${props.trafficSelection.kind}:${props.trafficSelection.id}` : ''}>
         {props.onMapClick && <button type="button" onClick={() => props.onMapClick(map.next)}>Clic en el mapa</button>}
+        {props.positions.map(item => <span key={item.id} data-stand={item.id} data-state={item.displayStatus} />)}
+        {props.children}
       </div>
     );
   }),
@@ -147,6 +171,7 @@ describe('PositionsMapPage', () => {
 
   it('reads the aerodrome weather of the OCC station and gives it to its map (PR M8)', async () => {
     // Without the PUJ scope there is no station: nothing read, the map gets a weather still loading.
+    auth.session = null;
     const first = render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
     expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather-status', 'loading');
     expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather', '');
@@ -404,7 +429,7 @@ describe('PositionsMapPage', () => {
 
     await user.click(within(items[2]).getByText('C7'));
     const drawer = screen.getByTestId('position-detail-drawer');
-    expect(within(drawer).getByRole('list', { name: 'Estado en el mapa' })).toHaveTextContent('Sin ubicar');
+    expect(within(drawer).getByRole('region', { name: 'Características' })).toHaveTextContent('Sin ubicar');
     await user.click(within(drawer).getByRole('button', { name: 'Ubicar en el mapa' }));
     expect(within(placingNotice('C7')).getByRole('status')).toHaveTextContent('Haz clic en el centro de la posición C7.');
     expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-placing', 'C7');
@@ -464,5 +489,94 @@ describe('PositionsMapPage in English', () => {
     expect(screen.getByText('Stale data — no connection with the positions provider.')).toBeInTheDocument();
     await userEvent.type(screen.getByPlaceholderText('Search stand, flight or registration...'), 'ZZZ99{enter}');
     expect(screen.getByText('Stand not found.')).toBeInTheDocument();
+  });
+});
+
+// Inside the OCC frame (PR M6): the stands read the map flights and the aircraft of the station, and the map draws the
+// traffic. Synthetic board: ZZ161 on A5, which the board already says arrived (the feed's runway time) while its
+// aircraft is still on final, and ZZ300 on A2, due 30 minutes ago and not arrived on the board, while the tablet
+// recorded its BLOCK_ON.
+describe('PositionsMapPage inside the OCC frame (PR M6)', () => {
+  const ACCESS = administratorAccess('operations', DepartmentPermissionCodes.operations);
+  const NOON = Date.parse(TRAFFIC_NOON);
+  const REFERENCES = STAND_REFERENCE.map(stand => ({ id: stand.code, terminal: stand.terminal, lat: stand.latitude, lon: stand.longitude }));
+  const rowOf = key => createMapFlights().flights.find(row => row.flightKey === key);
+  function liveData() {
+    const board = {
+      positions: [
+        boardStand('A05', { coveredBy: ['Ana Ruiz'], turnarounds: [boardVisit({ nowMs: NOON, flight: 'ZZ161', arrivalInMin: 10,
+          turnaroundId: rowOf(TRAFFIC_FLIGHT_KEY.arrival).turnaroundId, arrivedAt: new Date(NOON - 60_000).toISOString() })] }),
+        boardStand('A02', { coveredBy: ['Ana Ruiz'], turnarounds: [boardVisit({ nowMs: NOON, flight: 'ZZ300', arrivalInMin: -30,
+          departureInMin: 40, turnaroundId: rowOf(TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId })] }),
+      ],
+      asOf: TRAFFIC_NOON,
+    };
+    return { station: { code: 'PUJ' }, source: 'occupancy', operationDate: '2026-11-13', canAssign: true, unassigned: [],
+      asOf: TRAFFIC_NOON, stands: board.positions, positions: mapOccupancyToRampPositions(REFERENCES, board, TRAFFIC_NOON) };
+  }
+  const page = data => (
+    <PositionsMapPage status="success" data={data} error={null} connection="connected" onRetry={() => {}} />
+  );
+  const framed = data => (
+    <DepartmentAccessProvider initialAccess={ACCESS} load={vi.fn().mockResolvedValue(ACCESS)} observe={false}>
+      <OccShellTestProvider>{page(data)}</OccShellTestProvider>
+    </DepartmentAccessProvider>
+  );
+  const stateOf = code => screen.getByTestId('position-map-stub').querySelector(`[data-stand="${code}"]`).dataset.state;
+  const flush = () => act(async () => {
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOON);
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('without the frame reads the board alone, as before', () => {
+    render(page(liveData()));
+    expect(stateOf('A5')).toBe('occupied');
+    expect(stateOf('A2')).toBe('arriving');
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-traffic', '');
+  });
+
+  it('with the frame draws the traffic and the stands read «Llegando» and «Ocupada» from the flights', async () => {
+    render(framed(liveData()));
+    // The page's skeleton while the live chunk loads, never a map without its traffic.
+    expect(screen.getByTestId('positions-map-skeleton')).toBeInTheDocument();
+    await flush();
+    await flush();
+    const stub = screen.getByTestId('position-map-stub');
+    expect(stub.dataset.traffic.split(' ')).toEqual(expect.arrayContaining([`f:${TRAFFIC_FLIGHT_KEY.arrival}`,
+      `h:${TRAFFIC_HEX.overflight}`]));
+    // ZZ161 is still on final: A5 reads «Llegando» until its aircraft is on it. ZZ300's BLOCK_ON puts it on A2.
+    expect(stateOf('A5')).toBe('arriving');
+    expect(stateOf('A2')).toBe('occupied');
+    // The drawer says the same.
+    act(() => screen.getByRole('button', { name: /lista de posiciones/i }).click());
+    act(() => within(screen.getByTestId('positions-side-panel')).getByText('A2').click());
+    expect(within(screen.getByTestId('position-detail-drawer')).getByRole('list', { name: 'Estado en el mapa' }))
+      .toHaveTextContent('Ocupada');
+  });
+
+  it('a flight of the URL is the map\'s selection, with its data block docked beside the map controls', async () => {
+    window.history.replaceState({}, '', `${PAGE}&flightId=${TRAFFIC_FLIGHT_KEY.arrival}`);
+    render(framed(liveData()));
+    await flush();
+    await flush();
+    const stub = screen.getByTestId('position-map-stub');
+    expect(stub).toHaveAttribute('data-traffic-selection', `flight:${TRAFFIC_FLIGHT_KEY.arrival}`);
+    expect(stub).toHaveAttribute('data-selected', '');
+    const block = within(stub).getByRole('dialog', { name: 'Vuelo ZZ161' });
+    expect(block).toHaveStyle({ top: '12px', left: '56px' });
+    // «Cerrar» lets it go, keeping the other keys of the URL.
+    act(() => within(block).getByRole('button', { name: 'Cerrar' }).click());
+    expect(query().has('flightId')).toBe(false);
+    expect(query().get('stationId')).toBe('s-1');
+    expect(screen.queryByRole('dialog', { name: 'Vuelo ZZ161' })).not.toBeInTheDocument();
   });
 });

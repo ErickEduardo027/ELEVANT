@@ -9,6 +9,7 @@ import { SIGNALS, STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVoca
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import { createMapEngine } from '../core/mapEngine';
+import { MAP_COLORS } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES, isSdfImage } from '../style/mapImages';
 import { BASEMAP_COLORS } from '../style/mapTheme';
 import { FONT_STACKS, buildOccStyle } from '../style/occStyle';
@@ -17,9 +18,9 @@ import { createMapStands } from '../testing/mapFixtures';
 import { buildStandFeatures } from './standFeatures';
 import { ghostFeatures, placingGhost } from './placing';
 import {
-  PLACING_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES, STAND_FILL_LAYER, STAND_GHOST_SOURCE,
-  STAND_GROUP_SOURCE, STAND_LABEL_MODES, STAND_LABEL_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay,
-  standPaint,
+  FOOTPRINT_GROUP, FOOTPRINT_PAINT, PLACING_PAINT, PROGRESS_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES,
+  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_MODES, STAND_LABEL_SOURCE,
+  STAND_SOURCE, STAND_SOURCES, standDisplayAt, standFill, standOverlay, standPaint,
 } from './standLayers';
 import { attachStandGeometry } from './standModel';
 
@@ -65,7 +66,7 @@ function channelsOf(state) {
   const colour = evaluate(fill, 'paint', 'fill-color', polygon);
   let fillKind = 'none';
   if (passes(layerOf({ layers }, 'occ-stands-hatch'), polygon)) fillKind = 'hatch';
-  else if (opacity > 0) fillKind = colour.a < 1 ? 'tint' : 'solid';
+  else if (opacity > 0) fillKind = colour.a < 1 || opacity < 1 ? 'tint' : 'solid';
   const outlines = layers.filter(layer => layer.id.startsWith('occ-stands-outline-') && passes(layer, polygon, { type: 2 }));
   const marks = ['occ-stand-glyph', 'occ-stand-clock'].filter(id => passes(layerOf({ layers }, id), label, { type: 1 }));
   if (leadIn && passes(layerOf({ layers }, 'occ-stands-leadin-arriving'), leadIn, { type: 2 })) marks.push('leadin-arriving');
@@ -95,16 +96,21 @@ describe('standOverlay', () => {
       expect(validateStyleMin(styleWith(labels)), labels).toEqual([]);
       expect(validateStyleMin(buildOccStyle({ overlays: [selectionOverlay(), standOverlay({ labels })] })), labels).toEqual([]);
     }
-    // Four sources, each keyed by the property its collection promotes, and no cluster any more; and the boxes of
-    // «Ubicar en el mapa».
+    // Five sources, each keyed by the property its collection promotes (the aircraft to scale of PR M6 among them), and no
+    // cluster any more; and the boxes of «Ubicar en el mapa».
     expect(standOverlay().sources).toEqual({
       [STAND_SOURCE]: { type: 'geojson', promoteId: 'code' },
       [STAND_AUX_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_LABEL_SOURCE]: { type: 'geojson', promoteId: 'code' },
       [STAND_GROUP_SOURCE]: { type: 'geojson', promoteId: 'terminal' },
+      [STAND_FOOTPRINT_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_GHOST_SOURCE]: { type: 'geojson', promoteId: 'id' },
     });
-    expect(STAND_SOURCES).toEqual({ polygons: STAND_SOURCE, aux: STAND_AUX_SOURCE, labels: STAND_LABEL_SOURCE, groups: STAND_GROUP_SOURCE });
+    expect(STAND_SOURCES).toEqual({
+      polygons: STAND_SOURCE, aux: STAND_AUX_SOURCE, labels: STAND_LABEL_SOURCE, groups: STAND_GROUP_SOURCE,
+      footprints: STAND_FOOTPRINT_SOURCE,
+    });
+    expect(STAND_FOOTPRINT_SOURCE).toBe('occ-aircraft-footprints');
     // The stands slot holds the polygons and their lines; the labels slot the chips, marks, labels and signals.
     const style = styleWith();
     const ids = style.layers.map(layer => layer.id);
@@ -112,12 +118,13 @@ describe('standOverlay', () => {
     expect(between('stands', 'routes')).toEqual([
       'occ-stands-fill', 'occ-stands-hatch', 'occ-stands-outline-solid', 'occ-stands-outline-dash-4-3',
       'occ-stands-outline-dash-2-2', 'occ-stands-outline-dot-1-3', 'occ-stands-leadin', 'occ-stands-leadin-arriving',
-      'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-selection', 'occ-stands-related',
-      'occ-stands-same-agent',
+      'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-progress-track', 'occ-stands-progress-done',
+      'occ-stands-selection', 'occ-stands-related', 'occ-stands-same-agent',
     ]);
+    expect(between('footprints', 'extrusions')).toEqual(['occ-footprints-fill', 'occ-footprints-outline', 'occ-footprints-planned']);
     expect(between('standLabels', 'traffic')).toEqual([
-      'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-clock', 'occ-stand-labels',
-      'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
+      'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-glyph-unsized', 'occ-stand-clock',
+      'occ-stand-labels', 'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
     ]);
     // A stand is picked by its polygon, a terminal by its chip.
     const picks = style.layers.filter(layer => layer.metadata?.['occ:pick']).map(layer => [layer.id, layer.metadata['occ:pick'], layer.metadata['occ:pickId']]);
@@ -159,9 +166,11 @@ describe('standOverlay', () => {
         'occ-stands-outline-dash-2-2': [polygons, 24], 'occ-stands-outline-dot-1-3': [polygons, 24],
         'occ-stands-leadin': [codes, 24], 'occ-stands-leadin-arriving': [polygons, 24],
         'occ-stands-combined-link': [polygons, 24], 'occ-stands-narrow-inner': [codes, 24],
+        'occ-stands-progress-track': [threeLine, 24], 'occ-stands-progress-done': [threeLine, 24],
         'occ-stands-selection': [polygons, 24], 'occ-stands-related': [polygons, 24], 'occ-stands-same-agent': [polygons, 24],
+        'occ-footprints-fill': [codes, 24], 'occ-footprints-outline': [codes, 24], 'occ-footprints-planned': [codes, 24],
         'occ-stand-groups': [airfield, polygons], 'occ-stand-groups-arriving': [airfield, polygons],
-        'occ-stand-glyph': [polygons, 24], 'occ-stand-clock': [polygons, 24],
+        'occ-stand-glyph': [polygons, codes], 'occ-stand-glyph-unsized': [codes, 24], 'occ-stand-clock': [polygons, 24],
         'occ-stand-labels': [codesFrom, threeLine], 'occ-stand-labels-3': [threeLine, 24],
         'occ-stand-label-selected': [polygons, threeLine], 'occ-stand-label-selected-3': [threeLine, 24],
         'occ-stand-signal': [polygons, 24],
@@ -183,10 +192,11 @@ describe('standOverlay', () => {
 
   it('every pair of states differs in a channel that is not colour (dash, outline width, fill kind, glyph or extra mark)', () => {
     const channels = Object.fromEntries(STAND_STATE_KEYS.map(state => [state, channelsOf(state)]));
-    // What the layers draw is what the vocabulary says.
+    // What the layers draw is what the vocabulary says; every state is a tint of its own colour (mapColors.js), the
+    // hatch of «Inhabilitada» over it, so the fill tells no state apart by itself.
     for (const state of STAND_STATE_KEYS) {
       const { fill, outline } = STAND_STATES[state];
-      expect(channels[state].fillKind, state).toBe(fill.kind);
+      expect(channels[state].fillKind, state).toBe(fill.kind === 'hatch' ? 'hatch' : 'tint');
       expect(channels[state].width, state).toBe(outline.width);
       expect(channels[state].outline, state).toEqual([standPaint(state).outline.layer]);
     }
@@ -226,8 +236,8 @@ describe('standOverlay', () => {
     }
   });
 
-  it('colours come from STAND_STATES and occColor; no base-map colour and no hard-coded hex', () => {
-    const palette = new Set(Object.values(OCC_PALETTE));
+  it('colours come from STAND_STATES, occColor and the stand fills of mapColors; no base-map colour and no hard-coded hex', () => {
+    const palette = new Set([...Object.values(OCC_PALETTE), ...STAND_STATE_KEYS.map(state => standFill(state).color)]);
     const basemap = new Set(Object.values(BASEMAP_COLORS));
     for (const labels of STAND_LABEL_MODES) {
       const colours = standLayers(labels).flatMap(layer => coloursIn(Object.values(layer.paint ?? {})));
@@ -243,9 +253,15 @@ describe('standOverlay', () => {
       const { fill, outline } = STAND_STATES[state];
       const outlineLayer = layers.find(layer => layer.id === standPaint(state).outline.layer);
       expect(evaluate(outlineLayer, 'paint', 'line-color', { state }), state).toEqual(Color.parse(occColor(outline.token)));
-      if (fill.kind === 'tint' || fill.kind === 'solid') {
-        expect(evaluate(layerOf({ layers }, STAND_FILL_LAYER), 'paint', 'fill-color', { state }), state).toEqual(Color.parse(occColor(fill.token)));
-      }
+      // Each state fills in its own colour and opacity (style/mapColors.js), whatever the vocabulary's fill kind.
+      expect(fill.kind, state).toBeDefined();
+      const fillLayer = layerOf({ layers }, STAND_FILL_LAYER);
+      expect(evaluate(fillLayer, 'paint', 'fill-color', { state }), state).toEqual(Color.parse(MAP_COLORS.dark.stands[state].color));
+      expect(evaluate(fillLayer, 'paint', 'fill-opacity', { state }), state).toBe(MAP_COLORS.dark.stands[state].opacity);
+      // In the light theme, the light fill of the same state.
+      const lightFill = layerOf(standOverlay({ theme: 'light' }), STAND_FILL_LAYER);
+      expect(evaluate(lightFill, 'paint', 'fill-color', { state }), state).toEqual(Color.parse(MAP_COLORS.light.stands[state].color));
+      expect(evaluate(lightFill, 'paint', 'fill-opacity', { state }), state).toBe(MAP_COLORS.light.stands[state].opacity);
     }
     // Normal states carry no hue: cyan only in the selection and in what can be acted on (the boxes of a stand being
     // placed), amber and red only in the signals.
@@ -421,6 +437,74 @@ describe('standOverlay', () => {
       .toEqual([ghost.width, pending.width]);
     expect(layerOf({ layers }, 'occ-stand-ghost-fill').paint['fill-opacity']).toBe(pending.fillOpacity);
     expect(validateStyleMin(style)).toEqual([]);
+  });
+
+  it('the aircraft to scale: solid in the text colour over a light fill, dashed muted while it comes, never a hue', () => {
+    const layers = standLayers();
+    const fill = layerOf({ layers }, 'occ-footprints-fill');
+    const outline = layerOf({ layers }, 'occ-footprints-outline');
+    const planned = layerOf({ layers }, 'occ-footprints-planned');
+    for (const layer of [fill, outline, planned]) {
+      expect(layer, layer.id).toMatchObject({ slot: 'footprints', source: STAND_FOOTPRINT_SOURCE });
+      // A group of their own (the layers menu's «Aviones a escala», the 3D layer of PR M7), from the codes threshold.
+      expect(layer.metadata, layer.id).toEqual({ 'occ:group': FOOTPRINT_GROUP, 'occ:minThreshold': 'codes' });
+    }
+    expect(FOOTPRINT_GROUP).toBe('stands.footprints');
+    // Each draws its own kind.
+    expect([fill, outline, planned].map(layer => ['solid', 'planned'].filter(kind => passes(layer, { kind }))))
+      .toEqual([['solid'], ['solid'], ['planned']]);
+    const { solid, planned: dashed } = FOOTPRINT_PAINT;
+    expect(evaluate(fill, 'paint', 'fill-color', { kind: 'solid' })).toEqual(Color.parse(occColor(solid.fillToken)));
+    expect(evaluate(fill, 'paint', 'fill-opacity', { kind: 'solid' })).toBe(solid.fillOpacity);
+    expect(evaluate(outline, 'paint', 'line-color', { kind: 'solid' }, { type: 2 })).toEqual(Color.parse(occColor('text')));
+    expect(evaluate(planned, 'paint', 'line-color', { kind: 'planned' }, { type: 2 })).toEqual(Color.parse(occColor('muted')));
+    // The dash of a planned stand's own outline, 4-3 px, in line widths as MapLibre counts it.
+    expect(planned.paint['line-dasharray'].map(length => Math.round(length * dashed.width * 1000) / 1000)).toEqual([4, 3]);
+    expect(dashed.dash).toEqual(STAND_STATES.planned.dash);
+  });
+
+  it('the progress bar: its track and the part done from the three-line threshold, one colour whatever the time', () => {
+    const layers = standLayers();
+    const track = layerOf({ layers }, 'occ-stands-progress-track');
+    const done = layerOf({ layers }, 'occ-stands-progress-done');
+    expect(passes(track, { kind: 'progressTrack' }, { type: 2 }) && !passes(track, { kind: 'progressDone' }, { type: 2 })).toBe(true);
+    expect(passes(done, { kind: 'progressDone' }, { type: 2 }) && !passes(done, { kind: 'progressTrack' }, { type: 2 })).toBe(true);
+    for (const layer of [track, done]) {
+      expect(layer).toMatchObject({ slot: 'stands', source: STAND_AUX_SOURCE, metadata: { 'occ:minThreshold': 'threeLine' } });
+      expect(evaluate(layer, 'paint', 'line-width', {}, { type: 2 })).toBe(PROGRESS_PAINT.width);
+      // A constant colour: nothing it is given (a count, a time) changes it, so there is no «late» colour.
+      expect(typeof layer.paint['line-color']).toBe('string');
+    }
+    expect(track.paint['line-color']).toBe(occColor('line-strong'));
+    expect(done.paint['line-color']).toBe(occColor('text'));
+    // The part done is drawn over its track.
+    const ids = layers.map(layer => layer.id);
+    expect(ids.indexOf('occ-stands-progress-done')).toBeGreaterThan(ids.indexOf('occ-stands-progress-track'));
+  });
+
+  it('the aircraft glyph stays below the codes, and from them only on a stand whose aircraft is not drawn to scale', () => {
+    const layers = standLayers();
+    const glyph = layerOf({ layers }, 'occ-stand-glyph');
+    const unsized = layerOf({ layers }, 'occ-stand-glyph-unsized');
+    expect(glyph.metadata).toMatchObject({ 'occ:minThreshold': 'polygons', 'occ:maxThreshold': 'codes' });
+    expect(unsized.metadata).toMatchObject({ 'occ:minThreshold': 'codes' });
+    expect(unsized.metadata).not.toHaveProperty('occ:maxThreshold');
+    const drawnBy = layer => [null, 'planned', 'solid'].filter(footprint => passes(layer, { glyph: 'aircraft', footprint }, { type: 1 }));
+    expect(drawnBy(glyph)).toEqual([null, 'planned', 'solid']);
+    expect(drawnBy(unsized)).toEqual([null, 'planned']);
+    expect(passes(unsized, { glyph: null, footprint: null }, { type: 1 })).toBe(false);
+    // The same aircraft either way.
+    expect(unsized.layout).toEqual(glyph.layout);
+    expect(unsized.paint).toEqual(glyph.paint);
+  });
+
+  it('a plain notice is a diamond without a hue, in the text colour', () => {
+    const signal = layerOf({ layers: standLayers() }, 'occ-stand-signal');
+    expect(evaluate(signal, 'layout', 'icon-image', { signal: 'notice' }).name).toBe('signal-notice');
+    expect(evaluate(signal, 'paint', 'icon-color', { signal: 'notice' })).toEqual(Color.parse(occColor('text')));
+    expect(SIGNALS.notice.colorToken).toBeNull();
+    expect(isSdfImage('signal-notice')).toBe(true);
+    expect(passes(signal, { signal: 'notice' }, { type: 1 })).toBe(true);
   });
 
   it('never imports the dataset (source text guard)', () => {

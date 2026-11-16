@@ -1,4 +1,4 @@
-import { StrictMode, createRef } from 'react';
+import { StrictMode, createRef, useEffect } from 'react';
 import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
@@ -11,7 +11,9 @@ import { readSource } from '../../../styles/occSourceScan';
 import { occColor } from '../../occ-ui/occPalette';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
-import { destinationPoint, METRES_PER_NM } from '../airport/geo';
+import { destinationPoint, haversineM, METRES_PER_NM } from '../airport/geo';
+import { runwayEnd } from '../airport/runwayInUse';
+import { FOLLOW_ZOOM } from '../kinematics/followCamera';
 import { AIRFIELD_LAYER_IDS } from '../style/airfieldLayers';
 import { REFERENCE_LAYER_IDS, ourAirportsFeatures, referenceFeatures } from '../style/referenceLayers';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
@@ -21,20 +23,23 @@ import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import {
-  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_SOURCE,
+  createAirPicture, createDemoBlock, createDemoFlights, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX,
+  TRAFFIC_NOON, TRAFFIC_SOURCE,
 } from '../testing/trafficFixtures';
 import { serverClock } from '../../../services/serverClock';
 import { toWeatherReading } from '../../../services/weatherService';
 import { runwayEnds } from '../airport/runwayInUse';
 import { createAerodromeWeather, WEATHER_NOON } from '../testing/weatherFixtures';
 import { nightShadeFeatures } from '../traffic/nightShade';
+import { createMotionStore } from '../traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 import MapLegend from '../ui/MapLegend';
 import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 import { GOES_TILE_TEMPLATE } from '../../../services/satelliteService';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
-import { boundsCenter, presetTargets } from './cameraPresets';
+import { boundsCenter, isInBounds, presetTargets } from './cameraPresets';
+import { createRenderClock, metresPerPixel } from './frameLoop';
 import { liveEngineCount } from './mapEngine';
 import OccMap from './OccMap';
 import { useOccMap } from './OccMapContext';
@@ -152,6 +157,8 @@ afterEach(() => {
   resetLanguageForTests('es');
   window.history.replaceState({}, '', '/');
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('OccMap', () => {
@@ -862,13 +869,17 @@ describe('OccMap', () => {
     expect(ids.slice(ids.indexOf('slot-stands') + 1, ids.indexOf('slot-routes'))).toEqual([
       'occ-stands-fill', 'occ-stands-hatch', 'occ-stands-outline-solid', 'occ-stands-outline-dash-4-3',
       'occ-stands-outline-dash-2-2', 'occ-stands-outline-dot-1-3', 'occ-stands-leadin', 'occ-stands-leadin-arriving',
-      'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-selection', 'occ-stands-related',
-      'occ-stands-same-agent',
+      'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-progress-track', 'occ-stands-progress-done',
+      'occ-stands-selection', 'occ-stands-related', 'occ-stands-same-agent',
     ]);
+    // The aircraft to scale on the stands (PR M6), in their own slot.
+    expect(ids.slice(ids.indexOf('slot-footprints') + 1, ids.indexOf('slot-extrusions')))
+      .toEqual(['occ-footprints-fill', 'occ-footprints-outline', 'occ-footprints-planned']);
     // A screen's own overlays come after the map's in their slot.
     expect(ids.slice(ids.indexOf('slot-standLabels') + 1, ids.indexOf('slot-traffic'))).toEqual([
-      'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-clock', 'occ-stand-labels',
-      'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal', 'test-notes',
+      'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-glyph-unsized', 'occ-stand-clock',
+      'occ-stand-labels', 'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
+      'test-notes',
     ]);
     const sources = ['occ-stands', 'occ-stand-aux', 'occ-stand-labels', 'occ-stand-groups'].map(id => map.getSource(id));
     // One setData per source when the map starts, and no clustering any more.
@@ -1112,11 +1123,12 @@ describe('OccMap', () => {
     expect(source.data).toEqual(airfieldFeatures(MDPC_LAYOUT));
     expect(source.setDataCalls).toHaveLength(1);
     expect(source.spec.attribution).toBe(AIRFIELD_ATTRIBUTION);
-    // In the airfield slot, above the tile aeroway and under the mark of PUJ.
+    // In the airfield slot, above the tile aeroway and under the mark of PUJ (a map without traffic draws no airports
+    // of the region).
     const ids = map.layerIds();
     expect(ids.slice(ids.indexOf('slot-airfield') + 1, ids.indexOf('slot-stands'))).toEqual([
       'airfield-apron', 'airfield-runway-area', 'airfield-taxiway', 'airfield-runway', 'airfield-runway-ref',
-      ...AIRFIELD_LAYER_IDS, 'occ-reference-counterpart-labels', 'occ-reference-arp',
+      ...AIRFIELD_LAYER_IDS, 'occ-reference-arp',
     ]);
 
     // From the derived threshold, the boundary of the Aeródromo view, the dataset draws the airfield; the tiles stop.
@@ -1537,6 +1549,8 @@ describe('OccMap', () => {
       'src/features/positions-map/components/PositionMap.jsx', 'src/features/flight-monitoring/components/FlightMap.jsx',
       // PR M5: the data block and the layers menu.
       'src/features/maps/ui/FlightDataBlock.jsx', 'src/features/maps/ui/MapLayersMenu.jsx',
+      // PR M6: the pause control and the follow button.
+      'src/features/maps/ui/MapMotionControl.jsx', 'src/features/maps/ui/MapFollowButton.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {
@@ -1561,8 +1575,9 @@ describe('OccMap', () => {
     const stylesheet = readSource('src/styles/occ-map.css');
     const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
     const preludes = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim());
-    // The only at-rule keeps MapLibre's own icons in forced colours.
-    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)']);
+    // The at-rules keep MapLibre's own icons in forced colours and thin the ticks of a narrow altitude scale.
+    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)',
+      '@container (max-width: 27rem)', '@container (max-width: 18rem)']);
     const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
     expect(selectors.length).toBeGreaterThan(10);
     for (const selector of selectors) expect(selector.startsWith('.occ-map'), selector).toBe(true);
@@ -1678,6 +1693,43 @@ describe('OccMap traffic (PR M5)', () => {
     expect(without.calls.filter(call => call.method === 'updateData')).toEqual([]);
   });
 
+  it('an aircraft under the pointer shows its card: callsign, address and its facts', () => {
+    const traffic = noonTraffic();
+    const flights = createMapFlights().flights;
+    render(<OccMap defaultView="region" traffic={traffic} flights={flights} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    const hover = feature => {
+      fake.state.setRenderedFeatures(map, (_geometry, options) => (options.layers.includes(feature.layer.id) ? [feature] : []));
+      fake.state.emit(map, 'mousemove', { point: { x: 100, y: 100 }, lngLat: { lng: -68.4, lat: 18.4 } });
+      act(() => frames.shift()(0));
+    };
+    const other = traffic.aircraft.find(item => item.hex === TRAFFIC_HEX.overflight);
+    hover({ layer: { id: 'occ-traffic-other' }, properties: { id: other.id, hex: other.hex } });
+    let card = screen.getByTestId('map-tooltip');
+    expect(card).toHaveAttribute('data-kind', 'aircraft');
+    expect(card).toHaveAttribute('data-source', 'adsb');
+    expect(card).toHaveTextContent(other.callsign ?? other.hex.toUpperCase());
+    expect(card).toHaveTextContent(other.hex.toUpperCase());
+    for (const label of ['Matrícula', 'Tipo', 'Aerolínea', 'Ruta', 'Altitud', 'Velocidad', 'Fuente']) {
+      expect(card).toHaveTextContent(label);
+    }
+    expect(within(card).getByText('ADS-B')).toBeInTheDocument();
+    // An ELEVANT flight's card carries its route through PUJ; the demo flight's source is «Demo».
+    const demo = traffic.aircraft.find(item => item.kind === 'aviam' && item.isDemo === true);
+    hover({ layer: { id: 'occ-traffic-aviam' }, properties: { id: demo.id, flightKey: demo.flightKey } });
+    card = screen.getByTestId('map-tooltip');
+    expect(card).toHaveAttribute('data-source', 'demo');
+    expect(card.querySelector('[data-fact="route"]')).toHaveTextContent(/PUJ/);
+    // Off the aircraft, the card goes.
+    fake.state.setRenderedFeatures(map, () => []);
+    fake.state.emit(map, 'mousemove', { point: { x: 5, y: 5 }, lngLat: { lng: -68.1, lat: 18.1 } });
+    act(() => frames.shift()(0));
+    expect(screen.queryByTestId('map-tooltip')).toBeNull();
+  });
+
   it('a click on an AVIAM aircraft selects its flight key and on other traffic its hex', async () => {
     const onSelect = vi.fn();
     const ref = createRef();
@@ -1764,11 +1816,16 @@ describe('OccMap traffic (PR M5)', () => {
     const hex = TRAFFIC_HEX.arrival;
     const arrival = traffic.aircraft.find(item => item.hex === hex);
     const trailOf = collection => collection.features.filter(feature => feature.properties.hex === hex);
+    const observed = trailOf(traffic.trails)[0].geometry.coordinates;
+    const feature = (part, n, geometry, extra = {}) => ({ type: 'Feature', geometry,
+      properties: { id: `${arrival.flightKey}:${part}:${n}`, flightKey: arrival.flightKey, part, hex, ...extra } });
+    // The parts traffic/routeFeatures.js gives (PR M6): observed, estimated from Miami, still to fly to A5, its stand.
     const route = { type: 'FeatureCollection', features: [
-      { type: 'Feature', properties: { id: `${arrival.id}:flown:0`, part: 'flown', hex },
-        geometry: { type: 'LineString', coordinates: trailOf(traffic.trails)[0].geometry.coordinates } },
-      { type: 'Feature', properties: { id: `${arrival.id}:next`, part: 'next', hex, to: 'stand' },
-        geometry: { type: 'LineString', coordinates: [[arrival.lon, arrival.lat], standPoint('A5')] } },
+      feature('flownObserved', 0, { type: 'LineString', coordinates: observed }),
+      feature('flownEstimated', 0, { type: 'LineString', coordinates: [[-80.2906, 25.7932], observed[0]] },
+        { labelKey: 'flownEstimated' }),
+      feature('remaining', 0, { type: 'LineString', coordinates: [[arrival.lon, arrival.lat], standPoint('A5')] }),
+      feature('mark', 'stand', { type: 'Point', coordinates: standPoint('A5') }, { mark: 'stand', standCode: 'A5' }),
     ] };
     const element = withRoute => (
       <OccMap defaultView="region" traffic={{ ...traffic, route: withRoute ? route : null }}
@@ -1780,54 +1837,47 @@ describe('OccMap traffic (PR M5)', () => {
     const map = fake.state.liveMaps().at(-1);
     loadStyle(map);
     expect(map.getSource('occ-route').data).toEqual(route);
-    // The arrival's trail is its route's flown part now: the trails source no longer draws it.
+    // The arrival's trail is its route's observed part now: the trails source no longer draws it.
     expect(trailOf(map.getSource('occ-trails').data)).toEqual([]);
-    expect(trafficProbe().trafficOnScreen.route).toEqual(['flown', 'next']);
+    expect(trafficProbe().trafficOnScreen.route).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark']);
     const items = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
       .map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
-    expect(items()).toEqual(['aviamArrival', 'other', 'demo', 'estimated', 'stale', 'routeFlown', 'routeNext']);
-    expect(screen.getByText('Recorrido del vuelo elegido')).toBeInTheDocument();
-    expect(screen.getByText('Hasta su próximo punto, en línea recta')).toBeInTheDocument();
+    expect(items()).toEqual(['aviamArrival', 'other', 'demo', 'estimated', 'stale', 'routeFlownObserved',
+      'routeFlownEstimated', 'routeRemaining', 'routeMark']);
+    for (const words of ['Recorrido observado', 'Trayecto estimado', 'Ruta prevista', 'Puntos de la ruta']) {
+      expect(screen.getByText(words)).toBeInTheDocument();
+    }
+    // Closer in, only what is drawn there: at A5 the stand's mark and the end of what is still to fly.
+    act(() => map.jumpTo({ center: standPoint('A5'), zoom: 17 }));
+    expect(trafficProbe().trafficOnScreen.route).toEqual(['remaining', 'mark']);
     // No route: the trail comes back.
     view.rerender(element(false));
     expect(trailOf(map.getSource('occ-trails').data)).toHaveLength(1);
     expect(map.getSource('occ-route').data.features).toEqual([]);
-    expect(items()).not.toContain('routeFlown');
+    expect(trafficProbe().trafficOnScreen.route).toEqual([]);
   });
 
-  it('adds the aircraft credit while traffic is on screen and drops it when none is', () => {
+  it('names the source while traffic is on screen and keeps the aircraft credit out of the attribution', () => {
     const { rerender } = render(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
     const map = fake.state.liveMaps().at(-1);
-    // The map starts with the fixed credit only, and credits the source once it knows traffic is on screen.
-    const created = map.calls.find(call => call.method === 'addControl' && call.args[0] instanceof fake.module.AttributionControl);
-    expect(created.args[0].options.customAttribution).not.toMatch(/Datos de aeronaves/);
     loadStyle(map);
-    // The region view holds the traffic: «Datos de aeronaves» links the source and names its licence.
-    expect(attributionOf(map)).toContain('Datos de aeronaves: <a href="https://example.org/adsb" target="_blank" '
-      + 'rel="noopener noreferrer">Red ADS-B de prueba</a> (Datos sintéticos)');
+    // The region view holds the traffic: its source reaches the credit line (ui/MapSourceStatus.jsx), the one place the
+    // aircraft data is credited; the attribution keeps the base map's credits only and is never written again.
     expect(trafficProbe().trafficSource).toEqual(TRAFFIC_SOURCE);
-    // Away from every aircraft the credit goes, and comes back with them.
+    expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
+    const writes = map.calls.filter(call => call.method === 'removeControl').length;
+    // Away from every aircraft the source goes, and comes back with them.
     act(() => map.jumpTo(NOWHERE));
     expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
-    expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
     expect(trafficProbe().trafficSource).toBeNull();
     act(() => map.jumpTo({ center: [-68.36, 18.56], zoom: 7 }));
-    expect(attributionOf(map)).toContain('Datos de aeronaves');
-    // A credit is written once: re-reads of the same source write nothing.
-    const writes = map.calls.filter(call => call.method === 'removeControl').length;
+    expect(trafficProbe().trafficSource).toEqual(TRAFFIC_SOURCE);
     rerender(<OccMap defaultView="region" traffic={noonTraffic()}><TrafficProbe /></OccMap>);
-    expect(map.calls.filter(call => call.method === 'removeControl')).toHaveLength(writes);
     // Without a source (the provider is off) there is nothing to credit.
     rerender(<OccMap defaultView="region" traffic={noonTraffic({ source: null })}><TrafficProbe /></OccMap>);
+    expect(trafficProbe().trafficSource).toBeNull();
+    expect(map.calls.filter(call => call.method === 'removeControl')).toHaveLength(writes);
     expect(attributionOf(map)).not.toMatch(/Datos de aeronaves/);
-    cleanup();
-
-    // In English the credit speaks English.
-    act(() => resetLanguageForTests('en'));
-    render(<LanguageScope><OccMap defaultView="region" traffic={noonTraffic()} /></LanguageScope>);
-    const english = fake.state.liveMaps().at(-1);
-    loadStyle(english);
-    expect(attributionOf(english)).toContain('Aircraft data: <a href="https://example.org/adsb"');
   });
 
   it('the legend lists the aircraft kinds, tags and trails on screen', () => {
@@ -1845,9 +1895,736 @@ describe('OccMap traffic (PR M5)', () => {
     act(() => map.jumpTo({ center: standPoint('A3'), zoom: 17 }));
     expect(trafficProbe().trafficOnScreen.kinds).toEqual(['otherGround']);
     expect(items()).toEqual(['otherGround']);
-    // Nothing of the traffic on screen: no traffic in the legend.
+    // Nothing of the traffic on screen: no traffic in the legend (the region's airports stay while a far view shows them).
     act(() => map.jumpTo(NOWHERE));
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[data-legend-traffic]')).toHaveLength(0);
+  });
+});
+
+// The traffic of a motion store on a render clock whose server time the test moves (PR M6): the situation as
+// useMapSituation builds it, with the store's estimates, and the store as the traffic's motion.
+function motionTraffic({ picture = createAirPicture({ status: 'Disabled' }), flights = createMapFlights(), at = Date.parse(TRAFFIC_NOON),
+  server = null } = {}) {
+  const time = server ?? { at, now() { return this.at; } };
+  const clock = createRenderClock({ clock: time });
+  const motion = createMotionStore({ clock });
+  return { server: time, clock, motion, read: (nextPicture = picture, nextFlights = flights) => {
+    const pictureModel = toPictureModel(nextPicture);
+    const flightsModel = toFlightsModel(nextFlights);
+    motion.ingest({ picture: pictureModel, flights: flightsModel });
+    const nowMs = time.now();
+    const situation = buildSituation({ picture: pictureModel, flights: flightsModel, nowMs,
+      estimates: motion.estimatesAt(nowMs), estimatesChangeAt: motion.nextChangeAt(nowMs) });
+    return { aircraft: situation.aircraft, trails: EMPTY_TRAILS, route: null, source: TRAFFIC_SOURCE, motion };
+  } };
+}
+const EMPTY_TRAILS = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
+// The demo pair alone, on the flights of the lab's noon.
+function demoPairOnly(block, options) {
+  const response = createDemoFlights(block, options);
+  return { ...response, flights: response.flights.filter(row => row.isDemo) };
+}
+// Animation frames the test runs by hand; a cancelled one never runs.
+function controlledFrames() {
+  const frames = new Map();
+  let next = 1;
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+    const handle = next++;
+    frames.set(handle, callback);
+    return handle;
+  });
+  vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(handle => { frames.delete(handle); });
+  return {
+    pending: () => frames.size,
+    run: () => {
+      const due = [...frames.values()];
+      frames.clear();
+      act(() => due.forEach(callback => callback(0)));
+      return due.length;
+    },
+  };
+}
+function MotionProbe({ onMotion = null }) {
+  const { motion } = useOccMap();
+  useEffect(() => {
+    onMotion?.(motion);
+  });
+  return <pre data-testid="motion-probe">{JSON.stringify({ available: motion.available, paused: motion.paused,
+    pausedAt: motion.pausedAt, dataAt: motion.dataAt })}</pre>;
+}
+const motionProbe = () => JSON.parse(screen.getByTestId('motion-probe').textContent);
+const DEMO_ID = `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`;
+const geometryUpdates = (source, id) => source.updateDataCalls.filter(diff => diff.update.some(change => change.id === id && change.newGeometry));
+// Other aircraft in the air around PUJ, `count` of them, live at `atMs` and moving at 250 kt.
+function movingOthers(count, atMs) {
+  return Array.from({ length: count }, (_, index) => {
+    const [longitude, latitude] = destinationPoint([-68.3634, 18.5674], (index * 360) / count, 3_000 + index * 400);
+    return { hex: `f0d${String(index).padStart(3, '0')}`, callsign: `ZZZ${100 + index}`, registration: null, typeIcaoCode: 'A320',
+      category: 'A3', latitude, longitude, altitudeFeet: 9_000, onGround: false, groundSpeedKnots: 250, trackDegrees: 90,
+      verticalRateFeetPerMinute: 0, squawk: null, positionAt: new Date(atMs - 1_000).toISOString(), matchedFlightKey: null,
+      matchedBy: null, trail: [] };
+  });
+}
+
+describe('OccMap motion (PR M6)', () => {
+  it('runs no frame loop without motion', () => {
+    const frames = controlledFrames();
+    const view = render(<OccMap defaultView="region" traffic={noonTraffic()}><MotionProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    view.rerender(<OccMap defaultView="region" traffic={noonTraffic()}><MotionProbe /></OccMap>);
+    act(() => map.jumpTo({ center: [-68.36, 18.56], zoom: 12 }));
+    expect(frames.pending()).toBe(0);
+    expect(globalThis.requestAnimationFrame).not.toHaveBeenCalled();
+    expect(motionProbe()).toEqual({ available: false, paused: false, pausedAt: null, dataAt: null });
+    view.unmount();
+    // With a motion store the map draws through its own loop, and says it can pause.
+    const { read } = motionTraffic();
+    render(<OccMap defaultView="region" traffic={read()}><MotionProbe /></OccMap>);
+    loadStyle(fake.state.liveMaps().at(-1));
+    expect(motionProbe()).toMatchObject({ available: true, paused: false, dataAt: Date.parse(TRAFFIC_NOON) });
+    expect(frames.pending()).toBe(1);
+  });
+
+  it('moves the traffic with one updateData per due frame and stops when nothing moves', () => {
+    const frames = controlledFrames();
+    const NOON = Date.parse(TRAFFIC_NOON);
+    // The demo flight on final at noon (it appeared 4 minutes before, for its stand in 8), nothing else.
+    const { server, read } = motionTraffic({ flights: demoPairOnly(createDemoBlock({ appearAt: NOON - 240_000 })) });
+    render(<OccMap defaultView="approach" traffic={read()} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    expect(source.updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id))).toEqual([DEMO_ID]);
+    const writes = source.updateDataCalls.length;
+    // Every frame draws it where its trajectory puts it at the render clock's time: one updateData each, moving it.
+    for (let frame = 1; frame <= 3; frame += 1) {
+      server.at += 16;
+      expect(frames.run()).toBe(1);
+      expect(source.updateDataCalls).toHaveLength(writes + frame);
+    }
+    expect(geometryUpdates(source, DEMO_ID)).toHaveLength(3);
+    const moved = source.data.features.find(feature => feature.properties.id === DEMO_ID).geometry.coordinates;
+    // A frame at the same instant moves nothing and writes nothing.
+    frames.run();
+    expect(source.updateDataCalls).toHaveLength(writes + 3);
+    // An hour later it waits at terminal B's apron hold: one frame draws it there, and the loop stops.
+    server.at = NOON + 3_600_000;
+    expect(frames.run()).toBe(1);
+    const parked = source.data.features.find(feature => feature.properties.id === DEMO_ID).geometry.coordinates;
+    expect(parked).not.toEqual(moved);
+    expect(haversineM(parked, MDPC_LAYOUT.apronHolds.find(hold => hold.id === 'ah-b').p)).toBeLessThan(1);
+    expect(frames.pending()).toBe(0);
+    expect(map.calls.filter(call => call.method === 'setStyle')).toEqual([]);
+    expect(fake.state.maps).toEqual([map]);
+  });
+
+  it('updates every frame with fewer than 30 aircraft in view', () => {
+    const NOON = Date.parse(TRAFFIC_NOON);
+    const runFor = count => {
+      const frames = controlledFrames();
+      const picture = createAirPicture({ aircraft: movingOthers(count, NOON) });
+      const { server, read } = motionTraffic({ picture, flights: createMapFlights({ flights: [] }) });
+      const ref = createRef();
+      const view = render(<OccMap ref={ref} defaultView="approach" traffic={read()} />);
+      const map = fake.state.liveMaps().at(-1);
+      loadStyle(map);
+      act(() => { ref.current.jumpTo({ center: [-68.3634, 18.5674], zoom: 9 }); });
+      frames.run();
+      const source = map.getSource('occ-traffic');
+      const before = source.updateDataCalls.length;
+      // Two seconds of frames, 16 ms apart.
+      for (let frame = 0; frame < 125; frame += 1) {
+        server.at += 16;
+        frames.run();
+      }
+      const written = source.updateDataCalls.length - before;
+      view.unmount();
+      vi.restoreAllMocks();
+      return written;
+    };
+    // 29 aircraft in view: every frame.
+    expect(runFor(29)).toBe(125);
+    // 35 at 250 kt at zoom 9 cross about 0.9 px a second: the slowest rate, two writes a second (one every 500 ms
+    // after the one the camera move asked for).
+    expect(metresPerPixel(9, 18.5674)).toBeCloseTo(144.9, 0);
+    expect(runFor(35)).toBe(3);
+  });
+
+  it('pause freezes the aircraft while data keeps arriving', () => {
+    const frames = controlledFrames();
+    const NOON = Date.parse(TRAFFIC_NOON);
+    const block = createDemoBlock({ appearAt: NOON - 240_000 });
+    const { server, clock, read } = motionTraffic({ flights: demoPairOnly(block) });
+    const motionRef = { current: null };
+    const view = render(<OccMap defaultView="approach" traffic={read()}><MotionProbe onMotion={value => { motionRef.current = value; }} /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    server.at += 16;
+    frames.run();
+    // «Pausar movimiento»: the render clock holds, the context says since when, and the loop stops after its frame.
+    act(() => motionRef.current.pause());
+    expect(clock.isPaused()).toBe(true);
+    expect(motionProbe()).toMatchObject({ available: true, paused: true, pausedAt: NOON + 16 });
+    server.at += 5_000;
+    frames.run();
+    const held = geometryUpdates(source, DEMO_ID).length;
+    server.at += 5_000;
+    frames.run();
+    expect(frames.pending()).toBe(0);
+    expect(geometryUpdates(source, DEMO_ID)).toHaveLength(held);
+    // The reads go on: a new picture brings another aircraft, drawn at once, while the demo stays where it is.
+    const picture = createAirPicture({ aircraft: movingOthers(1, server.at) });
+    view.rerender(<OccMap defaultView="approach" traffic={read(picture, demoPairOnly(block))}><MotionProbe onMotion={value => { motionRef.current = value; }} /></OccMap>);
+    expect(source.updateDataCalls.at(-1).add.map(feature => feature.properties.id)).toEqual(['h:f0d000']);
+    frames.run();
+    expect(geometryUpdates(source, DEMO_ID)).toHaveLength(held);
+    // «Reanudar movimiento» picks up the server's time: the demo is drawn where it is now, and the loop runs again.
+    act(() => motionRef.current.resume());
+    expect(motionProbe()).toMatchObject({ paused: false, pausedAt: null });
+    frames.run();
+    expect(geometryUpdates(source, DEMO_ID).length).toBeGreaterThan(held);
+    expect(frames.pending()).toBe(1);
+  });
+});
+
+// The chosen flight's route and follow mode (PR M6): the demo flight `appearS` seconds after it appeared for its stand
+// in 8 minutes (imported onto A6, or with B21 suggested), chosen on a map whose frames and server time the test moves,
+// without the base map (its 8 s timer would bring its own notice).
+const THRESHOLD_08 = runwayEnd(MDPC_LAYOUT, '08').threshold;
+const FOLLOW_INSETS = Object.freeze({ top: 64, right: 0, bottom: 120, left: 400 });
+const NO_INSETS = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
+const DEMO_SELECTION = Object.freeze({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival });
+// Its departure ZZ9002, which leaves A6 on time an hour after its on-block (createDemoBlock's offBlockAfterMin): the
+// visit's aircraft goes by its key from the push-back on, and lifts off five minutes later.
+const DEPARTURE_SELECTION = Object.freeze({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture });
+const DEMO_DEPARTURE_ID = `f:${TRAFFIC_FLIGHT_KEY.demoDeparture}`;
+const DEMO_TAKEOFF_S = (8 + 60 + 5) * 60;
+const midpointOf = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+const cameraMoves = map => map.cameraCalls.filter(call => call.method === 'flyTo' || call.method === 'easeTo');
+const cameraJumps = map => map.cameraCalls.filter(call => call.method === 'jumpTo').length;
+// Reduced motion asked for (jsdom has no matchMedia): the loop then ticks once a second, on a timer the test runs.
+function reduceMotion() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.stubGlobal('matchMedia', media => ({ matches: media === '(prefers-reduced-motion: reduce)', addEventListener() {},
+    removeEventListener() {} }));
+}
+
+function FollowProbe() {
+  const { follow } = useOccMap();
+  return <pre data-testid="follow-probe">{JSON.stringify({ available: follow.available, following: follow.following,
+    canFollow: follow.canFollow })}</pre>;
+}
+const followProbe = () => JSON.parse(screen.getByTestId('follow-probe').textContent);
+
+function renderFollow({
+  appearS = 10, imported = true, offBlockAfterMin = null, insets = FOLLOW_INSETS, selection = DEMO_SELECTION, routeAt,
+} = {}) {
+  const frames = controlledFrames();
+  const block = createDemoBlock({ appearAt: Date.parse(TRAFFIC_NOON) - appearS * 1_000, imported, offBlockAfterMin });
+  const scene = motionTraffic({ flights: demoPairOnly(block, { imported, standCode: imported ? 'A6' : 'B21' }) });
+  const withRoute = traffic => (routeAt ? { ...traffic, routeAt } : traffic);
+  const ref = createRef();
+  let props = { traffic: withRoute(scene.read()), selection, insets };
+  const element = next => (
+    <OccMap ref={ref} defaultView="region" basemap={false} {...next}><FollowProbe /><Probe /></OccMap>
+  );
+  const view = render(element(props));
+  const map = fake.state.liveMaps().at(-1);
+  loadStyle(map);
+  frames.run();
+  return {
+    ...scene, block, frames, map, view, ref, root: screen.getByTestId('occ-map'),
+    rerender: next => {
+      props = { ...props, ...next, ...(next.traffic ? { traffic: withRoute(next.traffic) } : {}) };
+      view.rerender(element(props));
+    },
+    // Where the traffic source draws an aircraft now.
+    aircraftAt: (id = DEMO_ID) => map.getSource('occ-traffic').data.features
+      .find(feature => feature.properties.id === id)?.geometry.coordinates ?? null,
+    // The server's time `count` seconds on, with a frame at each of them.
+    seconds: count => {
+      for (let second = 0; second < count; second += 1) {
+        scene.server.at += 1_000;
+        frames.run();
+      }
+    },
+    // Under reduced motion (reduceMotion): the server's time a second on, and the loop's tick at it.
+    tick: () => {
+      scene.server.at += 1_000;
+      act(() => { vi.advanceTimersByTime(1_000); });
+    },
+  };
+}
+
+describe('OccMap route and follow mode (PR M6)', () => {
+  it('the chosen flight\'s route follows its aircraft: once a second below the airfield threshold, each frame from it', () => {
+    const routeAt = vi.fn((tMs, point) => ({ type: 'FeatureCollection', features: [{ type: 'Feature',
+      properties: { id: 'route:remaining:0', part: 'remaining', hex: '' },
+      geometry: { type: 'LineString', coordinates: [point, standPoint('A6')] } }] }));
+    const { map, ref, rerender, aircraftAt, frames, server, seconds } = renderFollow({ appearS: 144, routeAt });
+    const frameFor = ms => {
+      server.at += ms;
+      frames.run();
+    };
+    // The first frame writes the route where it drew the aircraft: the split is there.
+    expect(routeAt).toHaveBeenCalledTimes(1);
+    const [[, point]] = routeAt.mock.calls;
+    expect(point).toEqual(aircraftAt());
+    expect(map.getSource('occ-route').data.features[0].geometry.coordinates[0]).toEqual(point);
+    // A little over two seconds of frames in the approach view, below the airfield threshold: once a second, as it
+    // moves on.
+    const { thresholds } = probe();
+    act(() => { ref.current.jumpTo({ center: aircraftAt(), zoom: 10 }); });
+    expect(10).toBeLessThan(thresholds.airfield);
+    for (let frame = 0; frame < 130; frame += 1) frameFor(16);
+    expect(routeAt).toHaveBeenCalledTimes(3);
+    expect(haversineM(routeAt.mock.calls.at(-1)[1], point)).toBeGreaterThan(150);
+    // From the airfield threshold up, every frame in which it moves half a pixel on screen: at zoom 18 its 16 ms on final
+    // are more than a metre, over two pixels.
+    expect(18).toBeGreaterThan(thresholds.airfield);
+    act(() => { ref.current.jumpTo({ center: aircraftAt(), zoom: 18 }); });
+    expect(metresPerPixel(18, aircraftAt()[1])).toBeLessThan(0.5);
+    const before = routeAt.mock.calls.length;
+    for (let frame = 0; frame < 10; frame += 1) frameFor(16);
+    expect(routeAt.mock.calls.length - before).toBe(10);
+    expect(routeAt.mock.calls.at(-1)[1]).toEqual(aircraftAt());
+    // A frame in which it has not moved writes nothing.
+    frameFor(0);
+    expect(routeAt.mock.calls.length - before).toBe(10);
+    // Hidden with its layer, or with nothing chosen, nothing is written.
+    rerender({ groups: { route: false } });
+    const hidden = routeAt.mock.calls.length;
+    seconds(2);
+    expect(routeAt).toHaveBeenCalledTimes(hidden);
+    rerender({ groups: {}, selection: null });
+    seconds(2);
+    expect(routeAt).toHaveBeenCalledTimes(hidden);
+  });
+
+  it('S follows the chosen aircraft and frames it with its next objective inside the insets', () => {
+    const { map, root, aircraftAt, seconds, server, frames } = renderFollow({ appearS: 10 });
+    expect(followProbe()).toEqual({ available: true, following: false, canFollow: true });
+    // Not following, the frames move the aircraft and never the camera.
+    const region = map.getCenter().toArray();
+    seconds(1);
+    expect(map.getCenter().toArray()).toEqual(region);
+    const fit = vi.spyOn(map, 'cameraForBounds');
+    const event = press(root, 's');
+    expect(event.defaultPrevented).toBe(true);
+    expect(query().get('follow')).toBe('1');
+    expect(query().get('stationId')).toBe('s-1');
+    expect(followProbe().following).toBe(true);
+    server.at += 16;
+    frames.run();
+    // On the approach, more than 10 NM from the threshold of 08: one move of the map's own frames the aircraft and the
+    // threshold together in the room the panels leave (24 px inside the insets), at zoom 11.5 at most.
+    const here = aircraftAt();
+    expect(haversineM(here, THRESHOLD_08)).toBeGreaterThan(10 * 1_852);
+    expect(cameraMoves(map)).toHaveLength(1);
+    expect(fit).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ absolutePadding: true, maxZoom: 11.5,
+      padding: { top: 88, right: 24, bottom: 144, left: 424 } }));
+    expect(haversineM(map.getCenter().toArray(), midpointOf(here, THRESHOLD_08))).toBeLessThan(1);
+    expect(map.getZoom()).toBeLessThanOrEqual(11.5);
+    expect(map.padding).toEqual(FOLLOW_INSETS);
+    const [plane, threshold] = [map.project(here), map.project(THRESHOLD_08)];
+    expect(Math.abs(plane.x - threshold.x)).toBeLessThanOrEqual(1440 - FOLLOW_INSETS.left - FOLLOW_INSETS.right - 2 * 24);
+    // Then every frame eases the camera after it, without another animation, while the loop runs on.
+    seconds(6);
+    const later = aircraftAt();
+    expect(haversineM(later, here)).toBeGreaterThan(400);
+    expect(haversineM(map.getCenter().toArray(), midpointOf(later, THRESHOLD_08))).toBeLessThan(60);
+    expect(cameraMoves(map)).toHaveLength(1);
+    // S again lets it go, without a notice: the person asked for it.
+    press(root, 's');
+    expect(query().get('follow')).toBeNull();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    const stopped = map.getCenter().toArray();
+    seconds(2);
+    expect(map.getCenter().toArray()).toEqual(stopped);
+  });
+
+  it('a pan stops following and says so', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { map, root, seconds } = renderFollow({ appearS: 144 });
+    press(root, 's');
+    seconds(1);
+    // A person drags the map: follow mode lets go at once, in the URL too, and says how to come back.
+    act(() => fake.state.emit(map, 'dragstart', { originalEvent: new MouseEvent('mousedown') }));
+    expect(query().get('follow')).toBeNull();
+    expect(followProbe().following).toBe(false);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('Dejaste de seguir a ZZ9001. Pulsa Seguir para volver.');
+    // At the bottom left of the visible area, over the credit (occ-map.css), before the page's own overlays.
+    expect(notice).toHaveClass('occ-map-notice');
+    expect(notice.nextElementSibling).toBe(screen.getByTestId('follow-probe'));
+    act(() => map.jumpTo({ center: [-68.2, 18.7], originalEvent: new MouseEvent('mousemove') }));
+    // The frames leave the camera where the person put it.
+    seconds(3);
+    expect(map.getCenter().toArray()).toEqual([-68.2, 18.7]);
+    // The notice goes after a few seconds; S follows again and the notice is gone at once.
+    act(() => { vi.advanceTimersByTime(8_000); });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    press(root, 's');
+    expect(query().get('follow')).toBe('1');
+    seconds(1);
+    expect(map.getCenter().toArray()).not.toEqual([-68.2, 18.7]);
+    // A view asked for takes the camera elsewhere: follow mode ends the same way.
+    press(root, '3');
+    expect(query().get('follow')).toBeNull();
+    expect(query().get('view')).toBe('airfield');
+    expect(screen.getByRole('status')).toHaveTextContent('Dejaste de seguir a ZZ9001.');
+  });
+
+  it('a zoom keeps following with the zoom frozen', () => {
+    const { map, root, aircraftAt, seconds } = renderFollow({ appearS: 144 });
+    press(root, 's');
+    seconds(1);
+    // On final: the middle of the aircraft and the threshold, at the final's zoom.
+    const automatic = map.getZoom();
+    expect(automatic).toBeGreaterThan(12.5);
+    // The person zooms out with the wheel: still following, at their zoom from now on.
+    act(() => map.jumpTo({ zoom: automatic - 1.5, originalEvent: new WheelEvent('wheel') }));
+    expect(query().get('follow')).toBe('1');
+    seconds(6);
+    expect(map.getZoom()).toBeCloseTo(automatic - 1.5, 9);
+    expect(haversineM(map.getCenter().toArray(), midpointOf(aircraftAt(), THRESHOLD_08))).toBeLessThan(60);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // While a person moves the map nothing takes the camera from them; once the move ends, follow mode goes on.
+    act(() => fake.state.emit(map, 'zoomstart', { originalEvent: new WheelEvent('wheel') }));
+    const held = map.getCenter().toArray();
+    seconds(2);
+    expect(map.getCenter().toArray()).toEqual(held);
+    act(() => fake.state.emit(map, 'moveend', { originalEvent: new WheelEvent('wheel') }));
+    seconds(1);
+    expect(map.getCenter().toArray()).not.toEqual(held);
+    expect(query().get('follow')).toBe('1');
+  });
+
+  it('under reduced motion it re-centres only near the edge', () => {
+    reduceMotion();
+    // Taxiing to A6 a minute and a half after its touchdown: framed on itself.
+    const { map, root, aircraftAt, frames, tick } = renderFollow({ appearS: 354, insets: NO_INSETS });
+    press(root, 's');
+    // The frame of the key: one jump, no animation.
+    frames.run();
+    expect(cameraMoves(map)).toEqual([]);
+    const jumps = () => cameraJumps(map);
+    const framed = jumps();
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(1);
+    // Once a second it moves on, in the middle of the map: the camera stays where it is.
+    tick();
+    tick();
+    expect(jumps()).toBe(framed);
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeGreaterThan(5);
+    // Moved off by code so that the aircraft sits 600 px from the middle, past the central 60 %: the frame that move
+    // asks for frames it again, with one jump.
+    const [lng, lat] = aircraftAt();
+    act(() => { map.jumpTo({ center: map.unproject([720 - 600, 450]).toArray() }); });
+    const offset = map.project([lng, lat]);
+    expect(offset.x).toBeGreaterThan(1440 * 0.8);
+    frames.run();
+    expect(jumps()).toBe(framed + 2);
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(1);
+    // Back in the middle, the ticks leave it alone again.
+    tick();
+    expect(jumps()).toBe(framed + 2);
+  });
+
+  it('under reduced motion it re-centres before a departure flying away from its threshold leaves the view', () => {
+    reduceMotion();
+    // ZZ9002 climbing out of 08 ten seconds after its lift-off, followed: the camera frames it with the threshold.
+    const { map, root, aircraftAt, frames, tick } = renderFollow({ appearS: DEMO_TAKEOFF_S + 10, offBlockAfterMin: 60,
+      selection: DEPARTURE_SELECTION, insets: NO_INSETS });
+    const fit = vi.spyOn(map, 'cameraForBounds');
+    press(root, 's');
+    frames.run();
+    expect(cameraMoves(map)).toEqual([]);
+    // The box of the aircraft and the threshold, fitted inside the insets and 24 px more with the final's zoom as its
+    // cap: MapLibre keeps both in sight even once the climb turns off the runway's axis (the fake only fits widths).
+    const [bounds, options] = fit.mock.calls.filter(([, given]) => given?.maxZoom !== undefined).at(-1);
+    expect(isInBounds(aircraftAt(DEMO_DEPARTURE_ID), bounds) && isInBounds(THRESHOLD_08, bounds)).toBe(true);
+    expect(options).toMatchObject({ absolutePadding: true, padding: { top: 24, right: 24, bottom: 24, left: 24 } });
+    expect(options.maxZoom).toBeGreaterThan(FOLLOW_ZOOM.finalFrom);
+    expect(options.maxZoom).toBeLessThan(FOLLOW_ZOOM.finalTo);
+    // Each second it climbs on and turns north. The middle of the two moves at half its speed: watched alone it would
+    // leave the aircraft off the map for many seconds. The camera stays put until the aircraft itself nears the edge,
+    // then one jump frames it again: a few jumps in 75 s, never a glide, and the aircraft always on the map.
+    const onMap = ({ x, y }) => x >= 0 && x <= 1440 && y >= 0 && y <= 900;
+    let jumps = 0;
+    for (let second = 1; second <= 75; second += 1) {
+      const before = cameraJumps(map);
+      tick();
+      jumps += cameraJumps(map) - before;
+      expect(onMap(map.project(aircraftAt(DEMO_DEPARTURE_ID))), `${second} s after the key`).toBe(true);
+    }
+    expect(haversineM(aircraftAt(DEMO_DEPARTURE_ID), THRESHOLD_08)).toBeGreaterThan(6_500);
+    expect(jumps).toBeGreaterThanOrEqual(2);
+    expect(jumps).toBeLessThanOrEqual(5);
+    expect(cameraMoves(map)).toEqual([]);
+  });
+
+  it('2D or 3D while following frames the aircraft again with the new tilt, at the person\'s zoom', () => {
+    // Taxiing to A6 a minute and a half after its touchdown, followed in 2D: framed on itself, flat.
+    const { map, root, aircraftAt, frames, seconds, rerender } = renderFollow({ appearS: 354, insets: NO_INSETS });
+    press(root, 's');
+    seconds(1);
+    expect(cameraMoves(map)).toHaveLength(1);
+    expect(map.getPitch()).toBe(0);
+    // The person zooms in with the wheel: their zoom from now on.
+    const zoom = map.getZoom() + 1;
+    act(() => map.jumpTo({ zoom, originalEvent: new WheelEvent('wheel') }));
+    seconds(1);
+    // The page turns 3D on (its 2D/3D control; the D key once PR M7 wires it): one move of the map's own to the aircraft
+    // with the ground's tilt, as when follow mode engages, at the person's zoom; then the frames follow on at that tilt.
+    rerender({ pitchMode: '3d' });
+    frames.run();
+    expect(cameraMoves(map)).toHaveLength(2);
+    expect(cameraMoves(map).at(-1).options).toMatchObject({ pitch: FOLLOW_ZOOM.ground3dPitch, zoom: expect.closeTo(zoom, 9) });
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    seconds(2);
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    expect(map.getZoom()).toBeCloseTo(zoom, 9);
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(30);
+    expect(query().get('follow')).toBe('1');
+    // Back to 2D: flat again, the same way.
+    rerender({ pitchMode: '2d' });
+    frames.run();
+    expect(cameraMoves(map)).toHaveLength(3);
+    expect(map.getPitch()).toBe(0);
+  });
+
+  it('under reduced motion 2D or 3D while following jumps to the new tilt at once', () => {
+    reduceMotion();
+    // Taxiing to A6, followed in 2D: framed on itself, in the middle of the map, far from any edge.
+    const { map, root, aircraftAt, frames, tick, rerender } = renderFollow({ appearS: 354, insets: NO_INSETS });
+    press(root, 's');
+    frames.run();
+    const framed = cameraJumps(map);
+    expect(map.getPitch()).toBe(0);
+    // The page turns 3D on: one jump to the ground's tilt, without animation and without waiting for the aircraft to
+    // near the edge.
+    rerender({ pitchMode: '3d' });
+    frames.run();
+    expect(cameraJumps(map)).toBe(framed + 1);
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    expect(haversineM(map.getCenter().toArray(), aircraftAt())).toBeLessThan(1);
+    // The ticks leave it there, tilted, as before.
+    tick();
+    expect(cameraJumps(map)).toBe(framed + 1);
+    expect(map.getPitch()).toBe(FOLLOW_ZOOM.ground3dPitch);
+    // Back to 2D: flat again at once.
+    rerender({ pitchMode: '2d' });
+    frames.run();
+    expect(cameraJumps(map)).toBe(framed + 2);
+    expect(map.getPitch()).toBe(0);
+    expect(cameraMoves(map)).toEqual([]);
+  });
+
+  it('following survives the import of the flight (same flightKey) and a 3-N07 link (proposalId)', () => {
+    // ZZ9001 nobody imported yet, followed on final.
+    const { map, root, aircraftAt, seconds, read, rerender, block } = renderFollow({ appearS: 144, imported: false });
+    press(root, 's');
+    seconds(1);
+    expect(cameraMoves(map)).toHaveLength(1);
+    // OCC imports it onto A6: the same key, so the same selection, followed on without a new move to it.
+    const imported = demoPairOnly(block, { imported: true, standCode: 'A6' });
+    rerender({ traffic: read(undefined, imported) });
+    seconds(3);
+    expect(query().get('follow')).toBe('1');
+    expect(followProbe()).toMatchObject({ following: true, canFollow: true });
+    expect(cameraMoves(map)).toHaveLength(1);
+    expect(haversineM(map.getCenter().toArray(), midpointOf(aircraftAt(), THRESHOLD_08))).toBeLessThan(60);
+    // Linked to a planned flight under rule 3-N07: its rows take their legs' keys; the selection keeps the proposal's
+    // key, which names it through its proposalId.
+    const linked = { ...imported, flights: imported.flights.map(row => ({ ...row, flightKey: `l:${row.legId}` })) };
+    rerender({ traffic: read(undefined, linked) });
+    const leg = `f:l:${linked.flights.find(row => row.direction === 'Arrival').legId}`;
+    seconds(3);
+    expect(aircraftAt(DEMO_ID)).toBeNull();
+    expect(aircraftAt(leg)).not.toBeNull();
+    expect(followProbe()).toMatchObject({ following: true, canFollow: true });
+    expect(query().get('follow')).toBe('1');
+    expect(cameraMoves(map)).toHaveLength(1);
+    expect(haversineM(map.getCenter().toArray(), midpointOf(aircraftAt(leg), THRESHOLD_08))).toBeLessThan(60);
+    // A selection that names nothing any more leaves nothing to follow.
+    rerender({ selection: null });
+    expect(query().get('follow')).toBeNull();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('S does nothing without a chosen aircraft', () => {
+    const { map, root, rerender, seconds } = renderFollow({ selection: null });
+    expect(followProbe()).toEqual({ available: true, following: false, canFollow: false });
+    const before = map.getCenter().toArray();
+    expect(press(root, 's').defaultPrevented).toBe(false);
+    expect(query().get('follow')).toBeNull();
+    seconds(1);
+    expect(map.getCenter().toArray()).toEqual(before);
+    // A flight the map does not draw (ZZ9002 waits at A6: the visit's aircraft is its arrival's), a stand, an address
+    // the picture does not have: nothing either.
+    for (const selection of [{ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture }, { kind: 'stand', id: 'A6' },
+      { kind: 'aircraft', id: 'abcdef' }]) {
+      rerender({ selection });
+      expect(followProbe().canFollow, JSON.stringify(selection)).toBe(false);
+      expect(press(root, 's').defaultPrevented, JSON.stringify(selection)).toBe(false);
+      expect(query().get('follow')).toBeNull();
+    }
+    cleanup();
+    // A map that does not move its traffic cannot follow: S is left alone, even with a drawn aircraft chosen.
+    render(<OccMap defaultView="region" traffic={noonTraffic()} selection={{ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }}>
+      <FollowProbe />
+    </OccMap>);
+    loadStyle(fake.state.liveMaps().at(-1));
+    expect(followProbe()).toEqual({ available: false, following: false, canFollow: false });
+    expect(press(screen.getByTestId('occ-map'), 's').defaultPrevented).toBe(false);
+    expect(query().get('follow')).toBeNull();
+  });
+});
+
+// The stands fed by the map flights (PR M6, design D1 to D3, F4): the ramp scenario with the legs of DM205 on A4, an A320
+// with two milestones recorded, next to the demo flight coming to A6.
+describe('OccMap stands fed by the flights (PR M6)', () => {
+  const ago = minutes => new Date(NOW - minutes * MINUTE).toISOString();
+  const A320 = Object.freeze({ registration: 'HI0205', typeIcaoCode: 'A320', model: null, sizeCategory: 'Narrowbody' });
+  const legs = milestones => [
+    { direction: 'Arrival', flightNumber: 'DM205', phase: 'landed', actualAt: ago(30), actualKind: 'Runway', aircraft: A320,
+      milestones },
+    { direction: 'Departure', flightNumber: 'DM206', phase: 'scheduled', scheduledAt: new Date(NOW + 60 * MINUTE).toISOString(),
+      aircraft: A320, milestones },
+  ];
+  function fedStands() {
+    const { board, flightsByTurnaround } = createRampScenario(NOW);
+    const flights = { ...flightsByTurnaround, 'turn-DM205': legs([{ code: 'BLOCK_ON', actualAt: ago(28) },
+      { code: 'FIRST_CUSTOMS', actualAt: ago(20) }]) };
+    return withStandDisplay(mapOccupancyToRampPositions(REFERENCES, board, board.asOf), { nowMs: NOW, flightsByTurnaround: flights });
+  }
+  // The same ramp with A4 free on the board: its visits are gone.
+  function freeA4Stands() {
+    const { board } = createRampScenario(NOW);
+    const free = { ...board, positions: board.positions.map(stand => (stand.code === 'A04'
+      ? { ...stand, status: 'available', turnarounds: [] } : stand)) };
+    return withStandDisplay(mapOccupancyToRampPositions(REFERENCES, free, free.asOf), { nowMs: NOW });
+  }
+  const A4 = attachStandGeometry(fedStands(), MDPC_LAYOUT).find(stand => stand.id === 'A4').geometry;
+  // The aircraft of DM205 as the traffic draws it: live, standing still on the ground at `point`.
+  const parkedAircraft = (point, extra = {}) => ({
+    id: 'f:l:5c000000-0000-4000-8000-000000000205', hex: 'f0b205', kind: 'aviam',
+    flightKey: 'l:5c000000-0000-4000-8000-000000000205', visitKey: 't:turn-DM205', legId: '5c000000-0000-4000-8000-000000000205',
+    turnaroundId: 'turn-DM205', proposalId: null, direction: 'Arrival', isDemo: false, imported: true, phase: 'arrived',
+    flightNumber: 'DM205', counterpartIata: 'MIA', standCode: 'A4', model: null, sizeCategory: 'Narrowbody',
+    lon: point[0], lat: point[1], altM: null, gsMs: 0, trackDeg: A4.headingTrue, vrateMs: null, onGround: true,
+    positionAt: NOW, ageS: 2, quality: 'live', callsign: 'DMO205', registration: 'HI0205', typeIcao: 'A320',
+    emitterCategory: 'A3', squawk: null, matchedBy: 'Registration', hiddenInStand: false, statusKey: null, timeScale: null,
+    opacity: null, mode: null, ...extra,
+  });
+  const trafficOf = aircraft => ({ aircraft, trails: EMPTY_TRAILS, route: null, source: TRAFFIC_SOURCE });
+  // The properties a feature of a source ends up with, from its writes.
+  function lastProperties(source, id) {
+    let properties = null;
+    for (const diff of source.updateDataCalls) {
+      const added = diff.add.find(item => item.properties.id === id);
+      if (added) properties = { ...added.properties };
+      for (const change of diff.update.filter(item => item.id === id)) {
+        for (const { key, value } of change.addOrUpdateProperties ?? []) properties = { ...properties, [key]: value };
+      }
+    }
+    return properties;
+  }
+
+  it('draws the aircraft of the stands to scale from the codes threshold on and their progress from the three lines, as the legend says', () => {
+    const { map } = renderMap({ stands: fedStands(), frozenAt: NOW });
+    loadStyle(map);
+    // One more stand source, written with the others.
+    const footprints = map.getSource('occ-aircraft-footprints');
+    expect(footprints.spec).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    expect(footprints.setDataCalls).toHaveLength(1);
+    expect(footprints.data.features.map(item => [item.id, item.properties.kind])).toEqual([
+      ['footprint:A4', 'solid'], ['footprint:A6', 'planned'],
+    ]);
+    expect(map.getSource('occ-stand-aux').data.features.filter(item => item.properties.kind.startsWith('progress'))
+      .map(item => [item.id, item.properties.done, item.properties.total])).toEqual([
+      ['progressTrack:A4', 2, 25], ['progressDone:A4', 2, 25],
+    ]);
+    const ranges = Object.fromEntries(map.zoomRangeCalls.map(call => [call.id, [call.minzoom, call.maxzoom]]));
+    const { polygons, codes, threeLine } = probe().thresholds;
+    for (const id of ['occ-footprints-fill', 'occ-footprints-outline', 'occ-footprints-planned', 'occ-stand-glyph-unsized']) {
+      expect(ranges[id][0], id).toBe(codes);
+    }
+    expect(ranges['occ-stand-glyph']).toEqual([polygons, codes]);
+    expect([ranges['occ-stands-progress-track'][0], ranges['occ-stands-progress-done'][0]]).toEqual([threeLine, threeLine]);
+    // The ramp view shows the aircraft to scale, not the bars yet.
+    expect(probe().marks).toEqual(expect.arrayContaining(['footprint', 'footprintPlanned']));
+    expect(probe().marks).not.toContain('progress');
+    // Close on A4, past the three-line labels: its bar too.
+    act(() => map.jumpTo({ center: A4.center, zoom: threeLine + 1 }));
+    expect(probe().marks).toEqual(expect.arrayContaining(['footprint', 'progress']));
+    // Far from every stand, nothing of them.
+    act(() => map.jumpTo({ center: [-68.2, 18.45] }));
+    expect(probe().marks).toEqual([]);
+    act(() => map.jumpTo({ center: A4.center }));
+    // Below the codes, none of them.
+    act(() => map.jumpTo({ zoom: codes - 0.4 }));
+    expect(probe().marks.filter(mark => ['footprint', 'footprintPlanned', 'progress'].includes(mark))).toEqual([]);
+  });
+
+  it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand wherever the stands are drawn', () => {
+    const view = render(
+      <OccMap stands={fedStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}>
+        <Probe /><TrafficProbe />
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-traffic');
+    const id = parkedAircraft(A4.center).id;
+    const { polygons, codes } = probe().thresholds;
+    // The ramp view draws the footprints: the parked aircraft is the stand's, and the legend leaves it to the stand.
+    expect(lastProperties(source, id)).toMatchObject({ parkedOnStand: true, kind: 'aviam' });
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
+    // Below the codes the stand draws its glyph instead of the footprint: still the stand's, nothing is written.
+    const writes = source.updateDataCalls.length;
+    act(() => map.jumpTo({ center: A4.center, zoom: codes - 0.4 }));
+    expect(source.updateDataCalls).toHaveLength(writes);
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual([]);
+    // Below the polygons the stands go: its symbol comes back, in one write of that property.
+    act(() => map.jumpTo({ zoom: polygons - 0.4 }));
+    expect(source.updateDataCalls).toHaveLength(writes + 1);
+    expect(source.updateDataCalls.at(-1).update).toEqual([{ id, addOrUpdateProperties: [{ key: 'parkedOnStand', value: false }] }]);
+    expect(trafficProbe().trafficOnScreen.kinds).toEqual(['aviamArrival']);
+    // A move that stays on one side of the threshold writes nothing.
+    act(() => map.jumpTo({ zoom: polygons - 0.6 }));
+    expect(source.updateDataCalls).toHaveLength(writes + 1);
+    act(() => map.jumpTo({ zoom: polygons + 0.2 }));
+    expect(lastProperties(source, id).parkedOnStand).toBe(true);
+    // Moving, it is the traffic's again; so is it once its stand no longer shows it (A4 free on the board). With the board
+    // alone A4 reads its aircraft and shows it with the glyph: the stand's.
+    view.rerender(
+      <OccMap stands={fedStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center, { gsMs: 3 })])}>
+        <Probe /><TrafficProbe />
+      </OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(false);
+    view.rerender(
+      <OccMap stands={fedStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}><Probe /><TrafficProbe /></OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(true);
+    view.rerender(
+      <OccMap stands={freeA4Stands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}><Probe /><TrafficProbe /></OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(false);
+    view.rerender(
+      <OccMap stands={scenarioStands()} frozenAt={NOW} traffic={trafficOf([parkedAircraft(A4.center)])}><Probe /><TrafficProbe /></OccMap>,
+    );
+    expect(lastProperties(source, id).parkedOnStand).toBe(true);
+    cleanup();
+
+    // A map without stands parks nothing.
+    render(<OccMap defaultView="ramp" traffic={trafficOf([parkedAircraft(A4.center)])} />);
+    const bare = fake.state.liveMaps().at(-1);
+    loadStyle(bare);
+    expect(lastProperties(bare.getSource('occ-traffic'), id).parkedOnStand).toBe(false);
   });
 });
 
@@ -1877,7 +2654,7 @@ const inUseOf = map => map.getSource('occ-reference-ourairports').data.features
   .filter(item => item.properties.kind === 'centrelineLabel').map(item => item.properties.label);
 // The layer that draws each kind of reference, as queryRenderedFeatures names it.
 const LAYER_OF = Object.freeze({
-  centreline: 'occ-reference-centrelines', tick: 'occ-reference-centreline-ticks', airport: 'occ-reference-airports',
+  centreline: 'occ-reference-centrelines', tick: 'occ-reference-centreline-ticks', airport: 'occ-region-airports',
   navaid: 'occ-reference-navaids', night: 'occ-night',
 });
 const drawnLayerOf = properties => (properties.kind === 'ring' ? `occ-reference-rings-${properties.scope}` : LAYER_OF[properties.kind]);
@@ -1931,7 +2708,7 @@ describe('OccMap references (PR M8)', () => {
     expect(source.setDataCalls).toHaveLength(5);
     const emphasised = () => source.data.features.filter(item => item.properties.kind === 'airport' && item.properties.counterpart)
       .map(item => item.properties.label);
-    expect(emphasised()).toEqual(['MDSD SDQ']);
+    expect(emphasised()).toEqual(['MDSD/SDQ']);
     // The language: the words of the runway and of the navaids, in English.
     act(() => resetLanguageForTests('en'));
     expect(source.setDataCalls).toHaveLength(6);
@@ -2041,25 +2818,27 @@ describe('OccMap references (PR M8)', () => {
     });
     act(() => fake.state.emit(map, 'idle'));
     expect(asked.at(-1)).toEqual(REFERENCE_LAYER_IDS);
-    expect(referenceProbe()).toEqual({ kinds: ['rings', 'centrelines', 'runwayInUse', 'airports', 'counterparts', 'vor',
+    expect(referenceProbe()).toEqual({ kinds: ['rings', 'centrelines', 'runwayInUse', 'counterparts', 'vor',
       'ndb', 'night'], runway: { arrival: '08', source: 'wind' } });
     const legend = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
       .map(item => item.textContent);
-    expect(legend()).toEqual(['Anillos de distancia', 'Eje de pista extendido (marca cada NM)',
-      'Pista 08 (estimada por el viento)', 'Aeropuerto de la región', 'Origen o destino de un vuelo de hoy',
-      'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)']);
+    // The region's airports by kind while their key is on in this view, then the references on screen.
+    expect(legend()).toEqual(['Punta Cana (MDPC)', 'Aeropuerto internacional', 'Aeropuerto regional', 'Otro aeródromo',
+      'Anillos de distancia', 'Eje de pista extendido (marca cada NM)', 'Pista 08 (estimada por el viento)',
+      'Origen o destino de un vuelo de hoy', 'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)']);
     // A group the page hides is not asked about, and its entries go from the legend.
-    view.rerender(element({ groups: { airports: false, daynight: false } }));
+    view.rerender(element({ groups: { daynight: false } }));
     act(() => fake.state.emit(map, 'idle'));
-    expect(asked.at(-1)).not.toContain('occ-reference-airports');
+    expect(asked.at(-1)).toContain('occ-region-airports');
     expect(asked.at(-1)).not.toContain('occ-night');
-    expect(legend()).toEqual(['Anillos de distancia', 'Eje de pista extendido (marca cada NM)',
-      'Pista 08 (estimada por el viento)', 'Radioayuda VOR-DME', 'Radioayuda NDB']);
-    // Nothing of them drawn: no reference in the legend, and no legend at all with nothing else to explain.
+    expect(legend()).toEqual(['Punta Cana (MDPC)', 'Aeropuerto internacional', 'Aeropuerto regional', 'Otro aeródromo',
+      'Anillos de distancia', 'Eje de pista extendido (marca cada NM)', 'Pista 08 (estimada por el viento)',
+      'Origen o destino de un vuelo de hoy', 'Radioayuda VOR-DME', 'Radioayuda NDB']);
+    // Nothing of them drawn: no reference in the legend, only the airports' kinds while their key is on.
     fake.state.setRenderedFeatures(map, () => []);
     act(() => fake.state.emit(map, 'idle'));
     expect(referenceProbe()).toEqual({ kinds: [], runway: null });
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    expect(legend()).toEqual(['Punta Cana (MDPC)', 'Aeropuerto internacional', 'Aeropuerto regional', 'Otro aeródromo']);
   });
 });
 
@@ -2198,7 +2977,7 @@ describe('OccMap weather (PR M8)', () => {
     expect(attributionOf(map)).not.toMatch(/Clima/);
     cleanup();
 
-    // In English, with the aircraft data beside it when traffic is on screen too.
+    // In English; the aircraft data keep their own line (ui/MapSourceStatus.jsx), never the attribution.
     act(() => resetLanguageForTests('en'));
     render(<LanguageScope><OccMap defaultView="region" weather={weatherAt()} traffic={noonTraffic()}
       layerOverrides={{ 'weather.wind': true }} /></LanguageScope>);
@@ -2207,7 +2986,7 @@ describe('OccMap weather (PR M8)', () => {
     fake.state.setRenderedFeatures(english, (_geometry, options) => (options.layers.includes('occ-weather-wind')
       ? [windDrawn(english)] : []));
     act(() => fake.state.emit(english, 'idle'));
-    expect(attributionOf(english)).toContain('Aircraft data: <a href="https://example.org/adsb"');
+    expect(attributionOf(english)).not.toContain('Aircraft data');
     expect(attributionOf(english)).toContain('Weather: <a href="https://aviationweather.gov/"');
   });
 

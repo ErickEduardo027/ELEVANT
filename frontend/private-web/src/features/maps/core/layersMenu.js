@@ -5,7 +5,8 @@ import { VIEW_NAMES } from './cameraPresets';
 // the view on screen is stored (`localStorage`, LAYERS_STORAGE_KEY), so a new default reaches everyone who never
 // touched that key. Pure: OccMap holds the choices and ui/MapLayersMenu.jsx draws them.
 //
-// M5 ships the «Tráfico» group. PR M8 adds «Referencias» (rings, centrelines, airports, navaids, day and night; the FIR
+// M5 ships the «Tráfico» group. «Referencias» holds the region's airports and the routes from Punta Cana, and PR M8
+// adds to it the rings, the centrelines, the navaids and day and night (the FIR
 // waits for an extract of its boundary) and «Meteorología» (the satellite clouds and rain, off by default, and the wind
 // at the airfield), and PR M6 the ramp keys: each adds its group here, its defaults in ON_IN and, when its keys depend
 // on another, a line in engineGroupsFor.
@@ -16,10 +17,12 @@ export const LAYER_GROUPS = Object.freeze([
     id: 'traffic',
     keys: Object.freeze(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route']),
   }),
-  // The references of PR M8 (design E6, style/referenceLayers.js).
+  // The references (design E6, style/referenceLayers.js): the region's airports (owner request of 2026-11-15), the
+  // routes from Punta Cana (AeroDataBox's daily routes, ADR-0043 note of 15 November 2026, style/routeLayers.js) and,
+  // from PR M8, the range rings, the extended centrelines, the navaids and day and night.
   Object.freeze({
     id: 'reference',
-    keys: Object.freeze(['rings', 'centrelines', 'airports', 'navaids', 'daynight']),
+    keys: Object.freeze(['reference.airports', 'reference.routes', 'rings', 'centrelines', 'navaids', 'daynight']),
   }),
   // The weather of PR M8 (design E6, traffic/weatherLayers.js): the satellite images and the wind at the airfield.
   Object.freeze({
@@ -44,9 +47,10 @@ const ON_IN = Object.freeze({
   'traffic.labels': Object.freeze([]),
   'traffic.trails': Object.freeze([]),
   route: VIEW_NAMES,
+  'reference.airports': Object.freeze(['region', 'approach']),
+  'reference.routes': Object.freeze(['region']),
   rings: Object.freeze(['region', 'approach']),
   centrelines: Object.freeze(['approach']),
-  airports: Object.freeze(['region', 'approach']),
   navaids: Object.freeze(['approach', 'airfield']),
   daynight: Object.freeze(['region', 'approach']),
   // The satellite images are off until a person turns them on; the wind shows in Aproximación and Aeródromo.
@@ -134,10 +138,11 @@ export function engineGroupsFor(resolved) {
     'traffic.labels': on('traffic.labels') && on('traffic.other'),
     'traffic.trails': on('traffic.trails') && on('traffic.other'),
     route: on('route'),
-    // The references (PR M8): each key is its own group.
+    // The references: each key is its own group.
+    'reference.airports': on('reference.airports'),
+    'reference.routes': on('reference.routes'),
     rings: on('rings'),
     centrelines: on('centrelines'),
-    airports: on('airports'),
     navaids: on('navaids'),
     daynight: on('daynight'),
     // The weather (PR M8): each key is its own group. OccMap also keeps a satellite image hidden until it knows the time

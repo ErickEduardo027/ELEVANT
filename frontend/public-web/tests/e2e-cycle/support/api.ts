@@ -67,3 +67,26 @@ export async function expectCall<T = unknown>(expected: number | number[], token
   if (!ok) throw new Error(`${method} ${route} → HTTP ${result.status} ${JSON.stringify(result.data).slice(0, 400)}`);
   return result;
 }
+
+/** A synthetic RNC with a valid check digit (9 digits, modulus 11): 1-31-23456-9. */
+export const SYNTHETIC_RNC = "131234569";
+
+type ManagedAirline = { id: string; sourceName: string; displayName: string; legalName: string | null; region: string;
+  countryCode: string | null; iataCode: string | null; icaoCode: string | null; logoUrl: string | null; sourceUrl: string;
+  verificationSourceUrl: string | null; isVerified: boolean; isPublished: boolean; version: string };
+
+/**
+ * The exception to the public-registry rule (ADR-0023): Superadministración confirms by hand, in «Aerolíneas»,
+ * the verification Contratos made of a synthetic airline the registries do not know, so it can be approved.
+ */
+export async function superadminVerifiesByHand(displayName: string): Promise<void> {
+  const superadmin = await login("superadmin");
+  const airlines = await expectCall<ManagedAirline[]>(200, superadmin, "GET", "/governance/airlines");
+  const profile = airlines.data.find(item => item.displayName === displayName);
+  if (!profile?.verificationSourceUrl) throw new Error(`No verified profile named ${displayName}.`);
+  await expectCall(200, superadmin, "PUT", `/governance/airlines/${profile.id}`, {
+    sourceName: profile.sourceName, displayName: profile.displayName, legalName: profile.legalName, region: profile.region,
+    countryCode: profile.countryCode, iataCode: profile.iataCode, icaoCode: profile.icaoCode, logoUrl: profile.logoUrl,
+    sourceUrl: profile.sourceUrl, verificationSourceUrl: profile.verificationSourceUrl, isVerified: true,
+    isPublished: profile.isPublished, version: profile.version });
+}

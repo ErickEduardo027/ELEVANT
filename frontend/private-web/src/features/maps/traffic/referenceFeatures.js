@@ -65,7 +65,7 @@ export const WIND_MAX_AGE_MINUTES = 90;
 
 /** The kinds of the legend, in its order (ui/referenceLegend.js). */
 export const REFERENCE_LEGEND_KINDS = Object.freeze([
-  'rings', 'centrelines', 'runwayInUse', 'airports', 'counterparts', 'vor', 'ndb', 'night',
+  'rings', 'centrelines', 'runwayInUse', 'counterparts', 'vor', 'ndb', 'night',
 ]);
 
 /** The navaid types the map draws, each with its legend kind. */
@@ -273,23 +273,46 @@ export function counterpartCodes(flights) {
   return Object.freeze([...codes].sort());
 }
 
+const HOME_ICAO = 'MDPC';
+
+/** The kinds of the region's airports (style/referenceLayers.js colours them), in the legend's order. */
+export const AIRPORT_KINDS = Object.freeze(['home', 'international', 'regional', 'other']);
+
+/** The kind of an airport of region.context.json: the home airport, international, regional, or another aerodrome. */
+export function airportKind(airport) {
+  if (airport?.icao === HOME_ICAO || airport?.ident === HOME_ICAO) return 'home';
+  if (airport?.type === 'large_airport' || /international/i.test(airport?.name ?? '')) return 'international';
+  if (airport?.type === 'medium_airport' && typeof airport?.iata === 'string' && airport.iata !== '') return 'regional';
+  return 'other';
+}
+
+/** The label of an airport: «ICAO/IATA», or the one it has; the home airport its ICAO (the ARP mark says PUJ). */
+export function airportLabel(airport) {
+  const codes = [airport?.icao ?? airport?.ident, airport?.iata].filter(code => typeof code === 'string' && code !== '');
+  if (airportKind(airport) === 'home') return codes[0] ?? '';
+  return [...new Set(codes)].join('/');
+}
+
 /**
- * The airports of the region (`region.airports`), all but the station's own (its reference point draws it), labelled
- * «MDSD SDQ» (ICAO and IATA) or with the ICAO code alone, and `counterpart: true` for the airport of a flight of today
- * (`counterparts`, codes as counterpartCodes gives them).
+ * The airports of the region (`region.airports`, MDPC among them as the `home` kind), each with its kind
+ * (airportKind), its label «MDSD/SDQ» (airportLabel) and `counterpart: true` for the airport of a flight of today
+ * (`counterparts`, codes as counterpartCodes gives them; never the home airport).
  */
 export function regionAirportFeatures(region = REGION_CONTEXT, { counterparts = [] } = {}) {
   const wanted = new Set((counterparts ?? []).map(code => String(code).toUpperCase()));
   return (region?.airports ?? [])
-    .filter(airport => airport?.iata !== HOME_AIRPORT_IATA && typeof airport?.icao === 'string' && isPoint(airport.p))
+    .filter(airport => typeof (airport?.icao ?? airport?.ident) === 'string' && isPoint(airport.p))
     .map(airport => {
+      const icao = airport.icao ?? airport.ident;
       const iata = typeof airport.iata === 'string' && airport.iata !== '' ? airport.iata : null;
+      const kind = airportKind(airport);
       return feature({
         kind: 'airport',
-        icao: airport.icao,
+        airportKind: kind,
+        icao,
         iata,
-        label: iata === null ? airport.icao : `${airport.icao} ${iata}`,
-        counterpart: wanted.has(airport.icao) || (iata !== null && wanted.has(iata)),
+        label: airportLabel(airport),
+        counterpart: kind !== 'home' && (wanted.has(icao) || (iata !== null && wanted.has(iata))),
       }, point([airport.p[0], airport.p[1]]));
     });
 }
@@ -356,7 +379,8 @@ function kindsOf(properties) {
     case 'ring': return ['rings'];
     case 'centreline':
     case 'tick': return properties.inUse === true ? ['centrelines', 'runwayInUse'] : ['centrelines'];
-    case 'airport': return [properties.counterpart === true ? 'counterparts' : 'airports'];
+    // The region's airports are listed by kind while their layer is on (ui/MapLegend.jsx); a counterpart, by what it is.
+    case 'airport': return properties.counterpart === true ? ['counterparts'] : [];
     case 'navaid': return Object.hasOwn(NAVAID_KINDS, properties.type) ? [NAVAID_KINDS[properties.type]] : [];
     case 'night': return ['night'];
     default: return [];

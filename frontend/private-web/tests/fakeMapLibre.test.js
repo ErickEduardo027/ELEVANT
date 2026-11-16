@@ -58,6 +58,27 @@ describe('fake MapLibre', () => {
     expect(map.styleCalls).toHaveLength(1);
   });
 
+  it('a camera move fires zoomstart, rotatestart and pitchstart for what changes, with the move\'s originalEvent', () => {
+    const { fake, map } = newMap();
+    const seen = [];
+    for (const type of ['movestart', 'zoomstart', 'zoomend', 'rotatestart', 'rotateend', 'pitchstart', 'pitchend', 'moveend']) {
+      map.on(type, event => seen.push([type, event.originalEvent?.type ?? null]));
+    }
+    // A move made by code: no originalEvent, and only the zoom changed.
+    map.jumpTo({ zoom: 14 });
+    expect(seen).toEqual([['movestart', null], ['zoomstart', null], ['zoomend', null], ['moveend', null]]);
+    // One standing in for a person's: the event goes with every one of them; the same camera again fires no zoom.
+    seen.length = 0;
+    map.easeTo({ zoom: 14, bearing: -17, pitch: 40, originalEvent: new MouseEvent('mousemove') });
+    expect(seen).toEqual([['movestart', 'mousemove'], ['rotatestart', 'mousemove'], ['rotateend', 'mousemove'],
+      ['pitchstart', 'mousemove'], ['pitchend', 'mousemove'], ['moveend', 'mousemove']]);
+    // A gesture without a move (a drag that starts) is emitted by the test itself.
+    seen.length = 0;
+    map.on('dragstart', event => seen.push(['dragstart', event.originalEvent.type]));
+    fake.state.emit(map, 'dragstart', { originalEvent: new MouseEvent('mousedown') });
+    expect(seen).toEqual([['dragstart', 'mousedown']]);
+  });
+
   it('getBounds is the viewport around the centre; resize changes it and fires the events of Map.resize()', () => {
     const { fake, map } = newMap();
     const bounds = map.getBounds();

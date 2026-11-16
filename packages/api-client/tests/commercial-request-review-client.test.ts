@@ -41,6 +41,9 @@ function client(answers: Response[]) {
   return { api, calls };
 }
 
+const problem = (code: string, status = 409) => new Response(JSON.stringify({ title: "Ignored title", status, code }),
+  { status, headers: { "content-type": "application/problem+json" } });
+
 describe("commercial request review client", () => {
   it("reads the open inbox by default and validates every key of the page", async () => {
     const { api, calls } = client([Response.json(inbox), Response.json({ ...inbox, page: 2, limit: 10 })]);
@@ -134,6 +137,20 @@ describe("commercial request review client", () => {
     await expect(api.cancelCommercialRequest(requestId, { expectedVersion: version, reason: "Solicitud duplicada." },
       "not-a-key")).rejects.toThrow(TypeError);
     expect(calls).toEqual([]);
+  });
+
+  it("reads the tax identifier, the registry verdict and the Superadmin manual verification", async () => {
+    const checked = { ...request, taxRegistration: { number: "131234569", countryCode: "DO", display: "RNC 1-31-23456-9" },
+      registryCheck: { status: "NotFound", source: "OpenFlights", checkedAt: "2026-11-15T12:00:00Z", detail: null,
+        fromCatalog: false },
+      manualVerification: { verifiedAt: "2026-11-15T12:30:00Z", verificationSourceUrl: "https://aoc.example.test/ccx" } };
+    const { api } = client([Response.json({ ...inbox, requests: [checked] }),
+      Response.json({ ...inbox, requests: [{ ...checked, registryCheck: { ...checked.registryCheck, status: "Maybe" } }] }),
+      problem("airline_not_in_public_registry")]);
+    await expect(api.getCommercialRequestInbox()).resolves.toMatchObject({ requests: [{ registryCheck: { status: "NotFound" } }] });
+    await expect(api.getCommercialRequestInbox()).rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(api.decideCommercialRequest(requestId, { approve: true, stationIds: [stationId], expectedVersion: version },
+      key)).rejects.toMatchObject({ status: 409, code: "airline_not_in_public_registry" });
   });
 
   it("keeps the stable code of a refused command and drops unknown codes", async () => {

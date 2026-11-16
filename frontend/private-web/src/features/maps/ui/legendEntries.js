@@ -5,18 +5,23 @@ import { standStateOf } from '../stands/standModel';
 import { AIRFIELD_LEGEND_KINDS } from '../style/airfieldLayers';
 import { flightsInView } from '../traffic/flightLayers';
 
-/** The signals a stand can carry on the map, in the order of the vocabulary (SIGNALS): attention, then urgent. */
-export const STAND_SIGNAL_KEYS = Object.freeze(['attention', 'urgent']);
+/**
+ * The signals a stand can carry on the map, in the order of the vocabulary (SIGNALS): attention, urgent, then the plain
+ * notice of PR M6 (an aircraft on the stand without its arrival recorded).
+ */
+export const STAND_SIGNAL_KEYS = Object.freeze(['attention', 'urgent', 'notice']);
 /**
  * The marks of the stands the legend explains: the arrow over the chip of a terminal with a flight arriving at one of
- * its stands, the link of a cancelled stand, the narrow-body box, the ring of the stands covered by the same agent as
+ * its stands, the aircraft of a stand to scale (`footprint` on the stand, `footprintPlanned` still to come) and the
+ * progress bar of its turnaround (`progress`, PR M6), the link of a cancelled stand, the narrow-body box, the ring of the stands covered by the same agent as
  * the selected one (`sameAgent`) or as the one under the pointer (`sameAgentHover`; the map draws one ring at a time,
  * stands/standInteractions.js: sameAgentMark), and while a stand is placed, its box at the pointer and the pending
  * location. The arrow is drawn with the chips, where the legend lists no state or signal, so being first it comes right
  * after the chip's entry.
  */
 export const STAND_MARKS = Object.freeze([
-  'chipArriving', 'combined', 'narrowbody', 'sameAgent', 'sameAgentHover', 'ghost', 'pending',
+  'chipArriving', 'footprint', 'footprintPlanned', 'progress', 'combined', 'narrowbody', 'sameAgent', 'sameAgentHover',
+  'ghost', 'pending',
 ]);
 
 // A stand that is drawn: its polygon (or, outside a map, its location) inside `bounds`; without bounds, every drawn
@@ -41,12 +46,12 @@ const listed = (value, order) => {
  * - `states`: the states of the drawn stands (their display status, else their board status), in the vocabulary's
  *   order; a drawn stand has a polygon (inside a map) or a location (a legend given its own stands);
  * - `chips`: whether a terminal chip is drawn (`chips`, the terminals OccMap draws a chip for on screen);
- * - `signals`: the signals the map draws on the drawn stands (`attention`, `urgent`), in the vocabulary's order: one per
- *   stand, the strongest of those it carries (stands/standFeatures.js: standSignalOf), so a stand with an urgent and an
- *   attention signal brings only `urgent`;
+ * - `signals`: the signals the map draws on the drawn stands (`attention`, `urgent`, `notice`), in the vocabulary's
+ *   order: one per stand, the strongest of those it carries (stands/standFeatures.js: standSignalOf), so a stand with an
+ *   urgent and an attention signal brings only `urgent`;
  * - `tags`: «No oficial» when a drawn stand is not placed by OCC (it sits at an internal reference location);
- * - `marks`: the stand marks drawn on screen (`chipArriving`, `combined`, `narrowbody`, `sameAgent`, `sameAgentHover`,
- *   `ghost`, `pending`, as OccMap reads them), in that order;
+ * - `marks`: the stand marks drawn on screen (`chipArriving`, `footprint`, `footprintPlanned`, `progress`, `combined`,
+ *   `narrowbody`, `sameAgent`, `sameAgentHover`, `ghost`, `pending`, as OccMap reads them), in that order;
  * - `airfield`: the airfield items drawn on screen (`runway`, `taxiway`, `holdBar`, `apron`, `terminal`), in that order.
  * Stands and flights count inside `bounds` when given. Pure.
  */

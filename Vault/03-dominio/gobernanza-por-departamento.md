@@ -102,18 +102,41 @@ El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
 - **Una opción por entrada del menú.** Cada opción del menú lateral es un
   módulo, con su sección; las funciones que viven dentro de una pantalla
   declaran su opción padre.
-- **Columnas de la matriz.** Cada acción cae en una columna: Ver, Crear,
+- **Tipos de acción.** Cada acción del catálogo es de un tipo: Ver, Crear,
   Modificar, Eliminar u Otras acciones (aprobar, publicar, emitir, exportar,
   firmar…).
 - **Ver se concede siempre.** Conceder cualquier acción concede también «Ver».
 - **Subventanas.** Conceder una subventana (por ejemplo, Solicitudes de
   clausura dentro de Servicios) concede «Ver» de la pantalla que la contiene;
-  prohibir esa pantalla prohíbe sus subventanas. La matriz ofrece por fila el
-  selector rápido «Prohibido / Ver / Editar», con las casillas para el ajuste
-  fino ([ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)).
+  quitar el acceso a esa pantalla lo quita de sus subventanas
+  ([ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)).
 - **Grants antiguos.** Los códigos anteriores a ADR-0019 (`*.manage`,
   `employees.terminate`, `attendance.record`…) se traducen al resolver el acceso,
-  así que las plantillas guardadas siguen funcionando. Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
+  así que las plantillas guardadas siguen funcionando.
+- **Cuatro niveles por opción.** Desde la revisión docente de noviembre de
+  2026, la matriz (plantillas de rol, solicitud y edición de acceso, y usuario
+  interno del superadministrador) ofrece por fila un solo selector
+  «Sin acceso · Ver · Crear · Editar · Completo». Los niveles son acumulativos
+  y solo eligen códigos del catálogo, así que la API recibe los mismos códigos
+  que antes. Un nivel que no añade nada al anterior no se muestra: una opción
+  con solo «Ver» ofrece «Sin acceso / Ver». Los grants guardados que no
+  coinciden con ningún nivel se leen como «Personalizado» (solo etiqueta) y
+  «Ver detalle» conserva las casillas de cada acción. Elegir un nivel
+  reemplaza los grants de esa opción.
+
+| Nivel | Concede (además de lo del nivel anterior) |
+| --- | --- |
+| Ver | `read` y `export` |
+| Crear | `create` |
+| Editar | `update` y las acciones de trabajo que no deshacen nada: `assign`, `attend`, `write`, `validate`, `decide`, `verify`, `approve`, `reject`, `sign`, `issue`, `publish`, `pay`, `apply`, `confirm`, `activate`, `validity`, `refund` |
+| Completo | `delete` y las acciones que anulan, revierten o retiran: `revoke`, `reverse`, `unbind`, `reopen`, `retire`, `cancel`, `lifecycle` (suspender o terminar contratos) |
+
+La clasificación vive en
+[`permissionLevels.js`](../../frontend/private-web/src/features/department-users/permissionLevels.js).
+Un verbo nuevo que no esté clasificado exige «Completo», y su prueba lista
+todos los verbos del catálogo.
+
+Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
 desactivar una plantilla cambia el acceso de sus miembros y rota su sello de
 seguridad.
 
@@ -215,6 +238,10 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 2. Gestión Humana registra al empleado (`employees.create`): identificación
    real normalizada y única, número de empleado único, correo corporativo,
    departamento, puesto y estaciones. Un puesto de rampa crea su `RampAgent`.
+   Los formularios de empleado, de registro de expediente y de usuario interno
+   abren con pasaporte dominicano: muestran «RD» fijo, se escriben solo los 7
+   dígitos y se envía `RD1234567`. «Pasaporte extranjero» quita el prefijo.
+   Cédula y residencia no cambian.
 3. El administrador elige un empleado de su departamento sin cuenta activa y
    solicita el acceso con un UUID propio. El tipo (web o rampa) sale del puesto,
    la plantilla viene precargada desde el puesto y las estaciones deben estar

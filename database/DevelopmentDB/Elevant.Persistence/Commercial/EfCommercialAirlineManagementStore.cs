@@ -220,14 +220,18 @@ internal sealed class EfCommercialAirlineManagementStore(
             ManagedAirlineIdentityRules.ChangesIdentity(Identity(profile), input))
             return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict, GovernanceAccountIssues.AirlineIdentityLocked);
         if (await LogoFailureAsync(input, profile, cancellationToken) is { } logoFailure) return logoFailure;
-        if (Apply(actorDatabaseId, profile, input, created: false) is { } failure) return failure;
+        // ADR-0023: a superadministrator who confirms a verification Contratos stamped takes it over, so the
+        // profile counts as verified by hand by Superadministración (the exception to the registry rule).
+        var claim = input.IsVerified && profile.VerifiedByAccountId is long verifier && verifier != actorDatabaseId &&
+            !await IsSuperAdministratorAccountAsync(verifier, cancellationToken);
+        if (Apply(actorDatabaseId, profile, input, created: false, claim) is { } failure) return failure;
         await NotifyInternalAsync(profile.PublicId, cancellationToken);
         return AirlineMutationResult.Success(Map(profile, false));
     }
 
     /// <summary>Copies the form into the profile with its audit; a refused publication returns its failure.</summary>
     private AirlineMutationResult? Apply(long actorDatabaseId, CommercialAirlineProfile profile, ManagedAirlineInput input,
-        bool created)
+        bool created, bool claimVerification = false)
     {
         var beforeCountry = profile.CountryCode;
         var beforeIata = profile.IataCode;
@@ -245,7 +249,7 @@ internal sealed class EfCommercialAirlineManagementStore(
         if (input.IsPublished && !input.IsVerified && profile.RegistryStatus != AirlineRegistryStatus.Found)
             return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid, "registry_check_required");
         // The verification is stamped again only when it starts or its evidence changes (1-N20).
-        var restamp = ManagedAirlineIdentityRules.RestampsVerification(stored, input);
+        var restamp = ManagedAirlineIdentityRules.RestampsVerification(stored, input) || claimVerification;
         profile.DisplayName = input.DisplayName.Trim();
         profile.LegalName = Optional(input.LegalName);
         profile.Region = input.Region.Trim();
@@ -353,6 +357,13 @@ internal sealed class EfCommercialAirlineManagementStore(
         {
             return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict);
         }
+    }
+
+    private async Task<bool> IsSuperAdministratorAccountAsync(long accountId, CancellationToken cancellationToken)
+    {
+        var publicId = await context.Users.AsNoTracking().Where(user => user.Id == accountId)
+            .Select(user => (Guid?)user.PublicId).SingleOrDefaultAsync(cancellationToken);
+        return publicId is { } id && await permissions.IsSuperAdministratorAsync(id, cancellationToken);
     }
 
     private async Task NotifyInternalAsync(Guid profileId, CancellationToken cancellationToken)

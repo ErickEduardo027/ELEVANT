@@ -369,12 +369,13 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     const drawn = map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id));
     expect(drawn).toContain(`f:${TRAFFIC_FLIGHT_KEY.arrival}`);
     expect(drawn).toContain(`h:${TRAFFIC_HEX.overflight}`);
-    // The credit of the aircraft data, as a link over the map and in its attribution; no chip while the picture is Live.
+    // The credit of the aircraft data, once, as a link over the map (not in its attribution); no chip while the picture
+    // is Live.
     const status = screen.getByTestId('map-source-status');
     expect(within(status).getByRole('link', { name: 'Red ADS-B de prueba' })).toHaveAttribute('href', 'https://example.org/adsb');
     expect(within(status).queryByRole('status')).not.toBeInTheDocument();
     const attribution = map.controls.find(entry => entry.control instanceof fake.module.AttributionControl).control;
-    expect(attribution.options.customAttribution).toContain('Datos de aeronaves');
+    expect(attribution.options.customAttribution).not.toContain('Datos de aeronaves');
     // The legend explains the traffic on screen.
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
   });
@@ -403,7 +404,7 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
       .map(item => [item.properties.ident, item.properties.source])).toEqual([['08', 'wind']]);
     // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not.
     const airports = features(map).filter(item => item.properties.kind === 'airport');
-    expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.label)).toEqual(['MDSD SDQ']);
+    expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.label)).toEqual(['MDSD/SDQ']);
     // The reference sources are written when what they draw changes, not on every read of the traffic or the flights.
     const writesOf = () => ['occ-reference', 'occ-reference-ourairports'].map(id => map.getSource(id).setDataCalls.length);
     const writes = writesOf();
@@ -546,10 +547,16 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(sourceLine()).toHaveTextContent('En vivo · hace 4 s');
     expect(within(block).getByRole('link', { name: 'Ver escala' }))
       .toHaveAttribute('href', `/admin-occ/planning?stationId=${TRAFFIC_STATION_ID}&flightId=${arrivalRow.legId}`);
-    // The map reads the aircraft's track once and draws its route: what it flew, and the straight line to A5.
+    // The map reads the aircraft's track once and draws its route (PR M6): what it flew observed and estimated from
+    // Miami, and still to fly along its trajectory to A5, with the touchdown, the runway exit and the stand marked.
     const route = map.getSource('occ-route').data;
-    expect(route.features.map(feature => [feature.properties.part, feature.properties.to ?? null]))
-      .toEqual([['flown', null], ['next', 'stand']]);
+    expect(route.features.map(feature => feature.properties.part))
+      .toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark', 'mark', 'mark']);
+    expect(route.features.at(-1).properties).toMatchObject({ mark: 'stand', standCode: 'A5' });
+    // «Seguir» is the block's first action, and the dock has it beside the view selector.
+    expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(screen.getByTestId('map-preset-switcher').parentElement).getByRole('button', { name: 'Seguir' }))
+      .toHaveAttribute('aria-keyshortcuts', 'S');
     // The age counts up on its own between two reads of the picture.
     await flush(2_000);
     expect(sourceLine()).toHaveTextContent('En vivo · hace 6 s');
@@ -564,7 +571,7 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     await flush();
     const other = screen.getByRole('dialog', { name: 'Vuelo ZZZ804' });
     expect(within(other).getByText('Otro tráfico')).toBeInTheDocument();
-    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    expect(map.getSource('occ-route').data.features.map(feature => feature.properties.part)).toEqual(['flownObserved']);
     // The layers menu is in the dock.
     expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' })).toBeInTheDocument();
   });

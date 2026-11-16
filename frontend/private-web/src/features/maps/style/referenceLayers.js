@@ -2,6 +2,8 @@ import { occColor } from '../../occ-ui/occPalette';
 import { OURAIRPORTS_ATTRIBUTION } from '../core/attribution';
 import { NAVAID_IMAGES } from './referenceImages';
 import { FONT_STACKS } from './basemapLayers';
+import { mapColorsFor } from './mapColors';
+import { AIRPORT_KINDS, airportKind, airportLabel } from '../traffic/referenceFeatures';
 
 export { ourAirportsFeatures, referenceFeatures } from '../traffic/referenceFeatures';
 
@@ -20,8 +22,9 @@ export { ourAirportsFeatures, referenceFeatures } from '../traffic/referenceFeat
 // `reference` slot a runway drawn over it, or a place name placed before it, hid the airport the map is about (seen
 // in the map lab). The other references stay in the `reference` slot, under the base-map labels and the airfield, and
 // the night in the `shade` slot, right above the land and the sea. Each group is a key of the layers menu
-// (core/layersMenu.js): rings, centrelines, airports, navaids and daynight. All of it is quiet: thin lines and dim words
-// in the neutral tokens, no hue (contracts 2.4); the runway in use is the one line drawn wider and lighter.
+// (core/layersMenu.js): rings, centrelines, reference.airports, navaids and daynight. All of it but the airports is
+// quiet: thin lines and dim words in the neutral tokens, no hue (contracts 2.4); the runway in use is the one line
+// drawn wider and lighter. The airports keep the colours by kind the owner asked for (style/mapColors.js).
 
 export const REFERENCE_SOURCE = 'occ-reference';
 /**
@@ -33,6 +36,62 @@ export const OURAIRPORTS_SOURCE = 'occ-reference-ourairports';
 export const NIGHT_SOURCE = 'occ-night';
 /** The group of the mark of PUJ: never a key of the layers menu, so it always shows. */
 export const REFERENCE_GROUP = 'reference';
+/**
+ * The airports of the region (owner request of 2026-11-15): the 32 of airport/data/region.context.json (OurAirports,
+ * public domain), a dot coloured by kind with its ICAO/IATA code in yellow, from the Región and Aproximación views
+ * (below the derived `airfield` threshold) and in the layers menu («Referencias»). Above the base-map labels, so the
+ * tile label of the same airport gives way to it. The airport of a flight of today (PR M8) is a larger dot ringed in
+ * the text colour, its code larger and placed first: the ring tells it apart, not the colour alone. They read the
+ * OurAirports source, so its credit shows while they are drawn.
+ */
+export const AIRPORTS_GROUP = 'reference.airports';
+/** The kinds of the region's airports, in the legend's order (traffic/referenceFeatures.js: airportKind). */
+export { AIRPORT_KINDS, airportKind, airportLabel };
+const AIRPORT_RADIUS = Object.freeze({ home: 7, international: 5, regional: 4.5, other: 3.5 });
+
+function airportLayers(theme) {
+  const { airports: colours } = mapColorsFor(theme);
+  const kind = ['get', 'airportKind'];
+  const byKind = value => ['match', kind, ...AIRPORT_KINDS.slice(0, -1).flatMap(name => [name, value(name)]),
+    value(AIRPORT_KINDS.at(-1))];
+  const counterpart = ['==', ['get', 'counterpart'], true];
+  const metadata = { 'occ:group': AIRPORTS_GROUP, 'occ:maxThreshold': 'airfield' };
+  const isAirport = ['==', ['get', 'kind'], 'airport'];
+  return [
+    {
+      slot: ARP_SLOT,
+      id: 'occ-region-airports',
+      type: 'circle',
+      source: OURAIRPORTS_SOURCE,
+      filter: isAirport,
+      paint: {
+        'circle-radius': ['+', byKind(name => AIRPORT_RADIUS[name]), ['case', counterpart, 1.5, 0]],
+        'circle-color': byKind(name => colours[name]),
+        'circle-stroke-color': ['case', counterpart, occColor('text'), colours.halo],
+        'circle-stroke-width': ['case', counterpart, 2, 1.5],
+      },
+      metadata,
+    },
+    {
+      slot: ARP_SLOT,
+      id: 'occ-region-airport-labels',
+      type: 'symbol',
+      source: OURAIRPORTS_SOURCE,
+      filter: isAirport,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': [...FONT_STACKS.bold],
+        'text-size': ['case', ['any', counterpart, ['==', kind, 'home']], 13, 12],
+        'text-anchor': 'top',
+        'text-offset': [0, 0.7],
+        'symbol-sort-key': ['case', ['==', kind, 'home'], 0, counterpart, 1,
+          ['match', kind, 'international', 2, 'regional', 3, 4]],
+      },
+      paint: { 'text-color': colours.label, 'text-halo-color': colours.halo, 'text-halo-width': 1.5 },
+      metadata,
+    },
+  ];
+}
 /** The slot of the home airport's mark. */
 export const ARP_SLOT = 'airfield';
 export const REFERENCE_SLOT = 'reference';
@@ -40,7 +99,7 @@ export const NIGHT_SLOT = 'shade';
 
 /** The layers-menu keys of the references (design E7), each the `occ:group` of its layers. */
 export const REFERENCE_GROUPS = Object.freeze({
-  rings: 'rings', centrelines: 'centrelines', airports: 'airports', navaids: 'navaids', daynight: 'daynight',
+  rings: 'rings', centrelines: 'centrelines', airports: AIRPORTS_GROUP, navaids: 'navaids', daynight: 'daynight',
 });
 
 const LABEL_SIZE = 12;
@@ -48,19 +107,8 @@ const KIND = ['get', 'kind'];
 const kindIs = (...kinds) => ['match', KIND, kinds, true, false];
 const fonts = stack => [...FONT_STACKS[stack]];
 const IN_USE = ['==', ['get', 'inUse'], true];
-const COUNTERPART = ['==', ['get', 'counterpart'], true];
 // The dark of the map under every word and mark of the references, so they read over the land, the sea and the lines.
 const HALO = Object.freeze({ 'text-halo-color': occColor('nav'), 'text-halo-width': 1.2 });
-// The code of an airport beside its mark, on whichever side has room.
-const AIRPORT_LABEL_LAYOUT = Object.freeze({
-  'text-field': ['get', 'label'],
-  'text-font': [...FONT_STACKS.regular],
-  'text-size': LABEL_SIZE,
-  'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
-  'text-radial-offset': 0.7,
-  'text-optional': true,
-});
-
 function referenceLayer(id, type, group, { slot = REFERENCE_SLOT, source = REFERENCE_SOURCE, filter, layout, paint,
   thresholds = {} }) {
   return {
@@ -95,16 +143,17 @@ function ringLayers(scope, thresholds) {
 
 /**
  * The overlay of the references for buildOccStyle: the sources `occ-reference`, `occ-reference-ourairports` (with the
- * credit of OurAirports) and `occ-night`, born empty, and their layers. In the airfield slot, the codes of today's
- * counterparts and the mark of PUJ up to the codes threshold. In the reference slot: the rings of the Región view below
- * the `approach` threshold and those of Aproximación from it up to the airfield one, each with its label; the extended
- * centrelines, their ticks (from the `approach` threshold) and the label of the runway in use; the region's airports, a
- * hollow ring each and a filled one, with its code in the text colour, for today's counterparts; and the navaids, with
- * their chart symbol and their ident and frequency, from the `approach` threshold until the stands turn into polygons.
+ * credit of OurAirports) and `occ-night`, born empty, and their layers. In the airfield slot, the region's airports
+ * (unless `airports: false`, a map without traffic) in the colours of `theme` (style/mapColors.js), today's
+ * counterparts ringed, and the mark of PUJ up to the codes threshold. In the reference slot: the rings of the Región
+ * view below the `approach` threshold and those of Aproximación from it up to the airfield one, each with its label;
+ * the extended centrelines, their ticks (from the `approach` threshold) and the label of the runway in use; and the
+ * navaids, with their chart symbol and their ident and frequency, from the `approach` threshold until the stands turn
+ * into polygons.
  * In the shade slot, the night, the line of its edge and its word, up to the airfield threshold. The centrelines, the
  * airports and the navaids read the OurAirports source; the mark of PUJ and the rings, the reference source.
  */
-export function referenceOverlay() {
+export function referenceOverlay({ theme = 'dark', airports = true } = {}) {
   return {
     sources: {
       [REFERENCE_SOURCE]: { type: 'geojson' },
@@ -112,14 +161,9 @@ export function referenceOverlay() {
       [NIGHT_SOURCE]: { type: 'geojson' },
     },
     layers: [
-      // The codes of today's counterparts, under the mark of PUJ in the airfield slot, so the mark keeps its place first.
-      referenceLayer('occ-reference-counterpart-labels', 'symbol', REFERENCE_GROUPS.airports, {
-        slot: ARP_SLOT,
-        source: OURAIRPORTS_SOURCE,
-        filter: ['all', kindIs('airport'), COUNTERPART],
-        layout: AIRPORT_LABEL_LAYOUT,
-        paint: { 'text-color': occColor('text'), ...HALO },
-      }),
+      // The region's airports (unless `airports: false`, a map without traffic), under the mark of PUJ in the airfield
+      // slot, so the mark keeps its place first.
+      ...(airports ? airportLayers(theme) : []),
       {
         slot: ARP_SLOT,
         id: 'occ-reference-arp',
@@ -180,27 +224,6 @@ export function referenceOverlay() {
           'text-optional': true,
         },
         paint: { 'text-color': occColor('muted'), ...HALO },
-      }),
-      // An airport of the region is a ring; the airport of a flight of today a filled dot, and its code in the text
-      // colour: the shape tells them apart, not the colour alone.
-      referenceLayer('occ-reference-airports', 'circle', REFERENCE_GROUPS.airports, {
-        source: OURAIRPORTS_SOURCE,
-        filter: kindIs('airport'),
-        paint: {
-          'circle-radius': ['case', COUNTERPART, 3.5, 3],
-          'circle-color': ['case', COUNTERPART, occColor('text'), occColor('nav')],
-          'circle-stroke-color': ['case', COUNTERPART, occColor('text'), occColor('faint')],
-          'circle-stroke-width': 1,
-        },
-      }),
-      // The codes of the region's airports give way to the base map's place names; those of today's counterparts do not
-      // (their layer, first in this list, is in the airfield slot, placed before the base-map labels, as the mark of PUJ
-      // is). Each tries the four sides of its mark before it gives way.
-      referenceLayer('occ-reference-airport-labels', 'symbol', REFERENCE_GROUPS.airports, {
-        source: OURAIRPORTS_SOURCE,
-        filter: ['all', kindIs('airport'), ['!', COUNTERPART]],
-        layout: AIRPORT_LABEL_LAYOUT,
-        paint: { 'text-color': occColor('faint'), ...HALO },
       }),
       // Both navaids stand on the airport, a few pixels from the mark of PUJ in the Aproximación view: their symbols are
       // always drawn, under the mark, and their ident and frequency where there is room. They end where the stands turn

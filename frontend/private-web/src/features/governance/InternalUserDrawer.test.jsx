@@ -34,6 +34,7 @@ it('creates a Contracts member with only «Servicios: Ver» in one step, without
   const type = (label, value) => userEvent.type(screen.getByLabelText(label), value);
   await type('Nombre', 'Sofía');
   await type('Apellido', 'Catálogo');
+  await userEvent.selectOptions(screen.getByLabelText('Tipo de documento'), 'CEDULA');
   await type('Número de documento', '402-1234567-8');
   await type('Número de empleado', 'QA-CON-020');
   const position = await screen.findByRole('option', { name: 'Analista comercial' });
@@ -61,4 +62,25 @@ it('creates a Contracts member with only «Servicios: Ver» in one step, without
   });
   expect(payload.temporaryPassword.length).toBeGreaterThanOrEqual(14);
   expect(onCreated).toHaveBeenCalledWith({ id: 'acc-1' }, expect.stringContaining('Sofía Catálogo ya puede entrar'));
+  // The whole form is typed key by key: a loaded full run needs more than the default 5 s.
+}, 15_000);
+
+it('opens with a Dominican passport whose «RD» the form writes', async () => {
+  render(<InternalUserDrawer open initialDepartment="contracts" onClose={vi.fn()} onCreated={vi.fn()} />);
+  expect(screen.getByLabelText('Tipo de documento')).toHaveValue('PASAPORTE');
+  await userEvent.type(screen.getByLabelText('Número de documento'), '1234567');
+  expect(screen.getByLabelText('Número de documento')).toHaveValue('1234567');
+  expect(screen.queryByText(/pasaporte dominicano/i)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Pasaporte extranjero' }));
+  expect(screen.getByLabelText('Número de documento')).toHaveValue('1234567');
+});
+
+it('grants a member one level per option in the superadmin matrix', async () => {
+  render(<InternalUserDrawer open initialDepartment="contracts" onClose={vi.fn()} onCreated={vi.fn()} />);
+  const services = await screen.findByRole('radiogroup', { name: 'Acceso: Servicios' });
+  expect(within(services).getAllByRole('radio').map(radio => radio.textContent)).toEqual(['Sin acceso', 'Ver', 'Crear']);
+  await userEvent.click(within(services).getByRole('radio', { name: 'Crear' }));
+  expect(within(services).getByRole('radio', { name: 'Crear' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('checkbox', { name: 'Servicios: Crear' })).toBeChecked();
+  expect(within(screen.getByRole('radiogroup', { name: 'Acceso: Inicio' })).getAllByRole('radio')).toHaveLength(2);
 });

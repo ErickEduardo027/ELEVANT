@@ -6,7 +6,7 @@ import tailwindcss from 'tailwindcss';
 import { describe, expect, it } from 'vitest';
 import tailwindConfig from '../../tailwind.config.js';
 import FlightListItem from '../features/flight-monitoring/components/FlightListItem';
-import { OCC_PALETTE } from '../features/occ-ui/occPalette';
+import { OCC_PALETTES, OCC_THEMES } from '../features/occ-ui/occPalette';
 import FlightCard from '../features/planning/components/FlightCard';
 import { createPlanningFlight } from '../features/planning/testing/planningFixtures';
 import PositionListItem from '../features/positions-map/components/PositionListItem';
@@ -77,6 +77,32 @@ const CHAT_FIXED_COLOURS = [
 ];
 
 const stripComments = css => css.replace(/\/\*[\s\S]*?\*\//g, '');
+// A script without its comments: block and JSX comments, then line comments (a `//` after a colon is a URL).
+const stripScriptComments = source => stripComments(source).replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
+
+// What occ-ui never draws (contratos 2.4): a shadow, an upper-case or tracked label, text under 12 px, or a colour of
+// its own. occPalette.js is where the literal colours of the OCC live for JavaScript, so it may hold colours.
+const OCC_UI_STYLE_RULES = Object.freeze([
+  { what: 'shadow', pattern: /(?<!\w)(?:[\w-]+:)*(?:drop-|box-|text-)?shadow(?:-[\w[\]/.#-]+)?(?![\w-])|boxShadow|textShadow/g },
+  { what: 'upper case', pattern: /(?<!\w)(?:[\w-]+:)*uppercase(?![\w-])|text-transform|textTransform/g },
+  { what: 'tracking', pattern: /(?<!\w)(?:[\w-]+:)*tracking-[\w[\].-]+|letter-spacing|letterSpacing/g },
+  {
+    what: 'text under 12 px',
+    pattern: /(?<!\w)(?:[\w-]+:)*text-\[(\d*\.?\d+)(px|rem|em)\]|fontSize:\s*['"]?(\d*\.?\d+)(px|rem|em)?/g,
+    bites: match => {
+      const unit = match[2] ?? match[4] ?? 'px';
+      return Number(match[1] ?? match[3]) * (unit === 'px' ? 1 : 16) < 12;
+    },
+  },
+  { what: 'colour', colour: true, pattern: /(?<![&\w])#[\da-fA-F]{3,8}(?![\w-])|\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch|color-mix)\(/g },
+]);
+
+// The style findings of a script's code, as `what: text`, in the order of the rules.
+function occUiStyleFindings(code, { colours = true } = {}) {
+  return OCC_UI_STYLE_RULES.filter(rule => colours || !rule.colour).flatMap(rule => [...code.matchAll(rule.pattern)]
+    .filter(match => rule.bites?.(match) ?? true)
+    .map(match => `${rule.what}: ${match[0]}`));
+}
 
 // The innermost rules of a stylesheet, media queries included: their selectors and declarations.
 function parseRules(css) {
@@ -109,8 +135,9 @@ function luminance(hex) {
     .map(value => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
-function contrast(foreground, background) {
-  const [lighter, darker] = [luminance(OCC_PALETTE[foreground]), luminance(OCC_PALETTE[background])].sort((a, b) => b - a);
+function contrast(foreground, background, theme = 'dark') {
+  const palette = OCC_PALETTES[theme];
+  const [lighter, darker] = [luminance(palette[foreground]), luminance(palette[background])].sort((a, b) => b - a);
   return (lighter + 0.05) / (darker + 0.05);
 }
 
@@ -358,7 +385,9 @@ describe('OCC legacy bridge', () => {
     const frame = /const OCC_FRAME = \{([\s\S]*?)\n\};/.exec(layout)?.[1] ?? '';
     expect(frame).toMatch(/department: 'occ'/);
     expect(frame).toMatch(/rootAttributes: \{ 'data-occ-bridge': '' \}/);
-    expect(layout).toMatch(/frameProps=\{OCC_FRAME\}/);
+    // Every frame it hands to AppShell carries it: the console's (PR U3) is OCC_FRAME with its main filled.
+    expect(layout).toMatch(/const OCC_CONSOLE_FRAME = \{ \.\.\.OCC_FRAME, mainVariant: 'fill' \};/);
+    expect(layout).toMatch(/frameProps=\{pathname === OCC_CONSOLE_PATH \? OCC_CONSOLE_FRAME : OCC_FRAME\}/);
     // AppShell hands the frame props to ShellFrame, which spreads rootAttributes on its root (ShellFrame.test.jsx).
     expect(readSource('src/features/shell/AppShell.jsx')).toMatch(/<ShellFrame\s+\{\.\.\.frameProps\}/);
     expect(readSource('src/features/shell/ShellFrame.jsx')).toMatch(/\{\.\.\.rootAttributes\}/);
@@ -683,6 +712,41 @@ describe('OCC legacy bridge', () => {
     expect(sourceFilesUnder(BOOT_FOLDER).filter(file => file.endsWith('.css')).length).toBeGreaterThan(0);
   });
 
+  it('occ-ui uses no shadow, uppercase, tracking, text under 12 px or literal colour outside occPalette.js', () => {
+    const files = sourceFilesUnder('src/features/occ-ui').filter(file => SCRIPT_FILE.test(file));
+    // The console's primitives are among the files read.
+    expect(files).toEqual(expect.arrayContaining(['src/features/occ-ui/OccFloatingPanel.jsx',
+      'src/features/occ-ui/OccTimeline.jsx', 'src/features/occ-ui/occPalette.js']));
+    const found = files.flatMap(file => occUiStyleFindings(stripScriptComments(readSource(file)),
+      { colours: file !== 'src/features/occ-ui/occPalette.js' }).map(finding => `${file}: ${finding}`));
+    expect(found).toEqual([]);
+
+    // Comments are not read: they may say what the code never does («without a shadow»).
+    expect(occUiStyleFindings(stripScriptComments(
+      "// without a shadow, never uppercase\n/* tracking-wide on #fff */ const ok = 'text-xs'; {/* text-[10px] */}",
+    ))).toEqual([]);
+    // The guard bites, on classes and on inline styles alike.
+    const sample = [
+      'shadow hover:shadow-md drop-shadow-sm', "style={{ boxShadow: 'none' }}", 'uppercase textTransform',
+      'tracking-wide letterSpacing', 'text-[11px] text-[10.5px] text-[0.7rem] fontSize: 10',
+      "'#fff' 'rgb(0 0 0)' 'hsl(0 0% 0%)'",
+    ].join(' ');
+    expect(occUiStyleFindings(sample)).toEqual([
+      'shadow: shadow', 'shadow: hover:shadow-md', 'shadow: drop-shadow-sm', 'shadow: boxShadow',
+      'upper case: uppercase', 'upper case: textTransform',
+      'tracking: tracking-wide', 'tracking: letterSpacing',
+      'text under 12 px: text-[11px]', 'text under 12 px: text-[10.5px]', 'text under 12 px: text-[0.7rem]',
+      'text under 12 px: fontSize: 10',
+      'colour: #fff', 'colour: rgb(', 'colour: hsl(',
+    ]);
+    // What occ-ui does use passes: 12 px and up, tokens, its own pattern ids, and words that only contain the letters.
+    expect(occUiStyleFindings("text-xs text-sm text-[12px] text-[0.75rem] fontSize: 12 rounded-sm bg-occ-panel-float "
+      + "'url(#occ-demo-stripes-1)' value.toUpperCase() node.shadowRoot")).toEqual([]);
+    // occPalette.js may hold colours; nothing else may.
+    expect(occUiStyleFindings("'#0f161a'", { colours: false })).toEqual([]);
+    expect(occUiStyleFindings("'#0f161a'")).toEqual(['colour: #0f161a']);
+  });
+
   it('the boot screen styles use only occ tokens defined on the OCC scope', () => {
     const stylesheets = sourceFilesUnder(BOOT_FOLDER).filter(file => file.endsWith('.css'));
     expect(stylesheets).toEqual(['src/features/admin-occ/boot/OccBootScreen.module.css']);
@@ -704,14 +768,14 @@ describe('OCC legacy bridge', () => {
     ]);
   });
 
-  it('palette pairs keep their contrast', () => {
+  it.each(OCC_THEMES)('palette pairs keep their contrast (%s)', theme => {
     const onSurfaces = {
       '--occ-text': 10, '--occ-muted': 7, '--occ-faint': 4.5,
       '--occ-accent': 7, '--occ-warn': 7, '--occ-danger': 4.5, '--occ-line-strong': 3,
     };
     for (const [foreground, floor] of Object.entries(onSurfaces)) {
       for (const surface of ['--occ-canvas', '--occ-panel', '--occ-panel-raised']) {
-        expect(contrast(foreground, surface), `${foreground} on ${surface}`).toBeGreaterThanOrEqual(floor);
+        expect(contrast(foreground, surface, theme), `${foreground} on ${surface}`).toBeGreaterThanOrEqual(floor);
       }
     }
     const pairs = [
@@ -724,11 +788,12 @@ describe('OCC legacy bridge', () => {
       ['--occ-accent', '--occ-accent-soft', 4.5], ['--occ-warn', '--occ-warn-soft', 4.5],
     ];
     for (const [foreground, background, floor] of pairs) {
-      expect(contrast(foreground, background), `${foreground} on ${background}`).toBeGreaterThanOrEqual(floor);
+      expect(contrast(foreground, background, theme), `${foreground} on ${background}`).toBeGreaterThanOrEqual(floor);
     }
 
-    // Red text on the red tint is the one pair below 4.5:1, so the bridge turns it into plain text there.
-    expect(contrast('--occ-danger', '--occ-danger-soft')).toBeLessThan(4.5);
+    // Red text on the red tint is the one dark pair below 4.5:1, so the bridge turns it into plain text there (in both
+    // themes: the bridge has one set of rules).
+    if (theme === 'dark') expect(contrast('--occ-danger', '--occ-danger-soft')).toBeLessThan(4.5);
     const pair = OCC_LEGACY_BRIDGE.find(entry => entry.id === 'danger-tint-text');
     expect(pair.declarations).toEqual({ color: 'var(--occ-text)' });
     const tints = OCC_LEGACY_BRIDGE.find(entry => entry.id === 'tint-danger').classes;

@@ -6,13 +6,15 @@ import { AIRFIELD_ATTRIBUTION, OURAIRPORTS_ATTRIBUTION } from '../core/attributi
 import { PUJ_ARP } from '../core/cameraPresets';
 import { airfieldOverlay } from './airfieldLayers';
 import { HOME_AIRPORT_IATA, OWN_AIRPORT_IATAS, basemapLayers } from './basemapLayers';
+import { MAP_COLORS } from './mapColors';
 import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES, isSdfImage } from './mapImages';
 import { FONT_STACKS, THRESHOLD_NAMES, buildOccStyle } from './occStyle';
 import { NAVAID_IMAGES, REFERENCE_IMAGE_SHAPES } from './referenceImages';
 import {
-  NIGHT_SOURCE, OURAIRPORTS_SOURCE, REFERENCE_GROUPS, REFERENCE_LAYER_IDS, REFERENCE_SOURCE, ourAirportsFeatures,
-  referenceFeatures, referenceLayersShown, referenceOverlay,
+  AIRPORTS_GROUP, NIGHT_SOURCE, OURAIRPORTS_SOURCE, REFERENCE_GROUPS, REFERENCE_LAYER_IDS, REFERENCE_SOURCE, airportKind,
+  airportLabel, ourAirportsFeatures, referenceFeatures, referenceLayersShown, referenceOverlay,
 } from './referenceLayers';
+import { regionAirportFeatures } from '../traffic/referenceFeatures';
 
 const layerOf = id => referenceOverlay().layers.find(layer => layer.id === id);
 // Every colour a layer paints, from its paint values and the branches of their expressions.
@@ -93,7 +95,8 @@ describe('reference layers', () => {
       { type: 'geojson' }]);
     const summary = overlay.layers.map(layer => [layer.id, layer.slot, layer.type, layer.source, layer.metadata]);
     expect(summary).toEqual([
-      ['occ-reference-counterpart-labels', 'airfield', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'airports' }],
+      ['occ-region-airports', 'airfield', 'circle', OURAIRPORTS_SOURCE, { 'occ:group': 'reference.airports', 'occ:maxThreshold': 'airfield' }],
+      ['occ-region-airport-labels', 'airfield', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'reference.airports', 'occ:maxThreshold': 'airfield' }],
       ['occ-reference-arp', 'airfield', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'reference', 'occ:maxThreshold': 'codes' }],
       ['occ-reference-rings-region', 'reference', 'line', REFERENCE_SOURCE, { 'occ:group': 'rings', 'occ:maxThreshold': 'approach' }],
       ['occ-reference-ring-labels-region', 'reference', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'rings', 'occ:maxThreshold': 'approach' }],
@@ -104,8 +107,6 @@ describe('reference layers', () => {
       ['occ-reference-centrelines', 'reference', 'line', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines' }],
       ['occ-reference-centreline-ticks', 'reference', 'line', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines', 'occ:minThreshold': 'approach' }],
       ['occ-reference-centreline-label', 'reference', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines' }],
-      ['occ-reference-airports', 'reference', 'circle', OURAIRPORTS_SOURCE, { 'occ:group': 'airports' }],
-      ['occ-reference-airport-labels', 'reference', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'airports' }],
       ['occ-reference-navaids', 'reference', 'symbol', OURAIRPORTS_SOURCE,
         { 'occ:group': 'navaids', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'polygons' }],
       ['occ-night', 'shade', 'fill', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
@@ -113,7 +114,7 @@ describe('reference layers', () => {
       ['occ-night-label', 'shade', 'symbol', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
     ]);
     // Every group is a key of the layers menu, and every threshold is one the map derives.
-    expect(Object.values(REFERENCE_GROUPS)).toEqual(['rings', 'centrelines', 'airports', 'navaids', 'daynight']);
+    expect(Object.values(REFERENCE_GROUPS)).toEqual(['rings', 'centrelines', 'reference.airports', 'navaids', 'daynight']);
     for (const layer of overlay.layers) {
       for (const key of ['occ:minThreshold', 'occ:maxThreshold']) {
         if (layer.metadata[key]) expect(THRESHOLD_NAMES, layer.id).toContain(layer.metadata[key]);
@@ -125,23 +126,17 @@ describe('reference layers', () => {
     expect(ids.indexOf('occ-night-edge')).toBeLessThan(ids.indexOf('slot-weather'));
     expect(ids.indexOf('occ-reference-rings-region')).toBeGreaterThan(ids.indexOf('slot-reference'));
     expect(ids.indexOf('occ-reference-navaids')).toBeLessThan(ids.indexOf('slot-baseLabels'));
-    // The codes of today's counterparts are placed before the base-map labels, under the mark of PUJ; the others after.
-    expect(ids.indexOf('occ-reference-counterpart-labels')).toBeGreaterThan(ids.indexOf('slot-airfield'));
-    expect(ids.indexOf('occ-reference-counterpart-labels')).toBeLessThan(ids.indexOf('occ-reference-arp'));
-    expect(ids.indexOf('occ-reference-airport-labels')).toBeLessThan(ids.indexOf('slot-baseLabels'));
-    expect(layerOf('occ-reference-counterpart-labels').filter).toEqual(['all', ['match', ['get', 'kind'], ['airport'], true, false],
-      ['==', ['get', 'counterpart'], true]]);
-    // The runway in use is named on one line, and every code tries the four sides of its mark.
+    // The region's airports are placed after the base-map labels, under the mark of PUJ.
+    expect(ids.indexOf('occ-region-airport-labels')).toBeGreaterThan(ids.indexOf('slot-airfield'));
+    expect(ids.indexOf('occ-region-airport-labels')).toBeLessThan(ids.indexOf('occ-reference-arp'));
+    // The runway in use is named on one line, and the navaids' words try the four sides of their mark.
     expect(layerOf('occ-reference-centreline-label').layout['text-max-width']).toBe(30);
-    for (const id of ['occ-reference-airport-labels', 'occ-reference-counterpart-labels', 'occ-reference-navaids']) {
-      expect(layerOf(id).layout['text-variable-anchor'], id).toEqual(['left', 'right', 'top', 'bottom']);
-    }
+    expect(layerOf('occ-reference-navaids').layout['text-variable-anchor']).toEqual(['left', 'right', 'top', 'bottom']);
     // The layers the legend reads back, without the labels, the edge line and the mark of PUJ.
-    expect(REFERENCE_LAYER_IDS).toEqual(['occ-reference-rings-region', 'occ-reference-rings-approach',
-      'occ-reference-centrelines', 'occ-reference-centreline-ticks', 'occ-reference-airports', 'occ-reference-navaids',
-      'occ-night']);
-    expect(referenceLayersShown({ rings: true, centrelines: false, airports: true, navaids: false, daynight: false }))
-      .toEqual(['occ-reference-rings-region', 'occ-reference-rings-approach', 'occ-reference-airports']);
+    expect(REFERENCE_LAYER_IDS).toEqual(['occ-region-airports', 'occ-reference-rings-region', 'occ-reference-rings-approach',
+      'occ-reference-centrelines', 'occ-reference-centreline-ticks', 'occ-reference-navaids', 'occ-night']);
+    expect(referenceLayersShown({ rings: true, centrelines: false, 'reference.airports': true, navaids: false, daynight: false }))
+      .toEqual(['occ-region-airports', 'occ-reference-rings-region', 'occ-reference-rings-approach']);
     expect(referenceLayersShown({})).toEqual(REFERENCE_LAYER_IDS);
   });
 
@@ -165,8 +160,8 @@ describe('reference layers', () => {
       expect(drawnBy(layer, data[other]), layer.id).toEqual([]);
     }
     expect(overlay.layers.filter(layer => layer.source === OURAIRPORTS_SOURCE).map(layer => layer.id)).toEqual([
-      'occ-reference-counterpart-labels', 'occ-reference-centrelines', 'occ-reference-centreline-ticks',
-      'occ-reference-centreline-label', 'occ-reference-airports', 'occ-reference-airport-labels', 'occ-reference-navaids',
+      'occ-region-airports', 'occ-region-airport-labels', 'occ-reference-centrelines', 'occ-reference-centreline-ticks',
+      'occ-reference-centreline-label', 'occ-reference-navaids',
     ]);
     // A style with the airfield and the references is valid, each source once.
     expect(validateStyleMin(buildOccStyle({ overlays: [airfieldOverlay(), overlay] }))).toEqual([]);
@@ -175,7 +170,8 @@ describe('reference layers', () => {
   it('stays quiet: thin lines and dim words in the neutral tokens, the runway in use the one line drawn wider', () => {
     const neutral = new Set(['nav', 'line', 'line-strong', 'faint', 'muted', 'text'].map(token => occColor(token)));
     const hues = new Set(['accent', 'warn', 'danger'].map(token => occColor(token)));
-    for (const layer of referenceOverlay().layers) {
+    // The region's airports keep the colours by kind of style/mapColors.js (owner request): tested below.
+    for (const layer of referenceOverlay().layers.filter(item => item.metadata['occ:group'] !== AIRPORTS_GROUP)) {
       for (const colour of paintColours(layer)) {
         expect(neutral.has(colour), `${layer.id} ${colour}`).toBe(true);
         expect(hues.has(colour), `${layer.id} ${colour}`).toBe(false);
@@ -192,12 +188,6 @@ describe('reference layers', () => {
     const centrelines = layerOf('occ-reference-centrelines');
     expect(centrelines.paint['line-color']).toEqual(['case', ['==', ['get', 'inUse'], true], occColor('text'), occColor('line-strong')]);
     expect(centrelines.paint['line-width']).toEqual(['case', ['==', ['get', 'inUse'], true], 1.5, 1]);
-    // A counterpart is a filled dot with its code in the text colour, any other airport a hollow ring: not colour alone.
-    const airports = layerOf('occ-reference-airports');
-    expect(layerOf('occ-reference-counterpart-labels').paint['text-color']).toBe(occColor('text'));
-    expect(layerOf('occ-reference-airport-labels').paint['text-color']).toBe(occColor('faint'));
-    expect(airports.paint['circle-color']).toEqual(['case', ['==', ['get', 'counterpart'], true], occColor('text'), occColor('nav')]);
-    expect(airports.paint['circle-stroke-color'][3]).toBe(occColor('faint'));
     // The night darkens the map a little and draws its edge as a thin line.
     expect(layerOf('occ-night').paint).toEqual({ 'fill-color': occColor('nav'), 'fill-opacity': 0.45 });
     expect(layerOf('occ-night-edge').paint).toEqual({ 'line-color': occColor('line'), 'line-width': 1 });
@@ -207,7 +197,9 @@ describe('reference layers', () => {
     // Every word in the three stacks the glyph server has, at the 12 px floor of the OCC.
     for (const layer of referenceOverlay().layers.filter(item => item.layout?.['text-field'])) {
       expect(Object.values(FONT_STACKS).map(stack => stack.join())).toContain(layer.layout['text-font'].join());
-      expect(layer.layout['text-size'], layer.id).toBeGreaterThanOrEqual(12);
+      const size = layer.layout['text-size'];
+      const sizes = Array.isArray(size) ? size.flat(Infinity).filter(Number.isFinite).filter(value => value > 1) : [size];
+      expect(Math.min(...sizes), layer.id).toBeGreaterThanOrEqual(12);
     }
   });
 
@@ -243,5 +235,45 @@ describe('reference layers', () => {
     expect(REFERENCE_IMAGE_SHAPES['navaid-vor-dme'].ops.map(op => (op.stroke ? 'stroke' : 'fill')))
       .toEqual(['stroke', 'stroke', 'fill']);
     expect(dotsOf(REFERENCE_IMAGE_SHAPES['navaid-ndb'].ops[0].fill)).toHaveLength(10);
+  });
+
+  it('the airports of the region: 32 dots coloured by kind with a yellow ICAO/IATA label, below the airfield threshold', () => {
+    const airports = regionAirportFeatures();
+    expect(airports).toHaveLength(32);
+    expect(ourAirportsFeatures().features.filter(feature => feature.properties.kind === 'airport')).toHaveLength(32);
+    const home = airports.filter(feature => feature.properties.airportKind === 'home');
+    expect(home.map(feature => feature.properties.label)).toEqual(['MDPC']);
+    const kinds = new Set(airports.map(feature => feature.properties.airportKind));
+    expect([...kinds].sort()).toEqual(['home', 'international', 'other', 'regional']);
+    expect(airportKind({ icao: 'MDLR', type: 'large_airport' })).toBe('international');
+    expect(airportKind({ icao: 'TJBQ', iata: 'BQN', type: 'medium_airport', name: 'Rafael Hernández' })).toBe('regional');
+    expect(airportKind({ ident: 'X1', type: 'small_airport', name: 'Pista' })).toBe('other');
+    expect(airportLabel({ icao: 'MDSD', iata: 'SDQ', type: 'large_airport' })).toBe('MDSD/SDQ');
+    expect(airportLabel({ icao: 'MDXX', iata: '' })).toBe('MDXX');
+
+    const layers = referenceOverlay().layers.filter(layer => layer.metadata['occ:group'] === AIRPORTS_GROUP);
+    expect(layers.map(layer => layer.id)).toEqual(['occ-region-airports', 'occ-region-airport-labels']);
+    for (const layer of layers) expect(layer.metadata['occ:maxThreshold']).toBe('airfield');
+    const [dots, labels] = layers;
+    const { airports: colours } = MAP_COLORS.dark;
+    expect(dots.paint['circle-color']).toEqual(['match', ['get', 'airportKind'], 'home', colours.home, 'international',
+      colours.international, 'regional', colours.regional, colours.other]);
+    // The airport of a flight of today (PR M8) is larger and ringed in the text colour: the ring tells it apart.
+    const counterpart = ['==', ['get', 'counterpart'], true];
+    expect(dots.paint['circle-stroke-color']).toEqual(['case', counterpart, occColor('text'), colours.halo]);
+    expect(dots.paint['circle-radius'][2]).toEqual(['case', counterpart, 1.5, 0]);
+    expect(regionAirportFeatures(undefined, { counterparts: ['SDQ'] }).filter(feature => feature.properties.counterpart)
+      .map(feature => feature.properties.label)).toEqual(['MDSD/SDQ']);
+    // The home airport is larger than every other.
+    const radius = dots.paint['circle-radius'][1];
+    expect(radius[3]).toBeGreaterThan(Math.max(...radius.slice(4).filter(Number.isFinite)));
+    expect(labels.paint['text-color']).toBe(colours.label);
+    expect(labels.layout['text-field']).toEqual(['get', 'label']);
+    // Above the base-map labels, so the tile label of the same airport gives way.
+    const ids = buildOccStyle({ overlays: [referenceOverlay()] }).layers.map(layer => layer.id);
+    expect(ids.indexOf('occ-region-airport-labels')).toBeGreaterThan(ids.indexOf('base-label-aerodrome'));
+    // A map without traffic draws the mark of PUJ alone.
+    expect(referenceOverlay({ airports: false }).layers.map(layer => layer.id)
+      .filter(id => id.includes('airport'))).toEqual([]);
   });
 });

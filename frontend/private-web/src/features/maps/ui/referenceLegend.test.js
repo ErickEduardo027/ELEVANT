@@ -9,12 +9,12 @@ describe('reference legend entries', () => {
   it('lists each reference only while it is on screen', () => {
     const entries = referenceLegendEntries(ALL);
     expect(entries.map(entry => [entry.key, entry.swatch])).toEqual([
-      ['rings', 'rings'], ['centrelines', 'centrelines'], ['runwayInUse', 'runwayInUse'], ['airports', 'airports'],
+      ['rings', 'rings'], ['centrelines', 'centrelines'], ['runwayInUse', 'runwayInUse'],
       ['counterparts', 'counterparts'], ['vor', 'vor'], ['ndb', 'ndb'], ['night', 'night'],
     ]);
     expect(entries.map(entry => entry.label)).toEqual([
       'Anillos de distancia', 'Eje de pista extendido (marca cada NM)', 'Pista 08 (estimada por el viento)',
-      'Aeropuerto de la región', 'Origen o destino de un vuelo de hoy', 'Radioayuda VOR-DME', 'Radioayuda NDB',
+      'Origen o destino de un vuelo de hoy', 'Radioayuda VOR-DME', 'Radioayuda NDB',
       'Noche (tras el crepúsculo civil)',
     ]);
     // Only what is on screen, in the legend's order whatever order it comes in.
@@ -33,7 +33,7 @@ describe('reference legend entries', () => {
   it('speaks English', () => {
     expect(referenceLegendEntries(ALL, { language: 'en' }).map(entry => entry.label)).toEqual([
       'Range rings', 'Extended runway centreline (a tick per NM)', 'Runway 08 (estimated from the wind)',
-      'Airport in the region', 'Origin or destination of a flight today', 'VOR-DME navaid', 'NDB navaid',
+      'Origin or destination of a flight today', 'VOR-DME navaid', 'NDB navaid',
       'Night (after civil twilight)',
     ]);
   });

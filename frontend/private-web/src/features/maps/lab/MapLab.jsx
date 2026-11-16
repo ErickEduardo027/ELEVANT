@@ -5,18 +5,22 @@ import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { addProtocol, removeProtocol } from 'maplibre-gl';
 import { parseInstant } from '../../../services/serverClock';
+import { createRenderClock } from '../core/frameLoop';
 import { liveEngineCount } from '../core/mapEngine';
 import OccMap from '../core/OccMap';
 import { useOccMap } from '../core/OccMapContext';
 import { useMapSelection } from '../core/useMapSelection';
 import { useStandDisplay } from '../stands/useStandDisplay';
 import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
+import { createMotionStore } from '../traffic/motionStore';
 import { createTelemetryStore } from '../traffic/telemetryStore';
 import { windPoint } from '../traffic/weatherLayers';
 import FlightDataBlock from '../ui/FlightDataBlock';
 import MapDock from '../ui/MapDock';
+import MapFollowButton from '../ui/MapFollowButton';
 import MapLayersMenu from '../ui/MapLayersMenu';
 import MapLegend from '../ui/MapLegend';
+import MapMotionControl from '../ui/MapMotionControl';
 import MapPresetSwitcher from '../ui/MapPresetSwitcher';
 import MapSourceStatus from '../ui/MapSourceStatus';
 import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
@@ -37,9 +41,14 @@ import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 // review scene of the airport layout (`kind: 'layout-qa'`) is a screen of its own: LayoutQaScene.jsx.
 // A traffic scene (PR M5) draws its synthetic traffic with its state and credit (MapSourceStatus), the data block of
 // the aircraft the URL selects (flightId= or hex=) and the layers menu, and the handle adds aircraftAt(id), where the
-// map draws one of its aircraft. A reference scene (PR M8) draws the references with its synthetic weather, read once,
-// and the night scene at its own instant. A weather scene (PR M8) draws the wind and, with the layers it opens with,
-// the simulated satellite images; the handle adds windAt(), where the map draws the wind by the airfield.
+// map draws one of its aircraft. Its traffic moves as in the app (PR M6): through the motion store, on a render clock
+// frozen at `?t=` (one frame, no loop: the visual suite's pictures are still) or, without it, running from the scene's
+// own instant, so a person sees the demo flight move; «Pausar movimiento» is in the dock. The chosen flight's route
+// follows its aircraft (PR M6), and «Seguir» is in the dock and in the data block; a scene with `follow` opens
+// following (`follow=1`): on the frozen clock the camera frames the aircraft once. A reference scene (PR M8) draws the
+// references with its synthetic weather, read once, and the night scene at its own instant. A weather scene (PR M8)
+// draws the wind and, with the layers it opens with, the simulated satellite images; the handle adds windAt(), where
+// the map draws the wind by the airfield.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -58,6 +67,12 @@ function cutBasemap(url) {
 const copyStands = stands => stands.map(stand => ({ ...stand }));
 // The data block is docked at the top left of the map, as Monitoreo docks it.
 const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+
+// The data block of the scene's selection, with «Seguir» from the map it sits in (PR M6), as the screens give it.
+function LabDataBlock(props) {
+  const { follow } = useOccMap();
+  return <FlightDataBlock {...props} onFollow={follow.available ? follow.toggle : null} following={follow.following} />;
+}
 
 // A scene that opens with its layers menu open (region-layers-menu): once, as soon as the map offers its layers.
 function OpenLayersMenu() {
@@ -109,12 +124,21 @@ function LabScene({ scene, basemap, frozenAt }) {
   // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
   const standClock = frozenAt ?? scene.at ?? null;
   const displayed = useStandDisplay(stands, { nowMs: standClock });
-  const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
+  const { selection, follow, selectStand, selectFlight, selectAircraft, clear, setFollow } = useMapSelection();
+  // The render clock of the scene's traffic (PR M6): frozen at `?t=`, else running from the scene's own instant; and
+  // its motion store, one for the scene's whole life, as useMapSituation keeps one.
+  const [renderClock] = useState(() => {
+    if (frozenAt !== null) return createRenderClock({ frozenAt });
+    const sceneAt = parseInstant(scene.traffic?.at ?? null) ?? 0;
+    const openedAt = Date.now();
+    return createRenderClock({ clock: { now: () => sceneAt + (Date.now() - openedAt) } });
+  });
+  const [motion] = useState(() => createMotionStore({ clock: renderClock }));
   // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built at the frozen clock for the URL's selection:
   // the lab never polls. Every trail is there; the map shows the other traffic's only when the layers menu asks.
   const traffic = useMemo(() => (scene.traffic
-    ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true })
-    : null), [scene.traffic, frozenAt, selection]);
+    ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true, motion })
+    : null), [scene.traffic, frozenAt, selection, motion]);
   // What the map draws of it, with the map flights whose counterparts the references emphasise (PR M8).
   const mapTraffic = useMemo(() => (traffic ? { ...traffic.map, flights: traffic.situation.flights } : undefined), [traffic]);
   // The weather of a reference scene (PR M8), read once as useMdpcWeather would answer it: the lab never polls. A scene
@@ -122,11 +146,10 @@ function LabScene({ scene, basemap, frozenAt }) {
   // lab never reads GIBS, also when a person turns them on in a scene that names none.
   const weather = useMemo(() => labWeather(scene.weather ?? null), [scene.weather]);
   const [satelliteService] = useState(() => createSimulatedSatelliteImagery(scene.satellite ?? {}));
-  // The data block's telemetry on the lab's own clock: frozen, so the age of a position stays what the scene says.
-  const [telemetry] = useState(() => {
-    const labNow = frozenAt ?? parseInstant(scene.traffic?.at ?? null) ?? 0;
-    return createTelemetryStore({ clock: { now: () => labNow } });
-  });
+  // The data block's telemetry on the lab's render clock, where the map draws each aircraft: frozen with `?t=`, so the
+  // age of a position stays what the scene says.
+  const [telemetry] = useState(() => createTelemetryStore({ clock: renderClock,
+    sample: (id, tMs, aircraft) => motion.sampleOne(id, tMs, aircraft) }));
   useEffect(() => {
     if (traffic) telemetry.set(traffic.situation);
   }, [telemetry, traffic]);
@@ -154,12 +177,15 @@ function LabScene({ scene, basemap, frozenAt }) {
     else if (next.kind === 'aircraft') selectAircraft(next.id);
   }, [clear, selectStand, selectFlight, selectAircraft]);
 
-  // The scene's own selection, once, when it opens on a URL that selects nothing.
+  // The scene's own selection, once, when it opens on a URL that selects nothing, and with it follow mode when the
+  // scene follows (PR M6).
   useEffect(() => {
     if (openedRef.current) return;
     openedRef.current = true;
-    if (scene.selection && selection === null) select(scene.selection);
-  }, [scene.selection, selection, select]);
+    if (!scene.selection || selection !== null) return;
+    select(scene.selection);
+    if (scene.follow && !follow) setFollow(true);
+  }, [scene.selection, scene.follow, selection, follow, select, setFollow]);
 
   useEffect(() => {
     // A stand of the scene by its code, or a `[lng, lat]`.
@@ -180,10 +206,11 @@ function LabScene({ scene, basemap, frozenAt }) {
       whenIdle: () => mapRef.current?.whenIdle() ?? Promise.resolve(false),
       liveMaps: liveEngineCount,
       refresh: reread,
-      // Where the scene's traffic draws an aircraft (`f:<flightKey>` or `h:<hex>`), as `[lng, lat]`, or null.
+      // Where the scene's traffic draws an aircraft (`f:<flightKey>` or `h:<hex>`) now, as `[lng, lat]`, or null.
       aircraftAt: id => {
         const item = traffic?.map.aircraft.find(entry => entry.id === id && !entry.hiddenInStand);
-        return item ? [item.lon, item.lat] : null;
+        const drawn = item ? motion.sampleOne(item.id, renderClock.now(), item) : null;
+        return drawn ? [drawn.lon, drawn.lat] : null;
       },
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
       // Where the scene's wind stands by the airfield (PR M8), as `[lng, lat]`, or null without weather.
@@ -193,7 +220,7 @@ function LabScene({ scene, basemap, frozenAt }) {
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, scene.weather, reread, traffic]);
+  }, [scene.id, scene.stands, scene.weather, reread, traffic, motion, renderClock]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
@@ -248,13 +275,15 @@ function LabScene({ scene, basemap, frozenAt }) {
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           {traffic?.target && (
-            <FlightDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
+            <LabDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
               style={DOCKED_BLOCK_STYLE} />
           )}
           {scene.layersMenu && <OpenLayersMenu />}
           <MapDock>
             <MapLayersMenu />
             <MapPresetSwitcher />
+            <MapFollowButton />
+            <MapMotionControl />
             <MapLegend />
           </MapDock>
         </OccMap>
@@ -307,11 +336,12 @@ export default function MapLab() {
     screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
   }
 
+  // The OCC's theme (dark unless the account chose light): ThemeProvider sets it on the document, as in the OCC.
   return (
     <div
       {...{ [MAP_LAB_MARKER]: 'v1' }}
       data-department="occ"
-      className="dark flex h-screen flex-col overflow-hidden bg-occ-canvas text-occ-text"
+      className="flex h-screen flex-col overflow-hidden bg-occ-canvas text-occ-text"
     >
       {screen}
     </div>

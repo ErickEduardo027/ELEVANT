@@ -24,6 +24,8 @@ export const COMMERCIAL_REQUEST_MESSAGES = Object.freeze({
   invalid_commercial_request: 'Revise los datos de la decisión e intente de nuevo.',
   invalid_inbox_query: 'El filtro de la bandeja no es válido.',
   version_conflict: 'La solicitud cambió mientras la revisaba. Se actualizó; revise los datos e intente de nuevo.',
+  invalid_tax_registration: 'Revise el identificador fiscal: una aerolínea dominicana indica su RNC (9 dígitos con su dígito verificador); otra, su identificador de 3 a 32 caracteres con su país.',
+  airline_not_in_public_registry: 'La aerolínea no figura en los registros públicos (o figura inactiva o con otros datos). Pida a Superadministración que la verifique a mano con una fuente oficial en Superadministración › Aerolíneas; luego actualice y apruebe.',
 });
 
 export const COMMERCIAL_GOVERNANCE_MESSAGES = Object.freeze({

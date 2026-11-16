@@ -1,6 +1,7 @@
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { REFERENCE_IMAGE_SHAPES } from '../style/referenceImages';
-import { BASEMAP_COLORS } from '../style/mapTheme';
+import { basemapColorsFor } from '../style/mapTheme';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { SATELLITE_OPACITY } from '../../../services/satelliteService';
 
 // A swatch of the map legend for the references (PR M8, ui/referenceLegend.js), drawn as style/referenceLayers.js draws
@@ -62,12 +63,13 @@ const DRAWINGS = Object.freeze({
   centrelines: <Centreline colour={STRONG} width={1} />,
   runwayInUse: <Centreline colour={TEXT} width={1.5} />,
   airports: <circle cx="10" cy="10" r="3" style={{ fill: tokenColour('--occ-nav'), stroke: tokenColour('--occ-faint'), strokeWidth: 1 }} />,
-  counterparts: <circle cx="10" cy="10" r="3.5" style={{ fill: TEXT, stroke: TEXT, strokeWidth: 1 }} />,
+  // The dot of an airport ringed in the text colour, as the map rings the airport of a flight of today.
+  counterparts: <circle cx="10" cy="10" r="5" style={{ fill: tokenColour('--occ-faint'), stroke: TEXT, strokeWidth: 2 }} />,
   vor: <NavaidSymbol image="navaid-vor-dme" />,
   ndb: <NavaidSymbol image="navaid-ndb" />,
   night: (
     <>
-      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: BASEMAP_COLORS.land }} />
+      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: 'var(--occ-swatch-land)' }} />
       <path d="M11 0 C9 7 13 13 10.5 20 H18 A2 2 0 0 0 20 18 V2 A2 2 0 0 0 18 0 Z" style={{ fill: tokenColour('--occ-nav'), fillOpacity: 0.45 }} />
       <path d="M11 0 C9 7 13 13 10.5 20" style={{ fill: 'none', stroke: LINE, strokeWidth: 1 }} />
     </>
@@ -91,11 +93,13 @@ const DRAWINGS = Object.freeze({
 
 /** The swatch of a reference legend entry (ui/referenceLegend.js: `swatch`), hidden from assistive technology. */
 export default function ReferenceSwatch({ kind }) {
+  // The land and the sea of the theme on screen (style/mapTheme.js), as the map paints them under the reference.
+  const { land, sea } = basemapColorsFor(useOptionalTheme()?.theme);
   if (!Object.hasOwn(DRAWINGS, kind)) return null;
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0"
-      data-reference-swatch={kind}>
-      {kind === 'night' ? null : <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: BASEMAP_COLORS.sea }} />}
+      data-reference-swatch={kind} style={{ '--occ-swatch-land': land }}>
+      {kind === 'night' ? null : <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: sea }} />}
       {DRAWINGS[kind]}
     </svg>
   );
