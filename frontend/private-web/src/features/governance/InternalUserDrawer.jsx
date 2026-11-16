@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import Drawer from '../../components/Drawer';
 import { identificationProblem } from '../employees/EmployeeForms';
+import IdentityDocumentFields from '../employees/IdentityDocumentFields';
+import { DEFAULT_IDENTIFICATION_TYPE } from '../employees/identityDocumentValue';
 import GeneratePasswordField from '../department-users/GeneratePasswordField';
 import PermissionMatrix from '../department-users/PermissionMatrix';
 import {
   createInternalUser, DEPARTMENT_LABELS, getDepartmentOptions, getPermissionCatalog,
 } from '../../services/departmentGovernanceService';
-import { governanceMessage, IDENTIFICATION_LABELS, listPositions } from '../../services/humanResourcesEmployeesService';
+import { governanceMessage, listPositions } from '../../services/humanResourcesEmployeesService';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const today = () => new Date().toISOString().slice(0, 10);
 const EMPTY = {
-  firstName: '', lastName: '', identificationType: 'CEDULA', identificationNumber: '', employeeNumber: '',
+  firstName: '', lastName: '', identificationType: DEFAULT_IDENTIFICATION_TYPE, identificationNumber: '', employeeNumber: '',
   positionId: '', hireDate: today(), phoneNumber: '', corporateEmail: '', stationIds: [], kind: 'member',
   permissionCodes: [], temporaryPassword: '',
 };
@@ -110,14 +112,9 @@ export default function InternalUserDrawer({ open, initialDepartment, onClose, o
           <legend className="mb-2 font-semibold">Expediente del empleado</legend>
           <label className="text-xs font-semibold">Nombre<input className={field} value={form.firstName} maxLength={100} onChange={event => set({ firstName: event.target.value })} /></label>
           <label className="text-xs font-semibold">Apellido<input className={field} value={form.lastName} maxLength={100} onChange={event => set({ lastName: event.target.value })} /></label>
-          <label className="text-xs font-semibold">Tipo de documento
-            <select className={field} value={form.identificationType} onChange={event => set({ identificationType: event.target.value })}>
-              {Object.entries(IDENTIFICATION_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select></label>
-          <label className="text-xs font-semibold">Número de documento
-            <input className={field} value={form.identificationNumber} maxLength={20} aria-invalid={Boolean(form.identificationNumber && documentProblem)}
-              onChange={event => set({ identificationNumber: event.target.value })} />
-            {form.identificationNumber && documentProblem && <span className="mt-1 block text-[11px] font-normal text-status-danger">{documentProblem}</span>}</label>
+          <IdentityDocumentFields type={form.identificationType} number={form.identificationNumber} typeLabel="Tipo de documento"
+            fieldClass={field} maxLength={20} onChange={set} invalid={Boolean(form.identificationNumber && documentProblem)}
+            hint={form.identificationNumber && documentProblem && <span className="mt-1 block text-[11px] font-normal text-status-danger">{documentProblem}</span>} />
           <label className="text-xs font-semibold">Número de empleado<input className={field} value={form.employeeNumber} maxLength={20} onChange={event => set({ employeeNumber: event.target.value })} /></label>
           <label className="text-xs font-semibold">Puesto
             <select className={field} value={form.positionId} onChange={event => set({ positionId: event.target.value })}>
