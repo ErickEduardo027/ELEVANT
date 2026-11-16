@@ -37,7 +37,7 @@ export default function AirlineFleetFacts({ icaoCode = null, iataCode = null, au
   const status = none ? null : statusWords(t, read, summary !== null);
   const types = (fleet?.types ?? []).slice(0, TYPES_SHOWN);
   return (
-    <div data-airline-fleet={none ? 'none' : summary ? 'fleet' : read.status} role="status"
+    <div data-airline-fleet={none ? 'none' : summary ? 'fleet' : read.status} aria-live="polite"
       className={`text-xs ${className}`.trim()}>
       {summary && <p className="font-semibold">{summary}</p>}
       {summary && types.length > 0 && (
