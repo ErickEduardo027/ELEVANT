@@ -609,6 +609,10 @@ export interface ManagedAirlineData {
   /** @nullable */
   registryEntityUrl?: string | null;
   identityLocked: boolean;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface AirlineRegistryCheckResult {
@@ -3849,6 +3853,10 @@ export interface ManagedAirlineInput {
   isPublished: boolean;
   /** @nullable */
   version?: string | null;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface ManagedContractStationData {
@@ -5492,6 +5500,10 @@ export interface PublicAirlineData {
   isVerified: boolean;
   /** @nullable */
   registrySource?: string | null;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface PublicServiceData {

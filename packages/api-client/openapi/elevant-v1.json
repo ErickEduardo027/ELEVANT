@@ -48042,6 +48042,14 @@
           },
           "identityLocked": {
             "type": "boolean"
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -48100,6 +48108,14 @@
             "type": "boolean"
           },
           "version": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
             "type": "string",
             "nullable": true
           }
@@ -54002,6 +54018,14 @@
             "type": "boolean"
           },
           "registrySource": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
             "type": "string",
             "nullable": true
           }

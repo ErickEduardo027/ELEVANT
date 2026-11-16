@@ -59,6 +59,17 @@ describe("canonical public commercial intake client", () => {
     await expect(unsafe.getPublicCommercialCatalog()).rejects.toMatchObject({ kind: "malformed-response" });
   });
 
+  it("reads the tax identifier of a catalog airline when the server sends it, both values or neither", async () => {
+    const read = (airline: Record<string, unknown>) => createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...catalog, airlines: [{ ...catalog.airlines[0], ...airline }] }),
+        { headers: { "content-type": "application/json" } }) }).getPublicCommercialCatalog();
+    const withRnc = { countryCode: "DO", taxRegistration: "131234569", taxRegistrationCountryCode: "DO" };
+    await expect(read(withRnc)).resolves.toMatchObject({ airlines: [withRnc] });
+    await expect(read({ taxRegistration: "131234569" })).rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(read({ taxRegistration: "131234569", taxRegistrationCountryCode: "do" }))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("accepts the full server catalog without an undocumented client-only size cap", async () => {
     const largeCatalog = {
       ...catalog,

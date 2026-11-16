@@ -278,6 +278,25 @@ export function checkTaxRegistration(number: string | null | undefined,
   return { registration: { number: value, countryCode: country }, problem: null };
 }
 
+/**
+ * Mask of an RNC while it is typed: keeps the digits (at most 9) and adds the dashes progressively, «1», «1-3»,
+ * «1-31-2», «1-31-23456-9». The submitted value stays the 9 digits: `checkTaxRegistration` compacts the dashes.
+ */
+export function maskRnc(value: string | null | undefined): string {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 9);
+  return [digits.slice(0, 1), digits.slice(1, 3), digits.slice(3, 8), digits.slice(8)].filter(Boolean).join("-");
+}
+
+/**
+ * Live feedback of an RNC field: nothing until the 9 digits are typed, then the problem (e.g. a wrong check digit)
+ * or the confirmation.
+ */
+export function rncFeedback(value: string | null | undefined): { valid: boolean; message: string } | null {
+  if (String(value ?? "").replace(/\D/g, "").length < 9) return null;
+  const check = checkTaxRegistration(value, "DO");
+  return check.registration ? { valid: true, message: "RNC válido" } : { valid: false, message: check.problem };
+}
+
 /** «RNC 1-31-23456-9» for a Dominican RNC; «Id. fiscal X (país)» otherwise (as the contract prints it). */
 export function formatTaxRegistration(number: string, countryCode: string): string {
   return countryCode === "DO" && /^\d{9}$/.test(number)

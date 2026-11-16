@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkTaxRegistration, formatTaxRegistration, normalizedAirlineVerification } from "../src";
+import { checkTaxRegistration, formatTaxRegistration, maskRnc, normalizedAirlineVerification, rncFeedback } from "../src";
 
 describe("airline tax identifier", () => {
   it("is an RNC with its check digit for the Dominican Republic and the airline's own id elsewhere", () => {
@@ -21,5 +21,14 @@ describe("airline tax identifier", () => {
     expect(normalizedAirlineVerification(identity)).not.toHaveProperty("taxRegistration");
     expect(() => normalizedAirlineVerification({ ...identity, taxRegistration: "130000002", taxRegistrationCountryCode: "DO" }))
       .toThrow(TypeError);
+  });
+
+  it("masks an RNC while it is typed and keeps the 9 digits when it is checked", () => {
+    expect(["", "1", "13", "131", "1312", "13123456", "131234569", "1312345699", "1-31-23456-9", "rnc 13a1"].map(maskRnc))
+      .toEqual(["", "1", "1-3", "1-31", "1-31-2", "1-31-23456", "1-31-23456-9", "1-31-23456-9", "1-31-23456-9", "1-31"]);
+    expect(checkTaxRegistration(maskRnc("131234569"), "DO").registration).toEqual({ number: "131234569", countryCode: "DO" });
+    expect(rncFeedback("1-31-23456")).toBeNull();
+    expect(rncFeedback("1-31-23456-9")).toEqual({ valid: true, message: "RNC válido" });
+    expect(rncFeedback("1-31-23456-8")).toEqual({ valid: false, message: expect.stringMatching(/dígito verificador/) });
   });
 });
