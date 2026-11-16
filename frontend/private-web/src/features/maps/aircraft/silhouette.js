@@ -1,9 +1,10 @@
 import { CATEGORY_FALLBACKS } from './types';
 
 // The plan view of an aircraft as one simple polygon in metres, nose toward +y, built from its dimensions
-// (aircraft/types.js), so the map icons, the footprints at true size and the 3D wings of later PRs share one shape
-// (design E2). Drawn here from the table's numbers and a few proportions per family; no shape is taken from tar1090
-// or Plane Watch. Pure.
+// (aircraft/types.js), so the map icons, the footprints at true size and the 3D models (aircraft/aircraftGeometry.js)
+// share one shape (design E2): the 3D fuselage turns the outline's half-width, and its wings, tailplane and nacelles
+// stand on the planforms exported here. Drawn here from the table's numbers and a few proportions per family; no
+// shape is taken from tar1090 or Plane Watch. Pure.
 //
 // x runs across (right positive), y along the fuselage: the nose is at y = +length/2 and the tail at −length/2, and the
 // wingtips reach x = ±span/2, so the polygon's box is span × length. The right half is drawn from the nose down and
@@ -16,17 +17,18 @@ const deg = value => (value * Math.PI) / 180;
 // share of the length over which the rear fuselage narrows; the tailplane's `span` is a share of the wingspan and its
 // `fromTail` the share of the length between its root leading edge and the tail. Engines hang under the wing at
 // `stations` (shares of the half span), reaching `ahead` nacelle diameters in front of the leading edge, or sit on the
-// rear fuselage from `top` (share of the length from the tail) for `length` diameters.
+// rear fuselage from `top` (share of the length from the tail); `length` is a nacelle's whole length in diameters (the
+// outline shows only the part of a wing nacelle ahead of the wing; the 3D model draws all of it).
 const TUBE_SHAPES = Object.freeze({
   twinUnderwing: {
     noseR: 3.4, wingRoot: 0.125, rootChord: 0.17, taper: 0.27, tailCone: 0.3,
     stab: { span: 0.35, fromTail: 0.17, rootChord: 0.09, taper: 0.4, extraSweep: 5 },
-    engines: { mount: 'wing', stations: [0.34], ahead: 1.15 },
+    engines: { mount: 'wing', stations: [0.34], ahead: 1.15, length: 2.2 },
   },
   quadUnderwing: {
     noseR: 3.4, wingRoot: 0.12, rootChord: 0.17, taper: 0.25, tailCone: 0.3,
     stab: { span: 0.36, fromTail: 0.16, rootChord: 0.08, taper: 0.4, extraSweep: 5 },
-    engines: { mount: 'wing', stations: [0.39, 0.66], ahead: 1.1 },
+    engines: { mount: 'wing', stations: [0.39, 0.66], ahead: 1.1, length: 2.3 },
   },
   rearTwinT: {
     noseR: 3.4, wingRoot: 0.07, rootChord: 0.125, taper: 0.3, tailCone: 0.24,
@@ -42,7 +44,14 @@ const TUBE_SHAPES = Object.freeze({
   turbopropHigh: {
     noseR: 2.4, wingRoot: 0.077, rootChord: 0.095, taper: 0.55, tailCone: 0.3,
     stab: { span: 0.27, fromTail: 0.13, rootChord: 0.09, taper: 0.55, extraSweep: 6 },
-    engines: { mount: 'wing', stations: [0.3], ahead: 2.5 },
+    engines: { mount: 'wing', stations: [0.3], ahead: 2.5, length: 4.6 },
+  },
+  // A low-wing twin turboprop with a T-tail (King Air, Beech 1900): a long pointed nose, the wing near the middle, the
+  // nacelles well ahead of it and running past its trailing edge, a swept tailplane on top of the fin.
+  turbopropLow: {
+    noseR: 2.6, wingRoot: 0.05, rootChord: 0.14, taper: 0.45, tailCone: 0.35,
+    stab: { span: 0.32, fromTail: 0.13, rootChord: 0.09, taper: 0.55, extraSweep: 12 },
+    engines: { mount: 'wing', stations: [0.3], ahead: 2.4, length: 5.5 },
   },
   pistonSingle: {
     noseR: 1.6, wingRoot: 0.2, rootChord: 0.18, taper: 0.75, tailCone: 0.5,
@@ -76,7 +85,11 @@ function mirrorHalf(rawHalf) {
   return [...half, ...mirrored];
 }
 
-function tubeOutline(spec, shape) {
+/**
+ * Every number of a tube-and-wing airframe that its outline and its 3D model share, in metres and unrounded: the
+ * fuselage's half-width, the right wing, its nacelles, the rear pod and the right tailplane.
+ */
+function tubeFrame(spec, shape) {
   const L = spec.lengthM;
   const halfSpan = spec.spanM / 2;
   const R = spec.fuselageDiaM / 2;
@@ -85,10 +98,11 @@ function tubeOutline(spec, shape) {
   const noseLength = Math.min(shape.noseR * R, 0.3 * L);
   const taperStart = bottom + shape.tailCone * L;
 
-  // The fuselage's half-width at y: the ogive of the nose, the constant tube, the cone of the tail.
+  // The fuselage's half-width at y: the ogive of the nose, the constant tube, the cone of the tail. At the nose's very
+  // start the share can round to just above 1: it is held at 1, so that station reads the tube's width.
   const width = y => {
     if (y >= top - noseLength) {
-      const share = (top - y) / noseLength;
+      const share = Math.min((top - y) / noseLength, 1);
       const at = NOSE.findIndex(([depth]) => depth >= share);
       if (at <= 0) return R * NOSE[Math.max(at, 0)][1];
       const [d0, w0] = NOSE[at - 1];
@@ -99,7 +113,7 @@ function tubeOutline(spec, shape) {
     return R * (1 - ((1 - TAIL_END) * (taperStart - y)) / (taperStart - bottom));
   };
 
-  const half = NOSE.map(([depth, share]) => [R * share, top - depth * noseLength]);
+  const nose = NOSE.map(([depth, share]) => [R * share, top - depth * noseLength]);
 
   // The wing: root leading edge, nacelles under it, tip, trailing edge back to the fuselage.
   const rootY = shape.wingRoot * L;
@@ -107,7 +121,7 @@ function tubeOutline(spec, shape) {
   const tipChord = shape.taper * rootChord;
   const slope = Math.tan(deg(spec.wingSweepDeg + LEADING_EDGE_EXTRA_SWEEP));
   const leadingEdge = x => rootY - (x - R) * slope;
-  half.push([width(rootY), rootY]);
+  const wingNacelles = [];
   if (shape.engines?.mount === 'wing') {
     const nacelle = spec.engineDiaM;
     const chamfer = NACELLE_CHAMFER * nacelle;
@@ -116,14 +130,16 @@ function tubeOutline(spec, shape) {
       const front = leadingEdge(centre) + shape.engines.ahead * nacelle;
       const inner = centre - nacelle / 2;
       const outer = centre + nacelle / 2;
-      half.push([inner, leadingEdge(inner)], [inner, front - chamfer], [inner + chamfer, front],
-        [outer - chamfer, front], [outer, front - chamfer], [outer, leadingEdge(outer)]);
+      wingNacelles.push({
+        centre, front, back: front - shape.engines.length * nacelle, diameter: nacelle,
+        points: [[inner, leadingEdge(inner)], [inner, front - chamfer], [inner + chamfer, front], [outer - chamfer, front],
+          [outer, front - chamfer], [outer, leadingEdge(outer)]],
+      });
     }
   }
   const tipY = leadingEdge(halfSpan);
-  half.push([halfSpan, tipY], [halfSpan, tipY - tipChord]);
   const trailingRootY = rootY - rootChord;
-  half.push([width(trailingRootY), trailingRootY]);
+  const wing = [[width(rootY), rootY], [halfSpan, tipY], [halfSpan, tipY - tipChord], [width(trailingRootY), trailingRootY]];
 
   // Below the wing, in order down the fuselage: rear engines, the start of the tail cone and the tailplane.
   const stab = shape.stab;
@@ -136,24 +152,113 @@ function tubeOutline(spec, shape) {
   for (let step = 0; step < 50 && stabTipTrail(stabY) < bottom + TAIL_CLEARANCE * L; step += 1) stabY += 0.01 * L;
   const stabTrailY = stabY - stabRootChord;
   const stabTipY = stabY - (stabHalfSpan - width(stabY)) * stabSlope;
+  const tailplane = [[width(stabY), stabY], [stabHalfSpan, stabTipY], [stabHalfSpan, stabTipY - stab.taper * stabRootChord],
+    [width(stabTrailY), stabTrailY]];
 
-  const parts = [];
+  let rearPod = null;
   if (shape.engines?.mount === 'rear') {
     const podTop = bottom + shape.engines.top * L;
     const podBottom = podTop - shape.engines.length * spec.engineDiaM;
     const outer = width(podTop) + 1.15 * spec.engineDiaM;
     const chamfer = NACELLE_CHAMFER * spec.engineDiaM;
-    parts.push({ from: podTop, to: podBottom, points: [[width(podTop), podTop], [outer - chamfer, podTop],
-      [outer, podTop - chamfer], [outer, podBottom + chamfer], [outer - chamfer, podBottom], [width(podBottom), podBottom]] });
+    rearPod = {
+      top: podTop, bottom: podBottom, outer, diameter: spec.engineDiaM,
+      points: [[width(podTop), podTop], [outer - chamfer, podTop], [outer, podTop - chamfer], [outer, podBottom + chamfer],
+        [outer - chamfer, podBottom], [width(podBottom), podBottom]],
+    };
   }
-  parts.push({ from: stabY, to: stabTrailY, points: [[width(stabY), stabY], [stabHalfSpan, stabTipY],
-    [stabHalfSpan, stabTipY - stab.taper * stabRootChord], [width(stabTrailY), stabTrailY]] });
+
+  return {
+    R, top, bottom, taperStart, width, nose, wing, wingNacelles, rearPod, tailplane, stabY, stabTrailY, trailingRootY,
+  };
+}
+
+function tubeOutline(frame) {
+  const { R, bottom, taperStart, nose, wing, wingNacelles, rearPod, tailplane, stabY, stabTrailY, trailingRootY } = frame;
+  const [rootLeading, tipLeading, tipTrailing, rootTrailing] = wing;
+  const half = [...nose, rootLeading, ...wingNacelles.flatMap(nacelle => nacelle.points), tipLeading, tipTrailing,
+    rootTrailing];
+
+  const parts = [];
+  if (rearPod !== null) parts.push({ from: rearPod.top, to: rearPod.bottom, points: rearPod.points });
+  parts.push({ from: stabY, to: stabTrailY, points: tailplane });
   const covered = y => parts.some(part => y <= part.from && y >= part.to);
   if (taperStart < trailingRootY && !covered(taperStart)) parts.push({ from: taperStart, points: [[R, taperStart]] });
   // Each part keeps its own order: a swept tailplane's tip may lie below its root trailing edge.
   parts.sort((first, second) => second.from - first.from);
   half.push(...parts.flatMap(part => part.points), [R * TAIL_END, bottom]);
   return mirrorHalf(half);
+}
+
+// The frame of a tube-and-wing airframe; null for the two families drawn otherwise (a helicopter, the dart).
+function frameOf(spec) {
+  const family = spec?.family;
+  if (family === 'helicopter' || family === 'dart') return null;
+  if (typeof family !== 'string' || !Object.hasOwn(TUBE_SHAPES, family)) {
+    throw new RangeError(`No silhouette for the aircraft family ${String(family)}`);
+  }
+  return tubeFrame(spec, TUBE_SHAPES[family]);
+}
+
+/**
+ * The half-width of a tube-and-wing fuselage at `y` (metres along it, the nose at +length/2): the ogive of the nose,
+ * the constant tube, the cone of the tail, as the outline draws them; `y` is held within the length. `null` for a
+ * helicopter and the dart, whose outlines have no tube.
+ */
+export function fuselageHalfWidth(spec, y) {
+  const frame = frameOf(spec);
+  if (frame === null) return null;
+  return frame.width(Math.min(Math.max(y, frame.bottom), frame.top));
+}
+
+/**
+ * The stations where the fuselage outline bends, from the nose tip to the tail: `[[halfWidth, y], …]`, the points of
+ * the nose ogive, the start of the tail cone and the end of the tail. Between two stations the half-width changes
+ * linearly. `null` for a helicopter and the dart.
+ */
+export function fuselageProfile(spec) {
+  const frame = frameOf(spec);
+  if (frame === null) return null;
+  return [...frame.nose.map(([x, y]) => [x, y]), [frame.R, frame.taperStart], [frame.R * TAIL_END, frame.bottom]];
+}
+
+/**
+ * The right half of the wing in plan view: `[[x, y], …]` for the root leading edge (on the fuselage outline), the tip
+ * leading edge, the tip trailing edge and the root trailing edge, as the outline draws them. `null` for a helicopter
+ * and the dart.
+ */
+export function wingPlanform(spec) {
+  const frame = frameOf(spec);
+  return frame === null ? null : frame.wing.map(([x, y]) => [x, y]);
+}
+
+/**
+ * The right half of the tailplane in plan view, after the outline moved it forward until its tip clears the tail: the
+ * root leading edge, the tip leading edge, the tip trailing edge and the root trailing edge. `null` for a helicopter
+ * and the dart.
+ */
+export function tailplanePlanform(spec) {
+  const frame = frameOf(spec);
+  return frame === null ? null : frame.tailplane.map(([x, y]) => [x, y]);
+}
+
+/**
+ * The nacelles on the right side (the left ones are their mirror images): `[{ mount, x, frontY, backY, diameterM }]`,
+ * `mount` `wing` (hung under the wing) or `rear` (on the rear fuselage), `x` the nacelle's axis and `frontY` the front
+ * the outline draws. A wing nacelle's back lies under the wing, where the outline does not show it. `[]` for a single
+ * piston engine in the nose; `null` for a helicopter and the dart.
+ */
+export function nacelles(spec) {
+  const frame = frameOf(spec);
+  if (frame === null) return null;
+  const wingMounted = frame.wingNacelles.map(nacelle => ({
+    mount: 'wing', x: nacelle.centre, frontY: nacelle.front, backY: nacelle.back, diameterM: nacelle.diameter,
+  }));
+  const pod = frame.rearPod;
+  const rearMounted = pod === null ? [] : [{
+    mount: 'rear', x: pod.outer - pod.diameter / 2, frontY: pod.top, backY: pod.bottom, diameterM: pod.diameter,
+  }];
+  return [...wingMounted, ...rearMounted];
 }
 
 // A helicopter seen from above: the two blades of its rotor along and across it (the span is the rotor's diameter and
@@ -192,9 +297,7 @@ const dartOutline = spec => mirrorHalf([[0, spec.lengthM / 2], [spec.spanM / 2, 
 export function silhouetteOutline(spec) {
   if (spec?.family === 'helicopter') return helicopterOutline(spec);
   if (spec?.family === 'dart') return dartOutline(spec);
-  const shape = TUBE_SHAPES[spec?.family];
-  if (!shape) throw new RangeError(`No silhouette for the aircraft family ${String(spec?.family)}`);
-  return tubeOutline(spec, shape);
+  return tubeOutline(frameOf(spec));
 }
 
 /** `{ minX, maxX, minY, maxY }` of an outline. */

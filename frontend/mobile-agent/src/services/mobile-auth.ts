@@ -385,6 +385,35 @@ export async function loginMobileAgent(
   }
 }
 
+/**
+ * Replaces the temporary password Gestión Humana gave the account (the API answers sign-in with 409
+ * `password_change_required` until then). Unauthenticated, like sign-in; nothing is stored, and the caller signs in
+ * with the new password afterwards because the change ends every earlier credential.
+ */
+export async function changeTemporaryPassword(
+  email: string,
+  currentPassword: string,
+  newPassword: string,
+  options: MobileAuthRequestOptions = {},
+): Promise<void> {
+  const normalizedEmail = email.trim();
+  if (normalizedEmail.length === 0 || currentPassword.length === 0) {
+    throw new MobileServiceError('current_password_invalid');
+  }
+  if (newPassword.length === 0) {
+    throw new MobileServiceError('password_policy_rejected');
+  }
+
+  try {
+    await createMobileAgentApiClient().changePassword(
+      { email: normalizedEmail, currentPassword, newPassword },
+      { signal: options.signal },
+    );
+  } catch (error) {
+    throw asMobileServiceError(error, 'password_change');
+  }
+}
+
 export async function getMobileSession(): Promise<MobileSession | null> {
   try {
     const state = await localSessionState();

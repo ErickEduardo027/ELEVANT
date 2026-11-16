@@ -4,7 +4,7 @@ import { expect, production, test } from '../support/test.mjs';
 // The traffic of PR M5 in Chrome: the traffic scenes of the lab (synthetic air pictures, no provider) photographed at
 // the laptop sizes of the presentation, 1440 × 900 and 1920 × 1080, in the Región, Aproximación and Rampa views, for a
 // person to review in test-results/visual. Beside the pictures it checks what must hold on every one: the credit of
-// the aircraft data is on screen as a link, the attribution names it, and the legend lists the traffic. Step c adds
+// the aircraft data is on screen once, as a link, out of the attribution, and the legend lists the traffic. Step c adds
 // the chosen aircraft (its data block, its cyan and its route) and the layers menu; a stale aircraft chosen says since
 // when it is not updated.
 
@@ -53,14 +53,14 @@ test.describe('map lab traffic', () => {
     }
   });
 
-  test('each view explains its own traffic and the attribution credits the source', async ({ page }, testInfo) => {
+  test('each view explains its own traffic and credits the source once', async ({ page }, testInfo) => {
     await openLab(page, `scene=region-traffic-mixed&t=${NOON}`);
     await labIdle(page);
     await expect(legendItems(page)).toContainText(['Vuelo de AVIAM que llega', 'Vuelo de AVIAM que sale', 'Otro tráfico',
       'Sin actualizar', 'Estela']);
-    // The attribution, folded by default, names the source once opened.
-    await page.getByTestId('map-lab-map').locator('summary.maplibregl-ctrl-attrib-button').click();
-    await expect(page.getByTestId('map-lab-map').locator('.maplibregl-ctrl-attrib-inner')).toContainText(`Datos de aeronaves: ${CREDIT}`);
+    // One credit of the aircraft data, the line at the bottom left: the attribution keeps the base map's credits.
+    await expect(page.locator('a', { hasText: CREDIT })).toHaveCount(1);
+    await expect(page.getByTestId('map-lab-map').locator('.maplibregl-ctrl-attrib-inner')).not.toContainText('Datos de aeronaves');
 
     // Other traffic shows its tag while the pointer is on it.
     const point = await page.evaluate(() => {

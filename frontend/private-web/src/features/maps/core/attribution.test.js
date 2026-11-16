@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AIRFIELD_SOURCE, airfieldOverlay } from '../style/airfieldLayers';
 import { BASEMAP_SOURCE_ID, buildOccStyle } from '../style/occStyle';
+import { OURAIRPORTS_SOURCE, referenceOverlay } from '../style/referenceLayers';
 import {
-  AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, buildAttribution, collapseCompactAttribution, escapeHtml, httpsUrl,
+  AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, GIBS_ATTRIBUTION, GIBS_URL, OURAIRPORTS_ATTRIBUTION, buildAttribution,
+  collapseCompactAttribution, escapeHtml, httpsUrl,
 } from './attribution';
 
 // The attribution as the browser would build it, to read its links and text instead of matching strings.
@@ -63,6 +65,38 @@ describe('map attribution', () => {
     expect(buildOccStyle({ overlays: [airfieldOverlay()] }).sources[AIRFIELD_SOURCE].attribution).toBe(AIRFIELD_ATTRIBUTION);
     expect(buildAttribution()).not.toContain('OurAirports');
     expect(FIXED_ATTRIBUTION.includes(AIRFIELD_ATTRIBUTION) || AIRFIELD_ATTRIBUTION.includes(FIXED_ATTRIBUTION)).toBe(false);
+
+    // The references drawn from OurAirports (PR M8) credit it on their own source, so it shows while they are drawn,
+    // also without the airfield. The airfield credit contains it: with both on screen MapLibre shows it once.
+    expect(links(OURAIRPORTS_ATTRIBUTION)).toEqual([{ href: 'https://ourairports.com/', text: 'OurAirports', rel: 'noopener noreferrer' }]);
+    expect(parse(OURAIRPORTS_ATTRIBUTION).querySelector('a').getAttribute('target')).toBe('_blank');
+    expect(buildOccStyle({ overlays: [referenceOverlay()] }).sources[OURAIRPORTS_SOURCE].attribution).toBe(OURAIRPORTS_ATTRIBUTION);
+    expect(AIRFIELD_ATTRIBUTION.includes(OURAIRPORTS_ATTRIBUTION)).toBe(true);
+    expect(FIXED_ATTRIBUTION.includes(OURAIRPORTS_ATTRIBUTION)).toBe(false);
+  });
+
+  it('each source may bring its own label; NOAA as «Clima»', () => {
+    // The aerodrome weather of PR M8, as the API credits it, labelled in the screen's language.
+    const NOAA = { name: 'NOAA Aviation Weather Center', homeUrl: 'https://aviationweather.gov', label: 'Clima' };
+    const withWeather = buildAttribution([ADSB, NOAA]);
+    expect(parse(withWeather).textContent).toBe('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles · '
+      + 'Datos de aeronaves: adsb.fi (Uso personal) · Clima: NOAA Aviation Weather Center');
+    expect(links(withWeather).at(-1)).toEqual({
+      href: 'https://aviationweather.gov/', text: 'NOAA Aviation Weather Center', rel: 'noopener noreferrer',
+    });
+    // Alone, without traffic; in English; a label that comes empty falls back to aircraft data; the label is escaped.
+    expect(parse(buildAttribution([NOAA])).textContent).toContain(' · Clima: NOAA Aviation Weather Center');
+    expect(parse(buildAttribution([{ ...NOAA, label: 'Weather' }], { aircraftDataLabel: 'Aircraft data' })).textContent)
+      .toContain('Weather: NOAA Aviation Weather Center');
+    expect(parse(buildAttribution([{ ...ADSB, label: '  ' }])).textContent).toContain('Datos de aeronaves: adsb.fi');
+    expect(buildAttribution([{ ...NOAA, label: '<b>Clima</b>' }])).toContain('&lt;b&gt;Clima&lt;/b&gt;: ');
+
+    // The satellite images credit NASA GIBS over https on their own raster sources, apart from the fixed line.
+    expect(parse(GIBS_ATTRIBUTION).textContent).toBe('NASA GIBS');
+    expect(links(GIBS_ATTRIBUTION)).toEqual([{ href: GIBS_URL, text: 'NASA GIBS', rel: 'noopener noreferrer' }]);
+    expect(httpsUrl(GIBS_URL)).toBe(GIBS_URL);
+    expect(buildAttribution()).not.toContain('GIBS');
+    expect(FIXED_ATTRIBUTION.includes(GIBS_ATTRIBUTION) || GIBS_ATTRIBUTION.includes(FIXED_ATTRIBUTION)).toBe(false);
   });
 
   it('escapes API-provided text and drops links that are not https', () => {

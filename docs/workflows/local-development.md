@@ -89,6 +89,34 @@ Para probar a mano la red real, como una lectura deliberada y fuera de las prueb
 
   Después se abre un mapa del OCC con una cuenta de OCC que tenga PUJ en su alcance. Hasta que el PR M5 dibuje los aviones, la misma lectura se hace con `GET /api/v1/occ/map/air-picture?stationId=<id de PUJ>` desde el Swagger de la API local, autorizado con el token de una sesión de esa cuenta. La primera respuesta dice `Warming` y, unos segundos después, `Live`, con los aviones y `source.name` «adsb.fi». Al terminar se quita la variable (`Remove-Item Env:ELEVANT_E2E_AIR_TRAFFIC_ENABLED`) y se vuelve a levantar el stack, para que el arnés no lea la red real.
 
+## Clima del aeródromo: aviationweather.gov
+
+El clima del aeródromo del OCC por la API ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del PR M8) está apagado por defecto (`AviationWeather:Enabled=false`) y lo enciende `appsettings.Development.json`. Trae el METAR y el TAF de la Data API de aviationweather.gov, sin clave ([integraciones externas](../architecture/external-integrations.md)).
+
+**Aviso.** `compose.local.yml` ejecuta la API como `Development`, así que el stack local **sin** el overlay llama a aviationweather.gov cuando alguien lee `GET occ/weather` y la API no tiene guardado un informe vigente. Con el servicio respondiendo, son como mucho 2 consultas cada 5 minutos por aeropuerto; tras un fallo, la API espera 1, 2, 4, 8 y luego 15 minutos antes de volver a preguntar, o lo que pida un `Retry-After` más largo, hasta una hora. Desde la segunda parte de M8, abrir en el OCC Monitoreo de vuelos, Mapa de posiciones, Planificación o la consola contra ese stack hace esa lectura, y cada pantalla la repite cada 10 minutos con la pestaña a la vista: el stack llama al servicio aunque nadie lo lea a mano.
+
+El overlay del arnés lo apaga con `AviationWeather__Enabled: "${ELEVANT_E2E_AVIATION_WEATHER_ENABLED:-false}"`: el recorrido E2E nunca lee el servicio real. Ninguna prueba ni workflow de CI llama a aviationweather.gov.
+
+Para probar a mano el servicio real, como una lectura deliberada y fuera de las pruebas, hay dos caminos:
+
+- **Sin stack.** La prueba opcional del adaptador hace una consulta de METAR y una de TAF de Punta Cana (MDPC), y solo informa la antigüedad del METAR y cuántas capas de nubes y periodos del TAF leyó, nunca la respuesta.
+
+  ```powershell
+  $env:ELEVANT_LIVE_AVIATION_WEATHER = "1"
+  dotnet test backend/tests/Elevant.UnitTests --configuration Release --filter "FullyQualifiedName~AviationWeatherLiveTests"
+  ```
+
+  Al terminar se quita la variable (`Remove-Item Env:ELEVANT_LIVE_AVIATION_WEATHER`), para que las pruebas siguientes de esa consola no lean el servicio real.
+
+- **Con el stack.** Se levanta con el overlay y la variable en `true`:
+
+  ```powershell
+  $env:ELEVANT_E2E_AVIATION_WEATHER_ENABLED = "true"
+  docker compose --env-file database/DevelopmentDB/.env -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
+  ```
+
+  Después se hace `GET /api/v1/occ/weather?stationId=<id de PUJ>` desde el Swagger de la API local, autorizado con el token de una sesión de una cuenta de OCC que tenga PUJ en su alcance y un permiso de mapa (Panorama, Monitoreo de vuelos, Mapa de posiciones o Planificación). Responde `Live`, o `Stale` si el último METAR tiene más de 90 minutos, con `icaoCode` «MDPC», el METAR, el TAF y `source.name` «NOAA Aviation Weather Center». `Unavailable` significa que el servicio no respondió o no tiene informe. Al terminar se quita la variable (`Remove-Item Env:ELEVANT_E2E_AVIATION_WEATHER_ENABLED`) y se vuelve a levantar el stack, para que el arnés no lea el servicio real.
+
 ## Frontends
 
 Entre a `frontend/private-web`, `frontend/public-web` o `frontend/mobile-agent`, lea su README y ejecute solo los scripts declarados en su `package.json`. Una tablet no puede alcanzar el `localhost` de la PC; use una URL de red autorizada/Tailscale según el ambiente.

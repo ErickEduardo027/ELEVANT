@@ -13,6 +13,7 @@ export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./demoFlights";
 export * from "./occMap";
+export * from "./aviationReference";
 export * from "./flightFeedReview";
 export * from "./occTurnarounds";
 export * from "./occIncidents";
@@ -118,6 +119,10 @@ export {
   DOMINICAN_PASSPORT_PREFIX,
   PASSPORT_PATTERNS,
   checkIdentityDocument,
+  checkTaxRegistration,
+  formatTaxRegistration,
+  type TaxRegistration,
+  type TaxRegistrationCheck,
   identityDocumentExample,
   identityDocumentRequirements,
   normalizeIdentityDocument,
@@ -401,6 +406,26 @@ export {
   type OccMapStandResponse,
   type OccMapMilestoneResponse,
   type OccMapDemoResponse,
+  type GetOccAerodromeWeatherParams,
+  type OccAerodromeWeatherResponse,
+  type OccWeatherSourceResponse,
+  type GetOccAircraftReferenceParams,
+  type GetOccAirportRoutesParams,
+  type GetOccAirportDelaysParams,
+  type GetAirlineFleetParams,
+  type OccAircraftReferenceResponse,
+  type AircraftReferenceResponse,
+  type OccAirportRoutesResponse,
+  type OccAirportRouteResponse,
+  type OccAirportDelaysResponse,
+  type OccAirportDelayFactsResponse,
+  type OccDelayBatchResponse,
+  type AirlineFleetResponse,
+  type AirlineFleetTypeResponse,
+  type OccMetarResponse,
+  type OccCloudLayerResponse,
+  type OccTafResponse,
+  type OccTafPeriodResponse,
   type OccPlanningTurnaroundContextResponse,
   type OccServiceOptionResponse,
   type OccStandResponse,

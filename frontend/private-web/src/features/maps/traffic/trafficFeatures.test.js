@@ -217,7 +217,7 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     expect(moved.newGeometry.coordinates[1]).toBeCloseTo(before.features
       .find(feature => feature.properties.id === `f:${KEY.arrival}`).geometry.coordinates[1] + 0.01, 6);
     // Only what changed: the tag's second line.
-    expect(moved.addOrUpdateProperties).toEqual([{ key: 'tag2', value: 'B38M 022 150' }]);
+    expect(moved.addOrUpdateProperties).toEqual([{ key: 'altFt', value: 2200 }, { key: 'tag2', value: 'B38M 022 150' }]);
     expect(moved.removeProperties).toBeUndefined();
 
     // A selection changes properties only; a property that goes away is removed.
@@ -317,7 +317,14 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     const final = [[-68.66, 18.45], [-68.42, 18.62]];
     expect(trafficOnScreen(aircraft, final).kinds).toEqual(['aviamArrival']);
     expect(trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`]) }).kinds).toEqual(['aviamArrival']);
-    expect(trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`, `f:${KEY.demoArrival}`]) }))
-      .toEqual({ kinds: [], tags: [], trails: [], route: [] });
+    // A parked demo or estimated aircraft keeps its «Demo» plate and its «est.» ring over the stand, so the legend
+    // keeps explaining them, without a kind of traffic.
+    const demo = aircraft.find(item => item.id === `f:${KEY.demoArrival}`);
+    expect(demo).toMatchObject({ isDemo: true });
+    const parkedBoth = trafficOnScreen(aircraft, final, { parkedIds: new Set([`f:${KEY.arrival}`, `f:${KEY.demoArrival}`]) });
+    expect(parkedBoth).toMatchObject({ kinds: [], trails: [], route: [] });
+    expect(parkedBoth.tags).toEqual(demo.quality === 'estimated' ? ['demo', 'estimated'] : ['demo']);
+    const estimated = aircraft.map(item => (item.id === `f:${KEY.arrival}` ? { ...item, quality: 'estimated' } : item));
+    expect(trafficOnScreen(estimated, final, { parkedIds: new Set([`f:${KEY.arrival}`]) }).tags).toContain('estimated');
   });
 });

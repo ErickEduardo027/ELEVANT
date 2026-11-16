@@ -21,6 +21,8 @@ import MapSituationGate, { MapSituationOverlays, trafficSelectionOf } from '../m
 import { mapMessages } from '../maps/mapMessages';
 import { attachStandGeometry, unlocatedStands } from '../maps/stands/standModel';
 import { useStandDisplay } from '../maps/stands/useStandDisplay';
+import { useOccStation } from '../admin-occ/useOccStation';
+import { useMdpcWeather } from '../weather/useMdpcWeather';
 import { standInputsOf } from '../maps/traffic/standInputs';
 
 const NO_POSITIONS = Object.freeze([]);
@@ -55,6 +57,7 @@ export default function PositionsMapPage(props) {
 }
 
 function PositionsMapScreen({
+  aircraftFacts = null,
   status,
   data,
   error,
@@ -87,6 +90,9 @@ function PositionsMapScreen({
   const mapAreaRef = useRef(null);
   const placingRef = useRef(null);
   const isTablet = useIsTabletBreakpoint();
+  // The aerodrome weather of the OCC station (PR M8): its own 10-minute poll; the map draws its wind at the airfield.
+  const station = useOccStation();
+  const weather = useMdpcWeather({ enabled: station.status === 'ready' });
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -122,7 +128,11 @@ function PositionsMapScreen({
   const placedPositions = useMemo(() => (layout ? attachStandGeometry(positions, layout) : positions),
     [positions, layout]);
   const standInputs = useMemo(() => standInputsOf(situation), [situation]);
-  const displayedPositions = useStandDisplay(placedPositions, standInputs);
+  // On the clock the map draws its aircraft at (the server's, paused with the motion), so a demo stand changes state
+  // when its aircraft parks or leaves.
+  const standClock = live?.renderClock ?? null;
+  const standOptions = useMemo(() => ({ ...standInputs, clock: standClock }), [standInputs, standClock]);
+  const displayedPositions = useStandDisplay(placedPositions, standOptions);
   const { search, setSearch, terminalFilter, setTerminalFilter, filteredPositions } = usePositionsMapFilters(displayedPositions);
   const { toasts, dismissToast } = usePositionAlerts(positions, displayConnection);
 
@@ -297,6 +307,7 @@ function PositionsMapScreen({
         pendingLocation={placing?.pending ?? null}
         onCancelPlacing={cancelPlacing}
         onMapClick={placing ? handleMapClick : undefined}
+        weather={weather}
         traffic={live?.traffic}
         trafficSelection={trafficSelection}
         onSelectTraffic={live ? handleSelectTraffic : undefined}
@@ -390,6 +401,7 @@ function PositionsMapScreen({
         onChanged={onRetry}
         onStartPlacing={handleStartPlacing}
         operationDate={data?.operationDate}
+        aircraftFacts={aircraftFacts}
       />
 
       <PositionToastStack toasts={toasts} onDismiss={dismissToast} />

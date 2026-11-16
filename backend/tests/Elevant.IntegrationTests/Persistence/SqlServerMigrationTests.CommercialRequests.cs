@@ -25,7 +25,7 @@ public sealed partial class SqlServerMigrationTests
 
     private static SubmitCommercialRequestCommand CommercialApplication(Guid requestId, Guid profileId, Guid serviceId,
         string email) => new(requestId, profileId, [serviceId], "Ana Rivera", "Gerente comercial", email,
-        "+1 809 555 0142", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673");
+        "+1 809 555 0142", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673", TaxRegistration: "131234569", TaxRegistrationCountryCode: "DO");
 
     [Fact]
     public async Task CommercialReviewConfirmsOnceApprovesOnceAndCancelsTheDuplicateWithItsReason()

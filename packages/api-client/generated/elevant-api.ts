@@ -198,6 +198,40 @@ export interface AffiliationOptionsResponse {
   services: AffiliationServiceOptionResponse[];
 }
 
+export interface AircraftReferenceResponse {
+  registration: string;
+  active: boolean;
+  /** @nullable */
+  model?: string | null;
+  /** @nullable */
+  typeName?: string | null;
+  /** @nullable */
+  icaoType?: string | null;
+  /** @nullable */
+  iataType?: string | null;
+  /** @nullable */
+  operator?: string | null;
+  /** @nullable */
+  serial?: string | null;
+  /** @nullable */
+  modeS?: string | null;
+  /** @nullable */
+  seats?: number | null;
+  /** @nullable */
+  engines?: number | null;
+  /** @nullable */
+  engineType?: string | null;
+  /** @nullable */
+  ageYears?: number | null;
+  /** @nullable */
+  firstFlight?: string | null;
+  /** @nullable */
+  delivered?: string | null;
+  /** @nullable */
+  registered?: string | null;
+  isFreighter: boolean;
+}
+
 export interface AirlineApprovedServiceResponse {
   id: string;
   code: string;
@@ -278,6 +312,26 @@ export const CatalogMutationFailure = {
 export interface AirlineEnrichmentResult {
   changed: number;
   failure?: CatalogMutationFailure | null;
+}
+
+export interface AirlineFleetTypeResponse {
+  /** @nullable */
+  icaoType?: string | null;
+  model: string;
+  count: number;
+}
+
+export interface AirlineFleetResponse {
+  airlineCode: string;
+  status: string;
+  serverTime: string;
+  /** @nullable */
+  retrievedAt?: string | null;
+  source: string;
+  /** @nullable */
+  totalAircraft?: number | null;
+  sampledAircraft: number;
+  types: AirlineFleetTypeResponse[];
 }
 
 export interface AirlineInvoiceStatementCreditNoteResponse {
@@ -1047,6 +1101,28 @@ export interface CommercialRequestItemData {
   unit: string;
 }
 
+export interface CommercialTaxRegistrationData {
+  number: string;
+  countryCode: string;
+  display: string;
+}
+
+export interface CommercialRegistryCheckData {
+  status: string;
+  /** @nullable */
+  source?: string | null;
+  checkedAt: string;
+  /** @nullable */
+  detail?: string | null;
+  fromCatalog: boolean;
+}
+
+export interface CommercialManualVerificationData {
+  verifiedAt: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+}
+
 export interface CommercialInboxRequestData {
   id: string;
   reference: string;
@@ -1104,6 +1180,9 @@ export interface CommercialInboxRequestData {
   existingCustomer: boolean;
   services: CommercialRequestItemData[];
   version: string;
+  taxRegistration?: CommercialTaxRegistrationData | null;
+  registryCheck?: CommercialRegistryCheckData | null;
+  manualVerification?: CommercialManualVerificationData | null;
 }
 
 export interface CommercialInboxData {
@@ -3993,6 +4072,83 @@ export interface NonFiscalPaymentLookupResponse {
   payment?: NonFiscalPaymentResponse | null;
 }
 
+export interface OccWeatherSourceResponse {
+  name: string;
+  homeUrl: string;
+}
+
+export interface OccCloudLayerResponse {
+  cover: string;
+  /** @nullable */
+  baseFeet?: number | null;
+}
+
+export interface OccMetarResponse {
+  raw: string;
+  observedAt: string;
+  /** @nullable */
+  flightCategory?: string | null;
+  /** @nullable */
+  windDirectionDegrees?: number | null;
+  windVariable: boolean;
+  /** @nullable */
+  windSpeedKnots?: number | null;
+  /** @nullable */
+  windGustKnots?: number | null;
+  /** @nullable */
+  visibilityStatuteMiles?: number | null;
+  /** @nullable */
+  temperatureCelsius?: number | null;
+  /** @nullable */
+  dewpointCelsius?: number | null;
+  /** @nullable */
+  altimeterHectopascals?: number | null;
+  /** @nullable */
+  weather?: string | null;
+  clouds: OccCloudLayerResponse[];
+}
+
+export interface OccTafPeriodResponse {
+  from: string;
+  to: string;
+  /** @nullable */
+  change?: string | null;
+  /** @nullable */
+  probabilityPercent?: number | null;
+  /** @nullable */
+  windDirectionDegrees?: number | null;
+  windVariable: boolean;
+  /** @nullable */
+  windSpeedKnots?: number | null;
+  /** @nullable */
+  windGustKnots?: number | null;
+  /** @nullable */
+  visibilityStatuteMiles?: number | null;
+  /** @nullable */
+  weather?: string | null;
+  clouds: OccCloudLayerResponse[];
+}
+
+export interface OccTafResponse {
+  raw: string;
+  issuedAt: string;
+  validFrom: string;
+  validTo: string;
+  periods: OccTafPeriodResponse[];
+}
+
+export interface OccAerodromeWeatherResponse {
+  stationId: string;
+  icaoCode: string;
+  status: string;
+  serverTime: string;
+  /** @nullable */
+  retrievedAt?: string | null;
+  source: OccWeatherSourceResponse;
+  metar?: OccMetarResponse | null;
+  taf?: OccTafResponse | null;
+}
+
 export interface OccAgentOptionResponse {
   id: string;
   displayName: string;
@@ -4081,6 +4237,17 @@ export interface OccAirPictureResponse {
   aircraft: OccAirPictureAircraftResponse[];
 }
 
+export interface OccAircraftReferenceResponse {
+  stationId: string;
+  registration: string;
+  status: string;
+  serverTime: string;
+  /** @nullable */
+  retrievedAt?: string | null;
+  source: string;
+  aircraft?: AircraftReferenceResponse | null;
+}
+
 export interface OccAircraftResponse {
   id: string;
   icaoCode: string;
@@ -4143,6 +4310,64 @@ export interface OccAirlineResponse {
   iataCode: string;
   icaoCode: string;
   name: string;
+}
+
+export interface OccDelayBatchResponse {
+  total: number;
+  qualified: number;
+  cancelled: number;
+  /** @nullable */
+  medianDelayMinutes?: number | null;
+  /** @nullable */
+  delayIndex?: number | null;
+}
+
+export interface OccAirportDelayFactsResponse {
+  airportIcao: string;
+  from: string;
+  to: string;
+  arrivals: OccDelayBatchResponse;
+  departures: OccDelayBatchResponse;
+}
+
+export interface OccAirportDelaysResponse {
+  stationId: string;
+  airport: string;
+  status: string;
+  serverTime: string;
+  /** @nullable */
+  retrievedAt?: string | null;
+  source: string;
+  delays?: OccAirportDelayFactsResponse | null;
+}
+
+export interface OccAirportRouteResponse {
+  /** @nullable */
+  destinationIata?: string | null;
+  /** @nullable */
+  destinationIcao?: string | null;
+  name: string;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  averageDailyFlights: number;
+  operators: string[];
+}
+
+export interface OccAirportRoutesResponse {
+  stationId: string;
+  airportIcao: string;
+  status: string;
+  serverTime: string;
+  /** @nullable */
+  retrievedAt?: string | null;
+  source: string;
+  routes: OccAirportRouteResponse[];
 }
 
 export interface OccAssignedAgentResponse {
@@ -6436,6 +6661,10 @@ export interface SubmitCommercialRequestRequest {
   /** @nullable */
   representativeDistrict?: string | null;
   proposedAirline?: ProposedAirlineRequest | null;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface SubmitCommercialRequestResponse {
@@ -6699,6 +6928,10 @@ export interface VerifyRequestAirlineInput {
   icaoCode?: string | null;
   /** @nullable */
   verificationSourceUrl?: string | null;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface WithdrawContractVersionRequest {
@@ -6709,6 +6942,10 @@ export interface WithdrawContractVersionRequest {
 export type GetAccountChangesParams = {
 after?: string;
 limit?: number;
+};
+
+export type GetAirlineFleetParams = {
+airlineCode: string;
 };
 
 export type GetAirlineOperationalRequestsParams = {
@@ -7112,6 +7349,20 @@ stationId: string;
 date: string;
 };
 
+export type GetOccAircraftReferenceParams = {
+stationId: string;
+registration: string;
+};
+
+export type GetOccAirportRoutesParams = {
+stationId: string;
+};
+
+export type GetOccAirportDelaysParams = {
+stationId: string;
+airport?: string;
+};
+
 export type GetOccCoverageParams = {
 stationId: string;
 date: string;
@@ -7202,6 +7453,10 @@ stationId: string;
 };
 
 export type GetOccAircraftTrafficParams = {
+stationId: string;
+};
+
+export type GetOccAerodromeWeatherParams = {
 stationId: string;
 };
 
@@ -7377,6 +7632,44 @@ export const getAirlinePaymentReceipt = async (invoiceId: string, options?: Requ
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
   const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlineFleetUrl = (params: GetAirlineFleetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/airline-fleet?${stringifiedParams}` : `/api/v1/contracts/airline-fleet`
+}
+
+/**
+ * @summary The fleet size and type mix of the airline with ICAO (3 letters) or IATA (2 characters) code airlineCode.
+ */
+export const getAirlineFleet = async (params: GetAirlineFleetParams, options?: RequestInit): Promise<AirlineFleetResponse> => {
+
+  const res = await fetch(getGetAirlineFleetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineFleetResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -9373,6 +9666,9 @@ export const getDecideCommercialRequestUrl = (id: string,) => {
 /**
  * @summary Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older
 clients exist (expand); a key without the version is rejected. Approval returns the contract.
+An approval checks the airline against the public registries first and answers 409
+`airline_not_in_public_registry` for NotFound, Defunct or Mismatch unless Superadministración
+verified the airline by hand with an official source (ADR-0023).
  */
 export const decideCommercialRequest = async (id: string,
     reviewCommercialInput?: ReviewCommercialInput, options?: RequestInit): Promise<CommercialIdResponse> => {
@@ -16917,6 +17213,122 @@ export const getOccAssignmentReadiness = async (params: GetOccAssignmentReadines
 
 
 
+export const getGetOccAircraftReferenceUrl = (params: GetOccAircraftReferenceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/aviation/aircraft?${stringifiedParams}` : `/api/v1/occ/aviation/aircraft`
+}
+
+/**
+ * @summary The aircraft with the registration (tail number), kept a day. A demo flight's registration answers
+`NotApplicable` and is never asked of the provider.
+ */
+export const getOccAircraftReference = async (params: GetOccAircraftReferenceParams, options?: RequestInit): Promise<OccAircraftReferenceResponse> => {
+
+  const res = await fetch(getGetOccAircraftReferenceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAircraftReferenceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAirportRoutesUrl = (params: GetOccAirportRoutesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/aviation/routes?${stringifiedParams}` : `/api/v1/occ/aviation/routes`
+}
+
+/**
+ * @summary The routes and average daily flights from the station's airport, kept 24 hours.
+ */
+export const getOccAirportRoutes = async (params: GetOccAirportRoutesParams, options?: RequestInit): Promise<OccAirportRoutesResponse> => {
+
+  const res = await fetch(getGetOccAirportRoutesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAirportRoutesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAirportDelaysUrl = (params: GetOccAirportDelaysParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/aviation/delays?${stringifiedParams}` : `/api/v1/occ/aviation/delays`
+}
+
+/**
+ * @summary The current delays of the station's airport, or of airport (IATA or ICAO) when given: the
+origin or destination of a selected flight. Kept an hour per airport.
+ */
+export const getOccAirportDelays = async (params: GetOccAirportDelaysParams, options?: RequestInit): Promise<OccAirportDelaysResponse> => {
+
+  const res = await fetch(getGetOccAirportDelaysUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAirportDelaysResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetOccCoverageUrl = (params: GetOccCoverageParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -19276,6 +19688,46 @@ const res = await fetch(getCreateOccCharterAirlineUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccCharterAirlineResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAerodromeWeatherUrl = (params: GetOccAerodromeWeatherParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/weather?${stringifiedParams}` : `/api/v1/occ/weather`
+}
+
+/**
+ * @summary The METAR (decoded basics and raw text) and the TAF (raw text and periods) of the station's airport, which the API
+keeps a few minutes. The state of the weather (`Live`, `Stale`, `Unavailable`, `Disabled`)
+and the credit of the weather service come in the 200; a station outside the reader's scope is not found.
+ */
+export const getOccAerodromeWeather = async (params: GetOccAerodromeWeatherParams, options?: RequestInit): Promise<OccAerodromeWeatherResponse> => {
+
+  const res = await fetch(getGetOccAerodromeWeatherUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAerodromeWeatherResponse = body ? JSON.parse(body) : {}
   return data
 }
 

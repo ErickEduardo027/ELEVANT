@@ -372,7 +372,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(requestId, profile.Id,
             [cargo.PublicId, tow.PublicId], "Ana Rivera", "Gerente comercial", "ana.units@carrier.example.com",
             "+1 809 555 0142", true, RepresentativeDocumentType: "NationalId",
-            RepresentativeDocumentNumber: "00112345673"), ct)).IsSuccess);
+            RepresentativeDocumentNumber: "00112345673", TaxRegistration: "131234569", TaxRegistrationCountryCode: "DO"), ct)).IsSuccess);
         var requestRow = await context.ServiceRequests.AsNoTracking().SingleAsync(item => item.PublicId == requestId, ct);
         Assert.All(await context.Set<ServiceRequestItem>().AsNoTracking().Where(item => item.ServiceRequestId == requestRow.Id)
             .Select(item => item.RequestedUnit).ToArrayAsync(ct), unit => Assert.Equal("operation", unit));

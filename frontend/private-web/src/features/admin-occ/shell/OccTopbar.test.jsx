@@ -53,21 +53,23 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-it('shows no theme button in Spanish or English', async () => {
-  for (const language of ['es', 'en']) {
+it('shows the theme button in Spanish and English and toggles the theme', async () => {
+  for (const [language, toLight, toDark] of [
+    ['es', 'Cambiar a tema claro', 'Cambiar a tema oscuro'],
+    ['en', 'Switch to light theme', 'Switch to dark theme'],
+  ]) {
     resetLanguageForTests(language);
-    // AppShell sends these two props to every top bar; the OCC bar has no use for them.
     const onToggleTheme = vi.fn();
     const view = render(topbar({ theme: 'dark', onToggleTheme }));
 
-    expect(screen.queryByRole('button', { name: /modo|tema|oscuro|claro|mode|theme|dark|light/i }), language)
-      .not.toBeInTheDocument();
-    // No control of the bar reaches the handler either.
-    for (const button of screen.getAllByRole('button')) await userEvent.click(button);
-    expect(onToggleTheme, language).not.toHaveBeenCalled();
+    const button = screen.getByRole('button', { name: toLight });
+    expect(button.className.split(/\s+/)).toEqual(expect.arrayContaining(['hidden', 'lg:flex']));
+    await userEvent.click(button);
+    expect(onToggleTheme, language).toHaveBeenCalledTimes(1);
 
-    expect(occShellMessages[language]).not.toHaveProperty('themeToDark');
-    expect(occShellMessages[language]).not.toHaveProperty('themeToLight');
+    view.rerender(topbar({ theme: 'light', onToggleTheme }));
+    expect(screen.getByRole('button', { name: toDark })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: toLight })).not.toBeInTheDocument();
     view.unmount();
   }
 });
@@ -241,7 +243,7 @@ it('puts the bar in the order of the design and leaves out what the OCC deferred
     expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING, String(index))
       .toBeTruthy();
   }
-  // Search, wall mode and the theme stay out (contratos 2.2 and 2.4).
+  // Search and wall mode stay out (contratos 2.2 and 2.4).
   expect(screen.queryByRole('button', { name: /buscar|muro|atajos/i })).not.toBeInTheDocument();
 });
 

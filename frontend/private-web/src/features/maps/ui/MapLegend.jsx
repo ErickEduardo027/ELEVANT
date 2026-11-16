@@ -4,11 +4,16 @@ import { SIGNALS, STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
-import { FOOTPRINT_PAINT, PROGRESS_PAINT, standPaint } from '../stands/standLayers';
+import { FOOTPRINT_PAINT, PROGRESS_PAINT, standFill, standPaint } from '../stands/standLayers';
 import { MILESTONES_TOTAL } from '../stands/standModel';
+import { mapColorsFor } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
-import { BASEMAP_COLORS } from '../style/mapTheme';
+import { AIRPORT_KINDS } from '../style/referenceLayers';
+import { basemapColorsFor } from '../style/mapTheme';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { legendEntries } from './legendEntries';
+import { referenceLegendEntries } from './referenceLegend';
+import ReferenceSwatch from './ReferenceSwatch';
 import { trafficLegendEntries } from './trafficLegend';
 import TrafficSwatch from './TrafficSwatch';
 
@@ -43,7 +48,8 @@ const AIRCRAFT_TRANSFORM = `translate(5 5) scale(${10 / AIRCRAFT_SILHOUETTE_VIEW
 function StateSwatch({ state }) {
   const paint = standPaint(state);
   const line = tokenColour(paint.outline.token);
-  const filled = paint.fill.kind === 'tint' || paint.fill.kind === 'solid';
+  // Its own colour (owner request of 2026-11-15), as the map fills it.
+  const fill = standFill(state, useOptionalTheme()?.theme);
   return (
     <svg {...SWATCH_PROPS} data-swatch="state" data-fill={paint.fill.kind}>
       <rect
@@ -52,7 +58,8 @@ function StateSwatch({ state }) {
         width={BOX.size}
         height={BOX.size}
         style={{
-          fill: filled ? tokenColour(paint.fill.token) : 'none',
+          fill: fill.color,
+          fillOpacity: fill.opacity,
           stroke: line,
           strokeWidth: paint.outline.width,
           strokeDasharray: paint.outline.dash ? paint.outline.dash.join(' ') : 'none',
@@ -232,36 +239,71 @@ const MARK = tokenColour('--occ-text');
 const AIRFIELD_SWATCHES = Object.freeze({
   runway: (
     <>
-      <rect x="1" y="6.5" width="18" height="7" style={{ fill: BASEMAP_COLORS.runway }} />
+      <rect x="1" y="6.5" width="18" height="7" style={{ fill: 'var(--occ-swatch-runway)' }} />
       <path d="M2.5 7.8 V12.2 M17.5 7.8 V12.2" style={{ fill: 'none', stroke: MARK, strokeWidth: 1 }} />
       <path d="M4.5 10 H15.5" style={{ fill: 'none', stroke: MARK, strokeWidth: 1, strokeDasharray: '2.5 2' }} />
     </>
   ),
   taxiway: (
-    <path d="M2 15.5 C7.5 15.5 11 4.5 18 4.5" style={{ fill: 'none', stroke: BASEMAP_COLORS.taxiway, strokeWidth: 4, strokeLinecap: 'round' }} />
+    <path d="M2 15.5 C7.5 15.5 11 4.5 18 4.5" style={{ fill: 'none', stroke: 'var(--occ-swatch-taxiway)', strokeWidth: 4, strokeLinecap: 'round' }} />
   ),
   holdBar: (
     <>
-      <path d="M10 1 V19" style={{ fill: 'none', stroke: BASEMAP_COLORS.taxiway, strokeWidth: 4 }} />
+      <path d="M10 1 V19" style={{ fill: 'none', stroke: 'var(--occ-swatch-taxiway)', strokeWidth: 4 }} />
       <path d="M5 10 H15" style={{ fill: 'none', stroke: MARK, strokeWidth: 2 }} />
     </>
   ),
   apron: (
-    <rect x="3.5" y="4.5" width="13" height="11" style={{ fill: BASEMAP_COLORS.apron, stroke: tokenColour('--occ-line'), strokeWidth: 1 }} />
+    <rect x="3.5" y="4.5" width="13" height="11" style={{ fill: 'var(--occ-swatch-apron)', stroke: tokenColour('--occ-line'), strokeWidth: 1 }} />
   ),
   terminal: (
-    <rect x="4.5" y="5.5" width="11" height="9" style={{ fill: BASEMAP_COLORS.building, stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    <rect x="4.5" y="5.5" width="11" height="9" style={{ fill: 'var(--occ-swatch-building)', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
   ),
 });
 const AIRFIELD_MESSAGES = Object.freeze({
   runway: 'legend.runway', taxiway: 'legend.taxiway', holdBar: 'legend.hold', apron: 'legend.apron', terminal: 'legend.terminal',
 });
 
+// The base-map colours of the shell theme (light or dark) reach the swatches as variables of the svg.
+const SWATCH_KEYS = Object.freeze(['runway', 'taxiway', 'apron', 'building']);
+
 function AirfieldSwatch({ kind }) {
+  const colours = basemapColorsFor(useOptionalTheme()?.theme);
+  const variables = Object.fromEntries(SWATCH_KEYS.map(key => [`--occ-swatch-${key}`, colours[key]]));
   return (
-    <svg {...SWATCH_PROPS} data-swatch={kind}>
-      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: BASEMAP_COLORS.land }} />
+    <svg {...SWATCH_PROPS} data-swatch={kind} style={variables}>
+      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: colours.land }} />
       {AIRFIELD_SWATCHES[kind]}
+    </svg>
+  );
+}
+
+// The region's airports (style/referenceLayers.js) while the map shows them: from the Región and Aproximación views,
+// with «Aeropuertos de la región» on. Each kind its dot as the map draws it, the home airport larger.
+const AIRPORT_VIEWS = new Set(['region', 'approach']);
+function airportsShown({ layers, activeView }) {
+  return AIRPORT_VIEWS.has(activeView) && layers?.keys?.includes('reference.airports') === true
+    && layers?.values?.['reference.airports'] === true;
+}
+// The routes from Punta Cana (style/routeLayers.js) while the map shows them: in the Región view with the layer on.
+function routesShown({ layers, activeView }) {
+  return activeView === 'region' && layers?.keys?.includes('reference.routes') === true
+    && layers?.values?.['reference.routes'] === true;
+}
+function RouteSwatch() {
+  const { routes: colours } = mapColorsFor(useOptionalTheme()?.theme);
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="route-reference">
+      <path d="M2 15 Q10 3 18 9" style={{ fill: 'none', stroke: colours.line, strokeWidth: 1.2, strokeLinecap: 'round' }} />
+      <path d="M2 18 Q10 8 18 14" style={{ fill: 'none', stroke: colours.line, strokeWidth: 3, strokeLinecap: 'round' }} />
+    </svg>
+  );
+}
+function AirportSwatch({ kind }) {
+  const { airports: colours } = mapColorsFor(useOptionalTheme()?.theme);
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="airport" data-airport={kind}>
+      <circle cx="10" cy="10" r={kind === 'home' ? 6.5 : 4.5} style={{ fill: colours[kind], stroke: colours.halo, strokeWidth: 1.5 }} />
     </svg>
   );
 }
@@ -294,7 +336,10 @@ function WideEntry({ swatch, name, hint }) {
  * name stays «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to
  * explain.
  * The traffic an OccMap draws on screen comes first (ui/trafficLegend.js): the kinds of aircraft, their tags (Demo,
- * est., Sin actualizar) and their trails.
+ * est., Sin actualizar) and their trails. The references it draws there (PR M8, ui/referenceLegend.js: rings,
+ * centrelines and the runway in use, the region's airports, the navaids and the night) go with the airfield, below the
+ * rule and before it: what frames the map, apart from what moves and changes on it. The weather drawn there follows them
+ * (the wind with «No oficial», plus «Sin actualizar» when stale, and each satellite image with the time of its image).
  */
 // The open legend stays inside its map (PR M6): a short map (Mapa de posiciones at 1440 × 900) has less room above the
 // legend's button than a long legend needs, and the map clips what leaves it, so the panel is capped at that room, this
@@ -326,7 +371,8 @@ function useLegendInsideMap(rootRef, panelRef, active) {
 
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const {
-    standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen,
+    standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
+    activeView, referencesOnScreen,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
@@ -340,11 +386,17 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
     : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen]);
   // The traffic on screen (PR M5): the aircraft kinds, their tags and their trails.
   const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language }), [trafficOnScreen, language]);
+  // The references on screen (PR M8).
+  const references = useMemo(() => referenceLegendEntries(referencesOnScreen ?? {}, { language }),
+    [referencesOnScreen, language]);
 
   const word = entry => entry[language] ?? entry.es;
+  const airports = stands === undefined && airportsShown({ layers, activeView }) ? AIRPORT_KINDS : [];
+  const routes = stands === undefined && routesShown({ layers, activeView });
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
-    || marks.length > 0 || tags.length > 0;
-  const shown = listsOthers || airfield.length > 0;
+    || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes;
+  const framesMap = references.length > 0 || airfield.length > 0;
+  const shown = listsOthers || framesMap;
   useLegendInsideMap(rootRef, panelRef, open && shown);
   if (!shown) return null;
 
@@ -363,6 +415,13 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
               </span>
             </li>
           ))}
+          {airports.map(kind => (
+            <li key={kind} data-legend-airport={kind} className="col-span-2 flex items-center gap-2 pr-3">
+              <AirportSwatch kind={kind} />
+              <span>{t(`airports.${kind}`)}</span>
+            </li>
+          ))}
+          {routes && <WideEntry swatch={<RouteSwatch />} name={t('routes.name')} hint={t('routes.hint')} />}
           {flights && <WideEntry swatch={<FlightSwatch />} name={t('legend.flight')} hint={t('legend.flightHint')} />}
           {chips && <WideEntry swatch={<ChipSwatch />} name={t('legend.chip')} hint={t('legend.chipHint')} />}
           {states.map(state => (
@@ -389,10 +448,28 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
               <span className="text-occ-muted">{t(`legend.${tag}`)}</span>
             </li>
           ))}
-          {/* The airfield, set apart from what moves and changes on it by a rule across the legend. */}
-          {airfield.length > 0 && listsOthers && (
+          {/* The references and the airfield, set apart from what moves and changes on them by a rule across the legend. */}
+          {framesMap && listsOthers && (
             <li role="presentation" aria-hidden="true" data-legend-rule className="col-span-2 border-t border-occ-line" />
           )}
+          {references.map(entry => (
+            <li key={entry.key} data-legend-reference={entry.key} className="col-span-2 flex items-center gap-2">
+              <ReferenceSwatch kind={entry.swatch} />
+              {/* The weather (PR M8): the time of a satellite image, or «Sin actualizar» of a stale wind, below its name,
+                  and its tag of the vocabulary as a plate after it. */}
+              {entry.hint ? (
+                <span>
+                  <span className="block">{entry.label}</span>
+                  <span className="block text-occ-muted">{entry.hint}</span>
+                </span>
+              ) : <span>{entry.label}</span>}
+              {entry.tag && (
+                <span className="shrink-0 rounded-sm border border-occ-line-strong px-1 text-xs font-semibold text-occ-muted">
+                  {entry.tag}
+                </span>
+              )}
+            </li>
+          ))}
           {airfield.map(kind => (
             <li key={kind} className="flex items-center gap-2 pr-3">
               <AirfieldSwatch kind={kind} />

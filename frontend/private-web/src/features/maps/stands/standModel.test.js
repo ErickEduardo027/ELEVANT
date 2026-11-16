@@ -502,9 +502,28 @@ describe('deriveDisplayStatus with the map situation (PR M6)', () => {
     const shown = read(a2Of(-1), zz300(done, -1));
     expect(shown).toMatchObject({ state: 'releasing', milestonesDone: 9, signals: [{ kind: 'attention', reason: 'overdue' }] });
     expect(Object.keys(shown).sort()).toEqual([
-      'aircraftType', 'arrivalAt', 'cancelledBy', 'departureAt', 'flightNumber', 'footprint', 'isDemo', 'milestonesDone',
-      'milestonesTotal', 'minutesToArrival', 'minutesToDeparture', 'signals', 'state', 'typeSpec', 'visit',
+      'aircraftType', 'arrivalAt', 'cancelledBy', 'departureAt', 'detail', 'flightNumber', 'footprint', 'isDemo',
+      'milestonesDone', 'milestonesTotal', 'minutesToArrival', 'minutesToDeparture', 'next', 'signals', 'state', 'typeSpec',
+      'visit',
     ]);
+    // The detail of the visit (owner request of 2026-11-15): its airline, its times and its legs, from what was read.
+    expect(shown.detail).toMatchObject({ arrival: expect.any(Object), departure: expect.any(Object) });
+    expect(Array.isArray(shown.detail.legs)).toBe(true);
+    expect(shown.next).toBeNull();
+  });
+
+  it('the detail of a stand: the visit on it with its airline and times, and the next visit onto it', () => {
+    const stand = standAt('A2', boardStand('A02', { coveredBy: ['Marta'], turnarounds: [
+      noonVisit({ flight: 'ZZ300', arrivalInMin: -30, departureInMin: 40, arrived: true }),
+      noonVisit({ flight: 'ZZ500', arrivalInMin: 120, departureInMin: 180 }),
+    ] }));
+    const shown = deriveDisplayStatus(stand, { nowMs: NOON });
+    expect(shown.state).toBe('occupied');
+    expect(shown.detail).toMatchObject({ airline: 'Aerolínea de prueba', registration: 'HI0300', operationStatus: 'InProgress',
+      arrival: { scheduledAt: NOON - 30 * 60_000, actualAt: NOON - 30 * 60_000 },
+      departure: { scheduledAt: NOON + 40 * 60_000, actualAt: null } });
+    expect(shown.next).toMatchObject({ flightNumber: 'ZZ500', arrivalAt: NOON + 120 * 60_000, minutesToArrival: 120,
+      airline: 'Aerolínea de prueba' });
   });
 
   it('an aircraft standing in a stand without an arrival recorded asks to record it', () => {

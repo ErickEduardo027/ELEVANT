@@ -9,6 +9,7 @@ using Elevant.Infrastructure.Operations;
 using Elevant.Infrastructure.Commercial;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Integrations.AirTraffic;
+using Elevant.Infrastructure.Integrations.AviationWeather;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
@@ -61,6 +62,7 @@ public static class DependencyInjection
         else
             services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed,
                 Elevant.Infrastructure.Integrations.AeroDataBox.DisabledAirportFlightFeed>();
+        AddAviationReference(services, aeroDataBox);
         var openSky = configuration.GetSection(OpenSkyOptions.SectionName).Get<OpenSkyOptions>() ?? new OpenSkyOptions();
         services.AddSingleton<IOccAircraftTrafficSource>(provider =>
             new OpenSkyAircraftTrafficSource(
@@ -69,6 +71,7 @@ public static class DependencyInjection
                 openSky,
                 provider.GetRequiredService<TimeProvider>()));
         AddAirTraffic(services, configuration);
+        AddAviationWeather(services, configuration);
         // Public airline registries, asked in this order (ADR-0023).
         services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource>(_ =>
             new Elevant.Infrastructure.Integrations.AirlineRegistry.WikidataAirlineRegistrySource(
@@ -91,6 +94,39 @@ public static class DependencyInjection
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
+    }
+
+    /// <summary>
+    /// ADR-0028 (note of 15 November 2026): the on-demand reference reads (airline fleet, aircraft by registration, daily
+    /// routes, current delays) use the feed's key and run only while AeroDataBox is enabled with a key; otherwise the
+    /// provider is the unconfigured one and nothing is ever called. A negative cap stops the start.
+    /// </summary>
+    private static void AddAviationReference(IServiceCollection services,
+        Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions options)
+    {
+        int[] caps =
+        [
+            options.PlanMonthlyUnitLimit, options.FleetDailyUnitLimit, options.FleetMonthlyUnitLimit,
+            options.AircraftDailyUnitLimit, options.AircraftMonthlyUnitLimit, options.RoutesDailyUnitLimit,
+            options.RoutesMonthlyUnitLimit, options.DelaysDailyUnitLimit, options.DelaysMonthlyUnitLimit,
+        ];
+        if (caps.Any(cap => cap < 0))
+            throw new InvalidOperationException("The AeroDataBox reference caps must be zero or more.");
+        var defaults = Elevant.Application.Integration.AviationReference.AviationReferenceLimits.Default;
+        services.AddSingleton(new Elevant.Application.Integration.AviationReference.AviationReferenceLimits(
+            defaults.AirlineFleet with { DailyUnits = options.FleetDailyUnitLimit, MonthlyUnits = options.FleetMonthlyUnitLimit },
+            defaults.Aircraft with { DailyUnits = options.AircraftDailyUnitLimit, MonthlyUnits = options.AircraftMonthlyUnitLimit },
+            defaults.AirportRoutes with { DailyUnits = options.RoutesDailyUnitLimit, MonthlyUnits = options.RoutesMonthlyUnitLimit },
+            defaults.AirportDelays with { DailyUnits = options.DelaysDailyUnitLimit, MonthlyUnits = options.DelaysMonthlyUnitLimit },
+            options.PlanMonthlyUnitLimit, options.DelaysEnabled));
+        if (options.Enabled && !string.IsNullOrWhiteSpace(options.ApiKey))
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider>(_ =>
+                new Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxReferenceProvider(
+                    new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) },
+                    options));
+        else
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider,
+                Elevant.Application.Abstractions.Integrations.UnconfiguredAviationReferenceProvider>();
     }
 
     /// <summary>Configuration section of the card gateway (4-N05).</summary>
@@ -204,5 +240,26 @@ public static class DependencyInjection
         return new AirTrafficSettings(options.Enabled, options.StationCode.Trim().ToUpperInvariant(), options.CenterLatitude,
             options.CenterLongitude, options.RadiusNm, TimeSpan.FromSeconds(options.IntervalSeconds),
             TimeSpan.FromSeconds(options.IdleAfterSeconds), TimeSpan.FromMinutes(options.TrailMinutes));
+    }
+
+    /// <summary>
+    /// ADR-0043 (contracts 1.4): the METAR and the TAF of the OCC, from aviationweather.gov. <c>AviationWeather:Enabled</c>
+    /// is off by default, and then the source is <see cref="DisabledAerodromeWeatherSource"/> and nothing is ever called.
+    /// <c>AviationWeather:BaseUrl</c> is checked on every start, also while it is off, and gets its final slash when it
+    /// lacks one. On, the source is built only when it is first resolved, and it calls the service only when someone reads
+    /// an airport's weather: never while the API starts. No environment is refused: <c>appsettings.json</c> leaves it off.
+    /// </summary>
+    private static void AddAviationWeather(IServiceCollection services, IConfiguration configuration)
+    {
+        var options = configuration.GetSection(AviationWeatherOptions.SectionName).Get<AviationWeatherOptions>() ?? new();
+        var baseUrl = AviationWeatherSource.DataApiAddress(options.BaseUrl) ??
+            throw new InvalidOperationException("AviationWeather:BaseUrl must be an absolute https address.");
+        if (!options.Enabled)
+        {
+            services.AddSingleton<IAerodromeWeatherSource, DisabledAerodromeWeatherSource>();
+            return;
+        }
+        services.AddSingleton<IAerodromeWeatherSource>(provider => new AviationWeatherSource(
+            AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
     }
 }

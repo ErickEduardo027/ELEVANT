@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { call, expectCall, login } from "./support/api";
+import { call, expectCall, login, superadminVerifiesByHand, SYNTHETIC_RNC } from "./support/api";
 import { forwardApi, loginPortal, loginPrivate, openModule, snap } from "./support/browser";
 import { API, loadRun, PUBLIC_WEB, savePassword, saveRun, startRun } from "./support/env";
 import { linkTo, waitForEmail } from "./support/mailpit";
@@ -101,6 +101,8 @@ test("La aerolínea pide servicios desde el sitio público", async ({ page }) =>
   await services.nth(0).click();
   await page.getByRole("button", { name: /Continuar/ }).click();
   await page.locator("#airline-select").selectOption({ label: airline.name });
+  // Professor's review: a Dominican airline gives its RNC (synthetic, with a valid check digit).
+  await page.locator("#tax-number").fill(SYNTHETIC_RNC);
   await page.getByRole("button", { name: /Continuar/ }).click();
   await page.locator("#representative-name").fill(representative.name);
   await page.locator("#representative-titleOption").selectOption({ index: 1 });
@@ -172,7 +174,7 @@ test("Contratos cancela con motivo una segunda solicitud de la aerolínea ya afi
     requestId: crypto.randomUUID(), airlineProfileId: profile!.id, serviceIds: [catalog.data.services[0]!.id],
     representativeName: "Rosa Martinez Duplicada", representativeTitle: "Gerente de operaciones", representativeEmail: email,
     representativePhone: "809-555-0101", authorityDeclared: true, representativeDocumentType: "NationalId",
-    representativeDocumentNumber: "00112345673" });
+    representativeDocumentNumber: "00112345673", taxRegistration: SYNTHETIC_RNC, taxRegistrationCountryCode: "DO" });
   expect(submitted.status).toBe(201);
 
   await loginPrivate(page, "contracts");
@@ -216,6 +218,7 @@ test("Una aerolínea que no aparece en el listado se propone y Contratos la ve c
   await page.locator("#proposal-countryCode").selectOption("DO");
   await page.locator("#proposal-icaoCode").fill(`Q${pick(letters)}${pick(letters)}`);
   await page.locator("#proposal-websiteUrl").fill("https://e2e-proposal.example.com");
+  await page.locator("#tax-number").fill(SYNTHETIC_RNC);
   await page.getByRole("button", { name: /Continuar/ }).click();
   await page.locator("#representative-name").fill("Luis Propuesta Prueba");
   await page.locator("#representative-titleOption").selectOption({ index: 1 });
@@ -364,7 +367,8 @@ test("Contratos descarta un borrador que no prosperó y el contrato queda cerrad
       icaoCode: `W${pick(letters)}${pick(letters)}`, websiteUrl: "https://e2e-desist.example.com" },
     serviceIds: [catalog.data.services[0]!.id], representativeName: "Marta Desistida Prueba",
     representativeTitle: "Gerente comercial", representativeEmail: email, representativePhone: "809-555-0103",
-    authorityDeclared: true, representativeDocumentType: "NationalId", representativeDocumentNumber: "00112345673" });
+    authorityDeclared: true, representativeDocumentType: "NationalId", representativeDocumentNumber: "00112345673",
+    taxRegistration: SYNTHETIC_RNC, taxRegistrationCountryCode: "DO" });
   type InboxRequest = { id: string; version: string; contractId: string | null };
   const request = async () => (await expectCall<{ requests: InboxRequest[] }>(200, contracts, "GET",
     `/contracts/commercial-requests/inbox?status=All&search=${encodeURIComponent(email)}`)).data.requests[0]!;
@@ -380,6 +384,8 @@ test("Contratos descarta un borrador que no prosperó y el contrato queda cerrad
     if (attempt >= 4 || (verified.data as { code?: string })?.code !== "airline_profile_conflict")
       throw new Error(`verification → HTTP ${verified.status} ${JSON.stringify(verified.data)}`);
   }
+  // ADR-0023: the registries do not know the synthetic airline; Superadmin verifies it by hand so it can be approved.
+  await superadminVerifiesByHand(name);
   const stations = await expectCall<Array<{ id: string; code: string }>>(200, contracts, "GET",
     "/contracts/commercial-requests/stations");
   const puj = stations.data.find(station => station.code === "PUJ")!;
@@ -422,7 +428,8 @@ test("Superadmin vincula la cuenta que ya existía y cierra su invitación con u
       icaoCode: `V${pick(letters)}${pick(letters)}`, websiteUrl: "https://e2e-link.example.com" },
     serviceIds: [catalog.data.services[0]!.id], representativeName: "Lucía Vinculada Prueba",
     representativeTitle: "Gerente comercial", representativeEmail: email, representativePhone: "809-555-0104",
-    authorityDeclared: true, representativeDocumentType: "NationalId", representativeDocumentNumber: "00112345673" });
+    authorityDeclared: true, representativeDocumentType: "NationalId", representativeDocumentNumber: "00112345673",
+    taxRegistration: SYNTHETIC_RNC, taxRegistrationCountryCode: "DO" });
   type InboxRequest = { id: string; version: string };
   const request = async () => (await expectCall<{ requests: InboxRequest[] }>(200, contracts, "GET",
     `/contracts/commercial-requests/inbox?status=All&search=${encodeURIComponent(email)}`)).data.requests[0]!;
@@ -438,6 +445,7 @@ test("Superadmin vincula la cuenta que ya existía y cierra su invitación con u
     if (attempt >= 4 || (verified.data as { code?: string })?.code !== "airline_profile_conflict")
       throw new Error(`verification → HTTP ${verified.status} ${JSON.stringify(verified.data)}`);
   }
+  await superadminVerifiesByHand(name);
   const stations = await expectCall<Array<{ id: string; code: string }>>(200, contracts, "GET",
     "/contracts/commercial-requests/stations");
   await expectCall(200, contracts, "POST", `/contracts/commercial-requests/${(await request()).id}/decision`,

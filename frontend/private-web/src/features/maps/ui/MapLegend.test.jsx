@@ -13,7 +13,10 @@ import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import { standPaint } from '../stands/standLayers';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
+import { MAP_COLORS } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
+import { THEME_STORAGE_KEY } from '../../shell/occTheme';
+import { ThemeProvider } from '../../shell/useTheme';
 import { createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
 
@@ -23,6 +26,7 @@ const fake = sharedFakeMapLibre();
 // Synthetic states over the reference points: A1 occupied, A3 planned, B21 disabled and BN6 unverified, the rest free;
 // only A1 to A3 were placed by OCC.
 const STANDS = createMapStands();
+const rgbOf = hex => `rgb(${[1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
 const DRAWN = attachStandGeometry(STANDS, MDPC_LAYOUT);
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
 const RAMP_ORDER = ['available', 'planned', 'occupied', 'disabled', 'unverified'];
@@ -77,14 +81,16 @@ describe('MapLegend', () => {
     // The words of the vocabulary, in its order, and the «No oficial» plate with what it means.
     expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL]);
     expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
-    // Each state is drawn as the map draws it: its outline token and its dash, the slab of «Ocupada», the hatch of
-    // «Inhabilitada» and the aircraft of a stand with an aircraft on it.
+    // Each state is drawn as the map draws it: its outline token and its dash, its own fill colour (mapColors.js), the
+    // hatch of «Inhabilitada» and the aircraft of a stand with an aircraft on it.
     const outlines = stateSwatches().map(svg => svg.querySelector('rect'));
     expect(outlines.map(rect => rect.style.stroke)).toEqual([
       'var(--occ-line-strong)', 'var(--occ-muted)', 'var(--occ-text)', 'var(--occ-line-strong)', 'var(--occ-faint)',
     ]);
     expect(outlines.map(rect => rect.style.strokeDasharray)).toEqual(['none', '4 3', 'none', '2 2', '1 3']);
-    expect(outlines[2].style.fill).toBe('var(--occ-panel-raised)');
+    const rgb = hex => `rgb(${[1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
+    expect(outlines.map(rect => rect.style.fill)).toEqual(RAMP_ORDER.map(state => rgb(MAP_COLORS.dark.stands[state].color)));
+    expect(new Set(outlines.map(rect => rect.style.fill)).size).toBe(outlines.length);
     expect(stateSwatches().map(glyphsOf)).toEqual(['', '', 'aircraft', 'hatch', '']);
     expect(legend.querySelector('[data-glyph="aircraft"]').style.fill).toBe('var(--occ-text)');
 
@@ -571,6 +577,91 @@ describe('MapLegend', () => {
     );
     expect(legendItems()).toEqual(['Vuelo de AVIAM que llega']);
   });
+  it('lists each reference only while it is on screen, set apart with the airfield, each drawn as the map draws it', () => {
+    const ALL = { kinds: ['rings', 'centrelines', 'runwayInUse', 'counterparts', 'vor', 'ndb', 'night'],
+      runway: { arrival: '08', source: 'wind' } };
+    const withReferences = (referencesOnScreen, extra = {}) => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, referencesOnScreen, ...extra }}>
+        <MapLegend />
+      </OccMapContext.Provider>
+    );
+    const { rerender } = render(withReferences(ALL));
+    expect(legendItems()).toEqual(['Anillos de distancia', 'Eje de pista extendido (marca cada NM)',
+      'Pista 08 (estimada por el viento)', 'Origen o destino de un vuelo de hoy',
+      'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)']);
+    const legend = screen.getByTestId('map-legend');
+    // Each takes the whole row, with the swatch of what the map draws: the runway in use wider and lighter than the
+    // other centrelines, a counterpart ringed in the text colour, the chart symbols of the navaids.
+    const items = [...legend.querySelectorAll('[data-legend-reference]')];
+    expect(items.map(item => item.dataset.legendReference)).toEqual(ALL.kinds);
+    expect(items.every(item => item.classList.contains('col-span-2'))).toBe(true);
+    const swatch = kind => legend.querySelector('[data-reference-swatch="' + kind + '"]');
+    expect(swatch('runwayInUse').querySelector('g').style.stroke).toBe('var(--occ-text)');
+    expect(swatch('runwayInUse').querySelector('g').style.strokeWidth).toBe('1.5');
+    expect(swatch('centrelines').querySelector('g').style.stroke).toBe('var(--occ-line-strong)');
+    expect(swatch('rings').querySelectorAll('circle')).toHaveLength(2);
+    expect(swatch('counterparts').querySelector('circle').style.stroke).toBe('var(--occ-text)');
+    expect(swatch('vor').querySelectorAll('path')).toHaveLength(3);
+    expect(swatch('ndb').querySelectorAll('path')).toHaveLength(2);
+    // The night as the map paints it in the theme on screen (style/mapColors.js: night).
+    expect(swatch('night').style.getPropertyValue('--occ-swatch-night-opacity')).toBe('0.45');
+    expect(swatch('night').querySelector('path').style.fillOpacity).toBe('var(--occ-swatch-night-opacity)');
+    expect([...legend.querySelectorAll('[data-reference-swatch]')].every(svg => svg.getAttribute('aria-hidden') === 'true')).toBe(true);
+    // Alone, nothing sets them apart.
+    expect(legend.querySelector('[data-legend-rule]')).toBeNull();
+
+    // With traffic and the airfield: the traffic first, then the rule, the references and the airfield.
+    rerender(withReferences({ kinds: ['rings', 'vor'], runway: null },
+      { trafficOnScreen: { kinds: ['other'], tags: [], trails: [] }, airfieldOnScreen: ['runway'] }));
+    expect(legendItems()).toEqual(['Otro tráfico', 'Anillos de distancia', 'Radioayuda VOR-DME', 'Pista']);
+    expect(screen.getByTestId('map-legend').querySelector('[data-legend-rule]').nextElementSibling)
+      .toHaveTextContent('Anillos de distancia');
+    // The runway in use is listed only with its runway; nothing of them on screen, no legend.
+    rerender(withReferences({ kinds: ['centrelines', 'runwayInUse'], runway: null }));
+    expect(legendItems()).toEqual(['Eje de pista extendido (marca cada NM)']);
+    rerender(withReferences({ kinds: [], runway: null }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    // In English.
+    resetLanguageForTests('en');
+    render(<LanguageScope>{withReferences(ALL)}</LanguageScope>);
+    expect(legendItems().slice(0, 3)).toEqual(['Range rings', 'Extended runway centreline (a tick per NM)',
+      'Runway 08 (estimated from the wind)']);
+  });
+  it('lists the weather on screen after the references: the wind, dimmed when stale, and each image with its time', () => {
+    const withWeather = referencesOnScreen => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, referencesOnScreen }}>
+        <MapLegend />
+      </OccMapContext.Provider>
+    );
+    const imagery = { goes: { time: '2026-11-13T14:50:00Z', precision: 'instant' }, imerg: { time: '2026-11-13T14:30:00Z',
+      precision: 'instant' } };
+    const { rerender } = render(withWeather({ kinds: ['rings', 'wind', 'goes', 'imerg'], runway: null, imagery }));
+    expect(legendItems()).toEqual(['Anillos de distancia', `Viento en pista${TAGS.unofficial.es}`,
+      'Nubes por satélite (GOES-East, infrarrojo)Imagen de las 10:50', 'Lluvia estimada (IMERG)Imagen de las 10:30']);
+    const legend = screen.getByTestId('map-legend');
+    // The wind's arrow in the text colour; «No oficial» a plate of the vocabulary; each image's time muted.
+    const swatch = kind => legend.querySelector(`[data-reference-swatch="${kind}"]`);
+    expect(swatch('wind').querySelector('[data-glyph="wind"]').style.opacity).toBe('1');
+    expect(swatch('wind').querySelector('[data-glyph="wind"] path:last-child').style.fill).toBe('var(--occ-text)');
+    expect(within(legend.querySelector('[data-legend-reference="wind"]')).getByText(TAGS.unofficial.es))
+      .toHaveClass('rounded-sm', 'border-occ-line-strong');
+    expect(within(legend.querySelector('[data-legend-reference="goes"]')).getByText('Imagen de las 10:50'))
+      .toHaveClass('text-occ-muted');
+    expect(swatch('goes')).not.toBeNull();
+    expect(swatch('imerg')).not.toBeNull();
+    // Stale: the arrow dimmed and «Sin actualizar» muted below its name, and still the «No oficial» plate (contracts 2.4:
+    // the map's label never says it, and nothing depends on hover); nothing of the weather on screen, nothing listed.
+    rerender(withWeather({ kinds: ['windStale'], runway: null }));
+    expect(legendItems()).toEqual([`Viento en pista${TAGS.stale.short.es}${TAGS.unofficial.es}`]);
+    const stale = within(screen.getByTestId('map-legend').querySelector('[data-legend-reference="windStale"]'));
+    expect(stale.getByText(TAGS.unofficial.es)).toHaveClass('rounded-sm', 'border-occ-line-strong');
+    expect(stale.getByText(TAGS.stale.short.es)).toHaveClass('text-occ-muted');
+    expect(screen.getByTestId('map-legend').querySelector('[data-glyph="wind"]').style.opacity).toBe('0.75');
+    rerender(withWeather({ kinds: [], runway: null }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
 
   it('explains the aircraft to scale, the progress bar and the plain notice of the stands the flights feed (PR M6)', () => {
     const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
@@ -649,6 +740,47 @@ describe('MapLegend', () => {
       expect(panel().style.maxHeight).toBe('');
     } finally {
       rect.mockRestore();
+    }
+  });
+});
+
+describe('MapLegend: the airports of the region (owner request of 2026-11-15)', () => {
+  const withAirports = (view, on = true) => ({ ...OCC_MAP_IDLE, activeView: view,
+    layers: { keys: ['reference.airports'], values: { 'reference.airports': on } } });
+
+  it('lists the four kinds of airport while the Región or Aproximación view shows them', () => {
+    const { rerender } = render(<OccMapContext.Provider value={withAirports('region')}><MapLegend /></OccMapContext.Provider>);
+    const entries = [...document.querySelectorAll('[data-legend-airport]')];
+    expect(entries.map(entry => entry.dataset.legendAirport)).toEqual(['home', 'international', 'regional', 'other']);
+    expect(entries.map(entry => entry.textContent)).toEqual(['Punta Cana (MDPC)', 'Aeropuerto internacional',
+      'Aeropuerto regional', 'Otro aeródromo']);
+    // The home airport's dot is the larger one.
+    const radius = kind => Number(document.querySelector(`[data-airport="${kind}"] circle`).getAttribute('r'));
+    expect(radius('home')).toBeGreaterThan(radius('regional'));
+    rerender(<OccMapContext.Provider value={withAirports('ramp')}><MapLegend /></OccMapContext.Provider>);
+    expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+    rerender(<OccMapContext.Provider value={withAirports('approach', false)}><MapLegend /></OccMapContext.Provider>);
+    expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+  });
+
+  it('one airport to a row, and in the light theme the dots and the stand fills of the light palette', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    try {
+      render(
+        <ThemeProvider>
+          <OccMapContext.Provider value={withAirports('region')}><MapLegend /></OccMapContext.Provider>
+          <MapLegend stands={STANDS} />
+        </ThemeProvider>,
+      );
+      for (const entry of document.querySelectorAll('[data-legend-airport]')) expect(entry.className).toContain('col-span-2');
+      const dot = kind => document.querySelector(`[data-airport="${kind}"] circle`).style.fill;
+      for (const kind of ['home', 'international', 'regional', 'other']) expect(dot(kind), kind).toBe(rgbOf(MAP_COLORS.light.airports[kind]));
+      const fills = [...document.querySelectorAll('[data-swatch="state"] rect')].map(rect => rect.style.fill);
+      expect(fills.length).toBeGreaterThan(0);
+      const light = new Set(Object.values(MAP_COLORS.light.stands).map(fill => rgbOf(fill.color)));
+      for (const fill of fills) expect(light.has(fill), fill).toBe(true);
+    } finally {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
     }
   });
 });

@@ -248,7 +248,22 @@ describe('camera presets', () => {
     const narrow = thresholdsFromFits(fitZooms(cameraForWidth(800), targets)).airfield;
     expect(narrow).toBeCloseTo(wide - Math.log2(1440 / 800), 9);
     const fits = { region: 6, approach: 9, airfield: 14, ramp: 15.5 };
-    expect(thresholdsFromFits(fits)).toEqual({ polygons: 13.7, codes: 15.2, threeLine: 16.3, airfield: 11.5 });
+    expect(thresholdsFromFits(fits)).toEqual({ polygons: 13.7, codes: 15.2, threeLine: 16.3, airfield: 11.5, approach: 7.5 });
+  });
+
+  it('the approach threshold is the region/approach boundary of presetForZoom, and absent without a region fit', () => {
+    // Where the range rings of Región give way to those of Aproximación (PR M8): the boundary the selector draws.
+    const targets = presetTargets({ layout: MDPC_LAYOUT });
+    for (const width of [1440, 800]) {
+      const fits = fitZooms(cameraForWidth(width), targets);
+      const { approach } = thresholdsFromFits(fits);
+      expect(approach, String(width)).toBeCloseTo((fits.region + fits.approach) / 2, 12);
+      expect(presetForZoom(approach, fits), String(width)).toBe('approach');
+      expect(presetForZoom(approach - 1e-9, fits), String(width)).toBe('region');
+    }
+    // Fits without the region (the 3D instance plan passes only the airport views) give no approach threshold.
+    expect(thresholdsFromFits({ approach: 9.5, airfield: 14.4, ramp: 15.6 })).not.toHaveProperty('approach');
+    expect(thresholdsFromFits({ region: Number.NaN, approach: 9.5, airfield: 14.4, ramp: 15.6 })).not.toHaveProperty('approach');
   });
 
   it('presetForZoom keeps the selector truthful between fitted zooms and returns null before the fit', () => {

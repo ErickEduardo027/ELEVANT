@@ -209,6 +209,31 @@ describe('the map situation (design E1, contracts 1.3 and 2.4)', () => {
     expect(odd.byId.get(`f:${KEY.demoArrival}`)).toMatchObject({ statusKey: null, timeScale: 1, opacity: 1, mode: 'estimate' });
   });
 
+  it('an estimate of a flight the read no longer lists is drawn from the row it brings, which joins the flights', () => {
+    // The demo pair left the read (the server dismissed it); the motion store still fades its aircraft out.
+    const read = flightsOf(createMapFlights().flights.filter(row => !row.isDemo));
+    const row = flights.byKey.get(KEY.demoArrival);
+    const lastRow = { ...row, phase: 'cancelled', demo: { ...row.demo, state: 'Cancelled', phase: 'Gone' } };
+    const [estimate] = createEstimates();
+    const fading = { ...estimate, statusKey: 'cancelledByProvider', opacity: 0.5, flight: lastRow };
+    const situation = buildSituation({ picture: livePicture, flights: read, nowMs: NOON, estimates: [fading] });
+    expect(situation.byId.get(`f:${KEY.demoArrival}`)).toMatchObject({ quality: 'estimated', isDemo: true, phase: 'cancelled',
+      flightNumber: 'ZZ9001', statusKey: 'cancelledByProvider', opacity: 0.5 });
+    expect(situation.flights).toHaveLength(read.flights.length + 1);
+    expect(situation.flights[situation.flights.length - 1]).toBe(lastRow);
+    expect(selectionTarget({ kind: 'flight', id: KEY.demoArrival }, situation)).toMatchObject({ flight: lastRow });
+    // Without an estimate that brings it, the flights are the read's own rows, the very same array.
+    expect(buildSituation({ picture: livePicture, flights: read, nowMs: NOON }).flights).toBe(read.flights);
+    // A row the read still lists wins, and a row of another key is no row of this estimate.
+    const listed = buildSituation({ picture: livePicture, flights, nowMs: NOON, estimates: [fading] });
+    expect(listed.byId.get(`f:${KEY.demoArrival}`).phase).toBe(row.phase);
+    expect(listed.flights).toBe(flights.flights);
+    const stranger = buildSituation({ picture: livePicture, flights: read, nowMs: NOON,
+      estimates: [{ ...fading, flight: { ...lastRow, flightKey: KEY.noFix } }] });
+    expect(stranger.byId.has(`f:${KEY.demoArrival}`)).toBe(false);
+    expect(stranger.flights).toBe(read.flights);
+  });
+
   it('the motion store\'s next change joins the instant a live aircraft turns stale', () => {
     const live = buildSituation({ picture: livePicture, flights, nowMs: NOON });
     // The oldest live fix (the transponder inside A2, 8 s old at noon) turns stale 30 s after it.

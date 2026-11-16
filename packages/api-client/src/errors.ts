@@ -21,7 +21,9 @@ const COMMERCIAL_REQUEST_CODES = ["request_closed", "airline_unverified", "repre
   "profile_not_found", "invalid_airline", "stations_invalid", "confirmation_note_required",
   "invalid_commercial_request", "invalid_inbox_query", "invalid_application", "airline_unavailable",
   "service_unavailable", "receipt_not_found", "request_unavailable", "email_in_use", "invalid_provisioning",
-  "invitations_unavailable", "invitation_already_accepted", "registry_check_required"] as const;
+  "invitations_unavailable", "invitation_already_accepted", "registry_check_required",
+  // Professor's review: the airline's tax identifier and the public-registry rule of the approval (ADR-0023).
+  "invalid_tax_registration", "airline_not_in_public_registry"] as const;
 /**
  * Contract drafts (phase 1, block B): one code per cause that blocks the submission to Finance (the
  * readiness), the scope, the discard and the observations; the Finance approval codes of each blocking
@@ -237,6 +239,13 @@ const DEMO_FLIGHT_CODES = ["demo_flights_unavailable", "invalid_demo_flight", "d
  * no read saw lately the common `not_found`.
  */
 const OCC_MAP_CODES = ["invalid_map_query"] as const;
+/**
+ * The OCC's weather (ADR-0043): a station missing or malformed. A refused reader keeps `forbidden`, and a station outside
+ * the scope, unknown or inactive, or whose airport has no ICAO code the common `not_found`.
+ */
+const OCC_WEATHER_CODES = ["invalid_weather_query"] as const;
+/** The AeroDataBox reference reads (ADR-0028, note of 15 November 2026): a missing or malformed parameter. */
+const AVIATION_REFERENCE_CODES = ["invalid_aviation_reference_query"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
@@ -246,14 +255,16 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
   (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
   (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number] |
   (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number] | (typeof FINANCE_SIMPLIFICATION_CODES)[number] |
-  (typeof CARD_PAYMENT_CODES)[number] | (typeof DEMO_FLIGHT_CODES)[number] | (typeof OCC_MAP_CODES)[number];
+  (typeof CARD_PAYMENT_CODES)[number] | (typeof DEMO_FLIGHT_CODES)[number] | (typeof OCC_MAP_CODES)[number] |
+  (typeof OCC_WEATHER_CODES)[number] | (typeof AVIATION_REFERENCE_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
   ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
   ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES, ...INVOICING_CODES, ...TREASURY_CODES,
-  ...FINANCE_SIMPLIFICATION_CODES, ...CARD_PAYMENT_CODES, ...DEMO_FLIGHT_CODES, ...OCC_MAP_CODES];
+  ...FINANCE_SIMPLIFICATION_CODES, ...CARD_PAYMENT_CODES, ...DEMO_FLIGHT_CODES, ...OCC_MAP_CODES, ...OCC_WEATHER_CODES,
+  ...AVIATION_REFERENCE_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

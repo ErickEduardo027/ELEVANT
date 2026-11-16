@@ -13,8 +13,8 @@ import {
   createAirPicture, createDemoBlock, createDemoFlights, createMapFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX,
   TRAFFIC_NOON, trafficInstant,
 } from '../testing/trafficFixtures';
-import { FORGET_AFTER_MS, arrivalsOnFinal, createMotionStore, planInputsKey } from './motionStore';
-import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
+import { FINAL_VOTE, FORGET_AFTER_MS, arrivalsOnFinal, createMotionStore, planInputsKey } from './motionStore';
+import { buildSituation, selectionTarget, toFlightsModel, toPictureModel } from './situationModel';
 
 // The motion store on the synthetic traffic of the lab's noon (testing/trafficFixtures.js) over the signed Punta Cana
 // layout, with the real kinematics. Every instant is explicit; nothing reads a clock.
@@ -55,6 +55,9 @@ const demoOnly = (block, options) => {
   return flightsOf({ ...response, flights: response.flights.filter(row => row.isDemo) });
 };
 const demoEstimate = (store, tMs, key = KEY.demoArrival) => store.estimatesAt(tMs).find(item => item.flightKey === key);
+/** A flights read `seconds` after noon that lists none of the station's flights (the demo pair dismissed by the server). */
+const noFlights = (seconds, overrides = {}) => flightsOf({ ...createMapFlights({ serverTime: trafficInstant(seconds) }),
+  flights: [], ...overrides });
 /** The situation at `nowMs` with the store's estimates, as useMapSituation builds it. */
 const situationOf = (store, { picture, flights }, nowMs = NOON) => buildSituation({ picture, flights, nowMs,
   estimates: store.estimatesAt(nowMs), estimatesChangeAt: store.nextChangeAt(nowMs) });
@@ -107,7 +110,8 @@ describe('motion store (design F4, contracts 2.3)', () => {
     const on26 = { ...base.aircraft[1], latitude, longitude, altitudeFeet: 1_900, groundSpeedKnots: 150,
       trackDegrees: end26.headingTrue, verticalRateFeetPerMinute: -700, onGround: false };
     const picture = toPictureModel({ ...base, aircraft: [on26] });
-    expect(arrivalsOnFinal(picture.aircraft, MDPC_LAYOUT)).toEqual([{ trackDeg: end26.headingTrue }]);
+    expect(arrivalsOnFinal(picture.aircraft, MDPC_LAYOUT))
+      .toEqual([{ trackDeg: end26.headingTrue, positionAt: Date.parse(on26.positionAt) }]);
     const block = createDemoBlock({ appearAt: at(-60) });
     const store = createMotionStore();
     store.ingest({ picture, flights: flightsOf(createDemoFlights(block)) });
@@ -131,6 +135,43 @@ describe('motion store (design F4, contracts 2.3)', () => {
     // Not before it appears; it moves while it flies.
     expect(demoEstimate(store, at(-61))).toBeUndefined();
     expect(store.isAnimating(at(0))).toBe(true);
+  });
+
+  it('real flights keep the runway of the arrivals last seen on final for half an hour', { timeout: 30_000 }, () => {
+    // Other traffic on final for 26, seen 6 s before noon; ZZ500, en route without a fix, is planned to land on 26.
+    const end26 = runwayEnd(MDPC_LAYOUT, '26');
+    const [longitude, latitude] = destinationPoint(end26.threshold, end26.headingTrue + 180, nmToM(6));
+    const base = createAirPicture();
+    const on26 = { ...base.aircraft[1], latitude, longitude, altitudeFeet: 1_900, groundSpeedKnots: 150,
+      trackDegrees: end26.headingTrue, verticalRateFeetPerMinute: -700, onGround: false };
+    const { build, calls } = spied();
+    const store = createMotionStore({ build });
+    const flights = flightsOf(createMapFlights());
+    store.ingest({ picture: toPictureModel({ ...base, aircraft: [on26] }), flights });
+    const by26 = { arrival: '26', departure: '26', source: 'live' };
+    expect(store.runway()).toEqual(by26);
+    const zz500 = store.trajectoryOf(KEY.noFix);
+    expect(zz500.meta.runwayIdent).toBe('26');
+    const built = calls.arrival.length;
+    // It lands, and nobody else is on final for the next half hour: the runway stays and nothing is built again.
+    const quiet = seconds => toPictureModel(createAirPicture({ serverTime: trafficInstant(seconds), aircraft: [] }));
+    for (const minutes of [1, 10, 29]) {
+      store.ingest({ picture: quiet(minutes * 60), flights });
+      expect(store.runway(), `${minutes} min`).toEqual(by26);
+      expect(store.trajectoryOf(KEY.noFix), `${minutes} min`).toBe(zz500);
+    }
+    expect(calls.arrival.length).toBe(built);
+    // Past FINAL_VOTE.keepMs since it was seen, the preferred runway again, and ZZ500 is planned on 08.
+    expect(FINAL_VOTE.keepMs).toBe(30 * 60_000);
+    store.ingest({ picture: quiet(30 * 60), flights });
+    expect(store.runway()).toEqual({ arrival: '08', departure: '08', source: 'default' });
+    expect(store.trajectoryOf(KEY.noFix).meta.runwayIdent).toBe('08');
+    // A newer arrival on final turns the runway at once, inside the half hour of the one before.
+    const turning = createMotionStore();
+    turning.ingest({ picture: toPictureModel({ ...base, aircraft: [on26] }), flights });
+    const on08 = { ...base.aircraft[0], matchedFlightKey: null, matchedBy: null, positionAt: trafficInstant(300), trail: [] };
+    turning.ingest({ picture: toPictureModel(createAirPicture({ serverTime: trafficInstant(305), aircraft: [on08] })), flights });
+    expect(turning.runway()).toEqual({ arrival: '08', departure: '08', source: 'live' });
   });
 
   it('an un-imported demo waits at the apron hold awaiting a stand, not imported', () => {
@@ -173,6 +214,38 @@ describe('motion store (design F4, contracts 2.3)', () => {
     expect(store.followTargets(KEY.demoArrival)).toMatchObject({ stand: standOf('B21').center, apronHold: null });
   });
 
+  it('the continuation lasts: «Terminar demo» mid-taxi and the end of the flight move nothing drawn', { timeout: 30_000 }, () => {
+    // Waiting at terminal B's hold since its on-block, two minutes before noon, OCC imports it at noon with B21: it
+    // taxis there from the hold at its own speed.
+    const store = createMotionStore();
+    const appearAt = at(-600);
+    store.ingest({ picture: DISABLED, flights: demoOnly(createDemoBlock({ appearAt })) });
+    store.ingest({ picture: DISABLED, flights: demoOnly(createDemoBlock({ imported: true, appearAt }), { imported: true }) });
+    expect(demoEstimate(store, at(30)).gsMs).toBeGreaterThan(1);
+    const drawnAt = tMs => store.estimatesAt(tMs).find(item => [KEY.demoArrival, KEY.demoDeparture].includes(item.flightKey));
+    // Half a minute later, mid-taxi, «Terminar demo» brings its off-block to then; at its take-off the worker ends it.
+    const finishing = createDemoBlock({ imported: true, offBlockAfterMin: 2.5, appearAt });
+    expect(parseInstant(finishing.offBlockAt)).toBe(at(30));
+    const takeoffAt = parseInstant(finishing.takeoffAt);
+    for (const [readAt, block] of [[at(30), finishing], [takeoffAt, { ...finishing, state: 'Finished', phase: 'Departed' }]]) {
+      const moments = [-20, -5, 0, 5, 20].map(seconds => readAt + seconds * 1_000);
+      const before = moments.map(drawnAt);
+      store.ingest({ picture: DISABLED, flights: demoOnly(block, {
+        imported: true, overrides: { serverTime: new Date(readAt).toISOString() } }) });
+      moments.forEach((tMs, index) => {
+        expect(haversineM(point(drawnAt(tMs)), point(before[index])), `${(tMs - readAt) / 1_000} s`).toBeLessThan(0.01);
+      });
+      expect(store.trajectoryOf(KEY.demoArrival).meta.anchor).toMatchObject({ kind: 'demo', continuedAtMs: NOON });
+    }
+    // It reaches B21 after that off-block, so it pushes back at once and still lifts off at the server's takeoffAt.
+    const trajectory = store.trajectoryOf(KEY.demoArrival);
+    const parkedAt = trajectory.legs.find(leg => leg.phase === 'parked').t0Ms;
+    expect(parkedAt).toBeGreaterThan(at(30));
+    expect(haversineM(point(drawnAt(parkedAt)), standOf('B21').center)).toBeLessThan(0.5);
+    expect(sampleTrajectory(trajectory, parkedAt + 5_000).phase).toBe('pushback');
+    expect(Math.abs(trajectory.legs.find(leg => leg.phase === 'climb').t0Ms - takeoffAt)).toBeLessThan(1_000);
+  });
+
   it('a cancelled demo fades out where it is, cancelled by the provider', () => {
     // On approach at noon (touchdown 64 s later); the provider cancels it at noon and the map reads it 3 s later.
     const store = createMotionStore();
@@ -198,6 +271,82 @@ describe('motion store (design F4, contracts 2.3)', () => {
     expect(store.isAnimating(at(4))).toBe(true);
     expect(demoEstimate(store, at(8))).toBeUndefined();
     expect(demoEstimate(store, at(600))).toBeUndefined();
+  });
+
+  it('a demo flight the reads stop listing fades out where it is: cancelled before its touchdown, plainly after it', { timeout: 30_000 }, () => {
+    // Nobody imported it: «Cancelar vuelo» dismisses the pair at once, so the read 3 s after noon no longer lists it.
+    const store = createMotionStore();
+    store.ingest({ picture: DISABLED, flights: demoOnly(createDemoBlock({ appearAt: at(-200) })) });
+    const seconds = [1, 3, 5, 7];
+    const drawn = seconds.map(second => demoEstimate(store, at(second)));
+    const gone = noFlights(3);
+    store.ingest({ picture: DISABLED, flights: gone });
+    seconds.forEach((second, index) => {
+      const fading = demoEstimate(store, at(second));
+      expect(haversineM(point(fading), point(drawn[index])), `${second} s`).toBeLessThan(0.01);
+      expect(fading.onGround, `${second} s`).toBe(false);
+    });
+    // From that read on it fades out over 8 s, cancelled by the provider; before it, it is as it was drawn.
+    expect(demoEstimate(store, at(1))).toMatchObject({ opacity: 1, statusKey: null });
+    expect(demoEstimate(store, at(3))).toMatchObject({ opacity: 1, statusKey: 'cancelledByProvider' });
+    expect(demoEstimate(store, at(7)).opacity).toBeCloseTo(0.5, 6);
+    expect(demoEstimate(store, at(11))).toBeUndefined();
+    expect(store.isAnimating(at(5))).toBe(true);
+    expect(store.nextChangeAt(at(5))).toBe(at(11));
+    // The situation still draws it, from its last row read as cancelled: the selection and its data block name it.
+    const situation = situationOf(store, { picture: DISABLED, flights: gone }, at(5));
+    const aircraft = situation.byId.get(`f:${KEY.demoArrival}`);
+    expect(aircraft).toMatchObject({ quality: 'estimated', isDemo: true, flightNumber: 'ZZ9001', statusKey: 'cancelledByProvider' });
+    expect(aircraft.opacity).toBeCloseTo(0.75, 6);
+    const target = selectionTarget({ kind: 'flight', id: KEY.demoArrival }, situation);
+    expect(target.flight).toMatchObject({ flightKey: KEY.demoArrival, phase: 'cancelled', demo: { state: 'Cancelled', phase: 'Gone' } });
+    expect(target.aircraft.id).toBe(aircraft.id);
+    expect(store.trajectoryForRoute(target.flight)).toBeNull();
+    // The next read after its fade forgets it, and so does the situation.
+    store.ingest({ picture: toPictureModel(createAirPicture({ status: 'Disabled', serverTime: trafficInstant(12) })), flights: gone });
+    expect(store.estimatesAt(at(12))).toEqual([]);
+    expect(situationOf(store, { picture: DISABLED, flights: gone }, at(12)).flights).toEqual([]);
+
+    // Taxiing to its apron hold after its touchdown, «Terminar demo» dismisses a flight nobody imported as well: it fades
+    // out where it is, saying nothing new, its rows as they were.
+    const landed = createMotionStore();
+    landed.ingest({ picture: DISABLED, flights: demoOnly(createDemoBlock({ appearAt: at(-400) })) });
+    const taxiing = demoEstimate(landed, at(5));
+    landed.ingest({ picture: DISABLED, flights: noFlights(3) });
+    const ending = demoEstimate(landed, at(5));
+    expect(haversineM(point(ending), point(taxiing))).toBeLessThan(0.01);
+    expect(ending).toMatchObject({ onGround: true, statusKey: null });
+    expect(ending.opacity).toBeCloseTo(0.75, 6);
+    expect(situationOf(landed, { picture: DISABLED, flights: noFlights(3) }, at(5)).flights)
+      .toEqual([expect.objectContaining({ flightKey: KEY.demoArrival, phase: 'landed', demo: expect.objectContaining({ state: 'Active' }) })]);
+
+    // Imported, its rows are never dismissed: one the reads stop listing (OCC cancelled its turnaround) fades out with no
+    // provider's cancellation.
+    const unlisted = createMotionStore();
+    unlisted.ingest({ picture: DISABLED, flights: demoOnly(createDemoBlock({ imported: true, appearAt: at(-200) }),
+      { imported: true }) });
+    unlisted.ingest({ picture: DISABLED, flights: noFlights(3) });
+    expect(demoEstimate(unlisted, at(5))).toMatchObject({ statusKey: null, onGround: false });
+    expect(demoEstimate(unlisted, at(5)).opacity).toBeCloseTo(0.75, 6);
+
+    // The worker dismisses a flight nobody imported at its vanishAt (here 2 s before noon): its own fade goes on.
+    const block = createDemoBlock({ appearAt: at(-(8 + 60 + 15) * 60 - 2) });
+    expect(parseInstant(block.vanishAt)).toBe(at(-2));
+    const vanishing = createMotionStore();
+    vanishing.ingest({ picture: DISABLED, flights: demoOnly(block) });
+    const last = demoEstimate(vanishing, at(4), KEY.demoDeparture);
+    vanishing.ingest({ picture: DISABLED, flights: noFlights(3) });
+    const after = demoEstimate(vanishing, at(4), KEY.demoDeparture);
+    expect(haversineM(point(after), point(last))).toBeLessThan(0.01);
+    expect([after.opacity, after.statusKey]).toEqual([last.opacity, last.statusKey]);
+    expect(after.opacity).toBeCloseTo(0.25, 6);
+    expect(demoEstimate(vanishing, at(6), KEY.demoDeparture)).toBeUndefined();
+
+    // A read of another station is no newer read of this one: nothing of it is kept.
+    const elsewhere = createMotionStore();
+    elsewhere.ingest({ picture: DISABLED, flights: demoOnly(createDemoBlock({ appearAt: at(-200) })) });
+    elsewhere.ingest({ picture: DISABLED, flights: noFlights(3, { stationId: '5a000000-0000-4000-8000-000000000002' }) });
+    expect(elsewhere.estimatesAt(at(4))).toEqual([]);
   });
 
   it('an AVIAM flight without a fix is estimated only per Decision F-1', () => {
@@ -257,6 +406,77 @@ describe('motion store (design F4, contracts 2.3)', () => {
     fixed.ingest({ picture: toPictureModel({ ...picture, aircraft: [onStand] }), flights: flightsOf(createMapFlights()) });
     expect(fixed.estimatesAt(at(0)).map(item => item.flightKey)).not.toContain(KEY.parkedArrival);
     expect(fixed.estimatesAt(at(0)).map(item => item.flightKey)).not.toContain(KEY.parkedDeparture);
+  });
+
+  it('a stopped fix starts nothing: the aircraft stays at its stand as its fix ages, and a departure leaves with its PUSHBACK', { timeout: 30_000 }, () => {
+    // ZZ300/ZZ301's aircraft, parked at A2 with its transponder on (0 kt, 8 s before noon), matched by its registration;
+    // then the provider stops and the Stale picture keeps that fix.
+    const base = createAirPicture();
+    const parked = base.aircraft[2];
+    const fixAt = parseInstant(parked.positionAt);
+    const staleFor = key => toPictureModel({ ...base, status: 'Stale', reason: 'provider_error',
+      aircraft: [{ ...parked, matchedFlightKey: key, matchedBy: 'Registration' }] });
+    const response = createMapFlights();
+    const notImported = flightsOf({ ...response, flights: response.flights.map(row => (row.flightKey === KEY.parkedDeparture
+      ? { ...row, imported: false, stand: null } : row)) });
+    const cases = [
+      ['the imported departure without PUSHBACK', KEY.parkedDeparture, flightsOf(createMapFlights())],
+      ['a departure nobody imported, only scheduled', KEY.parkedDeparture, notImported],
+      ['the arrival parked there', KEY.parkedArrival, flightsOf(createMapFlights())],
+    ];
+    for (const [label, key, flights] of cases) {
+      const { build, calls } = spied();
+      const store = createMotionStore({ build });
+      const read = { picture: staleFor(key), flights };
+      store.ingest(read);
+      const item = situationOf(store, read).byId.get(`f:${key}`);
+      expect(item, label).toMatchObject({ quality: 'stale', hex: HEX.groundInOwnedStand });
+      // From the end of its 20 s on the ground it is estimated where it was, still, for as long as that fix stays.
+      for (const seconds of [30, 300, 1_200]) {
+        const drawn = store.sampleOne(item.id, fixAt + seconds * 1_000, item);
+        expect(haversineM(point(drawn), standOf('A2').center), `${label}, ${seconds} s`).toBeLessThan(0.5);
+        expect(drawn, `${label}, ${seconds} s`).toMatchObject({
+          gsMs: 0, onGround: true, mode: 'estimate', quality: 'estimated', statusKey: 'noSignal', opacity: 1,
+        });
+      }
+      store.sample([item], fixAt + 1_200_000);
+      expect(store.isAnimating(fixAt + 1_200_000), label).toBe(false);
+      // Rebuilt from that fix once; it never taxis away.
+      expect([...calls.arrival, ...calls.departure].filter(kind => kind === 'fix'), label).toEqual(['fix']);
+    }
+    // The waiting departure's route is still its way out from A2, from its schedule.
+    const store = createMotionStore();
+    const flights = flightsOf(createMapFlights());
+    const read = { picture: staleFor(KEY.parkedDeparture), flights };
+    store.ingest(read);
+    const item = situationOf(store, read).byId.get(`f:${KEY.parkedDeparture}`);
+    store.sampleOne(item.id, at(30), item);
+    const route = store.trajectoryForRoute(flights.byKey.get(KEY.parkedDeparture));
+    expect(route).toMatchObject({ kind: 'departure', meta: { standCode: 'A2' } });
+    expect(route.legs.some(leg => leg.part === 'taxiOut')).toBe(true);
+    expect(haversineM(point(sampleTrajectory(route, route.startMs)), standOf('A2').center)).toBeLessThan(1);
+    // The tablet records the PUSHBACK at 12:05 and the flights say so 5 s later, the fix still stale: it pushes back from
+    // A2 then, from where it is drawn, and not from a taxi begun at the old fix.
+    const later = createMapFlights({ serverTime: trafficInstant(305) });
+    const pushed = flightsOf({ ...later, flights: later.flights.map(row => (row.visitKey === `t:${'5d000000-0000-4000-8000-000000000300'}`
+      ? { ...row, milestones: [...row.milestones, { code: 'PUSHBACK', actualAt: trafficInstant(300) }] } : row)) });
+    const waiting = store.sampleOne(item.id, at(305), item);
+    store.ingest({ picture: read.picture, flights: pushed });
+    expect(haversineM(point(store.sampleOne(item.id, at(305), item)), point(waiting))).toBeLessThan(0.01);
+    const leaving = store.sampleOne(item.id, at(330), item);
+    expect(leaving).toMatchObject({ phase: 'pushback', quality: 'estimated' });
+    expect(leaving.gsMs).toBeGreaterThan(0);
+    expect(haversineM(point(leaving), standOf('A2').center)).toBeLessThan(80);
+    expect(store.trajectoryOf(KEY.parkedDeparture).startMs).toBe(at(300));
+    // Matched to the arrival, the stopped fix holds the aircraft only until that PUSHBACK: then it has left, and the
+    // arrival's fix places it nowhere.
+    const arrival = createMotionStore();
+    const arrivalRead = { picture: staleFor(KEY.parkedArrival), flights };
+    arrival.ingest(arrivalRead);
+    const parkedItem = situationOf(arrival, arrivalRead).byId.get(`f:${KEY.parkedArrival}`);
+    expect(haversineM(point(arrival.sampleOne(parkedItem.id, at(30), parkedItem)), standOf('A2').center)).toBeLessThan(0.5);
+    arrival.ingest({ picture: arrivalRead.picture, flights: pushed });
+    expect(arrival.sampleOne(parkedItem.id, at(306), parkedItem)).toBeNull();
   });
 
   it('trajectoryForRoute gives the planned trajectory, else one from the schedule for the route alone', () => {

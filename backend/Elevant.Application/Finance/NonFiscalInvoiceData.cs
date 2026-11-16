@@ -14,4 +14,4 @@ public sealed record NonFiscalInvoiceData(
 /// <summary>The simulated e-CF identity and parties printed on the invoice (ADR-0035).</summary>
 public sealed record NonFiscalInvoiceFiscalData(string? FiscalNumber, string? SecurityCode, DateTimeOffset? SignedAt,
     DateOnly? DueDate, decimal? NetTotal, decimal? TaxTotal, string IssuerName, string IssuerRnc, string CustomerName,
-    string StationCode);
+    string StationCode, string? CustomerTaxRegistration = null, string? CustomerTaxRegistrationCountryCode = null);

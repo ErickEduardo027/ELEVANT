@@ -5897,6 +5897,26 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<DateTimeOffset?>("RegistryCheckedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("registry_checked_at");
+
+                    b.Property<string>("RegistryDetail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("registry_detail");
+
+                    b.Property<string>("RegistrySource")
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)")
+                        .HasColumnName("registry_source");
+
+                    b.Property<string>("RegistryStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("registry_status");
+
                     b.Property<string>("RepresentativeConfirmationNote")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
@@ -5954,6 +5974,18 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("submitted_at");
+
+                    b.Property<string>("TaxRegistration")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("tax_registration");
+
+                    b.Property<string>("TaxRegistrationCountryCode")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("char(2)")
+                        .HasColumnName("tax_registration_country_code")
+                        .IsFixedLength();
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -7123,6 +7155,18 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)")
                         .HasColumnName("status");
+
+                    b.Property<string>("TaxRegistration")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("tax_registration");
+
+                    b.Property<string>("TaxRegistrationCountryCode")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("char(2)")
+                        .HasColumnName("tax_registration_country_code")
+                        .IsFixedLength();
 
                     b.Property<string>("Type")
                         .IsRequired()

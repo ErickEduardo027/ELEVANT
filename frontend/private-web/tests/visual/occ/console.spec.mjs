@@ -42,10 +42,18 @@ async function openConsole(page, isolation, query = '', { demo = false } = {}) {
 }
 
 // The console with its data on screen and its map still: the board answered, the band and the map drew everything.
-async function settled(page, map) {
+async function settled(page, map, { pause = false } = {}) {
   await expect(panel(page, 'Tablero').getByRole('tablist', { name: 'Vista del tablero' })).toBeVisible();
   await expect(page.getByTestId('occ-console-provenance')).toContainText('Aviones: Red ADS-B de prueba');
   await mapReady(map);
+  // Without reduced motion the console moves its traffic on every frame (PR M6), so its map settles only once
+  // «Pausar movimiento» holds the aircraft where they are; the reads go on meanwhile.
+  if (pause) {
+    const button = page.getByTestId('map-motion-control').getByRole('button');
+    if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(button).toHaveAccessibleName('Reanudar movimiento');
+  }
   await expect(map).toHaveAttribute('data-occ-settled', 'true');
 }
 
@@ -163,7 +171,7 @@ test.describe('the OCC console on the map engine', () => {
 
     test('a new demo arrival: «Llegada nueva» with «Ver y seguir», and «Recibido»', async ({ page, isolation }, testInfo) => {
       const { api, map } = await openConsole(page, isolation);
-      await settled(page, map);
+      await settled(page, map, { pause: true });
       // «Recibido» is the account's read receipt: the PUT, and the alert leaves the panel.
       const alerts = panel(page, 'Alertas');
       await alerts.getByRole('button', { name: 'Recibido' }).click();
@@ -184,7 +192,8 @@ test.describe('the OCC console on the map engine', () => {
       await expect.poll(() => new URL(page.url()).searchParams.get('flightId')).toBe(DEMO_FLIGHT_KEYS.arrival);
       // follow=1 once the URL has the flight and its view: a view the page asks for ends follow mode (PR M6).
       await expect.poll(() => new URL(page.url()).searchParams.get('follow')).toBe('1');
-      await expect(map).toHaveAttribute('data-occ-view', 'approach');
+      // Follow mode frames the aircraft with the airport (PR M6): the view is the one that holds both.
+      await expect(map).toHaveAttribute('data-occ-view', /^(approach|airfield)$/);
       await expect(page.getByTestId('occ-console-provenance')).toContainText('Incluye un vuelo demo.');
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       await shoot(page, testInfo, 'u3-consola-ver-y-seguir-1920');
@@ -197,7 +206,7 @@ test.describe('the OCC console on the map engine', () => {
       async ({ page, isolation }, testInfo) => {
         await page.setViewportSize({ width: 1440, height: 900 });
         const { map } = await openConsole(page, isolation);
-        await settled(page, map);
+        await settled(page, map, { pause: true });
         await setOpen(page, 'Alertas', false);
         await expect.poll(() => map.evaluate(node => node.style.getPropertyValue('--occ-map-inset-right'))).toBe('0px');
         await panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ }).click();
@@ -212,5 +221,43 @@ test.describe('the OCC console on the map engine', () => {
         await expect(map).toHaveAttribute('data-occ-settled', 'true');
         await shoot(page, testInfo, 'u3-consola-alertas-plegada-1440');
       });
+  });
+});
+
+// AeroDataBox through the API (ADR-0028 and ADR-0043, notes of 15 November 2026), on the stub's invented answers: the
+// routes from Punta Cana in the Región view, the delays pill of the bottom bar with its detail, and the aircraft and the
+// origin's delays of a chosen flight in the inspector.
+test.describe('the AeroDataBox reference reads on the console', () => {
+  test('routes in Región, the delays pill and the chosen flight\'s aircraft at 1440', async ({ page, isolation }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { api, map } = await openConsole(page, isolation, '?view=region');
+    await settled(page, map);
+    await expect(map).toHaveAttribute('data-occ-view', 'region');
+    const pill = page.locator('[data-airport-delays-pill]');
+    await expect(pill).toHaveText('Demoras PUJ: llegadas +12 min · salidas +8 min');
+    await expect.poll(() => api.reads.airportRoutes ?? 0).toBe(1);
+    await expect(map).toHaveAttribute('data-occ-settled', 'true');
+    await shoot(page, testInfo, 'adb-rutas-region-1440');
+
+    const legendButton = page.getByTestId('map-legend').getByRole('button', { name: 'Leyenda' });
+    await legendButton.click();
+    await expect(page.getByTestId('map-legend')).toContainText('Rutas desde Punta Cana');
+    await shoot(page, testInfo, 'adb-rutas-leyenda-1440');
+    await legendButton.click();
+    await expect(legendButton).toHaveAttribute('aria-expanded', 'false');
+
+    await pill.click();
+    await expect(page.locator('[data-airport-delays-detail]')).toContainText('Demoras en PUJ');
+    await shoot(page, testInfo, 'adb-demoras-detalle-1440');
+    await page.keyboard.press('Escape');
+
+    const strip = panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ });
+    await strip.click();
+    const inspector = panel(page, 'Inspector');
+    await expect(inspector.locator('[data-aircraft-facts="facts"]')).toContainText('Boeing 737-800');
+    await expect(inspector.locator('[data-airport-delays-line]')).toContainText('Demoras en el origen');
+    await inspector.locator('[data-aircraft-facts="facts"]').evaluate(node => node.scrollIntoView({ block: 'start' }));
+    await expect(map).toHaveAttribute('data-occ-settled', 'true');
+    await shoot(page, testInfo, 'adb-aeronave-inspector-1440');
   });
 });

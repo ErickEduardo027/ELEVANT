@@ -1,5 +1,6 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { SIGNALS, STAND_STATES, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
+import { mapColorsFor } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
 import { SELECTION_SOURCE } from '../style/selectionLayers';
 
@@ -92,6 +93,17 @@ export const PLACING_PAINT = Object.freeze({
   ghost: Object.freeze({ width: 2, dash: Object.freeze([4, 3]) }),
   pending: Object.freeze({ width: 2.5, fillOpacity: 0.2, centreRadius: 3 }),
 });
+
+/**
+ * The fill of each stand state (owner request of 2026-11-15, style/mapColors.js): `{ color, opacity }`, its own soft
+ * colour per state (Libre green, Planificada blue, Llegando cyan, Ocupada amber, Por liberar violet, Inhabilitada grey
+ * under its hatch, Sin verificar a faint neutral) under the vocabulary's outline, dash and marks, which still tell every
+ * state apart without colour.
+ */
+export function standFill(state, theme = 'dark') {
+  if (!Object.hasOwn(STAND_STATES, state)) throw new RangeError(`Unknown stand state: ${String(state)}`);
+  return mapColorsFor(theme).stands[state];
+}
 
 /**
  * How the aircraft to scale are drawn (PR M6, design D3), widths and dashes in pixels, tokens of occPalette.js: the
@@ -204,24 +216,18 @@ function casingLayer(id, { color, width, clearance, opacity, dash }) {
   });
 }
 
-function polygonLayers() {
+function polygonLayers(theme) {
   const hatched = statesWhere(paint => paint.fill.kind === 'hatch');
   const emphasised = statesWhere(paint => paint.leadIn);
   const linked = statesWhere(paint => paint.link);
   const lead = standPaint(emphasised[0]).outline;
   const link = standPaint(linked[0]).outline;
   return [
-    // Every state, so every stand is a pick target; only a tint or the slab paints (a hatch has a layer of its own).
+    // Every state, so every stand is a pick target, in its own colour (standFill); the hatch has a layer of its own.
     standLayer(STAND_FILL_LAYER, 'fill', {
       paint: {
-        'fill-color': byState(STAND_STATE_KEYS, state => {
-          const paint = standPaint(state);
-          return paint.fill.color ?? paint.outline.color;
-        }),
-        'fill-opacity': byState(STAND_STATE_KEYS, state => {
-          const { fill } = standPaint(state);
-          return fill.kind === 'tint' || fill.kind === 'solid' ? fill.opacity : 0;
-        }),
+        'fill-color': byState(STAND_STATE_KEYS, state => standFill(state, theme).color),
+        'fill-opacity': byState(STAND_STATE_KEYS, state => standFill(state, theme).opacity),
       },
       meta: { 'occ:pick': 'stand', 'occ:pickId': 'code' },
     }),
@@ -558,7 +564,7 @@ function assertLabels(labels) {
  * `selection` slot: the pending location of «Ubicar en el mapa» and the box that follows the pointer.
  * `labels: 'dashboard'` starts the codes at the polygons.
  */
-export function standOverlay({ labels = 'default' } = {}) {
+export function standOverlay({ labels = 'default', theme = 'dark' } = {}) {
   assertLabels(labels);
   return {
     sources: {
@@ -569,7 +575,7 @@ export function standOverlay({ labels = 'default' } = {}) {
       [STAND_FOOTPRINT_SOURCE]: { type: 'geojson', promoteId: 'id' },
       [STAND_GHOST_SOURCE]: { type: 'geojson', promoteId: 'id' },
     },
-    layers: [...polygonLayers(), ...footprintLayers(), ...labelLayers(labels), ...placingLayers()],
+    layers: [...polygonLayers(theme), ...footprintLayers(), ...labelLayers(labels), ...placingLayers()],
   };
 }
 

@@ -1,0 +1,343 @@
+import { describe, expect, it, vi } from 'vitest';
+import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { destinationPoint } from '../airport/geo';
+import {
+  AIRCRAFT_3D_SLOT, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS, createAircraft3dController,
+  createGovernor, parkedFromStands, readMode3d, translatePick, writeMode3d,
+} from './aircraft3d';
+
+// The 3D aircraft without three or a map (PR M7): the remembered choice, the stands' aircraft, the pick translation,
+// the governor and the controller with a fake engine, a fake chunk and a stub layer. Synthetic aircraft around the ARP.
+const ARP = MDPC_LAYOUT.meta.arp;
+const near = (metres, bearing = 90) => destinationPoint(ARP, bearing, metres);
+
+function memoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem: key => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+    values,
+  };
+}
+
+const aviam = (id, extra = {}) => {
+  const [lon, lat] = near(400);
+  return { id, kind: 'aviam', flightKey: id.slice(2), lon, lat, onGround: true, gsMs: 8, trackDeg: 80, typeIcao: 'A320',
+    ...extra };
+};
+const other = (hex, extra = {}) => {
+  const [lon, lat] = near(1_500, 200);
+  return { id: `h:${hex}`, kind: 'other', hex, lon, lat, onGround: false, altM: 300, trackDeg: 260, typeIcao: 'B738',
+    ...extra };
+};
+
+function stand(code, { footprint = 'solid', type = 'A320', turnaroundId = `t-${code}`, heading = 170 } = {}) {
+  const center = near(600, 30);
+  return {
+    id: code,
+    code,
+    geometry: { center, headingTrue: heading, polygon: [center, center, center, center] },
+    display: { footprint, typeSpec: footprint ? { lengthM: 37 } : null, aircraftType: type, visit: { turnaroundId } },
+  };
+}
+
+describe('the 2D/3D choice', () => {
+  it('is 3D by default where the browser draws WebGL2 and 2D without it; a stored choice wins and is written back', () => {
+    expect(readMode3d(memoryStorage(), { webgl: true })).toBe(true);
+    expect(readMode3d(memoryStorage(), { webgl: false })).toBe(false);
+    expect(readMode3d(null, { webgl: true })).toBe(true);
+    expect(readMode3d(memoryStorage({ [MODE_3D_STORAGE_KEY]: '2d' }), { webgl: true })).toBe(false);
+    expect(readMode3d(memoryStorage({ [MODE_3D_STORAGE_KEY]: '3d' }), { webgl: false })).toBe(true);
+    expect(readMode3d(memoryStorage({ [MODE_3D_STORAGE_KEY]: 'tilted' }), { webgl: false })).toBe(false);
+    const storage = memoryStorage();
+    writeMode3d(storage, false);
+    expect(storage.values.get(MODE_3D_STORAGE_KEY)).toBe('2d');
+    writeMode3d(storage, true);
+    expect(storage.values.get(MODE_3D_STORAGE_KEY)).toBe('3d');
+    // A browser that refuses storage keeps the default and remembers nothing, without throwing.
+    const refusing = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
+    expect(readMode3d(refusing, { webgl: true })).toBe(true);
+    expect(() => writeMode3d(refusing, true)).not.toThrow();
+  });
+});
+
+describe('parkedFromStands', () => {
+  it('gives one aircraft per stand that shows one to scale, owned by the parked aircraft of its visit or by the stand', () => {
+    const stands = [stand('A5'), stand('A6', { turnaroundId: 't-busy' }), stand('A7', { footprint: 'planned' }),
+      stand('A8', { type: null }), stand('A5'), { ...stand('A9'), retired: true }];
+    const parkedAircraft = aviam('f:parked', { turnaroundId: 't-busy', gsMs: 0 });
+    const parked = parkedFromStands(stands, [parkedAircraft], new Set(['f:parked']));
+    expect(parked.map(item => item.id)).toEqual(['s:A5', 'f:parked']);
+    expect(parked[0]).toMatchObject({ lon: stands[0].geometry.center[0], lat: stands[0].geometry.center[1],
+      headingDeg: 170, typeIcao: 'A320', kind: 'aviam' });
+    // The aircraft of a visit that still moves is the traffic's: its stand draws none.
+    expect(parkedFromStands(stands, [{ ...parkedAircraft, gsMs: 6 }], new Set()).map(item => item.id)).toEqual(['s:A5']);
+    expect(parkedFromStands(null, null)).toEqual([]);
+  });
+});
+
+describe('translatePick', () => {
+  it('names a flight by its key, other traffic by its address and a stand\'s aircraft by the stand', () => {
+    const drawn = [aviam('f:k-1'), other('abc123'), { ...aviam('h:def456'), flightKey: null, hex: 'def456' }];
+    expect(translatePick({ kind: 'aircraft', id: 'f:k-1' }, drawn)).toMatchObject({ kind: 'flight', id: 'k-1',
+      feature: { source: 'occ-traffic', properties: { id: 'f:k-1' } } });
+    expect(translatePick({ kind: 'aircraft', id: 'h:abc123' }, drawn)).toMatchObject({ kind: 'aircraft', id: 'abc123' });
+    expect(translatePick({ kind: 'aircraft', id: 'h:def456' }, drawn)).toMatchObject({ kind: 'aircraft', id: 'def456' });
+    expect(translatePick({ kind: 'aircraft', id: 's:A5' }, drawn)).toEqual({ kind: 'stand', id: 'A5', feature: null });
+    // An id the last write no longer draws still reads by its prefix.
+    expect(translatePick({ kind: 'aircraft', id: 'f:gone' }, [])).toMatchObject({ kind: 'flight', id: 'gone' });
+    expect(translatePick(null, drawn)).toBeNull();
+    expect(translatePick({ kind: 'aircraft', id: 'x' }, drawn)).toBeNull();
+  });
+});
+
+describe('the governor', () => {
+  // `count` frames of `dt` ms from `start`; answers the steps taken and the instant after the last frame.
+  const run = (governor, { dt, count, start = 0 }) => {
+    const steps = [];
+    let at = start;
+    for (let index = 0; index < count; index += 1) {
+      at += dt;
+      const step = governor.sample(dt, at);
+      if (step !== 0) steps.push(step);
+    }
+    return { steps, at };
+  };
+
+  it('steps down after two seconds of slow frames, one step per window, down to the pause', () => {
+    const governor = createGovernor();
+    // A second of slow frames is not enough.
+    expect(run(governor, { dt: 40, count: 25 }).steps).toEqual([]);
+    let { steps, at } = run(governor, { dt: 40, count: 26, start: 1_000 });
+    expect(steps).toEqual([-1]);
+    expect(governor.level).toBe(1);
+    ({ steps, at } = run(governor, { dt: 40, count: 3 * 51, start: at }));
+    expect(steps).toEqual([-1, -1, -1]);
+    expect(governor.level).toBe(GOVERNOR_PAUSED);
+    // Paused, nothing more happens, and fast frames never bring it back: «Volver a 3D» does.
+    expect(run(governor, { dt: 10, count: 4_000, start: at }).steps).toEqual([]);
+  });
+
+  it('never pauses while a flight is followed, and steps back up after thirty seconds of fast frames', () => {
+    const governor = createGovernor({ following: true });
+    const { at } = run(governor, { dt: 50, count: 400 });
+    expect(governor.level).toBe(GOVERNOR_PAUSED - 1);
+    const back = run(governor, { dt: 10, count: (GOVERNOR.stableMs + GOVERNOR.windowMs + 1_000) / 10, start: at });
+    expect(back.steps).toEqual([1]);
+    expect(governor.level).toBe(GOVERNOR_PAUSED - 2);
+  });
+
+  it('reads a gap as the map idling: slow frames on either side of it start a new window', () => {
+    const governor = createGovernor();
+    let { at } = run(governor, { dt: 40, count: 40 });
+    expect(governor.sample(GOVERNOR.maxGapMs + 1, at + 300)).toBe(0);
+    ({ at } = run(governor, { dt: 40, count: 40, start: at + 300 }));
+    expect(governor.level).toBe(0);
+    expect(run(governor, { dt: 40, count: 20, start: at }).steps).toEqual([-1]);
+  });
+});
+
+// The controller's world: an engine that records its custom layers, a chunk that resolves when told, a stub layer.
+function world({ fail = false, webgl = true } = {}) {
+  let clock = 0;
+  let resolveLoad;
+  let rejectLoad;
+  const engine = {
+    map: { triggerRepaint: vi.fn() },
+    layers: [],
+    ratio: 2,
+    addCustomLayer: vi.fn((layer, slot) => engine.layers.push({ layer, slot })),
+    removeCustomLayer: vi.fn(id => {
+      engine.layers = engine.layers.filter(entry => entry.layer.id !== id);
+    }),
+    getPixelRatio: () => engine.ratio,
+    setPixelRatio: vi.fn(ratio => {
+      engine.ratio = ratio;
+    }),
+  };
+  const made = [];
+  const modules = {
+    three: {},
+    createAircraft3dLayer: vi.fn(options => {
+      const layer = {
+        id: 'occ-aircraft-3d', options, quality: { shadows: true, dropLines: true },
+        render: vi.fn(),
+        pick: vi.fn(() => ({ kind: 'aircraft', id: 'f:k-1' })),
+        setQuality(next) {
+          Object.assign(layer.quality, next);
+          return { ...layer.quality };
+        },
+        stats: () => ({ meshes: 1, instances: 2, failed: false, lost: false }),
+      };
+      made.push(layer);
+      return layer;
+    }),
+  };
+  const load = vi.fn(() => new Promise((resolve, reject) => {
+    resolveLoad = () => resolve(modules);
+    rejectLoad = () => reject(new Error('chunk'));
+  }));
+  const onChange = vi.fn();
+  const controller = createAircraft3dController({
+    engine, originLngLat: ARP, fieldElevationM: 14, load, onChange, now: () => clock, getNow: () => Date.parse('2026-11-13T15:00:00Z'),
+    webgl: () => webgl,
+  });
+  const settle = async () => {
+    if (fail) rejectLoad();
+    else resolveLoad();
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+  return {
+    engine, modules, made, load, onChange, controller, settle,
+    advance: ms => {
+      clock += ms;
+    },
+    frame: ms => {
+      clock += ms;
+      made.at(-1).render();
+    },
+  };
+}
+
+const AT_RAMP = { zoom: 16, minZoom: 15 };
+
+describe('createAircraft3dController', () => {
+  it('loads the chunk the first time the zoom reaches the threshold with 3D on, then draws and hides those ids in 2D', async () => {
+    const { controller, load, engine, made, settle, onChange } = world();
+    const aircraft = [aviam('f:k-1'), other('abc123')];
+    // Off: nothing is planned or loaded.
+    expect(controller.plan({ aircraft, ...AT_RAMP }).size).toBe(0);
+    expect(load).not.toHaveBeenCalled();
+    controller.setEnabled(true);
+    expect(controller.state()).toMatchObject({ enabled: true, status: 'idle', notice: null });
+    // Below the threshold nothing loads.
+    controller.plan({ aircraft, zoom: 14, minZoom: 15 });
+    expect(load).not.toHaveBeenCalled();
+    expect(controller.plan({ aircraft, ...AT_RAMP }).size).toBe(0);
+    expect(load).toHaveBeenCalledOnce();
+    expect(controller.state().status).toBe('loading');
+    controller.plan({ aircraft, ...AT_RAMP });
+    expect(load).toHaveBeenCalledOnce();
+    await settle();
+    expect(controller.state()).toMatchObject({ status: 'ready', notice: null });
+    expect(engine.layers).toEqual([{ layer: made[0], slot: AIRCRAFT_3D_SLOT }]);
+    expect(onChange).toHaveBeenCalled();
+    // The layer reads the plan of the last write, with a new revision each write.
+    const ids = controller.plan({ aircraft, ...AT_RAMP, selectedId: 'f:k-1' });
+    expect([...ids].sort()).toEqual(['f:k-1', 'h:abc123']);
+    const first = made[0].options.getInstances();
+    expect(first.plan.get('A320')).toMatchObject({ aircraftCount: 1, ids: ['f:k-1', null] });
+    controller.plan({ aircraft, ...AT_RAMP });
+    expect(made[0].options.getInstances().revision).toBe(first.revision + 1);
+    expect(engine.map.triggerRepaint).toHaveBeenCalled();
+    // The sun at the render clock's instant, at the ARP: noon of 2026-11-13 in Punta Cana is day.
+    expect(made[0].options.getSun().elevationDeg).toBeGreaterThan(30);
+    expect(controller.pick({ x: 1, y: 2 })).toEqual({ kind: 'aircraft', id: 'f:k-1' });
+    // Back to 2D: the layer goes, nothing is hidden or picked, and 3D again adds the same layer without a new load.
+    controller.setEnabled(false);
+    expect(engine.layers).toEqual([]);
+    expect(controller.plan({ aircraft, ...AT_RAMP }).size).toBe(0);
+    expect(controller.pick({ x: 1, y: 2 })).toBeNull();
+    controller.setEnabled(true);
+    expect(engine.layers).toHaveLength(1);
+    expect(load).toHaveBeenCalledOnce();
+    expect(made).toHaveLength(1);
+    controller.dispose();
+    expect(engine.layers).toEqual([]);
+  });
+
+  it('keeps 2D with its notice when the chunk fails or the layer cannot draw, and tries again', async () => {
+    const failing = world({ fail: true });
+    failing.controller.setEnabled(true);
+    failing.controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    await failing.settle();
+    expect(failing.controller.state()).toMatchObject({ status: 'failed', notice: 'failed' });
+    expect(failing.engine.layers).toEqual([]);
+    // Not again at once; after RETRY_LOAD_MS it tries again.
+    failing.controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    expect(failing.load).toHaveBeenCalledOnce();
+    failing.advance(RETRY_LOAD_MS);
+    failing.controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    expect(failing.load).toHaveBeenCalledTimes(2);
+
+    // A browser without WebGL2 loads nothing and says so.
+    const flat = world({ webgl: false });
+    flat.controller.setEnabled(true);
+    flat.controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    expect(flat.load).not.toHaveBeenCalled();
+    expect(flat.controller.state()).toMatchObject({ status: 'failed', notice: 'failed' });
+
+    // A layer that could not build its renderer (or lost it on a restored context) shows the 2D aircraft again.
+    const { controller, made, settle } = world();
+    controller.setEnabled(true);
+    controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    await settle();
+    made[0].options.onFailedChange(true);
+    expect(controller.state()).toMatchObject({ status: 'failed', notice: 'failed' });
+    expect(controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP }).size).toBe(0);
+    expect(controller.pick({ x: 1, y: 2 })).toBeNull();
+    made[0].options.onFailedChange(false);
+    expect(controller.state()).toMatchObject({ status: 'ready', notice: null });
+    expect([...controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP })]).toEqual(['f:k-1']);
+  });
+
+  it('the governor lightens the scene, lowers the pixel ratio and pauses the 3D, never while a flight is followed', async () => {
+    const { controller, made, engine, settle, frame } = world();
+    controller.setEnabled(true);
+    controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    await settle();
+    const slow = seconds => {
+      for (let index = 0; index < (seconds * 1000) / 40; index += 1) frame(40);
+    };
+    slow(2.2);
+    expect(made[0].quality).toEqual({ shadows: false, dropLines: false });
+    expect(controller.state().level).toBe(1);
+    slow(2.2);
+    expect(engine.ratio).toBe(1.25);
+    slow(2.2);
+    expect(engine.ratio).toBe(1);
+    slow(2.2);
+    expect(controller.state()).toMatchObject({ status: 'paused', notice: 'paused', level: GOVERNOR_PAUSED });
+    expect(engine.layers).toEqual([]);
+    // The pixel ratio comes back with the 2D; «Volver a 3D» brings the layer back at full quality.
+    expect(engine.ratio).toBe(2);
+    controller.resume();
+    expect(controller.state()).toMatchObject({ status: 'ready', notice: null, level: 0 });
+    expect(engine.layers).toHaveLength(1);
+    expect(made[0].quality).toEqual({ shadows: true, dropLines: true });
+
+    // Followed, it goes down to the lowest quality and stays on.
+    controller.setFollowing(true);
+    slow(12);
+    expect(controller.state()).toMatchObject({ status: 'ready', level: GOVERNOR_PAUSED - 1 });
+    expect(engine.layers).toHaveLength(1);
+    // The lab's pause, on demand.
+    controller.pause();
+    expect(controller.state().status).toBe('paused');
+  });
+
+  it('without the governor (the map lab) slow frames change nothing', async () => {
+    const engine = { map: {}, addCustomLayer: vi.fn(), removeCustomLayer: vi.fn() };
+    let layer;
+    let clock = 0;
+    const controller = createAircraft3dController({
+      engine, originLngLat: ARP, governor: false, now: () => clock, webgl: () => true,
+      load: async () => ({ three: {}, createAircraft3dLayer: options => {
+        layer = { id: 'occ-aircraft-3d', options, render: vi.fn(), setQuality: vi.fn(), stats: () => ({}) };
+        return layer;
+      } }),
+    });
+    controller.setEnabled(true);
+    controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    await Promise.resolve();
+    await Promise.resolve();
+    for (let index = 0; index < 500; index += 1) {
+      clock += 60;
+      layer.render();
+    }
+    expect(controller.state()).toMatchObject({ status: 'ready', level: 0 });
+    expect(layer.setQuality).toHaveBeenCalledTimes(1);
+  });
+});

@@ -2151,7 +2151,7 @@ public sealed partial class SqlServerMigrationTests
             catalog.Airlines[0].Id, [catalog.Services[0].Id],
             "María Pérez", "Representante legal", "maria@example.test", "849-246-3371", true,
             "DO", "Avenida Principal 10", "República Dominicana", "Santo Domingo",
-            "Boca Chica", "Passport", "rd 123 4567");
+            "Boca Chica", "Passport", "rd 123 4567", TaxRegistration: "131234569", TaxRegistrationCountryCode: "DO");
         var handler = new SubmitCommercialRequestHandler(
             scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
         Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
@@ -2405,7 +2405,7 @@ public sealed partial class SqlServerMigrationTests
         var requestId = Guid.NewGuid();
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(requestId,
             catalog.Airlines[0].Id, [catalog.Services[0].Id], "María Pérez",
-            "Representante legal", "maria@example.test", "+1 809 555 0100", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"),
+            "Representante legal", "maria@example.test", "+1 809 555 0100", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673", TaxRegistration: "131234569", TaxRegistrationCountryCode: "DO"),
             cancellationToken)).IsSuccess);
         var contractsAccountId = Guid.Parse("40000000-0000-7000-8000-000000000005");
         var workflow = scope.ServiceProvider.GetRequiredService<ICommercialWorkflowStore>();
@@ -2436,7 +2436,7 @@ public sealed partial class SqlServerMigrationTests
         var rejectedRequestId = Guid.NewGuid();
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(rejectedRequestId,
             catalog.Airlines[0].Id, [catalog.Services[0].Id], "Elena Rivera",
-            "Representante legal", "elena@example.test", "+1 809 555 0101", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"),
+            "Representante legal", "elena@example.test", "+1 809 555 0101", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673", TaxRegistration: "131234569", TaxRegistrationCountryCode: "DO"),
             cancellationToken)).IsSuccess);
         var requestChangesBeforeRejection = await CountCommercialRequestChangesAsync();
         Assert.True((await workflow.DecideAsync(contractsAccountId, rejectedRequestId,

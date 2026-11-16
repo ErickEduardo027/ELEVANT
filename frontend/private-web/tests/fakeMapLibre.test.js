@@ -224,6 +224,35 @@ describe('fake MapLibre', () => {
     expect(map.featureStateOf('points', 9)).toBeUndefined();
   });
 
+  it('a raster source takes new tiles with setTiles and a context loss rebuilds it with them, like MapLibre 6.16', () => {
+    const fake = createFakeMapLibre();
+    fake.module.setWorkerUrl(SERVED_WORKER_URL);
+    const latest = 'https://gibs.example/clouds/default/default/{z}/{y}/{x}.png';
+    const pinned = 'https://gibs.example/clouds/default/2026-11-13T14:50:00Z/{z}/{y}/{x}.png';
+    const style = { ...STYLE, sources: { ...STYLE.sources, clouds: { type: 'raster', tiles: [latest], tileSize: 256 } } };
+    const map = new fake.module.Map({ container: document.createElement('div'), style });
+    fake.state.emit(map, 'style.load');
+    const source = map.getSource('clouds');
+    expect(source.tiles).toEqual([latest]);
+    expect(source.serialize()).toEqual({ type: 'raster', tiles: [latest], tileSize: 256 });
+    source.setTiles([pinned]);
+    expect(source.setTilesCalls).toEqual([[pinned]]);
+    expect(map.calls.filter(call => call.method === 'setTiles').map(call => call.args)).toEqual([['clouds', [pinned]]]);
+    expect(source.serialize().tiles).toEqual([pinned]);
+    // Stricter than MapLibre: tiles that are not a list throw. A GeoJSON source has no setTiles.
+    expect(() => source.setTiles(pinned)).toThrow(TypeError);
+    expect(map.getSource('points').setTiles).toBeUndefined();
+
+    // The snapshot keeps the tiles a raster source was last given, and no data on it; a GeoJSON source keeps its data.
+    fake.state.loseContext(map);
+    expect(map.snapshot.sources.clouds).toEqual({ type: 'raster', tiles: [pinned], tileSize: 256 });
+    expect(map.snapshot.sources.points).toHaveProperty('data');
+    fake.state.restoreContext(map);
+    fake.state.emit(map, 'style.load');
+    expect(map.getSource('clouds').tiles).toEqual([pinned]);
+    expect(map.getSource('clouds').setTilesCalls).toEqual([]);
+  });
+
   it('a restore without WebGL2 rebuilds the style and fires error, never webglcontextrestored, like MapLibre 6.16', () => {
     const { fake, map } = newMap();
     fake.state.emit(map, 'style.load');

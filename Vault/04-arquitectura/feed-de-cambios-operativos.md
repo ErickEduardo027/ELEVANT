@@ -69,6 +69,8 @@ sources:
   - backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfOccMapFlightStore.cs
   - frontend/private-web/src/features/admin-occ/live/occRequestPlan.js
+  - backend/Elevant.Api/Controllers/OccWeatherController.cs
+  - backend/Elevant.Infrastructure/Integrations/AviationWeather/AviationWeatherSource.cs
 tags:
   - arquitectura
   - tiempo-real
@@ -436,13 +438,15 @@ de solo lectura.
   vuelo demo y su worker, entre otras. Lo que depende de la hora (la fase de
   una llegada y el reloj de un vuelo demo sin importar) se calcula al leer, y
   los instantes del vuelo demo ya vienen en la respuesta.
-- **Desde M5 y U3:** en A3 ninguna pantalla leía `occ/map`. Desde el PR M5 lo
-  lee el mapa de Monitoreo de vuelos, y desde el PR U3, la consola de
-  Panorama: releen `flights` con `occ_planning`, como mucho una vez cada 3
-  segundos, y con un sondeo de seguridad de 60 segundos; un toque en la tablet
-  solo relee esa lectura. El
+- **Desde M5, M6 y U3:** en A3 ninguna pantalla leía `occ/map`. Desde el PR M5
+  lo lee el mapa de Monitoreo de vuelos; desde el PR M6, también Mapa de
+  posiciones y la vista «Mapa» de Planificación, dentro del marco del OCC; y
+  desde el PR U3, la consola de Panorama: releen `flights` con `occ_planning`,
+  como mucho una vez cada 3 segundos, y con un sondeo de seguridad de 60
+  segundos ([lecturas del mapa](../../frontend/private-web/src/features/maps/useMapSituation.js));
+  en la consola un toque en la tablet solo relee esa lectura. El
   [plan de peticiones del marco](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
-  cuenta esas lecturas en su prueba de presupuesto.
+  cuenta las lecturas de la consola en su prueba de presupuesto.
 - `GET occ/map/air-picture` no depende del feed de cambios: se sirve desde
   memoria
   ([servicio](../../backend/Elevant.Application/Operations/AirPicture/AirPictureService.cs))
@@ -454,5 +458,14 @@ de solo lectura.
   `matchedFlightKey` desconocida le dice a la pantalla que relea `flights`.
 - La estela de un avión (`GET occ/map/aircraft/{hex}/track`) se lee al
   elegirlo, también desde memoria.
+- *Posterior también (PR M8, código de `65f9446f` y `eeac6d1e`;
+  [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)):* el clima del
+  aeródromo, `GET occ/weather`
+  ([controlador](../../backend/Elevant.Api/Controllers/OccWeatherController.cs)),
+  tampoco depende del feed de cambios, y ninguna pista lo anuncia. Es de solo
+  lectura y se sirve desde la caché de la API
+  ([fuente](../../backend/Elevant.Infrastructure/Integrations/AviationWeather/AviationWeatherSource.cs)),
+  que guarda el METAR 5 minutos y el TAF 30. Ninguna pantalla lo lee todavía:
+  el ritmo con que lo lea lo fijará la segunda parte de M8.
 
 Tampoco esto demuestra latencia en el VPS.

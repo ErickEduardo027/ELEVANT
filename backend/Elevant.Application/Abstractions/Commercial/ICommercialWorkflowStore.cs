@@ -46,7 +46,41 @@ public sealed record CommercialInboxRequestData(
     string? DecisionReason, Guid? ContractId,
     CommercialRepresentativeConfirmationData? RepresentativeConfirmation,
     CommercialProposedAirlineData? ProposedAirline, bool ExistingCustomer,
-    IReadOnlyList<CommercialRequestItemData> Services, string Version);
+    IReadOnlyList<CommercialRequestItemData> Services, string Version,
+    CommercialTaxRegistrationData? TaxRegistration = null,
+    CommercialRegistryCheckData? RegistryCheck = null,
+    CommercialManualVerificationData? ManualVerification = null);
+
+/// <summary>
+/// The airline's tax identifier: <paramref name="Number"/> canonical (an RNC as 9 digits),
+/// <paramref name="Display"/> as printed («RNC 1-31-23456-9» or «Id. fiscal … (país)»).
+/// </summary>
+public sealed record CommercialTaxRegistrationData(string Number, string CountryCode, string Display);
+
+/// <summary>
+/// Last public-registry verdict of the request's airline (ADR-0023): Found, Mismatch, Defunct, NotFound
+/// or Unavailable. <paramref name="FromCatalog"/> tells it is the catalog profile's check made by
+/// Superadministración, because the request was not checked itself yet.
+/// </summary>
+public sealed record CommercialRegistryCheckData(string Status, string? Source, DateTimeOffset CheckedAt,
+    string? Detail, bool FromCatalog);
+
+/// <summary>
+/// The catalog profile was verified by hand by a superadministrator with an official source: the exception
+/// that allows approving an airline the public registries do not confirm.
+/// </summary>
+public sealed record CommercialManualVerificationData(DateTimeOffset VerifiedAt, string? VerificationSourceUrl);
+
+/// <summary>What the registries are asked about at approval: the linked profile's name and codes.</summary>
+public sealed record CommercialRegistrySubject(string Name, string? IataCode, string? IcaoCode,
+    bool ManuallyVerifiedBySuperAdministrator);
+
+/// <summary>
+/// The registry gate of an approval through the API: the fresh verdict, or null when the subject was
+/// verified by hand by Superadministración (no registry was asked). Without a gate the store applies no
+/// registry rule (direct persistence callers).
+/// </summary>
+public sealed record CommercialRegistryGate(CommercialRegistrySubject Subject, AirlineRegistryCheck? Check);
 
 /// <summary>Requests per status over the whole inbox, for the Contratos indicators.</summary>
 public sealed record CommercialInboxCountsData(int Pending, int InReview, int Approved, int Rejected,
@@ -88,7 +122,8 @@ public sealed record ReviewCommercialInput(bool Approve, string? Reason,
 /// </summary>
 public sealed record VerifyRequestAirlineInput(string? ExpectedVersion, Guid? LinkProfileId = null,
     string? LegalName = null, string? CountryCode = null, string? IataCode = null, string? IcaoCode = null,
-    string? VerificationSourceUrl = null);
+    string? VerificationSourceUrl = null, string? TaxRegistration = null,
+    string? TaxRegistrationCountryCode = null);
 
 /// <summary>How Contratos confirmed, through the airline's own channels, that the representative speaks for it.</summary>
 public sealed record ConfirmCommercialRepresentativeInput(string? ExpectedVersion, string? Note);
@@ -98,6 +133,8 @@ public sealed record CancelCommercialRequestInput(string? ExpectedVersion, strin
 public enum CommercialWorkflowFailure
 {
     Forbidden, NotFound, Invalid, Conflict, AirlineUnverified,
+    /// <summary>The registries do not confirm the airline and Superadministración has not verified it by hand.</summary>
+    AirlineNotInPublicRegistry,
 }
 
 /// <summary>Result of a commercial command; <paramref name="Code"/> is the Problem Details code of a failure.</summary>
@@ -128,5 +165,15 @@ public interface ICommercialWorkflowStore
         CancelCommercialRequestInput input, CancellationToken cancellationToken = default);
     /// <summary>Approves or rejects; with <paramref name="idempotencyKey"/> a retry replays the first result.</summary>
     Task<CommercialWorkflowResult> DecideAsync(Guid actorId, Guid requestId,
-        ReviewCommercialInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
+        ReviewCommercialInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default,
+        CommercialRegistryGate? registryGate = null);
+    /// <summary>
+    /// The linked profile an approval checks against the registries; null when the actor cannot approve,
+    /// or the request is missing, closed or has no profile yet (the approval itself then refuses it).
+    /// </summary>
+    Task<CommercialRegistrySubject?> RegistrySubjectAsync(Guid actorId, Guid requestId,
+        CancellationToken cancellationToken = default);
+    /// <summary>Stores the verdict on the request while its profile still has the subject's name and codes.</summary>
+    Task RecordRegistryCheckAsync(Guid requestId, CommercialRegistrySubject subject, AirlineRegistryCheck check,
+        CancellationToken cancellationToken = default);
 }

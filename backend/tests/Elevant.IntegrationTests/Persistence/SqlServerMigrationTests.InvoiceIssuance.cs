@@ -39,6 +39,10 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal(IssueInvoiceFailure.Forbidden, (await Handler(scope.ServiceProvider)
                 .HandleAsync(new IssueInvoiceRequest(ContractsAccount, station, [first], Guid.NewGuid()), ct)).Failure);
 
+        // Professor's review: the buyer's RNC (copied to its organization by the approval) is frozen at issue.
+        await setup.Organizations.Where(item => item.Type == OrganizationType.AirlineCustomer)
+            .ExecuteUpdateAsync(set => set.SetProperty(item => item.TaxRegistration, "131234569")
+                .SetProperty(item => item.TaxRegistrationCountryCode, "DO"), ct);
         var requestId = Guid.NewGuid();
         var issued = await IssueAsync(requestId, first);
         Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
@@ -55,6 +59,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(FinanceInvoicePolicy.IsFiscalNumber(invoice.FiscalNumber));
         Assert.Equal(6, invoice.SecurityCode!.Length);
         Assert.NotNull(invoice.FiscalSignedAt);
+        using (var snapshot = System.Text.Json.JsonDocument.Parse(invoice.CommercialSnapshotJson!))
+            Assert.Equal(("131234569", "DO"), (snapshot.RootElement.GetProperty("customerTaxRegistration").GetString(),
+                snapshot.RootElement.GetProperty("customerTaxRegistrationCountryCode").GetString()));
         var preinvoice = await setup.Preinvoices.AsNoTracking().SingleAsync(item => item.Id == invoice.PreinvoiceId, ct);
         Assert.Equal(PreinvoiceStatus.Invoiced, preinvoice.Status);
         var lines = await setup.PreinvoiceLines.AsNoTracking().Where(line => line.PreinvoiceId == preinvoice.Id && !line.IsExcluded)

@@ -82,4 +82,27 @@ describe('MapTooltip', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent(/^A5 · FreeUrgentAnother aircraft is arriving at this stand$/);
     expect(screen.getByRole('img', { name: 'Urgent' })).toHaveAttribute('data-shape', 'octagon');
   });
+  it('the wind tooltip says its words with «No oficial», the time of its METAR and the wind on each runway end', () => {
+    // As OccMap writes it from traffic/weatherLayers.js (windTooltip), in the screen's language.
+    const WIND = {
+      kind: 'wind', id: 'wind', title: 'Viento 100° 13 kt · No oficial', detail: 'METAR de las 10:50',
+      reasons: [{ signal: null, text: 'R08: 12 kt de frente · 6 kt de la derecha' },
+        { signal: null, text: 'R26: 12 kt de cola · 6 kt de la izquierda' }],
+      x: 420, y: 120, alignX: 'end', alignY: 'start', pinned: true,
+    };
+    render(<MapTooltip tooltip={WIND} />);
+    const card = screen.getByRole('tooltip');
+    expect(card).toHaveAttribute('data-kind', 'wind');
+    expect(card).toHaveAttribute('data-pinned', 'true');
+    // Written in lines, as a stand's: the title, the detail muted, a line per runway end without a signal's shape.
+    expect(within(card).getByText('Viento 100° 13 kt · No oficial')).toHaveClass('font-semibold');
+    expect(within(card).getByText('METAR de las 10:50')).toHaveClass('text-occ-muted');
+    expect(within(card).getByText('R26: 12 kt de cola · 6 kt de la izquierda').parentElement.querySelector('svg')).toBeNull();
+    expect(card).toHaveClass('pointer-events-none', 'max-w-xs', 'border-occ-line-strong');
+    expect(card).toHaveStyle({ left: '420px', top: '120px', transform: 'translate(calc(-100% - 12px), 12px)' });
+    expect(tooltipText(WIND, key => key)).toEqual({ title: WIND.title, detail: WIND.detail, reasons: WIND.reasons });
+    // A calm wind without lines, its detail stale.
+    expect(tooltipText({ kind: 'wind', title: 'Viento en calma · No oficial', detail: 'Sin actualizar desde las 08:00' }, key => key))
+      .toEqual({ title: 'Viento en calma · No oficial', detail: 'Sin actualizar desde las 08:00', reasons: [] });
+  });
 });

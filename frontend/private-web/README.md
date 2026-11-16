@@ -180,10 +180,15 @@ Aeródromo, Aproximación, Región, un navegador sin WebGL, el mapa base caído 
 la revisión del plano de MDPC), sin sesión ni API. La URL elige la escena
 (`?scene=`), el mapa sin teselas (`?basemap=none`), un reloj del mapa
 congelado (`?t=` con un instante ISO 8601) y las claves de selección del mapa
-(`stand=`, `view=`, `terminal=`). La ruta importa el laboratorio solo dentro de
+(`stand=`, `view=`, `terminal=`). Desde el PR M7 tiene también cuatro
+escenas en 3D (`ramp-3d-parked`, `ramp-3d-selected`, `airfield-3d-final` y
+`ramp-3d-night`); el regulador del 3D queda apagado en el laboratorio salvo
+con `?governor=on`. La ruta importa el laboratorio solo dentro de
 la rama de desarrollo, y `npm run build` termina con
 `scripts/verify-map-chunks.mjs`, que falla si el laboratorio llega
-al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`). En producción la ruta
+al build de producción (`PRIVATE_WEB_MAP_LAB_ABSENT_OK`), si una carga inicial
+de una ruta lleva el renderizador de three o si falta el trozo 3D
+(`PRIVATE_WEB_THREE_FIRST_LOAD_OK`). En producción la ruta
 responde la página de no encontrada.
 
 La suite visual del OCC (`tests/visual`, configurada en

@@ -17,7 +17,8 @@ import { staleWords } from './stationTime';
 // vocabulary («Sin actualizar desde las 14:02», traffic/stationTime.js), a demo flight its «Demo» plate. Other traffic
 // on the ground inside a stand an ELEVANT visit holds is not drawn. One owner per aircraft (PR M6, design F4): an
 // ELEVANT aircraft parked in the stand that shows it is the stand's (stands/standFeatures.js: parkedAircraftIds), so
-// where the stands are drawn its symbol gives way to the stand's footprint or glyph (`parkedOnStand`).
+// where the stands are drawn its symbol gives way to the stand's footprint or glyph (`parkedOnStand`); its dashed ring
+// and its «Demo» plate stay, so an estimated or demo aircraft on its stand keeps its mark.
 
 export const TRAFFIC_SOURCE = 'occ-traffic';
 export const TRAILS_SOURCE = 'occ-trails';
@@ -62,6 +63,16 @@ export function selectedAircraftId(aircraft, selection) {
 }
 
 /** Altitude in hundreds of feet, three digits («026» for 2 600 ft), or `null`. */
+/**
+ * The altitude the traffic is coloured by (style/mapColors.js), in feet rounded to the hundred: 0 on the ground, -1
+ * without an altitude, so a frame that moves an aircraft a few feet writes nothing new.
+ */
+export function altitudeFeet(item) {
+  if (item?.onGround === true) return 0;
+  if (!finite(item?.altM)) return -1;
+  return Math.max(0, Math.round((item.altM * FEET_PER_METRE) / 100) * 100);
+}
+
 export function flightLevelText(altM) {
   if (!finite(altM)) return null;
   return String(Math.max(0, Math.round((altM * FEET_PER_METRE) / 100))).padStart(3, '0');
@@ -100,7 +111,7 @@ const NO_IDS = Object.freeze(new Set());
 const idsOf = value => (value instanceof Set ? value : NO_IDS);
 
 /** One feature of the traffic source; see trafficFeatures for its properties. */
-function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked }) {
+function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models }) {
   const aviam = item.kind === 'aviam';
   const departure = aviam && item.direction === 'Departure';
   const ground = item.onGround === true;
@@ -134,6 +145,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
       estimated: item.quality === 'estimated',
       demo: aviam && item.isDemo === true,
       ground,
+      // The altitude in feet the icon is coloured by (style/mapColors.js): 0 on the ground, -1 when unknown.
+      altFt: altitudeFeet(item),
       selected,
       forceTag,
       showTag: forceTag || labelsOn === true,
@@ -145,6 +158,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
       opacity: opacityOf(item),
       // Parked in the stand that shows it (PR M6): its symbol gives way to the stand's footprint or glyph.
       parkedOnStand: aviam && parked.has(item.id),
+      // Drawn as a 3D model (PR M7): its 2D silhouette gives way; its tag, rings and plates stay.
+      model3d: models.has(item.id),
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -153,7 +168,7 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
 /**
  * The traffic source's data: one point per drawn aircraft (isDrawn), keyed by its id (`f:<flightKey>` or `h:<hex>`,
  * the source's promoted id), with
- * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground,
+ * `{ id, hex, flightKey, kind, dir, category, icon, scale, radius, trk, quality, stale, estimated, demo, ground, altFt,
  * selected, forceTag, showTag, tag1, suffix, tag2, tagStand, opacity }`:
  * - `icon`: the solid silhouette of the aircraft's category, hollow for a departing ELEVANT flight;
  * - `scale`: 1.25 for ELEVANT flights, 0.85 for other traffic, 0.6 for other traffic on the ground, 1.4 when chosen;
@@ -166,20 +181,24 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })
  * - `opacity`: the aircraft's own (PR M6, the motion store), in hundredths: 1, or less while it fades out; the layers
  *   multiply it into the dimming of a stale position;
  * - `parkedOnStand` (PR M6): an ELEVANT aircraft of `parkedIds` (a Set of ids), parked in the stand that draws it to
- *   scale or as its glyph; the layers then leave it to the stand, except as the chosen aircraft.
+ *   scale or as its glyph; the layers then leave its symbol and tag to the stand, except as the chosen aircraft, and
+ *   keep its estimated ring and «Demo» plate;
+ * - `model3d` (PR M7): an aircraft of `modelIds` (a Set of ids), drawn by the 3D layer (core/aircraft3d.js); the layers
+ *   then leave out its silhouette, the chosen one's too, and keep its tag, its rings and its plate.
  * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`,
- * `parkedIds`.
+ * `parkedIds`, `modelIds`.
  */
 export function trafficFeatures(aircraft = [], {
-  selection = null, focusId = null, labelsOn = false, language = 'es', parkedIds = null,
+  selection = null, focusId = null, labelsOn = false, language = 'es', parkedIds = null, modelIds = null,
 } = {}) {
   const list = (Array.isArray(aircraft) ? aircraft : []).filter(isDrawn);
   const selectedId = selectedAircraftId(list, selection);
   const t = createTranslator(mapMessages, language);
   const parked = idsOf(parkedIds);
+  const models = idsOf(modelIds);
   return {
     type: 'FeatureCollection',
-    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked })),
+    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models })),
   };
 }
 
@@ -274,7 +293,8 @@ const lineInBounds = (points, bounds) => points.some(point => isInBounds(point, 
  * - `route`: the chosen flight's route (traffic/routeFeatures.js: buildRoute): its lines drawn inside `bounds` or across
  *   them, and its marks (points) inside them.
  * - `parkedIds` (PR M6): the ELEVANT aircraft a stand draws instead (trafficFeatures' `parkedOnStand`): the stands'
- *   legend explains them, so they bring no traffic entry.
+ *   legend explains them, so they bring no kind of traffic; their «est.» ring and «Demo» plate stay drawn, so they
+ *   still bring the tags `estimated` and `demo`.
  */
 export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoom = null, thresholds = null, trails = null,
   route = null, parkedIds = null } = {}) {
@@ -284,9 +304,15 @@ export function trafficOnScreen(aircraft = [], bounds = null, { groups = {}, zoo
   const parked = idsOf(parkedIds);
   for (const item of Array.isArray(aircraft) ? aircraft : []) {
     if (!isDrawn(item) || (bounds !== null && !isInBounds([item.lon, item.lat], bounds))) continue;
-    if (item.kind === 'aviam' && parked.has(item.id)) continue;
     const aviam = item.kind === 'aviam';
     if (!visibleGroup(groups, aviam ? 'traffic.aviam' : 'traffic.other')) continue;
+    // A parked one is drawn by its stand, whose legend explains it, but its estimated ring and «Demo» plate stay.
+    const isParked = aviam && parked.has(item.id);
+    if (isParked) {
+      if (item.isDemo === true) tags.add('demo');
+      if (item.quality === 'estimated') tags.add('estimated');
+      continue;
+    }
     if (aviam) kinds.add(item.direction === 'Departure' ? 'aviamDeparture' : 'aviamArrival');
     else if (item.onGround === true) {
       if (groundHidden) continue;

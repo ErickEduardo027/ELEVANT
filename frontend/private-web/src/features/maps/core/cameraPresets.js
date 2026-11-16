@@ -233,7 +233,9 @@ export function sameFits(first, second) {
  * The zoom thresholds named in layer metadata: stand polygons from the airfield fit − 0.3, codes from the ramp fit
  * − 0.3, three-line labels from the ramp fit + 0.8, and `airfield`, where the airfield of the own dataset takes over
  * from the tiles: half way between the approach and airfield fits, the very boundary presetForZoom draws between those
- * views, so whenever the selector says «Aeródromo» the airfield comes from the dataset. `null` before the fit.
+ * views, so whenever the selector says «Aeródromo» the airfield comes from the dataset. With the region fit too,
+ * `approach`: half way between the region and approach fits, where the range rings of Región give way to those of
+ * Aproximación (PR M8), again the boundary of the selector. `null` before the fit.
  */
 export function thresholdsFromFits(fits) {
   if (!Number.isFinite(fits?.approach) || !Number.isFinite(fits?.airfield) || !Number.isFinite(fits?.ramp)) return null;
@@ -242,6 +244,7 @@ export function thresholdsFromFits(fits) {
     codes: fits.ramp + THRESHOLD_OFFSET.codes,
     threeLine: fits.ramp + THRESHOLD_OFFSET.threeLine,
     airfield: (fits.approach + fits.airfield) / 2,
+    ...(Number.isFinite(fits.region) ? { approach: (fits.region + fits.approach) / 2 } : {}),
   };
 }
 

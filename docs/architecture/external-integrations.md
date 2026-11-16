@@ -85,6 +85,29 @@ Debe responder `200`. Un `000` significa que la red no sale. Un `403` o un `429`
 
 El tráfico de OpenSky (`GET occ/traffic/aircraft`) no cambia: sigue apagado sin credenciales y no pasa por este puerto.
 
+## Clima aeronáutico: aviationweather.gov
+
+El clima del aeródromo del OCC ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del PR M8) lee la Data API de aviationweather.gov, del Aviation Weather Center de NOAA, detrás del puerto `IAerodromeWeatherSource`. Solo el servidor la llama, desde `AviationWeatherSource`; un navegador la lee solo a través de `GET occ/weather`, así que la CSP no cambia. Desde la segunda parte de M8 (PR M8, mapas), Private Web hace esa lectura en Monitoreo de vuelos, Mapa de posiciones, Planificación y el panel de meteorología de la consola, y cada pantalla la repite cada 10 minutos con la pestaña a la vista. El navegador ya no pide el METAR actual a Iowa Environmental Mesonet, que solo da el historial de 6 horas de ese panel hasta que U3 lo retire.
+
+| Servicio | Consultas | Condiciones | Cadencia |
+| --- | --- | --- | --- |
+| aviationweather.gov (Data API) | `https://aviationweather.gov/api/data/metar?ids={OACI}&format=json` y `https://aviationweather.gov/api/data/taf?ids={OACI}&format=json` | Datos públicos de NOAA, sin clave. La página de la Data API pide como mucho 100 consultas por minuto y un `User-Agent` propio, no admite CORS y no publica condiciones de uso comercial | Solo cuando alguien pide `occ/weather`. El METAR se guarda 5 minutos y el TAF 30, por aeropuerto: con el servicio respondiendo, como mucho 2 llamadas cada 5 minutos por aeropuerto |
+
+- **Petición.** Las dos consultas van a la vez, sin redirecciones, con 10 s para la respuesta completa, respuestas comprimidas, 1 MiB como máximo, `Accept: application/json` y el `User-Agent` genérico `air-traffic-reader/1.0`, el mismo de la imagen aérea, que no nombra el proyecto ni lleva correos ni direcciones.
+- **Fallos.** Una lista vacía o un `204` significa que no hay informe. Un `429`, otro estado, un tiempo agotado o un JSON ilegible es un fallo: la API sirve lo que guardó (el METAR hasta 2 horas, marcado como guardado, y el TAF hasta 12, nunca vencido) y espera 1, 2, 4, 8 y luego 15 minutos antes de volver a preguntar, o lo que pida un `Retry-After` más largo, hasta una hora. Nunca reintenta en bucle.
+- **Estado y crédito.** El estado (`Live`, `Stale`, `Unavailable` o `Disabled`) viaja siempre en un `200`, y cada respuesta lleva en `source` el crédito «NOAA Aviation Weather Center» con `https://aviationweather.gov`, también con el clima apagado, para que cada pantalla lo muestre junto al clima.
+- **Nada se guarda.** Lo que responde el servicio vive en la memoria de la API, sin tabla, registro de uso ni migración. Las pruebas usan respuestas sintéticas y nunca llaman al servicio; `AviationWeatherLiveTests` lo lee solo con `ELEVANT_LIVE_AVIATION_WEATHER=1`.
+- **Activación.** `AviationWeather:Enabled` es `false` por defecto y en `appsettings.Production.json`. `appsettings.Development.json` lo enciende, así que el VPS de Development y el stack local lo usan sin variables nuevas. `AviationWeather:BaseUrl` (`https://aviationweather.gov/api/data/`) debe ser una dirección `https` absoluta; si no, la API no arranca. El overlay del arnés E2E lo apaga salvo `ELEVANT_E2E_AVIATION_WEATHER_ENABLED=true` ([desarrollo local](../workflows/local-development.md)).
+- **Uso comercial.** La página de la Data API no publica condiciones para ese uso: hay que confirmarlas antes de encender el clima fuera de Development.
+
+**Comprobación del operador.** Antes de desplegar la API que trae el clima, el operador comprueba a mano, una sola vez y nunca desde CI, que la red de la API en el VPS alcanza aviationweather.gov. Usa la misma imagen de curl, con una consulta del METAR de Punta Cana cuya respuesta se descarta:
+
+```bash
+docker run --rm --network elevant-dev-api-runtime curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777 -s -o /dev/null -w '%{http_code}\n' --max-time 10 -A 'air-traffic-reader/1.0' 'https://aviationweather.gov/api/data/metar?ids=MDPC&format=json'
+```
+
+Debe responder `200`, o `204` si el servicio no tiene informe en ese momento. Un `000` significa que la red no sale. Un `403` o un `429` significa que el servicio rechaza o frena esa dirección: la API sigue respondiendo, con el clima `Stale` mientras le dure lo guardado y después `Unavailable`.
+
 ## Regla para nuevos proveedores
 
 Primero se define la necesidad del caso de uso y el puerto mínimo. Después se construye el adaptador. Si se cambia de proveedor, Domain y los contratos públicos solo cambian cuando cambie realmente el producto, no por la forma particular de la API externa.

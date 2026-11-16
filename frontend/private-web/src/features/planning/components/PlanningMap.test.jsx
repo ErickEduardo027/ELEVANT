@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PlanningMap from './PlanningMap';
 import { boardStand, boardVisit, standPoint } from '../../maps/testing/mapFixtures';
 import { createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON } from '../../maps/testing/trafficFixtures';
@@ -7,9 +7,10 @@ import { administratorAccess, DepartmentAccessProvider } from '../../access/Depa
 import { DepartmentPermissionCodes } from '../../access/testAccess';
 import { OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
 import { loadOccPositions } from '../../../services/occPositionsService';
+import { weatherService } from '../../../services/weatherService';
 
-vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, selectedPositionId, onSelectPosition, traffic, trafficSelection, children }) {
-  return <div data-testid="map" data-selected={selectedPositionId ?? ''}
+vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, selectedPositionId, onSelectPosition, weather, traffic, trafficSelection, children }) {
+  return <div data-testid="map" data-selected={selectedPositionId ?? ''} data-weather={weather?.apiStatus ?? ''}
     data-traffic={traffic ? traffic.aircraft.map(item => item.id).join(' ') : ''}
     data-traffic-selection={trafficSelection ? `${trafficSelection.kind}:${trafficSelection.id}` : ''}>
     {positions.map(position => <button key={position.id} type="button"
@@ -19,7 +20,8 @@ vi.mock('next/dynamic', () => ({ default: () => function MapStub({ positions, se
 } }));
 vi.mock('../../../services/occPositionsService', () => ({ loadOccPositions: vi.fn() }));
 // Inside the OCC frame (PR M6) the map reads the station of the session and the map service: both synthetic here, the
-// station of the traffic fixtures and the simulated adapter over their scenario, without the network.
+// station of the traffic fixtures and the simulated adapter over their scenario, without the network. The map also
+// reads the aerodrome weather of its station (PR M8), from the simulated weather service.
 vi.mock('../../auth/AuthContext', () => ({
   useAuth: () => ({ session: { stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] } }),
 }));
@@ -27,6 +29,11 @@ vi.mock('../../../services/occMapService', async () => {
   const actual = await vi.importActual('../../../services/occMapService');
   const { createTrafficScenario } = await import('../../maps/testing/trafficFixtures');
   return { ...actual, occMapService: actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() }) };
+});
+vi.mock('../../../services/weatherService', async () => {
+  const actual = await vi.importActual('../../../services/weatherService');
+  const { createWeatherScenario } = await import('../../maps/testing/weatherFixtures');
+  return { ...actual, weatherService: actual.createSimulatedWeatherAdapter({ scenario: createWeatherScenario() }) };
 });
 
 const stationId = '20000000-0000-7000-8000-000000000003';
@@ -74,9 +81,13 @@ it('a stand click writes stand= and shows its flights', async () => {
   expect(screen.getByTestId('map')).toHaveAttribute('data-selected', 'A1');
   // The panel says what the stand says on the map, then its flights.
   const facts = screen.getByRole('list', { name: 'Estado en el mapa' });
-  expect(within(facts).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-    'Llegando', 'Cubre Ana Ruiz', 'Ubicada por OCC',
-  ]);
+  const items = within(facts).getAllByRole('listitem').map(item => item.textContent);
+  expect(items[0]).toBe('Llegando');
+  expect(items[1]).toMatch(/^Llegando: /);
+  expect(items.at(-1)).toBe('Cubre Ana Ruiz');
+  const characteristics = screen.getByRole('region', { name: 'Características' });
+  expect(characteristics.querySelector('[data-fact="kind"] dd')).toHaveTextContent('Terminal A · De contacto');
+  expect(characteristics.querySelector('[data-fact="location"] dd')).toHaveTextContent('Ubicada por OCC');
   expect(screen.getByRole('button', { name: /DM161/ })).toBeInTheDocument();
   // «Ver todas» clears the selection.
   fireEvent.click(screen.getByRole('button', { name: 'Ver todas' }));
@@ -88,6 +99,20 @@ it('a stand click writes stand= and shows its flights', async () => {
   window.history.replaceState({}, '', `${PAGE}&stand=A01`);
   render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }]} />);
   expect(await screen.findByText('Posición A1')).toBeInTheDocument();
+});
+
+it('reads the aerodrome weather of its station and gives it to the map (PR M8)', async () => {
+  loadOccPositions.mockResolvedValue(board);
+  render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }]} />);
+  // The synthetic live METAR of the station reaches the map, which draws its wind at the airfield.
+  await waitFor(() => expect(screen.getByTestId('map')).toHaveAttribute('data-weather', 'Live'));
+  expect(weatherService.calls.at(-1)).toMatchObject({ read: 'aerodromeWeather', stationId });
+  cleanup();
+  // Without a station nothing is read.
+  const reads = weatherService.calls.length;
+  render(<PlanningMap stationId="" date="2026-11-03" />);
+  await act(async () => {});
+  expect(weatherService.calls).toHaveLength(reads);
 });
 
 it('reports a board error', async () => {

@@ -3,12 +3,15 @@
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { aviationReferenceService } from '../../../services/aviationReferenceService';
 import { occMapService } from '../../../services/occMapService';
+import { AviationReferenceProvider } from '../../aviation-reference/AviationReferenceContext';
 import { useOccBoot } from '../../admin-occ/boot/occBootContext';
 import { useOccStation } from '../../admin-occ/useOccStation';
 import { useAuth } from '../../auth/AuthContext';
 import { useMapSelection } from '../../maps/core/useMapSelection';
 import { useStandDisplay } from '../../maps/stands/useStandDisplay';
+import { standInputsOf } from '../../maps/traffic/standInputs';
 import { useMapSituation } from '../../maps/useMapSituation';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { consoleMessages } from './consoleMessages';
@@ -34,13 +37,15 @@ const ConsoleView = dynamic(() => import('./ConsolePage'), { ssr: false, loading
  * - the session's PUJ scope (useOccStation: the OCC operates Punta Cana only, with no station selector) and the URL
  *   selection (useMapSelection);
  * - the map situation, read once for the map, the board and the inspector (useMapSituation over `mapService`);
+ * - the AeroDataBox reference reads under `referenceService` (aviation-reference/AviationReferenceContext.jsx);
  * - the console's own reads (useConsoleData over `services`), today's weather (useMdpcWeather) and the stands as the
  *   map draws them (useStandDisplay over the positions board and the map flights).
  * Without the PUJ scope nothing is read and the console says so (`role="alert"`). The OCC boot screen leaves once the
  * view is on screen and the map flights stopped loading (the console's first data), or at once when the station is
  * missing (contratos 2.6).
  */
-export default function ConsoleRoute({ mapService = occMapService, services = CONSOLE_SERVICES }) {
+export default function ConsoleRoute({ mapService = occMapService, services = CONSOLE_SERVICES,
+  referenceService = aviationReferenceService }) {
   const { session } = useAuth();
   const station = useOccStation();
   const { t } = useTranslation(consoleMessages);
@@ -56,7 +61,13 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
   // The weather is read only with the PUJ scope.
   const weather = useMdpcWeather({ enabled: ready });
   const flightsByTurnaround = flightsByTurnaroundOf(live.flights?.flights);
-  const stands = useStandDisplay(data.positions.data?.stands ?? NO_STANDS, { flightsByTurnaround });
+  // The stands read on the clock the map draws its aircraft at (PR M6, the render clock, paused with the motion) and
+  // with the aircraft inside their box, so a demo stand turns Ocupada in the moment its aircraft parks.
+  const { aircraftByTurnaround } = standInputsOf(live.situation);
+  const standClock = live.renderClock ?? null;
+  const standOptions = useMemo(() => ({ flightsByTurnaround, aircraftByTurnaround, clock: standClock }),
+    [aircraftByTurnaround, flightsByTurnaround, standClock]);
+  const stands = useStandDisplay(data.positions.data?.stands ?? NO_STANDS, standOptions);
   const stationScope = useMemo(() => ({ stationId: stationId ?? '', stationCode: station.stationCode }),
     [station.stationCode, stationId]);
 
@@ -81,7 +92,10 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
   }
 
   return (
-    <ConsoleView station={stationScope} live={live} data={data} stands={stands} weather={weather}
-      selection={selection} accountId={session?.accountId ?? null} onShown={showView} />
+    // The AeroDataBox reference reads (ADR-0028, note of 15 November 2026): the aircraft, the delays and the routes.
+    <AviationReferenceProvider service={referenceService}>
+      <ConsoleView station={stationScope} live={live} data={data} stands={stands} weather={weather}
+        selection={selection} accountId={session?.accountId ?? null} onShown={showView} />
+    </AviationReferenceProvider>
   );
 }

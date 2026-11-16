@@ -10,14 +10,15 @@ import { NM, ktToMs } from './units.js';
 // it waits) it shows the stand up close, tilted in 3D. A departure is the same, the other way round. The map resolves a
 // framing with its own cameraForBounds (the floating panels as padding, the zoom capped at `maxZoom`) and eases there
 // with stepCamera every frame; a user pan ends follow mode and a user zoom freezes the automatic zoom (run in OccMap).
-// Under reduced motion the camera does not glide: it re-centres only when the aircraft leaves the central 60 % of the
-// area in sight (needsRecentre). Pure: nothing here reads a clock, the viewport or the map (the map passes what it
-// measures). Zoom levels are MapLibre's; distances in metres, speeds in m/s, `[lng, lat]`; pixels from the map's
-// top-left corner; explicit '.js' imports, no JSON.
+// Under reduced motion the camera does not glide: it jumps to the framing only when the point that framing centres on
+// leaves the central 60 % of the area in sight, or when the aircraft itself nears that area's edge (needsReframe).
+// Pure: nothing here reads a clock, the viewport or the map (the map passes what it measures). Zoom levels are
+// MapLibre's; distances in metres, speeds in m/s, `[lng, lat]`; pixels from the map's top-left corner; explicit '.js'
+// imports, no JSON.
 
 /**
- * The zoom levels and tilts of follow mode: the largest zoom en route and on the approach, the final's zoom from the
- * gate to the threshold, the ground's from fast to slow, the stand's, the radius around the stand where it applies,
+ * The zoom levels and tilts of follow mode: the largest zoom en route, on the approach and on final (this one from the
+ * gate to the threshold), the ground's from fast to slow, the stand's, the radius around the stand where it applies,
  * and the pitch in 3D at the stand and on the ground (the airfield view's 40°, contracts 2.3). In 2D the pitch is 0.
  */
 export const FOLLOW_ZOOM = Object.freeze({
@@ -51,8 +52,11 @@ export const FOLLOW_RANGES = Object.freeze({
 /** How fast stepCamera closes in on its target: the time constant of its exponential smoothing, in seconds. */
 export const FOLLOW_TAU_S = 0.8;
 
-/** Under reduced motion the camera stays put while the aircraft is inside this share of the area in sight. */
+/** Under reduced motion the camera stays put while the framing's centre is inside this share of the area in sight. */
 export const RECENTRE_SHARE = 0.6;
+
+/** …and while the aircraft itself is inside this share of it: past it the aircraft nears the edge. */
+export const RECENTRE_EDGE_SHARE = 0.9;
 
 // The trajectory phases on the ground (estimator.js), for an aircraft that does not say whether it is.
 const GROUND_PHASES = new Set(['landing', 'taxiIn', 'holding', 'parked', 'pushback', 'taxiOut', 'takeoff']);
@@ -103,8 +107,10 @@ function groundZoom(gsMs) {
  * - On the ground (its `onGround`, else a ground phase): within 250 m of the stand or apron hold, the point between it
  *   and the aircraft at zoom 17 (pitch 50 in 3D); otherwise the aircraft at 15.5 up to 30 kt, down to 14.5 from
  *   130 kt (a landing or a take-off roll), pitch 40 in 3D.
- * - On final (and in the initial climb of a departure) within 10 NM of the threshold: the point between the aircraft
- *   and the threshold, from zoom 12.5 at 10 NM to 13.8 at the threshold.
+ * - On final (and in the initial climb of a departure) within 10 NM of the threshold: the aircraft and the threshold,
+ *   centred between them, up to a zoom that goes from 12.5 at 10 NM to 13.8 at the threshold. A box and not a fixed
+ *   zoom, so the map zooms out where the two do not fit the area in sight at that zoom: a climb that turns off the
+ *   runway's axis, or the floating panels, would otherwise leave the aircraft off the screen.
  * - Otherwise within 40 NM of the airport: the aircraft and the threshold, up to zoom 11.5; farther, the aircraft and
  *   the airport, up to 8. In the air the pitch is 0.
  */
@@ -126,7 +132,7 @@ export function followCamera({ aircraft = null, phase = null, targets = {}, mode
     const distance = haversineM(here, threshold);
     if (distance <= FOLLOW_RANGES.finalGateM) {
       const u = distance / FOLLOW_RANGES.finalGateM;
-      return centred(midpoint(here, threshold), FOLLOW_ZOOM.finalTo - u * (FOLLOW_ZOOM.finalTo - FOLLOW_ZOOM.finalFrom), 0);
+      return framed(here, threshold, FOLLOW_ZOOM.finalTo - u * (FOLLOW_ZOOM.finalTo - FOLLOW_ZOOM.finalFrom));
     }
   }
   if (airport === null) return centred(here, FOLLOW_ZOOM.enrouteMax, 0);
@@ -209,4 +215,17 @@ export function needsRecentre({ pointPx = null, viewport = null, insets = null, 
   const marginX = ((right - left) * (1 - kept)) / 2;
   const marginY = ((bottom - top) * (1 - kept)) / 2;
   return x < left + marginX || x > right - marginX || y < top + marginY || y > bottom - marginY;
+}
+
+/**
+ * Whether follow mode jumps to its framing under reduced motion (design A6 and H): when the point the framing centres
+ * on (`centerPx`: the aircraft, or the middle between it and its objective) leaves the central 60 % of the area in
+ * sight, or when the aircraft itself (`aircraftPx`) leaves the central 90 % and so nears that area's edge. The middle
+ * of a framing of two points moves at half the speed of an aircraft flying away from its objective (a departure
+ * climbing out): watched alone, it would let the aircraft off the screen first. Pixels, viewport and insets as
+ * needsRecentre takes them; what cannot be told jumps.
+ */
+export function needsReframe({ centerPx = null, aircraftPx = null, viewport = null, insets = null } = {}) {
+  return needsRecentre({ pointPx: centerPx, viewport, insets })
+    || needsRecentre({ pointPx: aircraftPx, viewport, insets, share: RECENTRE_EDGE_SHARE });
 }

@@ -1,6 +1,7 @@
 import { Color, createPropertyExpression, featureFilter, latest, validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
 import { occColor } from '../../occ-ui/occPalette';
+import { ALTITUDE_STOPS_FT, MAP_COLORS, altitudeColourExpression } from '../style/mapColors';
 import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { SLOT_ORDER, buildOccStyle } from '../style/occStyle';
 import { selectionOverlay } from '../style/selectionLayers';
@@ -198,9 +199,19 @@ describe('traffic layers (design E1 and E3)', () => {
         if (accepts(layer, properties)) expect(hex(evaluate(layer, 'paint', 'icon-color', properties)), layer.id).not.toBe(accent);
       }
     }
-    // ELEVANT flights in the text colour, the rest faint; tags the same, never amber or red.
-    expect(hex(layerOf('occ-traffic-aviam').paint['icon-color'])).toBe(hex(occColor('text')));
-    expect(hex(layerOf('occ-traffic-other').paint['icon-color'])).toBe(hex(occColor('faint')));
+    // Every other aircraft by its altitude (style/mapColors.js), ELEVANT flights and the rest alike; tags never amber
+    // or red.
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-other', 'occ-traffic-other-ground']) {
+      expect(layerOf(id).paint['icon-color'], id).toEqual(altitudeColourExpression());
+      expect(layerOf(id).paint['icon-halo-color'], id).toBe(MAP_COLORS.dark.altitude.halo);
+    }
+    // In the light theme the same layers take the light scale and its dark halo.
+    const light = trafficOverlay({ theme: 'light' }).layers;
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-other', 'occ-traffic-other-ground']) {
+      const paint = light.find(layer => layer.id === id).paint;
+      expect(paint['icon-color'], id).toEqual(altitudeColourExpression('light'));
+      expect(paint['icon-halo-color'], id).toBe(MAP_COLORS.light.altitude.halo);
+    }
     const paints = JSON.stringify(trafficOverlay().layers.filter(layer => !layer.id.startsWith('occ-route')
       && !['occ-traffic-selected', 'occ-traffic-selected-ring'].includes(layer.id)).map(layer => layer.paint));
     for (const token of ['accent', 'warn', 'danger']) expect(paints, token).not.toContain(occColor(token));
@@ -273,12 +284,16 @@ describe('traffic layers (design E1 and E3)', () => {
       .toBeGreaterThan(evaluate(other, 'layout', 'symbol-sort-key', stale));
   });
 
-  it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand, unless chosen', () => {
+  it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand, unless chosen, and keeps its marks', () => {
     const parked = { kind: 'aviam', dir: 'arr', parkedOnStand: true, estimated: true, demo: true, selected: false };
-    // Its symbol, its estimated ring, its tag and its «Demo» plate: the stand shows it instead (footprint or glyph).
-    for (const id of ['occ-traffic-aviam', 'occ-traffic-estimated-ring', 'occ-traffic-tags', 'occ-traffic-demo-plate']) {
+    // Its symbol and its tag: the stand shows it instead (footprint or glyph).
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-tags']) {
       expect(accepts(layerOf(id), parked), id).toBe(false);
       expect(accepts(layerOf(id), { ...parked, parkedOnStand: false }), id).toBe(true);
+    }
+    // Its marks stay over the stand: the dashed ring of an estimated position and the «Demo» plate (contracts 2.4).
+    for (const id of ['occ-traffic-estimated-ring', 'occ-traffic-demo-plate']) {
+      expect(accepts(layerOf(id), parked), id).toBe(true);
     }
     // Chosen, it is drawn all the same, in cyan with its ring, so the person sees what they chose.
     for (const id of ['occ-traffic-selected-ring', 'occ-traffic-selected']) {
@@ -286,5 +301,29 @@ describe('traffic layers (design E1 and E3)', () => {
     }
     // Other traffic never is the stand's.
     expect(accepts(layerOf('occ-traffic-other'), { kind: 'other', ground: false, parkedOnStand: true })).toBe(true);
+  });
+
+  it('every aircraft is coloured by its altitude: the stops of mapColors, grey on the ground and without altitude', () => {
+    const { stops, ground, unknown } = MAP_COLORS.dark.altitude;
+    expect(stops.map(([feet]) => feet)).toEqual([...ALTITUDE_STOPS_FT]);
+    expect(stops[0][1]).toBe('#f06a20');
+    expect(stops.at(-1)).toEqual([40000, '#b020e0']);
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-other']) {
+      const layer = layerOf(id);
+      for (const [feet, colour] of stops) {
+        expect(hex(evaluate(layer, 'paint', 'icon-color', { ground: false, altFt: feet })), `${id} ${feet}`).toBe(hex(colour));
+      }
+      // 40 000 ft and above stay violet; between two stops the colour is interpolated.
+      expect(hex(evaluate(layer, 'paint', 'icon-color', { ground: false, altFt: 45000 }))).toBe(hex('#b020e0'));
+      const between = hex(evaluate(layer, 'paint', 'icon-color', { ground: false, altFt: 15000 }));
+      expect([hex('#20c060'), hex('#20b8c8')]).not.toContain(between);
+      expect(hex(evaluate(layer, 'paint', 'icon-color', { ground: true, altFt: 0 }))).toBe(hex(ground));
+      expect(hex(evaluate(layer, 'paint', 'icon-color', { ground: false, altFt: -1 }))).toBe(hex(unknown));
+    }
+    // The features carry it: feet rounded to the hundred, 0 on the ground, -1 without an altitude.
+    const features = noonFeatures();
+    expect(features.every(item => Number.isInteger(item.altFt) && item.altFt % 100 === 0)).toBe(true);
+    expect(features.filter(item => item.ground).every(item => item.altFt === 0)).toBe(true);
+    expect(features.some(item => item.altFt > 1000)).toBe(true);
   });
 });

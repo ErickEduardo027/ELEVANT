@@ -264,6 +264,38 @@ Desde la imagen aérea y los vuelos del mapa (PR A3 del mismo plan, código de
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.MapFlights.cs)),
   y las del cliente compartido.
 
+Desde el clima del aeródromo por la API (PR M8 del mismo plan, código de
+`65f9446f` y `eeac6d1e`, también posterior al commit verificado;
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)):
+
+- **Fixtures sintéticos.** Las respuestas de prueba de la fuente tienen la
+  forma real de las respuestas `metar` y `taf` de la Data API de
+  aviationweather.gov, con valores inventados
+  ([METAR](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/awc-metar.synthetic.json)
+  y [TAF](../../backend/tests/Elevant.UnitTests/Infrastructure/Fixtures/awc-taf.synthetic.json));
+  ninguna respuesta real se versiona. El HTTP se simula con un manejador de
+  prueba, y ninguna prueba ni workflow de CI llama a aviationweather.gov.
+- **Prueba en vivo opcional.**
+  [`AviationWeatherLiveTests`](../../backend/tests/Elevant.UnitTests/Infrastructure/AviationWeatherLiveTests.cs)
+  hace una consulta de METAR y una de TAF de Punta Cana (MDPC) y solo corre
+  con `ELEVANT_LIVE_AVIATION_WEATHER=1`. Informa conteos y la antigüedad del
+  METAR, nunca la respuesta. Como las de AeroDataBox y del tráfico, CI nunca la
+  activa.
+- **La E2E no enciende el clima.** El overlay del arnés lo deja apagado salvo
+  que `ELEVANT_E2E_AVIATION_WEATHER_ENABLED` lo encienda, así que el recorrido
+  nunca lee el servicio real; la lectura a mano es un paso aparte y deliberado
+  ([guía local](../../docs/workflows/local-development.md)). El PR no suma
+  pasos al arnés porque no tiene pantallas.
+- **Pruebas automáticas.** Unitarias de la fuente y su parser, las esperas, la
+  configuración y el manejador de la lectura. De la API, montando el host sin
+  SQL: la validación, los códigos y los títulos, el estado en el 200, el lector
+  solo de planificación y la imagen de Development, que enciende el clima. De
+  arquitectura: contratos sin `long`, enumeraciones ni ids internos, y una sola
+  lectura bajo `occ/weather`. Una prueba SQL del código OACI del aeropuerto de
+  la estación
+  ([prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Weather.cs)),
+  y las del cliente compartido.
+
 ## Suite visual de los mapas del OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código del
@@ -285,7 +317,10 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   y, posterior al commit verificado (PR U4, `bcfd6fd7`), la pantalla de
   arranque del OCC sobre Panorama
   ([prueba](../../frontend/private-web/tests/visual/occ/boot-screen.spec.mjs)).
-  Desde el PR U3 recorre también la consola de Panorama
+  Desde el PR M6, también posterior, recorre la vista «Mapa» de Planificación
+  ([prueba](../../frontend/private-web/tests/visual/occ/planning-map.spec.mjs);
+  ver [Cinemática y vuelo demo en los mapas del OCC (PR M6)](#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6)).
+  Y desde el PR U3 recorre también la consola de Panorama
   ([prueba](../../frontend/private-web/tests/visual/occ/console.spec.mjs); ver
   [La consola del OCC (PR U3)](#la-consola-del-occ-pr-u3)).
 - **Qué comprueba.** Los botones de vista y las teclas `1` a `4` escriben
@@ -419,9 +454,11 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   con la red sintética «Red ADS-B de prueba»: `region-traffic-mixed`,
   `approach-traffic-demo`, `ramp-traffic-ground`,
   `approach-traffic-estimated-stale`, `region-traffic-selected`,
-  `approach-traffic-hex-selected` y `region-layers-menu`. Sus posiciones
-  estimadas (la llegada demo en final y un vuelo de AVIAM sin señal) se pasan a
-  mano, como las calculará M6: las pantallas no estiman ninguna.
+  `approach-traffic-hex-selected` y `region-layers-menu`. En M5 sus posiciones
+  estimadas (la llegada demo en final y un vuelo de AVIAM sin señal) se pasaban
+  a mano, porque las pantallas no estimaban ninguna; desde M6 las calcula el
+  almacén de movimiento, como en las pantallas (ver
+  [Cinemática y vuelo demo en los mapas del OCC (PR M6)](#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6)).
 - **Spec visual del tráfico.**
   [`map-lab.traffic.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.traffic.spec.mjs),
   del proyecto `lab` de la [suite visual](#suite-visual-de-los-mapas-del-occ),
@@ -429,14 +466,217 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   primeras comprueba que el crédito de la red está a la vista como enlace y que
   la leyenda lista el tráfico. Comprueba también que la atribución abierta
   nombra la red; que otro avión muestra su etiqueta bajo el puntero; que cada
-  vista explica su tráfico («Otro tráfico en tierra» en la rampa, «Demo»,
-  «est.» y «Estela estimada» en la llegada demo) y que la imagen con retraso lo
-  dice; el bloque de datos del vuelo elegido y el de otro avión, sin enlaces; y
+  vista explica su tráfico («Otro tráfico en tierra» en la rampa; «Demo»,
+  «est.» y la estela en la llegada demo, que en M5 tenía además una estela
+  estimada pasada a mano) y que la imagen con retraso lo dice; el bloque de
+  datos del vuelo elegido y el de otro avión, sin enlaces; desde M6, las cuatro
+  partes de la ruta del vuelo elegido en la leyenda; y
   que un clic elige un avión (`hex=` o `flightId=`), `L` abre el menú de capas,
   la primera `Esc` lo cierra y conserva lo elegido, la segunda suelta el vuelo,
   y «Etiquetas de todo el tráfico» sobrevive a una recarga, con
   `elevant-occ-map-layers:v1` vacío al volver al valor por omisión. Como el
   resto de la suite, corre fuera del CI y una persona revisa sus capturas.
+
+## Referencias y meteorología en los mapas del OCC (PR M8)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M8 (mapas) «Capas aeronáuticas y clima en el mapa» (`1c0f2482` a
+`d5e35d68`), que esa verificación no cubre
+([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Las pruebas de vitest
+corren con `npm test`; las dos specs visuales, con la suite visual. Ninguna
+llama a aviationweather.gov, a Iowa Mesonet ni a NASA GIBS.
+
+- **Clima sintético.**
+  [`weatherFixtures.js`](../../frontend/private-web/src/features/maps/testing/weatherFixtures.js)
+  arma respuestas de `GET occ/weather` para Punta Cana en los cuatro estados
+  (`Live`, `Stale`, `Unavailable` y `Disabled`), con un METAR, un TAF e
+  identificadores inventados y el crédito del servicio; su
+  [prueba](../../frontend/private-web/src/features/maps/testing/weatherFixtures.test.js)
+  pasa cada una por el validador estricto del cliente compartido
+  (`isOccAerodromeWeather`). El adaptador simulado del servicio también valida
+  cada respuesta que da.
+- **Servicio y hook.**
+  [`weatherService.test.js`](../../frontend/private-web/src/services/weatherService.test.js)
+  comprueba que la lectura remota pide `no-store` y alimenta el reloj del
+  servidor; que un 401 cierra la sesión; que `invalid_weather_query`,
+  `forbidden` y `not_found` se explican en español sin el título del
+  servidor; que lo decodificado por la API solo rellena lo que el texto en
+  bruto no dice; y que el crédito de NOAA llega como no oficial.
+  [`useMdpcWeather.test.js`](../../frontend/private-web/src/features/weather/useMdpcWeather.test.js)
+  comprueba que no lee apagado o sin estación, y que toma la de la sesión del
+  OCC; los estados (`Live` y `Stale` con datos; `Unavailable` y `Disabled`
+  vacíos, con el crédito; el error de la primera lectura y la relectura fallida
+  que conserva los datos); que un 403 detiene el sondeo hasta que llega un
+  acceso nuevo o alguien pide `refresh()`, y que entonces vuelve a leer; el
+  sondeo de 10 minutos, solo con la pestaña a la vista, y la lectura al volver
+  la conexión; que su respuesta conserva las claves de antes; que informa su
+  estado a la lista de fuentes del marco; y que la regla de frescura es la
+  misma en el marco, el viento del mapa e `isObservationStale` (un METAR `Live`
+  de 80 minutos al día, uno `Stale` de 40 sin actualizar y el límite de 90
+  minutos medido al milisegundo).
+- **TAF y viento por pista.**
+  [`taf.test.js`](../../frontend/private-web/src/features/weather/taf.test.js)
+  corta el texto en bruto en sus grupos, ordena los periodos, dice qué rige
+  ahora y qué viene, y escribe cada periodo en español y en inglés con la hora
+  de la estación.
+  [`runwayWind.test.js`](../../frontend/private-web/src/features/maps/airport/runwayWind.test.js)
+  comprueba el viento de frente, de cola y de costado de cada cabecera, el
+  rótulo «R08» y que el módulo es puro.
+- **Referencias y noche.**
+  [`referenceFeatures.test.js`](../../frontend/private-web/src/features/maps/traffic/referenceFeatures.test.js)
+  comprueba los anillos (su radio, su cierre y su rótulo), los ejes de 10 NM
+  con sus marcas, la pista en uso con su origen (las llegadas, el viento de un
+  METAR en vivo o la 08), los aeropuertos de la región (MDPC como el propio) y con las
+  contrapartes resaltadas, las radioayudas en español y en inglés, y que no hay
+  FIR. Una llegada vota solo en final, sobre el eje prolongado de una cabecera:
+  un avión en el tramo de viento en cola al este del campo no vota, y el voto
+  de una llegada sigue contando después del aterrizaje, hasta 10 minutos.
+  [`useRecentArrivals.test.js`](../../frontend/private-web/src/features/maps/core/useRecentArrivals.test.js)
+  comprueba que el mapa guarda esos votos de una lectura a otra.
+  [`referenceLayers.test.js`](../../frontend/private-web/src/features/maps/style/referenceLayers.test.js)
+  comprueba que lo que sale de OurAirports va en su propia fuente, con su
+  crédito.
+  [`nightShade.test.js`](../../frontend/private-web/src/features/maps/traffic/nightShade.test.js)
+  comprueba que en cada vértice del borde de la noche el sol está a −6°, con
+  una tolerancia de 0,05° según `sunPosition` del módulo solar; que el anillo
+  está cerrado y dentro de ±85°; que la palabra «Noche» va del lado de la
+  noche; y que la sombra se mueve con el minuto.
+- **Meteorología en el mapa.**
+  [`weatherLayers.test.js`](../../frontend/private-web/src/features/maps/traffic/weatherLayers.test.js)
+  comprueba que las imágenes del satélite solo se dibujan en Región y
+  Aproximación, apagadas por omisión, en grises (`raster-saturation` −1), con
+  el crédito de GIBS en sus fuentes y las teselas fijadas a la hora de su
+  imagen, y que el estilo sigue pasando `validateStyleMin`; el viento, con
+  «100° 13 kt R08», «VRB», la ráfaga y la calma, oculto sin METAR y atenuado
+  con «Sin actualizar desde las 14:02»; su ficha por cabecera; y lo que dicen
+  la leyenda y el menú. La leyenda del viento sin actualizar dice «Sin
+  actualizar» y también «No oficial»
+  ([entradas](../../frontend/private-web/src/features/maps/ui/referenceLegend.test.js)
+  y [leyenda](../../frontend/private-web/src/features/maps/ui/MapLegend.test.jsx)).
+  [`useSatelliteImagery.test.jsx`](../../frontend/private-web/src/features/maps/useSatelliteImagery.test.jsx)
+  comprueba que la hora de una imagen se lee solo mientras se pide, cada 10
+  minutos con la pestaña a la vista, y que el adaptador simulado no usa la red.
+  Las pruebas del
+  [motor](../../frontend/private-web/src/features/maps/core/mapEngine.test.js)
+  y del [mapa falso](../../frontend/private-web/tests/fakeMapLibre.test.js)
+  reponen las teselas de una fuente ráster tras perder el contexto, como
+  MapLibre 6.16.
+- **Specs visuales.** Del proyecto `lab` de la
+  [suite visual](#suite-visual-de-los-mapas-del-occ):
+  - [`map-lab.references.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.references.spec.mjs)
+    fotografía las referencias de día, al atardecer (las 18:15 de Punta Cana) y
+    en Aproximación, a 1440×900 y a 1920×1080. Comprueba que la leyenda lista
+    cada referencia solo mientras está en pantalla, y que el grupo
+    «Referencias» del menú las muestra y las oculta, sin guardar nada al volver
+    al valor por omisión. También fotografía los créditos abiertos en Región y
+    comprueba que «OurAirports» sale una vez mientras se dibujan los ejes, los
+    aeropuertos o las radioayudas, y que se va con el último.
+  - [`map-lab.weather.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.weather.spec.mjs)
+    fotografía el satélite en Región y el viento en vivo, su ficha y el viento
+    sin actualizar, a los mismos dos tamaños. Comprueba que cada tesela de GIBS
+    que se pide está fijada a la hora de su imagen; que cada crédito («NASA
+    GIBS» y «Clima: NOAA Aviation Weather Center») se ve solo con lo que
+    acredita; y que sin METAR no hay viento, y el menú dice por qué.
+
+  El aislamiento responde las teselas de GIBS fijadas a una hora con una
+  imagen inventada, y no responde una sin hora, así que la spec falla si el
+  mapa la pide. La lluvia inventada lleva los tonos de una escala, como la de
+  IMERG, para que las capturas muestren que el mapa la dibuja en grises. En el
+  proyecto `occ`, el stub de la API responde `occ/weather` con un clima
+  sintético, que
+  [su prueba](../../frontend/private-web/tests/visualOccFixtures.test.js) pasa
+  por el validador estricto. Como el resto de la suite, corre fuera del CI y
+  una persona revisa sus capturas.
+
+## Cinemática y vuelo demo en los mapas del OCC (PR M6)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M6 «Cinemática y vuelo demo en el mapa» (`71b01804` a `763cf9ae`), que esa
+verificación no cubre ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)).
+Las pruebas de vitest corren con `npm test`; las specs visuales, con la suite
+visual.
+
+- **El contrato del vuelo demo.**
+  [`demoProfile.test.js`](../../frontend/private-web/src/features/maps/kinematics/demoProfile.test.js)
+  arma el reloj demo como lo arma el servidor y lo lee como el mapa lee el
+  bloque `demo` de los vuelos, sobre el plano firmado de MDPC. Con 8 minutos
+  (216 s de rodaje de llegada), cada una de las 41 posiciones activas se alcanza
+  por la 08 con un rodaje ajustado de 25 kt o menos. B36 y B37, las dos que no
+  caben a velocidad real, van comprimidas menos del 2 %: la prueba demuestra por
+  geometría que ningún rodaje posible cabe, fija las escalas «×1,01» (B36) y
+  «×1,02» (B37), el rótulo «Demo acelerada ×1,02» y comprueba que con 222 s de rodaje o con 10 minutos todas caben. Los
+  5 minutos de rodaje de salida caben a 25 kt o menos desde todas, con A1, A2 y
+  AN1 desde la intersección H. Prueba también los seis instantes del servidor,
+  con un segundo de margen; que ningún tramo salta; el arranque a 5 NM como
+  mínimo; la espera sobre la puerta de aproximación; la 08 con cualquier viento;
+  la espera de plataforma; la posición dada después, y que rehecha con su
+  propia continuación conserva el rodaje; la cancelación; el final donde está
+  de un vuelo que las lecturas dejan de listar; y que dos construcciones dan lo
+  mismo.
+- **Pureza.**
+  [`purity.test.js`](../../frontend/private-web/src/features/maps/kinematics/purity.test.js)
+  recorre las fuentes de `kinematics/` y `airport/runwayInUse.js`, sin sus
+  comentarios, y falla con `Date.now()`, `performance.now()`, un `new Date()`
+  sin argumentos, `Math.random()` o un import de JSON.
+- **El bucle y el movimiento.**
+  [`frameLoop.test.js`](../../frontend/private-web/src/features/maps/core/frameLoop.test.js)
+  usa un reloj y un `requestAnimationFrame` falsos: ningún cuadro si nada se
+  mueve; un cuadro por cada cuadro del navegador mientras algo se mueve; la hora
+  del reloj de render, nunca `Date.now()`; la pausa y la reanudación; el reloj
+  congelado del laboratorio; la pestaña oculta; un tic por segundo con
+  movimiento reducido; y el ritmo de `updateData`.
+  [`motionStore.test.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.test.js)
+  prueba la caché de trayectorias por sus entradas; el vuelo demo con los
+  instantes del servidor en la 08, su espera sin importar, la importación sin
+  salto, que la continuación sobrevive a «Terminar demo» y al final del vuelo, la
+  cancelación y el desvanecimiento de un vuelo demo que las lecturas dejan de
+  listar; la pista de las llegadas vistas en final durante media hora; la
+  decisión F-1; que una salida importada solo sale con `PUSHBACK` o con señal;
+  que una señal parada en la posición no pone nada en marcha al envejecer; la
+  ruta de un vuelo que no se dibuja; el relevo en vivo, sin señal y estimado; un
+  avión por visita; la escala de tiempo; `trackConfigFor`; y el próximo cambio.
+  Las del relevo, la ruta, la cámara de seguimiento y los rodajes están junto a
+  cada módulo de `kinematics/`.
+- **Las posiciones con los vuelos.**
+  [`standInputs.test.js`](../../frontend/private-web/src/features/maps/traffic/standInputs.test.js)
+  y [`footprint.test.js`](../../frontend/private-web/src/features/maps/aircraft/footprint.test.js)
+  (la huella mide la envergadura por el largo con un 2 % de margen, apunta
+  según el rumbo y cabe en su posición); las pruebas del modelo, las capas y la
+  leyenda de las posiciones suman «Llegando» desde el vuelo, las huellas, la
+  barra de avance y el aviso.
+  [`MapSituationGate.test.jsx`](../../frontend/private-web/src/features/maps/MapSituationGate.test.jsx)
+  comprueba que fuera del marco del OCC no se lee nada. Las pruebas de Mapa de
+  posiciones y de Planificación comprueban que fuera del marco leen solo el
+  tablero, como antes, y que dentro dibujan el tráfico, sus posiciones leen
+  «Llegando» y «Ocupada» de los vuelos y el vuelo o el avión de la URL es lo
+  elegido, con su bloque de datos.
+  [`useStandDisplay.test.js`](../../frontend/private-web/src/features/maps/stands/useStandDisplay.test.js)
+  comprueba que con el reloj del mapa las posiciones leen la hora del servidor
+  aunque el equipo vaya desfasado, que la posición demo cambia en el segundo
+  exacto de `onBlockAt` y `offBlockAt` y que la pausa la congela; las pruebas
+  de las capas de tráfico comprueban que un avión estimado o demo parado en su
+  posición conserva su anillo «est.» y su placa «Demo» y sus entradas de la
+  leyenda.
+- **Datos sintéticos validados.**
+  [`visualOccFixtures.test.js`](../../frontend/private-web/tests/visualOccFixtures.test.js)
+  pasa por los validadores estrictos del cliente compartido la imagen aérea, los
+  vuelos del mapa, la traza y el ping que responde la API simulada de la suite
+  visual, inventados y sin ningún proveedor.
+- **Specs visuales.**
+  [`map-lab.motion.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.motion.spec.mjs)
+  fotografía seis escenas del vuelo demo y de las fuentes de una posición, con
+  lo que dice el bloque de datos de cada una, y «Pausar movimiento».
+  [`map-lab.route-follow.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.route-follow.spec.mjs)
+  fotografía la ruta de una llegada y la de una salida y el modo seguir en
+  final, en rodaje y en el ascenso de una salida que gira tras despegar, con el
+  avión a la vista, y comprueba que `S` y «Seguir» escriben `follow=1` y que un
+  arrastre deja de seguir y lo dice. En el proyecto `occ`,
+  [`planning-map.spec.mjs`](../../frontend/private-web/tests/visual/occ/planning-map.spec.mjs)
+  y [`positions-map.spec.mjs`](../../frontend/private-web/tests/visual/occ/positions-map.spec.mjs)
+  muestran las posiciones alimentadas por los vuelos con el tráfico encima.
+  Todas corren a 1440×900 y a 1920×1080, fuera del CI, y una persona revisa sus
+  capturas. Ninguna mide los cuadros por segundo: el Chrome de la suite dibuja
+  por software.
 
 ## La consola del OCC (PR U3)
 

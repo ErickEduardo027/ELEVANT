@@ -36,8 +36,15 @@ describe('the traffic scenes of the map lab', () => {
         if (item.registration !== null) expect(item.registration, id).toMatch(/^ZZ-/);
       }
     }
-    // Each traffic scene names its scenario; no other scene has traffic.
-    expect(SCENES.filter(scene => scene.traffic).map(scene => scene.id)).toEqual(Object.keys(TRAFFIC_SCENARIOS));
+    // Each traffic scene names its scenario; the reference and weather scenes of PR M8, the ones with weather, borrow
+    // two of them, and the 3D scenes of PR M7 reuse the demo flight's; no other scene has traffic.
+    const reused = { 'ramp-3d-parked': 'airfield-demo-taxiing', 'ramp-3d-selected': 'airfield-demo-taxiing',
+      'airfield-3d-final': 'approach-demo-final' };
+    expect(SCENES.filter(scene => scene.traffic && scene.weather === undefined && !reused[scene.id]).map(scene => scene.id))
+      .toEqual(Object.keys(TRAFFIC_SCENARIOS));
+    expect(SCENES.filter(scene => scene.traffic && scene.weather !== undefined).map(scene => scene.id))
+      .toEqual(['region-references', 'approach-references', 'region-satellite']);
+    for (const [id, from] of Object.entries(reused)) expect(findScene(id).traffic, id).toBe(TRAFFIC_SCENARIOS[from]);
     expect(findScene('ramp-traffic-ground').traffic).toBe(TRAFFIC_SCENARIOS['ramp-traffic-ground']);
   });
 

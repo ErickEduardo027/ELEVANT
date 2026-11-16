@@ -1,6 +1,7 @@
-import { occColor } from '../../occ-ui/occPalette';
+import { occColor, occThemeColor } from '../../occ-ui/occPalette';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { maskToSdf } from './sdf';
+import { REFERENCE_IMAGE_SHAPES } from './referenceImages';
 import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
 
 // The images of the OCC map style. There is no sprite: each image is drawn on demand from the path data below and
@@ -25,6 +26,12 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'signal-notice',
   'aircraft-solid',
   'airport-arp',
+  // The navaids of the references (PR M8, style/referenceImages.js).
+  ...Object.keys(REFERENCE_IMAGE_SHAPES),
+  // The wind at the airfield (PR M8, traffic/weatherLayers.js): the arrow of a wind that blows from somewhere, and the
+  // ring of a calm or variable one.
+  'wind-arrow',
+  'wind-calm',
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
   ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
@@ -141,6 +148,25 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
       { stroke: 'M3.2 11.6 L24.8 8.4', lineWidth: 2 },
     ],
   },
+  ...REFERENCE_IMAGE_SHAPES,
+  // The wind (PR M8): an arrow pointing up, where the wind blows to once the layer turns it (its direction + 180°), a
+  // shaft with a head, clear of the border; and, for a calm or variable wind, which points nowhere, a ring around a dot.
+  'wind-arrow': {
+    width: 24,
+    height: 24,
+    ops: [
+      { stroke: 'M12 20 V10', lineWidth: 2 },
+      { fill: 'M12 3.5 L17.5 11 L6.5 11 Z' },
+    ],
+  },
+  'wind-calm': {
+    width: 24,
+    height: 24,
+    ops: [
+      { stroke: 'M17.5 12 A5.5 5.5 0 1 1 6.5 12 A5.5 5.5 0 1 1 17.5 12 Z', lineWidth: 1.5 },
+      { fill: 'M13.5 12 A1.5 1.5 0 1 1 10.5 12 A1.5 1.5 0 1 1 13.5 12 Z' },
+    ],
+  },
   ...TRAFFIC_IMAGE_SHAPES,
 });
 
@@ -223,7 +249,7 @@ const scaled = (values, pixelRatio) => values.map(value => (Array.isArray(value)
  * nothing to draw with, answers `null`. Results are kept, so an id is drawn once. `rasterize(shape, pixelRatio)` is
  * injectable because jsdom has no canvas.
  */
-export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRatio = 2 } = {}) {
+export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRatio = 2, theme = 'dark' } = {}) {
   const drawn = new Map();
   return function resolveMapImage(id) {
     if (drawn.has(id)) return drawn.get(id);
@@ -232,7 +258,7 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
     // A plain image whose operations carry their own colours (the traffic marks, PR M5) is laid over op by op; a
     // pattern in one colour (`color` on the shape, PR M4) is drawn below with its coverage as alpha.
     if (shape.sdf === false && shape.color === undefined) {
-      const plain = drawPlainImage(id, shape, { rasterize, pixelRatio });
+      const plain = drawPlainImage(id, shape, { rasterize, pixelRatio, theme });
       if (plain) drawn.set(id, plain);
       return plain;
     }
@@ -245,7 +271,7 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
       throw new RangeError(`Image ${id} was drawn at ${raster.width} × ${raster.height}, not ${width} × ${height}`);
     }
     const sdf = shape.sdf !== false;
-    const [red, green, blue] = sdf ? [255, 255, 255] : rgbOf(shape.color);
+    const [red, green, blue] = sdf ? [255, 255, 255] : rgbOf(occThemeColor(shape.color, theme));
     const alpha = sdf ? maskToSdf(raster.alpha, width, height) : raster.alpha;
     const data = new Uint8ClampedArray(width * height * 4);
     for (let index = 0; index < alpha.length; index += 1) {
@@ -267,8 +293,8 @@ export function createImageResolver({ rasterize = rasterizeWithCanvas, pixelRati
 }
 
 // The red, green and blue of an OCC colour token written as #rrggbb.
-function tokenRgb(token) {
-  const value = occColor(token);
+function tokenRgb(token, theme = 'dark') {
+  const value = occColor(token, theme);
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
   if (!match) throw new RangeError(`A plain map image needs a #rrggbb token, not ${token} (${value})`);
   return match.slice(1).map(hex => parseInt(hex, 16));
@@ -279,7 +305,7 @@ function tokenRgb(token) {
  * before it in its own `color` (an OCC token), as a canvas would paint it. Answers `{ width, height, data, pixelRatio,
  * sdf: false }` with straight (not premultiplied) RGBA, as MapLibre takes it, or `null` when nothing can be drawn.
  */
-function drawPlainImage(id, shape, { rasterize, pixelRatio }) {
+function drawPlainImage(id, shape, { rasterize, pixelRatio, theme }) {
   const width = Math.round(shape.width * pixelRatio);
   const height = Math.round(shape.height * pixelRatio);
   const size = width * height;
@@ -293,7 +319,7 @@ function drawPlainImage(id, shape, { rasterize, pixelRatio }) {
     if (raster.width !== width || raster.height !== height) {
       throw new RangeError(`Image ${id} was drawn at ${raster.width} × ${raster.height}, not ${width} × ${height}`);
     }
-    const [r, g, b] = tokenRgb(op.color);
+    const [r, g, b] = tokenRgb(op.color, theme);
     for (let index = 0; index < size; index += 1) {
       const cover = raster.alpha[index] / 255;
       if (cover === 0) continue;

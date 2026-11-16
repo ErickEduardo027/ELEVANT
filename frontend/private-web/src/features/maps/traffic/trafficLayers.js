@@ -1,13 +1,15 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
+import { altitudeColourExpression, mapColorsFor } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
 import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 
 // The traffic of the OCC maps as one overlay for buildOccStyle (design E1, contracts 2.4), fed by OccMap: the aircraft
 // (traffic/trafficFeatures.js) with updateData, their trails (traffic/trailStore.js) and the chosen flight's route
-// with setData. «Cabina oscura»: normal traffic carries no hue (ELEVANT flights in the text colour, the rest faint);
-// only the chosen aircraft is cyan. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
+// with setData. Every aircraft is coloured by its altitude (owner request of 2026-11-15, style/mapColors.js: orange near
+// the ground to violet at 40 000 ft, light grey on the ground, ui/AltitudeLegend.jsx explains it); only the chosen
+// aircraft is cyan, with its ring. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
 // striped plate, never by colour alone. Pure.
 //
 // Layers bottom to top. In the `routes` slot the chosen flight's route (PR M6, traffic/routeFeatures.js), in the
@@ -40,8 +42,13 @@ const isNot = key => ['!=', get(key), true];
 const AVIAM = ['==', get('kind'), 'aviam'];
 const OTHER = ['==', get('kind'), 'other'];
 // An ELEVANT aircraft parked in the stand that shows it is the stand's (PR M6, design F4: one owner per aircraft): its
-// symbol, ring, tag and plate give way to the stand's footprint or glyph; the chosen aircraft is drawn all the same.
+// symbol and tag give way to the stand's footprint or glyph; the chosen aircraft is drawn all the same. Its marks stay:
+// an estimated position keeps its dashed ring and a demo flight its «Demo» plate over the stand (contracts 2.4, «Tags»:
+// whatever is estimated or simulated carries its mark on screen).
 const NOT_PARKED = isNot('parkedOnStand');
+// An aircraft the 3D layer draws (PR M7, core/aircraft3d.js) leaves out its 2D silhouette, the chosen one's too; its tag,
+// its rings and its «Demo» plate stay, so it keeps its words and marks over the model.
+const NOT_3D = isNot('model3d');
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
 const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
@@ -69,9 +76,9 @@ const iconLayout = (extra = {}) => ({
   ...extra,
 });
 
-const iconPaint = (colour, haloWidth) => ({
+const iconPaint = (colour, haloWidth, halo = occColor('nav')) => ({
   'icon-color': colour,
-  'icon-halo-color': occColor('nav'),
+  'icon-halo-color': halo,
   'icon-halo-width': haloWidth,
   'icon-opacity': DIMMED,
 });
@@ -141,6 +148,9 @@ const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLA
 const ems = pixels => Math.round((pixels / PLATE_TEXT_SIZE) * 1000) / 1000;
 
 const ACCENT = occColor('accent');
+// Every aircraft but the chosen one in the colour of its altitude, edged by the halo of the theme (style/mapColors.js).
+const altitudePaint = (theme, haloWidth) => iconPaint(altitudeColourExpression(theme), haloWidth,
+  mapColorsFor(theme).altitude.halo);
 // The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
 // cyan clear of the silhouette.
 const SELECTED_RING_RADIUS_PX = 18;
@@ -181,8 +191,8 @@ export const ROUTE_LAYER_IDS = Object.freeze({
   mark: 'occ-route-marks',
 });
 
-/** The overlay of the traffic for buildOccStyle; its three sources start empty. */
-export function trafficOverlay() {
+/** The overlay of the traffic for buildOccStyle, in the colours of `theme`; its three sources start empty. */
+export function trafficOverlay({ theme = 'dark' } = {}) {
   return {
     sources: {
       [TRAFFIC_SOURCE]: { type: 'geojson', promoteId: 'id' },
@@ -266,9 +276,9 @@ export function trafficOverlay() {
         id: 'occ-traffic-other-ground',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, is('ground')],
+        filter: ['all', OTHER, is('ground'), NOT_3D],
         layout: otherLayout(),
-        paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
+        paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
           'occ:minThreshold': 'airfield' },
       },
@@ -277,9 +287,9 @@ export function trafficOverlay() {
         id: 'occ-traffic-other',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, isNot('ground')],
+        filter: ['all', OTHER, isNot('ground'), NOT_3D],
         layout: otherLayout(),
-        paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
+        paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
       },
       // Above the icons of other traffic, so MapLibre places these tags before them: a tag keeps off the ELEVANT
@@ -299,9 +309,9 @@ export function trafficOverlay() {
         id: 'occ-traffic-aviam',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', AVIAM, NOT_PARKED],
+        filter: ['all', AVIAM, NOT_PARKED, NOT_3D],
         layout: iconLayout(),
-        paint: iconPaint(occColor('text'), 1.5),
+        paint: altitudePaint(theme, 1.5),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:pick': 'flight', 'occ:pickId': 'flightKey' },
       },
       {
@@ -309,7 +319,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-estimated-ring',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', is('estimated'), NOT_PARKED],
+        filter: is('estimated'),
         layout: {
           'icon-image': ESTIMATED_RING_IMAGE,
           'icon-size': get('scale'),
@@ -342,7 +352,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-demo-plate',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', is('demo'), NOT_PARKED],
+        filter: is('demo'),
         layout: {
           'icon-image': DEMO_PLATE_IMAGE,
           'icon-anchor': 'center',
@@ -385,7 +395,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-selected',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('selected'),
+        filter: ['all', is('selected'), NOT_3D],
         layout: iconLayout({ 'icon-ignore-placement': true }),
         paint: iconPaint(ACCENT, 1.5),
         metadata: { 'occ:group': 'selection' },

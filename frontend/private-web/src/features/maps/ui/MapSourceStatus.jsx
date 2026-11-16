@@ -7,8 +7,8 @@ import { mapMessages } from '../mapMessages';
 
 // The state of the air traffic over an OCC map (design A7) and the credit of its source (owner decision 6). The chip
 // sits at the top centre of the visible area, under the base-map notice when both show; the credit «Datos de
-// aeronaves: adsb.fi» (a link) sits at its bottom left whenever traffic is on screen: the map's attribution keeps the
-// same credit, but folded. The air picture's state (Live, Stale, Warming, Unavailable, Disabled) is data, never an
+// aeronaves: adsb.fi» (a link) sits at its bottom left whenever traffic is on screen. It is the only credit of the
+// aircraft data: the map's attribution keeps the base map's credits alone (a second copy there sat under the dock). The air picture's state (Live, Stale, Warming, Unavailable, Disabled) is data, never an
 // error, and its reason is said in the screen's words: the server's text is never shown. The chip speaks of the air
 // picture alone, as the shell's list of sources does: each read of the map fails alone (contracts 1.3), so a failed
 // read of the AVIAM flights has a notice of its own, under the chip.

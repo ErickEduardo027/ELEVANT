@@ -9,6 +9,7 @@ import { loadRecentMetars } from '../../../services/weatherService';
 import OccPopover from '../../occ-ui/OccPopover';
 import OccSegmented from '../../occ-ui/OccSegmented';
 import { formatClock } from '../../occ-ui/occTime';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { isObservationStale, observationAgeMinutes } from '../../weather/useMdpcWeather';
 import { consoleMessages } from './consoleMessages';
 import { CONSOLE_ACTION, CONSOLE_SCROLL } from './consoleStyles';
@@ -194,12 +195,14 @@ function useSatelliteImages() {
 function Imagery({ t, locale, now, imagery, onImagery }) {
   const images = useSatelliteImages();
   const image = images[imagery];
+  // The small satellite map follows the OCC theme, dark by default.
+  const theme = useOptionalTheme()?.theme ?? 'dark';
   return (
     <section className="flex min-w-0 flex-col gap-2">
       <OccSegmented label={t('weather.imageryLayer')} size="sm" value={imagery} onChange={onImagery}
         options={IMAGERY.map(layer => ({ id: layer, label: t(`weather.layer.${layer}`) }))} />
       <div className="relative h-64 min-h-0 overflow-hidden rounded border border-occ-line bg-occ-canvas">
-        <GoesCloudMap theme="dark" imagery={image.status === 'ready' ? imagery : 'none'} imageryTime={image.time}
+        <GoesCloudMap theme={theme} imagery={image.status === 'ready' ? imagery : 'none'} imageryTime={image.time}
           labels={{ cloudsUnavailable: t('weather.cloudsUnavailable') }} />
       </div>
       <p className="text-xs text-occ-text">

@@ -341,10 +341,12 @@ export function fixIdentity(fix, { claimed, flightOf }) {
  *   aircraft; `status` and `reason` stay as data.
  * - An ELEVANT flight without a live fix is never given a position. A position the caller estimates (`estimates`:
  *   `{ flightKey, lon, lat, altM?, gsMs?, trackDeg?, vrateMs?, onGround?, positionAt?, statusKey?, timeScale?,
- *   opacity?, mode? }`, PR M6: traffic/motionStore.js) is drawn as `estimated`, unless the flight already has a live
- *   aircraft; its `statusKey` (a demo's «Esperando posición», «Cancelado por el proveedor (demo)»), `timeScale` (1
- *   unless the part it is in was scaled), `opacity` (1 unless it fades out) and `mode` ('estimate' unless given) go
- *   with it.
+ *   opacity?, mode?, flight? }`, PR M6: traffic/motionStore.js) is drawn as `estimated`, unless the flight already has
+ *   a live aircraft; its `statusKey` (a demo's «Esperando posición», «Cancelado por el proveedor (demo)»), `timeScale`
+ *   (1 unless the part it is in was scaled), `opacity` (1 unless it fades out) and `mode` ('estimate' unless given) go
+ *   with it. An estimate of a flight the read no longer lists may bring that flight's last row (`flight`: a demo flight
+ *   fading out after the server dismissed its rows): it is drawn from that row, which joins `flights` while it is
+ *   drawn, so the selection and its data block still name it.
  * - Other traffic on the ground inside the box of a stand an ELEVANT or demo aircraft is on (ownedStandCodes, with the
  *   live and estimated positions of the ELEVANT flights) is `hiddenInStand`.
  * - `changesAt`: the next instant a live aircraft turns stale without a new read, or `estimatesChangeAt` (the motion
@@ -361,20 +363,26 @@ export function fixIdentity(fix, { claimed, flightOf }) {
 export function buildSituation({
   picture = null, flights = null, nowMs, estimates = [], estimatesChangeAt = null, layout = MDPC_LAYOUT,
 } = {}) {
-  const rows = flights?.flights ?? [];
+  const read = flights?.flights ?? [];
   const status = picture?.status ?? null;
   const time = finite(nowMs) ? nowMs : (picture?.serverTime ?? 0);
   const staleAfterMs = staleAfterSeconds(picture?.refreshAfterSeconds) * 1_000;
   // One flight, one aircraft: the newest position of each flight of the window, whichever of its keys names it.
   const { fixes, claimed, flightOf } = claimFixes({ picture, flights });
-  // A position the caller estimated, for a flight without a live aircraft: one per flight.
+  // A position the caller estimated, for a flight without a live aircraft: one per flight. A flight the read no longer
+  // lists comes with its last row (a demo flight fading out, traffic/motionStore.js: leavingDemo) and joins the rows.
   const estimated = new Map();
+  const leaving = [];
   for (const estimate of Array.isArray(estimates) ? estimates : []) {
-    const flight = flightOf(estimate?.flightKey);
+    let flight = flightOf(estimate?.flightKey);
+    const own = flight === null && estimate?.flight != null && estimate.flight.flightKey === estimate.flightKey;
+    if (own) flight = estimate.flight;
     if (flight === null || claimed.has(flight.flightKey) || estimated.has(flight.flightKey)) continue;
     if (!finite(estimate.lon) || !finite(estimate.lat)) continue;
     estimated.set(flight.flightKey, { estimate, flight });
+    if (own) leaving.push(flight);
   }
+  const rows = leaving.length === 0 ? read : Object.freeze([...read, ...leaving]);
 
   // The stands an ELEVANT or demo aircraft is on, also from where the map has each flight's aircraft.
   const positions = new Map();
