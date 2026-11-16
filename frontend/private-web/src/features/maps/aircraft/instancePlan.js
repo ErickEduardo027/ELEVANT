@@ -105,6 +105,21 @@ export const AIRCRAFT_3D_COLORS = Object.freeze({
   shadow: linearRgb(occColor('nav')),
 });
 
+// On the light map (ADR-0044, note of 2026-11-15) the same roles in its own tokens: AVIAM aircraft in the panels'
+// white, other traffic in the strong line's grey, the chosen one in the light theme's accent and the shadows in the
+// faint ink, so a model stands off the light pavement and still carries no hue but the selection's.
+const LIGHT_3D_COLORS = Object.freeze({
+  aviam: linearRgb(occColor('panel', 'light')),
+  other: linearRgb(occColor('line-strong', 'light')),
+  selected: linearRgb(occColor('accent', 'light')),
+  shadow: linearRgb(occColor('faint', 'light')),
+});
+
+/** The instance colours of `theme` ('light' or the dark default): AIRCRAFT_3D_COLORS in the dark one. */
+export function aircraft3dColors(theme) {
+  return theme === 'light' ? LIGHT_3D_COLORS : AIRCRAFT_3D_COLORS;
+}
+
 /** The key of a resolved type in the plan: its ICAO designator, or `@` and its category for a generic airframe. */
 export function instanceKey(resolved) {
   return resolved.code ?? `@${resolved.iconCategory}`;

@@ -1,0 +1,444 @@
+import { mapStandCode } from '../../positions-map/positionsMapMappers';
+import { aircraft3dColors, planInstances } from '../aircraft/instancePlan';
+import { loadAircraft3d } from '../aircraft/loadAircraft3d';
+import { resolveAircraftType } from '../aircraft/types';
+import { sunPosition } from '../traffic/solar';
+import { TRAFFIC_SOURCE } from '../traffic/trafficFeatures';
+import { isRetired, standCodeOf } from './cameraPresets';
+
+// The 3D aircraft of an OccMap (PR M7, design G1 to G4 as contracts 2.3 amend them): the person's 2D/3D choice, the
+// stands' parked aircraft for the instance plan, the translation of a 3D pick into the map's selection, the frame-time
+// governor and the controller that loads the 3D chunk, adds and removes the custom layer on the map's engine and tells
+// the map which aircraft the 3D draws, so their 2D symbols give way. The controller has no clock and no read of its
+// own: OccMap hands it the aircraft of each write of its traffic, on its one frame loop (core/frameLoop.js), and the
+// layer reads the plan of that write.
+
+/** Where a browser keeps the 2D/3D choice of the OCC maps (design G4). */
+export const MODE_3D_STORAGE_KEY = 'elevant-occ-map-3d:v1';
+
+/**
+ * The governor (design G4, contracts 2.3): frames slower than `slowFrameMs` on average over `windowMs` of continuous
+ * drawing take one step down; `stableMs` of fast frames take one step back up (never out of the pause, which waits
+ * for «Volver a 3D»). A gap longer than `maxGapMs` is the map idling, not a slow frame. The steps: full quality, no
+ * shadows and drop lines, the pixel ratios of `pixelRatios`, then the 3D paused (never while a flight is followed).
+ */
+export const GOVERNOR = Object.freeze({
+  slowFrameMs: 22, windowMs: 2_000, stableMs: 30_000, maxGapMs: 250, pixelRatios: Object.freeze([1.25, 1]),
+});
+
+/** The last step of the governor: the 3D paused. */
+export const GOVERNOR_PAUSED = 2 + GOVERNOR.pixelRatios.length;
+
+/** After a failed load of the 3D chunk the map waits this long before it tries again. */
+export const RETRY_LOAD_MS = 30_000;
+
+/** The slot of the map's style the 3D aircraft draw in: above the footprints and the buildings, under the tags. */
+export const AIRCRAFT_3D_SLOT = 'models';
+
+const NO_IDS = Object.freeze(new Set());
+// The layer a 3D pick names in its feature: the custom layer's id (aircraft/aircraft3dLayer.js), which this module may
+// not import (only the 3D chunk does).
+const AIRCRAFT_3D_PICK_LAYER = 'occ-aircraft-3d';
+const finite = value => typeof value === 'number' && Number.isFinite(value);
+
+/** Whether the browser can draw WebGL2 at all (jsdom and very old browsers cannot): the 3D is off by default there. */
+export function supportsWebgl2() {
+  return typeof globalThis.WebGL2RenderingContext === 'function';
+}
+
+/**
+ * The browser's 2D/3D choice: true for 3D, false for 2D. Without a stored choice, 3D where the browser can draw it
+ * (contracts 2.3: 3D on by default in Aeródromo and Rampa). A browser that refuses storage keeps the default.
+ */
+export function readMode3d(storage, { webgl = supportsWebgl2() } = {}) {
+  try {
+    const stored = storage?.getItem(MODE_3D_STORAGE_KEY);
+    if (stored === '3d') return true;
+    if (stored === '2d') return false;
+  } catch {
+    // A browser that refuses storage keeps the default.
+  }
+  return webgl === true;
+}
+
+/** Remembers the choice; a browser that refuses storage remembers nothing. */
+export function writeMode3d(storage, on) {
+  try {
+    storage?.setItem(MODE_3D_STORAGE_KEY, on ? '3d' : '2d');
+  } catch {
+    // Nothing to remember it in.
+  }
+}
+
+/**
+ * The aircraft the stands draw (design F4, PR M6) as the instance plan takes them: one per stand whose display shows an
+ * aircraft on it to scale (its footprint `solid`: Ocupada or Por liberar with a known type), at the stand's centre, nose
+ * along its heading. Its id is that of the ELEVANT aircraft parked there (`parkedIds`, the stands' own, by its
+ * turnaround), else `s:<code>`; a stand whose visit has an aircraft of the traffic that is not parked (still moving)
+ * draws none, so no aircraft is drawn twice.
+ */
+export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS) {
+  const byTurnaround = new Map();
+  for (const item of Array.isArray(aircraft) ? aircraft : []) {
+    if (item?.turnaroundId != null && item.kind === 'aviam') byTurnaround.set(item.turnaroundId, item);
+  }
+  const parked = [];
+  const codes = new Set();
+  for (const stand of Array.isArray(stands) ? stands : []) {
+    if (stand === null || typeof stand !== 'object' || isRetired(stand)) continue;
+    const { display, geometry } = stand;
+    if (display?.footprint !== 'solid' || !display.typeSpec) continue;
+    if (!Array.isArray(geometry?.center) || !finite(geometry.headingTrue)) continue;
+    const code = mapStandCode(standCodeOf(stand));
+    if (code === '' || codes.has(code)) continue;
+    const type = display.aircraftType ?? null;
+    if (resolveAircraftType({ typeIcao: type, model: type }).iconCategory === 'unknown') continue;
+    const owner = byTurnaround.get(display.visit?.turnaroundId);
+    if (owner && !parkedIds.has(owner.id)) continue;
+    codes.add(code);
+    parked.push({
+      id: owner ? owner.id : `s:${code}`,
+      lon: geometry.center[0],
+      lat: geometry.center[1],
+      headingDeg: geometry.headingTrue,
+      typeIcao: type,
+      model: type,
+      kind: 'aviam',
+    });
+  }
+  return parked;
+}
+
+/**
+ * What a 3D pick names, as the 2D picking names it (core/mapEngine.js: pickAt): `f:<flightKey>` a flight, `h:<hex>`
+ * an aircraft of other traffic, `s:<code>` the stand whose parked aircraft it is. `drawn` (the aircraft of the last
+ * write) says what an id of the traffic is. Answers `{ kind, id, feature }`, with the traffic's feature id for the
+ * hover card and the focused tag, or null.
+ */
+export function translatePick(picked, drawn = []) {
+  const id = typeof picked?.id === 'string' ? picked.id : null;
+  if (id === null) return null;
+  if (id.startsWith('s:')) return { kind: 'stand', id: id.slice(2), feature: null };
+  const item = (Array.isArray(drawn) ? drawn : []).find(entry => entry?.id === id) ?? null;
+  const feature = { source: TRAFFIC_SOURCE, layer: { id: AIRCRAFT_3D_PICK_LAYER }, properties: { id } };
+  const flightKey = item?.flightKey ?? (id.startsWith('f:') ? id.slice(2) : null);
+  if (item?.kind === 'aviam' && flightKey) return { kind: 'flight', id: flightKey, feature };
+  if (id.startsWith('f:') && item === null) return { kind: 'flight', id: id.slice(2), feature };
+  const hex = item?.hex ?? (id.startsWith('h:') ? id.slice(2) : null);
+  return hex ? { kind: 'aircraft', id: hex, feature } : null;
+}
+
+/**
+ * The governor's arithmetic, without a map: `sample(dtMs, atMs)` takes the time between two frames the map drew and
+ * answers the step to take (`-1` down, `+1` up, `0` none). `level` starts at 0; `setFollowing(on)` keeps it out of the
+ * pause while a flight is followed; `reset()` forgets the frames.
+ */
+export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
+  let frames = [];
+  let windowStart = null;
+  let fastSince = null;
+  let level = 0;
+  let follow = following;
+  const lowest = () => (follow ? GOVERNOR_PAUSED - 1 : GOVERNOR_PAUSED);
+  return {
+    get level() {
+      return level;
+    },
+    set level(next) {
+      level = Math.max(0, Math.min(GOVERNOR_PAUSED, next));
+    },
+    setFollowing(on) {
+      follow = on === true;
+    },
+    reset() {
+      frames = [];
+      windowStart = null;
+      fastSince = null;
+    },
+    sample(dtMs, atMs) {
+      if (!finite(dtMs) || !finite(atMs) || dtMs <= 0 || dtMs > limits.maxGapMs) {
+        // The map idled: what comes next is a new stretch of drawing.
+        frames = [];
+        windowStart = null;
+        fastSince = null;
+        return 0;
+      }
+      if (windowStart === null) windowStart = atMs - dtMs;
+      frames.push([atMs, dtMs]);
+      while (frames.length > 0 && frames[0][0] < atMs - limits.windowMs) frames.shift();
+      if (atMs - windowStart < limits.windowMs || frames.length === 0) return 0;
+      const mean = frames.reduce((total, [, dt]) => total + dt, 0) / frames.length;
+      if (mean > limits.slowFrameMs) {
+        fastSince = null;
+        if (level >= lowest()) return 0;
+        level += 1;
+        frames = [];
+        windowStart = null;
+        return -1;
+      }
+      fastSince ??= atMs;
+      if (level === 0 || level >= GOVERNOR_PAUSED || atMs - fastSince < limits.stableMs) return 0;
+      level -= 1;
+      fastSince = atMs;
+      return 1;
+    },
+  };
+}
+
+/**
+ * The 3D aircraft of one map engine (core/mapEngine.js). `originLngLat` the ARP, `fieldElevationM` the field's height,
+ * `theme` the colours of the aircraft (aircraft/instancePlan.js: aircraft3dColors), `getNow()` the instant of the
+ * map's render clock (the sun is read at it), `onChange()` hears every change of what the 3D draws or says (OccMap then
+ * writes its traffic again and shows the notice), `governor` false switches the governor off (the map lab), and
+ * `load`, `now` and `webgl` (whether the browser has WebGL2) are for tests.
+ *
+ * - `setEnabled(on)`: the 3D mode; off removes the layer (and its renderer) from the map;
+ * - `plan({ aircraft, parked, zoom, minZoom, selectedId })`: the aircraft of a write of the traffic; plans them,
+ *   loads the chunk the first time the zoom reaches `minZoom` with 3D on, and answers the ids whose 2D symbol gives
+ *   way (none while the layer is not drawing: loading, failed, paused, off, or below the threshold);
+ * - `pick(point)`: what the 3D draws under a pixel, `{ kind: 'aircraft', id }` with the plan's id, or null;
+ * - `setFollowing(on)`, `pause()` and `resume()` («Volver a 3D»), `state()` → `{ enabled, status, notice, level }`
+ *   (status `off` · `idle` · `loading` · `ready` · `failed` · `paused`; notice `null` · `failed` · `paused`),
+ *   `stats()` (the layer's, or null) and `dispose()`.
+ */
+export function createAircraft3dController({
+  engine, originLngLat, fieldElevationM = 0, theme = 'dark', getNow = () => Date.now(), onChange,
+  governor: governed = true, load = loadAircraft3d, now = () => globalThis.performance?.now() ?? Date.now(),
+  webgl = supportsWebgl2,
+} = {}) {
+  const colors = aircraft3dColors(theme);
+  const governor = createGovernor();
+  let enabled = false;
+  let status = 'off';
+  let notice = null;
+  let modules = null;
+  let layer = null;
+  let added = false;
+  let layerFailed = false;
+  let loading = false;
+  let failedAt = null;
+  let disposed = false;
+  let revision = 0;
+  let current = { revision: 0, plan: new Map() };
+  let drawnIds = NO_IDS;
+  let lastFrameAt = null;
+  let basePixelRatio = null;
+
+  const changed = () => {
+    if (!disposed) onChange?.();
+  };
+
+  function setStatus(next, nextNotice = notice) {
+    if (status === next && notice === nextNotice) return;
+    status = next;
+    notice = nextNotice;
+    changed();
+  }
+
+  function applyLevel(level) {
+    if (layer === null) return;
+    const light = level >= 1;
+    layer.setQuality({ shadows: !light, dropLines: !light });
+    if (typeof engine?.setPixelRatio !== 'function') return;
+    basePixelRatio ??= engine.getPixelRatio?.() ?? null;
+    const ratio = level >= 2 ? GOVERNOR.pixelRatios[Math.min(level - 2, GOVERNOR.pixelRatios.length - 1)] : null;
+    if (ratio === null || !finite(basePixelRatio)) {
+      if (finite(basePixelRatio)) engine.setPixelRatio(basePixelRatio);
+      return;
+    }
+    engine.setPixelRatio(Math.min(ratio, basePixelRatio));
+  }
+
+  function restorePixelRatio() {
+    if (finite(basePixelRatio)) engine?.setPixelRatio?.(basePixelRatio);
+  }
+
+  function removeLayer() {
+    if (!added || layer === null) return;
+    added = false;
+    layerFailed = false;
+    engine?.removeCustomLayer(layer.id);
+    restorePixelRatio();
+  }
+
+  function addLayer() {
+    if (added || layer === null || disposed) return;
+    added = true;
+    engine?.addCustomLayer(layer, AIRCRAFT_3D_SLOT);
+    applyLevel(governor.level);
+  }
+
+  // Each frame the map draws with the 3D on: the governor hears how long it took since the previous one.
+  function onRendered() {
+    const at = now();
+    const dt = lastFrameAt === null ? null : at - lastFrameAt;
+    lastFrameAt = at;
+    if (!governed || dt === null) return;
+    const step = governor.sample(dt, at);
+    if (step === 0) return;
+    if (governor.level >= GOVERNOR_PAUSED) {
+      pauseNow();
+      return;
+    }
+    applyLevel(governor.level);
+  }
+
+  function createLayer() {
+    const made = modules.createAircraft3dLayer({
+      three: modules.three,
+      originLngLat,
+      getInstances: () => current,
+      getSun: () => sunPosition(getNow(), originLngLat),
+      onFailedChange: failed => {
+        layerFailed = failed === true;
+        setStatus(layerFailed ? 'failed' : 'ready', layerFailed ? 'failed' : null);
+      },
+    });
+    const render = made.render.bind(made);
+    made.render = (...args) => {
+      render(...args);
+      onRendered();
+    };
+    return made;
+  }
+
+  function startLoad() {
+    if (loading || modules !== null || disposed) return;
+    if (failedAt !== null && now() - failedAt < RETRY_LOAD_MS) return;
+    // A browser without WebGL2 draws no 3D: nothing to load.
+    if (!webgl()) {
+      failedAt = now();
+      setStatus('failed', 'failed');
+      return;
+    }
+    loading = true;
+    setStatus('loading', notice === 'failed' ? 'failed' : null);
+    load().then(loaded => {
+      loading = false;
+      if (disposed) return;
+      modules = loaded;
+      failedAt = null;
+      try {
+        layer = createLayer();
+      } catch (error) {
+        console.warn('The 3D aircraft could not be drawn; the map keeps its 2D aircraft.', error);
+        modules = null;
+        failedAt = now();
+        setStatus('failed', 'failed');
+        return;
+      }
+      if (!enabled || status === 'paused') {
+        setStatus(enabled ? status : 'off');
+        return;
+      }
+      showLayer();
+    }, () => {
+      loading = false;
+      if (disposed) return;
+      failedAt = now();
+      setStatus(enabled ? 'failed' : 'off', enabled ? 'failed' : null);
+    });
+  }
+
+  // The layer on the map, then the word: the map's next write of its traffic already hides what the 3D draws. A layer
+  // that failed while it was added has said so.
+  function showLayer() {
+    layerFailed = false;
+    addLayer();
+    if (!layerFailed) setStatus('ready', null);
+  }
+
+  function pauseNow() {
+    governor.level = GOVERNOR_PAUSED;
+    governor.reset();
+    lastFrameAt = null;
+    removeLayer();
+    setStatus('paused', 'paused');
+  }
+
+  const drawing = () => enabled && added && !layerFailed && status === 'ready' && engine?.map != null;
+
+  return {
+    setEnabled(on) {
+      const next = on === true;
+      if (next === enabled) return;
+      enabled = next;
+      lastFrameAt = null;
+      governor.reset();
+      if (!enabled) {
+        removeLayer();
+        governor.level = 0;
+        setStatus('off', null);
+        return;
+      }
+      governor.level = 0;
+      if (layer !== null) showLayer();
+      else setStatus('idle', null);
+    },
+
+    plan({ aircraft = [], parked = [], zoom, minZoom, selectedId = null } = {}) {
+      if (!enabled || disposed) {
+        drawnIds = NO_IDS;
+        return drawnIds;
+      }
+      const reached = finite(zoom) && finite(minZoom) && zoom >= minZoom;
+      if (reached && modules === null) startLoad();
+      const plan = planInstances(aircraft, parked, { zoom, minZoom, originLngLat, fieldElevationM, selectedId, colors });
+      revision += 1;
+      current = { revision, plan };
+      if (!drawing() || plan.size === 0) {
+        drawnIds = NO_IDS;
+        return drawnIds;
+      }
+      const ids = new Set();
+      for (const entry of plan.values()) {
+        for (const id of entry.ids) if (id !== null) ids.add(id);
+      }
+      drawnIds = ids;
+      // The 2D write may change nothing the map draws: the 3D still needs the frame that shows the new plan.
+      engine.map.triggerRepaint?.();
+      return ids;
+    },
+
+    /** The ids the last plan drew in 3D (their 2D symbols give way). */
+    drawnIds: () => drawnIds,
+
+    pick(point) {
+      if (!drawing() || layer === null) return null;
+      try {
+        return layer.pick(point);
+      } catch {
+        return null;
+      }
+    },
+
+    setFollowing(on) {
+      governor.setFollowing(on);
+    },
+
+    pause() {
+      if (!enabled) return;
+      pauseNow();
+    },
+
+    resume() {
+      if (!enabled || status !== 'paused') return;
+      governor.level = 0;
+      governor.reset();
+      lastFrameAt = null;
+      if (layer !== null) showLayer();
+      else setStatus('idle', null);
+    },
+
+    state: () => ({ enabled, status, notice, level: governor.level }),
+
+    stats: () => (layer === null || !added ? null : layer.stats()),
+
+    dispose() {
+      if (disposed) return;
+      removeLayer();
+      disposed = true;
+      layer = null;
+    },
+  };
+}

@@ -30,6 +30,7 @@ import { createMotionStore } from '../traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
 import MapLegend from '../ui/MapLegend';
+import { MODE_3D_STORAGE_KEY } from './aircraft3d';
 import { AIRFIELD_ATTRIBUTION } from './attribution';
 import { boundsCenter, isInBounds, presetTargets } from './cameraPresets';
 import { createRenderClock, metresPerPixel } from './frameLoop';
@@ -147,6 +148,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // The 2D/3D choice a test made (PR M7) is not the next test's.
+  window.localStorage.removeItem(MODE_3D_STORAGE_KEY);
   resetLanguageForTests('es');
   window.history.replaceState({}, '', '/');
   vi.restoreAllMocks();
@@ -357,8 +360,9 @@ describe('OccMap', () => {
     dialog.remove();
     expect(query().get('view')).toBe('ramp');
     expect(onSelect).toHaveBeenCalledOnce();
-    // D, S and L belong to later PRs: they pass through.
-    for (const key of ['d', 's', 'l']) expect(press(canvas, key).defaultPrevented, key).toBe(false);
+    // S and L pass through on a map with nothing to follow and no layers menu; D is the 2D/3D key (PR M7).
+    for (const key of ['s', 'l']) expect(press(canvas, key).defaultPrevented, key).toBe(false);
+    expect(press(canvas, 'd').defaultPrevented).toBe(true);
   });
 
   it('opens on the URL view, else initialCamera, else defaultView; re-pressing the active view after a free zoom flies again', () => {
@@ -1760,7 +1764,8 @@ describe('OccMap traffic (PR M5)', () => {
     expect(Object.values(added).filter(properties => properties.selected).map(properties => properties.id))
       .toEqual([`h:${TRAFFIC_HEX.overflight}`]);
     const selected = map.getLayer('occ-traffic-selected');
-    expect(selected.filter).toEqual(['==', ['get', 'selected'], true]);
+    // Every selected aircraft but one the 3D layer draws (PR M7: its model is cyan instead).
+    expect(selected.filter).toEqual(['all', ['==', ['get', 'selected'], true], ['!=', ['get', 'model3d'], true]]);
     expect(selected.paint['icon-color']).toBe(occColor('accent'));
     expect(selected.layout['icon-size']).toEqual(['get', 'scale']);
     const ids = map.layerIds();

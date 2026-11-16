@@ -294,6 +294,7 @@ function createModule(state) {
       this.removed = false;
       this.styleLoaded = false;
       this.contextLost = false;
+      this.pixelRatio = options.pixelRatio ?? 1;
       this.pendingStyle = options.style ?? null;
       this.snapshot = null;
       this.calls = [];
@@ -768,6 +769,15 @@ function createModule(state) {
       this._record('triggerRepaint', []);
     }
 
+    getPixelRatio() {
+      return this.pixelRatio;
+    }
+
+    setPixelRatio(ratio) {
+      this._record('setPixelRatio', [ratio]);
+      this.pixelRatio = ratio;
+    }
+
     remove() {
       if (this.removed) return;
       this._record('remove', []);
@@ -844,8 +854,13 @@ function addHelpers(state) {
     },
 
     // MapLibre 6.16 on a lost WebGL context: it keeps a snapshot of the style (sources with their data, layers with
-    // their layout, paint and zoom ranges, images), drops the style, and loses custom layers and feature state.
-    loseContext(map) {
+    // their layout, paint and zoom ranges, images), drops the style, and loses custom layers and feature state. Its
+    // style's destroy() calls onRemove of every custom layer before the map fires `webglcontextlost` (PR M7); a worker
+    // restart (restartWorkers) drops them without it.
+    loseContext(map, { removeCustomLayers = true } = {}) {
+      if (removeCustomLayers) {
+        for (const layer of map.layers.filter(item => item.type === 'custom')) layer.onRemove?.(map, null);
+      }
       map.snapshot = {
         version: 8,
         sources: Object.fromEntries([...map.sources].map(([id, source]) => [id, { ...source.spec, data: source.data }])),
@@ -869,7 +884,7 @@ function addHelpers(state) {
 
     // A worker restart fires the same synthetic pair.
     restartWorkers(map) {
-      state.loseContext(map);
+      state.loseContext(map, { removeCustomLayers: false });
       state.restoreContext(map);
     },
 

@@ -633,6 +633,15 @@ export function createMapEngine({
       });
     },
 
+    /** The pixel ratio the map draws at, or null without a map (PR M7: the 3D governor lowers it). */
+    getPixelRatio() {
+      return live() && typeof map.getPixelRatio === 'function' ? map.getPixelRatio() : null;
+    },
+
+    setPixelRatio(ratio) {
+      if (live() && Number.isFinite(ratio) && ratio > 0 && typeof map.setPixelRatio === 'function') map.setPixelRatio(ratio);
+    },
+
     /** Replaces the custom attribution (for example when a traffic source becomes active). */
     setAttribution(html) {
       customAttribution = html;

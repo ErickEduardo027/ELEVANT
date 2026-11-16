@@ -44,6 +44,7 @@ import { trafficOverlay } from '../traffic/trafficLayers';
 import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
 import AltitudeLegend from '../ui/AltitudeLegend';
 import MapTooltip from '../ui/MapTooltip';
+import { createAircraft3dController, parkedFromStands, readMode3d, translatePick, writeMode3d } from './aircraft3d';
 import { buildAttribution } from './attribution';
 import {
   PUJ_ARP, VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom,
@@ -154,6 +155,9 @@ const NO_IDS = Object.freeze(new Set());
 const standsDrawnAt = (zoom, thresholds) => !Number.isFinite(thresholds?.polygons) || !Number.isFinite(zoom)
   || zoom >= thresholds.polygons;
 const MOTION_OFF = Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null });
+// The 3D aircraft (PR M7, core/aircraft3d.js): what the controller says while there is none, and the feet of a metre.
+const VIEW_3D_OFF = Object.freeze({ enabled: false, status: 'off', notice: null, level: 0 });
+const METRES_PER_FOOT = 0.3048;
 
 // The chosen flight's route follows its aircraft (PR M6, design E5): rewritten at most once a second below the
 // airfield threshold, and from it every frame in which the aircraft moved at least half a pixel on screen.
@@ -293,6 +297,8 @@ const initialSnapshot = basemap => ({
   // The motion of the traffic (PR M6): whether this map moves it, whether «Pausar movimiento» holds it and since when,
   // and the server instant of the newest data it draws.
   motion: MOTION_OFF,
+  // The 3D aircraft (PR M7): the controller's state (core/aircraft3d.js).
+  view3d: VIEW_3D_OFF,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -433,7 +439,9 @@ const OccMapView = forwardRef(function OccMapView({
   onCancelPlacing,
   initialCamera,
   onCameraChange,
-  pitchMode = '2d',
+  pitchMode: pitchModeProp,
+  onPitchModeChange,
+  aircraft3d: aircraft3dOptions,
   groups = NO_GROUPS,
   insets,
   interactive = true,
@@ -454,6 +462,11 @@ const OccMapView = forwardRef(function OccMapView({
   const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
   const stands = standsProp ?? EMPTY;
   const flights = flightsProp ?? EMPTY;
+  // 2D or 3D (PR M7, contracts 2.3): the page's `pitchMode` when it sets one, else the browser's remembered choice, 3D
+  // by default where the browser can draw it. D and the dock's control change it, the page's through onPitchModeChange.
+  const [stored3d, setStored3d] = useState(() => readMode3d(layerStorage()));
+  const pitchMode = pitchModeProp ?? (stored3d ? '3d' : '2d');
+  const toggles3d = pitchModeProp === undefined || typeof onPitchModeChange === 'function';
   // Follow mode (PR M6): the aircraft the selection names, when the map draws it, and whether the map can follow it
   // (it moves its traffic frame by frame); following while the URL says so.
   const trafficAircraft = traffic?.aircraft ?? EMPTY;
@@ -540,6 +553,8 @@ const OccMapView = forwardRef(function OccMapView({
       language, shownTrails, layersMenuOpen, setLayersMenuOpen });
     // Follow mode (PR M6): what the URL says and how to change it.
     Object.assign(latest.current, { urlFollow: urlFollow === true, setFollow });
+    // The 3D aircraft (PR M7): whether they are on, and how the page or the browser changes it.
+    Object.assign(latest.current, { pitchModeProp, onPitchModeChange, aircraft3dOptions: aircraft3dOptions ?? null });
   });
 
   // A choice of the layers menu: a difference from the defaults of the view on screen, kept in the browser.
@@ -687,12 +702,27 @@ const OccMapView = forwardRef(function OccMapView({
   // The traffic (PR M5). The aircraft of other traffic under the pointer, whose tag shows while it is there.
   const trafficFocusRef = useRef(null);
 
+  // The 3D aircraft of a write (PR M7, core/aircraft3d.js): the aircraft it drew and those the stands draw, planned at the
+  // camera's zoom from the polygons threshold on; answers the ids the 3D draws, whose 2D silhouettes give way.
+  const plan3d = useCallback((drawn, selectedId = null) => {
+    const applied = appliedRef.current;
+    const controller = applied.aircraft3d;
+    if (!controller) return NO_IDS;
+    const zoom = engineRef.current?.getCamera()?.zoom;
+    const minZoom = store.get().thresholds?.polygons;
+    applied.reached3d = Number.isFinite(zoom) && Number.isFinite(minZoom) && zoom >= minZoom;
+    const parked = applied.drawsStands ? parkedFromStands(latest.current.attached, drawn, applied.parkedIds ?? NO_IDS) : EMPTY;
+    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId });
+  }, [store]);
+
   // The traffic's features from the newest props: one updateData with what changed since the last write. With motion
   // (PR M6) the aircraft are those of the situation where they are drawn at `tMs` (the frame's instant, else the render
   // clock's now), and the write says how long until the next one is due.
   const writeTraffic = useCallback((tMs = null) => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
+    // A map without traffic plans the aircraft its stands draw only (PR M7).
+    if (engine && !applied.drawsTraffic) plan3d(EMPTY);
     if (!engine || !applied.drawsTraffic) return;
     const { traffic: current, selection: chosen, groups: shown, language: words, padding: inset } = latest.current;
     const motion = applied.loop ? current?.motion ?? null : null;
@@ -715,21 +745,30 @@ const OccMapView = forwardRef(function OccMapView({
     applied.parkedIds = standsShown ? parkedAircraftIds(drawn, latest.current.attached) : NO_IDS;
     const data = trafficFeatures(drawn, {
       selection: chosen, focusId: trafficFocusRef.current, labelsOn: shown?.['traffic.labels'] === true, language: words,
-      parkedIds: applied.parkedIds,
+      parkedIds: applied.parkedIds, modelIds: plan3d(drawn, chosenId),
     });
     const diff = trafficDiff(applied.trafficById, data.features);
     if (isEmptyDiff(diff)) return;
     applied.trafficById = featuresById(data);
     engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
-  }, [store]);
+  }, [store, plan3d]);
 
   // A camera or a fit that takes the zoom across the polygons threshold shows or hides the stands and the aircraft on
   // them (PR M6): the parked aircraft's symbols go or come back with them, in one write.
   const syncParkedTraffic = useCallback(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
-    if (!engine || !applied.drawsTraffic || !applied.drawsStands) return;
-    if (standsDrawnAt(engine.getCamera()?.zoom, store.get().thresholds) !== applied.standsShown) writeTraffic();
+    if (!engine) return;
+    // The 3D aircraft come and go at the same threshold (PR M7), on a map with or without stands.
+    const minZoom = store.get().thresholds?.polygons;
+    const zoom = engine.getCamera()?.zoom;
+    const reached3d = Number.isFinite(zoom) && Number.isFinite(minZoom) && zoom >= minZoom;
+    if (applied.aircraft3d && reached3d !== applied.reached3d) {
+      writeTraffic();
+      return;
+    }
+    if (!applied.drawsTraffic || !applied.drawsStands) return;
+    if (standsDrawnAt(zoom, store.get().thresholds) !== applied.standsShown) writeTraffic();
   }, [store, writeTraffic]);
 
   // The chosen flight's route where the last write drew its aircraft (PR M6, design E5): `traffic.routeAt` rebuilds it
@@ -1197,6 +1236,25 @@ const OccMapView = forwardRef(function OccMapView({
     applied.loop?.wake();
   }, [stopFollowing]);
 
+  // A click or a pointer move picks the 3D aircraft first (PR M7, design G3), translated to what the 2D picking names
+  // (core/aircraft3d.js: translatePick); where the 3D draws nothing under the pointer, the 2D pick stands.
+  const with3dHit = useCallback(event => {
+    const controller = appliedRef.current.aircraft3d;
+    if (!event || !controller?.state().enabled) return event;
+    let hit;
+    return Object.defineProperty({ point: event.point, lngLat: event.lngLat, originalEvent: event.originalEvent }, 'hit', {
+      enumerable: true,
+      get() {
+        if (hit === undefined) {
+          const picked = event.point ? controller.pick(event.point) : null;
+          const drawn = appliedRef.current.sampledAircraft ?? latest.current?.traffic?.aircraft ?? EMPTY;
+          hit = (picked && translatePick(picked, drawn)) ?? event.hit;
+        }
+        return hit;
+      },
+    });
+  }, []);
+
   // One engine for the life of the component. A StrictMode remount destroys the first one before the second starts.
   useEffect(() => {
     const props = latest.current;
@@ -1295,11 +1353,29 @@ const OccMapView = forwardRef(function OccMapView({
         markSettled(rootRef.current, true);
       },
       onResize: refit,
-      onClick: handleClick,
-      onPointerMove: handlePointer,
+      onClick: event => handleClick(with3dHit(event)),
+      onPointerMove: event => handlePointer(with3dHit(event)),
       onUserGesture: handleGesture,
     });
     engineRef.current = engine;
+    // The 3D aircraft of this engine (PR M7): fed by the writes of its traffic on its one frame loop, lit by the sun at
+    // the render clock's instant, re-created with the engine for another theme.
+    const sunClock = motionClock ?? createRenderClock({ frozenAt: Number.isFinite(props.frozenAt) ? props.frozenAt : null });
+    const aircraft3d = props.drawsTraffic || props.drawsStands ? createAircraft3dController({
+      engine,
+      originLngLat: props.layout?.meta?.arp ?? PUJ_ARP,
+      fieldElevationM: (props.layout?.meta?.elevationFt ?? 0) * METRES_PER_FOOT,
+      theme: props.theme,
+      getNow: () => sunClock.now(),
+      governor: props.aircraft3dOptions?.governor !== false,
+      onChange: () => {
+        if (appliedRef.current.aircraft3d !== aircraft3d) return;
+        store.set({ view3d: aircraft3d.state() });
+        writeTraffic();
+      },
+    }) : null;
+    Object.assign(appliedRef.current, { aircraft3d, reached3d: null });
+    aircraft3d?.setEnabled(props.pitchMode === '3d');
     engine.setData(REFERENCE_SOURCE, referenceFeatures({ airports: props.drawsTraffic }));
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
     engine.setInsets(props.padding);
@@ -1322,11 +1398,14 @@ const OccMapView = forwardRef(function OccMapView({
       // Read before teardown: a map re-created for another theme opens where this one was.
       const resumeRef = latest.current?.resumeCameraRef;
       if (resumeRef) resumeRef.current = { theme: latest.current.theme, camera: engine.getCamera() };
+      // The 3D layer goes with its renderer before the map (PR M7).
+      aircraft3d?.dispose();
+      if (appliedRef.current.aircraft3d === aircraft3d) appliedRef.current.aircraft3d = null;
       engine.destroy();
       if (engineRef.current === engine) engineRef.current = null;
     };
   }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit, updateOnScreen, writeTraffic,
-    updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture]);
+    updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit]);
 
   // The URL view: fly only when it differs from the last view applied, so a view this map asked for flies once.
   useEffect(() => {
@@ -1426,7 +1505,8 @@ const OccMapView = forwardRef(function OccMapView({
   // is written again with the stands, which a re-read of the same stands leaves as it is.
   useEffect(() => {
     const applied = appliedRef.current;
-    if (applied.drawsTraffic && applied.drawsStands) writeTraffic();
+    // The stands' aircraft are 3D models too (PR M7), on a map with or without traffic.
+    if (applied.drawsStands && (applied.drawsTraffic || applied.aircraft3d)) writeTraffic();
   }, [attached, writeTraffic]);
 
   // The trails and the chosen flight's route: one setData when what they draw changes. A new route from the props is
@@ -1479,6 +1559,28 @@ const OccMapView = forwardRef(function OccMapView({
     const timer = setTimeout(() => setFollowNotice(null), FOLLOW_NOTICE_MS);
     return () => clearTimeout(timer);
   }, [followNotice]);
+
+  // D and the dock's 2D/3D control (PR M7, contracts 2.2 and 2.3): the page's onPitchModeChange when the page sets the
+  // mode, else the browser's choice, remembered. «Volver a 3D» after the governor paused the 3D.
+  const toggle3d = useCallback(() => {
+    const { pitchModeProp: controlled, onPitchModeChange: change, pitchMode: mode } = latest.current ?? {};
+    const next = mode === '3d' ? '2d' : '3d';
+    if (controlled !== undefined) {
+      change?.(next);
+      return;
+    }
+    writeMode3d(layerStorage(), next === '3d');
+    setStored3d(next === '3d');
+  }, []);
+  const resume3d = useCallback(() => appliedRef.current.aircraft3d?.resume(), []);
+  const view3dState = snapshot.view3d;
+  const view3d = useMemo(() => Object.freeze({
+    available: toggles3d && snapshot.engineStatus !== 'unavailable', on: pitchMode === '3d', toggle: toggle3d,
+    status: view3dState.status, notice: view3dState.notice, resume: resume3d,
+  }), [toggles3d, snapshot.engineStatus, pitchMode, toggle3d, view3dState, resume3d]);
+  useLayoutEffect(() => {
+    latest.current.view3d = view3d;
+  });
 
   // S and the follow buttons: on while a drawn aircraft is chosen, off whenever it is on.
   const toggleFollow = useCallback(() => {
@@ -1567,6 +1669,14 @@ const OccMapView = forwardRef(function OccMapView({
     engine.easeTo({ ...cameraAngles(view, pitchMode), duration: PITCH_EASE_MS, essential: false });
   }, [pitchMode, store]);
 
+  // The 3D aircraft follow the mode (PR M7); while a flight is followed the governor never pauses them (contracts 2.3).
+  useEffect(() => {
+    appliedRef.current.aircraft3d?.setEnabled(pitchMode === '3d');
+  }, [pitchMode]);
+  useEffect(() => {
+    appliedRef.current.aircraft3d?.setFollowing(followingNow);
+  }, [followingNow]);
+
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -1649,6 +1759,11 @@ const OccMapView = forwardRef(function OccMapView({
         return info.following || info.canFollow ? () => latest.current.followInfo.toggle() : undefined;
       },
     });
+    // 2D/3D (PR M7): D, while the map can draw and its mode is the map's or the page lets it change.
+    Object.defineProperty(handlers, 'toggle3d', {
+      enumerable: true,
+      get: () => (latest.current?.view3d?.available ? () => latest.current.view3d.toggle() : undefined),
+    });
     // The layers menu (PR M5): L opens and closes it while the map shows one and can draw.
     Object.defineProperty(handlers, 'toggleLayers', {
       enumerable: true,
@@ -1675,9 +1790,18 @@ const OccMapView = forwardRef(function OccMapView({
     return () => root.removeEventListener('keydown', listener);
   }, [requestView, store]);
 
+  // The 3D aircraft for the map lab and the visual suite (PR M7): their state, the layer's stats, and the governor's pause.
+  const aircraft3d = useCallback(() => {
+    const controller = appliedRef.current.aircraft3d;
+    return controller ? { ...controller.state(), stats: controller.stats(), pause: () => controller.pause(),
+      resume: () => controller.resume() } : null;
+  }, []);
+
   useImperativeHandle(ref, () => ({
     flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-  }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle]);
+    aircraft3d,
+  }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
+    aircraft3d]);
 
   // The overlays read only these: the tooltip, which changes with the pointer, renders here and re-renders none of them.
   const {
@@ -1715,9 +1839,9 @@ const OccMapView = forwardRef(function OccMapView({
     [motionSnapshot, pauseMotion, resumeMotion]);
   const mapContext = useMemo(() => ({
     ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
-    registerLayersMenu, motion, follow: followInfo,
+    registerLayersMenu, motion, follow: followInfo, view3d,
   }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu,
-    motion, followInfo]);
+    motion, followInfo, view3d]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;
@@ -1745,6 +1869,7 @@ const OccMapView = forwardRef(function OccMapView({
         data-occ-engine={engineStatus}
         data-occ-basemap={basemapStatus}
         data-occ-view={activeView ?? undefined}
+        data-occ-3d={view3d.on ? view3dState.status : 'off'}
         className={`occ-map absolute inset-0 overflow-hidden bg-occ-canvas ${className}`.trim()}
         style={insetVariables(padding)}
       >
@@ -1769,6 +1894,19 @@ const OccMapView = forwardRef(function OccMapView({
           <p role="status"
             className="occ-map-notice rounded-md border border-occ-line bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
             {t('follow.stopped', { id: followNotice.name })}
+          </p>
+        )}
+        {/* The 3D aircraft (PR M7): paused by the governor, with «Volver a 3D», or drawn in 2D after a failure. */}
+        {!unavailable && followNotice === null && view3d.on && view3d.notice !== null && (
+          <p role="status" data-occ-3d-notice={view3d.notice}
+            className="occ-map-notice flex items-center gap-3 rounded-md border border-occ-line bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
+            {t(`view3d.${view3d.notice}`)}
+            {view3d.notice === 'paused' && (
+              <button type="button" onClick={resume3d}
+                className="min-h-9 shrink-0 rounded border border-occ-line bg-occ-panel px-3 text-sm font-semibold text-occ-text hover:bg-occ-panel-raised">
+                {t('view3d.resume')}
+              </button>
+            )}
           </p>
         )}
         {/* The altitude scale of the traffic (owner request of 2026-11-15), under the page's overlays and its dock. */}

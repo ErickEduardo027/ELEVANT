@@ -328,6 +328,15 @@ export const mapMessages = {
       label: 'Seguir',
       stopped: 'Dejaste de seguir a {id}. Pulsa Seguir para volver.',
     },
+    // The 3D aircraft (PR M7, core/aircraft3d.js) and the dock's 2D/3D control (ui/Map3dToggle.jsx).
+    view3d: {
+      group: 'Vista 2D o 3D',
+      to2d: 'Ver el mapa en 2D',
+      to3d: 'Ver el mapa en 3D, con los aviones en 3D en Aeródromo y Rampa',
+      paused: 'Pausamos la vista 3D para que el mapa siga fluido.',
+      resume: 'Volver a 3D',
+      failed: 'No pudimos mostrar los aviones en 3D; los mostramos en 2D.',
+    },
     // The layers menu (ui/MapLayersMenu.jsx, core/layersMenu.js); its button takes «Capas» from the key table.
     layers: {
       menu: 'Capas del mapa',
@@ -637,6 +646,14 @@ export const mapMessages = {
     follow: {
       label: 'Follow',
       stopped: 'You stopped following {id}. Press Follow to resume.',
+    },
+    view3d: {
+      group: '2D or 3D view',
+      to2d: 'Show the map in 2D',
+      to3d: 'Show the map in 3D, with 3D aircraft in Airfield and Ramp',
+      paused: 'We paused the 3D view so the map stays smooth.',
+      resume: 'Back to 3D',
+      failed: 'We could not show the aircraft in 3D; they are shown in 2D.',
     },
     layers: {
       menu: 'Map layers',

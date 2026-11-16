@@ -88,12 +88,13 @@ async function scriptFiles(directory) {
 }
 
 /**
- * The 3D check of a built `.next` folder: no route's first load carries three's renderer. It throws when no route of
- * /admin-occ has a client reference manifest, when a manifest names a chunk the build did not write, or when a
- * first-load chunk carries the needle. Answers `{ routes, firstLoad, threeChunks }`: the routes checked, their distinct
+ * The 3D check of a built `.next` folder: no route's first load carries three's renderer, and (unless `requireThree`
+ * is false) some browser chunk does, the 3D chunk OccMap loads later. It throws when no route of /admin-occ has a
+ * client reference manifest, when a manifest names a chunk the build did not write, when a first-load chunk carries
+ * the needle, or when no chunk does. Answers `{ routes, firstLoad, threeChunks }`: the routes checked, their distinct
  * first-load chunks and the built browser chunks that do carry the renderer (three's own, loaded later).
  */
-export async function checkThreeFirstLoad(nextDir) {
+export async function checkThreeFirstLoad(nextDir, { requireThree = true } = {}) {
   const manifestFiles = (await scriptFiles(path.join(nextDir, 'server', 'app')))
     .filter(file => path.basename(file) === CLIENT_MANIFEST);
   const routes = [];
@@ -123,6 +124,11 @@ export async function checkThreeFirstLoad(nextDir) {
   let threeChunks = 0;
   for (const file of await scriptFiles(path.join(nextDir, 'static'))) {
     if ((await readFile(file, 'utf8')).includes(THREE_NEEDLE)) threeChunks += 1;
+  }
+  // OccMap loads the 3D chunk (PR M7): a build without it lost the 3D aircraft, or bundled three where the needle no
+  // longer finds it.
+  if (requireThree && threeChunks === 0) {
+    throw new Error(`No built browser chunk carries three's ${THREE_NEEDLE}: the 3D aircraft chunk is missing.`);
   }
   return { routes: routes.length, firstLoad: firstLoad.length, threeChunks };
 }

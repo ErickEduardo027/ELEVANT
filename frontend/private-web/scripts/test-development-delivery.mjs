@@ -132,7 +132,7 @@ test('the first-load chunks of a route are its entry files, its client modules a
   assert.deepEqual(readRscManifest('const nothing = 1;'), {});
 });
 
-test('the 3D check fails when a first-load chunk carries WebGLRenderer and passes when three sits in an async chunk; a build without OCC route manifests is an error', async () => {
+test('the 3D check fails when a first-load chunk carries WebGLRenderer or no chunk does, and passes when three sits in an async chunk; a build without OCC route manifests is an error', async () => {
   const { THREE_NEEDLE, checkThreeFirstLoad, findThreeInFirstLoad } = await import('./verify-map-chunks.mjs');
   assert.equal(THREE_NEEDLE, 'WebGLRenderer');
   // The word is three's own: its renderer's messages carry it, so a minified chunk still does.
@@ -166,6 +166,13 @@ test('the 3D check fails when a first-load chunk carries WebGLRenderer and passe
     await assert.rejects(checkThreeFirstLoad(nextDir),
       /three's WebGLRenderer reached the first load of \/admin-occ\/dashboard\/page \(static\/chunks\/0c-map\.js\)/);
     await write('static/chunks/0c-map.js', 'self.chunk = 1;');
+
+    // OccMap loads the 3D chunk (PR M7): a build without any chunk that carries three's renderer lost it.
+    await rm(path.join(nextDir, 'static/chunks/0d-three.js'));
+    await assert.rejects(checkThreeFirstLoad(nextDir), /No built browser chunk carries three's WebGLRenderer/);
+    assert.deepEqual(await checkThreeFirstLoad(nextDir, { requireThree: false }),
+      { routes: 2, firstLoad: OCC_FIRST_LOAD.length, threeChunks: 0 });
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost.");');
 
     // A manifest that names a chunk the build did not write.
     await rm(path.join(nextDir, 'static/chunks/0f-page.js'));
