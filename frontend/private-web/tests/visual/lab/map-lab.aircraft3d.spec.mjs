@@ -67,9 +67,10 @@ test.describe('map lab 3D aircraft', () => {
     await drawn3d(page, map);
     await expect(page.getByRole('dialog', { name: 'Vuelo ZZ9001' })).toBeVisible();
     const toggle = page.getByTestId('map-3d-toggle');
-    await expect(toggle.getByRole('button', { name: '3D' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(async () => (await page.evaluate(() => window.__occMapLab.getCamera())).pitch).toBeCloseTo(55, 0);
-    await toggle.getByRole('button', { name: '2D' }).click();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await expect(map).toHaveAttribute('data-occ-3d', 'off');
     await expect.poll(async () => (await page.evaluate(() => window.__occMapLab.getCamera())).pitch).toBeCloseTo(0, 0);
     await labIdle(page);

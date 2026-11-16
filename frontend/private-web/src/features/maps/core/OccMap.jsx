@@ -1897,9 +1897,10 @@ const OccMapView = forwardRef(function OccMapView({
           </p>
         )}
         {/* The 3D aircraft (PR M7): paused by the governor, with «Volver a 3D», or drawn in 2D after a failure. */}
-        {!unavailable && followNotice === null && view3d.on && view3d.notice !== null && (
+        {/* A state of the map, at the top centre (the altitude scale holds the bottom left), unless the base map's. */}
+        {!unavailable && basemapStatus !== 'degraded' && view3d.on && view3d.notice !== null && (
           <p role="status" data-occ-3d-notice={view3d.notice}
-            className="occ-map-notice flex items-center gap-3 rounded-md border border-occ-line bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
+            className="occ-map-chip flex items-center gap-3 rounded-md border border-occ-line bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
             {t(`view3d.${view3d.notice}`)}
             {view3d.notice === 'paused' && (
               <button type="button" onClick={resume3d}

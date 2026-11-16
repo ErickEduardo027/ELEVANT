@@ -330,7 +330,6 @@ export const mapMessages = {
     },
     // The 3D aircraft (PR M7, core/aircraft3d.js) and the dock's 2D/3D control (ui/Map3dToggle.jsx).
     view3d: {
-      group: 'Vista 2D o 3D',
       to2d: 'Ver el mapa en 2D',
       to3d: 'Ver el mapa en 3D, con los aviones en 3D en Aeródromo y Rampa',
       paused: 'Pausamos la vista 3D para que el mapa siga fluido.',
@@ -648,7 +647,6 @@ export const mapMessages = {
       stopped: 'You stopped following {id}. Press Follow to resume.',
     },
     view3d: {
-      group: '2D or 3D view',
       to2d: 'Show the map in 2D',
       to3d: 'Show the map in 3D, with 3D aircraft in Airfield and Ramp',
       paused: 'We paused the 3D view so the map stays smooth.',
