@@ -21,6 +21,7 @@ import {
   AIRCRAFT_SIZES, createOccAircraftType, createOccStand, createOccTerminal, loadOccMasterData, masterDataMessage,
   updateOccAircraftType, updateOccStand, updateOccTerminal,
 } from '../../services/occMasterDataService';
+import { sortByStandCode } from '../../services/standCodes';
 import { masterDataMessages } from './masterDataMessages';
 
 // Template D of the design («Registro»): the toolbar with the page title, then one panel per register, each with its
@@ -576,7 +577,7 @@ export default function MasterDataRoute() {
         {data.canCreate && <TerminalForm stationId={data.stationId} {...props} />}
       </OccPanel>
       <OccPanel title={t('stands.title')} meta={t('stands.about')}>
-        <StandsTable stands={data.stands} terminals={data.terminals} canUpdate={data.canUpdate}
+        <StandsTable stands={sortByStandCode(data.stands)} terminals={data.terminals} canUpdate={data.canUpdate}
           canSeeMap={Boolean(access?.can('operations.positions_map.read'))} {...props} />
         {data.canCreate && <StandForm key={data.terminals.map(item => `${item.id}${item.isActive}`).join()} stationId={data.stationId}
           terminals={data.terminals} {...props} />}

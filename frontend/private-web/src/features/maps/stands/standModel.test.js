@@ -519,11 +519,44 @@ describe('deriveDisplayStatus with the map situation (PR M6)', () => {
     ] }));
     const shown = deriveDisplayStatus(stand, { nowMs: NOON });
     expect(shown.state).toBe('occupied');
-    expect(shown.detail).toMatchObject({ airline: 'Aerolínea de prueba', registration: 'HI0300', operationStatus: 'InProgress',
+    expect(shown.detail).toMatchObject({ airline: 'Aerolínea de prueba', registration: 'HI0300', operationStatus: null, turnaroundStatus: 'InProgress',
       arrival: { scheduledAt: NOON - 30 * 60_000, actualAt: NOON - 30 * 60_000 },
       departure: { scheduledAt: NOON + 40 * 60_000, actualAt: null } });
     expect(shown.next).toMatchObject({ flightNumber: 'ZZ500', arrivalAt: NOON + 120 * 60_000, minutesToArrival: 120,
       airline: 'Aerolínea de prueba' });
+  });
+
+  it('the detail never shows an actual time still to come: a demo arrival is «Real» only from its touchdown', () => {
+    // ZZ9001 at A6: the server plans its touchdown and on-block; the board has no arrival yet.
+    const { board, flightsByTurnaround } = createRampScenario(NOW);
+    const ahead = minutes => iso(NOW + minutes * MINUTE);
+    const unlanded = { ...board, positions: board.positions.map(stand => (stand.code !== 'A06' ? stand : {
+      ...stand, status: 'planned', turnarounds: stand.turnarounds.map(item => ({ ...item, arrivedAt: null })) })) };
+    const legs = Object.fromEntries(Object.entries(flightsByTurnaround).map(([id, rows]) => [id, (Array.isArray(rows) ? rows : [rows])
+      .map(leg => ({ ...leg, actualAt: null, phase: leg.direction === 'Arrival' ? 'scheduled' : leg.phase,
+        demo: leg.demo ? { ...leg.demo, touchdownAt: ahead(1), onBlockAt: ahead(5), offBlockAt: null } : leg.demo }))]));
+    const demo = positionsOf(unlanded).find(position => position.id === 'A6');
+    const at = minutes => deriveDisplayStatus(demo, { nowMs: NOW + minutes * MINUTE, flightsByTurnaround: legs });
+    // Before its touchdown nothing is real: no «aterrizó», no «Real».
+    expect(at(0)).toMatchObject({ state: 'arriving', detail: { arrival: { actualAt: null }, departure: { actualAt: null } } });
+    // Landed: its touchdown is real, while it still taxis in.
+    expect(at(2)).toMatchObject({ state: 'arriving', detail: { arrival: { actualAt: NOW + MINUTE } } });
+    // Parked: the on-block time.
+    expect(at(6)).toMatchObject({ state: 'occupied', detail: { arrival: { actualAt: NOW + 5 * MINUTE } } });
+  });
+
+  it('the operation of a visit comes from its map flights, apart from the turnaround state', () => {
+    const stand = standAt('A2', boardStand('A02', { coveredBy: ['Marta'], turnarounds: [
+      noonVisit({ flight: 'ZZ300', arrivalInMin: -30, departureInMin: 40, arrived: true }),
+    ] }));
+    const turnaroundId = stand.turnarounds[0].turnaroundId;
+    const read = operationStatus => deriveDisplayStatus(stand, { nowMs: NOON, flightsByTurnaround: { [turnaroundId]: [
+      { direction: 'Arrival', flightNumber: 'ZZ300', phase: 'arrived', milestones: [],
+        turnaround: { id: turnaroundId, operationCode: 'OP-1', status: 'Confirmed', operationId: 'op-1', operationStatus } },
+    ] } }).detail;
+    expect(read('InProgress')).toMatchObject({ operationStatus: 'InProgress' });
+    expect(read(null).operationStatus).toBeNull();
+    expect(read(null).turnaroundStatus).toEqual(expect.any(String));
   });
 
   it('an aircraft standing in a stand without an arrival recorded asks to record it', () => {

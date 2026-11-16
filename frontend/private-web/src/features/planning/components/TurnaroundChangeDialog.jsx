@@ -3,6 +3,7 @@ import { getManualTurnaroundOptions } from '../../../services/planningService';
 import { stationLocalToUtc, utcToStationLocalInput } from '../../../services/businessDay';
 import { problemMessage } from '../../../services/problemMessages';
 import { placementReasons } from '../../../services/occFlightFeedService';
+import { sortByStandCode } from '../../../services/standCodes';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages, TURNAROUND_PROBLEM_MESSAGES, TURNAROUND_REASON_MESSAGES } from '../planningMessages';
 import { usePlanningTurnaround } from '../usePlanningTurnaround';
@@ -169,7 +170,7 @@ export default function TurnaroundChangeDialog({ turnaroundId, mode, onChanged, 
 
   const current = detail?.turnaround;
   const airports = (options?.airports ?? []).filter(airport => airport.iataCode !== options?.stationAirport?.iataCode);
-  const stands = options?.stands ?? [];
+  const stands = sortByStandCode(options?.stands);
   const types = options?.aircraftTypes ?? [];
   const datalistId = `turnaround-change-airports-${turnaroundId}`;
 
