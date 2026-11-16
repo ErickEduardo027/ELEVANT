@@ -13,6 +13,7 @@ export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./demoFlights";
 export * from "./occMap";
+export * from "./aviationReference";
 export * from "./flightFeedReview";
 export * from "./occTurnarounds";
 export * from "./occIncidents";
@@ -404,6 +405,19 @@ export {
   type GetOccAerodromeWeatherParams,
   type OccAerodromeWeatherResponse,
   type OccWeatherSourceResponse,
+  type GetOccAircraftReferenceParams,
+  type GetOccAirportRoutesParams,
+  type GetOccAirportDelaysParams,
+  type GetAirlineFleetParams,
+  type OccAircraftReferenceResponse,
+  type AircraftReferenceResponse,
+  type OccAirportRoutesResponse,
+  type OccAirportRouteResponse,
+  type OccAirportDelaysResponse,
+  type OccAirportDelayFactsResponse,
+  type OccDelayBatchResponse,
+  type AirlineFleetResponse,
+  type AirlineFleetTypeResponse,
   type OccMetarResponse,
   type OccCloudLayerResponse,
   type OccTafResponse,

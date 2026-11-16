@@ -186,6 +186,20 @@ import {
   type DemoFlightOptionsQuery,
 } from "./demoFlights";
 import {
+  isAirlineFleet,
+  isOccAircraftReference,
+  isOccAirportDelays,
+  isOccAirportRoutes,
+  normalizedAirlineFleetQuery,
+  normalizedOccAircraftReferenceQuery,
+  normalizedOccAirportDelaysQuery,
+  normalizedOccAirportRoutesQuery,
+  type AirlineFleetQuery,
+  type OccAircraftReferenceQuery,
+  type OccAirportDelaysQuery,
+  type OccAirportRoutesQuery,
+} from "./aviationReference";
+import {
   isOccAerodromeWeather,
   isOccAircraftTrack,
   isOccAirPicture,
@@ -408,6 +422,10 @@ import {
   getGetOccAircraftTrackUrl,
   getGetOccMapFlightsUrl,
   getGetOccAerodromeWeatherUrl,
+  getGetOccAircraftReferenceUrl,
+  getGetOccAirportRoutesUrl,
+  getGetOccAirportDelaysUrl,
+  getGetAirlineFleetUrl,
   getGetOccMasterDataUrl,
   getCreateOccTerminalUrl,
   getUpdateOccTerminalUrl,
@@ -600,6 +618,10 @@ import {
   type OccAircraftTrackResponse,
   type OccMapFlightsResponse,
   type OccAerodromeWeatherResponse,
+  type OccAircraftReferenceResponse,
+  type OccAirportRoutesResponse,
+  type OccAirportDelaysResponse,
+  type AirlineFleetResponse,
   type OccMasterData,
   type MasterTerminalData,
   type MasterStandData,
@@ -1256,6 +1278,23 @@ export interface ElevantApiClient {
    */
   getOccAerodromeWeather(query: OccAerodromeWeatherQuery, options?: GetOccMapOptions):
     Promise<OccAerodromeWeatherResponse>;
+  /**
+   * An aircraft by its registration from AeroDataBox through the API (ADR-0028, note of 15 November 2026), for the readers
+   * of the OCC map. The API keeps it a day and caps what it spends; the state comes in the 200 (`Available`,
+   * `NotFound`, `Disabled`, `DailyLimitReached`, `MonthlyLimitReached`, `Unavailable`, `NotApplicable` for a
+   * demo registration). A malformed query answers `invalid_aviation_reference_query`.
+   */
+  getOccAircraftReference(query: OccAircraftReferenceQuery, options?: GetOccMapOptions):
+    Promise<OccAircraftReferenceResponse>;
+  /** The daily routes from the station's airport (AeroDataBox, kept 24 hours by the API; ADR-0043). */
+  getOccAirportRoutes(query: OccAirportRoutesQuery, options?: GetOccMapOptions): Promise<OccAirportRoutesResponse>;
+  /** The current delays of the station's airport or of another one (AeroDataBox, kept an hour by the API). */
+  getOccAirportDelays(query: OccAirportDelaysQuery, options?: GetOccMapOptions): Promise<OccAirportDelaysResponse>;
+  /**
+   * An airline's fleet size and type mix (AeroDataBox, kept seven days), for Contratos and the superadministrator. It
+   * informs and blocks nothing.
+   */
+  getAirlineFleet(query: AirlineFleetQuery, options?: GetOccMapOptions): Promise<AirlineFleetResponse>;
   getOccPlanningOptions(
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
@@ -6700,6 +6739,32 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetOccAerodromeWeatherUrl(params), { ...options, method: "GET" }, true);
       if (result.status !== 200 || !isOccAerodromeWeather(result.data, params.stationId))
         throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAircraftReference(query: OccAircraftReferenceQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccAircraftReferenceQuery(query);
+      const result = await execute(getGetOccAircraftReferenceUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAircraftReference(result.data, params.stationId, params.registration))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAirportRoutes(query: OccAirportRoutesQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccAirportRoutesQuery(query);
+      const result = await execute(getGetOccAirportRoutesUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAirportRoutes(result.data, params.stationId)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAirportDelays(query: OccAirportDelaysQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccAirportDelaysQuery(query);
+      const result = await execute(getGetOccAirportDelaysUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAirportDelays(result.data, params.stationId, params.airport ?? undefined))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineFleet(query: AirlineFleetQuery, options?: GetOccMapOptions) {
+      const params = normalizedAirlineFleetQuery(query);
+      const result = await execute(getGetAirlineFleetUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isAirlineFleet(result.data, params.airlineCode)) throw malformedResponse(result.status);
       return result.data;
     },
     async getManualTurnaroundOptions(
