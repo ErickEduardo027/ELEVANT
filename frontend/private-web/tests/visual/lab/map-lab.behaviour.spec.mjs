@@ -291,13 +291,14 @@ test.describe('map lab', () => {
     await expect(credits).toContainText('© OpenStreetMap contributors (ODbL) · OurAirports');
     await expect(credits.locator('a', { hasText: 'ODbL' })).toHaveAttribute('href', 'https://opendatacommons.org/licenses/odbl/');
     await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveAttribute('href', 'https://ourairports.com/');
-    // The region view draws nothing of the dataset: its credit goes, the base map's stays. The airports of the region
-    // (PR M8) keep OurAirports alone, once (map-lab.references.spec.mjs).
+    // The region view draws nothing of the dataset: its credit goes, the base map's stays. This scene has no traffic, so
+    // no airports of the region either, and Región draws no navaid or centreline: nothing of OurAirports is on screen
+    // (with the airports, OurAirports is credited alone, once: map-lab.references.spec.mjs).
     await page.evaluate(() => window.__occMapLab.flyToPreset('region'));
     await labIdle(page);
     await expect(credits).not.toContainText('(ODbL)');
     await expect(credits).toContainText('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles');
-    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveCount(1);
+    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveCount(0);
     // And it comes back with the airfield, with OurAirports once.
     await page.evaluate(() => window.__occMapLab.flyToPreset('airfield'));
     await labIdle(page);
