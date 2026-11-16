@@ -343,6 +343,30 @@ anterior a la fase no conoce `NoCharge`, `Voided` de la factura de proveedor
 ni `Cancelled` del gasto: volver a esa API sobre una base que ya los usa no es
 un rollback probado.
 
+## Identificador fiscal de la aerolínea y comprobación de registros
+
+`20261115233439_AddAirlineTaxRegistrationAndRequestRegistryCheck`, posterior a
+`AddPayablesCorrections`, atiende la revisión del profesor. Es aditiva y solo
+agrega columnas que admiten nulos, sin `HasData` ni DML:
+
+- `iam.organizations`: `tax_registration` (`nvarchar(32)`) y
+  `tax_registration_country_code` (`char(2)`). Guardan el RNC de una aerolínea
+  dominicana como sus 9 dígitos, o el identificador fiscal de otra con su país.
+  La aprobación de la solicitud lo copia solo si la organización no tiene uno;
+  nunca lo reescribe, porque ya está en contratos y facturas.
+- `commercial.service_requests`: el mismo par, como lo dio el solicitante o lo
+  corrigió Contratos. También `registry_status` (`nvarchar(16)`),
+  `registry_source` (`nvarchar(48)`), `registry_checked_at`
+  (`datetimeoffset(3)`) y `registry_detail` (`nvarchar(500)`), que guardan el
+  último veredicto automático de los registros públicos
+  ([ADR-0023](../adr/0023-airline-public-registry-check.md)).
+
+Las filas existentes quedan en NULL. El contrato añade el identificador a su
+contenido firmado solo cuando la organización lo tiene. Una versión firmada
+antes sin él conserva su huella, porque `ContractDocumentHash.AsSigned` lo omite
+cuando ninguna firma coincide con el contenido que lo incluye. La factura e-CF lo
+congela en su snapshot al emitirse.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;

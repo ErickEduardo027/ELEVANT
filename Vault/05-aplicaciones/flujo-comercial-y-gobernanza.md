@@ -7,9 +7,14 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-07"
+last_verified: "2026-11-15"
 verified_commit: pending
 sources:
+  - docs/adr/0023-airline-public-registry-check.md
+  - backend/Elevant.Application/Commercial/DecideCommercialRequestHandler.cs
+  - backend/Elevant.Application/Commercial/AirlineRegistryChecks.cs
+  - backend/Elevant.Domain/Validation/TaxRegistrations.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialWorkflowStore.cs
   - docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md
   - backend/Elevant.Api/Controllers/ContractDocumentsController.cs
   - backend/Elevant.Api/Controllers/ContractLifecycleController.cs
@@ -141,6 +146,27 @@ mostró la bandeja; un conflicto obliga a releer.
   revisión, por ejemplo una duplicada. Nada se borra.
 - Aprobar, rechazar y cancelar encolan un correo al solicitante con la
   decisión y, cuando lo hay, el motivo.
+
+### Identificador fiscal y registros públicos (revisión del profesor)
+
+- La solicitud pública exige el **identificador fiscal** de la aerolínea. Si la
+  aerolínea es dominicana, es su **RNC**: 9 dígitos con dígito verificador. Si
+  no lo es, es su identificador, de 3 a 32 caracteres, con el país que lo emitió
+  (`invalid_tax_registration`). Contratos lo corrige al verificar la aerolínea.
+  La aprobación lo copia a la organización si esta no tiene uno. El contrato lo
+  imprime («RNC 1-31-23456-9»), solo en las versiones cuyo contenido firmado lo
+  incluye, y la factura e-CF lo congela como «RNC del comprador».
+- La API **comprueba la aerolínea en los registros públicos** al enviar una
+  aerolínea propuesta y al aprobar, y guarda el veredicto en la solicitud. La
+  bandeja lo muestra en español: «Encontrada en OpenFlights», «No encontrada
+  en registros públicos», «Inactiva», «No coincide: …» o «No se pudo
+  comprobar».
+- La aprobación con «no encontrada», «inactiva» o «no coincide» se rechaza
+  (`airline_not_in_public_registry`). La excepción es una ficha verificada a
+  mano por Superadministración con su fuente, que la bandeja muestra como
+  «Verificada a mano por Superadmin · fuente». «No se pudo comprobar» no
+  bloquea. El paso a paso está en la [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#una-aerolínea-que-los-registros-públicos-no-confirman)
+  y la regla en [ADR-0023](../../docs/adr/0023-airline-public-registry-check.md).
 
 Las aerolíneas sin designador IATA se identifican por su ICAO:
 `ref.airlines.iata_code` admite nulos desde esta fase. Las respuestas que ya

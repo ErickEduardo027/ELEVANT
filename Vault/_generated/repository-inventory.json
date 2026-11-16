@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "e69f48df8d9368888df103aa0b752898969d8e6cef2fda72ff3610cb3a6c3ac9",
+        "sha256": "ce824368b0c98da44deb07bdd72208bb989f834506a81fb5187b80878834530e",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "a876645132ed7cad8bedde5739cd9e5f89070444270f48352668319c5e86d961",
+        "sha256": "a498a7f21a76deab3cf9728b020874ee89168c93a3545636092313c1ccb9b6fc",
         "title": null,
         "version": null
       }
@@ -1508,6 +1508,12 @@
         "name": "AddPayablesCorrections",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261109064156_AddPayablesCorrections.cs",
         "sha256": "d28f940d91d2044323d28a4963bcc18126ee96c0287e3ab38ea6acc429ab7a04"
+      },
+      {
+        "id": "20261115233439",
+        "name": "AddAirlineTaxRegistrationAndRequestRegistryCheck",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261115233439_AddAirlineTaxRegistrationAndRequestRegistryCheck.cs",
+        "sha256": "358a5e81a1ee19cd7cac89cbbfd20986210048776ce723c6d0f6c7c054ada275"
       }
     ],
     "manifestContracts": [
