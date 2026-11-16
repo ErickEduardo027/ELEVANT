@@ -100,6 +100,9 @@ public static class DepartmentPermissionCatalog
                 Module("human_resources", "notifications", "Notificaciones", "Control", null, Read()),
                 Module("human_resources", "access_requests", "Validaciones de acceso", "Control", null,
                     Read(), Other("validate", "Validar o rechazar altas")),
+                // ADR-0045: the permit types and the qualification equipment Gestión Humana maintains.
+                Module("human_resources", "settings", "Configuración", "Configuración", null,
+                    Read(), Create(), Update("Modificar y desactivar")),
             ],
             [Department.Contracts] =
             [

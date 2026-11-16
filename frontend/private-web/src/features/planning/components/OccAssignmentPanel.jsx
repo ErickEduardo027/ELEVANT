@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
+import { reasonTexts } from '../planningMappers';
 
 function EmptyValue({ children }) {
   return <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{children}</p>;
@@ -233,8 +234,9 @@ export default function OccAssignmentPanel({
                       </span>
                       {!agent.eligible && agent.eligibilityReasons.length > 0 && (
                         <span className="mt-1.5 block text-[11px] leading-relaxed text-text-secondary-light dark:text-text-secondary-dark">
-                          {agent.eligibilityReasons
-                            .map(reason => reasonLabels[reason] ?? t('assignment.unknownReason'))
+                          {reasonTexts(agent.eligibilityReasons, agent.missingPermits,
+                            reason => reasonLabels[reason] ?? t('assignment.unknownReason'),
+                            names => t('assignment.missingPermit', { names }))
                             .join(' · ')}
                         </span>
                       )}

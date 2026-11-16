@@ -297,6 +297,20 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   apto (inactivo, ausente o sin carnet o licencia vigente) mediante una
   proyección que no libera nada.
 
+*Posterior al commit verificado de esta nota
+([ADR-0045](../../docs/adr/0045-configurable-permit-types-and-stand-required-permits.md), rama
+`feat/rh-configuracion-carnets`, sin desplegar):* una posición puede exigir carnets
+(`ref.stand_required_permits`). Pueden ser los del sistema o los que Gestión Humana agrega en
+`ref.permit_document_types`.
+
+Quien cubra la posición, la reciba por asignación, relevo o reasignación, o la cubra en el sorteo del vuelo demo,
+necesita un ciclo vigente de cada carnet exigido. Si le falta, la razón es `required_permit_missing`, con el nombre
+del carnet. La comprobación también entra en los avisos de asignación no apta.
+
+La regla es una sola y pura
+([RequiredPermitRules](../../backend/Elevant.Application/Operations/RequiredPermitRules.cs)), y la usan
+`PositionCoveragePolicy` y `OccAgentEligibilityPolicy`. Las posiciones sin carnets exigidos no cambian.
+
 *Posterior al commit verificado de esta nota (vuelos demo, código de
 `cba00f73`; [ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)):*
 una propuesta descartada del proveedor «Demo» nunca se restaura, aunque su vuelo

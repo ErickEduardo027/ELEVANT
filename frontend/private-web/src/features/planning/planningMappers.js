@@ -287,19 +287,34 @@ export function getFilterOptions(flights) {
 }
 
 /**
+ * The words of each reason an agent is not eligible or unfit: `required_permit_missing` names the permits the stand
+ * requires that the agent lacks (ADR-0045, «Le falta: …») when the answer carries them.
+ *
+ * @param {string[]} reasons @param {string[] | undefined} missingPermits
+ * @param {(reason: string) => string} label the screen's word for a reason
+ * @param {(names: string) => string} missingLabel «Le falta: {names}»
+ */
+export function reasonTexts(reasons, missingPermits, label, missingLabel) {
+  return (reasons ?? []).map(reason => (reason === 'required_permit_missing' && missingPermits?.length
+    ? missingLabel(missingPermits.join(', ')) : label(reason)));
+}
+
+/**
  * The flights with the planning board's marks (2-N25): each assigned agent whose assignment is unfit gets its
  * `unfitReasons`, and the flight counts them in `unfitAgentCount`. Fit flights keep their identity.
  */
 export function withAssignmentReadiness(flights, readiness) {
   if (!Array.isArray(readiness?.assignments) || readiness.assignments.length === 0) return flights;
   const reasons = new Map(readiness.assignments.map(item => [String(item.assignmentId).toLowerCase(), item.reasons]));
+  const missing = new Map(readiness.assignments.map(item => [String(item.assignmentId).toLowerCase(), item.missingPermits]));
   return flights.map(flight => {
     let unfit = 0;
     const agents = (flight.assignedAgents ?? []).map(agent => {
       const found = agent.assignmentId ? reasons.get(String(agent.assignmentId).toLowerCase()) : undefined;
       if (!found?.length) return agent;
       unfit += 1;
-      return { ...agent, unfitReasons: [...found] };
+      const permits = missing.get(String(agent.assignmentId).toLowerCase());
+      return { ...agent, unfitReasons: [...found], ...(permits?.length ? { missingPermits: [...permits] } : {}) };
     });
     return unfit === 0 ? flight : { ...flight, assignedAgents: agents, unfitAgentCount: unfit };
   });

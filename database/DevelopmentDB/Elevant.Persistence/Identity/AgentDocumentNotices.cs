@@ -18,7 +18,7 @@ internal static class AgentDocumentNotices
     public const string AssignmentKind = "agent_document_not_current";
 
     /// <summary>Documents every ramp agent needs to be assigned (<c>OccAgentEligibilityPolicy</c>).</summary>
-    private static readonly PermitDocumentType[] Required = [PermitDocumentType.AirportId, PermitDocumentType.RampDriverLicense];
+    private static readonly string[] Required = [PermitDocumentTypes.AirportId, PermitDocumentTypes.RampDriverLicense];
 
     /// <summary>
     /// Adds the notices of the open assignments, from today on, of <paramref name="agentIds"/> (every active agent

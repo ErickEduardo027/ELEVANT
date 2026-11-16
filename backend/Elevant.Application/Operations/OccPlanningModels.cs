@@ -146,7 +146,9 @@ public sealed record OccAgentCandidateData(
     Guid? OperationalPositionId,
     bool HasAssignmentConflict,
     bool HasApprovedAbsence = false,
-    bool RequiresMentor = false);
+    bool RequiresMentor = false,
+    IReadOnlyCollection<string>? CurrentPermitCodes = null,
+    IReadOnlyList<RequiredPermitFact>? RequiredPermits = null);
 
 public sealed record OccPlanningOptionsSourceData(
     OccPlanningTurnaroundContextData Turnaround,
@@ -180,7 +182,8 @@ public sealed record OccAgentOptionData(
     string DisplayName,
     string EmployeeNumber,
     bool Eligible,
-    IReadOnlyList<string> EligibilityReasons);
+    IReadOnlyList<string> EligibilityReasons,
+    IReadOnlyList<string>? MissingPermits = null);
 
 public sealed record OccPlanningOptionsData(
     OccPlanningTurnaroundContextData Turnaround,

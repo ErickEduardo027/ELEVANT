@@ -70,7 +70,32 @@ public sealed record MasterTerminalData(Guid Id, string Code, string Name, bool 
 /// <see cref="HasHistory"/> (flights or coverages that used it) fixes its code.
 /// </summary>
 public sealed record MasterStandData(Guid Id, Guid? TerminalId, string Code, bool HasBoardingBridge, bool IsRemote,
-    string? MaxAircraftSize, bool IsActive, bool HasHistory, string Version);
+    string? MaxAircraftSize, bool IsActive, bool HasHistory, string Version,
+    IReadOnlyList<StandRequiredPermitData>? RequiredPermits = null);
+
+/// <summary>
+/// A permit a stand requires (ADR-0045): a system code or a custom permit type's, with the name the screens show.
+/// </summary>
+public sealed record StandRequiredPermitData(string Code, string Name);
+
+/// <summary>A permit type OCC may require at a stand: the system ones and the active custom ones (ADR-0045).</summary>
+public sealed record StandPermitOptionData(string Code, string Name, bool IsSystem);
+
+/// <summary>
+/// The exact list of permits one stand requires (ADR-0045), with the stand's version the caller saw; an empty list
+/// requires none.
+/// </summary>
+public sealed record SetStandRequiredPermitsInput(IReadOnlyList<string> DocumentTypeCodes, string ExpectedVersion);
+
+/// <summary>
+/// «Aplicar a varias posiciones» (ADR-0045): every listed stand of the station requires exactly
+/// <paramref name="DocumentTypeCodes"/> afterwards.
+/// </summary>
+public sealed record ApplyStandRequiredPermitsInput(Guid StationId, IReadOnlyList<Guid> StandIds,
+    IReadOnlyList<string> DocumentTypeCodes);
+
+/// <summary>The stands a batch of required permits changed, as master data shows them.</summary>
+public sealed record StandRequiredPermitsBatchData(IReadOnlyList<MasterStandData> Stands);
 
 /// <summary>An aircraft type of the shared catalog; its ICAO designator never changes.</summary>
 public sealed record MasterAircraftTypeData(Guid Id, string IcaoCode, string? IataCode, string Manufacturer, string Model,
@@ -79,7 +104,7 @@ public sealed record MasterAircraftTypeData(Guid Id, string IcaoCode, string? Ia
 /// <summary>Terminals and stands of one station, active or not, and the aircraft types (2-A).</summary>
 public sealed record OccMasterData(Guid StationId, string StationCode, IReadOnlyList<MasterTerminalData> Terminals,
     IReadOnlyList<MasterStandData> Stands, IReadOnlyList<MasterAircraftTypeData> AircraftTypes, bool CanCreate,
-    bool CanUpdate);
+    bool CanUpdate, IReadOnlyList<StandPermitOptionData>? PermitTypes = null);
 
 public sealed record CreateTerminalInput(Guid StationId, string Code, string Name);
 
@@ -123,4 +148,15 @@ public interface IOccMasterDataStore
 
     Task<MasterDataResult<MasterAircraftTypeData>> UpdateAircraftTypeAsync(Guid actorId, Guid aircraftTypeId,
         UpdateAircraftTypeInput input, Guid idempotencyKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The permits a stand requires (ADR-0045, <c>operations.master_data.update</c>): a system code or an active custom
+    /// type, at most 10. <c>invalid_required_permits</c>, <c>version_conflict</c>, <c>idempotency_conflict</c>.
+    /// </summary>
+    Task<MasterDataResult<MasterStandData>> SetStandRequiredPermitsAsync(Guid actorId, Guid standId,
+        SetStandRequiredPermitsInput input, Guid idempotencyKey, CancellationToken cancellationToken = default);
+
+    /// <summary>The same list on up to 200 stands of one station, in one transaction.</summary>
+    Task<MasterDataResult<StandRequiredPermitsBatchData>> ApplyStandRequiredPermitsAsync(Guid actorId,
+        ApplyStandRequiredPermitsInput input, Guid idempotencyKey, CancellationToken cancellationToken = default);
 }

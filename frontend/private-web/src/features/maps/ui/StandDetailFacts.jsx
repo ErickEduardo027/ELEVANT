@@ -206,6 +206,11 @@ export default function StandDetailFacts({ position, layout = MDPC_LAYOUT, aircr
             </span>
           </Characteristic>
           {coverage && <Characteristic fact="coverage-agents" label={t('standInfo.coverage')}>{coverage}</Characteristic>}
+          {facts.requiredPermits.length > 0 && (
+            <Characteristic fact="required-permits" label={t('standInfo.requires')}>
+              {t('standInfo.requiresValue', { names: new Intl.ListFormat(locale, { type: 'conjunction' }).format(facts.requiredPermits) })}
+            </Characteristic>
+          )}
         </dl>
       </section>
     </div>

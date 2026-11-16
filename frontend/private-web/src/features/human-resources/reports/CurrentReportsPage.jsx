@@ -9,6 +9,7 @@ import { addDays, businessToday, formatBusinessDateTime } from '../../../service
 import { problemMessage } from '../../../services/problemMessages';
 import { HUMAN_RESOURCES_REPORT_PROBLEMS } from '../../../services/reportProblems';
 import { formatReportCell, formatReportDate, KIND_LABELS } from './reportLabels';
+import usePermitTypeCatalog from '../permits/usePermitTypeCatalog';
 
 const PAGE_LIMIT = 20;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -47,6 +48,8 @@ function validRange(from, to) {
 
 export default function CurrentReportsPage({ initialDate = new Date() }) {
   const { session } = useAuth();
+  // ADR-0045: the names of the custom permit types in the expirations report.
+  const permitTypes = usePermitTypeCatalog();
   const [searchParams, setSearchParams] = useSearchParams();
   const scopes = useMemo(() => (Array.isArray(session?.stationScopes)
     ? session.stationScopes : []).filter(scope =>
@@ -294,7 +297,7 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
           </tr></thead>
           <tbody>{shown.data.rows.map((row, index) => <tr key={row.id ?? row.equipmentTypeId ?? index}
             className="border-b border-slate-100 dark:border-white/5">
-            {KINDS[kind].columns.map(([field]) => <td key={field} className="px-3 py-3">{formatReportCell(kind, field, row)}</td>)}
+            {KINDS[kind].columns.map(([field]) => <td key={field} className="px-3 py-3">{formatReportCell(kind, field, row, { permitNames: permitTypes.names })}</td>)}
           </tr>)}</tbody>
         </table></div>}
       <nav aria-label="Páginas del reporte" className="mt-4 flex items-center justify-between gap-4">

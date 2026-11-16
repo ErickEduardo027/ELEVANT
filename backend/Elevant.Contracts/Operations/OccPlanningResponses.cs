@@ -142,12 +142,18 @@ public sealed record OccServiceOptionResponse(
     decimal UnitPrice,
     string CurrencyCode);
 
+/// <param name="MissingPermits">
+/// The names of the permits the flight's stand requires that the agent lacks, with <c>required_permit_missing</c>
+/// (ADR-0045); null otherwise.
+/// </param>
 public sealed record OccAgentOptionResponse(
     Guid Id,
     string DisplayName,
     string EmployeeNumber,
     bool Eligible,
-    IReadOnlyList<string> EligibilityReasons);
+    IReadOnlyList<string> EligibilityReasons,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<string>? MissingPermits = null);
 
 public sealed record OccAssignmentResponse(
     Guid TurnaroundId,

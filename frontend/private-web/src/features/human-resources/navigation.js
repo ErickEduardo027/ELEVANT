@@ -6,6 +6,7 @@ import {
   ChecklistIcon,
   IdCardIcon,
   LayoutGridIcon,
+  SettingsIcon,
   ShieldCheckIcon,
   UsersIcon,
 } from '../shell/components/icons';
@@ -28,6 +29,7 @@ export const HUMAN_RESOURCES_MODULE_IDS = {
   ACCESS_REQUESTS: 'access-requests',
   DEPARTMENT_USERS: 'department-users',
   EXPENSES: 'expenses',
+  SETTINGS: 'settings',
 };
 
 export const HUMAN_RESOURCES_NAVIGATION = [
@@ -131,5 +133,13 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/department-users`,
     icon: UsersIcon,
     description: 'Usuarios, plantillas y solicitudes de alta de Gestión Humana.',
+  },
+  {
+    // ADR-0045: the permit types and the qualification equipment Gestión Humana maintains.
+    id: HUMAN_RESOURCES_MODULE_IDS.SETTINGS, permission: 'human_resources.settings.read',
+    label: 'Configuración',
+    path: `${HUMAN_RESOURCES_BASE_PATH}/settings`,
+    icon: SettingsIcon,
+    description: 'Tipos de carnet y permiso y equipos de habilitación.',
   },
 ];

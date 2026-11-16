@@ -13,10 +13,14 @@ public sealed record OccPositionTurnaroundResponse(Guid TurnaroundId, string Ope
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsDemo = null);
 
 /// <param name="Latitude">WGS84 location OCC placed on the map (ADR-0027); null until placed.</param>
+/// <param name="RequiredPermits">
+/// Names of the permits the stand requires (ADR-0045); the key is written only when the stand requires one.
+/// </param>
 public sealed record OccPositionResponse(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
     IReadOnlyList<OccPositionTurnaroundResponse> Turnarounds, decimal? Latitude, decimal? Longitude,
     bool HasBoardingBridge, bool IsRemote, string? MaxAircraftSize, string? CancelledBy, bool NarrowbodyOnly,
-    IReadOnlyList<string> CoveredBy);
+    IReadOnlyList<string> CoveredBy,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? RequiredPermits = null);
 
 /// <summary>Both null clears the stand's location.</summary>
 public sealed record LocateOccStandRequest(decimal? Latitude, decimal? Longitude, DateOnly OperationDate);

@@ -5,6 +5,7 @@
  * cannot do their operation (2-N25).
  */
 import type { HumanResourcesAvailabilityAmended, OccAssignmentReadinessResponse } from "../generated/elevant-api";
+import { isPermitNameList } from "./permitSettings";
 
 /** The warnings every schedule read returns. */
 export const SCHEDULE_WARNING_KINDS = ["Overlap", "ShortRest", "SevenDayLoad", "Unevaluable"] as const;
@@ -17,7 +18,7 @@ export const SCHEDULE_REQUIRED_DOCUMENTS = ["AirportId", "RampDriverLicense"] as
 
 /** Why an assigned agent cannot do the operation on its date (2-N25). */
 export const OCC_ASSIGNMENT_UNFIT_REASONS = ["agent_inactive", "approved_absence", "airport_id_not_current",
-  "ramp_driver_license_not_current"] as const;
+  "ramp_driver_license_not_current", "required_permit_missing"] as const;
 export type OccAssignmentUnfitReason = (typeof OCC_ASSIGNMENT_UNFIT_REASONS)[number];
 
 /** `Cancel` an approved absence that has not started; `Shorten` one that has not ended (2-N22). */
@@ -109,7 +110,9 @@ export function isOccAssignmentReadiness(value: unknown, query: OccAssignmentRea
       !Array.isArray(value.assignments) || value.assignments.length > 2000) return false;
   const seen = new Set<string>();
   return value.assignments.every(item => {
-    if (!isRecord(item) || !hasOnlyKeys(item, ["assignmentId", "turnaroundId", "agentId", "reasons"]) ||
+    // ADR-0045: `missingPermits` names the permits the flight's stand requires that the agent lacks.
+    if (!isRecord(item) || !hasOnlyKeys(item, ["assignmentId", "turnaroundId", "agentId", "reasons", "missingPermits"]) ||
+        !isPermitNameList(item.missingPermits) ||
         !isUuid(item.assignmentId) || seen.has(item.assignmentId.toLowerCase()) || !isUuid(item.turnaroundId) ||
         !isUuid(item.agentId) || !Array.isArray(item.reasons) || item.reasons.length === 0 ||
         new Set(item.reasons).size !== item.reasons.length ||

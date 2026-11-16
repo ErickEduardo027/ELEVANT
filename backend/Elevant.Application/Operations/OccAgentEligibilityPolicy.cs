@@ -51,6 +51,13 @@ public static class OccAgentEligibilityPolicy
             reasons.Add("ramp_driver_license_not_current");
         }
 
+        // ADR-0045: the permits the stand of the flight requires, current on the operation date.
+        var missing = RequiredPermitRules.Missing(candidate.RequiredPermits ?? [], candidate.CurrentPermitCodes);
+        if (missing.Count > 0)
+        {
+            reasons.Add("required_permit_missing");
+        }
+
         if (!candidate.HasCompatibleShift)
         {
             reasons.Add("shift_not_compatible");
@@ -78,6 +85,7 @@ public static class OccAgentEligibilityPolicy
             candidate.DisplayName,
             candidate.EmployeeNumber,
             reasons.Count == 0,
-            reasons);
+            reasons,
+            missing.Count == 0 ? null : missing.Select(permit => permit.Name).ToArray());
     }
 }

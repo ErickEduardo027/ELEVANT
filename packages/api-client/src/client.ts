@@ -174,6 +174,21 @@ import {
   normalizedTerminalUpdate,
 } from "./masterData";
 import {
+  isEquipmentTypeSetting,
+  isEquipmentTypeSettings,
+  isMasterStandBatch,
+  isPermitNameList,
+  isPermitTypeCode,
+  isPermitTypeSetting,
+  isPermitTypeSettings,
+  normalizedEquipmentTypeCreate,
+  normalizedEquipmentTypeUpdate,
+  normalizedPermitTypeCreate,
+  normalizedPermitTypeUpdate,
+  normalizedStandRequiredPermits,
+  normalizedStandRequiredPermitsBatch,
+} from "./permitSettings";
+import {
   isDemoFlight,
   isDemoFlightList,
   isDemoFlightOptions,
@@ -427,6 +442,14 @@ import {
   getGetOccAirportDelaysUrl,
   getGetAirlineFleetUrl,
   getGetOccMasterDataUrl,
+  getSetOccStandRequiredPermitsUrl,
+  getApplyOccStandRequiredPermitsUrl,
+  getListHumanResourcesPermitTypesUrl,
+  getCreateHumanResourcesPermitTypeUrl,
+  getUpdateHumanResourcesPermitTypeUrl,
+  getListHumanResourcesEquipmentTypesUrl,
+  getCreateHumanResourcesEquipmentTypeUrl,
+  getUpdateHumanResourcesEquipmentTypeUrl,
   getCreateOccTerminalUrl,
   getUpdateOccTerminalUrl,
   getCreateOccStandUrl,
@@ -626,6 +649,17 @@ import {
   type MasterTerminalData,
   type MasterStandData,
   type MasterAircraftTypeData,
+  type PermitTypeSettingsData,
+  type PermitTypeSettingData,
+  type CreatePermitTypeInput,
+  type UpdatePermitTypeInput,
+  type EquipmentTypeSettingsData,
+  type EquipmentTypeSettingData,
+  type CreateEquipmentTypeInput,
+  type UpdateEquipmentTypeInput,
+  type SetStandRequiredPermitsInput,
+  type ApplyStandRequiredPermitsInput,
+  type StandRequiredPermitsBatchData,
   type CreateTerminalInput,
   type UpdateTerminalInput,
   type CreateStandInput,
@@ -1629,6 +1663,23 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<MasterAircraftTypeData>;
   updateOccAircraftType(aircraftTypeId: string, input: UpdateAircraftTypeInput, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<MasterAircraftTypeData>;
+  /** The exact permits a stand requires (ADR-0045), with the stand's version on screen. */
+  setOccStandRequiredPermits(standId: string, input: SetStandRequiredPermitsInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterStandData>;
+  /** «Aplicar a varias posiciones» (ADR-0045): the same permits on up to 200 stands of one station. */
+  applyOccStandRequiredPermits(input: ApplyStandRequiredPermitsInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<StandRequiredPermitsBatchData>;
+  /** Gestión Humana › Configuración (ADR-0045): the system permit types first, then the custom ones. */
+  listHumanResourcesPermitTypes(options?: GetHumanResourcesReportOptions): Promise<PermitTypeSettingsData>;
+  createHumanResourcesPermitType(input: CreatePermitTypeInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<PermitTypeSettingData>;
+  updateHumanResourcesPermitType(permitTypeId: string, input: UpdatePermitTypeInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<PermitTypeSettingData>;
+  listHumanResourcesEquipmentTypes(options?: GetHumanResourcesReportOptions): Promise<EquipmentTypeSettingsData>;
+  createHumanResourcesEquipmentType(input: CreateEquipmentTypeInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<EquipmentTypeSettingData>;
+  updateHumanResourcesEquipmentType(equipmentTypeId: string, input: UpdateEquipmentTypeInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<EquipmentTypeSettingData>;
   /** Contracts OCC can plan flights for at a station on a date (ADR-0027). */
   listOccReadyContracts(stationId: string, date: string,
     options?: GetHumanResourcesReportOptions): Promise<OccReadyContractsResponse>;
@@ -1927,6 +1978,7 @@ interface ProblemMetadata {
   readonly traceId?: string;
   readonly code?: ElevantApiErrorCode;
   readonly reasons?: readonly unknown[];
+  readonly missingPermits?: readonly unknown[];
 }
 
 function validatedBaseUrl(input: string) {
@@ -2034,6 +2086,7 @@ function problemMetadata(value: unknown): ProblemMetadata {
     ...(typeof record.traceId === "string" ? { traceId: record.traceId } : {}),
     ...(ELEVANT_API_ERROR_CODES.includes(record.code as ElevantApiErrorCode) ? { code: record.code as ElevantApiErrorCode } : {}),
     ...(Array.isArray(record.reasons) ? { reasons: record.reasons.slice(0, 32) } : {}),
+    ...(Array.isArray(record.missingPermits) ? { missingPermits: record.missingPermits.slice(0, 10) } : {}),
   };
 }
 
@@ -2610,7 +2663,9 @@ function isOccAgentOptionResponse(value: unknown) {
       "employeeNumber",
       "eligible",
       "eligibilityReasons",
+      "missingPermits",
     ]) &&
+    isPermitNameList(value.missingPermits) &&
     isUuid(value.id) &&
     isString(value.displayName) &&
     isString(value.employeeNumber) &&
@@ -3472,7 +3527,8 @@ function isOccPositionBoard(value: unknown, stationId?: string): value is OccPos
     typeof value.canAssign === "boolean" && Array.isArray(value.unassigned) && value.unassigned.every(isOccPositionTurnaround) &&
     Array.isArray(value.positions) && value.positions.every(position => isRecord(position) &&
       hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds", "latitude", "longitude",
-        "hasBoardingBridge", "isRemote", "maxAircraftSize", "cancelledBy", "narrowbodyOnly", "coveredBy"]) &&
+        "hasBoardingBridge", "isRemote", "maxAircraftSize", "cancelledBy", "narrowbodyOnly", "coveredBy", "requiredPermits"]) &&
+      isPermitNameList(position.requiredPermits) &&
       typeof position.hasBoardingBridge === "boolean" && typeof position.isRemote === "boolean" &&
       (position.maxAircraftSize == null || AIRCRAFT_SIZES.has(position.maxAircraftSize as string)) &&
       isOptionalNullable(position.cancelledBy, isNonEmptyString) && typeof position.narrowbodyOnly === "boolean" &&
@@ -4434,7 +4490,7 @@ function validatedHumanResourcesDocumentSummaryQuery<T extends {
       (key === "equipmentTypeId" && query.equipmentTypeId !== undefined &&
         !isUuid(query.equipmentTypeId)) ||
       (key === "documentType" && query.documentType !== undefined &&
-        !["AirportId", "RampDriverLicense"].includes(query.documentType)))
+        !isPermitTypeCode(query.documentType)))
     throw new TypeError("Human Resources document summary filter is invalid.");
   return { ...(query[key] === undefined ? {} : { [key]: query[key] }),
     ...documentFilterParams(query) } as T;
@@ -4491,7 +4547,7 @@ function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPerm
         !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
         !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
         typeof item.documentType !== "string" ||
-        !["AirportId", "RampDriverLicense"].includes(item.documentType) ||
+        !isPermitTypeCode(item.documentType) ||
         !isInt32(item.cycleNumber) || item.cycleNumber < 1 ||
         !isNonEmptyString(item.documentNumber) ||
         !isDateOnly(item.issuedOn) || !isDateOnly(item.expiresOn) ||
@@ -4509,7 +4565,7 @@ function validatedHumanResourcesPermitQuery(
     ["page", "limit", "rampProfileId", "documentType", "search", "validity", "asOf"]) ||
       (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
       (query.documentType !== undefined &&
-        !["AirportId", "RampDriverLicense"].includes(query.documentType)) ||
+        !isPermitTypeCode(query.documentType)) ||
       !isValidHumanResourcesDocumentFilter(query))
     throw new TypeError("Human Resources permit filter is invalid.");
   const paging = validatedHumanResourcesPaging({
@@ -4799,7 +4855,7 @@ function validatedHumanResourcesPermitInput(
   if (!isRecord(request) || !hasOnlyKeys(request,
     ["rampProfileId", "documentType", "expectedCurrentId", "documentNumber", "issuedOn", "expiresOn"]) ||
       !isUuid(request.rampProfileId) ||
-      !["AirportId", "RampDriverLicense"].includes(String(request.documentType)) ||
+      !isPermitTypeCode(request.documentType) ||
       (request.expectedCurrentId != null && !isUuid(request.expectedCurrentId)) ||
       !isNonEmptyString(request.documentNumber) ||
       request.documentNumber.trim().length < 2 || request.documentNumber.trim().length > 64 ||
@@ -5683,6 +5739,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         traceId: metadata.traceId,
         code: metadata.code,
         reasons: metadata.reasons,
+        missingPermits: metadata.missingPermits,
       });
     }
 
@@ -6376,7 +6433,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         ["rampProfileId", "agentName", "employeeNumber", "documentType", "cycles"]) ||
           !isUuid(data.rampProfileId) || !isNonEmptyString(data.agentName) ||
           !isNonEmptyString(data.employeeNumber) || typeof data.documentType !== "string" ||
-          !["AirportId", "RampDriverLicense"].includes(data.documentType) ||
+          !isPermitTypeCode(data.documentType) ||
           !isHumanResourcesDocumentCycles(data.cycles, ["id", "cycleNumber", "isCurrent",
             "documentNumber", "issuedOn", "expiresOn", "recordedAt", "recordedByName"], item =>
             isNonEmptyString(item.documentNumber) && isDateOnly(item.issuedOn) &&
@@ -8069,6 +8126,57 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const type = validatedUuid(aircraftTypeId, "aircraftTypeId");
       return masterDataCommand("PUT", getUpdateOccAircraftTypeUrl(type), normalizedAircraftTypeUpdate(input), idempotencyKey,
         options, (value): value is MasterAircraftTypeData => isMasterAircraftType(value, type));
+    },
+    async setOccStandRequiredPermits(standId: string, input: SetStandRequiredPermitsInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const stand = validatedUuid(standId, "standId");
+      return masterDataCommand("PUT", getSetOccStandRequiredPermitsUrl(stand), normalizedStandRequiredPermits(input),
+        idempotencyKey, options, (value): value is MasterStandData => isMasterStand(value, stand));
+    },
+    async applyOccStandRequiredPermits(input: ApplyStandRequiredPermitsInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedStandRequiredPermitsBatch(input);
+      // The answer lists the stands of the request, each one as master data shows it.
+      return masterDataCommand("POST", getApplyOccStandRequiredPermitsUrl(), body, idempotencyKey, options,
+        (value): value is StandRequiredPermitsBatchData => isMasterStandBatch(value, body.standIds));
+    },
+    async listHumanResourcesPermitTypes(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListHumanResourcesPermitTypesUrl(), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isPermitTypeSettings(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createHumanResourcesPermitType(input: CreatePermitTypeInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedPermitTypeCreate(input);
+      const created = await masterDataCommand("POST", getCreateHumanResourcesPermitTypeUrl(), body, idempotencyKey, options,
+        (value): value is PermitTypeSettingData => isPermitTypeSetting(value));
+      if (created.code !== body.code || created.isSystem) throw malformedResponse(201);
+      return created;
+    },
+    async updateHumanResourcesPermitType(permitTypeId: string, input: UpdatePermitTypeInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const type = validatedUuid(permitTypeId, "permitTypeId");
+      return masterDataCommand("PUT", getUpdateHumanResourcesPermitTypeUrl(type), normalizedPermitTypeUpdate(input),
+        idempotencyKey, options, (value): value is PermitTypeSettingData => isPermitTypeSetting(value, type));
+    },
+    async listHumanResourcesEquipmentTypes(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListHumanResourcesEquipmentTypesUrl(), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isEquipmentTypeSettings(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createHumanResourcesEquipmentType(input: CreateEquipmentTypeInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedEquipmentTypeCreate(input);
+      const created = await masterDataCommand("POST", getCreateHumanResourcesEquipmentTypeUrl(), body, idempotencyKey,
+        options, (value): value is EquipmentTypeSettingData => isEquipmentTypeSetting(value));
+      if (created.code !== body.code) throw malformedResponse(201);
+      return created;
+    },
+    async updateHumanResourcesEquipmentType(equipmentTypeId: string, input: UpdateEquipmentTypeInput,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const type = validatedUuid(equipmentTypeId, "equipmentTypeId");
+      return masterDataCommand("PUT", getUpdateHumanResourcesEquipmentTypeUrl(type), normalizedEquipmentTypeUpdate(input),
+        idempotencyKey, options, (value): value is EquipmentTypeSettingData => isEquipmentTypeSetting(value, type));
     },
     async listOccReadyContracts(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
       const station = validatedUuid(stationId, "stationId");

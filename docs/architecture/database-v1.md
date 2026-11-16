@@ -374,6 +374,15 @@ ni DML. Es el identificador que Superadministración registra en la ficha del
 catálogo y que la solicitud pública precarga; no forma parte de la identidad
 verificada de la ficha. El seed no lo escribe.
 
+`20261116203927_AddPermitTypesAndStandRequiredPermits` (ADR-0045) añade dos tablas, sin `HasData` ni DML:
+- `ref.permit_document_types`: los tipos de carnet que agrega Gestión Humana, con código único, nombre, descripción
+  opcional, `is_active` y `row_version`. Los dos tipos del sistema siguen en código.
+- `ref.stand_required_permits`: los carnets que exige una posición, con `stand_id` (FK `NO ACTION`) y
+  `document_type_code`, únicos por par.
+
+`hr.airport_permit_cycles.document_type` no cambia: sigue siendo `nvarchar(32)` y guarda el código de un tipo del
+sistema o de un tipo personalizado.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;

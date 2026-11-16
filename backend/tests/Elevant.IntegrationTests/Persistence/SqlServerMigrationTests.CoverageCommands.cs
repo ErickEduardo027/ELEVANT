@@ -51,7 +51,7 @@ public sealed partial class SqlServerMigrationTests
                         RampAgentId = agent, TerminalId = terminal, ValidFrom = new DateOnly(2026, 1, 1),
                     });
             }
-            foreach (var type in new[] { PermitDocumentType.AirportId, PermitDocumentType.RampDriverLicense })
+            foreach (var type in new[] { PermitDocumentTypes.AirportId, PermitDocumentTypes.RampDriverLicense })
                 context.AirportPermitCycles.Add(new AirportPermitCycle
                 {
                     PublicId = Guid.CreateVersion7(), RampAgentId = agent, DocumentType = type, CycleNumber = 1,
@@ -157,7 +157,7 @@ public sealed partial class SqlServerMigrationTests
         // Xavier's airport card expired the day before: he never receives the flight, and Riley may not work terminal B.
         await using (var expire = CreateContext(connection))
             await expire.AirportPermitCycles.Where(item => item.RampAgentId == xavier.Agent &&
-                    item.DocumentType == PermitDocumentType.AirportId)
+                    item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.ExpiresOn, day.AddDays(-1)), ct);
         Assert.Null((await Move(flight, "B01")).Failure);
         Assert.Null(await AgentOf(operation));
@@ -175,7 +175,7 @@ public sealed partial class SqlServerMigrationTests
         // With his card renewed, the flight back in A01 for Riley follows Xavier to B01.
         await using (var renew = CreateContext(connection))
             await renew.AirportPermitCycles.Where(item => item.RampAgentId == xavier.Agent &&
-                    item.DocumentType == PermitDocumentType.AirportId)
+                    item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.ExpiresOn, new DateOnly(2099, 12, 31)), ct);
         Assert.Null((await Move(flight, "A01")).Failure);
         Assert.True((await AssignThroughPlanningAsync(provider, flight, RileyProfile, ct)).IsSuccess);
@@ -195,7 +195,7 @@ public sealed partial class SqlServerMigrationTests
         await AddRampShiftAsync(connection, xavier.Agent, night, "A", 20, 4, ct);
         await using (var expire = CreateContext(connection))
             await expire.AirportPermitCycles.Where(item => item.RampAgentId == xavier.Agent &&
-                    item.DocumentType == PermitDocumentType.AirportId)
+                    item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.ExpiresOn, night), ct);
         var overnight = await Cover(xavier.Profile, terminalA, stands["A03"], night, LocalAt(night, 21), LocalAt(night, 27));
         Assert.Equal(PositionCoverageFailure.Rejected, overnight.Failure);

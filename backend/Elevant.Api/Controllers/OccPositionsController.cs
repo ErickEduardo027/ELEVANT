@@ -197,7 +197,7 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
         board.Positions.Select(position => new OccPositionResponse(position.StandId, position.Code, position.TerminalCode,
             position.StandType, position.Status, position.Turnarounds.Select(Turnaround).ToArray(), position.Latitude,
             position.Longitude, position.HasBoardingBridge, position.IsRemote, position.MaxAircraftSize, position.CancelledBy,
-            position.NarrowbodyOnly, position.CoveredBy ?? [])).ToArray(),
+            position.NarrowbodyOnly, position.CoveredBy ?? [], position.RequiredPermits)).ToArray(),
         board.Unassigned.Select(Turnaround).ToArray(), board.CanAssign);
 
     private static OccPositionTurnaroundResponse Turnaround(OccPositionTurnaroundData item) => new(item.TurnaroundId,

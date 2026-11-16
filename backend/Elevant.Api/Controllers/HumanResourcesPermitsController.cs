@@ -80,12 +80,13 @@ public sealed class HumanResourcesPermitsController(
     {
         query = null!;
         if (rampProfileId == Guid.Empty || search?.Length > 100) return false;
-        PermitDocumentType? type = null;
+        // ADR-0045: a system code or a custom permit type's code (an unknown one simply matches nothing).
+        string? type = null;
         if (documentType is not null)
         {
-            if (documentType is not (nameof(PermitDocumentType.AirportId) or
-                nameof(PermitDocumentType.RampDriverLicense))) return false;
-            type = Enum.Parse<PermitDocumentType>(documentType);
+            if (!PermitDocumentTypes.IsSystem(documentType) && PermitDocumentTypes.CustomCode(documentType) != documentType)
+                return false;
+            type = documentType;
         }
         DocumentValidity? parsed = null;
         if (validity is not null)

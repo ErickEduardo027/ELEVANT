@@ -6,7 +6,7 @@ namespace Elevant.Application.Abstractions.Operations;
 /// <c>approved_absence</c>, <c>airport_id_not_current</c>, <c>ramp_driver_license_not_current</c>).
 /// </summary>
 public sealed record OccUnfitAssignmentData(Guid AssignmentId, Guid TurnaroundId, Guid AgentId,
-    IReadOnlyList<string> Reasons);
+    IReadOnlyList<string> Reasons, IReadOnlyList<string>? MissingPermits = null);
 
 /// <summary>The unfit assignments of a station's operations on one date; fit ones are not listed.</summary>
 public sealed record OccAssignmentReadinessData(Guid StationId, DateOnly Date,

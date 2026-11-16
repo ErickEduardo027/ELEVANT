@@ -398,6 +398,17 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
         public Task<MasterDataResult<MasterAircraftTypeData>> UpdateAircraftTypeAsync(Guid actorId, Guid aircraftTypeId,
             UpdateAircraftTypeInput input, Guid idempotencyKey, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<MasterDataResult<MasterStandData>> SetStandRequiredPermitsAsync(Guid actorId, Guid standId,
+            SetStandRequiredPermitsInput input, Guid idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            LastKey = idempotencyKey;
+            return Task.FromResult(StandResult);
+        }
+
+        public Task<MasterDataResult<StandRequiredPermitsBatchData>> ApplyStandRequiredPermitsAsync(Guid actorId,
+            ApplyStandRequiredPermitsInput input, Guid idempotencyKey, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FeedStub : IOccFlightFeedStore

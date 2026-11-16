@@ -71,6 +71,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
 
+    public DbSet<PermitTypeDefinition> PermitTypeDefinitions => Set<PermitTypeDefinition>();
+
+    public DbSet<StandRequiredPermit> StandRequiredPermits => Set<StandRequiredPermit>();
+
     public DbSet<AircraftType> AircraftTypes => Set<AircraftType>();
 
     public DbSet<OperationalPosition> OperationalPositions => Set<OperationalPosition>();

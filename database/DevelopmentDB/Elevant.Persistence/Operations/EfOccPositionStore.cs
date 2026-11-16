@@ -505,6 +505,9 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             stands.FirstOrDefault(stand => stand.Id == item.StandId)?.Code ?? "", null)).ToArray();
         var cancelled = StandConstraintPolicy.CancelledStands(occupiedNow, rules);
         var limited = StandConstraintPolicy.NarrowbodyLimited(occupiedNow, rules);
+        // ADR-0045: the permits each stand requires, named for the stand's detail («Exige: …»).
+        var required = await EfOccPlanningReadStore.RequiredPermitsAsync(context, stands.Select(stand => stand.Id).ToArray(),
+            cancellationToken);
         var positions = stands.Select(stand =>
         {
             var parked = occupying.Where(item => item.StandId == stand.Id).Select(item => Map(item.TurnaroundId))
@@ -514,7 +517,8 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 stand.Latitude, stand.Longitude, stand.HasBoardingBridge, stand.IsRemote, stand.MaxAircraftSize?.ToString(),
                 cancelled.GetValueOrDefault(stand.Id),
                 stand.MaxAircraftSize == AircraftSizeCategory.Narrowbody || limited.Contains(stand.Id),
-                coverage[stand.Id].Distinct().ToArray());
+                coverage[stand.Id].Distinct().ToArray(),
+                required.TryGetValue(stand.Id, out var permits) ? permits.Select(item => item.Name).ToArray() : null);
         }).ToArray();
         var unassigned = turnarounds.Where(item => !assignmentOf.ContainsKey(item.Id) && !departed.Contains(item.Id) &&
                 item.CurrentStatus is not (TurnaroundStatus.Completed or TurnaroundStatus.Diverted))

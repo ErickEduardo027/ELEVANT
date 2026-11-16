@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -42,7 +43,7 @@ internal sealed class EfOccAssignmentReadinessStore(ElevantDbContext context, IA
                                  operation.CurrentStatus == GroundOperationStatus.Returned)
                           orderby turnaround.OperationCode, assignment.AssignedAt
                           select new { AssignmentId = assignment.PublicId, TurnaroundId = turnaround.PublicId,
-                              AgentKey = agent.Id, AgentId = agent.PublicId, agent.IsActive })
+                              TurnaroundKey = turnaround.Id, AgentKey = agent.Id, AgentId = agent.PublicId, agent.IsActive })
             .ToArrayAsync(cancellationToken);
         if (rows.Length == 0)
             return new OccAssignmentReadinessResult(new OccAssignmentReadinessData(stationId, operationDate, []), null);
@@ -60,6 +61,14 @@ internal sealed class EfOccAssignmentReadinessStore(ElevantDbContext context, IA
                     cycle.ExpiresOn >= operationDate)
                 .Select(cycle => new { cycle.RampAgentId, cycle.DocumentType }).Distinct().ToArrayAsync(cancellationToken))
             .Select(cycle => (cycle.RampAgentId, cycle.DocumentType)).ToHashSet();
+        // ADR-0045: the permits the flight's current stand requires.
+        var turnaroundKeys = rows.Select(row => row.TurnaroundKey).Distinct().ToArray();
+        var standOf = (await context.Set<Elevant.Domain.Entities.Operations.StandAssignment>().AsNoTracking()
+                .Where(item => turnaroundKeys.Contains(item.TurnaroundId) && item.AssignedTo == null)
+                .Select(item => new { item.TurnaroundId, item.StandId }).ToArrayAsync(cancellationToken))
+            .GroupBy(item => item.TurnaroundId).ToDictionary(group => group.Key, group => group.First().StandId);
+        var required = await EfOccPlanningReadStore.RequiredPermitsAsync(context, standOf.Values.ToArray(),
+            cancellationToken);
 
         var unfit = new List<OccUnfitAssignmentData>();
         foreach (var row in rows)
@@ -67,12 +76,19 @@ internal sealed class EfOccAssignmentReadinessStore(ElevantDbContext context, IA
             var reasons = new List<string>(4);
             if (!row.IsActive) reasons.Add("agent_inactive");
             if (absent.Contains(row.AgentKey)) reasons.Add("approved_absence");
-            if (!current.Contains((row.AgentKey, PermitDocumentType.AirportId)))
+            if (!current.Contains((row.AgentKey, PermitDocumentTypes.AirportId)))
                 reasons.Add("airport_id_not_current");
-            if (!current.Contains((row.AgentKey, PermitDocumentType.RampDriverLicense)))
+            if (!current.Contains((row.AgentKey, PermitDocumentTypes.RampDriverLicense)))
                 reasons.Add("ramp_driver_license_not_current");
+            var missing = standOf.TryGetValue(row.TurnaroundKey, out var standId) &&
+                          required.TryGetValue(standId, out var permits)
+                ? RequiredPermitRules.Missing(permits, current.Where(item => item.RampAgentId == row.AgentKey)
+                    .Select(item => item.DocumentType).ToArray())
+                : [];
+            if (missing.Count > 0) reasons.Add("required_permit_missing");
             if (reasons.Count > 0)
-                unfit.Add(new OccUnfitAssignmentData(row.AssignmentId, row.TurnaroundId, row.AgentId, reasons));
+                unfit.Add(new OccUnfitAssignmentData(row.AssignmentId, row.TurnaroundId, row.AgentId, reasons,
+                    missing.Count == 0 ? null : missing.Select(permit => permit.Name).ToArray()));
         }
         return new OccAssignmentReadinessResult(new OccAssignmentReadinessData(stationId, operationDate, unfit), null);
     }

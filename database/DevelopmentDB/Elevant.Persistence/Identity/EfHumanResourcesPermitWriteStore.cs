@@ -41,7 +41,7 @@ internal sealed class EfHumanResourcesPermitWriteStore(
         var actorDatabaseId = await context.Users.AsNoTracking()
             .Where(user => user.PublicId == actorId).Select(user => user.Id)
             .SingleAsync(cancellationToken);
-        var documentType = Enum.Parse<PermitDocumentType>(input.DocumentType);
+        var documentType = input.DocumentType;
         var strategy = context.Database.CreateExecutionStrategy();
         try
         {
@@ -57,6 +57,13 @@ internal sealed class EfHumanResourcesPermitWriteStore(
                 if (existing is not null)
                     return await ReplayAsync(existing, actorDatabaseId, input,
                         cancellationToken);
+
+                // ADR-0045: a custom permit type takes new cycles only while it is active in the catalog.
+                if (!PermitDocumentTypes.IsSystem(documentType) &&
+                    !await context.PermitTypeDefinitions.AsNoTracking().AnyAsync(type =>
+                        type.Code == documentType && type.IsActive, cancellationToken))
+                    return HumanResourcesPermitWriteResult.Failed(
+                        HumanResourcesPermitWriteFailure.Invalid);
 
                 var agent = await context.RampAgents.AsNoTracking()
                     .SingleOrDefaultAsync(item => item.PublicId == input.RampProfileId,
@@ -182,8 +189,8 @@ internal sealed class EfHumanResourcesPermitWriteStore(
 
     private static bool Valid(RecordHumanResourcesPermitInput input, DateOnly today) =>
         input.RampProfileId != Guid.Empty &&
-        (input.DocumentType is nameof(PermitDocumentType.AirportId) or
-            nameof(PermitDocumentType.RampDriverLicense)) &&
+        (PermitDocumentTypes.IsSystem(input.DocumentType) ||
+            PermitDocumentTypes.CustomCode(input.DocumentType) == input.DocumentType) &&
         input.ExpectedCurrentId != Guid.Empty &&
         !string.IsNullOrWhiteSpace(input.DocumentNumber) &&
         input.DocumentNumber.Trim().Length is >= 2 and <= 64 &&

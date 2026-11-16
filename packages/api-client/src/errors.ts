@@ -92,7 +92,14 @@ const STATION_CODES = ["station_code_taken", "airport_has_station", "airport_ica
  */
 const MASTER_DATA_CODES = ["terminal_code_taken", "stand_code_taken", "aircraft_type_code_taken", "invalid_terminal",
   "invalid_stand", "invalid_aircraft_type", "terminal_in_use", "stand_in_use", "aircraft_type_in_use",
-  "terminal_code_locked", "stand_code_locked", "terminal_inactive"] as const;
+  "terminal_code_locked", "stand_code_locked", "terminal_inactive",
+  // ADR-0045: the permits a stand requires (a malformed or unknown code, or more than ten).
+  "invalid_required_permits"] as const;
+/**
+ * Gestión Humana › Configuración (ADR-0045): invalid data, a code another type holds (a system one included), a code
+ * a cycle, a stand or a qualification uses, and a type the platform defines (the system permits, the boarding bridge).
+ */
+const HUMAN_RESOURCES_SETTINGS_CODES = ["invalid_settings", "code_taken", "code_in_use", "system_type_locked"] as const;
 /**
  * Flight feed review (phase 2, block C): the view and the import of a pair, a carrier whose contract at the station
  * is suspended or expired (2-N16), a charter without contract (2-B, ADR-0033) and the restore of a dismissed
@@ -256,7 +263,8 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
   (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number] |
   (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number] | (typeof FINANCE_SIMPLIFICATION_CODES)[number] |
   (typeof CARD_PAYMENT_CODES)[number] | (typeof DEMO_FLIGHT_CODES)[number] | (typeof OCC_MAP_CODES)[number] |
-  (typeof OCC_WEATHER_CODES)[number] | (typeof AVIATION_REFERENCE_CODES)[number];
+  (typeof OCC_WEATHER_CODES)[number] | (typeof AVIATION_REFERENCE_CODES)[number] |
+  (typeof HUMAN_RESOURCES_SETTINGS_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
@@ -264,7 +272,7 @@ export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["passwor
   ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
   ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES, ...INVOICING_CODES, ...TREASURY_CODES,
   ...FINANCE_SIMPLIFICATION_CODES, ...CARD_PAYMENT_CODES, ...DEMO_FLIGHT_CODES, ...OCC_MAP_CODES, ...OCC_WEATHER_CODES,
-  ...AVIATION_REFERENCE_CODES];
+  ...AVIATION_REFERENCE_CODES, ...HUMAN_RESOURCES_SETTINGS_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
@@ -295,7 +303,9 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // mentor_required are listed above).
   "stand_not_located", "stand_not_covered", "mobile_account_unavailable", "station_scope_missing",
   "operational_position_unavailable", "qualification_not_current", "airport_id_not_current",
-  "ramp_driver_license_not_current", "shift_not_compatible", "approved_absence", "assignment_conflict"] as const;
+  "ramp_driver_license_not_current", "shift_not_compatible", "approved_absence", "assignment_conflict",
+  // A stand requires a permit the agent holds no current cycle of (ADR-0045); `missingPermits` names it.
+  "required_permit_missing"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {
@@ -305,6 +315,7 @@ interface ElevantApiErrorOptions {
   readonly traceId?: string | null | undefined;
   readonly code?: ElevantApiErrorCode | undefined;
   readonly reasons?: readonly unknown[] | undefined;
+  readonly missingPermits?: readonly unknown[] | undefined;
 }
 
 function safeMetadata(value: string | null | undefined, maximumLength: number) {
@@ -330,6 +341,8 @@ export class ElevantApiError extends Error {
   readonly code: ElevantApiErrorCode | undefined;
   /** Known rule codes only; anything else the server sent is dropped. */
   readonly reasons: readonly ElevantRuleReason[];
+  /** The names of the permits a stand requires that the agent lacks (`required_permit_missing`, ADR-0045). */
+  readonly missingPermits: readonly string[];
 
   constructor(options: ElevantApiErrorOptions) {
     const message =
@@ -348,6 +361,9 @@ export class ElevantApiError extends Error {
     this.code = options.code;
     this.reasons = [...new Set((options.reasons ?? []).filter((reason): reason is ElevantRuleReason =>
       ELEVANT_RULE_REASONS.includes(reason as ElevantRuleReason)))];
+    this.missingPermits = [...new Set((options.missingPermits ?? []).slice(0, 10)
+      .map(name => safeMetadata(typeof name === "string" ? name : undefined, 160))
+      .filter((name): name is string => name !== undefined))];
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

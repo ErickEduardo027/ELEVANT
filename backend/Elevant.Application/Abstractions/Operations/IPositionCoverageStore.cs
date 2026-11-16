@@ -55,6 +55,9 @@ public sealed record StandConstraintInput(Guid StandId, Guid AffectedStandId, st
 public sealed record CoverageResult(CoverageBoardData? Board, PositionCoverageFailure? Failure, IReadOnlyList<string> Reasons,
     string? Code = null)
 {
+    /// <summary>The names of the permits the stands require that the agent lacks (<c>required_permit_missing</c>, ADR-0045).</summary>
+    public IReadOnlyList<string> MissingPermits { get; init; } = [];
+
     public static CoverageResult Fail(PositionCoverageFailure failure, IReadOnlyList<string>? reasons = null,
         string? code = null) =>
         new(null, failure, reasons ?? [], code);

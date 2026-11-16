@@ -107,6 +107,7 @@ export function standCharacteristics(position, layout = null) {
     overlaps: (Array.isArray(layoutStand?.overlaps) ? layoutStand.overlaps : []).map(normalizeStandCode).filter(Boolean),
     origin: locationOrigin(position),
     coveredBy: Array.isArray(position.coveredBy) ? cleanNames(position.coveredBy) : null,
+    requiredPermits: cleanNames(position.requiredPermits),
   };
 }
 

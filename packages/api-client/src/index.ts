@@ -11,6 +11,7 @@ export * from "./catalog";
 export * from "./contractDocuments";
 export * from "./airlinePermits";
 export * from "./masterData";
+export * from "./permitSettings";
 export * from "./demoFlights";
 export * from "./occMap";
 export * from "./aviationReference";

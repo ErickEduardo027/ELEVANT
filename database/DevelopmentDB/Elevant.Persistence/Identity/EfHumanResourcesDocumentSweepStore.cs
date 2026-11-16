@@ -43,10 +43,11 @@ internal sealed class EfHumanResourcesDocumentSweepStore(ElevantDbContext contex
                                  select new { cycle.PublicId, cycle.DocumentType, cycle.ExpiresOn, person.FirstName,
                                      person.LastName, agent.EmployeeNumber })
                 .ToArrayAsync(cancellationToken);
+            var permitNames = permits.Length == 0 ? null : await PermitTypeNames.LoadAsync(context, cancellationToken);
             foreach (var permit in permits)
                 await DepartmentNotificationWriter.NotifyAsync(context, Department.HumanResources,
                     "human_resources.permits.read", PermitKind, permit.PublicId,
-                    Subject(Label(permit.DocumentType), permit.FirstName, permit.LastName, permit.EmployeeNumber,
+                    Subject(PermitTypeNames.Name(permitNames!, permit.DocumentType), permit.FirstName, permit.LastName, permit.EmployeeNumber,
                         permit.ExpiresOn), now, cancellationToken);
             var qualifications = await (from cycle in context.QualificationCycles.AsNoTracking()
                                         join type in context.EquipmentTypes.AsNoTracking() on cycle.EquipmentTypeId equals type.Id
@@ -76,13 +77,6 @@ internal sealed class EfHumanResourcesDocumentSweepStore(ElevantDbContext contex
             return new HumanResourcesDocumentSweepResult(announced, assignments);
         });
     }
-
-    private static string Label(PermitDocumentType type) => type switch
-    {
-        PermitDocumentType.AirportId => "Carnet aeroportuario",
-        PermitDocumentType.RampDriverLicense => "Licencia de conducir en rampa",
-        _ => "Documento",
-    };
 
     private static string Subject(string document, string firstName, string lastName, string employeeNumber,
         DateOnly expiresOn) =>

@@ -30,6 +30,15 @@ describe('coverage errors (ADR-0030)', () => {
     expect(describeReasons(error.reasons)).toEqual(['Supera el máximo de posiciones por agente de esta terminal.']);
   });
 
+  it('names the permit a stand requires that the agent lacks (ADR-0045)', () => {
+    const error = translateCoverageError({ status: 422, code: 'coverage_rejected', reasons: ['required_permit_missing'],
+      missingPermits: ['Carnet de zona restringida'] });
+    expect(error.reasons).toEqual(['required_permit_missing']);
+    expect(describeReasons(error.reasons, error.missingPermits)).toEqual(['Le falta: Carnet de zona restringida.']);
+    expect(describeReasons(['required_permit_missing'])).toEqual(
+      ['Le falta un carnet que exige la posición, vigente hasta el final del horario.']);
+  });
+
   it('says why a stand in use cannot be deactivated from Configuración (2-A)', () => {
     const error = translateCoverageError({ status: 422, code: 'stand_in_use', reasons: ['stand_in_use'] });
     expect(error.message).toBe('La posición tiene vuelos sin terminar o coberturas abiertas: no se puede desactivar.');

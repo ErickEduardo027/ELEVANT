@@ -140,7 +140,7 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
             $"/api/v1/human-resources/permits?page=1&limit=1&rampProfileId={filteredAgentId:D}&documentType=AirportId",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
-        Assert.Equal((AccountId, 1, 1, filteredAgentId, PermitDocumentType.AirportId),
+        Assert.Equal((AccountId, 1, 1, filteredAgentId, PermitDocumentTypes.AirportId),
             stub.FilterRequest);
     }
 
@@ -191,7 +191,7 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
     {
         public HumanResourcesPermitPage? Data { get; init; }
         public (Guid AccountId, int Page, int Limit)? Request { get; private set; }
-        public (Guid AccountId, int Page, int Limit, Guid AgentId, PermitDocumentType DocumentType)?
+        public (Guid AccountId, int Page, int Limit, Guid AgentId, string DocumentType)?
             FilterRequest { get; private set; }
 
         public Task<HumanResourcesPermitPage?> ListCurrentAsync(Guid actorId, int page,
@@ -202,7 +202,7 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
         }
 
         public Task<HumanResourcesPermitPage?> ListCurrentAsync(Guid actorId, int page,
-            int limit, Guid rampProfileId, PermitDocumentType documentType,
+            int limit, Guid rampProfileId, string documentType,
             CancellationToken cancellationToken = default)
         {
             FilterRequest = (actorId, page, limit, rampProfileId, documentType);
@@ -213,7 +213,7 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
             int limit, HumanResourcesPermitQuery query, CancellationToken cancellationToken = default)
         {
             Request = (actorId, page, limit);
-            if (query.RampProfileId is Guid agentId && query.DocumentType is PermitDocumentType type)
+            if (query.RampProfileId is Guid agentId && query.DocumentType is string type)
                 FilterRequest = (actorId, page, limit, agentId, type);
             return Task.FromResult(Data);
         }

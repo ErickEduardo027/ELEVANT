@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "ecb033695c43a3b64d375f11e15e92f03c924d995492cbc30a684d9c971eaabb",
+        "sha256": "66e15f5f5626c31df44aad219f5d34fc362994f23e4399f85b5f6ef345d05e81",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "02eb25b8383ec4361c00c08f685fb3c800f499c1e24040e285bb2276c99da046",
+        "sha256": "68134697f90bf8c25a08d11d2b62e5ba43d8ba408d9a7cfc9e25cb77598ed7ae",
         "title": null,
         "version": null
       }
@@ -1520,6 +1520,12 @@
         "name": "AddAirlineProfileTaxRegistration",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261116145344_AddAirlineProfileTaxRegistration.cs",
         "sha256": "301da6a56121fc1705e378ae30de7d7daf6c85aaefbc7a237bba97911286cba8"
+      },
+      {
+        "id": "20261116203927",
+        "name": "AddPermitTypesAndStandRequiredPermits",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261116203927_AddPermitTypesAndStandRequiredPermits.cs",
+        "sha256": "4a2b58f3778f975b244bb2a1dd2cde541838ecd5366b132092f51cf681e9fd66"
       }
     ],
     "manifestContracts": [

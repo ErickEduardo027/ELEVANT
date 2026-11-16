@@ -59,7 +59,7 @@ const shiftWindow = (start, end, locale) =>
 /** What a refused command breaks: the amber slab with its triangle, the service's sentence and each broken rule. */
 function Reasons({ error }) {
   if (!error) return null;
-  const reasons = describeReasons(error.reasons);
+  const reasons = describeReasons(error.reasons, error.missingPermits);
   return (
     <div role="alert" className="flex items-start gap-2 rounded-md border border-occ-line bg-occ-warn-soft px-3 py-2 text-sm text-occ-text">
       <OccGlyph name="attention" className="mt-0.5" />

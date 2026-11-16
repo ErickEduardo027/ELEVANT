@@ -116,6 +116,8 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                 .Select(item => new { item.Id, item.PublicId, item.Code, item.IsActive, item.TerminalId, item.HasBoardingBridge })
                 .ToArrayAsync(cancellationToken);
             if (stands.Length != standIds.Length) return (CoverageResult.Fail(PositionCoverageFailure.NotFound), Guid.Empty);
+            var requiredPermits = await EfOccPlanningReadStore.RequiredPermitsAsync(context,
+                stands.Select(item => item.Id).ToArray(), cancellationToken);
 
             var zone = BusinessCalendar.Zone(scope.TimeZone);
             var shift = await ShiftWindowAsync(agent.Id, scope.StationId, input.Date, zone, cancellationToken);
@@ -153,11 +155,13 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                 new CoverageTerminalRules(terminal.MaxStandsPerAgent ?? PositionCoveragePolicy.DefaultMaxStandsPerAgent,
                     terminal.RequiresBridgeQualification),
                 stands.Select(item => new CoverageStandFacts(item.PublicId, item.Code, item.IsActive,
-                    item.TerminalId == terminal.Id, item.HasBoardingBridge)).ToArray(),
+                    item.TerminalId == terminal.Id, item.HasBoardingBridge, requiredPermits.GetValueOrDefault(item.Id)))
+                    .ToArray(),
                 new CoverageAgentFacts(agent.IsActive, agent.HireDate, facts.AirportPermit.Contains(agent.Id),
                     facts.DriverLicense.Contains(agent.Id), facts.BridgeQualified.Contains(agent.Id),
                     shift is not null && shift.StartsAt <= startsAt && endsAt <= shift.EndsAt,
-                    facts.Absent.Contains(agent.Id), agentOverlap, terminalScope),
+                    facts.Absent.Contains(agent.Id), agentOverlap, terminalScope,
+                    facts.PermitCodes[agent.Id].ToHashSet(StringComparer.Ordinal)),
                 mentor is null ? null : new CoverageMentorFacts(mentor.IsActive, mentor.HireDate,
                     mentorShift is not null && mentorShift.StartsAt <= startsAt && endsAt <= mentorShift.EndsAt,
                     facts.Absent.Contains(mentor.Id), facts.AirportPermit.Contains(mentor.Id)),
@@ -165,7 +169,11 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                 overlaps.Select(item => new CoverageStandOverlap(item.PublicId, item.Code,
                     item.RampAgentId == mentor?.Id || item.MentorRampAgentId == agent.Id)).ToArray());
             var reasons = PositionCoveragePolicy.Evaluate(candidate);
-            if (reasons.Count > 0) return (CoverageResult.Fail(PositionCoverageFailure.Rejected, reasons), Guid.Empty);
+            if (reasons.Count > 0)
+                return (CoverageResult.Fail(PositionCoverageFailure.Rejected, reasons) with
+                {
+                    MissingPermits = PositionCoveragePolicy.MissingPermits(candidate).Select(item => item.Name).ToArray(),
+                }, Guid.Empty);
 
             var now = Now();
             var coverage = new PositionCoverage
@@ -634,13 +642,14 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
         GroundOperation operation, DateTimeOffset from, DateTimeOffset until, IReadOnlyCollection<long>? onlyAgentIds,
         CancellationToken cancellationToken)
     {
-        var terminalId = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
-                                join stand in context.Stands.AsNoTracking() on assignment.StandId equals stand.Id
-                                where assignment.TurnaroundId == target.TurnaroundId && assignment.AssignedTo == null
-                                select stand.TerminalId).FirstOrDefaultAsync(cancellationToken);
+        var stand = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
+                           join item in context.Stands.AsNoTracking() on assignment.StandId equals item.Id
+                           where assignment.TurnaroundId == target.TurnaroundId && assignment.AssignedTo == null
+                           select new { StandId = (long?)item.Id, item.TerminalId }).FirstOrDefaultAsync(cancellationToken);
+        // ADR-0045: the agent who receives it needs the permits the flight's stand requires.
         return await new EfOccPlanningReadStore(context, timeProvider).BuildAgentCandidatesAsync(operation.Id,
-            target.StationId, terminalId, target.OperationDate, from, from, until, target.TimeZone, onlyAgentIds,
-            cancellationToken);
+            target.StationId, stand?.TerminalId, target.OperationDate, from, from, until, target.TimeZone, onlyAgentIds,
+            cancellationToken, stand?.StandId);
     }
 
     private sealed record OperationTarget(long OperationId, long TurnaroundId, Guid TurnaroundPublicId, Guid StationPublicId,
@@ -797,7 +806,7 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     private Dictionary<long, Guid> publicIds = [];
 
     private sealed record AgentFacts(HashSet<long> AirportPermit, HashSet<long> DriverLicense, HashSet<long> BridgeQualified,
-        HashSet<long> Absent);
+        HashSet<long> Absent, ILookup<long, string> PermitCodes);
 
     /// <summary>
     /// The documents current on <paramref name="date"/> and still on <paramref name="untilDate"/> (the local day a night
@@ -822,9 +831,9 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                               request.StartsOn <= date && request.EndsOn >= date)
             .Select(request => request.RampAgentId).Distinct().ToArrayAsync(cancellationToken);
         return new AgentFacts(
-            permits.Where(item => item.DocumentType == PermitDocumentType.AirportId).Select(item => item.RampAgentId).ToHashSet(),
-            permits.Where(item => item.DocumentType == PermitDocumentType.RampDriverLicense).Select(item => item.RampAgentId).ToHashSet(),
-            bridge.ToHashSet(), absent.ToHashSet());
+            permits.Where(item => item.DocumentType == PermitDocumentTypes.AirportId).Select(item => item.RampAgentId).ToHashSet(),
+            permits.Where(item => item.DocumentType == PermitDocumentTypes.RampDriverLicense).Select(item => item.RampAgentId).ToHashSet(),
+            bridge.ToHashSet(), absent.ToHashSet(), permits.ToLookup(item => item.RampAgentId, item => item.DocumentType));
     }
 
     private sealed record Window(DateTimeOffset StartsAt, DateTimeOffset EndsAt);

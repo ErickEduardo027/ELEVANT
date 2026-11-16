@@ -99,7 +99,7 @@ public sealed partial class SqlServerMigrationTests
         var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
         var seeded = Assert.Single((await permits.ListCurrentAsync(HumanResourcesAccount, 1, 10,
-            SeededRampAgentProfile, PermitDocumentType.AirportId, cancellationToken))!.Permits);
+            SeededRampAgentProfile, PermitDocumentTypes.AirportId, cancellationToken))!.Permits);
         var renewed = Guid.NewGuid();
         Assert.Null((await permitWrites.RecordAsync(HumanResourcesAccount, renewed,
             new RecordHumanResourcesPermitInput(SeededRampAgentProfile, "AirportId", seeded.Id, "DEV-AIRPORT-ID-2",
@@ -114,7 +114,7 @@ public sealed partial class SqlServerMigrationTests
             new HumanResourcesPermitQuery(today, Search: "DEV-AIRPORT-ID-2"), cancellationToken))!.Permits,
             item => item.Id == renewed && item.Validity == "Valid");
         var permitSummary = await permits.SummarizeAsync(HumanResourcesAccount,
-            new HumanResourcesPermitQuery(today, DocumentType: PermitDocumentType.AirportId), cancellationToken);
+            new HumanResourcesPermitQuery(today, DocumentType: PermitDocumentTypes.AirportId), cancellationToken);
         Assert.Equal(permitSummary!.Total,
             permitSummary.Valid + permitSummary.ExpiringSoon + permitSummary.Expired + permitSummary.Upcoming);
 

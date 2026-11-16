@@ -487,7 +487,8 @@ public sealed class OccPlanningController(
             agent.DisplayName,
             agent.EmployeeNumber,
             agent.Eligible,
-            agent.EligibilityReasons)).ToArray(),
+            agent.EligibilityReasons,
+            agent.MissingPermits)).ToArray(),
         options.IsCharter);
 
     private static ManualTurnaroundOptionsResponse Map(ManualTurnaroundOptionsData options) => new(

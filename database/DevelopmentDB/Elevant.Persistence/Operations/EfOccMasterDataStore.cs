@@ -47,12 +47,15 @@ internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorConte
         var standHistory = await MasterDataUsage.StandsWithHistoryAsync(context, station.Id, cancellationToken);
         var terminalHistory = await MasterDataUsage.TerminalsWithHistoryAsync(context, station.Id, standHistory, cancellationToken);
         var terminalIds = terminals.ToDictionary(item => item.Id, item => item.PublicId);
+        var required = await EfOccPlanningReadStore.RequiredPermitsAsync(context, stands.Select(item => item.Id).ToArray(),
+            cancellationToken);
         return MasterDataResult<OccMasterData>.Success(new OccMasterData(station.PublicId, station.Code,
             terminals.Select(item => TerminalItem(item, terminalHistory.Contains(item.Id))).ToArray(),
             stands.Select(item => StandItem(item, item.TerminalId is { } id ? terminalIds.GetValueOrDefault(id) : null,
-                standHistory.Contains(item.Id))).ToArray(),
+                standHistory.Contains(item.Id), required.GetValueOrDefault(item.Id))).ToArray(),
             types.Select(AircraftTypeItem).ToArray(),
-            actor!.HasPermission(CreatePermission), actor.HasPermission(UpdatePermission)));
+            actor!.HasPermission(CreatePermission), actor.HasPermission(UpdatePermission),
+            await PermitOptionsAsync(cancellationToken)));
     }
 
     public async Task<MasterDataResult<MasterTerminalData>> CreateTerminalAsync(Guid actorId, CreateTerminalInput input,
@@ -345,6 +348,138 @@ internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorConte
             }, AircraftTypeAsync, cancellationToken);
     }
 
+    public async Task<MasterDataResult<MasterStandData>> SetStandRequiredPermitsAsync(Guid actorId, Guid standId,
+        SetStandRequiredPermitsInput input, Guid idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!Allowed(actor, UpdatePermission)) return MasterDataResult<MasterStandData>.Failed(MasterDataFailure.Forbidden, "forbidden");
+        if (idempotencyKey == Guid.Empty) return MasterDataResult<MasterStandData>.Failed(MasterDataFailure.Invalid, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(input.ExpectedVersion))
+            return MasterDataResult<MasterStandData>.Failed(MasterDataFailure.Invalid, "expected_version_required");
+        var codes = RequiredCodes(input.DocumentTypeCodes);
+        if (codes is null) return MasterDataResult<MasterStandData>.Failed(MasterDataFailure.Invalid, InvalidRequiredPermitsCode);
+        var target = await context.Stands.AsNoTracking().Where(item => item.PublicId == standId)
+            .Select(item => (long?)item.StationId).SingleOrDefaultAsync(cancellationToken);
+        var station = target is { } stationId ? await StationAsync(actor!, stationId, cancellationToken) : null;
+        if (station is null) return MasterDataResult<MasterStandData>.Failed(MasterDataFailure.NotFound, "not_found");
+        var accountId = await AccountIdAsync(actorId, cancellationToken);
+        var hash = CommercialCommandReceipts.Hash(new { standId, codes, expected = input.ExpectedVersion });
+        var now = Now();
+        return await MasterDataCommand.RunAsync(context, idempotencyKey, accountId, "occ.stand.required_permits", hash,
+            "version_conflict", now, async () =>
+            {
+                if (!await CodesAvailableAsync(codes, cancellationToken))
+                    return Step.Fail(MasterDataFailure.Invalid, InvalidRequiredPermitsCode);
+                var stand = await context.Stands.SingleAsync(item => item.PublicId == standId, cancellationToken);
+                if (MasterDataCommand.Version(stand.RowVersion) != input.ExpectedVersion)
+                    return Step.Fail(MasterDataFailure.Conflict, "version_conflict");
+                await ReplaceRequiredPermitsAsync(stand, codes, station.Id, accountId, now, cancellationToken);
+                await OccPlanningChangeWriter.AddForStationAsync(context, station.Id, station.PublicId, now, cancellationToken);
+                await context.SaveChangesAsync(cancellationToken);
+                return Step.Done(stand.PublicId);
+            }, StandAsync, cancellationToken);
+    }
+
+    public async Task<MasterDataResult<StandRequiredPermitsBatchData>> ApplyStandRequiredPermitsAsync(Guid actorId,
+        ApplyStandRequiredPermitsInput input, Guid idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!Allowed(actor, UpdatePermission))
+            return MasterDataResult<StandRequiredPermitsBatchData>.Failed(MasterDataFailure.Forbidden, "forbidden");
+        if (idempotencyKey == Guid.Empty)
+            return MasterDataResult<StandRequiredPermitsBatchData>.Failed(MasterDataFailure.Invalid, "idempotency_key_required");
+        var codes = RequiredCodes(input.DocumentTypeCodes);
+        var standIds = input.StandIds?.Distinct().Order().ToArray() ?? [];
+        if (codes is null || standIds.Length is 0 or > MaxStandsPerBatch || standIds.Contains(Guid.Empty))
+            return MasterDataResult<StandRequiredPermitsBatchData>.Failed(MasterDataFailure.Invalid, InvalidRequiredPermitsCode);
+        var station = await StationAsync(actor!, input.StationId, cancellationToken);
+        if (station is null) return MasterDataResult<StandRequiredPermitsBatchData>.Failed(MasterDataFailure.NotFound, "not_found");
+        var accountId = await AccountIdAsync(actorId, cancellationToken);
+        var hash = CommercialCommandReceipts.Hash(new { input.StationId, standIds, codes });
+        var now = Now();
+        return await MasterDataCommand.RunAsync(context, idempotencyKey, accountId, "occ.stand.required_permits_batch", hash,
+            "version_conflict", now, async () =>
+            {
+                if (!await CodesAvailableAsync(codes, cancellationToken))
+                    return Step.Fail(MasterDataFailure.Invalid, InvalidRequiredPermitsCode);
+                var stands = await context.Stands.Where(item => standIds.Contains(item.PublicId) && item.StationId == station.Id)
+                    .ToArrayAsync(cancellationToken);
+                if (stands.Length != standIds.Length) return Step.Fail(MasterDataFailure.NotFound, "not_found");
+                foreach (var stand in stands)
+                    await ReplaceRequiredPermitsAsync(stand, codes, station.Id, accountId, now, cancellationToken);
+                await OccPlanningChangeWriter.AddForStationAsync(context, station.Id, station.PublicId, now, cancellationToken);
+                await context.SaveChangesAsync(cancellationToken);
+                return Step.Done(station.PublicId);
+            }, async _ =>
+            {
+                var items = new List<MasterStandData>(standIds.Length);
+                foreach (var id in standIds)
+                    if (await StandAsync(id) is { } item) items.Add(item);
+                return new StandRequiredPermitsBatchData(items.OrderBy(item => item.Code, StringComparer.Ordinal).ToArray());
+            }, cancellationToken);
+    }
+
+    private const string InvalidRequiredPermitsCode = "invalid_required_permits";
+
+    private const int MaxRequiredPermits = 10;
+
+    private const int MaxStandsPerBatch = 200;
+
+    /// <summary>The distinct codes in a fixed order, or null when one is malformed or there are too many.</summary>
+    private static string[]? RequiredCodes(IReadOnlyList<string>? values)
+    {
+        var codes = (values ?? []).Select(value => value?.Trim() ?? string.Empty).Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal).ToArray();
+        return codes.Length > MaxRequiredPermits || codes.Any(code =>
+            !PermitDocumentTypes.IsSystem(code) && PermitDocumentTypes.CustomCode(code) != code)
+            ? null
+            : codes;
+    }
+
+    /// <summary>Every custom code is an active type of the catalog (the system ones always are).</summary>
+    private async Task<bool> CodesAvailableAsync(string[] codes, CancellationToken cancellationToken)
+    {
+        var custom = codes.Where(code => !PermitDocumentTypes.IsSystem(code)).ToArray();
+        return custom.Length == 0 || await context.PermitTypeDefinitions.AsNoTracking()
+            .CountAsync(item => custom.Contains(item.Code) && item.IsActive, cancellationToken) == custom.Length;
+    }
+
+    /// <summary>
+    /// Leaves the stand requiring exactly <paramref name="codes"/>, audits a change and touches the stand so its version
+    /// moves (an editor that saw the old list re-reads it). The caller saves.
+    /// </summary>
+    private async Task ReplaceRequiredPermitsAsync(Stand stand, string[] codes, long stationId, long accountId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var current = await context.StandRequiredPermits.Where(item => item.StandId == stand.Id)
+            .ToArrayAsync(cancellationToken);
+        var before = current.Select(item => item.DocumentTypeCode).Order(StringComparer.Ordinal).ToArray();
+        if (before.SequenceEqual(codes, StringComparer.Ordinal)) return;
+        context.StandRequiredPermits.RemoveRange(current.Where(item => !codes.Contains(item.DocumentTypeCode)));
+        context.StandRequiredPermits.AddRange(codes.Where(code => !before.Contains(code)).Select(code =>
+            new StandRequiredPermit
+            {
+                PublicId = Guid.CreateVersion7(), StandId = stand.Id, DocumentTypeCode = code, CreatedAt = now,
+                UpdatedAt = now,
+            }));
+        stand.UpdatedAt = now;
+        MasterDataCommand.Audit(context, accountId, "occ.stand.required_permits_changed", StandResource, stand.PublicId,
+            stationId, now, new AuditFieldChangeData("stand.required_permits", before.Length == 0 ? null : string.Join(",", before),
+                codes.Length == 0 ? null : string.Join(",", codes)));
+    }
+
+    /// <summary>What OCC may require at a stand: the system types and the active custom ones, by name.</summary>
+    private async Task<IReadOnlyList<StandPermitOptionData>> PermitOptionsAsync(CancellationToken cancellationToken)
+    {
+        var custom = await context.PermitTypeDefinitions.AsNoTracking().Where(item => item.IsActive)
+            .OrderBy(item => item.Name).ThenBy(item => item.Code)
+            .Select(item => new StandPermitOptionData(item.Code, item.Name, false)).ToArrayAsync(cancellationToken);
+        return PermitDocumentTypes.System.Select(item => new StandPermitOptionData(item.Code, item.Name, true))
+            .Concat(custom).ToArray();
+    }
+
     /// <summary>
     /// The aircraft types are shared: «Datos maestros», the planning and the stand rules of every active station read
     /// them again (<c>occ_planning</c>), in the command's transaction.
@@ -376,7 +511,8 @@ internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorConte
                 .SingleOrDefaultAsync()
             : null;
         var history = await MasterDataUsage.StandsWithHistoryAsync(context, stand.StationId, CancellationToken.None);
-        return StandItem(stand, terminal, history.Contains(stand.Id));
+        var required = await EfOccPlanningReadStore.RequiredPermitsAsync(context, [stand.Id], CancellationToken.None);
+        return StandItem(stand, terminal, history.Contains(stand.Id), required.GetValueOrDefault(stand.Id));
     }
 
     private async Task<MasterAircraftTypeData?> AircraftTypeAsync(Guid aircraftTypeId) =>
@@ -388,9 +524,11 @@ internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorConte
         new(terminal.PublicId, terminal.Code, terminal.Name, terminal.IsActive, hasHistory,
             MasterDataCommand.Version(terminal.RowVersion));
 
-    private static MasterStandData StandItem(Stand stand, Guid? terminalId, bool hasHistory) =>
+    private static MasterStandData StandItem(Stand stand, Guid? terminalId, bool hasHistory,
+        IReadOnlyList<RequiredPermitFact>? required) =>
         new(stand.PublicId, terminalId, stand.Code, stand.HasBoardingBridge, stand.IsRemote, stand.MaxAircraftSize?.ToString(),
-            stand.IsActive, hasHistory, MasterDataCommand.Version(stand.RowVersion));
+            stand.IsActive, hasHistory, MasterDataCommand.Version(stand.RowVersion),
+            (required ?? []).Select(item => new StandRequiredPermitData(item.Code, item.Name)).ToArray());
 
     private static MasterAircraftTypeData AircraftTypeItem(AircraftType type) =>
         new(type.PublicId, type.IcaoCode, type.IataCode, type.Manufacturer, type.Model, type.SizeCategory?.ToString(),

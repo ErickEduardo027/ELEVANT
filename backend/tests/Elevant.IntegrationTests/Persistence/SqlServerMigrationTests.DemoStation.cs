@@ -421,7 +421,7 @@ public sealed partial class SqlServerMigrationTests
         {
             await using var setup = CreateContext(connection);
             await setup.AirportPermitCycles.Where(item => item.RampAgentId == demo.Agent &&
-                    item.DocumentType == PermitDocumentType.AirportId)
+                    item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsCurrent, current), ct);
         }
         await SetAirportId(false);
@@ -546,7 +546,7 @@ public sealed partial class SqlServerMigrationTests
             Refusal(await demo.Trigger(demo.Command(stand: demo.Stands["B03"]))));
         await using (var setup = CreateContext(database.ConnectionString))
             await setup.AirportPermitCycles.Where(item => item.RampAgentId == demo.Agent &&
-                    item.DocumentType == PermitDocumentType.AirportId)
+                    item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsCurrent, false), ct);
         Assert.Equal((MasterDataFailure.Conflict, "stand_not_eligible", "airport_id_not_current"),
             Refusal(await demo.Trigger(demo.Command(stand: demo.Stands["A02"]))));
@@ -565,7 +565,7 @@ public sealed partial class SqlServerMigrationTests
         // With the agent's documents in order the same stand is taken.
         await using (var setup = CreateContext(database.ConnectionString))
             await setup.AirportPermitCycles.Where(item => item.RampAgentId == demo.Agent &&
-                    item.DocumentType == PermitDocumentType.AirportId)
+                    item.DocumentType == PermitDocumentTypes.AirportId)
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsCurrent, true), ct);
         Assert.Equal("A02", (await demo.Triggered(stand: demo.Stands["A02"])).SuggestedStandCode);
     }

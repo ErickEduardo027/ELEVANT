@@ -23,6 +23,7 @@ import {
 } from '../../services/occMasterDataService';
 import { sortByStandCode } from '../../services/standCodes';
 import { masterDataMessages } from './masterDataMessages';
+import StandRequiredPermitsPanel from './StandRequiredPermitsPanel';
 
 // Template D of the design («Registro»): the toolbar with the page title, then one panel per register, each with its
 // dense table of edit rows and, under it, the form that adds one.
@@ -581,6 +582,10 @@ export default function MasterDataRoute() {
           canSeeMap={Boolean(access?.can('operations.positions_map.read'))} {...props} />
         {data.canCreate && <StandForm key={data.terminals.map(item => `${item.id}${item.isActive}`).join()} stationId={data.stationId}
           terminals={data.terminals} {...props} />}
+      </OccPanel>
+      <OccPanel title={t('permits.title')} meta={t('permits.about')}>
+        <StandRequiredPermitsPanel stationId={data.stationId} stands={sortByStandCode(data.stands)}
+          permitTypes={data.permitTypes} canUpdate={data.canUpdate} {...props} />
       </OccPanel>
       <OccPanel title={t('aircraftTypes.title')} meta={t('aircraftTypes.about')}>
         <AircraftTypesTable types={data.aircraftTypes} canUpdate={data.canUpdate} {...props} />

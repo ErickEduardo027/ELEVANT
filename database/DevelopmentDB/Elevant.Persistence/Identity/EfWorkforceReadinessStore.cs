@@ -105,14 +105,14 @@ internal sealed class EfWorkforceReadinessStore(ElevantDbContext context, IActor
         return agents.Select(agent =>
         {
             var account = accounts.FirstOrDefault(item => item.PersonId == agent.PersonId);
-            DateOnly? Permit(PermitDocumentType type) => permits.Where(item => item.RampAgentId == agent.Id && item.DocumentType == type)
+            DateOnly? Permit(string type) => permits.Where(item => item.RampAgentId == agent.Id && item.DocumentType == type)
                 .Select(item => (DateOnly?)item.ExpiresOn).Max();
             var facts = new RampAgentReadinessFacts(
                 agent.IsActive, account is not null, account?.IsActive == true,
                 account is not null && mobileRole.Contains(account.Id), account is not null && memberships.Contains(account.Id),
                 agentStations[agent.Id].Distinct().ToArray(),
                 account is null ? [] : accountStations[account.Id].Distinct().ToArray(),
-                terminals.GetValueOrDefault(agent.Id), Permit(PermitDocumentType.AirportId), Permit(PermitDocumentType.RampDriverLicense),
+                terminals.GetValueOrDefault(agent.Id), Permit(PermitDocumentTypes.AirportId), Permit(PermitDocumentTypes.RampDriverLicense),
                 qualifications[agent.Id].Select(item => (item.Code, item.ExpiresOn)).ToArray(),
                 shifts.GetValueOrDefault(agent.Id), absences.TryGetValue(agent.Id, out var absence) ? absence : null);
             return RampAgentReadiness.Evaluate(agent.PublicId, agent.Name, agent.EmployeeNumber, facts, today);
@@ -150,8 +150,11 @@ internal sealed class EfWorkforceReadinessStore(ElevantDbContext context, IActor
                                     join equipment in context.EquipmentTypes.AsNoTracking() on cycle.EquipmentTypeId equals equipment.Id
                                     where cycle.RampAgentId == me.Id && cycle.IsCurrent
                                     select new { equipment.Name, cycle.ExpiresOn }).ToArrayAsync(cancellationToken);
-        var documents = permits.Select(item => new RampAgentDocumentData(item.DocumentType.ToString(),
-                item.DocumentType == PermitDocumentType.AirportId ? "Carnet aeroportuario" : "Licencia de conducción en rampa",
+        // ADR-0045: a custom permit type keeps the name of its catalog; the system ones keep theirs.
+        var permitNames = await PermitTypeNames.LoadAsync(context, cancellationToken);
+        var documents = permits.Select(item => new RampAgentDocumentData(item.DocumentType,
+                item.DocumentType == PermitDocumentTypes.RampDriverLicense ? "Licencia de conducción en rampa"
+                    : PermitTypeNames.Name(permitNames, item.DocumentType),
                 item.DocumentNumber, item.ExpiresOn, RampAgentReadiness.Validity(item.ExpiresOn, today)))
             .Concat(qualifications.Select(item => new RampAgentDocumentData("Qualification", "Habilitación · " + item.Name, null,
                 item.ExpiresOn, RampAgentReadiness.Validity(item.ExpiresOn, today))))

@@ -20,6 +20,8 @@ export const COVERAGE_REASON_MESSAGES = {
   // 3-N05: the tablet only lets the agent work stands of a terminal in their scope.
   terminal_scope_missing: 'El agente no tiene alcance vigente en esa terminal.',
   airport_permit_required: 'El agente no tiene el carnet aeroportuario vigente hasta el final del horario.',
+  // ADR-0045: a stand requires a permit the agent holds no current cycle of; the refusal names it.
+  required_permit_missing: 'Le falta un carnet que exige la posición, vigente hasta el final del horario.',
   bridge_qualification_required: 'La Terminal B y las posiciones con puente exigen la habilitación de puente vigente.',
   shift_not_covering: 'El turno del agente no cubre todo ese horario.',
   absent: 'El agente tiene una ausencia aprobada ese día.',
@@ -67,8 +69,10 @@ const STATUS_CODES = { 400: 'invalid_coverage_request', 404: 'not_found', 409: '
 
 const UNCERTAIN_MESSAGE = 'No fue posible completar la acción. Intenta de nuevo.';
 
-export function describeReasons(reasons) {
-  return (reasons ?? []).map(reason => COVERAGE_REASON_MESSAGES[reason]).filter(Boolean);
+/** The broken rules in words; with the names of the missing permits, «Le falta: …» (ADR-0045). */
+export function describeReasons(reasons, missingPermits = []) {
+  return (reasons ?? []).map(reason => (reason === 'required_permit_missing' && missingPermits?.length
+    ? `Le falta: ${missingPermits.join(', ')}.` : COVERAGE_REASON_MESSAGES[reason])).filter(Boolean);
 }
 
 /**
@@ -79,7 +83,7 @@ export function translateCoverageError(error, messages = COVERAGE_PROBLEM_MESSAG
   if (error?.name === 'AbortError') return error;
   if (error instanceof TypeError) {
     return Object.assign(new Error(messages.invalid_coverage_request),
-      { status: 400, code: 'invalid_coverage_request', reasons: [] });
+      { status: 400, code: 'invalid_coverage_request', reasons: [], missingPermits: [] });
   }
   if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
   const status = Number.isInteger(error?.status) ? error.status : null;
@@ -94,7 +98,8 @@ export function translateCoverageError(error, messages = COVERAGE_PROBLEM_MESSAG
       forbidden: 'Tu acceso no permite gestionar la cobertura de posiciones.',
       fallback: UNCERTAIN_MESSAGE,
     });
-  return Object.assign(new Error(message), { status, code, reasons });
+  const missingPermits = Array.isArray(error?.missingPermits) ? error.missingPermits.filter(name => typeof name === 'string') : [];
+  return Object.assign(new Error(message), { status, code, reasons, missingPermits });
 }
 
 async function guarded(request) {

@@ -304,8 +304,7 @@ internal sealed class EfHumanResourcesReportStore(
                 person.LastName,
                 agent.EmployeeNumber,
                 Kind = "Permit",
-                Code = permit.DocumentType == PermitDocumentType.AirportId
-                    ? "AirportId" : "RampDriverLicense",
+                Code = permit.DocumentType,
                 permit.ExpiresOn,
                 SortId = permit.Id,
             };

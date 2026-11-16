@@ -293,6 +293,28 @@ internal static class IdentityReferenceConfiguration
 
         ConfigureCodeCatalog<EquipmentType>(modelBuilder, "equipment_types", _ => { });
 
+        // ADR-0045: the custom permit types (the two system types live in code) and the permits a stand requires.
+        modelBuilder.Entity<PermitTypeDefinition>(builder =>
+        {
+            builder.ToTable("permit_document_types", "ref");
+            builder.Property(type => type.Code).HasMaxLength(32).IsRequired();
+            builder.Property(type => type.Name).HasMaxLength(160).IsRequired();
+            builder.Property(type => type.Description).HasMaxLength(500);
+            builder.HasIndex(type => type.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<StandRequiredPermit>(builder =>
+        {
+            builder.ToTable("stand_required_permits", "ref");
+            builder.Property(item => item.DocumentTypeCode).HasMaxLength(32).IsRequired();
+            builder.HasIndex(item => new { item.StandId, item.DocumentTypeCode }).IsUnique();
+            builder.HasIndex(item => item.DocumentTypeCode);
+            builder.HasOne<Stand>()
+                .WithMany()
+                .HasForeignKey(item => item.StandId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<AircraftType>(builder =>
         {
             builder.ToTable("aircraft_types", "ref", table =>

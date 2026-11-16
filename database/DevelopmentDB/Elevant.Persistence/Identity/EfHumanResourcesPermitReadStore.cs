@@ -21,7 +21,7 @@ internal sealed class EfHumanResourcesPermitReadStore(
 
     public Task<HumanResourcesPermitPage?> ListCurrentAsync(
         Guid actorId, int page, int limit, Guid rampProfileId,
-        PermitDocumentType documentType, CancellationToken cancellationToken = default) =>
+        string documentType, CancellationToken cancellationToken = default) =>
         ListCurrentAsync(actorId, page, limit, new HumanResourcesPermitQuery(Today(),
             RampProfileId: rampProfileId, DocumentType: documentType), cancellationToken);
 
@@ -44,7 +44,7 @@ internal sealed class EfHumanResourcesPermitReadStore(
         return new HumanResourcesPermitPage(page, limit, rows.Length > limit,
             rows.Take(limit).Select(row => new HumanResourcesPermitData(
                 row.Id, row.RampProfileId, $"{row.FirstName} {row.LastName}",
-                row.EmployeeNumber, row.DocumentType.ToString(), row.CycleNumber,
+                row.EmployeeNumber, row.DocumentType, row.CycleNumber,
                 row.DocumentNumber, row.IssuedOn, row.ExpiresOn, row.CreatedAt,
                 HumanResourcesDocumentSupport.Classify(row.IssuedOn, row.ExpiresOn,
                     query.AsOf))).ToArray());
@@ -115,7 +115,7 @@ internal sealed class EfHumanResourcesPermitReadStore(
         return HumanResourcesReadResult<HumanResourcesPermitHistory>.Found(
             new HumanResourcesPermitHistory(anchor.RampProfileId,
                 $"{anchor.FirstName} {anchor.LastName}", anchor.EmployeeNumber,
-                anchor.DocumentType.ToString(),
+                anchor.DocumentType,
                 cycles.Select(cycle => new HumanResourcesPermitCycle(cycle.PublicId,
                     cycle.CycleNumber, cycle.IsCurrent, cycle.DocumentNumber, cycle.IssuedOn,
                     cycle.ExpiresOn, cycle.CreatedAt,
@@ -175,7 +175,7 @@ internal sealed class EfHumanResourcesPermitReadStore(
     {
         if (query is null || query.RampProfileId == Guid.Empty ||
             query.Search?.Length > HumanResourcesDocumentSupport.MaxSearchLength ||
-            (query.DocumentType is { } type && !Enum.IsDefined(type)) ||
+            query.DocumentType is { Length: 0 or > PermitDocumentTypes.CodeMaxLength } ||
             (query.Validity is { } validity && !Enum.IsDefined(validity)))
             throw new ArgumentOutOfRangeException(nameof(query));
     }
@@ -200,7 +200,7 @@ internal sealed class EfHumanResourcesPermitReadStore(
         public string FirstName { get; init; } = string.Empty;
         public string LastName { get; init; } = string.Empty;
         public string EmployeeNumber { get; init; } = string.Empty;
-        public PermitDocumentType DocumentType { get; init; }
+        public string DocumentType { get; init; } = string.Empty;
         public int CycleNumber { get; init; }
         public string DocumentNumber { get; init; } = string.Empty;
         public DateOnly IssuedOn { get; init; }

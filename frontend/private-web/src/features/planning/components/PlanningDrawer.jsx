@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { XIcon } from './icons';
 import StatusBadge from '../../../components/StatusBadge';
 import { getPlanningStatusMeta } from '../planningStatus';
-import { isInitialAssignmentCandidate, isTurnaroundChangeCandidate } from '../planningMappers';
+import { isInitialAssignmentCandidate, isTurnaroundChangeCandidate, reasonTexts } from '../planningMappers';
 import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
 import {
@@ -145,7 +145,8 @@ function HandoverAgent({ flight, onHandedOver, onStale }) {
   const options = answer?.request === request ? answer : LOADING_HANDOVER_OPTIONS;
   const timeZone = flight.station?.ianaTimeZone;
   const reasonLabels = t('assignment.reasons');
-  const describe = agent => agent.eligibilityReasons.map(item => reasonLabels[item] ?? t('assignment.unknownReason'))
+  const describe = agent => reasonTexts(agent.eligibilityReasons, agent.missingPermits,
+    item => reasonLabels[item] ?? t('assignment.unknownReason'), names => t('assignment.missingPermit', { names }))
     .join(', ');
   const data = options.data;
   const eligible = data?.agents.filter(agent => agent.eligible) ?? [];
@@ -485,10 +486,10 @@ export default function PlanningDrawer({
             <ResourceList items={flight.assignedAgents ?? []} emptyLabel={t('drawer.noAgents')}>
               {agent => <li key={agent.assignmentId}>{agent.displayName} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{agent.employeeNumber}{agent.positionCode ? ` · ${agent.positionCode}` : ''}</span>
                 {agent.unfitReasons?.length > 0 && <span className="mt-0.5 block text-xs font-semibold text-status-danger">
-                  {t('drawer.unfit', { reasons: agent.unfitReasons.map(reason => {
+                  {t('drawer.unfit', { reasons: reasonTexts(agent.unfitReasons, agent.missingPermits, reason => {
                     const label = t(`drawer.unfitReasons.${reason}`);
                     return label === `drawer.unfitReasons.${reason}` ? t('drawer.unfitReasons.other') : label;
-                  }).join(', ') })}</span>}</li>}
+                  }, names => t('drawer.unfitReasons.missingPermit', { names })).join(', ') })}</span>}</li>}
             </ResourceList>
             <ReleaseAgent flight={flight} onReleased={onAgentReleased} onStale={onStale} />
           </Section>

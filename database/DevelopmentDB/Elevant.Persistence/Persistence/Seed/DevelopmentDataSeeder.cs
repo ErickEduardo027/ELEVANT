@@ -479,8 +479,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             }, "50000000-0000-7000-8000-000000000002"),
             cancellationToken);
 
-        await SeedPermitAsync(rampAgent.Id, PermitDocumentType.AirportId, "DEV-AIRPORT-ID", "50000000-0000-7000-8000-000000000003", cancellationToken);
-        await SeedPermitAsync(rampAgent.Id, PermitDocumentType.RampDriverLicense, "DEV-RAMP-LICENSE", "50000000-0000-7000-8000-000000000004", cancellationToken);
+        await SeedPermitAsync(rampAgent.Id, PermitDocumentTypes.AirportId, "DEV-AIRPORT-ID", "50000000-0000-7000-8000-000000000003", cancellationToken);
+        await SeedPermitAsync(rampAgent.Id, PermitDocumentTypes.RampDriverLicense, "DEV-RAMP-LICENSE", "50000000-0000-7000-8000-000000000004", cancellationToken);
 
         await GetOrAddAsync(
             context.ShiftAssignments,
@@ -1490,7 +1490,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
 
     private async Task SeedPermitAsync(
         long rampAgentId,
-        PermitDocumentType type,
+        string type,
         string number,
         string publicId,
         CancellationToken cancellationToken) => await GetOrAddAsync(
