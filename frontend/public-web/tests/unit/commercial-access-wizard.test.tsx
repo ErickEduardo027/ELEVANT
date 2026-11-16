@@ -565,11 +565,13 @@ it("proposes an airline that is not in the listing, with its ICAO code and no IA
     { target: { value: "https://caribecargo.example.com" } });
   // A Dominican airline gives its RNC; the country of the identifier is fixed to the airline's.
   expect(field("País del identificador fiscal")).toBeDisabled();
+  expect(field("País del identificador fiscal")).toHaveValue("DO");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   expect(screen.getByText("Escriba el RNC de la aerolínea.")).toBeInTheDocument();
-  fillTax("131234568");
+  // Fewer than 9 digits get one short message; the check digit is not verified.
+  fillTax("13123456");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
-  expect(screen.getByText(/dígito verificador del RNC/)).toBeInTheDocument();
+  expect(screen.getByText("El RNC tiene 9 dígitos.")).toBeInTheDocument();
   fillTax("1-31-23456-9");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   expect(screen.getByText(/en nombre de Caribe Cargo Express/)).toBeInTheDocument();
@@ -610,10 +612,12 @@ it("prefills the RNC of the catalog profile, masked and still editable, and says
   vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
   const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
   const caribe = "20000000-0000-7000-8000-000000000011";
+  const panamaId = "20000000-0000-7000-8000-000000000012";
   const posts: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith("commercial-catalog"))
-      return new Response(JSON.stringify({ ...catalog, airlines: [...catalog.airlines, { ...catalog.airlines[0], id: caribe,
+      return new Response(JSON.stringify({ ...catalog, airlines: [...catalog.airlines,
+        { ...catalog.airlines[0], id: panamaId, name: "Panamá Air", countryCode: "PA" }, { ...catalog.airlines[0], id: caribe,
         name: "Caribe Air", legalName: "Caribe Air S.R.L.", countryCode: "DO", iataCode: null, icaoCode: "CRX",
         taxRegistration: "131234569", taxRegistrationCountryCode: "DO" }] }), { headers: { "content-type": "application/json" } });
     if (String(url).endsWith("commercial-requests") && init?.method === "POST") {
@@ -635,19 +639,19 @@ it("prefills the RNC of the catalog profile, masked and still editable, and says
   expect(rnc).toHaveAttribute("inputMode", "numeric");
   expect(screen.getByRole("status")).toHaveTextContent("RNC válido");
 
-  // The mask adds the dashes while typing; with the 9 digits a wrong check digit is explained at once.
+  // The mask adds the dashes while typing; any 9 digits are an RNC (no check digit).
   fireEvent.change(rnc, { target: { value: "13123" } });
   expect(rnc).toHaveValue("1-31-23");
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   fireEvent.change(rnc, { target: { value: "1312345680" } });
   expect(rnc).toHaveValue("1-31-23456-8");
-  expect(screen.getByText(/dígito verificador/)).toBeInTheDocument();
-  expect(rnc).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByRole("status")).toHaveTextContent("RNC válido");
+  expect(screen.queryByText(/dígito verificador/)).not.toBeInTheDocument();
   fireEvent.change(rnc, { target: { value: "1-31-23456-9" } });
 
-  // Another airline without an RNC starts empty, with its own country (none here: no RNC assumed).
-  choose("Seleccione una aerolínea", airlineId);
-  expect(field("País del identificador fiscal")).toHaveValue("");
+  // Another airline replaces both values: without an RNC in its profile, its own country and an empty number.
+  choose("Seleccione una aerolínea", panamaId);
+  expect(field("País del identificador fiscal")).toHaveValue("PA");
   expect(screen.getByRole("textbox", { name: "Identificador fiscal" })).toHaveValue("");
   choose("Seleccione una aerolínea", caribe);
   expect(screen.getByRole("textbox", { name: "RNC" })).toHaveValue("1-31-23456-9");

@@ -241,17 +241,24 @@ export function AccessRequestWizard() {
 
   const changeProposal = (changes: Partial<AirlineProposalDraft>) => {
     setProposal((current) => ({ ...current, ...changes }));
+    // The proposed airline's country is also the country of its tax identifier (still editable unless DO).
+    if (changes.countryCode !== undefined) {
+      const countryCode = changes.countryCode.trim().toUpperCase();
+      setTax((current) => ({ countryCode, number: countryCode === "DO" ? maskRnc(current.number) : current.number }));
+    }
     setProposalChosen(true);
     requestId.current = null;
     setError("");
   };
-  // The tax identifier of the catalog profile, still editable; without one the country is the airline's.
+  // Choosing an airline brings its tax country and number from the catalog profile, still editable: the profile's
+  // identifier when it has one, otherwise the airline's country and an empty number.
   const taxFromProfile = (id: string): TaxRegistrationDraft => {
     const profile = catalog?.airlines.find((item) => item.id === id);
-    return profile?.taxRegistration && profile.taxRegistrationCountryCode
-      ? { number: profile.taxRegistrationCountryCode === "DO" ? maskRnc(profile.taxRegistration) : profile.taxRegistration,
-        countryCode: profile.taxRegistrationCountryCode }
-      : emptyTaxRegistration;
+    if (!profile) return emptyTaxRegistration;
+    if (profile.taxRegistration && profile.taxRegistrationCountryCode)
+      return { number: profile.taxRegistrationCountryCode === "DO" ? maskRnc(profile.taxRegistration) : profile.taxRegistration,
+        countryCode: profile.taxRegistrationCountryCode };
+    return { number: "", countryCode: (profile.countryCode ?? "").trim().toUpperCase() };
   };
   const chooseAirline = (id: string) => {
     setAirlineId(id);
@@ -655,7 +662,7 @@ function TaxRegistrationField({ draft, airlineCountry, error, onChange }: {
 }) {
   const country = taxCountry(draft, airlineCountry);
   const dominican = country === "DO";
-  // With the 9 digits typed the RNC says at once whether it is valid; a refused «Continuar» shows the error instead.
+  // With the 9 digits typed the RNC confirms it at once; a refused «Continuar» shows its error instead.
   const feedback = dominican && !error ? rncFeedback(draft.number) : null;
   const described = [error && "tax-number-error", feedback && "tax-number-feedback", "tax-number-hint"]
     .filter(Boolean).join(" ");
@@ -673,14 +680,13 @@ function TaxRegistrationField({ draft, airlineCountry, error, onChange }: {
       <label htmlFor="tax-number">{dominican ? "RNC" : "Identificador fiscal"}</label>
       <input id="tax-number" required maxLength={dominican ? 12 : 32} inputMode={dominican ? "numeric" : undefined}
         placeholder={dominican ? "1-31-23456-9" : undefined} autoComplete="off"
-        aria-invalid={error || feedback?.valid === false ? true : undefined} aria-describedby={described} value={draft.number}
+        aria-invalid={error ? true : undefined} aria-describedby={described} value={draft.number}
         onChange={(event) => onChange({ number: dominican ? maskRnc(event.target.value) : event.target.value })} />
       <small className="access-field-hint" id="tax-number-hint">{dominican
         ? `Registro Nacional del Contribuyente: ${identityDocumentExample("Rnc")}.`
         : "El identificador tributario de la aerolínea en su país, de 3 a 32 caracteres."} Aparece en el contrato y en las facturas.</small>
       {error && <p className="access-field-error" id="tax-number-error">{error}</p>}
-      {feedback && <p id="tax-number-feedback" role="status" className={feedback.valid ? "access-field-ok" : "access-field-error"}>
-        {feedback.valid ? `✓ ${feedback.message}` : feedback.message}</p>}
+      {feedback && <p id="tax-number-feedback" role="status" className="access-field-ok">✓ {feedback.message}</p>}
     </div>
   </div>;
 }
