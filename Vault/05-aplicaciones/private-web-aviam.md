@@ -1047,6 +1047,14 @@ escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
   En «Configuración», los atributos de las posiciones son filas editables. Sus
   textos ganan inglés
   ([mensajes](../../frontend/private-web/src/features/position-coverage/coverageMessages.js)).
+  Las posiciones van en orden natural de su código normalizado (A1, A2… A10,
+  A11, AN1, B20, BN6… BN13): la tabla, los botones del formulario, las
+  combinadas y las posiciones de cada cobertura
+  ([orden](../../frontend/private-web/src/features/position-coverage/coverageOrder.js),
+  con el comparador compartido de
+  [`standCodes.js`](../../frontend/private-web/src/services/standCodes.js), que
+  también ordena Datos maestros, la «Lista de posiciones» del mapa y los
+  selectores de posición de Planificación).
 - **Notificaciones**
   ([ruta](../../frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx)).
   El «Historial de avisos» lleva la leyenda «Prioridad» en su cabecera y los
@@ -1073,7 +1081,8 @@ escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
   con su formulario de alta; las filas inactivas se atenúan. Cada posición
   tiene «Ver en el mapa», que abre Mapa de posiciones en ella
   (`/admin-occ/positions-map?stand=A1`, con el código normalizado) y no lee
-  nada. Sus textos ganan inglés.
+  nada. Las posiciones van en orden natural (A01, A02, A3… A10). Sus textos
+  ganan inglés.
 - **Tablets**
   ([ruta](../../frontend/private-web/src/features/devices/DevicesRoute.jsx)).
   Una tabla con el estado de cada tablet («En uso», «Libre» o «Revocada»), y
@@ -1450,7 +1459,15 @@ cambia.
   señales, la combinada que la anula, el límite de fuselaje estrecho y de dónde
   sale su ubicación
   ([`StandDetailFacts.jsx`](../../frontend/private-web/src/features/maps/ui/StandDetailFacts.jsx));
-  Planificación lo muestra en el panel junto a su mapa. El cajón dice el estado
+  Planificación lo muestra en el panel junto a su mapa. La escala de la
+  posición
+  ([`StandTurnaround.jsx`](../../frontend/private-web/src/features/maps/ui/StandTurnaround.jsx))
+  solo da por «Real» una hora ya alcanzada en el reloj de las posiciones: los
+  instantes de un vuelo demo son su plan, así que «aterrizó» y «Real» esperan a
+  su toque. «Operación» dice el estado de la operación de tierra que traen los
+  vuelos del mapa (Asignada, En curso, Devuelta…, con las palabras de
+  Planificación) y, sin operación, el de la escala. «Tipo de aeronave» toma el
+  de la escala cuando el tablero no lo trae. El cajón dice el estado
   una sola vez, con las palabras del mapa: su cabecera ya no muestra la del
   tablero, que podía contradecirla («Planificada» frente a «Llegando»). La
   cámara solo se mueve si la posición elegida queda fuera de la vista. Una `Esc`
