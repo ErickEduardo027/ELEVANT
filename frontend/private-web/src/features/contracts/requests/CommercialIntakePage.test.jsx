@@ -289,3 +289,44 @@ it('explains why the approval stays closed while no station is active or chosen'
   expect(within(withStation).getByText('✓ Al menos una estación elegida')).toBeInTheDocument();
   expect(within(withStation).getByRole('button', { name: 'Aprobar y crear borrador' })).toBeEnabled();
 });
+
+it('shows the RNC and the registry verdict in Spanish and points to the Superadmin exception', async () => {
+  const blocked = { ...base, status: 'InReview', airlineVerified: true, verificationSourceUrl: 'https://registry.example.test',
+    taxRegistration: { number: '131234569', countryCode: 'DO', display: 'RNC 1-31-23456-9' },
+    registryCheck: { status: 'NotFound', source: 'OpenFlights', checkedAt: '2026-11-05T12:01:00Z', detail: null, fromCatalog: false } };
+  const review = await open(blocked);
+  expect(within(review).getByText('RNC 1-31-23456-9')).toBeInTheDocument();
+  expect(within(review).getByText('No encontrada en registros públicos')).toBeInTheDocument();
+  expect(within(review).getByText(/Superadministración debe verificarla a mano/)).toBeInTheDocument();
+  expect(within(review).getByText(/○ Confirmada en registros públicos/)).toBeInTheDocument();
+  cleanup();
+
+  const manual = { ...blocked, registryCheck: { ...blocked.registryCheck, status: 'Mismatch',
+    detail: 'Con esos códigos el registro muestra «Otra Air», no «Copa Airlines».' },
+  manualVerification: { verifiedAt: '2026-11-05T12:30:00Z', verificationSourceUrl: 'https://aoc.example.test/cmp' } };
+  const verified = await open(manual);
+  expect(within(verified).getByText(/No coincide: Con esos códigos el registro muestra «Otra Air»/)).toBeInTheDocument();
+  expect(within(verified).getByText('✓ Verificada a mano por Superadmin · fuente https://aoc.example.test/cmp')).toBeInTheDocument();
+  expect(within(verified).queryByText(/Superadministración debe verificarla a mano/)).not.toBeInTheDocument();
+  expect(within(verified).getByText(/✓ Confirmada en registros públicos/)).toBeInTheDocument();
+});
+
+it('corrects the RNC while verifying and refuses an invalid one before sending', async () => {
+  verifyCommercialRequestAirline.mockResolvedValue({ id: 'req-1' });
+  const review = await open({ ...base, taxRegistration: { number: '131234569', countryCode: 'DO', display: 'RNC 1-31-23456-9' } });
+  await userEvent.clear(within(review).getByRole('textbox', { name: 'Razón social' }));
+  await userEvent.type(within(review).getByRole('textbox', { name: 'Razón social' }), 'Copa S.A.');
+  await userEvent.type(within(review).getByRole('textbox', { name: 'Fuente HTTPS' }), 'https://aoc.example.test/cmp');
+  const rnc = within(review).getByRole('textbox', { name: 'RNC' });
+  await userEvent.clear(rnc);
+  await userEvent.type(rnc, '131234568');
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  expect(within(review).getByText(/dígito verificador del RNC/)).toBeInTheDocument();
+  expect(verifyCommercialRequestAirline).not.toHaveBeenCalled();
+  await userEvent.clear(rnc);
+  await userEvent.type(rnc, '1-30-00000-1');
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  await waitFor(() => expect(verifyCommercialRequestAirline).toHaveBeenCalled());
+  expect(verifyCommercialRequestAirline.mock.calls[0][1]).toMatchObject({ taxRegistration: '130000001',
+    taxRegistrationCountryCode: 'DO' });
+});

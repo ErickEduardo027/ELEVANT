@@ -129,6 +129,40 @@ public sealed class CommercialRequestsEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task AnApprovalChecksTheRegistriesAndExplainsARefusalUnlessSuperadminVerifiedByHand()
+    {
+        var store = new StubStore { Subject = new CommercialRegistrySubject("Quetzal Air", null, "QZZ", false) };
+        var registry = new FakeRegistry();
+        await using var application = Application(store, registry);
+        using var client = Authorized(application);
+        var approve = new { approve = true, stationIds = new[] { Guid.NewGuid() }, expectedVersion = "AAAAAAAAB9E=" };
+
+        store.Result = CommercialWorkflowResult.Failed(CommercialWorkflowFailure.AirlineNotInPublicRegistry);
+        using var refused = await SendAsync(client, "decision", Guid.NewGuid(), approve);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal("airline_not_in_public_registry", await CodeAsync(refused));
+        Assert.Equal((1, "NotFound"), (registry.Calls, store.LastGate?.Check?.Status));
+        // The refused verdict is stored afterwards, so the re-read inbox explains it.
+        Assert.Equal("NotFound", store.Recorded?.Status);
+
+        // A profile Superadministración verified by hand is not sent to the registries.
+        store.Subject = store.Subject with { ManuallyVerifiedBySuperAdministrator = true };
+        store.Result = CommercialWorkflowResult.Success(RequestId);
+        using var approved = await SendAsync(client, "decision", Guid.NewGuid(), approve);
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        Assert.Equal(1, registry.Calls);
+        Assert.NotNull(store.LastGate);
+        Assert.Null(store.LastGate!.Check);
+
+        // A rejection never asks the registries.
+        using var rejected = await SendAsync(client, "decision", Guid.NewGuid(),
+            new { approve = false, reason = "No procede.", stationIds = Array.Empty<Guid>(), expectedVersion = "AAAAAAAAB9E=" });
+        Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        Assert.Equal(1, registry.Calls);
+        Assert.Null(store.LastGate);
+    }
+
+    [Fact]
     public async Task PublishesTheReviewOperations()
     {
         using var client = factory.CreateClient();
@@ -179,11 +213,13 @@ public sealed class CommercialRequestsEndpointsTests(ElevantApiFactory factory)
         return problem.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
 
-    private WebApplicationFactory<Program> Application(StubStore store) =>
+    private WebApplicationFactory<Program> Application(StubStore store, FakeRegistry? registry = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ICommercialWorkflowStore>();
             services.AddSingleton<ICommercialWorkflowStore>(store);
+            services.RemoveAll<IAirlineRegistryLookup>();
+            services.AddSingleton<IAirlineRegistryLookup>(registry ?? new FakeRegistry());
         }));
 
     private static HttpClient Authorized(WebApplicationFactory<Program> application)
@@ -264,11 +300,41 @@ public sealed class CommercialRequestsEndpointsTests(ElevantApiFactory factory)
             return Task.FromResult(Result);
         }
 
+        public CommercialRegistrySubject? Subject { get; set; }
+        public CommercialRegistryGate? LastGate { get; private set; }
+        public AirlineRegistryCheck? Recorded { get; private set; }
+
         public Task<CommercialWorkflowResult> DecideAsync(Guid actorId, Guid requestId, ReviewCommercialInput input,
-            Guid? idempotencyKey, CancellationToken cancellationToken = default)
+            Guid? idempotencyKey, CancellationToken cancellationToken = default, CommercialRegistryGate? registryGate = null)
         {
             LastDecision = new Decision(idempotencyKey, input);
+            LastGate = registryGate;
             return Task.FromResult(Result);
+        }
+
+        public Task<CommercialRegistrySubject?> RegistrySubjectAsync(Guid actorId, Guid requestId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Subject);
+
+        public Task RecordRegistryCheckAsync(Guid requestId, CommercialRegistrySubject subject, AirlineRegistryCheck check,
+            CancellationToken cancellationToken = default)
+        {
+            Recorded = check;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Answers a fixed verdict; the tests never ask Wikidata or OpenFlights.</summary>
+    private sealed class FakeRegistry : IAirlineRegistryLookup
+    {
+        public string Status { get; set; } = "NotFound";
+        public int Calls { get; private set; }
+
+        public Task<AirlineRegistryCheck> CheckAsync(string name, string? iataCode, string? icaoCode,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(new AirlineRegistryCheck(Status, "OpenFlights", null, null, null, null, null,
+                ["Ninguna aerolínea del registro usa el ICAO QZZ."], DateTimeOffset.UtcNow));
         }
     }
 }

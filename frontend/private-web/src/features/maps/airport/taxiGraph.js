@@ -3,9 +3,9 @@ import { haversineM, pointToPolylineM } from './geo.js';
 // The taxi network of the airport layout as a graph (PR M3): nodes with a point and a kind (junction, exit, hold,
 // stand, apronHold, runway) and undirected edges with a length in metres, a kind (taxiway, taxilane, leadin,
 // runway) and, when the pavement bends between two nodes, its full `line` from `a` to `b`. The generator checks
-// reachability on it and later PRs route taxiing aircraft over it (M6 adds the curve filleting). Pure and Node-safe
-// like geo.js: explicit '.js' imports only. Every result is deterministic: ties are broken by node id, so the same
-// layout always gives the same route.
+// reachability on it; the map kinematics (PR M6) routes taxiing aircraft over it by a cost per edge (routeBetween)
+// and draws the route's line (routeLine). Pure and Node-safe like geo.js: explicit '.js' imports only. Every result
+// is deterministic: ties are broken by node id, so the same layout always gives the same route.
 
 /**
  * Builds the graph from `{ nodes: [{ id, p, kind }], edges: [{ a, b, m, kind, ref }] }`:
@@ -68,40 +68,100 @@ function createHeap() {
   };
 }
 
+const lengthCost = edge => edge.m;
+
 /**
- * The shortest route between two nodes by Dijkstra: `{ nodeIds, lengthM }`, or `null` when there is none. Edges of a
- * kind in `avoidKinds` are never used. On equal lengths the route through the smaller node ids wins.
+ * Dijkstra over the graph by `costFn(edge, fromId, toId)` (an edge whose cost is not a finite number ≥ 0 is closed),
+ * keeping cost and metres apart and the edge each node was reached by. On equal costs the route through the smaller
+ * node ids wins. `{ nodeIds, edges, lengthM, cost }` or `null`.
  */
-export function shortestPath(graph, fromId, toId, { avoidKinds = [] } = {}) {
+function search(graph, fromId, toId, costFn, avoidKinds) {
   if (!graph.nodes.has(fromId) || !graph.nodes.has(toId)) return null;
   const avoid = new Set(avoidKinds);
-  const distance = new Map([[fromId, 0]]);
+  const cost = new Map([[fromId, 0]]);
+  const metres = new Map([[fromId, 0]]);
   const previous = new Map();
   const done = new Set();
   const heap = createHeap();
   heap.push([0, fromId]);
   while (heap.size > 0) {
-    const [length, id] = heap.pop();
+    const [value, id] = heap.pop();
     if (done.has(id)) continue;
     done.add(id);
     if (id === toId) break;
     for (const { to, edge } of graph.adjacency.get(id)) {
       if (done.has(to) || avoid.has(edge.kind)) continue;
-      const candidate = length + edge.m;
-      const known = distance.get(to);
+      const step = costFn(edge, id, to);
+      if (!Number.isFinite(step) || step < 0) continue;
+      const candidate = value + step;
+      const known = cost.get(to);
       const better = known === undefined || candidate < known - 1e-9
-        || (Math.abs(candidate - known) <= 1e-9 && compareIds(id, previous.get(to)) < 0);
+        || (Math.abs(candidate - known) <= 1e-9 && compareIds(id, previous.get(to).id) < 0);
       if (better) {
-        distance.set(to, candidate);
-        previous.set(to, id);
+        cost.set(to, candidate);
+        metres.set(to, metres.get(id) + edge.m);
+        previous.set(to, { id, edge });
         heap.push([candidate, to]);
       }
     }
   }
   if (!done.has(toId)) return null;
   const nodeIds = [toId];
-  while (nodeIds[0] !== fromId) nodeIds.unshift(previous.get(nodeIds[0]));
-  return { nodeIds, lengthM: distance.get(toId) };
+  const edges = [];
+  while (nodeIds[0] !== fromId) {
+    const step = previous.get(nodeIds[0]);
+    edges.unshift(step.edge);
+    nodeIds.unshift(step.id);
+  }
+  return { nodeIds, edges, lengthM: metres.get(toId), cost: cost.get(toId) };
+}
+
+/**
+ * The shortest route between two nodes by Dijkstra: `{ nodeIds, lengthM }`, or `null` when there is none. Edges of a
+ * kind in `avoidKinds` are never used. On equal lengths the route through the smaller node ids wins.
+ */
+export function shortestPath(graph, fromId, toId, { avoidKinds = [] } = {}) {
+  const route = search(graph, fromId, toId, lengthCost, avoidKinds);
+  return route === null ? null : { nodeIds: route.nodeIds, lengthM: route.lengthM };
+}
+
+/**
+ * The cheapest route between two nodes (PR M6): `{ nodeIds, edges, lengthM, cost }`, frozen, where `cost` sums
+ * `costFn(edge, fromId, toId)` (the metres by default) and `lengthM` the metres; `null` when there is none. An edge of
+ * a kind in `avoidKinds`, or whose cost is not a finite number ≥ 0, is never used. Ties go to the smaller node ids.
+ */
+export function routeBetween(graph, fromId, toId, { costFn = lengthCost, avoidKinds = [] } = {}) {
+  const route = search(graph, fromId, toId, costFn, avoidKinds);
+  if (route === null) return null;
+  return Object.freeze({
+    nodeIds: Object.freeze(route.nodeIds),
+    edges: Object.freeze(route.edges),
+    lengthM: route.lengthM,
+    cost: route.cost,
+  });
+}
+
+/**
+ * The line of a route (PR M6) as `[[lng, lat], …]`, frozen: each edge's geometry in the direction of travel (reversed
+ * when the route runs from its `b` to its `a`), joined without repeating the shared nodes. A route of one node gives
+ * that node's point.
+ */
+export function routeLine(graph, { nodeIds, edges }) {
+  const points = [];
+  if (edges.length === 0) {
+    const node = graph.nodes.get(nodeIds[0]);
+    if (node) points.push(node.p);
+  }
+  edges.forEach((edge, at) => {
+    const forward = edge.a === nodeIds[at];
+    const line = forward ? edgeLine(graph, edge) : [...edgeLine(graph, edge)].reverse();
+    line.forEach((point, index) => {
+      const last = points[points.length - 1];
+      if (index === 0 && last !== undefined && haversineM(last, point) <= 0.01) return;
+      points.push(point);
+    });
+  });
+  return Object.freeze(points.map(point => Object.freeze([point[0], point[1]])));
 }
 
 /** Every node reachable from `startId` (itself included) over edges of the given kinds (all kinds by default). */

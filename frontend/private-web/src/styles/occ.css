@@ -1,9 +1,9 @@
 /* Identity of the OCC workspace (operations control centre). It applies only
    inside `[data-department="occ"]`, which ShellFrame sets when AdminOccLayout
    asks for it; the other departments never see these variables.
-   The OCC is dark only: one token block, with no light values and no
-   dependency on the `dark` class. The `*-occ-*` classes of tailwind.config.js
-   read these values, and src/features/occ-ui/occPalette.js mirrors the colours
+   Two token blocks: the dark one, the default, on the scope itself, and the
+   light one below it, which applies while <html> has no `dark` class. The
+   `*-occ-*` classes of tailwind.config.js read these values, and src/features/occ-ui/occPalette.js mirrors the colours
    for JavaScript consumers (a parity test compares the two files). */
 [data-department='occ'] {
   color-scheme: dark;
@@ -77,6 +77,55 @@
   font-weight: 500;
 }
 
+/* The light theme of the OCC (ADR-0044, note of 2026-11-15): the same tokens
+   with light values, applied while <html> does not carry the `dark` class. The
+   dark block above stays the default (the boot script and ThemeProvider add the
+   class on OCC routes unless the account chose light). Every text token keeps
+   at least 4.5:1 on every surface (primary text 10:1, secondary 7:1) and the
+   control boundaries 3:1; occPalette.test.js checks both themes. */
+:root:not(.dark) [data-department='occ'] {
+  color-scheme: light;
+
+  --occ-nav: #e3e9ec;
+  --occ-canvas: #e9eef1;
+  --occ-panel: #ffffff;
+  --occ-panel-raised: #e4eaed;
+  --occ-panel-float: rgb(255 255 255 / 0.94);
+  --occ-field: #f4f7f8;
+
+  --occ-arriving-fill: rgb(196 207 213 / 0.4);
+
+  --occ-line: #c9d3d8;
+  --occ-line-strong: #6f7b82;
+  --occ-text: #11181c;
+  --occ-muted: #3b474e;
+  --occ-faint: #56636a;
+
+  --occ-accent: #054e66;
+  --occ-accent-soft: #d4ebf3;
+  --occ-on-accent: #ffffff;
+  --occ-primary: #1b2328;
+  --occ-primary-hover: #323d43;
+  --occ-on-primary: #ffffff;
+
+  --occ-warn: #634000;
+  --occ-warn-fill: #f2b340;
+  --occ-warn-soft: #f8ecd0;
+  --occ-on-warn: #11181c;
+  --occ-danger: #b0241a;
+  --occ-danger-fill: #c62f24;
+  --occ-danger-soft: #f9e1df;
+  --occ-on-danger: #ffffff;
+  --occ-scrim: rgb(17 24 28 / 0.45);
+
+  --occ-nav-line: #cdd7dc;
+  --occ-nav-text: #1f2a30;
+  --occ-nav-muted: #4c5960;
+  --occ-nav-hover: #d8e0e4;
+  --occ-nav-active: #cdd7dc;
+  --occ-nav-accent: #075d76;
+}
+
 [data-department='occ'] :focus-visible {
   outline: 2px solid var(--occ-accent);
   outline-offset: 2px;
@@ -118,180 +167,6 @@
   [data-department='occ'] table.table-stack tbody > tr > td::before {
     color: var(--occ-muted);
   }
-}
-
-/* Layout of the current dashboard console. It only places the panels; every
-   colour comes from the tokens above. */
-[data-department='occ'] .occ-dashboard-map-panel {
-  box-shadow: none;
-}
-
-[data-department='occ'] .occ-console-stage {
-  --occ-glass: var(--occ-panel-float);
-  --occ-stage-line: var(--occ-line);
-  display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(315px, 0.83fr);
-  grid-template-rows: 730px auto;
-  overflow: hidden;
-  border: 1px solid var(--occ-stage-line);
-  border-radius: 24px;
-  background: var(--occ-canvas);
-  box-shadow: none;
-}
-
-/* The panels meet at flush joints inside the stage. Their `rounded-xl` gets a
-   radius from the legacy bridge with the same weight as this rule, and the
-   bridge loads later, hence the !important (as on the stage borders below). */
-[data-department='occ'] .occ-console-stage .occ-dashboard-map-panel {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0 !important;
-  background: transparent;
-}
-
-[data-department='occ'] .occ-console-stage .occ-dashboard-map-panel > header {
-  position: absolute;
-  z-index: 12;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  width: auto;
-  min-height: 44px;
-  padding: 7px 10px 7px 14px;
-  border: 1px solid var(--occ-stage-line);
-  border-radius: 13px;
-  background: var(--occ-glass);
-}
-
-[data-department='occ'] .occ-stage-primary {
-  grid-column: 1;
-  grid-row: 1;
-  border-right: 1px solid var(--occ-stage-line) !important;
-}
-
-[data-department='occ'] .occ-stage-aux {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-column: 2;
-  grid-row: 1;
-  grid-template-rows: minmax(0, 1.45fr) minmax(0, 0.9fr);
-}
-
-[data-department='occ'] .occ-stage-weather {
-  border-bottom: 1px solid var(--occ-stage-line) !important;
-}
-
-[data-department='occ'] .occ-stage-weather > header > div:nth-child(2) { display: none; }
-
-[data-department='occ'] .occ-console-stage .occ-dashboard-map-panel > div:last-child:not([role='dialog']) {
-  min-height: 0;
-}
-
-[data-department='occ'] .occ-console-stage .occ-stage-primary > div:nth-child(2) > div:nth-child(2),
-[data-department='occ'] .occ-console-stage .occ-stage-region > div:nth-child(2) > p:nth-child(2),
-[data-department='occ'] .occ-console-stage .occ-stage-weather > div:nth-child(2) > div:nth-child(2),
-[data-department='occ'] .occ-console-stage .occ-stage-weather > div:nth-child(2) > div:nth-child(3) {
-  background: var(--occ-glass);
-}
-
-[data-department='occ'] .occ-stage-primary > div:nth-child(2) > div:nth-child(2),
-[data-department='occ'] .occ-stage-region > div:nth-child(2) > p:nth-child(2) {
-  z-index: 2;
-}
-
-[data-department='occ'] .occ-stage-primary > div:nth-child(2) > div:nth-child(2) {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  right: 12px;
-  border: 1px solid var(--occ-stage-line);
-  border-radius: 12px;
-  padding: 8px 12px;
-}
-
-[data-department='occ'] .occ-stage-region > div:nth-child(2) > p:nth-child(2) {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  border: 1px solid var(--occ-stage-line);
-  border-radius: 12px;
-}
-
-[data-department='occ'] .occ-stage-instruments {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  border-top: 1px solid var(--occ-stage-line);
-  background: var(--occ-glass);
-}
-
-[data-department='occ'] .occ-console-stage .maplibregl-ctrl-top-right { top: 72px; }
-[data-department='occ'] .occ-stage-primary .maplibregl-ctrl-bottom-right,
-[data-department='occ'] .occ-stage-region .maplibregl-ctrl-bottom-right { bottom: 54px; }
-[data-department='occ'] .occ-stage-primary [data-testid='position-map-container'] + div { bottom: 76px; }
-[data-department='occ'] .occ-stage-region [role='status'] { bottom: 56px; }
-
-[data-department='occ'] .occ-summary-strip dl {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-[data-department='occ'] .occ-summary-strip dl > div { padding: 10px 18px; }
-[data-department='occ'] .occ-summary-strip dd { font-variant-numeric: tabular-nums; }
-
-@media (max-width: 1199px) {
-  [data-department='occ'] .occ-console-stage {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 520px auto auto;
-  }
-  [data-department='occ'] .occ-stage-primary {
-    grid-column: 1;
-    border-right: 0 !important;
-    border-bottom: 1px solid var(--occ-stage-line) !important;
-  }
-  [data-department='occ'] .occ-stage-aux {
-    grid-column: 1;
-    grid-row: 2;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: 450px;
-  }
-  [data-department='occ'] .occ-stage-weather {
-    border-bottom: 0 !important;
-    border-right: 1px solid var(--occ-stage-line) !important;
-  }
-  [data-department='occ'] .occ-stage-instruments { grid-row: 3; }
-}
-
-@media (max-width: 699px) {
-  [data-department='occ'] .occ-console-stage {
-    grid-template-rows: 440px auto auto;
-    border-radius: 17px;
-  }
-  [data-department='occ'] .occ-stage-aux {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 455px 310px;
-  }
-  [data-department='occ'] .occ-stage-weather {
-    border-right: 0 !important;
-    border-bottom: 1px solid var(--occ-stage-line) !important;
-  }
-  [data-department='occ'] .occ-console-stage .occ-dashboard-map-panel > header {
-    top: 8px;
-    left: 8px;
-    right: 8px;
-  }
-  [data-department='occ'] .occ-summary-strip dl {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  [data-department='occ'] .occ-summary-strip dl > div { padding: 9px 10px; }
-}
-
-[data-department='occ'] .occ-dashboard * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--occ-line-strong) transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

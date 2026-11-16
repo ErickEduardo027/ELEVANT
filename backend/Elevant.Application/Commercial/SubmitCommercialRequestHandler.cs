@@ -21,7 +21,16 @@ public sealed record SubmitCommercialRequestCommand(
     string? RepresentativeDocumentType = null,
     string? RepresentativeDocumentNumber = null,
     string? RepresentativeDistrict = null,
-    CommercialAirlineProposal? ProposedAirline = null);
+    CommercialAirlineProposal? ProposedAirline = null,
+    string? TaxRegistration = null,
+    string? TaxRegistrationCountryCode = null)
+{
+    /// <summary>
+    /// Automatic public-registry check of a proposed airline (ADR-0023), made by the handler before the
+    /// request is stored; never part of the HTTP body nor of the submission hash.
+    /// </summary>
+    public AirlineRegistryCheck? RegistryCheck { get; init; }
+}
 
 /// <summary>
 /// Airline the applicant could not find in the public catalog (1-N25). Only the ICAO designator is
@@ -37,6 +46,8 @@ public enum CommercialSubmissionFailure
     ServiceUnavailable,
     Conflict,
     ReceiptNotFound,
+    /// <summary>The airline's tax identifier is missing or invalid (an RNC for a Dominican airline).</summary>
+    InvalidTaxRegistration,
 }
 
 public sealed record CommercialSubmissionResult(
@@ -49,20 +60,45 @@ public sealed record CommercialSubmissionResult(
         new(null, false, failure);
 }
 
-public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
+/// <summary>
+/// Validates and stores a public application. A proposed airline is checked against the public
+/// registries first (ADR-0023); <paramref name="registry"/> is optional so persistence tests can
+/// store requests without it.
+/// </summary>
+public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store,
+    IAirlineRegistryLookup? registry = null)
 {
-    public Task<CommercialSubmissionResult> HandleAsync(
+    public async Task<CommercialSubmissionResult> HandleAsync(
         SubmitCommercialRequestCommand command,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
+        if (CanonicalTax(command) is null)
+            return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.InvalidTaxRegistration);
         var canonical = Canonical(command);
         if (canonical is null)
-            return Task.FromResult(CommercialSubmissionResult.Failed(
-                CommercialSubmissionFailure.InvalidRequest));
+            return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.InvalidRequest);
+        if (canonical.ProposedAirline is { } proposal && registry is not null)
+            canonical = canonical with
+            {
+                RegistryCheck = await AirlineRegistryChecks.RunAsync(registry, proposal.Name, proposal.IataCode,
+                    proposal.IcaoCode, cancellationToken),
+            };
+        return await store.SubmitAsync(canonical, cancellationToken);
+    }
 
-        return store.SubmitAsync(canonical, cancellationToken);
+    /// <summary>
+    /// The airline's tax identifier (required): an RNC when its country is the Dominican Republic, and a
+    /// proposed Dominican airline must give a Dominican RNC. A catalog airline's country is checked by the store.
+    /// </summary>
+    private static TaxRegistration? CanonicalTax(SubmitCommercialRequestCommand command)
+    {
+        var tax = TaxRegistrations.Normalize(command.TaxRegistration, command.TaxRegistrationCountryCode);
+        if (tax is null) return null;
+        var proposedCountry = command.ProposedAirline?.CountryCode?.Trim().ToUpperInvariant();
+        return proposedCountry == TaxRegistrations.DominicanRepublic && tax.CountryCode != TaxRegistrations.DominicanRepublic
+            ? null : tax;
     }
 
     public async Task<CommercialSubmissionResult> LookupReceiptAsync(
@@ -94,8 +130,12 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
         if (document is { Valid: false }) return null;
         var proposal = command.ProposedAirline is { } proposed ? CanonicalProposal(proposed) : null;
         if (command.ProposedAirline is not null && proposal is null) return null;
+        var tax = CanonicalTax(command);
+        if (tax is null) return null;
         return command with
         {
+            TaxRegistration = tax.Number,
+            TaxRegistrationCountryCode = tax.CountryCode,
             RepresentativePhone = phone,
             RepresentativeDocumentNumber = document?.Number,
             ProposedAirline = proposal,

@@ -15,6 +15,34 @@ import { mapMessages } from '../mapMessages';
 const OFFSET_PX = 12;
 const shift = align => (align === 'end' ? `calc(-100% - ${OFFSET_PX}px)` : `${OFFSET_PX}px`);
 const metres = value => String(Math.round(value));
+const placed = tooltip => ({ left: tooltip.x, top: tooltip.y, transform: `translate(${shift(tooltip.alignX)}, ${shift(tooltip.alignY)})` });
+
+// The card of an aircraft (ui/aircraftCard.js, owner request of 2026-11-15): its callsign large with its flight number
+// and ADS-B address, then its facts two columns wide, an unknown one as a dash.
+function AircraftTooltip({ tooltip, t }) {
+  return (
+    <div
+      role="tooltip"
+      data-testid="map-tooltip"
+      data-kind="aircraft"
+      data-source={tooltip.source}
+      data-pinned={tooltip.pinned ? 'true' : 'false'}
+      className={`pointer-events-none absolute z-20 w-64 rounded-md border border-l-2 border-l-occ-accent bg-occ-panel-float px-3 py-2 text-sm text-occ-text ${tooltip.pinned ? 'border-occ-line-strong' : 'border-occ-line'}`}
+      style={placed(tooltip)}
+    >
+      <span className="block font-mono text-lg font-semibold leading-6">{tooltip.title}</span>
+      {tooltip.subtitle && <span className="block font-mono text-xs text-occ-muted">{tooltip.subtitle}</span>}
+      <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        {tooltip.facts.map(fact => (
+          <div key={fact.key} data-fact={fact.key} className="contents">
+            <dt className="text-occ-muted">{t(`aircraftCard.${fact.key}`)}</dt>
+            <dd className="truncate font-semibold">{fact.value ?? t('aircraftCard.unknown')}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 /**
  * The words of a tooltip: `{ title, detail, reasons }`, `detail` null when there is nothing to add and `reasons` the
@@ -43,6 +71,7 @@ export function tooltipText(tooltip, t) {
 export default function MapTooltip({ tooltip }) {
   const { t, language } = useTranslation(mapMessages);
   if (!tooltip) return null;
+  if (tooltip.kind === 'aircraft') return <AircraftTooltip tooltip={tooltip} t={t} />;
   const { title, detail, reasons } = tooltipText(tooltip, t);
   const stand = tooltip.kind === 'stand';
   return (
@@ -52,7 +81,7 @@ export default function MapTooltip({ tooltip }) {
       data-kind={tooltip.kind}
       data-pinned={tooltip.pinned ? 'true' : 'false'}
       className={`pointer-events-none absolute z-20 rounded-md border bg-occ-panel-float px-3 py-1.5 text-sm text-occ-text ${stand ? 'max-w-xs' : 'whitespace-nowrap'} ${tooltip.pinned ? 'border-occ-line-strong' : 'border-occ-line'}`}
-      style={{ left: tooltip.x, top: tooltip.y, transform: `translate(${shift(tooltip.alignX)}, ${shift(tooltip.alignY)})` }}
+      style={placed(tooltip)}
     >
       {stand ? (
         <>

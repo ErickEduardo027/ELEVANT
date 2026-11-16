@@ -34,7 +34,7 @@ sources:
   - frontend/private-web/src/features/notifications/DepartmentNotificationCenter.jsx
   - frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx
   - frontend/private-web/src/features/positions-map/components/PositionActions.jsx
-  - frontend/private-web/src/features/dashboard/useDashboardData.js
+  - frontend/private-web/src/features/dashboard/noc/useConsoleData.js
   - frontend/public-web/src/components/portal/AirlineContractSignature.tsx
 tags:
   - revision-docente
@@ -190,6 +190,17 @@ estación. Las cifras cambian respecto de los reportes anteriores.*
 - **Panorama.** Si el panorama no responde en 20 s, la pantalla avisa y ofrece
   reintentar. Las señales del feed ya no reinician una lectura en curso; antes,
   eso lo dejaba en «Cargando panorama operativo…».
+
+  *Posterior al commit verificado: desde el PR U3, Panorama es la consola del
+  OCC y cada panel hace su propia lectura, con el mismo límite de 20 s: el que
+  no responde a tiempo lo dice y ofrece «Reintentar» sin vaciar los demás, y
+  mientras carga se sigue anunciando «Cargando panorama operativo…». Un aviso
+  del feed tampoco reinicia una lectura en curso: los que llegan mientras lee
+  se juntan en una sola relectura al terminar. La planificación, las
+  posiciones y la disponibilidad de los agentes ya no se releen con los avisos
+  del feed, y la cola de revisión solo con `occ_review`. El sondeo de
+  seguridad de esas lecturas pasó de 25 a 60 segundos
+  ([lecturas](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.js)).*
 - **Límite:** las posiciones combinadas (9-Alfa, 32-Bravo) siguen sin modelarse
   en la base de datos.
 

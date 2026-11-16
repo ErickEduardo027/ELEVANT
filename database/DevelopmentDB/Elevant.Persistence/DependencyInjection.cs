@@ -123,6 +123,8 @@ public static class DependencyInjection
         services.AddScoped<IWorkforceReadinessStore, EfWorkforceReadinessStore>();
         services.AddScoped<Elevant.Application.Abstractions.Operations.IOccReadyContractsStore, EfOccReadyContractsStore>();
         services.AddScoped<Elevant.Application.Abstractions.Integration.IFlightFeedSyncStore, Elevant.Persistence.Integration.EfFlightFeedSyncStore>();
+        // ADR-0028 (note of 15 November 2026): the on-demand reference reads share the usage ledger.
+        services.AddScoped<Elevant.Application.Abstractions.Integration.IProviderUsageLedger, Elevant.Persistence.Integration.EfProviderUsageLedger>();
         services.AddScoped<Elevant.Application.Abstractions.Operations.IOccFlightFeedStore, Elevant.Persistence.Integration.EfOccFlightFeedStore>();
         // ADR-0041: the demo flights the superadministrator triggers; whether they run here is DemoFlights:Mode.
         services.AddScoped<IDemoFlightStore, EfDemoFlightStore>();
@@ -133,6 +135,8 @@ public static class DependencyInjection
         services.AddScoped<EfOccMapFlightStore>();
         services.AddScoped<IOccMapFlightStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
         services.AddScoped<IOccMapFlightMatchKeyStore>(provider => provider.GetRequiredService<EfOccMapFlightStore>());
+        // ADR-0043 (contracts 1.4): the ICAO code of a station's airport, which the OCC's weather is read by.
+        services.AddScoped<IOccStationAirportStore, EfOccStationAirportStore>();
         // Defaults when Infrastructure is not composed (tests, database tool); its registrations win.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);

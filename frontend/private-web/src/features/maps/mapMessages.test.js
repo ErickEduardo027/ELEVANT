@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { OCC_SHORTCUTS } from '../occ-ui/occShortcuts';
 import { STAND_STATES, TAGS } from '../occ-ui/statusVocabulary';
+import { ROUTE_LABELS, kinematicsMessages } from './kinematics/kinematicsMessages';
 import { mapMessages } from './mapMessages';
 
 // Every leaf of a message tree as `a.b.c`.
@@ -181,5 +182,43 @@ describe('map messages', () => {
       const texts = OCC_AIR_PICTURE_REASONS.map(reason => createTranslator(mapMessages, language)(`source.reason.${reason}`));
       expect(texts.join(' '), language).not.toMatch(/_|adsb|provider_error|rate_limited/i);
     }
+  });
+
+  it('says «Pausar movimiento» and where a real flight\'s runway comes from, in both languages (PR M6)', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect([es('motion.pause'), es('motion.resume'), es('motion.paused', { time: '14:20' }), es('motion.pausedWithoutData')])
+      .toEqual(['Pausar movimiento', 'Reanudar movimiento', 'Movimiento en pausa · datos de las 14:20', 'Movimiento en pausa']);
+    expect([en('motion.pause'), en('motion.resume'), en('motion.paused', { time: '14:20' })])
+      .toEqual(['Pause movement', 'Resume movement', 'Movement paused · data from 14:20']);
+    // The runway in use of a real flight with where the choice comes from (airport/runwayInUse.js: its `source`).
+    expect(['live', 'wind', 'default'].map(source => es('dataBlock.runwayFrom', { id: '08', source: es(`dataBlock.runwaySource.${source}`) })))
+      .toEqual(['Pista 08 (por el tráfico)', 'Pista 08 (por el viento)', 'Pista 08 (habitual)']);
+    expect(en('dataBlock.runwayFrom', { id: '26', source: en('dataBlock.runwaySource.live') })).toBe('Runway 26 (from the traffic)');
+  });
+
+  it('names the parts of the chosen flight\'s route and follow mode in both languages (PR M6)', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    const parts = ['routeFlownObserved', 'routeFlownEstimated', 'routeRemaining', 'routeMark', 'routeMarkHint'];
+    expect(parts.map(key => es(`legend.traffic.${key}`))).toEqual(['Recorrido observado', 'Trayecto estimado', 'Ruta prevista',
+      'Puntos de la ruta', 'Toma de pista, salida y posición']);
+    expect(parts.map(key => en(`legend.traffic.${key}`))).toEqual(['Observed path', 'Estimated path', 'Planned route',
+      'Route points', 'Touchdown, runway exit and stand']);
+    // The estimated part has one name: the legend's is the label the route builder gives it.
+    for (const language of ['es', 'en']) {
+      expect(createTranslator(mapMessages, language)('legend.traffic.routeFlownEstimated'), language)
+        .toBe(createTranslator(kinematicsMessages, language)(ROUTE_LABELS.flownEstimated));
+    }
+    // The words of PR M5's straight line are gone.
+    expect(es('legend.traffic.routeNext')).toBe('legend.traffic.routeNext');
+    // Follow mode's switch keeps one name, pressed or not; the notice names it.
+    expect([es('follow.label'), es('follow.stopped', { id: 'ZZ9001' })])
+      .toEqual(['Seguir', 'Dejaste de seguir a ZZ9001. Pulsa Seguir para volver.']);
+    expect([en('follow.label'), en('follow.stopped', { id: 'ZZ9001' })])
+      .toEqual(['Follow', 'You stopped following ZZ9001. Press Follow to resume.']);
+    // The button is named as the key table names the S key.
+    expect(OCC_SHORTCUTS.find(shortcut => shortcut.action === 'toggleFollow')).toMatchObject({ key: 's', es: 'Seguir',
+      en: 'Follow' });
   });
 });

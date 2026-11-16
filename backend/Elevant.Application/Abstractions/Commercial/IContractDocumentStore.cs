@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Elevant.Domain.Validation;
 
 namespace Elevant.Application.Abstractions.Commercial;
 
@@ -55,7 +56,7 @@ public sealed record ContractDocumentData(Guid ContractId, Guid VersionId, strin
     DateOnly ValidFrom, DateOnly? ValidTo, string CurrencyCode, IReadOnlyList<string> Stations,
     IReadOnlyList<ContractDocumentRate> Rates, string? Terms, DateOnly? SignedOn,
     IReadOnlyList<ContractDocumentSignature> Signatures, ContractValidityTerms? Validity = null,
-    ContractPricingTerms? Pricing = null)
+    ContractPricingTerms? Pricing = null, TaxRegistration? AirlineTaxRegistration = null)
 {
     /// <summary>SHA-256 of the canonical content; a signature proves acceptance of exactly this.</summary>
     public string ContentSha256 => ContractDocumentHash.Of(this);
@@ -66,6 +67,21 @@ public sealed record ContractDocumentData(Guid ContractId, Guid VersionId, strin
 
 public static class ContractDocumentHash
 {
+    /// <summary>
+    /// A version signed before its airline had a tax identifier keeps the content it was signed with: when no
+    /// signature matches the content with the identifier and one matches it without, the identifier is left out.
+    /// </summary>
+    public static ContractDocumentData AsSigned(ContractDocumentData document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document.AirlineTaxRegistration is null || document.Signatures.Count == 0) return document;
+        var withTax = Of(document);
+        if (document.Signatures.Any(item => item.DocumentSha256 == withTax)) return document;
+        var withoutTax = document with { AirlineTaxRegistration = null };
+        var signedBefore = Of(withoutTax);
+        return document.Signatures.Any(item => item.DocumentSha256 == signedBefore) ? withoutTax : document;
+    }
+
     public static string Of(ContractDocumentData document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -135,6 +151,13 @@ public static class ContractDocumentHash
                                 }).ToArray(),
                         }).ToArray(),
                 },
+            })[1..];
+        // The airline's tax identifier joins the signed content only when its organization has one, so versions
+        // signed before it existed keep exactly the hash they were signed with.
+        if (document.AirlineTaxRegistration is { } tax)
+            canonical = canonical[..^1] + "," + JsonSerializer.Serialize(new
+            {
+                airlineTaxRegistration = new[] { tax.Number, tax.CountryCode },
             })[1..];
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }

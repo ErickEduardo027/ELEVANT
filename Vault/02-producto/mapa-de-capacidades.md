@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-13"
-verified_commit: "e098ccde9d1ab6996d7d79bf914662a67236768c"
+last_verified: "2026-11-14"
+verified_commit: "eeac6d1e5cf0a7b047735e2c68c013839462b6e5"
 sources:
   - packages/api-client/openapi/elevant-v1.json
   - packages/api-client/src/client.ts
@@ -20,6 +20,7 @@ sources:
   - backend/Elevant.Api/Controllers/OccFlightFeedController.cs
   - backend/Elevant.Api/Controllers/DemoFlightsController.cs
   - backend/Elevant.Api/Controllers/OccMapController.cs
+  - backend/Elevant.Api/Controllers/OccWeatherController.cs
   - backend/Elevant.Api/Controllers/RampExecutionController.cs
   - backend/Elevant.Api/Controllers/OccReviewController.cs
   - backend/Elevant.Api/Controllers/MobileDevicesController.cs
@@ -40,6 +41,7 @@ sources:
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
   - docs/adr/0036-simulated-card-payment.md
   - docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md
+  - docs/adr/0042-occ-air-picture-and-map-flights.md
 tags:
   - producto
   - capacidades
@@ -52,7 +54,7 @@ tags:
 Este inventario responde «¿qué existe hoy y hasta dónde llega?» para el código
 del commit verificado. Cada fila nombra el controlador y una o más operaciones
 (`operationId`) del [snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json),
-que en ese commit publica 408 operaciones en 356 rutas. Ninguna fila acredita
+que en ese commit publica 409 operaciones en 357 rutas. Ninguna fila acredita
 merge en otra rama, promoción ni despliegue en el VPS: eso solo lo respalda un
 registro `operator-recorded`.
 
@@ -79,7 +81,8 @@ registro `operator-recorded`.
 | Contratos versionados, permisos y tarifas | Private Web, Public Web | `ContractDraftsController` · `ActivateManagedContractDraft`; `ContractDocumentsController` · `SignContractVersion`; `ContractLifecycleController` · `ApplyContractLifecycle`, `ReviewAirlinePermit`; `FinanceTariffBookController` · `DecideFinanceContractApproval` | Entregada | Vigencia, firmas dibujadas, permisos de operación y aprobación de precios por Finanzas ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md), [ADR-0025](../../docs/adr/0025-contract-validity-and-drawn-signatures.md), [ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)). |
 | Turnaround y vuelos | Private Web | `OccTurnaroundsController` · `RescheduleOccTurnaround`; `OccFlightFeedController` · `ImportOccFlight`, `RefreshOccFlightFeed`; `OccTrafficController` · `GetOccAircraftTraffic` | Entregada; el feed externo es configurable | El feed AeroDataBox está apagado sin `AeroDataBox:Enabled` y clave; el feed simulado solo arranca en Development o Test ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). El tráfico OpenSky también está apagado por defecto. |
 | Vuelos demo | Private Web | `DemoFlightsController` · `GetDemoFlightOptions`, `ListDemoFlights`, `CreateDemoFlight`, `CancelDemoFlight`, `PrepareDemoStation` | Configurable o solo Development | Superadministración dispara dos propuestas del proveedor «Demo» que OCC importa y opera como un vuelo real, sin gastar unidades de AeroDataBox. `DemoFlights:Mode` es `Disabled` por defecto y `Enabled` en `appsettings.Development.json`; fuera de Development, Test o Testing la API no arranca con él. La decisión está en el [ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md). Desde el PR A2, `PrepareDemoStation` carga las 41 posiciones de Punta Cana sin coordenadas y sin tocar lo que existe, «Al azar» sortea la posición entre las que cubre un agente elegible y la posición de cualquier vuelo queda libre con el `PUSHBACK` registrado. |
-| Mapas del OCC: imagen aérea y vuelos | Private Web (desde el PR M5, planificado) | `OccMapController` · `GetOccAirPicture`, `GetOccAircraftTrack`, `GetOccMapFlights` | Configurable o solo Development | La imagen aérea, con los aviones reales de adsb.fi y adsb.lol de relevo, está apagada por defecto (`AirTraffic:Enabled`) y la enciende `appsettings.Development.json`. Se lee solo mientras alguien la pide, se sirve desde memoria con el crédito de la red y reconoce los vuelos de ELEVANT por matrícula y *callsign*. Los vuelos del mapa (tramos y propuestas con claves que no cambian al importar, fase, posición, hitos y reloj demo) no dependen de esa configuración. Lee el personal interno con un permiso de mapas y la estación en su alcance. Ninguna pantalla los consume todavía: el carril de mapas los dibuja desde el PR M5. *Posterior al commit verificado:* la decisión está en el [ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md). |
+| Mapas del OCC: imagen aérea y vuelos | Private Web (desde el PR M5, posterior al commit verificado) | `OccMapController` · `GetOccAirPicture`, `GetOccAircraftTrack`, `GetOccMapFlights` | Configurable o solo Development | La imagen aérea, con los aviones reales de adsb.fi y adsb.lol de relevo, está apagada por defecto (`AirTraffic:Enabled`) y la enciende `appsettings.Development.json`. Se lee solo mientras alguien la pide, se sirve desde memoria con el crédito de la red y reconoce los vuelos de ELEVANT por matrícula y *callsign*. Los vuelos del mapa (tramos y propuestas con claves que no cambian al importar, fase, posición, hitos y reloj demo) no dependen de esa configuración. Lee el personal interno con un permiso de mapas y la estación en su alcance. *Posterior al commit verificado:* la decisión está en el [ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md); desde el PR M5 los dibuja el mapa de Monitoreo de vuelos y, desde el PR M6, también Mapa de posiciones y la vista «Mapa» de Planificación, dentro del marco del OCC; desde el PR U3, la consola de Panorama ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). |
+| Clima del aeródromo (METAR y TAF) | Private Web (desde la segunda parte del PR M8, planificado) | `OccWeatherController` · `GetOccAerodromeWeather` | Configurable o solo Development | El METAR (lo básico decodificado y el texto en bruto) y el TAF (en bruto y por periodos) del aeropuerto de la estación, que la API trae de aviationweather.gov: Punta Cana lee MDPC. Está apagado por defecto (`AviationWeather:Enabled`) y lo enciende `appsettings.Development.json`. La API llama al servicio solo cuando alguien pide el clima y guarda lo que responde, el METAR 5 minutos y el TAF 30. El estado (`Live`, `Stale`, `Unavailable` o `Disabled`) viaja en el 200 con el crédito «NOAA Aviation Weather Center». Lee el personal interno con un permiso de mapas y la estación en su alcance. Ninguna pantalla lo consume todavía: Private Web sigue con el METAR de Iowa Mesonet hasta la segunda parte del PR M8. *Posterior al commit verificado:* la decisión está en el [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). |
 | Planificación y cobertura | Private Web, Mobile Agent | `OccPlanningController` · `AssignOccPlanningOperation`; `OccPositionsController` · `AssignOccStand`; `OccCoverageController` · `CreateOccCoverage`; `OccAssignmentReadinessController` · `GetOccAssignmentReadiness` | Entregada | Posiciones combinadas, cobertura por turno y relevos ([ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md), [ADR-0030](../../docs/adr/0030-position-coverage-per-shift-and-combined-stands.md), [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)). |
 | Ejecución en rampa | Mobile Agent | `RampOperationsController` · `StartRampOperation`; `RampExecutionController` · `RecordRampMilestone`; `RampOperationServicesController` · `TransitionRampOperationService`; `RampServiceChargesController` · `ApplyRampServiceCharge` | Entregada | Captura del reporte de vuelo en la tableta ([ADR-0031](../../docs/adr/0031-flight-report-capture-on-the-tablet.md)). |
 | Checklists, formularios y firmas | Mobile Agent, Private Web | `RampOperationChecklistsController` · `SubmitRampOperationChecklist`; `RampDocumentsController` · `SignRampOperationDocument`, `RecordRampDamageMark` | Entregada | Orden de Servicio y walk-around con fotos en almacenamiento privado ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)). |

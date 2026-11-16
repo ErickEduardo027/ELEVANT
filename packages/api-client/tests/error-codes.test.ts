@@ -177,6 +177,13 @@ describe("Problem Details codes", () => {
     expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
   });
 
+  it("keeps invalid_weather_query of the OCC weather (ADR-0043)", () => {
+    // A malformed weather query has its own code; a refused reader and a station without weather keep the common ones.
+    for (const code of ["invalid_weather_query", "forbidden", "not_found"]) expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    expect(ELEVANT_API_ERROR_CODES.filter(code => code === "invalid_weather_query")).toHaveLength(1);
+    expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

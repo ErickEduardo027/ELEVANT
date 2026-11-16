@@ -4,6 +4,7 @@ import { listAudit } from '../../services/humanResourcesEmployeesService';
 import ShellFrame from '../shell/ShellFrame';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon, UsersIcon, MapPinIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
+import { ShellAviationReferenceProvider } from '../aviation-reference/AviationReferenceContext';
 import ClientsPanel from './ClientsPanel';
 import DemoFlightsPanel from './DemoFlightsPanel';
 import EmailDeliveryPanel from './EmailDeliveryPanel';
@@ -141,11 +142,11 @@ export default function GovernanceShell({ user, onLogout }) {
           {status === 'ready' && moduleId === 'home' && <GovernanceHome snapshot={snapshot} tasks={tasks} overview={overview}
             onOpen={setModuleId} onDone={async message => { setError(''); setNotice(message); await refresh(); }}
             onRefresh={refresh} />}
-          {status === 'ready' && moduleId === 'airlines' && <AirlinesPanel airlines={airlines}
+          {status === 'ready' && moduleId === 'airlines' && <ShellAviationReferenceProvider><AirlinesPanel airlines={airlines}
             onSave={(id, values, idempotencyKey) => run(() => saveManagedAirline(id, values, idempotencyKey), 'Aerolínea guardada.')}
             onArchive={(id, version) => run(() => archiveManagedAirline(id, version), 'Aerolínea archivada.')}
             onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')}
-            onCheckRegistry={async id => { const result = await checkManagedAirlineRegistry(id); await refresh(); return result; }} />}
+            onCheckRegistry={async id => { const result = await checkManagedAirlineRegistry(id); await refresh(); return result; }} /></ShellAviationReferenceProvider>}
           {status === 'ready' && moduleId === 'settings' && <DemoFlightsPanel />}
           {status === 'ready' && moduleId === 'settings' && <EmailDeliveryPanel />}
           {status === 'ready' && moduleId === 'settings' && <GovernanceSettings snapshot={snapshot} run={run} />}

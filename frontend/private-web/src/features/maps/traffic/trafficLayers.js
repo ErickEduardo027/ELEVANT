@@ -1,16 +1,21 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
+import { altitudeColourExpression, mapColorsFor } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
-import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
+import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 
 // The traffic of the OCC maps as one overlay for buildOccStyle (design E1, contracts 2.4), fed by OccMap: the aircraft
 // (traffic/trafficFeatures.js) with updateData, their trails (traffic/trailStore.js) and the chosen flight's route
-// with setData. «Cabina oscura»: normal traffic carries no hue (ELEVANT flights in the text colour, the rest faint);
-// only the chosen aircraft is cyan. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
+// with setData. Every aircraft is coloured by its altitude (owner request of 2026-11-15, style/mapColors.js: orange near
+// the ground to violet at 40 000 ft, light grey on the ground, ui/AltitudeLegend.jsx explains it); only the chosen
+// aircraft is cyan, with its ring. Estimated, stale and demo are told by a dashed ring, an age, a dimmed symbol and a
 // striped plate, never by colour alone. Pure.
 //
-// Layers bottom to top. In the `routes` slot the chosen flight's route: flown (solid) and still to fly (dashed). In the
+// Layers bottom to top. In the `routes` slot the chosen flight's route (PR M6, traffic/routeFeatures.js), in the
+// selection's cyan and told apart by its line, never by a hue: flown as observed (solid), flown as estimated (thin and
+// faint, «Trayecto estimado»), still to fly (dashed, static: only aircraft move) and its marked points (small rings, an
+// apron hold with its words, «Posición por asignar»). In the
 // `traffic` slot: the trails of other traffic (off until «Estelas de todo el tráfico»), the live trails fading toward
 // their tail, the estimated ones dashed; other traffic on the ground (from the airfield threshold up) and in the air,
 // each icon with its tag in one symbol; the tags of all other traffic (off until «Etiquetas de todo el tráfico»); the
@@ -36,7 +41,15 @@ const is = key => ['==', get(key), true];
 const isNot = key => ['!=', get(key), true];
 const AVIAM = ['==', get('kind'), 'aviam'];
 const OTHER = ['==', get('kind'), 'other'];
-const DIMMED = ['case', is('stale'), 0.5, 1];
+// An ELEVANT aircraft parked in the stand that shows it is the stand's (PR M6, design F4: one owner per aircraft): its
+// symbol and tag give way to the stand's footprint or glyph; the chosen aircraft is drawn all the same. Its marks stay:
+// an estimated position keeps its dashed ring and a demo flight its «Demo» plate over the stand (contracts 2.4, «Tags»:
+// whatever is estimated or simulated carries its mark on screen).
+const NOT_PARKED = isNot('parkedOnStand');
+// A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
+// carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
+const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
+const FADED = ['coalesce', get('opacity'), 1];
 const bold = () => ['literal', [...FONT_STACKS.bold]];
 
 // An OCC colour with its alpha, for the fading trail: the token's own colour, never a new hue.
@@ -60,9 +73,9 @@ const iconLayout = (extra = {}) => ({
   ...extra,
 });
 
-const iconPaint = (colour, haloWidth) => ({
+const iconPaint = (colour, haloWidth, halo = occColor('nav')) => ({
   'icon-color': colour,
-  'icon-halo-color': occColor('nav'),
+  'icon-halo-color': halo,
   'icon-halo-width': haloWidth,
   'icon-opacity': DIMMED,
 });
@@ -132,13 +145,51 @@ const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLA
 const ems = pixels => Math.round((pixels / PLATE_TEXT_SIZE) * 1000) / 1000;
 
 const ACCENT = occColor('accent');
+// Every aircraft but the chosen one in the colour of its altitude, edged by the halo of the theme (style/mapColors.js).
+const altitudePaint = (theme, haloWidth) => iconPaint(altitudeColourExpression(theme), haloWidth,
+  mapColorsFor(theme).altitude.halo);
 // The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
 // cyan clear of the silhouette.
 const SELECTED_RING_RADIUS_PX = 18;
 const SELECTED_RING_WIDTH_PX = 2;
 
-/** The overlay of the traffic for buildOccStyle; its three sources start empty. */
-export function trafficOverlay() {
+/** How the parts of the chosen flight's route are drawn (design E5): width in px, opacity, dashes. */
+export const ROUTE_STYLE = Object.freeze({
+  flownObserved: Object.freeze({ width: 2.5, opacity: 1 }),
+  flownEstimated: Object.freeze({ width: 1.5, opacity: 0.55 }),
+  remaining: Object.freeze({ width: 1.5, opacity: 1, dash: Object.freeze([2, 2]) }),
+});
+
+// One line layer per part of the route, filtered by its `part`.
+function routeLine(id, part) {
+  const { width, opacity, dash } = ROUTE_STYLE[part];
+  return {
+    slot: 'routes',
+    id,
+    type: 'line',
+    source: ROUTE_SOURCE,
+    filter: ['==', get('part'), part],
+    layout: dash ? { 'line-join': 'round' } : { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ACCENT,
+      'line-width': width,
+      ...(opacity === 1 ? {} : { 'line-opacity': opacity }),
+      ...(dash ? { 'line-dasharray': [...dash] } : {}),
+    },
+    metadata: { 'occ:group': TRAFFIC_GROUPS.route },
+  };
+}
+
+/** The ids of the route's layers, one per part of traffic/routeFeatures.js's ROUTE_PARTS. */
+export const ROUTE_LAYER_IDS = Object.freeze({
+  flownObserved: 'occ-route-flown',
+  flownEstimated: 'occ-route-flown-estimated',
+  remaining: 'occ-route-remaining',
+  mark: 'occ-route-marks',
+});
+
+/** The overlay of the traffic for buildOccStyle, in the colours of `theme`; its three sources start empty. */
+export function trafficOverlay({ theme = 'dark' } = {}) {
   return {
     sources: {
       [TRAFFIC_SOURCE]: { type: 'geojson', promoteId: 'id' },
@@ -146,24 +197,39 @@ export function trafficOverlay() {
       [ROUTE_SOURCE]: { type: 'geojson' },
     },
     layers: [
+      // What it flew estimated, under what it flew observed, under what it still has to fly.
+      routeLine(ROUTE_LAYER_IDS.flownEstimated, 'flownEstimated'),
+      routeLine(ROUTE_LAYER_IDS.flownObserved, 'flownObserved'),
+      routeLine(ROUTE_LAYER_IDS.remaining, 'remaining'),
       {
         slot: 'routes',
-        id: 'occ-route-flown',
-        type: 'line',
+        id: ROUTE_LAYER_IDS.mark,
+        type: 'symbol',
         source: ROUTE_SOURCE,
-        filter: ['==', get('part'), 'flown'],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': ACCENT, 'line-width': 2.5 },
-        metadata: { 'occ:group': TRAFFIC_GROUPS.route },
-      },
-      {
-        slot: 'routes',
-        id: 'occ-route-next',
-        type: 'line',
-        source: ROUTE_SOURCE,
-        filter: ['==', get('part'), 'next'],
-        layout: { 'line-join': 'round' },
-        paint: { 'line-color': ACCENT, 'line-width': 1.5, 'line-dasharray': [2, 2] },
+        filter: ['==', get('part'), 'mark'],
+        layout: {
+          'icon-image': ROUTE_MARK_IMAGE,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-pitch-alignment': 'map',
+          // Only an apron hold has words: «Posición por asignar», beside its ring.
+          'text-field': ['coalesce', get('label'), ''],
+          'text-font': [...FONT_STACKS.bold],
+          'text-size': 12,
+          'text-anchor': 'left',
+          'text-offset': [0.8, 0],
+          'text-optional': true,
+          'text-rotation-alignment': 'viewport',
+          'text-pitch-alignment': 'viewport',
+        },
+        paint: {
+          'icon-color': ACCENT,
+          'icon-halo-color': occColor('nav'),
+          'icon-halo-width': 1.5,
+          'text-color': ACCENT,
+          'text-halo-color': occColor('nav'),
+          'text-halo-width': 1.5,
+        },
         metadata: { 'occ:group': TRAFFIC_GROUPS.route },
       },
       {
@@ -209,7 +275,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', OTHER, is('ground')],
         layout: otherLayout(),
-        paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
+        paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
           'occ:minThreshold': 'airfield' },
       },
@@ -220,7 +286,7 @@ export function trafficOverlay() {
         source: TRAFFIC_SOURCE,
         filter: ['all', OTHER, isNot('ground')],
         layout: otherLayout(),
-        paint: { ...iconPaint(occColor('faint'), 1), ...tagPaint(occColor('muted')) },
+        paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
       },
       // Above the icons of other traffic, so MapLibre places these tags before them: a tag keeps off the ELEVANT
@@ -240,9 +306,9 @@ export function trafficOverlay() {
         id: 'occ-traffic-aviam',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: AVIAM,
+        filter: ['all', AVIAM, NOT_PARKED],
         layout: iconLayout(),
-        paint: iconPaint(occColor('text'), 1.5),
+        paint: altitudePaint(theme, 1.5),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:pick': 'flight', 'occ:pickId': 'flightKey' },
       },
       {
@@ -258,7 +324,9 @@ export function trafficOverlay() {
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
         },
-        paint: { 'icon-color': occColor('muted'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1 },
+        paint: {
+          'icon-color': occColor('muted'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1, 'icon-opacity': FADED,
+        },
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
       },
       {
@@ -266,7 +334,7 @@ export function trafficOverlay() {
         id: 'occ-traffic-tags',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: AVIAM,
+        filter: ['all', AVIAM, NOT_PARKED],
         layout: tagLayout(12, {
           'text-field': ['case', ['!=', get('tagStand'), ''], aviamTag({ stand: true }), aviamTag({ stand: false })],
           // Always on: where no anchor is free, over what is there.

@@ -35,18 +35,33 @@ export const OCC_REQUEST_PLAN = Object.freeze({
     Object.freeze({ key: 'presence', read: 'putOperationalPresence', resources: Object.freeze([]), pollMs: 30_000,
       coalesceMs: null, fixedRate: true, owner: '../../packages/api-client/src/presence.ts' }),
   ]),
-  // The console that U3 builds on useOccResource; its alerts panel reads the frame's notices.
+  // The console of U3 on useOccResource: the map's two reads (maps/useMapSituation.js, MAP_SITUATION_READS) and the
+  // console's own four (dashboard/noc/consoleReads.js, CONSOLE_READS); its alerts panel reads the frame's notices.
   console: Object.freeze([
     Object.freeze({ key: 'airPicture', read: 'getOccAirPicture', resources: Object.freeze([]), pollMs: 10_000,
-      coalesceMs: OCC_COALESCE_MS, note: 'refreshAfterSeconds (10 s), paused while the tab is hidden' }),
+      coalesceMs: OCC_COALESCE_MS, note: 'refreshAfterSeconds (10 s), paused while the tab is hidden',
+      owner: 'src/features/maps/useMapSituation.js' }),
     Object.freeze({ key: 'mapFlights', read: 'getOccMapFlights', resources: Object.freeze(['occ_planning']),
-      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS }),
+      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS, owner: 'src/features/maps/useMapSituation.js' }),
     Object.freeze({ key: 'planning', read: 'getOccPlanningSnapshot', resources: Object.freeze([]),
-      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS }),
+      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS, owner: 'src/features/dashboard/noc/useConsoleData.js' }),
     Object.freeze({ key: 'positions', read: 'getOccPositions', resources: Object.freeze([]),
-      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS }),
+      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS, owner: 'src/features/dashboard/noc/useConsoleData.js' }),
     Object.freeze({ key: 'reviewQueue', read: 'getOccReviewQueue', resources: Object.freeze(['occ_review']),
-      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS }),
+      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS, owner: 'src/features/dashboard/noc/useConsoleData.js' }),
+    // The assigned agents who cannot operate, once the planning's day is known.
+    Object.freeze({ key: 'readiness', read: 'getOccAssignmentReadiness', resources: Object.freeze([]),
+      pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS, owner: 'src/features/dashboard/noc/useConsoleData.js' }),
+  ]),
+  // The console's AeroDataBox reference reads (ADR-0028, note of 15 November 2026), on their own visible-tab timers: the
+  // delays pill every 15 minutes and the routes every hour. The aircraft and an origin's delays are read only when a
+  // flight or a stand is chosen, so they have no pace. The API keeps every answer, so they spend units at most hourly.
+  // The delays are not in the Starter plan (`offOnStarter`): their first answer is Disabled and the pill stops polling.
+  references: Object.freeze([
+    Object.freeze({ key: 'airportDelays', read: 'getOccAirportDelays', resources: Object.freeze([]), pollMs: 900_000,
+      coalesceMs: null, fixedRate: true, offOnStarter: true, owner: 'src/features/aviation-reference/AirportDelays.jsx' }),
+    Object.freeze({ key: 'airportRoutes', read: 'getOccAirportRoutes', resources: Object.freeze([]), pollMs: 3_600_000,
+      coalesceMs: null, fixedRate: true, owner: 'src/features/aviation-reference/useAirportRoutes.js' }),
   ]),
 });
 
@@ -82,8 +97,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
     movesIn: 'U2', resources: ['occ_review'], pollMs: null,
     // The review route re-reads its queue, and the open operation's detail and incidents.
     readsPerRefresh: 3 }),
-  'src/features/dashboard/useDashboardData.js': site({ mode: 'screen', screen: 'dashboard', movesIn: 'U3',
-    resources: ['notifications', 'occ_planning'], pollMs: 25_000, readsPerRefresh: 3 }),
   'src/features/flight-monitoring/FlightMonitoringRoute.jsx': site({ mode: 'screen', screen: 'flight-monitoring',
     movesIn: 'U5', resources: ['occ_planning'], pollMs: 25_000, readsPerRefresh: 1 }),
   'src/features/positions-map/PositionsMapRoute.jsx': site({ mode: 'screen', screen: 'positions-map', movesIn: 'U5',
@@ -125,7 +138,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
 
 /** Other periodic reads the OCC screens send today, outside any observer (file and pace read from the code). */
 export const OCC_SCREEN_POLLS = Object.freeze([
-  Object.freeze({ screen: 'dashboard', key: 'regionalTraffic', pollMs: 120_000, file: 'src/features/dashboard/useRegionalTraffic.js' }),
   Object.freeze({ screen: 'flight-monitoring', key: 'flightSnapshot', pollMs: 30_000, file: 'src/services/flightMonitoringService.js' }),
   Object.freeze({ screen: 'positions-map', key: 'positionsSnapshot', pollMs: 30_000, file: 'src/services/positionsMapService.js' }),
   Object.freeze({ screen: 'chat', key: 'conversations', pollMs: 20_000, file: 'src/features/chat/useChatPages.js' }),

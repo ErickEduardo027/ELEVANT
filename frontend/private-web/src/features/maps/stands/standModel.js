@@ -1,6 +1,8 @@
+import { FLIGHT_REPORT_MILESTONES } from '@elevant/api-client';
 import { normalizeStandCode } from '../../../services/standCodes';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
+import { resolveAircraftType } from '../aircraft/types';
 import { pointInPolygon } from '../airport/geo';
 import { indexLayout, matchStand } from '../airport/layoutIndex';
 import { locationPoint, resolveStandGeometry } from '../airport/standGeometry';
@@ -9,8 +11,10 @@ import { endsItsVisit } from '../core/mapSelection';
 // The model of a stand on the OCC maps (PR M4): where it is drawn (attachStandGeometry, design C5) and how it reads
 // (deriveDisplayStatus: the seven states and the signals of contracts 2.4, with item 3 of the plan's «Ajustes»). Pure.
 // The airport layout arrives as a parameter, so this module never bundles the dataset. The screens pass what their
-// reads give today (the positions board); what only later PRs bring is optional: the map flights of PR A3 (their
-// milestones and the demo instants of the server) and the aircraft position of PR M5.
+// reads give: the positions board, and inside the OCC frame (PR M6, traffic/standInputs.js) the map flights of each
+// visit (their milestones, their aircraft and the demo instants of the server) and where its aircraft is, live or
+// estimated. From them a stand also says which aircraft it draws to scale, how far its turnaround has gone and when
+// an aircraft stands on it without its arrival recorded (design D1 to D3).
 
 /** A visit assigned to a stand reads «Llegando» from this long before its aircraft is due on the stand. */
 export const ARRIVING_WINDOW_MS = 15 * 60 * 1000;
@@ -18,6 +22,14 @@ export const ARRIVING_WINDOW_MS = 15 * 60 * 1000;
 export const RELEASING_WINDOW_MS = 15 * 60 * 1000;
 /** A stand nobody covers raises «Sin agente que la cubra» when a flight is on it or due on it within this window. */
 export const COVERAGE_WINDOW_MS = 60 * 60 * 1000;
+/** The milestones of a turnaround's flight report (contracts 1.3): a stand's progress counts them, 25 in all. */
+export const MILESTONES_TOTAL = FLIGHT_REPORT_MILESTONES.length;
+/** Below this ground speed (2 kt) an aircraft stands still: ADS-B speed on the ground is noise under it. */
+export const STILL_BELOW_MS = (2 * 1852) / 3600;
+
+const MILESTONE_CODES = new Set(FLIGHT_REPORT_MILESTONES.map(item => item.code));
+// The aircraft a stand draws to scale (design D3): solid while it is on the stand, dashed while it is still to come.
+const FOOTPRINT_OF_STATE = Object.freeze({ occupied: 'solid', releasing: 'solid', planned: 'planned', arriving: 'planned' });
 
 const MINUTE_MS = 60 * 1000;
 
@@ -73,44 +85,115 @@ function legsOf(flightsByTurnaround, turnaroundId) {
 const hasMilestone = (legs, code) => legs.some(leg => Array.isArray(leg.milestones)
   && leg.milestones.some(milestone => milestone?.code === code && milestone.actualAt != null));
 
+// The milestones of the flight report recorded for a visit, each code once (both legs carry the operation's), or `null`
+// without its map flights: then nobody knows how far the turnaround has gone.
+function recordedMilestones(legs) {
+  if (legs.length === 0) return null;
+  const codes = new Set();
+  for (const leg of legs) {
+    for (const milestone of Array.isArray(leg.milestones) ? leg.milestones : []) {
+      if (milestone?.actualAt != null && MILESTONE_CODES.has(milestone.code)) codes.add(milestone.code);
+    }
+  }
+  return codes.size;
+}
+
+// The type of the aircraft of a visit, to draw it to scale (aircraft/types.js): the first leg whose aircraft says
+// something of it. `null` when nothing does, since the neutral dart of an unknown type has no size to draw.
+function visitTypeSpec(legs) {
+  const aircraft = legs.map(leg => leg.aircraft)
+    .find(item => item !== null && typeof item === 'object' && (item.typeIcaoCode || item.model || item.sizeCategory));
+  if (!aircraft) return null;
+  const type = resolveAircraftType({ typeIcao: aircraft.typeIcaoCode, model: aircraft.model, sizeCategory: aircraft.sizeCategory });
+  return type.iconCategory === 'unknown' ? null : type.spec;
+}
+
+const isMovingFast = speed => typeof speed === 'number' && Number.isFinite(speed) && speed >= STILL_BELOW_MS;
+
 /**
  * One board visit (a turnaround the positions board lists on the stand) joined with its optional map flights and
- * aircraft position: whether it still counts, whether its aircraft is on the stand, whether it landed, and its times.
+ * aircraft position: whether it still counts, whether its aircraft is on the stand, whether it landed, its times, its
+ * aircraft type and progress, and whether its aircraft stands on the stand without its arrival recorded.
  */
-function describeVisit(turnaround, legs, aircraft, polygon, now) {
+function describeVisit(turnaround, legs, aircraft, polygon, now, exactNow = now) {
   const arrival = legs.find(leg => leg.direction === 'Arrival') ?? null;
   const departure = legs.find(leg => leg.direction === 'Departure') ?? null;
   const demo = legs.map(leg => leg.demo).find(value => value !== null && typeof value === 'object') ?? null;
   const onBlockAt = timeOf(demo?.onBlockAt);
+  const offBlockAt = timeOf(demo?.offBlockAt);
   const touchdownAt = timeOf(demo?.touchdownAt);
   const point = locationPoint(aircraft?.position ?? aircraft);
+  // An aircraft in the air is never on a stand; a position that says nothing of it is read as one on the ground.
+  const inBox = point !== null && Array.isArray(polygon) && aircraft?.onGround !== false && pointInPolygon(point, polygon);
+  const blockOn = hasMilestone(legs, 'BLOCK_ON');
+  // OCC's «Registrar llegada» writes the arrival's on-block time (contracts 1.3, `actualKind: 'OnBlock'`).
+  const onBlockRecorded = arrival !== null && arrival.actualAt != null && arrival.actualKind === 'OnBlock';
+  const isDemo = turnaround.isDemo === true || legs.some(leg => leg.isDemo === true);
   // The aircraft is on the stand (contracts 2.4 and «Ajustes» 3), by the first evidence there is: the server's demo
   // instant; a recorded BLOCK_ON; the aircraft (live or estimated) inside the stand box; and with none of them, the
-  // actual time of the arrival leg when it is the on-block (`actualKind: 'OnBlock'`, contracts 1.3: OCC's «Registrar
-  // llegada»), since a runway time only says that the aircraft landed. Without the arrival leg, which is what today's
-  // reads give, the arrival time of the board decides: that is the leg's actual time, whichever kind it is.
+  // actual time of the arrival leg when it is the on-block, since a runway time only says that the aircraft landed.
+  // Without the arrival leg, which is what the board alone gives, the arrival time of the board decides: that is the
+  // leg's actual time, whichever kind it is.
   let onStand;
-  if (onBlockAt !== null) onStand = now >= onBlockAt;
-  else if (hasMilestone(legs, 'BLOCK_ON')) onStand = true;
-  else if (point !== null && Array.isArray(polygon)) onStand = pointInPolygon(point, polygon);
-  else if (arrival !== null) onStand = arrival.actualAt != null && arrival.actualKind === 'OnBlock';
+  // The server's demo instants are compared with the exact instant, not the minute: the stand changes in the same
+  // moment its aircraft parks or leaves (contracts 2.3, the server owns every instant).
+  if (onBlockAt !== null) onStand = exactNow >= onBlockAt;
+  else if (blockOn) onStand = true;
+  else if (point !== null && Array.isArray(polygon)) onStand = inBox;
+  else if (arrival !== null) onStand = onBlockRecorded;
   else onStand = turnaround.arrivedAt != null;
   const landed = turnaround.arrivedAt != null || arrival?.actualAt != null
-    || arrival?.phase === 'landed' || arrival?.phase === 'arrived' || (touchdownAt !== null && now >= touchdownAt);
+    || arrival?.phase === 'landed' || arrival?.phase === 'arrived' || (touchdownAt !== null && exactNow >= touchdownAt);
   return {
     turnaround,
-    ended: legs.some(endsItsVisit),
+    // A leg ends it (mapSelection.js: endsItsVisit); a demo flight leaves its stand at the server's off-block too.
+    ended: legs.some(endsItsVisit) || (offBlockAt !== null && exactNow >= offBlockAt),
     onStand,
     landed,
     arrivalAt: onBlockAt ?? timeOf(arrival?.estimatedAt) ?? timeOf(arrival?.scheduledAt)
       ?? timeOf(turnaround.arrivalScheduledAt),
-    departureAt: timeOf(demo?.offBlockAt) ?? timeOf(demo?.scheduledOffBlockAt) ?? timeOf(departure?.estimatedAt)
+    departureAt: offBlockAt ?? timeOf(demo?.scheduledOffBlockAt) ?? timeOf(departure?.estimatedAt)
       ?? timeOf(departure?.scheduledAt) ?? timeOf(turnaround.departureScheduledAt),
     arrivalFlight: turnaround.arrivalFlightNumber ?? arrival?.flightNumber ?? null,
     departureFlight: turnaround.departureFlightNumber ?? departure?.flightNumber ?? null,
     aircraftType: arrival?.aircraft?.typeIcaoCode ?? departure?.aircraft?.typeIcaoCode ?? arrival?.aircraft?.model
       ?? departure?.aircraft?.model ?? null,
-    isDemo: turnaround.isDemo === true || legs.some(leg => leg.isDemo === true),
+    typeSpec: visitTypeSpec(legs),
+    milestonesDone: recordedMilestones(legs),
+    // Its aircraft (live or estimated) stands still on the ground inside the stand box, yet nothing records that it is
+    // there: no BLOCK_ON and no on-block time. A demo flight's time is the server's, so it never asks.
+    arrivalNotRecorded: !isDemo && inBox && !isMovingFast(aircraft?.gsMs) && !blockOn && !onBlockRecorded,
+    isDemo,
+    // What the stand's detail says of the visit (owner request of 2026-11-15), from what the screen already read:
+    // where its aircraft comes from and goes to, its scheduled, estimated and actual times, its aircraft and its legs
+    // (their milestones make the progress strip).
+    detail: visitDetail(turnaround, arrival, departure, legs, { touchdownAt, onBlockAt, offBlockAt }),
+  };
+}
+
+const counterpartOf = leg => leg?.counterpart?.iataCode ?? leg?.counterpart?.icaoCode ?? null;
+
+// The facts of a visit for the stand's detail: `{ airline, registration, origin, destination, arrival, departure,
+// operationStatus, legs }`, `arrival` and `departure` as `{ scheduledAt, estimatedAt, actualAt }` (ms or null).
+function visitDetail(turnaround, arrival, departure, legs, demo) {
+  return {
+    airline: turnaround.airlineName ?? arrival?.airline?.name ?? departure?.airline?.name ?? null,
+    registration: turnaround.aircraftRegistration ?? arrival?.aircraft?.registration ?? departure?.aircraft?.registration
+      ?? null,
+    origin: counterpartOf(arrival),
+    destination: counterpartOf(departure),
+    arrival: {
+      scheduledAt: timeOf(arrival?.scheduledAt) ?? timeOf(turnaround.arrivalScheduledAt),
+      estimatedAt: timeOf(arrival?.estimatedAt),
+      actualAt: timeOf(turnaround.arrivedAt) ?? timeOf(arrival?.actualAt) ?? demo.onBlockAt ?? demo.touchdownAt,
+    },
+    departure: {
+      scheduledAt: timeOf(departure?.scheduledAt) ?? timeOf(turnaround.departureScheduledAt),
+      estimatedAt: timeOf(departure?.estimatedAt),
+      actualAt: timeOf(departure?.actualAt) ?? demo.offBlockAt,
+    },
+    operationStatus: turnaround.status ?? null,
+    legs,
   };
 }
 
@@ -147,16 +230,24 @@ function display(state, extra = {}) {
     minutesToDeparture: null,
     flightNumber: null,
     aircraftType: null,
+    typeSpec: null,
+    footprint: null,
+    milestonesDone: null,
+    milestonesTotal: MILESTONES_TOTAL,
     isDemo: false,
     cancelledBy: null,
+    // The facts of the visit shown (visitDetail) and the next visit while an aircraft is on the stand.
+    detail: null,
+    next: null,
     ...extra,
   };
 }
 
 /**
  * How a stand reads from its own fields alone, without the board's visits: its board status (standDrawState), its
- * flight, type and demo mark, the stand that cancels it, and no visit, times or signals. A stand of a screen that gives
- * no `turnarounds` (the console's apron) reads this way, and so does any stand the map is given without a display.
+ * flight, type and demo mark, the stand that cancels it, and no visit, times, signals, footprint or progress. A stand of
+ * a screen that gives no `turnarounds` (the console's apron) reads this way, and so does any stand the map is given
+ * without a display.
  */
 export function displayFromStatus(position) {
   return display(standDrawState(position?.status), {
@@ -168,31 +259,44 @@ export function displayFromStatus(position) {
 }
 
 /**
- * How a stand reads at `nowMs` (rounded down to the minute; the current time when it is not given). `position` is a
+ * How a stand reads at `nowMs` (rounded down to the minute, except against the server's demo instants, which it
+ * compares exactly; the current time when it is not given). `position` is a
  * stand of a positions screen (positionsMapMappers.js), with `geometry` when attachStandGeometry gave it one.
- * `flightsByTurnaround` (the map flights of PR A3, one or both legs per turnaround id) and `aircraftByTurnaround`
- * (`[lng, lat]` or `{ latitude, longitude }` per turnaround id, PR M5) are optional, as a Map or a plain object.
+ * `flightsByTurnaround` (the map flights of contracts 1.3, one or both legs per turnaround id) and
+ * `aircraftByTurnaround` (per turnaround id: `{ position: [lng, lat], onGround, gsMs, quality }` as
+ * traffic/standInputs.js gives it, or just `[lng, lat]` or `{ latitude, longitude }`) are optional, as a Map or a plain
+ * object.
  *
  * The state is one of the seven of contracts 2.4:
  * 1. a stand without the board's visits (`turnarounds`, as the dashboard gives its stands) keeps its own state;
  * 2. `unverified`: a map stand with no database row; 3. `disabled`: a free stand cancelled by a combined stand;
- * 4. a visit stops counting once a leg of it ends it (mapSelection.js: endsItsVisit; the board already drops a visit
- *    whose PUSHBACK is recorded);
+ * 4. a visit stops counting once a leg of it ends it (mapSelection.js: endsItsVisit, its PUSHBACK among them; the
+ *    board already drops a visit whose PUSHBACK is recorded), and a demo visit at the server's off-block;
  * 5. with an aircraft on the stand: `releasing` when its departure is due within 15 minutes, else `occupied`;
- * 6. otherwise, for the next visit: `arriving` when it landed and its aircraft is not on the stand yet, or it is due
- *    within 15 minutes; else `planned`; 7. no visit: `available`.
+ * 6. otherwise, for the next visit: `arriving` when it landed and its aircraft is not on the stand yet (for a demo
+ *    flight before the server's on-block; for any other, no BLOCK_ON and its aircraft, live or estimated, outside the
+ *    stand box or in the air), or it is due within 15 minutes; else `planned`; 7. no visit: `available`.
  * Signals, the most urgent first: `urgent` `conflict` (two aircraft are on the stand, or another visit comes onto it
  * before its aircraft leaves: that visit landed already, or it is due within 15 minutes and before the departure of the
  * aircraft on the stand, a departure nobody knows without a time or once it is past; a turnover due once that aircraft
  * has left is no conflict); `attention` `uncovered` (the coverage list is empty, never just absent, and a flight is on
- * the stand or due within 60 minutes) and `overdue` (the aircraft is still on the stand after its departure time).
+ * the stand or due within 60 minutes) and `overdue` (the aircraft is still on the stand after its departure time); then
+ * the plain notice `arrivalNotRecorded` (design D3): an aircraft, live or estimated, stands still on the ground (under
+ * 2 kt) inside the stand box with neither BLOCK_ON nor an on-block time, and it is not a demo flight, whose time the
+ * server records: «El avión ya está en la posición. Registra la llegada.»
  *
  * Returns `{ state, signals: [{ kind, reason }], visit (the board turnaround the stand shows, or null), arrivalAt,
- * departureAt (epoch ms or null), minutesToArrival, minutesToDeparture, flightNumber, aircraftType, isDemo,
- * cancelledBy (the normalized code of the stand that cancels this one, or null) }`.
+ * departureAt (epoch ms or null), minutesToArrival, minutesToDeparture, flightNumber, aircraftType, typeSpec, footprint,
+ * milestonesDone, milestonesTotal, isDemo, cancelledBy (the normalized code of the stand that cancels this one, or
+ * null) }`: `typeSpec` is the shown visit's aircraft type (aircraft/types.js: resolveAircraftType; null when its map
+ * flights say nothing of it), `footprint` how the stand draws that aircraft to scale (`solid` while it is on the stand,
+ * occupied or releasing; `planned`, dashed, while it is planned or arriving; null without a type or a visit), and
+ * `milestonesDone` the distinct milestones recorded for that visit out of `milestonesTotal` (25: the flight report of
+ * contracts 1.3), null without its map flights.
  */
 export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, aircraftByTurnaround } = {}) {
-  const now = floorToMinute(Number.isFinite(nowMs) ? nowMs : Date.now());
+  const exactNow = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const now = floorToMinute(exactNow);
   const cancelledBy = cancellerOf(position);
   if (!Array.isArray(position?.turnarounds)) return displayFromStatus(position);
   if (position.status === 'unverified' || position.standId == null) return display('unverified', { cancelledBy });
@@ -201,7 +305,7 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
   const visits = position.turnarounds
     .filter(turnaround => turnaround !== null && typeof turnaround === 'object')
     .map(turnaround => describeVisit(turnaround, legsOf(flightsByTurnaround, turnaround.turnaroundId),
-      lookup(aircraftByTurnaround, turnaround.turnaroundId), position.geometry?.polygon, now))
+      lookup(aircraftByTurnaround, turnaround.turnaroundId), position.geometry?.polygon, now, exactNow))
     .filter(visit => !visit.ended);
   const onStand = visits.filter(visit => visit.onStand).sort(byArrival);
   const waiting = visits.filter(visit => !visit.onStand).sort(byArrival);
@@ -228,6 +332,7 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
   if (current !== null && current.departureAt !== null && now > current.departureAt) {
     signals.push({ kind: 'attention', reason: 'overdue' });
   }
+  if (onStand.some(visit => visit.arrivalNotRecorded)) signals.push({ kind: 'notice', reason: 'arrivalNotRecorded' });
 
   const shown = current ?? next;
   if (shown === null) return display(state, { signals, cancelledBy });
@@ -241,8 +346,21 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
     // The flight whose time the stand shows: the departure of the aircraft on it, the arrival of the one to come.
     flightNumber: current !== null ? shown.departureFlight ?? shown.arrivalFlight : shown.arrivalFlight ?? shown.departureFlight,
     aircraftType: shown.aircraftType,
+    typeSpec: shown.typeSpec,
+    footprint: shown.typeSpec === null ? null : FOOTPRINT_OF_STATE[state] ?? null,
+    milestonesDone: shown.milestonesDone,
     isDemo: shown.isDemo,
     cancelledBy,
+    detail: shown.detail,
+    // The visit that comes next onto the stand once the aircraft on it leaves.
+    next: current !== null && next !== null ? {
+      turnaround: next.turnaround,
+      flightNumber: next.arrivalFlight ?? next.departureFlight,
+      arrivalAt: next.arrivalAt,
+      minutesToArrival: minutesUntil(next.arrivalAt, now),
+      airline: next.detail.airline,
+      origin: next.detail.origin,
+    } : null,
   });
 }
 
@@ -253,7 +371,8 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
  * Anything that is not an object is left out. Pure: stands/useStandDisplay.js keeps the result per minute.
  */
 export function withStandDisplay(positions = [], { nowMs, flightsByTurnaround, aircraftByTurnaround } = {}) {
-  const now = floorToMinute(Number.isFinite(nowMs) ? nowMs : Date.now());
+  // One instant for every stand; the model rounds it to the minute itself, except for the server's demo instants.
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
   return (positions ?? [])
     .filter(position => position !== null && typeof position === 'object')
     .map(position => {

@@ -3,8 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { AUTH_STORAGE_KEY as APP_AUTH_STORAGE_KEY } from '../src/features/auth/authService';
 import { mapOccupancyToRampPositions } from '../src/features/positions-map/positionsMapMappers';
 import { RAMP_POSITIONS } from '../src/features/dashboard/positionsData';
+import { MDPC_LAYOUT } from '../src/features/maps/airport/airportLayout';
+import { attachStandGeometry, withStandDisplay } from '../src/features/maps/stands/standModel';
+import { buildSituation, toFlightsModel, toPictureModel } from '../src/features/maps/traffic/situationModel';
+import { standInputsOf } from '../src/features/maps/traffic/standInputs';
 import {
-  AUTH_STORAGE_KEY, OCC_ACCESS, STATION, createOccApi, occSession, positionsBoard,
+  AUTH_STORAGE_KEY, MAP_HEX, OCC_ACCESS, STATION, aircraftTrack, airPicture, arrivalKeyOf, assignmentReadiness, createOccApi,
+  demoClock, mapFlights, occSession, operationDateAt, planningSnapshot, positionsBoard,
 } from './visual/occ/fixtures/occApi.mjs';
 
 // The synthetic API of the OCC visual suite (tests/visual/occ) must be answers the app accepts: the shared client
@@ -49,8 +54,8 @@ describe('visual suite OCC fixtures', () => {
     expect(OCC_ACCESS.permissions).toContain('operations.positions_map.read');
   });
 
-  it('the stub answers only the access and the board, and counts the boards it serves', async () => {
-    const api = createOccApi();
+  it('the stub answers the access, the board, the map reads, the ping and the planning, and counts what it serves', async () => {
+    const api = createOccApi({ startedAt: NOW });
     const get = path => ({ method: () => 'GET', url: () => `https://api.elevant.test${path}` });
     const answer = path => api.handle(get(path), new URL(`https://api.elevant.test${path}`));
     expect(await answer('/api/v1/governance/me/access')).toEqual({ status: 200, json: OCC_ACCESS });
@@ -58,8 +63,79 @@ describe('visual suite OCC fixtures', () => {
     expect(board.status).toBe(200);
     expect(board.json).toMatchObject({ stationId: STATION.stationId, operationDate: DATE });
     expect(api.reads).toBe(1);
-    expect(await answer('/api/v1/occ/planning')).toBeNull();
+    // The map reads (PR M6), each counted.
+    for (const path of [`/api/v1/occ/map/air-picture?stationId=${STATION.stationId}&trails=short`,
+      `/api/v1/occ/map/flights?stationId=${STATION.stationId}`,
+      `/api/v1/occ/map/aircraft/${MAP_HEX.holdingB24.toUpperCase()}/track?stationId=${STATION.stationId}`, '/api/v1/system/ping']) {
+      expect((await answer(path))?.status, path).toBe(200);
+    }
+    expect(api.mapReads).toEqual({ airPicture: 1, flights: 1, track: 1, ping: 1 });
+    expect((await answer(`/api/v1/occ/map/aircraft/${MAP_HEX.holdingB24.toUpperCase()}/track`)).json.hex).toBe(MAP_HEX.holdingB24);
+    expect((await answer(`/api/v1/occ/planning?stationId=${STATION.stationId}`)).json).toMatchObject({ date: operationDateAt(Date.now()) });
+    expect((await answer(`/api/v1/occ/planning/assignment-readiness?stationId=${STATION.stationId}&date=${DATE}`)).json)
+      .toEqual({ stationId: STATION.stationId, date: DATE, assignments: [] });
+    // Anything else is the isolation's 404; a write it does not know, too.
+    expect(await answer('/api/v1/occ/review-queue')).toBeNull();
     expect(api.handle({ method: () => 'POST' }, new URL('https://api.elevant.test/api/v1/occ/positions'))).toBeNull();
+  });
+
+  it('the map reads, the ping and the planning pass the strict validators of the shared client', async () => {
+    const demo = demoClock(NOW);
+    for (const trails of ['short', 'none']) {
+      const picture = airPicture({ now: NOW });
+      await expect(clientAnswering(picture).getOccAirPicture({ stationId: STATION.stationId, trails }), trails).resolves.toEqual(picture);
+    }
+    const flights = mapFlights({ now: NOW, demo });
+    await expect(clientAnswering(flights).getOccMapFlights({ stationId: STATION.stationId })).resolves.toEqual(flights);
+    // Later in the story as well: the demo aircraft on its stand three minutes on.
+    const later = mapFlights({ now: NOW + 4 * 60_000, demo });
+    await expect(clientAnswering(later).getOccMapFlights({ stationId: STATION.stationId })).resolves.toEqual(later);
+    const track = aircraftTrack({ hex: MAP_HEX.holdingB24, now: NOW });
+    await expect(clientAnswering(track).getOccAircraftTrack({ stationId: STATION.stationId, hex: MAP_HEX.holdingB24 }))
+      .resolves.toEqual(track);
+    const ping = { application: 'ELEVANT', status: 'Healthy', environment: 'Visual', timestampUtc: new Date(NOW).toISOString() };
+    await expect(clientAnswering(ping).getSystemPing()).resolves.toEqual(ping);
+    const snapshot = planningSnapshot({ date: DATE, now: NOW });
+    await expect(clientAnswering(snapshot).getOccPlanningSnapshot({ stationId: STATION.stationId, date: DATE })).resolves.toEqual(snapshot);
+    const readiness = assignmentReadiness({ date: DATE });
+    await expect(clientAnswering(readiness).getOccAssignmentReadiness({ stationId: STATION.stationId, date: DATE }))
+      .resolves.toEqual(readiness);
+    // The demo board's visit on A3 is the demo flight: due at its on-block, arrived at its touchdown.
+    const a3 = positionsBoard({ date: DATE, now: NOW, demo }).positions.find(stand => stand.code === 'A3');
+    expect(a3).toMatchObject({ status: 'occupied', turnarounds: [{ isDemo: true, arrivalScheduledAt: new Date(demo.onBlockAt).toISOString(),
+      arrivedAt: new Date(demo.touchdownAt).toISOString() }] });
+    await expect(clientAnswering(positionsBoard({ date: DATE, now: NOW, demo })).getOccPositions(STATION.stationId, DATE)).resolves
+      .toBeDefined();
+  });
+
+  it('the map reads tell the story of the visual specs on the board\'s stands', () => {
+    const demo = demoClock(NOW);
+    const board = positionsBoard({ date: DATE, now: NOW, demo });
+    const situation = buildSituation({ picture: toPictureModel(airPicture({ now: NOW })),
+      flights: toFlightsModel(mapFlights({ now: NOW, demo })), nowMs: NOW });
+    // The live aircraft are the board's flights: ZZ102 on A6 and ZZ111 holding short of B24.
+    expect(situation.aircraft.filter(item => item.kind === 'aviam').map(item => item.flightKey).sort())
+      .toEqual([arrivalKeyOf(2), arrivalKeyOf(11)].sort());
+    const stands = withStandDisplay(attachStandGeometry(mapOccupancyToRampPositions(RAMP_POSITIONS, board, board.asOf), MDPC_LAYOUT),
+      { nowMs: NOW, ...standInputsOf(situation) });
+    const read = code => stands.find(stand => stand.id === code).display;
+    // The demo flight landed and taxis to A3, which the board already calls occupied: «Llegando», its A320 dashed.
+    expect(read('A3')).toMatchObject({ state: 'arriving', isDemo: true, footprint: 'planned' });
+    // ZZ111 holds outside B24's box: «Llegando»; ZZ102 stands on A6 with no arrival recorded: «Ocupada» and the notice.
+    expect(read('B24')).toMatchObject({ state: 'arriving', footprint: 'planned' });
+    expect(read('A6')).toMatchObject({ state: 'occupied', footprint: 'solid', signals: [{ kind: 'notice', reason: 'arrivalNotRecorded' }] });
+    // The turnarounds on their stands with their milestones, and the planned ones dashed.
+    expect(read('A2')).toMatchObject({ state: 'occupied', footprint: 'solid', milestonesDone: 9, milestonesTotal: 25 });
+    expect(read('A7')).toMatchObject({ state: 'releasing', footprint: 'solid', milestonesDone: 18 });
+    expect(read('A4')).toMatchObject({ state: 'planned', footprint: 'planned' });
+    // Four minutes on, the demo aircraft is on A3.
+    const later = NOW + 4 * 60_000;
+    const laterSituation = buildSituation({ picture: toPictureModel(airPicture({ now: later })),
+      flights: toFlightsModel(mapFlights({ now: later, demo })), nowMs: later });
+    const laterBoard = positionsBoard({ date: DATE, now: later, demo });
+    const laterStands = withStandDisplay(attachStandGeometry(mapOccupancyToRampPositions(RAMP_POSITIONS, laterBoard, laterBoard.asOf),
+      MDPC_LAYOUT), { nowMs: later, ...standInputsOf(laterSituation) });
+    expect(laterStands.find(stand => stand.id === 'A3').display).toMatchObject({ state: 'occupied', footprint: 'solid', signals: [] });
   });
 
   it('«Ubicar en el mapa» keeps the location, answers the board with it as the client expects, and the next read keeps it', async () => {

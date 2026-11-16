@@ -72,5 +72,24 @@ it('keeps the bridge attribute in the frame props', async () => {
     SidebarComponent: OccSidebar,
     TopbarComponent: OccTopbar,
     rootClassName: 'bg-occ-canvas text-occ-text',
+    // The URL of these tests is the console's (beforeEach): its map fills main.
+    mainVariant: 'fill',
   });
+});
+
+it('the console route fills main without padding; other modules keep scrolling', async () => {
+  const view = renderLayout();
+  await screen.findByText('Marco OCC con avisos: empty');
+  // Panorama is a full-screen map (contratos 2.5): main takes it edge to edge, with no padding and no scroll.
+  expect(shellProps.frameProps.mainVariant).toBe('fill');
+  view.unmount();
+
+  for (const path of ['/admin-occ/planning', '/admin-occ/dashboard/otra', '/admin-occ/positions-map']) {
+    window.history.replaceState({}, '', path);
+    const other = renderLayout();
+    await screen.findByText('Marco OCC con avisos: empty');
+    expect(shellProps.frameProps.mainVariant, path).toBe('scroll');
+    expect(shellProps.frameProps).toMatchObject({ department: 'occ', rootAttributes: { 'data-occ-bridge': '' } });
+    other.unmount();
+  }
 });

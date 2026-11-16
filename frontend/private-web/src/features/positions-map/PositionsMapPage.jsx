@@ -17,12 +17,17 @@ import { useTranslation } from '../../i18n/LanguageScope';
 import { positionsMapMessages } from './positionsMapMessages';
 import { locateOccStand } from '../../services/occPositionsService';
 import { useMapSelection } from '../maps/core/useMapSelection';
+import MapSituationGate, { MapSituationOverlays, trafficSelectionOf } from '../maps/MapSituationGate';
 import { mapMessages } from '../maps/mapMessages';
-import { unlocatedStands } from '../maps/stands/standModel';
+import { attachStandGeometry, unlocatedStands } from '../maps/stands/standModel';
 import { useStandDisplay } from '../maps/stands/useStandDisplay';
+import { standInputsOf } from '../maps/traffic/standInputs';
 
 const NO_POSITIONS = Object.freeze([]);
 const NO_MESSAGE = Object.freeze({ tone: '', text: '' });
+// The data block of the chosen flight or aircraft (PR M6) docks at the top left of the map, right of the page's map
+// controls; «Ubicar en el mapa» keeps the top centre.
+const DATA_BLOCK_STYLE = Object.freeze({ top: 12, left: 56 });
 // The location saved for a stand, as «Ubicar en el mapa» always sent it: six decimals, about 10 cm.
 const toSixDecimals = value => Number(Number(value).toFixed(6));
 
@@ -33,7 +38,24 @@ export function assignCandidates(data) {
   return [...(data?.unassigned ?? []), ...elsewhere];
 }
 
-export default function PositionsMapPage({
+/**
+ * Mapa de posiciones. Inside the OCC frame (PR M6) its stands read the map flights and the aircraft positions of the
+ * station (maps/MapSituationGate.jsx, useMapSituation): a stand reads «Llegando» until its aircraft is on it, draws that
+ * aircraft to scale, counts its milestones and asks to record an arrival nobody recorded; and its map draws the live,
+ * estimated and demo traffic with the chosen flight's route and data block. The selection is the URL's (`stand=`,
+ * `flightId=`, `hex=`). Outside the frame it reads nothing more than the board, as before.
+ */
+export default function PositionsMapPage(props) {
+  const { selection } = useMapSelection();
+  return (
+    <MapSituationGate selection={selection} fallback={<PositionsMapSkeleton />}>
+      {live => <PositionsMapScreen {...props} live={live} />}
+    </MapSituationGate>
+  );
+}
+
+function PositionsMapScreen({
+  aircraftFacts = null,
   status,
   data,
   error,
@@ -43,13 +65,16 @@ export default function PositionsMapPage({
   forceState = 'default',
   theme = 'light',
   onNavigateToResource = () => {},
+  live = null,
 }) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
   // The selected stand lives in the URL (contracts 2.1: `stand=`); its drawer has an open state of its own, so the first
-  // Esc closes the drawer and the next one, on the map, clears the selection (contracts 2.2).
-  const { selection, selectStand, clear } = useMapSelection();
+  // Esc closes the drawer and the next one, on the map, clears the selection (contracts 2.2). Inside the OCC frame a
+  // flight (`flightId=`) or an aircraft (`hex=`) of the traffic may be the selection instead (PR M6).
+  const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
   const selectedCode = selection?.kind === 'stand' ? selection.id : null;
+  const trafficSelection = live ? trafficSelectionOf(selection) : null;
   const [drawerOpen, setDrawerOpen] = useState(() => selectedCode !== null);
   const [viewMode, setViewMode] = useState('2d');
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -91,8 +116,18 @@ export default function PositionsMapPage({
   const displayConnection = forceState === 'positionsMapDisconnected' ? 'disconnected' : connection;
 
   // Each stand as it reads now (the seven states, recomputed on the minute): the map draws it and the drawer says it;
-  // the list, the summary and the alerts keep the board's status.
-  const displayedPositions = useStandDisplay(positions);
+  // the list, the summary and the alerts keep the board's status. Inside the OCC frame (PR M6) with the map flights and
+  // the aircraft positions, and placed on the airport layout first, so a stand reads the aircraft inside its box.
+  const layout = live?.layout ?? null;
+  const situation = live?.situation ?? null;
+  const placedPositions = useMemo(() => (layout ? attachStandGeometry(positions, layout) : positions),
+    [positions, layout]);
+  const standInputs = useMemo(() => standInputsOf(situation), [situation]);
+  // On the clock the map draws its aircraft at (the server's, paused with the motion), so a demo stand changes state
+  // when its aircraft parks or leaves.
+  const standClock = live?.renderClock ?? null;
+  const standOptions = useMemo(() => ({ ...standInputs, clock: standClock }), [standInputs, standClock]);
+  const displayedPositions = useStandDisplay(placedPositions, standOptions);
   const { search, setSearch, terminalFilter, setTerminalFilter, filteredPositions } = usePositionsMapFilters(displayedPositions);
   const { toasts, dismissToast } = usePositionAlerts(positions, displayConnection);
 
@@ -138,6 +173,12 @@ export default function PositionsMapPage({
       return;
     }
     openStand(id);
+  }
+
+  // A flight or an aircraft chosen on the map (PR M6): its data block shows and its stand is marked.
+  function handleSelectTraffic(next) {
+    if (next.kind === 'flight') selectFlight(next.id);
+    else selectAircraft(next.id);
   }
 
   function handleToggleFullscreen() {
@@ -261,7 +302,12 @@ export default function PositionsMapPage({
         pendingLocation={placing?.pending ?? null}
         onCancelPlacing={cancelPlacing}
         onMapClick={placing ? handleMapClick : undefined}
-      />
+        traffic={live?.traffic}
+        trafficSelection={trafficSelection}
+        onSelectTraffic={live ? handleSelectTraffic : undefined}
+      >
+        <MapSituationOverlays live={live} onClose={clear} blockStyle={DATA_BLOCK_STYLE} />
+      </PositionMap>
       {placing && (
         <div ref={placingRef} tabIndex={-1} role="group" aria-label={tMap('placing.label', { code: placing.code })}
           onKeyDown={handlePlacingKeyDown}
@@ -349,6 +395,7 @@ export default function PositionsMapPage({
         onChanged={onRetry}
         onStartPlacing={handleStartPlacing}
         operationDate={data?.operationDate}
+        aircraftFacts={aircraftFacts}
       />
 
       <PositionToastStack toasts={toasts} onDismiss={dismissToast} />
