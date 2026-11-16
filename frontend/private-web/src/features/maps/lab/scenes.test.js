@@ -13,8 +13,8 @@ import { SCENARIO_AGENTS } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { legendEntries } from '../ui/legendEntries';
 import {
-  BASEMAP_MODES, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant, labStands,
-  readLabQuery,
+  BASEMAP_MODES, NIGHT_INSTANT, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant,
+  labStandFlights, labStands, readLabQuery,
 } from './scenes';
 
 // The lab's stands as the map lab shows them: read at the scene's instant (useStandDisplay).
@@ -31,7 +31,8 @@ describe('map lab scenes', () => {
       'ramp-traffic-ground', 'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected',
       'region-layers-menu', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
       'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
-      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'ramp-3d-parked', 'ramp-3d-selected',
+      'airfield-3d-final', 'ramp-3d-night',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -43,7 +44,11 @@ describe('map lab scenes', () => {
       expect(scene.title, scene.id).toMatch(/^\p{Lu}/u);
       expect(scene.title, scene.id).not.toMatch(/^\p{Lu}{2,}/u);
       expect(scene.description, scene.id).toMatch(/^\p{Lu}.*\.$/u);
-      expect(scene.at, scene.id).toBe(scene.kind === 'map' ? SCENE_INSTANT : null);
+      // The night scene of PR M7 reads at its own night.
+      const at = scene.id === 'ramp-3d-night' ? NIGHT_INSTANT : SCENE_INSTANT;
+      expect(scene.at, scene.id).toBe(scene.kind === 'map' ? at : null);
+      // 2D, except the 3D scenes of PR M7.
+      expect(scene.pitchMode, scene.id).toBe(scene.id.includes('-3d-') ? '3d' : '2d');
       expect(Object.isFrozen(scene), scene.id).toBe(true);
     }
     // 11:00 in Punta Cana, the frozen clock of the visual suite.
@@ -54,7 +59,7 @@ describe('map lab scenes', () => {
       'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'region-traffic-selected',
       'approach-traffic-hex-selected', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
       'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
-      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'ramp-3d-selected',
     ]);
     // The demo scenes of PR M6 choose the demo flight; the three sources of a position, the one without a signal.
     for (const id of ['approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'airfield-demo-cancelled',
@@ -92,7 +97,7 @@ describe('map lab scenes', () => {
     }
     // Every map scene draws these same stands, frozen.
     for (const scene of SCENES.filter(item => item.kind === 'map')) {
-      expect(scene.stands, scene.id).toEqual(labStands());
+      expect(scene.stands, scene.id).toEqual(scene.id === 'ramp-3d-night' ? labStands(NIGHT_INSTANT) : labStands());
       expect(Object.isFrozen(scene.stands[0]), scene.id).toBe(true);
     }
     // The seven states, read at the scene's instant.
@@ -130,6 +135,22 @@ describe('map lab scenes', () => {
     expect(stands.flatMap(stand => stand.coveredBy ?? []).every(name => agents.has(name))).toBe(true);
   });
 
+  it('the 3D scenes (PR M7) draw ten aircraft of several families on their stands, by day and by night', () => {
+    const parkedTypes = (stands, at, flights) => withStandDisplay(stands, { nowMs: at, flightsByTurnaround: flights })
+      .filter(stand => stand.display?.footprint === 'solid').map(stand => stand.display.aircraftType).sort();
+    const types = ['A320', 'A321', 'A332', 'AT76', 'B38M', 'B738', 'B763', 'B789', 'CRJ9', 'E190'];
+    const parked = findScene('ramp-3d-parked');
+    expect(parkedTypes(parked.stands, parked.at, parked.standFlights)).toEqual(types);
+    const night = findScene('ramp-3d-night');
+    expect(new Date(NIGHT_INSTANT).toISOString()).toBe('2026-11-14T02:00:00.000Z');
+    expect(parkedTypes(night.stands, night.at, night.standFlights)).toEqual(types);
+    expect(night.traffic).toBeUndefined();
+    // The traffic of the demo flight, reused from the scenes of PR M6.
+    expect(parked.traffic).toBe(findScene('airfield-demo-taxiing').traffic);
+    expect(findScene('airfield-3d-final').traffic).toBe(findScene('approach-demo-final').traffic);
+    expect(Object.keys(labStandFlights())).toHaveLength(10);
+  });
+
   it('the layout-qa scene is development-only data with a known view', () => {
     const review = findScene('layout-qa');
     expect(review).toEqual({
@@ -146,6 +167,7 @@ describe('map lab scenes', () => {
       basemap: 'on',
       webgl: true,
       placing: null,
+      pitchMode: '2d',
     });
     expect(Object.isFrozen(review) && Object.isFrozen(review.stands)).toBe(true);
     expect(SCENES.filter(scene => scene.kind !== 'map').map(scene => scene.id)).toEqual(['layout-qa']);

@@ -37,7 +37,12 @@ describe('the traffic scenes of the map lab', () => {
       }
     }
     // Each traffic scene names its scenario; no other scene has traffic.
-    expect(SCENES.filter(scene => scene.traffic).map(scene => scene.id)).toEqual(Object.keys(TRAFFIC_SCENARIOS));
+    // The 3D scenes of PR M7 reuse the demo flight's.
+    const reused = { 'ramp-3d-parked': 'airfield-demo-taxiing', 'ramp-3d-selected': 'airfield-demo-taxiing',
+      'airfield-3d-final': 'approach-demo-final' };
+    const withTraffic = SCENES.filter(scene => scene.traffic);
+    expect(withTraffic.filter(scene => !reused[scene.id]).map(scene => scene.id)).toEqual(Object.keys(TRAFFIC_SCENARIOS));
+    for (const [id, from] of Object.entries(reused)) expect(findScene(id).traffic, id).toBe(TRAFFIC_SCENARIOS[from]);
     expect(findScene('ramp-traffic-ground').traffic).toBe(TRAFFIC_SCENARIOS['ramp-traffic-ground']);
   });
 

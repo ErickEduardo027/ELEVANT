@@ -28,6 +28,10 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 // A traffic scene (PR M5) also has `traffic`: the synthetic air picture, map flights and tracks of
 // lab/trafficScenes.js, which the lab draws at the frozen clock for the URL's selection (MapLab.jsx), without polling;
 // with `layersMenu: true` it opens with the layers menu open.
+// Every scene has `pitchMode` (PR M7): `2d`, or `3d` for the 3D scenes, which open tilted with the 3D aircraft; the
+// dock's 2D/3D control and D change it while the scene is open. A 3D scene may add `standFlights`, the map flights of
+// its stands' visits by turnaround (their aircraft types), so the occupied stands draw their aircraft to scale and in
+// 3D, as the screens do with the flights they read.
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
 export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
@@ -97,6 +101,36 @@ const RAMP = Object.freeze({
   // BN13 has no database row: the map draws it «Sin verificar».
 });
 
+// The aircraft types of the visits on their stands in the 3D scenes (PR M7): several families of the type table, from a
+// turboprop and a regional jet to the wide bodies, on the stands that have an aircraft at the scene's instant.
+const STAND_TYPES = Object.freeze({
+  DM205: 'A320', DM209: 'B738', DM211: 'A332', DM213: 'B789', DM217: 'E190', DM221: 'AT76', DM223: 'A321',
+  DM229: 'B763', DM233: 'CRJ9', DM237: 'B38M',
+});
+
+/**
+ * The map flights of the stands' visits by turnaround, as a screen reads them (PR M7): one arrival leg per visit whose
+ * type STAND_TYPES names, landed at its time, with its aircraft. Only what the stands read of a visit: its aircraft
+ * type, so they draw it to scale and in 3D.
+ */
+export function labStandFlights(nowMs = SCENE_INSTANT) {
+  const flights = {};
+  for (const { visits = [] } of Object.values(RAMP)) {
+    for (const { flight, arrivalInMin } of visits) {
+      const type = STAND_TYPES[flight];
+      if (!type) continue;
+      const at = new Date(nowMs + arrivalInMin * 60_000).toISOString();
+      flights[`turn-${flight}`] = [{
+        flightKey: `l:lab-${flight}`, visitKey: `l:lab-${flight}`, turnaroundId: `turn-${flight}`, direction: 'Arrival',
+        flightNumber: flight, phase: 'arrived', scheduledAt: at, estimatedAt: null, actualAt: at, actualKind: 'OnBlock',
+        isDemo: false, demo: null, milestones: [], aircraft: { registration: null, typeIcaoCode: type, model: null,
+          sizeCategory: null },
+      }];
+    }
+  }
+  return flights;
+}
+
 /** The positions board of the lab at `nowMs`, in the shape the API sends it (getOccPositions). */
 export function labBoard(nowMs = SCENE_INSTANT) {
   const positions = Object.entries(RAMP).map(([code, { visits = [], ...stand }]) => boardStand(code, {
@@ -124,12 +158,17 @@ const REFERENCES = STAND_REFERENCE.map(stand => ({
  * The stands of the lab: the 41 reference stands in catalogue order, as the positions map gives them to its map from
  * labBoard(SCENE_INSTANT), all at their reference location (not placed by OCC, so the legend says «No oficial»).
  */
-export function labStands() {
-  const board = labBoard(SCENE_INSTANT);
+export function labStands(nowMs = SCENE_INSTANT) {
+  const board = labBoard(nowMs);
   return mapOccupancyToRampPositions(REFERENCES, board, board.asOf);
 }
 
 const STANDS = deepFreeze(labStands());
+/** The night of the 3D scenes (PR M7): 22:00 in Punta Cana, the sun far below the horizon. */
+export const NIGHT_INSTANT = Date.parse('2026-11-14T02:00:00.000Z');
+const NIGHT_STANDS = deepFreeze(labStands(NIGHT_INSTANT));
+const STAND_FLIGHTS = deepFreeze(labStandFlights(SCENE_INSTANT));
+const NIGHT_STAND_FLIGHTS = deepFreeze(labStandFlights(NIGHT_INSTANT));
 const NO_STANDS = Object.freeze([]);
 
 /** The stand the placing scene places: free, at its reference point, with nobody covering it. */
@@ -146,17 +185,26 @@ function placingScene() {
 
 function scene(id, {
   kind = 'map', title, description, view, selection = null, follow = false, basemap = 'on', webgl = true, placing = null,
+  pitchMode = '2d',
 }) {
   const map = kind === 'map';
   return {
     id, kind, title, description, view, stands: map ? STANDS : NO_STANDS, at: map ? SCENE_INSTANT : null, selection,
-    follow: follow === true, basemap, webgl, placing,
+    follow: follow === true, basemap, webgl, placing, pitchMode,
   };
 }
 
-// A map scene with the synthetic traffic of its id (lab/trafficScenes.js).
-const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[id],
+// A map scene with the synthetic traffic of its id (lab/trafficScenes.js), or of the scene `trafficOf` names.
+const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[options.trafficOf ?? id],
   ...(options.layersMenu === true ? { layersMenu: true } : {}) });
+
+// A 3D scene (PR M7): tilted, with the aircraft types of its stands' visits.
+const scene3d = (id, { night = false, ...options }) => {
+  const made = options.trafficOf ? trafficScene(id, { ...options, pitchMode: '3d' }) : scene(id, { ...options, pitchMode: '3d' });
+  return night
+    ? { ...made, stands: NIGHT_STANDS, at: NIGHT_INSTANT, standFlights: NIGHT_STAND_FLIGHTS }
+    : { ...made, standFlights: STAND_FLIGHTS };
+};
 
 export const SCENES = deepFreeze([
   scene('ramp-states', {
@@ -341,6 +389,34 @@ export const SCENES = deepFreeze([
     view: 'airfield',
     selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
     follow: true,
+  }),
+  // The 3D aircraft (PR M7): models of the type table on their stands and in motion, lit by the sun of the instant.
+  scene3d('ramp-3d-parked', {
+    title: 'Rampa en 3D: aviones en sus posiciones',
+    description: 'La rampa inclinada con los aviones de diez visitas en 3D a escala (turbohélice, regionales, fuselaje '
+      + 'estrecho y ancho) y el vuelo demo rodando hacia la A6, a la luz del sol de las 11:00.',
+    view: 'ramp',
+    trafficOf: 'airfield-demo-taxiing',
+  }),
+  scene3d('ramp-3d-selected', {
+    title: 'Rampa en 3D: vuelo demo elegido',
+    description: 'El vuelo demo rodando hacia la A6, elegido: su modelo en cian con su anillo y su bloque de datos.',
+    view: 'ramp',
+    trafficOf: 'airfield-demo-taxiing',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  scene3d('airfield-3d-final', {
+    title: 'Aeródromo en 3D: llegada en final corta',
+    description: 'El aeropuerto inclinado a 40° con el vuelo demo en final corta de la 08 a su altura, con su línea al '
+      + 'suelo, y los aviones de las posiciones (fotografiado unos segundos antes de tocar pista).',
+    view: 'airfield',
+    trafficOf: 'approach-demo-final',
+  }),
+  scene3d('ramp-3d-night', {
+    title: 'Rampa en 3D de noche',
+    description: 'La rampa en 3D a las 22:00, con el sol bajo el horizonte: la luz fría de la noche, sin tinte cian.',
+    view: 'ramp',
+    night: true,
   }),
 ]);
 

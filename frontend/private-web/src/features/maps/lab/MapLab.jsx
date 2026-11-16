@@ -44,6 +44,9 @@ import { labTraffic } from './trafficScenes';
 // own instant, so a person sees the demo flight move; «Pausar movimiento» is in the dock. The chosen flight's route
 // follows its aircraft (PR M6), and «Seguir» is in the dock and in the data block; a scene with `follow` opens
 // following (`follow=1`): on the frozen clock the camera frames the aircraft once.
+// The 3D aircraft (PR M7): each scene opens in its own 2D or 3D (`pitchMode`), which the dock's control and D change
+// while it is open (never remembered, so every run opens the same); the governor stays off unless `?governor=on`, so a
+// slow software GPU never lightens a picture; and the handle adds aircraft3d(), the 3D's state and the governor's pause.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -112,13 +115,14 @@ function useBasemapCut(cut) {
   }, [cut]);
 }
 
-function LabScene({ scene, basemap, frozenAt }) {
+function LabScene({ scene, basemap, frozenAt, governed = false }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
   // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
   const standClock = frozenAt ?? scene.at ?? null;
-  const displayed = useStandDisplay(stands, { nowMs: standClock });
+  const displayed = useStandDisplay(stands, { nowMs: standClock, flightsByTurnaround: scene.standFlights });
+  const [pitchMode, setPitchMode] = useState(() => scene.pitchMode ?? '2d');
   const { selection, follow, selectStand, selectFlight, selectAircraft, clear, setFollow } = useMapSelection();
   // The render clock of the scene's traffic (PR M6): frozen at `?t=`, else running from the scene's own instant; and
   // its motion store, one for the scene's whole life, as useMapSituation keeps one.
@@ -201,6 +205,8 @@ function LabScene({ scene, basemap, frozenAt }) {
         return drawn ? [drawn.lon, drawn.lat] : null;
       },
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
+      // The 3D aircraft (PR M7): `{ enabled, status, notice, level, stats, pause, resume }`, or null.
+      aircraft3d: () => mapRef.current?.aircraft3d?.() ?? null,
     };
     window.__occMapLab = lab;
     return () => {
@@ -213,6 +219,7 @@ function LabScene({ scene, basemap, frozenAt }) {
     ...(frozenAt === null ? {} : { fadeDuration: 0 }),
     ...(basemap === 'cut' ? { transformRequest: cutBasemap } : {}),
   }));
+  const [aircraft3d] = useState(() => ({ governor: governed }));
 
   return (
     <>
@@ -255,6 +262,9 @@ function LabScene({ scene, basemap, frozenAt }) {
           basemap={basemap !== 'none'}
           mapOptions={mapOptions}
           traffic={traffic?.map}
+          pitchMode={pitchMode}
+          onPitchModeChange={setPitchMode}
+          aircraft3d={aircraft3d}
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           {traffic?.target && (
@@ -310,13 +320,14 @@ function SceneIndex({ unknownId }) {
 export default function MapLab() {
   const searchParams = useSearchParams();
   const { sceneId, scene, basemap, frozenAt } = readLabQuery(searchParams);
+  const governed = searchParams?.get('governor') === 'on';
   const sceneKey = scene === null ? null : `${scene.id}|${basemap}|${frozenAt ?? ''}`;
   // The review scene of the airport layout is a screen of its own; every other scene is the map with its stands.
   let screen = <SceneIndex unknownId={sceneId} />;
   if (scene?.kind === 'layout-qa') {
     screen = <LayoutQaScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
   } else if (scene !== null) {
-    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
+    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} governed={governed} />;
   }
 
   // The OCC's theme (dark unless the account chose light): ThemeProvider sets it on the document, as in the OCC.
