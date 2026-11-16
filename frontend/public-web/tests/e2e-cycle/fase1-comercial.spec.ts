@@ -110,7 +110,8 @@ test("La aerolínea pide servicios desde el sitio público", async ({ page }) =>
   await page.locator("#representative-phone").fill("809-555-0100");
   await page.locator("#representative-documentType").selectOption("Passport");
   await page.locator("#representative-nationalityCode").selectOption("DO");
-  await page.locator("#representative-documentNumber").fill(`RD${String(Date.now()).slice(-7)}`);
+  // A Dominican passport: the form shows a fixed RD and takes only its 7 digits.
+  await page.locator("#representative-documentNumber").fill(String(Date.now()).slice(-7));
   await page.locator("#representative-country").selectOption("DO");
   await page.locator("#representative-province").selectOption({ index: 1 });
   await page.locator("#representative-municipality").selectOption({ index: 1 });

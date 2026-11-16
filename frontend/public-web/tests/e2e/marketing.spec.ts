@@ -93,18 +93,15 @@ test.describe("landing pública", () => {
     await page.getByRole("combobox", { name: "Cargo" }).selectOption("Gerente de operaciones");
     await page.getByRole("textbox", { name: "Correo corporativo" }).fill("ana@synthetic.example.test");
     await page.getByRole("textbox", { name: "Teléfono" }).fill("+1 809 555 0100");
-    // «Otro» no longer exists and each character is checked in its position.
+    // «Otro» no longer exists; a Dominican passport shows a fixed RD and takes only its 7 digits.
     await expect(page.getByRole("combobox", { name: "Tipo de documento" }).locator("option"))
       .toHaveText(["Seleccione", "Cédula", "Pasaporte"]);
     await page.getByRole("combobox", { name: "Tipo de documento" }).selectOption("Passport");
     await page.getByRole("combobox", { name: "Nacionalidad del pasaporte" }).selectOption("DO");
     const documentNumber = page.getByRole("textbox", { name: "Número de documento" });
-    await documentNumber.fill("ab1234567");
-    await documentNumber.blur();
-    await expect(page.getByText("El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567."))
-      .toBeVisible();
-    await documentNumber.fill("rd1234567");
-    await expect(documentNumber).toHaveValue("RD1234567");
+    await expect(page.getByTitle("Pasaporte dominicano")).toHaveText("RD");
+    await documentNumber.fill("1234567");
+    await expect(documentNumber).toHaveValue("1234567");
     await page.getByRole("combobox", { name: "País" }).selectOption("DO");
     await page.getByRole("combobox", { name: "Provincia / Estado / Región" }).selectOption("25");
     await page.getByRole("combobox", { name: "Municipio / Ciudad" }).selectOption("Santiago de los Caballeros");
