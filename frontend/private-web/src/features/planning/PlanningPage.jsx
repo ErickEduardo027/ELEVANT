@@ -11,8 +11,10 @@ import PlanningMap from './components/PlanningMap';
 import ProviderFlightsDialog from './components/ProviderFlightsDialog';
 import TurnaroundChangeDialog from './components/TurnaroundChangeDialog';
 import EmptyPlanningState from './components/EmptyPlanningState';
-import ModulePlaceholder from '../shell/components/ModulePlaceholder';
-import { CalendarIcon } from '../shell/components/icons';
+import PlanningBand from './components/PlanningBand';
+import PlanningTable from './components/PlanningTable';
+import OccButton from '../occ-ui/OccButton';
+import OccGlyph from '../occ-ui/OccGlyph';
 import { usePlanningFilters } from './usePlanningFilters';
 import { usePlanningOptions } from './usePlanningOptions';
 import { usePlanningAssignment } from './usePlanningAssignment';
@@ -42,15 +44,16 @@ function StatePanel({ kind, onRetry }) {
   const unauthorized = kind === 'unauthorized';
   const forbidden = kind === 'forbidden';
   return (
-    <div role={unauthorized ? 'status' : 'alert'} className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card">
-      <p className="text-sm font-semibold text-status-danger">
+    <div role={unauthorized ? 'status' : 'alert'}
+      className="flex flex-col items-start gap-3 rounded-md border border-l-[3px] border-occ-line border-l-occ-danger bg-occ-panel p-4">
+      <p className="text-sm font-semibold text-occ-text">
         {unauthorized
           ? t('states.unauthorizedTitle')
           : forbidden
             ? t('states.forbiddenTitle')
             : t('states.errorTitle')}
       </p>
-      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+      <p className="text-sm text-occ-muted">
         {unauthorized
           ? t('states.unauthorizedHint')
           : forbidden
@@ -58,7 +61,7 @@ function StatePanel({ kind, onRetry }) {
             : t('states.errorHint')}
       </p>
       {!unauthorized && !forbidden && (
-        <button type="button" onClick={onRetry} className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90">{t('states.retry')}</button>
+        <OccButton onClick={onRetry}>{t('states.retry')}</OccButton>
       )}
     </div>
   );
@@ -67,9 +70,9 @@ function StatePanel({ kind, onRetry }) {
 function NoStationScope() {
   const { t } = useTranslation(planningMessages);
   return (
-    <div role="status" className="rounded-2xl border border-status-warning/30 bg-status-warning/10 p-6">
-      <p className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{t('states.noScopeTitle')}</p>
-      <p className="mt-2 max-w-2xl text-xs text-text-secondary-light dark:text-text-secondary-dark">
+    <div role="status" className="rounded-md border border-l-[3px] border-occ-line border-l-occ-warn bg-occ-warn-soft p-4">
+      <p className="text-sm font-semibold text-occ-text">{t('states.noScopeTitle')}</p>
+      <p className="mt-2 max-w-2xl text-sm text-occ-text">
         {t('states.noScopeHint')}
       </p>
     </div>
@@ -199,9 +202,10 @@ export default function PlanningPage({
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
+    <div data-occ-planning="" className="flex min-h-0 flex-col gap-3">
       <PlanningHeader onRefresh={onRetry} onCreate={() => setShowCreate(true)} canCreate={canCreate}
-        onImport={() => setShowImport(true)} canImport={hasStationScope && Boolean(selectedStationId) && Boolean(data?.date ?? selectedDate)} />
+        onImport={() => setShowImport(true)} canImport={hasStationScope && Boolean(selectedStationId) && Boolean(data?.date ?? selectedDate)}
+        count={hasStationScope && !isLoading && ['success', 'empty'].includes(status) ? flights.length : null} />
 
       {!hasStationScope ? (
         <NoStationScope />
@@ -230,23 +234,28 @@ export default function PlanningPage({
 
           <PlanningKPIs kpis={kpis} loading={isLoading} />
           {readiness.status === 'error' && !isLoading && (
-            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs">
-              <span>{t('page.readinessUnavailable')}</span>
-              <button type="button" onClick={() => setReadinessRetry(value => value + 1)}
-                className="rounded-lg border border-status-warning/40 px-3 py-1 font-semibold">{t('page.readinessRetry')}</button>
+            <div role="status"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-l-[3px] border-occ-line border-l-occ-warn bg-occ-warn-soft px-3 py-2 text-sm text-occ-text">
+              <OccGlyph name="attention" />
+              <span className="mr-auto">{t('page.readinessUnavailable')}</span>
+              <OccButton size="sm" onClick={() => setReadinessRetry(value => value + 1)}>{t('page.readinessRetry')}</OccButton>
             </div>
           )}
-          <ViewSwitcher active={activeView} onChange={setActiveView} />
+          <div className="flex"><ViewSwitcher active={activeView} onChange={setActiveView} /></div>
 
           {isLoading ? (
             <PlanningSkeleton />
           ) : activeView === 'map' ? (
             <PlanningMap stationId={selectedStationId} date={data?.date ?? selectedDate} flights={flights}
               timeZone={data?.station?.ianaTimeZone} onSelectFlight={selectFlight} dataRevision={dataRevision} />
-          ) : activeView !== 'timeline' ? (
-            <ModulePlaceholder icon={CalendarIcon} label={t(activeView === 'table' ? 'page.tableView' : 'page.calendarView')} description={t('page.viewComingSoon')} />
           ) : displayedFlights.length === 0 ? (
             <EmptyPlanningState reason={flights.length === 0 ? 'no-flights' : 'no-results'} />
+          ) : activeView === 'table' ? (
+            <PlanningTable flights={displayedFlights} timeZone={data?.station?.ianaTimeZone} onSelectFlight={selectFlight}
+              selectedId={selectedFlightId} />
+          ) : activeView === 'positions' ? (
+            <PlanningBand flights={displayedFlights} date={data?.date ?? selectedDate} now={now}
+              timeZone={data?.station?.ianaTimeZone} onSelectFlight={selectFlight} selectedId={selectedFlightId} />
           ) : (
             <FlightTimeline
               flights={displayedFlights}
@@ -280,7 +289,7 @@ export default function PlanningPage({
           setOptionsRetryToken(token => token + 1);
           // The operation is Planned again: the board re-reads it so the panel offers another agent (3-C).
           onRetry();
-          showToast('Agente liberado. Ya puedes asignar a otro.', 'success');
+          showToast(t('page.agentReleased'), 'success');
         }}
         onAgentHandedOver={name => {
           // 3-F: the operation keeps its status with the new agent; the board re-reads who works it.

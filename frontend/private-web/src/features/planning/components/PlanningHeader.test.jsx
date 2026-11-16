@@ -4,14 +4,13 @@ import userEvent from '@testing-library/user-event';
 import PlanningHeader from './PlanningHeader';
 
 describe('PlanningHeader', () => {
-  it('describes the read-only operational planning surface', () => {
+  it('is the page toolbar with its h1 and the three commands', () => {
     render(<PlanningHeader onRefresh={() => {}} />);
 
-    expect(screen.getByText('Dashboard / Planificación Operativa')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Planificación Operativa' })).toBeInTheDocument();
-    expect(
-      screen.getByText('Consulte las escalas, sus tramos y los recursos operativos autorizados para cada estación.')
-    ).toBeInTheDocument();
+    // The page's h1 alone (design E.1): no breadcrumb above it and no paragraph under it.
+    expect(screen.getByRole('heading', { level: 1, name: 'Planificación Operativa' })).toBeInTheDocument();
+    expect(screen.queryByText('Dashboard / Planificación Operativa')).not.toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: 'Planificación Operativa' })).toBeInTheDocument();
   });
 
   it('keeps refresh available', async () => {
