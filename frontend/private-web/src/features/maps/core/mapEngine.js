@@ -119,6 +119,8 @@ export function createMapEngine({
   const listeners = [];
   const customLayers = new Map();
   const featureStates = new Map();
+  // The tiles a raster source was given at run time (PR M8: the satellite images pinned to their time), by source.
+  const rasterTiles = new Map();
   const idleWaiters = new Set();
 
   // Every status change goes through here, and `unavailable` is terminal: once a map could not start or lost WebGL for
@@ -215,10 +217,21 @@ export function createMapEngine({
     if (map.getSource(source)) map.setFeatureState({ source, id }, state);
   }
 
-  // What MapLibre does not keep through a context loss or a worker restart.
+  // A raster source takes `tiles` only when it does not have them already: MapLibre reloads a source on every setTiles.
+  function applyRasterTiles(sourceId, tiles) {
+    const source = map.getSource(sourceId);
+    if (typeof source?.setTiles !== 'function') return;
+    const current = typeof source.serialize === 'function' ? source.serialize()?.tiles : source.tiles;
+    if (JSON.stringify(current ?? null) === JSON.stringify(tiles)) return;
+    source.setTiles([...tiles]);
+  }
+
+  // What MapLibre does not keep through a context loss or a worker restart. MapLibre 6.16 rebuilds a raster source with
+  // the tiles it was last given; the engine puts them back only when a rebuilt style comes without them.
   function restoreRuntimeState() {
     for (const id of customLayers.keys()) runWhileLoading(() => addCustomLayerNow(id));
     for (const { source, id, state } of featureStates.values()) runWhileLoading(() => applyFeatureState(source, id, state));
+    for (const [sourceId, tiles] of rasterTiles) runWhileLoading(() => applyRasterTiles(sourceId, tiles));
   }
 
   function markStyleReady({ restore }) {
@@ -448,6 +461,20 @@ export function createMapEngine({
       whenStyleReady(() => {
         map.getSource(sourceId)?.setData(data);
       });
+    },
+
+    /**
+     * Gives a raster source of the style new tile URL templates (PR M8: a satellite image pinned to the time GIBS
+     * reports) and remembers them, so a style rebuilt without them after a context loss gets them back. The same tiles
+     * again change nothing. Throws a TypeError for anything but a list of URL templates.
+     */
+    setRasterTiles(sourceId, tiles) {
+      if (!Array.isArray(tiles) || tiles.length === 0 || !tiles.every(tile => typeof tile === 'string' && tile !== '')) {
+        throw new TypeError(`setRasterTiles needs a list of tile URL templates for ${sourceId}`);
+      }
+      const list = Object.freeze([...tiles]);
+      rasterTiles.set(sourceId, list);
+      whenStyleReady(() => applyRasterTiles(sourceId, list));
     },
 
     /** Applies a GeoJSONSourceDiff; the promise settles when MapLibre has taken it (or at once without a map). */
@@ -689,6 +716,7 @@ export function createMapEngine({
       releaseMap();
       customLayers.clear();
       featureStates.clear();
+      rasterTiles.clear();
       container.remove();
     },
   };

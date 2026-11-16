@@ -278,7 +278,7 @@ describe('MapLab', () => {
     expect(map.getSource('occ-route').data.features).toEqual([]);
     cleanup();
 
-    // The layers-menu scene opens with its menu open; a scene without traffic has no menu.
+    // The layers-menu scene opens with its menu open; a scene without traffic offers only the references (PR M8).
     open(`?scene=region-layers-menu&t=${NOON}`);
     loadStyle(fake.state.liveMaps().at(-1));
     expect(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }))
@@ -289,7 +289,48 @@ describe('MapLab', () => {
       .toBeChecked();
     cleanup();
     open(`?scene=ramp-states&t=${NOON}`);
-    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
+    loadStyle(fake.state.liveMaps().at(-1));
+    fireEvent.click(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }));
+    expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Tráfico' })).not.toBeInTheDocument();
+  });
+
+  it('draws the weather of a weather scene with its own layers and a simulated GIBS, and only there', async () => {
+    window.localStorage.clear();
+    // The region with both satellite images on: the scene's layers, its images pinned to their simulated times.
+    open(`?scene=region-satellite&t=${NOON}`);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await act(() => new Promise(resolve => { setTimeout(resolve, 0); }));
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([[expect.stringContaining('/default/2026-11-13T14:50:00Z/')]]);
+    expect(map.getSource('occ-weather-imerg').setTilesCalls).toEqual([[expect.stringContaining('/default/2026-11-13T14:30:00Z/')]]);
+    expect(map.getLayer('occ-weather-goes-image').layout.visibility).toBe('visible');
+    expect(map.getLayer('occ-weather-imerg-image').layout.visibility).toBe('visible');
+    // The scene's layers are not the browser's: nothing is kept.
+    expect(window.localStorage.getItem('elevant-occ-map-layers:v1')).toBeNull();
+    cleanup();
+
+    // The wind by the airfield, where the handle says it stands.
+    open(`?scene=airfield-wind-live&t=${NOON}`);
+    const airfield = fake.state.liveMaps().at(-1);
+    loadStyle(airfield);
+    const [wind] = airfield.getSource('occ-weather-wind').data.features;
+    expect(wind.properties.label).toBe('100° 13 kt R08');
+    expect(window.__occMapLab.windAt()).toEqual(wind.geometry.coordinates);
+    // A scene the person turns the satellite on in reads only the simulated GIBS, which names no image here.
+    fireEvent.click(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }));
+    expect(screen.getByRole('group', { name: 'Meteorología' })).toBeInTheDocument();
+    cleanup();
+
+    // A scene without weather draws none: no weather sources, no Meteorología group, no wind for the handle.
+    open(`?scene=ramp-states&t=${NOON}`);
+    const ramp = fake.state.liveMaps().at(-1);
+    loadStyle(ramp);
+    expect(ramp.options.style.sources['occ-weather-wind']).toBeUndefined();
+    expect(window.__occMapLab.windAt()).toBeNull();
+    fireEvent.click(within(screen.getByTestId('map-layers-menu')).getByRole('button', { name: 'Capas' }));
+    expect(screen.queryByRole('group', { name: 'Meteorología' })).not.toBeInTheDocument();
+    window.localStorage.clear();
   });
 
   it('moves the demo flight as the app does: frozen at t=, its block from the motion, and «Pausar movimiento»', () => {

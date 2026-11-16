@@ -1,8 +1,11 @@
+import { parseInstant } from '../../../services/serverClock';
+import { toWeatherReading } from '../../../services/weatherService';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { destinationPoint, roundCoord } from '../airport/geo';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
+import { createAerodromeWeather } from '../testing/weatherFixtures';
 import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
@@ -27,7 +30,11 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 //   `null` for none.
 // A traffic scene (PR M5) also has `traffic`: the synthetic air picture, map flights and tracks of
 // lab/trafficScenes.js, which the lab draws at the frozen clock for the URL's selection (MapLab.jsx), without polling;
-// with `layersMenu: true` it opens with the layers menu open.
+// with `layersMenu: true` it opens with the layers menu open. A reference scene (PR M8) has `weather`, a synthetic
+// answer of GET occ/weather (testing/weatherFixtures.js) that the lab reads once (labWeather), and may have `traffic`
+// too; the night scene reads at an instant of its own, dusk in Punta Cana. A weather scene (PR M8) may also have
+// `satellite`, the times the simulated satellite images name (useSatelliteImagery: createSimulatedSatelliteImagery; no
+// scene ever reads GIBS), and `layers`, the layers it opens with (OccMap's layerOverrides).
 // Every scene has `pitchMode` (PR M7): `2d`, or `3d` for the 3D scenes, which open tilted with the 3D aircraft; the
 // dock's 2D/3D control and D change it while the scene is open. A 3D scene may add `standFlights`, the map flights of
 // its stands' visits by turnaround (their aircraft types), so the occupied stands draw their aircraft to scale and in
@@ -198,6 +205,71 @@ function scene(id, {
 const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[options.trafficOf ?? id],
   ...(options.layersMenu === true ? { layersMenu: true } : {}) });
 
+/** The instant of the night scene: 18:15 in Punta Cana, at dusk, the edge of the civil twilight crossing the region. */
+export const NIGHT_SCENE_INSTANT = Date.parse('2026-11-13T22:15:00.000Z');
+
+const isoAt = (ms, minutes = 0) => new Date(ms + minutes * 60_000).toISOString();
+
+// The region's mixed traffic of lab/trafficScenes.js, with ZZ500 (en route, not drawn) coming from Santo Domingo
+// instead of Miami: an airport of the region, which the references emphasise as the counterpart of a flight of today.
+const SANTO_DOMINGO = Object.freeze({ iataCode: 'SDQ', icaoCode: 'MDSD', name: 'Las Américas International',
+  latitude: 18.429701, longitude: -69.6689 });
+function withCounterpart(scenario, flightKey, counterpart) {
+  const rows = scenario.flights.flights.map(row => (row.flightKey === flightKey ? { ...row, counterpart } : row));
+  return { ...scenario, flights: { ...scenario.flights, flights: rows } };
+}
+
+// A map scene with the references of PR M8: its synthetic weather, its traffic when it has one, and its own instant.
+function referenceScene(id, { weather, traffic = null, at = null, ...options }) {
+  return {
+    ...scene(id, options),
+    ...(at === null ? {} : { at }),
+    weather,
+    ...(traffic === null ? {} : { traffic }),
+  };
+}
+
+/**
+ * The satellite images of the lab (PR M8): the times GIBS would name for the GOES-East clouds and the IMERG rain before
+ * the scene's 11:00, 10:50 and 10:30 in Punta Cana. Simulated: the visual suite answers their tiles with a synthetic
+ * picture (tests/visual/support/isolate.mjs).
+ */
+export const LAB_SATELLITE = Object.freeze({
+  goes: Object.freeze({ time: '2026-11-13T14:50:00Z', precision: 'instant' }),
+  imerg: Object.freeze({ time: '2026-11-13T14:30:00Z', precision: 'instant' }),
+});
+
+// A map scene with the weather of PR M8: a reference scene with, when given, its satellite images and its layers.
+function weatherScene(id, { satellite = null, layers = null, ...options }) {
+  return {
+    ...referenceScene(id, options),
+    ...(satellite === null ? {} : { satellite }),
+    ...(layers === null ? {} : { layers }),
+  };
+}
+
+/**
+ * The weather of a scene as useMdpcWeather answers it (the `weather` of OccMap), read once from its synthetic answer of
+ * GET occ/weather: the lab never polls. `null` without one.
+ */
+export function labWeather(answer) {
+  if (!answer) return null;
+  const reading = toWeatherReading(answer, { receivedAt: parseInstant(answer.serverTime) });
+  return Object.freeze({
+    status: reading.observation ? 'success' : 'empty',
+    data: reading.observation,
+    fetchedAt: reading.receivedAt,
+    refreshFailed: false,
+    refreshing: false,
+    refresh: () => {},
+    apiStatus: reading.apiStatus,
+    taf: reading.taf,
+    retrievedAt: reading.retrievedAt,
+    source: reading.source,
+    error: null,
+  });
+}
+
 // A 3D scene (PR M7): tilted, with the aircraft types of its stands' visits.
 const scene3d = (id, { night = false, ...options }) => {
   const made = options.trafficOf ? trafficScene(id, { ...options, pitchMode: '3d' }) : scene(id, { ...options, pitchMode: '3d' });
@@ -242,12 +314,14 @@ export const SCENES = deepFreeze([
   }),
   scene('approach', {
     title: 'Aproximación',
-    description: 'Hasta 40 NM alrededor de PUJ: el punto de referencia del aeropuerto, sin posiciones.',
+    description: 'Hasta 40 NM alrededor de PUJ: el punto de referencia del aeropuerto, los anillos, los ejes de pista con la '
+      + '08 habitual y las radioayudas, sin posiciones.',
     view: 'approach',
   }),
   scene('region', {
     title: 'Región',
-    description: 'Hasta 250 NM alrededor de PUJ: el punto de referencia del aeropuerto, sin posiciones.',
+    description: 'Hasta 250 NM alrededor de PUJ: el punto de referencia del aeropuerto, los anillos y los aeropuertos de '
+      + 'la región, sin posiciones.',
     view: 'region',
   }),
   scene('unavailable-fallback', {
@@ -314,6 +388,60 @@ export const SCENES = deepFreeze([
       + 'siempre visibles.',
     view: 'region',
     layersMenu: true,
+  }),
+  referenceScene('region-references', {
+    title: 'Región: referencias',
+    description: 'Hasta 250 NM alrededor de PUJ a las 11:00: los anillos de distancia, los aeropuertos de la región con '
+      + 'Santo Domingo resaltado por un vuelo de hoy y el tráfico mixto encima.',
+    view: 'region',
+    weather: createAerodromeWeather(),
+    traffic: withCounterpart(TRAFFIC_SCENARIOS['region-traffic-mixed'], TRAFFIC_FLIGHT_KEY.noFix, SANTO_DOMINGO),
+  }),
+  referenceScene('region-references-night', {
+    title: 'Región: referencias de noche',
+    description: 'La región a las 18:15 de Punta Cana: pasado el crepúsculo civil, la noche cubre ya Puerto Rico y su '
+      + 'borde se acerca a PUJ.',
+    view: 'region',
+    at: NIGHT_SCENE_INSTANT,
+    weather: createAerodromeWeather({ serverTime: isoAt(NIGHT_SCENE_INSTANT), observedAt: isoAt(NIGHT_SCENE_INSTANT, -10),
+      retrievedAt: isoAt(NIGHT_SCENE_INSTANT, -3) }),
+  }),
+  referenceScene('approach-references', {
+    title: 'Aproximación: ejes de pista y radioayudas',
+    description: 'Hasta 40 NM alrededor de PUJ: los anillos, los ejes de pista extendidos con la 08 en uso estimada por '
+      + 'el viento del METAR, las radioayudas PNA y PCA y la llegada demo en final.',
+    view: 'approach',
+    weather: createAerodromeWeather(),
+    traffic: TRAFFIC_SCENARIOS['approach-traffic-demo'],
+  }),
+  weatherScene('region-satellite', {
+    title: 'Región: nubes y lluvia por satélite',
+    description: 'Hasta 250 NM alrededor de PUJ a las 11:00, con las nubes de GOES-East y la lluvia de IMERG encendidas y '
+      + 'fijadas a la hora de su imagen, bajo las referencias y el tráfico mixto. Imágenes simuladas, sin red.',
+    view: 'region',
+    weather: createAerodromeWeather(),
+    satellite: LAB_SATELLITE,
+    layers: { 'weather.goes': true, 'weather.imerg': true },
+    traffic: TRAFFIC_SCENARIOS['region-traffic-mixed'],
+  }),
+  weatherScene('airfield-wind-live', {
+    title: 'Aeródromo: viento en pista',
+    description: 'El viento del METAR de las 10:50, 100° a 13 kt, junto al aeródromo: su flecha y «100° 13 kt R08», con el '
+      + 'viento de frente y de costado de cada pista en su tooltip.',
+    view: 'airfield',
+    weather: createAerodromeWeather(),
+  }),
+  weatherScene('airfield-wind-stale', {
+    title: 'Aeródromo: viento sin actualizar',
+    description: 'El último METAR es de las 08:00: el viento se atenúa y dice «Sin actualizar desde las 08:00».',
+    view: 'airfield',
+    weather: createAerodromeWeather({ status: 'Stale' }),
+  }),
+  weatherScene('airfield-wind-unavailable', {
+    title: 'Aeródromo: sin clima del aeródromo',
+    description: 'El servicio del clima no tiene METAR: no hay viento en el mapa y el menú de capas dice por qué.',
+    view: 'airfield',
+    weather: createAerodromeWeather({ status: 'Unavailable' }),
   }),
   // The demo flight in motion (PR M6): each scene fires it with the server's timeline so the lab's instant finds it where
   // the scene says (lab/trafficScenes.js).

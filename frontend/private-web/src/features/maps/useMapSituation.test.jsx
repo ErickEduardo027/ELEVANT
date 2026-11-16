@@ -434,7 +434,8 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     const { result, rerender, adapter } = setup();
     await flush();
     const { traffic, motion, renderClock, situation, trails, route, routeAt } = result.current;
-    expect(traffic).toEqual({ aircraft: situation.aircraft, trails, route, routeAt, source: situation.source, motion });
+    expect(traffic).toEqual({ aircraft: situation.aircraft, trails, route, routeAt, source: situation.source, motion,
+      flights: situation.flights });
     expect(typeof routeAt).toBe('function');
     expect(Object.isFrozen(traffic)).toBe(true);
     // The motion draws on the render clock, which follows the clock the reads feed.

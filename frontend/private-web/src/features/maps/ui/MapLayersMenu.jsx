@@ -67,6 +67,8 @@ export default function MapLayersMenu({ className = '' }) {
               const locked = LOCKED_LAYERS.includes(layer);
               const inputId = `${idPrefix}-${layer}`;
               const hintId = `${inputId}-hint`;
+              // What a weather key that is on says when the map shows nothing of it, or the time of its image (PR M8).
+              const note = locked ? null : layers.notes?.[layer] ?? null;
               return (
                 <div key={layer} className="flex min-h-9 items-start gap-2 py-1">
                   <input
@@ -74,7 +76,7 @@ export default function MapLayersMenu({ className = '' }) {
                     type="checkbox"
                     checked={layers.values[layer] === true}
                     disabled={locked}
-                    aria-describedby={locked ? hintId : undefined}
+                    aria-describedby={locked || note !== null ? hintId : undefined}
                     onChange={event => setLayer(layer, event.target.checked)}
                     className="mt-0.5 h-4 w-4 shrink-0 accent-occ-accent disabled:cursor-not-allowed"
                   />
@@ -83,6 +85,7 @@ export default function MapLayersMenu({ className = '' }) {
                       {t(`layers.key.${layer}`)}
                     </label>
                     {locked && <span id={hintId} className="block text-xs text-occ-muted">{t('layers.locked')}</span>}
+                    {note !== null && <span id={hintId} className="block text-xs text-occ-muted">{note}</span>}
                   </span>
                 </div>
               );

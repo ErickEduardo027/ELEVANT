@@ -52,6 +52,47 @@ describe('useMinuteClock', () => {
     frozen.unmount();
   });
 
+  it('follows the minute of the given clock', () => {
+    // The server's clock (services/serverClock.js) three minutes and 45 s ahead of the browser, which tells when its
+    // offset changes.
+    vi.useFakeTimers({ now: NOW + 10 * 1000 });
+    let offset = 3 * MINUTE + 45 * 1000;
+    const listeners = new Set();
+    const clock = {
+      now: () => Date.now() + offset,
+      subscribe: listener => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const { result, unmount } = renderHook(() => useMinuteClock({ clock }));
+    // 15:10:55 on that clock: its minute, and its next boundary 5 s away (not the browser's, 50 s away).
+    expect(result.current).toBe(NOW + 3 * MINUTE);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(4_999));
+    expect(result.current).toBe(NOW + 3 * MINUTE);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current).toBe(NOW + 4 * MINUTE);
+    // A new offset moves the minute at once and times the next boundary again: one timeout still.
+    act(() => {
+      offset += 2 * MINUTE;
+      listeners.forEach(listener => listener());
+    });
+    expect(result.current).toBe(NOW + 6 * MINUTE);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(MINUTE));
+    expect(result.current).toBe(NOW + 7 * MINUTE);
+    // Gone with the component: no timeout and no listener left.
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(listeners.size).toBe(0);
+    // A frozen instant still wins over any clock.
+    const frozen = renderHook(() => useMinuteClock({ frozenAt: NOW + 25 * 1000, clock }));
+    expect(frozen.result.current).toBe(NOW);
+    expect(listeners.size).toBe(0);
+    frozen.unmount();
+  });
+
   it('reads the browser clock only: no request, no animation frame', () => {
     const source = readFileSync('src/features/maps/core/useMinuteClock.js', 'utf8');
     expect(source).not.toMatch(/fetch|elevantApi|setInterval|requestAnimationFrame/);

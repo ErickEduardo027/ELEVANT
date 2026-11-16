@@ -222,6 +222,37 @@ describe('OCC map style', () => {
       .toThrow(/GeoJSON/);
   });
 
+  it('accepts raster overlay sources with https tiles and rejects other types', () => {
+    // A satellite image of PR M8: its own https tiles, taken as given, with no data; its layer in the weather slot.
+    const tiles = ['https://gibs.example/wmts/default/default/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'];
+    const raster = (source, layer = {}) => ({
+      sources: { clouds: source },
+      layers: [{ slot: 'weather', id: 'clouds-image', type: 'raster', source: 'clouds', metadata: { 'occ:group': 'weather.goes' },
+        ...layer }],
+    });
+    const style = buildOccStyle({ overlays: [raster({ type: 'raster', tiles, tileSize: 256, maxzoom: 6, attribution: 'NASA GIBS' })] });
+    expect(style.sources.clouds).toEqual({ type: 'raster', tiles, tileSize: 256, maxzoom: 6, attribution: 'NASA GIBS' });
+    expect(style.layers.map(layer => layer.id).indexOf('clouds-image'))
+      .toBe(style.layers.map(layer => layer.id).indexOf('slot-weather') + 1);
+    expect(validateStyleMin(style)).toEqual([]);
+    // The tiles are copied: the style never shares an array with its overlay.
+    expect(style.sources.clouds.tiles).not.toBe(tiles);
+    // Only https tiles, at least one, and no TileJSON of its own; a vector, image or video source is refused too.
+    for (const source of [
+      { type: 'raster', tiles: [] },
+      { type: 'raster', tiles: ['http://gibs.example/{z}/{x}/{y}.png'] },
+      { type: 'raster', tiles: ['//gibs.example/{z}/{x}/{y}.png'] },
+      { type: 'raster', tiles: [42] },
+      { type: 'raster', url: 'https://gibs.example/tiles.json' },
+      { type: 'raster', url: 'https://gibs.example/tiles.json', tiles },
+      { type: 'vector', tiles },
+      { type: 'image', url: 'https://gibs.example/a.png', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] },
+    ]) {
+      expect(() => buildOccStyle({ overlays: [raster(source)] }), JSON.stringify(source))
+        .toThrow(/must be a GeoJSON source or a raster source with https tiles/);
+    }
+  });
+
   it('without the base map there is no vector source and the tile aeroway is gone', () => {
     const style = buildOccStyle({ basemap: false, overlays: [STAND_OVERLAY] });
     expect(style.sources).not.toHaveProperty(BASEMAP_SOURCE_ID);
@@ -239,7 +270,8 @@ describe('OCC map style', () => {
   });
 
   it('the tile aeroway ends at the derived airfield threshold (metadata) and keeps no fixed maxzoom', () => {
-    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield']);
+    // The boundary of Aeródromo for the airfield, and from PR M8 the boundary of Aproximación for the range rings.
+    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield', 'approach']);
     const style = buildOccStyle();
     const aeroway = style.layers.filter(layer => layer['source-layer'] === 'aeroway');
     expect(aeroway).toHaveLength(5);
@@ -257,6 +289,10 @@ describe('OCC map style', () => {
       layers: [{ slot: 'airfield', id: 'extra', type: 'line', source: 'extra', metadata: { 'occ:group': 'x', 'occ:minThreshold': 'airfield' } }],
     };
     expect(validateStyleMin(buildOccStyle({ overlays: [overlay] }))).toEqual([]);
+    const rings = { ...overlay, layers: [{ ...overlay.layers[0], metadata: { 'occ:group': 'x', 'occ:maxThreshold': 'approach' } }] };
+    expect(validateStyleMin(buildOccStyle({ overlays: [rings] }))).toEqual([]);
+    const unknown = { ...overlay, layers: [{ ...overlay.layers[0], metadata: { 'occ:group': 'x', 'occ:maxThreshold': 'region' } }] };
+    expect(() => buildOccStyle({ overlays: [unknown] })).toThrow(/unknown threshold in occ:maxThreshold: region/);
   });
 
   it.each(OCC_THEMES)('overlay colours are OCC palette values and base-map colours come from mapTheme (%s)', theme => {

@@ -52,6 +52,25 @@ export const mapMessages = {
         routeMark: 'Puntos de la ruta',
         routeMarkHint: 'Toma de pista, salida y posición',
       },
+      // The references on screen (ui/referenceLegend.js, PR M8); the runway in use takes its words from reference.runway.
+      reference: {
+        rings: 'Anillos de distancia',
+        centrelines: 'Eje de pista extendido (marca cada NM)',
+        airports: 'Aeropuerto de la región',
+        counterparts: 'Origen o destino de un vuelo de hoy',
+        vor: 'Radioayuda VOR-DME',
+        ndb: 'Radioayuda NDB',
+        night: 'Noche (tras el crepúsculo civil)',
+      },
+      // The weather on screen (ui/referenceLegend.js, traffic/weatherLayers.js, PR M8); its tags «No oficial» and «Sin
+      // actualizar» are the vocabulary's.
+      weather: {
+        wind: 'Viento en pista',
+        goes: 'Nubes por satélite (GOES-East, infrarrojo)',
+        imerg: 'Lluvia estimada (IMERG)',
+        imageAt: 'Imagen de las {time}',
+        imageDay: 'Imagen del {date}',
+      },
     },
     // What a stand is and the visits on it (ui/StandDetailFacts.jsx, ui/StandTurnaround.jsx; owner request of
     // 2026-11-15), from what the screen already read.
@@ -224,7 +243,7 @@ export const mapMessages = {
       stands: 'Posiciones del mapa',
       flights: 'Vuelos del mapa',
     },
-    attribution: { aircraftData: 'Datos de aeronaves' },
+    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima' },
     controls: {
       zoomIn: 'Acercar',
       zoomOut: 'Alejar',
@@ -342,7 +361,7 @@ export const mapMessages = {
       show: 'Mostrar las capas',
       hide: 'Ocultar las capas',
       locked: 'Siempre visible',
-      group: { traffic: 'Tráfico', reference: 'Referencias' },
+      group: { traffic: 'Tráfico', reference: 'Referencias', weather: 'Meteorología' },
       key: {
         reference: { airports: 'Aeropuertos de la región', routes: 'Rutas desde Punta Cana' },
         traffic: {
@@ -352,7 +371,67 @@ export const mapMessages = {
           trails: 'Estelas de todo el tráfico',
         },
         route: 'Ruta del vuelo elegido',
+        // The references of PR M8 (design E7).
+        rings: 'Anillos de distancia',
+        centrelines: 'Ejes de pista',
+        navaids: 'Radioayudas',
+        daynight: 'Día y noche',
+        // The weather of PR M8 (design E7).
+        weather: { goes: 'Nubes por satélite', imerg: 'Lluvia estimada', wind: 'Viento en pista' },
       },
+      // What a weather key that is on says when the map shows nothing of it (traffic/weatherLayers.js).
+      note: {
+        views: 'Se ve en {first} y {second}',
+        loadingImage: 'Buscando la imagen…',
+        noImage: 'No hay imagen en este momento.',
+      },
+    },
+    // The words the map draws by its references (traffic/referenceFeatures.js): the runway in use and where it comes
+    // from (contracts 2.3). Map labels keep to Latin-1 characters.
+    reference: {
+      runway: {
+        live: 'Pista {ident} (según las llegadas)',
+        wind: 'Pista {ident} (estimada por el viento)',
+        default: 'Pista {ident} (habitual)',
+        flight: 'Pista {ident}',
+      },
+      // The word on the night side of the edge of the night shade (traffic/nightShade.js).
+      night: 'Noche',
+    },
+    // The aerodrome weather (features/weather/useMdpcWeather.js, services/weatherService.js; contracts 1.4 and 2.5).
+    // Its stale state says «Sin actualizar desde las 14:02» with the vocabulary's words (TAGS.stale, through
+    // traffic/stationTime.js: staleWords and the time of the METAR) and its tag «No oficial» is TAGS.unofficial, so
+    // neither is copied here. The TAF readout (features/weather/taf.js) writes its times at the station.
+    weather: {
+      status: {
+        loading: 'Cargando el clima del aeródromo…',
+        unavailable: 'No hay clima del aeródromo en este momento.',
+        disabled: 'El clima del aeródromo no está activado en este entorno.',
+        error: 'No se pudo cargar el clima del aeródromo.',
+        forbidden: 'Tu acceso no incluye el clima del aeródromo.',
+      },
+      source: 'Clima: {name}',
+      taf: {
+        now: 'Ahora',
+        next: 'Después',
+        until: 'Hasta las {time}',
+        from: 'Desde las {time}',
+        expired: 'Pronóstico vencido',
+        none: 'Sin pronóstico',
+        change: { FM: 'Cambio', BECMG: 'Cambio gradual', TEMPO: 'Temporal', PROB: 'Probabilidad {percent}' },
+      },
+      wind: { calm: 'Calma', variable: 'VRB', gust: 'G{speed}' },
+    },
+    // The tooltip of the wind at the airfield (traffic/weatherLayers.js: windTooltip): its words, the time of the METAR
+    // and the head (or tail) and cross wind of each runway end. «No oficial» is TAGS.unofficial.
+    wind: {
+      title: 'Viento {wind}',
+      calmTitle: 'Viento en calma',
+      observed: 'METAR de las {time}',
+      head: '{speed} kt de frente',
+      tail: '{speed} kt de cola',
+      fromRight: '{speed} kt de la derecha',
+      fromLeft: '{speed} kt de la izquierda',
     },
   },
   en: {
@@ -400,6 +479,22 @@ export const mapMessages = {
         routeRemaining: 'Planned route',
         routeMark: 'Route points',
         routeMarkHint: 'Touchdown, runway exit and stand',
+      },
+      reference: {
+        rings: 'Range rings',
+        centrelines: 'Extended runway centreline (a tick per NM)',
+        airports: 'Airport in the region',
+        counterparts: 'Origin or destination of a flight today',
+        vor: 'VOR-DME navaid',
+        ndb: 'NDB navaid',
+        night: 'Night (after civil twilight)',
+      },
+      weather: {
+        wind: 'Runway wind',
+        goes: 'Satellite clouds (GOES-East, infrared)',
+        imerg: 'Estimated rain (IMERG)',
+        imageAt: 'Image of {time}',
+        imageDay: 'Image of {date}',
       },
     },
     standInfo: {
@@ -555,7 +650,7 @@ export const mapMessages = {
       stands: 'Stands on the map',
       flights: 'Flights on the map',
     },
-    attribution: { aircraftData: 'Aircraft data' },
+    attribution: { aircraftData: 'Aircraft data', weather: 'Weather' },
     controls: {
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',
@@ -658,7 +753,7 @@ export const mapMessages = {
       show: 'Show the layers',
       hide: 'Hide the layers',
       locked: 'Always shown',
-      group: { traffic: 'Traffic', reference: 'References' },
+      group: { traffic: 'Traffic', reference: 'References', weather: 'Weather' },
       key: {
         reference: { airports: 'Airports of the region', routes: 'Routes from Punta Cana' },
         traffic: {
@@ -668,7 +763,55 @@ export const mapMessages = {
           trails: 'Trails for all traffic',
         },
         route: 'Route of the selected flight',
+        rings: 'Range rings',
+        centrelines: 'Runway centrelines',
+        navaids: 'Navaids',
+        daynight: 'Day and night',
+        weather: { goes: 'Satellite clouds', imerg: 'Estimated rain', wind: 'Runway wind' },
       },
+      note: {
+        views: 'Shown in {first} and {second}',
+        loadingImage: 'Looking for the image…',
+        noImage: 'No image right now.',
+      },
+    },
+    reference: {
+      runway: {
+        live: 'Runway {ident} (from the arrivals)',
+        wind: 'Runway {ident} (estimated from the wind)',
+        default: 'Runway {ident} (usual)',
+        flight: 'Runway {ident}',
+      },
+      night: 'Night',
+    },
+    weather: {
+      status: {
+        loading: 'Loading the aerodrome weather…',
+        unavailable: 'No aerodrome weather right now.',
+        disabled: 'Aerodrome weather is not turned on in this environment.',
+        error: 'The aerodrome weather could not be loaded.',
+        forbidden: 'Your access does not include the aerodrome weather.',
+      },
+      source: 'Weather: {name}',
+      taf: {
+        now: 'Now',
+        next: 'Next',
+        until: 'Until {time}',
+        from: 'From {time}',
+        expired: 'Forecast expired',
+        none: 'No forecast',
+        change: { FM: 'Change', BECMG: 'Gradual change', TEMPO: 'Temporary', PROB: 'Probability {percent}' },
+      },
+      wind: { calm: 'Calm', variable: 'VRB', gust: 'G{speed}' },
+    },
+    wind: {
+      title: 'Wind {wind}',
+      calmTitle: 'Calm wind',
+      observed: 'METAR of {time}',
+      head: '{speed} kt headwind',
+      tail: '{speed} kt tailwind',
+      fromRight: '{speed} kt from the right',
+      fromLeft: '{speed} kt from the left',
     },
   },
 };

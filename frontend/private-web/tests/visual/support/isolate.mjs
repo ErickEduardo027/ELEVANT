@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { syntheticTile } from './syntheticTiles.mjs';
+import { syntheticSatelliteTile, syntheticTile } from './syntheticTiles.mjs';
 
 // The network of the visual suite: the page talks to its own origin and nothing else. Every request to another origin
 // is answered here or aborted and reported, so no test ever reaches a live provider:
@@ -12,6 +12,9 @@ import { syntheticTile } from './syntheticTiles.mjs';
 //   Problem Details 404; its WebSockets are closed;
 // - the Google Fonts stylesheet that the login screen's CSS imports (src/features/auth/LoginPage.css, loaded with
 //   every protected route) answers an empty stylesheet, so no font is fetched from Google;
+// - NASA GIBS (PR M8): a tile of the GOES-East clouds or the IMERG rain pinned to the time of its image answers the
+//   synthetic picture of support/syntheticTiles.mjs (`satellite`); a tile that is not pinned (`…/default/default/…`, the
+//   latest image) is not answered, so a map that asks for one fails the spec;
 // - anything else is aborted and listed in `unexpected`, which every spec expects to end empty.
 // The suite's Chrome also resolves no host but localhost (playwright.occ.config.mjs), so nothing these routes miss
 // can reach the network.
@@ -19,6 +22,14 @@ import { syntheticTile } from './syntheticTiles.mjs';
 export const OPENFREEMAP_ORIGIN = 'https://tiles.openfreemap.org';
 export const API_ORIGIN = 'https://api.elevant.test';
 export const GOOGLE_FONTS_CSS = 'https://fonts.googleapis.com/css2';
+export const GIBS_ORIGIN = 'https://gibs.earthdata.nasa.gov';
+// The GIBS layers the maps draw (src/services/satelliteService.js), by the name of the synthetic image that answers them.
+const GIBS_LAYERS = Object.freeze({
+  'GOES-East_ABI_Band13_Clean_Infrared': 'goes',
+  IMERG_Precipitation_Rate_30min: 'imerg',
+});
+// A WMTS tile of GIBS in Web Mercator, pinned to the time of its image: an instant or a day, never `default`.
+const GIBS_TILE = /^\/wmts\/epsg3857\/best\/([^/]+)\/default\/(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?)\/GoogleMapsCompatible_Level\d+\/(\d+)\/(\d+)\/(\d+)\.png$/;
 export const TILEJSON_URL = `${OPENFREEMAP_ORIGIN}/planet`;
 export const GLYPH_STACKS = Object.freeze(['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']);
 export const GLYPH_RANGE = '0-255';
@@ -65,6 +76,19 @@ export function tileRequest(url) {
   return match ? { z: Number(match[1]), x: Number(match[2]), y: Number(match[3]) } : null;
 }
 
+/**
+ * `{ layer, image, time, z, x, y }` of a GIBS tile pinned to the time of its image (`image` is `goes` or `imerg`), or
+ * `null` for any other URL: another layer, or a tile of the latest image (`default`) that names no time.
+ */
+export function gibsTileRequest(url) {
+  if (url.origin !== GIBS_ORIGIN) return null;
+  const match = GIBS_TILE.exec(url.pathname);
+  if (!match || !Object.hasOwn(GIBS_LAYERS, match[1])) return null;
+  // WMTS names the row (y) before the column (x).
+  return { layer: match[1], image: GIBS_LAYERS[match[1]], time: match[2], z: Number(match[3]), y: Number(match[4]),
+    x: Number(match[5]) };
+}
+
 function assertTileMode(mode) {
   if (!TILE_MODES.includes(mode)) throw new RangeError(`Unknown tiles mode: ${mode}`);
   return mode;
@@ -74,7 +98,7 @@ function assertTileMode(mode) {
  * Routes the page's foreign requests. `origin` is the page's own origin (the suite's baseURL); `tiles` is one of
  * TILE_MODES; `api(request, url)` may return `{ status, json, headers }` for an API request (or nothing for the
  * 404). Returns the log of what happened: `unexpected` (requests and WebSockets to any other origin), `requests`
- * (every answered request with its `kind`: tilejson, glyph, tile, api or stylesheet), `glyphMisses`, `count(kind)`,
+ * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet or satellite), `glyphMisses`, `count(kind)`,
  * and `setTiles(mode)` / `setApi(handler)` to change the answers for the next requests.
  */
 export async function isolate(page, { origin, tiles = 'synthetic', api = null } = {}) {
@@ -137,6 +161,7 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
   await page.route(url => url.origin !== origin, async route => {
     const request = route.request();
     const url = new URL(request.url());
+    const satellite = gibsTileRequest(url);
     if (url.origin === OPENFREEMAP_ORIGIN) {
       const handled = await openFreeMap(route, request, url);
       if (handled !== null) return handled;
@@ -145,6 +170,12 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
     } else if (`${url.origin}${url.pathname}` === GOOGLE_FONTS_CSS) {
       answered('stylesheet', request);
       return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+    } else if (satellite !== null) {
+      answered('satellite', request);
+      return route.fulfill({
+        status: 200, headers: corsHeaders(request, origin), contentType: 'image/png',
+        body: syntheticSatelliteTile(satellite.image, satellite.z, satellite.x, satellite.y),
+      });
     }
     log.unexpected.push(`${request.method()} ${request.url()}`);
     return route.abort('blockedbyclient');

@@ -1165,8 +1165,11 @@ Revisión firmada: el dueño del producto aprobó el plano el 13 de noviembre de
 está desactualizado en el aeropuerto; las 42 posiciones quedan revisadas
 (`provenance.qa: 'reviewed'`), con 14 marcas que se conservan como dato.
 Límites: la tabla de alias está vacía, así que un código como «9A» sigue sin
-ubicación. Ninguna pantalla usa todavía los aeropuertos de la región ni las
-radioayudas que trajo el extracto de OurAirports. Las capturas se revisaron en
+ubicación. En M3 ninguna pantalla usaba los aeropuertos de la región ni las
+radioayudas que trajo el extracto de OurAirports; desde el PR M8 los dibujan los
+mapas del OCC (ver
+[Referencias y meteorología en el mapa (PR M8)](#referencias-y-meteorología-en-el-mapa-pr-m8)).
+Las capturas se revisaron en
 local, en el laboratorio; nada de esto acredita un despliegue ni una revisión
 visual en el VPS.
 
@@ -1454,8 +1457,10 @@ no dibujaban tráfico, y no había cinemática, modo seguir, huellas a escala ni
 barra de avance de los hitos; desde M6 los tienen Mapa de posiciones y la vista
 «Mapa» de Planificación, y la consola, con U3. Los anillos de distancia,
 los ejes de pista, los aeropuertos de la región, la FIR, las radioayudas, el
-día y la noche, el satélite y el viento pasan a M8; por eso el menú de capas
-solo trae el grupo Tráfico. Desde M5, con el tráfico encendido (como en
+día y la noche, el satélite y el viento pasaron a M8, por eso en M5 el menú de
+capas solo traía el grupo Tráfico; el PR M8 los trae, salvo la FIR (ver
+[Referencias y meteorología en el mapa (PR M8)](#referencias-y-meteorología-en-el-mapa-pr-m8)).
+Desde M5, con el tráfico encendido (como en
 Development), abrir Monitoreo de vuelos en el OCC hace que la API lea la red de
 tráfico mientras la pestaña se ve y hasta 15 minutos después. Las capturas se
 revisaron en local, en el laboratorio; nada de esto acredita un despliegue ni
@@ -1850,6 +1855,135 @@ Ver la nota del 15 de noviembre de 2026 en el
 [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md) y en el
 [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
 
+## Referencias y meteorología en el mapa (PR M8)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR M8 (mapas) «Capas aeronáuticas y clima en el mapa» (`1c0f2482`, `32ecc0e5` y
+`d5e35d68`), que esa verificación no cubre. Es la segunda parte del PR M8; la
+primera, el PR M8 (API), trajo la lectura `GET occ/weather` (ver
+[Integraciones externas](../04-arquitectura/integraciones-externas.md#clima-del-aeródromo-aviationweathergov)).
+Las decisiones y las diferencias con el diseño están en la actualización del 14
+de noviembre de 2026 sobre M8 (mapas) de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). La API no cambia.
+Integrado sobre Development (nota del 16 de noviembre de 2026 del mismo ADR):
+los aeropuertos de la región son una sola capa, la de M6 (puntos por tipo y
+código «MDSD/SDQ»), con el realce de M8 para el origen o destino de un vuelo de
+hoy y el crédito de OurAirports; «Referencias» reúne los aeropuertos, las rutas
+desde Punta Cana y las referencias de M8, y todo se ve en el tema oscuro y en el
+claro.
+
+- **El clima, por la API.**
+  [`weatherService.js`](../../frontend/private-web/src/services/weatherService.js)
+  lee el clima del aeródromo con `getOccAerodromeWeather` del cliente
+  compartido, que valida la respuesta, y explica sus errores por su código, sin
+  mostrar el título del servidor.
+  [`useMdpcWeather.js`](../../frontend/private-web/src/features/weather/useMdpcWeather.js)
+  conserva su forma y su propio sondeo de 10 minutos con la pestaña a la vista,
+  nunca con `occ_planning`, y suma el estado del servicio (`Live`, `Stale`,
+  `Unavailable` o `Disabled`, un dato y no un error), el TAF, la hora en que el
+  servicio respondió por última vez y el crédito. Lee solo con un permiso de
+  mapa; tras un 401 o un 403 deja de leer, sondeo incluido, hasta que cambia
+  el acceso del departamento o alguien vuelve a pedirlo, y entonces decide de
+  nuevo el servidor. Un METAR está sin actualizar si la API lo marca `Stale` o
+  si pasa de 90 minutos, el límite de la API para uno en vivo: la misma regla
+  que sigue el viento del mapa. La barra de estado recibe la fuente «Clima
+  MDPC» con la marca «No oficial». Lo leen Monitoreo de vuelos (dentro del
+  marco del OCC), Mapa de posiciones, Planificación y el panel de meteorología
+  de la consola actual. El navegador ya no pide el METAR actual a Iowa
+  Environmental Mesonet: solo el historial de 6 horas de ese panel lo sigue
+  leyendo, hasta que U3 lo retire.
+- **El TAF.**
+  [`taf.js`](../../frontend/private-web/src/features/weather/taf.js) une el
+  texto en bruto y los periodos de la API, dice qué periodo rige y cuál viene, y
+  escribe cada periodo en una línea, con la hora de Punta Cana. Ninguna
+  pantalla lo muestra todavía; *planificado (U3):* lo usará la pastilla del
+  clima de la consola.
+- **Referencias.** Los mapas del OCC suman, en silencio y sin color
+  ([datos](../../frontend/private-web/src/features/maps/traffic/referenceFeatures.js)
+  y [capas](../../frontend/private-web/src/features/maps/style/referenceLayers.js)):
+  - los anillos de distancia, de 50 a 250 NM en Región y de 5 a 40 NM en
+    Aproximación, rotulados «20 NM»;
+  - los ejes de pista extendidos, de 10 NM con una marca por milla, con la
+    pista en uso más marcada y rotulada por su origen: «Pista 08 (según las
+    llegadas)», «Pista 08 (estimada por el viento)» o «Pista 08 (habitual)».
+    La deciden las llegadas en vivo recientes, después el viento de un METAR en
+    vivo y, si no, es la 08; sin tráfico en el mapa, como en Mapa de posiciones
+    y Planificación, la deciden el viento o la 08. Una llegada cuenta solo en
+    final: a 1 NM o menos del eje prolongado de una cabecera, a 12 NM o menos
+    del umbral, a 1000 m o menos y volando su rumbo. Un avión en el tramo de
+    viento en cola o en un tramo base no cuenta. Su voto dura 10 minutos del
+    reloj del servidor, así que la pista sigue «según las llegadas» después del
+    aterrizaje y entre dos llegadas;
+  - los aeropuertos de la región, con sus códigos OACI e IATA, y el origen o el
+    destino de los vuelos de hoy resaltados por su forma;
+  - las radioayudas PNA (VOR-DME 112,7) y PCA (NDB 425), en Aproximación;
+  - el crédito «OurAirports», mientras se dibuja alguno de los ejes, los
+    aeropuertos o las radioayudas, que salen de sus datos: en Región y en
+    Aproximación con sus valores por omisión.
+- **Día y noche.** En Región y Aproximación, la noche, pasado el crepúsculo
+  civil, oscurece un poco el mapa, con la línea de su borde y la palabra
+  «Noche»
+  ([sombra](../../frontend/private-web/src/features/maps/traffic/nightShade.js),
+  sobre el módulo solar de los aviones 3D). Cambia con el minuto del reloj del
+  servidor, sin peticiones.
+- **La FIR no está.** El límite aproximado de la FIR Santo Domingo no se dibuja
+  ni está en el menú: el archivo del proyecto VATSpy del que se iba a extraer ya
+  no estaba publicado, y un límite nunca se inventa
+  ([README de los datos](../../frontend/private-web/src/features/maps/airport/data/README.md)).
+- **Satélite.** Las nubes infrarrojas de GOES-East y la lluvia estimada de
+  IMERG, de NASA GIBS, pasan al mismo lienzo: solo en Región y Aproximación,
+  apagadas por omisión y visibles solo con sus teselas fijadas a la hora de su
+  imagen
+  ([capas](../../frontend/private-web/src/features/maps/traffic/weatherLayers.js)
+  y [hora de las imágenes](../../frontend/private-web/src/features/maps/useSatelliteImagery.js)).
+  Mientras se piden, la barra de estado recibe la fuente «Satélite», y mientras
+  se dibujan, la atribución suma «NASA GIBS». Se dibujan en grises, sin los
+  colores de las escalas de GIBS: lo normal no lleva tono, y el ámbar y el rojo
+  significan «Atención» y «Urgente».
+- **Viento en pista.** Junto al aeródromo, una flecha y «100° 13 kt R08»: la
+  dirección, la velocidad, la ráfaga y la pista en uso. Un METAR sin actualizar
+  se atenúa y dice «Sin actualizar desde las 08:00», y sin METAR no se dibuja.
+  Su ficha, que un clic fija, dice «No oficial», la hora del METAR y el viento
+  de frente o de cola y el de costado de cada cabecera. Mientras el viento está
+  en pantalla, la atribución del mapa, plegada por omisión, suma «Clima: NOAA
+  Aviation Weather Center», con su enlace.
+- **Menú de capas y leyenda.** En Monitoreo de vuelos, el
+  [menú](../../frontend/private-web/src/features/maps/core/layersMenu.js) suma
+  los grupos «Referencias» (Anillos de distancia, Ejes de pista, Aeropuertos de
+  la región, Radioayudas y Día y noche) y «Meteorología» (Nubes por satélite y
+  Lluvia estimada, apagadas por omisión, y Viento en pista), cada clave con las
+  vistas que la encienden por omisión. Una clave encendida que no muestra nada
+  dice por qué: «Se ve en Región y Aproximación» o «No hay clima del aeródromo
+  en este momento.». Mapa de posiciones y Planificación no tienen menú de capas:
+  muestran lo que trae cada vista. La leyenda suma cada referencia, el viento
+  con «No oficial» (y también «Sin actualizar» si su METAR está atrasado) y
+  cada imagen con su hora, solo mientras están en pantalla.
+- **Laboratorio.** Tres escenas de referencias y cuatro de clima, con clima
+  sintético y la hora simulada de las imágenes
+  ([escenas](../../frontend/private-web/src/features/maps/lab/scenes.js)). Las
+  pruebas están en
+  [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#referencias-y-meteorología-en-los-mapas-del-occ-pr-m8).
+
+Lo que no cambia: la API, el OpenAPI, el cliente compartido y la CSP, que
+sigue permitiendo NASA GIBS e Iowa Mesonet; el origen de Iowa Mesonet sale en
+un cambio aparte cuando nada lo lea.
+
+Límites: la plataforma de la consola actual no recibe el clima, y su panel de
+meteorología todavía dice que su METAR viene de IEM, aunque ya llega de la API.
+Ese panel tampoco muestra los estados vacío y sin permiso del hook: con el
+clima `Unavailable` o `Disabled` (como en Production y en el arnés E2E), o sin
+permiso, deja la franja del METAR en blanco, sin mensaje ni «Reintentar», donde
+antes mostraba el METAR de IEM, y su aviso de METAR desactualizado mira solo la
+edad, no el estado `Stale` de la API. El carril de mapas no edita ese panel,
+así que es una dependencia con U3;
+*planificado (U3):* la consola nueva lo reemplaza, con la pastilla del clima y
+el TAF. La pista según las llegadas vuelve al viento o a la 08 cuando pasan 10
+minutos sin una llegada en final. No hay SIGMET ni NOTAM.
+Desde este PR, con el clima encendido (como en Development), abrir esas
+pantallas hace que la API lea aviationweather.gov, como mucho dos veces cada 5
+minutos por aeropuerto. Las capturas se revisaron en local, en el laboratorio;
+nada de esto acredita un despliegue ni una revisión visual en el VPS.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |
@@ -1912,6 +2046,7 @@ npm run build
 - *posterior al commit verificado (PR M3):* las pruebas del plano de MDPC, que corren con `npm test`: el plano versionado tiene que ser idéntico a lo que genera el generador ([prueba de igualdad](../../frontend/private-web/src/features/maps/airport/mdpcLayout.generated.test.js)) y cumplir los criterios de aceptación ([criterios](../../frontend/private-web/src/features/maps/airport/airportLayout.test.js));
 - *posterior al commit verificado (PR M4):* las pruebas de las posiciones en rampa, junto a cada módulo, entre ellas la que exige que cada par de estados se distinga por algo que no es el color ([capas de las posiciones](../../frontend/private-web/src/features/maps/stands/standLayers.test.js)).
 - *posterior al commit verificado (PR M5):* la prueba de presupuesto del mapa, que repite un minuto demo y falla por encima de las 70 peticiones ([presupuesto](../../frontend/private-web/src/features/maps/useMapSituation.budget.test.jsx)), y el tráfico sintético que pasa los validadores estrictos del cliente compartido ([datos](../../frontend/private-web/src/features/maps/testing/trafficFixtures.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#tráfico-real-en-los-mapas-del-occ-pr-m5).
+- *posterior al commit verificado (PR M8, mapas):* las pruebas del clima por la API, del TAF, de las referencias, de la noche y de la meteorología en el mapa, con un clima sintético que pasa el validador estricto del cliente compartido ([datos](../../frontend/private-web/src/features/maps/testing/weatherFixtures.js)), y dos specs visuales más; ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#referencias-y-meteorología-en-los-mapas-del-occ-pr-m8).
 - *posterior al commit verificado (PR M6):* la prueba del contrato del vuelo demo, que con 8 minutos lleva a las 41 posiciones activas por la 08 con un rodaje ajustado de 25 kt o menos ([perfil demo](../../frontend/private-web/src/features/maps/kinematics/demoProfile.test.js)), la que exige que la cinemática no lea reloj, azar ni JSON ([pureza](../../frontend/private-web/src/features/maps/kinematics/purity.test.js)) y las del bucle por mapa ([bucle](../../frontend/private-web/src/features/maps/core/frameLoop.test.js)) y del almacén de movimiento ([almacén](../../frontend/private-web/src/features/maps/traffic/motionStore.test.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#cinemática-y-vuelo-demo-en-los-mapas-del-occ-pr-m6).
 - *posterior al commit verificado (PR U3):* las pruebas de la consola de Panorama, junto a cada módulo de `dashboard/noc`, entre ellas la que repite con los hooks reales un minuto en reposo y uno de vuelo demo y falla por encima de 40 o de 70 peticiones ([presupuesto](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)), y las respuestas sintéticas de la consola en la suite visual, que pasan los validadores estrictos del cliente compartido ([datos](../../frontend/private-web/tests/visualConsoleFixtures.test.js)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#la-consola-del-occ-pr-u3).
 
