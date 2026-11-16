@@ -12,6 +12,8 @@ import { aviationReferenceMessages } from './aviationReferenceMessages';
 // arrivals and the departures of the two hours before, with the provider's delay index. The pill of Panorama's bottom bar
 // reads the station's airport while the console is open and the tab visible, again every 15 minutes (the API keeps the
 // answer an hour, so most of those reads cost nothing); the inspector reads the selected flight's other airport once.
+// The Starter plan does not include the delays: the API answers `Disabled` without calling the provider, and then the
+// pill and the inspector's row draw nothing and the pill stops polling.
 // Without an AviationReferenceProvider nothing renders and nothing is sent. OCC tokens: both themes.
 
 /** The pill's pace: the API keeps the delays an hour, so a quarter of an hour never spends more than one call an hour. */
@@ -37,14 +39,23 @@ function useVisibleTick(pollMs) {
   return tick;
 }
 
-/** The delays of `airport` (null: the station's own), read through the provider's adapter. */
+/**
+ * The delays of `airport` (null: the station's own), read through the provider's adapter. The read is off on the
+ * Starter plan (ADR-0028, note of 15 November 2026): its first answer is `Disabled`, and then the hook stops polling and
+ * says it is not available, so nothing is drawn and nothing more is sent.
+ */
 export function useAirportDelays(stationId, airport = null, { pollMs = null } = {}) {
   const service = useAviationReferenceService();
-  const tick = useVisibleTick(service && stationId ? pollMs : null);
+  const [off, setOff] = useState(false);
+  const tick = useVisibleTick(service && stationId && !off ? pollMs : null);
   const key = service && stationId ? `${stationId}|${airport ?? ''}|${tick}` : null;
   const read = useAviationReferenceRead(key, ({ signal }) => service.getDelays({ stationId, airport, signal }),
     { keep: pollMs !== null });
-  return { available: service !== null && Boolean(stationId), read };
+  const disabled = read.status === 'success' && read.data?.status === 'Disabled';
+  useEffect(() => {
+    if (disabled) setOff(true);
+  }, [disabled]);
+  return { available: service !== null && Boolean(stationId) && !disabled && !off, read };
 }
 
 function Batch({ t, locale, label, batch }) {

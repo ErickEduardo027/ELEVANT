@@ -877,7 +877,8 @@ Pedido del dueño para la presentación: aprovechar más AeroDataBox. Los datos 
   mapa, y `aviation-reference/useAirportRoutes.js` la lee al abrir la consola y cada hora con la pestaña visible.
   Los otros mapas no la tienen.
 - **Demoras y aeronave.** La pastilla «Demoras PUJ: llegadas +12 min · salidas +8 min» va junto a la del clima y
-  abre su detalle. El inspector muestra los datos de la aeronave por matrícula y las demoras del aeropuerto contrario
+  abre su detalle, pero está apagada: el plan Starter no incluye las demoras, la API responde `Disabled` y la consola no
+  la dibuja (nota del ADR-0028). El inspector muestra los datos de la aeronave por matrícula y las demoras del aeropuerto contrario
   del vuelo elegido. Nada de esto se pide para un vuelo demo.
 - **Presupuesto de peticiones.** `OCC_REQUEST_PLAN.references` suma las dos lecturas periódicas (cada 15 minutos y
   cada hora). `occRequestBudget.test.js` comprueba que no añaden ninguna petición al minuto en reposo y que, en el

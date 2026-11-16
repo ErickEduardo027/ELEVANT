@@ -247,6 +247,10 @@ describe('OCC request budget', () => {
     const opening = sim.requests.filter(request => request.at < MINUTE_MS);
     expect(opening.filter(request => ['airportDelays', 'airportRoutes'].includes(request.key))).toHaveLength(2);
     expect(opening.length).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.rest);
+    // On the Starter plan the delays answer Disabled once and are never polled again (AirportDelays.jsx, tested in
+    // aviationReference.test.jsx): the opening minute then holds one delays read and no later one.
+    expect(OCC_REQUEST_PLAN.references.filter(read => read.offOnStarter).map(read => read.key)).toEqual(['airportDelays']);
+    expect(readSource('src/features/aviation-reference/AirportDelays.jsx')).toContain('!off ? pollMs : null');
     // Each pace is the one its file uses, and the reads are the shared client's.
     for (const read of OCC_REQUEST_PLAN.references) {
       expect(existsSync(read.owner), read.owner).toBe(true);

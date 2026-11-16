@@ -42,7 +42,8 @@ public sealed class AviationReferenceReader(IAviationReferenceProvider provider,
         ArgumentNullException.ThrowIfNull(call);
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(ledger);
-        if (!provider.IsConfigured) return new AviationReferenceRead<T>(AviationReferenceStatus.Disabled, null, null);
+        if (!provider.IsConfigured || !limits.IsEnabled(kind))
+            return new AviationReferenceRead<T>(AviationReferenceStatus.Disabled, null, null);
 
         var key = $"{kind}|{subject}";
         if (Kept<T>(key, timeProvider.GetUtcNow()) is { } kept) return kept;

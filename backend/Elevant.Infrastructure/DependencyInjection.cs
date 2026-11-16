@@ -118,7 +118,7 @@ public static class DependencyInjection
             defaults.Aircraft with { DailyUnits = options.AircraftDailyUnitLimit, MonthlyUnits = options.AircraftMonthlyUnitLimit },
             defaults.AirportRoutes with { DailyUnits = options.RoutesDailyUnitLimit, MonthlyUnits = options.RoutesMonthlyUnitLimit },
             defaults.AirportDelays with { DailyUnits = options.DelaysDailyUnitLimit, MonthlyUnits = options.DelaysMonthlyUnitLimit },
-            options.PlanMonthlyUnitLimit));
+            options.PlanMonthlyUnitLimit, options.DelaysEnabled));
         if (options.Enabled && !string.IsNullOrWhiteSpace(options.ApiKey))
             services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider>(_ =>
                 new Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxReferenceProvider(

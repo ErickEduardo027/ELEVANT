@@ -38,6 +38,12 @@ public sealed class AeroDataBoxOptions
 
     public int RoutesMonthlyUnitLimit { get; set; } = 200;
 
+    /// <summary>
+    /// The current airport delays (tier 3) are not in the Starter plan: off by default, the read answers Disabled and never
+    /// calls. Switch it on only with a plan that includes them.
+    /// </summary>
+    public bool DelaysEnabled { get; set; }
+
     public int DelaysDailyUnitLimit { get; set; } = 48;
 
     public int DelaysMonthlyUnitLimit { get; set; } = 1500;

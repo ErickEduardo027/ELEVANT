@@ -180,6 +180,18 @@ describe('the airport delays', () => {
     expect(await screen.findByText('Demoras PUJ: Límite mensual alcanzado')).toBeTruthy();
   });
 
+  it('draws nothing and stops polling when the plan has no delays (Disabled)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { service, wrap } = withService({ delays: delaysAnswer('Disabled', null) });
+    const { container } = render(wrap(<><AirportDelaysPill stationId={STATION} label="PUJ" />
+      <AirportDelaysLine stationId={STATION} airport="SDQ" /></>));
+    await waitFor(() => expect(service.calls).toHaveLength(2));
+    await waitFor(() => expect(container.querySelector('[data-airport-delays-pill]')).toBeNull());
+    expect(container.querySelector('[data-airport-delays-line]')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(AIRPORT_DELAYS_POLL_MS * 3); });
+    expect(service.calls).toHaveLength(2);
+  });
+
   it('the inspector reads the origin of the flight', async () => {
     const { service, wrap } = withService({ delays: query => ({ ...delaysAnswer(), airport: query.airport }) });
     render(wrap(<AirportDelaysLine stationId={STATION} airport="sdq" role="origin" />));

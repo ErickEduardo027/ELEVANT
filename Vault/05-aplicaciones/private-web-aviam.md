@@ -1782,7 +1782,8 @@ se muestra ni se pide nada. Ese servicio guarda en la pestaña cada respuesta 15
 demás), y cada pantalla pide su dato solo cuando lo muestra.
 
 - **Consola.**
-  - La pastilla «Demoras PUJ: llegadas +12 min · salidas +8 min» va junto al clima, con su detalle.
+  - La pastilla «Demoras PUJ: llegadas +12 min · salidas +8 min» va junto al clima, con su detalle. Hoy está oculta,
+    igual que la fila de demoras del inspector: el plan Starter no incluye las demoras y la API responde `Disabled`.
   - La capa «Rutas desde Punta Cana» está en Región, con su clave en el menú de capas y la leyenda, en los dos temas.
   - Al elegir un vuelo, el inspector muestra los datos de la aeronave por matrícula y las demoras del aeropuerto
     contrario.

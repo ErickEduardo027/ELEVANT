@@ -178,8 +178,9 @@ public sealed class AviationReferenceReaderTests
     public void TheDefaultCapsFitTheStarterPlanNextToTheFeed()
     {
         var limits = AviationReferenceLimits.Default;
-        var monthly = limits.AirlineFleet.MonthlyUnits + limits.Aircraft.MonthlyUnits + limits.AirportRoutes.MonthlyUnits +
-            limits.AirportDelays.MonthlyUnits;
+        // The current delays are not in the Starter plan: off by default, so their caps spend nothing.
+        Assert.False(limits.IsEnabled(AviationReferenceKind.AirportDelays));
+        var monthly = limits.AirlineFleet.MonthlyUnits + limits.Aircraft.MonthlyUnits + limits.AirportRoutes.MonthlyUnits;
 
         Assert.Equal((6, 1, 6, 6), (limits.AirlineFleet.UnitsPerCall, limits.Aircraft.UnitsPerCall,
             limits.AirportRoutes.UnitsPerCall, limits.AirportDelays.UnitsPerCall));
@@ -187,7 +188,25 @@ public sealed class AviationReferenceReaderTests
             (limits.AirlineFleet.CacheFor, limits.Aircraft.CacheFor, limits.AirportRoutes.CacheFor, limits.AirportDelays.CacheFor));
         // The Development VPS gives the feed 9 000 units a month: together they stay far below the plan's 40 000.
         Assert.True(monthly + 9000 <= 12500, $"The reference reads may spend {monthly} units a month.");
-        Assert.Equal(3200, monthly);
+        Assert.Equal(1700, monthly);
+    }
+
+    [Fact]
+    public async Task TheDelaysAreOffUnlessThePlanIncludesThem()
+    {
+        var provider = new StubProvider();
+        var ledger = new Ledger();
+        Task<AviationReferenceRead<AirportDelayFacts>> Read(AviationReferenceLimits limits) =>
+            new AviationReferenceReader(provider, limits, new Clock(Start)).ReadAsync(AviationReferenceKind.AirportDelays, "MDPC",
+                (adapter, token) => adapter.GetDelaysAsync("MDPC", token), _ => 1, ledger, PuntaCana, AccountId,
+                TestContext.Current.CancellationToken);
+
+        var off = await Read(AviationReferenceLimits.Default);
+        Assert.Equal((AviationReferenceStatus.Disabled, 0), (off.Status, provider.Calls));
+        Assert.Empty(ledger.Records);
+
+        var on = await Read(AviationReferenceLimits.Default with { DelaysEnabled = true });
+        Assert.Equal((AviationReferenceStatus.Available, 1), (on.Status, provider.Calls));
     }
 
     [Fact]
@@ -233,7 +252,7 @@ public sealed class AviationReferenceReaderTests
             (await allowed.RoutesAsync(AccountId, Guid.Parse("20000000-0000-7000-8000-000000000099"),
                 TestContext.Current.CancellationToken)).Failure);
         var delays = await allowed.DelaysAsync(AccountId, PuntaCana, "sdq", TestContext.Current.CancellationToken);
-        Assert.Equal("SDQ", delays.Value!.Subject);
+        Assert.Equal(("SDQ", AviationReferenceStatus.Disabled), (delays.Value!.Subject, delays.Value.Status));
         var own = await allowed.DelaysAsync(AccountId, PuntaCana, null, TestContext.Current.CancellationToken);
         Assert.Equal("MDPC", own.Value!.Subject);
     }

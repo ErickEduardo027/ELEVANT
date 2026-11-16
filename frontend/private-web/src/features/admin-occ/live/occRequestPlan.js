@@ -56,9 +56,10 @@ export const OCC_REQUEST_PLAN = Object.freeze({
   // The console's AeroDataBox reference reads (ADR-0028, note of 15 November 2026), on their own visible-tab timers: the
   // delays pill every 15 minutes and the routes every hour. The aircraft and an origin's delays are read only when a
   // flight or a stand is chosen, so they have no pace. The API keeps every answer, so they spend units at most hourly.
+  // The delays are not in the Starter plan (`offOnStarter`): their first answer is Disabled and the pill stops polling.
   references: Object.freeze([
     Object.freeze({ key: 'airportDelays', read: 'getOccAirportDelays', resources: Object.freeze([]), pollMs: 900_000,
-      coalesceMs: null, fixedRate: true, owner: 'src/features/aviation-reference/AirportDelays.jsx' }),
+      coalesceMs: null, fixedRate: true, offOnStarter: true, owner: 'src/features/aviation-reference/AirportDelays.jsx' }),
     Object.freeze({ key: 'airportRoutes', read: 'getOccAirportRoutes', resources: Object.freeze([]), pollMs: 3_600_000,
       coalesceMs: null, fixedRate: true, owner: 'src/features/aviation-reference/useAirportRoutes.js' }),
   ]),

@@ -31,11 +31,14 @@ public sealed record AviationReferenceLimits(
     AviationReferenceCap Aircraft,
     AviationReferenceCap AirportRoutes,
     AviationReferenceCap AirportDelays,
-    int ProviderMonthlyUnits)
+    int ProviderMonthlyUnits,
+    bool DelaysEnabled = false)
 {
     /// <summary>
-    /// Conservative defaults for the Starter plan (40 000 units a month): at most 3 200 units a month for the four reads
-    /// together, next to the flight feed's own budget.
+    /// Conservative defaults for the Starter plan (40 000 units a month): at most 1 700 units a month for the three reads
+    /// the plan includes, next to the flight feed's own budget. The current delays are not in the Starter plan, so their
+    /// read is off (<c>DelaysEnabled</c> false) and answers <see cref="AviationReferenceStatus.Disabled"/>
+    /// without calling; its caps stay for a plan that includes it.
     /// </summary>
     public static AviationReferenceLimits Default { get; } = new(
         new AviationReferenceCap(6, 30, 300, TimeSpan.FromDays(7)),
@@ -43,6 +46,9 @@ public sealed record AviationReferenceLimits(
         new AviationReferenceCap(6, 12, 200, TimeSpan.FromHours(24)),
         new AviationReferenceCap(6, 48, 1500, TimeSpan.FromHours(1)),
         38000);
+
+    /// <summary>False for a read this deployment switched off: it answers Disabled and never calls.</summary>
+    public bool IsEnabled(AviationReferenceKind kind) => kind != AviationReferenceKind.AirportDelays || DelaysEnabled;
 
     public AviationReferenceCap For(AviationReferenceKind kind) => kind switch
     {

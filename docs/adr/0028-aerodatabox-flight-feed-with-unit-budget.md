@@ -106,7 +106,7 @@ una prueba unitaria que simula el día minuto a minuto.
 | Webhooks | La API solo es accesible por la tailnet |
 | FAA, distancias, autocompletado, imágenes de aeronaves, demoras históricas | No aportan a la operación de tierra |
 
-La flota, la aeronave por matrícula, las rutas diarias y las demoras actuales sí se usan desde el 15 de noviembre de 2026; ver la última actualización.
+La flota, la aeronave por matrícula y las rutas diarias sí se usan desde el 15 de noviembre de 2026. Las demoras actuales están implementadas pero apagadas, porque el plan Starter no las incluye; ver la última actualización.
 
 ## Consecuencias
 
@@ -164,10 +164,16 @@ La flota, la aeronave por matrícula, las rutas diarias y las demoras actuales s
 > | Flota de una aerolínea | `GET /airlines/{code}/aircrafts?pageSize=25` | 3 / 6 | 7 días por código | 30 / 300 | ~60 (unas 10 aerolíneas) |
 > | Aeronave por matrícula | `GET /aircrafts/reg/{reg}` | 1 / 1 | 1 día por matrícula | 40 / 1 200 | ~300 (unas 10 al día) |
 > | Rutas diarias del aeropuerto | `GET /airports/icao/{code}/stats/routes/daily` | 3 / 6 | 24 horas | 12 / 200 | ~180 (una al día) |
-> | Demoras actuales | `GET /airports/{iata\|icao}/{code}/delays` | 3 / 6 | 1 hora por aeropuerto | 48 / 1 500 | ≤ 1 500 (el tope manda) |
+> | Demoras actuales (**apagada**) | `GET /airports/{iata\|icao}/{code}/delays` | 3 / 6 | 1 hora por aeropuerto | 48 / 1 500 | 0: el plan Starter no la incluye |
 >
-> Con los topes por defecto, las cuatro lecturas gastan como mucho **3 200 unidades al mes**. Junto a
-> las 9 000 del feed en el VPS, el total es de unas 12 200 de las 40 000 del plan (≈ 30 %).
+> **Demoras apagadas.** El dueño confirmó que su plan Starter **no incluye** las demoras actuales de un
+> aeropuerto. `AeroDataBox__DelaysEnabled` vale `false` por defecto: la lectura responde `Disabled` sin
+> llamar al proveedor y sin escribir en el registro. La pastilla de la consola y la fila de demoras del
+> inspector no se dibujan, y la pastilla deja de consultar tras esa primera respuesta. El código y sus
+> topes quedan listos para encenderla si el plan sube.
+>
+> Con los topes por defecto, las tres lecturas activas gastan como mucho **1 700 unidades al mes**. Junto
+> a las 9 000 del feed en el VPS, el total es de unas 10 700 de las 40 000 del plan (≈ 27 %).
 >
 > **Contabilidad.** Cada llamada queda en `integration.provider_usage_entries`:
 > - `Operation` lleva el nombre de la lectura (`airline_fleet`, `aircraft`, `airport_routes`, `airport_delays`);
