@@ -17,6 +17,7 @@ import {
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { countryCodes, countryName, loadDivisions } from "@/lib/geo/catalog";
 import { serviceImageFallback } from "@/lib/serviceImages";
+import { emptyTaxRegistration, taxCountry, type TaxRegistrationDraft, validateTaxRegistration } from "@/lib/tax-registration";
 
 type Catalog = PublicCommercialCatalog;
 type Representative = RepresentativeDraft;
@@ -61,6 +62,9 @@ export function AccessRequestWizard() {
   const [proposalChosen, setProposalChosen] = useState(false);
   const [proposal, setProposal] = useState<AirlineProposalDraft>(emptyAirlineProposal);
   const [showProposalErrors, setShowProposalErrors] = useState(false);
+  // The airline's tax identifier (professor's review): an RNC for a Dominican airline.
+  const [tax, setTax] = useState<TaxRegistrationDraft>(emptyTaxRegistration);
+  const [showTaxError, setShowTaxError] = useState(false);
   const [representative, setRepresentative] = useState(emptyRepresentative);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -94,6 +98,8 @@ export function AccessRequestWizard() {
   const proposing = proposalChosen || catalog?.airlines.length === 0;
   const airline = proposing ? undefined : catalog?.airlines.find((item) => item.id === airlineId);
   const proposalCheck = validateAirlineProposal(proposal);
+  const airlineCountry = (proposing ? proposal.countryCode : airline?.countryCode ?? "").trim().toUpperCase();
+  const taxCheck = validateTaxRegistration(tax, airlineCountry);
   const proposalError = (field: AirlineProposalField) => showProposalErrors ? proposalCheck.errors[field] : undefined;
   const proposalControl = (field: AirlineProposalField) => {
     const message = proposalError(field);
@@ -272,6 +278,12 @@ export function AccessRequestWizard() {
     if (step === 2 && !proposing && !airlineId) {
       setError("Seleccione la aerolínea que representa o indique que no aparece en el listado."); return;
     }
+    if (step === 2 && !taxCheck.ok) {
+      setShowTaxError(true);
+      document.getElementById("tax-number")?.focus();
+      setError("Revise el identificador fiscal de la aerolínea antes de continuar.");
+      return;
+    }
     if (step === 3 && !validation.ok) {
       setShowAllErrors(true);
       document.getElementById(fieldId(validation.firstInvalidField))?.focus();
@@ -292,6 +304,12 @@ export function AccessRequestWizard() {
       selected.some((id) => !catalog?.services.some((service) => service.id === id))) {
       setError("Revise los servicios disponibles antes de enviar la solicitud.");
       setStep(1);
+      return;
+    }
+    if (!taxCheck.ok) {
+      setShowTaxError(true);
+      setError("Revise el identificador fiscal de la aerolínea antes de enviar la solicitud.");
+      setStep(2);
       return;
     }
     if (!validation.ok) {
@@ -318,6 +336,7 @@ export function AccessRequestWizard() {
       representativeDistrict: location.district || null,
       representativeDocumentType: representative.documentType || null,
       representativeDocumentNumber: representative.documentNumber.trim() || null,
+      taxRegistration: taxCheck.value.number, taxRegistrationCountryCode: taxCheck.value.countryCode,
     };
     pendingSubmission.current = payload;
     setHasPendingSubmission(true);
@@ -451,6 +470,9 @@ export function AccessRequestWizard() {
           {airline.registrySource && <p className="access-airline__registry" role="note">✓ Verificada en registro público ({airline.registrySource}): el nombre y los códigos coinciden con una aerolínea en operación.</p>}
           <p className="access-airline__verification">{airline.isVerified ? "✓ Identidad verificada por AVIAM" : "Los datos sin fuente aparecen como «Sin dato confirmado»; Contratos verificará la identidad legal."}</p>
         </div>}
+        {(proposing || airline) && <TaxRegistrationField draft={tax} airlineCountry={airlineCountry}
+          error={showTaxError && !taxCheck.ok ? taxCheck.error : undefined}
+          onChange={(changes) => setTax((current) => ({ ...current, ...changes }))} />}
       </> : step === 3 ? <>
         <div className="access-panel__heading"><p>03 / REPRESENTANTE</p><h2>¿Quién presenta la solicitud?</h2><span>Ingrese los datos de la persona autorizada para representar a la aerolínea.</span></div>
         <form id="access-representative" className="access-representative" noValidate onSubmit={(event) => { event.preventDefault(); next(); }}>
@@ -527,7 +549,8 @@ export function AccessRequestWizard() {
           <section><div className="access-summary__header"><h3>Servicios solicitados</h3><button type="button" onClick={() => setStep(1)}>Editar servicios</button></div><ul>{catalog?.services.filter((service) => selected.includes(service.id)).map((service) => <li key={service.id}>{service.name}</li>)}</ul></section>
           <section><div className="access-summary__header"><h3>Aerolínea</h3><button type="button" onClick={() => setStep(2)}>Editar aerolínea</button></div><p>{airlineName}</p>{proposing
             ? <small>No figura en el listado · {countryName(proposal.countryCode)} · ICAO {proposal.icaoCode.trim().toUpperCase()} · {proposal.iataCode.trim() ? `IATA ${proposal.iataCode.trim().toUpperCase()}` : "Sin IATA"}{proposal.websiteUrl.trim() ? ` · ${proposal.websiteUrl.trim()}` : ""}</small>
-            : <small>{airline?.legalName ?? "Sin razón social confirmada"} · {airline?.countryCode ?? "Sin país confirmado"}</small>}</section>
+            : <small>{airline?.legalName ?? "Sin razón social confirmada"} · {airline?.countryCode ?? "Sin país confirmado"}</small>}
+            {taxCheck.ok && <small>{taxCheck.display}</small>}</section>
           <section><div className="access-summary__header"><h3>Representante</h3><button type="button" onClick={() => setStep(3)}>Editar representante</button></div><dl>
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>
             <div><dt>Contacto</dt><dd>{representative.email} · {representative.phone}</dd></div>
@@ -567,6 +590,36 @@ function ProposalField({ field, label, error, wide, children }: {
     {children}
     {hint && <small className="access-field-hint" id={`${proposalId(field)}-hint`}>{hint}</small>}
     {error && <p className="access-field-error" id={`${proposalId(field)}-error`}>{error}</p>}
+  </div>;
+}
+
+/** RNC for a Dominican airline; otherwise the airline's own tax identifier and the country that issued it. */
+function TaxRegistrationField({ draft, airlineCountry, error, onChange }: {
+  draft: TaxRegistrationDraft; airlineCountry: string; error?: string;
+  onChange: (changes: Partial<TaxRegistrationDraft>) => void;
+}) {
+  const country = taxCountry(draft, airlineCountry);
+  const dominican = country === "DO";
+  const described = [error && "tax-number-error", "tax-number-hint"].filter(Boolean).join(" ");
+  return <div className="access-representative access-proposal" role="group" aria-label="Identificación fiscal de la aerolínea">
+    <div className="access-field">
+      <label htmlFor="tax-countryCode">País del identificador fiscal</label>
+      <select id="tax-countryCode" className="access-select" required disabled={airlineCountry === "DO"} value={country}
+        onChange={(event) => onChange({ countryCode: event.target.value })}>
+        <option value="">Seleccione el país</option>
+        {countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}
+      </select>
+    </div>
+    <div className="access-field">
+      <label htmlFor="tax-number">{dominican ? "RNC" : "Identificador fiscal"}</label>
+      <input id="tax-number" required maxLength={dominican ? 12 : 32} inputMode={dominican ? "numeric" : undefined}
+        autoComplete="off" aria-invalid={error ? true : undefined} aria-describedby={described} value={draft.number}
+        onChange={(event) => onChange({ number: event.target.value })} />
+      <small className="access-field-hint" id="tax-number-hint">{dominican
+        ? `Registro Nacional del Contribuyente: ${identityDocumentExample("Rnc")}.`
+        : "El identificador tributario de la aerolínea en su país, de 3 a 32 caracteres."} Aparece en el contrato y en las facturas.</small>
+      {error && <p className="access-field-error" id="tax-number-error">{error}</p>}
+    </div>
   </div>;
 }
 
