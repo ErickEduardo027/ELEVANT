@@ -22,6 +22,8 @@ import type {
 } from "../generated/elevant-api";
 // The largest aircraft a stand admits and the size of a type share the ground-time categories; null admits any size.
 import { AIRCRAFT_SIZE_CATEGORIES, type AircraftSizeCategory } from "./operationalClose";
+// ADR-0045: the permits a stand requires and the types OCC may require.
+import { isRequiredPermitList, isStandPermitOption, useMasterStandValidator } from "./permitSettings";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
@@ -71,12 +73,14 @@ export function isMasterTerminal(value: unknown, terminalId?: string): value is 
 export function isMasterStand(value: unknown, standId?: string): value is MasterStandData {
   return isRecord(value) &&
     hasOnlyKeys(value, ["id", "terminalId", "code", "hasBoardingBridge", "isRemote", "maxAircraftSize", "isActive",
-      "hasHistory", "version"]) &&
+      "hasHistory", "version", "requiredPermits"]) && isRequiredPermitList(value.requiredPermits) &&
     isUuid(value.id) && (standId === undefined || sameId(value.id, standId)) &&
     (value.terminalId === null || value.terminalId === undefined || isUuid(value.terminalId)) && isText(value.code, 24) &&
     typeof value.hasBoardingBridge === "boolean" && typeof value.isRemote === "boolean" && isSize(value.maxAircraftSize) &&
     typeof value.isActive === "boolean" && typeof value.hasHistory === "boolean" && isText(value.version, 64);
 }
+
+useMasterStandValidator(stand => isMasterStand(stand));
 
 /** An aircraft type of the shared catalog; its ICAO designator never changes. */
 export function isMasterAircraftType(value: unknown, aircraftTypeId?: string): value is MasterAircraftTypeData {
@@ -92,7 +96,9 @@ export function isMasterAircraftType(value: unknown, aircraftTypeId?: string): v
 /** Terminals and stands of the station of the request (every stand in one of its terminals) and the aircraft types. */
 export function isOccMasterData(value: unknown, stationId: string): value is OccMasterData {
   if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "stationCode", "terminals", "stands", "aircraftTypes",
-      "canCreate", "canUpdate"]) || !isUuid(value.stationId) || !sameId(value.stationId, stationId) ||
+      "canCreate", "canUpdate", "permitTypes"]) || !isUuid(value.stationId) || !sameId(value.stationId, stationId) ||
+      !(value.permitTypes == null || (Array.isArray(value.permitTypes) && value.permitTypes.length <= 1000 &&
+        value.permitTypes.every(isStandPermitOption))) ||
       !isText(value.stationCode, 16) || typeof value.canCreate !== "boolean" || typeof value.canUpdate !== "boolean" ||
       !Array.isArray(value.terminals) || value.terminals.length > 500 || !value.terminals.every(item => isMasterTerminal(item)) ||
       !Array.isArray(value.stands) || value.stands.length > 2000 || !value.stands.every(item => isMasterStand(item)) ||

@@ -152,6 +152,7 @@ public sealed record OccAgentOptionResponse(
     string EmployeeNumber,
     bool Eligible,
     IReadOnlyList<string> EligibilityReasons,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<string>? MissingPermits = null);
 
 public sealed record OccAssignmentResponse(

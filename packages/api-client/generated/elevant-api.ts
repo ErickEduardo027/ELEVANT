@@ -799,6 +799,12 @@ export interface ApplyRampServiceChargeRequest {
   action: string;
 }
 
+export interface ApplyStandRequiredPermitsInput {
+  stationId: string;
+  standIds: string[];
+  documentTypeCodes: string[];
+}
+
 export interface AssignOccOperationRequest {
   agentId: string;
 }
@@ -1695,6 +1701,12 @@ export interface CreateDepartmentAccountInput {
   employeeId?: string | null;
 }
 
+export interface CreateEquipmentTypeInput {
+  code: string;
+  name: string;
+  requiresQualification: boolean;
+}
+
 export interface SaveEmployeeInput {
   firstName: string;
   lastName: string;
@@ -1767,6 +1779,13 @@ export interface CreateOccCoverageRequest {
   /** @nullable */
   vehicleCode?: string | null;
   isReinforcement: boolean;
+}
+
+export interface CreatePermitTypeInput {
+  code: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
 }
 
 export interface CreateRequisitionInput {
@@ -2477,6 +2496,23 @@ export interface EmployeePageData {
   total: number;
   hasMore: boolean;
   employees: EmployeeSummaryData[];
+}
+
+export interface EquipmentTypeSettingData {
+  id: string;
+  code: string;
+  name: string;
+  requiresQualification: boolean;
+  isActive: boolean;
+  isLocked: boolean;
+  inUse: boolean;
+  version: string;
+}
+
+export interface EquipmentTypeSettingsData {
+  equipmentTypes: EquipmentTypeSettingData[];
+  canCreate: boolean;
+  canUpdate: boolean;
 }
 
 export interface ExchangeRateData {
@@ -4021,6 +4057,11 @@ export interface MasterAircraftTypeData {
   version: string;
 }
 
+export interface StandRequiredPermitData {
+  code: string;
+  name: string;
+}
+
 export interface MasterStandData {
   id: string;
   /** @nullable */
@@ -4033,6 +4074,8 @@ export interface MasterStandData {
   isActive: boolean;
   hasHistory: boolean;
   version: string;
+  /** @nullable */
+  requiredPermits?: StandRequiredPermitData[] | null;
 }
 
 export interface MasterTerminalData {
@@ -4165,6 +4208,8 @@ export interface OccAgentOptionResponse {
   employeeNumber: string;
   eligible: boolean;
   eligibilityReasons: string[];
+  /** @nullable */
+  missingPermits?: string[] | null;
 }
 
 export interface OccAgentShiftResponse {
@@ -4411,6 +4456,8 @@ export interface OccUnfitAssignmentResponse {
   turnaroundId: string;
   agentId: string;
   reasons: string[];
+  /** @nullable */
+  missingPermits?: string[] | null;
 }
 
 export interface OccAssignmentReadinessResponse {
@@ -4812,6 +4859,12 @@ export interface OccMapFlightsResponse {
   flights: OccMapFlightResponse[];
 }
 
+export interface StandPermitOptionData {
+  code: string;
+  name: string;
+  isSystem: boolean;
+}
+
 export interface OccMasterData {
   stationId: string;
   stationCode: string;
@@ -4820,6 +4873,8 @@ export interface OccMasterData {
   aircraftTypes: MasterAircraftTypeData[];
   canCreate: boolean;
   canUpdate: boolean;
+  /** @nullable */
+  permitTypes?: StandPermitOptionData[] | null;
 }
 
 export interface OccMobileDeviceAgentData {
@@ -4964,6 +5019,8 @@ export interface OccPositionResponse {
   cancelledBy?: string | null;
   narrowbodyOnly: boolean;
   coveredBy: string[];
+  /** @nullable */
+  requiredPermits?: string[] | null;
 }
 
 export interface OccPositionBoardResponse {
@@ -5410,6 +5467,26 @@ export interface PayInvoiceByCardBody {
      * @maximum 100000000
      */
   amount: number;
+}
+
+export interface PermitTypeSettingData {
+  /** @nullable */
+  id?: string | null;
+  code: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isActive: boolean;
+  isSystem: boolean;
+  inUse: boolean;
+  /** @nullable */
+  version?: string | null;
+}
+
+export interface PermitTypeSettingsData {
+  permitTypes: PermitTypeSettingData[];
+  canCreate: boolean;
+  canUpdate: boolean;
 }
 
 export interface PrepareDemoStationRequest {
@@ -6586,6 +6663,11 @@ export interface SetPasswordWithTokenRequest {
   newPassword: string;
 }
 
+export interface SetStandRequiredPermitsInput {
+  documentTypeCodes: string[];
+  expectedVersion: string;
+}
+
 export interface SetSuggestedProfileInput {
   /** @nullable */
   accessProfileId?: string | null;
@@ -6606,6 +6688,10 @@ export interface SignOperationDocumentRequest {
   strokes: number[][];
   /** @nullable */
   signerIdentification?: string | null;
+}
+
+export interface StandRequiredPermitsBatchData {
+  stands: MasterStandData[];
 }
 
 export interface StartRampOperationRequest {
@@ -6857,6 +6943,14 @@ export interface UpdateDepartmentUserInput {
   permissionCodes?: string[] | null;
 }
 
+export interface UpdateEquipmentTypeInput {
+  code: string;
+  name: string;
+  requiresQualification: boolean;
+  isActive: boolean;
+  expectedVersion: string;
+}
+
 export interface UpdateOccStandAttributesRequest {
   date: string;
   hasBoardingBridge: boolean;
@@ -6873,6 +6967,15 @@ export interface UpdateOccTerminalRulesRequest {
   /** @nullable */
   maxStandsPerAgent?: number | null;
   requiresBridgeQualification: boolean;
+}
+
+export interface UpdatePermitTypeInput {
+  code: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isActive: boolean;
+  expectedVersion: string;
 }
 
 export interface UpdateRampFlightDataRequest {
@@ -16891,6 +16994,200 @@ export const listHumanResourcesScheduleWarnings = async (params?: ListHumanResou
 
 
 
+export const getListHumanResourcesPermitTypesUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/settings/permit-types`
+}
+
+export const listHumanResourcesPermitTypes = async ( options?: RequestInit): Promise<PermitTypeSettingsData> => {
+
+  const res = await fetch(getListHumanResourcesPermitTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PermitTypeSettingsData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateHumanResourcesPermitTypeUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/settings/permit-types`
+}
+
+export const createHumanResourcesPermitType = async (createPermitTypeInput: CreatePermitTypeInput, options?: RequestInit): Promise<PermitTypeSettingData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateHumanResourcesPermitTypeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createPermitTypeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PermitTypeSettingData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateHumanResourcesPermitTypeUrl = (permitTypeId: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/settings/permit-types/${permitTypeId}`
+}
+
+export const updateHumanResourcesPermitType = async (permitTypeId: string,
+    updatePermitTypeInput: UpdatePermitTypeInput, options?: RequestInit): Promise<PermitTypeSettingData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateHumanResourcesPermitTypeUrl(permitTypeId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updatePermitTypeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PermitTypeSettingData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesEquipmentTypesUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/settings/equipment-types`
+}
+
+export const listHumanResourcesEquipmentTypes = async ( options?: RequestInit): Promise<EquipmentTypeSettingsData> => {
+
+  const res = await fetch(getListHumanResourcesEquipmentTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EquipmentTypeSettingsData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateHumanResourcesEquipmentTypeUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/settings/equipment-types`
+}
+
+export const createHumanResourcesEquipmentType = async (createEquipmentTypeInput: CreateEquipmentTypeInput, options?: RequestInit): Promise<EquipmentTypeSettingData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateHumanResourcesEquipmentTypeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createEquipmentTypeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EquipmentTypeSettingData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateHumanResourcesEquipmentTypeUrl = (equipmentTypeId: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/settings/equipment-types/${equipmentTypeId}`
+}
+
+export const updateHumanResourcesEquipmentType = async (equipmentTypeId: string,
+    updateEquipmentTypeInput: UpdateEquipmentTypeInput, options?: RequestInit): Promise<EquipmentTypeSettingData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateHumanResourcesEquipmentTypeUrl(equipmentTypeId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateEquipmentTypeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EquipmentTypeSettingData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetHumanResourcesShiftAssignmentOptionsUrl = (params?: GetHumanResourcesShiftAssignmentOptionsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -18418,6 +18715,82 @@ const res = await fetch(getUpdateOccAircraftTypeUrl(aircraftTypeId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: MasterAircraftTypeData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetOccStandRequiredPermitsUrl = (standId: string,) => {
+
+
+
+
+  return `/api/v1/occ/master-data/stands/${standId}/required-permits`
+}
+
+/**
+ * @summary The exact permits a stand requires (ADR-0045): the agent who covers it or works a flight there needs a current
+cycle of each. Takes the stand's version and an Idempotency-Key.
+ */
+export const setOccStandRequiredPermits = async (standId: string,
+    setStandRequiredPermitsInput: SetStandRequiredPermitsInput, options?: RequestInit): Promise<MasterStandData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetOccStandRequiredPermitsUrl(standId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setStandRequiredPermitsInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterStandData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getApplyOccStandRequiredPermitsUrl = () => {
+
+
+
+
+  return `/api/v1/occ/master-data/stands/required-permits`
+}
+
+/**
+ * @summary «Aplicar a varias posiciones» (ADR-0045): the same permits on up to 200 stands of one station.
+ */
+export const applyOccStandRequiredPermits = async (applyStandRequiredPermitsInput: ApplyStandRequiredPermitsInput, options?: RequestInit): Promise<StandRequiredPermitsBatchData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getApplyOccStandRequiredPermitsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(applyStandRequiredPermitsInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: StandRequiredPermitsBatchData = body ? JSON.parse(body) : {}
   return data
 }
 

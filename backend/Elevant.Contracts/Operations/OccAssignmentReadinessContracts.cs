@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Elevant.Contracts.Operations;
 
 /// <summary>
@@ -8,7 +10,9 @@ namespace Elevant.Contracts.Operations;
 /// <param name="MissingPermits">With <c>required_permit_missing</c>: the names of the permits the flight's stand requires
 /// that the agent lacks (ADR-0045).</param>
 public sealed record OccUnfitAssignmentResponse(Guid AssignmentId, Guid TurnaroundId, Guid AgentId,
-    IReadOnlyList<string> Reasons, IReadOnlyList<string>? MissingPermits = null);
+    IReadOnlyList<string> Reasons,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<string>? MissingPermits = null);
 
 /// <summary>The unfit assignments of a station's operations on one date; fit assignments are not listed.</summary>
 public sealed record OccAssignmentReadinessResponse(Guid StationId, DateOnly Date,
