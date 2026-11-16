@@ -9,7 +9,6 @@ import { OCC_ROW_TONES } from '../features/occ-ui/OccDataTable';
 import { OCC_PALETTES, OCC_THEMES } from '../features/occ-ui/occPalette';
 import FlightCard from '../features/planning/components/FlightCard';
 import { createPlanningFlight } from '../features/planning/testing/planningFixtures';
-import PositionListItem from '../features/positions-map/components/PositionListItem';
 import { bridgeSelector, findLegacyColourClasses, generateOccLegacyBridgeCss } from './occLegacyBridge';
 import {
   MIGRATED_FILES, MIGRATED_FOLDERS, OCC_BRIDGE_DEFAULTS, OCC_BRIDGE_SCOPE, OCC_BRIDGE_UNMAPPED, OCC_LEGACY_BRIDGE,
@@ -25,21 +24,18 @@ const BOOT_FOLDER = 'src/features/admin-occ/boot';
 const REBUILT_SCREEN_FOLDERS = Object.freeze([
   'src/features/review', 'src/features/position-coverage', 'src/features/chat', 'src/features/master-data',
   'src/features/devices', 'src/features/ready-contracts', 'src/features/reports', 'src/features/flight-monitoring',
+  'src/features/positions-map',
 ]);
 const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const UPDATE_COMMAND = 'UPDATE_OCC_BRIDGE=1 npx vitest run --configLoader runner --config vitest.config.mjs '
   + 'src/styles/occStyleGuard.test.js';
 
 // The files mounted under /admin-occ that draw a status stripe with an inline colour, and how to render each. Monitoreo
-// de vuelos draws none since U5: its strips are occ-ui's (OccFlightStrip), which name the status in words.
+// de vuelos and Mapa de posiciones draw none since U5: their strips and their stand table are occ-ui's (OccFlightStrip,
+// OccDataTable), which name the status in words.
 const STRIPE_PAINTERS = {
   'src/features/planning/components/FlightCard.jsx': () => createElement(FlightCard, {
     flight: createPlanningFlight(), now: '2026-08-19T11:45:00-04:00', onSelect() {},
-  }),
-  'src/features/positions-map/components/PositionListItem.jsx': () => createElement(PositionListItem, {
-    position: { id: 'A5', terminal: 'A', status: 'occupied', flightNumber: 'AA904', airline: 'American' },
-    selected: false,
-    onSelect() {},
   }),
 };
 

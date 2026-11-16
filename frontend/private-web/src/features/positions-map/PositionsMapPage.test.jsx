@@ -460,8 +460,9 @@ describe('PositionsMapPage in English', () => {
     expect(screen.getByRole('button', { name: 'Switch to 3D view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Center on PUJ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument();
-    expect(screen.getByText('Stands')).toBeInTheDocument();
-    expect(screen.getAllByText('Available').length).toBeGreaterThan(0);
+    // The count of the stands sits on the title's line, and the folded band counts them by the state the map draws.
+    expect(screen.getByText('3 stands')).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Stands by state' })).getByText(/Free/)).toBeInTheDocument();
     // The page has no legend of its own, nor its combined-stand drawing: the map's legend explains what the map
     // draws (PositionsMapPage.legend.test.jsx).
     expect(screen.queryByRole('button', { name: 'Legend' })).not.toBeInTheDocument();
@@ -473,7 +474,8 @@ describe('PositionsMapPage in English', () => {
     renderEnglish();
     await userEvent.click(screen.getByRole('button', { name: 'Stand list' }));
     const panel = screen.getByTestId('positions-side-panel');
-    expect(within(panel).getAllByText('Terminal A')).toHaveLength(3);
+    expect(within(panel).getByRole('columnheader', { name: 'Terminal' })).toBeInTheDocument();
+    expect(within(panel).getAllByRole('cell', { name: 'A' })).toHaveLength(3);
     expect(within(panel).getAllByText('No flight assigned').length).toBeGreaterThan(0);
 
     await userEvent.click(within(panel).getByText('A10'));

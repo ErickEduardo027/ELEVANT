@@ -2,7 +2,7 @@ import { addDays, businessToday, stationLocalToUtc } from '../../../services/bus
 import { normalizeStandCode } from '../../../services/standCodes';
 import { endsItsVisit } from '../../maps/core/mapSelection';
 import { standStateOf } from '../../maps/stands/standModel';
-import { barGeometry } from '../../occ-ui/occTimelineModel';
+import { barGeometry, TIMELINE_CONFLICT_SIGNALS } from '../../occ-ui/occTimelineModel';
 import { isInOperation, STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { aircraftOnStand, assignedStandCode, bestTime, instantMs } from './boardModel';
 
@@ -199,7 +199,10 @@ export function buildStandTimeline({ stands = NO_ROWS, flightsByTurnaround = nul
     if (code === '' || seen.has(code)) continue;
     seen.add(code);
     const bars = (placed.get(code) ?? NO_ROWS).map(visit => barOf({ ...visit, nowMs, estimatedKeys }));
-    const signal = (Array.isArray(stand.signals) ? stand.signals : NO_ROWS)[0] ?? null;
+    // Only a signal the band can draw (attention or urgent): «arrivalNotRecorded» is a notice, which the stand's facts
+    // say and no bar carries.
+    const signal = (Array.isArray(stand.signals) ? stand.signals : NO_ROWS)
+      .find(item => TIMELINE_CONFLICT_SIGNALS.includes(item?.kind)) ?? null;
     const shown = stand.display?.visit?.turnaroundId ?? null;
     if (signal !== null && shown !== null) {
       const bar = bars.find(item => item.turnaroundId === shown);

@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import DemoTag from '../../occ-ui/DemoTag';
+import { occButtonClass } from '../../occ-ui/OccButton';
+import OccPlate from '../../occ-ui/OccPlate';
 import { formatClockTime } from '../../dashboard/mappers';
-import { XIcon } from '../../flight-monitoring/components/icons';
+import { XIcon } from '../../shell/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
 import PositionActions from './PositionActions';
@@ -10,21 +12,32 @@ import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import StandTurnaround from '../../maps/ui/StandTurnaround';
 import { positionsMapMessages } from '../positionsMapMessages';
 
+// The inspector of Mapa de posiciones (design E.2, template B): the chosen stand docked at the right of the map, never
+// over it, so it covers no stand and the map needs no inset. It is a landmark (`aside`), not a dialog: no veil and no
+// focus trap, the map keeps its keys. Esc closes it first and is marked as used, so the next Esc, on the map, leaves the
+// selection (contratos 2.2). It keeps the test id and «Cerrar detalle» the cycle E2E closes it with, and the stand's
+// facts (maps/ui/StandDetailFacts.jsx), its turnaround with the milestone strip of its flight (maps/ui/
+// StandTurnaround.jsx) and the OCC commands («Registrar llegada», «Asignar posición», «Liberar posición», «Ubicar en el
+// mapa»).
+
+const CLOSE = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-occ-muted hover:bg-occ-panel-raised '
+  + 'hover:text-occ-text [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11';
+
 function Field({ label, children }) {
   return (
-    <div>
-      <dt className="text-text-secondary-light dark:text-text-secondary-dark">{label}</dt>
-      <dd className="font-mono text-ink-900 dark:text-text-primary-dark">{children}</dd>
+    <div className="min-w-0">
+      <dt className="text-xs text-occ-muted">{label}</dt>
+      <dd className="mt-0.5 font-mono text-sm text-occ-text">{children}</dd>
     </div>
   );
 }
 
 export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged,
-  onStartPlacing, operationDate, aircraftFacts = null }) {
+  onStartPlacing, operationDate, aircraftFacts = null, className = '' }) {
   const { t, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
-    // Escape closes the drawer first and is marked as used, so the map keys leave the selection for the next one.
+    // Escape closes the inspector first and is marked as used, so the map keys leave the selection for the next one.
     function handleKeyDown(event) {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -39,85 +52,71 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   const hasFlight = Boolean(position.flightId || position.flightNumber);
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-ink-900/40 backdrop-blur-sm transition-opacity duration-200" onClick={onClose} />
-      <aside
-        data-testid="position-detail-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="position-drawer-title"
-        className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-black/5 bg-white/95 shadow-lg backdrop-blur-md transition-transform duration-200 dark:border-white/5 dark:bg-surface-dark-card lg:w-[420px]"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-black/5 px-5 py-4 dark:border-white/5">
-          <div className="space-y-1.5">
-            <p id="position-drawer-title" className="font-mono text-base font-semibold text-ink-900 dark:text-text-primary-dark">
-              {position.id}
-            </p>
-            {/* No state here: «Estado en el mapa» below says it once, in the words of the map (contracts 2.4). The
-                board's words (dashboard/statusMeta.js) differ and have no «Llegando», so a second state would
-                contradict it. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
-              </span>
-              {/* ADR-0041: the flight the stand shows is a demo flight the superadministrator triggered. */}
-              {position.isDemo && <DemoTag />}
-            </div>
+    <aside
+      data-testid="position-detail-drawer"
+      data-occ-inspector="stand"
+      aria-label={t('inspector.label', { code: position.id })}
+      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-occ-line bg-occ-panel text-occ-text ${className}`}
+    >
+      <div className="flex items-start justify-between gap-2 border-b border-occ-line py-2 pl-3 pr-2">
+        <div className="min-w-0 space-y-1">
+          <h2 id="position-drawer-title" className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+            <OccPlate kind="stand" className="text-sm">{position.id}</OccPlate>
+            {/* ADR-0041: the flight the stand shows is a demo flight the superadministrator triggered. */}
+            {position.isDemo && <DemoTag />}
+          </h2>
+          {/* No state here: «Estado en el mapa» below says it once, in the words of the map (contracts 2.4). */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-occ-muted">
+              {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
+            </span>
           </div>
-          <button
-            type="button"
-            aria-label={t('detail.close')}
-            onClick={onClose}
-            className="rounded-md p-1.5 text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
-          >
-            <XIcon className="h-4 w-4" />
+        </div>
+        <button type="button" aria-label={t('detail.close')} title={t('detail.close')} onClick={onClose} className={CLOSE}>
+          <XIcon className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin]">
+        {/* Its state, why and what comes next, and its characteristics (owner request of 2026-11-15); `aircraftFacts`
+            describes the aircraft parked on it or arriving (maps/ui/StandDetailFacts.jsx). */}
+        <StandDetailFacts position={position} aircraftFacts={aircraftFacts} />
+        {/* The turnaround on the stand, its times, agent, operation and milestones, and the next one (owner request
+            of 2026-11-15). */}
+        <StandTurnaround position={position} />
+        <CombinedPositionBanner position={position} />
+
+        {hasFlight ? (
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
+            <Field label={t('detail.flight')}>{position.flightNumber}</Field>
+            <Field label={t('detail.airline')}><span className="font-sans">{position.airline}</span></Field>
+            <Field label={t('detail.registration')}>{position.aircraftRegistration}</Field>
+            <Field label={t('detail.aircraftType')}>{position.aircraftType}</Field>
+            <Field label={t('detail.agent')}><span className="font-sans">{position.assignedAgent ?? t('detail.unassigned')}</span></Field>
+            <Field label={position.status === 'planned' ? t('detail.releaseUnverified') : t('detail.estimatedRelease')}>
+              {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime, locale) : '—'}
+            </Field>
+          </dl>
+        ) : (
+          <p className="text-sm text-occ-muted">{position.status === 'unverified' ? t('detail.unverifiedNote') : t('detail.noFlight')}</p>
+        )}
+
+        {canAssign && position.standId && <PositionActions position={position} candidates={candidates} onChanged={onChanged}
+          onStartPlacing={onStartPlacing} operationDate={operationDate} />}
+
+        <p className="font-mono text-xs text-occ-muted">
+          {t('detail.lastUpdate', { time: position.updatedAt ? formatClockTime(position.updatedAt, locale) : '—' })}
+        </p>
+      </div>
+
+      {position.flightId && (
+        <div className="border-t border-occ-line px-3 py-2">
+          <button type="button" onClick={() => onViewFlightInMonitoring(position.flightId)}
+            className={`${occButtonClass({ variant: 'secondary', size: 'sm' })} w-full`}>
+            {t('detail.viewFlight')}
           </button>
         </div>
-
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {/* Its state, why and what comes next, and its characteristics (owner request of 2026-11-15); `aircraftFacts`
-              describes the aircraft parked on it or arriving (maps/ui/StandDetailFacts.jsx). */}
-          <StandDetailFacts position={position} aircraftFacts={aircraftFacts} />
-          {/* The turnaround on the stand, its times, agent, operation and milestones, and the next one (owner request
-              of 2026-11-15). */}
-          <StandTurnaround position={position} />
-          <CombinedPositionBanner position={position} />
-
-          {hasFlight ? (
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-3 text-xs">
-              <Field label={t('detail.flight')}>{position.flightNumber}</Field>
-              <Field label={t('detail.airline')}>{position.airline}</Field>
-              <Field label={t('detail.registration')}>{position.aircraftRegistration}</Field>
-              <Field label={t('detail.aircraftType')}>{position.aircraftType}</Field>
-              <Field label={t('detail.agent')}>{position.assignedAgent ?? t('detail.unassigned')}</Field>
-              <Field label={position.status === 'planned' ? t('detail.releaseUnverified') : t('detail.estimatedRelease')}>
-                {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime, locale) : '—'}
-              </Field>
-            </dl>
-          ) : (
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{position.status === 'unverified' ? t('detail.unverifiedNote') : t('detail.noFlight')}</p>
-          )}
-
-          {canAssign && position.standId && <PositionActions position={position} candidates={candidates} onChanged={onChanged}
-            onStartPlacing={onStartPlacing} operationDate={operationDate} />}
-
-          <p className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            {t('detail.lastUpdate', { time: position.updatedAt ? formatClockTime(position.updatedAt, locale) : '—' })}
-          </p>
-        </div>
-
-        {position.flightId && (
-          <div className="border-t border-black/5 px-5 py-3 dark:border-white/5">
-            <button
-              type="button"
-              onClick={() => onViewFlightInMonitoring(position.flightId)}
-              className="w-full rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white hover:bg-accent-600/90"
-            >
-              {t('detail.viewFlight')}
-            </button>
-          </div>
-        )}
-      </aside>
-    </>
+      )}
+    </aside>
   );
 }

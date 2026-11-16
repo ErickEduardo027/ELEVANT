@@ -158,14 +158,15 @@ function SortGlyph({ direction }) {
  *   or it keeps its own; `expandLabel` (a text, or `(row, expanded) => text`) names the disclosure.
  * - `status`, `staleSince`, `onRetry`, `labels`, `emptyState`, `locale` and `timeZone` go to OccRemoteView; a `success`
  *   with no rows is `empty`. `footer` goes under the rows.
- * `getRowId(row, index)` gives each row its id (`row.id`, or its index). The root takes `className` and forwards
- * `data-testid`. An unknown kind, alignment, breakpoint, sort direction or row tone throws.
+ * `getRowId(row, index)` gives each row its id (`row.id`, or its index). `rowTestId` puts that `data-testid` on every
+ * row (`tr` or `li`), for the screens whose tests and cycle E2E find their rows by it. The root takes `className` and
+ * forwards `data-testid`. An unknown kind, alignment, breakpoint, sort direction or row tone throws.
  */
 export default function OccDataTable({
   columns = NO_COLUMNS, rows = NO_ROWS, getRowId = defaultRowId, caption, captionHidden = true, as = 'table',
   selectedId, onSelectRow, sort, onSortChange, rowTone, renderExpanded, expandedIds, onToggleExpanded, expandLabel,
   status = 'success', staleSince, onRetry, labels, emptyState, locale, timeZone, footer, stackBelow = true,
-  scrollClassName = '', className = '', 'data-testid': testId,
+  scrollClassName = '', className = '', rowTestId, 'data-testid': testId,
 }) {
   if (!OCC_TABLE_KINDS.includes(as)) throw new RangeError(`Unknown OCC table kind: ${String(as)}`);
   checkColumns(columns, as);
@@ -332,7 +333,7 @@ export default function OccDataTable({
     } : {};
     return (
       <Fragment key={entry.id}>
-        <tr data-occ-row="" data-occ-tone={entry.tone ?? undefined} {...select}
+        <tr data-occ-row="" data-testid={rowTestId} data-occ-tone={entry.tone ?? undefined} {...select}
           className={`${ROW} ${slab} ${selectable ? SELECTABLE : ''}`}>
           {columns.map((column, index) => (
             <td key={column.key} data-label={stackBelow ? labelOf(column) : undefined}
@@ -356,7 +357,7 @@ export default function OccDataTable({
   function listItem(entry, position) {
     const tone = entry.tone ? TONE[entry.tone] : null;
     return (
-      <li key={entry.id} data-occ-row="" data-occ-tone={entry.tone ?? undefined}
+      <li key={entry.id} data-occ-row="" data-testid={rowTestId} data-occ-tone={entry.tone ?? undefined}
         className={`${BAR} ${tone?.bar ?? NO_BAR} ${tone?.slab ?? ''} ${position > 0 ? JOINT : ''}`}>
         <div className={LIST_ROW}>
           {columns.map((column, index) => {
