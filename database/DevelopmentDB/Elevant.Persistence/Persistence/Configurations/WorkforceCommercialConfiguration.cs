@@ -272,6 +272,8 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(profile => profile.RegistrySource).HasMaxLength(24);
             builder.Property(profile => profile.RegistryCheckedAt).HasPrecision(3);
             builder.Property(profile => profile.RegistryEntityUrl).HasMaxLength(300);
+            builder.Property(profile => profile.TaxRegistration).HasMaxLength(32);
+            builder.Property(profile => profile.TaxRegistrationCountryCode).HasMaxLength(2).IsFixedLength().IsUnicode(false);
             builder.HasIndex(profile => profile.SourceName).IsUnique();
             // A verified profile is a real airline: its designators cannot belong to another one.
             builder.HasIndex(profile => profile.IataCode).IsUnique()

@@ -239,7 +239,7 @@ public sealed class SubmitCommercialRequestHandlerTests
     public async Task TheTaxIdentifierIsRequiredAndADominicanAirlineGivesAValidRnc()
     {
         foreach (var (tax, country) in new[] { ((string?)null, (string?)null), ("131234569", (string?)null),
-                     ("131234568", "DO"), ("12", "US"), (new string('9', 33), "US") })
+                     ("13123456", "DO"), ("1312345690", "DO"), ("12", "US"), (new string('9', 33), "US") })
         {
             var store = new RecordingStore();
             var result = await new SubmitCommercialRequestHandler(store).HandleAsync(ValidCommand() with

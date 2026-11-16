@@ -29,7 +29,8 @@ internal sealed class EfCommercialCatalogStore(ElevantDbContext context) : IComm
                 profile.Region, profile.LegalName, profile.CountryCode,
                 profile.IataCode, profile.IcaoCode,
                 profile.LogoObjectKey, profile.VerifiedAt != null && profile.VerifiedByAccountId != null,
-                profile.RegistryStatus == AirlineRegistryStatus.Found ? profile.RegistrySource : null) })
+                profile.RegistryStatus == AirlineRegistryStatus.Found ? profile.RegistrySource : null,
+                profile.TaxRegistration, profile.TaxRegistration == null ? null : profile.TaxRegistrationCountryCode) })
             .ToArrayAsync(cancellationToken);
         var airlines = airlineRows.Select(row => row.Data with
         {

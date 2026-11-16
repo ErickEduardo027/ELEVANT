@@ -519,6 +519,7 @@ internal sealed class EfCommercialWorkflowStore(
             }
 
             await CopyTaxRegistrationAsync(request, airlineId, actorDatabaseId, now, cancellationToken);
+            await PublishCreatedProfileAsync(request, profile, actorDatabaseId, now, cancellationToken);
             request.AirlineId = airlineId;
             request.AirlineLegalNameSnapshot = profile.LegalName;
             if (registryGate?.Check is { } verdict)
@@ -825,8 +826,9 @@ internal sealed class EfCommercialWorkflowStore(
             cancellationToken);
 
     /// <summary>
-    /// Verified and published profile for an airline the applicant proposed (1-N25), shown under
-    /// «Otras aerolíneas» from now on. Its source key avoids the names already in the catalog.
+    /// Verified profile for an airline the applicant proposed (1-N25). It stays out of the public wizard until this
+    /// request is approved (<see cref="PublishCreatedProfileAsync"/>), then it is listed under «Otras aerolíneas». Its
+    /// source key avoids the names already in the catalog.
     /// </summary>
     private async Task<CommercialAirlineProfile> CreateProfileAsync(ServiceRequest request, AirlineIdentity identity,
         long actorDatabaseId, DateTimeOffset now, CancellationToken cancellationToken)
@@ -856,7 +858,7 @@ internal sealed class EfCommercialWorkflowStore(
             VerificationSourceUrl = identity.SourceUrl,
             VerifiedAt = now,
             VerifiedByAccountId = actorDatabaseId,
-            IsPublished = true,
+            IsPublished = false,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -867,9 +869,33 @@ internal sealed class EfCommercialWorkflowStore(
             new AuditFieldChangeData("airline.country", null, profile.CountryCode),
             new AuditFieldChangeData("airline.iata", null, profile.IataCode),
             new AuditFieldChangeData("airline.icao", null, profile.IcaoCode),
-            new AuditFieldChangeData("airline.published", null, true.ToString()),
+            new AuditFieldChangeData("airline.published", null, false.ToString()),
             new AuditFieldChangeData("airline.verified", null, true.ToString()));
         return profile;
+    }
+
+    /// <summary>
+    /// The approval publishes, in its transaction, the profile Contratos created for this request's proposed airline:
+    /// only now does the airline appear in the public wizard. A profile the request was linked to keeps its
+    /// publication, and one Superadministración archived stays archived.
+    /// </summary>
+    private async Task PublishCreatedProfileAsync(ServiceRequest request, CommercialAirlineProfile profile,
+        long actorDatabaseId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (profile.IsPublished) return;
+        var reason = $"Solicitud {request.RequestCode}";
+        var audits = context.AuditEntries.Where(entry => entry.EntityType == "commercial.airline_profiles" &&
+            entry.EntityPublicId == profile.PublicId);
+        if (!await audits.AnyAsync(entry => entry.Action == "commercial.airline.created" && entry.Reason == reason,
+                cancellationToken) ||
+            await audits.AnyAsync(entry => entry.Action == "commercial.airline.archived", cancellationToken))
+            return;
+        profile.IsPublished = true;
+        profile.UpdatedAt = now;
+        CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.airline.published",
+            "commercial.airline_profiles", profile.PublicId, reason,
+            new AuditFieldChangeData("airline.published", false.ToString(), true.ToString()));
+        await NotifyAirlineReadersAsync(profile.PublicId, now, cancellationToken);
     }
 
     private void StartReview(ServiceRequest request, long actorDatabaseId, DateTimeOffset now, string reason)

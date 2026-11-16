@@ -121,6 +121,8 @@ export {
   checkIdentityDocument,
   checkTaxRegistration,
   formatTaxRegistration,
+  maskRnc,
+  rncFeedback,
   type TaxRegistration,
   type TaxRegistrationCheck,
   identityDocumentExample,

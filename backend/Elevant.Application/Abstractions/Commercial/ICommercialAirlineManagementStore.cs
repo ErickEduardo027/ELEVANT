@@ -1,14 +1,23 @@
+using System.Text.Json.Serialization;
+using Elevant.Domain.Validation;
+
 namespace Elevant.Application.Abstractions.Commercial;
 
 /// <param name="RegistryStatus">Last public-registry check (ADR-0023): Found, Mismatch, Defunct or NotFound; null when never checked or stale.</param>
 /// <param name="IdentityLocked">The airline already operates with AVIAM: its legal name, codes and verification are fixed (1-N20).</param>
+/// <param name="TaxRegistration">
+/// The airline's tax identifier (an RNC as its 9 digits) with <paramref name="TaxRegistrationCountryCode"/>; both are
+/// omitted when null so screens released before them, which reject unknown keys, keep reading (expand phase).
+/// </param>
 public sealed record ManagedAirlineData(
     Guid Id, string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
     bool IsVerified, bool IsPublished, string Version,
     string? RegistryStatus = null, string? RegistrySource = null, DateTimeOffset? RegistryCheckedAt = null,
-    string? RegistryEntityUrl = null, bool IdentityLocked = false);
+    string? RegistryEntityUrl = null, bool IdentityLocked = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaxRegistration = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaxRegistrationCountryCode = null);
 
 /// <summary>What a registry check is about; the record step refuses it if these changed meanwhile.</summary>
 public sealed record AirlineRegistryKey(Guid Id, string Name, string? IataCode, string? IcaoCode);
@@ -16,13 +25,46 @@ public sealed record AirlineRegistryKey(Guid Id, string Name, string? IataCode, 
 /// <summary>The stored airline after a registry check, with the full verdict for the screen.</summary>
 public sealed record AirlineRegistryCheckResult(ManagedAirlineData Airline, AirlineRegistryCheck Check);
 
+/// <remarks>
+/// <c>TaxRegistration</c> is the airline's optional tax identifier; the saved profile keeps exactly what the form
+/// sends (empty clears it). With it, <c>TaxRegistrationCountryCode</c> is required; a Dominican airline's is an RNC
+/// (ADR-0020). It is not part of the verified identity: changing it never voids the registry check or the manual
+/// verification.
+/// <c>IdentityCorrectionReason</c> (optional, 10 to 500 characters) lets a superadministrator correct the legal name,
+/// codes and verification source of an airline that already operates with AVIAM, which are otherwise fixed (1-N20).
+/// </remarks>
 public sealed record ManagedAirlineInput(
     string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
-    bool IsVerified, bool IsPublished, string? Version)
+    bool IsVerified, bool IsPublished, string? Version,
+    string? TaxRegistration = null, string? TaxRegistrationCountryCode = null,
+    string? IdentityCorrectionReason = null)
 {
+    public const int MinimumCorrectionReasonLength = 10;
+    public const int MaximumCorrectionReasonLength = 500;
+
+    /// <summary>The trimmed reason of an identity correction, or null when the save is not one.</summary>
+    public string? CorrectionReason() =>
+        string.IsNullOrWhiteSpace(IdentityCorrectionReason) ? null : IdentityCorrectionReason.Trim();
+
+    /// <summary>The canonical tax identifier, or null when none was given.</summary>
+    public TaxRegistration? TaxRegistrationOrNull() =>
+        TaxRegistrations.Normalize(TaxRegistration, TaxRegistrationCountryCode);
+
+    /// <summary>
+    /// Empty, or a valid identifier with its country; a Dominican airline's identifier is a Dominican RNC.
+    /// </summary>
+    public bool HasValidTaxRegistration() =>
+        string.IsNullOrWhiteSpace(TaxRegistration) ||
+        TaxRegistrationOrNull() is { } tax &&
+        (CountryCode?.Trim().ToUpperInvariant() != TaxRegistrations.DominicanRepublic ||
+            tax.CountryCode == TaxRegistrations.DominicanRepublic);
+
     public bool IsValid() =>
+        HasValidTaxRegistration() &&
+        (CorrectionReason() is not { } reason ||
+            reason.Length is >= MinimumCorrectionReasonLength and <= MaximumCorrectionReasonLength) &&
         Required(SourceName, 160) && Required(DisplayName, 160) &&
         Optional(LegalName, 200) && Required(Region, 64) &&
         Code(CountryCode, 2, lettersOnly: true) &&
@@ -69,6 +111,16 @@ public sealed record AirlineMutationResult(ManagedAirlineData? Airline,
 }
 
 public sealed record AirlineEnrichmentResult(int Changed, CatalogMutationFailure? Failure);
+
+/// <summary>
+/// What «Completar fichas AVIAM» may fill besides the public identity. <c>IncludeDevelopmentTaxRegistrations</c> copies
+/// the FICTITIOUS demo RNCs of the Development reference to profiles without identifier; only Development and Test may
+/// turn it on (<c>AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations</c>), so they never reach Production.
+/// </summary>
+public sealed record AirlineCatalogEnrichmentSettings(bool IncludeDevelopmentTaxRegistrations)
+{
+    public static readonly AirlineCatalogEnrichmentSettings Default = new(false);
+}
 
 public interface ICommercialAirlineManagementStore
 {

@@ -3,8 +3,8 @@
 import Image from "next/image";
 
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import { ElevantApiError, identityDocumentExample, identityDocumentRequirements, type PublicCommercialCatalog,
-  type SubmitCommercialRequestRequest } from "@elevant/api-client";
+import { DOMINICAN_PASSPORT_PREFIX, ElevantApiError, identityDocumentExample, identityDocumentRequirements, maskRnc,
+  type PublicCommercialCatalog, rncFeedback, type SubmitCommercialRequestRequest } from "@elevant/api-client";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -41,6 +41,19 @@ export function formatDocumentNumber(type: string, value: string): string {
 /** A Dominican passport typed as digits gets its RD; a pasted «RD1234567» or any other value is left as is. */
 export function withDominicanPassportPrefix(type: string, nationality: string, value: string): string {
   return type === "Passport" && nationality === "DO" && /^\d/.test(value) ? `RD${value}`.slice(0, 9) : value;
+}
+/** Whether the number is a Dominican passport: the form shows a fixed «RD» and the person types the 7 digits. */
+export const isDominicanPassport = (type: string, nationality: string) => type === "Passport" && nationality === "DO";
+/** The 7 digits after RD that the person types; a pasted «RD1234567» loses its RD. */
+export function dominicanPassportDigits(value: string): string {
+  const compact = value.toUpperCase().replace(/\s/g, "");
+  return (compact.startsWith(DOMINICAN_PASSPORT_PREFIX) ? compact.slice(DOMINICAN_PASSPORT_PREFIX.length) : compact)
+    .replace(/\D/g, "").slice(0, 7);
+}
+/** The stored number of a Dominican passport: always RD and its digits (empty while nothing is typed). */
+export function joinDominicanPassport(value: string): string {
+  const digits = dominicanPassportDigits(value);
+  return digits ? `${DOMINICAN_PASSPORT_PREFIX}${digits}` : "";
 }
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
 const proposalId = (field: AirlineProposalField) => `proposal-${field}`;
@@ -137,6 +150,7 @@ export function AccessRequestWizard() {
     district: representative.district,
   };
   const districts = division?.districts?.[representative.municipality] ?? [];
+  const dominicanPassport = isDominicanPassport(representative.documentType, representative.nationalityCode);
   const documentPlaceholder = representative.documentType === "NationalId" ? identityDocumentExample("Cedula")
     : representative.documentType === "Passport" ? identityDocumentExample("Passport", representative.nationalityCode)
       : undefined;
@@ -227,15 +241,45 @@ export function AccessRequestWizard() {
 
   const changeProposal = (changes: Partial<AirlineProposalDraft>) => {
     setProposal((current) => ({ ...current, ...changes }));
+    // The proposed airline's country is also the country of its tax identifier (still editable unless DO).
+    if (changes.countryCode !== undefined) {
+      const countryCode = changes.countryCode.trim().toUpperCase();
+      setTax((current) => ({ countryCode, number: countryCode === "DO" ? maskRnc(current.number) : current.number }));
+    }
     setProposalChosen(true);
+    requestId.current = null;
+    setError("");
+  };
+  // Choosing an airline brings its tax country and number from the catalog profile, still editable: the profile's
+  // identifier when it has one, otherwise the airline's country and an empty number.
+  const taxFromProfile = (id: string): TaxRegistrationDraft => {
+    const profile = catalog?.airlines.find((item) => item.id === id);
+    if (!profile) return emptyTaxRegistration;
+    if (profile.taxRegistration && profile.taxRegistrationCountryCode)
+      return { number: profile.taxRegistrationCountryCode === "DO" ? maskRnc(profile.taxRegistration) : profile.taxRegistration,
+        countryCode: profile.taxRegistrationCountryCode };
+    return { number: "", countryCode: (profile.countryCode ?? "").trim().toUpperCase() };
+  };
+  const chooseAirline = (id: string) => {
+    setAirlineId(id);
+    setTax(taxFromProfile(id));
+    setShowTaxError(false);
     requestId.current = null;
     setError("");
   };
   const toggleProposal = (next: boolean) => {
     setProposalChosen(next);
     setShowProposalErrors(false);
+    setTax(next ? emptyTaxRegistration : taxFromProfile(airlineId));
+    setShowTaxError(false);
     requestId.current = null;
     setError("");
+  };
+  /** The number when the document type or nationality changes: a Dominican passport gets its RD, leaving it drops it. */
+  const documentNumberFor = (type: string, nationality: string) => {
+    const typed = isDominicanPassport(representative.documentType, representative.nationalityCode)
+      ? dominicanPassportDigits(representative.documentNumber) : representative.documentNumber;
+    return isDominicanPassport(type, nationality) ? joinDominicanPassport(typed) : formatDocumentNumber(type, typed);
   };
   const changeRepresentative = (changes: Partial<Representative>) => {
     setRepresentative((current) => ({ ...current, ...changes }));
@@ -427,7 +471,7 @@ export function AccessRequestWizard() {
         {catalog?.airlines.length === 0 && <p className="access-airline__verification" role="note">Aún no hay aerolíneas publicadas en el listado. Indique los datos de la suya y Contratos la verificará.</p>}
         {!proposing && catalog?.airlines.length !== 0 && <>
           <label className="access-label" htmlFor="airline-select">Seleccione una aerolínea</label>
-          <select id="airline-select" className="access-select" value={airlineId} onChange={(event) => { setAirlineId(event.target.value); requestId.current = null; setError(""); }} required>
+          <select id="airline-select" className="access-select" value={airlineId} onChange={(event) => chooseAirline(event.target.value)} required>
             <option value="">Buscar en el listado de aerolíneas</option>
             {[...new Set(catalog?.airlines.map((item) => item.region))].map((region) => <optgroup key={region} label={region}>{catalog?.airlines.filter((item) => item.region === region).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</optgroup>)}
           </select>
@@ -460,7 +504,7 @@ export function AccessRequestWizard() {
           <ProposalField field="websiteUrl" label="Sitio web oficial (opcional)" error={proposalError("websiteUrl")} wide>
             <input {...proposalControl("websiteUrl")} type="url" maxLength={512} inputMode="url" placeholder="https://" value={proposal.websiteUrl} onChange={(event) => changeProposal({ websiteUrl: event.target.value })} />
           </ProposalField>
-          {listedMatch && <p className="access-representative__note" role="note">El código {listedMatch.icaoCode} corresponde a {listedMatch.name}, que ya figura en el listado. <button type="button" className="access-inline-link" onClick={() => { setAirlineId(listedMatch.id); toggleProposal(false); }}>Elegir {listedMatch.name}</button></p>}
+          {listedMatch && <p className="access-representative__note" role="note">El código {listedMatch.icaoCode} corresponde a {listedMatch.name}, que ya figura en el listado. <button type="button" className="access-inline-link" onClick={() => { toggleProposal(false); chooseAirline(listedMatch.id); }}>Elegir {listedMatch.name}</button></p>}
         </div>}
         {airline && <div className="access-airline">
           <div className="access-airline__logo">{airline.logoUrl ? <Image src={mediaUrl(airline.logoUrl)!} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.name}` : `Logo de ${airline.name}`} width={92} height={92} unoptimized /> : <span aria-label="Monograma de aerolínea">{airline.name.slice(0, 2)}</span>}<small>{airline.logoUrl?.includes('/reference-') ? "REFERENCIA AVIAM" : airline.logoUrl ? "LOGO" : "MONOGRAMA"}</small></div>
@@ -501,13 +545,24 @@ export function AccessRequestWizard() {
             <small className="access-field-hint">República Dominicana: 10 dígitos (809, 829 o 849). Otros países: con su prefijo, p. ej. +34.</small>
           </FormField>
           <FormField field="nationalityCode" label={representative.documentType === "Passport" ? "Nacionalidad del pasaporte" : "Nacionalidad"} error={fieldError("nationalityCode")}>
-            <select {...control("nationalityCode")} className="access-select" required={representative.documentType === "Passport"} value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value })}><option value="">{representative.documentType === "Passport" ? "Seleccione el país del pasaporte" : "Seleccione si desea indicarla"}</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
+            <select {...control("nationalityCode")} className="access-select" required={representative.documentType === "Passport"} value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value, documentNumber: documentNumberFor(representative.documentType, event.target.value) })}><option value="">{representative.documentType === "Passport" ? "Seleccione el país del pasaporte" : "Seleccione si desea indicarla"}</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
           </FormField>
           <FormField field="documentType" label="Tipo de documento" error={fieldError("documentType")}>
-            <select {...control("documentType")} className="access-select" required value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value, documentNumber: formatDocumentNumber(event.target.value, representative.documentNumber) })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option></select>
+            <select {...control("documentType")} className="access-select" required value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value, documentNumber: documentNumberFor(event.target.value, representative.nationalityCode) })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option></select>
           </FormField>
           <FormField field="documentNumber" label="Número de documento" error={fieldError("documentNumber")}>
-            <input {...control("documentNumber")} required maxLength={13} autoCapitalize="characters" inputMode={representative.documentType === "NationalId" ? "numeric" : "text"} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: withDominicanPassportPrefix(representative.documentType, representative.nationalityCode, formatDocumentNumber(representative.documentType, event.target.value)) })} />
+            {dominicanPassport
+              // The fixed «RD» stays outside the label, so the field is still named «Número de documento».
+              ? <span className="access-prefixed"><span className="access-prefixed__prefix" aria-hidden="true" title="Pasaporte dominicano">{DOMINICAN_PASSPORT_PREFIX}</span>
+                <input {...control("documentNumber")} required maxLength={7} inputMode="numeric" placeholder="1234567"
+                  value={dominicanPassportDigits(representative.documentNumber)}
+                  onChange={(event) => changeRepresentative({ documentNumber: joinDominicanPassport(event.target.value) })}
+                  onPaste={(event) => {
+                    // A pasted «RD1234567» is longer than the 7 digits the field takes: it is shaped here.
+                    event.preventDefault();
+                    changeRepresentative({ documentNumber: joinDominicanPassport(event.clipboardData.getData("text")) });
+                  }} /></span>
+              : <input {...control("documentNumber")} required maxLength={13} autoCapitalize="characters" inputMode={representative.documentType === "NationalId" ? "numeric" : "text"} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: withDominicanPassportPrefix(representative.documentType, representative.nationalityCode, formatDocumentNumber(representative.documentType, event.target.value)) })} />}
             {documentPlaceholder && <small className="access-field-hint">Formato: {documentPlaceholder}</small>}
             {documentRequirements.length > 0 && <ul className="access-doc-checklist" aria-live="polite" aria-label="Requisitos del número de documento">
               {documentRequirements.map((item) => <li key={item.label.replace(/ \(.*\)$/, "")} data-met={item.met}>
@@ -553,9 +608,11 @@ export function AccessRequestWizard() {
         <div className="access-summary">
           <section><div className="access-summary__header"><h3>Servicios solicitados</h3><button type="button" onClick={() => setStep(1)}>Editar servicios</button></div><ul>{catalog?.services.filter((service) => selected.includes(service.id)).map((service) => <li key={service.id}>{service.name}</li>)}</ul></section>
           <section><div className="access-summary__header"><h3>Aerolínea</h3><button type="button" onClick={() => setStep(2)}>Editar aerolínea</button></div><p>{airlineName}</p>{proposing
-            ? <small>No figura en el listado · {countryName(proposal.countryCode)} · ICAO {proposal.icaoCode.trim().toUpperCase()} · {proposal.iataCode.trim() ? `IATA ${proposal.iataCode.trim().toUpperCase()}` : "Sin IATA"}{proposal.websiteUrl.trim() ? ` · ${proposal.websiteUrl.trim()}` : ""}</small>
-            : <small>{airline?.legalName ?? "Sin razón social confirmada"} · {airline?.countryCode ?? "Sin país confirmado"}</small>}
-            {taxCheck.ok && <small>{taxCheck.display}</small>}</section>
+            ? <small>{["No figura en el listado", countryName(proposal.countryCode), `ICAO ${proposal.icaoCode.trim().toUpperCase()}`,
+              proposal.iataCode.trim() ? `IATA ${proposal.iataCode.trim().toUpperCase()}` : "Sin IATA", proposal.websiteUrl.trim(),
+              taxCheck.ok && taxCheck.display].filter(Boolean).join(" · ")}</small>
+            : <small>{[airline?.legalName ?? "Sin razón social confirmada", airline?.countryCode ?? "Sin país confirmado",
+              taxCheck.ok && taxCheck.display].filter(Boolean).join(" · ")}</small>}</section>
           <section><div className="access-summary__header"><h3>Representante</h3><button type="button" onClick={() => setStep(3)}>Editar representante</button></div><dl>
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>
             <div><dt>Contacto</dt><dd>{representative.email} · {representative.phone}</dd></div>
@@ -605,12 +662,16 @@ function TaxRegistrationField({ draft, airlineCountry, error, onChange }: {
 }) {
   const country = taxCountry(draft, airlineCountry);
   const dominican = country === "DO";
-  const described = [error && "tax-number-error", "tax-number-hint"].filter(Boolean).join(" ");
+  // With the 9 digits typed the RNC confirms it at once; a refused «Continuar» shows its error instead.
+  const feedback = dominican && !error ? rncFeedback(draft.number) : null;
+  const described = [error && "tax-number-error", feedback && "tax-number-feedback", "tax-number-hint"]
+    .filter(Boolean).join(" ");
   return <div className="access-representative access-proposal" role="group" aria-label="Identificación fiscal de la aerolínea">
     <div className="access-field">
       <label htmlFor="tax-countryCode">País del identificador fiscal</label>
       <select id="tax-countryCode" className="access-select" required disabled={airlineCountry === "DO"} value={country}
-        onChange={(event) => onChange({ countryCode: event.target.value })}>
+        onChange={(event) => onChange({ countryCode: event.target.value,
+          ...(event.target.value === "DO" ? { number: maskRnc(draft.number) } : {}) })}>
         <option value="">Seleccione el país</option>
         {countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}
       </select>
@@ -618,12 +679,14 @@ function TaxRegistrationField({ draft, airlineCountry, error, onChange }: {
     <div className="access-field">
       <label htmlFor="tax-number">{dominican ? "RNC" : "Identificador fiscal"}</label>
       <input id="tax-number" required maxLength={dominican ? 12 : 32} inputMode={dominican ? "numeric" : undefined}
-        autoComplete="off" aria-invalid={error ? true : undefined} aria-describedby={described} value={draft.number}
-        onChange={(event) => onChange({ number: event.target.value })} />
+        placeholder={dominican ? "1-31-23456-9" : undefined} autoComplete="off"
+        aria-invalid={error ? true : undefined} aria-describedby={described} value={draft.number}
+        onChange={(event) => onChange({ number: dominican ? maskRnc(event.target.value) : event.target.value })} />
       <small className="access-field-hint" id="tax-number-hint">{dominican
         ? `Registro Nacional del Contribuyente: ${identityDocumentExample("Rnc")}.`
         : "El identificador tributario de la aerolínea en su país, de 3 a 32 caracteres."} Aparece en el contrato y en las facturas.</small>
       {error && <p className="access-field-error" id="tax-number-error">{error}</p>}
+      {feedback && <p id="tax-number-feedback" role="status" className="access-field-ok">✓ {feedback.message}</p>}
     </div>
   </div>;
 }

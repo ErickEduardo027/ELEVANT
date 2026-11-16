@@ -90,7 +90,7 @@ public sealed partial class SqlServerMigrationTests
                 null, "QZZ", "https://aoc.example.gob.do/qzz", "B-85850394", "ES"), ct)).Code);
         Assert.Equal("invalid_tax_registration", (await workflow.VerifyRequestAirlineAsync(ContractsAdministrator,
             requestId, Guid.NewGuid(), new VerifyRequestAirlineInput(submitted.Version, null, "Quetzal Air S.R.L.", "DO",
-                null, "QZZ", "https://aoc.example.gob.do/qzz", "101-12345-6", "DO"), ct)).Code);
+                null, "QZZ", "https://aoc.example.gob.do/qzz", "101-1234-5", "DO"), ct)).Code);
         var corrected = await workflow.VerifyRequestAirlineAsync(ContractsAdministrator, requestId, Guid.NewGuid(),
             new VerifyRequestAirlineInput(submitted.Version, null, "Quetzal Air S.R.L.", "DO", null, "QZZ",
                 "https://aoc.example.gob.do/qzz", "130000001", "DO"), ct);

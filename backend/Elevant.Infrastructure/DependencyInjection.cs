@@ -84,6 +84,7 @@ public static class DependencyInjection
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
         AddCardPayments(services, configuration, environment);
         AddDemoFlights(services, configuration, environment);
+        AddAirlineCatalogEnrichment(services, configuration, environment);
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
@@ -155,6 +156,25 @@ public static class DependencyInjection
         }
         services.AddSingleton<ICardPaymentGateway, DisabledCardGateway>();
         services.AddSingleton(CardPaymentAvailability.Disabled);
+    }
+
+    /// <summary>Configuration key of the fictitious Development RNCs «Completar fichas AVIAM» may copy.</summary>
+    public const string DevelopmentTaxRegistrationsKey = "AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations";
+
+    /// <summary>
+    /// The demo RNCs of the AVIAM reference are fictitious: off by default, and on only in Development or Test, so a
+    /// Production API with it never starts. Only <c>true</c> or <c>false</c> are accepted.
+    /// </summary>
+    private static void AddAirlineCatalogEnrichment(IServiceCollection services, IConfiguration configuration,
+        string environment)
+    {
+        var configured = configuration[DevelopmentTaxRegistrationsKey]?.Trim();
+        var include = string.IsNullOrEmpty(configured) ? false
+            : bool.TryParse(configured, out var value) ? value
+            : throw new InvalidOperationException($"{DevelopmentTaxRegistrationsKey} must be true or false.");
+        if (include && environment is not ("Development" or "Test" or "Testing"))
+            throw new InvalidOperationException("Development tax registrations require Development or Test.");
+        services.AddSingleton(include ? new AirlineCatalogEnrichmentSettings(true) : AirlineCatalogEnrichmentSettings.Default);
     }
 
     /// <summary>Configuration key of the demo flights the superadministrator triggers (ADR-0041).</summary>

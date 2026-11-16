@@ -80,3 +80,83 @@ describe('Superadministrador Aerolíneas', () => {
     expect(await screen.findByText(/el registro muestra «Copa Airlines»/)).toBeInTheDocument();
   });
 });
+
+describe('Superadministrador Aerolíneas · identificador fiscal', () => {
+  it('defaults the tax country to the airline, masks the RNC and saves its 9 digits', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[{ ...airline, countryCode: 'DO' }]} onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    expect(screen.getByRole('textbox', { name: 'País del identificador fiscal' })).toHaveValue('DO');
+    const rnc = screen.getByRole('textbox', { name: 'RNC' });
+    expect(rnc).toHaveAttribute('inputMode', 'numeric');
+    fireEvent.change(rnc, { target: { value: '13123456' } });
+    expect(rnc).toHaveValue('1-31-23456');
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    expect(screen.getByText('El RNC tiene 9 dígitos.')).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.change(rnc, { target: { value: '131234569' } });
+    expect(screen.getByText('✓ RNC válido')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).toMatchObject({ taxRegistration: '131234569', taxRegistrationCountryCode: 'DO',
+      isVerified: false, version: airline.version });
+  });
+
+  it('shows a stored RNC with its dashes and takes a foreign identifier as written', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[{ ...airline, countryCode: 'ES', taxRegistration: '131234569',
+      taxRegistrationCountryCode: 'DO' }, { ...airline, id: 'other', displayName: 'Iberia Test', countryCode: 'ES' }]}
+    onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    expect(screen.getByRole('textbox', { name: 'RNC' })).toHaveValue('1-31-23456-9');
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Iberia Test' }));
+    expect(screen.getByRole('textbox', { name: 'País del identificador fiscal' })).toHaveValue('ES');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Identificador fiscal' }), { target: { value: ' B85850394 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).toMatchObject({ taxRegistration: 'B85850394', taxRegistrationCountryCode: 'ES' });
+  });
+});
+
+describe('Superadministrador Aerolíneas · corregir identidad', () => {
+  const operating = { ...airline, legalName: 'eeeeeeee', iataCode: 'EE', icaoCode: 'EOI',
+    verificationSourceUrl: 'https://junk.example.test', isVerified: true, identityLocked: true };
+
+  it('opens the identity of an operating airline only with a reason, and sends it with the verification', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[operating]} onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    expect(screen.getByRole('textbox', { name: 'Razón social' })).toHaveAttribute('readonly');
+    expect(screen.queryByRole('textbox', { name: 'Motivo de la corrección' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Corregir identidad' }));
+    expect(screen.getByRole('note')).toHaveTextContent('conservan los datos con los que se hicieron');
+    for (const name of ['Razón social', 'Código IATA', 'Código ICAO'])
+      expect(screen.getByRole('textbox', { name })).not.toHaveAttribute('readonly');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Razón social' }), { target: { value: 'Delta Air Lines, Inc.' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Código IATA' }), { target: { value: 'DL' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Código ICAO' }), { target: { value: 'DAL' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Fuente de verificación' }), { target: { value: 'https://www.delta.com/' } });
+
+    // The reason is required (10 to 500 characters) before anything is sent.
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('10 a 500 caracteres');
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Motivo de la corrección' }),
+      { target: { value: 'Datos de prueba reemplazados por los oficiales.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).toMatchObject({ legalName: 'Delta Air Lines, Inc.', iataCode: 'DL', icaoCode: 'DAL',
+      verificationSourceUrl: 'https://www.delta.com/', isVerified: true,
+      identityCorrectionReason: 'Datos de prueba reemplazados por los oficiales.', version: airline.version });
+  });
+
+  it('keeps the lock and sends no reason while the correction is not chosen', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[operating]} onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).not.toHaveProperty('identityCorrectionReason');
+  });
+});

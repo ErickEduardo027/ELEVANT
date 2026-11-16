@@ -46,6 +46,8 @@ public static class GovernanceAccountIssues
 
     /// <summary>The airline already operates with AVIAM: its legal name, codes and verification are fixed (1-N20).</summary>
     public const string AirlineIdentityLocked = "airline_identity_locked";
+    /// <summary>A correction of an operating airline's identity keeps it verified, with its official source.</summary>
+    public const string IdentityCorrectionRequiresVerification = "identity_correction_requires_verification";
 }
 
 /// <summary>What the database says about an account that already uses an email.</summary>

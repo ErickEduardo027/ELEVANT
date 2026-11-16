@@ -119,13 +119,18 @@ it("offers only cédula or passport and checks every character in its position",
   fireEvent.change(number, { target: { value: "00112345673" } });
   expect(number).toHaveValue("001-1234567-3");
 
+  // A Dominican passport takes only its 7 digits after the fixed RD: letters never reach the number.
   choose("Tipo de documento", "Passport");
   choose("Nacionalidad del pasaporte", "DO");
-  fireEvent.change(number, { target: { value: "ab1234567" } });
-  expect(number).toHaveValue("AB1234567");
-  fireEvent.blur(number);
-  expect(screen.getByText("El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567."))
-    .toBeInTheDocument();
+  const passport = screen.getByRole("textbox", { name: "Número de documento" });
+  fireEvent.change(passport, { target: { value: "ab12x34567" } });
+  expect(passport).toHaveValue("1234567");
+  // Any other passport is checked character by character as before.
+  choose("Nacionalidad del pasaporte", "US");
+  const foreign = screen.getByRole("textbox", { name: "Número de documento" });
+  expect(foreign).toHaveValue("1234567");
+  fireEvent.change(foreign, { target: { value: "ab1234567" } });
+  expect(foreign).toHaveValue("AB1234567");
 });
 
 it("formats the cédula key by key without repeating dashes", async () => {
@@ -149,11 +154,30 @@ it("starts with a Dominican passport and writes its RD for the representative", 
   await openRepresentativeStep();
   expect(field("Tipo de documento")).toHaveValue("Passport");
   expect(field("Nacionalidad del pasaporte")).toHaveValue("DO");
+  // The RD is shown fixed beside the field, outside its name; the person types only the 7 digits.
   const number = screen.getByRole("textbox", { name: "Número de documento" });
+  expect(number).toHaveValue("");
+  expect(number).toHaveAttribute("maxLength", "7");
+  expect(number).toHaveAttribute("inputMode", "numeric");
+  expect(screen.getByTitle("Pasaporte dominicano")).toHaveTextContent("RD");
+  const met = () => within(screen.getByRole("list", { name: "Requisitos del número de documento" }))
+    .getAllByRole("listitem").map((item) => item.getAttribute("data-met"));
+  fireEvent.change(number, { target: { value: "123" } });
+  expect(number).toHaveValue("123");
+  // The stored number already starts with RD: the checklist marks it.
+  expect(met()[0]).toBe("true");
   fireEvent.change(number, { target: { value: "1234567" } });
-  expect(number).toHaveValue("RD1234567");
+  expect(number).toHaveValue("1234567");
+  expect(met().every((item) => item === "true")).toBe(true);
+  // Typed or pasted with its RD, the prefix is not repeated.
   fireEvent.change(number, { target: { value: "rd7654321" } });
-  expect(number).toHaveValue("RD7654321");
+  expect(number).toHaveValue("7654321");
+  fireEvent.paste(number, { clipboardData: { getData: () => "RD1122334" } });
+  expect(number).toHaveValue("1122334");
+  // A cédula has no prefix and keeps what was typed.
+  choose("Tipo de documento", "NationalId");
+  expect(screen.queryByTitle("Pasaporte dominicano")).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Número de documento" })).toHaveValue("112-2334");
 });
 
 it("shows the document requirements while typing and turns them green as they are met", async () => {
@@ -541,16 +565,19 @@ it("proposes an airline that is not in the listing, with its ICAO code and no IA
     { target: { value: "https://caribecargo.example.com" } });
   // A Dominican airline gives its RNC; the country of the identifier is fixed to the airline's.
   expect(field("País del identificador fiscal")).toBeDisabled();
+  expect(field("País del identificador fiscal")).toHaveValue("DO");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   expect(screen.getByText("Escriba el RNC de la aerolínea.")).toBeInTheDocument();
-  fillTax("131234568");
+  // Fewer than 9 digits get one short message; the check digit is not verified.
+  fillTax("13123456");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
-  expect(screen.getByText(/dígito verificador del RNC/)).toBeInTheDocument();
+  expect(screen.getByText("El RNC tiene 9 dígitos.")).toBeInTheDocument();
   fillTax("1-31-23456-9");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   expect(screen.getByText(/en nombre de Caribe Cargo Express/)).toBeInTheDocument();
   await fillRepresentative();
-  expect(screen.getByText(/No figura en el listado · República Dominicana · ICAO CCX · Sin IATA/)).toBeInTheDocument();
+  expect(screen.getByText(/No figura en el listado · República Dominicana · ICAO CCX · Sin IATA · https:\/\/caribecargo\.example\.com · RNC 1-31-23456-9/))
+    .toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
   expect(await screen.findByText("REQ-PROPOSAL")).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("le escribirá a alex@caribecargo.example.com con su decisión");
@@ -579,6 +606,62 @@ it("asks a foreign airline for its own tax identifier, with the airline's countr
   fireEvent.change(number, { target: { value: "155596713-2-2015" } });
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   expect(screen.getByText(/PASO 03 \/ 04/i)).toBeInTheDocument();
+});
+
+it("prefills the RNC of the catalog profile, masked and still editable, and says at once whether it is valid", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const caribe = "20000000-0000-7000-8000-000000000011";
+  const panamaId = "20000000-0000-7000-8000-000000000012";
+  const posts: Array<Record<string, unknown>> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("commercial-catalog"))
+      return new Response(JSON.stringify({ ...catalog, airlines: [...catalog.airlines,
+        { ...catalog.airlines[0], id: panamaId, name: "Panamá Air", countryCode: "PA" }, { ...catalog.airlines[0], id: caribe,
+        name: "Caribe Air", legalName: "Caribe Air S.R.L.", countryCode: "DO", iataCode: null, icaoCode: "CRX",
+        taxRegistration: "131234569", taxRegistrationCountryCode: "DO" }] }), { headers: { "content-type": "application/json" } });
+    if (String(url).endsWith("commercial-requests") && init?.method === "POST") {
+      posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ reference: "REQ-RNC", replayed: false }),
+        { status: 201, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  choose("Seleccione una aerolínea", caribe);
+  expect(screen.getByRole("textbox", { name: "Razón social" })).toHaveValue("Caribe Air S.R.L.");
+  expect(screen.getByRole("textbox", { name: "Código ICAO" })).toHaveValue("CRX");
+  expect(field("País del identificador fiscal")).toHaveValue("DO");
+  const rnc = screen.getByRole("textbox", { name: "RNC" });
+  expect(rnc).toHaveValue("1-31-23456-9");
+  expect(rnc).toHaveAttribute("inputMode", "numeric");
+  expect(screen.getByRole("status")).toHaveTextContent("RNC válido");
+
+  // The mask adds the dashes while typing; any 9 digits are an RNC (no check digit).
+  fireEvent.change(rnc, { target: { value: "13123" } });
+  expect(rnc).toHaveValue("1-31-23");
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  fireEvent.change(rnc, { target: { value: "1312345680" } });
+  expect(rnc).toHaveValue("1-31-23456-8");
+  expect(screen.getByRole("status")).toHaveTextContent("RNC válido");
+  expect(screen.queryByText(/dígito verificador/)).not.toBeInTheDocument();
+  fireEvent.change(rnc, { target: { value: "1-31-23456-9" } });
+
+  // Another airline replaces both values: without an RNC in its profile, its own country and an empty number.
+  choose("Seleccione una aerolínea", panamaId);
+  expect(field("País del identificador fiscal")).toHaveValue("PA");
+  expect(screen.getByRole("textbox", { name: "Identificador fiscal" })).toHaveValue("");
+  choose("Seleccione una aerolínea", caribe);
+  expect(screen.getByRole("textbox", { name: "RNC" })).toHaveValue("1-31-23456-9");
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  await fillRepresentative();
+  // The confirmation separates every fact of the airline, the RNC included.
+  expect(screen.getByText("Caribe Air S.R.L. · DO · RNC 1-31-23456-9")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
+  expect(await screen.findByText("REQ-RNC")).toBeInTheDocument();
+  expect(posts[0]).toMatchObject({ airlineProfileId: caribe, taxRegistration: "131234569", taxRegistrationCountryCode: "DO" });
 });
 
 it("offers the proposal right away when no airline is published and points to a listed ICAO code", async () => {

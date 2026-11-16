@@ -49,6 +49,10 @@ internal static class SafeAuditChanges
         // Professor's review: the airline's tax identifier Contratos corrected on a request and the one an approval
         // copied to the airline's organization (a company's RNC or foreign tax id, never a person's document).
         "request.tax_registration", "organization.tax_registration",
+        // The airline catalog profile's tax identifier Superadministración records (the public request prefills it).
+        "airline.tax_registration",
+        // A superadministrator's correction of an operating airline's identity (with its reason in the entry).
+        "airline.legal_name", "airline.verification_source",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

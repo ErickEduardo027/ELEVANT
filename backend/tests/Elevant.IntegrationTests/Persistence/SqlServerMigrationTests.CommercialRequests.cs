@@ -309,23 +309,52 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("profile_not_found", (await workflow.VerifyRequestAirlineAsync(ContractsAdministrator, first,
             Guid.NewGuid(), new VerifyRequestAirlineInput((await ItemAsync(first)).Version, Guid.NewGuid()), ct)).Code);
 
-        // 1-N17: Contratos verifies it without IATA; the new profile is verified and published.
+        // 1-N17: Contratos verifies it without IATA; the new profile is verified but stays out of the public
+        // wizard until this request is approved.
         var verified = await workflow.VerifyRequestAirlineAsync(ContractsAdministrator, first, Guid.NewGuid(),
             new VerifyRequestAirlineInput((await ItemAsync(first)).Version, null, "Caribe Cargo Express S.R.L.", "DO",
                 null, "CCX", "https://aoc.example.gob.do/ccx"), ct);
         Assert.True(verified.IsSuccess, verified.Code);
         var created = await context.CommercialAirlineProfiles.AsNoTracking().SingleAsync(item => item.IcaoCode == "CCX", ct);
-        Assert.Equal(("Otras aerolíneas", true, null, "https://www.caribecargo.example.com/"),
+        Assert.Equal(("Otras aerolíneas", false, null, "https://www.caribecargo.example.com/"),
             (created.Region, created.IsPublished, created.IataCode, created.SourceUrl));
         Assert.NotNull(created.VerifiedAt);
-        Assert.Contains((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct)).Airlines,
-            item => item.Id == created.PublicId && item.IsVerified);
+        Assert.DoesNotContain((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct)).Airlines,
+            item => item.Id == created.PublicId);
+        // Superadministración still lists it, as not published.
+        Assert.Contains((await scope.ServiceProvider.GetRequiredService<ICommercialAirlineManagementStore>()
+            .ListAsync(SuperAdministrator, ct))!, item => item.Id == created.PublicId && !item.IsPublished && item.IsVerified);
         Assert.Equal(created.PublicId, (await ItemAsync(first)).AirlineProfileId);
 
         var approved = await ApproveAsync(first);
         Assert.True(approved.IsSuccess, approved.Code);
+        // The approval publishes it in the same transaction, audited.
+        Assert.True(await context.CommercialAirlineProfiles.AsNoTracking()
+            .Where(item => item.PublicId == created.PublicId).Select(item => item.IsPublished).SingleAsync(ct));
+        Assert.Contains((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct)).Airlines,
+            item => item.Id == created.PublicId && item.IsVerified);
+        var publication = await context.AuditEntries.AsNoTracking().SingleAsync(entry =>
+            entry.Action == "commercial.airline.published" && entry.EntityPublicId == created.PublicId, ct);
+        Assert.Contains("airline.published", publication.MetadataJson);
         var airline = await context.Airlines.AsNoTracking().SingleAsync(item => item.IcaoCode == "CCX", ct);
         Assert.Null(airline.IataCode);
+
+        // A proposal Contratos verifies and then rejects keeps its profile unpublished.
+        var declined = Guid.NewGuid();
+        Assert.True((await intake.HandleAsync(CommercialApplication(declined, Guid.Empty, service, "ops@arenacargo.example.com") with
+        {
+            ProposedAirline = new CommercialAirlineProposal("Arena Cargo", "DO", null, "QAZ", null),
+        }, ct)).IsSuccess);
+        Assert.True((await workflow.VerifyRequestAirlineAsync(ContractsAdministrator, declined, Guid.NewGuid(),
+            new VerifyRequestAirlineInput((await ItemAsync(declined)).Version, null, "Arena Cargo S.R.L.", "DO", null, "QAZ",
+                "https://aoc.example.gob.do/qaz"), ct)).IsSuccess);
+        Assert.True((await workflow.DecideAsync(ContractsAdministrator, declined, new ReviewCommercialInput(false,
+            "La aerolínea no opera en las estaciones de AVIAM.", [], (await ItemAsync(declined)).Version), Guid.NewGuid(), ct))
+            .IsSuccess);
+        Assert.False(await context.CommercialAirlineProfiles.AsNoTracking().Where(item => item.IcaoCode == "QAZ")
+            .Select(item => item.IsPublished).SingleAsync(ct));
+        Assert.DoesNotContain((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct)).Airlines,
+            item => item.IcaoCode == "QAZ");
 
         // A second request of the same airline links the verified profile, but cannot open a second contract.
         var again = Guid.NewGuid();

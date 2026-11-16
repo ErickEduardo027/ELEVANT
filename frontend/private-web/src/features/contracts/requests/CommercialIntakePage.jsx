@@ -10,7 +10,7 @@ import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { airlineIdentityErrors } from './airlineIdentity';
-import { checkTaxRegistration } from '@elevant/api-client';
+import { checkTaxRegistration, maskRnc, rncFeedback } from '@elevant/api-client';
 import { BLOCKING_REGISTRY_STATUSES, countryName, documentLabel, registryVerdictLabel, requestStatusLabel } from './requestLabels';
 import { representativeDomainCheck } from './representativeDomain';
 import { billingUnitLabel } from '../../../services/billingUnits';
@@ -50,6 +50,8 @@ export default function CommercialIntakePage({ canVerify = true, canApprove = tr
   const [stations, setStations] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [notice, setNotice] = useState('');
+  // Each «Actualizar» of the user: the open review drops an alert about the request as it was before.
+  const [refreshes, setRefreshes] = useState(0);
   const latest = useRef(0);
 
   const reload = useCallback(async () => {
@@ -114,7 +116,7 @@ export default function CommercialIntakePage({ canVerify = true, canApprove = tr
   const permissions = { canVerify, canApprove, canReject, canCancel };
 
   return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
-    <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Entrada pública</p><h1 className="mt-1 text-2xl font-bold">Solicitudes</h1><p className="mt-1 text-sm text-text-secondary-light">Verifique aerolínea y representante antes de aceptar los servicios. La aprobación crea un borrador.</p></div><button type="button" onClick={() => { void reload(); }} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Actualizar</button></header>
+    <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Entrada pública</p><h1 className="mt-1 text-2xl font-bold">Solicitudes</h1><p className="mt-1 text-sm text-text-secondary-light">Verifique aerolínea y representante antes de aceptar los servicios. La aprobación crea un borrador.</p></div><button type="button" onClick={() => { setRefreshes(current => current + 1); void reload(); }} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Actualizar</button></header>
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {view.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-8 text-center text-sm dark:bg-surface-dark-card">No tiene permiso para ver las solicitudes comerciales. Pida acceso al administrador de Contratos.</p> : <>
       {inbox && <div role="group" aria-label="Solicitudes por estado" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{COUNTERS.map(([status, key, label]) =>
@@ -133,16 +135,24 @@ export default function CommercialIntakePage({ canVerify = true, canApprove = tr
                 : <p className="p-8 text-center text-sm text-text-secondary-light">No hay solicitudes con este filtro.</p>}
           {inbox && view.status === 'ready' && inbox.total > PAGE_SIZE && <div className="flex items-center justify-between gap-3 border-t border-black/5 p-3 text-xs dark:border-white/5"><button type="button" disabled={page <= 1} onClick={() => changeQuery({ page: page - 1 })} className="rounded-lg border border-black/10 px-3 py-1 disabled:opacity-50">Anterior</button><span>Página {page} de {pages}</span><button type="button" disabled={!inbox.hasMore} onClick={() => changeQuery({ page: page + 1 })} className="rounded-lg border border-black/10 px-3 py-1 disabled:opacity-50">Siguiente</button></div>}
         </section>
-        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <RequestReview key={selected.id} request={selected} stations={stations} permissions={permissions} onCompleted={completed} onRefresh={reload} /> : <div className="py-12 text-center"><h2 className="font-bold">Seleccione una solicitud</h2><p className="mt-2 text-sm text-text-secondary-light">Aquí verá la aerolínea, el representante y los servicios solicitados.</p></div>}</section>
+        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <RequestReview key={selected.id} request={selected} stations={stations} permissions={permissions} onCompleted={completed} onRefresh={reload} refreshes={refreshes} /> : <div className="py-12 text-center"><h2 className="font-bold">Seleccione una solicitud</h2><p className="mt-2 text-sm text-text-secondary-light">Aquí verá la aerolínea, el representante y los servicios solicitados.</p></div>}</section>
       </div>
     </>}
   </div>;
 }
 
-function RequestReview({ request, stations, permissions, onCompleted, onRefresh }) {
+function RequestReview({ request, stations, permissions, onCompleted, onRefresh, refreshes = 0 }) {
   const open = OPEN.includes(request.status);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A refusal describes the request as it was: the user's «Actualizar» or a manual verification by Superadministración
+  // (what unblocks `airline_not_in_public_registry`) makes it stale. The re-read after a conflict keeps it on screen.
+  const freshness = `${refreshes}|${request.manualVerification ? 'manual' : ''}`;
+  const [seenFreshness, setSeenFreshness] = useState(freshness);
+  if (seenFreshness !== freshness) {
+    setSeenFreshness(freshness);
+    setError('');
+  }
   const verifyKeys = useRef(createCommandKeyHolder());
   const confirmKeys = useRef(createCommandKeyHolder());
   const decideKeys = useRef(createCommandKeyHolder());
@@ -198,13 +208,19 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
   const linked = Boolean(request.airlineProfileId);
   const [mode, setMode] = useState('create');
   const [editing, setEditing] = useState(!request.airlineVerified);
+  // What the applicant proposed fills the form until Contratos confirms it; its website is only a starting source.
   const [identity, setIdentity] = useState({
-    legalName: request.legalName ?? '', countryCode: request.countryCode ?? '', iataCode: request.iataCode ?? '',
-    icaoCode: request.icaoCode ?? '', verificationSourceUrl: request.verificationSourceUrl ?? '',
+    legalName: request.legalName ?? proposal?.name ?? '', countryCode: request.countryCode ?? proposal?.countryCode ?? '',
+    iataCode: request.iataCode ?? proposal?.iataCode ?? '', icaoCode: request.icaoCode ?? proposal?.icaoCode ?? '',
+    verificationSourceUrl: request.verificationSourceUrl
+      ?? (proposal?.websiteUrl?.startsWith('https://') ? proposal.websiteUrl : ''),
   });
-  // The airline's tax identifier (an RNC when it is Dominican); Contratos may correct it while verifying.
-  const [tax, setTax] = useState({ number: request.taxRegistration?.number ?? '',
-    countryCode: request.taxRegistration?.countryCode ?? request.countryCode ?? '' });
+  // The airline's tax identifier (an RNC when it is Dominican, shown with its dashes); Contratos may correct it.
+  const [tax, setTax] = useState(() => {
+    const countryCode = request.taxRegistration?.countryCode ?? request.countryCode ?? proposal?.countryCode ?? '';
+    const number = request.taxRegistration?.number ?? '';
+    return { number: countryCode === 'DO' ? maskRnc(number) : number, countryCode };
+  });
   const [catalog, setCatalog] = useState({ status: 'idle', airlines: [], error: '' });
   const [profileId, setProfileId] = useState('');
   // After a refused submit the messages follow the typing; `attempt` moves the focus to the first one.
@@ -285,9 +301,12 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
 /** The airline's tax identifier in the verification form: an RNC for a Dominican airline, otherwise its own id. */
 function TaxFields({ id, tax, error, onChange }) {
   const dominican = tax.countryCode.trim().toUpperCase() === 'DO';
+  // An RNC is typed with its mask and, with its 9 digits, is confirmed at once (no check digit).
+  const feedback = dominican && !error ? rncFeedback(tax.number) : null;
+  const described = [error && `${id}-taxNumber-error`, feedback && `${id}-taxNumber-feedback`].filter(Boolean).join(' ');
   return <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-    <div><label htmlFor={`${id}-taxCountry`} className="text-xs font-semibold">País del identificador fiscal (2 letras)</label><input id={`${id}-taxCountry`} maxLength={2} value={tax.countryCode} onChange={event => onChange({ countryCode: event.target.value.toUpperCase() })} className={field} /></div>
-    <div><label htmlFor={`${id}-taxNumber`} className="text-xs font-semibold">{dominican ? 'RNC' : 'Identificador fiscal'}</label><input id={`${id}-taxNumber`} maxLength={32} value={tax.number} aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-taxNumber-error` : undefined} onChange={event => onChange({ number: event.target.value })} className={field} />{error && <p id={`${id}-taxNumber-error`} className="mt-1 text-xs text-status-danger">{error}</p>}</div>
+    <div><label htmlFor={`${id}-taxCountry`} className="text-xs font-semibold">País del identificador fiscal (2 letras)</label><input id={`${id}-taxCountry`} maxLength={2} value={tax.countryCode} onChange={event => { const countryCode = event.target.value.toUpperCase(); onChange({ countryCode, ...(countryCode === 'DO' ? { number: maskRnc(tax.number) } : {}) }); }} className={field} /></div>
+    <div><label htmlFor={`${id}-taxNumber`} className="text-xs font-semibold">{dominican ? 'RNC' : 'Identificador fiscal'}</label><input id={`${id}-taxNumber`} maxLength={dominican ? 12 : 32} inputMode={dominican ? 'numeric' : undefined} placeholder={dominican ? '1-31-23456-9' : undefined} value={tax.number} aria-invalid={error ? true : undefined} aria-describedby={described || undefined} onChange={event => onChange({ number: dominican ? maskRnc(event.target.value) : event.target.value })} className={field} />{error && <p id={`${id}-taxNumber-error`} className="mt-1 text-xs text-status-danger">{error}</p>}{feedback && <p id={`${id}-taxNumber-feedback`} role="status" className="mt-1 text-xs font-semibold text-status-success">✓ {feedback.message}</p>}</div>
   </div>;
 }
 

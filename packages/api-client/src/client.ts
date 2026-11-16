@@ -4260,14 +4260,19 @@ function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCat
     isOptionalNullable(item.videoUrl, isString) && isInt32(item.displayOrder));
   const airlines = value.airlines.every((item: unknown) => isRecord(item) &&
     hasOnlyKeys(item, ["id", "name", "region", "legalName", "countryCode",
-      "iataCode", "icaoCode", "logoUrl", "isVerified", "registrySource"]) &&
+      "iataCode", "icaoCode", "logoUrl", "isVerified", "registrySource",
+      "taxRegistration", "taxRegistrationCountryCode"]) &&
     isUuid(item.id) && isNonEmptyString(item.name) && isNonEmptyString(item.region) &&
     isOptionalNullable(item.legalName, isString) &&
     isOptionalNullable(item.countryCode, isString) &&
     isOptionalNullable(item.iataCode, isString) &&
     isOptionalNullable(item.icaoCode, isString) &&
     isOptionalNullable(item.logoUrl, isString) && typeof item.isVerified === "boolean" &&
-    isOptionalNullable(item.registrySource, (source: unknown) => source === "Wikidata" || source === "OpenFlights"));
+    isOptionalNullable(item.registrySource, (source: unknown) => source === "Wikidata" || source === "OpenFlights") &&
+    // The tax identifier Superadministración recorded (optional, expand): both or neither, with its country.
+    (item.taxRegistration == null ? item.taxRegistrationCountryCode == null
+      : isString(item.taxRegistration) && item.taxRegistration.length <= 32 &&
+        typeof item.taxRegistrationCountryCode === "string" && /^[A-Z]{2}$/.test(item.taxRegistrationCountryCode)));
   return services && airlines &&
     new Set(value.services.map(item => item.id.toLowerCase())).size === value.services.length &&
     new Set(value.airlines.map(item => item.id.toLowerCase())).size === value.airlines.length;

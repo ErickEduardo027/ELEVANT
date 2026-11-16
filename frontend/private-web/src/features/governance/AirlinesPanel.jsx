@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { checkTaxRegistration, maskRnc, rncFeedback } from '@elevant/api-client';
 import { commercialGovernanceMessage } from '../../services/commercialProblems';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -11,7 +12,11 @@ const blank = {
   sourceName: '', displayName: '', legalName: '', region: '', countryCode: '',
   iataCode: '', icaoCode: '', logoUrl: '', sourceUrl: '', verificationSourceUrl: '',
   isVerified: false, isPublished: false, version: null, identityLocked: false,
+  taxRegistration: '', taxRegistrationCountryCode: '',
 };
+
+/** The issuing country of the tax identifier: the one chosen, otherwise the airline's. */
+const taxCountryOf = form => (form.taxRegistrationCountryCode.trim() || form.countryCode.trim()).toUpperCase();
 
 /** 1-N20: the operating identity of an airline that already works with AVIAM is fixed. */
 const LOCKED_FIELDS = ['legalName', 'iataCode', 'icaoCode'];
@@ -55,6 +60,11 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState(null);
   const [uploadError, setUploadError] = useState('');
+  const [taxError, setTaxError] = useState('');
+  // «Corregir identidad» of an operating airline: the identity becomes editable with a mandatory reason (audited).
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [correctionError, setCorrectionError] = useState('');
   const [pendingArchive, setPendingArchive] = useState(null);
   const saveKeys = useRef(createCommandKeyHolder());
   const visible = useMemo(() => airlines.filter((airline) =>
@@ -69,11 +79,26 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
     setForm({ ...airline, legalName: airline.legalName ?? '',
       countryCode: airline.countryCode ?? '', iataCode: airline.iataCode ?? '',
       icaoCode: airline.icaoCode ?? '', logoUrl: airline.logoUrl ?? '',
-      verificationSourceUrl: airline.verificationSourceUrl ?? '' });
+      verificationSourceUrl: airline.verificationSourceUrl ?? '',
+      taxRegistration: airline.taxRegistrationCountryCode === 'DO' ? maskRnc(airline.taxRegistration)
+        : airline.taxRegistration ?? '',
+      taxRegistrationCountryCode: airline.taxRegistrationCountryCode ?? '' });
+    setTaxError('');
+    resetCorrection();
   }
-  function clear() { setEditingId(null); setForm(blank); setLogo(null); saveKeys.current.reset(); }
+  function resetCorrection() { setCorrecting(false); setCorrectionReason(''); setCorrectionError(''); }
+  function clear() { setEditingId(null); setForm(blank); setLogo(null); setTaxError(''); resetCorrection(); saveKeys.current.reset(); }
   async function save(event) {
-    event.preventDefault(); setBusy(true); setUploadError('');
+    event.preventDefault();
+    // The tax identifier is optional; written, it must be valid (an RNC has 9 digits).
+    const tax = form.taxRegistration.trim() ? checkTaxRegistration(form.taxRegistration, taxCountryOf(form)) : null;
+    if (tax?.problem) { setTaxError(tax.problem); return; }
+    const reason = correctionReason.trim();
+    if (correcting && (reason.length < 10 || reason.length > 500)) {
+      setCorrectionError('Explique la corrección en 10 a 500 caracteres.');
+      return;
+    }
+    setTaxError(''); setCorrectionError(''); setBusy(true); setUploadError('');
     try {
       const uploadedLogo = logo ? await uploadCommercialMedia('airline-logo', logo) : null;
       const values = {
@@ -84,6 +109,9 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
         icaoCode: form.icaoCode.trim().toUpperCase() || null,
         logoUrl: uploadedLogo?.url ?? (form.logoUrl.trim() || null), sourceUrl: form.sourceUrl.trim(),
         verificationSourceUrl: form.verificationSourceUrl.trim() || null,
+        taxRegistration: tax?.registration.number ?? null,
+        taxRegistrationCountryCode: tax?.registration.countryCode ?? null,
+        ...(correcting ? { identityCorrectionReason: reason, isVerified: true } : {}),
       };
       // An update keeps its Idempotency-Key while the same save is retried after an uncertain answer.
       const key = editingId ? saveKeys.current.keyFor('save-airline', { id: editingId, ...values }) : undefined;
@@ -92,8 +120,18 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
     } catch (error) { setUploadError(commercialGovernanceMessage(error, { fallback: 'No se pudo cargar el logo. Verifique el formato y el tamaño.' })); }
     finally { setBusy(false); }
   }
-  const locked = Boolean(editingId && form.identityLocked);
+  const operating = Boolean(editingId && form.identityLocked);
+  const locked = operating && !correcting;
   const change = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const taxCountry = taxCountryOf(form);
+  const dominicanTax = taxCountry === 'DO';
+  const taxFeedback = dominicanTax && !taxError ? rncFeedback(form.taxRegistration) : null;
+  function changeTaxCountry(value) {
+    const country = value.toUpperCase();
+    setTaxError('');
+    setForm(current => ({ ...current, taxRegistrationCountryCode: country,
+      taxRegistration: country === 'DO' ? maskRnc(current.taxRegistration) : current.taxRegistration }));
+  }
 
   return <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_410px]">
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
@@ -103,12 +141,12 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
       </div>
       <div className="mt-4 flex flex-wrap gap-3">
         <label className="text-xs font-semibold">Buscar<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre o código" className="mt-1 block rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" /></label>
-        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Mostrar archivadas</label>
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Mostrar no publicadas (archivadas o pendientes de aprobación)</label>
       </div>
       <div className="mt-5 space-y-3">{visible.map((airline) => <article key={airline.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
-          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada manualmente' : 'Sin verificación manual'} · {[airline.iataCode, airline.icaoCode].filter(Boolean).join(' / ') || 'sin códigos'}{airline.identityLocked ? ' · Opera con AVIAM' : ''}</p>
+          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'No publicada'} · {airline.isVerified ? 'Verificada manualmente' : 'Sin verificación manual'} · {[airline.iataCode, airline.icaoCode].filter(Boolean).join(' / ') || 'sin códigos'}{airline.identityLocked ? ' · Opera con AVIAM' : ''}</p>
             <div className="mt-1"><RegistryBadge status={checks[airline.id]?.status === 'Unavailable' ? 'Unavailable' : airline.registryStatus} source={airline.registrySource} url={airline.registryEntityUrl} /></div>
             <AirlineFleetFacts icaoCode={airline.icaoCode} iataCode={airline.iataCode} className="mt-1" />
             {checks[airline.id]?.differences?.length > 0 && <ul role="status" className="mt-1 list-disc pl-4 text-xs text-text-secondary-light">{checks[airline.id].differences.map(item => <li key={item}>{item}</li>)}</ul>}
@@ -120,14 +158,36 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
       <h2 className="text-lg font-bold">{editingId ? 'Editar aerolínea' : 'Nueva aerolínea'}</h2>
       <p className="mt-1 text-xs text-text-secondary-light">Registre únicamente datos sustentados por la fuente indicada.</p>
-      {locked && <p role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">Esta aerolínea ya opera con AVIAM: su razón social, sus códigos IATA e ICAO y su verificación están en contratos, facturas y vuelos, y no pueden cambiar desde aquí. El nombre visible, el logo, la publicación y las fuentes siguen editables.</p>}
+      {operating && <div role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">
+        <p>Esta aerolínea ya opera con AVIAM: su razón social, sus códigos IATA e ICAO y su verificación están en contratos, facturas y vuelos, y no pueden cambiar desde aquí. El nombre visible, el logo, la publicación y las fuentes siguen editables.</p>
+        <label className="mt-2 flex items-center gap-2 font-semibold"><input type="checkbox" checked={correcting} onChange={(event) => { setCorrecting(event.target.checked); setCorrectionError(''); }} /> Corregir identidad</label>
+        {correcting && <p className="mt-1">La corrección cambia solo la ficha del catálogo, queda auditada con su motivo y la verificación pasa a su nombre. Los contratos, las facturas y las solicitudes conservan los datos con los que se hicieron.</p>}
+      </div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {[['sourceName', 'Nombre de origen', 160], ['displayName', 'Nombre visible', 160], ['legalName', 'Razón social', 200], ['region', 'Región', 64], ['countryCode', 'País ISO (2 letras)', 2], ['iataCode', 'Código IATA', 2], ['icaoCode', 'Código ICAO', 3], ['sourceUrl', 'Sitio o fuente oficial', 512], ['verificationSourceUrl', 'Fuente de verificación', 512]].map(([key, label, max]) =>
           <label key={key} className="text-xs font-semibold">{label}<input required={['sourceName', 'displayName', 'region', 'sourceUrl'].includes(key)} readOnly={key === 'sourceName' && !!editingId || locked && LOCKED_FIELDS.includes(key)} maxLength={max} value={form[key]} onChange={(event) => change(key, event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm read-only:bg-black/[.03] dark:bg-surface-dark" /></label>)}
       </div>
+      {/* Not part of the verified identity: changing it keeps the registry check and the manual verification. */}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="text-xs font-semibold">País del identificador fiscal<input maxLength={2} value={taxCountry} onChange={(event) => changeTaxCountry(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" /></label>
+        <div><label htmlFor="airline-tax-number" className="text-xs font-semibold">{dominicanTax ? 'RNC' : 'Identificador fiscal'}</label>
+          <input id="airline-tax-number" maxLength={dominicanTax ? 12 : 32} inputMode={dominicanTax ? 'numeric' : undefined} placeholder={dominicanTax ? '1-31-23456-9' : 'Opcional'} value={form.taxRegistration}
+            aria-invalid={taxError ? true : undefined} aria-describedby={taxError ? 'airline-tax-error' : taxFeedback ? 'airline-tax-feedback' : undefined}
+            onChange={(event) => { setTaxError(''); change('taxRegistration', dominicanTax ? maskRnc(event.target.value) : event.target.value); }}
+            className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" />
+          {taxError && <p id="airline-tax-error" role="alert" className="mt-1 text-xs text-status-danger">{taxError}</p>}
+          {taxFeedback && <p id="airline-tax-feedback" role="status" className="mt-1 text-xs font-semibold text-status-success">✓ {taxFeedback.message}</p>}
+        </div>
+      </div>
       <FileDropField label="Logo de la aerolínea" accept="image/png,image/jpeg,image/webp" file={logo} onFile={setLogo} currentUrl={form.logoUrl} hint="PNG, JPG o WebP. Máximo 8 MB. El logo seleccionado se carga al guardar." />
       {uploadError && <p role="alert" className="mt-2 text-sm text-status-danger">{uploadError}</p>}
-      <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isVerified} disabled={locked && form.isVerified} onChange={(event) => change('isVerified', event.target.checked)} /> Datos verificados con la fuente indicada</label>
+      {operating && correcting && <div className="mt-3"><label htmlFor="airline-correction-reason" className="block text-xs font-semibold">Motivo de la corrección</label>
+        <textarea id="airline-correction-reason" aria-required="true" maxLength={500} rows={3} value={correctionReason}
+          aria-invalid={correctionError ? true : undefined} aria-describedby={correctionError ? 'airline-correction-error' : undefined}
+          onChange={(event) => { setCorrectionReason(event.target.value); setCorrectionError(''); }}
+          className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" />
+        {correctionError && <p id="airline-correction-error" role="alert" className="mt-1 text-xs text-status-danger">{correctionError}</p>}</div>}
+      <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={operating && correcting ? true : form.isVerified} disabled={operating && (correcting || form.isVerified)} onChange={(event) => change('isVerified', event.target.checked)} /> Datos verificados con la fuente indicada</label>
       <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isPublished} onChange={(event) => change('isPublished', event.target.checked)} /> Disponible para nuevas solicitudes</label>
       <p className="mt-1 text-xs text-text-secondary-light">Para publicarla hace falta un check verde en el registro público o la verificación manual con su fuente. Cambiar el nombre visible o los códigos anula el check.</p>
       <div className="mt-5 flex gap-2"><button disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Guardando…' : 'Guardar aerolínea'}</button>{editingId && <button type="button" onClick={clear} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>

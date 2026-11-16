@@ -367,6 +367,13 @@ antes sin él conserva su huella, porque `ContractDocumentHash.AsSigned` lo omit
 cuando ninguna firma coincide con el contenido que lo incluye. La factura e-CF lo
 congela en su snapshot al emitirse.
 
+`20261116145344_AddAirlineProfileTaxRegistration` añade el mismo par a
+`commercial.airline_profiles`: `tax_registration` (`nvarchar(32)`) y
+`tax_registration_country_code` (`char(2)`), que admiten nulos, sin `HasData`
+ni DML. Es el identificador que Superadministración registra en la ficha del
+catálogo y que la solicitud pública precarga; no forma parte de la identidad
+verificada de la ficha. El seed no lo escribe.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;

@@ -7,7 +7,7 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-15"
+last_verified: "2026-11-16"
 verified_commit: pending
 sources:
   - docs/adr/0023-airline-public-registry-check.md
@@ -15,6 +15,11 @@ sources:
   - backend/Elevant.Application/Commercial/AirlineRegistryChecks.cs
   - backend/Elevant.Domain/Validation/TaxRegistrations.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialWorkflowStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialAirlineManagementStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/AviamAirlineReference.cs
+  - backend/Elevant.Infrastructure/Integrations/AirlineRegistry/openflights-airlines.tsv
+  - packages/api-client/src/validation.ts
+  - frontend/private-web/src/features/governance/AirlinesPanel.jsx
   - docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md
   - backend/Elevant.Api/Controllers/ContractDocumentsController.cs
   - backend/Elevant.Api/Controllers/ContractLifecycleController.cs
@@ -127,8 +132,16 @@ mostró la bandeja; un conflicto obliga a releer.
 
 - **Verificar la aerolínea** con una fuente oficial. Una aerolínea propuesta
   por el solicitante («Mi aerolínea no aparece») se vincula a una ficha
-  existente o se convierte en una ficha verificada y publicada en «Otras
-  aerolíneas». El formulario anónimo nunca escribe en el catálogo.
+  existente o se convierte en una ficha verificada en «Otras aerolíneas». Desde
+  el 16 de noviembre de 2026 esa ficha nace **sin publicar**: no aparece en el
+  asistente público hasta que se aprueba su solicitud, y la aprobación la
+  publica en la misma transacción (auditoría `commercial.airline.published`).
+  Rechazar o cancelar la solicitud la deja sin publicar; vincular la solicitud a
+  una ficha existente no cambia la publicación de esa ficha. Superadministración
+  la ve en **Aerolíneas** como «No publicada» y puede publicarla a mano con la
+  regla de siempre. El formulario de Contratos parte de lo que propuso el
+  solicitante: nombre como razón social, país, códigos y, si es HTTPS, su sitio
+  web como fuente. El formulario anónimo nunca escribe en el catálogo.
 - **Confirmar al representante.** Contratos registra quién confirmó que el
   representante habla por la aerolínea, cuándo y por qué canal; se registra
   una sola vez. La pantalla avisa, sin bloquear, si el dominio del correo no
@@ -150,7 +163,7 @@ mostró la bandeja; un conflicto obliga a releer.
 ### Identificador fiscal y registros públicos (revisión del profesor)
 
 - La solicitud pública exige el **identificador fiscal** de la aerolínea. Si la
-  aerolínea es dominicana, es su **RNC**: 9 dígitos con dígito verificador. Si
+  aerolínea es dominicana, es su **RNC**: 9 dígitos (desde el 16 de noviembre de 2026 no se comprueba su dígito verificador). Si
   no lo es, es su identificador, de 3 a 32 caracteres, con el país que lo emitió
   (`invalid_tax_registration`). Contratos lo corrige al verificar la aerolínea.
   La aprobación lo copia a la organización si esta no tiene uno. El contrato lo
@@ -167,6 +180,26 @@ mostró la bandeja; un conflicto obliga a releer.
   «Verificada a mano por Superadmin · fuente». «No se pudo comprobar» no
   bloquea. El paso a paso está en la [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#una-aerolínea-que-los-registros-públicos-no-confirman)
   y la regla en [ADR-0023](../../docs/adr/0023-airline-public-registry-check.md).
+  Cuando Contratos pulsa **Actualizar** después de la verificación a mano, el
+  aviso del rechazo anterior desaparece.
+- **RNC en la ficha (16 de noviembre de 2026).** La ficha del catálogo guarda el
+  identificador fiscal de la aerolínea, opcional, que Superadministración
+  escribe en **Aerolíneas** («País del identificador fiscal», por defecto el de
+  la aerolínea, y «RNC» o «Identificador fiscal»). No forma parte de la
+  identidad verificada: cambiarlo no anula el check del registro ni la
+  verificación manual, y queda auditado (`airline.tax_registration`). El
+  catálogo público lo devuelve y el asistente lo precarga al elegir la
+  aerolínea, editable: el país y el número de la ficha, o, sin RNC en la ficha,
+  el país de la aerolínea y el campo vacío; cambiar de aerolínea los reemplaza.
+  En «Mi aerolínea no aparece», el país elegido para la aerolínea pasa al
+  identificador fiscal. Los tres formularios (asistente, Contratos y
+  Superadministración) escriben el RNC con su máscara `1-31-23456-9`, teclado
+  numérico y, con los 9 dígitos, «RNC válido» (con menos, al enviar, «El RNC tiene 9 dígitos.»);
+  se envían los 9 dígitos (`maskRnc` y `rncFeedback` de `@elevant/api-client`).
+- **Pasaporte dominicano del representante.** Con «Pasaporte» y nacionalidad
+  República Dominicana (los valores por defecto), el asistente público muestra un
+  «RD» fijo junto al campo, fuera de su nombre, y se escriben solo los 7 dígitos;
+  se guarda y se envía `RD` y los dígitos, también al pegar «RD1234567».
 
 Las aerolíneas sin designador IATA se identifican por su ICAO:
 `ref.airlines.iata_code` admite nulos desde esta fase. Las respuestas que ya
@@ -269,7 +302,7 @@ Desde la fase 2 del ciclo
 
 ## Catálogo y fichas de aerolínea
 
-El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas conserva 51 nombres históricos de AVIAM, países y enlaces de investigación, con seis identidades cotejadas contra IATA. Una parte de las fichas usa iconos de sitios oficiales servidos localmente en ambas webs; las demás usan una placa de referencia que no se presenta como logo oficial. Los campos no corroborados permanecen como «Sin dato confirmado». Superadministración administra las fichas y puede completar las filas de fixture aún intactas; el seed no actualiza datos existentes. Cada ficha se puede verificar en un registro público («Verificar en registro»: primero las aerolíneas ya vistas en los vuelos de AeroDataBox, sin costo; luego Wikidata y, si no responde, una copia de OpenFlights; [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). Solo se publica para el paso 2 con el check verde o con la verificación manual con su fuente, y el asistente muestra el sello «Verificada en registro público» ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). Cuando la aerolínea ya opera (tiene su fila en `ref.airlines` o una solicitud aprobada), Superadministración no puede cambiar su razón social, su IATA, su ICAO ni su verificación; el nombre comercial, el logo y la publicación siguen editables.
+El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas conserva 51 nombres históricos de AVIAM, países y enlaces de investigación, con seis identidades cotejadas contra IATA. Una parte de las fichas usa iconos de sitios oficiales servidos localmente en ambas webs; las demás usan una placa de referencia que no se presenta como logo oficial. Los campos no corroborados permanecen como «Sin dato confirmado». Desde el 16 de noviembre de 2026, todas las aerolíneas activas de la lista tienen identidad: sus códigos IATA e ICAO vienen de la copia de OpenFlights del repositorio (`openflights-airlines.tsv`), cotejados por nombre, o, para las que esa copia no tiene, de sus designadores públicos con su sitio oficial como fuente. ARKEFLY, marca histórica de TUIFLY NETHERLANDS, deja a esta los designadores OR/TFL. En Development, «Completar fichas AVIAM» también pone un **RNC ficticio de demostración** (`AviamAirlineReference.DevelopmentTaxRegistrations`) a las fichas sin identificador, solo con `AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations`, que únicamente Development y Test permiten; no son los RNC reales de las aerolíneas. Superadministración administra las fichas y con **Completar fichas AVIAM** completa las que nadie editó: las del seed y las que solo cambiaron la propia acción o un check de registro, según la auditoría. Nunca toca una ficha guardada, verificada o creada por una persona, una que ya opera ni un designador que otra ficha verificada usa; por eso pulsarlo otra vez aplica las identidades nuevas. Fuera de Development el RNC no se completa así. El seed no actualiza datos existentes. Cada ficha se puede verificar en un registro público («Verificar en registro»: primero las aerolíneas ya vistas en los vuelos de AeroDataBox, sin costo; luego Wikidata y, si no responde, una copia de OpenFlights; [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). Solo se publica para el paso 2 con el check verde o con la verificación manual con su fuente, y el asistente muestra el sello «Verificada en registro público» ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). Cuando la aerolínea ya opera (tiene su fila en `ref.airlines` o una solicitud aprobada), Superadministración no puede cambiar su razón social, su IATA, su ICAO ni su verificación; el nombre comercial, el logo y la publicación siguen editables. Desde el 16 de noviembre de 2026, **Corregir identidad** en **Editar aerolínea** permite a un superadministrador corregir esos datos (por ejemplo, identidades de prueba) con un **Motivo de la corrección** obligatorio de 10 a 500 caracteres y la verificación con su fuente HTTPS: la API (`identityCorrectionReason`) lo audita como `commercial.airline.identity_corrected` con los valores anteriores y nuevos y el motivo, la verificación pasa a su nombre y se limpia el check del registro. Los designadores siguen siendo únicos entre fichas verificadas. Los contratos, las facturas, las solicitudes y la aerolínea canónica (`ref.airlines`) conservan los datos con los que se hicieron: la corrección cambia solo la ficha del catálogo.
 
 **Contratos → Servicios → Catálogo** muestra la lista interna de servicios en
 páginas de doce, incluidos los ocultos y los dados de baja, en el mismo orden

@@ -80,6 +80,11 @@
 .access-doc-checklist li[data-met="true"] { color: #15803d; font-weight: 600; }
 .access-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .access-field-error { margin: 7px 0 0; color: #9c2f13; font-size: .76rem; line-height: 1.45; }
+.access-field-ok { margin: 7px 0 0; color: #15803d; font-size: .76rem; font-weight: 600; line-height: 1.45; }
+/* A Dominican passport: the fixed «RD» beside the 7 digits the person types. */
+.access-prefixed { display: flex; align-items: stretch; margin-top: 9px; }
+.access-prefixed__prefix { display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid #c1ceda; border-right: 0; background: #e9eef3; color: #233b54; font-weight: 700; }
+.access-representative .access-prefixed > input { flex: 1; min-width: 0; margin-top: 0; }
 .access-field-error button { border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .access-representative__note { grid-column: 1 / -1; padding: 14px 18px; border-left: 3px solid #ff641f; background: #e9eef3; color: #425e79; font-size: .82rem; line-height: 1.5; }
 .access-summary { display: grid; gap: 16px; }

@@ -257,7 +257,7 @@ export type TaxRegistration = { number: string; countryCode: string };
 export type TaxRegistrationCheck = { registration: TaxRegistration; problem: null } | { registration: null; problem: string };
 
 /**
- * The airline's tax identifier: an RNC (9 digits, modulus 11) when the country is the Dominican Republic,
+ * The airline's tax identifier: an RNC (9 digits) when the country is the Dominican Republic,
  * otherwise the identifier as written, trimmed, 3 to 32 characters.
  */
 export function checkTaxRegistration(number: string | null | undefined,
@@ -266,16 +266,32 @@ export function checkTaxRegistration(number: string | null | undefined,
   if (!/^[A-Z]{2}$/.test(country)) return { registration: null, problem: "Elija el país que emitió el identificador fiscal." };
   if (String(number ?? "").trim() === "")
     return { registration: null, problem: country === "DO" ? "Escriba el RNC de la aerolínea." : "Escriba el identificador fiscal de la aerolínea." };
+  // An airline's RNC is its 9 digits, with or without dashes; its check digit is not verified (a person's
+  // documents keep their own rules in checkIdentityDocument).
   if (country === "DO") {
-    const rnc = checkIdentityDocument("Rnc", number);
-    return rnc.number ? { registration: { number: rnc.number, countryCode: "DO" }, problem: null }
-      : { registration: null, problem: rnc.problem ?? "El RNC no es válido." };
+    const digits = String(number).replace(/[\s.-]/g, "");
+    return /^\d{9}$/.test(digits) ? { registration: { number: digits, countryCode: "DO" }, problem: null }
+      : { registration: null, problem: "El RNC tiene 9 dígitos." };
   }
   const value = String(number).trim();
   // eslint-disable-next-line no-control-regex
   if (value.length < 3 || value.length > 32 || /[\u0000-\u001f\u007f]/.test(value))
     return { registration: null, problem: "El identificador fiscal tiene de 3 a 32 caracteres." };
   return { registration: { number: value, countryCode: country }, problem: null };
+}
+
+/**
+ * Mask of an RNC while it is typed: keeps the digits (at most 9) and adds the dashes progressively, «1», «1-3»,
+ * «1-31-2», «1-31-23456-9». The submitted value stays the 9 digits: `checkTaxRegistration` compacts the dashes.
+ */
+export function maskRnc(value: string | null | undefined): string {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 9);
+  return [digits.slice(0, 1), digits.slice(1, 3), digits.slice(3, 8), digits.slice(8)].filter(Boolean).join("-");
+}
+
+/** Live confirmation of an RNC field: nothing until the 9 digits are typed, then «RNC válido». */
+export function rncFeedback(value: string | null | undefined): { valid: boolean; message: string } | null {
+  return checkTaxRegistration(value, "DO").registration ? { valid: true, message: "RNC válido" } : null;
 }
 
 /** «RNC 1-31-23456-9» for a Dominican RNC; «Id. fiscal X (país)» otherwise (as the contract prints it). */

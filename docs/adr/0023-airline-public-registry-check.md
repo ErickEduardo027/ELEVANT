@@ -93,3 +93,36 @@ Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
 - **Alcance.** La regla vive en `DecideCommercialRequestHandler`, que es el camino de la API.
   `ICommercialWorkflowStore.DecideAsync` sin la compuerta no la aplica; lo usan las pruebas de
   persistencia. Las pruebas automáticas inyectan registros falsos y nunca consultan Wikidata.
+
+## Ampliación (16 de noviembre de 2026): ficha propuesta sin publicar, RNC de la ficha y fichas AVIAM
+
+- **La ficha de una aerolínea propuesta nace sin publicar.** «Crear ficha verificada» de Contratos crea la
+  ficha con `is_published = 0` (la auditoría `commercial.airline.created` lo registra). La aprobación de esa
+  solicitud la publica en la misma transacción, con `commercial.airline.published`
+  (`airline.published` False → True), y avisa al asistente público. Rechazar o cancelar la deja sin publicar.
+  Vincular la solicitud a una ficha existente no cambia su publicación, y una ficha que Superadministración
+  archivó sigue archivada. Superadministración puede publicarla a mano con la regla de este ADR. El catálogo
+  público sigue filtrando por `is_published`.
+- **RNC de la ficha.** `commercial.airline_profiles` guarda `tax_registration` y
+  `tax_registration_country_code` (migración `20261116145344_AddAirlineProfileTaxRegistration`), validados
+  con `TaxRegistrations`. No es evidencia de la identidad: cambiarlo no anula el check del registro ni la
+  verificación manual.
+- **RNC de 9 dígitos, sin dígito verificador.** A pedido del usuario, el RNC de una aerolínea es válido con sus
+  9 dígitos (con o sin guiones); ya no se comprueba el módulo 11 en la API, el cliente compartido ni los
+  formularios. Los documentos de personas (cédula, pasaporte, RNC en `IdentityDocuments`) conservan sus reglas.
+- **Fichas AVIAM.** `AviamAirlineReference.Verified` usa, además de las seis identidades IATA, los códigos de
+  la copia de OpenFlights del repositorio, cotejados por nombre. «Completar fichas AVIAM» se aplica a las
+  fichas que ninguna persona editó: `updated_at` del seed, o solo auditorías `commercial.airline.enriched` y
+  `commercial.airline.registry_checked`, sin aerolínea canónica. Nunca reutiliza un designador que otra ficha
+  verificada tenga, y unos códigos nuevos limpian el check anterior.
+- **Todas las aerolíneas activas con identidad, y RNC de demostración.** Las que la copia de OpenFlights no confirma
+  reciben sus designadores públicos con el sitio oficial como fuente; ARKEFLY (marca histórica) deja OR/TFL a
+  TUIFLY NETHERLANDS. `AviamAirlineReference.DevelopmentTaxRegistrations` guarda RNC **ficticios** de 9 dígitos
+  (1-30/1-31) que la enriquecida copia a fichas sin identificador solo con
+  `AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations=true`; el API no arranca con él fuera de
+  Development o Test, y `appsettings.Production.json` lo deja en `false`.
+- **Corrección auditada de una aerolínea que opera.** Con `identityCorrectionReason` (10 a 500 caracteres) y la
+  verificación con su fuente, un superadministrador corrige la razón social, el país, los códigos y la fuente de
+  una ficha bloqueada (1-N20). Se audita como `commercial.airline.identity_corrected` (antes, después y motivo),
+  reestampa la verificación a su nombre y limpia el check del registro. No toca `ref.airlines`, contratos,
+  facturas ni solicitudes: la edición verificada nunca lo hizo y esos registros conservan su instantánea.

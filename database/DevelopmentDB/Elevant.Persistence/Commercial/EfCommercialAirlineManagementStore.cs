@@ -4,6 +4,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Realtime;
 using Elevant.Infrastructure.Persistence.Seed;
@@ -13,12 +14,18 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Commercial;
 
 internal sealed class EfCommercialAirlineManagementStore(
-    ElevantDbContext context, CommercialPermissionGuard permissions)
+    ElevantDbContext context, CommercialPermissionGuard permissions,
+    AirlineCatalogEnrichmentSettings? enrichment = null)
     : ICommercialAirlineManagementStore
 {
+    private readonly AirlineCatalogEnrichmentSettings enrichmentSettings = enrichment ?? AirlineCatalogEnrichmentSettings.Default;
+
     private static readonly DateTimeOffset FixtureInstant =
         new(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
     private const string UpdateAction = "commercial.airline.update";
+    private const string ProfileEntity = "commercial.airline_profiles";
+    private const string EnrichedAction = "commercial.airline.enriched";
+    private const string RegistryCheckedAction = "commercial.airline.registry_checked";
 
     public async Task<AirlineEnrichmentResult> EnrichHistoricalCatalogAsync(Guid actorId,
         CancellationToken cancellationToken = default)
@@ -27,8 +34,23 @@ internal sealed class EfCommercialAirlineManagementStore(
             return new AirlineEnrichmentResult(0, CatalogMutationFailure.Forbidden);
         var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
             .Select(user => user.Id).SingleAsync(cancellationToken);
+        // A profile no person edited: as the seed left it, or changed since only by this enrichment or by a
+        // registry check (neither writes what a person typed). A second run then completes the identities added
+        // to the reference after the first one, and never touches a profile Superadministración or Contratos
+        // saved, verified or created, nor one that already operates with AVIAM.
+        var edited = context.AuditEntries.Where(entry => entry.EntityType == ProfileEntity &&
+                entry.Action != EnrichedAction && entry.Action != RegistryCheckedAction)
+            .Select(entry => entry.EntityPublicId);
         var profiles = await context.CommercialAirlineProfiles
-            .Where(item => item.UpdatedAt == FixtureInstant).ToArrayAsync(cancellationToken);
+            .Where(item => item.UpdatedAt == FixtureInstant ||
+                item.CanonicalAirlineId == null && !edited.Contains((Guid?)item.PublicId) &&
+                context.AuditEntries.Any(entry => entry.EntityType == ProfileEntity && entry.EntityPublicId == item.PublicId))
+            .ToArrayAsync(cancellationToken);
+        // A verified designator belongs to one airline (ux_airline_profiles_verified_iata/icao).
+        var verifiedCodes = await context.CommercialAirlineProfiles.AsNoTracking().Where(item => item.VerifiedAt != null)
+            .Select(item => new { item.IataCode, item.IcaoCode }).ToArrayAsync(cancellationToken);
+        var takenIata = verifiedCodes.Select(item => item.IataCode).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var takenIcao = verifiedCodes.Select(item => item.IcaoCode).OfType<string>().ToHashSet(StringComparer.Ordinal);
         var changed = 0;
         foreach (var profile in profiles)
         {
@@ -42,12 +64,21 @@ internal sealed class EfCommercialAirlineManagementStore(
             var beforePublished = profile.IsPublished;
             var beforeVerified = profile.VerifiedAt is not null;
             var beforeVerifier = profile.VerifiedByAccountId;
+            var beforeTax = TaxDisplay(profile);
             profile.CountryCode ??= lead.Country;
+            // Development only: a FICTITIOUS demo RNC for a profile without identifier (never a real one).
+            if (enrichmentSettings.IncludeDevelopmentTaxRegistrations && profile.TaxRegistration is null &&
+                AviamAirlineReference.DevelopmentTaxRegistrations.TryGetValue(profile.SourceName, out var demoRnc))
+            {
+                profile.TaxRegistration = demoRnc;
+                profile.TaxRegistrationCountryCode = TaxRegistrations.DominicanRepublic;
+            }
             profile.LogoObjectKey ??= AviamAirlineReference.LogoPaths.GetValueOrDefault(profile.SourceName);
             if (profile.SourceUrl == AviamAirlineReference.AviamClients && lead.Site is not null)
                 profile.SourceUrl = lead.Site;
             if (AviamAirlineReference.Verified.TryGetValue(profile.SourceName, out var identity) &&
-                profile.LegalName is null && profile.IataCode is null && profile.IcaoCode is null)
+                profile.LegalName is null && profile.IataCode is null && profile.IcaoCode is null &&
+                (identity.Iata is null || !takenIata.Contains(identity.Iata)) && !takenIcao.Contains(identity.Icao))
             {
                 profile.LegalName = identity.Legal;
                 profile.IataCode = identity.Iata;
@@ -55,6 +86,10 @@ internal sealed class EfCommercialAirlineManagementStore(
                 profile.VerificationSourceUrl = identity.Source;
                 profile.VerifiedAt = DateTimeOffset.UtcNow;
                 profile.VerifiedByAccountId = actorDatabaseId;
+                if (identity.Iata is not null) takenIata.Add(identity.Iata);
+                takenIcao.Add(identity.Icao);
+                // A registry check was about the codes it saw (none); the new ones need their own.
+                ClearRegistry(profile);
             }
             else if (AviamAirlineReference.Verified.TryGetValue(profile.SourceName, out identity) &&
                 profile.VerifiedAt is not null && profile.VerifiedByAccountId is null &&
@@ -67,18 +102,19 @@ internal sealed class EfCommercialAirlineManagementStore(
                 beforeIcao == profile.IcaoCode && beforePublished == profile.IsPublished &&
                 beforeVerified == (profile.VerifiedAt is not null) &&
                 beforeVerifier == profile.VerifiedByAccountId &&
-                beforeSource == profile.SourceUrl)
+                beforeSource == profile.SourceUrl && beforeTax == TaxDisplay(profile))
                 continue;
             profile.UpdatedAt = DateTimeOffset.UtcNow;
             CommercialAuditWriter.Add(context, actorDatabaseId,
-                "commercial.airline.enriched", "commercial.airline_profiles", profile.PublicId, null,
+                EnrichedAction, ProfileEntity, profile.PublicId, null,
                 new AuditFieldChangeData("airline.country", beforeCountry, profile.CountryCode),
                 new AuditFieldChangeData("airline.iata", beforeIata, profile.IataCode),
                 new AuditFieldChangeData("airline.icao", beforeIcao, profile.IcaoCode),
                 new AuditFieldChangeData("airline.logo", beforeLogo, profile.LogoObjectKey),
                 new AuditFieldChangeData("airline.published", beforePublished.ToString(), profile.IsPublished.ToString()),
                 new AuditFieldChangeData("airline.verified", beforeVerified.ToString(),
-                    (profile.VerifiedAt is not null).ToString()));
+                    (profile.VerifiedAt is not null).ToString()),
+                new AuditFieldChangeData("airline.tax_registration", beforeTax, TaxDisplay(profile)));
             await NotifyInternalAsync(profile.PublicId, cancellationToken);
             changed++;
         }
@@ -215,41 +251,54 @@ internal sealed class EfCommercialAirlineManagementStore(
             return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict);
         if (!profile.SourceName.Equals(input.SourceName.Trim(), StringComparison.OrdinalIgnoreCase))
             return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid);
-        // 1-N20: an operating airline keeps its legal name, codes and verification.
+        // 1-N20: an operating airline keeps its legal name, codes and verification, unless a superadministrator
+        // corrects them with a reason and an official source. Contracts, invoices and requests keep their snapshots.
+        string? correction = null;
         if (await IsLockedAsync(profile, cancellationToken) &&
             ManagedAirlineIdentityRules.ChangesIdentity(Identity(profile), input))
-            return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict, GovernanceAccountIssues.AirlineIdentityLocked);
+        {
+            if (input.CorrectionReason() is not { } reason)
+                return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict, GovernanceAccountIssues.AirlineIdentityLocked);
+            if (!input.IsVerified)
+                return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid,
+                    GovernanceAccountIssues.IdentityCorrectionRequiresVerification);
+            correction = reason;
+        }
         if (await LogoFailureAsync(input, profile, cancellationToken) is { } logoFailure) return logoFailure;
         // ADR-0023: a superadministrator who confirms a verification Contratos stamped takes it over, so the
         // profile counts as verified by hand by Superadministración (the exception to the registry rule).
         var claim = input.IsVerified && profile.VerifiedByAccountId is long verifier && verifier != actorDatabaseId &&
             !await IsSuperAdministratorAccountAsync(verifier, cancellationToken);
-        if (Apply(actorDatabaseId, profile, input, created: false, claim) is { } failure) return failure;
+        if (Apply(actorDatabaseId, profile, input, created: false, claim, correction) is { } failure) return failure;
         await NotifyInternalAsync(profile.PublicId, cancellationToken);
         return AirlineMutationResult.Success(Map(profile, false));
     }
 
     /// <summary>Copies the form into the profile with its audit; a refused publication returns its failure.</summary>
     private AirlineMutationResult? Apply(long actorDatabaseId, CommercialAirlineProfile profile, ManagedAirlineInput input,
-        bool created, bool claimVerification = false)
+        bool created, bool claimVerification = false, string? identityCorrection = null)
     {
+        var beforeLegalName = profile.LegalName;
+        var beforeVerificationSource = profile.VerificationSourceUrl;
         var beforeCountry = profile.CountryCode;
         var beforeIata = profile.IataCode;
         var beforeIcao = profile.IcaoCode;
         var beforeLogo = profile.LogoObjectKey;
         var beforePublished = profile.IsPublished;
         var beforeVerified = profile.VerifiedAt is not null;
+        var beforeTax = TaxDisplay(profile);
         var stored = Identity(profile);
         // A registry check is about the name and codes it saw; changing them makes it stale.
-        if (profile.DisplayName != input.DisplayName.Trim() || profile.IataCode != Optional(input.IataCode) ||
-            profile.IcaoCode != Optional(input.IcaoCode))
+        if (identityCorrection is not null || profile.DisplayName != input.DisplayName.Trim() ||
+            profile.IataCode != Optional(input.IataCode) || profile.IcaoCode != Optional(input.IcaoCode))
             ClearRegistry(profile);
         // Publishing (step 2 of the public wizard) needs a green registry check or a manual
         // verification with its source.
         if (input.IsPublished && !input.IsVerified && profile.RegistryStatus != AirlineRegistryStatus.Found)
             return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid, "registry_check_required");
         // The verification is stamped again only when it starts or its evidence changes (1-N20).
-        var restamp = ManagedAirlineIdentityRules.RestampsVerification(stored, input) || claimVerification;
+        var restamp = ManagedAirlineIdentityRules.RestampsVerification(stored, input) || claimVerification ||
+            identityCorrection is not null;
         profile.DisplayName = input.DisplayName.Trim();
         profile.LegalName = Optional(input.LegalName);
         profile.Region = input.Region.Trim();
@@ -260,6 +309,10 @@ internal sealed class EfCommercialAirlineManagementStore(
         profile.SourceUrl = input.SourceUrl.Trim();
         profile.VerificationSourceUrl = Optional(input.VerificationSourceUrl);
         profile.IsPublished = input.IsPublished;
+        // The tax identifier is not evidence of the identity: it never clears the registry check or restamps.
+        var tax = input.TaxRegistrationOrNull();
+        profile.TaxRegistration = tax?.Number;
+        profile.TaxRegistrationCountryCode = tax?.CountryCode;
         if (!input.IsVerified)
         {
             profile.VerifiedAt = null;
@@ -272,17 +325,29 @@ internal sealed class EfCommercialAirlineManagementStore(
         }
         profile.UpdatedAt = DateTimeOffset.UtcNow;
         CommercialAuditWriter.Add(context, actorDatabaseId,
-            created ? "commercial.airline.created" : "commercial.airline.updated",
-            "commercial.airline_profiles", profile.PublicId, null,
+            identityCorrection is not null ? "commercial.airline.identity_corrected"
+                : created ? "commercial.airline.created" : "commercial.airline.updated",
+            "commercial.airline_profiles", profile.PublicId, identityCorrection,
+            new AuditFieldChangeData("airline.legal_name", identityCorrection is null ? null : beforeLegalName,
+                identityCorrection is null ? null : profile.LegalName),
+            new AuditFieldChangeData("airline.verification_source",
+                identityCorrection is null ? null : beforeVerificationSource,
+                identityCorrection is null ? null : profile.VerificationSourceUrl),
             new AuditFieldChangeData("airline.country", beforeCountry, profile.CountryCode),
             new AuditFieldChangeData("airline.iata", beforeIata, profile.IataCode),
             new AuditFieldChangeData("airline.icao", beforeIcao, profile.IcaoCode),
             new AuditFieldChangeData("airline.logo", beforeLogo, profile.LogoObjectKey),
             new AuditFieldChangeData("airline.published", beforePublished.ToString(), profile.IsPublished.ToString()),
             new AuditFieldChangeData("airline.verified", beforeVerified.ToString(),
-                (profile.VerifiedAt is not null).ToString()));
+                (profile.VerifiedAt is not null).ToString()),
+            new AuditFieldChangeData("airline.tax_registration", beforeTax, TaxDisplay(profile)));
         return null;
     }
+
+    /// <summary>The identifier as the audit shows it («RNC 1-31-23456-9»); a company's, never a person's document.</summary>
+    private static string? TaxDisplay(CommercialAirlineProfile profile) =>
+        profile is { TaxRegistration: { } number, TaxRegistrationCountryCode: { } country }
+            ? TaxRegistrations.Display(number, country) : null;
 
     private async Task<AirlineMutationResult?> LogoFailureAsync(ManagedAirlineInput input, CommercialAirlineProfile profile,
         CancellationToken cancellationToken)
@@ -408,8 +473,8 @@ internal sealed class EfCommercialAirlineManagementStore(
         profile.RegistryEntityUrl = check.EntityUrl is { Length: <= 300 } url &&
             url.StartsWith("https://www.wikidata.org/wiki/Q", StringComparison.Ordinal) ? url : null;
         profile.UpdatedAt = DateTimeOffset.UtcNow;
-        CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.airline.registry_checked",
-            "commercial.airline_profiles", profile.PublicId, null,
+        CommercialAuditWriter.Add(context, actorDatabaseId, RegistryCheckedAction,
+            ProfileEntity, profile.PublicId, null,
             new AuditFieldChangeData("airline.registry_status", before, status.ToString()),
             new AuditFieldChangeData("airline.registry_source", null, check.Source));
         await NotifyInternalAsync(profile.PublicId, cancellationToken);
@@ -438,7 +503,8 @@ internal sealed class EfCommercialAirlineManagementStore(
         profile.LogoObjectKey ?? AviamAirlineReference.LogoPaths.GetValueOrDefault(profile.SourceName), profile.SourceUrl, profile.VerificationSourceUrl,
         IsVerified(profile), profile.IsPublished,
         Convert.ToBase64String(profile.RowVersion), profile.RegistryStatus?.ToString(), profile.RegistrySource,
-        profile.RegistryCheckedAt, profile.RegistryEntityUrl, identityLocked);
+        profile.RegistryCheckedAt, profile.RegistryEntityUrl, identityLocked,
+        profile.TaxRegistration, profile.TaxRegistrationCountryCode);
 
     private static bool ValidVersion(string? version)
     {

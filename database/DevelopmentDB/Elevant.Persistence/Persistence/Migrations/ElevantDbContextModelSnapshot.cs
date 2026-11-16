@@ -959,6 +959,18 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(512)")
                         .HasColumnName("source_url");
 
+                    b.Property<string>("TaxRegistration")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("tax_registration");
+
+                    b.Property<string>("TaxRegistrationCountryCode")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .HasColumnType("char(2)")
+                        .HasColumnName("tax_registration_country_code")
+                        .IsFixedLength();
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
