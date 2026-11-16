@@ -4961,7 +4961,7 @@
         "tags": [
           "CommercialRequestsManagement"
         ],
-        "summary": "Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older\nclients exist (expand); a key without the version is rejected. Approval returns the contract.",
+        "summary": "Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older\nclients exist (expand); a key without the version is rejected. Approval returns the contract.\nAn approval checks the airline against the public registries first and answers 409\n`airline_not_in_public_registry` for NotFound, Defunct or Mismatch unless Superadministración\nverified the airline by hand with an official source (ADR-0023).",
         "operationId": "DecideCommercialRequest",
         "parameters": [
           {
@@ -38247,6 +38247,47 @@
           },
           "version": {
             "type": "string"
+          },
+          "taxRegistration": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialTaxRegistrationData"
+              }
+            ],
+            "nullable": true
+          },
+          "registryCheck": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialRegistryCheckData"
+              }
+            ],
+            "nullable": true
+          },
+          "manualVerification": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialManualVerificationData"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialManualVerificationData": {
+        "required": [
+          "verifiedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -38275,6 +38316,35 @@
           "websiteUrl": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialRegistryCheckData": {
+        "required": [
+          "checkedAt",
+          "fromCatalog",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "fromCatalog": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -38468,6 +38538,26 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialTaxRegistrationData": {
+        "required": [
+          "countryCode",
+          "display",
+          "number"
+        ],
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "display": {
             "type": "string"
           }
         },
@@ -57480,6 +57570,14 @@
               }
             ],
             "nullable": true
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -58285,6 +58383,14 @@
             "nullable": true
           },
           "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxRegistrationCountryCode": {
             "type": "string",
             "nullable": true
           }
