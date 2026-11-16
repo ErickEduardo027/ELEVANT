@@ -129,7 +129,7 @@ function ringLayers(scope, thresholds) {
   return [
     referenceLayer(`occ-reference-rings-${scope}`, 'line', REFERENCE_GROUPS.rings, {
       filter,
-      paint: { 'line-color': occColor('line'), 'line-width': 1 },
+      paint: { 'line-color': occColor('line-strong'), 'line-width': 1 },
       thresholds,
     }),
     referenceLayer(`occ-reference-ring-labels-${scope}`, 'symbol', REFERENCE_GROUPS.rings, {
@@ -154,6 +154,8 @@ function ringLayers(scope, thresholds) {
  * airports and the navaids read the OurAirports source; the mark of PUJ and the rings, the reference source.
  */
 export function referenceOverlay({ theme = 'dark', airports = true } = {}) {
+  // The night darkens the map in both themes (style/mapColors.js), so its colour is the theme's, never a token.
+  const { night } = mapColorsFor(theme);
   return {
     sources: {
       [REFERENCE_SOURCE]: { type: 'geojson' },
@@ -258,7 +260,7 @@ export function referenceOverlay({ theme = 'dark', airports = true } = {}) {
         slot: NIGHT_SLOT,
         source: NIGHT_SOURCE,
         filter: kindIs('night'),
-        paint: { 'fill-color': occColor('nav'), 'fill-opacity': 0.45 },
+        paint: { 'fill-color': night.color, 'fill-opacity': night.opacity },
         thresholds: { 'occ:maxThreshold': 'airfield' },
       }),
       referenceLayer('occ-night-edge', 'line', REFERENCE_GROUPS.daynight, {

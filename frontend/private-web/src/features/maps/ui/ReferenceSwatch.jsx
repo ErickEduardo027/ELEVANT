@@ -1,11 +1,12 @@
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { REFERENCE_IMAGE_SHAPES } from '../style/referenceImages';
+import { mapColorsFor } from '../style/mapColors';
 import { basemapColorsFor } from '../style/mapTheme';
 import { useOptionalTheme } from '../../shell/useTheme';
 import { SATELLITE_OPACITY } from '../../../services/satelliteService';
 
 // A swatch of the map legend for the references (PR M8, ui/referenceLegend.js), drawn as style/referenceLayers.js draws
-// them, on a patch of the map's sea: two range rings in --occ-line; an extended centreline with its ticks, thin in
+// them, on a patch of the map's sea: two range rings in --occ-line-strong (they read on the light sea too); an extended centreline with its ticks, thin in
 // --occ-line-strong, or wider in --occ-text for the runway in use; an airport of the region as a hollow ring and one of
 // today's flights as a filled dot; the chart symbols of the navaids (style/referenceImages.js) in --occ-muted; and the
 // night, a darker half of the land past its edge. The weather as traffic/weatherLayers.js draws it: the wind's arrow,
@@ -55,7 +56,7 @@ function Centreline({ colour, width }) {
 
 const DRAWINGS = Object.freeze({
   rings: (
-    <g style={{ fill: 'none', stroke: LINE, strokeWidth: 1 }}>
+    <g style={{ fill: 'none', stroke: STRONG, strokeWidth: 1 }}>
       <circle cx="10" cy="10" r="4" />
       <circle cx="10" cy="10" r="8" />
     </g>
@@ -70,7 +71,8 @@ const DRAWINGS = Object.freeze({
   night: (
     <>
       <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: 'var(--occ-swatch-land)' }} />
-      <path d="M11 0 C9 7 13 13 10.5 20 H18 A2 2 0 0 0 20 18 V2 A2 2 0 0 0 18 0 Z" style={{ fill: tokenColour('--occ-nav'), fillOpacity: 0.45 }} />
+      <path d="M11 0 C9 7 13 13 10.5 20 H18 A2 2 0 0 0 20 18 V2 A2 2 0 0 0 18 0 Z"
+        style={{ fill: 'var(--occ-swatch-night)', fillOpacity: 'var(--occ-swatch-night-opacity)' }} />
       <path d="M11 0 C9 7 13 13 10.5 20" style={{ fill: 'none', stroke: LINE, strokeWidth: 1 }} />
     </>
   ),
@@ -94,11 +96,14 @@ const DRAWINGS = Object.freeze({
 /** The swatch of a reference legend entry (ui/referenceLegend.js: `swatch`), hidden from assistive technology. */
 export default function ReferenceSwatch({ kind }) {
   // The land and the sea of the theme on screen (style/mapTheme.js), as the map paints them under the reference.
-  const { land, sea } = basemapColorsFor(useOptionalTheme()?.theme);
+  const theme = useOptionalTheme()?.theme;
+  const { land, sea } = basemapColorsFor(theme);
+  const { night } = mapColorsFor(theme);
   if (!Object.hasOwn(DRAWINGS, kind)) return null;
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="shrink-0"
-      data-reference-swatch={kind} style={{ '--occ-swatch-land': land }}>
+      data-reference-swatch={kind} style={{ '--occ-swatch-land': land, '--occ-swatch-night': night.color,
+        '--occ-swatch-night-opacity': night.opacity }}>
       {kind === 'night' ? null : <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: sea }} />}
       {DRAWINGS[kind]}
     </svg>

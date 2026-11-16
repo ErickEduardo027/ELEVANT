@@ -603,7 +603,9 @@ describe('MapLegend', () => {
     expect(swatch('counterparts').querySelector('circle').style.stroke).toBe('var(--occ-text)');
     expect(swatch('vor').querySelectorAll('path')).toHaveLength(3);
     expect(swatch('ndb').querySelectorAll('path')).toHaveLength(2);
-    expect(swatch('night').querySelector('path').style.fillOpacity).toBe('0.45');
+    // The night as the map paints it in the theme on screen (style/mapColors.js: night).
+    expect(swatch('night').style.getPropertyValue('--occ-swatch-night-opacity')).toBe('0.45');
+    expect(swatch('night').querySelector('path').style.fillOpacity).toBe('var(--occ-swatch-night-opacity)');
     expect([...legend.querySelectorAll('[data-reference-swatch]')].every(svg => svg.getAttribute('aria-hidden') === 'true')).toBe(true);
     // Alone, nothing sets them apart.
     expect(legend.querySelector('[data-legend-rule]')).toBeNull();

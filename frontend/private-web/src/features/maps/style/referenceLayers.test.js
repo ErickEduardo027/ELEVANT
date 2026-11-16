@@ -171,7 +171,9 @@ describe('reference layers', () => {
     const neutral = new Set(['nav', 'line', 'line-strong', 'faint', 'muted', 'text'].map(token => occColor(token)));
     const hues = new Set(['accent', 'warn', 'danger'].map(token => occColor(token)));
     // The region's airports keep the colours by kind of style/mapColors.js (owner request): tested below.
-    for (const layer of referenceOverlay().layers.filter(item => item.metadata['occ:group'] !== AIRPORTS_GROUP)) {
+    // The region's airports and the night keep the colours of style/mapColors.js: tested below.
+    for (const layer of referenceOverlay().layers.filter(item => item.metadata['occ:group'] !== AIRPORTS_GROUP
+      && item.id !== 'occ-night')) {
       for (const colour of paintColours(layer)) {
         expect(neutral.has(colour), `${layer.id} ${colour}`).toBe(true);
         expect(hues.has(colour), `${layer.id} ${colour}`).toBe(false);
@@ -189,7 +191,10 @@ describe('reference layers', () => {
     expect(centrelines.paint['line-color']).toEqual(['case', ['==', ['get', 'inUse'], true], occColor('text'), occColor('line-strong')]);
     expect(centrelines.paint['line-width']).toEqual(['case', ['==', ['get', 'inUse'], true], 1.5, 1]);
     // The night darkens the map a little and draws its edge as a thin line.
-    expect(layerOf('occ-night').paint).toEqual({ 'fill-color': occColor('nav'), 'fill-opacity': 0.45 });
+    expect(layerOf('occ-night').paint).toEqual({ 'fill-color': MAP_COLORS.dark.night.color, 'fill-opacity': 0.45 });
+    // In the light theme it darkens the light map too.
+    expect(referenceOverlay({ theme: 'light' }).layers.find(layer => layer.id === 'occ-night').paint)
+      .toEqual({ 'fill-color': MAP_COLORS.light.night.color, 'fill-opacity': MAP_COLORS.light.night.opacity });
     expect(layerOf('occ-night-edge').paint).toEqual({ 'line-color': occColor('line'), 'line-width': 1 });
     // Over the sea the shade barely darkens the map: its word, on the night side of the edge, says where the night is.
     expect(layerOf('occ-night-label')).toMatchObject({ filter: ['match', ['get', 'kind'], ['nightLabel'], true, false],
