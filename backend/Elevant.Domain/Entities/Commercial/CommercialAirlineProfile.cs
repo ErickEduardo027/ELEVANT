@@ -19,6 +19,14 @@ public sealed class CommercialAirlineProfile : AuditableEntity
     public string? VerificationSourceUrl { get; set; }
     public bool IsPublished { get; set; }
 
+    /// <summary>
+    /// The airline's tax identifier as Superadministración recorded it (canonical, see TaxRegistrations: an RNC
+    /// as its 9 digits); the public request prefills it. It is not part of the verified identity.
+    /// </summary>
+    public string? TaxRegistration { get; set; }
+    /// <summary>ISO 3166-1 alpha-2 country that issued <see cref="TaxRegistration"/>.</summary>
+    public string? TaxRegistrationCountryCode { get; set; }
+
     /// <summary>Last public-registry check (ADR-0023); cleared when the name or codes change.</summary>
     public AirlineRegistryStatus? RegistryStatus { get; set; }
     public string? RegistrySource { get; set; }

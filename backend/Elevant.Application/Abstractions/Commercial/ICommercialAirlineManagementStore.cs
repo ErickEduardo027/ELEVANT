@@ -1,14 +1,23 @@
+using System.Text.Json.Serialization;
+using Elevant.Domain.Validation;
+
 namespace Elevant.Application.Abstractions.Commercial;
 
 /// <param name="RegistryStatus">Last public-registry check (ADR-0023): Found, Mismatch, Defunct or NotFound; null when never checked or stale.</param>
 /// <param name="IdentityLocked">The airline already operates with AVIAM: its legal name, codes and verification are fixed (1-N20).</param>
+/// <param name="TaxRegistration">
+/// The airline's tax identifier (an RNC as its 9 digits) with <paramref name="TaxRegistrationCountryCode"/>; both are
+/// omitted when null so screens released before them, which reject unknown keys, keep reading (expand phase).
+/// </param>
 public sealed record ManagedAirlineData(
     Guid Id, string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
     bool IsVerified, bool IsPublished, string Version,
     string? RegistryStatus = null, string? RegistrySource = null, DateTimeOffset? RegistryCheckedAt = null,
-    string? RegistryEntityUrl = null, bool IdentityLocked = false);
+    string? RegistryEntityUrl = null, bool IdentityLocked = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaxRegistration = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaxRegistrationCountryCode = null);
 
 /// <summary>What a registry check is about; the record step refuses it if these changed meanwhile.</summary>
 public sealed record AirlineRegistryKey(Guid Id, string Name, string? IataCode, string? IcaoCode);
@@ -16,13 +25,34 @@ public sealed record AirlineRegistryKey(Guid Id, string Name, string? IataCode, 
 /// <summary>The stored airline after a registry check, with the full verdict for the screen.</summary>
 public sealed record AirlineRegistryCheckResult(ManagedAirlineData Airline, AirlineRegistryCheck Check);
 
+/// <remarks>
+/// <c>TaxRegistration</c> is the airline's optional tax identifier; the saved profile keeps exactly what the form
+/// sends (empty clears it). With it, <c>TaxRegistrationCountryCode</c> is required; a Dominican airline's is an RNC
+/// (ADR-0020). It is not part of the verified identity: changing it never voids the registry check or the manual
+/// verification.
+/// </remarks>
 public sealed record ManagedAirlineInput(
     string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
-    bool IsVerified, bool IsPublished, string? Version)
+    bool IsVerified, bool IsPublished, string? Version,
+    string? TaxRegistration = null, string? TaxRegistrationCountryCode = null)
 {
+    /// <summary>The canonical tax identifier, or null when none was given.</summary>
+    public TaxRegistration? TaxRegistrationOrNull() =>
+        TaxRegistrations.Normalize(TaxRegistration, TaxRegistrationCountryCode);
+
+    /// <summary>
+    /// Empty, or a valid identifier with its country; a Dominican airline's identifier is a Dominican RNC.
+    /// </summary>
+    public bool HasValidTaxRegistration() =>
+        string.IsNullOrWhiteSpace(TaxRegistration) ||
+        TaxRegistrationOrNull() is { } tax &&
+        (CountryCode?.Trim().ToUpperInvariant() != TaxRegistrations.DominicanRepublic ||
+            tax.CountryCode == TaxRegistrations.DominicanRepublic);
+
     public bool IsValid() =>
+        HasValidTaxRegistration() &&
         Required(SourceName, 160) && Required(DisplayName, 160) &&
         Optional(LegalName, 200) && Required(Region, 64) &&
         Code(CountryCode, 2, lettersOnly: true) &&

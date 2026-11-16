@@ -1,6 +1,6 @@
 namespace Elevant.Infrastructure.Persistence.Seed;
 
-// Research leads for the historical AVIAM list; only Verified entries have IATA identity evidence.
+// Research leads for the historical AVIAM list; only Verified entries have designator evidence (IATA or OpenFlights).
 internal static class AviamAirlineReference
 {
     // AVIAM's client list is historical. These links are research leads, not proof
@@ -60,7 +60,13 @@ internal static class AviamAirlineReference
         ["LANPERU"] = ("PE", "https://www.latam.com/"),
         ["WINGO"] = ("CO", "https://www.wingo.com/"),
     };
-    public static readonly IReadOnlyDictionary<string, (string Legal, string Iata, string Icao, string Source)> Verified = new Dictionary<string, (string Legal, string Iata, string Icao, string Source)>(StringComparer.Ordinal)
+    // IATA member list entries (the first six) and, for the rest, the codes of the repository's offline OpenFlights
+    // registry (backend/Elevant.Infrastructure/Integrations/AirlineRegistry/openflights-airlines.tsv, ODbL 1.0), matched
+    // by name. The legal name is the operator's registered name only where it is well established, otherwise the
+    // brand. A null IATA means the registry gives none. Airlines the registry does not confirm stay out: AZUR AIR,
+    // EVELOP AIRLINES, IKAR AIRLINES, LEVEL-IBERIA, THOMAS COOK SCANDINAVIA, TRAVEL SERVICE POLSKA, TUIFLY BELGIUM,
+    // TUIFLY NETHERLANDS (its OR/TFL designators are ARKEFLY's), WAMOS AIR, AIR CANADA ROUGE, LATIN AMERICAN WINGS, WINGO.
+    public static readonly IReadOnlyDictionary<string, (string Legal, string? Iata, string Icao, string Source)> Verified = new Dictionary<string, (string Legal, string? Iata, string Icao, string Source)>(StringComparer.Ordinal)
     {
         ["AIR FRANCE"] = ("Société Air France", "AF", "AFR", "https://www.iata.org/en/about/members/airline-list/air-france/7/"),
         ["BRITISH AIRWAYS"] = ("British Airways Plc", "BA", "BAW", "https://www.iata.org/en/about/members/airline-list/british-airways/52/"),
@@ -68,6 +74,35 @@ internal static class AviamAirlineReference
         ["AIR CANADA"] = ("Air Canada", "AC", "ACA", "https://www.iata.org/en/about/members/airline-list/air-canada/21/"),
         ["AEROLINEAS ARGENTINAS"] = ("Aerolineas Argentinas S.A.", "AR", "ARG", "https://www.iata.org/en/about/members/airline-list/aerolineas-argentinas/13/"),
         ["AVIANCA"] = ("Aerovías del Continente Americano, S.A. AVIANCA", "AV", "AVA", "https://www.iata.org/en/about/members/airline-list/avianca/6/"),
+        ["AIR CARAIBES"] = ("Air Caraïbes", "TX", "FWI", "https://openflights.org/data"),
+        ["AIR EUROPA"] = ("Air Europa Líneas Aéreas, S.A.", "UX", "AEA", "https://openflights.org/data"),
+        ["ARKEFLY"] = ("Arkefly", "OR", "TFL", "https://openflights.org/data"),
+        ["CONDOR"] = ("Condor Flugdienst GmbH", "DE", "CFG", "https://openflights.org/data"),
+        ["EDELWEISS AIR"] = ("Edelweiss Air AG", "WK", "EDW", "https://openflights.org/data"),
+        ["EUROWINGS"] = ("Eurowings GmbH", "EW", "EWG", "https://openflights.org/data"),
+        ["I-FLY AIRLINES"] = ("I-Fly", "H5", "RSY", "https://openflights.org/data"),
+        ["NORWIND AIRLINES"] = ("NordWind Airlines", null, "NWS", "https://openflights.org/data"),
+        ["ORBES PORTUGAL"] = ("Orbest", null, "OBS", "https://openflights.org/data"),
+        ["ORENAIR"] = ("Orenburg Airlines", "R2", "ORB", "https://openflights.org/data"),
+        ["ROSSIYA AIRLINES"] = ("Rossiya Airlines", "FV", "SDM", "https://openflights.org/data"),
+        ["THOMSON AIRWAYS"] = ("Thomson Airways", "BY", "TOM", "https://openflights.org/data"),
+        ["VIM AIRLINES"] = ("VIM Airlines", "NN", "MOV", "https://openflights.org/data"),
+        ["XL AIRWAYS FRANCE"] = ("XL Airways France", "SE", "SEU", "https://openflights.org/data"),
+        ["AIR TRANSAT"] = ("Air Transat A.T. Inc.", "TS", "TSC", "https://openflights.org/data"),
+        ["ALLEGIANT AIR"] = ("Allegiant Air, LLC", "G4", "AAY", "https://openflights.org/data"),
+        ["DELTA AIRLINES"] = ("Delta Air Lines, Inc.", "DL", "DAL", "https://openflights.org/data"),
+        ["FRONTIER AIRLINES"] = ("Frontier Airlines, Inc.", "F9", "FFT", "https://openflights.org/data"),
+        ["JETBLUE"] = ("JetBlue Airways Corporation", "B6", "JBU", "https://openflights.org/data"),
+        ["NORWEGIAN AIR"] = ("Norwegian Air Shuttle ASA", "DY", "NAX", "https://openflights.org/data"),
+        ["SOUTHWEST AIRLINES"] = ("Southwest Airlines Co.", "WN", "SWA", "https://openflights.org/data"),
+        ["SUNCOUNTRY"] = ("Sun Country Airlines", "SY", "SCX", "https://openflights.org/data"),
+        ["SUNWING AIRLINES"] = ("Sunwing Airlines Inc.", "WG", "SWG", "https://openflights.org/data"),
+        ["SWIFT AIR"] = ("Swift Air", null, "SWQ", "https://openflights.org/data"),
+        ["UNITED AIRLINES"] = ("United Airlines, Inc.", "UA", "UAL", "https://openflights.org/data"),
+        ["XTRA AIRWAYS"] = ("Xtra Airways", "XP", "CXP", "https://openflights.org/data"),
+        ["WEST JET AIRLINES"] = ("WestJet Airlines Ltd.", "WS", "WJA", "https://openflights.org/data"),
+        ["COPA AIRLINES"] = ("Compañía Panameña de Aviación, S.A.", "CM", "CMP", "https://openflights.org/data"),
+        ["GOL"] = ("GOL Linhas Aéreas S.A.", "G3", "GLO", "https://openflights.org/data"),
     };
     // Official-site icons are checked into both web clients. A named AVIAM reference
     // tile is used when the historical brand has no retrievable official icon.
