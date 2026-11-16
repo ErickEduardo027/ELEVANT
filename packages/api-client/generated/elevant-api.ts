@@ -3857,6 +3857,8 @@ export interface ManagedAirlineInput {
   taxRegistration?: string | null;
   /** @nullable */
   taxRegistrationCountryCode?: string | null;
+  /** @nullable */
+  identityCorrectionReason?: string | null;
 }
 
 export interface ManagedContractStationData {
@@ -8995,7 +8997,10 @@ export const getUpdateManagedAirlineUrl = (id: string,) => {
 /**
  * @summary Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is
 optional while older clients exist (expand). The legal name, codes and verification of an
-airline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20).
+airline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20), unless the body
+carries `identityCorrectionReason` (10 to 500 characters) and keeps the verification with its source: the
+correction is audited as `commercial.airline.identity_corrected` and contracts, invoices and requests keep
+the identity they were made with.
  */
 export const updateManagedAirline = async (id: string,
     managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {

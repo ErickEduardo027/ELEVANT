@@ -251,24 +251,35 @@ internal sealed class EfCommercialAirlineManagementStore(
             return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict);
         if (!profile.SourceName.Equals(input.SourceName.Trim(), StringComparison.OrdinalIgnoreCase))
             return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid);
-        // 1-N20: an operating airline keeps its legal name, codes and verification.
+        // 1-N20: an operating airline keeps its legal name, codes and verification, unless a superadministrator
+        // corrects them with a reason and an official source. Contracts, invoices and requests keep their snapshots.
+        string? correction = null;
         if (await IsLockedAsync(profile, cancellationToken) &&
             ManagedAirlineIdentityRules.ChangesIdentity(Identity(profile), input))
-            return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict, GovernanceAccountIssues.AirlineIdentityLocked);
+        {
+            if (input.CorrectionReason() is not { } reason)
+                return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict, GovernanceAccountIssues.AirlineIdentityLocked);
+            if (!input.IsVerified)
+                return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid,
+                    GovernanceAccountIssues.IdentityCorrectionRequiresVerification);
+            correction = reason;
+        }
         if (await LogoFailureAsync(input, profile, cancellationToken) is { } logoFailure) return logoFailure;
         // ADR-0023: a superadministrator who confirms a verification Contratos stamped takes it over, so the
         // profile counts as verified by hand by Superadministración (the exception to the registry rule).
         var claim = input.IsVerified && profile.VerifiedByAccountId is long verifier && verifier != actorDatabaseId &&
             !await IsSuperAdministratorAccountAsync(verifier, cancellationToken);
-        if (Apply(actorDatabaseId, profile, input, created: false, claim) is { } failure) return failure;
+        if (Apply(actorDatabaseId, profile, input, created: false, claim, correction) is { } failure) return failure;
         await NotifyInternalAsync(profile.PublicId, cancellationToken);
         return AirlineMutationResult.Success(Map(profile, false));
     }
 
     /// <summary>Copies the form into the profile with its audit; a refused publication returns its failure.</summary>
     private AirlineMutationResult? Apply(long actorDatabaseId, CommercialAirlineProfile profile, ManagedAirlineInput input,
-        bool created, bool claimVerification = false)
+        bool created, bool claimVerification = false, string? identityCorrection = null)
     {
+        var beforeLegalName = profile.LegalName;
+        var beforeVerificationSource = profile.VerificationSourceUrl;
         var beforeCountry = profile.CountryCode;
         var beforeIata = profile.IataCode;
         var beforeIcao = profile.IcaoCode;
@@ -278,15 +289,16 @@ internal sealed class EfCommercialAirlineManagementStore(
         var beforeTax = TaxDisplay(profile);
         var stored = Identity(profile);
         // A registry check is about the name and codes it saw; changing them makes it stale.
-        if (profile.DisplayName != input.DisplayName.Trim() || profile.IataCode != Optional(input.IataCode) ||
-            profile.IcaoCode != Optional(input.IcaoCode))
+        if (identityCorrection is not null || profile.DisplayName != input.DisplayName.Trim() ||
+            profile.IataCode != Optional(input.IataCode) || profile.IcaoCode != Optional(input.IcaoCode))
             ClearRegistry(profile);
         // Publishing (step 2 of the public wizard) needs a green registry check or a manual
         // verification with its source.
         if (input.IsPublished && !input.IsVerified && profile.RegistryStatus != AirlineRegistryStatus.Found)
             return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid, "registry_check_required");
         // The verification is stamped again only when it starts or its evidence changes (1-N20).
-        var restamp = ManagedAirlineIdentityRules.RestampsVerification(stored, input) || claimVerification;
+        var restamp = ManagedAirlineIdentityRules.RestampsVerification(stored, input) || claimVerification ||
+            identityCorrection is not null;
         profile.DisplayName = input.DisplayName.Trim();
         profile.LegalName = Optional(input.LegalName);
         profile.Region = input.Region.Trim();
@@ -313,8 +325,14 @@ internal sealed class EfCommercialAirlineManagementStore(
         }
         profile.UpdatedAt = DateTimeOffset.UtcNow;
         CommercialAuditWriter.Add(context, actorDatabaseId,
-            created ? "commercial.airline.created" : "commercial.airline.updated",
-            "commercial.airline_profiles", profile.PublicId, null,
+            identityCorrection is not null ? "commercial.airline.identity_corrected"
+                : created ? "commercial.airline.created" : "commercial.airline.updated",
+            "commercial.airline_profiles", profile.PublicId, identityCorrection,
+            new AuditFieldChangeData("airline.legal_name", identityCorrection is null ? null : beforeLegalName,
+                identityCorrection is null ? null : profile.LegalName),
+            new AuditFieldChangeData("airline.verification_source",
+                identityCorrection is null ? null : beforeVerificationSource,
+                identityCorrection is null ? null : profile.VerificationSourceUrl),
             new AuditFieldChangeData("airline.country", beforeCountry, profile.CountryCode),
             new AuditFieldChangeData("airline.iata", beforeIata, profile.IataCode),
             new AuditFieldChangeData("airline.icao", beforeIcao, profile.IcaoCode),

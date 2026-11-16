@@ -30,14 +30,24 @@ public sealed record AirlineRegistryCheckResult(ManagedAirlineData Airline, Airl
 /// sends (empty clears it). With it, <c>TaxRegistrationCountryCode</c> is required; a Dominican airline's is an RNC
 /// (ADR-0020). It is not part of the verified identity: changing it never voids the registry check or the manual
 /// verification.
+/// <c>IdentityCorrectionReason</c> (optional, 10 to 500 characters) lets a superadministrator correct the legal name,
+/// codes and verification source of an airline that already operates with AVIAM, which are otherwise fixed (1-N20).
 /// </remarks>
 public sealed record ManagedAirlineInput(
     string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
     bool IsVerified, bool IsPublished, string? Version,
-    string? TaxRegistration = null, string? TaxRegistrationCountryCode = null)
+    string? TaxRegistration = null, string? TaxRegistrationCountryCode = null,
+    string? IdentityCorrectionReason = null)
 {
+    public const int MinimumCorrectionReasonLength = 10;
+    public const int MaximumCorrectionReasonLength = 500;
+
+    /// <summary>The trimmed reason of an identity correction, or null when the save is not one.</summary>
+    public string? CorrectionReason() =>
+        string.IsNullOrWhiteSpace(IdentityCorrectionReason) ? null : IdentityCorrectionReason.Trim();
+
     /// <summary>The canonical tax identifier, or null when none was given.</summary>
     public TaxRegistration? TaxRegistrationOrNull() =>
         TaxRegistrations.Normalize(TaxRegistration, TaxRegistrationCountryCode);
@@ -53,6 +63,8 @@ public sealed record ManagedAirlineInput(
 
     public bool IsValid() =>
         HasValidTaxRegistration() &&
+        (CorrectionReason() is not { } reason ||
+            reason.Length is >= MinimumCorrectionReasonLength and <= MaximumCorrectionReasonLength) &&
         Required(SourceName, 160) && Required(DisplayName, 160) &&
         Optional(LegalName, 200) && Required(Region, 64) &&
         Code(CountryCode, 2, lettersOnly: true) &&

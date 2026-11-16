@@ -51,6 +51,8 @@ internal static class SafeAuditChanges
         "request.tax_registration", "organization.tax_registration",
         // The airline catalog profile's tax identifier Superadministración records (the public request prefills it).
         "airline.tax_registration",
+        // A superadministrator's correction of an operating airline's identity (with its reason in the entry).
+        "airline.legal_name", "airline.verification_source",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

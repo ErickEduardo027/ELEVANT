@@ -121,3 +121,8 @@ Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
   (1-30/1-31) que la enriquecida copia a fichas sin identificador solo con
   `AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations=true`; el API no arranca con él fuera de
   Development o Test, y `appsettings.Production.json` lo deja en `false`.
+- **Corrección auditada de una aerolínea que opera.** Con `identityCorrectionReason` (10 a 500 caracteres) y la
+  verificación con su fuente, un superadministrador corrige la razón social, el país, los códigos y la fuente de
+  una ficha bloqueada (1-N20). Se audita como `commercial.airline.identity_corrected` (antes, después y motivo),
+  reestampa la verificación a su nombre y limpia el check del registro. No toca `ref.airlines`, contratos,
+  facturas ni solicitudes: la edición verificada nunca lo hizo y esos registros conservan su instantánea.

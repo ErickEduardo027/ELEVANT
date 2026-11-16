@@ -75,7 +75,10 @@ public sealed class CommercialAirlineManagementController(
     /// <summary>
     /// Saves the profile with the <c>version</c> the superadministrator saw. The Idempotency-Key is
     /// optional while older clients exist (expand). The legal name, codes and verification of an
-    /// airline that already operates with AVIAM are fixed (<c>airline_identity_locked</c>, 1-N20).
+    /// airline that already operates with AVIAM are fixed (<c>airline_identity_locked</c>, 1-N20), unless the body
+    /// carries <c>identityCorrectionReason</c> (10 to 500 characters) and keeps the verification with its source: the
+    /// correction is audited as <c>commercial.airline.identity_corrected</c> and contracts, invoices and requests keep
+    /// the identity they were made with.
     /// </summary>
     [HttpPut("{id:guid}", Name = "UpdateManagedAirline")]
     [RequestSizeLimit(32768)]
@@ -118,6 +121,8 @@ public sealed class CommercialAirlineManagementController(
         CatalogMutationFailure.Forbidden => Forbid(),
         CatalogMutationFailure.Invalid when code == "registry_check_required" =>
             Coded(400, "Para publicarla hace falta el registro público en verde o una verificación manual.", code),
+        CatalogMutationFailure.Invalid when code == "identity_correction_requires_verification" =>
+            Coded(400, "La corrección de la identidad exige la verificación con su fuente oficial.", code),
         CatalogMutationFailure.Invalid => Coded(400, "La ficha de la aerolínea no es válida.", code ?? "invalid_airline"),
         CatalogMutationFailure.Conflict when code == "airline_identity_locked" =>
             Coded(409, "La identidad de una aerolínea que ya opera con AVIAM no puede cambiarse.", code),

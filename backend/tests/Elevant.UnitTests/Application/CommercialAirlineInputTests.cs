@@ -56,6 +56,18 @@ public sealed class CommercialAirlineInputTests
         Assert.Equal(("B85850394", "ES"), (input.TaxRegistrationOrNull()!.Number, input.TaxRegistrationOrNull()!.CountryCode));
     }
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("   ", true)]
+    [InlineData("Demasiado", false)]
+    [InlineData("Datos de prueba reemplazados.", true)]
+    public void AnIdentityCorrectionReasonHasTenToFiveHundredCharacters(string? reason, bool valid)
+    {
+        Assert.Equal(valid, (Valid() with { IdentityCorrectionReason = reason }).IsValid());
+        Assert.False((Valid() with { IdentityCorrectionReason = new string('x', 501) }).IsValid());
+        Assert.Null((Valid() with { IdentityCorrectionReason = "   " }).CorrectionReason());
+    }
+
     private static ManagedAirlineInput Valid() => new(
         "TEST AIRWAYS", "Test Airways", "Test Airways Ltd.", "Caribe", "DO",
         "TA", "TST", "/assets/airlines/test-airways.svg",

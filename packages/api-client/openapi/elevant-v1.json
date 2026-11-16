@@ -3540,7 +3540,7 @@
         "tags": [
           "CommercialAirlineManagement"
         ],
-        "summary": "Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is\noptional while older clients exist (expand). The legal name, codes and verification of an\nairline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20).",
+        "summary": "Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is\noptional while older clients exist (expand). The legal name, codes and verification of an\nairline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20), unless the body\ncarries `identityCorrectionReason` (10 to 500 characters) and keeps the verification with its source: the\ncorrection is audited as `commercial.airline.identity_corrected` and contracts, invoices and requests keep\nthe identity they were made with.",
         "operationId": "UpdateManagedAirline",
         "parameters": [
           {
@@ -48116,6 +48116,10 @@
             "nullable": true
           },
           "taxRegistrationCountryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "identityCorrectionReason": {
             "type": "string",
             "nullable": true
           }
