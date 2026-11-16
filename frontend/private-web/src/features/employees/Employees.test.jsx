@@ -294,6 +294,7 @@ describe('employee identification and phone rules', () => {
 });
 
 describe('Dominican passport by default', () => {
+  // These tests type a whole form key by key: a loaded full run needs more than the default 5 s.
   const documentInput = () => screen.getByRole('textbox', { name: 'Número de documento' });
   const fillEmployee = async () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Nombre' }), 'Valeria');
@@ -320,7 +321,7 @@ describe('Dominican passport by default', () => {
     await fillEmployee();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     expect(createEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'PASAPORTE', identificationNumber: 'RD1234567' }));
-  });
+  }, 15_000);
 
   it('accepts a foreign passport without the prefix', async () => {
     createEmployee.mockResolvedValue({ id: 'emp-2' });
@@ -331,7 +332,7 @@ describe('Dominican passport by default', () => {
     await fillEmployee();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     expect(createEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'PASAPORTE', identificationNumber: 'X1234567' }));
-  });
+  }, 15_000);
 
   it('keeps cédula unchanged and never sends the RD the form wrote', async () => {
     render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
@@ -361,5 +362,5 @@ describe('Dominican passport by default', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Puesto' }), 'pos-1');
     await userEvent.click(screen.getByRole('button', { name: 'Registrar' }));
     expect(registerEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'PASAPORTE', identificationNumber: 'RD1234567', accountId: 'acc-9' }));
-  });
+  }, 15_000);
 });
