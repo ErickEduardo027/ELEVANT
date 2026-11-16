@@ -11,6 +11,7 @@ import { useOccResource } from '../admin-occ/live/useOccResource';
 import { useOptionalOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useLanguage } from '../../i18n/LanguageScope';
 import { createRenderClock } from './core/frameLoop';
+import { MAP_PERMISSIONS } from './mapPermissions';
 import { createMotionStore } from './traffic/motionStore';
 import { buildRoute } from './traffic/routeFeatures';
 import {
@@ -26,9 +27,8 @@ import { createTrailStore, trailFeatures } from './traffic/trailStore';
 // traffic/motionStore.js), which estimates the ELEVANT flights without a live fix (Decision F-1, the demo flight) and
 // gives the map its frame-by-frame motion on the render clock (core/frameLoop.js); no read is added for it.
 
-/** Any of them lets an OCC account read the map (contracts 1.3, OccMapAccess). */
-export const MAP_PERMISSIONS = Object.freeze(['operations.dashboard.read', 'operations.flight_monitoring.read',
-  'operations.positions_map.read', 'operations.planning.read']);
+// Any of them lets an OCC account read the map (contracts 1.3, OccMapAccess); the list is maps/mapPermissions.js's.
+export { MAP_PERMISSIONS };
 
 /**
  * The pace of the air picture: the `refreshAfterSeconds` of its last answer, never faster (10 s before the first one);
@@ -308,9 +308,9 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   const refreshFailed = pictureRead.refreshFailed || flightsRead.refreshFailed;
 
   // What OccMap draws of the traffic, with the motion its frames sample and the route they rebuild (core/OccMap.jsx: its
-  // `traffic` prop).
+  // `traffic` prop), and the map flights, whose counterparts the references emphasise (PR M8).
   const traffic = useMemo(() => Object.freeze({ aircraft: situation.aircraft, trails, route, routeAt,
-    source: situation.source, motion }), [motion, route, routeAt, situation, trails]);
+    source: situation.source, motion, flights: situation.flights }), [motion, route, routeAt, situation, trails]);
 
   return useMemo(() => ({
     status, picture, flights, situation, trails, track: chosenTrack, target, route, routeAt, telemetry, clock,

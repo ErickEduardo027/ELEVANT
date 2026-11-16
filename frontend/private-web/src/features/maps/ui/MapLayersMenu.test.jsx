@@ -6,6 +6,7 @@ import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { LAYERS_STORAGE_KEY } from '../core/layersMenu';
 import OccMap from '../core/OccMap';
+import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import {
   createAirPicture, createEstimates, createMapFlights, TRAFFIC_HEX as HEX, TRAFFIC_NOON,
 } from '../testing/trafficFixtures';
@@ -13,6 +14,7 @@ import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situa
 import MapDock from './MapDock';
 import MapLayersMenu from './MapLayersMenu';
 import MapLegend from './MapLegend';
+import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
 
@@ -92,15 +94,17 @@ describe('MapLayersMenu', () => {
     expect(layersButton()).toHaveAttribute('aria-expanded', 'false');
     cleanup();
 
-    // A map that shows no menu leaves L alone, and so does a map without traffic, which has no layers to offer.
+    // A map that shows no menu leaves L alone.
     const plain = renderMap({ menu: false });
     expect(press(plain.map.getCanvas(), 'l').defaultPrevented).toBe(false);
     cleanup();
+    // A map without traffic still has the references of PR M8 to offer: L opens their group alone.
     const empty = render(<OccMap defaultView="region"><MapDock><MapLayersMenu /></MapDock></OccMap>);
     const bare = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(bare, 'style.load'));
-    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
-    expect(press(bare.getCanvas(), 'l').defaultPrevented).toBe(false);
+    expect(press(bare.getCanvas(), 'l').defaultPrevented).toBe(true);
+    expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
+    expect(trafficGroup()).toBeNull();
     empty.unmount();
 
     // A map that cannot draw shows its fallback list, without the menu.
@@ -181,6 +185,91 @@ describe('MapLayersMenu', () => {
     await user.click(checkbox('Ruta del vuelo elegido'));
     expect(['occ-route-flown', 'occ-route-flown-estimated', 'occ-route-remaining', 'occ-route-marks']
       .map(id => visibilityOf(second.map, id))).toEqual(['none', 'none', 'none', 'none']);
+  });
+
+  it('lists the Referencias group after Tráfico, only with its layers in the style, and its keys work', async () => {
+    const user = userEvent.setup();
+    const { map } = renderMap();
+    await user.click(layersButton());
+    // Below Tráfico, the five keys of design E7 with the defaults of the Región view.
+    const groups = within(screen.getByRole('group', { name: 'Capas del mapa' })).getAllByRole('group');
+    expect(groups.map(group => group.querySelector('legend').textContent))
+      .toEqual(['Tráfico', 'Referencias']);
+    const references = screen.getByRole('group', { name: 'Referencias' });
+    const boxes = within(references).getAllByRole('checkbox');
+    expect(boxes.map(box => box.labels[0].textContent)).toEqual(['Aeropuertos de la región', 'Anillos de distancia',
+      'Ejes de pista', 'Radioayudas', 'Día y noche']);
+    expect(boxes.map(box => box.checked)).toEqual([true, true, false, false, true]);
+    expect(boxes.some(box => box.disabled)).toBe(false);
+    // Turning the rings off hides their layers and keeps the choice; turning the centrelines on shows theirs.
+    expect(visibilityOf(map, 'occ-reference-rings-region')).toBe('visible');
+    await user.click(within(references).getByRole('checkbox', { name: 'Anillos de distancia' }));
+    for (const id of ['occ-reference-rings-region', 'occ-reference-ring-labels-region', 'occ-reference-rings-approach']) {
+      expect(visibilityOf(map, id), id).toBe('none');
+    }
+    await user.click(within(references).getByRole('checkbox', { name: 'Ejes de pista' }));
+    expect(visibilityOf(map, 'occ-reference-centrelines')).toBe('visible');
+    expect(window.localStorage.getItem(LAYERS_STORAGE_KEY)).toBe('{"centrelines":true,"rings":false}');
+    // The mark of PUJ is no key of the menu: it always shows.
+    expect(visibilityOf(map, 'occ-reference-arp')).not.toBe('none');
+    cleanup();
+
+    // A map whose style has no reference layers (the menu reads the keys the map offers) shows no Referencias group.
+    render(
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, engineStatus: 'ready', layersMenuOpen: true,
+        layers: { keys: ['traffic.aviam', 'traffic.other'], values: { 'traffic.aviam': true, 'traffic.other': true } } }}>
+        <MapLayersMenu />
+      </OccMapContext.Provider>,
+    );
+    expect(screen.getByRole('group', { name: 'Tráfico' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Referencias' })).not.toBeInTheDocument();
+  });
+
+  it('lists the Meteorología group after Referencias on a map with weather, and says why a key on shows nothing', async () => {
+    const user = userEvent.setup();
+    // The weather of PR M8, synthetic: the aerodrome weather without a METAR; GIBS simulated, the clouds without a time.
+    const service = createSimulatedSatelliteImagery({ goes: null, imerg: { time: '2026-11-13T14:30:00Z' } });
+    const weather = { status: 'success', apiStatus: 'Unavailable', data: null };
+    render(
+      <OccMap defaultView="region" weather={weather} satelliteService={service}>
+        <MapDock><MapLayersMenu /></MapDock>
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    await user.click(layersButton());
+    const groups = within(screen.getByRole('group', { name: 'Capas del mapa' })).getAllByRole('group');
+    expect(groups.map(group => group.querySelector('legend').textContent)).toEqual(['Referencias', 'Meteorología']);
+    const meteorology = screen.getByRole('group', { name: 'Meteorología' });
+    const boxes = within(meteorology).getAllByRole('checkbox');
+    // The keys of design E7 in Región: the satellite images off, the wind off (it is on in Aproximación and Aeródromo).
+    expect(boxes.map(box => box.labels[0].textContent)).toEqual(['Nubes por satélite', 'Lluvia estimada', 'Viento en pista']);
+    expect(boxes.map(box => box.checked)).toEqual([false, false, false]);
+    expect(boxes.map(box => box.getAttribute('aria-describedby'))).toEqual([null, null, null]);
+    // Turned on: GIBS is read; an image without a time says so, the other says the time of its image, and is shown.
+    await user.click(within(meteorology).getByRole('checkbox', { name: 'Nubes por satélite' }));
+    await user.click(within(meteorology).getByRole('checkbox', { name: 'Lluvia estimada' }));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 0); }));
+    expect(within(meteorology).getByRole('checkbox', { name: 'Nubes por satélite' }))
+      .toHaveAccessibleDescription('No hay imagen en este momento.');
+    expect(within(meteorology).getByRole('checkbox', { name: 'Lluvia estimada' })).toHaveAccessibleDescription('Imagen de las 10:30');
+    expect(visibilityOf(map, 'occ-weather-goes-image')).toBe('none');
+    expect(visibilityOf(map, 'occ-weather-imerg-image')).toBe('visible');
+    // The wind on, with an aerodrome weather that has none: the menu says the state of that weather.
+    await user.click(within(meteorology).getByRole('checkbox', { name: 'Viento en pista' }));
+    expect(within(meteorology).getByRole('checkbox', { name: 'Viento en pista' }))
+      .toHaveAccessibleDescription('No hay clima del aeródromo en este momento.');
+    // The choices are kept as differences from the view on screen.
+    expect(JSON.parse(window.localStorage.getItem(LAYERS_STORAGE_KEY))).toEqual({
+      'weather.goes': true, 'weather.imerg': true, 'weather.wind': true,
+    });
+    cleanup();
+
+    // A map without weather offers no Meteorología group.
+    render(<OccMap defaultView="region"><MapDock><MapLayersMenu /></MapDock></OccMap>);
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    await user.click(layersButton());
+    expect(screen.queryByRole('group', { name: 'Meteorología' })).not.toBeInTheDocument();
   });
 
   it('speaks English inside a translated scope', async () => {

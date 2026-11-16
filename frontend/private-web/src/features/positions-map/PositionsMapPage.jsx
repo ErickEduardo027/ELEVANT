@@ -21,6 +21,8 @@ import MapSituationGate, { MapSituationOverlays, trafficSelectionOf } from '../m
 import { mapMessages } from '../maps/mapMessages';
 import { attachStandGeometry, unlocatedStands } from '../maps/stands/standModel';
 import { useStandDisplay } from '../maps/stands/useStandDisplay';
+import { useOccStation } from '../admin-occ/useOccStation';
+import { useMdpcWeather } from '../weather/useMdpcWeather';
 import { standInputsOf } from '../maps/traffic/standInputs';
 
 const NO_POSITIONS = Object.freeze([]);
@@ -88,6 +90,9 @@ function PositionsMapScreen({
   const mapAreaRef = useRef(null);
   const placingRef = useRef(null);
   const isTablet = useIsTabletBreakpoint();
+  // The aerodrome weather of the OCC station (PR M8): its own 10-minute poll; the map draws its wind at the airfield.
+  const station = useOccStation();
+  const weather = useMdpcWeather({ enabled: station.status === 'ready' });
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -302,6 +307,7 @@ function PositionsMapScreen({
         pendingLocation={placing?.pending ?? null}
         onCancelPlacing={cancelPlacing}
         onMapClick={placing ? handleMapClick : undefined}
+        weather={weather}
         traffic={live?.traffic}
         trafficSelection={trafficSelection}
         onSelectTraffic={live ? handleSelectTraffic : undefined}

@@ -1,4 +1,4 @@
-import { OCC_ACCESS, STATION } from './occApi.mjs';
+import { OCC_ACCESS, STATION, aerodromeWeather } from './occApi.mjs';
 
 // Synthetic answers of the ELEVANT API for the OCC console of the visual suite (tests/visual/occ/console.spec.mjs): one
 // coherent day at Punta Cana for the console's reads (contratos 1.3 and 2.7), the planning snapshot, the positions
@@ -437,6 +437,8 @@ export function createConsoleApi({ demo = false } = {}) {
         count('airPicture');
         return { status: 200, json: airPicture({ now, stationId, trails: url.searchParams.get('trails') ?? 'short' }) };
       case CONSOLE_PATHS.ping: count('ping'); return { status: 200, json: ping({ now }) };
+      // The aerodrome weather through the API (PR M8): an invented live METAR and TAF, never aviationweather.gov.
+      case '/api/v1/occ/weather': count('weather'); return { status: 200, json: aerodromeWeather({ now, stationId }) };
       // AeroDataBox through the API (ADR-0028, note of 15 November 2026): invented answers, never the provider.
       case '/api/v1/occ/aviation/routes': count('airportRoutes'); return { status: 200, json: airportRoutes({ now, stationId }) };
       case '/api/v1/occ/aviation/delays':
@@ -502,7 +504,7 @@ export function aircraftReference({ now = Date.now(), stationId = STATION.statio
 
 /**
  * Today's METAR of MDPC as Iowa Environmental Mesonet answers it (/api/1/currents.json), written `ageMinutes` before
- * `now`: the weather pill's only read until PR M8. Synthetic.
+ * `now`: the weather pill's read until PR M8, which reads `GET occ/weather` instead (handled above). Synthetic.
  */
 export function iemCurrents({ now = Date.now(), ageMinutes = 20 } = {}) {
   const at = new Date(now - ageMinutes * 60_000);

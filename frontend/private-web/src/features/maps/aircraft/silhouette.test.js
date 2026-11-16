@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CATEGORY_OUTLINES, outlineBox, silhouetteOutline, silhouettePath } from './silhouette';
+import {
+  CATEGORY_OUTLINES, fuselageHalfWidth, fuselageProfile, nacelles, outlineBox, silhouetteOutline, silhouettePath,
+  tailplanePlanform, wingPlanform,
+} from './silhouette';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS, ICON_CATEGORIES } from './types';
 
-// Every airframe the map draws: the twenty types of the table and the generic one of each icon category.
+// Every airframe the map draws: the thirty-four types of the table and the generic one of each icon category.
 const AIRFRAMES = [
   ...Object.entries(AIRCRAFT_TYPES),
   ...Object.entries(CATEGORY_FALLBACKS).map(([category, spec]) => [`category ${category}`, spec]),
@@ -38,6 +41,14 @@ function isSimple(ring) {
 
 const key = ([x, y]) => `${x.toFixed(3)}|${y.toFixed(3)}`;
 const numbersOf = path => path.match(/-?\d+(?:\.\d+)?/g).map(Number);
+// The outline rounds its points to the millimetre; the planforms keep the raw numbers.
+const millimetre = value => Math.round(value * 1000) / 1000;
+
+// What the outline draws for each tube-and-wing family: nacelles under the wing (per side) or on the rear fuselage.
+const NACELLES_PER_SIDE = Object.freeze({
+  twinUnderwing: ['wing'], quadUnderwing: ['wing', 'wing'], rearTwinT: ['rear'], bizjet: ['rear'], turbopropHigh: ['wing'],
+  turbopropLow: ['wing'], pistonSingle: [],
+});
 
 describe('aircraft silhouettes (design E2)', () => {
   it('the outline is a simple symmetric polygon whose box equals span by length within 1 %', () => {
@@ -105,5 +116,78 @@ describe('aircraft silhouettes (design E2)', () => {
       }
     }
     expect(() => silhouettePath(CATEGORY_OUTLINES.narrow, { size: 6 })).toThrow(RangeError);
+  });
+
+  it('the wing, tailplane and nacelle planforms are the parts of the outline', () => {
+    const families = new Set();
+    for (const [name, spec] of AIRFRAMES) {
+      if (spec.family === 'helicopter' || spec.family === 'dart') {
+        // No tube and no planforms: the 3D model draws these two from their outline and their own numbers.
+        for (const helper of [wingPlanform, tailplanePlanform, nacelles, fuselageProfile]) expect(helper(spec), name).toBeNull();
+        expect(fuselageHalfWidth(spec, 0), name).toBeNull();
+        continue;
+      }
+      families.add(spec.family);
+      const outline = silhouetteOutline(spec);
+      const points = new Set(outline.map(key));
+      // A point of the right half is in the outline, and so is its mirror on the left.
+      const drawn = ([x, y]) => points.has(key([millimetre(x), millimetre(y)]))
+        && points.has(key([-millimetre(x) || 0, millimetre(y)]));
+      const halfSpan = spec.spanM / 2;
+
+      const wing = wingPlanform(spec);
+      expect(wing, name).toHaveLength(4);
+      expect(wing.every(drawn), `${name} wing`).toBe(true);
+      const [rootLeading, tipLeading, tipTrailing, rootTrailing] = wing;
+      expect([tipLeading[0], tipTrailing[0]], name).toEqual([halfSpan, halfSpan]);
+      expect(tipLeading[1] - tipTrailing[1], name).toBeGreaterThan(0);
+      expect(rootLeading[1] - rootTrailing[1], name).toBeGreaterThan(tipLeading[1] - tipTrailing[1]);
+
+      const tailplane = tailplanePlanform(spec);
+      expect(tailplane, name).toHaveLength(4);
+      expect(tailplane.every(drawn), `${name} tailplane`).toBe(true);
+      // The tailplane sits behind the wing and its tip clears the tail.
+      expect(tailplane[0][1], name).toBeLessThan(rootTrailing[1]);
+      expect(Math.min(...tailplane.map(([, y]) => y)), name).toBeGreaterThan(-spec.lengthM / 2);
+
+      // The fuselage's stations: the nose ogive and the tail end are points of the outline, and the half-width there
+      // is the outline's.
+      const profile = fuselageProfile(spec);
+      expect(profile[0], name).toEqual([0, spec.lengthM / 2]);
+      expect(profile.at(-1)[1], name).toBe(-spec.lengthM / 2);
+      for (const station of [...profile.slice(0, -2), profile.at(-1)]) expect(drawn(station), `${name} ${station}`).toBe(true);
+      for (const [x, y] of profile) expect(fuselageHalfWidth(spec, y), `${name} at ${y}`).toBeCloseTo(x, 9);
+      expect(fuselageHalfWidth(spec, spec.lengthM)).toBe(0);
+      expect(fuselageHalfWidth(spec, -spec.lengthM)).toBeCloseTo(profile.at(-1)[0], 9);
+
+      // Each nacelle's front and outer side are edges of the outline.
+      const found = nacelles(spec);
+      expect(found.map(nacelle => nacelle.mount), name).toEqual(NACELLES_PER_SIDE[spec.family]);
+      for (const { mount, x, frontY, backY, diameterM } of found) {
+        const inner = x - diameterM / 2;
+        const outer = x + diameterM / 2;
+        expect(diameterM, name).toBe(spec.engineDiaM);
+        expect(backY, name).toBeLessThan(frontY);
+        const front = outline.filter(([px, py]) => py === millimetre(frontY) && px >= millimetre(inner) && px <= millimetre(outer));
+        expect(front.length, `${name} ${mount} nacelle front`).toBeGreaterThanOrEqual(mount === 'wing' ? 2 : 1);
+        expect(outline.some(([px]) => px === millimetre(outer)), `${name} ${mount} nacelle side`).toBe(true);
+        if (mount === 'wing') {
+          // A wing nacelle reaches ahead of the leading edge and runs on under the wing.
+          const leading = rootLeading[1] + ((tipLeading[1] - rootLeading[1]) * (x - rootLeading[0])) / (halfSpan - rootLeading[0]);
+          expect(frontY, name).toBeGreaterThan(leading);
+          expect(backY, name).toBeLessThan(leading);
+          expect(outline.some(([px]) => px === millimetre(inner)), `${name} nacelle inner side`).toBe(true);
+        } else {
+          expect(outline.some(([, py]) => py === millimetre(backY)), `${name} pod back`).toBe(true);
+          expect(x, name).toBeGreaterThan(fuselageHalfWidth(spec, frontY));
+        }
+      }
+    }
+    expect(families).toEqual(new Set(Object.keys(NACELLES_PER_SIDE)));
+    for (const helper of [wingPlanform, tailplanePlanform, nacelles, fuselageProfile]) {
+      expect(() => helper({ family: 'zeppelin' })).toThrow(RangeError);
+      expect(() => helper({ family: 'constructor' })).toThrow(RangeError);
+    }
+    expect(() => fuselageHalfWidth({ family: 'zeppelin' }, 0)).toThrow(RangeError);
   });
 });

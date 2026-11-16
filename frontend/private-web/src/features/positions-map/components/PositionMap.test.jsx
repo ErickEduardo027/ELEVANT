@@ -10,6 +10,8 @@ import { presetTargets } from '../../maps/core/cameraPresets';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
+import { createAerodromeWeather, WEATHER_NOON } from '../../maps/testing/weatherFixtures';
+import { toWeatherReading } from '../../../services/weatherService';
 import { createRenderClock } from '../../maps/core/frameLoop';
 import {
   createAirPicture, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_SOURCE,
@@ -175,8 +177,10 @@ describe('PositionMap on the map engine', () => {
       properties: { code: 'A1', terminal: 'A', state: 'occupied', unofficial: false },
       geometry: { type: 'Polygon', coordinates: [DRAWN.find(stand => stand.id === 'A1').geometry.polygon] },
     });
-    // PUJ is marked by its reference point.
-    expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
+    // PUJ is marked by its reference point, the first of the references every map has (PR M8: the rings, centrelines,
+    // airports and navaids around it, which the ramp view does not show).
+    const [arp] = map.getSource('occ-reference').data.features;
+    expect(arp.properties).toEqual({ kind: 'arp', label: 'PUJ' });
 
     // The same positions read again in new objects write nothing; a changed state is one update of that stand.
     rerender({ positions: createMapStands() });
@@ -312,6 +316,21 @@ describe('PositionMap on the map engine', () => {
     // On the console's apron it starts folded.
     view = renderPositions({ dashboardLabels: true });
     expect(screen.getByRole('button', { name: 'Leyenda' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('gives its map the weather of the page: the wind at the airfield, and none without it (PR M8)', () => {
+    // The aerodrome weather as useMdpcWeather answers it, from a synthetic answer of the API: 100° at 13 kt.
+    const reading = toWeatherReading(createAerodromeWeather(), { receivedAt: Date.parse(WEATHER_NOON) });
+    const weather = { status: 'success', data: reading.observation, apiStatus: reading.apiStatus, source: reading.source };
+    let view = renderPositions({ weather });
+    loadStyle(view.map);
+    expect(view.map.options.style.sources['occ-weather-wind']).toMatchObject({ type: 'geojson' });
+    expect(view.map.getSource('occ-weather-wind').data.features[0].properties).toMatchObject({ kind: 'wind',
+      directionDeg: 100, speedKt: 13 });
+    view.unmount();
+    // The console's apron gives it none: no weather on its map.
+    view = renderPositions({ dashboardLabels: true });
+    expect(view.map.options.style.sources['occ-weather-wind']).toBeUndefined();
   });
 
   it('no setStyle on theme change', () => {

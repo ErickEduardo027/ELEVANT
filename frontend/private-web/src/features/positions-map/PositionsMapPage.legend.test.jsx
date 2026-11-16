@@ -11,6 +11,8 @@ import { mapOccupancyToRampPositions } from './positionsMapMappers';
 // Mapa de posiciones with its real map (PositionMap over OccMap, on the shared fake MapLibre): the page has one
 // legend, the map's, with the states of the stands on screen. The other page tests stub the map.
 vi.mock('maplibre-gl', async () => (await import('../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+// The page reads the aerodrome weather of the OCC station (PR M8): a session without the PUJ scope reads none.
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: null }) }));
 
 const fake = sharedFakeMapLibre();
 const PAGE = '/admin-occ/positions-map?stationId=s-1';

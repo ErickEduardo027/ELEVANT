@@ -1,6 +1,7 @@
 import { occColor, occThemeColor } from '../../occ-ui/occPalette';
 import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircraftSilhouette';
 import { maskToSdf } from './sdf';
+import { REFERENCE_IMAGE_SHAPES } from './referenceImages';
 import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
 
 // The images of the OCC map style. There is no sprite: each image is drawn on demand from the path data below and
@@ -25,6 +26,12 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'signal-notice',
   'aircraft-solid',
   'airport-arp',
+  // The navaids of the references (PR M8, style/referenceImages.js).
+  ...Object.keys(REFERENCE_IMAGE_SHAPES),
+  // The wind at the airfield (PR M8, traffic/weatherLayers.js): the arrow of a wind that blows from somewhere, and the
+  // ring of a calm or variable one.
+  'wind-arrow',
+  'wind-calm',
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
   ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
@@ -139,6 +146,25 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
     ops: [
       { stroke: 'M18.5 10 A4.5 4.5 0 1 1 9.5 10 A4.5 4.5 0 1 1 18.5 10 Z', lineWidth: 1.5 },
       { stroke: 'M3.2 11.6 L24.8 8.4', lineWidth: 2 },
+    ],
+  },
+  ...REFERENCE_IMAGE_SHAPES,
+  // The wind (PR M8): an arrow pointing up, where the wind blows to once the layer turns it (its direction + 180°), a
+  // shaft with a head, clear of the border; and, for a calm or variable wind, which points nowhere, a ring around a dot.
+  'wind-arrow': {
+    width: 24,
+    height: 24,
+    ops: [
+      { stroke: 'M12 20 V10', lineWidth: 2 },
+      { fill: 'M12 3.5 L17.5 11 L6.5 11 Z' },
+    ],
+  },
+  'wind-calm': {
+    width: 24,
+    height: 24,
+    ops: [
+      { stroke: 'M17.5 12 A5.5 5.5 0 1 1 6.5 12 A5.5 5.5 0 1 1 17.5 12 Z', lineWidth: 1.5 },
+      { fill: 'M13.5 12 A1.5 1.5 0 1 1 10.5 12 A1.5 1.5 0 1 1 13.5 12 Z' },
     ],
   },
   ...TRAFFIC_IMAGE_SHAPES,

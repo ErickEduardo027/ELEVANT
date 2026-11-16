@@ -46,6 +46,9 @@ const OTHER = ['==', get('kind'), 'other'];
 // an estimated position keeps its dashed ring and a demo flight its «Demo» plate over the stand (contracts 2.4, «Tags»:
 // whatever is estimated or simulated carries its mark on screen).
 const NOT_PARKED = isNot('parkedOnStand');
+// An aircraft the 3D layer draws (PR M7, core/aircraft3d.js) leaves out its 2D silhouette, the chosen one's too; its tag,
+// its rings and its «Demo» plate stay, so it keeps its words and marks over the model.
+const NOT_3D = isNot('model3d');
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
 const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
@@ -273,7 +276,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-other-ground',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, is('ground')],
+        filter: ['all', OTHER, is('ground'), NOT_3D],
         layout: otherLayout(),
         paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
@@ -284,7 +287,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-other',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, isNot('ground')],
+        filter: ['all', OTHER, isNot('ground'), NOT_3D],
         layout: otherLayout(),
         paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
@@ -306,7 +309,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-aviam',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', AVIAM, NOT_PARKED],
+        filter: ['all', AVIAM, NOT_PARKED, NOT_3D],
         layout: iconLayout(),
         paint: altitudePaint(theme, 1.5),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:pick': 'flight', 'occ:pickId': 'flightKey' },
@@ -392,7 +395,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-selected',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('selected'),
+        filter: ['all', is('selected'), NOT_3D],
         layout: iconLayout({ 'icon-ignore-placement': true }),
         paint: iconPaint(ACCENT, 1.5),
         metadata: { 'occ:group': 'selection' },

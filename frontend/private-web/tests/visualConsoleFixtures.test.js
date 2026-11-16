@@ -4,12 +4,12 @@ import { buildBoard } from '../src/features/dashboard/noc/boardModel';
 import { consoleMessages } from '../src/features/dashboard/noc/consoleMessages';
 import { RAMP_POSITIONS } from '../src/features/dashboard/positionsData';
 import { mapOccupancyToRampPositions } from '../src/features/positions-map/positionsMapMappers';
-import { loadCurrentObservation } from '../src/services/weatherService';
+import { toWeatherReading } from '../src/services/weatherService';
 import { createTranslator } from '../src/i18n/languageStore';
 import {
   ARRIVAL_ON_FINAL_KEY, CONSOLE_HEX, CONSOLE_PATHS, DEMO_FLIGHT_KEYS, aircraftReference, aircraftTrack, airPicture,
   airportDelays, airportRoutes, assignmentReadiness,
-  createConsoleApi, iemCurrents, mapFlights, notices, ping, planningSnapshot, positionsBoard, reviewQueue, stationDay,
+  createConsoleApi, mapFlights, notices, ping, planningSnapshot, positionsBoard, reviewQueue, stationDay,
 } from './visual/occ/fixtures/consoleApi.mjs';
 import { OCC_ACCESS, STATION } from './visual/occ/fixtures/occApi.mjs';
 
@@ -150,11 +150,13 @@ describe('visual suite console fixtures', () => {
       .getOccAircraftReference({ stationId, registration: 'ZZ-TST1' })).resolves.toBeTruthy();
   });
 
-  it('the METAR of the weather pill is one the browser service reads', async () => {
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(iemCurrents({ now: NOW, ageMinutes: 20 })),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    const observation = await loadCurrentObservation();
-    expect(observation).toMatchObject({ station: 'MDPC', metar: { qnhHpa: 1015, wind: { directionDeg: 100, speedKt: 13 } } });
-    expect(Date.parse(observation.observedAt)).toBe(NOW - 20 * 60_000);
+  it('the METAR of the weather pill is one the browser service reads, through the API (PR M8)', async () => {
+    const api = createConsoleApi();
+    const answer = api.handle({ method: () => 'GET' }, new URL(`http://localhost/api/v1/occ/weather?stationId=${STATION.stationId}`));
+    expect(answer.status).toBe(200);
+    expect(api.reads.weather).toBe(1);
+    const reading = toWeatherReading(answer.json, { receivedAt: Date.now() });
+    expect(reading).toMatchObject({ apiStatus: 'Live', source: { name: 'NOAA Aviation Weather Center' } });
+    expect(reading.observation.metar).toMatchObject({ qnhHpa: 1015, wind: { directionDeg: 100, speedKt: 13 } });
   });
 });

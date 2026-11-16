@@ -1,12 +1,13 @@
 import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ElevantApiError } from '@elevant/api-client';
 import PositionsMapPage from './PositionsMapPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { destinationPoint } from '../maps/airport/geo';
+import { WEATHER_STATION_ID } from '../maps/testing/weatherFixtures';
 import { boardStand, boardVisit, standPoint } from '../maps/testing/mapFixtures';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
@@ -23,14 +24,26 @@ vi.mock('../../config/elevantApiClient', async importOriginal => ({
   ...(await importOriginal()), createPrivateWebApiClient: () => api,
 }));
 // Inside the OCC frame (PR M6) the page reads the station of the session and the map service: both synthetic here, the
-// station of the traffic fixtures and the simulated adapter over their scenario, without the network.
-vi.mock('../auth/AuthContext', () => ({
-  useAuth: () => ({ session: { stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] } }),
-}));
+// station of the traffic fixtures and the simulated adapter over their scenario, without the network. The page also
+// reads the aerodrome weather of that station (PR M8), from the synthetic weather service; a test may take the PUJ
+// scope away (`auth.session`), and then nothing is read.
+const PUJ_SESSION = Object.freeze({ stationScopes: [{ stationId: '5a000000-0000-4000-8000-000000000001', stationCode: 'PUJ' }] });
+const auth = vi.hoisted(() => ({ session: null }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: auth.session }) }));
 vi.mock('../../services/occMapService', async () => {
   const actual = await vi.importActual('../../services/occMapService');
   const { createTrafficScenario } = await import('../maps/testing/trafficFixtures');
   return { ...actual, occMapService: actual.createSimulatedOccMapAdapter({ scenario: createTrafficScenario() }) };
+});
+
+vi.mock('../../services/weatherService', async () => {
+  const actual = await vi.importActual('../../services/weatherService');
+  const { createWeatherScenario } = await import('../maps/testing/weatherFixtures');
+  return { ...actual, weatherService: actual.createSimulatedWeatherAdapter({ scenario: createWeatherScenario() }) };
+});
+
+beforeEach(() => {
+  auth.session = PUJ_SESSION;
 });
 
 vi.mock('./components/PositionMap', () => ({
@@ -47,7 +60,8 @@ vi.mock('./components/PositionMap', () => ({
     // draws, the chosen flight or aircraft and the overlays it holds.
     return (
       <div data-testid="position-map-stub" data-placing={props.placingCode ?? ''} data-selected={props.selectedPositionId ?? ''}
-        data-pending={pending ? `${pending.latitude},${pending.longitude}` : ''}
+        data-pending={pending ? `${pending.latitude},${pending.longitude}` : ''} data-weather={props.weather?.apiStatus ?? ''}
+        data-weather-status={props.weather?.status ?? ''}
         data-traffic={props.traffic ? props.traffic.aircraft.map(item => item.id).join(' ') : ''}
         data-traffic-selection={props.trafficSelection ? `${props.trafficSelection.kind}:${props.trafficSelection.id}` : ''}>
         {props.onMapClick && <button type="button" onClick={() => props.onMapClick(map.next)}>Clic en el mapa</button>}
@@ -127,6 +141,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.history.replaceState({}, '', '/');
+  auth.session = null;
 });
 
 // Opens the list (unless it is open), the drawer of `code` and «Ubicar en el mapa».
@@ -152,6 +167,20 @@ describe('PositionsMapPage', () => {
     expect(screen.getByText('network down')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the aerodrome weather of the OCC station and gives it to its map (PR M8)', async () => {
+    // Without the PUJ scope there is no station: nothing read, the map gets a weather still loading.
+    auth.session = null;
+    const first = render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather-status', 'loading');
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather', '');
+    first.unmount();
+    // With it, the synthetic live METAR reaches the map, which draws its wind at the airfield.
+    auth.session = { stationScopes: [{ stationId: WEATHER_STATION_ID, stationCode: 'PUJ' }] };
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather', 'Live'));
+    expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-weather-status', 'success');
   });
 
   it('renders the toolbar title/subtitle and the map', () => {

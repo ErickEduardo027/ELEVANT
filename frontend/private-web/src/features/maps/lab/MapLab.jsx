@@ -14,6 +14,7 @@ import { useStandDisplay } from '../stands/useStandDisplay';
 import { OPENFREEMAP_TILEJSON } from '../style/occStyle';
 import { createMotionStore } from '../traffic/motionStore';
 import { createTelemetryStore } from '../traffic/telemetryStore';
+import { windPoint } from '../traffic/weatherLayers';
 import FlightDataBlock from '../ui/FlightDataBlock';
 import MapDock from '../ui/MapDock';
 import MapFollowButton from '../ui/MapFollowButton';
@@ -24,8 +25,9 @@ import MapPresetSwitcher from '../ui/MapPresetSwitcher';
 import MapSourceStatus from '../ui/MapSourceStatus';
 import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
 import LayoutQaScene from './LayoutQaScene';
-import { SCENES, readLabQuery } from './scenes';
+import { SCENES, labWeather, readLabQuery } from './scenes';
 import { labTraffic } from './trafficScenes';
+import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
 // the API, for the visual suite (tests/visual) and for a person checking the map by eye. The URL says what to show:
@@ -43,7 +45,13 @@ import { labTraffic } from './trafficScenes';
 // frozen at `?t=` (one frame, no loop: the visual suite's pictures are still) or, without it, running from the scene's
 // own instant, so a person sees the demo flight move; «Pausar movimiento» is in the dock. The chosen flight's route
 // follows its aircraft (PR M6), and «Seguir» is in the dock and in the data block; a scene with `follow` opens
-// following (`follow=1`): on the frozen clock the camera frames the aircraft once.
+// following (`follow=1`): on the frozen clock the camera frames the aircraft once. A reference scene (PR M8) draws the
+// references with its synthetic weather, read once, and the night scene at its own instant. A weather scene (PR M8)
+// draws the wind and, with the layers it opens with, the simulated satellite images; the handle adds windAt(), where
+// the map draws the wind by the airfield.
+// The 3D aircraft (PR M7): each scene opens in its own 2D or 3D (`pitchMode`), which the dock's control and D change
+// while it is open (never remembered, so every run opens the same); the governor stays off unless `?governor=on`, so a
+// slow software GPU never lightens a picture; and the handle adds aircraft3d(), the 3D's state and the governor's pause.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -112,13 +120,14 @@ function useBasemapCut(cut) {
   }, [cut]);
 }
 
-function LabScene({ scene, basemap, frozenAt }) {
+function LabScene({ scene, basemap, frozenAt, governed = false }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
   // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
   const standClock = frozenAt ?? scene.at ?? null;
-  const displayed = useStandDisplay(stands, { nowMs: standClock });
+  const displayed = useStandDisplay(stands, { nowMs: standClock, flightsByTurnaround: scene.standFlights });
+  const [pitchMode, setPitchMode] = useState(() => scene.pitchMode ?? '2d');
   const { selection, follow, selectStand, selectFlight, selectAircraft, clear, setFollow } = useMapSelection();
   // The render clock of the scene's traffic (PR M6): frozen at `?t=`, else running from the scene's own instant; and
   // its motion store, one for the scene's whole life, as useMapSituation keeps one.
@@ -134,6 +143,13 @@ function LabScene({ scene, basemap, frozenAt }) {
   const traffic = useMemo(() => (scene.traffic
     ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true, motion })
     : null), [scene.traffic, frozenAt, selection, motion]);
+  // What the map draws of it, with the map flights whose counterparts the references emphasise (PR M8).
+  const mapTraffic = useMemo(() => (traffic ? { ...traffic.map, flights: traffic.situation.flights } : undefined), [traffic]);
+  // The weather of a reference scene (PR M8), read once as useMdpcWeather would answer it: the lab never polls. A scene
+  // without weather gives the map none, so it draws no weather. The satellite images are always the simulated ones: the
+  // lab never reads GIBS, also when a person turns them on in a scene that names none.
+  const weather = useMemo(() => labWeather(scene.weather ?? null), [scene.weather]);
+  const [satelliteService] = useState(() => createSimulatedSatelliteImagery(scene.satellite ?? {}));
   // The data block's telemetry on the lab's render clock, where the map draws each aircraft: frozen with `?t=`, so the
   // age of a position stays what the scene says.
   const [telemetry] = useState(() => createTelemetryStore({ clock: renderClock,
@@ -201,18 +217,23 @@ function LabScene({ scene, basemap, frozenAt }) {
         return drawn ? [drawn.lon, drawn.lat] : null;
       },
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
+      // Where the scene's wind stands by the airfield (PR M8), as `[lng, lat]`, or null without weather.
+      windAt: () => (scene.weather ? windPoint() : null),
+      // The 3D aircraft (PR M7): `{ enabled, status, notice, level, stats, pause, resume }`, or null.
+      aircraft3d: () => mapRef.current?.aircraft3d?.() ?? null,
     };
     window.__occMapLab = lab;
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, reread, traffic, motion, renderClock]);
+  }, [scene.id, scene.stands, scene.weather, reread, traffic, motion, renderClock]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
     ...(frozenAt === null ? {} : { fadeDuration: 0 }),
     ...(basemap === 'cut' ? { transformRequest: cutBasemap } : {}),
   }));
+  const [aircraft3d] = useState(() => ({ governor: governed }));
 
   return (
     <>
@@ -254,7 +275,13 @@ function LabScene({ scene, basemap, frozenAt }) {
           onCancelPlacing={stopPlacing}
           basemap={basemap !== 'none'}
           mapOptions={mapOptions}
-          traffic={traffic?.map}
+          traffic={mapTraffic}
+          weather={scene.weather ? weather : undefined}
+          satelliteService={satelliteService}
+          layerOverrides={scene.layers}
+          pitchMode={pitchMode}
+          onPitchModeChange={setPitchMode}
+          aircraft3d={aircraft3d}
         >
           {traffic && <MapSourceStatus status="success" picture={traffic.picture} nowMs={traffic.nowMs} />}
           {traffic?.target && (
@@ -310,13 +337,14 @@ function SceneIndex({ unknownId }) {
 export default function MapLab() {
   const searchParams = useSearchParams();
   const { sceneId, scene, basemap, frozenAt } = readLabQuery(searchParams);
+  const governed = searchParams?.get('governor') === 'on';
   const sceneKey = scene === null ? null : `${scene.id}|${basemap}|${frozenAt ?? ''}`;
   // The review scene of the airport layout is a screen of its own; every other scene is the map with its stands.
   let screen = <SceneIndex unknownId={sceneId} />;
   if (scene?.kind === 'layout-qa') {
     screen = <LayoutQaScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
   } else if (scene !== null) {
-    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
+    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} governed={governed} />;
   }
 
   // The OCC's theme (dark unless the account chose light): ThemeProvider sets it on the document, as in the OCC.

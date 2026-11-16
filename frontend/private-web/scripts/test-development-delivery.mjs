@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -74,6 +74,122 @@ test('the map chunk check reports a chunk that carries the map-lab marker and ac
   // Every build runs the check after the worker check, and the image build context ships the script.
   assert.match(JSON.parse(packageJson).scripts.build, /verify-maplibre-worker\.mjs && node \.\/scripts\/verify-map-chunks\.mjs$/);
   assert.match(dockerignore, /^!frontend\/private-web\/scripts\/verify-map-chunks\.mjs$/m);
+});
+
+// A client reference manifest as next build writes it next to each page: one route per file.
+const rscManifestSource = (route, manifest) => [
+  'globalThis.__RSC_MANIFEST = globalThis.__RSC_MANIFEST || {};',
+  `globalThis.__RSC_MANIFEST[${JSON.stringify(route)}] = ${JSON.stringify(manifest)};`,
+].join('\n');
+
+const OCC_ROUTE = '/admin-occ/dashboard/page';
+const OCC_ROUTE_MANIFEST = {
+  moduleLoading: { prefix: '', crossOrigin: 'none' },
+  clientModules: {
+    '[project]/frontend/private-web/node_modules/next/dist/esm/client/components/layout-router.js': {
+      id: 10183, name: '*', chunks: ['/_next/static/chunks/0a-shell.js?dpl=0123abcd', '/_next/static/chunks/0b-app.js'], async: false,
+    },
+    '[project]/frontend/private-web/src/features/maps/core/OccMap.jsx': {
+      id: 7, name: '*', chunks: ['/_next/static/chunks/0c-map.js'], async: false,
+    },
+  },
+  entryCSSFiles: { '[project]/frontend/private-web/app/layout': [{ path: 'static/chunks/0e-style.css', inlined: false }] },
+  entryJSFiles: {
+    '[project]/frontend/private-web/app/layout': ['static/chunks/0a-shell.js', 'static/chunks/0b-app.js'],
+    '[project]/frontend/private-web/app/admin-occ/dashboard/page': ['static/chunks/0a-shell.js', 'static/chunks/0f-page.js'],
+  },
+};
+const BUILD_MANIFEST = {
+  pages: { '/_app': [] },
+  polyfillFiles: ['static/chunks/0p-polyfills.js'],
+  rootMainFiles: ['static/chunks/0m-main.js', 'static/chunks/turbopack-0t.js'],
+};
+const OCC_FIRST_LOAD = [
+  'static/chunks/0a-shell.js', 'static/chunks/0b-app.js', 'static/chunks/0c-map.js', 'static/chunks/0f-page.js',
+  'static/chunks/0m-main.js', 'static/chunks/0p-polyfills.js', 'static/chunks/turbopack-0t.js',
+];
+
+test('the first-load chunks of a route are its entry files, its client modules and the root main files', async () => {
+  const { firstLoadChunks, readRscManifest } = await import('./verify-map-chunks.mjs');
+  const manifests = readRscManifest(rscManifestSource(OCC_ROUTE, OCC_ROUTE_MANIFEST));
+  assert.deepEqual(Object.keys(manifests), [OCC_ROUTE]);
+  assert.deepEqual(manifests[OCC_ROUTE], OCC_ROUTE_MANIFEST);
+  // The deployment query and the /_next/ prefix go; each chunk is listed once, in order; stylesheets stay out.
+  assert.deepEqual(firstLoadChunks({ rscManifests: Object.values(manifests), buildManifest: BUILD_MANIFEST }), OCC_FIRST_LOAD);
+  // An async client module (top-level await) loads with the page as well; a module id before a colon is dropped, and
+  // files outside static/ are not browser chunks.
+  assert.deepEqual(firstLoadChunks({
+    rscManifests: [{
+      clientModules: { awaited: { chunks: ['/_next/static/chunks/0z-awaited.js'], async: true },
+        webpack: { chunks: ['123', '123:static/chunks/0w-webpack.js', 'static/css/0s.css'], async: false } },
+      entryJSFiles: { server: ['server/app/page.js'] },
+    }],
+  }), ['static/chunks/0w-webpack.js', 'static/chunks/0z-awaited.js']);
+  assert.deepEqual(firstLoadChunks(), []);
+  // The manifest runs in an empty context: it reaches neither require nor process.
+  assert.throws(() => readRscManifest("require('node:fs')"), /require is not defined/);
+  assert.throws(() => readRscManifest('process.exit(1)'), /process is not defined/);
+  assert.deepEqual(readRscManifest('const nothing = 1;'), {});
+});
+
+test('the 3D check fails when a first-load chunk carries WebGLRenderer or no chunk does, and passes when three sits in an async chunk; a build without OCC route manifests is an error', async () => {
+  const { THREE_NEEDLE, checkThreeFirstLoad, findThreeInFirstLoad } = await import('./verify-map-chunks.mjs');
+  assert.equal(THREE_NEEDLE, 'WebGLRenderer');
+  // The word is three's own: its renderer's messages carry it, so a minified chunk still does.
+  assert.match(await readFile(path.join(projectRoot, 'node_modules/three/build/three.module.js'), 'utf8'), /'WebGLRenderer: /);
+  const sources = [
+    { file: 'static/chunks/0a-shell.js', source: 'self.__next_f.push([1,"shell"])' },
+    { file: 'static/chunks/0d-three.js', source: 'console.warn("THREE.WebGLRenderer: Context Lost.")' },
+  ];
+  assert.deepEqual(findThreeInFirstLoad(sources, ['static/chunks/0a-shell.js']), []);
+  assert.deepEqual(findThreeInFirstLoad(sources, ['static/chunks/0d-three.js', 'static/chunks/0a-shell.js']), ['static/chunks/0d-three.js']);
+  assert.deepEqual(findThreeInFirstLoad(new Map(sources.map(({ file, source }) => [file, source])), ['static/chunks/0d-three.js']),
+    ['static/chunks/0d-three.js']);
+
+  const nextDir = await mkdtemp(path.join(tmpdir(), 'elevant-next-'));
+  const write = async (file, content) => {
+    await mkdir(path.dirname(path.join(nextDir, file)), { recursive: true });
+    await writeFile(path.join(nextDir, file), content);
+  };
+  try {
+    await write('build-manifest.json', JSON.stringify(BUILD_MANIFEST));
+    for (const file of OCC_FIRST_LOAD) await write(file, 'self.chunk = 1;');
+    // three's own chunk: on disk, named by no manifest, fetched later through import().
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost.");');
+    await write('server/app/admin-occ/dashboard/page_client-reference-manifest.js', rscManifestSource(OCC_ROUTE, OCC_ROUTE_MANIFEST));
+    await write('server/app/login/page_client-reference-manifest.js',
+      rscManifestSource('/login/page', { clientModules: {}, entryJSFiles: { login: ['static/chunks/0a-shell.js'] } }));
+    assert.deepEqual(await checkThreeFirstLoad(nextDir), { routes: 2, firstLoad: OCC_FIRST_LOAD.length, threeChunks: 1 });
+
+    // A map chunk that carried three's renderer would break the dashboard's first load.
+    await write('static/chunks/0c-map.js', 'const renderer = new WebGLRenderer({ canvas });');
+    await assert.rejects(checkThreeFirstLoad(nextDir),
+      /three's WebGLRenderer reached the first load of \/admin-occ\/dashboard\/page \(static\/chunks\/0c-map\.js\)/);
+    await write('static/chunks/0c-map.js', 'self.chunk = 1;');
+
+    // OccMap loads the 3D chunk (PR M7): a build without any chunk that carries three's renderer lost it.
+    await rm(path.join(nextDir, 'static/chunks/0d-three.js'));
+    await assert.rejects(checkThreeFirstLoad(nextDir), /No built browser chunk carries three's WebGLRenderer/);
+    assert.deepEqual(await checkThreeFirstLoad(nextDir, { requireThree: false }),
+      { routes: 2, firstLoad: OCC_FIRST_LOAD.length, threeChunks: 0 });
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost.");');
+
+    // A manifest that names a chunk the build did not write.
+    await rm(path.join(nextDir, 'static/chunks/0f-page.js'));
+    await assert.rejects(checkThreeFirstLoad(nextDir), /names static\/chunks\/0f-page\.js, which the build did not write/);
+    await write('static/chunks/0f-page.js', 'self.chunk = 1;');
+
+    // Without a manifest of an /admin-occ route there is nothing to check: an error, not a pass.
+    await rm(path.join(nextDir, 'server/app/admin-occ'), { recursive: true });
+    await assert.rejects(checkThreeFirstLoad(nextDir), /No client reference manifest of an \/admin-occ route was found/);
+  } finally {
+    await rm(nextDir, { recursive: true, force: true });
+  }
+
+  // Every build runs the check: the build ends with verify-map-chunks.mjs, whose main calls it on .next.
+  const script = await readFile(path.join(projectRoot, 'scripts/verify-map-chunks.mjs'), 'utf8');
+  assert.match(script, /const three = await checkThreeFirstLoad\(path\.join\(projectRoot, '\.next'\)\);/);
+  assert.match(script, /PRIVATE_WEB_THREE_FIRST_LOAD_OK routes=\$\{three\.routes\} firstLoad=\$\{three\.firstLoad\} threeChunks=\$\{three\.threeChunks\}/);
 });
 
 const validEnvironment = {

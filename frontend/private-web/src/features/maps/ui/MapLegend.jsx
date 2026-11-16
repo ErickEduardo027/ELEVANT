@@ -12,6 +12,8 @@ import { AIRPORT_KINDS } from '../style/referenceLayers';
 import { basemapColorsFor } from '../style/mapTheme';
 import { useOptionalTheme } from '../../shell/useTheme';
 import { legendEntries } from './legendEntries';
+import { referenceLegendEntries } from './referenceLegend';
+import ReferenceSwatch from './ReferenceSwatch';
 import { trafficLegendEntries } from './trafficLegend';
 import TrafficSwatch from './TrafficSwatch';
 
@@ -334,7 +336,10 @@ function WideEntry({ swatch, name, hint }) {
  * name stays «Leyenda» while `aria-expanded` tells whether it is open, and it renders nothing when there is nothing to
  * explain.
  * The traffic an OccMap draws on screen comes first (ui/trafficLegend.js): the kinds of aircraft, their tags (Demo,
- * est., Sin actualizar) and their trails.
+ * est., Sin actualizar) and their trails. The references it draws there (PR M8, ui/referenceLegend.js: rings,
+ * centrelines and the runway in use, the region's airports, the navaids and the night) go with the airfield, below the
+ * rule and before it: what frames the map, apart from what moves and changes on it. The weather drawn there follows them
+ * (the wind with «No oficial», plus «Sin actualizar» when stale, and each satellite image with the time of its image).
  */
 // The open legend stays inside its map (PR M6): a short map (Mapa de posiciones at 1440 × 900) has less room above the
 // legend's button than a long legend needs, and the map clips what leaves it, so the panel is capped at that room, this
@@ -367,7 +372,7 @@ function useLegendInsideMap(rootRef, panelRef, active) {
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
-    activeView,
+    activeView, referencesOnScreen,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
@@ -381,13 +386,17 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
     : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen]);
   // The traffic on screen (PR M5): the aircraft kinds, their tags and their trails.
   const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language }), [trafficOnScreen, language]);
+  // The references on screen (PR M8).
+  const references = useMemo(() => referenceLegendEntries(referencesOnScreen ?? {}, { language }),
+    [referencesOnScreen, language]);
 
   const word = entry => entry[language] ?? entry.es;
   const airports = stands === undefined && airportsShown({ layers, activeView }) ? AIRPORT_KINDS : [];
   const routes = stands === undefined && routesShown({ layers, activeView });
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
     || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes;
-  const shown = listsOthers || airfield.length > 0;
+  const framesMap = references.length > 0 || airfield.length > 0;
+  const shown = listsOthers || framesMap;
   useLegendInsideMap(rootRef, panelRef, open && shown);
   if (!shown) return null;
 
@@ -439,10 +448,28 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
               <span className="text-occ-muted">{t(`legend.${tag}`)}</span>
             </li>
           ))}
-          {/* The airfield, set apart from what moves and changes on it by a rule across the legend. */}
-          {airfield.length > 0 && listsOthers && (
+          {/* The references and the airfield, set apart from what moves and changes on them by a rule across the legend. */}
+          {framesMap && listsOthers && (
             <li role="presentation" aria-hidden="true" data-legend-rule className="col-span-2 border-t border-occ-line" />
           )}
+          {references.map(entry => (
+            <li key={entry.key} data-legend-reference={entry.key} className="col-span-2 flex items-center gap-2">
+              <ReferenceSwatch kind={entry.swatch} />
+              {/* The weather (PR M8): the time of a satellite image, or «Sin actualizar» of a stale wind, below its name,
+                  and its tag of the vocabulary as a plate after it. */}
+              {entry.hint ? (
+                <span>
+                  <span className="block">{entry.label}</span>
+                  <span className="block text-occ-muted">{entry.hint}</span>
+                </span>
+              ) : <span>{entry.label}</span>}
+              {entry.tag && (
+                <span className="shrink-0 rounded-sm border border-occ-line-strong px-1 text-xs font-semibold text-occ-muted">
+                  {entry.tag}
+                </span>
+              )}
+            </li>
+          ))}
           {airfield.map(kind => (
             <li key={kind} className="flex items-center gap-2 pr-3">
               <AirfieldSwatch kind={kind} />
