@@ -1,10 +1,21 @@
 import { OCC_BOOT_SEEN_KEY } from '../../../src/features/admin-occ/boot/occBootSession.js';
 import { AUTH_STORAGE_KEY, occSession } from './fixtures/occApi.mjs';
-import { expect } from '../support/test.mjs';
+import { occColor } from '../../../src/features/occ-ui/occPalette.js';
+import { expect, theme } from '../support/test.mjs';
 
 // How the visual suite opens an OCC work screen (PR U6): a synthetic OCC session of PUJ, the stub API of the screen,
 // and the tab already past the boot screen, as when the screen is opened from another module. Without that mark the
 // boot screen (PR U4) would cover the page until 6 s after the access loaded.
+
+/**
+ * The computed CSS colour of an opaque OCC token in the theme the suite photographs (OCC_VISUAL_THEME), as
+ * `toHaveCSS` reads it: `occRgb('--occ-danger')` is `rgb(245, 116, 109)` in the dark theme.
+ */
+export function occRgb(token) {
+  const hex = occColor(token, theme);
+  const [r, g, b] = [1, 3, 5].map(start => Number.parseInt(hex.slice(start, start + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 /** The two windows every work screen is reviewed in: the laptop of the presentation and the 1080p screen. */
 export const SCREEN_VIEWPORTS = Object.freeze([

@@ -350,7 +350,10 @@ Usa la dependencia `playwright` que ya existía; sus pruebas importan de
   ([validación](../../frontend/private-web/tests/visualScreensFixtures.test.js)).
   Fotografían los datos, el vacío, el error o la falta de permiso y los
   diálogos de cada pantalla, a 1440×900 y a 1920×1080, y el chat también a
-  1024×768, donde la lista y el hilo se ven de a uno. Ver
+  1024×768, donde la lista y el hilo se ven de a uno. Corren en los dos temas:
+  con `OCC_VISUAL_THEME=light`, los colores que comprueban salen de la paleta
+  del tema (`occRgb` en
+  [la apertura](../../frontend/private-web/tests/visual/occ/occScreen.mjs)). Ver
   [Resto de pantallas del OCC (PR U6)](../05-aplicaciones/private-web-aviam.md#resto-de-pantallas-del-occ-pr-u6).
 - **Sin red.** Cada petición a otro origen se responde desde la suite o se
   aborta, y la prueba falla si una salió hacia un origen que la suite no

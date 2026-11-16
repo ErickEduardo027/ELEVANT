@@ -1,5 +1,5 @@
 import { API_PATHS, createScreensApi } from './fixtures/screensApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -11,9 +11,9 @@ import { expect, test } from '../support/test.mjs';
 
 const PAGE = '/admin-occ/contracts';
 // Plain text (--occ-text), a quiet joint (--occ-line) and the strong joint of a control (--occ-line-strong).
-const TEXT = 'rgb(232, 238, 241)';
-const LINE = 'rgb(57, 67, 72)';
-const LINE_STRONG = 'rgb(118, 130, 137)';
+const TEXT = occRgb('--occ-text');
+const LINE = occRgb('--occ-line');
+const LINE_STRONG = occRgb('--occ-line-strong');
 
 async function openContracts(page, isolation, viewport, scenario = 'data') {
   const api = createScreensApi(scenario);

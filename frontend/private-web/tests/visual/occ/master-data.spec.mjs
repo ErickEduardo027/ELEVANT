@@ -1,5 +1,5 @@
 import { API_PATHS, createScreensApi } from './fixtures/screensApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -11,7 +11,7 @@ import { expect, test } from '../support/test.mjs';
 
 const PAGE = '/admin-occ/master-data';
 // The light key of the primary action (--occ-primary); a control changes its colours through a short transition.
-const PRIMARY_KEY = 'rgb(232, 238, 241)';
+const PRIMARY_KEY = occRgb('--occ-primary');
 
 async function openMasterData(page, isolation, viewport, scenario = 'data', options = {}) {
   const api = createScreensApi(scenario, options);
