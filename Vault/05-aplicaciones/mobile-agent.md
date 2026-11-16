@@ -80,13 +80,15 @@ la sección «Fase 3» describe la cola actual.
 
 | Ruta Expo | Comportamiento observable |
 | --- | --- |
-| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta. |
+| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta; *posterior al commit verificado,* también el cambio de la contraseña temporal del primer ingreso. |
 | `/home` | Perfil, vuelos asignados, conteo de pendientes y acceso a chat. |
 | `/flight/[id]` | Detalle, servicios e inicio/cierre local de atención. |
 | `/checklist/[id]` | Respuestas y cierre de checklist asociado a la operación local. |
 | `/incident/[id]` | Registro de incidencia y selección de imagen dentro del prototipo. |
 | `/sync` | Consulta e intento de envío de elementos de outbox. |
 | `/chat` | Mensajes con OCC y conciliación básica de mensajes pendientes. |
+
+*Posterior al commit verificado de esta nota:* una cuenta que Gestión Humana creó con contraseña temporal recibe `409` con el código `password_change_required` al iniciar sesión. La misma pantalla `/` pasa a «Cambia tu contraseña temporal»: la temporal viene oculta y precargada, la nueva se escribe dos veces y una lista muestra en vivo la política de la API (14 caracteres o más, mayúscula, minúscula, número y símbolo, y distinta de la temporal). Al enviar, la app llama a `POST /api/v1/auth/password-change` sin sesión. Con `204` inicia sesión sola con la nueva contraseña y sigue el flujo normal, incluido el registro de la tablet. Con `400` explica la política, con `401` que la temporal no es válida y con `429` que espere un minuto. Ninguna contraseña se guarda ni se registra ([pantalla](../../frontend/mobile-agent/src/app/index.tsx), [formulario](../../frontend/mobile-agent/src/components/temporary-password-change.tsx), [servicio](../../frontend/mobile-agent/src/services/mobile-auth.ts)).
 
 El cierre de atención exige un checklist completo en el estado local. Esa regla de interfaz no es todavía una invariante del servidor ni un contrato público.
 
