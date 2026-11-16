@@ -74,9 +74,13 @@ it('a stand click writes stand= and shows its flights', async () => {
   expect(screen.getByTestId('map')).toHaveAttribute('data-selected', 'A1');
   // The panel says what the stand says on the map, then its flights.
   const facts = screen.getByRole('list', { name: 'Estado en el mapa' });
-  expect(within(facts).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-    'Llegando', 'Cubre Ana Ruiz', 'Terminal A · De contacto', 'Ubicada por OCC',
-  ]);
+  const items = within(facts).getAllByRole('listitem').map(item => item.textContent);
+  expect(items[0]).toBe('Llegando');
+  expect(items[1]).toMatch(/^Llegando: /);
+  expect(items.at(-1)).toBe('Cubre Ana Ruiz');
+  const characteristics = screen.getByRole('region', { name: 'Características' });
+  expect(characteristics.querySelector('[data-fact="kind"] dd')).toHaveTextContent('Terminal A · De contacto');
+  expect(characteristics.querySelector('[data-fact="location"] dd')).toHaveTextContent('Ubicada por OCC');
   expect(screen.getByRole('button', { name: /DM161/ })).toBeInTheDocument();
   // «Ver todas» clears the selection.
   fireEvent.click(screen.getByRole('button', { name: 'Ver todas' }));

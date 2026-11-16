@@ -28,12 +28,13 @@ const DOCKED_IN_FLOW = '!static !w-full !max-w-none';
  * stand as the map draws it (useStandDisplay) and `standFlight` its current or next map flight, with `stripOf(flight)`
  * the board's strip of a flight; `mapFlights` the map flights (both legs of a visit share its milestones);
  * `canImport(flight)` and `canAssign(flight)` say which actions the flight has, and `onImport(flight)`,
- * `onAssign(flight)` and `onClear()` run them. `nowMs` is the server's time and `timeZone` the station's.
+ * `onAssign(flight)` and `onClear()` run them. `aircraftFacts` (a node, or a function of the stand's aircraft) goes under
+ * a stand's state for the aircraft parked on it or arriving (maps/ui/StandDetailFacts.jsx). `nowMs` is the server's time and `timeZone` the station's.
  */
 export default function InspectorPanel({
   selection, target = null, telemetry = null, stationAirport = null, stationId = null, stand = null, standFlight = null,
   stripOf, mapFlights, canImport, canAssign, onImport, onAssign, onClear, nowMs, timeZone, measureRef,
-  layout = 'float', className = '',
+  layout = 'float', className = '', aircraftFacts = null,
 }) {
   const { t, language, locale } = useTranslation(consoleMessages);
   const standFlightTitleId = useId();
@@ -60,7 +61,7 @@ export default function InspectorPanel({
           <OccPlate kind="stand" className="text-sm">{stand.id ?? stand.code}</OccPlate>
           {clear}
         </div>
-        <StandDetailFacts position={stand} />
+        <StandDetailFacts position={stand} aircraftFacts={aircraftFacts} />
         {/* The inspector draws the milestones of the stand's flight below, once. */}
         <StandTurnaround position={stand} milestones={false} />
         <section aria-labelledby={standFlightTitleId} className="space-y-2">

@@ -20,7 +20,7 @@ function Field({ label, children }) {
 }
 
 export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged,
-  onStartPlacing, operationDate }) {
+  onStartPlacing, operationDate, aircraftFacts = null }) {
   const { t, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
@@ -75,7 +75,9 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          <StandDetailFacts position={position} />
+          {/* Its state, why and what comes next, and its characteristics (owner request of 2026-11-15); `aircraftFacts`
+              describes the aircraft parked on it or arriving (maps/ui/StandDetailFacts.jsx). */}
+          <StandDetailFacts position={position} aircraftFacts={aircraftFacts} />
           {/* The turnaround on the stand, its times, agent, operation and milestones, and the next one (owner request
               of 2026-11-15). */}
           <StandTurnaround position={position} />

@@ -16,7 +16,9 @@ const { board, flightsByTurnaround } = createRampScenario(NOW);
 const STANDS = withStandDisplay(mapOccupancyToRampPositions(REFERENCES, board, board.asOf), { nowMs: NOW, flightsByTurnaround });
 const stand = code => STANDS.find(item => item.id === code);
 const facts = () => screen.getByRole('list', { name: /Estado en el mapa|State on the map/ });
-const factsOf = kind => within(facts()).getAllByRole('listitem').filter(item => item.dataset.fact === kind);
+// A fact of the state list is its item; a characteristic is the value of its row.
+const factsOf = kind => [...screen.getByTestId('stand-detail-facts').querySelectorAll(`[data-fact="${kind}"]`)]
+  .map(item => item.querySelector(':scope > dd') ?? item);
 
 afterEach(() => {
   cleanup();
@@ -55,7 +57,7 @@ describe('StandDetailFacts', () => {
     // C7, placed by OCC; and a stand of the board no map draws.
     rerender(<StandDetailFacts position={stand('C7')} />);
     expect(factsOf('location')[0]).toHaveTextContent(/^Ubicada por OCC$/);
-    expect(factsOf('location')[0]).toHaveAttribute('data-origin', 'occ');
+    expect(factsOf('location')[0].querySelector('[data-origin]')).toHaveAttribute('data-origin', 'occ');
     rerender(<StandDetailFacts position={{ ...stand('A1'), latitude: null, longitude: null, locationSource: 'none' }} />);
     expect(factsOf('location')[0]).toHaveTextContent(/^Sin ubicar$/);
 
@@ -66,7 +68,7 @@ describe('StandDetailFacts', () => {
     expect(factsOf('state')[0]).toHaveTextContent('Por liberar');
     expect(factsOf('signal')).toEqual([]);
     rerender(<StandDetailFacts position={null} />);
-    expect(screen.queryByRole('list')).toBeNull();
+    expect(screen.queryByTestId('stand-detail-facts')).toBeNull();
   });
 
   it('speaks English on the English screens', () => {
@@ -92,10 +94,13 @@ describe('StandDetailFacts', () => {
     const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
     const fed = { ...stand('A9'), signals: [notice], display: { ...stand('A9').display, signals: [notice], milestonesDone: 3 } };
     const { rerender } = render(<StandDetailFacts position={fed} />);
-    expect(within(facts()).getAllByRole('listitem').map(item => item.textContent)).toEqual([
-      STAND_STATES.occupied.es, 'Cubre Ana Ruiz', `${SIGNALS.notice.es}El avión ya está en la posición. Registra la llegada.`,
-      'Hitos registrados: 3 de 25', 'Terminal A · De contacto', `${TAGS.unofficial.es}Referencia interna sin verificar`,
+    const items = within(facts()).getAllByRole('listitem').map(item => item.textContent);
+    expect(items[0]).toBe(STAND_STATES.occupied.es);
+    expect(items[1]).toMatch(/^Ocupada por \w+/);
+    expect(items.slice(-3)).toEqual([
+      'Cubre Ana Ruiz', `${SIGNALS.notice.es}El avión ya está en la posición. Registra la llegada.`, 'Hitos registrados: 3 de 25',
     ]);
+    expect(factsOf('kind')[0]).toHaveTextContent(/^Terminal A · De contacto$/);
     // The notice with its diamond, named with the vocabulary's word.
     expect(within(factsOf('signal')[0]).getByRole('img', { hidden: true, name: 'Aviso' })).toBeInTheDocument();
     // Without its map flights nobody knows the count; a stand without an aircraft on it has no progress either.
