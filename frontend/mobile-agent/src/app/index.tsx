@@ -14,8 +14,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  TemporaryPasswordChange,
+  type TemporaryPasswordChangeStatus,
+} from '../components/temporary-password-change';
 import { PrimaryButton } from '../components/ui';
 import {
+  changeTemporaryPassword,
   getMobileSession,
   loginMobileAgent,
   MobileServiceError,
@@ -34,6 +39,10 @@ export default function LoginScreen() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState('');
   const [unsent, setUnsent] = useState(0);
+  // Gestión Humana's temporary password (409 password_change_required) is replaced on this same screen.
+  const [passwordChange, setPasswordChange] = useState<{ email: string; temporaryPassword: string } | null>(null);
+  const [changeStatus, setChangeStatus] = useState<TemporaryPasswordChangeStatus>('idle');
+  const [changeError, setChangeError] = useState('');
   const requestRef = useRef<AbortController | null>(null);
 
   // 3-N12: what an ended session left unsent stays on the tablet; the agent is told before signing in.
@@ -82,10 +91,60 @@ export default function LoginScreen() {
       await loginMobileAgent(email.trim(), password, { signal: request.signal });
       if (!request.signal.aborted) router.replace('/home');
     } catch (loginError) {
-      if (!request.signal.aborted) setError(loginErrorMessage(loginError));
+      if (request.signal.aborted) return;
+      if (loginError instanceof MobileServiceError && loginError.code === 'password_change_required') {
+        setPasswordChange({ email: email.trim(), temporaryPassword: password });
+        setPassword('');
+        setChangeError('');
+        setChangeStatus('idle');
+      } else {
+        setError(loginErrorMessage(loginError));
+      }
     } finally {
       if (!request.signal.aborted) setBusy(false);
     }
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!passwordChange) return;
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
+    setChangeError('');
+    setChangeStatus('changing');
+
+    try {
+      await changeTemporaryPassword(passwordChange.email, currentPassword, newPassword, { signal: request.signal });
+    } catch (changeFailure) {
+      if (request.signal.aborted) return;
+      setChangeStatus('idle');
+      setChangeError(passwordChangeErrorMessage(changeFailure));
+      return;
+    }
+    if (request.signal.aborted) return;
+
+    // The temporary password no longer works: sign in with the new one and continue as any other sign-in.
+    setChangeStatus('signing_in');
+    try {
+      await loginMobileAgent(passwordChange.email, newPassword, { signal: request.signal });
+      if (!request.signal.aborted) router.replace('/home');
+    } catch (loginError) {
+      if (request.signal.aborted) return;
+      const reason = loginErrorMessage(loginError);
+      setEmail(passwordChange.email);
+      setPassword('');
+      setPasswordChange(null);
+      setChangeStatus('idle');
+      setError(`Tu contraseña se cambió, pero no pudimos iniciar sesión. ${reason ? `${reason} ` : ''}Entra con tu nueva contraseña.`);
+    }
+  };
+
+  const cancelPasswordChange = () => {
+    requestRef.current?.abort();
+    setPasswordChange(null);
+    setChangeStatus('idle');
+    setChangeError('');
+    setError('');
   };
 
   const sessionNotice = notice === 'session_expired'
@@ -128,6 +187,16 @@ export default function LoginScreen() {
           <Text style={styles.subtitle}>Operaciones en tierra ágiles, seguras y trazables.</Text>
           </View>
 
+          {passwordChange ? (
+            <TemporaryPasswordChange
+              email={passwordChange.email}
+              error={changeError}
+              initialCurrentPassword={passwordChange.temporaryPassword}
+              onCancel={cancelPasswordChange}
+              onSubmit={(currentPassword, newPassword) => void changePassword(currentPassword, newPassword)}
+              status={changeStatus}
+            />
+          ) : (
           <View style={styles.form}>
           <View style={styles.intro}>
             <Text accessibilityRole="header" style={styles.introTitle}>Acceso operativo</Text>
@@ -209,6 +278,7 @@ export default function LoginScreen() {
             <Text style={styles.securityText}>La sesión se guarda en el almacenamiento seguro del dispositivo.</Text>
           </View>
           </View>
+          )}
 
           <View style={styles.footer}>
             <Text style={styles.footerTitle}>ELEVANDO LA GESTIÓN DE</Text>
@@ -243,7 +313,26 @@ function loginErrorMessage(error: unknown) {
   if (error.code === 'network_unavailable') return 'No hay conexión con la red privada de ELEVANT.';
   if (error.code === 'request_timeout') return 'ELEVANT tardó demasiado en responder. Inténtalo nuevamente.';
   if (error.code === 'storage_unavailable') return 'No pudimos proteger la sesión en este dispositivo.';
+  if (error.code === 'rate_limited') return 'Demasiados intentos. Espera un minuto antes de reintentar.';
   return 'No pudimos iniciar sesión. Inténtalo nuevamente.';
+}
+
+function passwordChangeErrorMessage(error: unknown) {
+  if (!(error instanceof MobileServiceError)) {
+    return 'No pudimos cambiar la contraseña. Inténtalo nuevamente.';
+  }
+
+  if (error.code === 'cancelled') return '';
+  if (error.code === 'password_policy_rejected') {
+    return 'La nueva contraseña no cumple la política: mínimo 14 caracteres, mayúscula, minúscula, número y símbolo.';
+  }
+  if (error.code === 'current_password_invalid') {
+    return 'La contraseña temporal no es válida. Revísala o pide a Gestión Humana una nueva.';
+  }
+  if (error.code === 'rate_limited') return 'Demasiados intentos. Espera un minuto antes de reintentar.';
+  if (error.code === 'network_unavailable') return 'No hay conexión con la red privada de ELEVANT.';
+  if (error.code === 'request_timeout') return 'ELEVANT tardó demasiado en responder. Inténtalo nuevamente.';
+  return 'No pudimos cambiar la contraseña. Inténtalo nuevamente.';
 }
 
 const styles = StyleSheet.create({
