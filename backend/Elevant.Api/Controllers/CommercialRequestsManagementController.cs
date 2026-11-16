@@ -146,7 +146,10 @@ public sealed class CommercialRequestsManagementController(
         [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        return Respond(await decisions.HandleAsync(actorId, id, input, idempotencyKey, cancellationToken));
+        var result = await decisions.HandleAsync(actorId, id, input, idempotencyKey, cancellationToken);
+        // An approval publishes the profile created for a proposed airline: the public wizard re-reads its list.
+        if (result.IsSuccess && input.Approve) await InvalidateCatalogAsync();
+        return Respond(result);
     }
 
     private Task InvalidateCatalogAsync() => PublicCatalogInvalidation.TrySendAsync(

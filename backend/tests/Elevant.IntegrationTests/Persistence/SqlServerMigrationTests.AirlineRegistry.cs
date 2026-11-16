@@ -62,10 +62,11 @@ public sealed partial class SqlServerMigrationTests
         Assert.Null(unpublished.RegistryStatus);
         Assert.Equal(CatalogMutationFailure.Conflict, (await store.RecordRegistryCheckAsync(superAdmin, key, found, ct)).Failure);
 
-        // A manual verification with its source remains the alternative to the registry.
+        // A manual verification with its source remains the alternative to the registry. The seeded Copa Airlines
+        // already holds the verified IATA CM, so this test airline is verified without it.
         var manual = await store.SaveAsync(superAdmin, created.Id, input with
         {
-            IcaoCode = "CMQ", LegalName = "Compañía Panameña de Aviación, S.A.", IsVerified = true,
+            IataCode = null, IcaoCode = "CMQ", LegalName = "Compañía Panameña de Aviación, S.A.", IsVerified = true,
             VerificationSourceUrl = "https://www.copaair.com/es-gs/legal/", IsPublished = true, Version = unpublished.Version,
         }, null, ct);
         Assert.Null(manual.Failure);
