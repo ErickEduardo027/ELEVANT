@@ -35,7 +35,8 @@ internal sealed class EfHumanResourcesSettingsStore(ElevantDbContext context, IA
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (!Allowed(actor, ReadPermission))
+        // The names are also read by whoever records or reads permits (their form and lists name the custom types).
+        if (!Allowed(actor, ReadPermission) && !Allowed(actor, "human_resources.permits.read"))
             return MasterDataResult<PermitTypeSettingsData>.Failed(MasterDataFailure.Forbidden, "forbidden");
         var types = await context.PermitTypeDefinitions.AsNoTracking().OrderBy(item => item.Name)
             .ThenBy(item => item.Code).ToArrayAsync(cancellationToken);

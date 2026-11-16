@@ -281,6 +281,28 @@ Gestión Humana consulta los turnos y alertas, y decide sobre la disponibilidad
 [componentes compartidos](../../frontend/private-web/src/features/human-resources/documents/DocumentHistoryDrawer.jsx)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesQualificationReadStore.cs).
 
+*Posterior al commit verificado de esta nota
+([ADR-0045](../../docs/adr/0045-configurable-permit-types-and-stand-required-permits.md), rama
+`feat/rh-configuracion-carnets`, sin desplegar):* **Gestión Humana › Configuración**
+(`human_resources.settings`) tiene dos pestañas.
+- «Carnets y permisos» muestra los dos tipos del sistema, que no se editan, y los tipos que Gestión Humana agrega.
+- «Equipos de habilitación» administra el catálogo de equipos de las habilitaciones. El puente de abordaje no cambia
+  su código ni se desactiva.
+
+En las dos pestañas hay una tabla y un formulario lateral para crear, editar y desactivar. Cada guardado lleva su
+Idempotency-Key y la versión, y los errores se explican por código.
+
+El formulario de carnets ofrece los tipos del sistema y los personalizados activos. La lista y el reporte de
+vencimientos nombran los tipos personalizados con el catálogo. Sin acceso al catálogo, se quedan con los nombres del
+sistema.
+
+En OCC › Datos maestros, el panel «Carnets exigidos por posición» fija los carnets de una posición o los aplica a
+varias a la vez. El detalle de la posición en los mapas dice «Exige: …». Cobertura y Planificación explican al agente
+no elegible con «Le falta: {carnet}».
+
+Fuentes: [Configuración](../../frontend/private-web/src/features/human-resources/settings/HumanResourcesSettingsPage.jsx)
+y [carnets por posición](../../frontend/private-web/src/features/master-data/StandRequiredPermitsPanel.jsx).
+
 En el worktree local posterior a esta fotografía, el dashboard consulta los
 perfiles de rampa autorizados de la API para contar agentes activos y perfiles
 sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
