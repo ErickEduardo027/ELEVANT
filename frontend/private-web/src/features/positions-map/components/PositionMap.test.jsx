@@ -10,6 +10,14 @@ import { presetTargets } from '../../maps/core/cameraPresets';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
+import { createAerodromeWeather, WEATHER_NOON } from '../../maps/testing/weatherFixtures';
+import { toWeatherReading } from '../../../services/weatherService';
+import { createRenderClock } from '../../maps/core/frameLoop';
+import {
+  createAirPicture, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_SOURCE,
+} from '../../maps/testing/trafficFixtures';
+import { createMotionStore } from '../../maps/traffic/motionStore';
+import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import PositionMap from './PositionMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -24,7 +32,8 @@ const VIEWPORT_PX = 1440;
 const STAND_LAYERS = [
   'occ-stands-fill', 'occ-stands-hatch', 'occ-stands-outline-solid', 'occ-stands-outline-dash-4-3',
   'occ-stands-outline-dash-2-2', 'occ-stands-outline-dot-1-3', 'occ-stands-leadin', 'occ-stands-leadin-arriving',
-  'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-selection', 'occ-stands-related', 'occ-stands-same-agent',
+  'occ-stands-combined-link', 'occ-stands-narrow-inner', 'occ-stands-progress-track', 'occ-stands-progress-done',
+  'occ-stands-selection', 'occ-stands-related', 'occ-stands-same-agent',
 ];
 // The stands as the map draws them: the layout's polygons, moved where OCC placed a stand.
 const DRAWN = attachStandGeometry(STANDS, MDPC_LAYOUT);
@@ -168,8 +177,10 @@ describe('PositionMap on the map engine', () => {
       properties: { code: 'A1', terminal: 'A', state: 'occupied', unofficial: false },
       geometry: { type: 'Polygon', coordinates: [DRAWN.find(stand => stand.id === 'A1').geometry.polygon] },
     });
-    // PUJ is marked by its reference point.
-    expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
+    // PUJ is marked by its reference point, the first of the references every map has (PR M8: the rings, centrelines,
+    // airports and navaids around it, which the ramp view does not show).
+    const [arp] = map.getSource('occ-reference').data.features;
+    expect(arp.properties).toEqual({ kind: 'arp', label: 'PUJ' });
 
     // The same positions read again in new objects write nothing; a changed state is one update of that stand.
     rerender({ positions: createMapStands() });
@@ -307,6 +318,21 @@ describe('PositionMap on the map engine', () => {
     expect(screen.getByRole('button', { name: 'Leyenda' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('gives its map the weather of the page: the wind at the airfield, and none without it (PR M8)', () => {
+    // The aerodrome weather as useMdpcWeather answers it, from a synthetic answer of the API: 100° at 13 kt.
+    const reading = toWeatherReading(createAerodromeWeather(), { receivedAt: Date.parse(WEATHER_NOON) });
+    const weather = { status: 'success', data: reading.observation, apiStatus: reading.apiStatus, source: reading.source };
+    let view = renderPositions({ weather });
+    loadStyle(view.map);
+    expect(view.map.options.style.sources['occ-weather-wind']).toMatchObject({ type: 'geojson' });
+    expect(view.map.getSource('occ-weather-wind').data.features[0].properties).toMatchObject({ kind: 'wind',
+      directionDeg: 100, speedKt: 13 });
+    view.unmount();
+    // The console's apron gives it none: no weather on its map.
+    view = renderPositions({ dashboardLabels: true });
+    expect(view.map.options.style.sources['occ-weather-wind']).toBeUndefined();
+  });
+
   it('no setStyle on theme change', () => {
     const { map, rerender } = renderPositions({ theme: 'light' });
     loadStyle(map);
@@ -315,5 +341,64 @@ describe('PositionMap on the map engine', () => {
     expect(map.styleCalls).toEqual([]);
     expect(fake.state.maps).toEqual([map]);
     expect(map.getSource('occ-stands').setDataCalls).toHaveLength(1);
+  });
+});
+
+// The live traffic a screen of the OCC frame gives its map (PR M6, maps/MapSituationGate.jsx): the synthetic picture
+// and flights of the lab's noon, through a motion store on a render clock, as useMapSituation builds them.
+function liveTraffic() {
+  const noon = Date.parse(TRAFFIC_NOON);
+  const motion = createMotionStore({ clock: createRenderClock({ clock: { now: () => noon } }) });
+  const picture = toPictureModel(createAirPicture());
+  const flights = toFlightsModel(createMapFlights());
+  motion.ingest({ picture, flights });
+  const situation = buildSituation({ picture, flights, nowMs: noon, estimates: motion.estimatesAt(noon),
+    estimatesChangeAt: motion.nextChangeAt(noon) });
+  return { aircraft: situation.aircraft, trails: { type: 'FeatureCollection', features: [] }, route: null,
+    source: TRAFFIC_SOURCE, motion };
+}
+
+describe('PositionMap with the live traffic (PR M6)', () => {
+  it('draws the traffic over the stands with the chosen flight, its overlays inside the map and «Seguir» and the pause in the dock', async () => {
+    const onSelectTraffic = vi.fn();
+    const onSelectPosition = vi.fn();
+    const { map } = renderPositions({
+      traffic: liveTraffic(), trafficSelection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }, onSelectTraffic,
+      onSelectPosition, children: <p data-testid="screen-overlay">Bloque de datos</p>,
+    });
+    // The traffic overlay, started with the map: one map, its stands and its aircraft.
+    expect(map.options.style.sources['occ-traffic']).toMatchObject({ type: 'geojson', promoteId: 'id' });
+    loadStyle(map);
+    const added = map.getSource('occ-traffic').updateDataCalls.flatMap(diff => diff.add);
+    expect(added.map(feature => feature.properties.id)).toEqual(expect.arrayContaining([
+      `f:${TRAFFIC_FLIGHT_KEY.arrival}`, `h:${TRAFFIC_HEX.overflight}`,
+    ]));
+    // The chosen flight is the selection: drawn in cyan, and its stand (A5) marked as the one it goes to.
+    expect(added.find(feature => feature.properties.id === `f:${TRAFFIC_FLIGHT_KEY.arrival}`).properties.selected).toBe(true);
+    expect(map.featureStateOf('occ-stands', 'A5')).toEqual({ related: true });
+    expect(map.getSource('occ-stands').data.features).toHaveLength(41);
+    // The screen's overlays sit inside the map; the dock has «Seguir» and «Pausar movimiento» besides its own.
+    expect(within(screen.getByTestId('occ-map')).getByTestId('screen-overlay')).toHaveTextContent('Bloque de datos');
+    const dock = screen.getByTestId('map-preset-switcher').parentElement;
+    expect(within(dock).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-keyshortcuts', 'S');
+    expect(within(dock).getByRole('button', { name: 'Pausar movimiento' })).toBeInTheDocument();
+
+    // A click on an aircraft is the screen's traffic selection; a click on a stand still picks the stand.
+    await click(map, [{ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, flightKey: TRAFFIC_FLIGHT_KEY.arrival } }]);
+    expect(onSelectTraffic).toHaveBeenLastCalledWith({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
+    await click(map, [{ layer: { id: 'occ-traffic-other' }, properties: { id: `h:${TRAFFIC_HEX.overflight}`, hex: TRAFFIC_HEX.overflight } }]);
+    expect(onSelectTraffic).toHaveBeenLastCalledWith({ kind: 'aircraft', id: TRAFFIC_HEX.overflight });
+    await click(map, [standFeature('A2')]);
+    expect(onSelectPosition).toHaveBeenLastCalledWith('A2');
+    expect(onSelectTraffic).toHaveBeenCalledTimes(2);
+  });
+
+  it('without traffic it is the map it always was: no traffic overlay, no «Seguir», no pause', () => {
+    const { map } = renderPositions({ trafficSelection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival } });
+    loadStyle(map);
+    expect(map.options.style.sources['occ-traffic']).toBeUndefined();
+    expect(screen.queryByRole('button', { name: 'Seguir' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pausar movimiento' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Leyenda' })).toBeInTheDocument();
   });
 });

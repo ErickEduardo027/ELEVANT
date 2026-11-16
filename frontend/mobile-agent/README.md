@@ -109,6 +109,12 @@ AVIAM y al menos un scope de estación. Los comandos operativos registran primer
 la instalación actual y la API vuelve a validar cuenta, asignación, estación y
 vínculo del dispositivo antes de aceptar cualquier escritura.
 
+Una cuenta creada por Gestión Humana con contraseña temporal recibe `409
+password_change_required` al iniciar sesión. La pantalla de acceso pide entonces
+cambiarla (`POST /api/v1/auth/password-change`, sin sesión) con la política de la
+API visible en vivo. Tras el `204`, inicia sesión con la nueva contraseña y sigue
+el flujo normal. Ninguna contraseña se guarda.
+
 Las tablets son compartidas (fase 2, bloque E): iniciar sesión vincula la
 instalación a la cuenta y la toma de otro agente, salvo que ese agente tenga una
 operación en curso (`device_in_use_by_active_agent`). Cerrar sesión libera la

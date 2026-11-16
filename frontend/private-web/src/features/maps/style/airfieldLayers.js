@@ -119,7 +119,8 @@ export function airfieldOverlay() {
           'text-size': LABEL_SIZE,
           'text-max-angle': 30,
         },
-        paint: labelPaint(occColor('faint')),
+        // Muted, not faint: it reads on the lighter taxiways of the coloured base map (mapColors.js).
+        paint: labelPaint(occColor('muted')),
       }),
       // Each designator faces its runway end's heading, as painted: it reads from the approach.
       airfieldLayer('occ-airfield-designator', 'symbol', kindIs('designator'), {

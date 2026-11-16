@@ -1,5 +1,6 @@
 import { occColor } from '../../occ-ui/occPalette';
-import { BASEMAP_COLORS } from './mapTheme';
+import { REGION_AIRPORT_IATAS } from '../airport/regionContext';
+import { basemapColorsFor } from './mapTheme';
 
 // The NOC base map on the OpenMapTiles schema of the OpenFreeMap vector tiles: water, land, coast, borders, the main
 // roads (dim, from zoom 8), buildings, a few labels and, as context below the airfield view, the airfield as the tiles
@@ -11,6 +12,12 @@ export const BASEMAP_SOURCE_ID = 'openmaptiles';
 
 /** The airport of the OCC: style/referenceLayers.js draws it at its reference point, so its tile label is left out. */
 export const HOME_AIRPORT_IATA = 'PUJ';
+
+/**
+ * The airports whose tile label the base map leaves out: the home airport and the airports of the region, which the
+ * reference overlays draw with their ICAO and IATA codes (PR M8, airport/regionContext.js), so none is written twice.
+ */
+export const OWN_AIRPORT_IATAS = Object.freeze([...new Set([HOME_AIRPORT_IATA, ...REGION_AIRPORT_IATAS])]);
 
 // The OpenFreeMap glyph server serves these three stacks and nothing else, so no other font may appear in the style.
 export const FONT_STACKS = Object.freeze({
@@ -58,7 +65,7 @@ function labelPaint(colour, halo) {
  * The tile airfield ends at the derived `airfield` threshold (`occ:maxThreshold`, never a fixed zoom): from there the
  * airfield of the own MDPC dataset (airfieldLayers.js) takes over, so the two are never drawn together.
  */
-export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
+export function basemapLayers({ theme = 'dark', colors = basemapColorsFor(theme) } = {}) {
   const base = [
     { id: 'base-background', type: 'background', paint: { 'background-color': colors.land }, metadata: { 'occ:group': 'basemap' } },
     tileLayer('water', 'basemap', { id: 'base-water', type: 'fill', filter: IS_POLYGON, paint: { 'fill-color': colors.sea } }),
@@ -72,7 +79,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       id: 'base-boundary-country',
       type: 'line',
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]],
-      paint: { 'line-color': colors.boundary, 'line-width': 1, 'line-dasharray': [3, 2] },
+      paint: { 'line-color': colors.boundary, 'line-width': 1.2, 'line-dasharray': [3, 2] },
     }),
     tileLayer('boundary', 'basemap', {
       id: 'base-boundary-maritime',
@@ -115,7 +122,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
     tileLayer('place', 'basemap.labels', {
       id: 'base-label-city',
       type: 'symbol',
-      filter: ['all', classIs('city'), ['!=', ['get', 'capital'], 2]],
+      filter: ['all', classIs('city', 'town'), ['!=', ['get', 'capital'], 2]],
       layout: { 'text-field': NAME, 'text-font': fonts('regular'), 'text-size': LABEL_SIZE, 'text-max-width': 8 },
       paint: labelPaint(colors.placeLabel, colors.labelHalo),
     }),
@@ -145,7 +152,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       type: 'symbol',
       minzoom: 7,
       maxzoom: 12,
-      filter: ['all', ['has', 'iata'], ['!=', ['get', 'iata'], HOME_AIRPORT_IATA]],
+      filter: ['all', ['has', 'iata'], ['match', ['get', 'iata'], [...OWN_AIRPORT_IATAS], false, true]],
       layout: {
         'icon-image': 'airport-arp',
         'text-field': ['get', 'iata'],
@@ -210,7 +217,7 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
         'text-font': fonts('bold'),
         'text-size': LABEL_SIZE,
       },
-      paint: labelPaint(occColor('muted'), colors.labelHalo),
+      paint: labelPaint(occColor('text', theme), colors.labelHalo),
       metadata: UNTIL_AIRFIELD,
     }),
   ];

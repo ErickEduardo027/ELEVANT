@@ -16,6 +16,7 @@ import OccLanguageToggle from './status/OccLanguageToggle';
 import OccLegendButton from './status/OccLegendButton';
 import OccLiveIndicator from './status/OccLiveIndicator';
 import OccSourcesButton from './status/OccSourcesButton';
+import OccThemeToggle from './status/OccThemeToggle';
 import OccUserMenu from './status/OccUserMenu';
 import { COARSE_TARGET, STATUS_BAR_LAYOUT as LAYOUT } from './status/statusBarLayout';
 
@@ -24,13 +25,13 @@ const isCurrent = (pathname, item) => pathname === item.path || pathname?.starts
 /**
  * The OCC status bar (design C.3), 48 px high on every OCC screen. It answers what time it is, whether the picture is
  * live, whether the sources can be trusted and whether anything needs the controller: the station, the module, the
- * live link, the sources, the alerts, the two clocks, the language, «Leyenda» and the account. The OCC is dark only and
- * has no theme button, so the `theme` and `onToggleTheme` props that AppShell sends to every top bar go unread, as do
- * its notification props: the bar reads the notices of OccShellProvider (useOccShell). Which element shows at which
+ * live link, the sources, the alerts, the two clocks, the language, «Leyenda», the theme (light or dark, dark by
+ * default: `theme` and `onToggleTheme` from AppShell) and the account. The notification props AppShell sends go
+ * unread: the bar reads the notices of OccShellProvider (useOccShell). Which element shows at which
  * width comes from status/statusBarLayout.js. The alerts open «Alertas y avisos» (OccAlertsDrawer), whose open state
  * lives here and which OccShellOverlays draws in the shell root.
  */
-export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout }) {
+export default function OccTopbar({ navigation = [], user, theme, onToggleTheme, onOpenMenu, onLogout }) {
   const { t } = useTranslation(occShellMessages);
   const pathname = usePathname();
   const { live, sources, notices } = useOccShell();
@@ -94,7 +95,8 @@ export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout 
       <OccClocks className={LAYOUT.localClock.bar} utcClassName={LAYOUT.utcClock.bar} />
       <OccLanguageToggle className={LAYOUT.language.bar} />
       <OccLegendButton className={LAYOUT.legend.bar} />
-      <OccUserMenu user={user} onLogout={onLogout} className={LAYOUT.account.bar} />
+      <OccThemeToggle theme={theme} onToggle={onToggleTheme} className={LAYOUT.theme.bar} />
+      <OccUserMenu user={user} onLogout={onLogout} theme={theme} onToggleTheme={onToggleTheme} className={LAYOUT.account.bar} />
       <OccShellOverlays alerts={alerts} />
     </header>
   );

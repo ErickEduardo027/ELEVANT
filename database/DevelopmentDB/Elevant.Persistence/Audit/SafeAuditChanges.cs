@@ -46,6 +46,9 @@ internal static class SafeAuditChanges
         // and adopted (ADR-0041, contracts 1.2).
         "demo_flight.stand_choice",
         "demo_station.terminals_created", "demo_station.stands_created", "demo_station.stands_adopted",
+        // Professor's review: the airline's tax identifier Contratos corrected on a request and the one an approval
+        // copied to the airline's organization (a company's RNC or foreign tax id, never a person's document).
+        "request.tax_registration", "organization.tax_registration",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

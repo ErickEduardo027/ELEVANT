@@ -4,6 +4,7 @@ import { createSimulatedOccMapAdapter } from '../../services/occMapService';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
 import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { sampleTrajectory } from './kinematics/estimator';
 import {
   createAirPicture, createMapFlights, createTrafficScenario, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_HEX as HEX,
   TRAFFIC_NOON, TRAFFIC_STATION_ID,
@@ -164,31 +165,38 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
   });
 
   it('carries Disabled, Unavailable, Stale and Warming as data, never as an error', async () => {
+    // Without live traffic the AVIAM flights F-1 draws are estimated from the schedule (PR M6): ZZ161 approaching,
+    // ZZ300 parked, ZZ500 en route, ZZ700 leaving and the demo flight. A Stale picture still draws its six fixes, ZZ161
+    // among them.
     const cases = [
-      ['Disabled', 'not_configured', 'unconfigured', 0],
-      ['Unavailable', 'provider_error', 'offline', 0],
-      ['Stale', 'provider_error', 'delayed', 6],
-      ['Warming', null, 'idle', 0],
+      ['Disabled', 'not_configured', 'unconfigured', 0, 5],
+      ['Unavailable', 'provider_error', 'offline', 0, 5],
+      ['Stale', 'provider_error', 'delayed', 6, 4],
+      ['Warming', null, 'idle', 0, 5],
     ];
-    for (const [status, reason, source, aircraft] of cases) {
+    for (const [status, reason, source, fixes, estimated] of cases) {
       const shell = createOccShellValue();
       const { result } = setup({}, { shell, scenario: createTrafficScenario({ picture: createAirPicture({ status }) }) });
       await flush();
       expect(result.current.status, status).toBe('success');
       expect(result.current.picture, status).toMatchObject({ status, reason });
       expect(result.current.situation, status).toMatchObject({ status, reason });
-      expect(result.current.situation.aircraft, status).toHaveLength(aircraft);
-      if (status === 'Stale') expect(result.current.situation.aircraft.every(item => item.quality === 'stale')).toBe(true);
+      const { aircraft } = result.current.situation;
+      expect(aircraft.filter(item => item.hex !== null), status).toHaveLength(fixes);
+      expect(aircraft.filter(item => item.quality === 'estimated'), status).toHaveLength(estimated);
+      expect(aircraft, status).toHaveLength(fixes + estimated);
+      if (status === 'Stale') expect(aircraft.filter(item => item.hex !== null).every(item => item.quality === 'stale')).toBe(true);
       expect(airTraffic(shell), status).toMatchObject({ state: source, detail: reason });
       cleanup();
       expect(airTraffic(shell), `${status} after unmount`).toBeNull();
     }
 
-    // Live: the source is current, from the instant the network described.
+    // Live: the source is current, from the instant the network described, and its tags say that the map also draws
+    // estimated positions and a demo flight (contracts 2.5).
     const shell = createOccShellValue();
     setup({}, { shell });
     await flush();
-    expect(airTraffic(shell)).toMatchObject({ state: 'ok', at: NOON - 2_000, detail: null, tags: [] });
+    expect(airTraffic(shell)).toMatchObject({ state: 'ok', at: NOON - 2_000, detail: null, tags: ['demo', 'estimated'] });
   });
 
   it('reports loading, success, empty, recoverable error with retry, and unauthorized without a request', async () => {
@@ -223,7 +231,8 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     cleanup();
 
     // Each read fails alone: an air picture that fails (a 503) while the flights answer leaves the map with its
-    // flights and no aircraft; the source list says that the traffic is offline, and retry() asks for it again.
+    // flights and no live aircraft (only the estimated AVIAM flights); the source list says that the traffic is
+    // offline, and retry() asks for it again.
     const offlineShell = createOccShellValue();
     const noPicture = { ...simulated,
       getAirPicture: vi.fn().mockRejectedValueOnce(refused(503)).mockImplementation(simulated.getAirPicture) };
@@ -231,7 +240,9 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     await flush();
     expect(unavailable.result.current).toMatchObject({ status: 'success', picture: null, sourceState: 'offline' });
     expect(unavailable.result.current.situation.flights).toHaveLength(8);
-    expect(unavailable.result.current.situation.aircraft).toEqual([]);
+    expect(unavailable.result.current.situation.aircraft.every(item => item.quality === 'estimated' && item.hex === null))
+      .toBe(true);
+    expect(unavailable.result.current.situation.aircraft).toHaveLength(5);
     expect(airTraffic(offlineShell)).toMatchObject({ state: 'offline' });
     act(() => unavailable.result.current.retry());
     await flush();
@@ -274,7 +285,7 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     const elsewhere = setup({}, { service: noTraffic, shell: elsewhereShell });
     await flush();
     expect(elsewhere.result.current).toMatchObject({ status: 'success', picture: null, sourceState: 'unconfigured' });
-    expect(elsewhere.result.current.situation.aircraft).toEqual([]);
+    expect(elsewhere.result.current.situation.aircraft.filter(item => item.quality !== 'estimated')).toEqual([]);
     expect(airTraffic(elsewhereShell)).toMatchObject({ state: 'unconfigured' });
     await flush(60_000);
     expect(noTraffic.getAirPicture).toHaveBeenCalledTimes(1);
@@ -355,16 +366,26 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     await flush();
     expect(result.current.target).toMatchObject({ kind: 'flight', flight: { flightKey: KEY.arrival },
       aircraft: { id: `f:${KEY.arrival}`, hex: HEX.arrival } });
-    // The flight's aircraft is the chosen one: its track is read once, and the route draws what it flew (the trail with
-    // the track) and the straight line to its stand.
+    // The flight's aircraft is the chosen one: its track is read once, and the route (PR M6) draws what it flew observed
+    // (the trail with the track), estimated from Miami, and still to fly along its trajectory to its stand A5, with the
+    // touchdown, the runway exit and the stand marked.
     expect(readsOf(adapter, 'aircraftTrack').map(call => call.hex)).toEqual([HEX.arrival]);
     expect(result.current.track).toMatchObject({ hex: HEX.arrival });
-    const [flown, next] = result.current.route.features;
-    expect(result.current.route.features.map(feature => feature.properties.part)).toEqual(['flown', 'next']);
+    const parts = () => result.current.route.features.map(feature => feature.properties.part);
+    expect(parts()).toEqual(['flownObserved', 'flownEstimated', 'remaining', 'mark', 'mark', 'mark']);
+    const [flown] = result.current.route.features;
     expect(flown.geometry.coordinates.length).toBeGreaterThanOrEqual(30);
-    expect(next.properties).toMatchObject({ hex: HEX.arrival, to: 'stand' });
-    // The telemetry store holds the situation's aircraft for the data block.
-    expect(result.current.telemetry.telemetryOf(`f:${KEY.arrival}`)).toMatchObject({ altFt: 2_600, gsKt: 150, quality: 'live' });
+    expect(flown.properties).toMatchObject({ hex: HEX.arrival, flightKey: KEY.arrival });
+    expect(result.current.route.features.at(-1).properties).toMatchObject({ mark: 'stand', standCode: 'A5' });
+    // routeAt is the same route with the aircraft where a frame draws it: the split moves there.
+    const ahead = result.current.routeAt(NOON + 2_000, [-68.45, 18.55]);
+    expect(ahead.features.find(feature => feature.properties.part === 'remaining').geometry.coordinates[0])
+      .toEqual([-68.45, 18.55]);
+    expect(result.current.traffic.routeAt).toBe(result.current.routeAt);
+    // The telemetry store holds the situation's aircraft for the data block, where the map draws it (PR M6): the fix is
+    // 4 s old at noon, so 768 ft/min down from 2 600 ft it reads 2 549 ft.
+    expect(result.current.telemetry.telemetryOf(`f:${KEY.arrival}`)).toMatchObject({ altFt: 2_549, gsKt: 150, quality: 'live',
+      mode: 'live' });
     await flush(30_000);
     expect(countOf(adapter, 'aircraftTrack')).toBe(1);
 
@@ -373,17 +394,84 @@ describe('useMapSituation (contracts 1.3 and 2.7)', () => {
     await flush();
     expect(result.current.target).toMatchObject({ kind: 'aircraft', flight: null, aircraft: { hex: HEX.overflight } });
     expect(readsOf(adapter, 'aircraftTrack').map(call => call.hex)).toEqual([HEX.arrival, HEX.overflight]);
-    expect(result.current.route.features.map(feature => feature.properties.part)).toEqual(['flown']);
+    expect(parts()).toEqual(['flownObserved']);
 
-    // A flight without a position: no aircraft, no route and no read; nothing chosen, nothing named.
-    rerender(props({ kind: 'flight', id: KEY.noFix }));
+    // A flight without a position (ZZ162 waits for its push-back: F-1 draws no estimate of it): no aircraft and no read,
+    // and its planned way out from A5, all still to fly; nothing chosen, nothing named.
+    rerender(props({ kind: 'flight', id: KEY.departure }));
     await flush();
     expect(result.current.target).toMatchObject({ kind: 'flight', aircraft: null });
-    expect(result.current.route.features).toEqual([]);
+    expect(parts()).toEqual(['remaining', 'mark']);
+    expect(result.current.route.features[1].properties).toMatchObject({ mark: 'stand', standCode: 'A5' });
     expect(result.current.track).toBeNull();
     rerender(props(null));
     await flush();
     expect(result.current.target).toBeNull();
     expect(countOf(adapter, 'aircraftTrack')).toBe(2);
+  });
+
+  it('estimates the demo flight from its trajectory', async () => {
+    const { result } = setup();
+    await flush();
+    const { situation, motion } = result.current;
+    // ZZ9001 appeared 3 minutes ago for its stand in 8: on the 08 final, drawn where its fitted trajectory has it.
+    const demo = situation.byId.get(`f:${KEY.demoArrival}`);
+    expect(demo).toMatchObject({ kind: 'aviam', isDemo: true, quality: 'estimated', hex: null, onGround: false,
+      mode: 'estimate', statusKey: null, timeScale: 1, opacity: 1 });
+    const trajectory = motion.trajectoryOf(KEY.demoArrival);
+    expect(trajectory.meta).toMatchObject({ runwayIdent: '08', departureRunwayIdent: '08', standCode: null, apronHoldId: 'ah-b' });
+    const sample = sampleTrajectory(trajectory, NOON);
+    expect([demo.lon, demo.lat]).toEqual([sample.lon, sample.lat]);
+    // Its data block reads it where the map draws it, on the render clock.
+    expect(result.current.telemetry.telemetryOf(demo.id)).toMatchObject({ quality: 'estimated', mode: 'estimate',
+      runwayIdent: '08', runwaySource: 'demo', onGround: false });
+    // ZZ161 has its fix: drawn live, never estimated; the situation's next change is the motion store's next instant.
+    expect(situation.byId.get(`f:${KEY.arrival}`)).toMatchObject({ quality: 'live', mode: null });
+    expect(situation.changesAt).toBe(Math.min(motion.nextChangeAt(NOON), NOON - 8_000 + 30_001));
+  });
+
+  it('returns the traffic with its motion', async () => {
+    const { result, rerender, adapter } = setup();
+    await flush();
+    const { traffic, motion, renderClock, situation, trails, route, routeAt } = result.current;
+    expect(traffic).toEqual({ aircraft: situation.aircraft, trails, route, routeAt, source: situation.source, motion,
+      flights: situation.flights });
+    expect(typeof routeAt).toBe('function');
+    expect(Object.isFrozen(traffic)).toBe(true);
+    // The motion draws on the render clock, which follows the clock the reads feed.
+    expect(motion.clock).toBe(renderClock);
+    expect(renderClock.now()).toBe(result.current.clock.now());
+    expect(motion.dataAt()).toBe(NOON);
+    // A render that changes nothing keeps the same objects; the same motion for the hook's whole life.
+    rerender({ stationId: TRAFFIC_STATION_ID, service: adapter });
+    expect(result.current.traffic).toBe(traffic);
+    await flush(10_000);
+    expect(result.current.motion).toBe(motion);
+    expect(result.current.traffic.motion).toBe(motion);
+    expect(result.current.traffic).not.toBe(traffic);
+  });
+
+  it('pausing the render clock keeps reading', async () => {
+    const { result, adapter } = setup();
+    await flush();
+    const { renderClock, telemetry } = result.current;
+    const demoId = `f:${KEY.demoArrival}`;
+    telemetry.subscribe(() => {});
+    act(() => renderClock.pause());
+    expect(renderClock.isPaused()).toBe(true);
+    expect(renderClock.pausedAt()).toBe(NOON);
+    const frozen = telemetry.telemetryOf(demoId);
+    // Thirty seconds on, the reads go on at their pace and the situation follows the server's time...
+    await flush(30_000);
+    expect(countOf(adapter, 'airPicture')).toBe(4);
+    expect(result.current.picture.serverTime).toBe(NOON + 30_000);
+    expect(result.current.situation.byId.get(`f:${KEY.arrival}`).ageS).toBe(4);
+    // ...while the map draws the paused instant: the telemetry the data block reads stays where it was.
+    expect(renderClock.now()).toBe(NOON);
+    expect(telemetry.getSnapshot().nowMs).toBe(NOON);
+    expect(telemetry.telemetryOf(demoId)).toMatchObject({ altFt: frozen.altFt, gsKt: frozen.gsKt });
+    // Resumed, it draws the server's time again.
+    act(() => renderClock.resume());
+    expect(renderClock.now()).toBe(NOON + 30_000);
   });
 });

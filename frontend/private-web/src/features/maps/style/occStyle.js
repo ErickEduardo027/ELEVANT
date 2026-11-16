@@ -1,9 +1,15 @@
+import { occThemeColor } from '../../occ-ui/occPalette';
 import { BASEMAP_SOURCE_ID, FONT_STACKS, basemapLayers } from './basemapLayers';
+import { basemapThemeColor } from './mapTheme';
 
 // The one style document of the OCC maps, built in code and handed to the map as an object: the NOC base map over
 // the OpenFreeMap vector tiles, an invisible marker at the base of every slot, and the overlay layers of the screen
-// with their GeoJSON sources born empty (the map engine fills them). There is no theme parameter and no sprite: the
-// OCC is dark only, icons are generated as SDF images (mapImages.js), and the style is never swapped after start.
+// with their GeoJSON sources born empty (the map engine fills them) and, from PR M8, the raster sources of the
+// satellite images with their own https tiles (the engine pins them to the time of the image). `theme` (dark by
+// default, or light) picks the base-map colours (mapTheme.js) and the OCC palette: the overlays are written with the
+// dark palette, and every colour of theirs is carried to the same token (or base-map key) of the theme. There is no
+// sprite: icons are generated as SDF images (mapImages.js), and the style is never swapped after start: a theme change
+// re-creates the map (OccMap).
 
 export { BASEMAP_SOURCE_ID, FONT_STACKS };
 
@@ -34,13 +40,45 @@ export const SLOT_GROUP = 'slot';
 
 /**
  * Zoom thresholds derived at run time from the fitted views (contracts 2.3), named in layer metadata: `polygons`,
- * `codes` and `threeLine` for the stands, and `airfield`, the boundary of the Aeródromo view, where the airfield of the
- * own dataset takes over from the tiles.
+ * `codes` and `threeLine` for the stands, `airfield`, the boundary of the Aeródromo view, where the airfield of the
+ * own dataset takes over from the tiles, and `approach`, the boundary between Región and Aproximación, where the range
+ * rings of one view give way to the other's (PR M8).
  */
-export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 'airfield']);
+export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 'airfield', 'approach']);
 
 const THRESHOLD_KEYS = ['occ:minThreshold', 'occ:maxThreshold'];
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
+
+const RGBA = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/;
+const hexOf = channels => `#${channels.map(value => Number(value).toString(16).padStart(2, '0')).join('')}`;
+
+// One colour written with the dark palette or the dark base map, as `theme` paints it. An `rgba()` colour (the fading
+// trails) keeps its alpha.
+function themeColour(value, theme) {
+  const rgba = RGBA.exec(value);
+  if (rgba === null) return basemapThemeColor(occThemeColor(value, theme), theme);
+  const swapped = themeColour(hexOf(rgba.slice(1, 4)), theme);
+  if (swapped === hexOf(rgba.slice(1, 4))) return value;
+  const [red, green, blue] = [1, 3, 5].map(start => Number.parseInt(swapped.slice(start, start + 2), 16));
+  return `rgba(${red}, ${green}, ${blue}, ${rgba[4]})`;
+}
+
+// Every string of a paint or layout value (expressions included), carried to `theme`.
+function themed(value, theme) {
+  if (typeof value === 'string') return themeColour(value, theme);
+  if (Array.isArray(value)) return value.map(item => themed(item, theme));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, themed(item, theme)]));
+  }
+  return value;
+}
+
+const themedLayer = (layer, theme) => (theme !== 'light' ? layer : {
+  ...layer,
+  ...(layer.paint ? { paint: themed(layer.paint, theme) } : {}),
+  // A formatted label carries its colours in the layout (`format` sections).
+  ...(layer.layout ? { layout: themed(layer.layout, theme) } : {}),
+});
 
 function slotIndex(slot) {
   const index = SLOT_ORDER.indexOf(slot);
@@ -83,17 +121,23 @@ function overlayLayerProblem(layer, slot) {
   return null;
 }
 
+// A raster source of an overlay (PR M8): its tiles are a list of https URL templates, and it has no TileJSON of its own.
+const HTTPS_TILE = /^https:\/\/[^/\s]+\/\S*$/;
+const isHttpsRaster = source => source?.type === 'raster' && source.url === undefined && Array.isArray(source.tiles)
+  && source.tiles.length > 0 && source.tiles.every(tile => typeof tile === 'string' && HTTPS_TILE.test(tile));
+
 /**
  * Builds the style. `basemap: false` leaves out the vector source and every tile layer (the land colour stays as the
  * background), which the map lab uses to render without the network. An overlay is
  * `{ sources: { id: GeoJSONSourceSpecification }, layers: [{ slot, ...LayerSpecification }] }`: every layer names
  * its slot and its `metadata['occ:group']`, may name a threshold in `occ:minThreshold` / `occ:maxThreshold`, and
- * keeps its order inside the slot. Duplicate ids, unknown slots or thresholds and missing sources throw.
+ * keeps its order inside the slot. A source is GeoJSON, born empty, or (PR M8) a raster with its https `tiles`, taken
+ * as given. Duplicate ids, other sources, unknown slots or thresholds and missing sources throw.
  */
-export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
+export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark' } = {}) {
   const sources = {};
   const slots = new Map(SLOT_ORDER.map(slot => [slot, []]));
-  const layers = basemapLayers();
+  const layers = basemapLayers({ theme });
 
   if (basemap) {
     sources[BASEMAP_SOURCE_ID] = { type: 'vector', url: OPENFREEMAP_TILEJSON, attribution: OPENFREEMAP_ATTRIBUTION };
@@ -108,7 +152,14 @@ export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
   for (const overlay of overlays) {
     for (const [id, source] of Object.entries(overlay?.sources ?? {})) {
       if (Object.hasOwn(sources, id)) throw new Error(`Map source ${id} is defined twice`);
-      if (source?.type !== 'geojson') throw new Error(`Overlay source ${id} must be a GeoJSON source`);
+      // A raster of PR M8 (the satellite images) is taken as given, with its own https tiles and no data.
+      if (isHttpsRaster(source)) {
+        sources[id] = { ...source, tiles: [...source.tiles] };
+        continue;
+      }
+      if (source?.type !== 'geojson') {
+        throw new Error(`Overlay source ${id} must be a GeoJSON source or a raster source with https tiles`);
+      }
       sources[id] = { ...source, data: EMPTY_COLLECTION };
     }
   }
@@ -119,7 +170,7 @@ export function buildOccStyle({ basemap = true, overlays = [] } = {}) {
       if (layer.source !== undefined && !Object.hasOwn(sources, layer.source)) {
         throw new Error(`Overlay layer ${layer.id} reads a source the style does not have: ${layer.source}`);
       }
-      slots.get(slot).push(layer);
+      slots.get(slot).push(themedLayer(layer, theme));
     }
   }
 

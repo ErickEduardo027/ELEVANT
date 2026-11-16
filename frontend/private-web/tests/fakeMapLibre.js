@@ -10,8 +10,12 @@
 // - adding a layer twice or before a missing layer, querying a missing layer, and passing the query point as a plain
 //   object (MapLibre would read it as the options) throw;
 // - `updateData` applies its diff to the source's `data` as MapLibre 6.16 does, `removeAllProperties` dropping the
-//   properties that come with it.
-// Camera moves are applied at once and fire `moveend` synchronously.
+//   properties that come with it;
+// - a raster source has `setTiles` (a list of URL templates, anything else throws) and `serialize`, and a context loss
+//   rebuilds it with the tiles it was last given, as MapLibre 6.16 does.
+// Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
+// pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
+// ended with `emit(map, 'moveend', { originalEvent })`.
 //
 // Engine tests create one fake per test and inject `module`. Component tests share one fake through vi.mock:
 //   vi.mock('maplibre-gl', async () => (await import('<path>/tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -222,9 +226,32 @@ function applySourceDiff(data, diff, promoteId) {
   return { ...data, features };
 }
 
+// What a raster source adds, as MapLibre 6.16's RasterTileSource: setTiles takes a list of URL templates and keeps it
+// in the options it serializes, so a context loss rebuilds the source with them; serialize answers those options.
+function rasterMethods(map, id, spec) {
+  return {
+    tiles: Array.isArray(spec.tiles) ? [...spec.tiles] : null,
+    setTilesCalls: [],
+    setTiles(tiles) {
+      if (!Array.isArray(tiles)) throw new TypeError(`setTiles of ${id} takes a list of tile URLs, not ${JSON.stringify(tiles)}`);
+      map._record('setTiles', [id, tiles]);
+      this.setTilesCalls.push(tiles);
+      this.tiles = [...tiles];
+      this.spec = { ...this.spec, tiles: [...tiles] };
+      return this;
+    },
+    serialize() {
+      return clone(this.spec);
+    },
+  };
+}
+
+// What a source keeps of itself in a snapshot of the style: its options, and its data when it is GeoJSON.
+const sourceSnapshot = source => (source.type === 'geojson' ? { ...source.spec, data: source.data } : { ...source.spec });
+
 function createModule(state) {
   function createSource(map, id, spec) {
-    return {
+    const source = {
       id,
       type: spec.type,
       spec,
@@ -273,6 +300,7 @@ function createModule(state) {
         return Promise.resolve(this.expansionZoom);
       },
     };
+    return spec.type === 'raster' ? Object.assign(source, rasterMethods(map, id, spec)) : source;
   }
 
   const normalizeLayer = layer => ({ ...layer, layout: { ...layer.layout }, paint: { ...layer.paint } });
@@ -292,6 +320,7 @@ function createModule(state) {
       this.removed = false;
       this.styleLoaded = false;
       this.contextLost = false;
+      this.pixelRatio = options.pixelRatio ?? 1;
       this.pendingStyle = options.style ?? null;
       this.snapshot = null;
       this.calls = [];
@@ -382,13 +411,23 @@ function createModule(state) {
       if (pitch !== undefined) this.camera.pitch = Math.min(Math.max(pitch, 0), this.options.maxPitch ?? 60);
     }
 
+    // As MapLibre 6.16's jumpTo and easeTo: movestart, then zoomstart/rotatestart/pitchstart (each with its end) for what
+    // changes, then moveend. Every event carries `originalEvent` only when the move does (a test standing in for a
+    // person's gesture passes one in the options); the moves code makes carry none.
     _move(method, options, camera = options) {
       this._record(method, [options]);
       this.cameraCalls.push({ method, options });
       if (camera.padding !== undefined) this.padding = paddingOf(camera.padding);
+      const before = { zoom: this.camera.zoom, bearing: this.camera.bearing, pitch: this.camera.pitch };
       this._setCamera(camera);
-      this._fire('movestart', { originalEvent: options?.originalEvent });
-      this._fire('moveend', { originalEvent: options?.originalEvent });
+      const originalEvent = options?.originalEvent;
+      this._fire('movestart', { originalEvent });
+      for (const [key, type] of [['zoom', 'zoom'], ['bearing', 'rotate'], ['pitch', 'pitch']]) {
+        if (this.camera[key] === before[key]) continue;
+        this._fire(`${type}start`, { originalEvent });
+        this._fire(`${type}end`, { originalEvent });
+      }
+      this._fire('moveend', { originalEvent });
       return this;
     }
 
@@ -735,7 +774,7 @@ function createModule(state) {
     getStyle() {
       return {
         version: 8,
-        sources: Object.fromEntries([...this.sources].map(([id, source]) => [id, { ...source.spec, data: source.data }])),
+        sources: Object.fromEntries([...this.sources].map(([id, source]) => [id, sourceSnapshot(source)])),
         layers: this.layers.filter(layer => layer.type !== 'custom').map(clone),
       };
     }
@@ -754,6 +793,15 @@ function createModule(state) {
 
     triggerRepaint() {
       this._record('triggerRepaint', []);
+    }
+
+    getPixelRatio() {
+      return this.pixelRatio;
+    }
+
+    setPixelRatio(ratio) {
+      this._record('setPixelRatio', [ratio]);
+      this.pixelRatio = ratio;
     }
 
     remove() {
@@ -832,11 +880,16 @@ function addHelpers(state) {
     },
 
     // MapLibre 6.16 on a lost WebGL context: it keeps a snapshot of the style (sources with their data, layers with
-    // their layout, paint and zoom ranges, images), drops the style, and loses custom layers and feature state.
-    loseContext(map) {
+    // their layout, paint and zoom ranges, images), drops the style, and loses custom layers and feature state. Its
+    // style's destroy() calls onRemove of every custom layer before the map fires `webglcontextlost` (PR M7); a worker
+    // restart (restartWorkers) drops them without it.
+    loseContext(map, { removeCustomLayers = true } = {}) {
+      if (removeCustomLayers) {
+        for (const layer of map.layers.filter(item => item.type === 'custom')) layer.onRemove?.(map, null);
+      }
       map.snapshot = {
         version: 8,
-        sources: Object.fromEntries([...map.sources].map(([id, source]) => [id, { ...source.spec, data: source.data }])),
+        sources: Object.fromEntries([...map.sources].map(([id, source]) => [id, sourceSnapshot(source)])),
         layers: map.layers.filter(layer => layer.type !== 'custom').map(clone),
       };
       map.sources = new Map();
@@ -857,7 +910,7 @@ function addHelpers(state) {
 
     // A worker restart fires the same synthetic pair.
     restartWorkers(map) {
-      state.loseContext(map);
+      state.loseContext(map, { removeCustomLayers: false });
       state.restoreContext(map);
     },
 

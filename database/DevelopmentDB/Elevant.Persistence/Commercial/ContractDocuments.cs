@@ -5,6 +5,7 @@ using Elevant.Application.Common;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
+using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,6 +33,7 @@ internal static class ContractDocuments
                               // The airline's designator in the document: IATA, or ICAO for an operator without one.
                               ContractStatus = contract.Status, Airline = airline.Name,
                               AirlineCode = airline.IataCode ?? airline.IcaoCode, organization.LegalName,
+                              organization.TaxRegistration, organization.TaxRegistrationCountryCode,
                               version.VersionNumber, version.Status, version.ValidFrom, version.ValidTo, version.CurrencyCode,
                               version.Terms, version.RenewalMode, version.RenewalTermMonths,
                               version.RenewalNoticeDays, version.TerminationNoticeDays, version.TerminationTerms,
@@ -67,10 +69,13 @@ internal static class ContractDocuments
         // recorded as signed (ADR-0024); any other version is signed on the day of its second signature.
         var legacy = signatures.Length == 0 && head.FirstApproved && head.ContractStatus != ContractStatus.Draft &&
             head.Status is ContractVersionStatus.Approved or ContractVersionStatus.Superseded;
-        return new ContractDocumentData(head.ContractId, head.VersionId, head.ContractCode, head.ContractStatus.ToString(),
+        var tax = string.IsNullOrWhiteSpace(head.TaxRegistration) || string.IsNullOrWhiteSpace(head.TaxRegistrationCountryCode)
+            ? null : new TaxRegistration(head.TaxRegistration, head.TaxRegistrationCountryCode.Trim());
+        var document = new ContractDocumentData(head.ContractId, head.VersionId, head.ContractCode, head.ContractStatus.ToString(),
             head.Airline, head.AirlineCode, string.IsNullOrWhiteSpace(head.LegalName) ? null : head.LegalName,
             head.VersionNumber, head.Status.ToString(), head.ValidFrom, head.ValidTo, head.CurrencyCode, stations, rates,
-            head.Terms, legacy ? head.ContractSignedOn : SignedOn(signatures), signatures, validity, pricing);
+            head.Terms, legacy ? head.ContractSignedOn : SignedOn(signatures), signatures, validity, pricing, tax);
+        return ContractDocumentHash.AsSigned(document);
     }
 
     /// <summary>

@@ -249,3 +249,38 @@ export function identityDocumentExample(kind: IdentityDocumentKind, nationality?
     default: return "";
   }
 }
+
+/** A tax identifier and the country that issued it (mirror of TaxRegistrations in the API). */
+export type TaxRegistration = { number: string; countryCode: string };
+
+/** Why a tax identifier was refused, or its canonical form (an RNC as its 9 digits). */
+export type TaxRegistrationCheck = { registration: TaxRegistration; problem: null } | { registration: null; problem: string };
+
+/**
+ * The airline's tax identifier: an RNC (9 digits, modulus 11) when the country is the Dominican Republic,
+ * otherwise the identifier as written, trimmed, 3 to 32 characters.
+ */
+export function checkTaxRegistration(number: string | null | undefined,
+  countryCode: string | null | undefined): TaxRegistrationCheck {
+  const country = String(countryCode ?? "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(country)) return { registration: null, problem: "Elija el país que emitió el identificador fiscal." };
+  if (String(number ?? "").trim() === "")
+    return { registration: null, problem: country === "DO" ? "Escriba el RNC de la aerolínea." : "Escriba el identificador fiscal de la aerolínea." };
+  if (country === "DO") {
+    const rnc = checkIdentityDocument("Rnc", number);
+    return rnc.number ? { registration: { number: rnc.number, countryCode: "DO" }, problem: null }
+      : { registration: null, problem: rnc.problem ?? "El RNC no es válido." };
+  }
+  const value = String(number).trim();
+  // eslint-disable-next-line no-control-regex
+  if (value.length < 3 || value.length > 32 || /[\u0000-\u001f\u007f]/.test(value))
+    return { registration: null, problem: "El identificador fiscal tiene de 3 a 32 caracteres." };
+  return { registration: { number: value, countryCode: country }, problem: null };
+}
+
+/** «RNC 1-31-23456-9» for a Dominican RNC; «Id. fiscal X (país)» otherwise (as the contract prints it). */
+export function formatTaxRegistration(number: string, countryCode: string): string {
+  return countryCode === "DO" && /^\d{9}$/.test(number)
+    ? `RNC ${number[0]}-${number.slice(1, 3)}-${number.slice(3, 8)}-${number[8]}`
+    : `Id. fiscal ${number} (${countryCode})`;
+}

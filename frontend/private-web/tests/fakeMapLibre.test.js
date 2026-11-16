@@ -58,6 +58,27 @@ describe('fake MapLibre', () => {
     expect(map.styleCalls).toHaveLength(1);
   });
 
+  it('a camera move fires zoomstart, rotatestart and pitchstart for what changes, with the move\'s originalEvent', () => {
+    const { fake, map } = newMap();
+    const seen = [];
+    for (const type of ['movestart', 'zoomstart', 'zoomend', 'rotatestart', 'rotateend', 'pitchstart', 'pitchend', 'moveend']) {
+      map.on(type, event => seen.push([type, event.originalEvent?.type ?? null]));
+    }
+    // A move made by code: no originalEvent, and only the zoom changed.
+    map.jumpTo({ zoom: 14 });
+    expect(seen).toEqual([['movestart', null], ['zoomstart', null], ['zoomend', null], ['moveend', null]]);
+    // One standing in for a person's: the event goes with every one of them; the same camera again fires no zoom.
+    seen.length = 0;
+    map.easeTo({ zoom: 14, bearing: -17, pitch: 40, originalEvent: new MouseEvent('mousemove') });
+    expect(seen).toEqual([['movestart', 'mousemove'], ['rotatestart', 'mousemove'], ['rotateend', 'mousemove'],
+      ['pitchstart', 'mousemove'], ['pitchend', 'mousemove'], ['moveend', 'mousemove']]);
+    // A gesture without a move (a drag that starts) is emitted by the test itself.
+    seen.length = 0;
+    map.on('dragstart', event => seen.push(['dragstart', event.originalEvent.type]));
+    fake.state.emit(map, 'dragstart', { originalEvent: new MouseEvent('mousedown') });
+    expect(seen).toEqual([['dragstart', 'mousedown']]);
+  });
+
   it('getBounds is the viewport around the centre; resize changes it and fires the events of Map.resize()', () => {
     const { fake, map } = newMap();
     const bounds = map.getBounds();
@@ -201,6 +222,35 @@ describe('fake MapLibre', () => {
     expect(map.getLayer('dots').layout.visibility).toBe('none');
     expect(map.getSource('points').data.features).toHaveLength(1);
     expect(map.featureStateOf('points', 9)).toBeUndefined();
+  });
+
+  it('a raster source takes new tiles with setTiles and a context loss rebuilds it with them, like MapLibre 6.16', () => {
+    const fake = createFakeMapLibre();
+    fake.module.setWorkerUrl(SERVED_WORKER_URL);
+    const latest = 'https://gibs.example/clouds/default/default/{z}/{y}/{x}.png';
+    const pinned = 'https://gibs.example/clouds/default/2026-11-13T14:50:00Z/{z}/{y}/{x}.png';
+    const style = { ...STYLE, sources: { ...STYLE.sources, clouds: { type: 'raster', tiles: [latest], tileSize: 256 } } };
+    const map = new fake.module.Map({ container: document.createElement('div'), style });
+    fake.state.emit(map, 'style.load');
+    const source = map.getSource('clouds');
+    expect(source.tiles).toEqual([latest]);
+    expect(source.serialize()).toEqual({ type: 'raster', tiles: [latest], tileSize: 256 });
+    source.setTiles([pinned]);
+    expect(source.setTilesCalls).toEqual([[pinned]]);
+    expect(map.calls.filter(call => call.method === 'setTiles').map(call => call.args)).toEqual([['clouds', [pinned]]]);
+    expect(source.serialize().tiles).toEqual([pinned]);
+    // Stricter than MapLibre: tiles that are not a list throw. A GeoJSON source has no setTiles.
+    expect(() => source.setTiles(pinned)).toThrow(TypeError);
+    expect(map.getSource('points').setTiles).toBeUndefined();
+
+    // The snapshot keeps the tiles a raster source was last given, and no data on it; a GeoJSON source keeps its data.
+    fake.state.loseContext(map);
+    expect(map.snapshot.sources.clouds).toEqual({ type: 'raster', tiles: [pinned], tileSize: 256 });
+    expect(map.snapshot.sources.points).toHaveProperty('data');
+    fake.state.restoreContext(map);
+    fake.state.emit(map, 'style.load');
+    expect(map.getSource('clouds').tiles).toEqual([pinned]);
+    expect(map.getSource('clouds').setTilesCalls).toEqual([]);
   });
 
   it('a restore without WebGL2 rebuilds the style and fires error, never webglcontextrestored, like MapLibre 6.16', () => {

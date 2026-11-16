@@ -13,7 +13,10 @@ import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import { standPaint } from '../stands/standLayers';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
+import { MAP_COLORS } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
+import { THEME_STORAGE_KEY } from '../../shell/occTheme';
+import { ThemeProvider } from '../../shell/useTheme';
 import { createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
 import MapLegend from './MapLegend';
 
@@ -23,6 +26,7 @@ const fake = sharedFakeMapLibre();
 // Synthetic states over the reference points: A1 occupied, A3 planned, B21 disabled and BN6 unverified, the rest free;
 // only A1 to A3 were placed by OCC.
 const STANDS = createMapStands();
+const rgbOf = hex => `rgb(${[1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
 const DRAWN = attachStandGeometry(STANDS, MDPC_LAYOUT);
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
 const RAMP_ORDER = ['available', 'planned', 'occupied', 'disabled', 'unverified'];
@@ -77,14 +81,16 @@ describe('MapLegend', () => {
     // The words of the vocabulary, in its order, and the «No oficial» plate with what it means.
     expect(legendItems()).toEqual([...RAMP_ORDER.map(state => STAND_STATES[state].es), UNOFFICIAL]);
     expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
-    // Each state is drawn as the map draws it: its outline token and its dash, the slab of «Ocupada», the hatch of
-    // «Inhabilitada» and the aircraft of a stand with an aircraft on it.
+    // Each state is drawn as the map draws it: its outline token and its dash, its own fill colour (mapColors.js), the
+    // hatch of «Inhabilitada» and the aircraft of a stand with an aircraft on it.
     const outlines = stateSwatches().map(svg => svg.querySelector('rect'));
     expect(outlines.map(rect => rect.style.stroke)).toEqual([
       'var(--occ-line-strong)', 'var(--occ-muted)', 'var(--occ-text)', 'var(--occ-line-strong)', 'var(--occ-faint)',
     ]);
     expect(outlines.map(rect => rect.style.strokeDasharray)).toEqual(['none', '4 3', 'none', '2 2', '1 3']);
-    expect(outlines[2].style.fill).toBe('var(--occ-panel-raised)');
+    const rgb = hex => `rgb(${[1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
+    expect(outlines.map(rect => rect.style.fill)).toEqual(RAMP_ORDER.map(state => rgb(MAP_COLORS.dark.stands[state].color)));
+    expect(new Set(outlines.map(rect => rect.style.fill)).size).toBe(outlines.length);
     expect(stateSwatches().map(glyphsOf)).toEqual(['', '', 'aircraft', 'hatch', '']);
     expect(legend.querySelector('[data-glyph="aircraft"]').style.fill).toBe('var(--occ-text)');
 
@@ -256,9 +262,11 @@ describe('MapLegend', () => {
     const map = fake.state.liveMaps().at(-1);
     act(() => fake.state.emit(map, 'style.load'));
     // The ramp view: the seven states, the attention signal (A3 covered by nobody, B21 past its departure) and the
-    // urgent one (A4, another flight arriving), the link of A10 to A9 and the tag.
+    // urgent one (A4, another flight arriving), the demo flight's B38M to scale on A6, where it is still to come (PR M6),
+    // the link of A10 to A9 and the tag.
     expect(legendItems()).toEqual([
-      ...STAND_STATE_KEYS.map(state => STAND_STATES[state].es), ATTENTION, URGENT, COMBINED, UNOFFICIAL,
+      ...STAND_STATE_KEYS.map(state => STAND_STATES[state].es), ATTENTION, URGENT,
+      'Avión previsto, a escalaMuestra si cabe en la posición', COMBINED, UNOFFICIAL,
     ]);
     const shapes = [...screen.getByTestId('map-legend').querySelectorAll('svg[data-swatch="signal"]')];
     expect(shapes.map(svg => svg.dataset.shape)).toEqual(['triangle', 'octagon']);
@@ -568,5 +576,211 @@ describe('MapLegend', () => {
       </OccMapContext.Provider>,
     );
     expect(legendItems()).toEqual(['Vuelo de AVIAM que llega']);
+  });
+  it('lists each reference only while it is on screen, set apart with the airfield, each drawn as the map draws it', () => {
+    const ALL = { kinds: ['rings', 'centrelines', 'runwayInUse', 'counterparts', 'vor', 'ndb', 'night'],
+      runway: { arrival: '08', source: 'wind' } };
+    const withReferences = (referencesOnScreen, extra = {}) => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, referencesOnScreen, ...extra }}>
+        <MapLegend />
+      </OccMapContext.Provider>
+    );
+    const { rerender } = render(withReferences(ALL));
+    expect(legendItems()).toEqual(['Anillos de distancia', 'Eje de pista extendido (marca cada NM)',
+      'Pista 08 (estimada por el viento)', 'Origen o destino de un vuelo de hoy',
+      'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)']);
+    const legend = screen.getByTestId('map-legend');
+    // Each takes the whole row, with the swatch of what the map draws: the runway in use wider and lighter than the
+    // other centrelines, a counterpart ringed in the text colour, the chart symbols of the navaids.
+    const items = [...legend.querySelectorAll('[data-legend-reference]')];
+    expect(items.map(item => item.dataset.legendReference)).toEqual(ALL.kinds);
+    expect(items.every(item => item.classList.contains('col-span-2'))).toBe(true);
+    const swatch = kind => legend.querySelector('[data-reference-swatch="' + kind + '"]');
+    expect(swatch('runwayInUse').querySelector('g').style.stroke).toBe('var(--occ-text)');
+    expect(swatch('runwayInUse').querySelector('g').style.strokeWidth).toBe('1.5');
+    expect(swatch('centrelines').querySelector('g').style.stroke).toBe('var(--occ-line-strong)');
+    expect(swatch('rings').querySelectorAll('circle')).toHaveLength(2);
+    expect(swatch('counterparts').querySelector('circle').style.stroke).toBe('var(--occ-text)');
+    expect(swatch('vor').querySelectorAll('path')).toHaveLength(3);
+    expect(swatch('ndb').querySelectorAll('path')).toHaveLength(2);
+    // The night as the map paints it in the theme on screen (style/mapColors.js: night).
+    expect(swatch('night').style.getPropertyValue('--occ-swatch-night-opacity')).toBe('0.45');
+    expect(swatch('night').querySelector('path').style.fillOpacity).toBe('var(--occ-swatch-night-opacity)');
+    expect([...legend.querySelectorAll('[data-reference-swatch]')].every(svg => svg.getAttribute('aria-hidden') === 'true')).toBe(true);
+    // Alone, nothing sets them apart.
+    expect(legend.querySelector('[data-legend-rule]')).toBeNull();
+
+    // With traffic and the airfield: the traffic first, then the rule, the references and the airfield.
+    rerender(withReferences({ kinds: ['rings', 'vor'], runway: null },
+      { trafficOnScreen: { kinds: ['other'], tags: [], trails: [] }, airfieldOnScreen: ['runway'] }));
+    expect(legendItems()).toEqual(['Otro tráfico', 'Anillos de distancia', 'Radioayuda VOR-DME', 'Pista']);
+    expect(screen.getByTestId('map-legend').querySelector('[data-legend-rule]').nextElementSibling)
+      .toHaveTextContent('Anillos de distancia');
+    // The runway in use is listed only with its runway; nothing of them on screen, no legend.
+    rerender(withReferences({ kinds: ['centrelines', 'runwayInUse'], runway: null }));
+    expect(legendItems()).toEqual(['Eje de pista extendido (marca cada NM)']);
+    rerender(withReferences({ kinds: [], runway: null }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    cleanup();
+
+    // In English.
+    resetLanguageForTests('en');
+    render(<LanguageScope>{withReferences(ALL)}</LanguageScope>);
+    expect(legendItems().slice(0, 3)).toEqual(['Range rings', 'Extended runway centreline (a tick per NM)',
+      'Runway 08 (estimated from the wind)']);
+  });
+  it('lists the weather on screen after the references: the wind, dimmed when stale, and each image with its time', () => {
+    const withWeather = referencesOnScreen => (
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, referencesOnScreen }}>
+        <MapLegend />
+      </OccMapContext.Provider>
+    );
+    const imagery = { goes: { time: '2026-11-13T14:50:00Z', precision: 'instant' }, imerg: { time: '2026-11-13T14:30:00Z',
+      precision: 'instant' } };
+    const { rerender } = render(withWeather({ kinds: ['rings', 'wind', 'goes', 'imerg'], runway: null, imagery }));
+    expect(legendItems()).toEqual(['Anillos de distancia', `Viento en pista${TAGS.unofficial.es}`,
+      'Nubes por satélite (GOES-East, infrarrojo)Imagen de las 10:50', 'Lluvia estimada (IMERG)Imagen de las 10:30']);
+    const legend = screen.getByTestId('map-legend');
+    // The wind's arrow in the text colour; «No oficial» a plate of the vocabulary; each image's time muted.
+    const swatch = kind => legend.querySelector(`[data-reference-swatch="${kind}"]`);
+    expect(swatch('wind').querySelector('[data-glyph="wind"]').style.opacity).toBe('1');
+    expect(swatch('wind').querySelector('[data-glyph="wind"] path:last-child').style.fill).toBe('var(--occ-text)');
+    expect(within(legend.querySelector('[data-legend-reference="wind"]')).getByText(TAGS.unofficial.es))
+      .toHaveClass('rounded-sm', 'border-occ-line-strong');
+    expect(within(legend.querySelector('[data-legend-reference="goes"]')).getByText('Imagen de las 10:50'))
+      .toHaveClass('text-occ-muted');
+    expect(swatch('goes')).not.toBeNull();
+    expect(swatch('imerg')).not.toBeNull();
+    // Stale: the arrow dimmed and «Sin actualizar» muted below its name, and still the «No oficial» plate (contracts 2.4:
+    // the map's label never says it, and nothing depends on hover); nothing of the weather on screen, nothing listed.
+    rerender(withWeather({ kinds: ['windStale'], runway: null }));
+    expect(legendItems()).toEqual([`Viento en pista${TAGS.stale.short.es}${TAGS.unofficial.es}`]);
+    const stale = within(screen.getByTestId('map-legend').querySelector('[data-legend-reference="windStale"]'));
+    expect(stale.getByText(TAGS.unofficial.es)).toHaveClass('rounded-sm', 'border-occ-line-strong');
+    expect(stale.getByText(TAGS.stale.short.es)).toHaveClass('text-occ-muted');
+    expect(screen.getByTestId('map-legend').querySelector('[data-glyph="wind"]').style.opacity).toBe('0.75');
+    rerender(withWeather({ kinds: [], runway: null }));
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
+
+  it('explains the aircraft to scale, the progress bar and the plain notice of the stands the flights feed (PR M6)', () => {
+    const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
+    const a1 = { ...DRAWN.find(stand => stand.id === 'A1'), displayStatus: 'occupied', signals: [notice], locationSource: 'occ' };
+    const onScreen = (marks, stands = [a1]) => ({ ...OCC_MAP_IDLE, standsOnScreen: stands, standMarksOnScreen: marks });
+    const { rerender } = render(
+      <OccMapContext.Provider value={onScreen(['progress', 'footprintPlanned', 'footprint'])}><MapLegend /></OccMapContext.Provider>,
+    );
+    // The state, the plain notice with the vocabulary's word, then the marks in the legend's order with their hints.
+    expect(legendItems()).toEqual([
+      'Ocupada', SIGNALS.notice.es, 'Avión en la posición, a escala',
+      'Avión previsto, a escalaMuestra si cabe en la posición', 'Avance de la escalaHitos registrados de 25',
+    ]);
+    const legend = screen.getByTestId('map-legend');
+    // The notice: its diamond's outline alone, in the text colour, never a hue, as the map draws it.
+    const diamond = legend.querySelector('li[data-signal="notice"] svg');
+    expect(diamond.dataset.shape).toBe('diamond');
+    const [outline] = diamond.querySelectorAll('path');
+    expect([outline.getAttribute('d'), outline.style.fill, outline.style.stroke])
+      .toEqual([MAP_IMAGE_SHAPES['signal-notice'].ops[0].stroke, 'none', 'var(--occ-text)']);
+    expect(diamond.querySelectorAll('path')).toHaveLength(1);
+    // The aircraft on the stand: a light silhouette over the slab with a hairline; the one to come, its dashed outline;
+    // the bar: its track and the part done, one colour each whatever the time.
+    const part = (mark, glyph) => legend.querySelector(`svg[data-swatch="${mark}"] [data-glyph="${glyph}"]`);
+    const solid = part('footprint', 'footprint');
+    expect(solid.getAttribute('d')).toBe(AIRCRAFT_SILHOUETTE_PATH);
+    expect([solid.style.fill, solid.style.fillOpacity, solid.style.stroke]).toEqual(['var(--occ-muted)', '0.35', 'var(--occ-text)']);
+    const dashed = part('footprintPlanned', 'footprint-planned');
+    expect([dashed.style.fill, dashed.style.stroke]).toEqual(['none', 'var(--occ-muted)']);
+    expect(dashed.style.strokeDasharray).not.toBe('');
+    expect([part('progress', 'progress-track').style.stroke, part('progress', 'progress-done').style.stroke])
+      .toEqual(['var(--occ-line-strong)', 'var(--occ-text)']);
+    // With an attention signal on the same stand the map draws only that one, so the notice is not listed.
+    rerender(<OccMapContext.Provider value={onScreen([], [{ ...a1, signals: [{ kind: 'attention', reason: 'uncovered' }, notice] }])}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(legendItems()).toEqual(['Ocupada', SIGNALS.attention.es]);
+    cleanup();
+
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMapContext.Provider value={onScreen(['footprint', 'progress'])}><MapLegend /></OccMapContext.Provider></LanguageScope>);
+    expect(legendItems()).toEqual([
+      'Occupied', SIGNALS.notice.en, 'Aircraft on the stand, to scale', 'Turnaround progressMilestones recorded out of 25',
+    ]);
+  });
+
+  it('the open legend stays inside a short map: capped at the room above its button, it scrolls (PR M6)', () => {
+    // A map whose top is at 100 px with the legend's button at 420 px: 300 px above it, 20 of them kept free.
+    const tops = new Map([['occ-map', 100], ['map-legend', 420]]);
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function boxOf() {
+      const top = tops.get(this.dataset?.testid) ?? 0;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) };
+    });
+    try {
+      const inMap = stands => (
+        <div data-testid="occ-map"><MapLegend stands={stands} /></div>
+      );
+      const { rerender } = render(inMap(STANDS));
+      const panel = () => screen.getByRole('list', { name: 'Leyenda' }).parentElement;
+      expect(panel().style.maxHeight).toBe('300px');
+      expect(panel()).toHaveClass('overflow-y-auto');
+      // The map grows (a resize): the room is measured again.
+      tops.set('occ-map', 20);
+      act(() => window.dispatchEvent(new Event('resize')));
+      expect(panel().style.maxHeight).toBe('380px');
+      // Too little room to read a list in: left as it is, rather than a sliver.
+      tops.set('occ-map', 340);
+      act(() => window.dispatchEvent(new Event('resize')));
+      expect(panel().style.maxHeight).toBe('');
+      tops.set('occ-map', 100);
+      rerender(inMap(STANDS.slice(0, 2)));
+      act(() => window.dispatchEvent(new Event('resize')));
+      expect(panel().style.maxHeight).toBe('300px');
+      cleanup();
+      // Outside a map nothing caps it.
+      render(<MapLegend stands={STANDS} />);
+      expect(panel().style.maxHeight).toBe('');
+    } finally {
+      rect.mockRestore();
+    }
+  });
+});
+
+describe('MapLegend: the airports of the region (owner request of 2026-11-15)', () => {
+  const withAirports = (view, on = true) => ({ ...OCC_MAP_IDLE, activeView: view,
+    layers: { keys: ['reference.airports'], values: { 'reference.airports': on } } });
+
+  it('lists the four kinds of airport while the Región or Aproximación view shows them', () => {
+    const { rerender } = render(<OccMapContext.Provider value={withAirports('region')}><MapLegend /></OccMapContext.Provider>);
+    const entries = [...document.querySelectorAll('[data-legend-airport]')];
+    expect(entries.map(entry => entry.dataset.legendAirport)).toEqual(['home', 'international', 'regional', 'other']);
+    expect(entries.map(entry => entry.textContent)).toEqual(['Punta Cana (MDPC)', 'Aeropuerto internacional',
+      'Aeropuerto regional', 'Otro aeródromo']);
+    // The home airport's dot is the larger one.
+    const radius = kind => Number(document.querySelector(`[data-airport="${kind}"] circle`).getAttribute('r'));
+    expect(radius('home')).toBeGreaterThan(radius('regional'));
+    rerender(<OccMapContext.Provider value={withAirports('ramp')}><MapLegend /></OccMapContext.Provider>);
+    expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+    rerender(<OccMapContext.Provider value={withAirports('approach', false)}><MapLegend /></OccMapContext.Provider>);
+    expect(document.querySelectorAll('[data-legend-airport]')).toHaveLength(0);
+  });
+
+  it('one airport to a row, and in the light theme the dots and the stand fills of the light palette', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    try {
+      render(
+        <ThemeProvider>
+          <OccMapContext.Provider value={withAirports('region')}><MapLegend /></OccMapContext.Provider>
+          <MapLegend stands={STANDS} />
+        </ThemeProvider>,
+      );
+      for (const entry of document.querySelectorAll('[data-legend-airport]')) expect(entry.className).toContain('col-span-2');
+      const dot = kind => document.querySelector(`[data-airport="${kind}"] circle`).style.fill;
+      for (const kind of ['home', 'international', 'regional', 'other']) expect(dot(kind), kind).toBe(rgbOf(MAP_COLORS.light.airports[kind]));
+      const fills = [...document.querySelectorAll('[data-swatch="state"] rect')].map(rect => rect.style.fill);
+      expect(fills.length).toBeGreaterThan(0);
+      const light = new Set(Object.values(MAP_COLORS.light.stands).map(fill => rgbOf(fill.color)));
+      for (const fill of fills) expect(light.has(fill), fill).toBe(true);
+    } finally {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    }
   });
 });

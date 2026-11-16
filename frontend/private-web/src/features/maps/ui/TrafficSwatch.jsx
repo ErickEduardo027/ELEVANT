@@ -4,8 +4,9 @@ import { CATEGORY_OUTLINES, silhouettePath } from '../aircraft/silhouette';
 // A swatch of the map legend for the traffic, drawn as the map draws it (traffic/trafficLayers.js): the narrow-body
 // silhouette solid for an arriving ELEVANT flight and hollow for a departing one, smaller and muted for other traffic
 // (smaller still on the ground), with the dashed ring of an estimated position, dimmed when stale; the trail fading
-// toward its tail and the estimated one dashed; the chosen flight's route solid and dashed in cyan. The «Demo» plate is
-// occ-ui's texture swatch.
+// toward its tail and the estimated one dashed; the chosen flight's route in cyan as its layers draw it: observed solid,
+// estimated thin and faint, still to fly dashed, and the small ring of its marked points. The «Demo» plate is occ-ui's
+// texture swatch.
 
 const tokenColour = token => `var(${token})`;
 const outline = inset => silhouettePath(CATEGORY_OUTLINES.narrow, { size: 20, inset });
@@ -45,12 +46,19 @@ const DRAWINGS = Object.freeze({
   trailEstimated: (
     <path d="M2 16 L18 5" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1.5, strokeDasharray: '3 3' }} />
   ),
-  // The chosen flight's route, in the selection's cyan: what it flew solid, the straight line to its next point dashed.
-  routeFlown: (
+  // The chosen flight's route, in the selection's cyan (traffic/trafficLayers.js: ROUTE_STYLE): what it flew observed
+  // solid, estimated thinner at 55 %, what it still has to fly dashed, and a marked point as its small ring.
+  routeFlownObserved: (
     <path d="M2 16 L18 5" style={{ fill: 'none', stroke: tokenColour('--occ-accent'), strokeWidth: 2.5, strokeLinecap: 'round' }} />
   ),
-  routeNext: (
+  routeFlownEstimated: (
+    <path d="M2 16 L18 5" style={{ fill: 'none', stroke: tokenColour('--occ-accent'), strokeWidth: 1.5, strokeLinecap: 'round', opacity: 0.55 }} />
+  ),
+  routeRemaining: (
     <path d="M2 16 L18 5" style={{ fill: 'none', stroke: tokenColour('--occ-accent'), strokeWidth: 1.5, strokeDasharray: '3 3' }} />
+  ),
+  routeMark: (
+    <circle cx="10" cy="10" r="4" style={{ fill: 'none', stroke: tokenColour('--occ-accent'), strokeWidth: 2 }} />
   ),
 });
 

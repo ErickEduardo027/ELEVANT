@@ -3,10 +3,10 @@ import { ICON_CATEGORIES } from '../aircraft/types';
 
 // The images of the traffic on the OCC maps (PR M5), drawn on demand by style/mapImages.js like every other icon and
 // listed at the end of its MAP_IMAGE_IDS: one solid and one hollow silhouette per icon category (design E2), the dashed
-// ring of an estimated position, and three plain images. Sizes are CSS pixels and every shape keeps 3 px clear of the
-// image border. Pure data.
+// ring of an estimated position, three plain images and (PR M6) the ring of a point marked on the chosen flight's route.
+// Sizes are CSS pixels and every shape keeps 3 px clear of the image border. Pure data.
 //
-// The silhouettes and the ring are SDF images, painted in the colour of their layer. The glyphs that go inside a tag
+// The silhouettes and the rings are SDF images, painted in the colour of their layer. The glyphs that go inside a tag
 // (arrival, departure, the arrow before a stand) and the «Demo» plate are plain images (`sdf: false`) in their own OCC
 // colours: MapLibre draws an image inside a text's `format` as it is, without the SDF threshold, and the plate has two
 // tones and a frame (contracts 2.4: «Demo» on 45° stripes, as occ-ui/DemoTag.jsx draws it).
@@ -28,6 +28,8 @@ export function aircraftImage(category, { hollow = false } = {}) {
 
 /** The dashed ring of a position estimated from the schedule. */
 export const ESTIMATED_RING_IMAGE = 'traffic-ring-est';
+/** The ring of a point marked on the chosen flight's route (PR M6): its touchdown, runway exit, stand or apron hold. */
+export const ROUTE_MARK_IMAGE = 'route-mark';
 /** The plain images of a tag and the «Demo» plate. */
 export const TAG_GLYPHS = Object.freeze({ arrival: 'glyph-arrival', departure: 'glyph-departure', stand: 'glyph-arrow-right' });
 export const DEMO_PLATE_IMAGE = 'plate-demo';
@@ -137,5 +139,11 @@ export const TRAFFIC_IMAGE_SHAPES = Object.freeze({
         .map(band => ({ fill: band, color: '--occ-line' })),
       { stroke: `M3.5 3.5 H${plate.width + 2.5} V${plate.height + 2.5} H3.5 Z`, lineWidth: 1, color: '--occ-line-strong' },
     ],
+  },
+  // A small ring, SDF: the route layer paints it in the selection's cyan with a dark halo.
+  [ROUTE_MARK_IMAGE]: {
+    width: 16,
+    height: 16,
+    ops: [{ stroke: 'M12 8 A4 4 0 1 1 4 8 A4 4 0 1 1 12 8 Z', lineWidth: 2 }],
   },
 });

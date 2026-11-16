@@ -1,24 +1,30 @@
 import { createTranslator, localeFor } from '../../../i18n/languageStore';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
-import { haversineM } from '../airport/geo';
+import { aircraftFootprint } from '../aircraft/footprint';
+import { haversineM, pointInPolygon, toLocal } from '../airport/geo';
 import { STAND_BOX, standBox } from '../airport/standGeometry';
 import { TERMINALS, isRetired, standCodeOf, standTerminalOf } from '../core/cameraPresets';
 import { mapMessages } from '../mapMessages';
 import { standPaint } from './standLayers';
-import { coverageInitials, displayFromStatus, floorToMinute, minutesUntil, standStateOf } from './standModel';
+import {
+  STILL_BELOW_MS, coverageInitials, displayFromStatus, floorToMinute, minutesUntil, standStateOf,
+} from './standModel';
 
 // The stands of a screen as the GeoJSON of the stand layers (stands/standLayers.js): the polygons with their state,
-// their lines (lead-ins, combined links, narrow-body boxes), a label point per stand and a chip per terminal.
-// diffStandFeatures gives the part of them a refresh changes, so the map sends updateData only for the stands that
-// changed. A stand reads as the screen derived it (useStandDisplay: `displayStatus`, `signals` and `display`); without
-// that, as its board status says (standModel.js: standStateOf). Pure.
+// their lines (lead-ins, combined links, narrow-body boxes, progress bars), a label point per stand, a chip per
+// terminal and the aircraft drawn at true size on them (PR M6). diffStandFeatures gives the part of them a refresh
+// changes, so the map sends updateData only for the stands that changed. A stand reads as the screen derived it
+// (useStandDisplay: `displayStatus`, `signals` and `display`); without that, as its board status says (standModel.js:
+// standStateOf). Pure.
 
 /**
  * The property that keys the features of each collection of buildStandFeatures: the `promoteId` of its source. It
  * always equals the feature's own `id`, which diffStandFeatures uses.
  */
-export const STAND_FEATURE_KEYS = Object.freeze({ polygons: 'code', aux: 'id', labels: 'code', groups: 'terminal' });
+export const STAND_FEATURE_KEYS = Object.freeze({
+  polygons: 'code', aux: 'id', labels: 'code', groups: 'terminal', footprints: 'id',
+});
 export const STAND_FEATURE_COLLECTIONS = Object.freeze(Object.keys(STAND_FEATURE_KEYS));
 /** The label modes, as stands/standLayers.js names them: `dashboard` is the console's apron map. */
 export const STAND_FEATURE_LABEL_MODES = Object.freeze(['default', 'dashboard']);
@@ -32,11 +38,21 @@ const SORT_KEYS = Object.freeze({
   dashboard: Object.freeze({ planned: 0, disabled: 1, arriving: 1, occupied: 2, releasing: 2, available: 4, unverified: 5 }),
 });
 // A stand with a signal places its label before every other (MapLibre places the lower key first): urgent, then
-// attention, then the order of its state.
-const SIGNAL_SORT = Object.freeze({ urgent: -20, attention: -10 });
+// attention, then a plain notice, then the order of its state.
+const SIGNAL_SORT = Object.freeze({ urgent: -20, attention: -10, notice: -5 });
+// The signals the map draws on a stand, the strongest first: it draws one.
+const SIGNAL_ORDER = Object.freeze(['urgent', 'attention', 'notice']);
 const SEPARATOR = ' · ';
 // The code-C box of a stand limited to narrow-body aircraft sits inside the stand, at least a metre from each side.
 const NARROW_MARGIN_M = 2;
+// The aircraft a stand draws to scale: on the stand, or still to come (standModel.js: deriveDisplayStatus).
+const FOOTPRINT_KINDS = new Set(['solid', 'planned']);
+
+/**
+ * Where the progress bar of a turnaround sits in a stand's box (design D3): this many metres inside its rear edge, the
+ * tail's side, and this share of the box's width off each side, so it reads apart from the stand's outline.
+ */
+export const PROGRESS_INSET = Object.freeze({ rearM: 4, sideShare: 0.1 });
 
 const clockFormatters = new Map();
 
@@ -61,12 +77,12 @@ function signalsOf(position) {
 /**
  * The one signal the map draws on a stand of a screen, its label point's `signal`: `urgent` when one of the signals the
  * stand carries (those the screen derived, else those of its display) is urgent, else `attention` when one is, else
- * `null`. A stand with both shows only the red octagon, so the legend explains that one alone (ui/legendEntries.js).
+ * `notice` for a plain notice (PR M6: «Registra la llegada»), else `null`. A stand with several shows only the strongest,
+ * so the legend explains that one alone (ui/legendEntries.js).
  */
 export function standSignalOf(position) {
   const signals = signalsOf(position);
-  if (signals.some(signal => signal?.kind === 'urgent')) return 'urgent';
-  return signals.some(signal => signal?.kind === 'attention') ? 'attention' : null;
+  return SIGNAL_ORDER.find(kind => signals.some(signal => signal?.kind === kind)) ?? null;
 }
 
 const feature = (id, properties, geometry) => ({ type: 'Feature', id, properties, geometry });
@@ -91,8 +107,9 @@ function timeLine(stand, { t, clock, now }) {
 }
 
 // The three label variants of a stand: the code; the code and the flight (or «Anulada por …»); and up to the full
-// label: code; flight, type and «Demo»; times and initials; then «Anulada por …», the reason of the strongest signal
-// and «Solo fuselaje estrecho» where they apply. Lines are separated by «\n».
+// label: code; flight, type and «Demo»; times and initials; then «Anulada por …», the reason of the strongest signal,
+// the plain notice (PR M6: «El avión ya está en la posición. Registra la llegada.») and «Solo fuselaje estrecho» where
+// they apply. Lines are separated by «\n».
 function labelTexts(stand, context) {
   const { code, display, state, signals, position } = stand;
   const { t, language } = context;
@@ -102,12 +119,15 @@ function labelTexts(stand, context) {
   const flightShort = flight ? [flight, demo].filter(Boolean).join(SEPARATOR) : null;
   const flightLong = flight ? [flight, display.aircraftType, demo].filter(Boolean).join(SEPARATOR) : null;
   const second = cancelled ?? flightShort;
-  const reason = signals.length > 0 && signals[0]?.reason ? t(`stand.${signals[0].reason}`) : null;
+  const strongest = signals.find(signal => (signal?.kind === 'urgent' || signal?.kind === 'attention') && signal.reason);
+  const reason = strongest ? t(`stand.${strongest.reason}`) : null;
+  const notice = signals.find(signal => signal?.kind === 'notice' && signal.reason);
   const narrow = position.narrowbodyOnly === true ? t('stand.narrowbodyOnly') : null;
   return {
     label1: code,
     label2: second === null ? code : `${code}\n${second}`,
-    label3: [code, flightLong, timeLine(stand, context), cancelled, reason, narrow].filter(Boolean).join('\n'),
+    label3: [code, flightLong, timeLine(stand, context), cancelled, reason, notice ? t(`stand.${notice.reason}`) : null, narrow]
+      .filter(Boolean).join('\n'),
   };
 }
 
@@ -146,20 +166,26 @@ function drawnStands(stands) {
 }
 
 /**
- * The four collections the stand layers draw, from the stands of a screen with their geometry (stand model:
+ * The five collections the stand layers draw, from the stands of a screen with their geometry (stand model:
  * attachStandGeometry) and, when the screen derived it, their display (withStandDisplay); a stand without a geometry, a
  * retired stand or a code seen twice is left out:
  * - `polygons`: each stand's box, id the normalized code (`code` is the promoteId), with `code`, `terminal`, `state`
  *   (standStateOf) and `unofficial` (not placed by OCC);
  * - `aux`: lines by `kind`: `leadIn` (with the stand's `state`), `combinedLink` (from the centre of a cancelled stand
- *   to the centre of the stand that cancels it, when both are drawn) and `narrowInner` (the code-C box inside a stand
- *   wider than code C limited to narrow-body aircraft; a narrower stand is already that box);
+ *   to the centre of the stand that cancels it, when both are drawn), `narrowInner` (the code-C box inside a stand
+ *   wider than code C limited to narrow-body aircraft; a narrower stand is already that box), and on a stand with an
+ *   aircraft on it whose milestones are known (PR M6) `progressTrack`, the whole bar along its rear edge, and
+ *   `progressDone`, the share recorded (progressSegment), both with `done` and `total`;
  * - `labels`: a point at each centre with the label variants `label1` (code), `label2` (code and flight, or «Anulada
- *   por …») and `label3` (the full label), its `state`, `signal` (standSignalOf: `urgent`, `attention` or `null`),
- *   `glyph` (`aircraft` while an aircraft is on the stand, until the footprints to scale of PR M5), `clock` (Por
- *   liberar), `heading` (the stand's, for the aircraft) and `sortKey` (`labels: 'dashboard'` puts planned stands first);
+ *   por …») and `label3` (the full label), its `state`, `signal` (standSignalOf: `urgent`, `attention`, `notice` or
+ *   `null`), `glyph` (`aircraft` while an aircraft is on the stand), `footprint` (the kind of aircraft to scale drawn on
+ *   it, `solid` or `planned`, or `null`), `clock` (Por liberar), `heading` (the stand's, for the aircraft) and
+ *   `sortKey` (`labels: 'dashboard'` puts planned stands first);
  * - `groups`: one point per terminal at the centre of its boxes, `text` «A · 3/16» (aircraft on the stands over the
- *   stands drawn) and `arriving` (a stand of the terminal reads «Llegando»).
+ *   stands drawn) and `arriving` (a stand of the terminal reads «Llegando»);
+ * - `footprints` (PR M6): the aircraft of a stand at true size (aircraft/footprint.js: aircraftFootprint, from the
+ *   type of its display), id `footprint:<code>`, with `code`, `kind` (`solid` while it is on the stand, `planned`,
+ *   dashed, while it is still to come) and the stand's `state`.
  * The countdowns are counted at `nowMs` rounded down to the minute (the current time when it is not given), so they
  * change only on the minute. Texts follow `language` (es, en) and the clock times `timeZone`.
  */
@@ -175,6 +201,7 @@ export function buildStandFeatures(stands = [], {
   const polygons = [];
   const aux = [];
   const labelPoints = [];
+  const footprints = [];
   const centres = new Map(drawn.map(stand => [stand.code, stand.geometry.center]));
   for (const stand of drawn) {
     const { code, position, geometry, terminal, state, display } = stand;
@@ -186,6 +213,12 @@ export function buildStandFeatures(stands = [], {
       unofficial: geometry.locationSource !== 'occ',
     }, { type: 'Polygon', coordinates: [lineOf(geometry.polygon)] }));
 
+    // The aircraft of the stand at true size, nose along the stand's heading (PR M6).
+    const footprint = footprintOf(display, geometry);
+    if (footprint !== null) {
+      const id = `footprint:${code}`;
+      footprints.push(feature(id, { id, code, kind: display.footprint, state }, { type: 'Polygon', coordinates: [footprint] }));
+    }
     if (Array.isArray(geometry.leadIn) && geometry.leadIn.length >= 2) {
       const id = `leadIn:${code}`;
       aux.push(feature(id, { id, kind: 'leadIn', code, state }, { type: 'LineString', coordinates: lineOf(geometry.leadIn) }));
@@ -203,6 +236,8 @@ export function buildStandFeatures(stands = [], {
         type: 'LineString', coordinates: lineOf(standBox(geometry.center, geometry.headingTrue, 'C')),
       }));
     }
+    // How far its turnaround has gone, while its aircraft is on it and its milestones are known (PR M6).
+    aux.push(...progressFeatures(code, state, display, geometry));
 
     const signal = standSignalOf(position);
     labelPoints.push(feature(code, {
@@ -210,6 +245,7 @@ export function buildStandFeatures(stands = [], {
       state,
       signal,
       glyph: paint.glyph,
+      footprint: footprint === null ? null : display.footprint,
       clock: paint.clock,
       heading: Number.isFinite(geometry.headingTrue) ? geometry.headingTrue : 0,
       sortKey: (SIGNAL_SORT[signal] ?? 0) + SORT_KEYS[labels][state],
@@ -222,7 +258,111 @@ export function buildStandFeatures(stands = [], {
     aux: collection(aux),
     labels: collection(labelPoints),
     groups: collection(terminalGroups(drawn)),
+    footprints: collection(footprints),
   };
+}
+
+// The ring of the aircraft a stand draws to scale (aircraft/footprint.js), or `null`: its display names a kind and a
+// type, and its geometry a centre and a heading.
+function footprintOf(display, geometry) {
+  if (!FOOTPRINT_KINDS.has(display?.footprint) || !display.typeSpec) return null;
+  if (!Array.isArray(geometry?.center) || !isFiniteNumber(geometry.headingTrue)) return null;
+  return aircraftFootprint(display.typeSpec, geometry.center, geometry.headingTrue);
+}
+
+// The bar of a stand's progress and the part done: on a stand with an aircraft on it whose milestones are known.
+function progressFeatures(code, state, display, geometry) {
+  if (standPaint(state).glyph !== 'aircraft' || !Number.isInteger(display?.milestonesDone) || !(display.milestonesTotal > 0)) {
+    return [];
+  }
+  const total = display.milestonesTotal;
+  const done = Math.max(0, Math.min(display.milestonesDone, total));
+  const track = progressSegment(geometry.polygon, geometry.headingTrue, 1);
+  if (track === null) return [];
+  const line = (kind, coordinates) => {
+    const id = `${kind}:${code}`;
+    return feature(id, { id, kind, code, done, total }, { type: 'LineString', coordinates });
+  };
+  const features = [line('progressTrack', track)];
+  if (done > 0) features.push(line('progressDone', progressSegment(geometry.polygon, geometry.headingTrue, done / total)));
+  return features;
+}
+
+const roundCoordinate = value => Math.round(value * 1e7) / 1e7;
+
+/**
+ * The line of a stand's progress bar (design D3): along the rear edge of its box (`polygon`, a closed ring, the nose
+ * along `headingTrue`), PROGRESS_INSET inside it, from one end to `fraction` (0 to 1) of its length, as
+ * `[[lng, lat], [lng, lat]]`. It reads from left to right on a north-up map (west to east; south to north when the
+ * edge runs that way). `null` without a box or a heading.
+ */
+export function progressSegment(polygon, headingTrue, fraction) {
+  const ring = Array.isArray(polygon) ? polygon.filter(point => Array.isArray(point)) : [];
+  const corners = ring.length > 1 && ring[0][0] === ring.at(-1)[0] && ring[0][1] === ring.at(-1)[1] ? ring.slice(0, -1) : ring;
+  if (corners.length < 3 || !isFiniteNumber(headingTrue) || !isFiniteNumber(fraction)) return null;
+  const origin = [
+    corners.reduce((sum, point) => sum + point[0], 0) / corners.length,
+    corners.reduce((sum, point) => sum + point[1], 0) / corners.length,
+  ];
+  const plane = toLocal(origin);
+  const radians = (headingTrue * Math.PI) / 180;
+  const nose = [Math.sin(radians), Math.cos(radians)];
+  const right = [Math.cos(radians), -Math.sin(radians)];
+  const local = corners.map(point => plane.forward(point));
+  const along = local.map(([x, y]) => x * nose[0] + y * nose[1]);
+  const across = local.map(([x, y]) => x * right[0] + y * right[1]);
+  const rear = Math.min(...along) + PROGRESS_INSET.rearM;
+  const left = Math.min(...across);
+  const width = Math.max(...across) - left;
+  const at = acrossM => [nose[0] * rear + right[0] * acrossM, nose[1] * rear + right[1] * acrossM];
+  let start = at(left + width * PROGRESS_INSET.sideShare);
+  let end = at(left + width * (1 - PROGRESS_INSET.sideShare));
+  const [dx, dy] = [end[0] - start[0], end[1] - start[1]];
+  if (Math.abs(dx) >= Math.abs(dy) ? dx < 0 : dy < 0) [start, end] = [end, start];
+  const share = Math.min(1, Math.max(0, fraction));
+  const stop = [start[0] + (end[0] - start[0]) * share, start[1] + (end[1] - start[1]) * share];
+  return [start, stop].map(xy => plane.inverse(xy).map(roundCoordinate));
+}
+
+// The box of each stand that draws the aircraft on it (Ocupada or Por liberar: its footprint, or its glyph), by the
+// turnaround of the visit it shows; built once per list.
+const PARKED_BOXES = new WeakMap();
+function parkedBoxes(stands) {
+  if (!Array.isArray(stands)) return new Map();
+  let boxes = PARKED_BOXES.get(stands);
+  if (boxes === undefined) {
+    boxes = new Map();
+    for (const stand of stands) {
+      if (stand === null || typeof stand !== 'object' || isRetired(stand) || !Array.isArray(stand.geometry?.polygon)) continue;
+      const turnaroundId = stand.display?.visit?.turnaroundId;
+      if (hasAircraft(standStateOf(stand)) && turnaroundId != null && !boxes.has(turnaroundId)) {
+        boxes.set(turnaroundId, stand.geometry.polygon);
+      }
+    }
+    PARKED_BOXES.set(stands, boxes);
+  }
+  return boxes;
+}
+
+/**
+ * The ELEVANT aircraft the stands draw instead of the traffic (design F4: one owner per aircraft, nothing drawn twice):
+ * those of `aircraft` (the traffic as a frame draws it, traffic/situationModel.js) standing still on the ground (under
+ * 2 kt) inside the box of the stand of their visit while that stand reads an aircraft on it (Ocupada or Por liberar),
+ * which it draws: to scale from the codes threshold on (its footprint; the glyph when its type is unknown), as its glyph
+ * below. A Set of their ids; from the polygons threshold on, where the stands are drawn, the map hides their symbol
+ * (traffic/trafficFeatures.js: `parkedOnStand`). A moving aircraft is always the traffic's.
+ */
+export function parkedAircraftIds(aircraft = [], stands = []) {
+  const parked = new Set();
+  const boxes = parkedBoxes(stands);
+  if (boxes.size === 0) return parked;
+  for (const item of Array.isArray(aircraft) ? aircraft : []) {
+    if (item?.kind !== 'aviam' || item.onGround !== true || !isFiniteNumber(item.lon) || !isFiniteNumber(item.lat)) continue;
+    if (isFiniteNumber(item.gsMs) && item.gsMs >= STILL_BELOW_MS) continue;
+    const box = boxes.get(item.turnaroundId);
+    if (box && pointInPolygon([item.lon, item.lat], box)) parked.add(item.id);
+  }
+  return parked;
 }
 
 // One chip per terminal at the centre of the box around its stands, in the order of TERMINALS.

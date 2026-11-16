@@ -5,8 +5,12 @@ import { mapOccupancyToRampPositions, mapStandCode } from '../../positions-map/p
 import { loadOccPositions } from '../../../services/occPositionsService';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { useMapSelection } from '../../maps/core/useMapSelection';
+import MapSituationGate, { MapSituationOverlays, trafficSelectionOf } from '../../maps/MapSituationGate';
+import { attachStandGeometry } from '../../maps/stands/standModel';
 import { useStandDisplay } from '../../maps/stands/useStandDisplay';
+import { standInputsOf } from '../../maps/traffic/standInputs';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
+import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { planningMessages } from '../planningMessages';
 
 // MapLibre needs the browser: the map loads only on the client.
@@ -26,14 +30,30 @@ function time(value, timeZone) {
  * Planning on the map (ADR-0027): the station's stands with the day's flights, from the same
  * OCC positions board the positions map reads. Selecting a flight opens it in the planning drawer.
  * Stands use the location OCC saved; the rest fall back to the unverified internal reference.
- * The selected stand lives in the URL (`stand=`, contracts 2.1), as on the positions map.
+ * The selected stand lives in the URL (`stand=`, contracts 2.1), as on the positions map. Inside the OCC frame (PR M6)
+ * the stands also read the map flights and the aircraft positions (maps/MapSituationGate.jsx), and the map draws the
+ * live, estimated and demo traffic with the chosen flight (`flightId=`) or aircraft (`hex=`), its route and data block.
+ * The map also draws the wind at the airfield from the station's aerodrome weather (PR M8, useMdpcWeather).
  */
-export default function PlanningMap({ stationId, date, flights = [], timeZone, onSelectFlight, dataRevision = 0 }) {
+export default function PlanningMap(props) {
+  const { t } = useTranslation(planningMessages);
+  const { selection } = useMapSelection();
+  return (
+    <MapSituationGate selection={selection} fallback={<p role="status" className={`${panelClass} p-5 text-sm`}>{t('map.loading')}</p>}>
+      {live => <PlanningMapView {...props} live={live} />}
+    </MapSituationGate>
+  );
+}
+
+function PlanningMapView({ stationId, date, flights = [], timeZone, onSelectFlight, dataRevision = 0, live = null }) {
   const { t } = useTranslation(planningMessages);
   const [state, setState] = useState({ status: 'loading' });
-  const { selection, selectStand, clear } = useMapSelection();
+  const { selection, selectStand, selectFlight, selectAircraft, clear } = useMapSelection();
   const selectedCode = selection?.kind === 'stand' ? selection.id : null;
+  const trafficSelection = live ? trafficSelectionOf(selection) : null;
   const mapRef = useRef(null);
+  // The aerodrome weather of the station (PR M8): its own 10-minute poll; the map draws its wind at the airfield.
+  const weather = useMdpcWeather({ stationId, enabled: Boolean(stationId) });
 
   useEffect(() => {
     if (!stationId || !date) return undefined;
@@ -47,14 +67,26 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
   const plannedIds = useMemo(() => new Set(flights.map(flight => flight.id)), [flights]);
   const positions = useMemo(() => state.board ? mapOccupancyToRampPositions(RAMP_POSITIONS, state.board) : [],
     [state.board]);
-  // The map draws each stand as it reads now, and the panel says it; the lists beside it keep the board.
-  const mapPositions = useStandDisplay(positions);
+  // The map draws each stand as it reads now, and the panel says it; the lists beside it keep the board. Inside the OCC
+  // frame (PR M6) with the map flights and the aircraft positions, placed on the airport layout first.
+  const layout = live?.layout ?? null;
+  const situation = live?.situation ?? null;
+  const placedPositions = useMemo(() => (layout ? attachStandGeometry(positions, layout) : positions),
+    [positions, layout]);
+  const standInputs = useMemo(() => standInputsOf(situation), [situation]);
+  // On the clock the map draws its aircraft at (the server's, paused with the motion), so a demo stand changes state
+  // when its aircraft parks or leaves.
+  const standClock = live?.renderClock ?? null;
+  const standOptions = useMemo(() => ({ ...standInputs, clock: standClock }), [standInputs, standClock]);
+  const mapPositions = useStandDisplay(placedPositions, standOptions);
   const withFlights = positions.filter(position => position.turnarounds.length > 0);
   const selected = selectedCode === null ? null
     : mapPositions.find(position => mapStandCode(position.id) === selectedCode) ?? null;
   const unassigned = (state.board?.unassigned ?? []).filter(item => plannedIds.has(item.turnaroundId));
   const located = positions.filter(position => position.locationSource === 'occ').length;
   const selectPosition = id => (id == null ? clear() : selectStand(id));
+  // A flight or an aircraft chosen on the map (PR M6): the same selection of the URL as on the positions map.
+  const selectTraffic = next => (next.kind === 'flight' ? selectFlight(next.id) : selectAircraft(next.id));
 
   if (state.status === 'loading') return <p role="status" className={`${panelClass} p-5 text-sm`}>{t('map.loading')}</p>;
   if (state.status === 'error') return <p role="alert" className={`${panelClass} p-5 text-sm text-status-danger`}>{state.error.message}</p>;
@@ -73,7 +105,10 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
     <section aria-label={t('map.label')} className="grid gap-4 lg:grid-cols-[7fr_minmax(16rem,3fr)]">
       <div className={`${panelClass} relative min-h-[460px] overflow-hidden`}>
         <PositionMap ref={mapRef} positions={mapPositions} selectedPositionId={selected?.id ?? selectedCode}
-          onSelectPosition={selectPosition} theme="dark" viewMode="2d" />
+          onSelectPosition={selectPosition} viewMode="2d" traffic={live?.traffic} weather={weather}
+          trafficSelection={trafficSelection} onSelectTraffic={live ? selectTraffic : undefined}>
+          <MapSituationOverlays live={live} onClose={clear} />
+        </PositionMap>
       </div>
       <aside className={`${panelClass} space-y-3 p-4 text-sm`}>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">

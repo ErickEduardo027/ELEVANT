@@ -1,26 +1,35 @@
+import { isOccAerodromeWeather, isOccMapFlights } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { importClosure } from '../../../styles/occSourceScan';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
-import { haversineM } from '../airport/geo';
+import { destinationPoint, haversineM } from '../airport/geo';
 import { MAX_TRANSLATION_M } from '../airport/standGeometry';
-import { VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
+import { PUJ_ARP, VIEW_NAMES, presetTargets, targetFor } from '../core/cameraPresets';
 import { PLACING_SNAP_M } from '../stands/placing';
 import { buildStandFeatures } from '../stands/standFeatures';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
+import { WEATHER_STATION_ID } from '../testing/weatherFixtures';
+import { counterpartCodes, mapRunwayInUse, regionAirportFeatures, rememberArrivals } from '../traffic/referenceFeatures';
+import { CIVIL_TWILIGHT_DEG, sunPosition } from '../traffic/solar';
 import { legendEntries } from '../ui/legendEntries';
+import { labTraffic } from './trafficScenes';
 import {
-  BASEMAP_MODES, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT, SCENE_KINDS, findScene, labInstant, labStands,
-  readLabQuery,
+  BASEMAP_MODES, LAB_SATELLITE, NIGHT_INSTANT, NIGHT_SCENE_INSTANT, PLACING_OFFSET_M, PLACING_STAND, SCENES, SCENE_INSTANT,
+  SCENE_KINDS, findScene, labInstant, labStandFlights, labStands, labWeather, readLabQuery,
 } from './scenes';
+import { satelliteTiles, windFeatures } from '../traffic/weatherLayers';
+import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 
 // The lab's stands as the map lab shows them: read at the scene's instant (useStandDisplay).
 const shown = () => withStandDisplay(labStands(), { nowMs: SCENE_INSTANT });
 const byId = (stands, code) => stands.find(stand => stand.id === code);
 const legendOf = stands => legendEntries({ stands }).states;
+// The weather scenes of PR M8.
+const WEATHER_SCENES = ['region-satellite', 'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable'];
 
 describe('map lab scenes', () => {
   it('every scene id is unique, names a known view and kind and reads at a fixed instant', () => {
@@ -29,7 +38,11 @@ describe('map lab scenes', () => {
       'ramp-states', 'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'airfield', 'approach', 'region',
       'unavailable-fallback', 'basemap-degraded', 'layout-qa', 'region-traffic-mixed', 'approach-traffic-demo',
       'ramp-traffic-ground', 'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected',
-      'region-layers-menu',
+      'region-layers-menu', 'region-references', 'region-references-night', 'approach-references', 'region-satellite',
+      'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable', 'approach-demo-final', 'airfield-demo-taxiing',
+      'ramp-demo-awaiting-stand', 'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated',
+      'approach-demo-route', 'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'ramp-3d-parked',
+      'ramp-3d-selected', 'airfield-3d-final', 'ramp-3d-night',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -41,7 +54,13 @@ describe('map lab scenes', () => {
       expect(scene.title, scene.id).toMatch(/^\p{Lu}/u);
       expect(scene.title, scene.id).not.toMatch(/^\p{Lu}{2,}/u);
       expect(scene.description, scene.id).toMatch(/^\p{Lu}.*\.$/u);
-      expect(scene.at, scene.id).toBe(scene.kind === 'map' ? SCENE_INSTANT : null);
+      // Every map scene reads at the lab's noon but the night ones: the references' at dusk, the 3D one at 22:00.
+      let instant = SCENE_INSTANT;
+      if (scene.id === 'region-references-night') instant = NIGHT_SCENE_INSTANT;
+      if (scene.id === 'ramp-3d-night') instant = NIGHT_INSTANT;
+      expect(scene.at, scene.id).toBe(scene.kind === 'map' ? instant : null);
+      // 2D, except the 3D scenes of PR M7.
+      expect(scene.pitchMode, scene.id).toBe(scene.id.includes('-3d-') ? '3d' : '2d');
       expect(Object.isFrozen(scene), scene.id).toBe(true);
     }
     // 11:00 in Punta Cana, the frozen clock of the visual suite.
@@ -50,8 +69,21 @@ describe('map lab scenes', () => {
     expect(findScene('ramp-combined-selected').selection).toEqual({ kind: 'stand', id: 'A10' });
     expect(SCENES.filter(scene => scene.selection !== null).map(scene => scene.id)).toEqual([
       'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'region-traffic-selected',
-      'approach-traffic-hex-selected',
+      'approach-traffic-hex-selected', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
+      'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'ramp-3d-selected',
     ]);
+    // The demo scenes of PR M6 choose the demo flight; the three sources of a position, the one without a signal.
+    for (const id of ['approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'airfield-demo-cancelled',
+      'approach-demo-accelerated', 'approach-demo-route', 'approach-follow-final', 'airfield-follow-taxi']) {
+      expect(findScene(id).selection, id).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival });
+    }
+    // The departure's route chooses the demo departure; two scenes open following (follow=1), every other does not.
+    expect(findScene('airfield-departure-route').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture });
+    expect(SCENES.filter(scene => scene.follow === true).map(scene => scene.id))
+      .toEqual(['approach-follow-final', 'airfield-follow-taxi']);
+    expect(SCENES.every(scene => typeof scene.follow === 'boolean')).toBe(true);
+    expect(findScene('approach-traffic-live-estimated').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.departed });
     // The traffic scenes that choose an aircraft: an AVIAM flight by its key and other traffic by its address.
     expect(findScene('region-traffic-selected').selection).toEqual({ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival });
     expect(findScene('approach-traffic-hex-selected').selection).toEqual({ kind: 'aircraft', id: 'f0c002' });
@@ -77,7 +109,7 @@ describe('map lab scenes', () => {
     }
     // Every map scene draws these same stands, frozen.
     for (const scene of SCENES.filter(item => item.kind === 'map')) {
-      expect(scene.stands, scene.id).toEqual(labStands());
+      expect(scene.stands, scene.id).toEqual(scene.id === 'ramp-3d-night' ? labStands(NIGHT_INSTANT) : labStands());
       expect(Object.isFrozen(scene.stands[0]), scene.id).toBe(true);
     }
     // The seven states, read at the scene's instant.
@@ -115,6 +147,22 @@ describe('map lab scenes', () => {
     expect(stands.flatMap(stand => stand.coveredBy ?? []).every(name => agents.has(name))).toBe(true);
   });
 
+  it('the 3D scenes (PR M7) draw ten aircraft of several families on their stands, by day and by night', () => {
+    const parkedTypes = (stands, at, flights) => withStandDisplay(stands, { nowMs: at, flightsByTurnaround: flights })
+      .filter(stand => stand.display?.footprint === 'solid').map(stand => stand.display.aircraftType).sort();
+    const types = ['A320', 'A321', 'A332', 'AT76', 'B38M', 'B738', 'B763', 'B789', 'CRJ9', 'E190'];
+    const parked = findScene('ramp-3d-parked');
+    expect(parkedTypes(parked.stands, parked.at, parked.standFlights)).toEqual(types);
+    const night = findScene('ramp-3d-night');
+    expect(new Date(NIGHT_INSTANT).toISOString()).toBe('2026-11-14T02:00:00.000Z');
+    expect(parkedTypes(night.stands, night.at, night.standFlights)).toEqual(types);
+    expect(night.traffic).toBeUndefined();
+    // The traffic of the demo flight, reused from the scenes of PR M6.
+    expect(parked.traffic).toBe(findScene('airfield-demo-taxiing').traffic);
+    expect(findScene('airfield-3d-final').traffic).toBe(findScene('approach-demo-final').traffic);
+    expect(Object.keys(labStandFlights())).toHaveLength(10);
+  });
+
   it('the layout-qa scene is development-only data with a known view', () => {
     const review = findScene('layout-qa');
     expect(review).toEqual({
@@ -127,9 +175,11 @@ describe('map lab scenes', () => {
       stands: [],
       at: null,
       selection: null,
+      follow: false,
       basemap: 'on',
       webgl: true,
       placing: null,
+      pitchMode: '2d',
     });
     expect(Object.isFrozen(review) && Object.isFrozen(review.stands)).toBe(true);
     expect(SCENES.filter(scene => scene.kind !== 'map').map(scene => scene.id)).toEqual(['layout-qa']);
@@ -182,6 +232,91 @@ describe('map lab scenes', () => {
       // Every stand sits at its reference location: the legend says «No oficial».
       expect(framed.tags, terminal).toEqual(['unofficial']);
     }
+  });
+
+  it('the reference scenes are valid: their weather passes the validator, the night shows its edge and a counterpart', () => {
+    const ids = ['region-references', 'region-references-night', 'approach-references'];
+    for (const id of ids) {
+      const scene = findScene(id);
+      expect(scene.kind, id).toBe('map');
+      // Its weather is a whole answer of GET occ/weather that the api-client's validator takes, read once by the lab.
+      expect(isOccAerodromeWeather(scene.weather, WEATHER_STATION_ID), id).toBe(true);
+      const weather = labWeather(scene.weather);
+      expect(weather, id).toMatchObject({ status: 'success', apiStatus: 'Live', refreshFailed: false, error: null });
+      expect(weather.data.metar.wind, id).toMatchObject({ directionDeg: 100, speedKt: 13 });
+      expect(weather.source.name, id).toBe('NOAA Aviation Weather Center');
+      expect(Object.isFrozen(scene.weather), id).toBe(true);
+    }
+    expect(labWeather(null)).toBeNull();
+    expect(SCENES.filter(scene => scene.weather !== undefined).map(scene => scene.id)).toEqual([...ids, ...WEATHER_SCENES]);
+
+    // By day the region carries its traffic, where ZZ500 comes from Santo Domingo, an airport of the region.
+    const day = findScene('region-references');
+    expect(day.at).toBe(SCENE_INSTANT);
+    expect(isOccMapFlights(day.traffic.flights, WEATHER_STATION_ID)).toBe(true);
+    const counterparts = counterpartCodes(day.traffic.flights.flights);
+    expect(counterparts).toContain('SDQ');
+    expect(regionAirportFeatures(undefined, { counterparts }).filter(item => item.properties.counterpart)
+      .map(item => item.properties.label)).toEqual(['MDSD/SDQ']);
+
+    // At 18:15 in Punta Cana the edge of the civil twilight is inside the 250 NM of the Región view: PUJ and the west of
+    // the region are still in the twilight, the east of it in the night.
+    const night = findScene('region-references-night');
+    expect(new Date(night.at).toISOString()).toBe('2026-11-13T22:15:00.000Z');
+    expect(night.traffic).toBeUndefined();
+    const elevation = point => sunPosition(night.at, point).elevationDeg;
+    const east = destinationPoint(PUJ_ARP, 90, 250 * 1852);
+    const west = destinationPoint(PUJ_ARP, 270, 250 * 1852);
+    expect(elevation(PUJ_ARP)).toBeGreaterThan(CIVIL_TWILIGHT_DEG);
+    expect(elevation(PUJ_ARP)).toBeLessThan(0);
+    expect(elevation(west)).toBeGreaterThan(CIVIL_TWILIGHT_DEG);
+    expect(elevation(east)).toBeLessThan(CIVIL_TWILIGHT_DEG);
+    // Its METAR was observed ten minutes before the scene, so it is live at that instant.
+    expect(Date.parse(night.weather.metar.observedAt)).toBe(night.at - 10 * 60_000);
+
+    // On the approach, the demo traffic has no live arrival on final (the demo is estimated, the live arrival is on base):
+    // the METAR's wind sets the runway in use, 08.
+    const approach = findScene('approach-references');
+    const { situation } = labTraffic(approach.traffic, { nowMs: SCENE_INSTANT });
+    const arrivals = rememberArrivals([], situation.aircraft, { nowMs: SCENE_INSTANT });
+    expect(arrivals).toEqual([]);
+    expect(mapRunwayInUse({ arrivals, weather: labWeather(approach.weather), nowMs: SCENE_INSTANT }))
+      .toEqual({ arrival: '08', departure: '08', source: 'wind' });
+  });
+
+  it('the weather scenes are valid: their weather passes the validator, their images are simulated and pinned', async () => {
+    for (const id of WEATHER_SCENES) {
+      const scene = findScene(id);
+      expect(scene.kind, id).toBe('map');
+      expect(scene.at, id).toBe(SCENE_INSTANT);
+      expect(isOccAerodromeWeather(scene.weather, WEATHER_STATION_ID), id).toBe(true);
+    }
+    // The wind of each airfield scene as the map draws it, read once at the scene's instant: live, stale or none.
+    const windOf = id => windFeatures({ reading: labWeather(findScene(id).weather), runway: '08', nowMs: SCENE_INSTANT })
+      .features[0]?.properties ?? null;
+    expect(windOf('airfield-wind-live')).toMatchObject({ label: '100° 13 kt R08', stale: false });
+    expect(windOf('airfield-wind-stale')).toMatchObject({ label: '100° 13 kt R08\nSin actualizar desde las 08:00', stale: true });
+    expect(windOf('airfield-wind-unavailable')).toBeNull();
+    for (const id of ['airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable']) {
+      expect(findScene(id).view, id).toBe('airfield');
+      expect(findScene(id).satellite, id).toBeUndefined();
+    }
+    // The region opens with both images on, over its traffic, from a simulated GIBS that names their times.
+    const region = findScene('region-satellite');
+    expect(region.view).toBe('region');
+    expect(region.layers).toEqual({ 'weather.goes': true, 'weather.imerg': true });
+    expect(region.satellite).toBe(LAB_SATELLITE);
+    expect(Object.isFrozen(region.layers) && Object.isFrozen(region.satellite)).toBe(true);
+    expect(isOccMapFlights(region.traffic.flights, WEATHER_STATION_ID)).toBe(true);
+    const service = createSimulatedSatelliteImagery(region.satellite);
+    for (const layer of ['goes', 'imerg']) {
+      const info = await service.loadImageInfo(layer);
+      expect(Date.parse(info.time), layer).toBeLessThan(SCENE_INSTANT);
+      expect(info.tileTemplate, layer).toBe(satelliteTiles(layer, info)[0]);
+      expect(info.tileTemplate, layer).toContain(`/default/${info.time}/`);
+    }
+    // Every other scene opens with the browser's layers.
+    expect(SCENES.filter(scene => scene.layers !== undefined).map(scene => scene.id)).toEqual(['region-satellite']);
   });
 
   it('reads the scene, the base map and the frozen clock from the URL', () => {

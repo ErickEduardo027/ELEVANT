@@ -23,6 +23,12 @@ const ALL_STATES = Object.freeze(Object.keys(STATE_LABELS));
 const CHIP = /^Posiciones de una terminal/;
 const CHIP_ARRIVING = /^Llega un vuelo a una posición/;
 const airfieldOf = (...items) => items.map(item => AIRFIELD_LABELS[item]);
+// The references of PR M8 the legend lists after the rule, before the airfield (ui/referenceLegend.js).
+const REFERENCE_LABELS = Object.freeze({
+  rings: 'Anillos de distancia', centrelines: 'Eje de pista extendido (marca cada NM)', usualRunway: 'Pista 08 (habitual)',
+  vor: 'Radioayuda VOR-DME', ndb: 'Radioayuda NDB',
+});
+const referencesOf = (...items) => items.map(item => REFERENCE_LABELS[item]);
 
 // The airport layout the map draws, read in Node as the generator wrote it.
 const LAYOUT = JSON.parse(readFileSync(new URL('../../../src/features/maps/airport/data/mdpc.layout.json', import.meta.url), 'utf8'));
@@ -210,12 +216,17 @@ test.describe('map lab', () => {
     // over the chips of A and B, where a flight is arriving (A3, A6 and B25).
     await page.evaluate(zoom => window.__occMapLab.jumpTo({ zoom }), airfieldFit - 0.6);
     await labIdle(page);
-    await expect(legend.getByRole('listitem')).toHaveText([CHIP, CHIP_ARRIVING, ...ALL_AIRFIELD]);
-    // Region and approach draw neither stands nor the airfield of the dataset.
+    // There the navaids PNA and PCA of the airport are drawn too (PR M8), with the airfield, after the rule; they end
+    // where the stands turn into polygons, so nothing of them sits over the stands.
+    await expect(legend.getByRole('listitem')).toHaveText([CHIP, CHIP_ARRIVING, ...referencesOf('vor', 'ndb'), ...ALL_AIRFIELD]);
+    // Region and approach draw neither stands nor the airfield of the dataset, and their legend explains the references
+    // they draw (PR M8): the rings; on the approach also the centrelines, with the usual 08 in use (the scene has no
+    // weather and no traffic, so no airports of the region either), and the navaids by the mark of PUJ.
     await settleOn('region');
-    await expect(page.getByTestId('map-legend')).toHaveCount(0);
+    await expect(legend.getByRole('listitem')).toHaveText(referencesOf('rings'));
     await settleOn('approach');
-    await expect(page.getByTestId('map-legend')).toHaveCount(0);
+    await expect(legend.getByRole('listitem'))
+      .toHaveText(referencesOf('rings', 'centrelines', 'usualRunway', 'vor', 'ndb'));
     await settleOn('ramp');
     await expect(legend.getByRole('listitem')).toHaveCount(17);
 
@@ -280,15 +291,19 @@ test.describe('map lab', () => {
     await expect(credits).toContainText('© OpenStreetMap contributors (ODbL) · OurAirports');
     await expect(credits.locator('a', { hasText: 'ODbL' })).toHaveAttribute('href', 'https://opendatacommons.org/licenses/odbl/');
     await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveAttribute('href', 'https://ourairports.com/');
-    // The region view draws nothing of the dataset: its credit goes, the base map's stays.
+    // The region view draws nothing of the dataset: its credit goes, the base map's stays. This scene has no traffic, so
+    // no airports of the region either, and Región draws no navaid or centreline: nothing of OurAirports is on screen
+    // (with the airports, OurAirports is credited alone, once: map-lab.references.spec.mjs).
     await page.evaluate(() => window.__occMapLab.flyToPreset('region'));
     await labIdle(page);
-    await expect(credits).not.toContainText('OurAirports');
+    await expect(credits).not.toContainText('(ODbL)');
     await expect(credits).toContainText('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles');
-    // And it comes back with the airfield.
+    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveCount(0);
+    // And it comes back with the airfield, with OurAirports once.
     await page.evaluate(() => window.__occMapLab.flyToPreset('airfield'));
     await labIdle(page);
-    await expect(credits).toContainText('OurAirports');
+    await expect(credits).toContainText('© OpenStreetMap contributors (ODbL) · OurAirports');
+    await expect(credits.locator('a', { hasText: 'OurAirports' })).toHaveCount(1);
   });
 
   test('a runway or a taxiway under the pointer shows its tooltip; a click holds it and a click elsewhere or another view closes it', async ({ page }) => {

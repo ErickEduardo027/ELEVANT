@@ -113,7 +113,7 @@ describe('map images', () => {
 
   it('every icon keeps 3 px clear of its border for the SDF and its halo', () => {
     // The icons drawn with lines and curves: every point of what they draw (a cut lies inside its shape).
-    for (const id of ['glyph-aircraft', 'glyph-arriving', 'signal-attention', 'signal-urgent', 'aircraft-solid']) {
+    for (const id of ['glyph-aircraft', 'glyph-arriving', 'signal-attention', 'signal-urgent', 'signal-notice', 'aircraft-solid']) {
       const { width, height, ops } = MAP_IMAGE_SHAPES[id];
       for (const op of ops.filter(item => item.clear === undefined)) {
         const scale = op.scale ?? 1;
@@ -135,6 +135,36 @@ describe('map images', () => {
     const [ringRight, ringY, ringRadius] = numbers(clock.ops[0].stroke);
     expect([ringRight - ringRadius, ringY]).toEqual([clock.width / 2, clock.height / 2]);
     expect(clock.width / 2 - ringRadius - clock.ops[0].lineWidth / 2).toBeGreaterThanOrEqual(3);
+  });
+
+  it('the wind arrow points up, a shaft and a head clear of the border; a calm or variable wind is a ring around a dot', () => {
+    const { width, height, ops: [shaft, head] } = MAP_IMAGE_SHAPES['wind-arrow'];
+    expect([width, height]).toEqual([24, 24]);
+    // Nose up (north): the layer turns it to where the wind blows. The shaft runs down the middle below the head.
+    const tip = pathPoints(head.fill).reduce((top, point) => (point[1] < top[1] ? point : top));
+    expect(tip).toEqual([width / 2, 3.5]);
+    const [shaftStart, shaftEnd] = pathPoints(shaft.stroke);
+    expect([shaftStart[0], shaftEnd[0]]).toEqual([width / 2, width / 2]);
+    // From the bottom up into the head's base (y 11), so the two join.
+    expect(shaftStart[1]).toBeGreaterThan(shaftEnd[1]);
+    expect(shaftEnd[1]).toBeLessThanOrEqual(Math.max(...pathPoints(head.fill).map(([, y]) => y)));
+    // 3 px clear of the border for its SDF and halo, the shaft's width included.
+    for (const op of [shaft, head]) {
+      const half = op.stroke === undefined ? 0 : op.lineWidth / 2;
+      for (const [x, y] of pathPoints(op.fill ?? op.stroke)) {
+        expect(Math.min(x, width - x) - half, `x ${x}`).toBeGreaterThanOrEqual(3);
+        expect(Math.min(y, height - y) - half, `y ${y}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+    // The ring of a calm wind: 5.5 px around the middle with its 1.5 px stroke, and a dot inside it.
+    const calm = MAP_IMAGE_SHAPES['wind-calm'];
+    const [ringRight, ringY, ringRadius] = numbers(calm.ops[0].stroke);
+    expect([ringRight - ringRadius, ringY]).toEqual([calm.width / 2, calm.height / 2]);
+    expect(calm.width / 2 - ringRadius - calm.ops[0].lineWidth / 2).toBeGreaterThanOrEqual(3);
+    expect(calm.ops[1].fill).toBeDefined();
+    // Both are icons the layer paints (SDF), before the traffic's images at the end of the list.
+    expect(['wind-arrow', 'wind-calm'].every(isSdfImage)).toBe(true);
+    expect(MAP_IMAGE_IDS.indexOf('wind-calm')).toBe(MAP_IMAGE_IDS.indexOf('wind-arrow') + 1);
   });
 
   it('the hatch pattern is a non-SDF image painted in line-strong; the signal images are a triangle and an octagon with «!»', () => {
@@ -184,6 +214,16 @@ describe('map images', () => {
     // Both resolve as SDF icons the layer paints in --occ-warn and --occ-danger.
     const resolve = createImageResolver({ rasterize: centreRasterizer() });
     expect([resolve('signal-attention').sdf, resolve('signal-urgent').sdf]).toEqual([true, true]);
+    // The plain notice (PR M6) is a diamond without colour: its outline alone, centred, with nothing cut out of it; an
+    // SDF too, which the layer paints in the text colour.
+    expect(SIGNALS.notice).toMatchObject({ shape: 'diamond', colorToken: null });
+    const diamond = MAP_IMAGE_SHAPES['signal-notice'];
+    expect(diamond.ops).toHaveLength(1);
+    expect(diamond.ops[0].fill).toBeUndefined();
+    const tips = pointsOf(diamond.ops[0].stroke);
+    expect(tips).toHaveLength(4);
+    for (const [x, y] of tips) expect(Math.abs(x - 10) + Math.abs(y - 10)).toBeCloseTo(6, 9);
+    expect(resolve('signal-notice').sdf).toBe(true);
   });
 
   it('the chip stretches only its flat middle around the text and keeps the text inside its plate', () => {
@@ -361,7 +401,7 @@ describe('traffic images (PR M5)', () => {
     expect(MAP_IMAGE_IDS.slice(-TRAFFIC_IDS.length)).toEqual(TRAFFIC_IDS);
     expect(TRAFFIC_IDS).toEqual([
       ...ICON_CATEGORIES.flatMap(category => [`ac-${category}-solid`, `ac-${category}-hollow`]),
-      'traffic-ring-est', 'glyph-arrival', 'glyph-departure', 'glyph-arrow-right', 'plate-demo',
+      'traffic-ring-est', 'glyph-arrival', 'glyph-departure', 'glyph-arrow-right', 'plate-demo', 'route-mark',
     ]);
     expect(aircraftImage('narrow')).toBe('ac-narrow-solid');
     expect(aircraftImage('heavy4', { hollow: true })).toBe('ac-heavy4-hollow');
@@ -409,10 +449,16 @@ describe('traffic images (PR M5)', () => {
         expect(Math.max(...reach.map(([, y]) => y)), id).toBeLessThanOrEqual(height - 3 + 1e-9);
       }
     }
-    const { width, ops: [ring] } = MAP_IMAGE_SHAPES['traffic-ring-est'];
-    const [right, centreY, radius] = ring.stroke.match(/-?\d+(?:\.\d+)?/g).map(Number);
-    expect([right - radius, centreY]).toEqual([width / 2, width / 2]);
-    expect(width / 2 - radius - ring.lineWidth / 2).toBeGreaterThanOrEqual(3);
+    // The two rings (an estimated position's, a route mark's, PR M6): centred, with 3 px clear outside their stroke.
+    for (const id of ['traffic-ring-est', 'route-mark']) {
+      const { width, height, ops: [ring] } = MAP_IMAGE_SHAPES[id];
+      const [right, centreY, radius] = ring.stroke.match(/-?\d+(?:\.\d+)?/g).map(Number);
+      expect([right - radius, centreY], id).toEqual([width / 2, width / 2]);
+      expect(width, id).toBe(height);
+      expect(width / 2 - radius - ring.lineWidth / 2, id).toBeGreaterThanOrEqual(3);
+    }
+    // The route's ring is an SDF: the layer paints it in the selection's cyan.
+    expect(isSdfImage('route-mark')).toBe(true);
     // The plate's word has its slab: 38 × 16 px inside the 3 px margin.
     expect([MAP_IMAGE_SHAPES['plate-demo'].width, MAP_IMAGE_SHAPES['plate-demo'].height])
       .toEqual([DEMO_PLATE.width + 6, DEMO_PLATE.height + 6]);

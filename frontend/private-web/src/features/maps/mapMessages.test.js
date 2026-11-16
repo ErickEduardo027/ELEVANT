@@ -1,9 +1,11 @@
-import { OCC_AIR_PICTURE_REASONS } from '@elevant/api-client';
+import { OCC_AIR_PICTURE_REASONS, OCC_TAF_CHANGES } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import { OCC_SHORTCUTS } from '../occ-ui/occShortcuts';
 import { STAND_STATES, TAGS } from '../occ-ui/statusVocabulary';
+import { ROUTE_LABELS, kinematicsMessages } from './kinematics/kinematicsMessages';
 import { mapMessages } from './mapMessages';
+import { staleWords } from './traffic/stationTime';
 
 // Every leaf of a message tree as `a.b.c`.
 function leafPaths(tree, prefix = '') {
@@ -181,5 +183,138 @@ describe('map messages', () => {
       const texts = OCC_AIR_PICTURE_REASONS.map(reason => createTranslator(mapMessages, language)(`source.reason.${reason}`));
       expect(texts.join(' '), language).not.toMatch(/_|adsb|provider_error|rate_limited/i);
     }
+  });
+
+  it('names the references of the layers menu and the legend, and the runway in use, in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    // The group and keys of design E7.
+    expect([es('layers.group.reference'), en('layers.group.reference')]).toEqual(['Referencias', 'References']);
+    const keys = ['reference.airports', 'reference.routes', 'rings', 'centrelines', 'navaids', 'daynight'];
+    expect(keys.map(key => es(`layers.key.${key}`))).toEqual(['Aeropuertos de la región', 'Rutas desde Punta Cana',
+      'Anillos de distancia', 'Ejes de pista', 'Radioayudas', 'Día y noche']);
+    expect(keys.map(key => en(`layers.key.${key}`))).toEqual(['Airports of the region', 'Routes from Punta Cana',
+      'Range rings', 'Runway centrelines', 'Navaids', 'Day and night']);
+    // The legend: what each reference on screen is.
+    const entries = ['rings', 'centrelines', 'airports', 'counterparts', 'vor', 'ndb', 'night'];
+    expect(entries.map(key => es(`legend.reference.${key}`))).toEqual([
+      'Anillos de distancia', 'Eje de pista extendido (marca cada NM)', 'Aeropuerto de la región',
+      'Origen o destino de un vuelo de hoy', 'Radioayuda VOR-DME', 'Radioayuda NDB', 'Noche (tras el crepúsculo civil)',
+    ]);
+    expect(en('legend.reference.night')).toBe('Night (after civil twilight)');
+    // The runway in use and where it comes from (contracts 2.3), in the words the map draws: Latin-1 only.
+    expect(['live', 'wind', 'default', 'flight'].map(key => es(`reference.runway.${key}`, { ident: '08' }))).toEqual([
+      'Pista 08 (según las llegadas)', 'Pista 08 (estimada por el viento)', 'Pista 08 (habitual)', 'Pista 08',
+    ]);
+    expect(en('reference.runway.wind', { ident: '26' })).toBe('Runway 26 (estimated from the wind)');
+    // The word on the night side of the night's edge.
+    expect([es('reference.night'), en('reference.night')]).toEqual(['Noche', 'Night']);
+    for (const language of ['es', 'en']) {
+      for (const path of leafPaths(mapMessages[language].reference)) {
+        expect(createTranslator(mapMessages, language)(`reference.${path}`), path).toMatch(/^[ -ÿ]+$/u);
+      }
+    }
+  });
+
+  it('names the states of the aerodrome weather, its credit, the TAF and the wind in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect(['loading', 'unavailable', 'disabled', 'error', 'forbidden'].map(key => es(`weather.status.${key}`))).toEqual([
+      'Cargando el clima del aeródromo…', 'No hay clima del aeródromo en este momento.',
+      'El clima del aeródromo no está activado en este entorno.', 'No se pudo cargar el clima del aeródromo.',
+      'Tu acceso no incluye el clima del aeródromo.',
+    ]);
+    expect(['unavailable', 'disabled', 'forbidden'].map(key => en(`weather.status.${key}`))).toEqual([
+      'No aerodrome weather right now.', 'Aerodrome weather is not turned on in this environment.',
+      'Your access does not include the aerodrome weather.',
+    ]);
+    // Stale has no words of its own: «Sin actualizar desde las 08:00» is the vocabulary's (TAGS.stale), with the
+    // station's time of the METAR, and «No oficial» is TAGS.unofficial.
+    expect(Object.keys(mapMessages.es.weather.status)).not.toContain('stale');
+    expect(staleWords(Date.parse('2026-11-13T12:00:00Z'), 'es')).toBe('Sin actualizar desde las 08:00');
+    expect(staleWords(Date.parse('2026-11-13T12:00:00Z'), 'en')).toBe('Not updated since 08:00');
+    expect([es('weather.source', { name: 'NOAA Aviation Weather Center' }), en('weather.source', { name: 'NOAA Aviation Weather Center' })])
+      .toEqual(['Clima: NOAA Aviation Weather Center', 'Weather: NOAA Aviation Weather Center']);
+    expect(['now', 'next', 'expired', 'none'].map(key => es(`weather.taf.${key}`)))
+      .toEqual(['Ahora', 'Después', 'Pronóstico vencido', 'Sin pronóstico']);
+    expect([es('weather.taf.until', { time: '18:00' }), es('weather.taf.from', { time: '18:00' }),
+      en('weather.taf.until', { time: '18:00' }), en('weather.taf.from', { time: '18:00' })])
+      .toEqual(['Hasta las 18:00', 'Desde las 18:00', 'Until 18:00', 'From 18:00']);
+    // One word for each change the API names (OCC_TAF_CHANGES); PROB takes its percent.
+    for (const language of ['es', 'en']) {
+      expect(Object.keys(mapMessages[language].weather.taf.change), language).toEqual([...OCC_TAF_CHANGES]);
+    }
+    expect([es('weather.taf.change.TEMPO'), es('weather.taf.change.PROB', { percent: '30 %' }),
+      en('weather.taf.change.BECMG'), en('weather.taf.change.PROB', { percent: '30%' })])
+      .toEqual(['Temporal', 'Probabilidad 30 %', 'Gradual change', 'Probability 30%']);
+    expect([es('weather.wind.calm'), es('weather.wind.variable'), es('weather.wind.gust', { speed: 25 }), en('weather.wind.calm')])
+      .toEqual(['Calma', 'VRB', 'G25', 'Calm']);
+  });
+  it('names the weather of the layers menu, the legend, the wind tooltip and the credit in both languages', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    // The group and keys of design E7.
+    expect([es('layers.group.weather'), en('layers.group.weather')]).toEqual(['Meteorología', 'Weather']);
+    const keys = ['goes', 'imerg', 'wind'];
+    expect(keys.map(key => es(`layers.key.weather.${key}`))).toEqual(['Nubes por satélite', 'Lluvia estimada', 'Viento en pista']);
+    expect(keys.map(key => en(`layers.key.weather.${key}`))).toEqual(['Satellite clouds', 'Estimated rain', 'Runway wind']);
+    expect([es('layers.note.views', { first: 'Región', second: 'Aproximación' }), es('layers.note.loadingImage'),
+      es('layers.note.noImage')]).toEqual(['Se ve en Región y Aproximación', 'Buscando la imagen…', 'No hay imagen en este momento.']);
+    // The legend: what each is, and the time of an image.
+    expect(['wind', 'goes', 'imerg'].map(key => es(`legend.weather.${key}`))).toEqual([
+      'Viento en pista', 'Nubes por satélite (GOES-East, infrarrojo)', 'Lluvia estimada (IMERG)',
+    ]);
+    expect([es('legend.weather.imageAt', { time: '10:50' }), en('legend.weather.imageDay', { date: 'Nov 13' })])
+      .toEqual(['Imagen de las 10:50', 'Image of Nov 13']);
+    // The wind's tooltip: its words, the time of its METAR, head, tail and cross wind; «No oficial» is the vocabulary's.
+    expect([es('wind.title', { wind: '100° 13 kt' }), es('wind.calmTitle'), es('wind.observed', { time: '10:50' })])
+      .toEqual(['Viento 100° 13 kt', 'Viento en calma', 'METAR de las 10:50']);
+    expect(['head', 'tail', 'fromRight', 'fromLeft'].map(key => es(`wind.${key}`, { speed: 6 }))).toEqual([
+      '6 kt de frente', '6 kt de cola', '6 kt de la derecha', '6 kt de la izquierda',
+    ]);
+    expect(['head', 'tail', 'fromRight', 'fromLeft'].map(key => en(`wind.${key}`, { speed: 6 }))).toEqual([
+      '6 kt headwind', '6 kt tailwind', '6 kt from the right', '6 kt from the left',
+    ]);
+    expect(Object.values(mapMessages.es.wind)).not.toContain(TAGS.unofficial.es);
+    // The credit of the aerodrome weather beside the aircraft data's.
+    expect([es('attribution.weather'), en('attribution.weather')]).toEqual(['Clima', 'Weather']);
+  });
+
+  it('says «Pausar movimiento» and where a real flight\'s runway comes from, in both languages (PR M6)', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    expect([es('motion.pause'), es('motion.resume'), es('motion.paused', { time: '14:20' }), es('motion.pausedWithoutData')])
+      .toEqual(['Pausar movimiento', 'Reanudar movimiento', 'Movimiento en pausa · datos de las 14:20', 'Movimiento en pausa']);
+    expect([en('motion.pause'), en('motion.resume'), en('motion.paused', { time: '14:20' })])
+      .toEqual(['Pause movement', 'Resume movement', 'Movement paused · data from 14:20']);
+    // The runway in use of a real flight with where the choice comes from (airport/runwayInUse.js: its `source`).
+    expect(['live', 'wind', 'default'].map(source => es('dataBlock.runwayFrom', { id: '08', source: es(`dataBlock.runwaySource.${source}`) })))
+      .toEqual(['Pista 08 (por el tráfico)', 'Pista 08 (por el viento)', 'Pista 08 (habitual)']);
+    expect(en('dataBlock.runwayFrom', { id: '26', source: en('dataBlock.runwaySource.live') })).toBe('Runway 26 (from the traffic)');
+  });
+
+  it('names the parts of the chosen flight\'s route and follow mode in both languages (PR M6)', () => {
+    const es = createTranslator(mapMessages, 'es');
+    const en = createTranslator(mapMessages, 'en');
+    const parts = ['routeFlownObserved', 'routeFlownEstimated', 'routeRemaining', 'routeMark', 'routeMarkHint'];
+    expect(parts.map(key => es(`legend.traffic.${key}`))).toEqual(['Recorrido observado', 'Trayecto estimado', 'Ruta prevista',
+      'Puntos de la ruta', 'Toma de pista, salida y posición']);
+    expect(parts.map(key => en(`legend.traffic.${key}`))).toEqual(['Observed path', 'Estimated path', 'Planned route',
+      'Route points', 'Touchdown, runway exit and stand']);
+    // The estimated part has one name: the legend's is the label the route builder gives it.
+    for (const language of ['es', 'en']) {
+      expect(createTranslator(mapMessages, language)('legend.traffic.routeFlownEstimated'), language)
+        .toBe(createTranslator(kinematicsMessages, language)(ROUTE_LABELS.flownEstimated));
+    }
+    // The words of PR M5's straight line are gone.
+    expect(es('legend.traffic.routeNext')).toBe('legend.traffic.routeNext');
+    // Follow mode's switch keeps one name, pressed or not; the notice names it.
+    expect([es('follow.label'), es('follow.stopped', { id: 'ZZ9001' })])
+      .toEqual(['Seguir', 'Dejaste de seguir a ZZ9001. Pulsa Seguir para volver.']);
+    expect([en('follow.label'), en('follow.stopped', { id: 'ZZ9001' })])
+      .toEqual(['Follow', 'You stopped following ZZ9001. Press Follow to resume.']);
+    // The button is named as the key table names the S key.
+    expect(OCC_SHORTCUTS.find(shortcut => shortcut.action === 'toggleFollow')).toMatchObject({ key: 's', es: 'Seguir',
+      en: 'Follow' });
   });
 });

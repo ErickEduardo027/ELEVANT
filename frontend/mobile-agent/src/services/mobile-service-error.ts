@@ -19,7 +19,11 @@ export type MobileServiceErrorCode =
   | 'malformed_response'
   | 'request_failed'
   | 'storage_unavailable'
-  | 'cancelled';
+  | 'cancelled'
+  | 'password_change_required'
+  | 'password_policy_rejected'
+  | 'current_password_invalid'
+  | 'rate_limited';
 
 const messages: Record<MobileServiceErrorCode, string> = {
   authentication_failed: 'Las credenciales no son válidas.',
@@ -37,6 +41,12 @@ const messages: Record<MobileServiceErrorCode, string> = {
   request_failed: 'No fue posible completar la solicitud.',
   storage_unavailable: 'No fue posible acceder al almacenamiento seguro.',
   cancelled: 'La solicitud fue cancelada.',
+  password_change_required: 'Debes cambiar la contraseña temporal antes de entrar.',
+  password_policy_rejected:
+    'La nueva contraseña no cumple la política: mínimo 14 caracteres, mayúscula, minúscula, número y símbolo.',
+  current_password_invalid:
+    'La contraseña temporal no es válida. Revísala o pide a Gestión Humana una nueva.',
+  rate_limited: 'Demasiados intentos. Espera un minuto antes de reintentar.',
 };
 
 /**
@@ -146,9 +156,15 @@ function isAbortError(error: unknown) {
   );
 }
 
+/**
+ * `login` is the sign-in (createSession and what follows it); `password_change` is the unauthenticated change of a
+ * temporary password, whose 400/401/429 name the cause instead of a generic failure.
+ */
+export type MobileServiceErrorContext = 'login' | 'authenticated' | 'password_change';
+
 export function asMobileServiceError(
   error: unknown,
-  context: 'login' | 'authenticated' = 'authenticated',
+  context: MobileServiceErrorContext = 'authenticated',
 ) {
   if (error instanceof MobileServiceError) return error;
   if (isAbortError(error)) return new MobileServiceError('cancelled');
@@ -180,6 +196,29 @@ export function asMobileServiceError(
         status: error.status,
         traceId: error.traceId,
         retryable: false,
+      });
+    }
+    // An account created with a temporary password must replace it before its first session (Gestión Humana).
+    if (error.status === 409 && error.code === 'password_change_required') {
+      return new MobileServiceError('password_change_required', {
+        status: error.status,
+        traceId: error.traceId,
+        retryable: false,
+        problemCode: error.code,
+      });
+    }
+    if (context === 'password_change' && (error.status === 400 || error.status === 401)) {
+      return new MobileServiceError(
+        error.status === 400 ? 'password_policy_rejected' : 'current_password_invalid',
+        { status: error.status, traceId: error.traceId, retryable: false },
+      );
+    }
+    // Sign-in and the password change share the API's session-creation rate limit.
+    if (context !== 'authenticated' && error.status === 429) {
+      return new MobileServiceError('rate_limited', {
+        status: error.status,
+        traceId: error.traceId,
+        retryable: true,
       });
     }
     if (error.status === 401) {

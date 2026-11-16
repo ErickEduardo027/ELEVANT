@@ -46,6 +46,16 @@ public sealed class FinancialDocumentPdfRendererTests
         Assert.Single(document.Pages);
         Assert.Contains("E310000000001", document.Info.Title);
         Assert.Equal(FinanceInvoicePolicy.Disclaimer, document.Info.Subject);
+        // An invoice issued before the airline had a tax identifier prints none for the buyer.
+        Assert.DoesNotContain("del comprador", PdfFontInspector.Text(pdf));
+
+        // The buyer's RNC frozen at issue, or a foreign airline's own identifier with its country.
+        var withRnc = invoice with { Fiscal = invoice.Fiscal! with
+            { CustomerTaxRegistration = "131234569", CustomerTaxRegistrationCountryCode = "DO" } };
+        Assert.Contains("RNC del comprador 1-31-23456-9",
+            PdfFontInspector.Text(new FinancialDocumentPdfRenderer().RenderInvoice(withRnc)));
+        Assert.Equal("Id. fiscal del comprador B85850394 (ES)", FinancialDocumentPdfRenderer.BuyerTaxRegistration(
+            withRnc.Fiscal! with { CustomerTaxRegistration = "B85850394", CustomerTaxRegistrationCountryCode = "ES" }));
     }
 
     [Fact]

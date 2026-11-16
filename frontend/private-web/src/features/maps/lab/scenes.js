@@ -1,8 +1,11 @@
+import { parseInstant } from '../../../services/serverClock';
+import { toWeatherReading } from '../../../services/weatherService';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { destinationPoint, roundCoord } from '../airport/geo';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
+import { createAerodromeWeather } from '../testing/weatherFixtures';
 import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
@@ -10,7 +13,7 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 // without a session, the API or the network; the layout review shows the generated MDPC dataset itself. Pure data.
 // Later PRs add their scenes here (traffic, the demo flight, 3D).
 //
-// A scene is `{ id, kind, title, description, view, stands, at, selection, basemap, webgl, placing }`:
+// A scene is `{ id, kind, title, description, view, stands, at, selection, follow, basemap, webgl, placing }`:
 // - `kind`: `map`, the OCC map with the scene's stands (MapLab.jsx), or `layout-qa`, the review screen of the MDPC
 //   airport layout (LayoutQaScene.jsx), which draws the layout itself and has no stands of its own;
 // - `view`: the view the map opens on when the URL names none (region · approach · airfield · ramp);
@@ -18,6 +21,7 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 //   synthetic positions board), with their visits;
 // - `at`: the instant the stands read at (their states and countdowns), unless the URL freezes another one with `?t=`;
 // - `selection`: `{ kind, id }`, written to the URL when the scene opens and the URL selects nothing, or `null`;
+// - `follow`: `true` writes `follow=1` with it (PR M6: follow mode), else `false`;
 // - `basemap`: `on` (the vector tiles of OpenFreeMap), `none` (the style without them, as `?basemap=none`) or `cut`
 //   (the style with them, but the lab makes every base-map request fail, so the map shows its degraded notice);
 // - `webgl`: `false` makes the browser refuse WebGL while the scene is open, so the map shows its fallback list;
@@ -26,7 +30,15 @@ import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 //   `null` for none.
 // A traffic scene (PR M5) also has `traffic`: the synthetic air picture, map flights and tracks of
 // lab/trafficScenes.js, which the lab draws at the frozen clock for the URL's selection (MapLab.jsx), without polling;
-// with `layersMenu: true` it opens with the layers menu open.
+// with `layersMenu: true` it opens with the layers menu open. A reference scene (PR M8) has `weather`, a synthetic
+// answer of GET occ/weather (testing/weatherFixtures.js) that the lab reads once (labWeather), and may have `traffic`
+// too; the night scene reads at an instant of its own, dusk in Punta Cana. A weather scene (PR M8) may also have
+// `satellite`, the times the simulated satellite images name (useSatelliteImagery: createSimulatedSatelliteImagery; no
+// scene ever reads GIBS), and `layers`, the layers it opens with (OccMap's layerOverrides).
+// Every scene has `pitchMode` (PR M7): `2d`, or `3d` for the 3D scenes, which open tilted with the 3D aircraft; the
+// dock's 2D/3D control and D change it while the scene is open. A 3D scene may add `standFlights`, the map flights of
+// its stands' visits by turnaround (their aircraft types), so the occupied stands draw their aircraft to scale and in
+// 3D, as the screens do with the flights they read.
 
 export const BASEMAP_MODES = Object.freeze(['on', 'none', 'cut']);
 export const SCENE_KINDS = Object.freeze(['map', 'layout-qa']);
@@ -96,6 +108,36 @@ const RAMP = Object.freeze({
   // BN13 has no database row: the map draws it «Sin verificar».
 });
 
+// The aircraft types of the visits on their stands in the 3D scenes (PR M7): several families of the type table, from a
+// turboprop and a regional jet to the wide bodies, on the stands that have an aircraft at the scene's instant.
+const STAND_TYPES = Object.freeze({
+  DM205: 'A320', DM209: 'B738', DM211: 'A332', DM213: 'B789', DM217: 'E190', DM221: 'AT76', DM223: 'A321',
+  DM229: 'B763', DM233: 'CRJ9', DM237: 'B38M',
+});
+
+/**
+ * The map flights of the stands' visits by turnaround, as a screen reads them (PR M7): one arrival leg per visit whose
+ * type STAND_TYPES names, landed at its time, with its aircraft. Only what the stands read of a visit: its aircraft
+ * type, so they draw it to scale and in 3D.
+ */
+export function labStandFlights(nowMs = SCENE_INSTANT) {
+  const flights = {};
+  for (const { visits = [] } of Object.values(RAMP)) {
+    for (const { flight, arrivalInMin } of visits) {
+      const type = STAND_TYPES[flight];
+      if (!type) continue;
+      const at = new Date(nowMs + arrivalInMin * 60_000).toISOString();
+      flights[`turn-${flight}`] = [{
+        flightKey: `l:lab-${flight}`, visitKey: `l:lab-${flight}`, turnaroundId: `turn-${flight}`, direction: 'Arrival',
+        flightNumber: flight, phase: 'arrived', scheduledAt: at, estimatedAt: null, actualAt: at, actualKind: 'OnBlock',
+        isDemo: false, demo: null, milestones: [], aircraft: { registration: null, typeIcaoCode: type, model: null,
+          sizeCategory: null },
+      }];
+    }
+  }
+  return flights;
+}
+
 /** The positions board of the lab at `nowMs`, in the shape the API sends it (getOccPositions). */
 export function labBoard(nowMs = SCENE_INSTANT) {
   const positions = Object.entries(RAMP).map(([code, { visits = [], ...stand }]) => boardStand(code, {
@@ -123,12 +165,17 @@ const REFERENCES = STAND_REFERENCE.map(stand => ({
  * The stands of the lab: the 41 reference stands in catalogue order, as the positions map gives them to its map from
  * labBoard(SCENE_INSTANT), all at their reference location (not placed by OCC, so the legend says «No oficial»).
  */
-export function labStands() {
-  const board = labBoard(SCENE_INSTANT);
+export function labStands(nowMs = SCENE_INSTANT) {
+  const board = labBoard(nowMs);
   return mapOccupancyToRampPositions(REFERENCES, board, board.asOf);
 }
 
 const STANDS = deepFreeze(labStands());
+/** The night of the 3D scenes (PR M7): 22:00 in Punta Cana, the sun far below the horizon. */
+export const NIGHT_INSTANT = Date.parse('2026-11-14T02:00:00.000Z');
+const NIGHT_STANDS = deepFreeze(labStands(NIGHT_INSTANT));
+const STAND_FLIGHTS = deepFreeze(labStandFlights(SCENE_INSTANT));
+const NIGHT_STAND_FLIGHTS = deepFreeze(labStandFlights(NIGHT_INSTANT));
 const NO_STANDS = Object.freeze([]);
 
 /** The stand the placing scene places: free, at its reference point, with nobody covering it. */
@@ -144,18 +191,92 @@ function placingScene() {
 }
 
 function scene(id, {
-  kind = 'map', title, description, view, selection = null, basemap = 'on', webgl = true, placing = null,
+  kind = 'map', title, description, view, selection = null, follow = false, basemap = 'on', webgl = true, placing = null,
+  pitchMode = '2d',
 }) {
   const map = kind === 'map';
   return {
-    id, kind, title, description, view, stands: map ? STANDS : NO_STANDS, at: map ? SCENE_INSTANT : null, selection, basemap, webgl,
-    placing,
+    id, kind, title, description, view, stands: map ? STANDS : NO_STANDS, at: map ? SCENE_INSTANT : null, selection,
+    follow: follow === true, basemap, webgl, placing, pitchMode,
   };
 }
 
-// A map scene with the synthetic traffic of its id (lab/trafficScenes.js).
-const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[id],
+// A map scene with the synthetic traffic of its id (lab/trafficScenes.js), or of the scene `trafficOf` names.
+const trafficScene = (id, options) => ({ ...scene(id, options), traffic: TRAFFIC_SCENARIOS[options.trafficOf ?? id],
   ...(options.layersMenu === true ? { layersMenu: true } : {}) });
+
+/** The instant of the night scene: 18:15 in Punta Cana, at dusk, the edge of the civil twilight crossing the region. */
+export const NIGHT_SCENE_INSTANT = Date.parse('2026-11-13T22:15:00.000Z');
+
+const isoAt = (ms, minutes = 0) => new Date(ms + minutes * 60_000).toISOString();
+
+// The region's mixed traffic of lab/trafficScenes.js, with ZZ500 (en route, not drawn) coming from Santo Domingo
+// instead of Miami: an airport of the region, which the references emphasise as the counterpart of a flight of today.
+const SANTO_DOMINGO = Object.freeze({ iataCode: 'SDQ', icaoCode: 'MDSD', name: 'Las Américas International',
+  latitude: 18.429701, longitude: -69.6689 });
+function withCounterpart(scenario, flightKey, counterpart) {
+  const rows = scenario.flights.flights.map(row => (row.flightKey === flightKey ? { ...row, counterpart } : row));
+  return { ...scenario, flights: { ...scenario.flights, flights: rows } };
+}
+
+// A map scene with the references of PR M8: its synthetic weather, its traffic when it has one, and its own instant.
+function referenceScene(id, { weather, traffic = null, at = null, ...options }) {
+  return {
+    ...scene(id, options),
+    ...(at === null ? {} : { at }),
+    weather,
+    ...(traffic === null ? {} : { traffic }),
+  };
+}
+
+/**
+ * The satellite images of the lab (PR M8): the times GIBS would name for the GOES-East clouds and the IMERG rain before
+ * the scene's 11:00, 10:50 and 10:30 in Punta Cana. Simulated: the visual suite answers their tiles with a synthetic
+ * picture (tests/visual/support/isolate.mjs).
+ */
+export const LAB_SATELLITE = Object.freeze({
+  goes: Object.freeze({ time: '2026-11-13T14:50:00Z', precision: 'instant' }),
+  imerg: Object.freeze({ time: '2026-11-13T14:30:00Z', precision: 'instant' }),
+});
+
+// A map scene with the weather of PR M8: a reference scene with, when given, its satellite images and its layers.
+function weatherScene(id, { satellite = null, layers = null, ...options }) {
+  return {
+    ...referenceScene(id, options),
+    ...(satellite === null ? {} : { satellite }),
+    ...(layers === null ? {} : { layers }),
+  };
+}
+
+/**
+ * The weather of a scene as useMdpcWeather answers it (the `weather` of OccMap), read once from its synthetic answer of
+ * GET occ/weather: the lab never polls. `null` without one.
+ */
+export function labWeather(answer) {
+  if (!answer) return null;
+  const reading = toWeatherReading(answer, { receivedAt: parseInstant(answer.serverTime) });
+  return Object.freeze({
+    status: reading.observation ? 'success' : 'empty',
+    data: reading.observation,
+    fetchedAt: reading.receivedAt,
+    refreshFailed: false,
+    refreshing: false,
+    refresh: () => {},
+    apiStatus: reading.apiStatus,
+    taf: reading.taf,
+    retrievedAt: reading.retrievedAt,
+    source: reading.source,
+    error: null,
+  });
+}
+
+// A 3D scene (PR M7): tilted, with the aircraft types of its stands' visits.
+const scene3d = (id, { night = false, ...options }) => {
+  const made = options.trafficOf ? trafficScene(id, { ...options, pitchMode: '3d' }) : scene(id, { ...options, pitchMode: '3d' });
+  return night
+    ? { ...made, stands: NIGHT_STANDS, at: NIGHT_INSTANT, standFlights: NIGHT_STAND_FLIGHTS }
+    : { ...made, standFlights: STAND_FLIGHTS };
+};
 
 export const SCENES = deepFreeze([
   scene('ramp-states', {
@@ -193,12 +314,14 @@ export const SCENES = deepFreeze([
   }),
   scene('approach', {
     title: 'Aproximación',
-    description: 'Hasta 40 NM alrededor de PUJ: el punto de referencia del aeropuerto, sin posiciones.',
+    description: 'Hasta 40 NM alrededor de PUJ: el punto de referencia del aeropuerto, los anillos, los ejes de pista con la '
+      + '08 habitual y las radioayudas, sin posiciones.',
     view: 'approach',
   }),
   scene('region', {
     title: 'Región',
-    description: 'Hasta 250 NM alrededor de PUJ: el punto de referencia del aeropuerto, sin posiciones.',
+    description: 'Hasta 250 NM alrededor de PUJ: el punto de referencia del aeropuerto, los anillos y los aeropuertos de '
+      + 'la región, sin posiciones.',
     view: 'region',
   }),
   scene('unavailable-fallback', {
@@ -228,8 +351,8 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-demo', {
     title: 'Aproximación: llegada demo',
-    description: 'El vuelo demo en final de la 08 con su placa «Demo», su anillo «est.» y su recorrido estimado, con la '
-      + 'llegada de AVIAM en base y otro tráfico alrededor.',
+    description: 'El vuelo demo en final de la 08, donde lo pone su trayectoria ajustada al reloj del servidor, con su '
+      + 'placa «Demo» y su anillo «est.», la llegada de AVIAM en base y otro tráfico alrededor.',
     view: 'approach',
   }),
   trafficScene('ramp-traffic-ground', {
@@ -240,21 +363,22 @@ export const SCENES = deepFreeze([
   }),
   trafficScene('approach-traffic-estimated-stale', {
     title: 'Aproximación: estimado y sin actualizar',
-    description: 'La imagen aérea con cuatro minutos de retraso, cada avión atenuado con la hora de su última '
-      + 'posición, y un vuelo de AVIAM dibujado con su posición estimada.',
+    description: 'La imagen aérea con más de un minuto de retraso: cada avión atenuado con la hora de su última '
+      + 'posición, los que llevan más tiempo sin señal desvaneciéndose, y un vuelo de AVIAM con su posición estimada '
+      + 'por el horario.',
     view: 'approach',
   }),
   trafficScene('region-traffic-selected', {
     title: 'Región: vuelo elegido',
-    description: 'ZZ161 elegido en final de la 08: en cian, más grande y con su anillo, su recorrido observado y la línea '
-      + 'recta hasta su posición A5, con su bloque de datos acoplado arriba a la izquierda.',
+    description: 'ZZ161 elegido en final de la 08: en cian, más grande y con su anillo, su recorrido observado, su trayecto '
+      + 'estimado desde Miami y lo que le queda hasta su posición A5, con su bloque de datos acoplado arriba a la izquierda.',
     view: 'region',
     selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival },
   }),
   trafficScene('approach-traffic-hex-selected', {
     title: 'Aproximación: otro tráfico elegido',
-    description: 'Un avión de otra línea elegido por su dirección ADS-B: su bloque dice «Otro tráfico» y su ruta es lo '
-      + 'que voló, sin punto siguiente.',
+    description: 'Un avión de otra línea elegido por su dirección ADS-B: su bloque dice «Otro tráfico» y su ruta es solo '
+      + 'lo que voló.',
     view: 'approach',
     selection: { kind: 'aircraft', id: LAB_CHOSEN_HEX },
   }),
@@ -264,6 +388,163 @@ export const SCENES = deepFreeze([
       + 'siempre visibles.',
     view: 'region',
     layersMenu: true,
+  }),
+  referenceScene('region-references', {
+    title: 'Región: referencias',
+    description: 'Hasta 250 NM alrededor de PUJ a las 11:00: los anillos de distancia, los aeropuertos de la región con '
+      + 'Santo Domingo resaltado por un vuelo de hoy y el tráfico mixto encima.',
+    view: 'region',
+    weather: createAerodromeWeather(),
+    traffic: withCounterpart(TRAFFIC_SCENARIOS['region-traffic-mixed'], TRAFFIC_FLIGHT_KEY.noFix, SANTO_DOMINGO),
+  }),
+  referenceScene('region-references-night', {
+    title: 'Región: referencias de noche',
+    description: 'La región a las 18:15 de Punta Cana: pasado el crepúsculo civil, la noche cubre ya Puerto Rico y su '
+      + 'borde se acerca a PUJ.',
+    view: 'region',
+    at: NIGHT_SCENE_INSTANT,
+    weather: createAerodromeWeather({ serverTime: isoAt(NIGHT_SCENE_INSTANT), observedAt: isoAt(NIGHT_SCENE_INSTANT, -10),
+      retrievedAt: isoAt(NIGHT_SCENE_INSTANT, -3) }),
+  }),
+  referenceScene('approach-references', {
+    title: 'Aproximación: ejes de pista y radioayudas',
+    description: 'Hasta 40 NM alrededor de PUJ: los anillos, los ejes de pista extendidos con la 08 en uso estimada por '
+      + 'el viento del METAR, las radioayudas PNA y PCA y la llegada demo en final.',
+    view: 'approach',
+    weather: createAerodromeWeather(),
+    traffic: TRAFFIC_SCENARIOS['approach-traffic-demo'],
+  }),
+  weatherScene('region-satellite', {
+    title: 'Región: nubes y lluvia por satélite',
+    description: 'Hasta 250 NM alrededor de PUJ a las 11:00, con las nubes de GOES-East y la lluvia de IMERG encendidas y '
+      + 'fijadas a la hora de su imagen, bajo las referencias y el tráfico mixto. Imágenes simuladas, sin red.',
+    view: 'region',
+    weather: createAerodromeWeather(),
+    satellite: LAB_SATELLITE,
+    layers: { 'weather.goes': true, 'weather.imerg': true },
+    traffic: TRAFFIC_SCENARIOS['region-traffic-mixed'],
+  }),
+  weatherScene('airfield-wind-live', {
+    title: 'Aeródromo: viento en pista',
+    description: 'El viento del METAR de las 10:50, 100° a 13 kt, junto al aeródromo: su flecha y «100° 13 kt R08», con el '
+      + 'viento de frente y de costado de cada pista en su tooltip.',
+    view: 'airfield',
+    weather: createAerodromeWeather(),
+  }),
+  weatherScene('airfield-wind-stale', {
+    title: 'Aeródromo: viento sin actualizar',
+    description: 'El último METAR es de las 08:00: el viento se atenúa y dice «Sin actualizar desde las 08:00».',
+    view: 'airfield',
+    weather: createAerodromeWeather({ status: 'Stale' }),
+  }),
+  weatherScene('airfield-wind-unavailable', {
+    title: 'Aeródromo: sin clima del aeródromo',
+    description: 'El servicio del clima no tiene METAR: no hay viento en el mapa y el menú de capas dice por qué.',
+    view: 'airfield',
+    weather: createAerodromeWeather({ status: 'Unavailable' }),
+  }),
+  // The demo flight in motion (PR M6): each scene fires it with the server's timeline so the lab's instant finds it where
+  // the scene says (lab/trafficScenes.js).
+  trafficScene('approach-demo-final', {
+    title: 'Aproximación: vuelo demo en final',
+    description: 'El vuelo demo importado con la A6, en final de la 08 dos minutos antes de tocar pista, elegido: su '
+      + 'bloque dice que su posición es estimada.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('airfield-demo-taxiing', {
+    title: 'Aeródromo: vuelo demo rodando',
+    description: 'El vuelo demo importado rueda por las calles de rodaje hacia la A6, minuto y medio después de tocar '
+      + 'pista en la 08.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('ramp-demo-awaiting-stand', {
+    title: 'Rampa: vuelo demo esperando posición',
+    description: 'Nadie importó el vuelo demo: espera en el punto de espera de la plataforma de la terminal B, con su '
+      + 'bloque «Esperando posición · sin importar».',
+    view: 'ramp',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('approach-traffic-live-estimated', {
+    title: 'Aproximación: en vivo, sin señal y estimado',
+    description: 'ZZ161 en vivo, ZZ700 saliendo sin señal desde hace 20 s y ZZ500 estimado por su horario: el bloque de '
+      + 'cada uno dice de dónde sale su posición. Elegido, ZZ700.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.departed },
+  }),
+  trafficScene('airfield-demo-cancelled', {
+    title: 'Aeródromo: vuelo demo cancelado',
+    description: 'El proveedor canceló el vuelo demo en final corta: se desvanece donde está y su bloque dice «Cancelado '
+      + 'por el proveedor (demo)».',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('approach-demo-accelerated', {
+    title: 'Aproximación: vuelo demo de 2 minutos',
+    description: 'Disparado con 2 minutos hasta la posición: sus 30 s en el aire no alcanzan a velocidad real desde 5 NM, '
+      + 'así que esa parte va comprimida y su bloque dice «Demo acelerada ×N».',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  // The route of the chosen flight and follow mode (PR M6, lab/trafficScenes.js).
+  trafficScene('approach-demo-route', {
+    title: 'Aproximación: ruta del vuelo demo',
+    description: 'El vuelo demo importado con la A6, elegido un minuto después de aparecer: su trayecto estimado desde '
+      + 'Nueva York y lo que le queda por volar, la aproximación, la pista 08, la salida y el rodaje hasta la A6.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  trafficScene('airfield-departure-route', {
+    title: 'Aeródromo: ruta de una salida',
+    description: 'La salida del vuelo demo elegida mientras rueda hacia la 08, dos minutos después de dejar la A6 a su '
+      + 'hora: lo que recorrió desde la posición y lo que le queda, el rodaje, la pista 08, el ascenso y el círculo '
+      + 'máximo hacia Nueva York.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoDeparture },
+  }),
+  trafficScene('approach-follow-final', {
+    title: 'Aproximación: seguir al vuelo demo en final',
+    description: 'El vuelo demo en final de la 08, seguido: la cámara lo encuadra con el umbral de la pista, entre los '
+      + 'paneles.',
+    view: 'approach',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+    follow: true,
+  }),
+  trafficScene('airfield-follow-taxi', {
+    title: 'Aeródromo: seguir al vuelo demo en rodaje',
+    description: 'El vuelo demo rodando hacia la A6, seguido: la cámara lo centra de cerca mientras rueda.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+    follow: true,
+  }),
+  // The 3D aircraft (PR M7): models of the type table on their stands and in motion, lit by the sun of the instant.
+  scene3d('ramp-3d-parked', {
+    title: 'Rampa en 3D: aviones en sus posiciones',
+    description: 'La rampa inclinada con los aviones de diez visitas en 3D a escala (turbohélice, regionales, fuselaje '
+      + 'estrecho y ancho) y el vuelo demo rodando hacia la A6, a la luz del sol de las 11:00.',
+    view: 'ramp',
+    trafficOf: 'airfield-demo-taxiing',
+  }),
+  scene3d('ramp-3d-selected', {
+    title: 'Rampa en 3D: vuelo demo elegido',
+    description: 'El vuelo demo rodando hacia la A6, elegido: su modelo en cian con su anillo y su bloque de datos.',
+    view: 'ramp',
+    trafficOf: 'airfield-demo-taxiing',
+    selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
+  }),
+  scene3d('airfield-3d-final', {
+    title: 'Aeródromo en 3D: llegada en final corta',
+    description: 'El aeropuerto inclinado a 40° con el vuelo demo en final corta de la 08 a su altura, con su línea al '
+      + 'suelo, y los aviones de las posiciones (fotografiado unos segundos antes de tocar pista).',
+    view: 'airfield',
+    trafficOf: 'approach-demo-final',
+  }),
+  scene3d('ramp-3d-night', {
+    title: 'Rampa en 3D de noche',
+    description: 'La rampa en 3D a las 22:00, con el sol bajo el horizonte: la luz fría de la noche, sin tinte cian.',
+    view: 'ramp',
+    night: true,
   }),
 ]);
 

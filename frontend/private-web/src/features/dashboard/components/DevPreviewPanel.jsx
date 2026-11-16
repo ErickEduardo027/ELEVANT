@@ -23,7 +23,7 @@ const STATE_BUTTONS = [
   { state: 'chatDisconnected', label: 'Chat: desconectado' },
 ];
 
-// Development-only preview of forced screen states. It offers no theme toggle: the OCC is dark only.
+// Development-only preview of forced screen states. It offers no theme toggle: the OCC top bar has it.
 export default function DevPreviewPanel({ forceState, onSetForceState, defaultOpen = true }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return defaultOpen;
@@ -39,7 +39,7 @@ export default function DevPreviewPanel({ forceState, onSetForceState, defaultOp
 
   return (
     <>
-    {open && <div className="fixed bottom-20 right-4 z-50 max-h-[calc(100vh-6rem)] w-64 overflow-y-auto rounded-xl border border-black/10 bg-white/95 p-3 text-xs shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card">
+    {open && <div className="fixed bottom-32 right-4 z-50 max-h-[calc(100vh-10rem)] w-64 overflow-y-auto rounded-xl border border-black/10 bg-white/95 p-3 text-xs shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card">
       <p className="mb-2 font-semibold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">
         Vista previa (solo desarrollo)
       </p>
@@ -60,7 +60,7 @@ export default function DevPreviewPanel({ forceState, onSetForceState, defaultOp
         ))}
       </div>
     </div>}
-    <button type="button" onClick={toggle} aria-expanded={open} aria-label={open ? 'Ocultar herramientas de vista previa' : 'Mostrar herramientas de vista previa'} title={open ? 'Ocultar vista previa' : 'Mostrar vista previa'} className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-accent-600 text-xl font-bold text-white shadow-lg transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accent-600 focus:ring-offset-2">
+    <button type="button" onClick={toggle} aria-expanded={open} aria-label={open ? 'Ocultar herramientas de vista previa' : 'Mostrar herramientas de vista previa'} title={open ? 'Ocultar vista previa' : 'Mostrar vista previa'} className="fixed bottom-16 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-accent-600 text-xl font-bold text-white shadow-lg transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accent-600 focus:ring-offset-2">
       {open ? '×' : '⚙'}
     </button>
     </>

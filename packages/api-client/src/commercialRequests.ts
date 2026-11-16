@@ -8,6 +8,7 @@ import type {
   CommercialInboxData,
   ListCommercialRequestInboxParams,
 } from "../generated/elevant-api";
+import { checkTaxRegistration } from "./validation";
 
 export const COMMERCIAL_REQUEST_STATUSES = ["Pending", "InReview", "Approved", "Rejected", "Cancelled"] as const;
 export type CommercialRequestStatus = (typeof COMMERCIAL_REQUEST_STATUSES)[number];
@@ -31,6 +32,9 @@ export interface VerifyCommercialRequestAirlineCommand {
   readonly iataCode?: string | null;
   readonly icaoCode?: string | null;
   readonly verificationSourceUrl?: string | null;
+  /** Correction of the airline's tax identifier (an RNC for a Dominican airline); omitted, it stays as sent. */
+  readonly taxRegistration?: string | null;
+  readonly taxRegistrationCountryCode?: string | null;
 }
 
 export interface ConfirmCommercialRepresentativeCommand {
@@ -78,7 +82,24 @@ const REQUEST_KEYS = ["id", "reference", "airline", "airlineProfileId", "legalNa
   "representativeAddress", "representativeCountry", "representativeProvince", "representativeMunicipality",
   "representativeDistrict", "representativeDocumentType", "representativeDocumentNumber", "authorityDeclared",
   "status", "submittedAt", "reviewedAt", "cancelledAt", "decisionReason", "contractId", "representativeConfirmation",
-  "proposedAirline", "existingCustomer", "services", "version"] as const;
+  "proposedAirline", "existingCustomer", "services", "version", "taxRegistration", "registryCheck",
+  "manualVerification"] as const;
+
+/** Verdicts of the public-registry check (ADR-0023). */
+export const AIRLINE_REGISTRY_STATUSES = ["Found", "Mismatch", "Defunct", "NotFound", "Unavailable"] as const;
+
+const isTaxRegistration = (value: unknown) => isRecord(value) &&
+  hasOnlyKeys(value, ["number", "countryCode", "display"]) && isText(value.number, 32) &&
+  typeof value.countryCode === "string" && /^[A-Z]{2}$/.test(value.countryCode) && isText(value.display, 80);
+
+const isRegistryCheck = (value: unknown) => isRecord(value) &&
+  hasOnlyKeys(value, ["status", "source", "checkedAt", "detail", "fromCatalog"]) &&
+  (AIRLINE_REGISTRY_STATUSES as readonly unknown[]).includes(value.status) && isOptionalString(value.source, 48) &&
+  isInstant(value.checkedAt) && isOptionalString(value.detail, 500) && typeof value.fromCatalog === "boolean";
+
+const isManualVerification = (value: unknown) => isRecord(value) &&
+  hasOnlyKeys(value, ["verifiedAt", "verificationSourceUrl"]) && isInstant(value.verifiedAt) &&
+  isOptionalString(value.verificationSourceUrl, 512);
 
 const isConfirmation = (value: unknown) => isRecord(value) &&
   hasOnlyKeys(value, ["confirmedAt", "confirmedBy", "note"]) && isInstant(value.confirmedAt) &&
@@ -112,7 +133,8 @@ const isInboxRequest = (value: unknown) => isRecord(value) && hasOnlyKeys(value,
   isOptionalString(value.decisionReason, 1000) && isOptional(value.contractId, isUuid) &&
   isOptional(value.representativeConfirmation, isConfirmation) && isOptional(value.proposedAirline, isProposal) &&
   typeof value.existingCustomer === "boolean" && Array.isArray(value.services) && value.services.every(isService) &&
-  isVersion(value.version);
+  isVersion(value.version) && isOptional(value.taxRegistration, isTaxRegistration) &&
+  isOptional(value.registryCheck, isRegistryCheck) && isOptional(value.manualVerification, isManualVerification);
 
 export function isCommercialInboxData(value: unknown, query: ListCommercialRequestInboxParams):
   value is CommercialInboxData {
@@ -163,8 +185,12 @@ const blank = (value: unknown) => value === undefined || value === null || typeo
 
 export function normalizedAirlineVerification(command: VerifyCommercialRequestAirlineCommand) {
   if (!isRecord(command) || !hasOnlyKeys(command, ["expectedVersion", "linkProfileId", "legalName", "countryCode",
-      "iataCode", "icaoCode", "verificationSourceUrl"]))
+      "iataCode", "icaoCode", "verificationSourceUrl", "taxRegistration", "taxRegistrationCountryCode"]))
     throw new TypeError("The airline verification is invalid.");
+  const taxGiven = !blank(command.taxRegistration) || !blank(command.taxRegistrationCountryCode);
+  const tax = taxGiven ? checkTaxRegistration(command.taxRegistration, command.taxRegistrationCountryCode).registration : null;
+  if (taxGiven && tax === null) throw new TypeError("The airline's tax identifier is invalid.");
+  const taxFields = tax ? { taxRegistration: tax.number, taxRegistrationCountryCode: tax.countryCode } : {};
   const version = expectedVersion(command.expectedVersion);
   const link = blank(command.linkProfileId) ? null : command.linkProfileId;
   if (link !== null && !isUuid(link)) throw new TypeError("linkProfileId must be a canonical UUID.");
@@ -172,7 +198,7 @@ export function normalizedAirlineVerification(command: VerifyCommercialRequestAi
     command.verificationSourceUrl].some(value => !blank(value));
   if (!identityGiven) {
     if (link === null) throw new TypeError("The airline verification needs an identity or a profile to link.");
-    return { expectedVersion: version, linkProfileId: link.toLowerCase() };
+    return { expectedVersion: version, linkProfileId: link.toLowerCase(), ...taxFields };
   }
   const legalName = boundedText(command.legalName, 1, 200, "legalName");
   const countryCode = String(command.countryCode ?? "").trim().toUpperCase();
@@ -185,7 +211,7 @@ export function normalizedAirlineVerification(command: VerifyCommercialRequestAi
       !/^[A-Z]{3}$/.test(icaoCode) || source.length > 512 || url?.protocol !== "https:" || url.username || url.password)
     throw new TypeError("The airline identity is invalid.");
   return { expectedVersion: version, linkProfileId: link?.toLowerCase() ?? null, legalName, countryCode, iataCode,
-    icaoCode, verificationSourceUrl: source };
+    icaoCode, verificationSourceUrl: source, ...taxFields };
 }
 
 export function normalizedRepresentativeConfirmation(command: ConfirmCommercialRepresentativeCommand) {

@@ -421,6 +421,52 @@ describe('map engine', () => {
     expect(map.featureStateOf('occ-stands', 'A2')).toEqual({ selected: true });
   });
 
+  it('setRasterTiles sets the tiles and restores them after a context loss', () => {
+    // A raster source of PR M8 (a satellite image of GIBS), its tiles the latest image until they are pinned.
+    const latest = 'https://gibs.example/wmts/epsg3857/best/Clouds/default/default/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png';
+    const pinned = latest.replace('/default/default/', '/default/2026-11-13T14:50:00Z/');
+    const style = buildOccStyle({ overlays: [OVERLAY, {
+      sources: { 'occ-weather-goes': { type: 'raster', tiles: [latest], tileSize: 256, maxzoom: 6 } },
+      layers: [{ slot: 'weather', id: 'occ-weather-goes-image', type: 'raster', source: 'occ-weather-goes',
+        layout: { visibility: 'none' }, metadata: { 'occ:group': 'weather.goes' } }],
+    }] });
+    const { engine, map, state } = setup({ style });
+    // Asked before the style loads, it waits for it, like every call that needs the style.
+    engine.setRasterTiles('occ-weather-goes', [pinned]);
+    state.emit(map, 'style.load');
+    const source = map.getSource('occ-weather-goes');
+    expect(source.setTilesCalls).toEqual([[pinned]]);
+    expect(source.serialize().tiles).toEqual([pinned]);
+    // The same tiles again: MapLibre would reload the source for nothing, so nothing is called.
+    engine.setRasterTiles('occ-weather-goes', [pinned]);
+    expect(source.setTilesCalls).toHaveLength(1);
+
+    // A context loss: MapLibre 6.16 rebuilds the source with the tiles it was last given, and the engine adds nothing.
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(map.getSource('occ-weather-goes').serialize().tiles).toEqual([pinned]);
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([]);
+    // A style rebuilt without them (another MapLibre, a worker restart that lost them) gets them back from the engine.
+    state.loseContext(map);
+    map.snapshot.sources['occ-weather-goes'].tiles = [latest];
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(map.getSource('occ-weather-goes').setTilesCalls).toEqual([[pinned]]);
+    expect(map.getSource('occ-weather-goes').tiles).toEqual([pinned]);
+
+    // Only a list of URL templates; a source that is not a raster, or none, is left alone.
+    for (const tiles of [[], pinned, null, [''], [42]]) {
+      expect(() => engine.setRasterTiles('occ-weather-goes', tiles), JSON.stringify(tiles)).toThrow(TypeError);
+    }
+    expect(() => engine.setRasterTiles('occ-stands', [pinned])).not.toThrow();
+    expect(() => engine.setRasterTiles('nowhere', [pinned])).not.toThrow();
+    // After destroy nothing reaches MapLibre.
+    engine.destroy();
+    expect(() => engine.setRasterTiles('occ-weather-goes', [latest])).not.toThrow();
+    expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(2);
+  });
+
   it('stays unavailable when the context comes back without WebGL2 and removes the map at once', async () => {
     vi.useFakeTimers();
     const onStatus = vi.fn();
@@ -664,6 +710,65 @@ describe('map engine', () => {
     // Without handlers the engine does not listen to clicks or the pointer at all.
     const quiet = setup();
     expect(quiet.map.listenerCount('click') + quiet.map.listenerCount('mousemove')).toBe(0);
+  });
+
+  it('onUserGesture hears a person pan, zoom, rotate and tilt the map, never a move the code makes', () => {
+    const onUserGesture = vi.fn();
+    const onCamera = vi.fn();
+    const { engine, map, state } = ready(setup({ onUserGesture, onCamera, camera: { center: [-68.36, 18.57], zoom: 12 } }));
+    const person = type => ({ originalEvent: new MouseEvent(type) });
+    // The moves the code makes, whatever they change, carry no DOM event: no gesture, nobody interacting.
+    engine.jumpTo({ center: [-68.37, 18.58], zoom: 13, bearing: -17, pitch: 40 });
+    engine.easeTo({ zoom: 14, duration: 0 });
+    engine.flyTo({ zoom: 10, duration: 0 });
+    state.emit(map, 'zoomstart');
+    expect(onUserGesture).not.toHaveBeenCalled();
+    expect(engine.isInteracting()).toBe(false);
+    // A drag pans; it lasts until its move ends, and meanwhile the person is moving the map.
+    state.emit(map, 'dragstart', person('mousedown'));
+    expect(onUserGesture).toHaveBeenLastCalledWith({ kind: 'pan' });
+    expect(engine.isInteracting()).toBe(true);
+    state.emit(map, 'moveend', person('mouseup'));
+    expect(engine.isInteracting()).toBe(false);
+    expect(onCamera).toHaveBeenLastCalledWith(expect.any(Object), { byUser: true });
+    // The wheel (or a zoom button) zooms, the right button rotates and tilts.
+    for (const [type, kind] of [['zoomstart', 'zoom'], ['rotatestart', 'rotate'], ['pitchstart', 'pitch']]) {
+      state.emit(map, type, person('wheel'));
+      expect(onUserGesture, type).toHaveBeenLastCalledWith({ kind });
+      expect(engine.isInteracting(), type).toBe(true);
+      state.emit(map, 'moveend', person('mouseup'));
+    }
+    // A zoom the map makes for a person (its zoom buttons pass the click) is theirs too.
+    map.easeTo({ zoom: 11, originalEvent: new MouseEvent('click') });
+    expect(onUserGesture).toHaveBeenLastCalledWith({ kind: 'zoom' });
+    expect(engine.isInteracting()).toBe(false);
+    // MapLibre's keyboard pans with the arrow keys: a move that starts with one is a pan; Shift rotates or tilts, and
+    // the + and − keys zoom (their zoomstart says so).
+    const calls = onUserGesture.mock.calls.length;
+    state.emit(map, 'movestart', { originalEvent: new KeyboardEvent('keydown', { key: 'ArrowLeft' }) });
+    expect(onUserGesture).toHaveBeenLastCalledWith({ kind: 'pan' });
+    state.emit(map, 'movestart', { originalEvent: new KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true }) });
+    state.emit(map, 'movestart', { originalEvent: new KeyboardEvent('keydown', { key: '+' }) });
+    state.emit(map, 'movestart', person('wheel'));
+    expect(onUserGesture).toHaveBeenCalledTimes(calls + 1);
+    state.emit(map, 'moveend');
+    // Without a handler the engine still knows who moves the map; without a map nobody does.
+    const quiet = ready(setup());
+    quiet.state.emit(quiet.map, 'dragstart', person('mousedown'));
+    expect(quiet.engine.isInteracting()).toBe(true);
+    quiet.engine.destroy();
+    expect(quiet.engine.isInteracting()).toBe(false);
+  });
+
+  it('getViewport is the size of the map on screen, or nothing without one', () => {
+    const { engine, state, map } = ready(setup());
+    expect(engine.getViewport()).toEqual({ width: 1440, height: 900 });
+    state.resize(map, { width: 1920, height: 1080 });
+    expect(engine.getViewport()).toEqual({ width: 1920, height: 1080 });
+    state.resize(map, { width: 0, height: 1080 });
+    expect(engine.getViewport()).toBeNull();
+    engine.destroy();
+    expect(engine.getViewport()).toBeNull();
   });
 
   it('reports resizes and the bounds on screen, and picks under a moving pointer only when the hit is read', () => {

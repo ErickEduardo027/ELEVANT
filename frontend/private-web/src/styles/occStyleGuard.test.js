@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import tailwindConfig from '../../tailwind.config.js';
 import FlightListItem from '../features/flight-monitoring/components/FlightListItem';
 import { OCC_ROW_TONES } from '../features/occ-ui/OccDataTable';
-import { OCC_PALETTE } from '../features/occ-ui/occPalette';
+import { OCC_PALETTES, OCC_THEMES } from '../features/occ-ui/occPalette';
 import FlightCard from '../features/planning/components/FlightCard';
 import { createPlanningFlight } from '../features/planning/testing/planningFixtures';
 import PositionListItem from '../features/positions-map/components/PositionListItem';
@@ -134,8 +134,9 @@ function luminance(hex) {
     .map(value => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
-function contrast(foreground, background) {
-  const [lighter, darker] = [luminance(OCC_PALETTE[foreground]), luminance(OCC_PALETTE[background])].sort((a, b) => b - a);
+function contrast(foreground, background, theme = 'dark') {
+  const palette = OCC_PALETTES[theme];
+  const [lighter, darker] = [luminance(palette[foreground]), luminance(palette[background])].sort((a, b) => b - a);
   return (lighter + 0.05) / (darker + 0.05);
 }
 
@@ -1003,14 +1004,14 @@ describe('OCC legacy bridge', () => {
     ]);
   });
 
-  it('palette pairs keep their contrast', () => {
+  it.each(OCC_THEMES)('palette pairs keep their contrast (%s)', theme => {
     const onSurfaces = {
       '--occ-text': 10, '--occ-muted': 7, '--occ-faint': 4.5,
       '--occ-accent': 7, '--occ-warn': 7, '--occ-danger': 4.5, '--occ-line-strong': 3,
     };
     for (const [foreground, floor] of Object.entries(onSurfaces)) {
       for (const surface of ['--occ-canvas', '--occ-panel', '--occ-panel-raised']) {
-        expect(contrast(foreground, surface), `${foreground} on ${surface}`).toBeGreaterThanOrEqual(floor);
+        expect(contrast(foreground, surface, theme), `${foreground} on ${surface}`).toBeGreaterThanOrEqual(floor);
       }
     }
     const pairs = [
@@ -1023,11 +1024,12 @@ describe('OCC legacy bridge', () => {
       ['--occ-accent', '--occ-accent-soft', 4.5], ['--occ-warn', '--occ-warn-soft', 4.5],
     ];
     for (const [foreground, background, floor] of pairs) {
-      expect(contrast(foreground, background), `${foreground} on ${background}`).toBeGreaterThanOrEqual(floor);
+      expect(contrast(foreground, background, theme), `${foreground} on ${background}`).toBeGreaterThanOrEqual(floor);
     }
 
-    // Red text on the red tint is the one pair below 4.5:1, so the bridge turns it into plain text there.
-    expect(contrast('--occ-danger', '--occ-danger-soft')).toBeLessThan(4.5);
+    // Red text on the red tint is the one dark pair below 4.5:1, so the bridge turns it into plain text there (in both
+    // themes: the bridge has one set of rules).
+    if (theme === 'dark') expect(contrast('--occ-danger', '--occ-danger-soft')).toBeLessThan(4.5);
     const pair = OCC_LEGACY_BRIDGE.find(entry => entry.id === 'danger-tint-text');
     expect(pair.declarations).toEqual({ color: 'var(--occ-text)' });
     const tints = OCC_LEGACY_BRIDGE.find(entry => entry.id === 'tint-danger').classes;

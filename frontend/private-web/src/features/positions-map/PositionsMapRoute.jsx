@@ -7,6 +7,9 @@ import { usePositionsMapData } from './usePositionsMapData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useTheme } from '../shell/useTheme';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { aviationReferenceService } from '../../services/aviationReferenceService';
+import AircraftRegistryFacts from '../aviation-reference/AircraftRegistryFacts';
+import { AviationReferenceProvider } from '../aviation-reference/AviationReferenceContext';
 
 // `theme` es de alcance de la app (shell), no de la vista previa de Admin/OCC,
 // por eso se resuelve aquí vía el hook compartido en vez de AdminOccPreviewContext
@@ -42,25 +45,30 @@ export default function PositionsMapRoute() {
   const router = useRouter();
 
   return (
-    <div className="space-y-3">
-      <PositionsMapPage
-        key={`${session?.accountId ?? 'none'}|${selected?.stationId ?? 'none'}`}
-        status={positionsMap.status}
-        data={positionsMap.data}
-        error={positionsMap.error}
-        connection={positionsMap.connection}
-        lastUpdatedAt={positionsMap.lastUpdatedAt}
-        onRetry={() => setRetryToken(token => token + 1)}
-        forceState={forceState}
-        theme={theme}
-        onNavigateToResource={(moduleId, resourceId) => {
-          if (moduleId === 'flight-monitoring' && selected?.stationId) {
-            const query = new URLSearchParams({ stationId: selected.stationId,
-              flightId: String(resourceId) });
-            router.push(`/admin-occ/flight-monitoring?${query}`);
-          }
-        }}
-      />
-    </div>
+    // AeroDataBox (ADR-0028, note of 15 November 2026): the parked or arriving aircraft of a stand, on demand.
+    <AviationReferenceProvider service={aviationReferenceService}>
+      <div className="space-y-3">
+        <PositionsMapPage
+          aircraftFacts={aircraft => (aircraft?.isDemo || !aircraft?.registration ? null
+            : <AircraftRegistryFacts stationId={selected?.stationId} registration={aircraft.registration} />)}
+          key={`${session?.accountId ?? 'none'}|${selected?.stationId ?? 'none'}`}
+          status={positionsMap.status}
+          data={positionsMap.data}
+          error={positionsMap.error}
+          connection={positionsMap.connection}
+          lastUpdatedAt={positionsMap.lastUpdatedAt}
+          onRetry={() => setRetryToken(token => token + 1)}
+          forceState={forceState}
+          theme={theme}
+          onNavigateToResource={(moduleId, resourceId) => {
+            if (moduleId === 'flight-monitoring' && selected?.stationId) {
+              const query = new URLSearchParams({ stationId: selected.stationId,
+                flightId: String(resourceId) });
+              router.push(`/admin-occ/flight-monitoring?${query}`);
+            }
+          }}
+        />
+      </div>
+    </AviationReferenceProvider>
   );
 }

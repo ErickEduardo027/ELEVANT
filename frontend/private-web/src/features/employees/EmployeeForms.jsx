@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { checkIdentityDocument, DOMINICAN_PASSPORT_PREFIX, identityDocumentExample, normalizePhone } from '@elevant/api-client';
+import { checkIdentityDocument, DOMINICAN_PASSPORT_PREFIX, normalizePhone } from '@elevant/api-client';
 import Drawer from '../../components/Drawer';
 import Modal from '../../components/Modal';
+import IdentityDocumentFields from './IdentityDocumentFields';
+import { DEFAULT_IDENTIFICATION_TYPE } from './identityDocumentValue';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../services/departmentGovernanceService';
 import {
-  createEmployee, EMPLOYEE_MESSAGES, governanceMessage, IDENTIFICATION_LABELS, registerEmployee, terminateEmployee,
+  createEmployee, EMPLOYEE_MESSAGES, governanceMessage, registerEmployee, terminateEmployee,
   transferEmployee, updateEmployee,
 } from '../../services/humanResourcesEmployeesService';
 import { businessToday } from '../../services/businessDay';
@@ -59,7 +61,7 @@ function ErrorLine({ text }) {
 }
 
 const blank = requisition => ({
-  firstName: '', lastName: '', identificationType: 'CEDULA', identificationNumber: '', phoneNumber: '', corporateEmail: '',
+  firstName: '', lastName: '', identificationType: DEFAULT_IDENTIFICATION_TYPE, identificationNumber: '', phoneNumber: '', corporateEmail: '',
   employeeNumber: '', department: requisition?.department ?? DEPARTMENTS.OPERATIONS, positionId: requisition?.position.id ?? '',
   stationIds: requisition?.station ? [requisition.station.id] : [], hireDate: today(), requisitionId: requisition?.id ?? '',
 });
@@ -75,7 +77,7 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
     setError('');
     setForm(employee ? {
       firstName: employee.summary.firstName, lastName: employee.summary.lastName,
-      identificationType: employee.identificationIsPlaceholder ? 'CEDULA' : employee.identificationType,
+      identificationType: employee.identificationIsPlaceholder ? DEFAULT_IDENTIFICATION_TYPE : employee.identificationType,
       identificationNumber: employee.identificationIsPlaceholder ? '' : employee.identificationNumber,
       phoneNumber: employee.phoneNumber ?? '', corporateEmail: employee.summary.corporateEmail ?? '',
       employeeNumber: employee.summary.employeeNumber, department: employee.summary.department,
@@ -127,11 +129,9 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
             <label className="text-xs font-semibold">Apellido<input required minLength={2} maxLength={100} value={form.lastName} onChange={event => set({ lastName: event.target.value })} className={fieldClass} /></label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_minmax(0,1fr)]">
-            <label className="text-xs font-semibold">Documento<select value={form.identificationType} onChange={event => set({ identificationType: event.target.value })} className={fieldClass}>
-              {(options?.identificationTypes ?? Object.keys(IDENTIFICATION_LABELS)).map(type => <option key={type} value={type}>{IDENTIFICATION_LABELS[type] ?? type}</option>)}</select></label>
-            <label className="text-xs font-semibold">Número de documento<input required maxLength={40}
-              ref={withRule(identificationProblem(form.identificationType, form.identificationNumber))}
-              placeholder={identityDocumentExample(DOCUMENT_KINDS[form.identificationType] ?? 'Cedula')} value={form.identificationNumber} onChange={event => set({ identificationNumber: event.target.value })} className={fieldClass} /></label>
+            <IdentityDocumentFields type={form.identificationType} number={form.identificationNumber} required
+              types={options?.identificationTypes} fieldClass={fieldClass} onChange={set}
+              inputRef={withRule(identificationProblem(form.identificationType, form.identificationNumber))} />
           </div>
           {employee?.identificationIsPlaceholder && <p className="text-xs text-status-warning">Este expediente tiene una identificación provisional: registre la real.</p>}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -267,7 +267,7 @@ export function RegisterDrawer({ person, options, onClose, onSaved }) {
   useEffect(() => {
     if (!person) return;
     setError('');
-    setForm({ identificationType: 'CEDULA', identificationNumber: '', employeeNumber: person.employeeNumber ?? '',
+    setForm({ identificationType: DEFAULT_IDENTIFICATION_TYPE, identificationNumber: '', employeeNumber: person.employeeNumber ?? '',
       positionId: '', hireDate: today(), phoneNumber: '', stationIds: person.stations.map(station => station.id) });
   }, [person]);
   const positions = (options?.positions ?? []).filter(position => position.department === person?.department &&
@@ -294,9 +294,12 @@ export function RegisterDrawer({ person, options, onClose, onSaved }) {
         <form id="register-form" onSubmit={submit} className="space-y-4">
           <ErrorLine text={error} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_minmax(0,1fr)]">
-            <label className="text-xs font-semibold">Documento<select value={form.identificationType} onChange={event => setForm(current => ({ ...current, identificationType: event.target.value }))} className={fieldClass}>
-              {(options?.identificationTypes ?? []).map(type => <option key={type} value={type}>{IDENTIFICATION_LABELS[type] ?? type}</option>)}</select></label>
-            <label className="text-xs font-semibold">Número de documento<input required value={form.identificationNumber} onChange={event => setForm(current => ({ ...current, identificationNumber: event.target.value }))} className={fieldClass} /></label>
+            {form.identificationType && (
+              <IdentityDocumentFields type={form.identificationType} number={form.identificationNumber ?? ''} required
+                types={options?.identificationTypes ?? []} fieldClass={fieldClass}
+                onChange={patch => setForm(current => ({ ...current, ...patch }))}
+                inputRef={withRule(identificationProblem(form.identificationType, form.identificationNumber ?? ''))} />
+            )}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold">Número de empleado<input required disabled={Boolean(person.employeeNumber)} value={form.employeeNumber} onChange={event => setForm(current => ({ ...current, employeeNumber: event.target.value.toUpperCase() }))} className={fieldClass} /></label>

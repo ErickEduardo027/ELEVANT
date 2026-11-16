@@ -3,6 +3,7 @@ using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Api.Hubs;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Commercial;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -24,6 +25,7 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/contracts/commercial-requests")]
 public sealed class CommercialRequestsManagementController(
     ICommercialWorkflowStore store,
+    DecideCommercialRequestHandler decisions,
     IHubContext<PublicCatalogHub> publicCatalogHub,
     ILogger<CommercialRequestsManagementController> logger) : ControllerBase
 {
@@ -128,6 +130,9 @@ public sealed class CommercialRequestsManagementController(
     /// <summary>
     /// Approves or rejects. The Idempotency-Key and <c>expectedVersion</c> are optional while older
     /// clients exist (expand); a key without the version is rejected. Approval returns the contract.
+    /// An approval checks the airline against the public registries first and answers 409
+    /// <c>airline_not_in_public_registry</c> for NotFound, Defunct or Mismatch unless Superadministración
+    /// verified the airline by hand with an official source (ADR-0023).
     /// </summary>
     [HttpPost("{id:guid}/decision", Name = "DecideCommercialRequest")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
@@ -141,7 +146,7 @@ public sealed class CommercialRequestsManagementController(
         [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        return Respond(await store.DecideAsync(actorId, id, input, idempotencyKey, cancellationToken));
+        return Respond(await decisions.HandleAsync(actorId, id, input, idempotencyKey, cancellationToken));
     }
 
     private Task InvalidateCatalogAsync() => PublicCatalogInvalidation.TrySendAsync(
@@ -166,6 +171,10 @@ public sealed class CommercialRequestsManagementController(
             code ?? "version_conflict"),
         CommercialWorkflowFailure.AirlineUnverified => Coded(409, "Verifique la aerolínea antes de aprobar.",
             code ?? "airline_unverified"),
+        CommercialWorkflowFailure.AirlineNotInPublicRegistry => Coded(409,
+            "La aerolínea no figura en los registros públicos (o figura inactiva o con otros datos). " +
+            "Superadministración debe verificarla a mano con una fuente oficial antes de aprobar.",
+            code ?? "airline_not_in_public_registry"),
         _ => throw new InvalidOperationException(),
     };
 

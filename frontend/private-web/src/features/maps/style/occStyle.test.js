@@ -1,10 +1,10 @@
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
-import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
+import { OCC_PALETTES, OCC_THEMES, occColor } from '../../occ-ui/occPalette';
 import { qaPoint } from '../testing/mapFixtures';
 import { basemapLayers } from './basemapLayers';
 import { createImageResolver } from './mapImages';
-import { BASEMAP_COLORS } from './mapTheme';
+import { BASEMAP_COLORS, BASEMAP_THEMES } from './mapTheme';
 import {
   BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, SLOT_GROUP, SLOT_ORDER, THRESHOLD_NAMES,
   buildOccStyle, groupLayerIds, nextSlot, slotMarkerId,
@@ -125,7 +125,8 @@ const resourceUrls = style => [
 
 describe('OCC map style', () => {
   it('the style passes the MapLibre style validator with and without the base map (validateStyleMin from @maplibre/maplibre-gl-style-spec)', () => {
-    for (const options of [{}, { basemap: false }, { overlays: [STAND_OVERLAY] }, { basemap: false, overlays: [STAND_OVERLAY] }]) {
+    for (const options of [{}, { basemap: false }, { overlays: [STAND_OVERLAY] }, { basemap: false, overlays: [STAND_OVERLAY] },
+      { theme: 'light', overlays: [STAND_OVERLAY] }]) {
       expect(validateStyleMin(buildOccStyle(options)), JSON.stringify(Object.keys(options))).toEqual([]);
     }
     // The validator is not a rubber stamp: a broken layer is reported.
@@ -221,6 +222,37 @@ describe('OCC map style', () => {
       .toThrow(/GeoJSON/);
   });
 
+  it('accepts raster overlay sources with https tiles and rejects other types', () => {
+    // A satellite image of PR M8: its own https tiles, taken as given, with no data; its layer in the weather slot.
+    const tiles = ['https://gibs.example/wmts/default/default/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'];
+    const raster = (source, layer = {}) => ({
+      sources: { clouds: source },
+      layers: [{ slot: 'weather', id: 'clouds-image', type: 'raster', source: 'clouds', metadata: { 'occ:group': 'weather.goes' },
+        ...layer }],
+    });
+    const style = buildOccStyle({ overlays: [raster({ type: 'raster', tiles, tileSize: 256, maxzoom: 6, attribution: 'NASA GIBS' })] });
+    expect(style.sources.clouds).toEqual({ type: 'raster', tiles, tileSize: 256, maxzoom: 6, attribution: 'NASA GIBS' });
+    expect(style.layers.map(layer => layer.id).indexOf('clouds-image'))
+      .toBe(style.layers.map(layer => layer.id).indexOf('slot-weather') + 1);
+    expect(validateStyleMin(style)).toEqual([]);
+    // The tiles are copied: the style never shares an array with its overlay.
+    expect(style.sources.clouds.tiles).not.toBe(tiles);
+    // Only https tiles, at least one, and no TileJSON of its own; a vector, image or video source is refused too.
+    for (const source of [
+      { type: 'raster', tiles: [] },
+      { type: 'raster', tiles: ['http://gibs.example/{z}/{x}/{y}.png'] },
+      { type: 'raster', tiles: ['//gibs.example/{z}/{x}/{y}.png'] },
+      { type: 'raster', tiles: [42] },
+      { type: 'raster', url: 'https://gibs.example/tiles.json' },
+      { type: 'raster', url: 'https://gibs.example/tiles.json', tiles },
+      { type: 'vector', tiles },
+      { type: 'image', url: 'https://gibs.example/a.png', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] },
+    ]) {
+      expect(() => buildOccStyle({ overlays: [raster(source)] }), JSON.stringify(source))
+        .toThrow(/must be a GeoJSON source or a raster source with https tiles/);
+    }
+  });
+
   it('without the base map there is no vector source and the tile aeroway is gone', () => {
     const style = buildOccStyle({ basemap: false, overlays: [STAND_OVERLAY] });
     expect(style.sources).not.toHaveProperty(BASEMAP_SOURCE_ID);
@@ -238,7 +270,8 @@ describe('OCC map style', () => {
   });
 
   it('the tile aeroway ends at the derived airfield threshold (metadata) and keeps no fixed maxzoom', () => {
-    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield']);
+    // The boundary of Aeródromo for the airfield, and from PR M8 the boundary of Aproximación for the range rings.
+    expect(THRESHOLD_NAMES).toEqual(['polygons', 'codes', 'threeLine', 'airfield', 'approach']);
     const style = buildOccStyle();
     const aeroway = style.layers.filter(layer => layer['source-layer'] === 'aeroway');
     expect(aeroway).toHaveLength(5);
@@ -256,44 +289,75 @@ describe('OCC map style', () => {
       layers: [{ slot: 'airfield', id: 'extra', type: 'line', source: 'extra', metadata: { 'occ:group': 'x', 'occ:minThreshold': 'airfield' } }],
     };
     expect(validateStyleMin(buildOccStyle({ overlays: [overlay] }))).toEqual([]);
+    const rings = { ...overlay, layers: [{ ...overlay.layers[0], metadata: { 'occ:group': 'x', 'occ:maxThreshold': 'approach' } }] };
+    expect(validateStyleMin(buildOccStyle({ overlays: [rings] }))).toEqual([]);
+    const unknown = { ...overlay, layers: [{ ...overlay.layers[0], metadata: { 'occ:group': 'x', 'occ:maxThreshold': 'region' } }] };
+    expect(() => buildOccStyle({ overlays: [unknown] })).toThrow(/unknown threshold in occ:maxThreshold: region/);
   });
 
-  it('overlay colours are OCC palette values and base-map colours come from mapTheme (parity)', () => {
-    const style = buildOccStyle({ overlays: [STAND_OVERLAY] });
-    const tokenValues = new Set(Object.values(OCC_PALETTE));
-    const baseValues = new Set(Object.values(BASEMAP_COLORS));
+  it.each(OCC_THEMES)('overlay colours are OCC palette values and base-map colours come from mapTheme (%s)', theme => {
+    const style = buildOccStyle({ overlays: [STAND_OVERLAY], theme });
+    const colours = BASEMAP_THEMES[theme];
+    const tokenValues = new Set(Object.values(OCC_PALETTES[theme]));
+    const baseValues = new Set(Object.values(colours));
     for (const layer of style.layers) {
       for (const colour of paintColours(layer)) {
         if (OVERLAY_IDS.has(layer.id)) expect(tokenValues.has(colour), `${layer.id}: ${colour}`).toBe(true);
         else expect(baseValues.has(colour) || tokenValues.has(colour), `${layer.id}: ${colour}`).toBe(true);
       }
     }
-    // The only token a tile layer paints is the runway designator, in --occ-muted.
+    // The only token a tile layer paints is the runway designator, in --occ-text (it reads on the lighter runway).
     const tokensOnTiles = style.layers.filter(layer => !OVERLAY_IDS.has(layer.id))
       .flatMap(layer => paintColours(layer).filter(colour => !baseValues.has(colour)).map(colour => [layer.id, colour]));
-    expect(tokensOnTiles).toEqual([['airfield-runway-ref', occColor('muted')]]);
+    expect(tokensOnTiles).toEqual([['airfield-runway-ref', occColor('text', theme)]]);
 
     const paintOf = (id, property) => style.layers.find(layer => layer.id === id).paint[property];
-    expect(paintOf('base-background', 'background-color')).toBe(BASEMAP_COLORS.land);
-    expect(paintOf('base-water', 'fill-color')).toBe(BASEMAP_COLORS.sea);
-    expect(paintOf('base-coastline', 'line-color')).toBe(BASEMAP_COLORS.coastline);
-    expect(paintOf('base-boundary-country', 'line-color')).toBe(BASEMAP_COLORS.boundary);
-    expect(paintOf('base-road', 'line-color')).toBe(BASEMAP_COLORS.road);
-    expect(paintOf('base-road-major', 'line-color')).toBe(BASEMAP_COLORS.roadMajor);
-    expect(paintOf('base-building', 'fill-color')).toBe(BASEMAP_COLORS.building);
-    expect(paintOf('building-3d', 'fill-extrusion-color')).toBe(BASEMAP_COLORS.buildingExtrusion);
-    expect(paintOf('airfield-runway', 'line-color')).toBe(BASEMAP_COLORS.runway);
-    expect(paintOf('airfield-taxiway', 'line-color')).toBe(BASEMAP_COLORS.taxiway);
-    expect(paintOf('airfield-apron', 'fill-color')).toBe(BASEMAP_COLORS.apron);
-    expect(paintOf('base-label-city', 'text-color')).toBe(BASEMAP_COLORS.placeLabel);
-    expect(paintOf('base-label-water', 'text-color')).toBe(BASEMAP_COLORS.waterLabel);
-    expect(paintOf('base-label-water', 'text-halo-color')).toBe(BASEMAP_COLORS.labelHalo);
+    expect(paintOf('base-background', 'background-color')).toBe(colours.land);
+    expect(paintOf('base-water', 'fill-color')).toBe(colours.sea);
+    expect(paintOf('base-coastline', 'line-color')).toBe(colours.coastline);
+    expect(paintOf('base-boundary-country', 'line-color')).toBe(colours.boundary);
+    expect(paintOf('base-road', 'line-color')).toBe(colours.road);
+    expect(paintOf('base-road-major', 'line-color')).toBe(colours.roadMajor);
+    expect(paintOf('base-building', 'fill-color')).toBe(colours.building);
+    expect(paintOf('building-3d', 'fill-extrusion-color')).toBe(colours.buildingExtrusion);
+    expect(paintOf('airfield-runway', 'line-color')).toBe(colours.runway);
+    expect(paintOf('airfield-taxiway', 'line-color')).toBe(colours.taxiway);
+    expect(paintOf('airfield-apron', 'fill-color')).toBe(colours.apron);
+    expect(paintOf('base-label-city', 'text-color')).toBe(colours.placeLabel);
+    expect(paintOf('base-label-water', 'text-color')).toBe(colours.waterLabel);
+    expect(paintOf('base-label-water', 'text-halo-color')).toBe(colours.labelHalo);
 
+  });
+
+  it('carries every overlay colour of the dark palette, an rgba() trail included, to the light theme', () => {
+    const accent = OCC_PALETTES.dark['--occ-accent'];
+    const [red, green, blue] = [1, 3, 5].map(index => Number.parseInt(accent.slice(index, index + 2), 16));
+    const overlay = {
+      sources: { trail: { type: 'geojson' } },
+      layers: [{
+        slot: 'traffic', id: 'trail', type: 'line', source: 'trail', metadata: { 'occ:group': 'traffic' },
+        paint: { 'line-color': ['case', ['get', 'x'], `rgba(${red}, ${green}, ${blue}, 0.5)`, occColor('nav')] },
+        layout: { 'text-field': ['format', 'A', { 'text-color': occColor('muted') }] },
+      }],
+    };
+    const paint = theme => buildOccStyle({ basemap: false, overlays: [overlay], theme }).layers.find(layer => layer.id === 'trail');
+    expect(paint('dark').paint['line-color']).toEqual(overlay.layers[0].paint['line-color']);
+    const light = paint('light');
+    const lightAccent = OCC_PALETTES.light['--occ-accent'];
+    const channels = [1, 3, 5].map(index => Number.parseInt(lightAccent.slice(index, index + 2), 16));
+    expect(light.paint['line-color']).toEqual(['case', ['get', 'x'], `rgba(${channels.join(', ')}, 0.5)`, occColor('nav', 'light')]);
+    expect(light.layout['text-field'][2]).toEqual({ 'text-color': occColor('muted', 'light') });
+    // The base map of the light theme is its own.
+    const background = buildOccStyle({ theme: 'light' }).layers.find(layer => layer.id === 'base-background');
+    expect(background.paint['background-color']).toBe(BASEMAP_THEMES.light.land);
+  });
+
+  it('basemapLayers draws whatever palette it is given', () => {
     // basemapLayers draws whatever palette it is given: no base-map colour is written into the layers.
     const marked = Object.fromEntries(Object.keys(BASEMAP_COLORS).map((key, index) => [key, `#0000${String(index).padStart(2, '0')}`]));
     const markedValues = new Set(Object.values(marked));
     const drawn = Object.values(basemapLayers({ colors: marked })).flat().flatMap(paintColours);
-    expect(drawn.filter(colour => !markedValues.has(colour))).toEqual([occColor('muted')]);
+    expect(drawn.filter(colour => !markedValues.has(colour))).toEqual([occColor('text')]);
   });
 
   it('every icon-image and fill-pattern the style names resolves through createImageResolver', () => {

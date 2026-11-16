@@ -51,7 +51,7 @@ describe('root layout', () => {
     expect(metadata.icons.icon).toBe('/brand/elevant-logo.png');
   });
 
-  it('a first load is dark on an OCC route and unchanged on any other route', async () => {
+  it('a first load is dark by default on an OCC route and unchanged on any other route', async () => {
     const { markup } = await renderDocument({ 'x-nonce': NONCE });
 
     for (const path of ['/admin-occ', '/admin-occ/dashboard', '/admin-occ/planning?stationId=1']) {

@@ -6,7 +6,9 @@ import { serverClock } from '../../../services/serverClock';
 // The telemetry of the aircraft on a map, outside React (design E4, Decision E-1): the data block reads the chosen
 // aircraft's altitude, speed, track and the age of its position through useSyncExternalStore, so the age counts up
 // without a render of the map, and React renders the card only when a value it shows changes. The store ticks at 4 Hz
-// while someone watches it and the tab is visible; between ticks nothing runs.
+// while someone watches it and the tab is visible; between ticks nothing runs. With a sampler (PR M6: the motion
+// store's sampleOne) each tick reads the aircraft where the map draws it at the clock's time, which is the render
+// clock: «Pausar movimiento» freezes the telemetry with the map.
 
 /** How often the store ticks while it is watched and the tab shows: 4 Hz. */
 export const TELEMETRY_INTERVAL_MS = 250;
@@ -18,11 +20,14 @@ const finite = value => typeof value === 'number' && Number.isFinite(value);
 const round = (value, unit) => (finite(value) ? Math.round(value / unit) : null);
 
 /**
- * What the data block shows of `aircraft` (a RenderAircraft of traffic/situationModel.js) at `nowMs`, the server's
- * time, in the units of the screen: `{ altFt, gsKt, trackDeg, vrate, ageS, positionAt, quality, onGround }`, with feet,
- * knots, whole degrees, feet per minute, whole seconds since its position (never below 0) and the instant of that
- * position in milliseconds (a stale position says its time: traffic/stationTime.js); a value it does not know is
- * `null`. No aircraft, `null`.
+ * What the data block shows of `aircraft` (a RenderAircraft of traffic/situationModel.js, or one the motion store
+ * sampled) at `nowMs`, the server's time, in the units of the screen: `{ altFt, gsKt, trackDeg, vrate, ageS,
+ * positionAt, quality, onGround, mode, statusKey, timeScale, opacity, runwayIdent, runwaySource }`, with feet, knots,
+ * whole degrees, feet per minute, whole seconds since its position (never below 0) and the instant of that position in
+ * milliseconds (a stale position says its time: traffic/stationTime.js); a value it does not know is `null`. From the
+ * motion (PR M6): its hand-off mode ('live', 'coast', 'estimate' or `null`), the status of its plan (a demo's
+ * «Esperando posición»), the time scale of the part it is in (1 in real time), its opacity (1 unless it fades out) and
+ * the runway its plan uses with where that choice comes from. No aircraft, `null`.
  */
 export function telemetryAt(aircraft, nowMs) {
   if (aircraft == null) return null;
@@ -36,11 +41,18 @@ export function telemetryAt(aircraft, nowMs) {
     positionAt: finite(aircraft.positionAt) ? aircraft.positionAt : null,
     quality: aircraft.quality ?? null,
     onGround: aircraft.onGround === true,
+    mode: aircraft.mode ?? null,
+    statusKey: typeof aircraft.statusKey === 'string' ? aircraft.statusKey : null,
+    timeScale: finite(aircraft.timeScale) && aircraft.timeScale > 0 ? aircraft.timeScale : 1,
+    opacity: finite(aircraft.opacity) ? aircraft.opacity : 1,
+    runwayIdent: typeof aircraft.runwayIdent === 'string' ? aircraft.runwayIdent : null,
+    runwaySource: typeof aircraft.runwaySource === 'string' ? aircraft.runwaySource : null,
   });
 }
 
 const TELEMETRY_FIELDS = Object.freeze([
-  'altFt', 'gsKt', 'trackDeg', 'vrate', 'ageS', 'positionAt', 'quality', 'onGround',
+  'altFt', 'gsKt', 'trackDeg', 'vrate', 'ageS', 'positionAt', 'quality', 'onGround', 'mode', 'statusKey', 'timeScale',
+  'opacity', 'runwayIdent', 'runwaySource',
 ]);
 const sameTelemetry = (first, second) => first === second
   || (first != null && second != null && TELEMETRY_FIELDS.every(field => Object.is(first[field], second[field])));
@@ -53,10 +65,12 @@ const sameTelemetry = (first, second) => first === second
  *   hidden, the store stops, and when the tab shows again it ticks at once and starts over;
  * - `telemetryOf(id)`: telemetryAt of that aircraft at the snapshot's instant, the same object for as long as the values
  *   it holds stay the same (so a card re-renders when its age turns a second, not 4 times a second).
- * `clock` is anything with `now()` in milliseconds (the server clock by default; the map lab passes a frozen one).
+ * `clock` is anything with `now()` in milliseconds (the server clock by default; the maps pass their render clock and
+ * the map lab a frozen one). `sample(id, tMs, aircraft)` (the motion store's sampleOne) gives the aircraft where the
+ * map draws it at `tMs`, or `null` when it draws none then; without it, the aircraft as the situation holds it.
  */
 export function createTelemetryStore({ clock = serverClock, intervalMs = TELEMETRY_INTERVAL_MS,
-  document: doc = globalThis.document } = {}) {
+  document: doc = globalThis.document, sample = null } = {}) {
   const listeners = new Set();
   const cache = new Map();
   let byId = new Map();
@@ -115,7 +129,9 @@ export function createTelemetryStore({ clock = serverClock, intervalMs = TELEMET
       if (id == null) return null;
       const entry = cache.get(id);
       if (entry?.snapshot === snapshot) return entry.value;
-      const next = telemetryAt(snapshot.byId.get(id), snapshot.nowMs);
+      const held = snapshot.byId.get(id) ?? null;
+      const drawn = held !== null && typeof sample === 'function' ? sample(id, snapshot.nowMs, held) : held;
+      const next = telemetryAt(drawn, snapshot.nowMs);
       const value = entry && sameTelemetry(entry.value, next) ? entry.value : next;
       cache.set(id, { snapshot, value });
       return value;

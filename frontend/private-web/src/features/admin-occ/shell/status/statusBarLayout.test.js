@@ -3,7 +3,7 @@ import { BREAKPOINTS } from '../../../../config/breakpoints';
 import { COARSE_TARGET, STATUS_BAR_LAYOUT, STATUS_CONTROL, STATUS_TONE, statusBarAt } from './statusBarLayout';
 
 const ORDER = ['menu', 'station', 'stationCity', 'module', 'live', 'sources', 'alerts', 'localClock', 'utcClock',
-  'language', 'legend', 'account'];
+  'language', 'legend', 'theme', 'account'];
 
 // The Tailwind screen that starts at a width (`sm` for 640).
 const screenAt = px => Object.entries(BREAKPOINTS).find(([, value]) => value === px)?.[0];
@@ -21,7 +21,7 @@ describe('status bar layout', () => {
       // readers, so the bar fits a 320 px phone.
       expect(statusBarAt(width), `${width} px`).toEqual({
         bar: { menu: 'full', station: 'full', live: 'reduced', alerts: 'reduced', localClock: 'full', account: 'full' },
-        menu: ['language', 'legend'],
+        menu: ['language', 'legend', 'theme'],
       });
     }
   });
@@ -30,14 +30,14 @@ describe('status bar layout', () => {
     const tablet = {
       bar: { station: 'full', module: 'full', live: 'full', sources: 'reduced', alerts: 'full', localClock: 'full',
         account: 'full' },
-      menu: ['language', 'legend'],
+      menu: ['language', 'legend', 'theme'],
     };
     expect(statusBarAt(640)).toEqual(tablet);
     expect(statusBarAt(1023)).toEqual(tablet);
     // From 1024 px they are back in the bar, with the UTC clock.
     const desktop = {
       bar: { station: 'full', module: 'full', live: 'full', sources: 'reduced', alerts: 'full', localClock: 'full',
-        utcClock: 'full', language: 'full', legend: 'full', account: 'full' },
+        utcClock: 'full', language: 'full', legend: 'full', theme: 'full', account: 'full' },
       menu: [],
     };
     expect(statusBarAt(1024)).toEqual(desktop);
