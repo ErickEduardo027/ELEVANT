@@ -2171,10 +2171,10 @@ carril de mapas, con las mismas props.
   «Salidas» y «Todos» con su cuenta y la búsqueda. Al elegir un vuelo, en el
   tablero o en el mapa, su inspector muestra sus horas, posición, avión,
   matrícula, agentes y servicios, con enlaces a Planificación y a Mapa de
-  posiciones. Va bajo el tablero; desde 2200 px, a la derecha del mapa. Sin
+  posiciones, y la tira de hitos de su operación, que sale de los vuelos que el
+  mapa ya lee. Va bajo el tablero; desde 2200 px, a la derecha del mapa. Sin
   tarjeta de conexión: un fallo de lectura deja los vuelos bajo un aviso de
-  datos sin actualizar. El bloque de datos del avión lo muestra el mapa; la tira
-  de hitos aún no está en este inspector (ver el ADR).
+  datos sin actualizar. El bloque de datos del avión lo muestra el mapa.
 - **Mapa de posiciones**
   ([vista](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx)).
   «Lista de posiciones» abre una
@@ -2187,7 +2187,9 @@ carril de mapas, con las mismas props.
   Bajo el mapa, la
   [banda de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionsBand.jsx)
   cuenta las posiciones por estado y, abierta, dibuja sus escalas en el tiempo
-  con la línea «ahora». Los textos de los comandos tienen inglés.
+  con la línea «ahora». Por debajo de 1536 px la lista se pliega mientras el
+  inspector está abierto. Un enlace con `stand=` centra esa posición en el
+  mapa. Los textos de los comandos tienen inglés.
 - **Planificación**
   ([vista](../../frontend/private-web/src/features/planning/PlanningPage.jsx)).
   La barra lleva «Nuevo vuelo», «Importar vuelos» y «Actualizar»; debajo, los
@@ -2198,6 +2200,10 @@ carril de mapas, con las mismas props.
   la escala y los diálogos no cambian.
 - **Consola.** «Posiciones» de la consola ya no falla al abrir su banda cuando
   una posición tiene un avión sin llegada registrada.
+- **Barra del mapa.** En un mapa estrecho, como el de Monitoreo en un portátil
+  de 1440 px, la barra de vistas y herramientas quita las teclas y acorta
+  «Aproximación» y «Aeródromo» para caber en una fila
+  ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)).
 
 Las capturas se revisaron en local con la API simulada de la suite visual, en
 oscuro y en claro; nada de esto acredita un despliegue ni una revisión visual en
