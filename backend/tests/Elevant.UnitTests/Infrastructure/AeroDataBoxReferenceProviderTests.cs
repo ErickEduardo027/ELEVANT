@@ -62,8 +62,8 @@ public sealed class AeroDataBoxReferenceProviderTests
         }
         """;
 
-    private static AeroDataBoxReferenceProvider Provider(StubHandler handler, bool enabled = true) =>
-        new(new HttpClient(handler), new AeroDataBoxOptions { Enabled = enabled, ApiKey = "synthetic-key" });
+    private static AeroDataBoxReferenceProvider Provider(StubHandler handler, bool enabled = true, string? key = "synthetic-key") =>
+        new(new HttpClient(handler), new AeroDataBoxOptions { Enabled = enabled, ApiKey = key });
 
     private static StubHandler Answer(string json) => new(_ => new HttpResponseMessage(HttpStatusCode.OK)
         { Content = new StringContent(json, Encoding.UTF8, "application/json") });
