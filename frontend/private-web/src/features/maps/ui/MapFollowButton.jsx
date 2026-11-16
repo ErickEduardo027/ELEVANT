@@ -34,7 +34,7 @@ export default function MapFollowButton({ className = '' }) {
         ? 'border-occ-accent bg-occ-accent-soft text-occ-text'
         : 'border-occ-line bg-occ-panel text-occ-muted hover:bg-occ-panel-raised hover:text-occ-text disabled:hover:bg-occ-panel'} ${className}`.trim()}
     >
-      <span aria-hidden="true" className="font-mono text-xs text-occ-faint">{FOLLOW_KEY}</span>
+      <span aria-hidden="true" className="occ-map-key font-mono text-xs text-occ-faint">{FOLLOW_KEY}</span>
       {t('follow.label')}
     </button>
   );

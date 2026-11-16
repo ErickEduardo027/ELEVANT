@@ -21,6 +21,11 @@ async function openPositions(page, isolation, { viewport, query = '' }) {
 }
 
 const settled = map => expect(map).toHaveAttribute('data-occ-settled', 'true', { timeout: 60_000 });
+// The map's dock (its views and tools) in one row: the width it needs never passes the width it has.
+async function expectDockFits(map) {
+  const dock = await map.locator('.occ-map-dock').evaluate(node => ({ needs: node.scrollWidth, has: node.clientWidth }));
+  expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
+}
 
 // Two boxes on screen share no pixel.
 const apart = (left, right) => left.x + left.width <= right.x || right.x + right.width <= left.x
@@ -38,6 +43,8 @@ test.describe('Mapa de posiciones as a work map', () => {
       const [mapBox, inspectorBox] = await Promise.all([map.boundingBox(), inspector(page).boundingBox()]);
       expect(apart(mapBox, inspectorBox), 'the inspector beside the map, never over it').toBe(true);
       await settled(map);
+      await expectDockFits(map);
+      // The link's stand is brought to the centre of the map once it is ready (the screenshot shows it).
       await shoot(page, testInfo, `u5-posiciones-posicion-${viewport.width}`);
       await inspector(page).getByRole('button', { name: 'Cerrar detalle' }).click();
       await expect(inspector(page)).toHaveCount(0);
@@ -65,6 +72,11 @@ test.describe('Mapa de posiciones as a work map', () => {
       await expect(inspector(page)).toBeVisible();
       await expect(item).toHaveAttribute('aria-selected', 'true');
       await settled(map);
+      await expectDockFits(map);
+      // Below 1536 px the list folds away while the inspector is open, so the map keeps its room.
+      const column = page.locator('[data-occ-positions-list]');
+      if (viewport.width < 1536) await expect(column).toBeHidden();
+      else await expect(column).toBeVisible();
       await shoot(page, testInfo, `u5-posiciones-tabla-${viewport.width}`);
     });
   }

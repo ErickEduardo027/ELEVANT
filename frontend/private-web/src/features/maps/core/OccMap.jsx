@@ -397,7 +397,8 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  * - `pitchMode` ('2d' | '3d'), `groups` ({ 'buildings-3d': true }), `insets` ({ top, right, bottom, left } in px);
  * - `testId` of the host that holds the canvas, `labels` ({ unavailableTitle, unavailableDescription,
  *   unavailableList, map }), `fallbackItems` ([{ id, label, kind }]) and `onFallbackSelect(id, item)`;
- * - `isShortcutBlocked()` (an open drawer that is not a modal dialog), `className`, `children` (DOM overlays).
+ * - `isShortcutBlocked()` (an open drawer that is not a modal dialog), `className`, `children` (DOM overlays);
+ * - `focusStandOnStart`: a stand selected when the map starts is brought to the centre once the map is ready.
  * - `traffic` (PR M5): `{ aircraft, trails, route, source, flights }` from the map situation (useMapSituation: the
  *   aircraft of traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route, the air picture's
  *   source and, from PR M8, the rows of the map flights, whose counterparts the references emphasise).
@@ -499,6 +500,7 @@ const OccMapView = forwardRef(function OccMapView({
   fallbackItems,
   onFallbackSelect,
   isShortcutBlocked,
+  focusStandOnStart = false,
   className = '',
   children,
 }, ref) {
@@ -2017,6 +2019,18 @@ const OccMapView = forwardRef(function OccMapView({
     engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, chipsOnScreen, standMarksOnScreen,
     flightsOnScreen, airfieldOnScreen,
   } = snapshot;
+
+  // `focusStandOnStart` (U5, Mapa de posiciones): the stand a link selects (`stand=`) is brought to the centre once the
+  // map can draw and knows its fits, as a row of the page's list does (flyToStand), instead of being left to the view.
+  // Once, on the map's first start: a map re-created for the theme resumes its camera instead.
+  const startStandRef = useRef(focusStandOnStart && selection?.kind === 'stand' && !resumeCameraRef?.current
+    ? String(selection.id) : null);
+  useEffect(() => {
+    const code = startStandRef.current;
+    if (code === null || engineStatus !== 'ready' || !fits) return;
+    startStandRef.current = null;
+    flyToStand(code);
+  }, [engineStatus, fits, flyToStand]);
   const context = useMemo(() => ({
     engineStatus,
     basemapStatus,

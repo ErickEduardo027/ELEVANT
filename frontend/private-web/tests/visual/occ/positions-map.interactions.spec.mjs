@@ -99,6 +99,8 @@ test.describe('Mapa de posiciones: what a person does with the stands', () => {
     await expect(drawer(page)).toHaveCount(0);
     expect(stand(page)).toBe('A2');
     await settled(page);
+    // A link to a stand opens with the legend folded (U5: the stand is brought to the centre, under where it opens).
+    await unfoldLegend(page);
     await expect(legend(page).getByRole('listitem')).toContainText(['Mismo agente que la posición elegida']);
     await shoot(page, testInfo, 'positions-interactions-coverage-legend');
     await foldLegend(page);

@@ -49,7 +49,7 @@ export default function PositionsTable({ positions, emptyReason = null, selected
       ),
     },
     {
-      key: 'terminal', header: t('table.terminal'), width: '4.25rem', hideBelow: '2xl',
+      key: 'terminal', header: t('table.terminal'), width: '4.25rem',
       render: position => (position.terminal === 'FBO' ? 'FBO' : position.terminal ?? '—'),
     },
     {

@@ -6,6 +6,7 @@ import { writeSelection } from '../../maps/core/mapSelection';
 import DemoTag from '../../occ-ui/DemoTag';
 import { occButtonClass } from '../../occ-ui/OccButton';
 import OccGlyph from '../../occ-ui/OccGlyph';
+import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
 import OccPlate from '../../occ-ui/OccPlate';
 import { formatClock, toInstantMs } from '../../occ-ui/occTime';
 import { SIGNALS } from '../../occ-ui/statusVocabulary';
@@ -18,8 +19,8 @@ import { flightMonitoringMessages } from '../flightMonitoringMessages';
 // dialog: no veil, no focus trap, and the map keeps its keys. It shows what the page reads of the flight from the planning
 // snapshot (its three times, its stand, its aircraft, its agents and services) and links to the same flight in
 // Planificación and Mapa de posiciones through the one selection of the URL (contratos 2.1). What the map knows of the
-// aircraft (its data block and the milestones of its operation) the map draws itself: the adapter does not hand its
-// situation to the page (FlightMap.jsx).
+// aircraft (its data block) the map draws itself; the milestones of its operation come from the map flights, which
+// FlightMap.jsx hands to the page (onSelectionFlights).
 
 const CLOSE = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-occ-muted hover:bg-occ-panel-raised '
   + 'hover:text-occ-text [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11';
@@ -67,9 +68,10 @@ const agentsText = (count, t) => (count === 1 ? t('inspector.agentsOne') : t('in
 /**
  * The inspector. `flight` is the page's flight (a leg of the planning snapshot) and `strip` its strip on the board
  * (flightBoardModel.js: its direction, its stand and its status); `stationId` is kept in the links; `timeZone` is the
- * station's; `onClose()` clears the selection («Cerrar detalle»).
+ * station's; `onClose()` clears the selection («Cerrar detalle»). `milestones` (`{ status, phases }`,
+ * dashboard/noc/milestoneModel.js: inspectorMilestones) draws the milestone strip of its operation.
  */
-export default function FlightInspector({ flight, strip, stationId = null, timeZone, onClose, className = '' }) {
+export default function FlightInspector({ flight, strip, stationId = null, timeZone, onClose, milestones = null, className = '' }) {
   const { t, language, locale } = useTranslation(flightMonitoringMessages);
   if (!flight || !strip) return null;
   const arrival = strip.direction === 'Arrival';
@@ -147,6 +149,10 @@ export default function FlightInspector({ flight, strip, stationId = null, timeZ
             {services.length > 0 ? <span>{services.join(', ')}</span> : <Missing>{t('inspector.noServices')}</Missing>}
           </Fact>
         </dl>
+        {/* The milestones of its operation, from the map flights (FlightMap): none while the map does not know it. */}
+        {milestones ? (
+          <OccMilestoneStrip phases={milestones.phases} status={milestones.status} locale={locale} timeZone={timeZone} />
+        ) : null}
         <nav aria-label={t('inspector.links')} className="flex flex-wrap gap-2 border-t border-occ-line pt-3">
           <Link href={links.planning} className={LINK}>{t('inspector.viewPlanning')}</Link>
           <Link href={links.positions} className={LINK}>{t('inspector.viewPositions')}</Link>

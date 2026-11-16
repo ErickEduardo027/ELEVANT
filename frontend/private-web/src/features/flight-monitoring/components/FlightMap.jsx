@@ -134,7 +134,7 @@ function FlightMapView({
  * the map does not know (outside its window, or while the map cannot read its flights) keeps the page's own card, as
  * does every flight of the page while the map cannot draw.
  */
-function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null }) {
+function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights }) {
   const { stationId } = useOccStation();
   const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
   const selectedHex = urlSelection?.kind === 'aircraft' ? urlSelection.id : null;
@@ -150,6 +150,12 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
   // flights (PR M8).
   const { situation, target, traffic } = live;
   const mapFlights = situation.flights;
+  // The chosen flight as the map flights know it, with every map flight (U5): the page's inspector reads its milestones
+  // from them (both legs of a visit share its operation), with no read of its own. Told again on each new read.
+  const chosenMapFlight = selectedFlightId == null ? null : matchFlight(mapFlights, String(selectedFlightId)) ?? null;
+  useEffect(() => {
+    onSelectionFlights?.({ flight: chosenMapFlight, flights: mapFlights });
+  }, [onSelectionFlights, chosenMapFlight, mapFlights]);
   // The ELEVANT flights the traffic draws, by key: the page does not draw them a second time.
   const drawnKeys = useMemo(() => new Set(situation.aircraft
     .filter(item => item.kind === 'aviam' && isDrawn(item)).map(item => item.flightKey)), [situation]);
@@ -209,7 +215,8 @@ function SelectionCard({ target, detail, ...block }) {
 /**
  * The map of Monitoreo de vuelos. Inside the OCC shell (its channel present) it draws the live traffic of the station
  * (LiveFlightMap); elsewhere (isolated screens and the tests) the same map without live traffic, with the page's card
- * of its selected flight (`detail`).
+ * of its selected flight (`detail`). `onSelectionFlights({ flight, flights })` (U5) hears, inside the shell, the chosen
+ * flight as the map flights know it (`null` when they do not) and the map flights themselves, after each read.
  */
 export default function FlightMap({ detail = null, ...props }) {
   const channel = useOptionalOccShellChannel();

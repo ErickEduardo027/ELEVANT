@@ -29,10 +29,13 @@ const EMPTY = Object.freeze([]);
 // place of a selected stand: one selection at a time) and `onSelectTraffic(next)` for a click on an aircraft. `children`
 // are the screen's overlays on the map (the data block, the traffic's state). The dock adds «Seguir» and «Pausar
 // movimiento», which show only on a map that moves its traffic. Without them it is the map it always was.
+// `focusSelectedOnStart` (U5): a stand the page opens with (a `stand=` link) is brought to the centre once the map is
+// ready, as a row of the list does; it starts with the legend folded. `legendFoldKey` folds the legend when it changes.
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
-  pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic, children,
+  pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
+  focusSelectedOnStart = false, legendFoldKey = null, children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -100,6 +103,7 @@ const PositionMap = forwardRef(function PositionMap({
         unavailableDescription: t('map.unavailableDescription'),
         unavailableList: tMap('unavailable.stands'),
       }}
+      focusStandOnStart={focusSelectedOnStart}
       fallbackItems={fallbackItems}
       onFallbackSelect={id => onSelectPosition?.(positionIdOf(id))}
     >
@@ -108,7 +112,9 @@ const PositionMap = forwardRef(function PositionMap({
         <MapPresetSwitcher />
         <MapFollowButton />
         <MapMotionControl />
-        <MapLegend defaultOpen={!dashboardLabels} />
+        {/* A stand a link opens with is brought to the centre: the legend starts folded so it does not cover it. */}
+        <MapLegend defaultOpen={!dashboardLabels && !(focusSelectedOnStart && selectedPositionId != null)}
+          foldKey={legendFoldKey} />
       </MapDock>
     </OccMap>
   );

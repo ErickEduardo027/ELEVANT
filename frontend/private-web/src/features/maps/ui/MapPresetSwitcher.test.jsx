@@ -29,9 +29,13 @@ function renderSwitcher() {
 }
 
 const group = () => screen.getByRole('group', { name: 'Vista del mapa' });
+// What a view button shows on a wide map: its key and its full word (the short word shows only on a narrow map, and is
+// hidden from assistive technology).
+const wideText = button => [...button.childNodes]
+  .filter(node => !node.classList?.contains('occ-map-label-short')).map(node => node.textContent).join('');
 const pressed = () => within(group()).getAllByRole('button')
   .filter(button => button.getAttribute('aria-pressed') === 'true')
-  .map(button => button.textContent);
+  .map(wideText);
 const query = () => new URLSearchParams(window.location.search);
 // Clicks a view and answers the zoom the map flew to: the fitted zoom of that view.
 const fitOf = (map, name) => {
@@ -55,7 +59,12 @@ describe('MapPresetSwitcher', () => {
     const map = renderSwitcher();
     const buttons = within(group()).getAllByRole('button');
     // The four views of the key table with their key, on 44 px targets (min-h-11 and min-w-11 are 2.75 rem).
-    expect(buttons.map(button => button.textContent)).toEqual(['1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
+    expect(buttons.map(wideText)).toEqual(['1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
+    // A narrow map's short words (occ-map.css) never change a button's name.
+    expect(buttons.map(button => button.querySelector('.occ-map-label-short')?.textContent ?? null))
+      .toEqual([null, 'Aprox.', 'Aeród.', null]);
+    expect(buttons[1].querySelector('.occ-map-label-short')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(group()).getByRole('button', { name: 'Aproximación' })).toBe(buttons[1]);
     expect(buttons.map(button => button.getAttribute('aria-keyshortcuts'))).toEqual(['1', '2', '3', '4']);
     for (const [index, button] of buttons.entries()) {
       expect(button).toHaveAccessibleName(NAMES[index]);
@@ -123,7 +132,7 @@ describe('MapPresetSwitcher', () => {
       </LanguageScope>,
     );
     const english = screen.getByRole('group', { name: 'Map view' });
-    expect(within(english).getAllByRole('button').map(button => button.textContent))
+    expect(within(english).getAllByRole('button').map(wideText))
       .toEqual(['1Region', '2Approach', '3Airfield', '4Ramp']);
     cleanup();
     resetLanguageForTests('es');

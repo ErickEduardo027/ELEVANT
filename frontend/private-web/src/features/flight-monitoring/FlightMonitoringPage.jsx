@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { serverClock } from '../../services/serverClock';
 import { STATION_TIME_ZONE } from '../admin-occ/shell/status/OccClocks';
+import { inspectorMilestones } from '../dashboard/noc/milestoneModel';
 import { useConsoleClock } from '../dashboard/noc/useConsoleClock';
 import { useMapSelection } from '../maps/core/useMapSelection';
 import OccButton from '../occ-ui/OccButton';
@@ -93,8 +94,11 @@ export default function FlightMonitoringPage({
   status, data, error, connection, lastUpdatedAt, onRetry, forceState = 'default', theme = 'dark', stationId = null,
   stationCode = null, clock = serverClock,
 }) {
-  const { t } = useTranslation(flightMonitoringMessages);
+  const { t, language } = useTranslation(flightMonitoringMessages);
   const { selection, selectFlight, clear } = useMapSelection();
+  // The chosen flight as the map flights know it, and those flights (FlightMap's onSelectionFlights): its milestones.
+  const [mapChoice, setMapChoice] = useState(null);
+  const hearMapChoice = useCallback(value => setMapChoice(value), []);
   const nowMs = useConsoleClock(clock);
   const isTablet = useIsTabletBreakpoint();
   const [filter, setFilter] = useState('all');
@@ -176,7 +180,8 @@ export default function FlightMonitoringPage({
   );
   const inspector = selectedStrip ? (
     <FlightInspector flight={selectedFlight} strip={selectedStrip} stationId={stationId} timeZone={timeZone}
-      onClose={closeInspector} />
+      onClose={closeInspector}
+      milestones={mapChoice?.flight ? inspectorMilestones(mapChoice.flight, mapChoice.flights, language) : null} />
   ) : null;
   const layout = FLIGHT_MONITORING_LAYOUT;
 
@@ -199,7 +204,7 @@ export default function FlightMonitoringPage({
               // The same props as before: every flight of the page, so a click on the map finds any of them; the
               // inspector replaces the page's card (`detail`).
               <FlightMap flights={flights} selectedFlightId={mapSelectedId} onSelectFlight={selectFromMap} theme={theme}
-                detail={null} />
+                detail={null} onSelectionFlights={hearMapChoice} />
             ) : (
               <div role="status"
                 className="absolute inset-0 flex items-center justify-center rounded-md border border-occ-line bg-occ-panel p-8 text-center text-sm text-occ-muted">

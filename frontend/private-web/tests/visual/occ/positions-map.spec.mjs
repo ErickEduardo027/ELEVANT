@@ -106,7 +106,10 @@ test.describe('Mapa de posiciones on the map engine', () => {
       await switcher.getByRole('button', { name: VIEW_LABELS.airfield, exact: true }).click();
       await expect(map).toHaveAttribute('data-occ-view', 'airfield');
       await expect.poll(() => viewInUrl(page)).toBe('airfield');
-      await expect.poll(() => zoomOf(map)).toBeLessThan(before - 1);
+      // Aeródromo is a view of its own while it stays under the zoom where the stand codes show, which the map derives
+      // as the ramp fit less 0.3 (core/cameraPresets.js: thresholdsFromFits). How much further out it is depends on the
+      // map's shape: with Mapa de posiciones filling the frame's height (U5) it is about 0.9 of a level at 1440 × 900.
+      await expect.poll(() => zoomOf(map)).toBeLessThan(before - 0.3);
       await switcher.getByRole('button', { name: VIEW_LABELS.ramp, exact: true }).click();
       await expect(map).toHaveAttribute('data-occ-view', 'ramp');
       await expect.poll(() => zoomOf(map)).toBeCloseTo(before, 1);

@@ -101,14 +101,13 @@ test.describe('Monitoreo de vuelos as a work map', () => {
       expect(apart(mapBox, inspectorBox), 'the inspector beside the map').toBe(true);
       expect(apart(mapBox, boardBox), 'the board beside the map').toBe(true);
       expect(mapBox.width).toBeGreaterThanOrEqual(700);
-      // The inspector sits under the board, so the map keeps its width: at 1920 × 1080 the map's dock fits its row. At
-      // 1440 × 900 with the rail open the board alone leaves the map less than the dock needs; the dock is the maps
-      // lane's to fold (reported, not asserted here).
+      // The inspector sits under the board, so the map keeps its width; at 1440 × 900 the dock takes its compact steps.
       expect(inspectorBox.y, 'the inspector under the board').toBeGreaterThanOrEqual(boardBox.y + boardBox.height);
       const dock = await dockRoom(map);
       testInfo.annotations.push({ type: 'dock', description: `needs ${dock.needs}px, has ${dock.has}px` });
       console.log(`dock at ${size}: needs ${dock.needs}px, has ${dock.has}px, map ${Math.round(mapBox.width)}px`);
-      if (viewport.width >= 1920) expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
+      // On a narrow map the dock drops the keys and shortens two views (occ-map.css): it fits its row at both sizes.
+      expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
       await shoot(page, testInfo, `u5-monitoreo-vuelo-${viewport.width}`);
     });
 

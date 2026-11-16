@@ -147,6 +147,23 @@ describe('FlightMonitoringPage', () => {
     expect(screen.getByRole('complementary', { name: 'Detalle del vuelo AA904' })).toBeInTheDocument();
   });
 
+  it('draws the milestone strip of the chosen flight from the map flights the map hands over, with no read of its own', () => {
+    window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}&flightId=leg-161`);
+    render(page());
+    const inspector = screen.getByRole('complementary', { name: 'Detalle del vuelo DM161' });
+    // Until the map tells which map flight it is, there is no strip.
+    expect(within(inspector).queryByRole('list', { name: 'Hitos de la escala' })).not.toBeInTheDocument();
+    expect(typeof map.props.onSelectionFlights).toBe('function');
+    // A synthetic map flight of the visit with an operation and one recorded milestone (contratos 1.3).
+    const mapFlight = { flightKey: 'l:leg-161', visitKey: 't:tat-161', legId: 'leg-161', direction: 'Arrival',
+      turnaround: { operationId: 'op-161' }, milestones: [{ code: 'ON_BLOCK', at: at(-5) }] };
+    act(() => map.props.onSelectionFlights({ flight: mapFlight, flights: [mapFlight] }));
+    expect(within(inspector).getByRole('list', { name: 'Hitos de la escala' })).toBeInTheDocument();
+    // A flight the map flights do not know has none.
+    act(() => map.props.onSelectionFlights({ flight: null, flights: [mapFlight] }));
+    expect(within(inspector).queryByRole('list', { name: 'Hitos de la escala' })).not.toBeInTheDocument();
+  });
+
   it('a flightId link selects that flight', () => {
     for (const [link, number] of [['leg-161', 'DM161'], ['l:leg-904', 'AA904'], ['tat-161', 'DM161']]) {
       window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}&flightId=${link}`);

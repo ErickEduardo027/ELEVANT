@@ -44,7 +44,7 @@ const toSixDecimals = value => Number(Number(value).toFixed(6));
 /**
  * How the screen is laid out (design E.2, template B «Mapa de trabajo»), as pure classes so a test can read what jsdom
  * does not lay out: the toolbar, then from 1024 px «Lista de posiciones» at the left when it is open (24 rem, 28 rem
- * from 1536 px, where the terminal and agent columns show; 20 rem below that while the inspector is open too), the map
+ * from 1536 px, where the terminal and agent columns show; below 1536 px it folds away while the inspector is open), the map
  * with the stand band under it, and the inspector of the chosen stand docked at the right (24 rem), beside the map and
  * never over it, so it covers no stand. Below 1024 px the list opens in a drawer and the inspector goes under the map.
  */
@@ -56,10 +56,13 @@ export const POSITIONS_MAP_LAYOUT = Object.freeze({
       + 'lg:grid-rows-[minmax(0,1fr)]',
     noListInspector: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] '
       + 'lg:grid-rows-[minmax(0,1fr)]',
-    listInspector: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[20rem_minmax(0,1fr)_22rem] '
+    listInspector: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] '
       + '2xl:grid-cols-[28rem_minmax(0,1fr)_24rem] lg:grid-rows-[minmax(0,1fr)]',
   }),
   list: 'flex min-h-0 min-w-0 flex-col',
+  // Below 1536 px the list folds away while a stand is open, so the map keeps the room its dock needs; it comes back
+  // when the inspector closes («Lista de posiciones» stays pressed).
+  listWithInspector: 'hidden min-h-0 min-w-0 flex-col 2xl:flex',
   main: 'flex min-h-0 min-w-0 flex-col gap-3',
   inspector: 'flex min-h-0 min-w-0 flex-col',
   notice: 'rounded-md border border-occ-line bg-occ-panel px-3 py-2 text-sm text-occ-muted',
@@ -118,6 +121,8 @@ function PositionsMapScreen({
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   // The stand band starts folded (its header still counts the stands by state): the map keeps its height.
   const [bandOpen, setBandOpen] = useState(false);
+  // Counts the stands brought to the centre from the list or the band: each one folds the map's legend.
+  const [legendFold, setLegendFold] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   // The stand OCC is placing on the map (ADR-0027, Decision D-2): `pointing` until a click on the map sets a pending
@@ -231,9 +236,11 @@ function PositionsMapScreen({
   }
 
   // A stand chosen in the table or on the band: the map brings it to the centre of its area, beside the inspector.
+  // The legend folds then, so it does not cover the stand.
   function handleSelectFromList(id) {
     if (id == null) return;
     openStand(id);
+    setLegendFold(count => count + 1);
     mapRef.current?.flyToPosition(id);
   }
 
@@ -355,6 +362,8 @@ function PositionsMapScreen({
         traffic={live?.traffic}
         trafficSelection={trafficSelection}
         onSelectTraffic={live ? handleSelectTraffic : undefined}
+        focusSelectedOnStart
+        legendFoldKey={legendFold}
       >
         <MapSituationOverlays live={live} onClose={clear} blockStyle={DATA_BLOCK_STYLE} />
       </PositionMap>
@@ -440,7 +449,7 @@ function PositionsMapScreen({
         <PositionsMapSkeleton />
       ) : (
         <div className={grid}>
-          {listShown ? <div className={frame.list}>{table}</div> : null}
+          {listShown ? <div data-occ-positions-list="" className={inspectorOpen ? frame.listWithInspector : frame.list}>{table}</div> : null}
           <div className={frame.main}>
             {mapArea}
             <PositionsBand stands={displayedPositions} flightsByTurnaround={flightsByTurnaround}
