@@ -99,6 +99,9 @@ internal static class IdentityReferenceConfiguration
             builder.Property(organization => organization.DisplayName).HasMaxLength(120).IsRequired();
             builder.Property(organization => organization.Type).HasConversion<string>().HasMaxLength(32);
             builder.Property(organization => organization.Status).HasConversion<string>().HasMaxLength(16);
+            builder.Property(organization => organization.TaxRegistration).HasMaxLength(32);
+            builder.Property(organization => organization.TaxRegistrationCountryCode).HasMaxLength(2).IsFixedLength()
+                .IsUnicode(false);
             builder.HasIndex(organization => organization.Code).IsUnique();
         });
 

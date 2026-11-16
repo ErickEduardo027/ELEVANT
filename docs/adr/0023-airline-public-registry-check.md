@@ -64,3 +64,32 @@ palabras genéricas («Airlines», «S.A.», «Líneas Aéreas»…):
   legal de Contratos (razón social y permisos, ADR-0024).
 - Las pruebas no usan la red: los adaptadores se prueban con respuestas grabadas y con la copia
   de OpenFlights. La prueba contra Wikidata en vivo solo corre con `ELEVANT_LIVE_REGISTRY=1`.
+
+## Ampliación (15 de noviembre de 2026): comprobación automática en la solicitud y bloqueo de la aprobación
+
+Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
+
+- **Cuándo corre.** Sin intervención de nadie, (a) al enviar una solicitud pública con una
+  aerolínea propuesta (no está en el catálogo) y (b) cada vez que Contratos aprueba una solicitud.
+  Usa los mismos registros y el mismo orden (vuelos observados, Wikidata en vivo con 8 s,
+  OpenFlights sin red); nunca AeroDataBox. Todos juntos tienen 10 s; si no responden, el veredicto
+  es `Unavailable` y el formulario público no falla.
+- **Dónde queda.** En la solicitud (`commercial.service_requests.registry_status`,
+  `registry_source`, `registry_checked_at` y `registry_detail`, migración
+  `20261115233439_AddAirlineTaxRegistrationAndRequestRegistryCheck`). Mientras la solicitud no
+  tiene veredicto propio, la bandeja muestra el último check de la ficha del catálogo que hizo
+  Superadministración. Contratos lo lee en español: «Encontrada en OpenFlights», «No encontrada en
+  registros públicos», «Inactiva», «No coincide: …» o «No se pudo comprobar».
+- **Bloqueo.** La aprobación con `NotFound`, `Defunct` o `Mismatch` responde 409
+  `airline_not_in_public_registry` («Superadministración debe verificarla a mano con una fuente
+  oficial antes de aprobar»). El veredicto rechazado se guarda después de la respuesta, de modo que
+  la relectura que exige el 409 lo muestra. `Unavailable` no bloquea; la bandeja avisa.
+- **Excepción.** La ficha está verificada con una fuente (`verified_at`, `verified_by_account_id`
+  y `verification_source_url`, ya auditados) por una cuenta que es superadministradora. En ese caso
+  la aprobación no consulta los registros y la bandeja muestra «Verificada a mano por Superadmin ·
+  fuente». Confirmar la misma identidad y la misma fuente ya no reemplaza a quien verificó, tanto en
+  Contratos como en Superadministración. Si un superadministrador guarda en **Aerolíneas** una
+  ficha verificada por Contratos, la toma como suya.
+- **Alcance.** La regla vive en `DecideCommercialRequestHandler`, que es el camino de la API.
+  `ICommercialWorkflowStore.DecideAsync` sin la compuerta no la aplica; lo usan las pruebas de
+  persistencia. Las pruebas automáticas inyectan registros falsos y nunca consultan Wikidata.

@@ -36,7 +36,15 @@ async function openRepresentativeStep() {
   fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   choose("Seleccione una aerolínea", airlineId);
+  fillTax("131234569", "DO");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+}
+
+/** The airline's tax identifier of step 2; a Dominican airline fixes the country to DO. */
+function fillTax(number: string, country?: string) {
+  if (country) choose("País del identificador fiscal", country);
+  fireEvent.change(screen.getByRole("textbox", { name: country === "DO" || !country ? "RNC" : "Identificador fiscal" }),
+    { target: { value: number } });
 }
 
 async function chooseDominicanLocation() {
@@ -531,6 +539,14 @@ it("proposes an airline that is not in the listing, with its ICAO code and no IA
   fireEvent.change(screen.getByRole("textbox", { name: "Código ICAO" }), { target: { value: "ccx" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Sitio web oficial (opcional)" }),
     { target: { value: "https://caribecargo.example.com" } });
+  // A Dominican airline gives its RNC; the country of the identifier is fixed to the airline's.
+  expect(field("País del identificador fiscal")).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByText("Escriba el RNC de la aerolínea.")).toBeInTheDocument();
+  fillTax("131234568");
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByText(/dígito verificador del RNC/)).toBeInTheDocument();
+  fillTax("1-31-23456-9");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   expect(screen.getByText(/en nombre de Caribe Cargo Express/)).toBeInTheDocument();
   await fillRepresentative();
@@ -539,7 +555,30 @@ it("proposes an airline that is not in the listing, with its ICAO code and no IA
   expect(await screen.findByText("REQ-PROPOSAL")).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("le escribirá a alex@caribecargo.example.com con su decisión");
   expect(posts[0]).toMatchObject({ airlineProfileId: null, proposedAirline: { name: "Caribe Cargo Express",
-    countryCode: "DO", iataCode: null, icaoCode: "CCX", websiteUrl: "https://caribecargo.example.com" } });
+    countryCode: "DO", iataCode: null, icaoCode: "CCX", websiteUrl: "https://caribecargo.example.com" },
+    taxRegistration: "131234569", taxRegistrationCountryCode: "DO" });
+});
+
+it("asks a foreign airline for its own tax identifier, with the airline's country by default", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const panama = "20000000-0000-7000-8000-000000000010";
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ...catalog, airlines: [
+    { ...catalog.airlines[0], id: panama, name: "Copa Airlines", countryCode: "PA" }] }),
+  { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  choose("Seleccione una aerolínea", panama);
+  expect(field("País del identificador fiscal")).toHaveValue("PA");
+  const number = screen.getByRole("textbox", { name: "Identificador fiscal" });
+  fireEvent.change(number, { target: { value: "ab" } });
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(number).toHaveFocus();
+  expect(screen.getByText("El identificador fiscal tiene de 3 a 32 caracteres.")).toBeInTheDocument();
+  fireEvent.change(number, { target: { value: "155596713-2-2015" } });
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByText(/PASO 03 \/ 04/i)).toBeInTheDocument();
 });
 
 it("offers the proposal right away when no airline is published and points to a listed ICAO code", async () => {

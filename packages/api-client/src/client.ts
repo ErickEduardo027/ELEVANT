@@ -723,7 +723,7 @@ import {
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";
 import { ELEVANT_API_ERROR_CODES, ElevantApiError, type ElevantApiErrorCode } from "./errors";
-import { normalizeIdentityDocument, normalizePhone } from "./validation";
+import { checkTaxRegistration, normalizeIdentityDocument, normalizePhone } from "./validation";
 
 type AccessToken = string | null | undefined;
 type FetchImplementation = typeof globalThis.fetch;
@@ -4282,7 +4282,11 @@ function validatedCommercialRequest(
     "representativeNationalityCode", "representativeAddress", "representativeCountry",
     "representativeProvince", "representativeMunicipality",
     "representativeDocumentType", "representativeDocumentNumber", "representativeDistrict",
-    "proposedAirline"]) ||
+    "proposedAirline", "taxRegistration", "taxRegistrationCountryCode"]) ||
+    // The airline's tax identifier is required: an RNC for a Dominican one (also when it is proposed).
+    checkTaxRegistration(request.taxRegistration, request.taxRegistrationCountryCode).registration === null ||
+    isRecord(request.proposedAirline) && request.proposedAirline.countryCode === "DO" &&
+      String(request.taxRegistrationCountryCode).trim().toUpperCase() !== "DO" ||
     !isUuid(request.requestId) ||
     // A catalog profile, or an airline proposed because it is not listed (1-N25); never both.
     (request.proposedAirline == null ? !isUuid(request.airlineProfileId)

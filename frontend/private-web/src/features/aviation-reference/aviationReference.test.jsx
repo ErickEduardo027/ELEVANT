@@ -185,8 +185,9 @@ describe('the airport delays', () => {
     const { service, wrap } = withService({ delays: delaysAnswer('Disabled', null) });
     const { container } = render(wrap(<><AirportDelaysPill stationId={STATION} label="PUJ" />
       <AirportDelaysLine stationId={STATION} airport="SDQ" /></>));
-    await waitFor(() => expect(service.calls).toHaveLength(2));
-    await waitFor(() => expect(container.querySelector('[data-airport-delays-pill]')).toBeNull());
+    // Generous waits: under a loaded full run the first answers can take longer than the default second.
+    await waitFor(() => expect(service.calls).toHaveLength(2), { timeout: 10_000 });
+    await waitFor(() => expect(container.querySelector('[data-airport-delays-pill]')).toBeNull(), { timeout: 10_000 });
     expect(container.querySelector('[data-airport-delays-line]')).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(AIRPORT_DELAYS_POLL_MS * 3); });
     expect(service.calls).toHaveLength(2);

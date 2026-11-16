@@ -166,10 +166,15 @@ internal sealed class EfCommercialWorkflowStore(
         var customers = await ExistingCustomersAsync(profiles.Values
             .Where(profile => profile.CanonicalAirlineId != null)
             .Select(profile => profile.CanonicalAirlineId!.Value).Distinct().ToArray(), cancellationToken);
+        var superAdministrators = await SuperAdministratorsAsync(profiles.Values
+            .Where(profile => profile.VerifiedByAccountId != null)
+            .Select(profile => profile.VerifiedByAccountId!.Value), cancellationToken);
 
         var requests = page.Select(request =>
         {
             var profile = request.AirlineProfileId is long profileId ? profiles.GetValueOrDefault(profileId) : null;
+            var manual = ManuallyVerified(profile, superAdministrators)
+                ? new CommercialManualVerificationData(profile!.VerifiedAt!.Value, profile.VerificationSourceUrl) : null;
             var legalName = profile is null ? request.AirlineLegalNameSnapshot
                 // An open request shows what Contratos verified last; a decided one, what was decided.
                 : IsOpen(request.Status) ? profile.LegalName ?? request.AirlineLegalNameSnapshot
@@ -204,7 +209,9 @@ internal sealed class EfCommercialWorkflowStore(
                         request.ProposedAirlineWebsiteUrl)
                     : null,
                 profile?.CanonicalAirlineId is long airlineId && customers.Contains(airlineId),
-                ServicesOf(items, request.Id, servicePublicIds), Version(request, profile));
+                ServicesOf(items, request.Id, servicePublicIds), Version(request, profile),
+                TaxOf(request.TaxRegistration, request.TaxRegistrationCountryCode),
+                RegistryOf(request, profile), manual);
         }).ToArray();
         return new CommercialInboxData(query.Page, query.Limit, total, (long)query.Page * query.Limit < total,
             new CommercialInboxCountsData(CountOf(CommercialRequestStatus.Pending),
@@ -227,8 +234,14 @@ internal sealed class EfCommercialWorkflowStore(
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_airline");
         if (input.LinkProfileId == Guid.Empty)
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "profile_not_found");
+        // Contratos may correct the airline's tax identifier while verifying it; omitted, it stays as sent.
+        var taxGiven = !string.IsNullOrWhiteSpace(input.TaxRegistration) ||
+            !string.IsNullOrWhiteSpace(input.TaxRegistrationCountryCode);
+        var tax = taxGiven ? TaxRegistrations.Normalize(input.TaxRegistration, input.TaxRegistrationCountryCode) : null;
+        if (taxGiven && tax is null)
+            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_tax_registration");
         var actor = await ActorDatabaseIdAsync(actorId, cancellationToken);
-        var payload = new { requestId, input.ExpectedVersion, input.LinkProfileId, identity };
+        var payload = new { requestId, input.ExpectedVersion, input.LinkProfileId, identity, tax };
         return await RunAsync(actor, idempotencyKey, VerifyAction, payload, async now =>
         {
             var request = await context.ServiceRequests.SingleOrDefaultAsync(
@@ -251,6 +264,10 @@ internal sealed class EfCommercialWorkflowStore(
                 if (identity is null && (profile.VerifiedAt is null || profile.VerifiedByAccountId is null))
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_airline");
             }
+            // A Dominican airline is identified by its RNC.
+            if (tax is not null && (identity?.CountryCode ?? profile?.CountryCode) == TaxRegistrations.DominicanRepublic &&
+                tax.CountryCode != TaxRegistrations.DominicanRepublic)
+                return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_tax_registration");
             var previousProfile = request.AirlineProfileId;
             if (identity is not null)
             {
@@ -268,12 +285,20 @@ internal sealed class EfCommercialWorkflowStore(
                 request.AirlineProfileId = profile!.Id;
                 request.AirlineId = profile.CanonicalAirlineId;
             }
+            var previousTax = TaxOf(request.TaxRegistration, request.TaxRegistrationCountryCode)?.Display;
+            if (tax is not null)
+            {
+                request.TaxRegistration = tax.Number;
+                request.TaxRegistrationCountryCode = tax.CountryCode;
+            }
             StartReview(request, actor, now, "Verificación de la aerolínea");
             request.UpdatedAt = now;
             CommercialAuditWriter.Add(context, actor, "commercial.request.airline_verified",
                 "commercial.service_requests", request.PublicId, null,
                 new AuditFieldChangeData("request.airline_profile",
-                    previousProfile is null ? null : profile!.PublicId.ToString("D"), profile!.PublicId.ToString("D")));
+                    previousProfile is null ? null : profile!.PublicId.ToString("D"), profile!.PublicId.ToString("D")),
+                new AuditFieldChangeData("request.tax_registration", previousTax,
+                    TaxOf(request.TaxRegistration, request.TaxRegistrationCountryCode)?.Display));
             await NotifyRequestReadersAsync(request.PublicId, cancellationToken);
             await NotifyAirlineReadersAsync(profile.PublicId, now, cancellationToken);
             return CommercialWorkflowResult.Success(request.PublicId);
@@ -355,7 +380,7 @@ internal sealed class EfCommercialWorkflowStore(
 
     public async Task<CommercialWorkflowResult> DecideAsync(Guid actorId,
         Guid requestId, ReviewCommercialInput input, Guid? idempotencyKey,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, CommercialRegistryGate? registryGate = null)
     {
         if (!await permissions.HasAsync(actorId,
             input?.Approve == true ? "contracts.requests.approve" : "contracts.requests.reject",
@@ -413,6 +438,16 @@ internal sealed class EfCommercialWorkflowStore(
                 string.IsNullOrWhiteSpace(profile.IcaoCode) ||
                 string.IsNullOrWhiteSpace(profile.CountryCode))
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.AirlineUnverified, "airline_unverified");
+            // ADR-0023: the registries must confirm the airline, unless Superadministración verified it by hand
+            // with an official source. «Unavailable» does not block: the inbox shows the warning.
+            if (registryGate is not null && !await ManuallyVerifiedAsync(profile, cancellationToken))
+            {
+                if (registryGate.Check is { } check && !SameSubject(profile, registryGate.Subject))
+                    return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "version_conflict");
+                if (registryGate.Check is null || AirlineRegistryChecks.Blocks(registryGate.Check.Status))
+                    return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.AirlineNotInPublicRegistry,
+                        "airline_not_in_public_registry");
+            }
             var stations = await context.Stations.Where(station =>
                 input.StationIds.Contains(station.PublicId) && station.IsActive)
                 .ToArrayAsync(cancellationToken);
@@ -483,8 +518,16 @@ internal sealed class EfCommercialWorkflowStore(
                 profile.CanonicalAirlineId = airlineId;
             }
 
+            await CopyTaxRegistrationAsync(request, airlineId, actorDatabaseId, now, cancellationToken);
             request.AirlineId = airlineId;
             request.AirlineLegalNameSnapshot = profile.LegalName;
+            if (registryGate?.Check is { } verdict)
+            {
+                request.RegistryStatus = verdict.Status;
+                request.RegistrySource = verdict.Source is null ? null : Truncate(verdict.Source, 48);
+                request.RegistryCheckedAt = verdict.CheckedAt;
+                request.RegistryDetail = AirlineRegistryChecks.Detail(verdict);
+            }
             request.Status = CommercialRequestStatus.Approved;
             request.ReviewedAt = now;
             request.ReviewedByAccountId = actorDatabaseId;
@@ -555,6 +598,38 @@ internal sealed class EfCommercialWorkflowStore(
                     "account_provisioning", request.PublicId, now);
             return CommercialWorkflowResult.Success(contract.PublicId);
         }, cancellationToken);
+    }
+
+    public async Task<CommercialRegistrySubject?> RegistrySubjectAsync(Guid actorId, Guid requestId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await permissions.HasAsync(actorId, "contracts.requests.approve", cancellationToken)) return null;
+        var request = await context.ServiceRequests.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.PublicId == requestId, cancellationToken);
+        if (request is null || !IsOpen(request.Status)) return null;
+        var profile = await LinkedProfileAsync(request, cancellationToken);
+        return profile is null ? null : new CommercialRegistrySubject(profile.DisplayName, profile.IataCode,
+            profile.IcaoCode, await ManuallyVerifiedAsync(profile, cancellationToken));
+    }
+
+    public async Task RecordRegistryCheckAsync(Guid requestId, CommercialRegistrySubject subject,
+        AirlineRegistryCheck check, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(check);
+        context.ChangeTracker.Clear();
+        var request = await context.ServiceRequests.SingleOrDefaultAsync(item => item.PublicId == requestId,
+            cancellationToken);
+        if (request is null || !IsOpen(request.Status)) return;
+        var profile = await LinkedProfileAsync(request, cancellationToken);
+        if (profile is null || !SameSubject(profile, subject)) return;
+        // Called after a refused approval (409), so the client re-reads the request with its new version.
+        await context.ServiceRequests.Where(item => item.Id == request.Id).ExecuteUpdateAsync(setters => setters
+            .SetProperty(item => item.RegistryStatus, check.Status)
+            .SetProperty(item => item.RegistrySource, check.Source == null ? null : Truncate(check.Source, 48))
+            .SetProperty(item => item.RegistryCheckedAt, check.CheckedAt)
+            .SetProperty(item => item.RegistryDetail, AirlineRegistryChecks.Detail(check)), cancellationToken);
+        context.ChangeTracker.Clear();
     }
 
     /// <summary>
@@ -718,13 +793,22 @@ internal sealed class EfCommercialWorkflowStore(
             profile.RegistryCheckedAt = null;
             profile.RegistryEntityUrl = null;
         }
+        // The verification is stamped again only when it starts or its evidence changes (1-N20): confirming
+        // the same identity and source keeps who verified it, e.g. a superadministrator's manual verification.
+        var sameEvidence = profile is { VerifiedAt: not null, VerifiedByAccountId: not null } &&
+            profile.LegalName == identity.LegalName && profile.CountryCode == identity.CountryCode &&
+            profile.IataCode == identity.IataCode && profile.IcaoCode == identity.IcaoCode &&
+            profile.VerificationSourceUrl == identity.SourceUrl;
         profile.LegalName = identity.LegalName;
         profile.CountryCode = identity.CountryCode;
         profile.IataCode = identity.IataCode;
         profile.IcaoCode = identity.IcaoCode;
         profile.VerificationSourceUrl = identity.SourceUrl;
-        profile.VerifiedByAccountId = actorDatabaseId;
-        profile.VerifiedAt = now;
+        if (!sameEvidence)
+        {
+            profile.VerifiedByAccountId = actorDatabaseId;
+            profile.VerifiedAt = now;
+        }
         profile.UpdatedAt = now;
         CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.airline.verified",
             "commercial.airline_profiles", profile.PublicId, null,
@@ -886,6 +970,69 @@ internal sealed class EfCommercialWorkflowStore(
         Convert.ToBase64String(profile is null ? request.RowVersion : [.. request.RowVersion, .. profile.RowVersion]);
 
     private static string Truncate(string value, int length) => value.Length > length ? value[..length] : value;
+
+    /// <summary>
+    /// The exception to the registry rule (ADR-0023): the profile is verified, with an official source, by an
+    /// account that is a superadministrator.
+    /// </summary>
+    private async Task<bool> ManuallyVerifiedAsync(CommercialAirlineProfile? profile, CancellationToken cancellationToken) =>
+        profile?.VerifiedByAccountId is long verifier &&
+        ManuallyVerified(profile, await SuperAdministratorsAsync([verifier], cancellationToken));
+
+    private static bool ManuallyVerified(CommercialAirlineProfile? profile, IReadOnlySet<long> superAdministrators) =>
+        profile is { VerifiedAt: not null, VerifiedByAccountId: long verifier } &&
+        !string.IsNullOrWhiteSpace(profile.VerificationSourceUrl) && superAdministrators.Contains(verifier);
+
+    /// <summary>The accounts among <paramref name="accountIds"/> that are superadministrators now.</summary>
+    private async Task<HashSet<long>> SuperAdministratorsAsync(IEnumerable<long> accountIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = accountIds.Distinct().ToArray();
+        if (ids.Length == 0) return [];
+        var accounts = await context.Users.AsNoTracking().Where(user => ids.Contains(user.Id))
+            .Select(user => new { user.Id, user.PublicId }).ToArrayAsync(cancellationToken);
+        var result = new HashSet<long>();
+        foreach (var account in accounts)
+            if (await permissions.IsSuperAdministratorAsync(account.PublicId, cancellationToken))
+                result.Add(account.Id);
+        return result;
+    }
+
+    private static bool SameSubject(CommercialAirlineProfile profile, CommercialRegistrySubject subject) =>
+        profile.DisplayName == subject.Name && profile.IataCode == subject.IataCode && profile.IcaoCode == subject.IcaoCode;
+
+    private static CommercialTaxRegistrationData? TaxOf(string? number, string? countryCode) =>
+        string.IsNullOrWhiteSpace(number) || string.IsNullOrWhiteSpace(countryCode) ? null
+            : new CommercialTaxRegistrationData(number, countryCode.Trim(), TaxRegistrations.Display(number, countryCode.Trim()));
+
+    /// <summary>The request's own verdict; before it has one, the catalog profile's last check.</summary>
+    private static CommercialRegistryCheckData? RegistryOf(ServiceRequest request, CommercialAirlineProfile? profile) =>
+        request is { RegistryStatus: { } status, RegistryCheckedAt: { } checkedAt }
+            ? new CommercialRegistryCheckData(status, request.RegistrySource, checkedAt, request.RegistryDetail, false)
+            : profile is { RegistryStatus: { } profileStatus, RegistryCheckedAt: { } profileCheckedAt }
+                ? new CommercialRegistryCheckData(profileStatus.ToString(), profile.RegistrySource, profileCheckedAt, null, true)
+                : null;
+
+    /// <summary>
+    /// The approval copies the request's tax identifier to the airline's organization when it has none; an
+    /// organization's identifier is in its signed contracts and invoices and is never rewritten here.
+    /// </summary>
+    private async Task CopyTaxRegistrationAsync(ServiceRequest request, long airlineId, long actorDatabaseId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (TaxOf(request.TaxRegistration, request.TaxRegistrationCountryCode) is not { } tax) return;
+        var organization = await (from airline in context.Airlines
+                                  join item in context.Organizations on airline.OrganizationId equals item.Id
+                                  where airline.Id == airlineId
+                                  select item).SingleAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(organization.TaxRegistration)) return;
+        organization.TaxRegistration = tax.Number;
+        organization.TaxRegistrationCountryCode = tax.CountryCode;
+        organization.UpdatedAt = now;
+        CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.airline.tax_registration_set", "iam.organizations",
+            organization.PublicId, $"Solicitud {request.RequestCode}",
+            new AuditFieldChangeData("organization.tax_registration", null, tax.Display));
+    }
 
     private static bool ValidText(string? value, int max) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;

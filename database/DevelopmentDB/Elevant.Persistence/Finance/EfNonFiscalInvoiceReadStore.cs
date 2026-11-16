@@ -119,6 +119,9 @@ internal sealed class EfNonFiscalInvoiceReadStore(
                 line.UnitPrice, line.Amount, line.NetAmount, line.TaxAmount))
             .ToArrayAsync(cancellationToken);
         // ADR-0035: the simulated e-CF identity and the parties printed on the document.
+        var snapshotJson = await context.NonFiscalInvoices.AsNoTracking().Where(invoice => invoice.Id == internalId)
+            .Select(invoice => invoice.CommercialSnapshotJson).SingleAsync(cancellationToken);
+        var (customerTax, customerTaxCountry) = CustomerTaxRegistration(snapshotJson);
         var fiscal = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
                             join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
                             join organization in context.Organizations.AsNoTracking() on airline.OrganizationId equals organization.Id
@@ -129,6 +132,31 @@ internal sealed class EfNonFiscalInvoiceReadStore(
                                 FinanceInvoicePolicy.SimulatedIssuerRnc, organization.LegalName, station.Code))
             .SingleAsync(cancellationToken);
         return new NonFiscalInvoiceData(id, preinvoiceId, airlineId, stationId,
-            number, currency, total, issuedAt, lines, fiscal);
+            number, currency, total, issuedAt, lines, fiscal with
+            {
+                CustomerTaxRegistration = customerTax, CustomerTaxRegistrationCountryCode = customerTaxCountry,
+            });
+    }
+
+    /// <summary>
+    /// The buyer's tax identifier frozen in the invoice snapshot at issue; invoices issued before it existed have none.
+    /// </summary>
+    internal static (string? Number, string? CountryCode) CustomerTaxRegistration(string? snapshotJson)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotJson)) return (null, null);
+        try
+        {
+            using var snapshot = System.Text.Json.JsonDocument.Parse(snapshotJson);
+            string? Text(string name) => snapshot.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                snapshot.RootElement.TryGetProperty(name, out var value) &&
+                value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() : null;
+            var number = Text("customerTaxRegistration");
+            var country = Text("customerTaxRegistrationCountryCode");
+            return string.IsNullOrWhiteSpace(number) || string.IsNullOrWhiteSpace(country) ? (null, null) : (number, country);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (null, null);
+        }
     }
 }

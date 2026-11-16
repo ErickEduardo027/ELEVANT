@@ -81,4 +81,25 @@ public sealed class ServiceRequest : AuditableEntity
     public string? ProposedAirlineIcaoCode { get; set; }
 
     public string? ProposedAirlineWebsiteUrl { get; set; }
+
+    /// <summary>
+    /// Tax identifier the applicant gave for the airline (an RNC when it is Dominican); Contratos may
+    /// correct it while verifying, and the approval copies it to the airline's organization.
+    /// </summary>
+    public string? TaxRegistration { get; set; }
+
+    public string? TaxRegistrationCountryCode { get; set; }
+
+    /// <summary>
+    /// Last automatic public-registry check of the request's airline (ADR-0023), run when a proposed
+    /// airline is submitted and when Contratos approves: Found, Mismatch, Defunct, NotFound or Unavailable.
+    /// </summary>
+    public string? RegistryStatus { get; set; }
+
+    public string? RegistrySource { get; set; }
+
+    public DateTimeOffset? RegistryCheckedAt { get; set; }
+
+    /// <summary>What the registry said, in Spanish (for example the differences of a mismatch).</summary>
+    public string? RegistryDetail { get; set; }
 }

@@ -1101,6 +1101,28 @@ export interface CommercialRequestItemData {
   unit: string;
 }
 
+export interface CommercialTaxRegistrationData {
+  number: string;
+  countryCode: string;
+  display: string;
+}
+
+export interface CommercialRegistryCheckData {
+  status: string;
+  /** @nullable */
+  source?: string | null;
+  checkedAt: string;
+  /** @nullable */
+  detail?: string | null;
+  fromCatalog: boolean;
+}
+
+export interface CommercialManualVerificationData {
+  verifiedAt: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+}
+
 export interface CommercialInboxRequestData {
   id: string;
   reference: string;
@@ -1158,6 +1180,9 @@ export interface CommercialInboxRequestData {
   existingCustomer: boolean;
   services: CommercialRequestItemData[];
   version: string;
+  taxRegistration?: CommercialTaxRegistrationData | null;
+  registryCheck?: CommercialRegistryCheckData | null;
+  manualVerification?: CommercialManualVerificationData | null;
 }
 
 export interface CommercialInboxData {
@@ -6636,6 +6661,10 @@ export interface SubmitCommercialRequestRequest {
   /** @nullable */
   representativeDistrict?: string | null;
   proposedAirline?: ProposedAirlineRequest | null;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface SubmitCommercialRequestResponse {
@@ -6899,6 +6928,10 @@ export interface VerifyRequestAirlineInput {
   icaoCode?: string | null;
   /** @nullable */
   verificationSourceUrl?: string | null;
+  /** @nullable */
+  taxRegistration?: string | null;
+  /** @nullable */
+  taxRegistrationCountryCode?: string | null;
 }
 
 export interface WithdrawContractVersionRequest {
@@ -9633,6 +9666,9 @@ export const getDecideCommercialRequestUrl = (id: string,) => {
 /**
  * @summary Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older
 clients exist (expand); a key without the version is rejected. Approval returns the contract.
+An approval checks the airline against the public registries first and answers 409
+`airline_not_in_public_registry` for NotFound, Defunct or Mismatch unless Superadministración
+verified the airline by hand with an official source (ADR-0023).
  */
 export const decideCommercialRequest = async (id: string,
     reviewCommercialInput?: ReviewCommercialInput, options?: RequestInit): Promise<CommercialIdResponse> => {
