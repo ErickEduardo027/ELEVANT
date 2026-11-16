@@ -14,9 +14,12 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Commercial;
 
 internal sealed class EfCommercialAirlineManagementStore(
-    ElevantDbContext context, CommercialPermissionGuard permissions)
+    ElevantDbContext context, CommercialPermissionGuard permissions,
+    AirlineCatalogEnrichmentSettings? enrichment = null)
     : ICommercialAirlineManagementStore
 {
+    private readonly AirlineCatalogEnrichmentSettings enrichmentSettings = enrichment ?? AirlineCatalogEnrichmentSettings.Default;
+
     private static readonly DateTimeOffset FixtureInstant =
         new(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
     private const string UpdateAction = "commercial.airline.update";
@@ -61,7 +64,15 @@ internal sealed class EfCommercialAirlineManagementStore(
             var beforePublished = profile.IsPublished;
             var beforeVerified = profile.VerifiedAt is not null;
             var beforeVerifier = profile.VerifiedByAccountId;
+            var beforeTax = TaxDisplay(profile);
             profile.CountryCode ??= lead.Country;
+            // Development only: a FICTITIOUS demo RNC for a profile without identifier (never a real one).
+            if (enrichmentSettings.IncludeDevelopmentTaxRegistrations && profile.TaxRegistration is null &&
+                AviamAirlineReference.DevelopmentTaxRegistrations.TryGetValue(profile.SourceName, out var demoRnc))
+            {
+                profile.TaxRegistration = demoRnc;
+                profile.TaxRegistrationCountryCode = TaxRegistrations.DominicanRepublic;
+            }
             profile.LogoObjectKey ??= AviamAirlineReference.LogoPaths.GetValueOrDefault(profile.SourceName);
             if (profile.SourceUrl == AviamAirlineReference.AviamClients && lead.Site is not null)
                 profile.SourceUrl = lead.Site;
@@ -91,7 +102,7 @@ internal sealed class EfCommercialAirlineManagementStore(
                 beforeIcao == profile.IcaoCode && beforePublished == profile.IsPublished &&
                 beforeVerified == (profile.VerifiedAt is not null) &&
                 beforeVerifier == profile.VerifiedByAccountId &&
-                beforeSource == profile.SourceUrl)
+                beforeSource == profile.SourceUrl && beforeTax == TaxDisplay(profile))
                 continue;
             profile.UpdatedAt = DateTimeOffset.UtcNow;
             CommercialAuditWriter.Add(context, actorDatabaseId,
@@ -102,7 +113,8 @@ internal sealed class EfCommercialAirlineManagementStore(
                 new AuditFieldChangeData("airline.logo", beforeLogo, profile.LogoObjectKey),
                 new AuditFieldChangeData("airline.published", beforePublished.ToString(), profile.IsPublished.ToString()),
                 new AuditFieldChangeData("airline.verified", beforeVerified.ToString(),
-                    (profile.VerifiedAt is not null).ToString()));
+                    (profile.VerifiedAt is not null).ToString()),
+                new AuditFieldChangeData("airline.tax_registration", beforeTax, TaxDisplay(profile)));
             await NotifyInternalAsync(profile.PublicId, cancellationToken);
             changed++;
         }

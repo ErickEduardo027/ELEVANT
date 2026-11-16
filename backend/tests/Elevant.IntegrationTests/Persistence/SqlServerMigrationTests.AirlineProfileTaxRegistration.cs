@@ -178,4 +178,52 @@ public sealed partial class SqlServerMigrationTests
         // Running it again changes nothing.
         Assert.Equal(0, (await store.EnrichHistoricalCatalogAsync(SuperAdministrator, ct)).Changed);
     }
+
+    [Fact]
+    public async Task TheDevelopmentEnrichmentCopiesTheFictitiousDemoRncsOnlyWhenTurnedOn()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var permissions = scope.ServiceProvider.GetRequiredService<CommercialPermissionGuard>();
+
+        // Every active airline of the list has its identity in the seed; ARKEFLY, the historical brand of TUIFLY
+        // NETHERLANDS, leaves the OR/TFL designators to it.
+        var seeded = await context.CommercialAirlineProfiles.AsNoTracking().ToDictionaryAsync(item => item.SourceName, ct);
+        Assert.Equal(("OR", "TFL"), (seeded["TUIFLY NETHERLANDS"].IataCode, seeded["TUIFLY NETHERLANDS"].IcaoCode));
+        Assert.Null(seeded["ARKEFLY"].IcaoCode);
+        Assert.All(AviamAirlineReference.Research.Keys.Where(name => name != "ARKEFLY" &&
+            !AviamAirlineReference.Archived.Contains(name)), name => Assert.NotNull(seeded[name].IcaoCode));
+
+        // Off (the default), the enrichment never writes an RNC.
+        await new EfCommercialAirlineManagementStore(context, permissions).EnrichHistoricalCatalogAsync(SuperAdministrator, ct);
+        Assert.Equal(0, await context.CommercialAirlineProfiles.CountAsync(item => item.TaxRegistration != null, ct));
+
+        // On, a profile without identifier gets its demo RNC, audited; one that has an identifier keeps it.
+        var kept = await context.CommercialAirlineProfiles.SingleAsync(item => item.SourceName == "AIR EUROPA", ct);
+        kept.TaxRegistration = "B85850394";
+        kept.TaxRegistrationCountryCode = "ES";
+        await context.SaveChangesAsync(ct);
+        var result = await new EfCommercialAirlineManagementStore(context, permissions,
+            new AirlineCatalogEnrichmentSettings(true)).EnrichHistoricalCatalogAsync(SuperAdministrator, ct);
+        Assert.Null(result.Failure);
+        var wingo = await context.CommercialAirlineProfiles.AsNoTracking().SingleAsync(item => item.SourceName == "WINGO", ct);
+        Assert.Equal((AviamAirlineReference.DevelopmentTaxRegistrations["WINGO"], "DO"),
+            (wingo.TaxRegistration, wingo.TaxRegistrationCountryCode));
+        Assert.Equal(("B85850394", "ES"), await context.CommercialAirlineProfiles.AsNoTracking()
+            .Where(item => item.SourceName == "AIR EUROPA")
+            .Select(item => new ValueTuple<string?, string?>(item.TaxRegistration, item.TaxRegistrationCountryCode)).SingleAsync(ct));
+        var audit = await context.AuditEntries.AsNoTracking().Where(entry => entry.EntityPublicId == wingo.PublicId &&
+            entry.Action == "commercial.airline.enriched").Select(entry => entry.MetadataJson).ToArrayAsync(ct);
+        Assert.Contains(audit, json => json != null && json.Contains("airline.tax_registration", StringComparison.Ordinal));
+        // The demo RNCs are distinct, 9 digits each.
+        Assert.Equal(AviamAirlineReference.DevelopmentTaxRegistrations.Count,
+            AviamAirlineReference.DevelopmentTaxRegistrations.Values.Distinct().Count());
+        Assert.All(AviamAirlineReference.DevelopmentTaxRegistrations.Values,
+            value => Assert.Matches("^13[01][0-9]{6}$", value));
+    }
 }

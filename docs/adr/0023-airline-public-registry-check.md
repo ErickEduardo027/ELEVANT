@@ -115,3 +115,9 @@ Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
   fichas que ninguna persona editó: `updated_at` del seed, o solo auditorías `commercial.airline.enriched` y
   `commercial.airline.registry_checked`, sin aerolínea canónica. Nunca reutiliza un designador que otra ficha
   verificada tenga, y unos códigos nuevos limpian el check anterior.
+- **Todas las aerolíneas activas con identidad, y RNC de demostración.** Las que la copia de OpenFlights no confirma
+  reciben sus designadores públicos con el sitio oficial como fuente; ARKEFLY (marca histórica) deja OR/TFL a
+  TUIFLY NETHERLANDS. `AviamAirlineReference.DevelopmentTaxRegistrations` guarda RNC **ficticios** de 9 dígitos
+  (1-30/1-31) que la enriquecida copia a fichas sin identificador solo con
+  `AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations=true`; el API no arranca con él fuera de
+  Development o Test, y `appsettings.Production.json` lo deja en `false`.

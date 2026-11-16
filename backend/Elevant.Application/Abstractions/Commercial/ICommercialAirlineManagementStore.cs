@@ -100,6 +100,16 @@ public sealed record AirlineMutationResult(ManagedAirlineData? Airline,
 
 public sealed record AirlineEnrichmentResult(int Changed, CatalogMutationFailure? Failure);
 
+/// <summary>
+/// What «Completar fichas AVIAM» may fill besides the public identity. <c>IncludeDevelopmentTaxRegistrations</c> copies
+/// the FICTITIOUS demo RNCs of the Development reference to profiles without identifier; only Development and Test may
+/// turn it on (<c>AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations</c>), so they never reach Production.
+/// </summary>
+public sealed record AirlineCatalogEnrichmentSettings(bool IncludeDevelopmentTaxRegistrations)
+{
+    public static readonly AirlineCatalogEnrichmentSettings Default = new(false);
+}
+
 public interface ICommercialAirlineManagementStore
 {
     Task<IReadOnlyList<ManagedAirlineData>?> ListAsync(Guid actorId,

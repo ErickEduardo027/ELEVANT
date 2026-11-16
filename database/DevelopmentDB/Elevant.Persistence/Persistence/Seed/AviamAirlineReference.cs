@@ -60,12 +60,12 @@ internal static class AviamAirlineReference
         ["LANPERU"] = ("PE", "https://www.latam.com/"),
         ["WINGO"] = ("CO", "https://www.wingo.com/"),
     };
-    // IATA member list entries (the first six) and, for the rest, the codes of the repository's offline OpenFlights
-    // registry (backend/Elevant.Infrastructure/Integrations/AirlineRegistry/openflights-airlines.tsv, ODbL 1.0), matched
-    // by name. The legal name is the operator's registered name only where it is well established, otherwise the
-    // brand. A null IATA means the registry gives none. Airlines the registry does not confirm stay out: AZUR AIR,
-    // EVELOP AIRLINES, IKAR AIRLINES, LEVEL-IBERIA, THOMAS COOK SCANDINAVIA, TRAVEL SERVICE POLSKA, TUIFLY BELGIUM,
-    // TUIFLY NETHERLANDS (its OR/TFL designators are ARKEFLY's), WAMOS AIR, AIR CANADA ROUGE, LATIN AMERICAN WINGS, WINGO.
+    // Every active airline of the list: the IATA member list entries (the first six), the codes of the repository's
+    // offline OpenFlights registry (backend/Elevant.Infrastructure/Integrations/AirlineRegistry/openflights-airlines.tsv,
+    // ODbL 1.0) matched by name, and, for the airlines that copy lacks, their publicly known designators with their
+    // official site as source. The legal name is the operator's registered name where it is well established,
+    // otherwise the brand. A null IATA means none is known. ARKEFLY is the historical brand of TUIFLY NETHERLANDS: the
+    // OR/TFL designators are the current brand's, so ARKEFLY has none.
     public static readonly IReadOnlyDictionary<string, (string Legal, string? Iata, string Icao, string Source)> Verified = new Dictionary<string, (string Legal, string? Iata, string Icao, string Source)>(StringComparer.Ordinal)
     {
         ["AIR FRANCE"] = ("Société Air France", "AF", "AFR", "https://www.iata.org/en/about/members/airline-list/air-france/7/"),
@@ -76,13 +76,12 @@ internal static class AviamAirlineReference
         ["AVIANCA"] = ("Aerovías del Continente Americano, S.A. AVIANCA", "AV", "AVA", "https://www.iata.org/en/about/members/airline-list/avianca/6/"),
         ["AIR CARAIBES"] = ("Air Caraïbes", "TX", "FWI", "https://openflights.org/data"),
         ["AIR EUROPA"] = ("Air Europa Líneas Aéreas, S.A.", "UX", "AEA", "https://openflights.org/data"),
-        ["ARKEFLY"] = ("Arkefly", "OR", "TFL", "https://openflights.org/data"),
         ["CONDOR"] = ("Condor Flugdienst GmbH", "DE", "CFG", "https://openflights.org/data"),
         ["EDELWEISS AIR"] = ("Edelweiss Air AG", "WK", "EDW", "https://openflights.org/data"),
         ["EUROWINGS"] = ("Eurowings GmbH", "EW", "EWG", "https://openflights.org/data"),
         ["I-FLY AIRLINES"] = ("I-Fly", "H5", "RSY", "https://openflights.org/data"),
-        ["NORWIND AIRLINES"] = ("NordWind Airlines", null, "NWS", "https://openflights.org/data"),
-        ["ORBES PORTUGAL"] = ("Orbest", null, "OBS", "https://openflights.org/data"),
+        ["NORWIND AIRLINES"] = ("NordWind Airlines", "N4", "NWS", "https://openflights.org/data"),
+        ["ORBES PORTUGAL"] = ("Orbest", "6O", "OBS", "https://openflights.org/data"),
         ["ORENAIR"] = ("Orenburg Airlines", "R2", "ORB", "https://openflights.org/data"),
         ["ROSSIYA AIRLINES"] = ("Rossiya Airlines", "FV", "SDM", "https://openflights.org/data"),
         ["THOMSON AIRWAYS"] = ("Thomson Airways", "BY", "TOM", "https://openflights.org/data"),
@@ -97,12 +96,25 @@ internal static class AviamAirlineReference
         ["SOUTHWEST AIRLINES"] = ("Southwest Airlines Co.", "WN", "SWA", "https://openflights.org/data"),
         ["SUNCOUNTRY"] = ("Sun Country Airlines", "SY", "SCX", "https://openflights.org/data"),
         ["SUNWING AIRLINES"] = ("Sunwing Airlines Inc.", "WG", "SWG", "https://openflights.org/data"),
-        ["SWIFT AIR"] = ("Swift Air", null, "SWQ", "https://openflights.org/data"),
+        ["SWIFT AIR"] = ("Swift Air", "WQ", "SWQ", "https://openflights.org/data"),
         ["UNITED AIRLINES"] = ("United Airlines, Inc.", "UA", "UAL", "https://openflights.org/data"),
         ["XTRA AIRWAYS"] = ("Xtra Airways", "XP", "CXP", "https://openflights.org/data"),
         ["WEST JET AIRLINES"] = ("WestJet Airlines Ltd.", "WS", "WJA", "https://openflights.org/data"),
         ["COPA AIRLINES"] = ("Compañía Panameña de Aviación, S.A.", "CM", "CMP", "https://openflights.org/data"),
         ["GOL"] = ("GOL Linhas Aéreas S.A.", "G3", "GLO", "https://openflights.org/data"),
+        // Not in the OpenFlights copy: publicly known designators, with the airline's official site as source.
+        ["AZUR AIR"] = ("Azur Air LLC", "ZF", "KTK", "https://www.azurair.com/"),
+        ["EVELOP AIRLINES"] = ("Evelop Airlines S.L.", "E9", "EVE", "https://www.evelop.com/"),
+        ["IKAR AIRLINES"] = ("Ikar LLC", "EO", "KAR", "https://pegasfly.com/"),
+        ["LEVEL-IBERIA"] = ("Level", "LL", "LVL", "https://www.flylevel.com/"),
+        ["THOMAS COOK SCANDINAVIA"] = ("Thomas Cook Airlines Scandinavia A/S", "DK", "VKG", "https://www.sunclassairlines.com/"),
+        ["TRAVEL SERVICE POLSKA"] = ("Travel Service Polska Sp. z o.o.", "3Z", "TVP", "https://www.smartwings.com/"),
+        ["TUIFLY BELGIUM"] = ("TUI Airlines Belgium N.V.", "TB", "JAF", "https://www.tuifly.be/en"),
+        ["TUIFLY NETHERLANDS"] = ("TUI Airlines Nederland B.V.", "OR", "TFL", "https://en.tuifly.com/"),
+        ["WAMOS AIR"] = ("Wamos Air S.A.", "EB", "PLM", "https://www.wamosair.com/es"),
+        ["AIR CANADA ROUGE"] = ("Air Canada Rouge LP", "RV", "ROU", "https://flyrouge.com/"),
+        ["LATIN AMERICAN WINGS"] = ("Latin American Wings S.A.", null, "LWG", "https://www.vuelalaw.com/cl/"),
+        ["WINGO"] = ("Wingo", "P5", "RPB", "https://www.wingo.com/"),
     };
     // Official-site icons are checked into both web clients. A named AVIAM reference
     // tile is used when the historical brand has no retrievable official icon.
@@ -137,6 +149,62 @@ internal static class AviamAirlineReference
         name => OfficialLogoPaths.GetValueOrDefault(name) ??
             $"/assets/airlines/reference-{name.ToLowerInvariant().Replace(' ', '-')}.svg",
         StringComparer.Ordinal);
+    /// <summary>
+    /// FICTITIOUS demo RNCs for the Development environment only: they are NOT the airlines' real tax identifiers.
+    /// Each is 9 digits shaped like a company RNC (1-30/1-31, five digits and a modulus-11 check digit). «Completar
+    /// fichas AVIAM» copies one to a profile without identifier only when
+    /// <c>AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations</c> is on, which only Development and Test allow.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> DevelopmentTaxRegistrations = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["AIR CARAIBES"] = "130201013",
+        ["AIR EUROPA"] = "131201385",
+        ["AIR FRANCE"] = "130201757",
+        ["ARKEFLY"] = "131202128",
+        ["AZUR AIR"] = "130202494",
+        ["BRITISH AIRWAYS"] = "131202861",
+        ["CONDOR"] = "130203237",
+        ["EDELWEISS AIR"] = "131203604",
+        ["EUROWINGS"] = "130203972",
+        ["EVELOP AIRLINES"] = "131204341",
+        ["I-FLY AIRLINES"] = "130204713",
+        ["IKAR AIRLINES"] = "131205089",
+        ["LEVEL-IBERIA"] = "130205452",
+        ["NORWIND AIRLINES"] = "131205828",
+        ["ORBES PORTUGAL"] = "130206198",
+        ["ORENAIR"] = "131206565",
+        ["ROSSIYA AIRLINES"] = "130206937",
+        ["THOMAS COOK SCANDINAVIA"] = "131207308",
+        ["THOMSON AIRWAYS"] = "130207674",
+        ["TRAVEL SERVICE POLSKA"] = "131208045",
+        ["TUIFLY BELGIUM"] = "130208417",
+        ["TUIFLY NETHERLANDS"] = "131208789",
+        ["VIM AIRLINES"] = "130209154",
+        ["XL AIRWAYS FRANCE"] = "131209521",
+        ["WAMOS AIR"] = "130209898",
+        ["AMERICAN AIRLINES"] = "131210262",
+        ["AIR CANADA"] = "130210632",
+        ["AIR CANADA ROUGE"] = "131211003",
+        ["AIR TRANSAT"] = "130211371",
+        ["ALLEGIANT AIR"] = "131211747",
+        ["DELTA AIRLINES"] = "130212112",
+        ["FRONTIER AIRLINES"] = "131212484",
+        ["JETBLUE"] = "130212856",
+        ["NORWEGIAN AIR"] = "131213227",
+        ["SOUTHWEST AIRLINES"] = "130213593",
+        ["SUNCOUNTRY"] = "131213962",
+        ["SUNWING AIRLINES"] = "130214336",
+        ["SWIFT AIR"] = "131214703",
+        ["UNITED AIRLINES"] = "130215073",
+        ["XTRA AIRWAYS"] = "131215442",
+        ["WEST JET AIRLINES"] = "130215812",
+        ["AEROLINEAS ARGENTINAS"] = "131216188",
+        ["AVIANCA"] = "130216551",
+        ["COPA AIRLINES"] = "131216927",
+        ["GOL"] = "130217297",
+        ["LATIN AMERICAN WINGS"] = "131217664",
+        ["WINGO"] = "130218031",
+    };
     public static readonly IReadOnlySet<string> Archived = new HashSet<string>(StringComparer.Ordinal)
     {
         "AIR BERLIN", "THOMAS COOK", "TAM AIRLINES", "LANPERU",
