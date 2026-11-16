@@ -39,13 +39,15 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   useEffect(() => {
     if (!position) return undefined;
     // Escape closes the inspector first and is marked as used, so the map keys leave the selection for the next one.
+    // The inspector is docked, not a modal dialog, so the map keys would not wait for it: it listens in the capture
+    // phase, before the map's root hears the key, and the map's handler skips a key already used (occShortcuts.js).
     function handleKeyDown(event) {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
       onClose();
     }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [position, onClose]);
 
   if (!position) return null;
