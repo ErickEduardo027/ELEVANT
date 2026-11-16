@@ -400,7 +400,7 @@ describe('PositionsMapPage', () => {
 
     await user.click(within(items[2]).getByText('C7'));
     const drawer = screen.getByTestId('position-detail-drawer');
-    expect(within(drawer).getByRole('list', { name: 'Estado en el mapa' })).toHaveTextContent('Sin ubicar');
+    expect(within(drawer).getByRole('region', { name: 'Características' })).toHaveTextContent('Sin ubicar');
     await user.click(within(drawer).getByRole('button', { name: 'Ubicar en el mapa' }));
     expect(within(placingNotice('C7')).getByRole('status')).toHaveTextContent('Haz clic en el centro de la posición C7.');
     expect(screen.getByTestId('position-map-stub')).toHaveAttribute('data-placing', 'C7');

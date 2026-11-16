@@ -1773,6 +1773,33 @@ Límites: aún no se muestra el turno del agente, y la tarjeta del avión no se
 actualiza mientras él se mueve. Los detalles están en el
 [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
 
+## AeroDataBox en la consola, Contratos y Superadministración (15 de noviembre de 2026)
+
+*Posterior al commit verificado.* Los datos llegan siempre por la API (`occ/aviation/*` y
+`contracts/airline-fleet`), nunca desde el navegador, a través de
+`services/aviationReferenceService.js`. Las pantallas lo reciben por `AviationReferenceProvider`: sin proveedor no
+se muestra ni se pide nada. Ese servicio guarda en la pestaña cada respuesta 15 minutos (demoras) o una hora (las
+demás), y cada pantalla pide su dato solo cuando lo muestra.
+
+- **Consola.**
+  - La pastilla «Demoras PUJ: llegadas +12 min · salidas +8 min» va junto al clima, con su detalle. Hoy está oculta,
+    igual que la fila de demoras del inspector: el plan Starter no incluye las demoras y la API responde `Disabled`.
+  - La capa «Rutas desde Punta Cana» está en Región, con su clave en el menú de capas y la leyenda, en los dos temas.
+  - Al elegir un vuelo, el inspector muestra los datos de la aeronave por matrícula y las demoras del aeropuerto
+    contrario.
+- **Mapa de posiciones.** Al elegir una posición, el cajón muestra la aeronave estacionada o que llega.
+- **Diálogo de importación.** Muestra la aeronave a pedido, con «Ver la aeronave …».
+- **Contratos.** La bandeja muestra «Flota según AeroDataBox: 87 aviones · A320, B738…» o el aviso «Sin flota
+  registrada»; es un aviso y no cambia la aprobación.
+- **Superadministración.** El catálogo de aerolíneas consulta la flota con un botón, para no gastar unidades por
+  listar.
+- **Estados.** Un tope alcanzado se dice en palabras («Límite diario alcanzado»), nunca como error.
+- **Vuelos demo.** Nunca se consultan.
+
+Ver la nota del 15 de noviembre de 2026 en el
+[ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md) y en el
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
 ## Estado de integración
 
 | Capa | Actual | Límite |

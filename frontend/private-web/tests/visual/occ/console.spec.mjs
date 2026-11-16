@@ -223,3 +223,41 @@ test.describe('the OCC console on the map engine', () => {
       });
   });
 });
+
+// AeroDataBox through the API (ADR-0028 and ADR-0043, notes of 15 November 2026), on the stub's invented answers: the
+// routes from Punta Cana in the Región view, the delays pill of the bottom bar with its detail, and the aircraft and the
+// origin's delays of a chosen flight in the inspector.
+test.describe('the AeroDataBox reference reads on the console', () => {
+  test('routes in Región, the delays pill and the chosen flight\'s aircraft at 1440', async ({ page, isolation }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { api, map } = await openConsole(page, isolation, '?view=region');
+    await settled(page, map);
+    await expect(map).toHaveAttribute('data-occ-view', 'region');
+    const pill = page.locator('[data-airport-delays-pill]');
+    await expect(pill).toHaveText('Demoras PUJ: llegadas +12 min · salidas +8 min');
+    await expect.poll(() => api.reads.airportRoutes ?? 0).toBe(1);
+    await expect(map).toHaveAttribute('data-occ-settled', 'true');
+    await shoot(page, testInfo, 'adb-rutas-region-1440');
+
+    const legendButton = page.getByTestId('map-legend').getByRole('button', { name: 'Leyenda' });
+    await legendButton.click();
+    await expect(page.getByTestId('map-legend')).toContainText('Rutas desde Punta Cana');
+    await shoot(page, testInfo, 'adb-rutas-leyenda-1440');
+    await legendButton.click();
+    await expect(legendButton).toHaveAttribute('aria-expanded', 'false');
+
+    await pill.click();
+    await expect(page.locator('[data-airport-delays-detail]')).toContainText('Demoras en PUJ');
+    await shoot(page, testInfo, 'adb-demoras-detalle-1440');
+    await page.keyboard.press('Escape');
+
+    const strip = panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ });
+    await strip.click();
+    const inspector = panel(page, 'Inspector');
+    await expect(inspector.locator('[data-aircraft-facts="facts"]')).toContainText('Boeing 737-800');
+    await expect(inspector.locator('[data-airport-delays-line]')).toContainText('Demoras en el origen');
+    await inspector.locator('[data-aircraft-facts="facts"]').evaluate(node => node.scrollIntoView({ block: 'start' }));
+    await expect(map).toHaveAttribute('data-occ-settled', 'true');
+    await shoot(page, testInfo, 'adb-aeronave-inspector-1440');
+  });
+});

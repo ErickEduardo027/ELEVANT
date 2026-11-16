@@ -8,6 +8,7 @@ import ContractsHomePage from '../home/ContractsHomePage';
 import { useContractsHomeData } from '../home/useContractsHomeData';
 import ManagedAgreementsPage from '../agreements/ManagedAgreementsPage';
 import CommercialIntakePage from '../requests/CommercialIntakePage';
+import { ShellAviationReferenceProvider } from '../../aviation-reference/AviationReferenceContext';
 import CommercialCatalogPage from '../catalog/CommercialCatalogPage';
 import ManagedDraftsPage from '../drafts/ManagedDraftsPage';
 import AirlinePermitsPage from '../permits/AirlinePermitsPage';
@@ -114,7 +115,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
             <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')}
               canDiscard={can('contracts.drafts.delete')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
-            <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} canCancel={can('contracts.requests.cancel')} />
+            <ShellAviationReferenceProvider><CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} canCancel={can('contracts.requests.cancel')} /></ShellAviationReferenceProvider>
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (
             <CommercialCatalogPage canCreate={can('contracts.catalog.create')} canEdit={can('contracts.catalog.update')} canRetire={can('contracts.catalog.delete')} canSeeClosures={can('contracts.service_closures.read')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (

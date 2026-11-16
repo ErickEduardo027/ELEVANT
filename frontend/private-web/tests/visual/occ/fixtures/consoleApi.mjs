@@ -437,6 +437,14 @@ export function createConsoleApi({ demo = false } = {}) {
         count('airPicture');
         return { status: 200, json: airPicture({ now, stationId, trails: url.searchParams.get('trails') ?? 'short' }) };
       case CONSOLE_PATHS.ping: count('ping'); return { status: 200, json: ping({ now }) };
+      // AeroDataBox through the API (ADR-0028, note of 15 November 2026): invented answers, never the provider.
+      case '/api/v1/occ/aviation/routes': count('airportRoutes'); return { status: 200, json: airportRoutes({ now, stationId }) };
+      case '/api/v1/occ/aviation/delays':
+        count('airportDelays');
+        return { status: 200, json: airportDelays({ now, stationId, airport: url.searchParams.get('airport') }) };
+      case '/api/v1/occ/aviation/aircraft':
+        count('aircraftReference');
+        return { status: 200, json: aircraftReference({ now, stationId, registration: url.searchParams.get('registration') }) };
       case CONSOLE_PATHS.changes: {
         count('changes');
         const after = url.searchParams.get('after');
@@ -448,6 +456,48 @@ export function createConsoleApi({ demo = false } = {}) {
     }
   };
   return api;
+}
+
+// The daily routes from PUJ (invented frequencies; the airports and their positions are public).
+const ROUTES = Object.freeze([
+  ['SJU', 'TJSJ', 'San Juan Luis Muñoz Marín', 'PR', 18.4394, -66.0018, 4.5],
+  ['MIA', 'KMIA', 'Miami International', 'US', 25.7959, -80.287, 7],
+  ['JFK', 'KJFK', 'New York JFK', 'US', 40.6398, -73.7789, 6],
+  ['YYZ', 'CYYZ', 'Toronto Pearson', 'CA', 43.6772, -79.6306, 5],
+  ['PTY', 'MPTO', 'Panamá Tocumen', 'PA', 9.0714, -79.3835, 3],
+  ['BOG', 'SKBO', 'Bogotá El Dorado', 'CO', 4.7016, -74.1469, 2],
+  ['CCS', 'SVMI', 'Caracas Simón Bolívar', 'VE', 10.6031, -66.9906, 1],
+  ['AUA', 'TNCA', 'Aruba Reina Beatrix', 'AW', 12.5014, -70.0152, 1.5],
+  ['MAD', 'LEMD', 'Madrid Barajas', 'ES', 40.4719, -3.5626, 2],
+]);
+
+/** The daily routes from PUJ as the API answers them (AeroDataBox, invented). */
+export function airportRoutes({ now = Date.now(), stationId = STATION.stationId } = {}) {
+  return { stationId, airportIcao: 'MDPC', status: 'Available', serverTime: new Date(now).toISOString(),
+    retrievedAt: new Date(now - 3 * 3_600_000).toISOString(), source: 'AeroDataBox',
+    routes: ROUTES.map(([iata, icao, name, countryCode, latitude, longitude, flights]) => ({ destinationIata: iata,
+      destinationIcao: icao, name, city: null, countryCode, latitude, longitude, averageDailyFlights: flights,
+      operators: ['Demo Airlines'] })) };
+}
+
+/** The current delays of PUJ (or of `airport`) as the API answers them (AeroDataBox, invented). */
+export function airportDelays({ now = Date.now(), stationId = STATION.stationId, airport = null } = {}) {
+  const batch = (total, median, index) => ({ total, qualified: total - 1, cancelled: 0, medianDelayMinutes: median,
+    delayIndex: index });
+  return { stationId, airport: airport ?? 'MDPC', status: 'Available', serverTime: new Date(now).toISOString(),
+    retrievedAt: new Date(now - 10 * 60_000).toISOString(), source: 'AeroDataBox',
+    delays: { airportIcao: airport && airport.length === 4 ? airport : 'MDPC', from: new Date(now - 7_200_000).toISOString(),
+      to: new Date(now).toISOString(), arrivals: batch(14, 12, 1.7), departures: batch(11, 8, 1.1) } };
+}
+
+/** Any registration as an invented Boeing 737-800 (AeroDataBox through the API). */
+export function aircraftReference({ now = Date.now(), stationId = STATION.stationId, registration = 'HI1055' } = {}) {
+  return { stationId, registration, status: 'Available', serverTime: new Date(now).toISOString(),
+    retrievedAt: new Date(now - 3_600_000).toISOString(), source: 'AeroDataBox',
+    aircraft: { registration, active: true, model: 'Boeing 737-800', typeName: 'Boeing 737', icaoType: 'B738',
+      iataType: '73H', operator: 'Demo Airlines', serial: '12345', modeS: '0C2ABC', seats: 186, engines: 2,
+      engineType: 'Jet', ageYears: 9.3, firstFlight: '2017-06-12', delivered: '2017-07-01', registered: '2017-07-01',
+      isFreighter: false } };
 }
 
 /**

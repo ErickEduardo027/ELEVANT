@@ -2,6 +2,8 @@
 
 import { useId } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFacts';
+import { AirportDelaysLine } from '../../aviation-reference/AirportDelays';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import StandTurnaround from '../../maps/ui/StandTurnaround';
@@ -28,12 +30,13 @@ const DOCKED_IN_FLOW = '!static !w-full !max-w-none';
  * stand as the map draws it (useStandDisplay) and `standFlight` its current or next map flight, with `stripOf(flight)`
  * the board's strip of a flight; `mapFlights` the map flights (both legs of a visit share its milestones);
  * `canImport(flight)` and `canAssign(flight)` say which actions the flight has, and `onImport(flight)`,
- * `onAssign(flight)` and `onClear()` run them. `nowMs` is the server's time and `timeZone` the station's.
+ * `onAssign(flight)` and `onClear()` run them. `aircraftFacts` (a node, or a function of the stand's aircraft) goes under
+ * a stand's state for the aircraft parked on it or arriving (maps/ui/StandDetailFacts.jsx). `nowMs` is the server's time and `timeZone` the station's.
  */
 export default function InspectorPanel({
   selection, target = null, telemetry = null, stationAirport = null, stationId = null, stand = null, standFlight = null,
   stripOf, mapFlights, canImport, canAssign, onImport, onAssign, onClear, nowMs, timeZone, measureRef,
-  layout = 'float', className = '',
+  layout = 'float', className = '', aircraftFacts = null,
 }) {
   const { t, language, locale } = useTranslation(consoleMessages);
   const standFlightTitleId = useId();
@@ -51,6 +54,13 @@ export default function InspectorPanel({
   ) : null;
   const clear = <button type="button" onClick={onClear} className={CONSOLE_ACTION}>{t('inspector.clear')}</button>;
 
+  // AeroDataBox (ADR-0028, note of 15 November 2026): what it knows of the aircraft by its registration and the delays
+  // of the flight's other airport, read when the flight or the stand is chosen; never for a demo flight.
+  const standAircraftFacts = aircraft => (aircraft?.isDemo || !aircraft?.registration ? null
+    : <AircraftRegistryFacts stationId={stationId} registration={aircraft.registration} />);
+  const flightRegistration = target?.aircraft?.registration ?? target?.flight?.aircraft?.registration ?? null;
+  const counterpart = target?.flight?.counterpart?.iataCode ?? target?.flight?.counterpart?.icaoCode ?? null;
+
   let body;
   if (selection?.kind === 'stand' && stand) {
     const strip = standFlight ? stripOf?.(standFlight) ?? null : null;
@@ -60,7 +70,7 @@ export default function InspectorPanel({
           <OccPlate kind="stand" className="text-sm">{stand.id ?? stand.code}</OccPlate>
           {clear}
         </div>
-        <StandDetailFacts position={stand} />
+        <StandDetailFacts position={stand} aircraftFacts={aircraftFacts ?? standAircraftFacts} />
         {/* The inspector draws the milestones of the stand's flight below, once. */}
         <StandTurnaround position={stand} milestones={false} />
         <section aria-labelledby={standFlightTitleId} className="space-y-2">
@@ -72,8 +82,16 @@ export default function InspectorPanel({
     );
   } else if (selection?.kind !== 'stand' && target) {
     body = (
-      <FlightDataBlock target={target} telemetry={telemetry} station={stationAirport} stationId={stationId}
-        onClose={onClear} className={DOCKED_IN_FLOW} />
+      <>
+        <FlightDataBlock target={target} telemetry={telemetry} station={stationAirport} stationId={stationId}
+          onClose={onClear} className={DOCKED_IN_FLOW} />
+        <AircraftRegistryFacts stationId={stationId} registration={flightRegistration}
+          isDemo={target.flight?.isDemo === true} />
+        {target.flight && target.flight.isDemo !== true ? (
+          <AirportDelaysLine stationId={stationId} airport={counterpart}
+            role={target.flight.direction === 'Departure' ? 'destination' : 'origin'} />
+        ) : null}
+      </>
     );
   } else {
     body = (

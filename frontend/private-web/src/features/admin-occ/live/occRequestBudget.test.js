@@ -231,6 +231,34 @@ describe('OCC request budget', () => {
     }
   });
 
+  it('the AeroDataBox reference reads fit the budget: none in a minute at rest, two when the console opens', () => {
+    const withReferences = script => simulate({ observers: ['shell'],
+      shellReads: [...OCC_REQUEST_PLAN.frame, ...OCC_REQUEST_PLAN.console, ...OCC_REQUEST_PLAN.references], script });
+    // Their paces are a quarter of an hour and an hour: the counted minute holds none of them.
+    expect(withReferences([]).byKey).toEqual(plannedConsole([]).byKey);
+    expect(withReferences(OCC_DEMO_MINUTE).total).toBe(plannedConsole(OCC_DEMO_MINUTE).total);
+    // The minute the console opens: every read once, the two references included, still within the budget.
+    const sim = createSimulation();
+    const hub = createHub();
+    addObserver(sim, hub, 'shell');
+    [...OCC_REQUEST_PLAN.frame, ...OCC_REQUEST_PLAN.console, ...OCC_REQUEST_PLAN.references]
+      .forEach(read => addShellRead(sim, hub, read));
+    sim.runUntil(MINUTE_MS);
+    const opening = sim.requests.filter(request => request.at < MINUTE_MS);
+    expect(opening.filter(request => ['airportDelays', 'airportRoutes'].includes(request.key))).toHaveLength(2);
+    expect(opening.length).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.rest);
+    // On the Starter plan the delays answer Disabled once and are never polled again (AirportDelays.jsx, tested in
+    // aviationReference.test.jsx): the opening minute then holds one delays read and no later one.
+    expect(OCC_REQUEST_PLAN.references.filter(read => read.offOnStarter).map(read => read.key)).toEqual(['airportDelays']);
+    expect(readSource('src/features/aviation-reference/AirportDelays.jsx')).toContain('!off ? pollMs : null');
+    // Each pace is the one its file uses, and the reads are the shared client's.
+    for (const read of OCC_REQUEST_PLAN.references) {
+      expect(existsSync(read.owner), read.owner).toBe(true);
+      expect(digits(readSource(read.owner)), `${read.owner}: ${read.pollMs} ms`).toMatch(new RegExp(`\\b${read.pollMs}\\b`));
+      expect(readSource('src/services/aviationReferenceService.js')).toContain(`api.${read.read}(`);
+    }
+  });
+
   it('the planned console is what useConsoleData and useMapSituation read', () => {
     const reads = { ...MAP_SITUATION_READS, ...CONSOLE_READS };
     // One plan entry per read of the two hooks, and nothing else.

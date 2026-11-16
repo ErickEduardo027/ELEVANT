@@ -104,8 +104,9 @@ una prueba unitaria que simula el día minuto a minuto.
 |---|---|
 | Estado por número de vuelo | FIDS ya trae todos los vuelos de la estación en una llamada |
 | Webhooks | La API solo es accesible por la tailnet |
-| Flota y aeronave | *Tier* 3 (6 unidades); la matrícula y el modelo ya vienen en FIDS |
-| Estadísticas, FAA, distancias, autocompletado | No aportan a la operación de tierra |
+| FAA, distancias, autocompletado, imágenes de aeronaves, demoras históricas | No aportan a la operación de tierra |
+
+La flota, la aeronave por matrícula y las rutas diarias sí se usan desde el 15 de noviembre de 2026. Las demoras actuales están implementadas pero apagadas, porque el plan Starter no las incluye; ver la última actualización.
 
 ## Consecuencias
 
@@ -147,3 +148,69 @@ una prueba unitaria que simula el día minuto a minuto.
 > (`occ/traffic/aircraft`) sigue sin enlazar. Ninguna de estas lecturas llama a
 > AeroDataBox ni gasta unidades. Ver
 > [ADR-0042](0042-occ-air-picture-and-map-flights.md).
+
+> **Actualización (15 de noviembre de 2026). Lecturas de referencia bajo demanda.** El dueño pidió
+> «sacarle provecho» a la API para la presentación. Además del FIDS, el servidor lee ahora cuatro
+> datos de referencia. Solo los pide cuando una pantalla los muestra, los guarda en memoria y cada
+> uno tiene un tope por día y otro por mes. Ningún navegador llama a AeroDataBox, no se agrega ningún
+> origen a la CSP y nada se llama al arrancar ni en segundo plano.
+>
+> **Endpoints confirmados** con la especificación pública (`doc.aerodatabox.com`, OpenAPI directa) y
+> la lista de precios (*tier* 1 = 1 unidad, *tier* 2 = 2 y *tier* 3 = 6). En el plan Starter la
+> página de la flota es de 25 aviones. La política de AeroDataBox permite guardar los datos 7 días.
+>
+> | Lectura | Endpoint | *Tier* / unidades | Caché | Tope día / mes | Estimación al mes |
+> |---|---|---|---|---|---|
+> | Flota de una aerolínea | `GET /airlines/{code}/aircrafts?pageSize=25` | 3 / 6 | 7 días por código | 30 / 300 | ~60 (unas 10 aerolíneas) |
+> | Aeronave por matrícula | `GET /aircrafts/reg/{reg}` | 1 / 1 | 1 día por matrícula | 40 / 1 200 | ~300 (unas 10 al día) |
+> | Rutas diarias del aeropuerto | `GET /airports/icao/{code}/stats/routes/daily` | 3 / 6 | 24 horas | 12 / 200 | ~180 (una al día) |
+> | Demoras actuales (**apagada**) | `GET /airports/{iata\|icao}/{code}/delays` | 3 / 6 | 1 hora por aeropuerto | 48 / 1 500 | 0: el plan Starter no la incluye |
+>
+> **Demoras apagadas.** El dueño confirmó que su plan Starter **no incluye** las demoras actuales de un
+> aeropuerto. `AeroDataBox__DelaysEnabled` vale `false` por defecto: la lectura responde `Disabled` sin
+> llamar al proveedor y sin escribir en el registro. La pastilla de la consola y la fila de demoras del
+> inspector no se dibujan, y la pastilla deja de consultar tras esa primera respuesta. El código y sus
+> topes quedan listos para encenderla si el plan sube.
+>
+> Con los topes por defecto, las tres lecturas activas gastan como mucho **1 700 unidades al mes**. Junto
+> a las 9 000 del feed en el VPS, el total es de unas 10 700 de las 40 000 del plan (≈ 27 %).
+>
+> **Contabilidad.** Cada llamada queda en `integration.provider_usage_entries`:
+> - `Operation` lleva el nombre de la lectura (`airline_fleet`, `aircraft`, `airport_routes`, `airport_delays`);
+> - `Trigger` es el nuevo valor `OnDemand`;
+> - `FlightsReceived` cuenta los elementos recibidos.
+>
+> No hizo falta migración, porque el disparador se guarda como texto. El presupuesto del feed
+> (`DailyUnitLimit`, `MonthlyUnitLimit`) cuenta ahora **solo** la operación `fids`, en el
+> sincronizador y en la cifra que muestra OCC. Así las lecturas nuevas no le quitan lecturas al feed.
+>
+> **Topes en configuración** (`AeroDataBox__…`, ninguno es secreto):
+> - por lectura: `FleetDailyUnitLimit`, `FleetMonthlyUnitLimit`, `AircraftDailyUnitLimit`, `AircraftMonthlyUnitLimit`,
+>   `RoutesDailyUnitLimit`, `RoutesMonthlyUnitLimit`, `DelaysDailyUnitLimit`, `DelaysMonthlyUnitLimit`;
+> - para todas: `PlanMonthlyUnitLimit` (38 000 por defecto). Ninguna lectura se hace si la suma de
+>   todas las operaciones del proveedor en el mes lo superaría.
+>
+> **Estados en lugar de errores.** Cada respuesta es un 200 con un estado: `Available`, `NotFound`,
+> `Disabled`, `DailyLimitReached`, `MonthlyLimitReached`, `Unavailable` o `NotApplicable`.
+> - Con un tope alcanzado, o el proveedor caído o en espera, se devuelve el último valor guardado si existe.
+> - Las pantallas dicen «Límite diario alcanzado», «Límite mensual alcanzado», etc.
+> - La espera ante fallos es la misma que la del feed: cuota agotada hasta el día UTC siguiente, clave
+>   rechazada 6 horas, `Retry-After` en un 429 y cinco minutos por sujeto ante otros fallos.
+> - Una matrícula demo (`HIDM01`–`HIDM99`) nunca se consulta: responde `NotApplicable`.
+>
+> **Endpoints de la API:**
+> - `GET occ/aviation/aircraft`, `GET occ/aviation/routes` y `GET occ/aviation/delays`, para quien
+>   puede leer el mapa del OCC;
+> - `GET contracts/airline-fleet`, para el superadministrador o personal interno con `contracts.requests.read`.
+>
+> La flota informa y no bloquea ninguna aprobación. Código de error: `invalid_aviation_reference_query`.
+>
+> **Caché.** Vive en la memoria de la API, como la del clima. Un reinicio la vacía, pero el gasto
+> sigue acotado por los topes, que se calculan sobre el registro persistido. Las pruebas, el CI y el
+> E2E no llaman nunca a AeroDataBox: sin `AeroDataBox:Enabled` y una clave, el proveedor es el no
+> configurado, y las pruebas usan respuestas sintéticas.
+>
+> **Descartado:**
+> - `/airports/{code}/runways` (*tier* 1), por tiempo; el dato es útil y queda pendiente;
+> - imágenes de la aeronave e historial de matrículas, que no están en Starter;
+> - demoras históricas y globales, y demoras por número de vuelo (*tier* 3), porque no hacen falta.

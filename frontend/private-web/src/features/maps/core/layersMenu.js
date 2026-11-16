@@ -16,7 +16,8 @@ export const LAYER_GROUPS = Object.freeze([
     keys: Object.freeze(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route']),
   }),
   // The region's airports (owner request of 2026-11-15, style/referenceLayers.js).
-  Object.freeze({ id: 'reference', keys: Object.freeze(['reference.airports']) }),
+  // The routes from Punta Cana (AeroDataBox's daily routes, ADR-0043 note of 15 November 2026, style/routeLayers.js).
+  Object.freeze({ id: 'reference', keys: Object.freeze(['reference.airports', 'reference.routes']) }),
 ]);
 
 /** Every key of the menu, in its order. */
@@ -36,6 +37,7 @@ const ON_IN = Object.freeze({
   'traffic.trails': Object.freeze([]),
   route: VIEW_NAMES,
   'reference.airports': Object.freeze(['region', 'approach']),
+  'reference.routes': Object.freeze(['region']),
 });
 
 /**
@@ -118,6 +120,7 @@ export function engineGroupsFor(resolved) {
     'traffic.trails': on('traffic.trails') && on('traffic.other'),
     route: on('route'),
     'reference.airports': on('reference.airports'),
+    'reference.routes': on('reference.routes'),
   });
 }
 

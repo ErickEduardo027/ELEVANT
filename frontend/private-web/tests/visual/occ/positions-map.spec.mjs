@@ -198,4 +198,18 @@ test.describe('Mapa de posiciones on the map engine', () => {
       await shoot(page, testInfo, `positions-map-flight-${size.width}`);
     });
   }
+
+  // A stand clicked (owner request of 2026-11-15): its drawer says its state with the reason and the next change, and
+  // its characteristics (code letter, nose, size, centre, taxiway, limits, where its location comes from).
+  for (const code of ['A6', 'A10', 'A5']) {
+    test(`the drawer of ${code}: its state, why and what comes next, and its characteristics`, async ({ page, isolation }, testInfo) => {
+      await openPositionsMap(page, isolation, `?stand=${code}`);
+      const drawer = page.getByTestId('position-detail-drawer');
+      await expect(drawer).toBeVisible();
+      await expect(drawer.locator('[data-fact="reason"]')).toBeVisible();
+      await expect(drawer.getByRole('region', { name: 'Características' })).toBeVisible();
+      await settled(page);
+      await shoot(page, testInfo, `posicion-${code.toLowerCase()}-drawer`);
+    });
+  }
 });

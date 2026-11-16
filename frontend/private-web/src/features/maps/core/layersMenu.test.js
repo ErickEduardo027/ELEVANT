@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { trafficOverlay } from '../traffic/trafficLayers';
 import { buildOccStyle } from '../style/occStyle';
 import { referenceOverlay } from '../style/referenceLayers';
+import { routesOverlay } from '../style/routeLayers';
 import { VIEW_NAMES } from './cameraPresets';
 import {
   LAYERS_STORAGE_KEY, LAYER_DEFAULTS, LAYER_GROUPS, LAYER_KEYS, LOCKED_LAYERS, availableLayerKeys, cleanOverrides,
@@ -26,7 +27,7 @@ describe('layers menu', () => {
   it('lists the Tráfico group of design E7 and the region\'s airports under Referencias, with their defaults', () => {
     expect(LAYER_GROUPS.map(group => group.id)).toEqual(['traffic', 'reference']);
     expect(LAYER_KEYS).toEqual(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route',
-      'reference.airports']);
+      'reference.airports', 'reference.routes']);
     expect(LOCKED_LAYERS).toEqual(['traffic.aviam']);
     expect(LAYERS_STORAGE_KEY).toBe('elevant-occ-map-layers:v1');
     for (const view of VIEW_NAMES) {
@@ -34,10 +35,13 @@ describe('layers menu', () => {
         'traffic.aviam': true, 'traffic.other': true, 'traffic.labels': false, 'traffic.trails': false, route: true,
         // The airports from the Región and Aproximación views; closer in, the airfield is on screen.
         'reference.airports': view === 'region' || view === 'approach',
+        // The routes from Punta Cana (AeroDataBox) in the Región view only.
+        'reference.routes': view === 'region',
       });
     }
     // Before the map knows its view, a key is on only when every view has it on.
-    expect(resolveLayers(null, {})).toEqual({ ...LAYER_DEFAULTS.region, 'reference.airports': false });
+    expect(resolveLayers(null, {})).toEqual({ ...LAYER_DEFAULTS.region, 'reference.airports': false,
+      'reference.routes': false });
   });
 
   it('stores only the differences from the preset defaults', () => {
@@ -52,18 +56,18 @@ describe('layers menu', () => {
     expect(overrides).toEqual({ 'traffic.other': false });
     expect(resolveLayers('airfield', overrides)).toEqual({
       'traffic.aviam': true, 'traffic.other': false, 'traffic.labels': false, 'traffic.trails': false, route: true,
-      'reference.airports': false,
+      'reference.airports': false, 'reference.routes': false,
     });
 
     // What the map shows: the tags and the trails of all the traffic follow «Otro tráfico».
     expect(engineGroupsFor(resolveLayers('region', { 'traffic.labels': true, 'traffic.trails': true }))).toEqual({
       'traffic.aviam': true, 'traffic.other': true, 'traffic.labels': true, 'traffic.trails': true, route: true,
-      'reference.airports': true,
+      'reference.airports': true, 'reference.routes': true,
     });
     expect(engineGroupsFor(resolveLayers('region', { 'traffic.other': false, 'traffic.labels': true, 'traffic.trails': true,
       route: false, 'reference.airports': false }))).toEqual({
       'traffic.aviam': true, 'traffic.other': false, 'traffic.labels': false, 'traffic.trails': false, route: false,
-      'reference.airports': false,
+      'reference.airports': false, 'reference.routes': true,
     });
 
     // Kept in the browser as the differences alone, sorted; none left removes the entry.
@@ -101,8 +105,12 @@ describe('layers menu', () => {
   });
 
   it('offers only the keys whose layers the map has', () => {
-    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay()] }))).toEqual(LAYER_KEYS.slice(0, -1));
-    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay()] }))).toEqual(LAYER_KEYS);
+    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay()] }))).toEqual(LAYER_KEYS.slice(0, -2));
+    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay()] })))
+      .toEqual(LAYER_KEYS.slice(0, -1));
+    // The routes layer comes only with the console's overlay (style/routeLayers.js).
+    expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay(), routesOverlay()] })))
+      .toEqual(LAYER_KEYS);
     expect(availableLayerKeys(buildOccStyle({ overlays: [] }))).toEqual([]);
     expect(availableLayerKeys(null)).toEqual([]);
   });

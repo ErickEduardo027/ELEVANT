@@ -859,3 +859,29 @@ Al unirse M6 con el tema claro del OCC (nota de esa fecha en el [ADR-0044](0044-
 - **Un solo crédito de los datos de aeronaves.** «Datos de aeronaves: {fuente}» queda solo en la línea de `ui/MapSourceStatus.jsx`, abajo a la izquierda del área libre. La atribución de MapLibre guarda solo los créditos del mapa base: la copia que tenía, al abrirse, quedaba debajo del dock y de la escala. Abierta, la atribución se parte en líneas en su esquina (20 rem como máximo).
 - **Pruebas.** `mapColors.test.js` comprueba los contrastes de los dos temas; `mapTheme.test.js` compara el mapa base claro y el oscuro con las mismas reglas (mar más saturado que la tierra, fronteras a 4.5:1, la escalera del pavimento invertida en claro); `occStyleTheme.test.js`, `trafficLayers.test.js`, `standLayers.test.js` y `MapLegend.test.jsx` suman el tema claro. `OccMap.test.jsx`, `FlightMap.test.jsx` y `map-lab.traffic.spec.mjs` comprueban que el crédito aparece una sola vez.
 - **El laboratorio y la suite visual en claro.** `/map-lab` sigue la regla de tema del OCC (`isOccPath` lo incluye): oscuro salvo que la cuenta haya elegido claro, sin una clase `dark` propia. `OCC_VISUAL_THEME=light npm run test:visual` guarda el tema claro antes de cada página y nombra sus capturas `-light`; la consola, Mapa de posiciones (con sus interacciones) y el tráfico del laboratorio se revisaron así en los dos temas, en local y con datos sintéticos.
+
+## Actualización (15 de noviembre de 2026). Rutas desde Punta Cana, demoras y aeronave en la consola
+
+Pedido del dueño para la presentación: aprovechar más AeroDataBox. Los datos llegan solo por la API, con caché y topes
+(nota de esa fecha en el [ADR-0028](0028-aerodatabox-flight-feed-with-unit-budget.md)).
+
+- **Capa «Rutas desde Punta Cana».** `maps/style/routeLayers.js` dibuja las rutas diarias que AeroDataBox informa
+  para la estación como arcos de gran círculo desde el punto de referencia de PUJ. El grosor sigue los vuelos diarios
+  (de 1 a 12 o más) y cada arco lleva la etiqueta «YYZ · 6/día». Va en la ranura `reference` y en el grupo
+  `reference.routes` del menú de capas («Referencias»), encendida por defecto solo en la vista Región. Se oculta
+  desde el umbral `airfield`, como los aeropuertos de la región, y la leyenda la explica. Sus colores están en
+  `mapColors.js` para los dos temas: coral en oscuro, carmesí en claro.
+- **Posición del destino.** Sale de la respuesta y, si falta, de `region.context.json`. Un destino sin ninguna de las
+  dos no se dibuja. Se dibujan como mucho 40 rutas, las más frecuentes.
+- **Solo en la consola.** `ConsolePage` pasa la capa a `OccMap` por `overlays` y `overlayData`, con el tema del
+  mapa, y `aviation-reference/useAirportRoutes.js` la lee al abrir la consola y cada hora con la pestaña visible.
+  Los otros mapas no la tienen.
+- **Demoras y aeronave.** La pastilla «Demoras PUJ: llegadas +12 min · salidas +8 min» va junto a la del clima y
+  abre su detalle, pero está apagada: el plan Starter no incluye las demoras, la API responde `Disabled` y la consola no
+  la dibuja (nota del ADR-0028). El inspector muestra los datos de la aeronave por matrícula y las demoras del aeropuerto contrario
+  del vuelo elegido. Nada de esto se pide para un vuelo demo.
+- **Presupuesto de peticiones.** `OCC_REQUEST_PLAN.references` suma las dos lecturas periódicas (cada 15 minutos y
+  cada hora). `occRequestBudget.test.js` comprueba que no añaden ninguna petición al minuto en reposo y que, en el
+  minuto en que se abre la consola, el total sigue por debajo de 40.
+- **Verificación.** La suite visual (`console.spec.mjs`, «the AeroDataBox reference reads on the console») revisó la
+  capa, la leyenda, el detalle de demoras y el inspector en los dos temas, con respuestas inventadas.

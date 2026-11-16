@@ -45,6 +45,9 @@ public enum ProviderCallTrigger
 {
     Scheduled,
     Manual,
+
+    /// <summary>A screen asked for reference data the cache did not hold (ADR-0028, note of 15 November 2026).</summary>
+    OnDemand,
 }
 
 public enum ExternalFlightProposalStatus

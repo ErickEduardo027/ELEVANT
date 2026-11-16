@@ -4,6 +4,7 @@ import { createCommandKeyHolder } from '../../services/commandKeys';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import FileDropField from '../../components/FileDropField';
 import PrivateMediaImage from '../../components/PrivateMediaImage';
+import AirlineFleetFacts from '../aviation-reference/AirlineFleetFacts';
 import { uploadCommercialMedia } from '../../services/commercialGovernanceApi';
 
 const blank = {
@@ -109,6 +110,7 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
           <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada manualmente' : 'Sin verificación manual'} · {[airline.iataCode, airline.icaoCode].filter(Boolean).join(' / ') || 'sin códigos'}{airline.identityLocked ? ' · Opera con AVIAM' : ''}</p>
             <div className="mt-1"><RegistryBadge status={checks[airline.id]?.status === 'Unavailable' ? 'Unavailable' : airline.registryStatus} source={airline.registrySource} url={airline.registryEntityUrl} /></div>
+            <AirlineFleetFacts icaoCode={airline.icaoCode} iataCode={airline.iataCode} className="mt-1" />
             {checks[airline.id]?.differences?.length > 0 && <ul role="status" className="mt-1 list-disc pl-4 text-xs text-text-secondary-light">{checks[airline.id].differences.map(item => <li key={item}>{item}</li>)}</ul>}
           </div>
         </div>

@@ -55,6 +55,7 @@ export default function PositionsMapPage(props) {
 }
 
 function PositionsMapScreen({
+  aircraftFacts = null,
   status,
   data,
   error,
@@ -394,6 +395,7 @@ function PositionsMapScreen({
         onChanged={onRetry}
         onStartPlacing={handleStartPlacing}
         operationDate={data?.operationDate}
+        aircraftFacts={aircraftFacts}
       />
 
       <PositionToastStack toasts={toasts} onDismiss={dismissToast} />
