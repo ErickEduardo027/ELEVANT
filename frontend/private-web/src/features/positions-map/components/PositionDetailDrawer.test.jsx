@@ -130,6 +130,16 @@ it('says the turnaround on the stand: flight, airline, aircraft, times, countdow
   expect(within(drawer).getByRole('button', { name: 'Cerrar detalle' })).toBeInTheDocument();
 });
 
+it('«Tipo de aeronave» falls back to the type of the visit when the board does not carry it', () => {
+  const stand = rampStands().find(item => item.id === 'A6');
+  expect(stand.aircraftType).toBeNull();
+  render(<PositionDetailDrawer position={stand} onClose={() => {}} onViewFlightInMonitoring={() => {}} />);
+  const drawer = screen.getByTestId('position-detail-drawer');
+  const field = within(drawer).getByText('Tipo de aeronave').closest('div');
+  expect(field).toHaveTextContent(stand.display.aircraftType);
+  expect(stand.display.aircraftType).toBe('B38M');
+});
+
 it('says why a stand reads its state, what comes next and what the stand is, from what the map read (owner request of 2026-11-15)', () => {
   const stands = rampStands();
   // A6: a demo aircraft landed and is not on the stand yet; its arrival on the stand comes next, with its countdown.

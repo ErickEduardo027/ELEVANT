@@ -23,6 +23,8 @@ import { positionsMapMessages } from '../positionsMapMessages';
 const CLOSE = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-occ-muted hover:bg-occ-panel-raised '
   + 'hover:text-occ-text [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11';
 
+const textOf = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
+
 function Field({ label, children }) {
   return (
     <div className="min-w-0">
@@ -53,6 +55,9 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   if (!position) return null;
 
   const hasFlight = Boolean(position.flightId || position.flightNumber);
+  // The occupancy board carries no aircraft type: the visit's own (its map flights' ICAO code or model, the one
+  // «Avión» shows in the turnaround below) fills it in.
+  const aircraftType = textOf(position.aircraftType) ?? textOf(position.display?.aircraftType);
 
   return (
     <aside
@@ -94,7 +99,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
             <Field label={t('detail.flight')}>{position.flightNumber}</Field>
             <Field label={t('detail.airline')}>{position.airline ? <span className="font-sans">{position.airline}</span> : null}</Field>
             <Field label={t('detail.registration')}>{position.aircraftRegistration}</Field>
-            <Field label={t('detail.aircraftType')}>{position.aircraftType}</Field>
+            <Field label={t('detail.aircraftType')}>{aircraftType}</Field>
             <Field label={t('detail.agent')}><span className="font-sans">{position.assignedAgent ?? t('detail.unassigned')}</span></Field>
             <Field label={position.status === 'planned' ? t('detail.releaseUnverified') : t('detail.estimatedRelease')}>
               {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime, locale) : '—'}
