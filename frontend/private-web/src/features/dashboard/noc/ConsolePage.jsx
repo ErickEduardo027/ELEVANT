@@ -7,6 +7,8 @@ import { useToast } from '../../../hooks/useToast';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { normalizeStandCode } from '../../../services/standCodes';
 import { OccBootContext } from '../../admin-occ/boot/occBootContext';
+import { AirportDelaysPill } from '../../aviation-reference/AirportDelays';
+import { useAirportRoutes } from '../../aviation-reference/useAirportRoutes';
 import { STATION_TIME_ZONE } from '../../admin-occ/shell/status/OccClocks';
 import { matchFlight, relatedEntities } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
@@ -16,6 +18,8 @@ import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
+import { routesOverlay } from '../../maps/style/routeLayers';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { notificationTargetPath } from '../../notifications/notificationKinds';
 import { panelStateOf } from '../../occ-ui/OccPanel';
 import ProviderFlightsDialog from '../../planning/components/ProviderFlightsDialog';
@@ -135,6 +139,13 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const { insets, rootRef, measure, measured } = useConsoleInsets({ enabled: layout === 'map' && !focusMap });
   const { planning, positions, reviewQueue, readiness, notices } = data;
   const { selection: chosen, selectFlight, selectStand, selectAircraft, clear, setFocus, setFollow, setView } = selection;
+
+  // «Rutas desde Punta Cana» (AeroDataBox, ADR-0043 note of 15 November 2026): its layer is part of the map's style from
+  // the start, in the theme the map draws (the map is re-created when it changes), and its data comes with the read.
+  const routes = useAirportRoutes(station.stationId);
+  const mapTheme = useOptionalTheme()?.theme === 'light' ? 'light' : 'dark';
+  const routeOverlays = useMemo(() => (routes.active ? [routesOverlay({ theme: mapTheme })] : EMPTY),
+    [routes.active, mapTheme]);
 
   const timeZone = planning.data?.station?.ianaTimeZone ?? STATION_TIME_ZONE;
   const nowMs = useConsoleClock(live.clock);
@@ -462,6 +473,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
         <OccBootContext.Provider value={CONSOLE_MAP_BOOT}>
           <OccMap ref={mapRef} defaultView="ramp" stands={stands} flights={mapFlights} traffic={traffic}
             selection={chosen} onSelect={handleMapSelect} insets={insets} labels={mapLabels}
+            overlays={routeOverlays} overlayData={routes.overlayData}
             onCameraChange={handleCamera} isShortcutBlocked={() => importOpen || assignTurnaroundId !== null}>
             <EngineStatusProbe onChange={setEngineStatus} />
             {layout === 'map' && !focusMap ? <ConsoleOverlay layout="float" {...panels('float')} /> : null}
@@ -502,6 +514,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
           <button type="button" onClick={() => setFocus('map')} className={CONSOLE_ACTION}>{t('focus.hide')}</button>
         ) : null}
         <WeatherPill weather={weather} className="ml-auto" />
+        <AirportDelaysPill stationId={station.stationId} label={station.stationCode || 'PUJ'} />
       </div>
       {importOpen && canOpenImport ? (
         <ProviderFlightsDialog stationId={station.stationId} date={planningDate} timeZone={timeZone}

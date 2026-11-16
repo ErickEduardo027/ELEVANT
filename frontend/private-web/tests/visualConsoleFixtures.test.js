@@ -7,7 +7,8 @@ import { mapOccupancyToRampPositions } from '../src/features/positions-map/posit
 import { loadCurrentObservation } from '../src/services/weatherService';
 import { createTranslator } from '../src/i18n/languageStore';
 import {
-  ARRIVAL_ON_FINAL_KEY, CONSOLE_HEX, CONSOLE_PATHS, DEMO_FLIGHT_KEYS, aircraftTrack, airPicture, assignmentReadiness,
+  ARRIVAL_ON_FINAL_KEY, CONSOLE_HEX, CONSOLE_PATHS, DEMO_FLIGHT_KEYS, aircraftReference, aircraftTrack, airPicture,
+  airportDelays, airportRoutes, assignmentReadiness,
   createConsoleApi, iemCurrents, mapFlights, notices, ping, planningSnapshot, positionsBoard, reviewQueue, stationDay,
 } from './visual/occ/fixtures/consoleApi.mjs';
 import { OCC_ACCESS, STATION } from './visual/occ/fixtures/occApi.mjs';
@@ -139,6 +140,14 @@ describe('visual suite console fixtures', () => {
     expect(answer(api, '/api/v1/occ/traffic/aircraft')).toBeNull();
     expect(api.handle({ method: () => 'POST' }, new URL('https://api.elevant.test/api/v1/occ/planning'))).toBeNull();
     expect(api.reads).toMatchObject({ access: 1, planning: 1, mapFlights: 2, changes: 3, notices: 1, track: 1 });
+  });
+
+  it('the AeroDataBox answers (ADR-0028) pass the strict validators of the shared client', async () => {
+    const stationId = STATION.stationId;
+    await expect(clientAnswering(airportRoutes({ now: NOW, stationId })).getOccAirportRoutes({ stationId })).resolves.toBeTruthy();
+    await expect(clientAnswering(airportDelays({ now: NOW, stationId })).getOccAirportDelays({ stationId })).resolves.toBeTruthy();
+    await expect(clientAnswering(aircraftReference({ now: NOW, stationId, registration: 'ZZTST1' }))
+      .getOccAircraftReference({ stationId, registration: 'ZZ-TST1' })).resolves.toBeTruthy();
   });
 
   it('the METAR of the weather pill is one the browser service reads', async () => {

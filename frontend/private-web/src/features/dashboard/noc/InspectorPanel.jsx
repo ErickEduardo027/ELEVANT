@@ -2,6 +2,8 @@
 
 import { useId } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFacts';
+import { AirportDelaysLine } from '../../aviation-reference/AirportDelays';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import StandTurnaround from '../../maps/ui/StandTurnaround';
@@ -52,6 +54,13 @@ export default function InspectorPanel({
   ) : null;
   const clear = <button type="button" onClick={onClear} className={CONSOLE_ACTION}>{t('inspector.clear')}</button>;
 
+  // AeroDataBox (ADR-0028, note of 15 November 2026): what it knows of the aircraft by its registration and the delays
+  // of the flight's other airport, read when the flight or the stand is chosen; never for a demo flight.
+  const standAircraftFacts = aircraft => (aircraft?.isDemo || !aircraft?.registration ? null
+    : <AircraftRegistryFacts stationId={stationId} registration={aircraft.registration} />);
+  const flightRegistration = target?.aircraft?.registration ?? target?.flight?.aircraft?.registration ?? null;
+  const counterpart = target?.flight?.counterpart?.iataCode ?? target?.flight?.counterpart?.icaoCode ?? null;
+
   let body;
   if (selection?.kind === 'stand' && stand) {
     const strip = standFlight ? stripOf?.(standFlight) ?? null : null;
@@ -61,7 +70,7 @@ export default function InspectorPanel({
           <OccPlate kind="stand" className="text-sm">{stand.id ?? stand.code}</OccPlate>
           {clear}
         </div>
-        <StandDetailFacts position={stand} aircraftFacts={aircraftFacts} />
+        <StandDetailFacts position={stand} aircraftFacts={aircraftFacts ?? standAircraftFacts} />
         {/* The inspector draws the milestones of the stand's flight below, once. */}
         <StandTurnaround position={stand} milestones={false} />
         <section aria-labelledby={standFlightTitleId} className="space-y-2">
@@ -73,8 +82,16 @@ export default function InspectorPanel({
     );
   } else if (selection?.kind !== 'stand' && target) {
     body = (
-      <FlightDataBlock target={target} telemetry={telemetry} station={stationAirport} stationId={stationId}
-        onClose={onClear} className={DOCKED_IN_FLOW} />
+      <>
+        <FlightDataBlock target={target} telemetry={telemetry} station={stationAirport} stationId={stationId}
+          onClose={onClear} className={DOCKED_IN_FLOW} />
+        <AircraftRegistryFacts stationId={stationId} registration={flightRegistration}
+          isDemo={target.flight?.isDemo === true} />
+        {target.flight && target.flight.isDemo !== true ? (
+          <AirportDelaysLine stationId={stationId} airport={counterpart}
+            role={target.flight.direction === 'Departure' ? 'destination' : 'origin'} />
+        ) : null}
+      </>
     );
   } else {
     body = (

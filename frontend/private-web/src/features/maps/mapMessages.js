@@ -164,6 +164,8 @@ export const mapMessages = {
       sources: { adsb: 'ADS-B', estimated: 'Estimada' },
     },
     // The region's airports (style/referenceLayers.js), in the legend.
+    // The routes from Punta Cana (style/routeLayers.js), in the legend.
+    routes: { name: 'Rutas desde Punta Cana', hint: 'grosor según vuelos diarios (AeroDataBox)' },
     airports: {
       home: 'Punta Cana (MDPC)',
       international: 'Aeropuerto internacional',
@@ -334,7 +336,7 @@ export const mapMessages = {
       locked: 'Siempre visible',
       group: { traffic: 'Tráfico', reference: 'Referencias' },
       key: {
-        reference: { airports: 'Aeropuertos de la región' },
+        reference: { airports: 'Aeropuertos de la región', routes: 'Rutas desde Punta Cana' },
         traffic: {
           aviam: 'Vuelos de AVIAM',
           other: 'Otro tráfico',
@@ -494,6 +496,7 @@ export const mapMessages = {
       unknown: '—',
       sources: { adsb: 'ADS-B', estimated: 'Estimated' },
     },
+    routes: { name: 'Routes from Punta Cana', hint: 'width by daily flights (AeroDataBox)' },
     airports: {
       home: 'Punta Cana (MDPC)',
       international: 'International airport',
@@ -642,7 +645,7 @@ export const mapMessages = {
       locked: 'Always shown',
       group: { traffic: 'Traffic', reference: 'References' },
       key: {
-        reference: { airports: 'Airports of the region' },
+        reference: { airports: 'Airports of the region', routes: 'Routes from Punta Cana' },
         traffic: {
           aviam: 'AVIAM flights',
           other: 'Other traffic',

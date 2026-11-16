@@ -55,6 +55,9 @@ export const MAP_COLORS = deepFreeze({
     airports: {
       home: '#3fdcf2', international: '#3ecf6e', regional: '#4a9bf0', other: '#f2f5f7', label: '#f5d547', halo: '#07111f',
     },
+    // The routes from Punta Cana (style/routeLayers.js): a warm coral that no altitude, airport or stand colour uses,
+    // with its labels light on a dark halo.
+    routes: { line: '#ff7a8a', label: '#ffd3d9', halo: '#07111f' },
     // The fill of each stand state (stands/standLayers.js), under the vocabulary's outline, dash and marks.
     stands: {
       available: { color: '#3fae6a', opacity: 0.22 },
@@ -89,6 +92,7 @@ export const MAP_COLORS = deepFreeze({
     airports: {
       home: '#0a7fa8', international: '#16893f', regional: '#2a62c8', other: '#3a4650', label: '#6e5200', halo: '#fdfefe',
     },
+    routes: { line: '#c2334a', label: '#7a1426', halo: '#fdfefe' },
     stands: {
       available: { color: '#2f9a58', opacity: 0.2 },
       planned: { color: '#2f6fe0', opacity: 0.24 },

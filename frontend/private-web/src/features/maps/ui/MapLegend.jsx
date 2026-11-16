@@ -283,6 +283,20 @@ function airportsShown({ layers, activeView }) {
   return AIRPORT_VIEWS.has(activeView) && layers?.keys?.includes('reference.airports') === true
     && layers?.values?.['reference.airports'] === true;
 }
+// The routes from Punta Cana (style/routeLayers.js) while the map shows them: in the Región view with the layer on.
+function routesShown({ layers, activeView }) {
+  return activeView === 'region' && layers?.keys?.includes('reference.routes') === true
+    && layers?.values?.['reference.routes'] === true;
+}
+function RouteSwatch() {
+  const { routes: colours } = mapColorsFor(useOptionalTheme()?.theme);
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="route-reference">
+      <path d="M2 15 Q10 3 18 9" style={{ fill: 'none', stroke: colours.line, strokeWidth: 1.2, strokeLinecap: 'round' }} />
+      <path d="M2 18 Q10 8 18 14" style={{ fill: 'none', stroke: colours.line, strokeWidth: 3, strokeLinecap: 'round' }} />
+    </svg>
+  );
+}
 function AirportSwatch({ kind }) {
   const { airports: colours } = mapColorsFor(useOptionalTheme()?.theme);
   return (
@@ -370,8 +384,9 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
 
   const word = entry => entry[language] ?? entry.es;
   const airports = stands === undefined && airportsShown({ layers, activeView }) ? AIRPORT_KINDS : [];
+  const routes = stands === undefined && routesShown({ layers, activeView });
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
-    || marks.length > 0 || tags.length > 0 || airports.length > 0;
+    || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes;
   const shown = listsOthers || airfield.length > 0;
   useLegendInsideMap(rootRef, panelRef, open && shown);
   if (!shown) return null;
@@ -397,6 +412,7 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, c
               <span>{t(`airports.${kind}`)}</span>
             </li>
           ))}
+          {routes && <WideEntry swatch={<RouteSwatch />} name={t('routes.name')} hint={t('routes.hint')} />}
           {flights && <WideEntry swatch={<FlightSwatch />} name={t('legend.flight')} hint={t('legend.flightHint')} />}
           {chips && <WideEntry swatch={<ChipSwatch />} name={t('legend.chip')} hint={t('legend.chipHint')} />}
           {states.map(state => (
