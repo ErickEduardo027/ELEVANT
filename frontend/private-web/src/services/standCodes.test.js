@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { normalizeStandCode } from './standCodes';
+import { compareStandCodes, normalizeStandCode, sortByStandCode } from './standCodes';
 import { mapStandCode } from '../features/positions-map/positionsMapMappers';
 
 // ADR-0041: the API and the web compare stand codes with one rule. The cases are the file the C# tests read too
@@ -36,5 +36,28 @@ describe('normalizeStandCode (ADR-0041)', () => {
   it('mapStandCode stays as an alias', () => {
     expect(mapStandCode).toBe(normalizeStandCode);
     expect(mapStandCode('b-032')).toBe('B32');
+  });
+});
+
+describe('compareStandCodes', () => {
+  it('orders stand codes naturally by their normalized code', () => {
+    const codes = ['BN10', 'A10', 'A3', 'BN6', 'A02', 'AN1', 'B20', 'A11', 'A01', 'BN13', 'A4', 'B3'];
+    expect([...codes].sort(compareStandCodes))
+      .toEqual(['A01', 'A02', 'A3', 'A4', 'A10', 'A11', 'AN1', 'B3', 'B20', 'BN6', 'BN10', 'BN13']);
+  });
+
+  it('reads «A01» and «a-1» as the same stand', () => {
+    expect(compareStandCodes('A01', 'a-1')).toBe(0);
+    expect(compareStandCodes('A9', 'A10')).toBeLessThan(0);
+    expect(compareStandCodes('A10', 'A9')).toBeGreaterThan(0);
+  });
+
+  it('sorts a copy of the items by their code', () => {
+    const items = [{ code: 'A10' }, { code: 'A9' }, { code: 'A1' }];
+    const sorted = sortByStandCode(items);
+    expect(sorted.map(item => item.code)).toEqual(['A1', 'A9', 'A10']);
+    expect(items.map(item => item.code)).toEqual(['A10', 'A9', 'A1']);
+    expect(sortByStandCode([{ id: 'B2' }, { id: 'A2' }], item => item.id).map(item => item.id)).toEqual(['A2', 'B2']);
+    expect(sortByStandCode(null)).toEqual([]);
   });
 });

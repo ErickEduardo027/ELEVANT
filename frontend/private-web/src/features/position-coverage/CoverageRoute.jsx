@@ -26,6 +26,7 @@ import {
   removeOccStandConstraint, updateOccStandAttributes, updateOccTerminalRules,
 } from '../../services/occCoverageService';
 import { coverageMessages } from './coverageMessages';
+import { orderCoverageBoard } from './coverageOrder';
 
 // Template C of the design («Mesa de trabajo»): the toolbar with the page title and the date, the terminal and the view
 // as segmented controls, then the board at the left and the form docked at the right from 1280 px.
@@ -509,7 +510,7 @@ export default function CoverageRoute() {
     if (!station.stationId || !date) return undefined;
     const controller = new AbortController();
     const read = () => loadOccCoverage(station.stationId, date, { signal: controller.signal })
-      .then(board => setState({ status: 'success', board }))
+      .then(board => setState({ status: 'success', board: orderCoverageBoard(board) }))
       .catch(error => {
         if (error?.name === 'AbortError') return;
         // Without access the view says so and offers no retry; another failure keeps the board on screen.
@@ -528,7 +529,7 @@ export default function CoverageRoute() {
   const board = state.board;
   const terminal = useMemo(() => board?.terminals.find(item => item.code === terminalCode) ?? board?.terminals[0],
     [board, terminalCode]);
-  const onChange = useCallback(next => setState({ status: 'success', board: next }), []);
+  const onChange = useCallback(next => setState({ status: 'success', board: orderCoverageBoard(next) }), []);
   // A refused change because the data moved meanwhile reads the board again before a new attempt.
   const onStale = useCallback(() => { void live.current(); }, []);
 

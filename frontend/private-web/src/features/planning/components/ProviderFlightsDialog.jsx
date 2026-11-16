@@ -9,7 +9,7 @@ import {
 import { getManualTurnaroundOptions } from '../../../services/planningService';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict } from '../../../services/problemMessages';
-import { normalizeStandCode } from '../../../services/standCodes';
+import { normalizeStandCode, sortByStandCode } from '../../../services/standCodes';
 
 const buttonClass = 'min-h-9 rounded-lg border border-accent-600/40 px-3 text-xs font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-50';
 const primaryClass = 'min-h-9 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -66,9 +66,6 @@ function Budget({ budget, lastReadAt, timeZone }) {
 function typeLabel(type) {
   return `${type.manufacturer} ${type.model} · ${type.icaoCode}`;
 }
-
-/** Stands in natural order: A1, A2, A10, AN1, B20. */
-const STAND_ORDER = new Intl.Collator('es', { numeric: true });
 
 /** A demo flight the superadministrator triggered (ADR-0041) is always labelled as such. */
 function DemoMark({ item }) {
@@ -143,8 +140,8 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
   const proposals = useMemo(() => current.data?.proposals ?? [], [current.data]);
   const openDepartures = proposals.filter(item => item.direction === 'Departure' && item.status === 'Proposed');
   const arrivals = proposals.filter(item => item.direction === 'Arrival');
-  const stands = useMemo(() => [...(catalog.stands ?? [])].sort((left, right) => STAND_ORDER.compare(left.code, right.code)),
-    [catalog.stands]);
+  // Stands in natural order (services/standCodes.js): A1, A2, A10, AN1, B20.
+  const stands = useMemo(() => sortByStandCode(catalog.stands), [catalog.stands]);
   /** The stand a demo arrival's gate names (ADR-0041), compared as the API compares stand codes; '' without one. */
   const gateStandId = arrival => {
     if (arrival.isDemo !== true || !arrival.gate) return '';

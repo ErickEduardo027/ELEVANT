@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { operationStatusLabel } from '../../operations/operationLabels';
 import { buildMilestonePhases } from '../../occ-ui/milestonePhases';
 import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
 import { mapMessages } from '../mapMessages';
@@ -73,9 +74,15 @@ export default function StandTurnaround({ position, milestones = true, className
   const agents = Array.isArray(position.coveredBy) ? position.coveredBy.filter(name => text(name)) : [];
   const agent = agents.length > 0 ? new Intl.ListFormat(locale, { type: 'conjunction' }).format(agents)
     : t('turnaround.unassigned');
-  const status = text(detail?.operationStatus) ?? text(visit?.status);
-  let statusWord = status ?? unknown;
-  if (status !== null && KNOWN_STATUSES.has(status)) statusWord = t(`turnaround.statuses.${status}`);
+  // «Operación» is the state of the ground operation (Asignada, En curso, Devuelta…: operations/operationLabels.js, the
+  // words of Planificación) once the map flights bring it; without an operation, the turnaround's own state.
+  const operationStatus = text(detail?.operationStatus);
+  const turnaroundStatus = text(detail?.turnaroundStatus) ?? text(visit?.status);
+  let statusWord = unknown;
+  if (operationStatus !== null) statusWord = operationStatusLabel(operationStatus, language);
+  else if (turnaroundStatus !== null) {
+    statusWord = KNOWN_STATUSES.has(turnaroundStatus) ? t(`turnaround.statuses.${turnaroundStatus}`) : turnaroundStatus;
+  }
   const countdown = countdownOf(display, t);
   const legs = Array.isArray(detail?.legs) ? detail.legs : [];
   const hasOperation = legs.some(leg => leg?.turnaround?.operationId);

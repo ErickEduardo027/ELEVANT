@@ -167,15 +167,25 @@ function describeVisit(turnaround, legs, aircraft, polygon, now, exactNow = now)
     // What the stand's detail says of the visit (owner request of 2026-11-15), from what the screen already read:
     // where its aircraft comes from and goes to, its scheduled, estimated and actual times, its aircraft and its legs
     // (their milestones make the progress strip).
-    detail: visitDetail(turnaround, arrival, departure, legs, { touchdownAt, onBlockAt, offBlockAt }),
+    detail: visitDetail(turnaround, arrival, departure, legs, { touchdownAt, onBlockAt, offBlockAt }, exactNow),
   };
 }
 
 const counterpartOf = leg => leg?.counterpart?.iataCode ?? leg?.counterpart?.icaoCode ?? null;
 
+// The first of `instants` (ms or null) already reached at `now`: an actual time still to come is never real. The
+// server's demo instants (`onBlockAt`, `touchdownAt`, `offBlockAt`) are its plan, not what happened: a demo arrival
+// reads «Real» only once the stand's clock passed its touchdown, and no recorded time in the future is shown as real.
+const reachedOf = (now, ...instants) => instants.find(at => at !== null && at !== undefined && at <= now) ?? null;
+
+// The state of a visit's ground operation from its map flights (`turnaround.operationStatus`), or null without one.
+const operationStatusOf = legs => legs.map(leg => leg?.turnaround?.operationStatus)
+  .find(status => typeof status === 'string' && status.trim() !== '')?.trim() ?? null;
+
 // The facts of a visit for the stand's detail: `{ airline, registration, origin, destination, arrival, departure,
-// operationStatus, legs }`, `arrival` and `departure` as `{ scheduledAt, estimatedAt, actualAt }` (ms or null).
-function visitDetail(turnaround, arrival, departure, legs, demo) {
+// operationStatus, turnaroundStatus, legs }`, `arrival` and `departure` as `{ scheduledAt, estimatedAt, actualAt }` (ms
+// or null), `actualAt` only once it is not after `now` (the stand's clock, server-synced: stands/useStandClock.js).
+function visitDetail(turnaround, arrival, departure, legs, demo, now) {
   return {
     airline: turnaround.airlineName ?? arrival?.airline?.name ?? departure?.airline?.name ?? null,
     registration: turnaround.aircraftRegistration ?? arrival?.aircraft?.registration ?? departure?.aircraft?.registration
@@ -185,14 +195,17 @@ function visitDetail(turnaround, arrival, departure, legs, demo) {
     arrival: {
       scheduledAt: timeOf(arrival?.scheduledAt) ?? timeOf(turnaround.arrivalScheduledAt),
       estimatedAt: timeOf(arrival?.estimatedAt),
-      actualAt: timeOf(turnaround.arrivedAt) ?? timeOf(arrival?.actualAt) ?? demo.onBlockAt ?? demo.touchdownAt,
+      actualAt: reachedOf(now, timeOf(turnaround.arrivedAt), timeOf(arrival?.actualAt), demo.onBlockAt, demo.touchdownAt),
     },
     departure: {
       scheduledAt: timeOf(departure?.scheduledAt) ?? timeOf(turnaround.departureScheduledAt),
       estimatedAt: timeOf(departure?.estimatedAt),
-      actualAt: timeOf(departure?.actualAt) ?? demo.offBlockAt,
+      actualAt: reachedOf(now, timeOf(departure?.actualAt), demo.offBlockAt),
     },
-    operationStatus: turnaround.status ?? null,
+    // The state of the ground operation (Asignada, En curso, Devuelta…), which the map flights carry with their
+    // turnaround; the turnaround's own state (Programada, Confirmada…) stays apart, for a visit without an operation.
+    operationStatus: operationStatusOf(legs),
+    turnaroundStatus: turnaround.status ?? null,
     legs,
   };
 }

@@ -42,6 +42,25 @@ describe('StandTurnaround (owner request of 2026-11-15)', () => {
     expect(fact('next')).toHaveTextContent(/ZZ500 · llega \d\d:\d\d · en 120 min/);
   });
 
+  it('«Operación» says the state of the ground operation, not the turnaround state «Confirmada»', () => {
+    const withStatus = (detail, visitStatus = 'Confirmed') => ({ ...occupied, display: { ...occupied.display,
+      visit: { ...occupied.display.visit, status: visitStatus }, detail: { ...occupied.display.detail, ...detail } } });
+    const operation = () => screen.getByTestId('stand-turnaround').querySelector('[data-fact="operation"]');
+    // The tablet started it («En atención» on the tablet): OCC reads the operation in its own words.
+    render(<StandTurnaround position={withStatus({ operationStatus: 'InProgress', turnaroundStatus: 'Confirmed' })} />);
+    expect(operation()).toHaveTextContent('En curso');
+    cleanup();
+    render(<StandTurnaround position={withStatus({ operationStatus: 'Returned', turnaroundStatus: 'Confirmed' })} />);
+    expect(operation()).toHaveTextContent('Devuelta');
+    cleanup();
+    render(<StandTurnaround position={withStatus({ operationStatus: 'Assigned', turnaroundStatus: 'Confirmed' })} />);
+    expect(operation()).toHaveTextContent('Asignada');
+    cleanup();
+    // Without an operation yet, the turnaround's own state.
+    render(<StandTurnaround position={withStatus({ operationStatus: null, turnaroundStatus: 'Confirmed' })} />);
+    expect(operation()).toHaveTextContent('Confirmada');
+  });
+
   it('draws nothing on a stand without a visit', () => {
     render(<StandTurnaround position={{ id: 'A1', status: 'available', display: { state: 'available', visit: null, next: null } }} />);
     expect(screen.queryByTestId('stand-turnaround')).toBeNull();

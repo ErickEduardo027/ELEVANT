@@ -421,3 +421,20 @@ describe('CoverageRoute in English', () => {
     expect(screen.queryByText('Cobertura de posiciones')).toBeNull();
   });
 });
+
+it('lists the stands in natural order on the board, the form and each coverage row', async () => {
+  const codes = ['A10', 'A01', 'A3', 'A11', 'A02', 'A9'];
+  loadOccCoverage.mockResolvedValue({ ...board, stands: codes.map(code => stand(code, 't-a')),
+    coverages: [{ id: 'cv-9', agentId: 'ag-1', agentName: 'Riley Ramp', terminalId: 't-a', terminalCode: 'A',
+      stands: [{ standId: 's-A10', code: 'A10' }, { standId: 's-A9', code: 'A9' }], startsAt: '2026-08-19T10:00:00Z',
+      endsAt: '2026-08-19T18:00:00Z', mentorAgentId: null, mentorName: null, vehicleCode: null, isReinforcement: false }] });
+  render(<CoverageRoute />);
+  const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+  const natural = ['A01', 'A02', 'A3', 'A9', 'A10', 'A11'];
+  expect(within(form).getAllByRole('button').map(button => button.textContent).filter(text => natural.includes(text)))
+    .toEqual(natural);
+  const day = await screen.findByRole('region', { name: 'Coberturas del día' });
+  const row = within(day).getByText('Riley Ramp').closest('[data-occ-row]');
+  expect(within(row).getByText('A9').compareDocumentPosition(within(row).getByText('A10')) & Node.DOCUMENT_POSITION_FOLLOWING)
+    .toBeTruthy();
+});
