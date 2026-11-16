@@ -93,3 +93,22 @@ Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
 - **Alcance.** La regla vive en `DecideCommercialRequestHandler`, que es el camino de la API.
   `ICommercialWorkflowStore.DecideAsync` sin la compuerta no la aplica; lo usan las pruebas de
   persistencia. Las pruebas automáticas inyectan registros falsos y nunca consultan Wikidata.
+
+## Ampliación (16 de noviembre de 2026): ficha propuesta sin publicar, RNC de la ficha y fichas AVIAM
+
+- **La ficha de una aerolínea propuesta nace sin publicar.** «Crear ficha verificada» de Contratos crea la
+  ficha con `is_published = 0` (la auditoría `commercial.airline.created` lo registra). La aprobación de esa
+  solicitud la publica en la misma transacción, con `commercial.airline.published`
+  (`airline.published` False → True), y avisa al asistente público. Rechazar o cancelar la deja sin publicar.
+  Vincular la solicitud a una ficha existente no cambia su publicación, y una ficha que Superadministración
+  archivó sigue archivada. Superadministración puede publicarla a mano con la regla de este ADR. El catálogo
+  público sigue filtrando por `is_published`.
+- **RNC de la ficha.** `commercial.airline_profiles` guarda `tax_registration` y
+  `tax_registration_country_code` (migración `20261116145344_AddAirlineProfileTaxRegistration`), validados
+  con `TaxRegistrations`. No es evidencia de la identidad: cambiarlo no anula el check del registro ni la
+  verificación manual.
+- **Fichas AVIAM.** `AviamAirlineReference.Verified` usa, además de las seis identidades IATA, los códigos de
+  la copia de OpenFlights del repositorio, cotejados por nombre. «Completar fichas AVIAM» se aplica a las
+  fichas que ninguna persona editó: `updated_at` del seed, o solo auditorías `commercial.airline.enriched` y
+  `commercial.airline.registry_checked`, sin aerolínea canónica. Nunca reutiliza un designador que otra ficha
+  verificada tenga, y unos códigos nuevos limpian el check anterior.
