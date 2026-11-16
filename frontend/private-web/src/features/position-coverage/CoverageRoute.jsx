@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import AppLink from '../../components/AppLink';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { OCC_CLASSES } from '../occ-ui/classes';
 import OccButton from '../occ-ui/OccButton';
@@ -12,10 +13,10 @@ import OccGlyph from '../occ-ui/OccGlyph';
 import OccPanel, { OccRemoteView } from '../occ-ui/OccPanel';
 import OccPlate from '../occ-ui/OccPlate';
 import OccSegmented from '../occ-ui/OccSegmented';
+import OccStatusLegend from '../occ-ui/OccStatusLegend';
 import OccStatusPill from '../occ-ui/OccStatusPill';
 import OccToolbar from '../occ-ui/OccToolbar';
 import { formatClock } from '../occ-ui/occTime';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict } from '../../services/problemMessages';
@@ -45,6 +46,10 @@ const STAND_OFF = 'border-occ-line-strong text-occ-text hover:bg-occ-panel-raise
 const LINK = 'font-semibold text-occ-accent underline underline-offset-2';
 const ROW_ERROR = 'flex items-start gap-1.5 text-xs text-occ-text';
 const ATTRIBUTE_KEYS = Object.freeze(['hasBoardingBridge', 'isRemote', 'maxAircraftSize', 'isActive']);
+// The tone of each mark the boards draw, read by their pills and by their legends, so a legend shows the board's own
+// shapes: an attribute of a stand («Puente», «Estrecho») is a plain mark, the hollow circle; a deactivated stand is
+// out of service, the slashed circle; and a coverage that reinforces stands already covered is a plain mark too.
+const MARK_TONES = Object.freeze({ attribute: 'neutral', inactive: 'muted', reinforcement: 'neutral' });
 
 // An agent's shift or a coverage's window, «06:00–14:00» in the station's time.
 const shiftWindow = (start, end, locale) =>
@@ -212,16 +217,30 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
     }
   };
   const meta = t('terminal', { code: terminal.code });
+  // Each board's legend, in its header (contratos 2.4): the marks it draws, with the shape and the word of its pills.
+  const standLegend = (
+    <OccStatusLegend label={t('board.legend.label')} items={[
+      { key: 'attribute', tone: MARK_TONES.attribute, label: t('board.legend.attribute') },
+      { key: 'inactive', tone: MARK_TONES.inactive, label: t('board.inactive') },
+    ]} />
+  );
+  const coverageLegend = (
+    <OccStatusLegend label={t('coverages.legend.label')} items={[
+      { key: 'reinforcement', tone: MARK_TONES.reinforcement, label: t('coverages.reinforcement') },
+    ]} />
+  );
 
-  // No header is called «Puente»: the attribute's word is the only «Puente» of the board.
+  // No header is called «Puente», and neither is a word of the legend: the attribute's word is the only «Puente» of the
+  // board.
   const standColumns = [
     { key: 'stand', header: t('board.columns.stand'), width: '6rem', render: stand => <OccPlate kind="stand">{stand.code}</OccPlate> },
     {
       key: 'attributes', header: t('board.columns.attributes'), width: '10rem',
       render: stand => (
         <span className="flex flex-wrap gap-x-3 gap-y-1">
-          {stand.hasBoardingBridge && <OccStatusPill size="sm" label={t('board.bridge')} />}
-          {stand.maxAircraftSize === 'Narrowbody' && <OccStatusPill size="sm" label={t('board.narrowbody')} />}
+          {stand.hasBoardingBridge && <OccStatusPill size="sm" tone={MARK_TONES.attribute} label={t('board.bridge')} />}
+          {stand.maxAircraftSize === 'Narrowbody'
+            && <OccStatusPill size="sm" tone={MARK_TONES.attribute} label={t('board.narrowbody')} />}
         </span>
       ),
     },
@@ -235,7 +254,8 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
     {
       key: 'state', header: t('board.columns.state'), width: '8.5rem',
       // A normal stand carries nothing: only a deactivated one says so.
-      render: stand => (stand.isActive ? null : <OccStatusPill size="sm" tone="muted" label={t('board.inactive')} />),
+      render: stand => (stand.isActive ? null
+        : <OccStatusPill size="sm" tone={MARK_TONES.inactive} label={t('board.inactive')} />),
     },
   ];
 
@@ -245,7 +265,8 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
       render: item => (
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <strong className="font-semibold">{item.agentName}</strong>
-          {item.isReinforcement && <OccStatusPill size="sm" label={t('coverages.reinforcement')} />}
+          {item.isReinforcement
+            && <OccStatusPill size="sm" tone={MARK_TONES.reinforcement} label={t('coverages.reinforcement')} />}
         </span>
       ),
     },
@@ -278,10 +299,10 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <OccPanel title={t('board.title')} meta={meta}>
+      <OccPanel title={t('board.title')} meta={meta} actions={standLegend}>
         <OccDataTable caption={t('board.title')} columns={standColumns} rows={stands} getRowId={stand => stand.standId} />
       </OccPanel>
-      <OccPanel title={t('coverages.title')} meta={meta}>
+      <OccPanel title={t('coverages.title')} meta={meta} actions={coverageLegend}>
         {error ? <div className="p-3 pb-0"><Reasons error={error} /></div> : null}
         <OccDataTable as="list" caption={t('coverages.title')} columns={coverageColumns} rows={coverages}
           emptyState={<OccEmptyState title={t('coverages.empty')} description={t('coverages.about')} />} />
@@ -475,6 +496,8 @@ function Configuration({ board, terminal, date, onChange, onStale }) {
 export default function CoverageRoute() {
   const { t } = useTranslation(coverageMessages);
   const station = useOccStation();
+  // The frame's stable channel: listening on it does not re-render the page when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [date, setDate] = useState(() => stationDate());
   const [state, setState] = useState({ status: 'loading' });
   const [terminalCode, setTerminalCode] = useState('A');
@@ -498,14 +521,9 @@ export default function CoverageRoute() {
     return () => controller.abort();
   }, [station.stationId, date, attempt]);
 
-  // Another OCC seat, HR or the airport changes something: re-read under current permissions.
-  useEffect(() => {
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('occ_planning')) void live.current();
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, []);
+  // Another OCC seat, HR or the airport changes something: re-read under current permissions. The announcement comes
+  // from the tab's single account-change observer, the OCC frame's (contratos 2.7): the page opens none of its own.
+  useEffect(() => subscribe(['occ_planning'], () => { void live.current(); }), [subscribe]);
 
   const board = state.board;
   const terminal = useMemo(() => board?.terminals.find(item => item.code === terminalCode) ?? board?.terminals[0],

@@ -1,16 +1,21 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
 import CoverageRoute from './CoverageRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { createOccCoverage, loadOccCoverage, releaseOccCoverage, updateOccStandAttributes } from '../../services/occCoverageService';
 
 const stationId = '20000000-0000-0000-0000-000000000003';
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: { stationScopes: [{ stationId, stationCode: 'PUJ' }] } }) }));
+// A spy: the page must not open an observer of its own (contratos 2.7).
 vi.mock('../../services/accountChangeObserver', () => ({
-  createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
+  createPrivateWebAccountChangeObserver: vi.fn(() => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 vi.mock('../../services/occCoverageService', async importOriginal => ({
   ...(await importOriginal()),
@@ -28,7 +33,15 @@ const board = { stationId, stationCode: 'PUJ', date: '2026-08-19', canAssign: tr
   terminals: [terminalA, terminalB], stands: [stand('A01', 't-a'), stand('A02', 't-a'), stand('B01', 't-b', { hasBoardingBridge: true })],
   constraints: [], agents: [agent], coverages: [] };
 
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7).
+let shell;
+beforeEach(() => { shell = createOccShellValue(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
 
 it('assigns stands to an agent and explains every broken rule in Spanish', async () => {
   loadOccCoverage.mockResolvedValue(board);
@@ -308,6 +321,72 @@ it('shows the board as a table and the day coverages as a list', async () => {
   expect(within(form).getByRole('button', { name: 'Asignar posiciones' })).toBeEnabled();
 });
 
+it('shows in the header of each board the legend of the marks it draws (contratos 2.4)', async () => {
+  loadOccCoverage.mockResolvedValue({ ...board,
+    stands: [stand('A01', 't-a', { hasBoardingBridge: true }), stand('A02', 't-a', { maxAircraftSize: 'Narrowbody' }),
+      stand('A03', 't-a', { isActive: false }), ...board.stands.slice(2)],
+    coverages: [{ id: 'cv-1', agentId: 'ag-1', agentName: 'Riley Ramp', terminalId: 't-a', terminalCode: 'A',
+      stands: [{ standId: 's-A01', code: 'A01' }], startsAt: '2026-08-19T10:00:00Z', endsAt: '2026-08-19T18:00:00Z',
+      mentorAgentId: null, mentorName: null, vehicleCode: null, isReinforcement: true }] });
+  render(<CoverageRoute />);
+  const shapeOf = element => element.querySelector('svg').dataset.shape;
+  const entriesOf = legend => within(legend).getAllByRole('listitem')
+    .map(item => [item.textContent, item.dataset.tone, shapeOf(item)]);
+
+  // «Posiciones de la terminal»: the legend sits in the board's header, beside its title, with the board's two shapes
+  // in order: the hollow circle of an attribute, then the slashed circle of a deactivated stand.
+  const stands = await screen.findByRole('region', { name: 'Posiciones de la terminal' });
+  const legend = within(stands).getByRole('list', { name: 'Atributos y estado' });
+  expect(legend.closest('header')).toContainElement(within(stands).getByRole('heading', { name: 'Posiciones de la terminal' }));
+  expect(entriesOf(legend)).toEqual([['Atributo', 'neutral', 'hollow-circle'], ['Desactivada', 'muted', 'slashed-circle']]);
+  // Each entry is the shape the board draws for its mark.
+  const table = within(stands).getByRole('table', { name: 'Posiciones de la terminal' });
+  const pillOf = text => within(table).getByText(text).closest('[data-occ-status]');
+  for (const attribute of ['Puente', 'Estrecho']) expect(shapeOf(pillOf(attribute)), attribute).toBe('hollow-circle');
+  expect(shapeOf(pillOf('Desactivada'))).toBe('slashed-circle');
+  // The legend names the kind of mark: «Puente» stays the only one of the board.
+  expect(within(stands).getAllByText('Puente')).toHaveLength(1);
+
+  // «Coberturas del día»: its one mark, «Refuerzo», with the same hollow circle, in its header and not in the list.
+  const day = screen.getByRole('region', { name: 'Coberturas del día' });
+  const dayLegend = within(day).getByRole('list', { name: 'Tipo de cobertura' });
+  expect(dayLegend.closest('header')).toContainElement(within(day).getByRole('heading', { name: 'Coberturas del día' }));
+  expect(entriesOf(dayLegend)).toEqual([['Refuerzo', 'neutral', 'hollow-circle']]);
+  const items = within(within(day).getByRole('list', { name: 'Coberturas del día' })).getAllByRole('listitem');
+  expect(items).toHaveLength(1);
+  expect(shapeOf(within(items[0]).getByText('Refuerzo').closest('[data-occ-status]'))).toBe('hollow-circle');
+});
+
+it('reads the board again when the frame announces occ_planning, without an observer of its own', async () => {
+  // The first read, then the board after another OCC seat covered A01.
+  const covered = { ...board, stands: [stand('A01', 't-a', { coveredBy: ['Riley Ramp'] }), ...board.stands.slice(1)] };
+  loadOccCoverage.mockResolvedValue(covered).mockResolvedValueOnce(board);
+  const view = render(<CoverageRoute />);
+  await screen.findByRole('region', { name: 'Posiciones de la terminal' });
+  const rowOf = code => within(screen.getByRole('table', { name: 'Posiciones de la terminal' })).getByText(code).closest('tr');
+  expect(rowOf('A01')).toHaveTextContent('Sin agente');
+  // It listens on the shell's channel, to occ_planning only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['occ_planning']);
+  expect(createPrivateWebAccountChangeObserver).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['mobile_devices', 'operation_messages', 'notifications']));
+  expect(loadOccCoverage).toHaveBeenCalledTimes(1);
+
+  // Another OCC seat covered A01: the page reads the day's board again and shows who covers it.
+  act(() => shell.announce(['occ_planning']));
+  await waitFor(() => expect(rowOf('A01')).toHaveTextContent('Riley Ramp'));
+  expect(loadOccCoverage).toHaveBeenCalledTimes(2);
+  // The same station and day, read once more.
+  const [first, second] = loadOccCoverage.mock.calls;
+  expect(first[0]).toBe(stationId);
+  expect(second.slice(0, 2)).toEqual(first.slice(0, 2));
+
+  // Leaving the page stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
+});
+
 describe('CoverageRoute in English', () => {
   afterEach(() => act(() => resetLanguageForTests('es')));
 
@@ -319,12 +398,17 @@ describe('CoverageRoute in English', () => {
     const nav = screen.getByRole('navigation', { name: 'Terminal and view' });
     expect(within(nav).getByRole('button', { name: 'Terminal A' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(nav).getByRole('button', { name: 'Coverage' })).toBeInTheDocument();
-    const table = within(screen.getByRole('region', { name: 'Terminal stands' })).getByRole('table');
+    const standsRegion = screen.getByRole('region', { name: 'Terminal stands' });
+    const table = within(standsRegion).getByRole('table');
     expect(within(table).getAllByRole('columnheader').map(header => header.textContent))
       .toEqual(['Stand', 'Attributes', 'Covered by', 'State']);
     expect(within(table).getAllByText('No agent')).toHaveLength(2);
-    expect(within(screen.getByRole('region', { name: 'Coverage of the day' }))
-      .getByText('No agents are assigned in this terminal yet.')).toBeInTheDocument();
+    // The legends speak English too, with the pills' own words.
+    expect(within(within(standsRegion).getByRole('list', { name: 'Attributes and state' })).getAllByRole('listitem')
+      .map(item => item.textContent)).toEqual(['Attribute', 'Deactivated']);
+    const day = screen.getByRole('region', { name: 'Coverage of the day' });
+    expect(within(day).getByRole('list', { name: 'Coverage type' })).toHaveTextContent('Reinforcement');
+    expect(within(day).getByText('No agents are assigned in this terminal yet.')).toBeInTheDocument();
     const form = screen.getByRole('form', { name: 'Assign stands' });
     expect(within(form).getByText('Up to 3 per agent. The window is the agent’s whole shift.')).toBeInTheDocument();
     fireEvent.change(within(form).getByLabelText('Agent'), { target: { value: 'ag-1' } });

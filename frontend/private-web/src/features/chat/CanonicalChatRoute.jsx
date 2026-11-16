@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from '../../components/AppLink';
 import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchParams';
 import { useAuth } from '../auth/AuthContext';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { selectOccStationScopes } from '../admin-occ/useOccStation';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { useChatPages } from './useChatPages';
 import { markConversationRead, readConversations, readMessages, sendMessage } from './chatService';
@@ -85,6 +85,8 @@ function ChatWorkspace() {
   const access = useOptionalDepartmentAccess();
   const { t, locale } = useTranslation(chatMessages);
   const { session } = useAuth();
+  // The frame's stable channel: listening on it does not re-render the chat when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [params, setParams] = useSearchParams();
   const stationScopes = useMemo(() => selectOccStationScopes(session?.stationScopes)
     .filter(scope => UUID.test(scope.stationId)), [session?.stationScopes]);
@@ -117,14 +119,13 @@ function ChatWorkspace() {
   useEffect(() => {
     if (!stationScopes.some(scope => scope.stationId === stationId)) setStationId(stationScopes[0]?.stationId ?? '');
   }, [stationId, stationScopes]);
-  useEffect(() => {
-    if (!UUID.test(session?.accountId ?? '')) return undefined;
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('operation_messages')) { void refreshFeeds.current?.conversations(); void refreshFeeds.current?.messages(); }
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, [session?.accountId]);
+  // A message of the account's operations: the list and the open thread are read again under current permissions. The
+  // announcement comes from the tab's single account-change observer, the OCC frame's (contratos 2.7), which observes
+  // only for a signed-in account.
+  useEffect(() => subscribe(['operation_messages'], () => {
+    void refreshFeeds.current?.conversations();
+    void refreshFeeds.current?.messages();
+  }), [subscribe]);
   useLayoutEffect(() => {
     const element = history.current;
     if (!element) return;

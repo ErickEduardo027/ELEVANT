@@ -5,23 +5,38 @@ import { expect, test } from '../support/test.mjs';
 
 // Reportes (PR U6, step e) in Chrome: template D of the design («Registro») with a synthetic OCC session and a stubbed
 // API (fixtures/screensApi.mjs), in the two windows of the presentation. The toolbar holds the report and its period
-// with «Generar»; the generated page is a panel with its export actions in the header, the dense table and the pages at
-// its foot. Screenshots for review go to test-results/visual as reportes-{state}-{width}.png. No export is pressed:
-// nothing is downloaded.
+// with «Generar»; while the list of reports loads, a skeleton under it says so; the generated page is a panel with its
+// export actions in the header, the dense table and the pages at its foot. Screenshots for review go to
+// test-results/visual as reportes-{state}-{width}.png. No export is pressed: nothing is downloaded.
 
 const PAGE = '/admin-occ/reports';
 // The light key of the primary action (--occ-primary).
 const PRIMARY_KEY = 'rgb(232, 238, 241)';
 const TURNAROUND = `${API_PATHS.reports}/turnaround-times`;
 const REPORT = 'Tiempos de turnaround';
+const IDLE = 'Elige el reporte y el período, y pulsa «Generar».';
 
 async function openReports(page, isolation, viewport, scenario = 'data') {
   const api = createScreensApi(scenario);
   const main = await openOccScreen(page, isolation, { path: PAGE, api, viewport });
   await expect(main.getByRole('heading', { level: 1, name: 'Reportes operativos' })).toBeVisible();
   // The list of reports loaded: before the first report the page says what to do.
-  await expect(main.getByText('Elige el reporte y el período, y pulsa «Generar».')).toBeVisible();
+  await expect(main.getByText(IDLE)).toBeVisible();
   return { api, main, filters: main.getByRole('toolbar', { name: 'Reporte y período' }) };
+}
+
+/** The stub API of a scenario, whose list of reports answers only once `release()` is called. */
+function heldCatalogApi(scenario = 'data') {
+  const api = createScreensApi(scenario);
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  return {
+    release,
+    handle: async (request, url) => {
+      if (url.pathname === API_PATHS.reports) await held;
+      return api.handle(request, url);
+    },
+  };
 }
 
 async function generate(filters, title = REPORT) {
@@ -35,6 +50,25 @@ const exportsOf = isolation => isolation.requests.filter(entry => entry.kind ===
 
 for (const viewport of SCREEN_VIEWPORTS) {
   test.describe(`Reportes at ${viewport.width}×${viewport.height}`, () => {
+    test('first load of the list of reports', async ({ page, isolation }, testInfo) => {
+      const api = heldCatalogApi();
+      const main = await openOccScreen(page, isolation, { path: PAGE, api, viewport });
+      await expect(main.getByRole('heading', { level: 1, name: 'Reportes operativos' })).toBeVisible();
+      // Under the toolbar a skeleton of two lines says the list is on its way; nothing invites to choose yet, and the
+      // list and «Generar» cannot be used.
+      const loading = main.getByRole('status').filter({ hasText: 'Cargando reportes…' });
+      await expect(loading).toBeVisible();
+      await expect(main.getByText(IDLE)).toHaveCount(0);
+      const filters = main.getByRole('toolbar', { name: 'Reporte y período' });
+      await expect(filters.getByRole('combobox', { name: 'Reporte' })).toBeDisabled();
+      await expect(filters.getByRole('button', { name: 'Generar' })).toBeDisabled();
+      await shoot(page, testInfo, `reportes-cargando-${viewport.width}`);
+      api.release();
+      await expect(main.getByText(IDLE)).toBeVisible();
+      await expect(loading).toHaveCount(0);
+      await expect(filters.getByRole('combobox', { name: 'Reporte' })).toBeEnabled();
+    });
+
     test('a generated report', async ({ page, isolation }, testInfo) => {
       const { main, filters } = await openReports(page, isolation, viewport);
       await expect(filters.getByRole('button', { name: 'Generar' })).toHaveCSS('background-color', PRIMARY_KEY);

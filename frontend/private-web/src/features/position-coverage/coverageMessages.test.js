@@ -36,8 +36,12 @@ describe('coverageMessages', () => {
       .toEqual(['Posiciones de la terminal', 'Atributos de las posiciones', 'Reglas de la terminal', 'Posiciones combinadas']);
     expect([es.board.bridge, es.board.narrowbody, es.board.noAgent, es.board.inactive])
       .toEqual(['Puente', 'Estrecho', 'Sin agente', 'Desactivada']);
-    // No header of the board is called «Puente»: the attribute's word stays the only one.
-    expect(Object.values(es.board.columns)).not.toContain(es.board.bridge);
+    // No header of the board, and no word of its legend, is called «Puente»: the attribute's word stays the only one.
+    expect([...Object.values(es.board.columns), ...Object.values(es.board.legend)]).not.toContain(es.board.bridge);
+    // The legends in the headers (contratos 2.4): their names, and the word of an attribute's mark. «Desactivada» and
+    // «Refuerzo» are the pills' own words.
+    expect([es.board.legend.label, es.board.legend.attribute, es.coverages.legend.label])
+      .toEqual(['Atributos y estado', 'Atributo', 'Tipo de cobertura']);
     // The station's states, as the screen said them before U6.
     expect(es.states.forbidden).toBe('Tu acceso no permite ver la cobertura de posiciones de esta estación.');
     expect(es.states.noTerminals).toBe('La estación no tiene terminales activas. OCC las crea en «Datos maestros».');

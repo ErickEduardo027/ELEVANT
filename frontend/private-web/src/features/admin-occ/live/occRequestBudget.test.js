@@ -6,13 +6,14 @@ import { occMountedFiles, readSource } from '../../../styles/occSourceScan';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import { OCC_COALESCE_MS, OCC_OBSERVER_POLL_MS } from './occCadence';
 import {
-  OCC_DEMO_MINUTE, OCC_OBSERVER_SITES, OCC_REQUEST_BUDGET, OCC_REQUEST_PLAN, OCC_SCREEN_POLLS,
+  OCC_DEMO_MINUTE, OCC_OBSERVER_SITES, OCC_REQUEST_BUDGET, OCC_REQUEST_PLAN, OCC_SCREEN_POLLS, OCC_SHELL_LISTENERS,
 } from './occRequestPlan';
 import { createRefreshScheduler } from './refreshScheduler';
 
 // A replayed minute of one OCC tab (contracts 2.7). Everything mounts at t = 0; after a 60 s warm-up the next
 // minute is counted, without the mount reads. The shell's reads run through the same refresh scheduler as
-// useOccResource; the per-screen observers that remain re-read as their code does today, uncoalesced.
+// useOccResource; the per-screen observers that remain, and the screens that listen on the shell's channel, re-read
+// as their code does today, uncoalesced.
 
 const WARM_UP_MS = 60_000;
 const MINUTE_MS = 60_000;
@@ -23,6 +24,7 @@ const SCRIPT_FILE = /\.(?:js|jsx|mjs)$/;
 const MODES = ['shell', 'screen', 'shared-page', 'outside-shell-fallback', 'disabled-in-occ', 'import-only'];
 const SCREEN_IDS = ADMIN_OCC_NAVIGATION.map(item => item.id);
 const SITES = Object.entries(OCC_OBSERVER_SITES);
+const LISTENERS = Object.entries(OCC_SHELL_LISTENERS);
 
 function createSimulation() {
   let now = 0;
@@ -132,10 +134,12 @@ const fileLabel = file => file.split('/').at(-1).replace(SCRIPT_FILE, '');
 const plannedConsole = script => simulate({ observers: ['shell'],
   shellReads: [...OCC_REQUEST_PLAN.frame, ...OCC_REQUEST_PLAN.console], script });
 
-// A screen as it is today: the frame plus every observer of that screen (each of its tabs and drawers open).
+// A screen as it is today: the frame plus every observer of that screen (each of its tabs and drawers open), and what
+// re-reads on the shell's announcements without one of its own.
 function screenToday(screen, script) {
   const own = SITES.filter(([, site]) => site.screen === screen && ['screen', 'shared-page'].includes(site.mode));
-  const riding = SITES.filter(([, site]) => site.screen === screen && site.mode === 'outside-shell-fallback');
+  const riding = [...SITES.filter(([, site]) => site.screen === screen && site.mode === 'outside-shell-fallback'),
+    ...LISTENERS.filter(([, listener]) => listener.screen === screen)];
   return simulate({
     observers: ['shell', ...own.map(([file]) => fileLabel(file))],
     shellReads: OCC_REQUEST_PLAN.frame,
@@ -185,11 +189,6 @@ describe('OCC request budget', () => {
       'src/features/positions-map/PositionsMapRoute.jsx → U5',
       'src/features/planning/PlanningRoute.jsx → U5',
       'src/features/planning/attendance/useAttendanceDraft.js → U5',
-      'src/features/position-coverage/CoverageRoute.jsx → U6',
-      'src/features/master-data/MasterDataRoute.jsx → U6',
-      'src/features/devices/DevicesRoute.jsx → U6',
-      'src/features/chat/CanonicalChatRoute.jsx → U6',
-      'src/features/notifications/CanonicalNotificationsRoute.jsx → U6',
     ]);
 
     // The table describes the code: its modes and screens exist, and every resource and pace is in the file it names.
@@ -204,6 +203,44 @@ describe('OCC request budget', () => {
     for (const poll of [...OCC_SCREEN_POLLS, ...OCC_REQUEST_PLAN.frame.filter(read => read.fixedRate)]) {
       const file = poll.file ?? poll.owner;
       expect(digits(readSource(file)), `${file}: ${poll.pollMs} ms`).toMatch(new RegExp(`\\b${poll.pollMs}\\b`));
+    }
+  });
+
+  it('counts the screens that listen on the shell channel: no observer of their own, their re-reads in the budget', () => {
+    // The five screens of U6 that had an observer of their own (contratos 2.7): none is left among the observers.
+    expect(LISTENERS.map(([file, listener]) => `${file} → ${listener.movedIn}`)).toEqual([
+      'src/features/position-coverage/CoverageRoute.jsx → U6',
+      'src/features/master-data/MasterDataRoute.jsx → U6',
+      'src/features/devices/DevicesRoute.jsx → U6',
+      'src/features/chat/CanonicalChatRoute.jsx → U6',
+      'src/features/notifications/CanonicalNotificationsRoute.jsx → U6',
+    ]);
+    expect(SITES.filter(([, site]) => site.movesIn === 'U6')).toEqual([]);
+    const mounted = occMountedFiles();
+    for (const [file, listener] of LISTENERS) {
+      // The table describes the code: a screen of /admin-occ that takes the frame's channel and listens there to its
+      // resources, with no observer of its own and no entry among the observers, and polls at the pace it names.
+      expect(mounted, file).toContain(file);
+      expect(SCREEN_IDS, file).toContain(listener.screen);
+      expect(OCC_OBSERVER_SITES, file).not.toHaveProperty([file]);
+      const source = readSource(file);
+      expect(source, file).toMatch(/\buseOccShellChannel\(\)/);
+      expect(source, file).not.toMatch(/\bcreatePrivateWebAccountChangeObserver\b/);
+      for (const resource of listener.resources) expect(source, `${file}: ${resource}`).toContain(`'${resource}'`);
+      if (listener.pollMs) expect(digits(source), `${file}: ${listener.pollMs} ms`).toMatch(new RegExp(`\\b${listener.pollMs}\\b`));
+
+      // A minute with one announcement of each of its resources: the screen reads no cursor (only the shell's observer
+      // does, and those of the pages of other departments the screen mounts), and its re-reads are counted on top of
+      // its own poll.
+      const shared = SITES.filter(([, site]) => site.screen === listener.screen && site.mode === 'shared-page')
+        .map(([page]) => `${fileLabel(page)}:cursor`);
+      const label = `${fileLabel(file)}:read`;
+      const quiet = screenToday(listener.screen, []);
+      const minute = screenToday(listener.screen, listener.resources.map(resource => ({ at: 10, resource })));
+      expect(Object.keys(minute.byKey).filter(key => key.endsWith(':cursor')).sort(), file)
+        .toEqual(['shell:cursor', ...shared].sort());
+      expect((minute.byKey[label] ?? 0) - (quiet.byKey[label] ?? 0), file)
+        .toBe(listener.readsPerRefresh * listener.resources.length);
     }
   });
 

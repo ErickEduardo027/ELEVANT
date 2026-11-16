@@ -1,8 +1,10 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  useAuth: vi.fn(), conversations: vi.fn(), messages: vi.fn(), send: vi.fn(), observer: vi.fn(), read: vi.fn(() => Promise.resolve()),
+  useAuth: vi.fn(), conversations: vi.fn(), messages: vi.fn(), send: vi.fn(), read: vi.fn(() => Promise.resolve()),
+  // A spy: the chat must not open an observer of its own (contratos 2.7).
+  observer: vi.fn(() => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) })),
 }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
 vi.mock('../access/DepartmentAccessContext', () => ({ useOptionalDepartmentAccess: () => ({ can: () => true }) }));
@@ -17,6 +19,7 @@ vi.mock('../../components/AppLink', () => ({
 import CanonicalChatRoute, { isSeen } from './CanonicalChatRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 
 function deferred() {
   let resolve;
@@ -28,19 +31,28 @@ const operationId = '70000000-0000-0000-0000-000000000001';
 const operation = { operationId, operationCode: 'DEV-CHAT-01', stationId: '20000000-0000-0000-0000-000000000003', stationCode: 'PUJ', airlineName: 'Airline', agentName: 'Ramp', lastMessage: null };
 const message = (id, content) => ({ id, senderName: 'OCC', senderRole: 'occ', sentAt: '2026-09-01T12:00:00Z', content });
 
-beforeEach(() => window.history.replaceState({}, '', '/admin-occ/chat'));
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7).
+let shell;
+beforeEach(() => {
+  shell = createOccShellValue();
+  window.history.replaceState({}, '', '/admin-occ/chat');
+});
 
 afterEach(() => {
   vi.useRealTimers();
   act(() => resetLanguageForTests('es'));
 });
 
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
+
 it('keeps each draft and uncertain command when navigating during a send, then retries the same key', async () => {
   const other = { ...operation, operationId: '70000000-0000-0000-0000-000000000002', operationCode: 'DEV-CHAT-02' };
   let reject;
   const pending = new Promise((_, fail) => { reject = fail; });
   mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001', stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }] } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation, other], hasMore: false });
   mocks.messages.mockReset().mockResolvedValue({ messages: [], hasMore: false });
   mocks.send.mockReset().mockReturnValueOnce(pending).mockResolvedValueOnce({ ...message('confirmed', 'Draft A'), operationId });
@@ -71,7 +83,6 @@ it('coalesces periodic chat reads while a request is pending', async () => {
     accountId: '10000000-0000-0000-0000-000000000001',
     stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }],
   } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation], hasMore: false });
   mocks.messages.mockReset().mockReturnValueOnce(first.promise);
   vi.useFakeTimers();
@@ -95,7 +106,6 @@ it('renders conversations and messages in English inside the OCC scope', async (
     accountId: '10000000-0000-0000-0000-000000000001',
     stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }],
   } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.conversations.mockReset().mockReturnValue(conversationsRead.promise);
   mocks.messages.mockReset().mockReturnValue(messagesRead.promise);
   window.history.replaceState({}, '', '/admin-occ/chat');
@@ -117,6 +127,35 @@ it('renders conversations and messages in English inside the OCC scope', async (
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
 });
 
+it('reads the conversations and the open thread again when the frame announces operation_messages', async () => {
+  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001',
+    stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }] } });
+  mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation], hasMore: false });
+  mocks.messages.mockReset().mockResolvedValueOnce({ messages: [], hasMore: false }).mockResolvedValue({
+    messages: [{ ...message('agent-1', 'Puente conectado'), senderName: 'Ramp', senderRole: 'agent' }], hasMore: false });
+  window.history.replaceState({}, '', `/admin-occ/chat?operationId=${operationId}`);
+  const view = render(<CanonicalChatRoute />);
+  const thread = await screen.findByRole('region', { name: 'Mensajes' });
+  expect(await within(thread).findByText('Sin mensajes todavía.')).toBeInTheDocument();
+  await screen.findByRole('button', { name: /DEV-CHAT-01/ });
+  // It listens on the shell's channel, to operation_messages only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['operation_messages']);
+  expect(mocks.observer).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['occ_planning', 'mobile_devices']));
+  expect([mocks.conversations.mock.calls.length, mocks.messages.mock.calls.length]).toEqual([1, 1]);
+
+  // The agent wrote: the list and the open thread are read again at once, and the message shows.
+  act(() => shell.announce(['operation_messages']));
+  expect([mocks.conversations.mock.calls.length, mocks.messages.mock.calls.length]).toEqual([2, 2]);
+  expect(await within(thread).findByText('Puente conectado')).toBeInTheDocument();
+
+  // Leaving the chat stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
+});
+
 it('marks «visto» only once the other side read up to the message', () => {
   const sent = { sentAt: '2026-09-01T12:00:00Z' };
   expect(isSeen(sent, null)).toBe(false);
@@ -128,7 +167,6 @@ it('shows unread counts and the agent, marks the open thread read and shows seen
   const accountId = '10000000-0000-0000-0000-000000000001';
   mocks.useAuth.mockReturnValue({ session: { token: 'token', accountId,
     stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }] } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.read.mockClear();
   mocks.conversations.mockReset().mockResolvedValue({ conversations: [{ ...operation, unreadCount: 3 }], hasMore: false });
   const own = { ...message('80000000-0000-0000-0000-000000000001', 'Recibido'), senderAccountId: accountId, sentAt: '2026-09-01T12:00:00Z' };
@@ -152,7 +190,6 @@ it('marks the open conversation with aria-current in the accent token', async ()
   const other = { ...operation, operationId: '70000000-0000-0000-0000-000000000002', operationCode: 'DEV-CHAT-02' };
   mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001',
     stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }] } });
-  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation, { ...other, unreadCount: 2 }], hasMore: false });
   mocks.messages.mockReset().mockResolvedValue({ messages: [], hasMore: false });
   window.history.replaceState({}, '', `/admin-occ/chat?operationId=${operationId}`);

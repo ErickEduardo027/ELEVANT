@@ -927,8 +927,8 @@ despliegue ni una revisión visual en el VPS.
 
 Desde el PR U6, posterior al commit verificado, Cobertura de posiciones, Datos
 maestros, Tablets, Chat interno y Notificaciones ya se dibujan con las
-primitivas del OCC, pero conservan su propio observador: U6 no cambió sus
-lecturas
+primitivas del OCC, y U6 no cambió sus lecturas. Las cinco escuchan ya en el
+observador del marco y no abren uno propio
 ([Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6)).
 
 ## Pantalla de arranque del OCC (PR U4)
@@ -1039,8 +1039,12 @@ escriben.
   ([ruta](../../frontend/private-web/src/features/position-coverage/CoverageRoute.jsx)).
   La barra lleva la fecha y «Terminal y vista». El tablero «Posiciones de la
   terminal» es una tabla, «Coberturas del día» es una lista y el formulario
-  «Asignar posiciones» queda a la derecha desde 1280 px. En «Configuración»,
-  los atributos de las posiciones son filas editables. Sus textos ganan inglés
+  «Asignar posiciones» queda a la derecha desde 1280 px. Cada tablero lleva su
+  leyenda en la cabecera, con la forma y la palabra de sus marcas: «Atributos y
+  estado» (atributo y «Desactivada») y «Tipo de cobertura» («Refuerzo»)
+  ([leyenda](../../frontend/private-web/src/features/occ-ui/OccStatusLegend.jsx)).
+  En «Configuración», los atributos de las posiciones son filas editables. Sus
+  textos ganan inglés
   ([mensajes](../../frontend/private-web/src/features/position-coverage/coverageMessages.js)).
 - **Notificaciones**
   ([ruta](../../frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx)).
@@ -1077,13 +1081,15 @@ escriben.
 - **Contratos listos**
   ([ruta](../../frontend/private-web/src/features/ready-contracts/ReadyContractsRoute.jsx)).
   La cuenta del día junto al título, «Fecha de operación» y los contratos como
-  lista; cada uno despliega «Servicios contratados (n)» y conserva «Planificar
-  vuelos».
+  lista; cada uno muestra sus servicios a la vista, que «Servicios contratados
+  (n)» pliega y vuelve a abrir, y conserva «Planificar vuelos».
 - **Reportes**
   ([ruta](../../frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx)).
-  La barra «Reporte y período» lleva «Generar». El resultado lleva «Exportar
-  Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la tabla densa y las
-  páginas al pie. El botón de exportar, que tenía carpeta propia, se borró.
+  La barra «Reporte y período» lleva «Generar»; mientras llega la lista de
+  reportes, un esqueleto bajo la barra dice «Cargando reportes…». El resultado
+  lleva «Exportar Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la
+  tabla densa y las páginas al pie. El botón de exportar, que tenía carpeta
+  propia, se borró.
 - **Primitivas y guardas.** U6 suma a `src/features/occ-ui` la
   [tabla densa](../../frontend/private-web/src/features/occ-ui/OccDataTable.jsx),
   que se dibuja como tabla o como lista, con filas encendidas, filas
@@ -1108,10 +1114,21 @@ escriben.
   [guardas](../../frontend/private-web/src/styles/occStyleGuard.test.js)
   exigen que esas pantallas dibujen como `occ-ui` y que las hojas del chat usen
   solo tokens.
+- **El observador del marco.** Cobertura de posiciones, Datos maestros,
+  Tablets, Chat interno y Notificaciones ya no abren su propio observador de
+  cambios: escuchan en el canal del marco `occ_planning` (las dos primeras),
+  `mobile_devices`, `operation_messages` y `notifications`, y releen en el
+  acto, como antes; Notificaciones conserva su sondeo de 20 s. El
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  las cuenta aparte de los observadores que quedan, entre los que ya no hay
+  ninguno de U6, y la
+  [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  falla si una vuelve a abrir el suyo.
 - **Lo que sigue en el puente.** Usuarios, Mis gastos, el panel de servicios de
   Contratos, el panel de incidencias que Revisión comparte con Planificación y
   los componentes de avisos que usan Gestión Humana, Finanzas y Contratos no se
-  editan para el OCC. El manifiesto del puente no cambia.
+  editan para el OCC. Las correspondencias de clases del puente no cambian: del
+  manifiesto cambian solo las listas `MIGRATED_FOLDERS` y `MIGRATED_FILES`.
 - **Pruebas.** Vitest cubre cada primitiva nueva, la paridad de los mensajes y
   las ocho rutas. La suite visual suma una prueba en Chrome por pantalla, a
   1920×1080 y a 1440×900, con una API simulada cuyas respuestas sintéticas
@@ -1120,14 +1137,14 @@ escriben.
   cómo corre está en
   [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md#suite-visual-de-los-mapas-del-occ).
 
-Límites: Cobertura de posiciones, Datos maestros, Tablets, Chat interno y
-Notificaciones conservan su propio observador de cambios, con su sondeo,
-mientras están abiertas; pasarlas al observador del marco queda para un PR
-posterior. Chat interno conserva el margen de las demás pantallas y no llena
-el alto. La insignia de la estación (`OccStationBadge`) queda sin uso, y los
-alias `--occ-ui-*` del chat, definidos sin que nadie los lea, hasta su
-limpieza. Las capturas se revisaron en local, con una API simulada; nada de
-esto acredita un despliegue ni una revisión visual en el VPS.
+Límites: la pestaña de servicios de Notificaciones, que es de Contratos,
+conserva su propio observador de cambios, con su sondeo, mientras está
+abierta. Chat interno conserva el margen de las
+demás pantallas y no llena el alto. La insignia de la estación
+(`OccStationBadge`) queda sin uso, y los alias `--occ-ui-*` del chat,
+definidos sin que nadie los lea, hasta su limpieza. Las capturas se revisaron
+en local, con una API simulada; nada de esto acredita un despliegue ni una
+revisión visual en el VPS.
 
 ## Mapas del OCC en un solo motor (PR M2)
 

@@ -15,13 +15,22 @@ vi.mock('../../services/occReportsService', () => ({ listOccReports: vi.fn(), ge
 const page = (number, hasMore) => ({ key: 'turnaround-times', title: 'Tiempos de turnaround', stationId, stationCode: 'PUJ',
   from: '2026-08-01', to: '2026-08-31', asOf: '2026-10-26T12:00:00Z', columns: ['Operación', 'Minutos reales'],
   rows: [[{ value: `OP-${number}`, type: 'text' }, { value: '45', type: 'number' }]], page: number, limit: 25, hasMore });
+const catalog = { maxRangeDays: 366, reports: [
+  { key: 'operations', title: 'Operaciones del período', description: 'Cada operación.', columns: ['Fecha'] },
+  { key: 'turnaround-times', title: 'Tiempos de turnaround', description: 'Planificado frente a real.', columns: ['Operación'] },
+] };
+const IDLE = 'Elige el reporte y el período, y pulsa «Generar».';
+
+// A read that answers only when the test says so.
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
 
 beforeEach(() => {
   access = { can: () => true };
-  listOccReports.mockResolvedValue({ maxRangeDays: 366, reports: [
-    { key: 'operations', title: 'Operaciones del período', description: 'Cada operación.', columns: ['Fecha'] },
-    { key: 'turnaround-times', title: 'Tiempos de turnaround', description: 'Planificado frente a real.', columns: ['Operación'] },
-  ] });
+  listOccReports.mockResolvedValue(catalog);
   getOccReport.mockImplementation(async (key, query) => page(query.page, query.page === 1));
   downloadOccReport.mockResolvedValue(undefined);
 });
@@ -97,10 +106,33 @@ it('says when the report was generated in the station local time (3-N26)', async
   expect(screen.getByText(/Generado 26\/10\/2026, 08:00/)).toBeInTheDocument();
 });
 
+it('says the list of reports is on its way until it arrives', async () => {
+  const pending = deferred();
+  listOccReports.mockReturnValueOnce(pending.promise);
+  render(<CanonicalReportsRoute />);
+  // Under the toolbar, where the result goes, a skeleton in the shape of the two lines to come says it in words for
+  // assistive technology; the page does not invite to choose a report yet, and the list cannot be used.
+  const loading = screen.getByRole('status');
+  expect(loading).toHaveTextContent('Cargando reportes…');
+  expect(loading).toHaveAttribute('data-occ-skeleton', 'text');
+  const toolbar = screen.getByRole('toolbar', { name: 'Reporte y período' });
+  expect(toolbar).not.toContainElement(loading);
+  expect(toolbar.compareDocumentPosition(loading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByText(IDLE)).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Reporte' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Generar' })).toBeDisabled();
+
+  await act(async () => pending.resolve(catalog));
+  expect(await screen.findByText(IDLE)).toBeInTheDocument();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Reporte' })).toBeEnabled();
+  expect(getOccReport).not.toHaveBeenCalled();
+});
+
 it('shows the export actions in the panel header and the pagination in its footer', async () => {
   render(<CanonicalReportsRoute />);
   // Before the first report the page says what to do, and the chosen report's description describes the list.
-  expect(await screen.findByText('Elige el reporte y el período, y pulsa «Generar».')).toBeInTheDocument();
+  expect(await screen.findByText(IDLE)).toBeInTheDocument();
   const select = screen.getByRole('combobox', { name: 'Reporte' });
   expect(screen.getByRole('toolbar', { name: 'Reporte y período' })).toContainElement(select);
   await userEvent.selectOptions(select, 'turnaround-times');
@@ -161,9 +193,17 @@ it('offers a retry when the list of reports could not be read', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo generar el reporte. Intenta nuevamente.');
   expect(screen.getByRole('combobox', { name: 'Reporte' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Generar' })).toBeDisabled();
+  // While the list is read again, the failure gives way to its loading.
+  const pending = deferred();
+  listOccReports.mockReturnValueOnce(pending.promise);
   await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
-  expect(await screen.findByRole('option', { name: 'Operaciones del período' })).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Cargando reportes…');
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await act(async () => pending.resolve(catalog));
+  expect(await screen.findByRole('option', { name: 'Operaciones del período' })).toBeInTheDocument();
+  expect(screen.getByText(IDLE)).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
   expect(listOccReports).toHaveBeenCalledTimes(2);
 });
 
@@ -172,8 +212,12 @@ describe('CanonicalReportsRoute in English', () => {
 
   it('generates a report in English inside the OCC scope', async () => {
     act(() => resetLanguageForTests('en'));
+    const pending = deferred();
+    listOccReports.mockReturnValueOnce(pending.promise);
     render(<LanguageScope><CanonicalReportsRoute /></LanguageScope>);
     expect(screen.getByRole('heading', { level: 1, name: 'Operational reports' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading reports…');
+    await act(async () => pending.resolve(catalog));
     expect(await screen.findByText('Choose the report and the period, then press “Generate”.')).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Report and period' })).toBeInTheDocument();
     expect(screen.getByLabelText('From')).toBeInTheDocument();

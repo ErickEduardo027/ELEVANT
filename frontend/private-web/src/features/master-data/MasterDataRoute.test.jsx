@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
 import MasterDataRoute from './MasterDataRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import {
   createOccAircraftType, createOccStand, createOccTerminal, loadOccMasterData, updateOccStand, updateOccTerminal,
 } from '../../services/occMasterDataService';
@@ -12,8 +14,11 @@ import {
 const stationId = '20000000-0000-7000-8000-000000000003';
 const auth = vi.hoisted(() => ({ scopes: [] }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: { stationScopes: auth.scopes } }) }));
+// A spy: the page must not open an observer of its own (contratos 2.7).
 vi.mock('../../services/accountChangeObserver', () => ({
-  createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
+  createPrivateWebAccountChangeObserver: vi.fn(() => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  })),
 }));
 vi.mock('../../services/occMasterDataService', async importOriginal => ({
   ...(await importOriginal()),
@@ -31,7 +36,15 @@ const data = (extra = {}) => ({ stationId, stationCode: 'PUJ', terminals: [termi
   aircraftTypes: [a320], canCreate: true, canUpdate: true, ...extra });
 const failure = (status, code) => Object.assign(new Error('The stand is in use.'), { status, code, title: 'The stand is in use.' });
 
+// Every case renders inside the OCC frame, whose shell channel brings the feed's announcements (contratos 2.7).
+let shell;
+beforeEach(() => { shell = createOccShellValue(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); auth.scopes = []; });
+
+function InFrame({ children }) {
+  return <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>;
+}
+const render = ui => renderView(ui, { wrapper: InFrame });
 
 function signedIn() { auth.scopes = [{ stationId, stationCode: 'PUJ' }]; }
 
@@ -195,6 +208,31 @@ it('shows a record out of use dimmed, with its muted pill, and still lets it be 
   expect(await screen.findByText('Posición A11 reactivada.')).toBeInTheDocument();
   expect(updateOccStand).toHaveBeenCalledWith('s-a11', expect.objectContaining({ isActive: true, expectedVersion: 'v-a11' }),
     expect.stringMatching(/^[0-9a-f-]{36}$/));
+});
+
+it('reads the layout again when the frame announces occ_planning, without an observer of its own', async () => {
+  signedIn();
+  const terminalD = { ...terminalC, id: 't-d', code: 'D', name: 'Terminal D', version: 'v-td' };
+  // The first read, then the layout with the terminal another seat added.
+  loadOccMasterData.mockResolvedValue(data({ terminals: [terminalA, terminalC, terminalD] })).mockResolvedValueOnce(data());
+  const view = render(<MasterDataRoute />);
+  const terminals = await screen.findByRole('region', { name: 'Terminales' });
+  // It listens on the shell's channel, to occ_planning only: the tab's one observer stays the frame's (contratos 2.7).
+  expect(shell.subscriptions()).toEqual(['occ_planning']);
+  expect(createPrivateWebAccountChangeObserver).not.toHaveBeenCalled();
+
+  // What other modules announce reads nothing here.
+  act(() => shell.announce(['mobile_devices', 'operation_messages']));
+  expect(loadOccMasterData).toHaveBeenCalledTimes(1);
+
+  // Another OCC seat added a terminal: the page reads the station's layout again and shows it.
+  act(() => shell.announce(['occ_planning']));
+  expect(await within(terminals).findByLabelText('Nombre de la terminal D')).toHaveValue('Terminal D');
+  expect(loadOccMasterData.mock.calls.map(([id]) => id)).toEqual([stationId, stationId]);
+
+  // Leaving the page stops listening.
+  view.unmount();
+  expect(shell.subscriptions()).toEqual([]);
 });
 
 describe('MasterDataRoute in English', () => {

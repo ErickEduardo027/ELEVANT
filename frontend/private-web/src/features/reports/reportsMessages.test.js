@@ -32,6 +32,9 @@ describe('reportsMessages', () => {
     expect(['Excel', 'PDF', 'CSV'].map(format => fill(es.exportAs, { format })))
       .toEqual(['Exportar Excel', 'Exportar PDF', 'Exportar CSV']);
     expect(es.exporting).toBe('Exportando…');
+    // The list of reports loads in its own words: nothing is generated yet.
+    expect([es.loadingCatalog, reportsMessages.en.loadingCatalog]).toEqual(['Cargando reportes…', 'Loading reports…']);
+    expect(es.loadingCatalog).not.toBe(es.loading);
     expect(es.pdfTooLarge).toBe('El PDF admite hasta 5 000 filas: exporte a Excel o CSV, o acote el período.');
     expect(fill(es.exportFailed, { message: 'sin conexión' })).toBe('No se pudo exportar: sin conexión');
     expect(fill(es.generatedAt, { date: '26/10/2026, 08:00' })).toBe('Generado 26/10/2026, 08:00');

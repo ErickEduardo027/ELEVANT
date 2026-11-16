@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { findLegacyColourClasses } from '../../styles/occLegacyBridge';
-import OccStatusPill, { OCC_STATUS_PILL_SIZES } from './OccStatusPill';
+import OccStatusPill, { OCC_STATUS_PILL_SIZES, OccStatusGlyph } from './OccStatusPill';
 import { OCC_STATUS_TONE_KEYS, STATUS_TONES } from './statusVocabulary';
 
 afterEach(cleanup);
@@ -91,8 +91,28 @@ describe('OccStatusPill', () => {
       expect(() => render(<OccStatusPill tone="critical" label="Urgente" />)).toThrow(RangeError);
       expect(() => render(<OccStatusPill tone="ok" label="Libre" />)).toThrow(/Unknown OCC status tone: ok/);
       expect(() => render(<OccStatusPill tone="done" label="Cerrada" size="lg" />)).toThrow(RangeError);
+      expect(() => render(<OccStatusGlyph tone="critical" />)).toThrow(/Unknown OCC status tone: critical/);
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it('gives its glyph alone as OccStatusGlyph, the one a legend draws next to each word', () => {
+    const { container } = render(<>
+      <OccStatusGlyph tone="neutral" />
+      <OccStatusGlyph tone="muted" className="mt-0.5" />
+      <OccStatusGlyph tone="urgent" />
+    </>);
+    const [hollow, slashed, octagon] = container.querySelectorAll('svg');
+    // The tone's shape in its glyph token, hidden from assistive technology: a word always stands next to it.
+    expect(hollow).toHaveAttribute('data-shape', STATUS_TONES.neutral.shape);
+    expect(classesOf(hollow)).toContain(classOf('text', STATUS_TONES.neutral.glyphToken));
+    expect(hollow).toHaveAttribute('aria-hidden', 'true');
+    expect(slashed).toHaveAttribute('data-shape', STATUS_TONES.muted.shape);
+    expect(classesOf(slashed)).toEqual(expect.arrayContaining([classOf('text', STATUS_TONES.muted.glyphToken), 'mt-0.5']));
+    // The signals keep the triangle and the octagon of OccGlyph.
+    expect(octagon).toHaveAttribute('data-occ-glyph', 'urgent');
+    expect(octagon).toHaveAttribute('data-shape', 'octagon');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 });

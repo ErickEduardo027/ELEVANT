@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import Link from '../../components/AppLink';
-import { useAuth } from '../auth/AuthContext';
+import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { loadOperationalNotifications, setOperationalNotificationRead } from '../../services/operationalCommunicationService';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 import ServiceClosurePanel from '../contracts/catalog/ServiceClosurePanel';
@@ -21,7 +20,6 @@ import { notificationKindLabel, notificationTargetPath } from './notificationKin
 import { notificationsMessages } from './notificationsMessages';
 import { requestNotificationsRefresh } from './useNotificationBadge';
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FILTERS = Object.freeze(['all', 'unread', 'alerts']);
 const EMPTY_TEXT = Object.freeze({ all: 'empty', unread: 'emptyUnread', alerts: 'emptyAlerts' });
 const days = new Map();
@@ -66,7 +64,8 @@ function PriorityLegend({ label, language }) {
 
 export default function CanonicalNotificationsRoute() {
   const { t, language, locale } = useTranslation(notificationsMessages);
-  const { session } = useAuth();
+  // The frame's stable channel: listening on it does not re-render the page when the live link or the notices move.
+  const { subscribe } = useOccShellChannel();
   const [state, setState] = useState({ status: 'loading', items: [], hasMore: false });
   const [revision, setRevision] = useState(0);
   const [busyId, setBusyId] = useState(null);
@@ -74,14 +73,10 @@ export default function CanonicalNotificationsRoute() {
   const [section, setSection] = useState('notices');
   const [filter, setFilter] = useState('all');
 
-  useEffect(() => {
-    if (!UUID.test(session?.accountId ?? '')) return undefined;
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('notifications')) setRevision(value => value + 1);
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, [session?.accountId]);
+  // A notice of the account: the history is read again at once, under current permissions, and its 20 s poll starts
+  // over. The announcement comes from the tab's single account-change observer, the OCC frame's (contratos 2.7), which
+  // observes only for a signed-in account.
+  useEffect(() => subscribe(['notifications'], () => setRevision(value => value + 1)), [subscribe]);
 
   useEffect(() => {
     const controller = new AbortController();
