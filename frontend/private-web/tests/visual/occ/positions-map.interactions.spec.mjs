@@ -86,8 +86,12 @@ test.describe('Mapa de posiciones: what a person does with the stands', () => {
     await settled(page);
     const facts = drawer(page).getByRole('list', { name: 'Estado en el mapa' });
     await expect(facts.getByRole('listitem')).toHaveText([
-      'Ocupada', 'Cubre Agente de prueba', 'Hitos registrados: 9 de 25', /^Terminal A/, /^No oficial/,
+      'Ocupada', /^Ocupada por ZZ101 desde las /, /^Próximo cambio /, 'Cubre Agente de prueba', 'Hitos registrados: 9 de 25',
     ]);
+    // Its terminal and where its location comes from are characteristics since #190.
+    const characteristics = drawer(page).getByRole('region', { name: 'Características' });
+    await expect(characteristics.locator('[data-fact="kind"] dd')).toHaveText(/^Terminal A/);
+    await expect(characteristics.locator('[data-fact="location"] dd')).toHaveText(/^No oficial/);
     await shoot(page, testInfo, 'positions-interactions-drawer');
 
     // One Esc closes only the drawer: A2 stays selected, and the stands its agent covers are ringed and explained.
@@ -131,11 +135,11 @@ test.describe('Mapa de posiciones: what a person does with the stands', () => {
     await expect(map).toHaveAttribute('data-occ-engine', 'ready');
   });
 
-  test('the combined pair: the cancelled stand with its hatch, its link to the stand that cancels it and «Anulada por A9»', async ({ page, isolation }, testInfo) => {
+  test('the combined pair: the cancelled stand with its hatch, its link to the stand that cancels it and «Inhabilitada: anulada por A9 ocupada»', async ({ page, isolation }, testInfo) => {
     await openPositionsMap(page, isolation, '?stand=A10');
     await settled(page);
     await expect(drawer(page).getByRole('list', { name: 'Estado en el mapa' }).getByRole('listitem'))
-      .toContainText(['Inhabilitada', 'Anulada por A9']);
+      .toHaveText(['Inhabilitada', 'Inhabilitada: anulada por A9 ocupada']);
     await expect(drawer(page).getByTestId('combined-position-banner')).toBeVisible();
 
     // Up close on A10, selected: its casing, the hatch and the dashed link to A9; the legend explains the link.
@@ -199,6 +203,7 @@ test.describe('Mapa de posiciones: what a person does with the stands', () => {
 
     // Its drawer now says OCC placed it.
     await search(page, 'B27');
-    await expect(drawer(page).getByRole('list', { name: 'Estado en el mapa' })).toContainText('Ubicada por OCC');
+    await expect(drawer(page).getByRole('region', { name: 'Características' }).locator('[data-fact="location"] dd'))
+      .toHaveText(/^Ubicada por OCC/);
   });
 });

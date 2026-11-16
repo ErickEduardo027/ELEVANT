@@ -1011,7 +1011,8 @@ queda en el puente y las diferencias con el diseño y con el plan están en la
 nota del 14 de noviembre de 2026 sobre U6 de
 [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U6 cambia cómo se ven
 y se recorren ocho pantallas del OCC; no cambia la API ni lo que leen o
-escriben.
+escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
+`--occ-*`, así que se leen en los dos temas del OCC.
 
 - **Dos plantillas.** Revisión, Cobertura de posiciones y Chat interno son una
   mesa de trabajo: una barra con el título y, desde 1280 px, la lista y el

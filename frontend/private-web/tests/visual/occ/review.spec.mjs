@@ -1,7 +1,7 @@
 import {
   API_PATHS, NO_HAND_OFF, ON_RAMP_INCIDENT, REOPENING, REVIEW_IDS, createScreensApi,
 } from './fixtures/screensApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -15,7 +15,7 @@ const PAGE = '/admin-occ/review';
 const PENDING_CODE = 'PUJ-20261113-004';
 // The light key of the primary action (--occ-primary). A button changes its colours through a short transition, so a
 // screenshot waits until the key shows this one.
-const PRIMARY_KEY = 'rgb(232, 238, 241)';
+const PRIMARY_KEY = occRgb('--occ-primary');
 
 // What covers the point (x, y) of the window: the dialog's own layer, or the tag of the element drawn there.
 const drawnAt = (page, x, y) => page.evaluate(([left, top]) => {

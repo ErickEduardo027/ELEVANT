@@ -1,5 +1,5 @@
 import { API_PATHS, COVERAGE_REFUSAL, createScreensApi } from './fixtures/screensApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -12,7 +12,7 @@ import { expect, test } from '../support/test.mjs';
 const PAGE = '/admin-occ/position-coverage';
 // The light key of the primary action (--occ-primary). A button changes its colours through a short transition, so a
 // screenshot waits until the key shows this one.
-const PRIMARY_KEY = 'rgb(232, 238, 241)';
+const PRIMARY_KEY = occRgb('--occ-primary');
 
 // The row of a stand, found by the plate of its code (A1 is not A10 or A11).
 const rowOf = (page, table, code) => table.getByRole('row')

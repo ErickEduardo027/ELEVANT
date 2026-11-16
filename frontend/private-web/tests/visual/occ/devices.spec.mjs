@@ -1,5 +1,5 @@
 import { API_PATHS, createScreensApi } from './fixtures/screensApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -11,8 +11,8 @@ import { expect, test } from '../support/test.mjs';
 
 const PAGE = '/admin-occ/devices';
 // The light key of the primary action (--occ-primary) and the red joint of a destructive one (--occ-danger).
-const PRIMARY_KEY = 'rgb(232, 238, 241)';
-const DANGER = 'rgb(245, 116, 109)';
+const PRIMARY_KEY = occRgb('--occ-primary');
+const DANGER = occRgb('--occ-danger');
 
 async function openTablets(page, isolation, viewport, scenario = 'data', options = {}) {
   const api = createScreensApi(scenario, options);

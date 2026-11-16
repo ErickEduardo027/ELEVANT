@@ -1,5 +1,5 @@
 import { API_PATHS, CHAT_IDS, createScreensApi } from './fixtures/screensApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -13,9 +13,9 @@ const PAGE = '/admin-occ/chat';
 const NARROW = Object.freeze({ width: 1024, height: 768 });
 // The tokens the selection and the primary key paint (src/styles/occ.css): cyan, its soft slab and the light key. A
 // control changes its colours through a short transition, so a check waits until it shows them.
-const ACCENT = 'rgb(111, 212, 245)';
-const ACCENT_SOFT = 'rgb(45, 68, 77)';
-const PRIMARY_KEY = 'rgb(232, 238, 241)';
+const ACCENT = occRgb('--occ-accent');
+const ACCENT_SOFT = occRgb('--occ-accent-soft');
+const PRIMARY_KEY = occRgb('--occ-primary');
 const OPEN_CODE = 'PUJ-20261113-004';
 
 async function openChat(page, isolation, viewport, { scenario = 'data', operationId } = {}) {
