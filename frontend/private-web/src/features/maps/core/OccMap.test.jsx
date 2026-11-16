@@ -1430,6 +1430,15 @@ describe('OccMap', () => {
     expect([ringed(), explained(), ringMarks()]).toEqual([['A5', 'B22'], [SELECTED], ['sameAgent']]);
   });
 
+  it('with focusStandOnStart, a stand selected when the map starts is brought to the centre once the map is ready', () => {
+    window.history.replaceState({}, '', PAGE);
+    const { map } = renderMap({ selection: { kind: 'stand', id: 'B21' }, focusStandOnStart: true });
+    loadStyle(map);
+    const { fits } = probe();
+    expect(map.getCenter().toArray()).toEqual(standPoint('B21'));
+    expect(map.getZoom()).toBeCloseTo(fits.ramp + 1.5, 6);
+  });
+
   it('selecting a visible stand does not move the camera; one outside the safe area eases to it', () => {
     // A stand selected when the map starts is framed by the view: no move of its own.
     window.history.replaceState({}, '', PAGE);
@@ -1579,9 +1588,11 @@ describe('OccMap', () => {
     const stylesheet = readSource('src/styles/occ-map.css');
     const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
     const preludes = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim());
-    // The at-rules keep MapLibre's own icons in forced colours and thin the ticks of a narrow altitude scale.
+    // The at-rules keep MapLibre's own icons in forced colours, thin the ticks of a narrow altitude scale and (U5)
+    // tighten the dock of a narrow map in two steps.
     expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)',
-      '@container (max-width: 27rem)', '@container (max-width: 18rem)']);
+      '@container (max-width: 27rem)', '@container (max-width: 18rem)', '@container occ-map (max-width: 64rem)',
+      '@container occ-map (max-width: 48rem)']);
     const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
     expect(selectors.length).toBeGreaterThan(10);
     for (const selector of selectors) expect(selector.startsWith('.occ-map'), selector).toBe(true);

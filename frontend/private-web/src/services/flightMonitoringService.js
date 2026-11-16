@@ -61,7 +61,7 @@ export async function getFlightMonitoringSnapshot(stationCode = 'PUJ') {
     if (!stationScope?.stationId) throw new Error('Tu cuenta no tiene acceso a esta estación.');
     const snapshot = await getPlanningSnapshot({ stationId: stationScope.stationId });
     return {
-      station: { code: snapshot.station.code, localAbbr: 'AST' },
+      station: { code: snapshot.station.code, localAbbr: 'AST', ianaTimeZone: snapshot.station.ianaTimeZone ?? null },
       source: 'planning',
       flights: snapshot.turnarounds.flatMap(turnaround => [
         turnaround.arrival && mapOperationalFlight(turnaround, turnaround.arrival, 'arrival'),
@@ -180,6 +180,9 @@ export function subscribeToFlightUpdates(onUpdate, stationCode = 'PUJ',
   return () => clearInterval(intervalId);
 }
 
+// A leg of the planning snapshot as a flight of the page. Next to the fields the page always had, the board of
+// Monitoreo de vuelos (flight-monitoring/flightBoardModel.js) reads the leg's own three times, the turnaround's demo
+// mark (ADR-0041: only the server's `isDemo`, never a guess) and the states of the turnaround and of its operation.
 function mapOperationalFlight(turnaround, leg, direction) {
   const scheduled = leg.scheduledAt;
   const expected = leg.estimatedAt ?? scheduled;
@@ -188,12 +191,19 @@ function mapOperationalFlight(turnaround, leg, direction) {
     id: leg.id,
     turnaroundId: turnaround.id,
     direction,
+    scheduledAt: scheduled ?? null,
+    estimatedAt: leg.estimatedAt ?? null,
+    actualAt: leg.actualAt ?? null,
+    isDemo: turnaround.isDemo === true,
+    turnaroundStatus: turnaround.status ?? null,
+    operationStatus: turnaround.operation?.status ?? null,
     flightNumber: leg.flightNumber,
     airline: turnaround.airline.name,
     origin: leg.origin.iataCode,
     destination: leg.destination.iataCode,
-    registration: turnaround.aircraft?.registration ?? 'Sin registrar',
-    aircraft: turnaround.aircraft?.model ?? 'Sin registrar',
+    // Without an aircraft the screen says «Sin registrar» in its own language (FlightInspector.jsx).
+    registration: turnaround.aircraft?.registration ?? null,
+    aircraft: turnaround.aircraft?.model ?? null,
     // A recorded leg time is not proof of landing, pushback or stand occupancy.
     status: leg.actualAt ? 'actualRecorded' : delayed ? 'delayed' : 'scheduled',
     eta: direction === 'arrival' ? expected : null,

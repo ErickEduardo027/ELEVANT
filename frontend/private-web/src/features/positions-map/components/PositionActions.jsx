@@ -6,9 +6,18 @@ import {
 import { BUSINESS_TIME_ZONE, stationLocalToUtc, utcToStationLocalInput } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { useArrivalAircraftTypes, usePositionTurnarounds } from '../usePositionTurnarounds';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { occButtonClass } from '../../occ-ui/OccButton';
+import { occControlClass } from '../../occ-ui/OccField';
+import { positionsMapMessages } from '../positionsMapMessages';
 
-const inputClass = 'w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-surface-dark-card';
-const buttonClass = 'rounded-lg border border-accent-600/40 px-3 py-1.5 text-xs font-semibold text-accent-600 disabled:opacity-50';
+// Painted with the occ tokens (design E.3): the controls of OccField, the secondary key of OccButton, its faint look
+// while disabled.
+const inputClass = `w-full ${occControlClass({ kind: 'input' })}`;
+const selectClass = `w-full ${occControlClass({ kind: 'select' })}`;
+const textareaClass = `w-full ${occControlClass({ kind: 'textarea' })}`;
+const buttonClass = `${occButtonClass({ variant: 'secondary', size: 'sm' })} disabled:cursor-not-allowed disabled:text-occ-faint`;
+const LABEL = 'block text-xs font-medium text-occ-muted';
 const REGISTRATION = /^[A-Z0-9-]{2,10}$/;
 /** How often an untouched arrival time follows the clock. */
 const CLOCK_TICK_MS = 15_000;
@@ -40,16 +49,17 @@ function useClock(running) {
  * «Reintentar») or the account may not read it. Nothing while the flight is read now or read again.
  */
 function VersionNotice({ version, onRetry }) {
+  const { t } = useTranslation(positionsMapMessages);
   const status = version?.status ?? 'loading';
   if (status === 'loading') {
-    return <p role="status" className="text-text-secondary-light">Consultando la versión del vuelo…</p>;
+    return <p role="status" className="text-occ-muted">{t('actions.versionLoading')}</p>;
   }
-  if (status === 'forbidden') return <p role="alert" className="text-status-danger">{positionVersionMessage({ status: 403 })}</p>;
+  if (status === 'forbidden') return <p role="alert" className="text-occ-danger">{positionVersionMessage({ status: 403 })}</p>;
   if (status !== 'error') return null;
   return (
     <div className="space-y-1">
-      <p role="alert" className="text-status-danger">{positionVersionMessage(version.error)}</p>
-      <button type="button" className={buttonClass} onClick={onRetry}>Reintentar</button>
+      <p role="alert" className="text-occ-danger">{positionVersionMessage(version.error)}</p>
+      <button type="button" className={buttonClass} onClick={onRetry}>{t('actions.retry')}</button>
     </div>
   );
 }
@@ -62,6 +72,7 @@ function VersionNotice({ version, onRetry }) {
  * server allows recording and correcting only before the first submission.
  */
 function ArrivalForm({ item, correcting, zone, station, catalog, current, busy, ready, onSubmit, onCancel }) {
+  const { t } = useTranslation(positionsMapMessages);
   const id = useId();
   const [registration, setRegistration] = useState(item.aircraftRegistration ?? '');
   // What OCC typed in the time field; null while untouched.
@@ -82,19 +93,18 @@ function ArrivalForm({ item, correcting, zone, station, catalog, current, busy, 
     event.preventDefault();
     const value = registration.trim().toUpperCase();
     if (!REGISTRATION.test(value)) {
-      setError('Revisa la matrícula: usa solo letras, números o guion (por ejemplo HI1055).');
+      setError(t('actions.registrationInvalid'));
       return;
     }
     // Unchanged: the time on the flight as it is, or none so the server records the moment it saves.
     const at = changed && typed ? stationLocalToUtc(typed, zone) : changed ? null : recorded;
     if (changed && typed && !at) {
-      setError('Revisa la hora de llegada.');
+      setError(t('actions.timeInvalid'));
       return;
     }
     const note = reason.trim();
     if (needsReason && (note.length < 5 || note.length > 500)) {
-      setError(correcting ? 'Indica el motivo de la corrección (entre 5 y 500 caracteres).'
-        : 'Indica el motivo del cambio de hora (entre 5 y 500 caracteres).');
+      setError(t(correcting ? 'actions.correctionReasonInvalid' : 'actions.changeReasonInvalid'));
       return;
     }
     setError('');
@@ -102,32 +112,32 @@ function ArrivalForm({ item, correcting, zone, station, catalog, current, busy, 
       reason: needsReason ? note : null });
   }
 
-  const label = station ? `Hora real de llegada (hora local de ${station})` : 'Hora real de llegada (hora local de la estación)';
+  const label = station ? t('actions.arrivedLabelStation', { station }) : t('actions.arrivedLabel');
   const hint = correcting ? null
-    : recorded ? `Ya hay una hora de llegada informada (${formatTime(recorded, zone)}). Si registras otra, indica el motivo.`
-      : typed === null ? 'Si no la cambias, se registra la hora en que guardes.' : null;
+    : recorded ? t('actions.arrivedRecorded', { time: formatTime(recorded, zone) })
+      : typed === null ? t('actions.arrivedUntouched') : null;
   return (
-    <form className="space-y-2" noValidate onSubmit={submit} aria-label={correcting ? 'Corregir llegada' : 'Registrar llegada'}>
+    <form className="space-y-2" noValidate onSubmit={submit} aria-label={t(correcting ? 'actions.correctArrival' : 'actions.recordArrival')}>
       <div className="grid gap-2 sm:grid-cols-2">
         <div>
-          <label htmlFor={`${id}-registration`} className="block">Matrícula</label>
+          <label htmlFor={`${id}-registration`} className={LABEL}>{t('actions.registration')}</label>
           <input id={`${id}-registration`} className={inputClass} value={registration} placeholder="HI1055" maxLength={10}
             onChange={event => { setRegistration(event.target.value); setError(''); }} />
         </div>
         <div>
-          <label htmlFor={`${id}-arrived`} className="block">{label}</label>
+          <label htmlFor={`${id}-arrived`} className={LABEL}>{label}</label>
           <input id={`${id}-arrived`} type="datetime-local" className={inputClass} value={shown}
             aria-describedby={hint ? `${id}-hint` : undefined}
             onChange={event => { setTyped(event.target.value); setError(''); }} />
         </div>
       </div>
-      {hint && <p id={`${id}-hint`} className="text-text-secondary-light">{hint}</p>}
+      {hint && <p id={`${id}-hint`} className="text-occ-muted">{hint}</p>}
       {catalog.status === 'success' && catalog.types.length > 0 && (
         <div>
-          <label htmlFor={`${id}-type`} className="block">Tipo de avión (opcional)</label>
-          <select id={`${id}-type`} className={inputClass} value={aircraftTypeId}
+          <label htmlFor={`${id}-type`} className={LABEL}>{t('actions.aircraftType')}</label>
+          <select id={`${id}-type`} className={selectClass} value={aircraftTypeId}
             onChange={event => { setAircraftTypeId(event.target.value); setError(''); }}>
-            <option value="">{current?.aircraft?.icaoCode ? `Mantener el actual (${current.aircraft.icaoCode})` : 'Sin indicar'}</option>
+            <option value="">{current?.aircraft?.icaoCode ? t('actions.keepType', { code: current.aircraft.icaoCode }) : t('actions.noType')}</option>
             {catalog.types.filter(type => type.id !== current?.aircraft?.id).map(type =>
               <option key={type.id} value={type.id}>{type.manufacturer} {type.model} · {type.icaoCode}</option>)}
           </select>
@@ -135,16 +145,17 @@ function ArrivalForm({ item, correcting, zone, station, catalog, current, busy, 
       )}
       {needsReason && (
         <div>
-          <label htmlFor={`${id}-reason`} className="block">{correcting ? 'Motivo de la corrección' : 'Motivo del cambio de hora'}</label>
-          <textarea id={`${id}-reason`} className={inputClass} rows={2} maxLength={500} value={reason}
+          <label htmlFor={`${id}-reason`} className={LABEL}>{t(correcting ? 'actions.correctionReason' : 'actions.changeReason')}</label>
+          <textarea id={`${id}-reason`} className={textareaClass} rows={2} maxLength={500} value={reason}
             onChange={event => { setReason(event.target.value); setError(''); }} />
         </div>
       )}
-      {error && <p role="alert" className="text-status-danger">{error}</p>}
+      {error && <p role="alert" className="text-occ-danger">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <button type="submit" className={buttonClass} disabled={Boolean(busy) || !ready}>
-          {busy === `${action}:${item.turnaroundId}` ? 'Guardando…' : correcting ? 'Guardar corrección' : 'Registrar llegada'}</button>
-        {onCancel && <button type="button" className={buttonClass} disabled={Boolean(busy)} onClick={onCancel}>Cancelar</button>}
+          {busy === `${action}:${item.turnaroundId}` ? t('actions.saving')
+            : t(correcting ? 'actions.saveCorrection' : 'actions.recordArrival')}</button>
+        {onCancel && <button type="button" className={buttonClass} disabled={Boolean(busy)} onClick={onCancel}>{t('actions.cancel')}</button>}
       </div>
     </form>
   );
@@ -159,6 +170,7 @@ function ArrivalForm({ item, correcting, zone, station, catalog, current, busy, 
  * are read again. Every command returns the refreshed board.
  */
 export default function PositionActions({ position, candidates = [], onChanged, onStartPlacing, operationDate }) {
+  const { t } = useTranslation(positionsMapMessages);
   const [turnaroundId, setTurnaroundId] = useState('');
   const [busy, setBusy] = useState('');
   const [correcting, setCorrecting] = useState('');
@@ -208,29 +220,29 @@ export default function PositionActions({ position, candidates = [], onChanged, 
   async function arrival(item, value, correction) {
     const action = `${correction ? 'correction' : 'arrival'}:${item.turnaroundId}`;
     await run(action, value, item.turnaroundId, headers => recordOccArrival(item.turnaroundId, value, headers),
-      correction ? `Llegada corregida: ${value.aircraftRegistration} en ${position.id}.`
-        : `Llegada registrada: ${value.aircraftRegistration} en ${position.id}.`);
+      t(correction ? 'actions.arrivalCorrected' : 'actions.arrivalRecorded',
+        { registration: value.aircraftRegistration, position: position.id }));
   }
 
   const selected = turnaroundId ? versions[turnaroundId] : null;
   return (
-    <section aria-label="Acciones de la posición" className="space-y-3 rounded-lg border border-black/10 p-3 text-xs dark:border-white/10">
-      <h3 className="text-sm font-semibold">Acciones OCC</h3>
-      <div className="space-y-2 border-b border-black/5 pb-3 dark:border-white/5">
-        <p className="text-text-secondary-light dark:text-text-secondary-dark">
+    <section aria-label={t('actions.label')} className="space-y-3 rounded border border-occ-line p-3 text-sm text-occ-text">
+      <h3 className="text-sm font-semibold">{t('actions.title')}</h3>
+      <div className="space-y-2 border-b border-occ-line pb-3">
+        <p className="text-occ-muted">
           {position.locationSource === 'occ'
-            ? `Ubicación registrada por OCC (${Number(position.latitude).toFixed(5)}, ${Number(position.longitude).toFixed(5)}).`
-            : position.locationSource === 'none'
-              ? 'El mapa no la dibuja todavía. Ubícala en el mapa para que OCC y Planificación la vean.'
-              : 'Ubicación de referencia interna, sin verificar. Ubícala en el mapa para que OCC y Planificación usen la real.'}
+            ? t('actions.locationOcc', { latitude: Number(position.latitude).toFixed(5),
+              longitude: Number(position.longitude).toFixed(5) })
+            : t(position.locationSource === 'none' ? 'actions.locationNone' : 'actions.locationReference')}
         </p>
         <div className="flex flex-wrap gap-2">
           {onStartPlacing && <button type="button" className={buttonClass} disabled={Boolean(busy)}
-            onClick={() => onStartPlacing(position)}>Ubicar en el mapa</button>}
+            onClick={() => onStartPlacing(position)}>{t('actions.place')}</button>}
           {position.locationSource === 'occ' && operationDate && <button type="button" className={buttonClass} disabled={Boolean(busy)}
             onClick={() => void run('clear-location', { standId: position.standId }, null,
-              () => locateOccStand(position.standId, null, null, operationDate), `Se quitó la ubicación de ${position.id}.`)}>
-            {busy === 'clear-location' ? 'Quitando…' : 'Quitar ubicación'}</button>}
+              () => locateOccStand(position.standId, null, null, operationDate),
+              t('actions.locationCleared', { position: position.id }))}>
+            {busy === 'clear-location' ? t('actions.clearingLocation') : t('actions.clearLocation')}</button>}
         </div>
       </div>
       {parked.map(item => {
@@ -243,52 +255,55 @@ export default function PositionActions({ position, candidates = [], onChanged, 
           (version?.detail?.allowedActions ?? []).includes('correctArrival');
         const flightReady = ready(item.turnaroundId);
         return (
-          <div key={item.turnaroundId} className="space-y-2 border-b border-black/5 pb-3 last:border-0 dark:border-white/5">
-            <p><strong>{item.arrivalFlightNumber ?? item.operationCode}</strong> · {item.airlineName}
+          <div key={item.turnaroundId} className="space-y-2 border-b border-occ-line pb-3 last:border-0">
+            <p><strong>{item.arrivalFlightNumber ?? item.operationCode}</strong>{' '}<span className="text-occ-muted">{item.airlineName}</span>
               {/* ADR-0041: a demo flight the superadministrator triggered is always labelled as such. */}
               {item.isDemo === true && <>{' '}<DemoTag /></>}
-              <span className="block text-text-secondary-light">Llegada prevista {formatTime(item.arrivalScheduledAt, zone)}
-                {item.arrivedAt ? ` · llegó ${formatTime(item.arrivedAt, zone)}` : ' · aún no ha llegado'}</span></p>
+              <span className="block text-occ-muted">
+                {t('actions.scheduledArrival', { time: formatTime(item.arrivalScheduledAt, zone) })}{', '}
+                {item.arrivedAt ? t('actions.arrivedAt', { time: formatTime(item.arrivedAt, zone) }) : t('actions.notArrived')}
+              </span></p>
             <VersionNotice version={version} onRetry={reload} />
             {shown && recordable(item) &&
               <ArrivalForm item={item} correcting={false} zone={zone} station={station} catalog={catalog} current={current}
                 busy={busy} ready={flightReady} onSubmit={value => void arrival(item, value, false)} />}
             {shown && correctable && correcting !== item.turnaroundId &&
               <button type="button" className={buttonClass} disabled={Boolean(busy) || !flightReady}
-                onClick={() => { setCorrecting(item.turnaroundId); setMessage({ tone: '', text: '' }); }}>Corregir llegada</button>}
+                onClick={() => { setCorrecting(item.turnaroundId); setMessage({ tone: '', text: '' }); }}>
+                {t('actions.correctArrival')}</button>}
             {shown && correctable && correcting === item.turnaroundId &&
               <ArrivalForm item={item} correcting zone={zone} station={station} catalog={catalog} current={current} busy={busy}
                 ready={flightReady} onSubmit={value => void arrival(item, value, true)} onCancel={() => setCorrecting('')} />}
             {!unavailable && <button type="button" className={buttonClass} disabled={Boolean(busy) || !flightReady}
               onClick={() => void run(`release:${item.turnaroundId}`, { turnaroundId: item.turnaroundId }, item.turnaroundId,
-                headers => releaseOccStand(item.turnaroundId, headers), `${position.id} quedó libre.`)}>
-              {busy === `release:${item.turnaroundId}` ? 'Liberando…' : 'Liberar posición'}</button>}
+                headers => releaseOccStand(item.turnaroundId, headers), t('actions.released', { position: position.id }))}>
+              {busy === `release:${item.turnaroundId}` ? t('actions.releasing') : t('actions.release')}</button>}
           </div>
         );
       })}
       {movable.length > 0 && (
         <form className="space-y-2" noValidate onSubmit={event => {
           event.preventDefault();
-          if (!turnaroundId) { setMessage({ tone: 'danger', text: 'Elige el vuelo que ocupará esta posición.' }); return; }
+          if (!turnaroundId) { setMessage({ tone: 'danger', text: t('actions.chooseFlight') }); return; }
           void run(`assign:${turnaroundId}`, { turnaroundId, standId: position.standId }, turnaroundId,
-            headers => assignOccStand(turnaroundId, position.standId, null, headers), `Vuelo asignado a ${position.id}.`)
+            headers => assignOccStand(turnaroundId, position.standId, null, headers), t('actions.assigned', { position: position.id }))
             .then(done => { if (done) setTurnaroundId(''); });
         }}>
-          <label className="block">Asignar un vuelo del día a {position.id}
-            <select className={inputClass} value={turnaroundId} onChange={event => setTurnaroundId(event.target.value)}>
-              <option value="">Selecciona un vuelo…</option>
+          <label className={LABEL}>{t('actions.assignLabel', { position: position.id })}
+            <select className={`mt-1 ${selectClass}`} value={turnaroundId} onChange={event => setTurnaroundId(event.target.value)}>
+              <option value="">{t('actions.selectFlight')}</option>
               {movable.map(item => <option key={item.turnaroundId} value={item.turnaroundId}>
                 {(item.arrivalFlightNumber ?? item.operationCode)} · {item.airlineName}{item.isDemo === true ? ' · Demo' : ''}
                 {' · '}{formatTime(item.arrivalScheduledAt, zone)}
-                {item.standCode ? ` (ahora en ${item.standCode})` : ''}</option>)}
+                {item.standCode ? ` ${t('actions.nowAt', { stand: item.standCode })}` : ''}</option>)}
             </select></label>
           {turnaroundId && <VersionNotice version={selected} onRetry={reload} />}
           <button type="submit" className={buttonClass} disabled={Boolean(busy) || (Boolean(turnaroundId) && !ready(turnaroundId))}>
-            {busy === `assign:${turnaroundId}` ? 'Asignando…' : 'Asignar posición'}</button>
+            {busy === `assign:${turnaroundId}` ? t('actions.assigning') : t('actions.assign')}</button>
         </form>
       )}
       {message.text && <p role={message.tone === 'danger' ? 'alert' : 'status'}
-        className={message.tone === 'danger' ? 'text-status-danger' : 'text-status-success'}>{message.text}</p>}
+        className={message.tone === 'danger' ? 'text-occ-danger' : 'text-occ-text'}>{message.text}</p>}
     </section>
   );
 }

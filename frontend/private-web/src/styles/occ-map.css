@@ -6,6 +6,14 @@
 .occ-map {
   --occ-map-gap: 12px;
   isolation: isolate;
+  /* The map is the container of its dock's compact steps below (its root fills its parent, so its size does not depend
+     on what it holds). */
+  container: occ-map / inline-size;
+}
+
+/* The short word of a view button shows only on a narrow map. */
+.occ-map .occ-map-label-short {
+  display: none;
 }
 
 /* The four control corners, inside the insets. */
@@ -242,4 +250,38 @@
   left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
   bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 52px);
   max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 2 * var(--occ-map-gap));
+}
+
+/* The dock on a narrow map (U5): a map beside a list and an inspector, as on a 1440 px laptop, gets less width than the
+   dock's one row needs (about 56 rem with every tool). First the keys of the key table go (they stay in each button's
+   aria-keyshortcuts, and the key table lists them) and the buttons tighten; then «Aproximación» and «Aeródromo» take
+   their short word, keeping the full one as the button's name. The dock never wraps onto the map. */
+@container occ-map (max-width: 64rem) {
+  .occ-map .occ-map-dock {
+    gap: 4px;
+  }
+
+  .occ-map .occ-map-dock .occ-map-key {
+    display: none;
+  }
+
+  .occ-map .occ-map-dock button {
+    padding-inline: 0.5rem;
+  }
+}
+
+@container occ-map (max-width: 48rem) {
+  /* Only a word that has a short one gives way to it: «Región» and «Rampa» stay as they are. */
+  .occ-map .occ-map-dock .occ-map-label-full:has(+ .occ-map-label-short) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .occ-map .occ-map-dock .occ-map-label-short {
+    display: inline;
+  }
 }

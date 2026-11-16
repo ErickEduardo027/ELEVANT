@@ -31,8 +31,11 @@ describe('PlanningKPIs', () => {
   });
 
   it('renders skeletons for every card while loading', () => {
-    render(<PlanningKPIs kpis={KPIS} loading />);
+    const { container } = render(<PlanningKPIs kpis={KPIS} loading />);
 
-    expect(screen.getAllByTestId('kpi-skeleton')).toHaveLength(4);
+    // Four figures of the day, each «—» while loading: never a zero nobody counted.
+    const tiles = container.querySelectorAll('[data-occ-stat]');
+    expect(tiles).toHaveLength(4);
+    for (const tile of tiles) expect(tile).toHaveTextContent('—');
   });
 });

@@ -171,6 +171,21 @@ describe('standTimeline', () => {
     expect(rowOf(english, 'A4').bars[0].conflict.label).toBe('Another aircraft is arriving at this stand');
   });
 
+  it('a notice the band cannot draw («arrivalNotRecorded») carries no conflict, and an attention after it still does', () => {
+    const { stands, flightsByTurnaround } = ramp();
+    const window = bandWindow('4h', NOW, 'America/Santo_Domingo');
+    const notice = { kind: 'notice', reason: 'arrivalNotRecorded' };
+    // A3 reads «Sin agente que la cubra» (attention); A2 is calm.
+    const withNotice = stands.map(stand => {
+      if (stand.id === 'A3') return { ...stand, signals: [notice, ...stand.signals] };
+      if (stand.id === 'A2') return { ...stand, signals: [notice] };
+      return stand;
+    });
+    const timeline = buildStandTimeline({ stands: withNotice, flightsByTurnaround, nowMs: NOW, ...window, t });
+    expect(rowOf(timeline, 'A2').bars[0].conflict).toBeNull();
+    expect(rowOf(timeline, 'A3').bars[0].conflict).toEqual({ label: 'Sin agente que la cubra', signal: 'attention' });
+  });
+
   it('the day window follows the station time zone', () => {
     expect(Object.keys(TIMELINE_RANGES)).toEqual(['4h', '8h', 'day']);
     // 22:30 of the 13th in Punta Cana is already the 14th in UTC: the band shows the station's day.

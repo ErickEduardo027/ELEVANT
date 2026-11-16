@@ -47,7 +47,8 @@ export default function PositionsMapRoute() {
   return (
     // AeroDataBox (ADR-0028, note of 15 November 2026): the parked or arriving aircraft of a stand, on demand.
     <AviationReferenceProvider service={aviationReferenceService}>
-      <div className="space-y-3">
+      {/* The page fills the height of the OCC frame's content, so its grid and the map in it stay bounded by the screen. */}
+      <div className="h-full">
         <PositionsMapPage
           aircraftFacts={aircraft => (aircraft?.isDemo || !aircraft?.registration ? null
             : <AircraftRegistryFacts stationId={selected?.stationId} registration={aircraft.registration} />)}

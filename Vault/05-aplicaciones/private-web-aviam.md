@@ -2153,6 +2153,62 @@ pantallas hace que la API lea aviationweather.gov, como mucho dos veces cada 5
 minutos por aeropuerto. Las capturas se revisaron en local, en el laboratorio;
 nada de esto acredita un despliegue ni una revisión visual en el VPS.
 
+## Pantallas de mapa del OCC (PR U5)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U5 «Pantallas de mapa del OCC» (`10e0fb82`, `5d0e24ad` y `87fd5186`), que esa
+verificación no cubre. Las plantillas, lo que se borró y las diferencias con el
+diseño están en la nota del 16 de noviembre de 2026 sobre U5 de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U5 cambia cómo se ven
+y se recorren Monitoreo de vuelos, Mapa de posiciones y Planificación; no cambia
+la API, ni lo que leen, ni sus comandos. Las tres pintan solo con tokens, así
+que siguen el tema claro u oscuro del OCC. Los mapas siguen siendo los del
+carril de mapas, con las mismas props.
+
+- **Monitoreo de vuelos**
+  ([vista](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx)).
+  A la izquierda, «Tablero de vuelos»: una tira por vuelo, con «Llegadas»,
+  «Salidas» y «Todos» con su cuenta y la búsqueda. Al elegir un vuelo, en el
+  tablero o en el mapa, su inspector muestra sus horas, posición, avión,
+  matrícula, agentes y servicios, con enlaces a Planificación y a Mapa de
+  posiciones, y la tira de hitos de su operación, que sale de los vuelos que el
+  mapa ya lee. Va bajo el tablero; desde 2200 px, a la derecha del mapa. Sin
+  tarjeta de conexión: un fallo de lectura deja los vuelos bajo un aviso de
+  datos sin actualizar. El bloque de datos del avión lo muestra el mapa.
+- **Mapa de posiciones**
+  ([vista](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx)).
+  «Lista de posiciones» abre una
+  [tabla densa](../../frontend/private-web/src/features/positions-map/components/PositionsTable.jsx)
+  a la izquierda: posición, terminal, estado con su forma y su palabra, vuelo y
+  quién la cubre. La posición elegida se abre en un inspector a la derecha del
+  mapa, sin tapar el mapa, con su estado, sus características, la escala con su
+  tira de hitos y los comandos «Registrar llegada», «Asignar posición»,
+  «Liberar posición» y «Ubicar en el mapa»; «Cerrar detalle» o Esc lo cierran.
+  Bajo el mapa, la
+  [banda de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionsBand.jsx)
+  cuenta las posiciones por estado y, abierta, dibuja sus escalas en el tiempo
+  con la línea «ahora». Por debajo de 1536 px la lista se pliega mientras el
+  inspector está abierto. Un enlace con `stand=` centra esa posición en el
+  mapa. Los textos de los comandos tienen inglés.
+- **Planificación**
+  ([vista](../../frontend/private-web/src/features/planning/PlanningPage.jsx)).
+  La barra lleva «Nuevo vuelo», «Importar vuelos» y «Actualizar»; debajo, los
+  filtros y las cuatro cifras del día. Las vistas «Línea de tiempo»,
+  «Posiciones», «Tabla» y «Mapa» son reales: «Posiciones» es la banda del día y
+  «Tabla» una tabla ordenable de las escalas; ya no hay marcadores de vistas
+  futuras. Las dos salen de la misma lectura de la planificación. El detalle de
+  la escala y los diálogos no cambian.
+- **Consola.** «Posiciones» de la consola ya no falla al abrir su banda cuando
+  una posición tiene un avión sin llegada registrada.
+- **Barra del mapa.** En un mapa estrecho, como el de Monitoreo en un portátil
+  de 1440 px, la barra de vistas y herramientas quita las teclas y acorta
+  «Aproximación» y «Aeródromo» para caber en una fila
+  ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)).
+
+Las capturas se revisaron en local con la API simulada de la suite visual, en
+oscuro y en claro; nada de esto acredita un despliegue ni una revisión visual en
+el VPS.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |

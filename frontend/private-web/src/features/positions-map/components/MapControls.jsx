@@ -3,8 +3,9 @@ import { CubeIcon, LayersIcon, MaximizeIcon, MinimizeIcon } from './icons';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { positionsMapMessages } from '../positionsMapMessages';
 
-const buttonClass =
-  'rounded-lg border border-black/10 bg-white/90 p-2 shadow-md backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card';
+// Flat map tools on the floating slab (design B.5): a joint, no shadow and no blur.
+const buttonClass = 'flex min-h-9 min-w-9 items-center justify-center rounded border border-occ-line bg-occ-panel-float '
+  + 'text-occ-text hover:bg-occ-panel-raised [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11';
 
 export default function MapControls({ viewMode, onToggleViewMode, onCenterPuj, fullscreen, onToggleFullscreen }) {
   const { t } = useTranslation(positionsMapMessages);
@@ -19,9 +20,9 @@ export default function MapControls({ viewMode, onToggleViewMode, onCenterPuj, f
         className={buttonClass}
       >
         {viewMode === '3d' ? (
-          <CubeIcon className="h-4 w-4 text-accent-600" />
+          <CubeIcon className="h-4 w-4 text-occ-accent" />
         ) : (
-          <LayersIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
+          <LayersIcon className="h-4 w-4" />
         )}
       </button>
       <button
@@ -31,7 +32,7 @@ export default function MapControls({ viewMode, onToggleViewMode, onCenterPuj, f
         aria-label={t('controls.centerPuj')}
         className={buttonClass}
       >
-        <CrosshairIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
+        <CrosshairIcon className="h-4 w-4" />
       </button>
       <button
         type="button"
@@ -41,9 +42,9 @@ export default function MapControls({ viewMode, onToggleViewMode, onCenterPuj, f
         className={buttonClass}
       >
         {fullscreen ? (
-          <MinimizeIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
+          <MinimizeIcon className="h-4 w-4" />
         ) : (
-          <MaximizeIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
+          <MaximizeIcon className="h-4 w-4" />
         )}
       </button>
     </div>

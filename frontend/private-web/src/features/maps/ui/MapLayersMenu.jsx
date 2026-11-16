@@ -105,7 +105,7 @@ export default function MapLayersMenu({ className = '' }) {
           ? 'border-occ-accent bg-occ-accent-soft'
           : 'border-occ-line bg-occ-panel'}`}
       >
-        <span aria-hidden="true" className="font-mono text-xs text-occ-faint">{key}</span>
+        <span aria-hidden="true" className="occ-map-key font-mono text-xs text-occ-faint">{key}</span>
         {SHORTCUT[language] ?? SHORTCUT.es}
       </button>
     </div>

@@ -369,13 +369,23 @@ function useLegendInsideMap(rootRef, panelRef, active) {
   }, [rootRef, panelRef, active]);
 }
 
-export default function MapLegend({ stands, bounds = null, defaultOpen = true, className = '' }) {
+/**
+ * The legend of an OccMap. `defaultOpen` is how it starts; `foldKey` (U5), when it changes after the first render,
+ * folds it, so a stand a screen brings to the centre (a row of its list) is not left under the open legend.
+ */
+export default function MapLegend({ stands, bounds = null, defaultOpen = true, foldKey = null, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
     activeView, referencesOnScreen,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
+  // A new fold key folds the legend (adjusted while rendering, no effect); the first one is the starting state's.
+  const [heardFoldKey, setHeardFoldKey] = useState(foldKey);
+  if (foldKey !== heardFoldKey) {
+    setHeardFoldKey(foldKey);
+    if (open) setOpen(false);
+  }
   const panelId = useId();
   const rootRef = useRef(null);
   const panelRef = useRef(null);

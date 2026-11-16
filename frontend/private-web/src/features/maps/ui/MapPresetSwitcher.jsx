@@ -9,6 +9,12 @@ const VIEW_BUTTONS = Object.freeze(OCC_SHORTCUTS
   .filter(({ action }) => action.startsWith('view.'))
   .map(({ key, action, es, en }) => Object.freeze({ view: action.slice('view.'.length), key, label: { es, en } })));
 
+// The words a narrow map shows (occ-map.css, the dock's compact steps); the full word stays the button's name.
+const SHORT_LABELS = Object.freeze({
+  approach: Object.freeze({ es: 'Aprox.', en: 'Appr.' }),
+  airfield: Object.freeze({ es: 'Aeród.', en: 'Airf.' }),
+});
+
 /**
  * The view selector of an OccMap (it goes with the legend in the group at the bottom centre). The pressed button is
  * the view the camera really shows, so it stays truthful after a free zoom; a click flies to the view and writes
@@ -41,8 +47,14 @@ export default function MapPresetSwitcher({ className = '' }) {
                 ? 'border-occ-accent bg-occ-accent-soft text-occ-text'
                 : 'border-transparent text-occ-muted hover:bg-occ-panel-raised hover:text-occ-text'}`}
             >
-              <span aria-hidden="true" className="font-mono text-xs text-occ-faint">{key}</span>
-              {label[language] ?? label.es}
+              <span aria-hidden="true" className="occ-map-key font-mono text-xs text-occ-faint">{key}</span>
+              {/* A narrow map (occ-map.css) shows the short word and keeps the full one for assistive technology. */}
+              <span className="occ-map-label-full">{label[language] ?? label.es}</span>
+              {SHORT_LABELS[view] ? (
+                <span aria-hidden="true" className="occ-map-label-short">
+                  {SHORT_LABELS[view][language] ?? SHORT_LABELS[view].es}
+                </span>
+              ) : null}
             </button>
           );
         })}

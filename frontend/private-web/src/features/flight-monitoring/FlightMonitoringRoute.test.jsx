@@ -16,8 +16,12 @@ vi.mock('../admin-occ/AdminOccPreviewContext', () => ({
   useAdminOccPreview: () => ({ forceState: 'default' }),
 }));
 vi.mock('../shell/useTheme', () => ({ useTheme: () => ({ theme: 'light' }) }));
+const pageProps = vi.hoisted(() => ({ current: null }));
 vi.mock('./FlightMonitoringPage', () => ({
-  default: ({ data }) => <p>{data?.station.code}</p>,
+  default: props => {
+    pageProps.current = props;
+    return <p>{props.data?.station.code}</p>;
+  },
 }));
 
 const firstId = '20000000-0000-7000-8000-000000000003';
@@ -60,6 +64,17 @@ it('ignores a deep link to another station and keeps the PUJ scope', () => {
   ]}><FlightMonitoringRoute /></MemoryRouter>);
   expect(useFlightMonitoringData).toHaveBeenCalledWith('PUJ', 0, false, 'occ-account');
   expect(useFlightMonitoringData).not.toHaveBeenCalledWith('SDQ', expect.anything(), expect.anything(), expect.anything());
+});
+
+it('hands the page the PUJ scope it reads, and lets the page read the flight of the URL itself', () => {
+  render(<MemoryRouter initialEntries={[
+    `/admin-occ/flight-monitoring?stationId=${firstId}&flightId=leg-one`,
+  ]}><FlightMonitoringRoute /></MemoryRouter>);
+  expect(pageProps.current).toMatchObject({ stationId: firstId, stationCode: 'PUJ', theme: 'light', forceState: 'default' });
+  // The selection is the URL's (maps/core/useMapSelection.js): the route no longer hands a flight of its own.
+  expect(pageProps.current).not.toHaveProperty('focusFlightId');
+  // The route keeps its observer and its 25 s poll until the frame's channel takes them (OCC_OBSERVER_SITES).
+  expect(observerFactory).toHaveBeenCalledOnce();
 });
 
 it('does not read monitoring without a PUJ scope', () => {

@@ -19,6 +19,21 @@ export const OCC_TOAST_PLACEMENT = Object.freeze({
   className: 'fixed right-4 top-14 z-toast flex w-[min(24rem,calc(100vw_-_2rem))] flex-col gap-2',
 });
 
+/**
+ * The places a stack can take. `statusBar` (the default) is OCC_TOAST_PLACEMENT, where the frame's own stack sits.
+ * `workArea` is for a screen's own toasts (Monitoreo de vuelos): fixed to the bottom right of the work area, 24 px from
+ * the bottom and from the right, the margin of the frame's content, so they never pile onto the frame's stack under the
+ * status bar. Literal classes, so that Tailwind generates them: `bottom-6` and `right-6` are 1.5 rem (24 px).
+ */
+export const OCC_TOAST_PLACEMENTS = Object.freeze({
+  statusBar: OCC_TOAST_PLACEMENT,
+  workArea: Object.freeze({
+    bottomPx: 24,
+    rightPx: 24,
+    className: 'fixed bottom-6 right-6 z-toast flex w-[min(24rem,calc(100vw_-_3rem))] flex-col gap-2',
+  }),
+});
+
 // Elevation 2 (design B.5) without a shadow: the raised slab with a strong joint. An urgent or attention toast takes
 // the soft slab of its signal and a 3 px bar in its colour; its text stays plain.
 const TONE = Object.freeze({
@@ -55,14 +70,18 @@ function ToastWords({ toast, priority, language }) {
  * and a comma as a plate, «Incidencia reportada en rampa, OP-0412», so it never breaks across lines; `action`
  * (`{ label, onClick }`, «Abrir» or «Ver») runs and then closes the toast, like «Cerrar notificación» (`onDismiss(id)`).
  * An urgent toast is an `alert`, the rest are `status`: a toast never takes focus. It decides nothing about when a
- * toast shows or goes (shell/occToastQueue.js does).
+ * toast shows or goes (shell/occToastQueue.js does). `placement` is a key of OCC_TOAST_PLACEMENTS: `statusBar` (default)
+ * under the status bar, or `workArea` at the bottom right of the work area; an unknown placement throws.
  */
-export default function OccToastStack({ toasts = [], onDismiss, className = '' }) {
+export default function OccToastStack({ toasts = [], onDismiss, placement = 'statusBar', className = '' }) {
   const { t, language } = useTranslation(occUiMessages);
+  if (!Object.hasOwn(OCC_TOAST_PLACEMENTS, placement)) {
+    throw new RangeError(`Unknown OCC toast placement: ${String(placement)}`);
+  }
   if (toasts.length === 0) return null;
 
   return (
-    <div data-occ-toasts="" className={`${OCC_TOAST_PLACEMENT.className} ${className}`}>
+    <div data-occ-toasts="" data-placement={placement} className={`${OCC_TOAST_PLACEMENTS[placement].className} ${className}`}>
       {toasts.map(toast => {
         const priority = priorityOf(toast);
         return (

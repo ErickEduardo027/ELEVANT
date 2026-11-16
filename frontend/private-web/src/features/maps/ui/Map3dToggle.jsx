@@ -30,7 +30,7 @@ export default function Map3dToggle({ className = '' }) {
         ? 'border-occ-accent bg-occ-accent-soft text-occ-text'
         : 'border-occ-line bg-occ-panel text-occ-muted hover:bg-occ-panel-raised hover:text-occ-text'} ${className}`.trim()}
     >
-      <span aria-hidden="true" className="font-mono text-xs text-occ-faint">{key}</span>
+      <span aria-hidden="true" className="occ-map-key font-mono text-xs text-occ-faint">{key}</span>
       3D
     </button>
   );

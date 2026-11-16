@@ -80,6 +80,16 @@ describe('OccDataTable', () => {
     expect(screen.getByRole('table', { name: 'Tiempos de turnaround' }).querySelector('caption')).not.toHaveClass('sr-only');
   });
 
+  it('puts rowTestId on every row of a table and of a list', () => {
+    const { unmount } = render(<OccDataTable caption="Escalas" columns={COLUMNS} rows={FLIGHTS} rowTestId="turnaround-row" />);
+    expect(screen.getAllByTestId('turnaround-row')).toHaveLength(3);
+    expect(screen.getAllByTestId('turnaround-row')[0].tagName).toBe('TR');
+    unmount();
+    render(<OccDataTable as="list" caption="Escalas" columns={COLUMNS.map(({ sortable, ...column }) => column)}
+      rows={FLIGHTS} rowTestId="turnaround-row" />);
+    expect(screen.getAllByTestId('turnaround-row').map(row => row.tagName)).toEqual(['LI', 'LI', 'LI']);
+  });
+
   it('renders cells with render, mono, end alignment and hides columns below their breakpoint', () => {
     const seen = [];
     render(table({

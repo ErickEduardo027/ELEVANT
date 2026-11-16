@@ -3,12 +3,14 @@ import { getPlanningStatusMeta } from '../planningStatus';
 import { OCC_STATION_CODE, OCC_STATION_NAME } from '../../admin-occ/useOccStation';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
+import { occButtonClass } from '../../occ-ui/OccButton';
+import { occControlClass } from '../../occ-ui/OccField';
 
 const QUICK_FILTERS = ['delayed', 'unassigned'];
 
 function FieldLabel({ label, children, className = '' }) {
   return (
-    <label className={`flex flex-col gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark ${className}`}>
+    <label className={`flex flex-col gap-1 text-xs font-medium text-occ-muted ${className}`}>
       {label}
       {children}
     </label>
@@ -22,7 +24,7 @@ function FilterSelect({ label, value, onChange, options = [], formatOption = opt
       <select
         value={value}
         onChange={event => onChange(event.target.value)}
-        className="rounded-lg border border-black/10 bg-white/80 px-2 py-1.5 text-sm text-ink-900 outline-none transition focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+        className={occControlClass({ kind: 'select' })}
       >
         <option value="">{t('filters.all')}</option>
         {options.map(option => (
@@ -49,21 +51,21 @@ export default function PlanningFilters({
 }) {
   const { t, language } = useTranslation(planningMessages);
   return (
-    <div className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
-      <div className="flex flex-wrap items-end gap-3 border-b border-accent-600/10 bg-accent-600/[0.04] p-4 dark:bg-accent-600/[0.08]">
+    <div className="rounded-md border border-occ-line bg-occ-panel">
+      <div className="flex flex-wrap items-end gap-3 border-b border-occ-line px-3 py-2.5">
         <div className="mr-auto min-w-[200px]">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-600">{t('filters.scope')}</p>
-          <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+          <p className="text-sm font-semibold text-occ-text">{t('filters.scope')}</p>
+          <p className="mt-1 text-xs text-occ-muted">
             {t('filters.scopeHint')}
           </p>
         </div>
-        <div role="group" aria-labelledby="occ-planning-station-label" className="flex min-w-[180px] flex-col gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+        <div role="group" aria-labelledby="occ-planning-station-label" className="flex min-w-[180px] flex-col gap-1 text-xs font-medium text-occ-muted">
           <span id="occ-planning-station-label">{t('filters.station')}</span>
           <p className="flex min-h-[34px] items-center gap-2 text-sm">
-            <span className="font-mono font-semibold tracking-wider text-accent-600 dark:text-[#5B9BF5]">
+            <span className="rounded-sm border border-occ-line-strong px-1 font-mono font-semibold text-occ-text">
               {stationScopes.find(scope => scope.stationId === selectedStationId)?.stationCode ?? OCC_STATION_CODE}
             </span>
-            <span className="truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">{OCC_STATION_NAME}</span>
+            <span className="truncate text-xs text-occ-muted">{OCC_STATION_NAME}</span>
           </p>
         </div>
         <FieldLabel label={t('filters.operationalDate')} className="min-w-[170px]">
@@ -73,22 +75,22 @@ export default function PlanningFilters({
             value={selectedDate}
             onChange={event => onDateChange?.(event.target.value)}
             disabled={!selectedStationId}
-            className="rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm font-semibold text-ink-900 outline-none transition focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+            className={`${occControlClass({ kind: 'input' })} font-mono disabled:cursor-not-allowed disabled:text-occ-faint`}
           />
         </FieldLabel>
       </div>
 
-      <div className="space-y-3 p-4">
+      <div className="space-y-2.5 px-3 py-2.5">
         <div className="flex flex-wrap items-end gap-3">
           <FieldLabel label={t('filters.search')} className="min-w-[240px] flex-1">
             <span className="relative">
-              <SearchIcon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-secondary-light dark:text-text-secondary-dark" />
+              <SearchIcon aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-occ-muted" />
               <input
                 type="search"
                 value={filters.search}
                 onChange={event => onFilterChange('search', event.target.value)}
                 placeholder={t('filters.searchPlaceholder')}
-                className="w-full rounded-lg border border-black/10 bg-white/80 py-1.5 pl-7 pr-2 text-sm text-ink-900 outline-none transition focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+                className={`w-full pl-8 ${occControlClass({ kind: 'input' })}`}
               />
             </span>
           </FieldLabel>
@@ -107,10 +109,10 @@ export default function PlanningFilters({
               type="button"
               onClick={() => onQuickFilter(id)}
               aria-pressed={quickFilter === id}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-200 ${
+              className={`min-h-8 rounded border px-3 text-sm font-medium [@media(pointer:coarse)]:min-h-11 ${
                 quickFilter === id
-                  ? 'border-accent-600 bg-accent-600/10 text-accent-600'
-                  : 'border-black/10 text-text-secondary-light hover:border-accent-600/40 dark:border-white/10 dark:text-text-secondary-dark'
+                  ? 'border-occ-accent bg-occ-accent-soft text-occ-text'
+                  : 'border-occ-line text-occ-muted hover:border-occ-line-strong hover:text-occ-text'
               }`}
             >
               {t(`filters.${id}`)}
@@ -119,7 +121,7 @@ export default function PlanningFilters({
           <button
             type="button"
             onClick={onReset}
-            className="ml-auto rounded-lg px-2 py-1 text-xs font-semibold text-accent-600 hover:bg-accent-600/10"
+            className={`ml-auto ${occButtonClass({ variant: 'ghost', size: 'sm' })}`}
           >
             {t('filters.reset')}
           </button>

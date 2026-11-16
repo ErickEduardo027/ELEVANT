@@ -1,8 +1,30 @@
 import { useEffect, useState } from 'react';
 import { getFlightMonitoringSnapshot, subscribeToFlightUpdates, updateFlightStatus } from '../../services/flightMonitoringService';
 
+const STATION_MISMATCH = 'La respuesta no coincide con la estación seleccionada.';
+
 function mergeUpdate(flights, update) {
   return flights.map(flight => (flight.id === update.id ? { ...flight, ...update } : flight));
+}
+
+function stationMismatch() {
+  const error = new Error(STATION_MISMATCH);
+  error.code = 'station_mismatch';
+  return error;
+}
+
+// A refusal (401 or 403: the account may no longer read the station) and an answer for another station take the flights
+// away; any other failed refresh leaves them on screen.
+const dropsData = error => error?.status === 401 || error?.status === 403 || error?.code === 'station_mismatch';
+
+/**
+ * The state after a read failed: a refresh of the station on screen keeps its flights (`status` stays `success`, with
+ * the `error`), so the board shows them dimmed under its stale notice (OccRemoteView `staleSince`) instead of an empty
+ * error; the first read, a change of station or account, and a refusal show the error without flights.
+ */
+function failedRead(current, error, scopeKey) {
+  const keeps = !dropsData(error) && current.scopeKey === scopeKey && current.status === 'success' && current.data;
+  return keeps ? { ...current, error } : { status: 'error', data: null, error, scopeKey };
 }
 
 export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0,
@@ -30,16 +52,14 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0,
     getFlightMonitoringSnapshot(stationCode)
       .then(data => {
         if (cancelled) return;
-        if (data.station?.code !== stationCode) {
-          throw new Error('La respuesta no coincide con la estación seleccionada.');
-        }
+        if (data.station?.code !== stationCode) throw stationMismatch();
         setState({ status: 'success', data, error: null, scopeKey });
         setConnection('connected');
         setLastUpdatedAt(new Date().toISOString());
       })
       .catch(error => {
         if (cancelled) return;
-        setState({ status: 'error', data: null, error, scopeKey });
+        setState(current => failedRead(current, error, scopeKey));
         setConnection('disconnected');
       });
 
@@ -64,8 +84,7 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0,
       onSnapshot: snapshot => {
         if (stopped) return;
         if (snapshot.station?.code !== stationCode) {
-          setState({ status: 'error', data: null,
-            error: new Error('La respuesta no coincide con la estación seleccionada.'), scopeKey });
+          setState({ status: 'error', data: null, error: stationMismatch(), scopeKey });
           setConnection('disconnected');
           return;
         }
@@ -75,9 +94,8 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0,
       },
       onError: error => {
         if (stopped) return;
-        setState({ status: 'error', data: null, error, scopeKey });
+        setState(current => failedRead(current, error, scopeKey));
         setConnection('disconnected');
-        setLastUpdatedAt(null);
       },
     });
 

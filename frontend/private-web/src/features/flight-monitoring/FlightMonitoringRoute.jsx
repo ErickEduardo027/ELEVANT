@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchParams';
 import { useAuth } from '../auth/AuthContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import FlightMonitoringPage from './FlightMonitoringPage';
@@ -8,14 +7,14 @@ import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useTheme } from '../shell/useTheme';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 
-// El `focusFlightId` que el `AppShell` original guardaba en estado local al
-// navegar desde Notificaciones/Revisión (`handleNavigateToResource`) ahora se
-// expresa como query param `?flightId=`, enlazable y persistente a un refresh.
+// A flight linked from Notificaciones or Revisión arrives as `?flightId=` (contracts 2.1): the page reads it from the one
+// URL selection (maps/core/useMapSelection.js), linkable and kept across a refresh. The route keeps its own
+// account-change observer (OCC_OBSERVER_SITES, `movesIn: 'U5'`): the maps lane's budget test
+// (maps/useMapSituation.budget.test.jsx) reads that entry, so moving it onto the frame's channel waits for that lane.
 export default function FlightMonitoringRoute() {
   const { session } = useAuth();
   // OCC solo opera PUJ: un `?stationId=` de otra estación no cambia el alcance.
   const { stationScopes } = useOccStation();
-  const [searchParams] = useSearchParams();
   const selected = stationScopes[0];
   const [retryToken, setRetryToken] = useState(0);
   const { forceState } = useAdminOccPreview();
@@ -57,7 +56,8 @@ export default function FlightMonitoringRoute() {
         onRetry={() => setRetryToken(token => token + 1)}
         forceState={forceState}
         theme={theme}
-        focusFlightId={searchParams.get('flightId') ?? undefined}
+        stationId={selected?.stationId ?? null}
+        stationCode={selected?.stationCode ?? null}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, within, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PlanningPage from './PlanningPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
@@ -123,7 +123,7 @@ describe('PlanningPage', () => {
 
     expect(screen.getByTestId('planning-skeleton')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Cargando planificación operativa' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('kpi-skeleton')).toHaveLength(4);
+    expect(document.querySelector('dl[aria-label="Cifras del día"]').querySelectorAll('[data-occ-stat]')).toHaveLength(4);
     expect(screen.getByRole('group', { name: 'Estación' })).toBeInTheDocument();
     expect(screen.getByLabelText('Fecha operativa')).toBeEnabled();
   });
@@ -338,12 +338,24 @@ describe('PlanningPage', () => {
     }
   );
 
-  it('keeps alternative views explicitly unavailable instead of inventing data', async () => {
+  it('shows the day as a table and as the stand band, and each opens the drawer of a turnaround', async () => {
     renderPage();
+    const cards = screen.getAllByTestId('flight-card').length;
 
     await userEvent.click(screen.getByRole('button', { name: 'Tabla' }));
-    expect(screen.getByText('Vista de tabla')).toBeInTheDocument();
     expect(screen.queryByTestId('flight-timeline')).not.toBeInTheDocument();
+    const table = screen.getByRole('table', { name: 'Escalas del día' });
+    const rows = within(table).getAllByTestId('planning-table-row');
+    expect(rows).toHaveLength(cards);
+    expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent.replace(/Ordenar por .*$/, '').trim()))
+      .toEqual(['Vuelo', 'Aerolínea', 'Llegada', 'Salida', 'Posición', 'Agente', 'Estado']);
+    await userEvent.click(rows[0]);
+    expect(rows[0]).toHaveAttribute('aria-selected', 'true');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Posiciones' }));
+    const band = screen.getByRole('region', { name: 'Posiciones del día' });
+    expect(within(band).queryByRole('group', { name: 'Posiciones del día' }) ?? within(band).getByText(/Ninguna escala/))
+      .toBeInTheDocument();
   });
 
   it('supports deterministic preview states without replacing real data contracts', () => {
@@ -375,7 +387,7 @@ describe('PlanningPage in English', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delayed' }));
     await userEvent.click(screen.getByRole('button', { name: 'Table' }));
-    expect(screen.getByText('Table view')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Turnarounds of the day' })).toBeInTheDocument();
   });
 
   it('renders the empty state in English', () => {
