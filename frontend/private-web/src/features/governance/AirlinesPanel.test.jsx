@@ -117,3 +117,46 @@ describe('Superadministrador Aerolíneas · identificador fiscal', () => {
     expect(onSave.mock.calls[0][1]).toMatchObject({ taxRegistration: 'B85850394', taxRegistrationCountryCode: 'ES' });
   });
 });
+
+describe('Superadministrador Aerolíneas · corregir identidad', () => {
+  const operating = { ...airline, legalName: 'eeeeeeee', iataCode: 'EE', icaoCode: 'EOI',
+    verificationSourceUrl: 'https://junk.example.test', isVerified: true, identityLocked: true };
+
+  it('opens the identity of an operating airline only with a reason, and sends it with the verification', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[operating]} onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    expect(screen.getByRole('textbox', { name: 'Razón social' })).toHaveAttribute('readonly');
+    expect(screen.queryByRole('textbox', { name: 'Motivo de la corrección' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Corregir identidad' }));
+    expect(screen.getByRole('note')).toHaveTextContent('conservan los datos con los que se hicieron');
+    for (const name of ['Razón social', 'Código IATA', 'Código ICAO'])
+      expect(screen.getByRole('textbox', { name })).not.toHaveAttribute('readonly');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Razón social' }), { target: { value: 'Delta Air Lines, Inc.' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Código IATA' }), { target: { value: 'DL' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Código ICAO' }), { target: { value: 'DAL' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Fuente de verificación' }), { target: { value: 'https://www.delta.com/' } });
+
+    // The reason is required (10 to 500 characters) before anything is sent.
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('10 a 500 caracteres');
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Motivo de la corrección' }),
+      { target: { value: 'Datos de prueba reemplazados por los oficiales.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).toMatchObject({ legalName: 'Delta Air Lines, Inc.', iataCode: 'DL', icaoCode: 'DAL',
+      verificationSourceUrl: 'https://www.delta.com/', isVerified: true,
+      identityCorrectionReason: 'Datos de prueba reemplazados por los oficiales.', version: airline.version });
+  });
+
+  it('keeps the lock and sends no reason while the correction is not chosen', async () => {
+    const onSave = vi.fn(async () => true);
+    render(<AirlinesPanel airlines={[operating]} onSave={onSave} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Test Airways' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1]).not.toHaveProperty('identityCorrectionReason');
+  });
+});
