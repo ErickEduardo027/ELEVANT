@@ -276,3 +276,13 @@ describe('MasterDataRoute in English', () => {
     expect(screen.queryByText(/Datos maestros|Terminales|Posiciones|Tipos de avión|Guardar|Crear/)).toBeNull();
   });
 });
+
+it('lists the stands in natural order of their codes', async () => {
+  signedIn();
+  const codes = ['A10', 'BN10', 'A02', 'BN6', 'A3', 'A01', 'BN13', 'A11'];
+  loadOccMasterData.mockResolvedValue(data({ stands: codes.map(code => ({ ...a01, id: `s-${code}`, code, version: `v-${code}` })) }));
+  render(<MasterDataRoute />);
+  const stands = await screen.findByRole('region', { name: 'Posiciones' });
+  const shown = within(stands).getAllByLabelText(/^Código de la posición /).map(input => input.value);
+  expect(shown).toEqual(['A01', 'A02', 'A3', 'A10', 'A11', 'BN6', 'BN10', 'BN13']);
+});

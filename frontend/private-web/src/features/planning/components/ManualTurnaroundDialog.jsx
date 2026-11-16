@@ -3,6 +3,7 @@ import { createCharterAirline, createManualTurnaround, getManualTurnaroundOption
 import { stationLocalToUtc } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { problemMessage } from '../../../services/problemMessages';
+import { sortByStandCode } from '../../../services/standCodes';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages, TURNAROUND_PROBLEM_MESSAGES } from '../planningMessages';
 
@@ -307,7 +308,7 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
             <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.stand')}
               <select required value={form.standId} onChange={event => updateField('standId', event.target.value)} className={`${fieldClass} mt-1`}>
                 <option value="">{t('manual.selectStand')}</option>
-                {(options?.stands ?? []).map(stand => <option key={stand.id} value={stand.id}>{t('manual.standOption', { code: stand.code, terminal: stand.terminal?.code ?? '—' })}</option>)}
+                {sortByStandCode(options?.stands).map(stand => <option key={stand.id} value={stand.id}>{t('manual.standOption', { code: stand.code, terminal: stand.terminal?.code ?? '—' })}</option>)}
               </select>
             </label>
             <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.aircraftType')}

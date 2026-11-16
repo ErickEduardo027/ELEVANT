@@ -36,4 +36,11 @@ describe('usePositionsMapFilters', () => {
     act(() => result.current.setSearch('dm161'));
     expect(result.current.filteredPositions).toHaveLength(0);
   });
+
+  it('lists the stands in natural order of their codes', () => {
+    const shuffled = ['A10', 'BN13', 'A3', 'AN1', 'BN6', 'A11', 'B20', 'A1', 'A2'].map(id => position({ id }));
+    const { result } = renderHook(() => usePositionsMapFilters(shuffled));
+    expect(result.current.filteredPositions.map(p => p.id))
+      .toEqual(['A1', 'A2', 'A3', 'A10', 'A11', 'AN1', 'B20', 'BN6', 'BN13']);
+  });
 });
