@@ -163,7 +163,7 @@ mostró la bandeja; un conflicto obliga a releer.
 ### Identificador fiscal y registros públicos (revisión del profesor)
 
 - La solicitud pública exige el **identificador fiscal** de la aerolínea. Si la
-  aerolínea es dominicana, es su **RNC**: 9 dígitos con dígito verificador. Si
+  aerolínea es dominicana, es su **RNC**: 9 dígitos (desde el 16 de noviembre de 2026 no se comprueba su dígito verificador). Si
   no lo es, es su identificador, de 3 a 32 caracteres, con el país que lo emitió
   (`invalid_tax_registration`). Contratos lo corrige al verificar la aerolínea.
   La aprobación lo copia a la organización si esta no tiene uno. El contrato lo
@@ -189,10 +189,12 @@ mostró la bandeja; un conflicto obliga a releer.
   identidad verificada: cambiarlo no anula el check del registro ni la
   verificación manual, y queda auditado (`airline.tax_registration`). El
   catálogo público lo devuelve y el asistente lo precarga al elegir la
-  aerolínea, editable; sin RNC en la ficha, el país es el de la aerolínea y el
-  campo queda vacío. Los tres formularios (asistente, Contratos y
+  aerolínea, editable: el país y el número de la ficha, o, sin RNC en la ficha,
+  el país de la aerolínea y el campo vacío; cambiar de aerolínea los reemplaza.
+  En «Mi aerolínea no aparece», el país elegido para la aerolínea pasa al
+  identificador fiscal. Los tres formularios (asistente, Contratos y
   Superadministración) escriben el RNC con su máscara `1-31-23456-9`, teclado
-  numérico y, con los 9 dígitos, el aviso del dígito verificador o «RNC válido»;
+  numérico y, con los 9 dígitos, «RNC válido» (con menos, al enviar, «El RNC tiene 9 dígitos.»);
   se envían los 9 dígitos (`maskRnc` y `rncFeedback` de `@elevant/api-client`).
 - **Pasaporte dominicano del representante.** Con «Pasaporte» y nacionalidad
   República Dominicana (los valores por defecto), el asistente público muestra un

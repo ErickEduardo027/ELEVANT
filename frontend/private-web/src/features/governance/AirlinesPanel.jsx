@@ -84,7 +84,7 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
   function clear() { setEditingId(null); setForm(blank); setLogo(null); setTaxError(''); saveKeys.current.reset(); }
   async function save(event) {
     event.preventDefault();
-    // The tax identifier is optional; written, it must be valid (an RNC with its check digit for DO).
+    // The tax identifier is optional; written, it must be valid (an RNC has 9 digits).
     const tax = form.taxRegistration.trim() ? checkTaxRegistration(form.taxRegistration, taxCountryOf(form)) : null;
     if (tax?.problem) { setTaxError(tax.problem); return; }
     setTaxError(''); setBusy(true); setUploadError('');
@@ -155,11 +155,11 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
         <label className="text-xs font-semibold">País del identificador fiscal<input maxLength={2} value={taxCountry} onChange={(event) => changeTaxCountry(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" /></label>
         <div><label htmlFor="airline-tax-number" className="text-xs font-semibold">{dominicanTax ? 'RNC' : 'Identificador fiscal'}</label>
           <input id="airline-tax-number" maxLength={dominicanTax ? 12 : 32} inputMode={dominicanTax ? 'numeric' : undefined} placeholder={dominicanTax ? '1-31-23456-9' : 'Opcional'} value={form.taxRegistration}
-            aria-invalid={taxError || taxFeedback?.valid === false ? true : undefined} aria-describedby={taxError ? 'airline-tax-error' : taxFeedback ? 'airline-tax-feedback' : undefined}
+            aria-invalid={taxError ? true : undefined} aria-describedby={taxError ? 'airline-tax-error' : taxFeedback ? 'airline-tax-feedback' : undefined}
             onChange={(event) => { setTaxError(''); change('taxRegistration', dominicanTax ? maskRnc(event.target.value) : event.target.value); }}
             className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" />
           {taxError && <p id="airline-tax-error" role="alert" className="mt-1 text-xs text-status-danger">{taxError}</p>}
-          {taxFeedback && <p id="airline-tax-feedback" role="status" className={`mt-1 text-xs ${taxFeedback.valid ? 'font-semibold text-status-success' : 'text-status-danger'}`}>{taxFeedback.valid ? `✓ ${taxFeedback.message}` : taxFeedback.message}</p>}
+          {taxFeedback && <p id="airline-tax-feedback" role="status" className="mt-1 text-xs font-semibold text-status-success">✓ {taxFeedback.message}</p>}
         </div>
       </div>
       <FileDropField label="Logo de la aerolínea" accept="image/png,image/jpeg,image/webp" file={logo} onFile={setLogo} currentUrl={form.logoUrl} hint="PNG, JPG o WebP. Máximo 8 MB. El logo seleccionado se carga al guardar." />

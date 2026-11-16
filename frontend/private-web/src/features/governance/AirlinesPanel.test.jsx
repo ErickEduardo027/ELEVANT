@@ -89,10 +89,10 @@ describe('Superadministrador Aerolíneas · identificador fiscal', () => {
     expect(screen.getByRole('textbox', { name: 'País del identificador fiscal' })).toHaveValue('DO');
     const rnc = screen.getByRole('textbox', { name: 'RNC' });
     expect(rnc).toHaveAttribute('inputMode', 'numeric');
-    fireEvent.change(rnc, { target: { value: '131234568' } });
-    expect(rnc).toHaveValue('1-31-23456-8');
-    expect(screen.getByText(/dígito verificador/)).toBeInTheDocument();
+    fireEvent.change(rnc, { target: { value: '13123456' } });
+    expect(rnc).toHaveValue('1-31-23456');
     fireEvent.click(screen.getByRole('button', { name: 'Guardar aerolínea' }));
+    expect(screen.getByText('El RNC tiene 9 dígitos.')).toBeInTheDocument();
     expect(onSave).not.toHaveBeenCalled();
     fireEvent.change(rnc, { target: { value: '131234569' } });
     expect(screen.getByText('✓ RNC válido')).toBeInTheDocument();

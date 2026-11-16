@@ -301,12 +301,12 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
 /** The airline's tax identifier in the verification form: an RNC for a Dominican airline, otherwise its own id. */
 function TaxFields({ id, tax, error, onChange }) {
   const dominican = tax.countryCode.trim().toUpperCase() === 'DO';
-  // An RNC is typed with its mask and says at once, with its 9 digits, whether it is valid.
+  // An RNC is typed with its mask and, with its 9 digits, is confirmed at once (no check digit).
   const feedback = dominican && !error ? rncFeedback(tax.number) : null;
   const described = [error && `${id}-taxNumber-error`, feedback && `${id}-taxNumber-feedback`].filter(Boolean).join(' ');
   return <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
     <div><label htmlFor={`${id}-taxCountry`} className="text-xs font-semibold">País del identificador fiscal (2 letras)</label><input id={`${id}-taxCountry`} maxLength={2} value={tax.countryCode} onChange={event => { const countryCode = event.target.value.toUpperCase(); onChange({ countryCode, ...(countryCode === 'DO' ? { number: maskRnc(tax.number) } : {}) }); }} className={field} /></div>
-    <div><label htmlFor={`${id}-taxNumber`} className="text-xs font-semibold">{dominican ? 'RNC' : 'Identificador fiscal'}</label><input id={`${id}-taxNumber`} maxLength={dominican ? 12 : 32} inputMode={dominican ? 'numeric' : undefined} placeholder={dominican ? '1-31-23456-9' : undefined} value={tax.number} aria-invalid={error || feedback?.valid === false ? true : undefined} aria-describedby={described || undefined} onChange={event => onChange({ number: dominican ? maskRnc(event.target.value) : event.target.value })} className={field} />{error && <p id={`${id}-taxNumber-error`} className="mt-1 text-xs text-status-danger">{error}</p>}{feedback && <p id={`${id}-taxNumber-feedback`} role="status" className={`mt-1 text-xs ${feedback.valid ? 'font-semibold text-status-success' : 'text-status-danger'}`}>{feedback.valid ? `✓ ${feedback.message}` : feedback.message}</p>}</div>
+    <div><label htmlFor={`${id}-taxNumber`} className="text-xs font-semibold">{dominican ? 'RNC' : 'Identificador fiscal'}</label><input id={`${id}-taxNumber`} maxLength={dominican ? 12 : 32} inputMode={dominican ? 'numeric' : undefined} placeholder={dominican ? '1-31-23456-9' : undefined} value={tax.number} aria-invalid={error ? true : undefined} aria-describedby={described || undefined} onChange={event => onChange({ number: dominican ? maskRnc(event.target.value) : event.target.value })} className={field} />{error && <p id={`${id}-taxNumber-error`} className="mt-1 text-xs text-status-danger">{error}</p>}{feedback && <p id={`${id}-taxNumber-feedback`} role="status" className="mt-1 text-xs font-semibold text-status-success">✓ {feedback.message}</p>}</div>
   </div>;
 }
 

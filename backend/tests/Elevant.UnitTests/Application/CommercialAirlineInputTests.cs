@@ -25,16 +25,26 @@ public sealed class CommercialAirlineInputTests
     [InlineData(null, null, true)]
     [InlineData("", "DO", true)]
     [InlineData("1-31-23456-9", "DO", true)]
-    [InlineData("131234568", "DO", false)]
+    [InlineData("13123456", "DO", false)]
+    [InlineData("1312345690", "DO", false)]
     [InlineData("131234569", null, false)]
     [InlineData("B85850394", "ES", false)]
-    public void ADominicanAirlineTaxIdentifierIsAnRncWithItsCheckDigit(string? number, string? country, bool valid)
+    public void ADominicanAirlineTaxIdentifierIsAnRncOfNineDigits(string? number, string? country, bool valid)
     {
         var input = Valid() with { TaxRegistration = number, TaxRegistrationCountryCode = country };
 
         Assert.Equal(valid, input.IsValid());
         if (valid && !string.IsNullOrWhiteSpace(number))
             Assert.Equal("131234569", input.TaxRegistrationOrNull()!.Number);
+    }
+
+    [Fact]
+    public void AnAirlineRncIsNotRefusedForItsCheckDigit()
+    {
+        var input = Valid() with { TaxRegistration = "1-31-23456-8", TaxRegistrationCountryCode = "DO" };
+
+        Assert.True(input.IsValid());
+        Assert.Equal("131234568", input.TaxRegistrationOrNull()!.Number);
     }
 
     [Fact]

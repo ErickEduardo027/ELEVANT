@@ -26,7 +26,7 @@ describe("canonical public commercial intake client", () => {
       fetch: async () => new Response(JSON.stringify({ reference: "REQ", replayed: false }),
         { status: 201, headers: { "content-type": "application/json" } }) });
     for (const tax of [{ taxRegistration: null, taxRegistrationCountryCode: null },
-      { taxRegistration: "131234568", taxRegistrationCountryCode: "DO" },
+      { taxRegistration: "13123456", taxRegistrationCountryCode: "DO" },
       { taxRegistration: "ab", taxRegistrationCountryCode: "US" }])
       await expect(client.submitCommercialRequest({ ...request, ...tax })).rejects.toBeInstanceOf(TypeError);
     // A proposed Dominican airline cannot give a foreign identifier.

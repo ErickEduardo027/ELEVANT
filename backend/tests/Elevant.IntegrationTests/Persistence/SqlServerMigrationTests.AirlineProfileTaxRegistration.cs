@@ -60,9 +60,9 @@ public sealed partial class SqlServerMigrationTests
         var input = new ManagedAirlineInput("RNC TEST", "Caribe Rnc", "Caribe Rnc S.R.L.", "Caribe", "DO", null, "QRN",
             null, "https://caribe-rnc.example.test/", "https://aoc.example.gob.do/qrn", IsVerified: true, IsPublished: true,
             Version: null, TaxRegistration: "1-30-00000-1", TaxRegistrationCountryCode: "DO");
-        // A Dominican airline's identifier is an RNC: a bad check digit or a foreign country is refused.
+        // A Dominican airline's identifier is an RNC of 9 digits: a shorter one or a foreign country is refused.
         Assert.Equal(CatalogMutationFailure.Invalid, (await store.SaveAsync(SuperAdministrator, null,
-            input with { TaxRegistration = "130000002" }, null, ct)).Failure);
+            input with { TaxRegistration = "13000000" }, null, ct)).Failure);
         Assert.Equal(CatalogMutationFailure.Invalid, (await store.SaveAsync(SuperAdministrator, null,
             input with { TaxRegistrationCountryCode = "US" }, null, ct)).Failure);
         Assert.Equal(CatalogMutationFailure.Invalid, (await store.SaveAsync(SuperAdministrator, null,

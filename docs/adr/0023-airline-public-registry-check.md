@@ -107,6 +107,9 @@ Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
   `tax_registration_country_code` (migración `20261116145344_AddAirlineProfileTaxRegistration`), validados
   con `TaxRegistrations`. No es evidencia de la identidad: cambiarlo no anula el check del registro ni la
   verificación manual.
+- **RNC de 9 dígitos, sin dígito verificador.** A pedido del usuario, el RNC de una aerolínea es válido con sus
+  9 dígitos (con o sin guiones); ya no se comprueba el módulo 11 en la API, el cliente compartido ni los
+  formularios. Los documentos de personas (cédula, pasaporte, RNC en `IdentityDocuments`) conservan sus reglas.
 - **Fichas AVIAM.** `AviamAirlineReference.Verified` usa, además de las seis identidades IATA, los códigos de
   la copia de OpenFlights del repositorio, cotejados por nombre. «Completar fichas AVIAM» se aplica a las
   fichas que ninguna persona editó: `updated_at` del seed, o solo auditorías `commercial.airline.enriched` y

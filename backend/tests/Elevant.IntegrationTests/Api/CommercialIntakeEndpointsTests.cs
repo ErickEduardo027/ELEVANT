@@ -83,9 +83,9 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(("Caribe Cargo Express", "CCX"), registry.Asked);
         Assert.Equal("NotFound", stub.Written?.RegistryCheck?.Status);
 
-        // The tax identifier is required, and a Dominican airline gives a valid RNC.
+        // The tax identifier is required, and a Dominican airline gives an RNC of 9 digits.
         var caribe = new { name = "Caribe Cargo Express", countryCode = "DO", iataCode = (string?)null, icaoCode = "CCX" };
-        foreach (var (tax, country) in new[] { ((string?)null, (string?)null), ("131234568", "DO"), ("B-12345678", "ES") })
+        foreach (var (tax, country) in new[] { ((string?)null, (string?)null), ("13123456", "DO"), ("B-12345678", "ES") })
         {
             using var refused = await client.PostAsJsonAsync("/api/v1/public/commercial-requests",
                 Payload(caribe, tax, country), TestContext.Current.CancellationToken);

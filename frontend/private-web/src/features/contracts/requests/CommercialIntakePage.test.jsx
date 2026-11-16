@@ -320,7 +320,7 @@ it('shows the RNC and the registry verdict in Spanish and points to the Superadm
   expect(within(verified).getByText(/✓ Confirmada en registros públicos/)).toBeInTheDocument();
 });
 
-it('corrects the RNC while verifying and refuses an invalid one before sending', async () => {
+it('corrects the RNC while verifying and refuses an incomplete one before sending', async () => {
   verifyCommercialRequestAirline.mockResolvedValue({ id: 'req-1' });
   const review = await open({ ...base, taxRegistration: { number: '131234569', countryCode: 'DO', display: 'RNC 1-31-23456-9' } });
   await userEvent.clear(within(review).getByRole('textbox', { name: 'Razón social' }));
@@ -328,9 +328,9 @@ it('corrects the RNC while verifying and refuses an invalid one before sending',
   await userEvent.type(within(review).getByRole('textbox', { name: 'Fuente HTTPS' }), 'https://aoc.example.test/cmp');
   const rnc = within(review).getByRole('textbox', { name: 'RNC' });
   await userEvent.clear(rnc);
-  await userEvent.type(rnc, '131234568');
+  await userEvent.type(rnc, '13123456');
   await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
-  expect(within(review).getByText(/dígito verificador del RNC/)).toBeInTheDocument();
+  expect(within(review).getByText('El RNC tiene 9 dígitos.')).toBeInTheDocument();
   expect(verifyCommercialRequestAirline).not.toHaveBeenCalled();
   await userEvent.clear(rnc);
   await userEvent.type(rnc, '1-30-00000-1');
@@ -340,7 +340,7 @@ it('corrects the RNC while verifying and refuses an invalid one before sending',
     taxRegistrationCountryCode: 'DO' });
 });
 
-it('shows the RNC with its dashes, masks what is typed and says at once whether it is valid', async () => {
+it('shows the RNC with its dashes, masks what is typed and confirms it with its 9 digits', async () => {
   const review = await open({ ...base, countryCode: 'DO',
     taxRegistration: { number: '131000029', countryCode: 'DO', display: 'RNC 1-31-00002-9' } });
   const rnc = within(review).getByRole('textbox', { name: 'RNC' });
@@ -353,9 +353,11 @@ it('shows the RNC with its dashes, masks what is typed and says at once whether 
   await userEvent.type(rnc, '4569');
   expect(rnc).toHaveValue('1-31-23456-9');
   expect(within(review).getByText('✓ RNC válido')).toBeInTheDocument();
+  // No check digit: any 9 digits are an RNC.
   await userEvent.type(rnc, '{backspace}8');
-  expect(within(review).getByText(/dígito verificador del RNC/)).toBeInTheDocument();
-  expect(rnc).toHaveAttribute('aria-invalid', 'true');
+  expect(within(review).getByText('✓ RNC válido')).toBeInTheDocument();
+  expect(within(review).queryByText(/dígito verificador/)).not.toBeInTheDocument();
+  expect(rnc).not.toHaveAttribute('aria-invalid');
 });
 
 it('drops the registry refusal once Superadministración verified the airline and Contratos updates', async () => {
