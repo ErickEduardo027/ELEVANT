@@ -3,6 +3,18 @@ import { expect, test } from "@playwright/test";
 const serviceId = "20000000-0000-7000-8000-000000000006";
 const airlineId = "20000000-0000-7000-8000-000000000003";
 
+/**
+ * Opens the landing with the headline font loaded. The headline is measured in the display font,
+ * not in the fallback one, which wraps differently.
+ */
+async function gotoLandingWithFonts(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    await document.fonts.load('700 1rem "Bricolage Grotesque"');
+    await document.fonts.ready;
+  });
+}
+
 async function stubCommercialCatalog(page: import("@playwright/test").Page) {
   await page.route("**/api/v1/public/commercial-catalog", route => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({
@@ -147,5 +159,77 @@ test.describe("landing pública", () => {
     await expect(
       page.getByRole("textbox", { name: "Correo corporativo", exact: true }),
     ).toBeVisible();
+  });
+
+  // N20: short desktop windows and landscape phones also size the headline by the window
+  // height, so it ends inside the first screen, below the header.
+  const shortWindows = [
+    { width: 1366, height: 657 },
+    { width: 1568, height: 653 },
+    { width: 1280, height: 600 },
+    { width: 1936, height: 806 },
+    { width: 1920, height: 800 },
+    { width: 844, height: 390 },
+  ];
+
+  for (const viewport of shortWindows) {
+    test(`el titular cabe en la primera pantalla de ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }, testInfo) => {
+      test.skip(testInfo.project.name !== "desktop", "Fixed window sizes");
+      await page.setViewportSize(viewport);
+      await gotoLandingWithFonts(page);
+
+      const title = page.getByRole("heading", { level: 1, name: /historia verificable/ });
+      await expect(title).toBeVisible();
+      // Right after a cold font load Chrome may still apply the fallback font's `ch` to the
+      // headline's max-width (one line more) and reflow shortly after, so the bottom is polled.
+      await expect.poll(async () => {
+        const box = (await title.boundingBox())!;
+        return Math.ceil(box.y + box.height);
+      }, { message: `El titular termina dentro de los ${viewport.height}px de alto` })
+        .toBeLessThanOrEqual(viewport.height);
+      const titleBox = (await title.boundingBox())!;
+      const headerBox = (await page.locator(".site-header").boundingBox())!;
+      expect(titleBox.y, "El titular empieza debajo del encabezado")
+        .toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+      // Nor does the bottom edge slice a line of the lead that follows it.
+      const slicedLines = await page.locator(".hero__lead").evaluate((lead, fold) => {
+        const range = document.createRange();
+        range.selectNodeContents(lead);
+        return [...range.getClientRects()].filter((line) => line.top < fold && line.bottom > fold).length;
+      }, viewport.height);
+      expect(slicedLines, "Ninguna línea de la entradilla queda cortada por el borde inferior").toBe(0);
+    });
+  }
+
+  // Portrait phones and tall windows keep the width-only size of the headline.
+  const unchangedWindows = [
+    { width: 390, height: 844, fontSize: 51.2 }, // clamp(3.2rem, 12vw, 8.7rem)
+    { width: 360, height: 780, fontSize: 51.2 },
+    { width: 1440, height: 900, fontSize: 123.2 }, // clamp(7.7rem, 8.4vw, 10.5rem)
+  ];
+
+  for (const viewport of unchangedWindows) {
+    test(`el titular conserva su tamaño en ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }, testInfo) => {
+      test.skip(testInfo.project.name !== "desktop", "Fixed window sizes");
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await gotoLandingWithFonts(page);
+
+      const title = page.getByRole("heading", { level: 1, name: /historia verificable/ });
+      await expect(title).toBeInViewport({ ratio: 1 });
+      const fontSize = await title.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+      expect(fontSize).toBeCloseTo(viewport.fontSize, 1);
+    });
+  }
+
+  test("el héroe no muestra la pastilla técnica del motor 3D", async ({ page }) => {
+    await page.goto("/");
+
+    const scene = page.locator(".hero__media [data-render-state]");
+    await expect(scene).toHaveAttribute("data-graphics-tier", /^(FULL|LITE)$/);
+    await expect(page.locator(".hero")).not.toContainText(/MOTOR 3D|RESPALDO VISUAL/);
   });
 });

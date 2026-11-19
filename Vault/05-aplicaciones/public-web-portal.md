@@ -210,6 +210,27 @@ ancho disponible junto al sidebar, no al del viewport
 La navegación inferior del portal se mantiene hasta 64 rem. El héroe 3D elige
 la calidad LITE en teléfonos, tablets y equipos o redes limitados.
 
+*Posterior al commit verificado de esta nota (hallazgo N20 de la corrida del VPS
+del 16 de noviembre de 2026):* en las ventanas de escritorio bajas y en los
+teléfonos en horizontal, el titular del héroe ya no se dimensiona solo por el
+ancho: toma el menor entre el tamaño que da el ancho y el que deja libre el alto
+de la ventana (`min(vw, svh)`). Así «Cada rotación deja una historia
+verificable.» termina justo encima del borde inferior de la primera pantalla y
+la entradilla empieza debajo, sin líneas cortadas; en una ventana muy baja el
+titular puede bajar hasta los 3,2 rem de los teléfonos. Las ventanas altas, como
+la de 1440 × 900, y los teléfonos en vertical conservan el tamaño anterior, que
+queda además como respaldo para los navegadores sin `svh`. En una ventana de
+escritorio de hasta 50 rem de alto el héroe ocupa la pantalla sin el mínimo de
+44 rem. El héroe ya no muestra la pastilla técnica «MOTOR 3D · LITE» ni
+«RESPALDO VISUAL»: la calidad elegida y el estado del render siguen en los
+atributos `data-graphics-tier` y `data-render-state` de la escena. Tras la
+primera carga de la fuente, Chrome puede mostrar el titular un instante con una
+línea más, hasta que recalcula su ancho máximo en `ch` con la fuente cargada
+([estilos](../../frontend/public-web/src/app/globals.css),
+[escena](../../frontend/public-web/src/components/three/HeroFlightScene.tsx),
+[prueba de la escena](../../frontend/public-web/tests/unit/hero-flight-scene.test.tsx)
+y [ventanas medidas en el navegador](../../frontend/public-web/tests/e2e/marketing.spec.ts)).
+
 Playwright añade proyectos de 360, 1024 y 1920 px que repiten las
 comprobaciones de desbordamiento con un
 [detector de elementos fuera del viewport](../../frontend/public-web/tests/e2e/layout.ts).
