@@ -6,7 +6,7 @@ import { SIGNALS, STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
-import { SCENARIO_AGENTS, createRampScenario } from '../testing/mapFixtures';
+import { SCENARIO_AGENTS, boardStand, boardVisit, createRampScenario } from '../testing/mapFixtures';
 import StandDetailFacts, { locationOrigin } from './StandDetailFacts';
 
 // The synthetic ramp of the fixtures at 14:07 in Punta Cana, as the positions map reads it (useStandDisplay).
@@ -69,6 +69,59 @@ describe('StandDetailFacts', () => {
     expect(factsOf('signal')).toEqual([]);
     rerender(<StandDetailFacts position={null} />);
     expect(screen.queryByTestId('stand-detail-facts')).toBeNull();
+  });
+
+  it('says who covers the stand now and, dimmed, the coverages that ended or are still to start (N26)', () => {
+    // A5 at 19:50 on 16 November in Punta Cana, with an aircraft on it since 19:20, and the coverage windows of the day.
+    const T1950 = Date.parse('2026-11-16T23:50:00Z');
+    const local = (hour, minute = 0, day = 16) => Date.UTC(2026, 10, day, hour + 4, minute);
+    const cover = (agentName, from, to, isReinforcement = false) => ({
+      agentName, startsAt: new Date(from).toISOString(), endsAt: new Date(to).toISOString(), isReinforcement,
+    });
+    const parked = boardVisit({ nowMs: T1950, flight: 'WN301', arrivalInMin: -30, departureInMin: 40, arrived: true });
+    const a5 = (coverage, operationDate = '2026-11-16') => withStandDisplay(mapOccupancyToRampPositions(REFERENCES, {
+      operationDate, asOf: new Date(T1950).toISOString(), positions: [boardStand('A05', {
+        coveredBy: [...new Set(coverage.map(window => window.agentName))], coverage, turnarounds: [parked] })],
+    }), { nowMs: T1950 }).find(item => item.id === 'A5');
+    const coverageLines = () => within(facts()).getAllByRole('listitem').map(item => item.textContent)
+      .filter(text => /cobertura|Cubre/.test(text));
+
+    // Elena Soto covered it until 17:00: nobody covers it now, and the stand asks for an agent.
+    const { rerender } = render(<StandDetailFacts position={a5([cover('Elena Soto', local(5), local(17))])} />);
+    expect(factsOf('coverage')).toEqual([]);
+    const [ended] = factsOf('coverage-ended');
+    expect(ended).toHaveTextContent(/^La cobertura de Elena Soto terminó a las 17:00$/);
+    expect(ended).toHaveClass('text-occ-muted');
+    expect(factsOf('signal').map(item => item.textContent)).toEqual([`${SIGNALS.attention.es}Sin agente que la cubra`]);
+    // Somebody covered it that day: no «Sin cobertura registrada».
+    expect(factsOf('coverage-agents')).toEqual([]);
+
+    // Luis Peña covers it now with Marta Castillo's reinforcement, and Ana Ruiz from 21:00.
+    rerender(<StandDetailFacts position={a5([cover('Elena Soto', local(5), local(17)), cover('Luis Peña', local(17), local(21)),
+      cover('Marta Castillo', local(19), local(22), true), cover('Ana Ruiz', local(21), local(23))])} />);
+    expect(coverageLines()).toEqual(['Cubre Luis Peña y Marta Castillo (refuerzo)',
+      'La cobertura de Elena Soto terminó a las 17:00', 'La cobertura de Ana Ruiz empieza a las 21:00']);
+    expect(factsOf('coverage-upcoming')[0]).toHaveClass('text-occ-muted');
+    expect(factsOf('signal')).toEqual([]);
+
+    // Another date: each window with its times, and nothing said of now.
+    rerender(<StandDetailFacts position={a5([cover('Elena Soto', local(5, 0, 17), local(17, 0, 17)),
+      cover('Luis Peña', local(17, 0, 17), local(23, 0, 17), true)], '2026-11-17')} />);
+    expect(coverageLines()).toEqual(['Cubre Elena Soto de 05:00 a 17:00', 'Cubre Luis Peña (refuerzo) de 17:00 a 23:00']);
+    expect(factsOf('coverage-window')).toHaveLength(2);
+
+    // Nobody covers it that day: «Sin cobertura registrada», as without windows.
+    rerender(<StandDetailFacts position={a5([])} />);
+    expect(coverageLines()).toEqual([]);
+    expect(factsOf('coverage-agents')[0]).toHaveTextContent('Sin cobertura registrada');
+    cleanup();
+
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><StandDetailFacts position={a5([cover('Elena Soto', local(5), local(17)),
+      cover('Ana Ruiz', local(21), local(23), true)])} /></LanguageScope>);
+    expect(factsOf('coverage-ended').map(item => item.textContent)).toEqual(['Coverage by Elena Soto ended at 17:00']);
+    expect(factsOf('coverage-upcoming').map(item => item.textContent))
+      .toEqual(['Coverage by Ana Ruiz (reinforcement) starts at 21:00']);
   });
 
   it('speaks English on the English screens', () => {

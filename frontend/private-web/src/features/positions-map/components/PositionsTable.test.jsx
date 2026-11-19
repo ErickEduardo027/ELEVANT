@@ -61,3 +61,14 @@ it('names who covers a stand: the coverage first, else the flight\'s agent', () 
   expect(standAgentOf(STANDS[1])).toBe('J. Ramírez');
   expect(standAgentOf(STANDS[2])).toBeNull();
 });
+
+it('names who covers the stand now when the board brought its coverage windows (N26)', () => {
+  const live = now => ({ live: true, now, visit: null, ended: [], upcoming: [], windows: [] });
+  // The names of the day list Elena Soto, whose coverage ended: nobody covers it now, never the day's names.
+  const ended = { ...STANDS[0], coveredBy: ['Elena Soto'], assignedAgent: 'Elena Soto', display: { coverage: live([]) } };
+  expect(standAgentOf(ended)).toBeNull();
+  expect(standAgentOf({ ...ended, display: { coverage: live([{ name: 'Luis Peña', isReinforcement: false }]) } }))
+    .toBe('Luis Peña');
+  // Another date: the names of the day.
+  expect(standAgentOf({ ...ended, display: { coverage: { ...live([]), live: false } } })).toBe('Elena Soto');
+});

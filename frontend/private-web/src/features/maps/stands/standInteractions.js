@@ -3,7 +3,7 @@ import { normalizeStandCode } from '../../../services/standCodes';
 import { STAND_STATES, TAGS } from '../../occ-ui/statusVocabulary';
 import { isRetired, standCodeOf } from '../core/cameraPresets';
 import { boxOfPoints, boxesMeet } from './standFeatures';
-import { displayFromStatus, sameAgentCodes, standStateOf } from './standModel';
+import { displayFromStatus, sameAgentCodes, standCoverageNames, standStateOf } from './standModel';
 
 // What a person's pointer and selection do to the stands of an OCC map (PR M4, design D5): the words of the tooltip of
 // a stand, the feature-state a hover or a selection writes (only what changes), and whether a selected stand lies
@@ -31,9 +31,6 @@ function joinNames(names, language) {
   return listFormatters.get(locale).format(names);
 }
 
-const cleanNames = names => [...new Set((Array.isArray(names) ? names : [])
-  .map(name => String(name ?? '').trim()).filter(name => name !== ''))];
-
 const codeOf = stand => normalizeStandCode(standCodeOf(stand));
 
 /** The stand of `stands` (not retired) whose normalized code is `code`'s, or `null`. */
@@ -49,8 +46,9 @@ export function findStandByCode(stands, code) {
  * and `display`, else their board status), with the words of `t` (the map messages) in `language`:
  * `{ kind: 'stand', id, code, title, detail, reasons }`:
  * - `title`: the code and the state in the words of the vocabulary, «A5 · Ocupada»;
- * - `detail`: the flight (with «Demo» for a demo flight) and who covers the stand, «DM161 · Cubre M. Castillo», or
- *   `null` when there is neither;
+ * - `detail`: the flight (with «Demo» for a demo flight) and who covers the stand (now, with the board's coverage
+ *   windows of today, N26: standModel.js, standCoverageNames), «DM161 · Cubre M. Castillo», or `null` when there is
+ *   neither;
  * - `reasons`: `[{ signal, text }]`, the reasons of its signals first (`signal` is `urgent`, `attention` or, PR M6, the
  *   plain `notice` «El avión ya está en la posición. Registra la llegada.», drawn with their shape), then «Anulada
  *   por …» and «Solo fuselaje estrecho» (`signal` `null`).
@@ -66,7 +64,7 @@ export function standTooltip(code, stands, t, language = 'es') {
   const display = stand.display ?? displayFromStatus(stand);
   const demo = display.isDemo ? TAGS.demo[language] ?? TAGS.demo.es : null;
   const flight = display.flightNumber ? [display.flightNumber, demo].filter(Boolean).join(SEPARATOR) : null;
-  const names = cleanNames(stand.coveredBy);
+  const names = standCoverageNames(stand);
   const coverage = names.length > 0 ? t('stand.coveredBy', { names: joinNames(names, language) }) : null;
   const signals = Array.isArray(stand.signals) ? stand.signals : display.signals ?? [];
   const reasons = signals

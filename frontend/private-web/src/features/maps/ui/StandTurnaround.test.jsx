@@ -42,6 +42,24 @@ describe('StandTurnaround (owner request of 2026-11-15)', () => {
     expect(fact('next')).toHaveTextContent(/ZZ500 · llega \d\d:\d\d · en 120 min/);
   });
 
+  it('«Agente» is who covers the visit (N26): the aircraft on the stand now, the one to come at its chocks', () => {
+    const agentOf = position => {
+      cleanup();
+      render(<StandTurnaround position={position} />);
+      return screen.getByTestId('stand-turnaround').querySelector('[data-fact="agent"] dd').textContent;
+    };
+    const live = (now, visit) => ({ live: true, now, visit, ended: [], upcoming: [], windows: [] });
+    const marta = { name: 'Marta', isReinforcement: false };
+    // Her coverage ended: nobody covers the aircraft on the stand, whatever the names of the day say.
+    expect(agentOf({ ...occupied, display: { ...occupied.display, coverage: live([], []) } })).toBe('Sin agente');
+    // The flight to come: who covers the stand when it gets there, not who covers it now.
+    const coming = { ...occupied.display, state: 'planned', coverage: live([marta], [{ name: 'Luis Peña', isReinforcement: false }]) };
+    expect(agentOf({ ...occupied, coveredBy: ['Marta', 'Luis Peña'], display: coming })).toBe('Luis Peña');
+    // Another date, or no windows: the names of the day.
+    expect(agentOf({ ...occupied, display: { ...occupied.display, coverage: { ...live([], null), live: false } } }))
+      .toBe('Marta');
+  });
+
   it('the arrival tells its landing from its stand: «Aterrizó» and «En posición», never «Real» (N23)', () => {
     // WN9001 on 16 November: due on the stand at 19:54, on the runway at 19:49, on the stand at 19:54:40 (UTC−4).
     const at = time => Date.parse(`2026-11-16T${time}Z`);

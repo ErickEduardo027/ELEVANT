@@ -133,6 +133,22 @@ export function mapTurnaroundsToRampPositions(rampPositions, turnarounds = [], n
  */
 export const mapStandCode = normalizeStandCode;
 
+/**
+ * The coverage windows of a board stand (N26), `{ date, windows: [{ agentName, startsAt, endsAt, isReinforcement }] }`
+ * with the board's operation date, as copies; `null` when the board brought none (a read that did not ask for them, an
+ * older API, or a map position without a stand row): unknown, never empty.
+ */
+function coverageOf(stand, board) {
+  if (!Array.isArray(stand?.coverage)) return null;
+  return {
+    date: board?.operationDate ?? null,
+    windows: stand.coverage.map(window => ({
+      agentName: window?.agentName, startsAt: window?.startsAt, endsAt: window?.endsAt,
+      isReinforcement: window?.isReinforcement === true,
+    })),
+  };
+}
+
 function occupancyTurnaround(item) {
   return {
     id: item.turnaroundId, operationCode: item.operationCode, status: item.status, airline: item.airlineName,
@@ -154,7 +170,9 @@ function occupancyTurnaround(item) {
  *
  * Each position keeps the board's own stand fields for the maps (PR M4): `coveredBy` (a copy of the board's list;
  * `null` without a stand row, unknown rather than empty), `maxAircraftSize`, `standType`, `isRemote` and the raw
- * `cancelledBy` code, next to its normalized `linkedPositionId`.
+ * `cancelledBy` code, next to its normalized `linkedPositionId`. N26: `coverage`, the coverage windows of the board's
+ * date when the read asked for them (coverageOf), from which the maps read who covers the stand now
+ * (maps/stands/standModel.js).
  */
 export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new Date().toISOString()) {
   const byCode = new Map((board?.positions ?? []).map(position => [mapStandCode(position.code), position]));
@@ -187,6 +205,7 @@ export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new D
       isDemo: current?.isDemo === true,
       assignedAgent: stand?.coveredBy?.length ? stand.coveredBy.join(', ') : null,
       coveredBy: Array.isArray(stand?.coveredBy) ? [...stand.coveredBy] : null,
+      coverage: coverageOf(stand, board),
       maxAircraftSize: stand?.maxAircraftSize ?? null,
       standType: stand?.standType ?? null,
       isRemote: stand?.isRemote ?? false,

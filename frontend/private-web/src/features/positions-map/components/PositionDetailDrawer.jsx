@@ -7,6 +7,7 @@ import { XIcon } from '../../shell/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
 import PositionActions from './PositionActions';
+import { standAgentOf } from './PositionsTable';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import StandTurnaround from '../../maps/ui/StandTurnaround';
@@ -100,7 +101,8 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
             <Field label={t('detail.airline')}>{position.airline ? <span className="font-sans">{position.airline}</span> : null}</Field>
             <Field label={t('detail.registration')}>{position.aircraftRegistration}</Field>
             <Field label={t('detail.aircraftType')}>{aircraftType}</Field>
-            <Field label={t('detail.agent')}><span className="font-sans">{position.assignedAgent ?? t('detail.unassigned')}</span></Field>
+            {/* Who covers the stand now (N26), as the list says it. */}
+            <Field label={t('detail.agent')}><span className="font-sans">{standAgentOf(position) ?? t('detail.unassigned')}</span></Field>
             <Field label={position.status === 'planned' ? t('detail.releaseUnverified') : t('detail.estimatedRelease')}>
               {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime, locale) : '—'}
             </Field>

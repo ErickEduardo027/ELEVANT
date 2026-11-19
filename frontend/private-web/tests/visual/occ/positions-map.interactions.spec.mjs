@@ -137,6 +137,26 @@ test.describe('Mapa de posiciones: what a person does with the stands', () => {
     await expect(map).toHaveAttribute('data-occ-engine', 'ready');
   });
 
+  test('N26: a stand whose coverage ended asks for an agent and its drawer says, dimmed, until when it was covered', async ({ page, isolation }, testInfo) => {
+    // BN8: an aircraft on it, and the coverage of the stub's agent ended two hours ago (fixtures/occApi.mjs), though the
+    // names of the day still list them. The positions map reads the board with its coverage windows.
+    await openPositionsMap(page, isolation, '?stand=BN8');
+    await settled(page);
+    const facts = drawer(page).getByRole('list', { name: 'Estado en el mapa' });
+    await expect(facts.locator('[data-fact="coverage"]')).toHaveCount(0);
+    const ended = facts.locator('[data-fact="coverage-ended"]');
+    await expect(ended).toHaveText(/^La cobertura de Agente de prueba terminó a las \d\d:\d\d$/);
+    await expect(ended).toHaveClass(/text-occ-muted/);
+    await expect(facts).toContainText('Sin agente que la cubra');
+    // The turnaround's agent and the flight's: nobody now.
+    await expect(drawer(page).locator('[data-fact="agent"] dd')).toHaveText('Sin agente');
+    await shoot(page, testInfo, 'positions-interactions-coverage-ended');
+    // A2 keeps the agent who covers it now.
+    await page.goto(`${PAGE}?stand=A2`);
+    await settled(page);
+    await expect(drawer(page).getByRole('list', { name: 'Estado en el mapa' })).toContainText('Cubre Agente de prueba');
+  });
+
   test('the combined pair: the cancelled stand with its hatch, its link to the stand that cancels it and «Inhabilitada: anulada por A9 ocupada»', async ({ page, isolation }, testInfo) => {
     await openPositionsMap(page, isolation, '?stand=A10');
     await settled(page);

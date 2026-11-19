@@ -1,4 +1,5 @@
 import { FLIGHT_REPORT_MILESTONES } from '@elevant/api-client';
+import { BUSINESS_TIME_ZONE, businessToday } from '../../../services/businessDay';
 import { normalizeStandCode } from '../../../services/standCodes';
 import { STAND_STATE_KEYS } from '../../occ-ui/statusVocabulary';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
@@ -266,6 +267,81 @@ const comesBeforeItFrees = (visit, freeAt, now) => visit.landed || (visit.arriva
 
 const cancellerOf = position => normalizeStandCode(position?.cancelledBy ?? position?.linkedPositionId) || null;
 
+// N26: who covers a stand when, from the board's coverage windows of its date (positionsMapMappers.js: `coverage`), as
+// instants, by start; `null` without them. A window holds the instants from its start to its end, the end excluded.
+function coverageWindows(position) {
+  const windows = position?.coverage?.windows;
+  if (!Array.isArray(windows)) return null;
+  return windows
+    .filter(window => window !== null && typeof window === 'object')
+    .map(window => ({
+      name: String(window.agentName ?? '').trim(),
+      startsAt: timeOf(window.startsAt),
+      endsAt: timeOf(window.endsAt),
+      isReinforcement: window.isReinforcement === true,
+    }))
+    .filter(window => window.name !== '' && window.startsAt !== null && window.endsAt !== null
+      && window.startsAt < window.endsAt)
+    .sort((first, second) => first.startsAt - second.startsAt || first.endsAt - second.endsAt
+      || first.name.localeCompare(second.name, 'es'));
+}
+
+const byName = (first, second) => first.name.localeCompare(second.name, 'es');
+
+// The agents whose window holds `at`, each once: the primary ones first, then the reinforcements. A reinforcement is a
+// second agent on stands already covered (ADR-0030) and still covers the stand alone: the server hands it the flight
+// of a stand no primary agent covers (persistence's CoverageReassignment).
+function agentsAt(windows, at) {
+  const agents = new Map();
+  for (const window of windows) {
+    if (window.startsAt > at || at >= window.endsAt) continue;
+    const known = agents.get(window.name);
+    agents.set(window.name, { name: window.name, isReinforcement: (known?.isReinforcement ?? true) && window.isReinforcement });
+  }
+  return [...agents.values()].sort((first, second) => Number(first.isReinforcement) - Number(second.isReinforcement)
+    || byName(first, second));
+}
+
+// When a visit to come reaches the stand, to judge who covers it (D-N26): at its time on the stand, and now at the
+// earliest, since an aircraft late on its time reaches the stand from now on.
+const chocksOf = (visit, now) => (visit.arrivalAt !== null && visit.arrivalAt > now ? visit.arrivalAt : now);
+
+/**
+ * The coverage of a stand at the minute `now` (N26), from its windows (coverageWindows), or null without them. `live`
+ * says the board's date is the station's today: only then are the windows judged against the clock. Otherwise, another
+ * date (Planificación on another day), they are only listed: `now` is empty, `visit` null, and who covers the stand
+ * is the names of the day. `visitAt` is when the visit the stand shows is judged: now for the aircraft on the stand, at
+ * its chocks for the one to come (D-N26), null without a visit.
+ */
+function coverageOf(windows, live, now, visitAt) {
+  if (windows === null) return null;
+  const listed = windows.map(window => ({ ...window }));
+  if (!live) return { live: false, now: [], visit: null, ended: [], upcoming: [], windows: listed };
+  const covering = agentsAt(windows, now);
+  const names = new Set(covering.map(agent => agent.name));
+  // For each agent who does not cover it now: their last window that ended and their first one still to start.
+  const ended = new Map();
+  const upcoming = new Map();
+  for (const window of windows) {
+    if (names.has(window.name)) continue;
+    if (window.endsAt <= now) {
+      if (!ended.has(window.name) || ended.get(window.name).endsAt < window.endsAt) {
+        ended.set(window.name, { name: window.name, endsAt: window.endsAt, isReinforcement: window.isReinforcement });
+      }
+    } else if (window.startsAt > now && !upcoming.has(window.name)) {
+      upcoming.set(window.name, { name: window.name, startsAt: window.startsAt, isReinforcement: window.isReinforcement });
+    }
+  }
+  return {
+    live: true,
+    now: covering,
+    visit: visitAt === null ? null : agentsAt(windows, visitAt),
+    ended: [...ended.values()].sort((first, second) => first.endsAt - second.endsAt || byName(first, second)),
+    upcoming: [...upcoming.values()].sort((first, second) => first.startsAt - second.startsAt || byName(first, second)),
+    windows: listed,
+  };
+}
+
 function display(state, extra = {}) {
   return {
     state,
@@ -286,6 +362,8 @@ function display(state, extra = {}) {
     // The facts of the visit shown (visitDetail) and the next visit while an aircraft is on the stand.
     detail: null,
     next: null,
+    // Who covers the stand from its coverage windows (N26: coverageOf), null without them.
+    coverage: null,
     ...extra,
   };
 }
@@ -326,20 +404,28 @@ export function displayFromStatus(position) {
  * Signals, the most urgent first: `urgent` `conflict` (two aircraft are on the stand, or another visit comes onto it
  * before its aircraft leaves: that visit landed already, or it is due within 15 minutes and before the departure of the
  * aircraft on the stand, a departure nobody knows without a time or once it is past; a turnover due once that aircraft
- * has left is no conflict); `attention` `uncovered` (the coverage list is empty, never just absent, and a flight is on
- * the stand or due within 60 minutes) and `overdue` (the aircraft is still on the stand after its departure time); then
- * the plain notice `arrivalNotRecorded` (design D3): an aircraft, live or estimated, stands still on the ground (under
- * 2 kt) inside the stand box with neither BLOCK_ON nor an on-block time, and it is not a demo flight, whose time the
- * server records: «El avión ya está en la posición. Registra la llegada.»
+ * has left is no conflict); `attention` `uncovered` (nobody covers the aircraft on the stand or a flight due within 60
+ * minutes: with the board's coverage windows of today, N26, nobody covers the aircraft on the stand now, or a flight
+ * due when it reaches the stand, D-N26; otherwise the coverage list is empty, never just absent) and `overdue` (the
+ * aircraft is still on the stand after its departure time); then the plain notice `arrivalNotRecorded` (design D3): an
+ * aircraft, live or estimated, stands still on the ground (under 2 kt) inside the stand box with neither BLOCK_ON nor an
+ * on-block time, and it is not a demo flight, whose time the server records: «El avión ya está en la posición. Registra
+ * la llegada.»
  *
  * Returns `{ state, signals: [{ kind, reason }], visit (the board turnaround the stand shows, or null), arrivalAt,
  * departureAt (epoch ms or null), minutesToArrival, minutesToDeparture, flightNumber, aircraftType, typeSpec, footprint,
  * milestonesDone, milestonesTotal, isDemo, cancelledBy (the normalized code of the stand that cancels this one, or
- * null) }`: `typeSpec` is the shown visit's aircraft type (aircraft/types.js: resolveAircraftType; null when its map
- * flights say nothing of it), `footprint` how the stand draws that aircraft to scale (`solid` while it is on the stand,
- * occupied or releasing; `planned`, dashed, while it is planned or arriving; null without a type or a visit), and
- * `milestonesDone` the distinct milestones recorded for that visit out of `milestonesTotal` (25: the flight report of
- * contracts 1.3), null without its map flights.
+ * null), detail, next, coverage }`: `typeSpec` is the shown visit's aircraft type (aircraft/types.js:
+ * resolveAircraftType; null when its map flights say nothing of it), `footprint` how the stand draws that aircraft to
+ * scale (`solid` while it is on the stand, occupied or releasing; `planned`, dashed, while it is planned or arriving;
+ * null without a type or a visit), `milestonesDone` the distinct milestones recorded for that visit out of
+ * `milestonesTotal` (25: the flight report of contracts 1.3), null without its map flights, and `coverage` who covers
+ * the stand (N26), null without the board's windows: `{ live, now, visit, ended, upcoming, windows }`, where `live`
+ * says the board's date is the station's today at `nowMs`; `now` the agents covering it at the minute and `visit`
+ * those covering the visit shown (`[{ name, isReinforcement }]`, primaries first; `visit` null without a visit);
+ * `ended` and `upcoming` the last window that ended and the first still to start of each agent who does not cover it
+ * now (`[{ name, endsAt | startsAt, isReinforcement }]`); and `windows` every window of the day, by start (`[{ name,
+ * startsAt, endsAt, isReinforcement }]`, instants in ms). On another date only `windows` is filled.
  */
 export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, aircraftByTurnaround } = {}) {
   const exactNow = Number.isFinite(nowMs) ? nowMs : Date.now();
@@ -347,7 +433,12 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
   const cancelledBy = cancellerOf(position);
   if (!Array.isArray(position?.turnarounds)) return displayFromStatus(position);
   if (position.status === 'unverified' || position.standId == null) return display('unverified', { cancelledBy });
-  if (position.status === 'disabled') return display('disabled', { cancelledBy });
+  // N26: the board's coverage windows, judged against the clock only on the board's date, the station's today.
+  const windows = coverageWindows(position);
+  const live = windows !== null && position.coverage.date === businessToday(new Date(exactNow), BUSINESS_TIME_ZONE);
+  if (position.status === 'disabled') {
+    return display('disabled', { cancelledBy, coverage: coverageOf(windows, live, now, null) });
+  }
 
   const visits = position.turnarounds
     .filter(turnaround => turnaround !== null && typeof turnaround === 'object')
@@ -371,20 +462,26 @@ export function deriveDisplayStatus(position, { nowMs, flightsByTurnaround, airc
   if (current !== null && (onStand.length > 1 || waiting.some(visit => comesBeforeItFrees(visit, freeAt, now)))) {
     signals.push({ kind: 'urgent', reason: 'conflict' });
   }
-  const due = current !== null
-    || waiting.some(visit => visit.landed || (visit.arrivalAt !== null && visit.arrivalAt - now <= COVERAGE_WINDOW_MS));
-  if (Array.isArray(position.coveredBy) && position.coveredBy.length === 0 && due) {
-    signals.push({ kind: 'attention', reason: 'uncovered' });
-  }
+  const isDue = visit => visit.landed || (visit.arrivalAt !== null && visit.arrivalAt - now <= COVERAGE_WINDOW_MS);
+  // Nobody covers it. With today's windows (N26) the aircraft on the stand is judged now and each flight due within
+  // 60 minutes when it reaches the stand (D-N26); otherwise, by the names of the day.
+  const uncovered = live
+    ? (current !== null && agentsAt(windows, now).length === 0)
+      || waiting.some(visit => isDue(visit) && agentsAt(windows, chocksOf(visit, now)).length === 0)
+    : Array.isArray(position.coveredBy) && position.coveredBy.length === 0 && (current !== null || waiting.some(isDue));
+  if (uncovered) signals.push({ kind: 'attention', reason: 'uncovered' });
   if (current !== null && current.departureAt !== null && now > current.departureAt) {
     signals.push({ kind: 'attention', reason: 'overdue' });
   }
   if (onStand.some(visit => visit.arrivalNotRecorded)) signals.push({ kind: 'notice', reason: 'arrivalNotRecorded' });
 
   const shown = current ?? next;
-  if (shown === null) return display(state, { signals, cancelledBy });
+  // Who covers the visit shown: the aircraft on the stand now, the one to come at its chocks (D-N26).
+  const coverage = coverageOf(windows, live, now, current !== null ? now : next !== null ? chocksOf(next, now) : null);
+  if (shown === null) return display(state, { signals, cancelledBy, coverage });
   return display(state, {
     signals,
+    coverage,
     visit: shown.turnaround,
     arrivalAt: shown.arrivalAt,
     departureAt: shown.departureAt,
@@ -494,16 +591,41 @@ export function coverageInitials(names) {
   return list.length > 1 ? `${initials} +${list.length - 1}` : initials;
 }
 
-/** The normalized codes of the other stands covered by an agent who covers stand `code` (an empty set without any). */
+/**
+ * Who covers a stand of a screen, as its label, tooltip, drawer, list and agent ring say it (N26): with the board's
+ * coverage windows of today, the agents covering it at the minute its display was derived (`display.coverage.now`);
+ * otherwise (another date, no windows: an older API, or a stand the screen derived nothing for) the names of the day,
+ * `coveredBy`. Clean names, each once; an empty list when nobody covers it.
+ */
+export function standCoverageNames(position) {
+  const coverage = position?.display?.coverage;
+  if (coverage?.live === true && Array.isArray(coverage.now)) return coverage.now.map(agent => agent.name);
+  return cleanNames(position?.coveredBy);
+}
+
+/**
+ * Who covers the visit a stand shows (D-N26), for its «Agente»: with today's windows, the agents covering the aircraft
+ * on the stand now, or the one to come when it reaches the stand; otherwise as standCoverageNames.
+ */
+export function visitCoverageNames(position) {
+  const coverage = position?.display?.coverage;
+  if (coverage?.live === true && Array.isArray(coverage.visit)) return coverage.visit.map(agent => agent.name);
+  return standCoverageNames(position);
+}
+
+/**
+ * The normalized codes of the other stands covered by an agent who covers stand `code` (an empty set without any), by
+ * who covers each stand as standCoverageNames says it: now, with the board's windows of today (N26).
+ */
 export function sameAgentCodes(positions = [], code) {
   const wanted = normalizeStandCode(code);
   const list = (positions ?? []).filter(position => position !== null && typeof position === 'object');
-  const names = new Set(list.filter(position => codeOf(position) === wanted).flatMap(position => cleanNames(position.coveredBy)));
+  const names = new Set(list.filter(position => codeOf(position) === wanted).flatMap(standCoverageNames));
   const codes = new Set();
   if (wanted === '' || names.size === 0) return codes;
   for (const position of list) {
     const other = codeOf(position);
-    if (other !== '' && other !== wanted && cleanNames(position.coveredBy).some(name => names.has(name))) codes.add(other);
+    if (other !== '' && other !== wanted && standCoverageNames(position).some(name => names.has(name))) codes.add(other);
   }
   return codes;
 }
@@ -520,9 +642,9 @@ const isDrawn = position => (position?.geometry === undefined
  * of `positions` with a geometry, or, without a `geometry` key, with a location), as positions of the mapper with
  * `latitude` and `longitude` `null`, `geometry` `null` and `locationSource: 'none'`: the screens list them as «Sin
  * ubicar», each with «Ubicar en el mapa». A code seen twice keeps its first stand. `asOf` stamps their `updatedAt`, as
- * the board's `asOf` does.
+ * the board's `asOf` does, and `operationDate`, the board's date, dates their coverage windows (N26).
  */
-export function unlocatedStands(boardStands = [], positions = [], { asOf } = {}) {
+export function unlocatedStands(boardStands = [], positions = [], { asOf, operationDate } = {}) {
   const drawn = new Set((positions ?? []).filter(isDrawn).map(codeOf));
   const seen = new Set();
   const missing = [];
@@ -536,6 +658,6 @@ export function unlocatedStands(boardStands = [], positions = [], { asOf } = {})
   const references = missing.map(stand => ({
     id: normalizeStandCode(stand.code), terminal: stand.terminalCode ?? null, lat: null, lon: null,
   }));
-  return mapOccupancyToRampPositions(references, { positions: missing, asOf })
+  return mapOccupancyToRampPositions(references, { positions: missing, asOf, operationDate })
     .map(position => ({ ...position, latitude: null, longitude: null, locationSource: 'none', geometry: null }));
 }

@@ -159,7 +159,8 @@ function PositionsMapScreen({
   const positions = useMemo(() => {
     if (forceState === 'positionsMapEmpty') return NO_POSITIONS;
     const drawn = data?.positions ?? NO_POSITIONS;
-    const missing = unlocatedStands(data?.stands ?? NO_POSITIONS, drawn, { asOf: data?.asOf });
+    const missing = unlocatedStands(data?.stands ?? NO_POSITIONS, drawn,
+      { asOf: data?.asOf, operationDate: data?.operationDate });
     return missing.length === 0 ? drawn : [...drawn, ...missing];
   }, [data, forceState]);
   const displayConnection = forceState === 'positionsMapDisconnected' ? 'disconnected' : connection;

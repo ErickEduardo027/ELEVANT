@@ -1581,7 +1581,28 @@ cambia.
   elegido: con A11 elegida, A10 vuelve a decir «Anulada por A9» en las capturas
   a 1920 px y en 3D a 1440 px; en 2D a 1440 px su rótulo tocaría el propio
   «A11» y sigue sin mostrarse. Dónde va el rótulo de una posición con avión no
-  cambia: queda para decidirlo con una captura (D-N29).
+  cambia: queda para decidirlo con una captura (D-N29). *Posterior al commit
+  verificado (hallazgo N26, 19 de noviembre de 2026):* el mapa dice quién cubre
+  la posición ahora, no quién la cubre ese día. A las 19:50 del 16 de noviembre,
+  A5 y A6 decían «CM» aunque esa cobertura terminó a las 17:00, y «Sin agente
+  que la cubra» nunca salía: el tablero solo traía los nombres del día. Ahora
+  las tres pantallas que lo leen (Mapa de posiciones, la consola y el mapa de
+  Planificación) lo piden con `includeCoverage=true`
+  ([`occPositionsService.js`](../../frontend/private-web/src/services/occPositionsService.js)),
+  y cada posición trae sus ventanas de cobertura.
+  [`standModel.js`](../../frontend/private-web/src/features/maps/stands/standModel.js)
+  (`deriveDisplayStatus`) las lee al minuto del reloj de las posiciones cuando
+  la fecha del tablero es la de hoy. Las iniciales del rótulo, la ficha, el
+  anillo del mismo agente, la lista y «Cubre …» del cajón nombran a quien la
+  cubre en ese minuto (`standCoverageNames`), un refuerzo incluido; «Agente» de
+  la escala nombra a quien cubre el avión que está en la posición y, para el
+  que viene, a quien la cubre a la hora de sus calzos (`visitCoverageNames`).
+  «Sin agente que la cubra» se evalúa igual: ahora para el avión en la posición
+  y a la hora de los calzos para el que viene (D-N26). El cajón dice, atenuado,
+  «La cobertura de … terminó a las 17:00» y «La cobertura de … empieza a las
+  …». En otra fecha (Planificación de otro día) el cajón lista cada ventana,
+  «Cubre … de 05:00 a 17:00», sin decir quién cubre ahora, y lo demás sigue con
+  los nombres del día, igual que cuando la API no trae las ventanas.
 - **Combinadas.** La posición que una combinada anula se dibuja «Inhabilitada»,
   con «Anulada por A9» y un enlace a trazos hasta la que la anula. «Solo
   fuselaje estrecho» suma una caja punteada de letra C dentro de una posición

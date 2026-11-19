@@ -5,7 +5,7 @@ import { operationStatusLabel } from '../../operations/operationLabels';
 import { buildMilestonePhases } from '../../occ-ui/milestonePhases';
 import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
 import { mapMessages } from '../mapMessages';
-import { displayFromStatus } from '../stands/standModel';
+import { displayFromStatus, visitCoverageNames } from '../stands/standModel';
 import { stationTime } from '../traffic/stationTime';
 
 // The visits of a stand on the OCC maps (owner request of 2026-11-15), for its drawer on Mapa de posiciones and the
@@ -77,7 +77,8 @@ export default function StandTurnaround({ position, milestones = true, className
     .filter(Boolean).join(' · ') || unknown;
   const route = detail && (detail.origin || detail.destination)
     ? `${detail.origin ?? unknown} – ${detail.destination ?? unknown}` : unknown;
-  const agents = Array.isArray(position.coveredBy) ? position.coveredBy.filter(name => text(name)) : [];
+  // Who covers the visit (N26, D-N26): the aircraft on the stand now, the one to come when it reaches the stand.
+  const agents = visitCoverageNames(position);
   const agent = agents.length > 0 ? new Intl.ListFormat(locale, { type: 'conjunction' }).format(agents)
     : t('turnaround.unassigned');
   // «Operación» is the state of the ground operation (Asignada, En curso, Devuelta…: operations/operationLabels.js, the

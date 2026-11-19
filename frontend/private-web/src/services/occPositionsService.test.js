@@ -13,8 +13,8 @@ vi.mock('../features/auth/authService', () => ({
 }));
 
 const {
-  assignOccStand, isStalePosition, POSITION_PROBLEM_MESSAGES, positionVersionMessage, recordOccArrival, releaseOccStand,
-  translatePositionError,
+  assignOccStand, isStalePosition, loadOccPositions, POSITION_PROBLEM_MESSAGES, positionVersionMessage, recordOccArrival,
+  releaseOccStand, translatePositionError,
 } = await import('./occPositionsService');
 
 const turnaroundId = '70000000-0000-7000-8000-000000000012';
@@ -24,7 +24,7 @@ const problem = (status, code, reasons = []) => new ElevantApiError({ kind: 'htt
   title: 'The stand is not available for this turnaround.', code, reasons });
 
 describe('positions map adapter (3-N08, 3-N10, 3-B)', () => {
-  const client = { recordOccArrival: vi.fn(), assignOccStand: vi.fn(), releaseOccStand: vi.fn() };
+  const client = { recordOccArrival: vi.fn(), assignOccStand: vi.fn(), releaseOccStand: vi.fn(), getOccPositions: vi.fn() };
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createPrivateWebApiClient.mockReturnValue(client);
@@ -45,6 +45,14 @@ describe('positions map adapter (3-N08, 3-N10, 3-B)', () => {
     expect(client.assignOccStand).toHaveBeenCalledWith(turnaroundId, { standId, reason: null }, command);
     await releaseOccStand(turnaroundId, command);
     expect(client.releaseOccStand).toHaveBeenCalledWith(turnaroundId, command);
+  });
+
+  it('reads the board with the coverage windows of the day, so the maps tell who covers a stand now (N26)', async () => {
+    const controller = new AbortController();
+    const stationId = '20000000-0000-7000-8000-000000000003';
+    await loadOccPositions(stationId, '2026-11-16', { signal: controller.signal });
+    expect(client.getOccPositions).toHaveBeenCalledWith(stationId, '2026-11-16',
+      { signal: controller.signal, includeCoverage: true });
   });
 
   it('never sends a command without its key and the version it expects (3-N10)', async () => {

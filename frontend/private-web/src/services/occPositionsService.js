@@ -87,8 +87,12 @@ function commandHeaders({ ifMatch = null, idempotencyKey = null } = {}) {
   return { ifMatch, idempotencyKey };
 }
 
+/**
+ * The positions board of a station's date with each stand's coverage windows (N26), so the maps tell who covers a stand
+ * now instead of reading the names of the day as «now». An API that does not know the windows answers without them.
+ */
 export const loadOccPositions = (stationId, date, { signal } = {}) =>
-  guarded(() => client().getOccPositions(stationId, date, { signal }));
+  guarded(() => client().getOccPositions(stationId, date, { signal, includeCoverage: true }));
 
 /**
  * Records the arrival (3-N08): the registration, the actual time in UTC (the screen converts it from the station's
