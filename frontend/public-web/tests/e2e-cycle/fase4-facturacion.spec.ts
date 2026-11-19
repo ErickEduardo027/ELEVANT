@@ -135,7 +135,7 @@ test("La aerolínea paga la factura con tarjeta en su portal: una rechazada y un
     await snap(page, "fase4-portal-pago");
     await form.getByLabel("Titular de la tarjeta").fill("Rosa Martinez Prueba");
     await form.getByLabel("Número de tarjeta").fill(DECLINED);
-    await form.getByLabel("Vencimiento (MM/AA)").fill("12/30");
+    await form.getByLabel("Vencimiento (MM/AA)").fill("12/40");
     await form.getByLabel("Código de seguridad").fill("123");
     await form.getByRole("button", { name: /^Pagar / }).click();
     await expect(page.getByText("fondos insuficientes").first()).toBeVisible();

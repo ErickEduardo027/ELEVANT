@@ -1,8 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ElevantApiError } from "@elevant/api-client";
 
 import { CARD_SIMULATION_LABEL, CardPaymentPanel } from "@/components/portal/CardPaymentPanel";
+import { CARD_EXPIRY_ERRORS, CARD_EXPIRY_HINT } from "@/lib/card-expiry";
+import { installFormValidation } from "@/lib/forms/formValidation";
 
 type Availability = { available: boolean; simulated: boolean };
 const getCardPaymentAvailability = vi.fn<() => Promise<Availability>>(async () => ({ available: true, simulated: true }));
@@ -30,18 +33,27 @@ afterEach(() => {
   getCardPaymentReceipt.mockReset();
   onChanged.mockReset();
   financeRevision = 0;
+  vi.useRealTimers();
 });
 
 function mount(balance = 148.09) {
   return render(<CardPaymentPanel invoiceId={invoiceId} balance={balance} currencyCode="USD" onChanged={onChanged} />);
 }
 
-function fill(form: HTMLElement) {
+/** Fills the card form; an empty `expiry` leaves that field as it is. */
+function fill(form: HTMLElement, expiry = "12/40") {
   fireEvent.change(within(form).getByLabelText("Titular de la tarjeta"), { target: { value: "Casey Airline" } });
   fireEvent.change(within(form).getByLabelText("Número de tarjeta"), { target: { value: "4111 1111 1111 1111" } });
-  fireEvent.change(within(form).getByLabelText("Vencimiento (MM/AA)"), { target: { value: "12/30" } });
+  if (expiry) fireEvent.change(within(form).getByLabelText("Vencimiento (MM/AA)"), { target: { value: expiry } });
   fireEvent.change(within(form).getByLabelText("Código de seguridad"), { target: { value: "123" } });
 }
+
+async function openForm() {
+  fireEvent.click(await screen.findByRole("button", { name: "Pagar con tarjeta USD 148.09" }));
+  return screen.getByRole("form", { name: "Datos de la tarjeta" });
+}
+
+const pay = (form: HTMLElement) => fireEvent.click(within(form).getByRole("button", { name: "Pagar USD 148.09" }));
 
 it("labels the simulated gateway next to the card form (4-N05)", async () => {
   mount();
@@ -127,4 +139,117 @@ it("explains a failed receipt download and lets it be tried again (4-N30)", asyn
   fireEvent.click(screen.getByRole("button", { name: "Descargar recibo" }));
   await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
   await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+});
+
+// S4: the fake clock only mocks Date, so the expiry is checked against a fixed business day.
+const NOV_19 = new Date("2026-11-19T12:00:00Z");
+const declined = { ...approved, status: "Declined", authorizationCode: null, declineCode: "insufficient_funds", receiptId: null };
+const expiryOf = (form: HTMLElement) => within(form).getByLabelText("Vencimiento (MM/AA)");
+
+it.each(["1230", "12 30", "12-30", "122030", "12/2030"])("pays with the expiry %j, with or without the slash (S4)", async expiry => {
+  vi.setSystemTime(NOV_19);
+  payInvoiceByCard.mockResolvedValueOnce({ attempt: approved, invoiceBalance: 0, replayed: false });
+  mount();
+  const form = await openForm();
+  fill(form, expiry);
+  pay(form);
+  expect(await screen.findByText(/Pago aprobado · Visa terminada en 1111/)).toBeInTheDocument();
+  expect(payInvoiceByCard).toHaveBeenCalledTimes(1);
+  expect(payInvoiceByCard.mock.calls[0][1]).toMatchObject({ expiryMonth: 12, expiryYear: 2030 });
+});
+
+it("does not call the API with the month 13: the field says why and the last answer goes (S4)", async () => {
+  vi.setSystemTime(NOV_19);
+  payInvoiceByCard.mockResolvedValueOnce({ attempt: declined, invoiceBalance: 148.09, replayed: false });
+  mount();
+  const form = await openForm();
+  fill(form);
+  const field = expiryOf(form);
+  expect(field).toHaveAccessibleDescription(CARD_EXPIRY_HINT);
+  pay(form);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Tarjeta rechazada: fondos insuficientes.");
+  fireEvent.change(field, { target: { value: "13/30" } });
+  // The security code is cleared after a declined card.
+  fireEvent.change(within(form).getByLabelText("Código de seguridad"), { target: { value: "123" } });
+  pay(form);
+  expect(payInvoiceByCard).toHaveBeenCalledTimes(1);
+  expect(field).toHaveFocus();
+  expect(field).toHaveAttribute("aria-invalid", "true");
+  expect(field).toHaveAccessibleDescription(CARD_EXPIRY_ERRORS.month);
+  expect(screen.queryByText("Tarjeta rechazada: fondos insuficientes.")).not.toBeInTheDocument();
+  // Editing the field takes the error away and shows the hint again.
+  fireEvent.change(field, { target: { value: "12/30" } });
+  expect(field).not.toHaveAttribute("aria-invalid");
+  expect(field).toHaveAccessibleDescription(CARD_EXPIRY_HINT);
+});
+
+it("refuses an expired card before the API, by the fake clock (S4)", async () => {
+  vi.setSystemTime(NOV_19);
+  mount();
+  const form = await openForm();
+  fill(form, "10/26");
+  pay(form);
+  expect(payInvoiceByCard).not.toHaveBeenCalled();
+  expect(expiryOf(form)).toHaveFocus();
+  expect(expiryOf(form)).toHaveAccessibleDescription(CARD_EXPIRY_ERRORS.expired);
+});
+
+it("still pays with a card of 11/26 at 20:30 of 30 November in Santo Domingo, already 1 December in UTC (S4)", async () => {
+  vi.setSystemTime(new Date("2026-12-01T00:30:00Z"));
+  payInvoiceByCard.mockResolvedValueOnce({ attempt: approved, invoiceBalance: 0, replayed: false });
+  mount();
+  const form = await openForm();
+  fill(form, "11/26");
+  pay(form);
+  expect(await screen.findByText(/Pago aprobado/)).toBeInTheDocument();
+  expect(payInvoiceByCard.mock.calls[0][1]).toMatchObject({ expiryMonth: 11, expiryYear: 2026 });
+});
+
+it("refuses a card of 11/26 from 00:30 of 1 December in Santo Domingo (S4)", async () => {
+  vi.setSystemTime(new Date("2026-12-01T04:30:00Z"));
+  mount();
+  const form = await openForm();
+  fill(form, "11/26");
+  pay(form);
+  expect(payInvoiceByCard).not.toHaveBeenCalled();
+  expect(expiryOf(form)).toHaveAccessibleDescription(CARD_EXPIRY_ERRORS.expired);
+});
+
+it("formats the expiry while it is typed, erased and pasted (S4)", async () => {
+  const user = userEvent.setup();
+  mount();
+  await user.click(await screen.findByRole("button", { name: "Pagar con tarjeta USD 148.09" }));
+  const field = screen.getByLabelText("Vencimiento (MM/AA)");
+  expect(field).toHaveAttribute("inputmode", "numeric");
+  expect(field).toHaveAttribute("autocomplete", "cc-exp");
+  expect(Number(field.getAttribute("maxlength"))).toBeGreaterThanOrEqual(10);
+  await user.type(field, "12");
+  expect(field).toHaveValue("12/");
+  await user.keyboard("{Backspace}");
+  expect(field).toHaveValue("12");
+  await user.keyboard("40");
+  expect(field).toHaveValue("12/40");
+  await user.clear(field);
+  await user.type(field, "1/2040");
+  expect(field).toHaveValue("01/2040");
+  await user.clear(field);
+  await user.paste("12 / 2040");
+  expect(field).toHaveValue("12/2040");
+});
+
+it("keeps the browser's own message for an empty expiry out of its label (S4)", async () => {
+  const uninstall = installFormValidation(document);
+  try {
+    mount();
+    const form = await openForm();
+    fill(form, "");
+    pay(form);
+    const field = screen.getByLabelText("Vencimiento (MM/AA)");
+    expect(field).toHaveAccessibleName("Vencimiento (MM/AA)");
+    expect(field).toHaveAccessibleDescription(`${CARD_EXPIRY_HINT} Complete este campo.`);
+    expect(field).toHaveFocus();
+    expect(payInvoiceByCard).not.toHaveBeenCalled();
+  } finally {
+    uninstall();
+  }
 });

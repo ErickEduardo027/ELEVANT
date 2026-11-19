@@ -393,7 +393,7 @@ async function openCardForm() {
   const form = screen.getByRole("form", { name: "Datos de la tarjeta" });
   fireEvent.change(within(form).getByLabelText("Titular de la tarjeta"), { target: { value: "Casey Airline" } });
   fireEvent.change(within(form).getByLabelText("Número de tarjeta"), { target: { value: "4000 0000 0000 0002" } });
-  fireEvent.change(within(form).getByLabelText("Vencimiento (MM/AA)"), { target: { value: "12/30" } });
+  fireEvent.change(within(form).getByLabelText("Vencimiento (MM/AA)"), { target: { value: "12/40" } });
   fireEvent.change(within(form).getByLabelText("Código de seguridad"), { target: { value: "123" } });
   return form;
 }
@@ -408,7 +408,7 @@ it("pays the whole balance by card: a declined card, then another card with a ne
   expect(await screen.findByRole("alert")).toHaveTextContent("fondos insuficientes");
   const [invoiceId, body, firstKey] = payInvoiceByCard.mock.calls[0];
   expect(invoiceId).toBe("74000000-0000-7000-8000-000000000009");
-  expect(body).toEqual({ cardholderName: "Casey Airline", cardNumber: "4000 0000 0000 0002", expiryMonth: 12, expiryYear: 2030,
+  expect(body).toEqual({ cardholderName: "Casey Airline", cardNumber: "4000 0000 0000 0002", expiryMonth: 12, expiryYear: 2040,
     securityCode: "123", amount: 148.09 });
   fireEvent.change(within(form).getByLabelText("Número de tarjeta"), { target: { value: "4111 1111 1111 1111" } });
   fireEvent.change(within(form).getByLabelText("Código de seguridad"), { target: { value: "123" } });

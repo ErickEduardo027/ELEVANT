@@ -72,6 +72,12 @@
 .disputeForm label { display: grid; gap: .3rem; font-weight: 600; font-size: .8rem; }
 .disputeForm input, .disputeForm textarea { width: 100%; border: 1px solid #b6c9e1; border-radius: .4rem; padding: .55rem; color: #0b1d39; background: #fff; }
 .disputeForm textarea { min-height: 6rem; resize: vertical; }
+/* S4: a card field whose input sits outside its label, with a hint or an error under it. Its input inherits the
+   font of the field, like the inputs inside a label. */
+.cardField { display: grid; gap: .3rem; min-width: 0; font-weight: 600; font-size: .8rem; }
+.fieldHint, .fieldError { margin: 0; font-size: .75rem; line-height: 1.45; }
+.fieldHint { color: #566b80; font-weight: 400; }
+.fieldError { color: #9c2f13; }
 .loadMore { justify-self: center; padding: .7rem 1rem; border: 1px solid #b8c9df; border-radius: .5rem; background: #fff; color: #1155b4; font-weight: 700; cursor: pointer; }
 .loadMore:disabled { cursor: wait; opacity: .65; }
 .draftBadge { border-radius: 1rem; background: #fff0e6; color: #b94c16; padding: .45rem .7rem; font: 700 .68rem var(--font-data); letter-spacing: .06em; }

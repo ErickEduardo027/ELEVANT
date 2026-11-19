@@ -177,6 +177,17 @@ demuestra por sí solo la disponibilidad del objeto PDF en el VPS. Fuentes:
 [Documentos](../../frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx)
 y [prueba de regresión](../../frontend/public-web/tests/unit/airline-portal-page.test.tsx).
 
+*Posterior al commit verificado de esta nota (hallazgo S4 de la corrida del VPS
+del 16 de noviembre de 2026):* en el pago con tarjeta, el vencimiento se acepta
+con o sin barra («1228», «12 28», «12-28» o «12/2028») y el campo lo muestra
+como MM/AA; el teclado del móvil es numérico. Un mes fuera de 01-12 o una
+tarjeta vencida según el día hábil de Santo Domingo no llegan a la API: el
+motivo aparece bajo el campo, que recibe el foco, y desaparece la respuesta
+anterior del servidor. El campo queda fuera de su etiqueta, así que el aviso
+propio del formulario («Complete este campo.») no se mezcla con su nombre
+([vencimiento](../../frontend/public-web/src/lib/card-expiry.ts) y
+[pruebas](../../frontend/public-web/tests/unit/card-payment-panel.test.tsx)).
+
 **Historia (retirado del producto).** Antes de la fase 4, la aerolínea podía
 registrar una disputa persistente e idempotente de líneas de una prefactura
 `Submitted` propia, Finanzas la resolvía manteniendo o anulando la prefactura,
