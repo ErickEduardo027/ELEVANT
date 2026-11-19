@@ -36,6 +36,8 @@ jest.mock('../src/storage/walkaround-photos', () => ({
   keepWalkaroundPhoto: jest.fn(), readWalkaroundPhoto: jest.fn(), forgetWalkaroundPhoto: jest.fn(),
 }));
 jest.mock('../src/services/mobile-auth', () => ({
+  // S3: messages are queued with the session's identity, the same session as the request context here.
+  getMobileSessionIdentity: (...args) => mockContext(...args),
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: (...args) => mockReject(...args),
 }));
@@ -106,7 +108,8 @@ test('reads messages and notifications through the authenticated API and clears 
   await expect(setOperationalNotificationRead(key, true)).resolves.toMatchObject({ id: key });
   mockApi.getOperationalMessages.mockRejectedValueOnce(new ElevantApiError({ status: 401 }));
   await expect(getOperationalMessages(operationId)).rejects.toMatchObject({ code: 'unauthenticated' });
-  expect(mockReject).toHaveBeenCalledWith(sessionId);
+  expect(mockReject).toHaveBeenCalledWith(expect.objectContaining({ sessionId }),
+    expect.objectContaining({ code: 'unauthenticated' }));
 });
 
 test('moves the read cursor through the authenticated API', async () => {

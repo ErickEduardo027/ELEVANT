@@ -123,7 +123,7 @@ el cifrado de las cachés para datos reales siguen sin una política aprobada.
 
 | Capa | Fotografía original | Posterior al commit verificado (código de `39a85a46`) |
 | --- | --- | --- |
-| Autenticación | Servicio prototípico y token en AsyncStorage. | Sesión de la API con refresh rotativo; credencial en almacenamiento seguro. |
+| Autenticación | Servicio prototípico y token en AsyncStorage. | Sesión de la API con refresh rotativo, que la tablet guarda y usa desde S3 ([ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)); credencial en almacenamiento seguro. |
 | Vuelos | Endpoint heredado con fallback a caché. | `GetRampAssignedOperations`, con alcance derivado por cuenta, agente y estación, y caché sin conexión. |
 | Comandos offline | Outbox local y endpoint heredado de sync. | Instalación registrada, clave estable y recibo del servidor. |
 | Chat | Poll/merge contra ruta prototípica. | Conversaciones de la operación por la API; el aviso `ChangedV1` solo invita a releer. |
@@ -171,6 +171,33 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
 - **APK desplegada.** La respuesta de éxito del registro no cambió. La APK
   anterior no libera la tablet al cerrar sesión, pero el siguiente agente la
   toma igual.
+- **La sesión se renueva.** Posterior a la fase 2 (hallazgo S3 de la corrida
+  del VPS del 16 de noviembre;
+  [ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)):
+  - el inicio de sesión guarda el refresh token en el almacenamiento seguro
+    (sobre v2; el v1 de la APK anterior se sigue leyendo) y la siguiente
+    solicitud renueva el access token en su último minuto o ya vencido, una
+    sola vez para todas las que la esperan y comparando con el reloj de
+    ELEVANT ([servicio](../../frontend/mobile-agent/src/services/mobile-auth.ts));
+  - la renovación conserva la revisión de la sesión: cachés, borradores,
+    reservas, el vínculo de la tablet y la versión de su liberación siguen
+    igual, y la presencia conserva su lease;
+  - solo renueva si el JWT trae `auth_time`; frente a una API anterior la
+    sesión termina a los 15 minutos, como antes;
+  - sin señal, con `429` o `5xx` la sesión sigue y la siguiente renovación
+    espera 30 segundos; encolar un toque, guardar un borrador o reservar la
+    asistencia solo usan la identidad de la sesión guardada en la tablet;
+  - un `401` de una renovación termina la sesión y conserva lo registrado; un
+    `401` de una solicitud fuerza una renovación y la solicitud se repite una
+    vez;
+  - si se pierde la respuesta de una renovación (D-S3b), la sesión sigue con su
+    access token hasta que ELEVANT trata el refresh token viejo como reuso;
+    entonces termina y el agente vuelve a entrar;
+  - cerrar sesión libera la tablet y termina la familia en ELEVANT, cada uno con
+    un límite de 5 segundos, y un inicio de sesión que la tablet no conserva
+    también termina su familia. No hay tope de horas, por decisión de Erick del
+    2026-11-19. La APK ya instalada no renueva: el cambio llega con la APK
+    nueva.
 
 ## Fase 3: una sola cola, el reloj de ELEVANT y la evidencia que se conserva
 

@@ -198,7 +198,8 @@ test('revoked login clears the current session', async () => {
   mockApi.submitRampOperation.mockRejectedValueOnce(new ElevantApiError({ status: 401 }));
   await expect(submitRampOperation(OPERATION_ID, FROZEN))
     .rejects.toMatchObject({ code: 'unauthenticated' });
-  expect(mockRejectSession).toHaveBeenCalledWith(SESSION_ID);
+  expect(mockRejectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION_ID }),
+    expect.objectContaining({ code: 'unauthenticated' }));
 });
 
 describe('hand-off readiness (3-N06)', () => {

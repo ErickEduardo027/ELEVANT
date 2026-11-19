@@ -29,7 +29,12 @@ import {
   removeRampChecklistDraftIfCurrent,
   type LegacyRampCommand,
 } from '../storage/mobile-session';
-import { getMobileSessionRequestContext, rejectMobileSessionRequest } from './mobile-auth';
+import {
+  getMobileSessionIdentity,
+  getMobileSessionRequestContext,
+  rejectMobileSessionRequest,
+  type MobileSessionRequestContext,
+} from './mobile-auth';
 import { registerCurrentMobileDevice } from './mobile-device';
 import { asMobileServiceError, MobileServiceError } from './mobile-service-error';
 
@@ -93,21 +98,25 @@ export function currentFlightReportSnapshot() {
 }
 
 export async function refreshFlightReportQueue() {
-  const context = await getMobileSessionRequestContext();
-  publish({ items: await readFlightReportOutbox(context.session.actor.accountId) });
+  const identity = await getMobileSessionIdentity();
+  publish({ items: await readFlightReportOutbox(identity.session.actor.accountId) });
 }
 
 /** What the queue of this account holds for one operation, read from the device. */
 export async function readOperationQueue(operationId: string): Promise<OperationQueue> {
-  const context = await getMobileSessionRequestContext();
-  const items = await readFlightReportOutbox(context.session.actor.accountId);
+  const identity = await getMobileSessionIdentity();
+  const items = await readFlightReportOutbox(identity.session.actor.accountId);
   publish({ items });
   return pendingFor(items, operationId);
 }
 
+/**
+ * Saves a tap in this account's queue with the session's identity only (S3): it never waits for a renewal, so without
+ * signal and with the access token expired the tap is still kept, and it goes out once the session renews.
+ */
 async function enqueue(command: FlightReportCommand) {
-  const context = await getMobileSessionRequestContext();
-  const items = await enqueueFlightReportCommand(context.session.actor.accountId, command, Crypto.randomUUID(),
+  const identity = await getMobileSessionIdentity();
+  const items = await enqueueFlightReportCommand(identity.session.actor.accountId, command, Crypto.randomUUID(),
     serverNow());
   publish({ items });
   void flushFlightReport();
@@ -130,8 +139,9 @@ const sessionFailure = (issue: MobileServiceError) =>
 export async function sendFlightReportCommand(command: FlightReportCommand, options: Readonly<{
   idempotencyKey?: string; replaces?: string; discardRefused?: boolean;
 }> = {}): Promise<QueuedSend> {
-  const context = await getMobileSessionRequestContext();
-  const accountId = context.session.actor.accountId;
+  // The command is kept on the device before anything waits for the network or a renewal (S3).
+  const identity = await getMobileSessionIdentity();
+  const accountId = identity.session.actor.accountId;
   const idempotencyKey = (options.idempotencyKey ?? Crypto.randomUUID()).toLowerCase();
   publish({ items: await enqueueFlightReportCommand(accountId, command, idempotencyKey, serverNow(), options.replaces) });
   outcomes.delete(idempotencyKey);
@@ -157,15 +167,9 @@ export const saveFlightData = (operationId: string, data: Omit<Extract<FlightRep
 
 /** Reads the forms of the operation; without signal the last copy stays on screen. */
 export async function loadOperationDocuments(operationId: string): Promise<OperationDocumentsResponse> {
-  const context = await getMobileSessionRequestContext();
-  try {
-    const documents = await createMobileAgentApiClient({ getAccessToken: () => context.accessToken })
-      .getRampOperationDocuments(operationId);
-    publish({ documents: { ...snapshot.documents, [operationId]: documents } });
-    return documents;
-  } catch (error) {
-    throw await revoked(context.sessionId, error);
-  }
+  const documents = await readWithSession(client => client.getRampOperationDocuments(operationId));
+  publish({ documents: { ...snapshot.documents, [operationId]: documents } });
+  return documents;
 }
 
 /**
@@ -180,14 +184,9 @@ export const signDocument = (operationId: string, documentKind: OperationDocumen
 
 /** The charter of the operation: carrier data and the services it can add at the base tariff (ADR-0033). */
 export async function loadCharter(operationId: string): Promise<RampCharterResponse> {
-  const context = await getMobileSessionRequestContext();
-  try {
-    const charter = await createMobileAgentApiClient({ getAccessToken: () => context.accessToken }).getRampCharter(operationId);
-    publish({ charters: { ...snapshot.charters, [operationId]: charter } });
-    return charter;
-  } catch (error) {
-    throw await revoked(context.sessionId, error);
-  }
+  const charter = await readWithSession(client => client.getRampCharter(operationId));
+  publish({ charters: { ...snapshot.charters, [operationId]: charter } });
+  return charter;
 }
 
 /** A service the carrier asks for, priced by Finance's base tariff; saved on the device first. */
@@ -258,6 +257,61 @@ const bump = (operationId: string) => ({
 
 type ApiClient = ReturnType<typeof createMobileAgentApiClient>;
 type SendContext = Readonly<{ client: ApiClient; installationId: string; sessionId: string; accountId: string }>;
+
+/** The credential one pass (or one read) sends with; a renewal of the same session replaces it once (S3). */
+type SessionPass = { context: MobileSessionRequestContext; client: ApiClient; renewed: boolean };
+/** Why a request of a pass failed; `stop` when nothing else can go out with the session's credential now. */
+type PassFailure = Readonly<{ issue: MobileServiceError; stop: boolean }>;
+
+const clientFor = (context: MobileSessionRequestContext) =>
+  createMobileAgentApiClient({ getAccessToken: () => context.accessToken });
+
+/**
+ * Runs one request with the pass's credential. ELEVANT's refusal of that credential goes to the session first (S3):
+ * when the same session holds a renewed credential the request runs once more with it, and the rest of the pass uses
+ * it. A session that ended, or a refused credential that cannot be renewed now (no signal, ELEVANT busy), stops the
+ * pass with its failure.
+ */
+async function withSessionRetry<T>(pass: SessionPass, request: () => Promise<T>):
+  Promise<Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; failure: PassFailure }>> {
+  for (;;) {
+    try {
+      return { ok: true, value: await request() };
+    } catch (error) {
+      const issue = asMobileServiceError(error);
+      if (issue.code !== 'unauthenticated' && issue.code !== 'forbidden') {
+        return { ok: false, failure: { issue, stop: false } };
+      }
+      let rejected: boolean | 'retry';
+      try {
+        rejected = await rejectMobileSessionRequest(pass.context, issue);
+      } catch (renewalFailure) {
+        return { ok: false, failure: { issue: asMobileServiceError(renewalFailure), stop: true } };
+      }
+      if (rejected !== 'retry' || pass.renewed) return { ok: false, failure: { issue, stop: true } };
+      pass.renewed = true;
+      try {
+        const renewed = await getMobileSessionRequestContext();
+        if (renewed.sessionId !== pass.context.sessionId) {
+          return { ok: false, failure: { issue: new MobileServiceError('cancelled'), stop: true } };
+        }
+        pass.context = renewed;
+        pass.client = clientFor(renewed);
+      } catch (contextError) {
+        return { ok: false, failure: { issue: asMobileServiceError(contextError), stop: true } };
+      }
+    }
+  }
+}
+
+/** One read with the session's credential, sent once more when the session renewed a refused one (S3). */
+async function readWithSession<T>(read: (client: ApiClient) => Promise<T>): Promise<T> {
+  const context = await getMobileSessionRequestContext();
+  const pass: SessionPass = { context, client: clientFor(context), renewed: false };
+  const outcome = await withSessionRetry(pass, () => read(pass.client));
+  if (outcome.ok) return outcome.value;
+  throw outcome.failure.issue;
+}
 
 /** Sends one command; answers ELEVANT's result and what the snapshot learns from it. */
 async function send(item: FlightReportOutboxItem, { client, installationId, sessionId, accountId }: SendContext):
@@ -362,8 +416,8 @@ async function readKeptPhoto(fileUri: string) {
  * One pass over the queue, first in first out per operation (3-I): without signal or with a revoked session it stops;
  * a photo ELEVANT cannot store now does not hold anything back, and the agent may discard it (3-N06); any other
  * failure holds only the rest of its operation (a refused start too, since nothing of the operation can follow it); a
- * refusal, or a photo the device cannot read, waits in «Sincronización» for the agent. Answers why it stopped, if it
- * did.
+ * refusal, or a photo the device cannot read, waits in «Sincronización» for the agent. A command whose credential
+ * ELEVANT refused goes out once more when the session renews it (S3). Answers why it stopped, if it did.
  */
 async function flushOnce(): Promise<MobileServiceError | undefined> {
   let context;
@@ -373,18 +427,13 @@ async function flushOnce(): Promise<MobileServiceError | undefined> {
   const items = await readFlightReportOutbox(accountId);
   if (!items.some(item => item.state === 'pending')) { publish({ items, syncing: false, issue: undefined }); return undefined; }
   publish({ items, syncing: true });
-  let installationId: string;
-  try {
-    installationId = (await registerCurrentMobileDevice({ accessToken: context.accessToken })).installationId;
-  } catch (error) {
-    const issue = await revoked(context.sessionId, error);
-    publish({ syncing: false, issue });
-    return issue;
+  const pass: SessionPass = { context, client: clientFor(context), renewed: false };
+  const registered = await withSessionRetry(pass, () => registerCurrentMobileDevice(pass.context));
+  if (!registered.ok) {
+    publish({ syncing: false, issue: registered.failure.issue });
+    return registered.failure.issue;
   }
-  const sending: SendContext = {
-    client: createMobileAgentApiClient({ getAccessToken: () => context.accessToken }),
-    installationId, sessionId: context.sessionId, accountId,
-  };
+  const installationId = registered.value.installationId;
   const held = new Map<string, MobileServiceError | undefined>();
   /** The walk-around marks ELEVANT refused (blocked in the queue or in this pass): their photos are not sent. */
   const refusedMarks = new Set<string>();
@@ -409,50 +458,47 @@ async function flushOnce(): Promise<MobileServiceError | undefined> {
       publish({ items: next, issue });
       continue;
     }
-    try {
-      const { result, change } = await send(item, sending);
+    const sent = await withSessionRetry(pass, () => send(item, {
+      client: pass.client, installationId, sessionId: pass.context.sessionId, accountId,
+    }));
+    if (sent.ok) {
+      const { result, change } = sent.value;
       const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'remove');
       remember(item.idempotencyKey, { state: 'sent', result });
       publish({ items: next, ...change });
-    } catch (error) {
-      const issue = await revoked(context.sessionId, error);
-      lastIssue = issue;
-      if (stopsTheQueue(issue)) {
-        const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'attempt', issue.message,
-          issue.problemCode);
-        remember(item.idempotencyKey, { state: 'waiting', issue });
-        publish({ items: next, syncing: false, issue });
-        return issue;
-      }
-      // A refusal, or a photo the device cannot read: sending it again cannot help, it waits for the agent.
-      if (isRefusal(issue) || issue.problemCode === WALKAROUND_PHOTO_UNREADABLE) {
-        const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'block',
-          refusalMessage(item.command, issue), issue.problemCode);
-        remember(item.idempotencyKey, { state: 'blocked', issue });
-        if (item.command.kind === 'start') held.set(operationId, issue);
-        if (item.command.kind === 'damageMark') refusedMarks.add(markOf(item.command));
-        publish({ items: next, issue });
-        continue;
-      }
-      // ELEVANT could not take it now (5xx, 429, an unreadable answer): it is sent again later. A photo holds nothing
-      // back and says so: the agent may discard it in «Sincronización» to hand the operation off without it (3-N06).
-      const photo = item.command.kind === 'damagePhoto';
-      const waiting = photo ? new MobileServiceError(issue.code, { problemCode: WALKAROUND_PHOTO_UNAVAILABLE }) : issue;
-      const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'attempt', waiting.message,
-        waiting.problemCode);
-      remember(item.idempotencyKey, { state: 'waiting', issue });
-      if (!photo) held.set(operationId, issue);
-      publish({ items: next, issue });
+      continue;
     }
+    const { issue, stop } = sent.failure;
+    lastIssue = issue;
+    if (stop || stopsTheQueue(issue)) {
+      const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'attempt', issue.message,
+        issue.problemCode);
+      remember(item.idempotencyKey, { state: 'waiting', issue });
+      publish({ items: next, syncing: false, issue });
+      return issue;
+    }
+    // A refusal, or a photo the device cannot read: sending it again cannot help, it waits for the agent.
+    if (isRefusal(issue) || issue.problemCode === WALKAROUND_PHOTO_UNREADABLE) {
+      const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'block',
+        refusalMessage(item.command, issue), issue.problemCode);
+      remember(item.idempotencyKey, { state: 'blocked', issue });
+      if (item.command.kind === 'start') held.set(operationId, issue);
+      if (item.command.kind === 'damageMark') refusedMarks.add(markOf(item.command));
+      publish({ items: next, issue });
+      continue;
+    }
+    // ELEVANT could not take it now (5xx, 429, an unreadable answer): it is sent again later. A photo holds nothing
+    // back and says so: the agent may discard it in «Sincronización» to hand the operation off without it (3-N06).
+    const photo = item.command.kind === 'damagePhoto';
+    const waiting = photo ? new MobileServiceError(issue.code, { problemCode: WALKAROUND_PHOTO_UNAVAILABLE }) : issue;
+    const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'attempt', waiting.message,
+      waiting.problemCode);
+    remember(item.idempotencyKey, { state: 'waiting', issue });
+    if (!photo) held.set(operationId, issue);
+    publish({ items: next, issue });
   }
   publish({ syncing: false, issue: lastIssue });
   return undefined;
-}
-
-async function revoked(sessionId: string, error: unknown) {
-  const issue = asMobileServiceError(error);
-  if (issue.code === 'unauthenticated' || issue.code === 'forbidden') await rejectMobileSessionRequest(sessionId);
-  return issue;
 }
 
 const SERVICE_TARGETS = new Set(['InProgress', 'Completed', 'NotPerformed', 'Exception']);
@@ -540,10 +586,10 @@ function transitionRank(entry: LegacyRampCommand) {
 
 /** The agent discards a command the server rejected, after reviewing it in «Sincronización». */
 export async function discardFlightReportItem(idempotencyKey: string) {
-  const context = await getMobileSessionRequestContext();
+  const identity = await getMobileSessionIdentity();
   const discarded = snapshot.items.find(item => item.idempotencyKey === idempotencyKey);
   if (discarded?.command.kind === 'damagePhoto') forgetWalkaroundPhoto(discarded.command.fileUri);
-  publish({ items: await updateFlightReportItem(context.session.actor.accountId, idempotencyKey, 'remove') });
+  publish({ items: await updateFlightReportItem(identity.session.actor.accountId, idempotencyKey, 'remove') });
 }
 
 /**
@@ -552,8 +598,8 @@ export async function discardFlightReportItem(idempotencyKey: string) {
  * again, so its card never keeps a refusal that no longer holds.
  */
 export async function retryFlightReportItem(idempotencyKey: string) {
-  const context = await getMobileSessionRequestContext();
-  const accountId = context.session.actor.accountId;
+  const identity = await getMobileSessionIdentity();
+  const accountId = identity.session.actor.accountId;
   let items = await updateFlightReportItem(accountId, idempotencyKey, 'retry');
   const retried = items.find(item => item.idempotencyKey.toLowerCase() === idempotencyKey.toLowerCase())?.command;
   const photos = retried?.kind === 'damageMark'

@@ -3,13 +3,23 @@
 `mobile-session.ts` conserva la sesión como dos sobres enlazados por una
 revisión aleatoria:
 
-- el bearer y la revisión viven únicamente en `expo-secure-store` con accesibilidad
-  `WHEN_UNLOCKED_THIS_DEVICE_ONLY`;
-- AsyncStorage contiene actor/expiración no secretos con la misma revisión y
-  cachés de lectura versionadas por `accountId` y revisión;
+- el bearer, el refresh token y la revisión viven únicamente en
+  `expo-secure-store` con accesibilidad `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (sobre
+  v2, que mide menos de 2048 bytes; el sobre v1 de la APK anterior se sigue
+  leyendo, sin refresh token);
+- AsyncStorage contiene actor/expiración no secretos, y hasta cuándo renueva el
+  refresh token, con la misma revisión y cachés de lectura versionadas por
+  `accountId` y revisión;
 - las actualizaciones y eliminaciones comparan la revisión de sesión para que
   una respuesta tardía no pueda modificar una cuenta que ya cambió;
+- `replaceStoredMobileCredentialIfCurrent` guarda la credencial de una
+  renovación (S3, ADR-0046) bajo el candado y con la misma revisión: escribe
+  primero SecureStore y después la metadata, no borra cachés y solo reemplaza
+  la credencial que renovó, de la misma cuenta;
+- la sesión queda vencida, según el reloj de ELEVANT, cuando vence el access
+  token y no hay un refresh token vigente; mientras lo hay, sigue activa;
 - expiración, logout y rechazo `401/403` limpian la sesión y la caché actual;
+  un rechazo de una credencial anterior no borra la que la renovó;
 - login/logout también purgan checklist, estado de vuelo, outbox y chat
   prototípicos no namespaced para que no crucen cuentas.
 

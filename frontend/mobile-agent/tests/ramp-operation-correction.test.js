@@ -136,5 +136,6 @@ test('clears a definitely rejected command and expires an unauthorized session',
   mockApi.reopenRampOperationCorrection.mockRejectedValueOnce(new ElevantApiError(401));
   await expect(reopenRampOperationCorrection(OPERATION_ID))
     .rejects.toMatchObject({ code: 'unauthenticated' });
-  expect(mockRejectSession).toHaveBeenCalledWith(SESSION_ID);
+  expect(mockRejectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION_ID }),
+    expect.objectContaining({ code: 'unauthenticated' }));
 });

@@ -20,9 +20,15 @@ export function scheduleRange(today: Date = new Date()): { from: string; to: str
 
 /**
  * The signed-in agent's shifts and documents, read from the API under the current session.
- * Read-only: the tablet never stores it as truth, and a revoked session ends here.
+ * Read-only: the tablet never stores it as truth, and a revoked session ends here; a credential the session renewed
+ * reads once more (S3).
  */
-export async function getOwnSchedule(signal?: AbortSignal, today?: Date): Promise<RampAgentScheduleData> {
+export function getOwnSchedule(signal?: AbortSignal, today?: Date): Promise<RampAgentScheduleData> {
+  return readOwnSchedule(signal, today, false);
+}
+
+async function readOwnSchedule(signal: AbortSignal | undefined, today: Date | undefined,
+  retried: boolean): Promise<RampAgentScheduleData> {
   const context = await getMobileSessionRequestContext();
   const { from, to } = scheduleRange(today);
   try {
@@ -35,7 +41,8 @@ export async function getOwnSchedule(signal?: AbortSignal, today?: Date): Promis
   } catch (error) {
     const normalized = asMobileServiceError(error);
     if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(context, normalized);
+      if (cleared === 'retry' && !retried) return readOwnSchedule(signal, today, true);
       if (!cleared) throw new MobileServiceError('cancelled');
     }
     throw normalized;

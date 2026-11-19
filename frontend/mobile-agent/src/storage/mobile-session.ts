@@ -5,8 +5,15 @@ import {
   flightReportOutboxAccount,
   parseFlightReportOutbox,
 } from '../synchronization/flight-report-outbox';
+import { serverNow } from '../synchronization/server-clock';
 
-const ENVELOPE_SCHEMA_VERSION = 1 as const;
+/**
+ * v2 (S3, ADR-0046) adds the refresh token of the sign-in to the secret envelope; the v1 envelope the deployed APK
+ * stored is still read, without one.
+ */
+const CREDENTIAL_SCHEMA_VERSION = 2 as const;
+const LEGACY_CREDENTIAL_SCHEMA_VERSION = 1 as const;
+const METADATA_ENVELOPE_SCHEMA_VERSION = 1 as const;
 const RAMP_EXECUTION_COMMAND_SCHEMA_VERSION = 1 as const;
 const SESSION_CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
 const MOBILE_INSTALLATION_ID_KEY = 'elevant.mobile.installation-id.v1';
@@ -53,13 +60,15 @@ const secureStoreOptions: SecureStore.SecureStoreOptions = {
 };
 
 type StoredCredentialEnvelope = Readonly<{
-  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION;
+  schemaVersion: typeof CREDENTIAL_SCHEMA_VERSION;
   sessionId: string;
   accessToken: string;
+  /** The refresh token of the sign-in, rotated by every renewal; null when ELEVANT gave none. */
+  refreshToken: string | null;
 }>;
 
 type StoredMetadataEnvelope = Readonly<{
-  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION;
+  schemaVersion: typeof METADATA_ENVELOPE_SCHEMA_VERSION;
   sessionId: string;
   metadata: unknown;
 }>;
@@ -72,6 +81,10 @@ export class MobileSessionStorageError extends Error {
   }
 }
 
+/**
+ * 'active' while the access token is in force by ELEVANT's clock, or while a refresh token in force can renew it (S3):
+ * its access token may then be expired, and the session service renews it before a request.
+ */
 export type StoredMobileSessionState =
   | Readonly<{ kind: 'missing' }>
   | Readonly<{ kind: 'expired'; accountId?: string }>
@@ -79,6 +92,7 @@ export type StoredMobileSessionState =
       kind: 'active';
       sessionId: string;
       accessToken: string;
+      refreshToken: string | null;
       metadata: unknown;
     }>;
 
@@ -177,13 +191,19 @@ function safeAccountId(metadata: unknown) {
     : undefined;
 }
 
-function safeExpiry(metadata: unknown) {
-  if (!isRecord(metadata) || typeof metadata.expiresAt !== 'string') {
-    return undefined;
-  }
-
-  const timestamp = Date.parse(metadata.expiresAt);
+function safeInstant(value: unknown) {
+  if (typeof value !== 'string') return undefined;
+  const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function safeExpiry(metadata: unknown) {
+  return isRecord(metadata) ? safeInstant(metadata.expiresAt) : undefined;
+}
+
+/** Until when the refresh token can renew the session (S3); undefined when the session cannot be renewed. */
+function safeRefreshExpiry(metadata: unknown) {
+  return isRecord(metadata) ? safeInstant(metadata.refreshExpiresAt) : undefined;
 }
 
 function isValidAccessToken(value: unknown): value is string {
@@ -192,6 +212,11 @@ function isValidAccessToken(value: unknown): value is string {
     value.trim().length > 0 &&
     !/[\u0000-\u001f\u007f]/.test(value)
   );
+}
+
+/** A refresh token as ELEVANT issues it (ADR-0021): Base64URL, the shape the shared client accepts. */
+function isValidRefreshToken(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(value);
 }
 
 function parseJson(raw: string | null) {
@@ -209,8 +234,6 @@ function parseCredentialEnvelope(
   const candidate = parseJson(raw);
   if (
     !isRecord(candidate) ||
-    !hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'accessToken']) ||
-    candidate.schemaVersion !== ENVELOPE_SCHEMA_VERSION ||
     typeof candidate.sessionId !== 'string' ||
     !uuidPattern.test(candidate.sessionId) ||
     !isValidAccessToken(candidate.accessToken)
@@ -218,10 +241,32 @@ function parseCredentialEnvelope(
     return undefined;
   }
 
+  // The envelope the deployed APK wrote has no refresh token: its session ends with its access token.
+  if (
+    candidate.schemaVersion === LEGACY_CREDENTIAL_SCHEMA_VERSION &&
+    hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'accessToken'])
+  ) {
+    return {
+      schemaVersion: CREDENTIAL_SCHEMA_VERSION,
+      sessionId: candidate.sessionId,
+      accessToken: candidate.accessToken,
+      refreshToken: null,
+    };
+  }
+
+  if (
+    candidate.schemaVersion !== CREDENTIAL_SCHEMA_VERSION ||
+    !hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'accessToken', 'refreshToken']) ||
+    (candidate.refreshToken !== null && !isValidRefreshToken(candidate.refreshToken))
+  ) {
+    return undefined;
+  }
+
   return {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: CREDENTIAL_SCHEMA_VERSION,
     sessionId: candidate.sessionId,
     accessToken: candidate.accessToken,
+    refreshToken: candidate.refreshToken,
   };
 }
 
@@ -232,7 +277,7 @@ function parseMetadataEnvelope(
   if (
     !isRecord(candidate) ||
     !hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'metadata']) ||
-    candidate.schemaVersion !== ENVELOPE_SCHEMA_VERSION ||
+    candidate.schemaVersion !== METADATA_ENVELOPE_SCHEMA_VERSION ||
     typeof candidate.sessionId !== 'string' ||
     !uuidPattern.test(candidate.sessionId) ||
     !('metadata' in candidate)
@@ -241,7 +286,7 @@ function parseMetadataEnvelope(
   }
 
   return {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: METADATA_ENVELOPE_SCHEMA_VERSION,
     sessionId: candidate.sessionId,
     metadata: candidate.metadata,
   };
@@ -408,7 +453,10 @@ async function readStoredMobileSessionUnlocked(): Promise<StoredMobileSessionSta
       return { kind: 'missing' };
     }
 
-    if (expiry <= Date.now()) {
+    // ELEVANT's clock decides (3-N18). An expired access token ends the session only when no refresh token in force
+    // can renew it (S3).
+    const now = serverNow().getTime();
+    if (expiry <= now && !canStillRenew(credential, metadataEnvelope.metadata, now)) {
       await clearStoredMobileSessionUnlocked();
       return { kind: 'expired', ...(accountId ? { accountId } : {}) };
     }
@@ -417,12 +465,19 @@ async function readStoredMobileSessionUnlocked(): Promise<StoredMobileSessionSta
       kind: 'active',
       sessionId: credential.sessionId,
       accessToken: credential.accessToken,
+      refreshToken: credential.refreshToken,
       metadata: metadataEnvelope.metadata,
     };
   } catch (error) {
     if (error instanceof MobileSessionStorageError) throw error;
     throw new MobileSessionStorageError();
   }
+}
+
+/** Whether the session's refresh token can still renew it: the metadata says until when (S3). */
+function canStillRenew(credential: StoredCredentialEnvelope, metadata: unknown, now: number) {
+  const refreshExpiry = safeRefreshExpiry(metadata);
+  return credential.refreshToken !== null && refreshExpiry !== undefined && refreshExpiry > now;
 }
 
 async function currentSessionUnlocked(expectedSessionId: string) {
@@ -445,6 +500,7 @@ async function currentAccountSessionUnlocked(
 
 async function persistSessionUnlocked(
   accessToken: string,
+  refreshToken: string | null,
   metadata: unknown,
   sessionId: string,
 ) {
@@ -457,12 +513,13 @@ async function persistSessionUnlocked(
   }
 
   const credential: StoredCredentialEnvelope = {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: CREDENTIAL_SCHEMA_VERSION,
     sessionId,
     accessToken,
+    refreshToken,
   };
   const metadataEnvelope: StoredMetadataEnvelope = {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: METADATA_ENVELOPE_SCHEMA_VERSION,
     sessionId,
     metadata,
   };
@@ -1501,11 +1558,19 @@ export async function clearStoredMobileSession() {
   });
 }
 
-export async function clearStoredMobileSessionIfCurrent(sessionId: string) {
+/**
+ * Clears the session only while it is the one that made the request and, given its access token, only while it still
+ * holds that credential: ELEVANT's refusal of an earlier credential never ends the session a renewal gave a new one (S3).
+ */
+export async function clearStoredMobileSessionIfCurrent(sessionId: string, accessToken?: string) {
   return withStorageLock(async () => {
     try {
       const current = await readStoredMobileSessionUnlocked();
-      if (current.kind !== 'active' || current.sessionId !== sessionId) {
+      if (
+        current.kind !== 'active' ||
+        current.sessionId !== sessionId ||
+        (accessToken !== undefined && current.accessToken !== accessToken)
+      ) {
         return false;
       }
       await clearStoredMobileSessionUnlocked();
@@ -1521,23 +1586,95 @@ export async function readStoredMobileSession(): Promise<StoredMobileSessionStat
   return withStorageLock(readStoredMobileSessionUnlocked);
 }
 
+/** The access token while it is in force by ELEVANT's clock; one that waits for its renewal is not (S3). */
 export async function readValidMobileAccessToken() {
   const state = await readStoredMobileSession();
-  return state.kind === 'active' ? state.accessToken : undefined;
+  if (state.kind !== 'active') return undefined;
+  const expiry = safeExpiry(state.metadata);
+  return expiry !== undefined && expiry > serverNow().getTime() ? state.accessToken : undefined;
 }
 
+/**
+ * Stores a new sign-in under a new revision, with the refresh token ELEVANT issued (S3) or null. It takes the place of
+ * any earlier session, its refresh token included.
+ */
 export async function writeStoredMobileSession(
   accessToken: string,
   metadata: unknown,
+  refreshToken: string | null = null,
 ) {
-  if (!isValidAccessToken(accessToken)) {
+  if (!isValidAccessToken(accessToken) || (refreshToken !== null && !isValidRefreshToken(refreshToken))) {
     throw new MobileSessionStorageError();
   }
 
   return withStorageLock(async () => {
     const sessionId = Crypto.randomUUID();
-    await persistSessionUnlocked(accessToken, metadata, sessionId);
+    await persistSessionUnlocked(accessToken, refreshToken, metadata, sessionId);
     return sessionId;
+  });
+}
+
+/**
+ * Stores the credential a renewal returned in place of the one it renewed (S3), under the same revision: the session's
+ * caches, drafts and reservations stay, and so does the tablet's binding. Only while the session is still
+ * `expectedSessionId` with `expectedAccessToken` and the renewal names its account: a late answer never overwrites
+ * another credential nor another account. The secret goes first and the metadata after it, so the stored credential is
+ * never older than the metadata that describes it. Answers whether it replaced the credential.
+ */
+export async function replaceStoredMobileCredentialIfCurrent(
+  expectedSessionId: string,
+  expectedAccessToken: string,
+  accessToken: string,
+  refreshToken: string | null,
+  metadata: unknown,
+): Promise<boolean> {
+  const accountId = safeAccountId(metadata)?.toLowerCase();
+  if (
+    !isValidAccessToken(accessToken) ||
+    (refreshToken !== null && !isValidRefreshToken(refreshToken)) ||
+    safeExpiry(metadata) === undefined ||
+    accountId === undefined
+  ) {
+    throw new MobileSessionStorageError();
+  }
+
+  return withStorageLock(async () => {
+    try {
+      const current = await readStoredMobileSessionUnlocked();
+      if (
+        current.kind !== 'active' ||
+        current.sessionId !== expectedSessionId ||
+        current.accessToken !== expectedAccessToken ||
+        safeAccountId(current.metadata)?.toLowerCase() !== accountId
+      ) {
+        return false;
+      }
+
+      const credential: StoredCredentialEnvelope = {
+        schemaVersion: CREDENTIAL_SCHEMA_VERSION,
+        sessionId: expectedSessionId,
+        accessToken,
+        refreshToken,
+      };
+      const metadataEnvelope: StoredMetadataEnvelope = {
+        schemaVersion: METADATA_ENVELOPE_SCHEMA_VERSION,
+        sessionId: expectedSessionId,
+        metadata,
+      };
+      await SecureStore.setItemAsync(
+        SESSION_CREDENTIAL_KEY,
+        serializeEnvelope(credential),
+        secureStoreOptions,
+      );
+      await AsyncStorage.setItem(
+        SESSION_METADATA_KEY,
+        serializeEnvelope(metadataEnvelope),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
   });
 }
 
@@ -1555,6 +1692,7 @@ export async function updateStoredMobileSessionMetadata(
       const nextSessionId = Crypto.randomUUID();
       await persistSessionUnlocked(
         state.accessToken,
+        state.refreshToken,
         metadata,
         nextSessionId,
       );

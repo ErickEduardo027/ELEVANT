@@ -33,6 +33,8 @@ jest.mock('../src/storage/mobile-session', () => ({
   MobileSessionStorageError: class MobileSessionStorageError extends Error {},
 }));
 jest.mock('../src/services/mobile-auth', () => ({
+  // S3: forms, signatures and marks are queued with the session's identity, the same session here.
+  getMobileSessionIdentity: (...args) => mockContext(...args),
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: jest.fn(async () => true),
 }));

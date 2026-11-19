@@ -35,5 +35,6 @@ test('reads the own coverage through the authenticated API and ends a rejected s
   await expect(getOwnCoverage()).resolves.toEqual(coverage);
   mockApi.getOwnRampCoverage.mockRejectedValueOnce(new ElevantApiError({ status: 403 }));
   await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'forbidden' });
-  expect(mockReject).toHaveBeenCalledWith('session-a');
+  expect(mockReject).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-a', accessToken: 'token' }),
+    expect.objectContaining({ code: 'forbidden' }));
 });

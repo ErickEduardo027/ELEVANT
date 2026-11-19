@@ -57,6 +57,7 @@ const {
   readOrCreateMobileInstallationId,
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
+  replaceStoredMobileCredentialIfCurrent,
   updateStoredMobileSessionMetadata,
   writeRampChecklistDraftIfCurrent,
   reserveRampIncidentOutboxItemIfCurrent,
@@ -67,6 +68,7 @@ const {
   writeRampOperationChargesCacheIfCurrent,
   writeStoredMobileSession,
 } = require('../src/storage/mobile-session');
+const { observeServerDate, resetServerClockForTests } = require('../src/synchronization/server-clock');
 const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 const SecureStore = require('expo-secure-store');
 
@@ -88,10 +90,20 @@ function metadata(accountId, extra = {}) {
   };
 }
 
+const inMinutes = minutes => new Date(Date.now() + minutes * 60_000).toISOString();
+// Refresh tokens are 32 random bytes in Base64URL (ADR-0021): 43 characters.
+const refreshToken = letter => `refresh-${letter}-${letter.repeat(33)}`;
+const REFRESH_A = refreshToken('a');
+const REFRESH_A2 = refreshToken('b');
+const REFRESH_B = refreshToken('c');
+// The size of a real access token: header, claims (sub, jti, sv, auth_time, aud, exp, iat, iss, nbf) and signature.
+const accessToken = name => `eyJhbGciOiJIUzI1NiIsInR5cCI6ImF0K2p3dCJ9.${name}${'x'.repeat(620)}.${'s'.repeat(43)}`;
+
 beforeEach(() => {
   mockAsyncData.clear();
   mockSecureData.clear();
   mockUuidCounter = 0;
+  resetServerClockForTests();
 });
 
 test('keeps only the compact credential envelope in SecureStore', async () => {
@@ -105,12 +117,115 @@ test('keeps only the compact credential envelope in SecureStore', async () => {
   expect(secureRaw).toBeDefined();
   expect(secureRaw.length).toBeLessThan(2_048);
   expect(JSON.parse(secureRaw)).toEqual({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId: '10000000-0000-4000-8000-000000000001',
     accessToken: token,
+    refreshToken: null,
   });
   expect(metadataRaw).not.toContain(token);
   expect(JSON.parse(metadataRaw).metadata).toEqual(largeMetadata);
+});
+
+describe('a session that renews itself (S3)', () => {
+  test('the v2 envelope keeps the refresh token only in SecureStore and stays under 2048 bytes', async () => {
+    const token = accessToken('a');
+    const sessionId = await writeStoredMobileSession(token,
+      metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+
+    const secureRaw = mockSecureData.get(CREDENTIAL_KEY);
+    expect(JSON.parse(secureRaw)).toEqual({ schemaVersion: 2, sessionId, accessToken: token, refreshToken: REFRESH_A });
+    expect(secureRaw.length).toBeLessThan(2_048);
+    expect([...mockAsyncData.values()].some(value => value.includes(REFRESH_A) || value.includes(token))).toBe(false);
+  });
+
+  test('an expired access token with a refresh token in force stays active and keeps the caches, by ELEVANT’s clock', async () => {
+    const sessionId = await writeStoredMobileSession('token-a',
+      metadata(ACCOUNT_A, { expiresAt: inMinutes(-5), refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+    const cacheKey = assignedOperationsCacheKey(ACCOUNT_A);
+    await expect(writeAssignedOperationsCacheIfCurrent(sessionId, cacheKey, '{"cached":true}')).resolves.toBe('written');
+    await writeRampChecklistCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ checklistId: CHECKLIST_A }));
+
+    await expect(readStoredMobileSession()).resolves.toMatchObject({
+      kind: 'active', sessionId, accessToken: 'token-a', refreshToken: REFRESH_A,
+    });
+    expect(mockAsyncData.get(cacheKey)).toBe('{"cached":true}');
+    expect([...mockAsyncData.keys()].some(key => key.includes('ramp-checklist-cache'))).toBe(true);
+
+    // ELEVANT's clock decides, not the tablet's: an hour ahead, an access token of ten more minutes already expired.
+    expect(observeServerDate(new Date(Date.now() + 60 * 60_000).toUTCString(), Date.now(), Date.now())).toBe(true);
+    await clearStoredMobileSession();
+    await writeStoredMobileSession('token-b', metadata(ACCOUNT_B, { expiresAt: inMinutes(10) }));
+    await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'expired', accountId: ACCOUNT_B });
+  });
+
+  test('replacing the credential keeps the revision and the caches, and the secret is written first', async () => {
+    const sessionId = await writeStoredMobileSession('token-a',
+      metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+    const cacheKey = assignedOperationsCacheKey(ACCOUNT_A);
+    await writeAssignedOperationsCacheIfCurrent(sessionId, cacheKey, '{"cached":true}');
+    await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
+    SecureStore.setItemAsync.mockClear();
+    AsyncStorage.setItem.mockClear();
+
+    const renewed = metadata(ACCOUNT_A, { expiresAt: inMinutes(15), refreshExpiresAt: inMinutes(30 * 24 * 60) });
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionId, 'token-a', 'token-a2', REFRESH_A2, renewed))
+      .resolves.toBe(true);
+
+    expect(SecureStore.setItemAsync).toHaveBeenCalledTimes(1);
+    expect(SecureStore.setItemAsync.mock.invocationCallOrder[0])
+      .toBeLessThan(AsyncStorage.setItem.mock.invocationCallOrder[0]);
+    await expect(readStoredMobileSession()).resolves.toEqual({
+      kind: 'active', sessionId, accessToken: 'token-a2', refreshToken: REFRESH_A2, metadata: renewed,
+    });
+    expect(mockAsyncData.get(cacheKey)).toBe('{"cached":true}');
+    expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-charges'))).toBe(true);
+    await expect(writeAssignedOperationsCacheIfCurrent(sessionId, cacheKey, '{"next":true}')).resolves.toBe('written');
+  });
+
+  test('a late renewal never overwrites another credential nor another account', async () => {
+    const renewedA = metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) });
+    const sessionA = await writeStoredMobileSession('token-a', renewedA, REFRESH_A);
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionA, 'token-a', 'token-a2', REFRESH_A2, renewedA))
+      .resolves.toBe(true);
+    // An answer to the earlier credential arrives after that one was replaced.
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionA, 'token-a', 'token-a3', refreshToken('d'), renewedA))
+      .resolves.toBe(false);
+    await expect(readStoredMobileSession()).resolves.toMatchObject({ accessToken: 'token-a2', refreshToken: REFRESH_A2 });
+
+    // Another agent signed in on the tablet meanwhile.
+    await clearStoredMobileSession();
+    const sessionB = await writeStoredMobileSession('token-b',
+      metadata(ACCOUNT_B, { refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_B);
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionA, 'token-a2', 'token-a4', refreshToken('e'), renewedA))
+      .resolves.toBe(false);
+    // A renewal that names another account never takes the place of this one.
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionB, 'token-b', 'token-x', refreshToken('f'), renewedA))
+      .resolves.toBe(false);
+    await expect(readStoredMobileSession()).resolves.toMatchObject({
+      kind: 'active', sessionId: sessionB, accessToken: 'token-b', refreshToken: REFRESH_B,
+    });
+  });
+
+  test('still reads the credential the deployed APK stored (v1)', async () => {
+    const sessionId = '30000000-0000-4000-8000-000000000009';
+    mockSecureData.set(CREDENTIAL_KEY, JSON.stringify({ schemaVersion: 1, sessionId, accessToken: 'token-v1' }));
+    mockAsyncData.set(METADATA_KEY, JSON.stringify({ schemaVersion: 1, sessionId,
+      metadata: { schemaVersion: 1, actor: { accountId: ACCOUNT_A }, expiresAt: inMinutes(10) } }));
+
+    await expect(readStoredMobileSession()).resolves.toMatchObject({
+      kind: 'active', sessionId, accessToken: 'token-v1', refreshToken: null,
+    });
+  });
+
+  test('when another account signs in, the refresh token of the earlier one is gone', async () => {
+    await writeStoredMobileSession('token-a', metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) }),
+      REFRESH_A);
+    expect(mockSecureData.get(CREDENTIAL_KEY)).toContain(REFRESH_A);
+
+    await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+    expect([...mockSecureData.values(), ...mockAsyncData.values()].some(value => value.includes(REFRESH_A))).toBe(false);
+    await expect(readStoredMobileSession()).resolves.toMatchObject({ accessToken: 'token-b', refreshToken: null });
+  });
 });
 
 test('keeps one account-scoped chat command stable across retries and for the same account after logout (3-N12)', async () => {

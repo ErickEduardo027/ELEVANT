@@ -38,12 +38,27 @@ Se evaluó poner un tope absoluto a la sesión de las cuentas de rampa, de 16 ho
   - durante 60 segundos, presentarlo otra vez responde `409 refresh_rotated` y no revoca nada;
   - después cuenta como reuso y revoca la familia, así que la sesión termina y el agente vuelve a entrar.
 - La tablet documenta y prueba ese caso. No hay tolerancia adicional en el servidor.
+- En la tablet, la respuesta perdida es un fallo de red: la sesión sigue con su access token y la siguiente renovación espera 30 segundos. El `409` que llega dentro del minuto de margen no trae nada nuevo que guardar, así que la sesión sigue igual. Pasado el margen, el `401` termina la sesión. Lo que el agente registró queda en la tablet ligado a su cuenta (3-N12) y sale cuando vuelve a entrar ([prueba](../../frontend/mobile-agent/tests/mobile-session-renewal.test.js)).
+
+**4. Cómo renueva la tablet.**
+- **Lo que guarda.** El sobre de SecureStore pasa a la versión 2 y lleva el refresh token junto al access token; el sobre v1 de la APK anterior se sigue leyendo, sin refresh. La metadata no secreta de AsyncStorage pasa a la versión 2 y dice hasta cuándo renueva el refresh token (`refreshExpiresAt`), o `null` si la sesión no puede renovarse. Un inicio de sesión de otra cuenta reemplaza ambos sobres, refresh token incluido.
+- **Cuándo renueva.** La siguiente solicitud renueva el access token en su último minuto o ya vencido, igual que AVIAM Web. Una sola renovación en curso atiende a todas las solicitudes que la esperan, y un refresh token ya reemplazado nunca se vuelve a presentar. Todo se compara con el reloj de ELEVANT (3-N18): un reloj de la tablet adelantado no impide entrar, y un desfase viejo solo adelanta la renovación, porque la respuesta corrige el reloj.
+- **Solo con `auth_time`.** La tablet lee el `auth_time` del JWT sin verificar la firma, porque solo decide si renovar. Sin él, la sesión termina con su access token, como antes, y el refresh token se guarda solo para terminar la familia al cerrar sesión.
+- **Según la respuesta.**
+  - `200`: la credencial nueva, de la misma cuenta, reemplaza a la anterior con la misma revisión de la sesión. Las cachés, los borradores, las reservas y el vínculo de la tablet siguen igual.
+  - `409`: la tablet relee lo guardado.
+  - `401`: la sesión termina con esa causa (`session_expired`, estado 401) y conserva lo que el agente registró.
+  - Sin señal, `429` o `5xx`: la sesión sigue con su credencial y la siguiente renovación espera 30 segundos. La solicitud sale con esa credencial: sin señal falla como sin conexión y las lecturas usan su caché.
+- **El `401` de una solicitud.** Fuerza una renovación y la solicitud se repite una vez, los comandos con su misma clave. Si la credencial ya cambió, se repite sin renovar. Una credencial que ELEVANT rechaza recién renovada termina la sesión, para no entrar en un ciclo.
+- **Sin red.** Encolar un toque, guardar un borrador y reservar una observación de asistencia solo necesitan la identidad de la sesión guardada en la tablet. Una sesión cuyo access token venció sigue activa mientras su refresh token esté vigente.
+- **La tablet y la presencia.** La confirmación del registro de la tablet y la versión de la liberación se atan a la sesión, no al token, así que sobreviven a la renovación. La presencia identifica su lease por la sesión y la cuenta, y cada latido lee el token vigente. Los hubs de SignalR piden el token en cada conexión y toman el renovado.
+- **Cerrar sesión.** Libera la tablet y termina la familia en ELEVANT (`endSession`), cada uno con un límite de 5 segundos. Si la tablet no conserva un inicio de sesión, por ejemplo porque falla su registro, también termina la familia recién emitida.
 
 ## Compatibilidad y despliegue
 
 - El cambio es aditivo. Un cliente que ignora `auth_time` funciona igual; AVIAM Web y el portal no cambian.
 - `development-delivery.yml` publica la API antes que las webs, y la APK se publica a mano. Una APK que renueva, frente a una API anterior a este cambio, no renueva y vuelve a pedir el acceso al vencer el token, como hasta ahora.
-- La APK ya instalada no guarda el refresh token. Hasta que se instale la nueva, la tablet sigue con la sesión de 15 minutos.
+- La APK ya instalada no guarda el refresh token. Hasta que se instale la nueva, la tablet sigue con la sesión de 15 minutos. La APK nueva lee la sesión que dejó la anterior y la deja terminar con su access token; el siguiente inicio de sesión ya renueva.
 - Los tokens emitidos antes del despliegue no traen `auth_time`, y el registro de la tablet usa su `iat`, como antes. Esos tokens vencen a los 15 minutos.
 
 ## Consecuencias

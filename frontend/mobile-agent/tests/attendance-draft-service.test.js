@@ -1,5 +1,6 @@
 const mockApi = { getOperationAttendanceDraft: jest.fn(), saveRampAttendanceDraft: jest.fn() };
 const mockContext = jest.fn();
+const mockIdentity = jest.fn();
 const mockRejectSession = jest.fn();
 const mockRegister = jest.fn();
 const mockReserve = jest.fn();
@@ -18,6 +19,7 @@ jest.mock('../src/config/elevant-api', () => ({
   isMobileAgentNetworkError: jest.fn(() => false),
 }));
 jest.mock('../src/services/mobile-auth', () => ({
+  getMobileSessionIdentity: (...args) => mockIdentity(...args),
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: (...args) => mockRejectSession(...args),
 }));
@@ -53,6 +55,7 @@ const receipt = { contribution: { revision: 1, incidentNote: 'Observado' }, repl
 beforeEach(() => {
   jest.clearAllMocks();
   mockContext.mockResolvedValue(current());
+  mockIdentity.mockResolvedValue({ sessionId, session: { actor: { accountId } } });
   mockRegister.mockResolvedValue({ installationId });
   mockReserve.mockResolvedValue({ idempotencyKey: key, request });
   mockReadPending.mockResolvedValue({ idempotencyKey: key, request });
@@ -66,7 +69,8 @@ test('reads canonical lanes with confirmed installation and same account session
   await expect(readRampAttendanceDraft(operationId, assignmentId)).resolves.toMatchObject({ operationId, assignmentId });
   expect(mockApi.getOperationAttendanceDraft).toHaveBeenCalledWith(operationId,
     assignmentId, { signal: undefined, installationId });
-  expect(mockRegister).toHaveBeenCalledWith({ accessToken: 'token' }, { signal: undefined, reuseForSession: true });
+  expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'token', sessionId }),
+    { signal: undefined, reuseForSession: true });
 });
 
 test('persists one intent and retries an uncertain write with identical key and payload', async () => {
@@ -115,7 +119,8 @@ test.each([401, 403])('does not resend after HTTP %s and rejects only original s
   mockApi.saveRampAttendanceDraft.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status }));
   await expect(saveRampAttendanceDraft(operationId, assignmentId, request)).rejects.toMatchObject({ status });
   expect(mockApi.saveRampAttendanceDraft).toHaveBeenCalledTimes(1);
-  expect(mockRejectSession).toHaveBeenCalledWith(sessionId);
+  expect(mockRejectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId, accessToken: 'token' }),
+    expect.objectContaining({ status }));
   expect(mockClearPending).not.toHaveBeenCalled();
 });
 
@@ -125,7 +130,8 @@ test.each([401, 403])('does not reject a replacement session when an old request
   mockRejectSession.mockResolvedValueOnce(false);
   await expect(readRampAttendanceDraft(operationId, assignmentId))
     .rejects.toMatchObject({ code: 'cancelled' });
-  expect(mockRejectSession).toHaveBeenCalledWith(sessionId);
+  expect(mockRejectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId, accessToken: 'token' }),
+    expect.objectContaining({ status }));
 });
 
 test('requires explicit resolution before replacing a different pending body', async () => {

@@ -12,20 +12,26 @@ import {
   MobileServiceError,
 } from './mobile-service-error';
 
+/**
+ * The credential that registers or releases the tablet and the session revision it belongs to. A renewal changes the
+ * token and keeps the session (S3, ADR-0046), so what the session confirmed is tied to `sessionId`.
+ */
 export type MobileDeviceRegistrationContext = Readonly<{
   accessToken: string;
+  sessionId: string;
 }>;
 
 export type RegisterCurrentMobileDeviceOptions = Readonly<{
   signal?: AbortSignal;
   /**
-   * Solo para lecturas periódicas: reutiliza el registro ya confirmado con el
-   * mismo token. Las escrituras siempre vuelven a registrar el dispositivo.
+   * Solo para lecturas periódicas: reutiliza el registro ya confirmado en la
+   * misma sesión, también tras renovar su token. Las escrituras siempre vuelven
+   * a registrar el dispositivo.
    */
   reuseForSession?: boolean;
 }>;
 
-let confirmedForSession: Readonly<{ accessToken: string; device: RegisteredMobileDevice }> | null = null;
+let confirmedForSession: Readonly<{ sessionId: string; device: RegisteredMobileDevice }> | null = null;
 
 /** How long sign-out waits for the release before it clears the session anyway. */
 export const MOBILE_RELEASE_TIMEOUT_MS = 5_000;
@@ -55,8 +61,8 @@ function currentOperatingSystemVersion() {
  * The newest registration the session confirmed. Registrations of the same session can answer out of order (a write
  * and a periodic read at once), and the release at sign-out names the newest one (2-N02).
  */
-function newestOfSession(accessToken: string, device: RegisteredMobileDevice): RegisteredMobileDevice {
-  const previous = confirmedForSession?.accessToken === accessToken &&
+function newestOfSession(sessionId: string, device: RegisteredMobileDevice): RegisteredMobileDevice {
+  const previous = confirmedForSession?.sessionId === sessionId &&
     confirmedForSession.device.installationId === device.installationId
     ? confirmedForSession.device
     : null;
@@ -70,7 +76,7 @@ export async function registerCurrentMobileDevice(
   context: MobileDeviceRegistrationContext,
   options: RegisterCurrentMobileDeviceOptions = {},
 ): Promise<RegisteredMobileDevice> {
-  if (options.reuseForSession && confirmedForSession?.accessToken === context.accessToken) {
+  if (options.reuseForSession && confirmedForSession?.sessionId === context.sessionId) {
     return confirmedForSession.device;
   }
   try {
@@ -97,8 +103,8 @@ export async function registerCurrentMobileDevice(
 
     const device = { installationId, registration };
     confirmedForSession = {
-      accessToken: context.accessToken,
-      device: newestOfSession(context.accessToken, device),
+      sessionId: context.sessionId,
+      device: newestOfSession(context.sessionId, device),
     };
     return device;
   } catch (error) {
@@ -123,14 +129,15 @@ export function forgetConfirmedMobileDevice() {
 /**
  * Frees the tablet when the agent signs out (2-N02), so the next agent who signs in on it holds it. It is best
  * effort: it never blocks the sign-out, and a tablet another agent, OCC or the end of the agent's duty already freed
- * answers `device_not_bound`. The release names the newest registration this session confirmed. Each sign-in opens its
- * own binding, so a release that arrives after the agent signed in on the tablet again answers `version_conflict` and
- * frees nothing, while the session's own writes never refuse it. Answers whether the server released it.
+ * answers `device_not_bound`. The release names the newest registration this session confirmed, also after the session
+ * renewed its token: a renewal keeps the binding (S3, ADR-0046). Each sign-in opens its own binding, so a release that
+ * arrives after the agent signed in on the tablet again answers `version_conflict` and frees nothing, while the
+ * session's own writes never refuse it. Answers whether the server released it.
  */
 export async function releaseCurrentMobileDevice(
   context: MobileDeviceRegistrationContext,
 ): Promise<boolean> {
-  const confirmed = confirmedForSession?.accessToken === context.accessToken
+  const confirmed = confirmedForSession?.sessionId === context.sessionId
     ? confirmedForSession.device
     : null;
   forgetConfirmedMobileDevice();

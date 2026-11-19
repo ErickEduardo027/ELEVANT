@@ -21,9 +21,11 @@ import {
 } from '../storage/mobile-session';
 import { discardFlightReportItem, readOperationQueue, sendFlightReportCommand } from './flight-report';
 import {
+  getMobileSessionIdentity,
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
+  type MobileSessionRequestContext,
 } from './mobile-auth';
 import { asMobileServiceError } from './mobile-service-error';
 
@@ -437,10 +439,14 @@ async function confirmSameSession(sessionId: string) {
   return confirmed;
 }
 
-async function rejectIfUnauthorized(sessionId: string, error: unknown): Promise<never> {
+/** Throws the failure of a request, unless the session renewed the credential ELEVANT refused: then 'retry' (S3). */
+async function rejectIfUnauthorized(
+  context: MobileSessionRequestContext, error: unknown, retried: boolean,
+): Promise<'retry'> {
   const normalized = asMobileServiceError(error);
   if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-    const cleared = await rejectMobileSessionRequest(sessionId);
+    const cleared = await rejectMobileSessionRequest(context, normalized);
+    if (cleared === 'retry' && !retried) return 'retry';
     if (!cleared) throw new MobileServiceError('cancelled');
   }
   throw normalized;
@@ -450,9 +456,17 @@ async function rejectIfUnauthorized(sessionId: string, error: unknown): Promise<
  * The operation's checklist. The last copy ELEVANT returned stays on the device for this account (3-I): without
  * signal the agent opens it from there, answers it and sends it to the queue; the copy is flagged as cached.
  */
-export async function getRampOperationChecklist(
+export function getRampOperationChecklist(
   operationId: string,
   options: RampChecklistRequestOptions = {},
+): Promise<GetRampOperationChecklistResponse> {
+  return readChecklist(operationId, options, false);
+}
+
+async function readChecklist(
+  operationId: string,
+  options: RampChecklistRequestOptions,
+  retried: boolean,
 ): Promise<GetRampOperationChecklistResponse> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const context = await getMobileSessionRequestContext();
@@ -480,7 +494,8 @@ export async function getRampOperationChecklist(
         }
       }
     }
-    return rejectIfUnauthorized(context.sessionId, normalized);
+    await rejectIfUnauthorized(context, normalized, retried);
+    return readChecklist(operationId, options, true);
   }
 }
 
@@ -491,11 +506,12 @@ export async function readRampOperationChecklistDraft(
   if (!isUuid(operationId) || !isUuid(checklistId)) {
     throw new MobileServiceError('request_failed');
   }
-  const context = await getMobileSessionRequestContext();
+  // The draft lives on the device: the session's identity is enough, without signal or a renewal (S3).
+  const identity = await getMobileSessionIdentity();
   try {
     const result = await readRampChecklistDraftIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
+      identity.sessionId,
+      identity.session.actor.accountId,
       operationId,
       checklistId,
     );
@@ -517,11 +533,12 @@ export async function saveRampOperationChecklistDraft(
   if (!parseDraft(serialized, draft.checklistId)) {
     throw new MobileServiceError('request_failed');
   }
-  const context = await getMobileSessionRequestContext();
+  // Kept on the device with the session's identity only: no signal nor renewal is needed (S3).
+  const identity = await getMobileSessionIdentity();
   try {
     const result = await writeRampChecklistDraftIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
+      identity.sessionId,
+      identity.session.actor.accountId,
       operationId,
       draft.checklistId,
       serialized,
