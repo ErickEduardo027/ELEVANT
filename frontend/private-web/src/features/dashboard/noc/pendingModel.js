@@ -47,9 +47,15 @@ function deadlineOf(flight, visit) {
 // A stand assigned or released on another screen reads here as on the board's strip.
 const standOf = (flight, visit) => (visit?.source === 'map' ? visit.standCode : flight.stand?.code ?? null);
 
+// An arrival's time that is its runway time (the map flights' `actualKind`, boardModel.js: bestTime): it only says that
+// the aircraft landed, never that it arrived on its stand (N23).
+const isLanding = deadline => deadline.direction === 'Arrival' && deadline.time.kind === 'actual'
+  && deadline.time.actualKind === 'Runway';
+
 /**
- * «llega en 23 min», «llega ahora», «llegó hace 5 min» (an actual time) or «debía llegar hace 5 min» (a time that
- * passed with nothing recorded); the same for a departure. An empty text without a deadline.
+ * «llega en 23 min», «llega ahora», «llegó hace 5 min» (an actual time), «aterrizó hace 5 min» (an arrival's runway
+ * time) or «debía llegar hace 5 min» (a time that passed with nothing recorded); the same for a departure. An empty
+ * text without a deadline.
  */
 function whenWords(deadline, nowMs, t) {
   if (deadline === null) return '';
@@ -59,6 +65,7 @@ function whenWords(deadline, nowMs, t) {
   if (parts.tense === 'now') return t(`pending.when.${leg}Now`);
   const duration = durationText(parts, t);
   if (parts.tense === 'future') return t(`pending.when.${leg}`, { duration });
+  if (isLanding(deadline)) return t('pending.when.landedPast', { duration });
   return t(deadline.time.kind === 'actual' ? `pending.when.${leg}Past` : `pending.when.${leg}Due`, { duration });
 }
 

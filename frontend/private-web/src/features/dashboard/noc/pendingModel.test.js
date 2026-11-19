@@ -107,6 +107,26 @@ describe('buildPending', () => {
       .toEqual(['ZZ301 pasó su hora de salida']);
   });
 
+  it('an arrival the map flights give with its runway time «aterrizó hace», never «llegó» (N23)', () => {
+    // ZZ102 touched down 12 minutes ago, as the feed or the demo worker writes it, and nobody is assigned yet.
+    const flight = createPlanningFlight({ assignedAgents: [], agents: [] });
+    const boardWith = actualKind => buildBoard({ flights: [{ ...mapArrivalOf(flight, 'A02'), phase: 'landed',
+      actualAt: new Date(NOW - 12 * 60_000).toISOString(), actualKind }], nowMs: NOW, t });
+    const labels = (actualKind, translate = t) => buildPending({ board: boardWith(actualKind), planningFlights: [flight],
+      nowMs: NOW, t: translate }).map(item => item.label);
+    expect(labels('Runway')).toEqual(['ZZ102 sin agente, aterrizó hace 12 min']);
+    expect(labels('Runway', createTranslator(consoleMessages, 'en'))).toEqual(['ZZ102 without an agent, landed 12 min ago']);
+    // OCC's «Registrar llegada» writes its on-block time: then it arrived.
+    expect(labels('OnBlock')).toEqual(['ZZ102 sin agente, llegó hace 12 min']);
+
+    // A demo flight to import that already landed says so too.
+    const noon = Date.parse(TRAFFIC_NOON);
+    const flights = createMapFlights().flights.map(item => (item.flightKey !== TRAFFIC_FLIGHT_KEY.demoArrival ? item
+      : { ...item, phase: 'landed', actualAt: new Date(noon - 2 * 60_000).toISOString(), actualKind: 'Runway' }));
+    expect(summary(buildPending({ board: buildBoard({ flights, nowMs: noon, t }), nowMs: noon, t })))
+      .toEqual([['toImport', 'attention', 'ZZ9001 por importar, aterrizó hace 2 min']]);
+  });
+
   it('a readiness mark becomes agentCannotOperate', () => {
     const flight = createPlanningFlight();
     const readiness = { stationId: 'station', date: '2026-08-19',

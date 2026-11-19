@@ -150,6 +150,10 @@ export const mapMessages = {
       departure: 'Salida',
       scheduled: 'Prog. {time}',
       estimated: 'Est. {time}',
+      // An arrival's landing and its stand, apart (N23), in the data block's words (`dataBlock.landed`, `onBlock`);
+      // «Real» is an actual time that tells no kind.
+      landed: 'Aterrizó {time}',
+      onStand: 'En posición {time}',
       actual: 'Real {time}',
       arrivesIn: 'Llega en {minutes} min',
       departsIn: 'Sale en {minutes} min',
@@ -572,6 +576,8 @@ export const mapMessages = {
       departure: 'Departure',
       scheduled: 'Sched. {time}',
       estimated: 'Est. {time}',
+      landed: 'Landed {time}',
+      onStand: 'On stand {time}',
       actual: 'Actual {time}',
       arrivesIn: 'Arrives in {minutes} min',
       departsIn: 'Departs in {minutes} min',

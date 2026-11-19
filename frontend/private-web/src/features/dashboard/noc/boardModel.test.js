@@ -46,7 +46,7 @@ describe('boardModel', () => {
     // ZZ300 landed 22 min ago (actual), ZZ161 comes in 10 min (estimated), ZZ500 in 48 (estimated).
     expect(numbers(board.arrivals)).toEqual(['ZZ300', 'ZZ161', 'ZZ500']);
     expect(board.arrivals.map(item => item.time)).toEqual([
-      { at: NOW - 22 * MINUTE, kind: 'actual' }, { at: NOW + 10 * MINUTE, kind: 'estimated' },
+      { at: NOW - 22 * MINUTE, kind: 'actual', actualKind: 'OnBlock' }, { at: NOW + 10 * MINUTE, kind: 'estimated' },
       { at: NOW + 48 * MINUTE, kind: 'estimated' },
     ]);
     expect(numbers(board.departures)).toEqual(['ZZ700', 'ZZ301', 'ZZ162']);
@@ -65,6 +65,20 @@ describe('boardModel', () => {
     expect(board.departures[0].status).toMatchObject({ key: 'departed', label: 'Salió' });
     expect(board.arrivals[2].status.label).toBe('En ruta');
     expect(board.counts).toEqual({ arrivals: 3, departures: 3, toImport: 2, visits: 4 });
+  });
+
+  it('an actual time keeps the kind the map flights give it: a runway time only says that it landed (N23)', () => {
+    const leg = actualKind => ({ scheduledAt: '2026-11-13T15:00:00Z', actualAt: '2026-11-13T14:58:00Z', actualKind });
+    expect(bestTime(leg('Runway'))).toEqual({ at: NOW - 2 * MINUTE, kind: 'actual', actualKind: 'Runway' });
+    expect(bestTime(leg('OnBlock'))).toEqual({ at: NOW - 2 * MINUTE, kind: 'actual', actualKind: 'OnBlock' });
+    // A planning leg tells no kind, and an estimate or a schedule has none.
+    expect(bestTime(leg(undefined))).toEqual({ at: NOW - 2 * MINUTE, kind: 'actual' });
+    expect(bestTime({ scheduledAt: '2026-11-13T15:00:00Z', actualAt: null, actualKind: null }))
+      .toEqual({ at: NOW, kind: 'scheduled' });
+    // The strips carry it: ZZ300's on-block time, written by «Registrar llegada», and ZZ700's take-off.
+    const board = buildBoard({ flights: FLIGHTS, nowMs: NOW, t });
+    expect(board.arrivals.find(item => item.flightNumber === 'ZZ300').time.actualKind).toBe('OnBlock');
+    expect(board.departures.find(item => item.flightNumber === 'ZZ700').time.actualKind).toBe('Runway');
   });
 
   it('an arrival without a stand reads «Llegada sin posición asignada» and turns attention within 60 min', () => {

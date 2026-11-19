@@ -595,6 +595,86 @@ describe('deriveDisplayStatus with the map situation (PR M6)', () => {
   });
 });
 
+// N23, the run of 16 November: the detail of a visit kept one actual time, the board's first, which for a feed or demo
+// leg is its runway time, so at 19:57 the map said «Ocupada por WN9001 desde las 19:49 (llegada registrada)» of an
+// aircraft that landed at 19:49 and parked at 19:54. Synthetic, as the demo worker leaves the scene: the runway time on
+// the arrival leg (`actualKind: 'Runway'`) and as the board's arrival time, the server's on-block on the whole minute
+// (N28) and the tablet's BLOCK_ON a little later.
+describe('the detail of a visit tells the landing from the stand (N23)', () => {
+  const utc = time => Date.parse(`2026-11-16T${time}Z`);
+  const T1950 = utc('23:50:00');
+  const TOUCHDOWN = utc('23:49:12');
+  const ON_BLOCK = utc('23:54:00');
+  const BLOCK_ON = utc('23:54:40');
+  const demo = {
+    demoFlightId: 'demo-wn9001', state: 'Active', phase: 'TaxiIn', appearAt: iso(TOUCHDOWN - 6 * MINUTE),
+    touchdownAt: iso(TOUCHDOWN), onBlockAt: iso(ON_BLOCK), scheduledOffBlockAt: iso(ON_BLOCK + 60 * MINUTE),
+    offBlockAt: null, takeoffAt: null, vanishAt: null,
+  };
+  const a11 = positionOf('A11', boardStand('A11', { coveredBy: [marta], turnarounds: [boardVisit({
+    nowMs: T1950, flight: 'WN9001', arrivalInMin: 4, departureInMin: 64, arrivedAt: iso(TOUCHDOWN), isDemo: true,
+  })] }));
+  const demoLegs = milestones => ({ 'turn-WN9001': [
+    { direction: 'Arrival', flightNumber: 'WN9001', phase: 'landed', scheduledAt: iso(ON_BLOCK), estimatedAt: iso(ON_BLOCK),
+      actualAt: iso(TOUCHDOWN), actualKind: 'Runway', isDemo: true, demo, milestones },
+    { direction: 'Departure', flightNumber: 'WN9002', phase: 'scheduled', scheduledAt: iso(ON_BLOCK + 60 * MINUTE),
+      actualAt: null, actualKind: null, isDemo: true, demo, milestones },
+  ] });
+  const readA11 = (nowMs, milestones = []) => deriveDisplayStatus(a11, { nowMs, flightsByTurnaround: demoLegs(milestones) });
+
+  it('the run of 16 November: landed at 19:49 and arriving at 19:50, on the stand since 19:54 at 19:57', () => {
+    expect(a11.status).toBe('occupied');
+    // 19:50: it landed and taxis in; nothing puts it on the stand yet.
+    const taxiing = readA11(T1950);
+    expect(taxiing).toMatchObject({ state: 'arriving', minutesToArrival: 4,
+      detail: { arrival: { landedAt: TOUCHDOWN, onStandAt: null, onStandRecorded: false } } });
+    // 19:57: parked at the server's on-block, and the tablet recorded BLOCK_ON at 19:54:40, which is said first.
+    const parked = readA11(T1950 + 7 * MINUTE, [{ code: 'BLOCK_ON', actualAt: iso(BLOCK_ON) }]);
+    expect(parked).toMatchObject({ state: 'occupied',
+      detail: { arrival: { landedAt: TOUCHDOWN, onStandAt: BLOCK_ON, onStandRecorded: true } } });
+    // Without BLOCK_ON, the demo chocks: the time the server planned, which nobody recorded.
+    expect(readA11(T1950 + 7 * MINUTE).detail.arrival)
+      .toMatchObject({ landedAt: TOUCHDOWN, onStandAt: ON_BLOCK, onStandRecorded: false });
+    // The one actual time of before stays, for what reads it: the stand's time, else the runway's.
+    expect([taxiing.detail.arrival.actualAt, parked.detail.arrival.actualAt]).toEqual([TOUCHDOWN, BLOCK_ON]);
+  });
+
+  it('a real flight: OCC\'s on-block, the earliest BLOCK_ON, an aircraft seen in the box and the board alone', () => {
+    const position = positionOf('A5', onA5([visit({ flight: 'DM301', arrivalInMin: -12, departureInMin: 60, arrived: true })]));
+    const legs = (arrival, arrivalMilestones = [], departureMilestones = arrivalMilestones) => ({ 'turn-DM301': [
+      { direction: 'Arrival', flightNumber: 'DM301', phase: 'landed', scheduledAt: iso(NOW - 15 * MINUTE),
+        milestones: arrivalMilestones, ...arrival },
+      { direction: 'Departure', flightNumber: 'DM302', phase: 'scheduled', scheduledAt: iso(NOW + 60 * MINUTE),
+        milestones: departureMilestones },
+    ] });
+    const arrivalOf = (flightsByTurnaround, options = {}) => deriveDisplayStatus(position, { nowMs: NOW,
+      flightsByTurnaround, ...options });
+    const blockOn = minutes => ({ code: 'BLOCK_ON', actualAt: iso(NOW + minutes * MINUTE) });
+    const runway = { actualAt: iso(NOW - 12 * MINUTE), actualKind: 'Runway' };
+
+    // OCC's «Registrar llegada» writes the on-block time: on the stand since then, recorded; no runway time is known.
+    expect(arrivalOf(legs({ phase: 'arrived', actualAt: iso(NOW - 9 * MINUTE), actualKind: 'OnBlock' })))
+      .toMatchObject({ state: 'occupied', detail: { arrival: {
+        landedAt: null, onStandAt: NOW - 9 * MINUTE, onStandRecorded: true, actualAt: NOW - 9 * MINUTE } } });
+    // The feed's runway time and the tablet's BLOCK_ON, without demo chocks: the earliest BLOCK_ON of its legs.
+    expect(arrivalOf(legs(runway, [blockOn(-6)], [blockOn(-7)]))).toMatchObject({ state: 'occupied', detail: { arrival: {
+      landedAt: NOW - 12 * MINUTE, onStandAt: NOW - 7 * MINUTE, onStandRecorded: true } } });
+    // A BLOCK_ON ahead of the stand's clock is never said.
+    expect(arrivalOf(legs(runway, [blockOn(2)])).detail.arrival).toMatchObject({ onStandAt: null, onStandRecorded: false });
+    // Its aircraft stands in the box with only its runway time: it is there, and nobody knows since when.
+    const [lng, lat] = position.geometry.center;
+    expect(arrivalOf(legs(runway), { aircraftByTurnaround: { 'turn-DM301': { latitude: lat, longitude: lng } } }))
+      .toMatchObject({ state: 'occupied', signals: [{ kind: 'notice', reason: 'arrivalNotRecorded' }], detail: { arrival: {
+        landedAt: NOW - 12 * MINUTE, onStandAt: null, onStandRecorded: false } } });
+    // The board alone, or without the arrival leg: its arrival time tells no kind (a runway or an on-block time), so
+    // it stays only as the actual time of before.
+    const boardOnly = { landedAt: null, onStandAt: null, onStandRecorded: false, actualAt: NOW - 12 * MINUTE };
+    expect(deriveDisplayStatus(position, { nowMs: NOW })).toMatchObject({ state: 'occupied', detail: { arrival: boardOnly } });
+    expect(arrivalOf({ 'turn-DM301': [legs(runway)['turn-DM301'][1]] })).toMatchObject({ state: 'occupied',
+      detail: { arrival: boardOnly } });
+  });
+});
+
 describe('attachStandGeometry', () => {
   it('attachStandGeometry matches by normalized code, skips retired stands and leaves unknown unplaced stands without geometry', () => {
     const { board } = createRampScenario(NOW);

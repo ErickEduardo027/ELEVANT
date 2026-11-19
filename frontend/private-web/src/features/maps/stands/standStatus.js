@@ -114,6 +114,18 @@ export function standCharacteristics(position, layout = null) {
 const ON_STAND = new Set(['occupied', 'releasing']);
 const nonNegative = minutes => (finite(minutes) && minutes >= 0 ? minutes : null);
 
+// The arrival times of the visit a stand shows (stands/standModel.js: visitDetail), its landing apart from its stand
+// (N23): `{ landedAt, onStandAt, recorded, kindless }`, where `kindless` is an actual time that tells no kind (the
+// board's arrival time alone), which stands for both as before. Null for each time nobody knows.
+function arrivalTimesOf(detail) {
+  const arrival = detail?.arrival ?? null;
+  const landedAt = finite(arrival?.landedAt) ? arrival.landedAt : null;
+  const onStandAt = finite(arrival?.onStandAt) ? arrival.onStandAt : null;
+  const told = landedAt !== null || onStandAt !== null;
+  return { landedAt, onStandAt, recorded: arrival?.onStandRecorded === true,
+    kindless: !told && finite(arrival?.actualAt) ? arrival.actualAt : null };
+}
+
 // The flight a stand's reason names: the arrival of the one to come, the departure of the one on it.
 function flightOf(display, onStand) {
   const visit = display.visit ?? {};
@@ -154,9 +166,11 @@ export function standAircraftOf(position) {
  * - available: no visit; disabled: «anulada por {code} ocupada» when a combined stand cancels it; unverified: no row of
  *   the database;
  * - planned: the flight it waits for and when it is due; it turns «Llegando» 15 minutes before;
- * - arriving: «aterrizó {time}, llega en N min» once it landed, else when it is due; it turns «Ocupada» at its arrival;
- * - occupied: since its actual arrival (recorded, or the aircraft seen in the box); it turns «Por liberar» 15 minutes
- *   before its departure;
+ * - arriving: «aterrizó {time}, llega en N min» once it landed (its runway time), else when it is due; it turns
+ *   «Ocupada» at its arrival;
+ * - occupied: since its aircraft reached the stand (OCC's on-block, a BLOCK_ON or the demo chocks), never since its
+ *   runway time (N23), «llegada registrada» when somebody recorded that time, and without a time when nobody knows it
+ *   (the aircraft seen in the box); it turns «Por liberar» 15 minutes before its departure;
  * - releasing: its departure time, scheduled or estimated, or how late it is; the stand frees then, or the next visit
  *   comes.
  */
@@ -185,17 +199,22 @@ export function standStatus(position) {
       return result(flight ? 'planned' : 'plannedUnknown', { flight, arrivalAt }, nextChange('becomesArriving',
         arrivalAt === null ? null : arrivalAt - ARRIVING_WINDOW_MS, toArrival === null ? null : toArrival - 15));
     case 'arriving': {
-      const landedAt = finite(detail?.arrival?.actualAt) ? detail.arrival.actualAt : null;
+      // «Aterrizó» is its runway time, never the time it reached the stand (N23).
+      const times = arrivalTimesOf(detail);
+      const landedAt = times.landedAt ?? times.kindless;
       const key = landedAt !== null ? 'arrivingLanded' : 'arriving';
       return result(key, { flight, landedAt, arrivalAt, minutes: nonNegative(toArrival) },
         nextChange('becomesOccupied', arrivalAt, toArrival));
     }
     case 'occupied': {
-      const sinceAt = finite(detail?.arrival?.actualAt) ? detail.arrival.actualAt : null;
-      // «Llegada registrada» only when nothing says otherwise: the notice that the aircraft stands on the stand with
-      // its arrival unrecorded (stands/standModel.js, `arrivalNotRecorded`) wins over the board's arrival time.
+      // Since its aircraft reached the stand, never since its runway time, which only says that it landed (N23).
+      const times = arrivalTimesOf(detail);
+      const sinceAt = times.onStandAt ?? times.kindless;
+      // «Llegada registrada» for a time somebody recorded (OCC's on-block or a BLOCK_ON; the board's arrival time
+      // when it is all there is, as before), and only when nothing says otherwise: the notice that the aircraft stands
+      // on the stand with its arrival unrecorded (stands/standModel.js, `arrivalNotRecorded`) wins.
       const signals = Array.isArray(position.signals) ? position.signals : display.signals ?? [];
-      const recorded = display.visit?.arrivedAt != null
+      const recorded = (times.onStandAt !== null ? times.recorded : display.visit?.arrivedAt != null)
         && !signals.some(signal => signal?.reason === 'arrivalNotRecorded');
       const key = sinceAt === null ? 'occupiedNoTime' : recorded ? 'occupiedRecorded' : 'occupiedSeen';
       return result(key, { flight, sinceAt }, nextChange('becomesReleasing',

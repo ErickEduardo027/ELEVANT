@@ -190,7 +190,7 @@ it('writes every time on 24 hours in the station zone, as the OCC console does (
   render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
 
   const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
-  expect(arrival).toHaveTextContent('10:05 → 19:53 · real 19:58');
+  expect(arrival).toHaveTextContent('10:05 → 19:53 · aterrizó 19:58');
   expect(within(arrival).getByRole('option', { name: 'ZZ162 · hacia JFK · 21:30' })).toBeInTheDocument();
   expect(screen.getByText(/Lecturas en pausa hasta las 20:05:/)).toBeInTheDocument();
   expect(screen.getByText(/última lectura 12:00$/)).toBeInTheDocument();
@@ -217,7 +217,7 @@ it('names the provider’s status of each arrival as the board does, in every vi
   expect(approaching).toHaveTextContent('En aproximación · HI1055');
   // The provider's «Arrived» only says that it landed, as on the board; a runway time says so whatever the word.
   expect(arrived).toHaveTextContent('Aterrizó · HI1055');
-  expect(landed).toHaveTextContent('· real 10:01');
+  expect(landed).toHaveTextContent('· aterrizó 10:01');
   expect(landed).toHaveTextContent('Aterrizó · HI1055');
   // A word the board does not know is «Sin estado», never the word itself.
   expect(odd).toHaveTextContent('Sin estado · HI1055');
@@ -231,6 +231,20 @@ it('names the provider’s status of each arrival as the board does, in every vi
   expect(late).toHaveTextContent('10:05 → 11:00');
   expect(late).toHaveTextContent('Programado · Airbus A320 · Terminal B');
   expect(screen.getByRole('dialog')).not.toHaveTextContent(/Approaching|Delayed/);
+});
+
+it('names the runway time «aterrizó» on an arrival and «despegó» on a departure, never «real» (N23)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  // Punta Cana is UTC−4: ZZ161 touched down at 10:01; ZZ900 took off at 11:12.
+  loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161', { runwayAt: '2026-11-03T14:01:00Z' }),
+    leg('gone', 'Departure', 'ZZ900', { runwayAt: '2026-11-03T15:12:00Z' })]));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
+  expect(arrival).toHaveTextContent('ZZ161 · Demo Airlines · desde SDQ · 10:05 · aterrizó 10:01');
+  const departure = within(screen.getByRole('list', { name: 'Salidas sin llegada' })).getByRole('listitem');
+  expect(departure).toHaveTextContent('ZZ900 · Demo Airlines · hacia JFK · 10:05 · despegó 11:12');
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/· real /);
 });
 
 describe('demo flights (ADR-0041)', () => {
@@ -335,7 +349,7 @@ describe('demo flights (ADR-0041)', () => {
     // The aircraft landed meanwhile: the planning changed and the dialog read the new versions before the import.
     view.rerender(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} onImported={onImported}
       revision={5} />);
-    expect(await screen.findByText(/· real \d/)).toBeInTheDocument();
+    expect(await screen.findByText(/· aterrizó \d/)).toBeInTheDocument();
     const arrivals = screen.getByRole('list', { name: 'Llegadas propuestas' });
     fireEvent.click(within(arrivals).getByRole('button', { name: 'Importar escala' }));
     expect(await screen.findByText('Escala importada (PUJ-20261112-003).')).toBeInTheDocument();

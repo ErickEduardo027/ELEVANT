@@ -35,11 +35,14 @@ function time(value, timeZone) {
   return value ? formatClock(value, 'es-DO', timeZone ?? 'America/Santo_Domingo') : '—';
 }
 
+// The provider's runway time is the landing of an arrival and the take-off of a departure, never «real» (N23): it says
+// nothing of when the aircraft reached or left its stand.
 function Times({ item, timeZone }) {
   return <span>
     {time(item.scheduledAt, timeZone)}
     {item.revisedAt && item.revisedAt !== item.scheduledAt && <span className="text-status-warning"> → {time(item.revisedAt, timeZone)}</span>}
-    {item.runwayAt && <span className="text-status-success"> · real {time(item.runwayAt, timeZone)}</span>}
+    {item.runwayAt && <span className="text-status-success">
+      {' · '}{item.direction === 'Departure' ? 'despegó' : 'aterrizó'} {time(item.runwayAt, timeZone)}</span>}
   </span>;
 }
 

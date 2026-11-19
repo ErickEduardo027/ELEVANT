@@ -165,8 +165,8 @@ function describeVisit(turnaround, legs, aircraft, polygon, now, exactNow = now)
     arrivalNotRecorded: !isDemo && inBox && !isMovingFast(aircraft?.gsMs) && !blockOn && !onBlockRecorded,
     isDemo,
     // What the stand's detail says of the visit (owner request of 2026-11-15), from what the screen already read:
-    // where its aircraft comes from and goes to, its scheduled, estimated and actual times, its aircraft and its legs
-    // (their milestones make the progress strip).
+    // where its aircraft comes from and goes to, its scheduled, estimated and actual times (its landing apart from its
+    // stand, N23), its aircraft and its legs (their milestones make the progress strip).
     detail: visitDetail(turnaround, arrival, departure, legs, { touchdownAt, onBlockAt, offBlockAt }, exactNow),
   };
 }
@@ -175,16 +175,50 @@ const counterpartOf = leg => leg?.counterpart?.iataCode ?? leg?.counterpart?.ica
 
 // The first of `instants` (ms or null) already reached at `now`: an actual time still to come is never real. The
 // server's demo instants (`onBlockAt`, `touchdownAt`, `offBlockAt`) are its plan, not what happened: a demo arrival
-// reads «Real» only once the stand's clock passed its touchdown, and no recorded time in the future is shown as real.
+// reads «Aterrizó» only once the stand's clock passed its touchdown, and no recorded time in the future is shown.
 const reachedOf = (now, ...instants) => instants.find(at => at !== null && at !== undefined && at <= now) ?? null;
+
+// The earliest time of the milestone `code` recorded on any leg of a visit (both legs carry the operation's), or null.
+function earliestMilestone(legs, code) {
+  const times = legs.flatMap(leg => (Array.isArray(leg.milestones) ? leg.milestones : []))
+    .filter(milestone => milestone?.code === code)
+    .map(milestone => timeOf(milestone.actualAt))
+    .filter(at => at !== null);
+  return times.length > 0 ? Math.min(...times) : null;
+}
 
 // The state of a visit's ground operation from its map flights (`turnaround.operationStatus`), or null without one.
 const operationStatusOf = legs => legs.map(leg => leg?.turnaround?.operationStatus)
   .find(status => typeof status === 'string' && status.trim() !== '')?.trim() ?? null;
 
+// What happened to a visit's arrival, its landing apart from its stand (N23): a runway time only says that the aircraft
+// landed (contracts 1.3), so it never says since when the aircraft is on the stand.
+// - `landedAt`: the arrival leg's runway time (`actualKind: 'Runway'`, what the feed and the demo worker write), else
+//   the server's demo touchdown;
+// - `onStandAt`: what was recorded first, OCC's on-block time (`actualKind: 'OnBlock'`, «Registrar llegada») or the
+//   earliest BLOCK_ON of the legs, else the server's demo on-block (D-N23); `onStandRecorded` says it was recorded;
+// - `actualAt`: the first of them, the one actual time of before, for what reads that. Without the arrival leg, as the
+//   board alone gives a visit, it is the board's arrival time, which tells no kind: that leg's actual time, a runway or
+//   an on-block time (and so is a leg's actual time without its kind).
+// Each only once it is not after `now`.
+function arrivalTimes(turnaround, arrival, legs, demo, now) {
+  const legActualAt = timeOf(arrival?.actualAt);
+  const kind = arrival?.actualKind;
+  const landedAt = reachedOf(now, kind === 'Runway' ? legActualAt : null, demo.touchdownAt);
+  const recordedAt = reachedOf(now, kind === 'OnBlock' ? legActualAt : null, earliestMilestone(legs, 'BLOCK_ON'));
+  const onStandAt = recordedAt ?? reachedOf(now, demo.onBlockAt);
+  const kindless = arrival === null ? timeOf(turnaround.arrivedAt)
+    : (kind === 'Runway' || kind === 'OnBlock' ? null : legActualAt);
+  return {
+    landedAt, onStandAt, onStandRecorded: recordedAt !== null,
+    actualAt: onStandAt ?? landedAt ?? reachedOf(now, kindless),
+  };
+}
+
 // The facts of a visit for the stand's detail: `{ airline, registration, origin, destination, arrival, departure,
-// operationStatus, turnaroundStatus, legs }`, `arrival` and `departure` as `{ scheduledAt, estimatedAt, actualAt }` (ms
-// or null), `actualAt` only once it is not after `now` (the stand's clock, server-synced: stands/useStandClock.js).
+// operationStatus, turnaroundStatus, legs }`, `arrival` as `{ scheduledAt, estimatedAt, landedAt, onStandAt,
+// onStandRecorded, actualAt }` (arrivalTimes) and `departure` as `{ scheduledAt, estimatedAt, actualAt }` (ms or null),
+// an actual time only once it is not after `now` (the stand's clock, server-synced: stands/useStandClock.js).
 function visitDetail(turnaround, arrival, departure, legs, demo, now) {
   return {
     airline: turnaround.airlineName ?? arrival?.airline?.name ?? departure?.airline?.name ?? null,
@@ -195,7 +229,7 @@ function visitDetail(turnaround, arrival, departure, legs, demo, now) {
     arrival: {
       scheduledAt: timeOf(arrival?.scheduledAt) ?? timeOf(turnaround.arrivalScheduledAt),
       estimatedAt: timeOf(arrival?.estimatedAt),
-      actualAt: reachedOf(now, timeOf(turnaround.arrivedAt), timeOf(arrival?.actualAt), demo.onBlockAt, demo.touchdownAt),
+      ...arrivalTimes(turnaround, arrival, legs, demo, now),
     },
     departure: {
       scheduledAt: timeOf(departure?.scheduledAt) ?? timeOf(turnaround.departureScheduledAt),

@@ -556,7 +556,7 @@ ver [La operación (fase 3)](#la-operación-fase-3).
 
 *Posterior al commit verificado (hallazgo N28, 19 de noviembre de 2026):* el
 diálogo escribe sus horas en 24 horas y en la zona de la estación, como la
-consola del OCC: «10:05 → 19:53 · real 19:58», nunca «7:53 p. m.»
+consola del OCC: «10:05 → 19:53 · aterrizó 19:58», nunca «7:53 p. m.»
 ([`formatClock`](../../frontend/private-web/src/features/occ-ui/occTime.js)).
 Lo mismo hacen la lista de vuelos de la vista «Mapa» de Planificación y las
 acciones de una posición en Mapa de posiciones. La cuenta atrás de las tiras de
@@ -587,6 +587,12 @@ Los matices del proveedor no se conservan: un retraso se ve en la hora revisada
 ([`providerArrivalStatusKey`](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
 El diálogo no tiene reloj, así que una llegada que el proveedor aún espera sigue
 «Programado» después de su hora, cuando el mapa ya la da «En ruta».
+
+*Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* la
+hora de pista que informa el proveedor (`runwayAt`) ya no se rotula «real»,
+porque no dice cuándo el avión llegó a su posición ni cuándo la dejó: en una
+llegada dice «aterrizó» («10:05 → 19:53 · aterrizó 19:58») y en una salida,
+«despegó».
 
 ## Chat con presencia y cierre de sesión confirmado
 
@@ -1520,7 +1526,19 @@ cambia.
   ([`StandTurnaround.jsx`](../../frontend/private-web/src/features/maps/ui/StandTurnaround.jsx))
   solo da por «Real» una hora ya alcanzada en el reloj de las posiciones: los
   instantes de un vuelo demo son su plan, así que «aterrizó» y «Real» esperan a
-  su toque. «Operación» dice el estado de la operación de tierra que traen los
+  su toque. *Posterior al commit verificado (hallazgo N23, 19 de noviembre de
+  2026):* la llegada separa la hora de pista de la hora en la posición
+  ([`standModel.js`](../../frontend/private-web/src/features/maps/stands/standModel.js),
+  `visitDetail`). La fila «Llegada» dice «Aterrizó 19:49» (la hora de pista o
+  el toque demo) y «En posición 19:54»: la hora de «Registrar llegada» o el
+  `BLOCK_ON` más temprano y, si nadie la registró, los calzos demo. «Real» queda
+  para una hora que no dice de qué tipo es, como la de la salida o la del
+  tablero sin los vuelos del mapa. «Estado en el mapa» dice «Ocupada por WN9001
+  desde las 19:54 (llegada registrada)» con la hora en la posición, nunca con la
+  de pista (antes decía «desde las 19:49», la del aterrizaje), y «(llegada
+  registrada)» solo con una hora registrada; con solo la hora de pista no dice
+  desde cuándo. «Llegando» sigue diciendo «aterrizó 19:49». «Operación» dice el
+  estado de la operación de tierra que traen los
   vuelos del mapa (Asignada, En curso, Devuelta…, con las palabras de
   Planificación) y, sin operación, el de la escala. «Tipo de aeronave» toma el
   de la escala cuando el tablero no lo trae. El cajón dice el estado
@@ -1755,6 +1773,10 @@ tampoco.
   de calzos del vuelo demo, el hito `BLOCK_ON` o la hora de calzos que escribe
   «Registrar llegada»; el «Arrived» del proveedor solo dice «Aterrizó»
   ([tablero](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
+  *Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* la
+  cuenta atrás de una llegada cuya hora es la de pista dice «aterrizó hace 8 min»,
+  no «hace 8 min»; la palabra de la hora sigue siendo «real», porque «aterrizó» no
+  cabe en su columna.
   El encabezado del tablero lleva su leyenda, solo con lo que dibuja la pestaña
   a la vista: el triángulo de «Atención» y el octágono de «Urgente» con su
   palabra, y «Demo» y «est.» con lo que significan, con las palabras de
@@ -1768,6 +1790,9 @@ tampoco.
   cierra cuando la hay: «Elegir posición», «Asignar agente», «Revisar» o
   «Importar»
   ([pendientes](../../frontend/private-web/src/features/dashboard/noc/pendingModel.js)).
+  *Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* una
+  llegada cuya hora es la de pista dice «WN9001 sin agente, aterrizó hace 8 min»,
+  nunca «llegó hace»; con la hora de «Registrar llegada» sigue «llegó hace».
   Esos pendientes salen de cuatro lecturas (la planificación, la disponibilidad
   de los agentes, los vuelos del mapa y la cola de revisión), y cada una apaga
   solo lo suyo: la que no respondió, falló, fue rechazada o muestra datos

@@ -117,6 +117,8 @@ export const consoleMessages = {
         arrives: 'llega en {duration}',
         arrivesNow: 'llega ahora',
         arrivesPast: 'llegó hace {duration}',
+        // An arrival's runway time only says that it landed (N23).
+        landedPast: 'aterrizó hace {duration}',
         arrivesDue: 'debía llegar hace {duration}',
         departs: 'sale en {duration}',
         departsNow: 'sale ahora',
@@ -411,6 +413,7 @@ export const consoleMessages = {
         arrives: 'arrives in {duration}',
         arrivesNow: 'arrives now',
         arrivesPast: 'arrived {duration} ago',
+        landedPast: 'landed {duration} ago',
         arrivesDue: 'was due {duration} ago',
         departs: 'departs in {duration}',
         departsNow: 'departs now',

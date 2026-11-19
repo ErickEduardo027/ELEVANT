@@ -42,6 +42,30 @@ describe('StandTurnaround (owner request of 2026-11-15)', () => {
     expect(fact('next')).toHaveTextContent(/ZZ500 · llega \d\d:\d\d · en 120 min/);
   });
 
+  it('the arrival tells its landing from its stand: «Aterrizó» and «En posición», never «Real» (N23)', () => {
+    // WN9001 on 16 November: due on the stand at 19:54, on the runway at 19:49, on the stand at 19:54:40 (UTC−4).
+    const at = time => Date.parse(`2026-11-16T${time}Z`);
+    const arrival = { scheduledAt: at('23:54:00'), estimatedAt: at('23:54:00'), landedAt: at('23:49:12'),
+      onStandAt: at('23:54:40'), onStandRecorded: true, actualAt: at('23:54:40') };
+    expect(legTimes(arrival, t, 'es-DO')).toBe('Prog. 19:54 · Est. 19:54 · Aterrizó 19:49 · En posición 19:54');
+    expect(legTimes(arrival, createTranslator(mapMessages, 'en'), 'en-US'))
+      .toBe('Sched. 19:54 · Est. 19:54 · Landed 19:49 · On stand 19:54');
+    // Landed and still taxiing in; OCC's on-block, with no runway time known.
+    expect(legTimes({ ...arrival, onStandAt: null, onStandRecorded: false, actualAt: at('23:49:12') }, t, 'es-DO'))
+      .toBe('Prog. 19:54 · Est. 19:54 · Aterrizó 19:49');
+    expect(legTimes({ scheduledAt: at('23:54:00'), estimatedAt: null, landedAt: null, onStandAt: at('23:55:00'),
+      onStandRecorded: true, actualAt: at('23:55:00') }, t, 'es-DO')).toBe('Prog. 19:54 · En posición 19:55');
+    // An actual time that tells no kind, the board's arrival time alone or a departure's, is still «Real».
+    expect(legTimes({ scheduledAt: at('23:54:00'), estimatedAt: null, landedAt: null, onStandAt: null,
+      onStandRecorded: false, actualAt: at('23:49:12') }, t, 'es-DO')).toBe('Prog. 19:54 · Real 19:49');
+
+    render(<StandTurnaround position={{ ...occupied, display: { ...occupied.display,
+      detail: { ...occupied.display.detail, arrival } } }} />);
+    const row = screen.getByTestId('stand-turnaround').querySelector('[data-fact="arrival"]');
+    expect(row).toHaveTextContent('Prog. 19:54 · Est. 19:54 · Aterrizó 19:49 · En posición 19:54');
+    expect(row).not.toHaveTextContent(/Real/);
+  });
+
   it('«Operación» says the state of the ground operation, not the turnaround state «Confirmada»', () => {
     const withStatus = (detail, visitStatus = 'Confirmed') => ({ ...occupied, display: { ...occupied.display,
       visit: { ...occupied.display.visit, status: visitStatus }, detail: { ...occupied.display.detail, ...detail } } });

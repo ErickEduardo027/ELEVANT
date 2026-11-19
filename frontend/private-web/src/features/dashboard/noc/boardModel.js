@@ -45,13 +45,17 @@ export function instantMs(value) {
 
 /**
  * The best time of a leg (a map flight or a planning leg): its actual time, else its estimate, else its schedule, as
- * `{ at, kind }` with `at` in milliseconds and `kind` `actual`, `estimated` or `scheduled`; `null` without any.
+ * `{ at, kind }` with `at` in milliseconds and `kind` `actual`, `estimated` or `scheduled`; `null` without any. An
+ * actual time keeps the kind a map flight gives it (contracts 1.3) as `actualKind`: `Runway`, which only says that the
+ * aircraft landed or took off, or `OnBlock`, OCC's «Registrar llegada» (N23). A planning leg tells none.
  */
 export function bestTime(leg) {
   if (!isObject(leg)) return null;
   for (const [field, kind] of TIME_FIELDS) {
     const at = instantMs(leg[field]);
-    if (at !== null) return Object.freeze({ at, kind });
+    if (at === null) continue;
+    return Object.freeze(kind === 'actual' && typeof leg.actualKind === 'string'
+      ? { at, kind, actualKind: leg.actualKind } : { at, kind });
   }
   return null;
 }
