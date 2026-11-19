@@ -4,14 +4,22 @@ import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
 import { BrandMark } from "@/components/marketing/BrandMark";
+import {
+  IDENTITY_PASSWORD_OPTIONS, meetsPasswordPolicy, PASSWORD_ERRORS, passwordRequirements,
+} from "@/lib/password-policy";
 import { useAirlineSession, type AirlineLinkResult } from "./AirlineSessionProvider";
 import { CredentialPanel, InfoIcon } from "./AuthExperience";
+import { PasswordRequirements } from "./PasswordRequirements";
 
 import styles from "./AuthExperience.module.css";
 
 type Mode = "activate" | "reset";
+type PasswordInputField = "password" | "confirmation";
 
-const MINIMUM_PASSWORD = 14;
+const PASSWORD_IDS: Record<PasswordInputField, string> = {
+  password: "link-password",
+  confirmation: "link-confirmation",
+};
 
 const COPY: Record<Mode, { kicker: string; title: string; lead: string; action: string; done: string }> = {
   activate: {
@@ -35,7 +43,7 @@ function linkMessage(result: Exclude<AirlineLinkResult, { ok: true }>, mode: Mod
     case "invalid-link": return mode === "activate"
       ? "El enlace no es válido, ya se usó o venció. Pide a AVIAM que reenvíe la invitación."
       : "El enlace no es válido, ya se usó o venció. Solicita uno nuevo.";
-    case "policy": return "La contraseña no cumple la política de seguridad: usa al menos 14 caracteres y evita contraseñas comunes.";
+    case "policy": return "La contraseña no cumple la política de seguridad. Revise los requisitos de la lista y vuelva a intentarlo.";
     case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
     case "unavailable": return "No se pudo conectar con ELEVANT. Reintenta en unos minutos.";
   }
@@ -66,17 +74,38 @@ function SetPasswordForm({ mode, token }: { mode: Mode; token: string }) {
   const { activateAccount, resetPassword } = useAirlineSession();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [errors, setErrors] = useState<Partial<Record<PasswordInputField, string>>>({});
+  const [checked, setChecked] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [done, setDone] = useState(false);
   const copy = COPY[mode];
 
+  const change = (field: PasswordInputField, value: string) => {
+    if (field === "password") setPassword(value);
+    else setConfirmation(value);
+    setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  };
+
+  const refuse = (field: PasswordInputField, text: string) => {
+    setErrors({ [field]: text });
+    requestAnimationFrame(() => document.getElementById(PASSWORD_IDS[field])?.focus());
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (password.length < MINIMUM_PASSWORD || password !== confirmation) {
-      setMessage({ kind: "error", text: "La contraseña debe tener al menos 14 caracteres y coincidir con la confirmación." });
+    setMessage(null);
+    // N17: a password the API would refuse is not sent; the list shows what is missing.
+    if (!meetsPasswordPolicy(password)) {
+      setChecked(true);
+      refuse("password", PASSWORD_ERRORS.requirements);
       return;
     }
+    if (password !== confirmation) {
+      refuse("confirmation", PASSWORD_ERRORS.confirmation);
+      return;
+    }
+    setErrors({});
     setPending(true);
     const result = await (mode === "activate" ? activateAccount(token, password) : resetPassword(token, password));
     setPending(false);
@@ -98,8 +127,12 @@ function SetPasswordForm({ mode, token }: { mode: Mode; token: string }) {
         <p>{copy.lead}</p>
       </header>
       {!done && <form className={styles.form} onSubmit={submit} noValidate>
-        <PasswordInput id="link-password" label="Contraseña nueva" value={password} onChange={setPassword} />
-        <PasswordInput id="link-confirmation" label="Confirmar contraseña" value={confirmation} onChange={setConfirmation} />
+        <PasswordInput id={PASSWORD_IDS.password} label="Contraseña nueva" value={password} error={errors.password}
+          describedBy={`${PASSWORD_IDS.password}-requirements`} onChange={(value) => change("password", value)} />
+        <PasswordRequirements id={`${PASSWORD_IDS.password}-requirements`} requirements={passwordRequirements(password)}
+          checked={checked} />
+        <PasswordInput id={PASSWORD_IDS.confirmation} label="Confirmar contraseña" value={confirmation}
+          error={errors.confirmation} onChange={(value) => change("confirmation", value)} />
         {message && <Feedback {...message} />}
         <button className={styles.primaryButton} type="submit" disabled={pending}>
           {pending ? "Guardando…" : copy.action}
@@ -156,12 +189,17 @@ function RequestResetForm() {
   );
 }
 
-function PasswordInput({ id, label, value, onChange }: { id: string; label: string; value: string; onChange(value: string): void }) {
+function PasswordInput({ id, label, value, error, describedBy, onChange }: {
+  id: string; label: string; value: string; error?: string; describedBy?: string; onChange(value: string): void;
+}) {
+  const description = [error ? `${id}-error` : undefined, describedBy].filter(Boolean).join(" ") || undefined;
   return (
     <div className={styles.field}>
       <div className={styles.labelRow}><label htmlFor={id}>{label}</label></div>
-      <input id={id} type="password" autoComplete="new-password" value={value} minLength={MINIMUM_PASSWORD}
+      <input id={id} type="password" autoComplete="new-password" value={value}
+        minLength={IDENTITY_PASSWORD_OPTIONS.requiredLength} aria-invalid={Boolean(error)} aria-describedby={description}
         onChange={(event) => onChange(event.currentTarget.value)} required />
+      {error && <p className={styles.error} id={`${id}-error`} aria-live="polite">{error}</p>}
     </div>
   );
 }
