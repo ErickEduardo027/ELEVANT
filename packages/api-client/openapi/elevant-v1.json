@@ -27533,6 +27533,7 @@
         "tags": [
           "OccPositions"
         ],
+        "summary": "The stands of the station with the turnarounds of the day. With `includeCoverage=true` every stand also\ncarries its coverage windows of the day (`coverage`, N26); without it the board keeps the keys a client\ndeployed before them validates.",
         "operationId": "GetOccPositions",
         "parameters": [
           {
@@ -27551,6 +27552,14 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "includeCoverage",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -52462,6 +52471,32 @@
         },
         "additionalProperties": false
       },
+      "OccPositionCoverageResponse": {
+        "required": [
+          "agentName",
+          "endsAt",
+          "isReinforcement",
+          "startsAt"
+        ],
+        "type": "object",
+        "properties": {
+          "agentName": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isReinforcement": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "OccPositionResponse": {
         "required": [
           "code",
@@ -52536,6 +52571,13 @@
             "type": "array",
             "items": {
               "type": "string"
+            },
+            "nullable": true
+          },
+          "coverage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccPositionCoverageResponse"
             },
             "nullable": true
           }
