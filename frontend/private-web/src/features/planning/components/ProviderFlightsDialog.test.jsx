@@ -199,6 +199,40 @@ it('writes every time on 24 hours in the station zone, as the OCC console does (
   expect(screen.getByRole('dialog')).not.toHaveTextContent(/[ap]\.\s?m\./i);
 });
 
+it('names the provider’s status of each arrival as the board does, in every view (N22)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  loadOccFlightFeed.mockImplementation((id, day, { view }) => Promise.resolve(view === 'Dismissed'
+    ? feed([leg('gone', 'Arrival', 'ZZ171', { status: 'Dismissed', providerStatus: 'Approaching' }),
+      leg('late', 'Arrival', 'ZZ173', { status: 'Dismissed', providerStatus: 'Delayed', aircraftRegistration: null,
+        revisedAt: '2026-11-03T15:00:00Z' })])
+    : feed([leg('exp', 'Arrival', 'ZZ161'), leg('app', 'Arrival', 'ZZ163', { providerStatus: 'Approaching' }),
+      leg('arr', 'Arrival', 'ZZ165', { providerStatus: 'Arrived' }),
+      leg('rwy', 'Arrival', 'ZZ167', { runwayAt: '2026-11-03T14:01:00Z' }),
+      leg('odd', 'Arrival', 'ZZ169', { providerStatus: 'Holding' })])));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const proposed = await screen.findByRole('list', { name: 'Llegadas propuestas' });
+  const [expected, approaching, arrived, landed, odd] = within(proposed).getAllByRole('listitem');
+  expect(expected).toHaveTextContent('Programado · HI1055 · Airbus A320 · Terminal B');
+  expect(approaching).toHaveTextContent('En aproximación · HI1055');
+  // The provider's «Arrived» only says that it landed, as on the board; a runway time says so whatever the word.
+  expect(arrived).toHaveTextContent('Aterrizó · HI1055');
+  expect(landed).toHaveTextContent('· real 10:01');
+  expect(landed).toHaveTextContent('Aterrizó · HI1055');
+  // A word the board does not know is «Sin estado», never the word itself.
+  expect(odd).toHaveTextContent('Sin estado · HI1055');
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/Expected|Approaching|Arrived|Holding/);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Descartadas' }));
+  const dismissed = await screen.findByRole('list', { name: 'Llegadas descartadas' });
+  const [gone, late] = within(dismissed).getAllByRole('listitem');
+  expect(gone).toHaveTextContent('En aproximación · HI1055');
+  // «Delayed» is scheduled, as on the board: the revised time says how late it comes.
+  expect(late).toHaveTextContent('10:05 → 11:00');
+  expect(late).toHaveTextContent('Programado · Airbus A320 · Terminal B');
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/Approaching|Delayed/);
+});
+
 describe('demo flights (ADR-0041)', () => {
   const terminalA = { id: 'ta', code: 'A', name: 'Terminal A' };
   const stand = (id, code, terminal = terminalA) => ({ id, code, terminal });
@@ -266,7 +300,9 @@ describe('demo flights (ADR-0041)', () => {
     expect(within(arrivals).getByLabelText('Posición')).toHaveValue('s-b20');
     await act(async () => answer(feed([demoArrival({ version: 'v-arr-2', providerStatus: 'Arrived' }), demoDeparture(),
       leg('other', 'Departure', 'ZZ9006')])));
-    expect(await screen.findByText(/Arrived/)).toBeInTheDocument();
+    // The provider's «Arrived» in the board's words (N22): it landed.
+    expect(await screen.findByText(/^Aterrizó · HIDM01/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent(/Approaching|Arrived|Expected/);
     const refreshed = screen.getByRole('list', { name: 'Llegadas propuestas' });
     expect(within(refreshed).getByLabelText('Sale como')).toHaveValue('other');
     expect(within(refreshed).getByLabelText('Tipo de avión')).toHaveValue('t-b738');

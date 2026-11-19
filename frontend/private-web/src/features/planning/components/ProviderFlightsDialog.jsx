@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFacts';
 import { useAviationReferenceService } from '../../aviation-reference/AviationReferenceContext';
+import { providerArrivalStatusKey } from '../../dashboard/noc/boardModel';
+import { consoleMessages } from '../../dashboard/noc/consoleMessages';
 import DemoTag from '../../occ-ui/DemoTag';
 import { formatClock } from '../../occ-ui/occTime';
 import {
@@ -41,9 +43,11 @@ function Times({ item, timeZone }) {
   </span>;
 }
 
+// What the provider reports of an arrival, in the words the console's board gives its phase (N22): «Aterrizó», never
+// «Arrived» (dashboard/noc/boardModel.js, providerArrivalStatusKey).
 function Details({ item }) {
   return <span className="block text-xs text-text-secondary-light dark:text-text-secondary-dark">
-    {item.providerStatus}{item.aircraftRegistration ? ` · ${item.aircraftRegistration}` : ''}
+    {consoleMessages.es.status[providerArrivalStatusKey(item)]}{item.aircraftRegistration ? ` · ${item.aircraftRegistration}` : ''}
     {item.aircraftModel ? ` · ${item.aircraftModel}` : ''}{item.terminal ? ` · Terminal ${item.terminal}` : ''}
     {item.gate ? ` · Puerta ${item.gate}` : ''}</span>;
 }

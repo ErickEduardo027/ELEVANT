@@ -88,6 +88,14 @@ export function aircraftOnStand(legs, { nowMs, arrivedAt = null } = {}) {
 
 const dueSoon = (time, nowMs) => time !== null && Number.isFinite(nowMs) && time.at - nowMs <= DUE_SOON_MS;
 
+// The status of an arrival by its phase alone (contratos 1.3), the board's (flightStatus) and the importer's
+// (providerArrivalStatusKey): the provider's «Arrived» only says that it landed, and a flight that departed from its
+// origin is en route.
+const ARRIVAL_PHASE_KEYS = new Map([['scheduled', 'scheduled'], ['departed', 'enroute'], ['enroute', 'enroute'],
+  ['approaching', 'approaching'], ['landed', 'landed'], ['arrived', 'landed'], ['cancelled', 'cancelled'],
+  ['diverted', 'diverted']]);
+const arrivalPhaseKey = phase => ARRIVAL_PHASE_KEYS.get(phase) ?? 'unknown';
+
 /**
  * What a map flight is doing, as a status key and its signal (contratos 2.4: a normal state carries no hue):
  * - a cancelled or diverted leg asks for attention; a turnaround Completed is `completed`;
@@ -118,12 +126,36 @@ export function flightStatus(flight, { nowMs, onStand } = {}) {
   const parked = typeof onStand === 'boolean' ? onStand
     : assignedStandCode(flight) !== null && !endsItsVisit(flight) && aircraftOnStand([flight], { nowMs });
   if (parked) return { key: 'onStand', signal: null };
-  if (arrival) {
-    if (phase === 'landed' || phase === 'arrived') return { key: 'landed', signal: null };
-    if (phase === 'approaching') return { key: 'approaching', signal: null };
-    if (phase === 'enroute' || phase === 'departed') return { key: 'enroute', signal: null };
-  }
+  if (arrival) return { key: arrivalPhaseKey(phase), signal: null };
   return { key: phase === 'scheduled' ? 'scheduled' : 'unknown', signal: null };
+}
+
+// The provider's words (the statuses AeroDataBox reports, which the demo flights use too), lower-case, and the phase
+// the server gives a map flight for each before the flight's time: the table of `Waiting` and `Of` in
+// backend/Elevant.Application/Operations/MapFlights/MapFlightPhases.cs (ADR-0042, decision 7). Keep the two in step.
+const PROVIDER_WORD_PHASES = new Map([
+  ['expected', 'scheduled'], ['unknown', 'scheduled'], ['checkin', 'scheduled'], ['boarding', 'scheduled'],
+  ['gateclosed', 'scheduled'], ['delayed', 'scheduled'], ['departed', 'departed'], ['enroute', 'enroute'],
+  ['approaching', 'approaching'], ['arrived', 'arrived'], ['canceled', 'cancelled'], ['cancelled', 'cancelled'],
+  ['canceleduncertain', 'cancelled'], ['diverted', 'diverted'],
+]);
+
+/**
+ * The status key (consoleMessages `status.*`) of an arrival the feed proposes, by what the provider reports, so that
+ * «Importar vuelos» (planning/components/ProviderFlightsDialog.jsx) names it as the board names its phase, never in
+ * the provider's words (N22). Its runway time (`runwayAt`) decides first: `landed`, whatever the word. Without one,
+ * the provider's word (`providerStatus`), in any case and without the spaces around it, gives the phase the server
+ * gives a map flight (MapFlightPhases.cs) and the board's status for that phase: Expected, Unknown, CheckIn,
+ * Boarding, GateClosed and Delayed, or no word, `scheduled`; Departed and EnRoute `enroute`; Approaching
+ * `approaching`; Arrived `landed`; Canceled, Cancelled and CanceledUncertain `cancelled`; Diverted `diverted`; any
+ * other word `unknown`. It has no clock: an arrival the provider still expects stays `scheduled` after its time, when
+ * the server's phase is already `enroute`. Only for an arrival: `null` for anything else.
+ */
+export function providerArrivalStatusKey(item) {
+  if (item?.direction !== 'Arrival') return null;
+  if (instantMs(item.runwayAt) !== null) return 'landed';
+  const word = String(item.providerStatus ?? '').trim().toLowerCase();
+  return arrivalPhaseKey(word === '' ? 'scheduled' : (PROVIDER_WORD_PHASES.get(word) ?? 'unknown'));
 }
 
 // The status of a planning leg the map's window leaves out: only what the planning snapshot knows, with the stand of its

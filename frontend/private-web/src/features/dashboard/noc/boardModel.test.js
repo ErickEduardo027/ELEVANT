@@ -6,7 +6,8 @@ import {
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import { readSelection, writeSelection } from '../../maps/core/mapSelection';
 import {
-  BOARD_LEGEND_KEYS, bestTime, boardLegendKeys, buildBoard, filterVisits, flightStatus, selectionIdOf, VISIT_FILTERS,
+  BOARD_LEGEND_KEYS, bestTime, boardLegendKeys, buildBoard, filterVisits, flightStatus, providerArrivalStatusKey,
+  selectionIdOf, VISIT_FILTERS,
 } from './boardModel';
 import { consoleMessages } from './consoleMessages';
 
@@ -303,6 +304,50 @@ describe('boardModel', () => {
     expect(demoVisit(NOW)).toMatchObject({ onStand: false, arrival: { status: { key: 'approaching' } } });
     expect(demoVisit(NOW + 6 * MINUTE)).toMatchObject({ onStand: true, arrival: { status: { key: 'onStand' } },
       departure: { status: { key: 'onStand' } } });
+  });
+
+  it('names a proposed arrival as the board names its phase, never in the provider’s words (N22)', () => {
+    const arrival = (providerStatus, extra = {}) => ({ direction: 'Arrival', flightNumber: 'ZZ9001', providerStatus,
+      runwayAt: null, ...extra });
+    const said = (providerStatus, extra) => t(`status.${providerArrivalStatusKey(arrival(providerStatus, extra))}`);
+    // The server's table (MapFlightPhases.cs, ADR-0042 decision 7): the phase of each word of the provider before the
+    // flight's time; a word it does not know, «Landed» and «En Route» among them, is `unknown`.
+    const phases = {
+      Expected: 'scheduled', Unknown: 'scheduled', CheckIn: 'scheduled', Boarding: 'scheduled', GateClosed: 'scheduled',
+      Delayed: 'scheduled', Departed: 'departed', EnRoute: 'enroute', Approaching: 'approaching', Arrived: 'arrived',
+      Canceled: 'cancelled', Cancelled: 'cancelled', CanceledUncertain: 'cancelled', Diverted: 'diverted',
+      Landed: 'unknown', 'En Route': 'unknown', 'Something else': 'unknown',
+    };
+    // What the board says of an arrival in that phase, on its assigned stand and not there yet.
+    const boardKey = phase => flightStatus({ direction: 'Arrival', phase, stand: { code: 'A05' } },
+      { nowMs: NOW, onStand: false }).key;
+    for (const [word, phase] of Object.entries(phases)) {
+      // In any case and without the spaces around it, as the server reads it.
+      for (const written of [word, word.toUpperCase(), word.toLowerCase(), `  ${word}\t`]) {
+        expect(providerArrivalStatusKey(arrival(written)), written).toBe(boardKey(phase));
+      }
+    }
+
+    // Grouped as the board groups them: the provider's nuances are not kept.
+    expect(['Approaching', 'Arrived', 'EnRoute', 'Departed', 'Canceled', 'Diverted'].map(word => said(word)))
+      .toEqual(['En aproximación', 'Aterrizó', 'En ruta', 'En ruta', 'Cancelado', 'Desviado']);
+    expect(['Delayed', 'CheckIn', 'GateClosed', 'Expected'].map(word => said(word))).toEqual(Array(4).fill('Programado'));
+    // A word the server does not know is «Sin estado», as on the board.
+    expect([said('Holding'), said('Landed'), said('En Route')]).toEqual(Array(3).fill('Sin estado'));
+    // Without a word, as a leg nobody reports.
+    expect([said(null), said(''), said('   ')]).toEqual(Array(3).fill('Programado'));
+
+    // The runway time decides first: it landed, whatever the provider still says.
+    for (const word of ['Expected', 'Approaching', 'Delayed', 'Canceled', 'Something else', null]) {
+      expect(providerArrivalStatusKey(arrival(word, { runwayAt: '2026-11-13T14:58:00Z' })), String(word)).toBe('landed');
+    }
+    expect(said('Expected', { runwayAt: '2026-11-13T14:58:00.1234567+00:00' })).toBe('Aterrizó');
+
+    // Only an arrival: a departure, or no item, has no answer.
+    expect(providerArrivalStatusKey({ direction: 'Departure', providerStatus: 'Departed', runwayAt: null })).toBeNull();
+    expect(providerArrivalStatusKey({ direction: 'Departure', providerStatus: 'Expected',
+      runwayAt: '2026-11-13T14:58:00Z' })).toBeNull();
+    expect(providerArrivalStatusKey(null)).toBeNull();
   });
 
   it('selects through the one store with the flightKey of the map flight', () => {

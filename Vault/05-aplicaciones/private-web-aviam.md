@@ -567,6 +567,27 @@ vuelo demo desde el minuto entero siguiente
 19:50, su llegada de las 19:53 dice «en 3 min» en la consola y en el mapa, cuya
 cuenta regresiva no cambió.
 
+*Posterior al commit verificado (hallazgo N22, 19 de noviembre de 2026):* el
+diálogo nombra el estado que informa el proveedor de cada llegada con las
+palabras con que el Tablero de la consola nombra su fase, nunca con las del
+proveedor: «Aterrizó · HIDM01», no «Arrived · HIDM01». Lo hace en «Con
+contrato», «Charter sin contrato» y «Descartadas». La hora de pista manda
+primero: con ella, la llegada dice «Aterrizó», diga lo que diga el proveedor. Si
+no la hay, la palabra se lee como la lee el servidor para el mapa
+([`MapFlightPhases`](../../backend/Elevant.Application/Operations/MapFlights/MapFlightPhases.cs),
+decisión 7 de [ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)),
+sin distinguir mayúsculas ni espacios alrededor, y se agrupa como en el Tablero:
+- Expected, Unknown, CheckIn, Boarding, GateClosed y Delayed dicen «Programado»;
+- Departed y EnRoute, «En ruta»; Approaching, «En aproximación»;
+- Arrived, «Aterrizó»: solo dice que tocó pista;
+- Canceled, Cancelled y CanceledUncertain, «Cancelado»; Diverted, «Desviado»;
+- cualquier otra palabra, «Sin estado».
+
+Los matices del proveedor no se conservan: un retraso se ve en la hora revisada
+([`providerArrivalStatusKey`](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
+El diálogo no tiene reloj, así que una llegada que el proveedor aún espera sigue
+«Programado» después de su hora, cuando el mapa ya la da «En ruta».
+
 ## Chat con presencia y cierre de sesión confirmado
 
 El PR #156 se fusionó y luego se revirtió su rediseño visual de Admin/OCC: el
