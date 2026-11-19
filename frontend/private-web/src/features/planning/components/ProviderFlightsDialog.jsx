@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFacts';
 import { useAviationReferenceService } from '../../aviation-reference/AviationReferenceContext';
 import DemoTag from '../../occ-ui/DemoTag';
+import { formatClock } from '../../occ-ui/occTime';
 import {
   dismissOccFlightProposal, FLIGHT_FEED_VIEWS, flightFeedMessage, importOccFlightProposals, loadOccFlightFeed,
   pauseReasonText, placementReasons, refreshOccFlightFeed, REFRESH_MESSAGES, restoreOccFlightProposal,
@@ -27,9 +28,9 @@ const EMPTY_TEXT = {
   Dismissed: 'No hay propuestas descartadas para esta fecha.',
 };
 
+// «19:53», on 24 hours in the station's zone as the OCC console writes it (N28); «—» without a time.
 function time(value, timeZone) {
-  return value ? new Intl.DateTimeFormat('es-DO', { timeStyle: 'short', timeZone: timeZone ?? 'America/Santo_Domingo' })
-    .format(new Date(value)) : '—';
+  return value ? formatClock(value, 'es-DO', timeZone ?? 'America/Santo_Domingo') : '—';
 }
 
 function Times({ item, timeZone }) {

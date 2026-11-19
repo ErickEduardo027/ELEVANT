@@ -212,6 +212,21 @@ it('keeps the time the provider reported as it is, and replaces it only with its
     aircraftTypeId: null, reason: 'Hora de calzos, no la de pista' }, headers('t-1'));
 });
 
+it('writes the flights’ times on 24 hours in the station zone (N28)', async () => {
+  // Punta Cana is UTC−4: 23:53Z is 19:53 there, 00:02Z the next day is 20:02 and 01:15Z, 21:15 (never «7:53 p. m.»).
+  const late = { ...waiting, arrivalScheduledAt: '2026-08-18T23:53:00Z', arrivedAt: '2026-08-19T00:02:00Z' };
+  const next = { ...other, arrivalScheduledAt: '2026-08-19T01:15:00Z' };
+  const position = { id: 'A1', standId: 's-1', turnarounds: [late] };
+  render(<PositionActions position={position} candidates={[late, next]} onChanged={vi.fn()} />);
+
+  expect(screen.getByText('Llegada prevista 19:53, llegó 20:02')).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'ZZ303 · Demo Airlines · 21:15' })).toBeInTheDocument();
+  // The time the provider reported, once the flight's version (and its station) is read.
+  expect(await screen.findByText('Ya hay una hora de llegada informada (20:02). Si registras otra, indica el motivo.'))
+    .toBeInTheDocument();
+  expect(screen.getByText('Llegada prevista 19:53, llegó 20:02')).toBeInTheDocument();
+});
+
 it('records the moment it is saved when OCC leaves the arrival time untouched', async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date('2026-08-18T16:00:00Z'));

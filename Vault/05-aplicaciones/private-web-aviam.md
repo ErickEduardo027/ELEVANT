@@ -554,6 +554,19 @@ avión, la posición y la restauración: ver
 vuelo que ya está planificado lo vincula a esa escala en lugar de duplicarla:
 ver [La operación (fase 3)](#la-operación-fase-3).
 
+*Posterior al commit verificado (hallazgo N28, 19 de noviembre de 2026):* el
+diálogo escribe sus horas en 24 horas y en la zona de la estación, como la
+consola del OCC: «10:05 → 19:53 · real 19:58», nunca «7:53 p. m.»
+([`formatClock`](../../frontend/private-web/src/features/occ-ui/occTime.js)).
+Lo mismo hacen la lista de vuelos de la vista «Mapa» de Planificación y las
+acciones de una posición en Mapa de posiciones. La cuenta atrás de las tiras de
+vuelo y de «Pendientes de la jornada» cuenta la diferencia entre los minutos que
+muestran los relojes, no el desfase exacto redondeado, y el disparo programa el
+vuelo demo desde el minuto entero siguiente
+([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)): a las
+19:50, su llegada de las 19:53 dice «en 3 min» en la consola y en el mapa, cuya
+cuenta regresiva no cambió.
+
 ## Chat con presencia y cierre de sesión confirmado
 
 El PR #156 se fusionó y luego se revirtió su rediseño visual de Admin/OCC: el

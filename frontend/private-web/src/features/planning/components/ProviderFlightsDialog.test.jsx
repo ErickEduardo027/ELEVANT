@@ -178,6 +178,27 @@ it('explains a paused feed in Spanish, never by its raw code (2-N29)', async () 
   expect(screen.queryByText(/quota_exceeded/)).not.toBeInTheDocument();
 });
 
+it('writes every time on 24 hours in the station zone, as the OCC console does (N28)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  // Punta Cana is UTC−4: 14:05Z is 10:05 there, 23:53Z is 19:53 and 01:30Z the next day is 21:30.
+  loadOccFlightFeed.mockResolvedValue({
+    ...feed([leg('arr', 'Arrival', 'ZZ161', { suggestedDepartureId: 'dep', revisedAt: '2026-11-03T23:53:00Z',
+      runwayAt: '2026-11-03T23:58:00Z' }), leg('dep', 'Departure', 'ZZ162', { scheduledAt: '2026-11-04T01:30:00Z' })],
+    { pausedUntil: '2026-11-04T00:05:00Z', pauseReason: 'quota_exceeded' }),
+    lastReadAt: '2026-11-03T16:00:00Z', nextManualRefreshAt: '2026-11-03T22:40:00Z',
+  });
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
+  expect(arrival).toHaveTextContent('10:05 → 19:53 · real 19:58');
+  expect(within(arrival).getByRole('option', { name: 'ZZ162 · hacia JFK · 21:30' })).toBeInTheDocument();
+  expect(screen.getByText(/Lecturas en pausa hasta las 20:05:/)).toBeInTheDocument();
+  expect(screen.getByText(/última lectura 12:00$/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Actualizar ahora' })).toHaveAttribute('title', 'Disponible a las 18:40');
+  // Never «7:53 p. m.»: the dialog has no 12-hour clock.
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/[ap]\.\s?m\./i);
+});
+
 describe('demo flights (ADR-0041)', () => {
   const terminalA = { id: 'ta', code: 'A', name: 'Terminal A' };
   const stand = (id, code, terminal = terminalA) => ({ id, code, terminal });

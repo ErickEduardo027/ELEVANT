@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import DemoTag from '../../occ-ui/DemoTag';
+import { formatClock } from '../../occ-ui/occTime';
 import {
   assignOccStand, isStalePosition, locateOccStand, positionVersionMessage, recordOccArrival, releaseOccStand,
 } from '../../../services/occPositionsService';
@@ -22,14 +23,16 @@ const REGISTRATION = /^[A-Z0-9-]{2,10}$/;
 /** How often an untouched arrival time follows the clock. */
 const CLOCK_TICK_MS = 15_000;
 
-/** A clock time in the station's zone (3-N19); AVIAM's calendar until the flight's station is known. */
+/**
+ * A clock time on 24 hours in the station's zone, as the OCC console writes it (3-N19, N28); AVIAM's calendar until the
+ * flight's station is known, or when its zone is not one Intl knows.
+ */
 function formatTime(value, timeZone) {
   if (!value) return '—';
-  const format = zone => new Intl.DateTimeFormat('es-DO', { timeStyle: 'short', timeZone: zone }).format(new Date(value));
   try {
-    return format(timeZone ?? BUSINESS_TIME_ZONE);
+    return formatClock(value, 'es-DO', timeZone ?? BUSINESS_TIME_ZONE);
   } catch {
-    return format(BUSINESS_TIME_ZONE);
+    return formatClock(value, 'es-DO', BUSINESS_TIME_ZONE);
   }
 }
 
