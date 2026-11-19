@@ -161,7 +161,8 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
           maxLength={10} value={expiry} aria-invalid={expiryError ? true : undefined} aria-describedby={`${expiryId}-hint`}
           onChange={event => { setExpiry(formatCardExpiry(event.target.value, expiry)); setExpiryError(null);
             pending.current = null; }} />
-        <p id={`${expiryId}-hint`} className={expiryError ? styles.fieldError : styles.fieldHint}>
+        {/* Always mounted and live: Enter inside the field submits without moving the focus, and the error is still heard. */}
+        <p id={`${expiryId}-hint`} className={expiryError ? styles.fieldError : styles.fieldHint} aria-live="polite">
           {expiryError ?? CARD_EXPIRY_HINT}</p>
       </div>
       <label>Código de seguridad<input required type="password" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={cvv}

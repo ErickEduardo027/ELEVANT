@@ -183,7 +183,9 @@ con o sin barra («1228», «12 28», «12-28» o «12/2028») y el campo lo mue
 como MM/AA; el teclado del móvil es numérico. Un mes fuera de 01-12 o una
 tarjeta vencida según el día hábil de Santo Domingo no llegan a la API: el
 motivo aparece bajo el campo, que recibe el foco, y desaparece la respuesta
-anterior del servidor. El campo queda fuera de su etiqueta, así que el aviso
+anterior del servidor. La pista y el motivo comparten un párrafo `aria-live`,
+así que el motivo también se anuncia cuando se paga con Intro desde el propio
+campo y el foco no se mueve. El campo queda fuera de su etiqueta, así que el aviso
 propio del formulario («Complete este campo.») no se mezcla con su nombre
 ([vencimiento](../../frontend/public-web/src/lib/card-expiry.ts) y
 [pruebas](../../frontend/public-web/tests/unit/card-payment-panel.test.tsx)).

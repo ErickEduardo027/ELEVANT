@@ -183,6 +183,27 @@ it("does not call the API with the month 13: the field says why and the last ans
   expect(field).toHaveAccessibleDescription(CARD_EXPIRY_HINT);
 });
 
+it("announces a refused expiry when the airline submits with Enter from the field itself (S4)", async () => {
+  vi.setSystemTime(NOV_19);
+  const user = userEvent.setup();
+  mount();
+  const form = await openForm();
+  fill(form, "");
+  const field = expiryOf(form);
+  const liveAncestor = (text: string) => screen.getByText(text).closest('[aria-live="polite"], [role="alert"]');
+  await user.click(field);
+  await user.keyboard("1330{Enter}");
+  expect(payInvoiceByCard).not.toHaveBeenCalled();
+  // The focus is already in the field and does not move, so only a live region makes the error heard.
+  expect(field).toHaveFocus();
+  expect(liveAncestor(CARD_EXPIRY_ERRORS.month)).not.toBeNull();
+  await user.clear(field);
+  await user.keyboard("1026{Enter}");
+  expect(payInvoiceByCard).not.toHaveBeenCalled();
+  expect(field).toHaveFocus();
+  expect(liveAncestor(CARD_EXPIRY_ERRORS.expired)).not.toBeNull();
+});
+
 it("says a processor error can be retried, addressing the airline as usted (N19)", async () => {
   payInvoiceByCard.mockResolvedValueOnce({ attempt: { ...declined, status: "Error", declineCode: "processing_error" },
     invoiceBalance: 148.09, replayed: false });
