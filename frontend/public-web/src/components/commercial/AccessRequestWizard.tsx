@@ -15,7 +15,7 @@ import {
   type AirlineProposalDraft, type AirlineProposalField, emptyAirlineProposal, validateAirlineProposal,
 } from "@/lib/airline-proposal";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
-import { countryCodes, countryName, loadDivisions } from "@/lib/geo/catalog";
+import { countryCodes, countryLabel, countryName, loadDivisions } from "@/lib/geo/catalog";
 import { serviceImageFallback } from "@/lib/serviceImages";
 import { emptyTaxRegistration, taxCountry, type TaxRegistrationDraft, validateTaxRegistration } from "@/lib/tax-registration";
 
@@ -94,19 +94,20 @@ export function AccessRequestWizard() {
   const submissionInFlight = useRef(false);
   const reconcileAfterSubmit = useRef(false);
   const reconciling = useRef(false);
-  const carousel = useRef<HTMLDivElement>(null);
   const [servicePage, setServicePage] = useState(1);
   // Same order as the internal catalog: display order, then name.
   const orderedServices = [...(catalog?.services ?? [])].sort((left, right) =>
     (left.displayOrder ?? 0) - (right.displayOrder ?? 0) || left.name.localeCompare(right.name, "es"));
   const servicePages = Math.max(1, Math.ceil(orderedServices.length / SERVICES_PER_PAGE));
   const currentServicePage = Math.min(servicePage, servicePages);
-  const visibleServices = orderedServices.slice((currentServicePage - 1) * SERVICES_PER_PAGE,
-    currentServicePage * SERVICES_PER_PAGE);
-  const changeServicePage = (direction: 1 | -1) => {
-    setServicePage((current) => Math.min(servicePages, Math.max(1, current + direction)));
-    carousel.current?.scrollTo?.({ left: 0, behavior: "smooth" });
-  };
+  const pageStart = (currentServicePage - 1) * SERVICES_PER_PAGE;
+  const visibleServices = orderedServices.slice(pageStart, pageStart + SERVICES_PER_PAGE);
+  // Which services of the catalog are on screen (N15): «SERVICIOS 1–6 DE 9», or «SERVICIO 7 DE 7» alone.
+  const serviceRange = visibleServices.length === 1 ? `SERVICIO ${pageStart + 1} DE ${orderedServices.length}`
+    : `SERVICIOS ${pageStart + 1}–${pageStart + visibleServices.length} DE ${orderedServices.length}`;
+  // From the page on screen: after a withdrawal the stored page can lie past the last one.
+  const changeServicePage = (direction: 1 | -1) =>
+    setServicePage(Math.min(servicePages, Math.max(1, currentServicePage + direction)));
   const [divisions, setDivisions] = useState<DivisionsState>([]);
   const [divisionsError, setDivisionsError] = useState(false);
   const divisionsCountry = useRef("");
@@ -445,25 +446,29 @@ export function AccessRequestWizard() {
       <p className="access-intro__foot">OPERACIÓN CONECTADA · DECISIONES VERIFICABLES</p>
     </aside>
 
-    <section className="access-panel" aria-live="polite">
+    <section className="access-panel">
       <div className="access-panel__top"><span>PASO 0{step} / 04</span><span>ACCESO COMERCIAL</span></div>
       {withdrawnNotice && <p className="access-error" role="alert">{withdrawnNotice}</p>}
       {step === 1 && hasPendingSubmission && <button type="button" className="access-back"
         disabled={busy} onClick={() => { void reconcilePending(); }}>Verificar envío anterior</button>}
       {loading ? <p className="access-loading">Cargando servicios y aerolíneas…</p> : step === 1 ? <>
         <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione uno o varios servicios de rampa.</span></div>
-        <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS · PÁGINA {currentServicePage} DE {servicePages}</span><div><button type="button" aria-label="Ver servicios anteriores" disabled={currentServicePage === 1} onClick={() => changeServicePage(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" disabled={currentServicePage === servicePages} onClick={() => changeServicePage(1)}>→</button></div></div>
-        <div className="access-carousel" ref={carousel} aria-label="Servicios disponibles">
-          {visibleServices.map((service, offset) => { const index = (currentServicePage - 1) * SERVICES_PER_PAGE + offset; return <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
+        {orderedServices.length > 0 && <div className="access-carousel__controls">
+          {/* Only the range is a live region: changing the page announces it, selecting a service does not. */}
+          <p><span>{selected.length} {selected.length === 1 ? "SELECCIONADO" : "SELECCIONADOS"}</span> · <span aria-live="polite" aria-atomic="true">{serviceRange}</span></p>
+          <div><button type="button" aria-label="Ver servicios anteriores" disabled={currentServicePage === 1} onClick={() => changeServicePage(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" disabled={currentServicePage === servicePages} onClick={() => changeServicePage(1)}>→</button></div>
+        </div>}
+        <div className="access-carousel" aria-label="Servicios disponibles">
+          {visibleServices.map((service, offset) => <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
             <div className="access-service__media">
               {service.videoUrl ? <video controls playsInline poster={mediaUrl(service.imageUrl)} src={mediaUrl(service.videoUrl)} aria-label={`Video de ${service.name}`} /> :
                 <div className="access-service__image" style={{ backgroundImage: `url(${mediaUrl(service.imageUrl) ?? serviceImageFallback(service)}), url(${serviceImageFallback(service)})` }} role="img" aria-label={service.name} />}
-              <span>{String(index + 1).padStart(2, "0")} / AVIAM</span>
+              <span>{String(pageStart + offset + 1).padStart(2, "0")} / AVIAM</span>
             </div>
             <div className="access-service__body"><h3>{service.name}</h3><p>{service.description}</p>
               <button type="button" onClick={() => toggleService(service.id)} aria-pressed={selected.includes(service.id)}>{selected.includes(service.id) ? "Seleccionado ✓" : "Añadir servicio +"}</button>
             </div>
-          </article>; })}
+          </article>)}
           {catalog?.services.length === 0 && <p>No hay servicios publicados por el momento.</p>}
         </div>
       </> : step === 2 ? <>
@@ -512,12 +517,12 @@ export function AccessRequestWizard() {
             <ReadOnlyField label="Aerolínea" value={airline.name} />
             <ReadOnlyField label="Razón social" value={airline.legalName ?? null} />
             <ReadOnlyField label="Región" value={airline.region} />
-            <ReadOnlyField label="País" value={airline.countryCode ?? null} />
+            <ReadOnlyField label="País" value={countryLabel(airline.countryCode)} />
             <ReadOnlyField label="Código IATA" value={airline.iataCode ?? null} />
             <ReadOnlyField label="Código ICAO" value={airline.icaoCode ?? null} />
           </div>
           {airline.registrySource && <p className="access-airline__registry" role="note">✓ Verificada en registro público ({airline.registrySource}): el nombre y los códigos coinciden con una aerolínea en operación.</p>}
-          <p className="access-airline__verification">{airline.isVerified ? "✓ Identidad verificada por AVIAM" : "Los datos sin fuente aparecen como «Sin dato confirmado»; Contratos verificará la identidad legal."}</p>
+          <p className="access-airline__verification" data-verified={airline.isVerified}>{airline.isVerified ? "✓ Identidad verificada por AVIAM" : "Los datos sin fuente aparecen como «Sin dato confirmado»; Contratos verificará la identidad legal."}</p>
         </div>}
         {(proposing || airline) && <TaxRegistrationField draft={tax} airlineCountry={airlineCountry}
           error={showTaxError && !taxCheck.ok ? taxCheck.error : undefined}
@@ -611,7 +616,7 @@ export function AccessRequestWizard() {
             ? <small>{["No figura en el listado", countryName(proposal.countryCode), `ICAO ${proposal.icaoCode.trim().toUpperCase()}`,
               proposal.iataCode.trim() ? `IATA ${proposal.iataCode.trim().toUpperCase()}` : "Sin IATA", proposal.websiteUrl.trim(),
               taxCheck.ok && taxCheck.display].filter(Boolean).join(" · ")}</small>
-            : <small>{[airline?.legalName ?? "Sin razón social confirmada", airline?.countryCode ?? "Sin país confirmado",
+            : <small>{[airline?.legalName ?? "Sin razón social confirmada", countryLabel(airline?.countryCode) ?? "Sin país confirmado",
               taxCheck.ok && taxCheck.display].filter(Boolean).join(" · ")}</small>}</section>
           <section><div className="access-summary__header"><h3>Representante</h3><button type="button" onClick={() => setStep(3)}>Editar representante</button></div><dl>
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>
