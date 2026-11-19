@@ -36,8 +36,9 @@ import { standInputsOf } from '../maps/traffic/standInputs';
 const NO_POSITIONS = Object.freeze([]);
 const NO_MESSAGE = Object.freeze({ tone: '', text: '' });
 // The data block of the chosen flight or aircraft (PR M6) docks at the top left of the map, right of the page's map
-// controls; «Ubicar en el mapa» keeps the top centre.
-const DATA_BLOCK_STYLE = Object.freeze({ top: 12, left: 56 });
+// controls: their block starts 12 px from the map's edge and is 38 px wide with its joint (N29), 46 px on a touch
+// screen. «Ubicar en el mapa» keeps the top centre.
+const DATA_BLOCK_STYLE = Object.freeze({ top: 12, left: 58 });
 // The location saved for a stand, as «Ubicar en el mapa» always sent it: six decimals, about 10 cm.
 const toSixDecimals = value => Number(Number(value).toFixed(6));
 

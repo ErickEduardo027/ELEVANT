@@ -14,9 +14,10 @@ import { SELECTION_SOURCE } from '../style/selectionLayers';
 // signals from `polygons` (the airfield fit − 0.3); codes, flights, lead-ins and the aircraft to scale from `codes` (the
 // ramp fit − 0.3; the console's apron shows its codes from `polygons`); the three-line labels and the progress of a
 // turnaround from `threeLine` (the ramp fit + 0.8). Hover, selection, related and same-agent marks are feature-state, so
-// a pointer or a selection never rewrites the data. «Ubicar en el mapa» draws its boxes from a source of its own in the
-// top slot. Pure: OccMap adds the overlay, fills the five stand sources with stands/standFeatures.js and the placing
-// source with stands/placing.js.
+// a pointer or a selection never rewrites the data; the selected stand's label comes from the selection source, and its
+// own label leaves the stand labels by their filter (standLabelFilter, N29). «Ubicar en el mapa» draws its boxes from a
+// source of its own in the top slot. Pure: OccMap adds the overlay, fills the five stand sources with
+// stands/standFeatures.js and the placing source with stands/placing.js, and sets the labels' filter.
 //
 // PR M6 (design D3): the aircraft of a stand at true size (aircraft/footprint.js), solid while it is on the stand and
 // dashed while it is still to come, so one sees whether it fits; below `codes`, where a footprint is too small to read,
@@ -47,6 +48,8 @@ export const FOOTPRINT_GROUP = 'stands.footprints';
 export const STAND_FILL_LAYER = 'occ-stands-fill';
 /** The layer of the terminal chips: the pick target of a terminal. */
 export const STAND_CHIP_LAYER = 'occ-stand-groups';
+/** The layers of the stands' own labels, which leave out the selected stand's (standLabelFilter). */
+export const STAND_LABEL_LAYER_IDS = Object.freeze(['occ-stand-labels', 'occ-stand-labels-3']);
 /** `dashboard` is the console's apron map: codes from the stand polygons on, planned stands placed first. */
 export const STAND_LABEL_MODES = Object.freeze(['default', 'dashboard']);
 /** The feature-state keys of a stand polygon: hover, selection, the stand of the selected flight, the same agent. */
@@ -78,8 +81,13 @@ const outsideOffset = side => ['interpolate', ['linear'], ['zoom'],
 // A label moves above or below the stand's centre when its neighbours leave no room in the middle.
 const LABEL_ANCHORS = Object.freeze(['center', 'bottom', 'top']);
 const LABEL_OFFSET_EM = 1.2;
-// The selected stand's label clears this much around itself, so the same stand's label below it never shows next to it.
-const SELECTED_LABEL_PADDING = 44;
+// The selected stand's label takes only its own room (N29): a margin of 2 px, so the labels of the stands beside it keep
+// their place, and its longest lines broken at about 14 em (on one line, «El avión ya está en la posición. Registra la
+// llegada.» is about 24 em, wider than the stands on both sides). The same stand's own label leaves the stand labels by
+// a layer filter (standLabelFilter), never by its opacity: an invisible label would still take its room. Until N29 a
+// margin of 44 px kept that label away, and the labels of the neighbours with it.
+const SELECTED_LABEL_PADDING = 2;
+const SELECTED_LABEL_MAX_WIDTH_EM = 14;
 
 // The marks the vocabulary's `extra` of a state asks the polygon layers for.
 const AIRCRAFT_EXTRAS = new Set(['footprint-progress', 'clock']);
@@ -361,6 +369,14 @@ const textLayout = (field, { placed = 'centre' } = {}) => ({
   'text-padding': 1,
 });
 
+// The selected stand's label: always drawn, in the middle of its stand, with its own small room (N29).
+const selectedLabelLayout = field => ({
+  ...textLayout(field),
+  'text-max-width': SELECTED_LABEL_MAX_WIDTH_EM,
+  'text-allow-overlap': true,
+  'text-padding': SELECTED_LABEL_PADDING,
+});
+
 const codeColour = () => byState(STAND_STATE_KEYS, state => occColor(standPaint(state).mutedCode ? 'faint' : 'text'));
 
 // The aircraft glyph of a stand, sized with the map so it stays inside the box at every zoom.
@@ -469,19 +485,20 @@ function labelLayers(labels) {
       paint: textPaint,
       meta: { 'occ:minThreshold': 'threeLine' },
     }),
-    // The selected stand's label, from the selection source: above the others, so MapLibre places it first and the
-    // same stand's label below it gives way. From the polygons on, whatever the codes threshold.
+    // The selected stand's label, from the selection source: above the others, so MapLibre places it first, and the
+    // same stand's own label is left out of the layers below (standLabelFilter). It keeps only a margin of 2 px, so the
+    // labels beside it give way only where they would touch it (N29). From the polygons on, whatever the codes threshold.
     labelLayer('occ-stand-label-selected', {
       source: SELECTION_SOURCE,
       filter: isStand,
-      layout: { ...textLayout(['get', 'label2']), 'text-allow-overlap': true, 'text-padding': SELECTED_LABEL_PADDING },
+      layout: selectedLabelLayout(['get', 'label2']),
       paint: selectedPaint,
       meta: { 'occ:maxThreshold': 'threeLine' },
     }),
     labelLayer('occ-stand-label-selected-3', {
       source: SELECTION_SOURCE,
       filter: isStand,
-      layout: { ...textLayout(['get', 'label3']), 'text-allow-overlap': true, 'text-padding': SELECTED_LABEL_PADDING },
+      layout: selectedLabelLayout(['get', 'label3']),
       paint: selectedPaint,
       meta: { 'occ:minThreshold': 'threeLine' },
     }),
@@ -560,8 +577,9 @@ function assertLabels(labels) {
  * dash, the lead-ins, the combined links, the narrow-body boxes, the progress bars and the three casings of the feature
  * state. In the `footprints` slot: the aircraft on a stand (fill and outline) and the one to come (dashed). In the
  * `standLabels` slot: the chips, the aircraft glyph (below the codes, and from them where no type is drawn), the clock,
- * the labels in two variants, the selected stand's label (from the selection source) and the signals. In the
- * `selection` slot: the pending location of «Ubicar en el mapa» and the box that follows the pointer.
+ * the labels in two variants (STAND_LABEL_LAYER_IDS, which leave out the selected stand's: standLabelFilter), the
+ * selected stand's label (from the selection source) and the signals. In the `selection` slot: the pending location of
+ * «Ubicar en el mapa» and the box that follows the pointer.
  * `labels: 'dashboard'` starts the codes at the polygons.
  */
 export function standOverlay({ labels = 'default', theme = 'dark' } = {}) {
@@ -577,6 +595,17 @@ export function standOverlay({ labels = 'default', theme = 'dark' } = {}) {
     },
     layers: [...polygonLayers(theme), ...footprintLayers(), ...labelLayers(labels), ...placingLayers()],
   };
+}
+
+/**
+ * The filter of the stand labels (STAND_LABEL_LAYER_IDS) while stand `code` is selected (N29): every stand's label but
+ * that stand's, whose cyan label comes from the selection source alone; `null` (no filter) without a selected stand.
+ * `code` is the code the label points carry (buildStandFeatures: the normalized code). A layer filter, and not the
+ * labels' opacity: an invisible label would still take its room from the labels beside it. The two layers have no
+ * filter of their own for it to replace.
+ */
+export function standLabelFilter(code) {
+  return typeof code === 'string' && code !== '' ? ['!=', ['get', 'code'], code] : null;
 }
 
 /**

@@ -1571,7 +1571,17 @@ cambia.
   una sola vez, con las palabras del mapa: su cabecera ya no muestra la del
   tablero, que podía contradecirla («Planificada» frente a «Llegando»). La
   cámara solo se mueve si la posición elegida queda fuera de la vista. Una `Esc`
-  cierra el cajón y la siguiente limpia la selección.
+  cierra el cajón y la siguiente limpia la selección. *Posterior al commit
+  verificado (hallazgo N29, 19 de noviembre de 2026):* el rótulo cian de la
+  posición elegida ya no aparta 44 px a su alrededor, sino 2 px, y parte sus
+  líneas más largas a unos 14 em. El rótulo normal de esa misma posición sale de
+  las capas de rótulos por un filtro de capa, no por transparencia
+  ([`standLayers.js`](../../frontend/private-web/src/features/maps/stands/standLayers.js),
+  `standLabelFilter`). Así, las vecinas conservan su rótulo donde no tocan el
+  elegido: con A11 elegida, A10 vuelve a decir «Anulada por A9» en las capturas
+  a 1920 px y en 3D a 1440 px; en 2D a 1440 px su rótulo tocaría el propio
+  «A11» y sigue sin mostrarse. Dónde va el rótulo de una posición con avión no
+  cambia: queda para decidirlo con una captura (D-N29).
 - **Combinadas.** La posición que una combinada anula se dibuja «Inhabilitada»,
   con «Anulada por A9» y un enlace a trazos hasta la que la anula. «Solo
   fuselaje estrecho» suma una caja punteada de letra C dentro de una posición
@@ -2324,7 +2334,13 @@ carril de mapas, con las mismas props.
   cuenta las posiciones por estado y, abierta, dibuja sus escalas en el tiempo
   con la línea «ahora». Por debajo de 1536 px la lista se pliega mientras el
   inspector está abierto. Un enlace con `stand=` centra esa posición en el
-  mapa. Los textos de los comandos tienen inglés.
+  mapa. Los textos de los comandos tienen inglés. *Posterior (hallazgo N29, 19
+  de noviembre de 2026):* los botones 2D/3D, «Centrar PUJ» y pantalla completa,
+  arriba a la izquierda del mapa, van en un solo bloque opaco con su junta, como
+  los grupos de controles del propio mapa
+  ([`MapControls.jsx`](../../frontend/private-web/src/features/positions-map/components/MapControls.jsx)).
+  Antes eran tres botones translúcidos separados, y en 3D la placa «Demo»
+  asomaba entre ellos. El bloque de datos de un vuelo sigue a su derecha.
 - **Planificación**
   ([vista](../../frontend/private-web/src/features/planning/PlanningPage.jsx)).
   La barra lleva «Nuevo vuelo», «Importar vuelos» y «Actualizar»; debajo, los

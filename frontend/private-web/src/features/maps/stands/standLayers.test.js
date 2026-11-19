@@ -19,8 +19,8 @@ import { buildStandFeatures } from './standFeatures';
 import { ghostFeatures, placingGhost } from './placing';
 import {
   FOOTPRINT_GROUP, FOOTPRINT_PAINT, PLACING_PAINT, PROGRESS_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES,
-  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_MODES, STAND_LABEL_SOURCE,
-  STAND_SOURCE, STAND_SOURCES, standDisplayAt, standFill, standOverlay, standPaint,
+  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_LAYER_IDS, STAND_LABEL_MODES,
+  STAND_LABEL_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standFill, standLabelFilter, standOverlay, standPaint,
 } from './standLayers';
 import { attachStandGeometry } from './standModel';
 
@@ -311,8 +311,8 @@ describe('standOverlay', () => {
     expect(keys.occupied).toBeLessThan(keys.planned);
     expect(keys.planned).toBeLessThan(keys.available);
     expect(keys.available).toBeLessThan(keys.unverified);
-    // The selected stand's label is above every other label, so MapLibre places it before them all; the same stand's
-    // label below it gives way, and its texts come from the selection source.
+    // The selected stand's label is above every other label, so MapLibre places it before them all, and its texts come
+    // from the selection source.
     const ids = standLayers().map(layer => layer.id);
     for (const id of ['occ-stand-label-selected', 'occ-stand-label-selected-3']) {
       expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('occ-stand-labels-3'));
@@ -320,18 +320,54 @@ describe('standOverlay', () => {
       expect(layerOf(standOverlay(), id).layout['text-allow-overlap']).toBe(true);
     }
     // A label moves above or below its stand's centre when its neighbours leave no room; the selected one stays in the
-    // middle and clears the room around it, so the same stand's label never shows beside it.
+    // middle. It takes only its own room (N29): a margin of 2 px at most and its longest lines broken at about 14 em,
+    // so the label of the stand beside it keeps its place. The same stand's own label leaves by a layer filter (below).
     for (const id of ['occ-stand-labels', 'occ-stand-labels-3']) {
       expect(layerOf(standOverlay(), id).layout, id).toMatchObject({ 'text-variable-anchor': ['center', 'bottom', 'top'], 'text-radial-offset': 1.2 });
     }
     for (const id of ['occ-stand-label-selected', 'occ-stand-label-selected-3']) {
-      expect(layerOf(standOverlay(), id).layout, id).toMatchObject({ 'text-anchor': 'center', 'text-padding': 44 });
-      expect(layerOf(standOverlay(), id).layout, id).not.toHaveProperty('text-variable-anchor');
+      const { layout } = layerOf(standOverlay(), id);
+      expect(layout, id).toMatchObject({ 'text-anchor': 'center', 'text-max-width': 14 });
+      expect(layout['text-padding'], id).toBeLessThanOrEqual(2);
+      expect(layout, id).not.toHaveProperty('text-variable-anchor');
     }
     // The label shows the code of a free stand and the code with its flight otherwise.
     const label = layerOf(standOverlay(), 'occ-stand-labels');
     expect(evaluate(label, 'layout', 'text-field', { state: 'available', label1: 'A1', label2: 'A1\nX' }, { type: 1 }).toString()).toBe('A1');
     expect(evaluate(label, 'layout', 'text-field', { state: 'planned', label1: 'A2', label2: 'A2\nDM201' }, { type: 1 }).toString()).toBe('A2\nDM201');
+  });
+
+  it('the selected stand\'s own label leaves the stand labels through a layer filter, never through its opacity (N29)', () => {
+    // The layers of the stands' own labels, which leave out the selected stand's: its label comes from the selection
+    // source. They have no filter of their own for standLabelFilter to replace, and no opacity: an invisible label would
+    // still take its room from the labels beside it.
+    expect(STAND_LABEL_LAYER_IDS).toEqual(['occ-stand-labels', 'occ-stand-labels-3']);
+    for (const labels of STAND_LABEL_MODES) {
+      for (const id of STAND_LABEL_LAYER_IDS) {
+        const layer = layerOf(standOverlay({ labels }), id);
+        expect(layer, `${labels} ${id}`).not.toHaveProperty('filter');
+        expect(layer.paint, `${labels} ${id}`).not.toHaveProperty('text-opacity');
+      }
+    }
+    // The label points of the stands of terminal A, as buildStandFeatures gives them; A10 stands beside A11.
+    const stands = attachStandGeometry(createMapStands().filter(item => /^A\d+$/.test(item.id)), MDPC_LAYOUT);
+    const points = buildStandFeatures(stands, { nowMs: NOW }).labels.features;
+    const codes = points.map(item => item.properties.code);
+    expect(codes).toEqual(expect.arrayContaining(['A10', 'A11']));
+    const drawnWith = filter => points.filter(item => passes({ id: 'occ-stand-labels', filter }, item.properties, { type: 1 }))
+      .map(item => item.properties.code);
+    // With A11 selected, the stand labels draw every stand but A11 (its cyan label is the selection's), A10 included.
+    expect(drawnWith(standLabelFilter('A11'))).toEqual(codes.filter(code => code !== 'A11'));
+    expect(drawnWith(standLabelFilter('A10'))).toEqual(codes.filter(code => code !== 'A10'));
+    // Without a selected stand there is no filter: every label is drawn.
+    for (const none of [null, undefined, '']) expect(standLabelFilter(none), String(none)).toBeNull();
+    expect(drawnWith(undefined)).toEqual(codes);
+    // A filter MapLibre takes on those layers, in both label modes.
+    for (const labels of STAND_LABEL_MODES) {
+      const style = styleWith(labels);
+      for (const id of STAND_LABEL_LAYER_IDS) style.layers.find(layer => layer.id === id).filter = standLabelFilter('A11');
+      expect(validateStyleMin(style), labels).toEqual([]);
+    }
   });
 
   it('the signal sits above the stand and the clock below it, clear of the label in the middle, and the aircraft grows with the map', () => {
