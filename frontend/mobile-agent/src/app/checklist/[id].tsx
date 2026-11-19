@@ -47,6 +47,8 @@ type Notice = Readonly<{
 }>;
 type PendingDraftSave = Readonly<{
   operationId: string;
+  /** The account the screen loaded the draft for (N5): its answers stay with it after its session ends. */
+  accountId: string;
   draft: RampChecklistDraft;
 }>;
 
@@ -70,6 +72,8 @@ export default function ChecklistScreen() {
   const submitInFlightRef = useRef(false);
   const contentScrollRef = useRef<ScrollView | null>(null);
   const answersRef = useRef<Readonly<Record<string, RampChecklistDraftAnswer>>>({});
+  // N5: the account the draft was loaded for; every save names it, so answers marked after the session ended are kept.
+  const draftOwnerRef = useRef<string | null>(null);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraftSaveRef = useRef<PendingDraftSave | null>(null);
   const draftWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -89,7 +93,7 @@ export default function ChecklistScreen() {
         .catch(() => undefined)
         .then(async () => {
           try {
-            await saveRampOperationChecklistDraft(current.operationId, current.draft);
+            await saveRampOperationChecklistDraft(current.operationId, current.draft, current.accountId);
             draftWriteFailedRef.current = false;
             if (mountedRef.current) setDraftSaveState('saved');
           } catch (error) {
@@ -111,7 +115,7 @@ export default function ChecklistScreen() {
       .catch(() => undefined)
       .then(async () => {
         try {
-          await saveRampOperationChecklistDraft(current.operationId, current.draft);
+          await saveRampOperationChecklistDraft(current.operationId, current.draft, current.accountId);
           draftWriteFailedRef.current = false;
           if (mountedRef.current) setDraftSaveState('saved');
         } catch {
@@ -153,12 +157,14 @@ export default function ChecklistScreen() {
         signal: request.signal,
       });
       if (request.signal.aborted) return;
-      const [draft, pending] = await Promise.all([
+      const [loadedDraft, pending] = await Promise.all([
         readRampOperationChecklistDraft(id, nextSnapshot.checklist.id),
         readRampChecklistPendingSubmission(id, nextSnapshot.checklist.id),
       ]);
       if (request.signal.aborted) return;
 
+      const draft = loadedDraft.draft;
+      draftOwnerRef.current = loadedDraft.accountId;
       const mergedAnswers = mergeAnswers(nextSnapshot, draft, pending);
       const lastSection = Math.max(0, nextSnapshot.checklist.sections.length - 1);
       const initialSection = pending || nextSnapshot.checklist.status === 'Submitted'
@@ -236,9 +242,11 @@ export default function ChecklistScreen() {
   const progress = useMemo(() => checklistProgress(sections, answers), [answers, sections]);
 
   const updateAnswer = useCallback((item: RampChecklistItem, answer: RampChecklistDraftAnswer) => {
+    const accountId = draftOwnerRef.current;
     if (
       submitInFlightRef.current ||
       !snapshot ||
+      !accountId ||
       frozen ||
       submitted ||
       submitting
@@ -254,6 +262,7 @@ export default function ChecklistScreen() {
     setAnswers(next);
     queueDraftSave({
       operationId: snapshot.operationId,
+      accountId,
       draft: {
         schemaVersion: DRAFT_SCHEMA_VERSION,
         checklistId: snapshot.checklist.id,

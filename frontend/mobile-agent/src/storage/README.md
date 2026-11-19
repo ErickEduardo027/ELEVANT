@@ -20,6 +20,12 @@ revisión aleatoria:
   token y no hay un refresh token vigente; mientras lo hay, sigue activa;
 - expiración, logout y rechazo `401/403` limpian la sesión y la caché actual;
   un rechazo de una credencial anterior no borra la que la renovó;
+- la expiración y el rechazo dejan el marcador no secreto
+  `elevant:mobile:ended-session:v1` (N5) con la cuenta, la causa y la hora del
+  fin. `writeRampChecklistDraftForAccount` escribe el borrador del checklist
+  para la cuenta que fijó la pantalla mientras su sesión está activa o, sin
+  sesión, durante 2 horas desde ese fin (D-N5). El logout y un inicio de sesión
+  confirmado borran el marcador; un intento fallido no;
 - login/logout también purgan checklist, estado de vuelo, outbox y chat
   prototípicos no namespaced para que no crucen cuentas.
 

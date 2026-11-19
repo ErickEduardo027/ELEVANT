@@ -10,9 +10,11 @@ import {
   clearStoredMobileSession,
   clearStoredMobileSessionIfCurrent,
   countPendingEvidence,
+  forgetEndedMobileSession,
   readStoredMobileSession,
   replaceStoredMobileCredentialIfCurrent,
   writeStoredMobileSession,
+  type MobileSessionEndReason,
   type PendingEvidenceCount,
 } from '../storage/mobile-session';
 import { serverNow } from '../synchronization/server-clock';
@@ -456,13 +458,13 @@ function renewable(state: ActiveSessionState, now: number) {
 
 /**
  * The session can still be used: its access token is in force or it can renew it. One that can do neither, an expired
- * token without `auth_time` for one, ends here as an expired session always did.
+ * token without `auth_time` for one, ends here as an expired session always did, and its marker stays (N5).
  */
 async function usableSessionState(): Promise<ActiveSessionState> {
   const state = await activeSessionState();
   const now = serverNow().getTime();
   if (isFutureExpiry(state.session.expiresAt, now) || renewable(state, now)) return state;
-  await clearStoredMobileSessionIfCurrent(state.sessionId, state.accessToken);
+  await clearStoredMobileSessionIfCurrent(state.sessionId, state.accessToken, 'expired');
   throw new MobileServiceError('session_expired');
 }
 
@@ -514,13 +516,17 @@ async function changedSession(previous: ActiveSessionState): Promise<RenewalOutc
   }
 }
 
-/** Ends the session ELEVANT refused, only while it still holds the refused credential. */
+/**
+ * Ends the session that cannot go on, only while it still holds that credential; its marker names why (N5), so the
+ * account keeps the checklist answers it marks after the end.
+ */
 async function endRefusedSession(
   state: ActiveSessionState,
   issue: MobileServiceError,
+  reason: MobileSessionEndReason,
 ): Promise<RenewalOutcome> {
   try {
-    const cleared = await clearStoredMobileSessionIfCurrent(state.sessionId, state.accessToken);
+    const cleared = await clearStoredMobileSessionIfCurrent(state.sessionId, state.accessToken, reason);
     return cleared ? { kind: 'ended', issue } : await changedSession(state);
   } catch (error) {
     return { kind: 'kept', issue: asMobileServiceError(error) };
@@ -543,7 +549,7 @@ async function renewCredential(seen: ActiveSessionState): Promise<RenewalOutcome
   if (state.kind !== 'active' || state.sessionId !== seen.sessionId) return { kind: 'superseded' };
   if (state.accessToken !== seen.accessToken) return { kind: 'renewed' };
   if (!renewable(state, serverNow().getTime())) {
-    return endRefusedSession(state, new MobileServiceError('session_expired'));
+    return endRefusedSession(state, new MobileServiceError('session_expired'), 'expired');
   }
   const pause = activeRenewalPause();
   if (pause) return { kind: 'kept', issue: pause.issue };
@@ -558,9 +564,9 @@ async function renewCredential(seen: ActiveSessionState): Promise<RenewalOutcome
       return endRefusedSession(state, new MobileServiceError('session_expired', {
         status: issue.status,
         traceId: issue.traceId,
-      }));
+      }), 'refused');
     }
-    if (issue.status === 403) return endRefusedSession(state, issue);
+    if (issue.status === 403) return endRefusedSession(state, issue, 'forbidden');
     // 409 refresh_rotated: the token was replaced less than a minute ago. If no other renewal stored the new one, its
     // answer was lost (D-S3b): the session lasts as long as its access token, and ELEVANT ends the family once the old
     // refresh token comes back after that minute.
@@ -577,7 +583,7 @@ async function renewCredential(seen: ActiveSessionState): Promise<RenewalOutcome
 
   const actor = qualifyingActor(issued.actor);
   if (!actor || actor.accountId !== state.session.actor.accountId) {
-    return endRefusedSession(state, new MobileServiceError('forbidden'));
+    return endRefusedSession(state, new MobileServiceError('forbidden'), 'forbidden');
   }
   const refreshToken = isRefreshToken(issued.refreshToken) ? issued.refreshToken : null;
   let replaced: boolean;
@@ -620,9 +626,9 @@ async function endSessionAtElevant(refreshToken: string) {
   }
 }
 
-async function clearRejectedSession(sessionId: string, accessToken: string) {
+async function clearRejectedSession(sessionId: string, accessToken: string, reason: MobileSessionEndReason) {
   try {
-    return await clearStoredMobileSessionIfCurrent(sessionId, accessToken);
+    return await clearStoredMobileSessionIfCurrent(sessionId, accessToken, reason);
   } catch (error) {
     throw asMobileServiceError(error);
   }
@@ -689,7 +695,9 @@ async function openSession(
     const confirmedState = await localSessionState();
     if (
       confirmedState.kind !== 'active' ||
-      confirmedState.sessionId !== sessionId
+      confirmedState.sessionId !== sessionId ||
+      // Only a sign-in the tablet keeps forgets the end of the previous session (N5); a failed one leaves it.
+      !(await forgetEndedMobileSession(sessionId))
     ) {
       throw new MobileServiceError('cancelled');
     }
@@ -818,7 +826,8 @@ export async function rejectMobileSessionRequest(
     if (outcome.kind === 'superseded') return false;
     throw outcome.issue;
   }
-  return clearRejectedSession(context.sessionId, context.accessToken);
+  return clearRejectedSession(context.sessionId, context.accessToken,
+    failure.code === 'forbidden' ? 'forbidden' : 'refused');
 }
 
 /**
@@ -835,9 +844,10 @@ export async function readUnsentRecords(): Promise<PendingEvidenceCount | null> 
 
 /**
  * Signs out: frees the tablet for the next agent (2-N02) and ends the session at ELEVANT, so its refresh token and
- * every renewal of it stop working (S3); both are best effort and bounded in time. Then it clears the session and its
- * caches. A tablet that cannot reach ELEVANT still signs out; the next agent who signs in on it takes it. What the
- * agent recorded and ELEVANT has not confirmed stays on the device for the same account (3-N12).
+ * every renewal of it stop working (S3); both are best effort and bounded in time. Then it clears the session, its
+ * caches and the marker of an ended session (N5): nothing marked afterwards is kept. A tablet that cannot reach ELEVANT
+ * still signs out; the next agent who signs in on it takes it. What the agent recorded and ELEVANT has not confirmed
+ * stays on the device for the same account (3-N12).
  */
 export async function logoutMobileAgent(): Promise<void> {
   let state: LocalSessionState | null = null;

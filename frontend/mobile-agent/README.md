@@ -181,6 +181,24 @@ sesión que se conservan y «Sincronización» indica los de otra cuenta, que no
 pueden ver ni descartar. Nada se borra solo: el agente descarta únicamente sus
 propios registros rechazados.
 
+Lo que el agente marca en el checklist después de que su sesión terminó tampoco
+se pierde (N5). Al borrar una sesión vencida o rechazada (`401` de la
+renovación o `403`), la tablet deja el marcador no secreto
+`elevant:mobile:ended-session:v1` con la cuenta, la causa (`expired`,
+`refused` o `forbidden`) y la hora del fin según el reloj de ELEVANT; una
+sesión vencida terminó cuando venció su access token, no cuando la tablet lo
+notó. La pantalla del checklist fija la cuenta al cargar el borrador y guarda
+siempre para ella: con su sesión activa responde `saved`, y sin sesión, si el
+marcador nombra esa cuenta y no pasaron más de 2 horas desde el fin (D-N5),
+`kept-until-sign-in`, también si la sesión termina mientras el guardado espera
+al almacenamiento. Las respuestas vuelven cuando esa cuenta inicia sesión de
+nuevo. Con otra cuenta activa, después de un cierre de sesión a propósito o
+fuera de ese plazo el borrador no se guarda (`session_expired`), y solo un fallo
+real del almacenamiento da `storage_unavailable`. El cierre de sesión a
+propósito y un inicio de sesión confirmado borran el marcador; un intento
+fallido no. El esquema del borrador no cambia y los comandos de la cola siguen
+exigiendo una sesión (D-N5).
+
 La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
 antigüedad no supera 15 minutos. Un `401`, `403`, otro fallo HTTP, cancelación,
 caché vencida o contrato malformado se entrega como error tipado y nunca se

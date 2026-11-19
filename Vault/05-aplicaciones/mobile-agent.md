@@ -236,6 +236,20 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
   el cierre de sesión ya no borran lo que ELEVANT no confirmó: queda ligado a la
   cuenta, solo esa cuenta lo envía al volver a entrar y «Sincronización» indica
   los registros de otra cuenta, sin mostrarlos.
+- **Lo marcado después del fin de la sesión.** Posterior a la fase 3 (hallazgo N5
+  de la corrida del VPS del 16 de noviembre): lo que el agente marca en el
+  checklist después de que su sesión venció o fue rechazada ya no se pierde.
+  - Al terminar la sesión, la tablet deja un marcador no secreto con la cuenta,
+    la causa y la hora del fin
+    ([almacenamiento](../../frontend/mobile-agent/src/storage/mobile-session.ts)).
+  - La pantalla del checklist guarda para la cuenta con la que se abrió: con su
+    sesión activa o, sin sesión, durante 2 horas desde el fin (D-N5). Las
+    respuestas vuelven cuando esa cuenta inicia sesión de nuevo.
+  - Otra cuenta activa, el cierre de sesión a propósito o el plazo vencido lo
+    impiden. El cierre de sesión y un inicio de sesión confirmado borran el
+    marcador; un intento fallido no.
+  - Los comandos de la cola siguen exigiendo una sesión: el checklist se envía
+    después de volver a entrar.
 - **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
   registros pendientes o rechazados de la operación, ni con la Orden de Servicio
   sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.

@@ -153,6 +153,14 @@ A, B y C, `34e90aad`;
   descartar los que ELEVANT rechazó y las fotos del walk-around que no llegan a
   ELEVANT: la que ELEVANT no pudo guardar, la que la tablet no puede leer y la de
   una marca rechazada.
+- **Checklist después del fin de la sesión.** Posterior a la fase 3 (hallazgo
+  N5): cuando la sesión de una cuenta vence o ELEVANT la rechaza, lo que esa
+  cuenta marca en el checklist que tenía abierto se sigue guardando en la tablet
+  durante 2 horas desde el fin, sin sesión ni red (D-N5). Ninguna otra cuenta
+  puede escribir ese borrador, el cierre de sesión a propósito lo impide y solo
+  esa cuenta lo lee y lo envía al volver a entrar. Los comandos de la cola no se
+  aceptan sin sesión
+  ([ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)).
 
 ## Vocabulario de ciclo de vida
 

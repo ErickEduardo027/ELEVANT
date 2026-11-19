@@ -54,6 +54,13 @@ Se evaluó poner un tope absoluto a la sesión de las cuentas de rampa, de 16 ho
 - **La tablet y la presencia.** La confirmación del registro de la tablet y la versión de la liberación se atan a la sesión, no al token, así que sobreviven a la renovación. La presencia identifica su lease por la sesión y la cuenta, y cada latido lee el token vigente. Los hubs de SignalR piden el token en cada conexión y toman el renovado.
 - **Cerrar sesión.** Libera la tablet y termina la familia en ELEVANT (`endSession`), cada uno con un límite de 5 segundos. Si la tablet no conserva un inicio de sesión, por ejemplo porque falla su registro, también termina la familia recién emitida.
 
+**5. Lo que se marca después del fin de la sesión (hallazgo N5).**
+- Una sesión que termina sin que el agente cierre sesión deja en AsyncStorage el marcador no secreto `elevant:mobile:ended-session:v1` con la cuenta, la causa y la hora del fin, según el reloj de ELEVANT. Las causas son `expired` (venció sin poder renovarse), `refused` (ELEVANT rechazó la renovación o la credencial con `401`) y `forbidden` (`403`, o la cuenta ya no califica). Una sesión vencida terminó cuando venció su access token, no cuando la tablet lo notó.
+- La pantalla del checklist fija la cuenta al cargar el borrador y guarda siempre para ella (`writeRampChecklistDraftForAccount`). Guarda mientras la sesión de esa cuenta está activa, también si una renovación cambió su credencial. Sin sesión, guarda si el marcador nombra esa cuenta y no pasaron más de 2 horas desde el fin (D-N5), también si la sesión termina mientras el guardado espera al almacenamiento. Con otra cuenta activa, tras un cierre de sesión a propósito o fuera de ese plazo, no guarda.
+- El servicio responde `saved` o `kept-until-sign-in`. Solo lanza `storage_unavailable` ante un fallo real del almacenamiento, y `session_expired` cuando el borrador ya no puede guardarse; nunca un `cancelled` silencioso.
+- El marcador se borra al cerrar sesión a propósito y tras un inicio de sesión confirmado; un intento fallido lo deja. Las respuestas guardadas vuelven cuando la misma cuenta inicia sesión.
+- El esquema del borrador no cambia. Los comandos de la cola siguen sin aceptarse sin sesión (D-N5): el checklist se envía después de volver a entrar.
+
 ## Compatibilidad y despliegue
 
 - El cambio es aditivo. Un cliente que ignora `auth_time` funciona igual; AVIAM Web y el portal no cambian.
@@ -64,6 +71,7 @@ Se evaluó poner un tope absoluto a la sesión de las cuentas de rampa, de 16 ho
 ## Consecuencias
 
 - Una tablet compartida que queda abierta sigue usable hasta que alguien cierra la sesión, OCC la revoca o pasan 30 días sin uso. El riesgo queda en [riesgos y controles pendientes](../../Vault/10-seguridad/riesgos-y-controles-pendientes.md).
+- Durante las 2 horas siguientes al fin de una sesión, quien tenga la tablet puede seguir marcando el checklist que esa cuenta dejó abierto. Esas respuestas solo quedan en la tablet: salen cuando esa cuenta vuelve a entrar, las ve en su checklist y lo envía.
 - `auth_time` no sirve para identificar una sesión: va en segundos enteros, y el token del inicio de sesión se firma unos milisegundos antes de que se cree la familia de refresh. Por eso el `auth_time` de los tokens renovados puede ser un segundo posterior al del primer token. Aun así, nunca supera el instante en que se abrió el vínculo de la tablet, que se registra después del inicio de sesión, así que no lo renueva.
 - Cada renovación hace una consulta más: el mínimo de `issued_at` de la familia, que usa el índice `(family_id, revoked_at)`.
 - El inicio de una familia sale de sus filas. Hoy solo se borra el token nuevo de una rotación que perdió la carrera, nunca el primero de la familia; una limpieza futura de `iam.refresh_tokens` tiene que conservar la primera fila de cada familia viva.

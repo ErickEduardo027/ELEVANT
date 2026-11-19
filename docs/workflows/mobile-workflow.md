@@ -51,8 +51,12 @@ entrega a OCC, la corrección y la observación de asistencia conservan su propi
 clave reservada fuera de esa cola. El inicio y los servicios llevan
 la hora del toque, corregida con el reloj de ELEVANT, y lo que ELEVANT no
 confirmó sobrevive a un `401`, un `403` o al cierre de sesión, ligado a su
-cuenta. Una API anterior rechaza con `400` la transición de servicio que lleva
-`occurredAt` y acepta el inicio con `startedAt`, pero ignora ese campo: el
+cuenta. Lo que el agente marca en el checklist después de que su sesión venció
+o fue rechazada también se guarda en la tablet para esa cuenta, durante 2 horas
+desde el fin (N5, D-N5), y vuelve cuando inicia sesión de nuevo; los comandos de
+la cola siguen exigiendo una sesión. Una API anterior rechaza con `400` la
+transición de servicio que lleva `occurredAt` y acepta el inicio con
+`startedAt`, pero ignora ese campo: el
 inicio queda con la hora en que llegó al servidor, no con la del toque. Por eso
 la API se despliega antes que la APK. El detalle está en
 el [estado de Mobile Agent](../../Vault/05-aplicaciones/mobile-agent.md).
