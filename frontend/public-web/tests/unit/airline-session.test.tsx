@@ -251,7 +251,8 @@ it("refreshes the server-scoped bootstrap after an authorized airline change hin
   }));
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("Demo Airlines");
-  expect(observe).toHaveBeenCalledOnce();
+  // The observer starts in a passive effect, which can run after the commit findByText sees.
+  await waitFor(() => expect(observe).toHaveBeenCalledOnce());
   currentName = "Airline Updated";
   observe.mock.calls[0][0].onChanges(["airline_operations"]);
   await screen.findByText("Airline Updated");
