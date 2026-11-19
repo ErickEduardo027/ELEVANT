@@ -5,7 +5,7 @@ import { ElevantApiError, type AirlineContractPageResponse, type AirlinePortalBo
 import { AIRLINE_SESSION_STORAGE_KEY, AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 import { AirlineTreasuryPanel } from "@/components/portal/AirlineTreasuryPanel";
-import { contractStatusLabel, standingNotice, terminationNote } from "@/lib/contract-status";
+import { contractStatusLabel, standingBadge, standingNotice, stationsInForce, terminationNote } from "@/lib/contract-status";
 import { permitProblem } from "@/lib/permit-problems";
 
 // Phase 2, block B: the portal standing (2-N32, 2-N35) and the permit submission (2-N09, 2-N30, 2-N37).
@@ -71,6 +71,42 @@ describe("contract labels and standing notices (2-N32, 2-N35)", () => {
     expect(standingNotice({ organizationId, status: "Active", readOnly: false, stations: [], contracts: [] })).toBeNull();
   });
 
+  it("calls a contract «en vigor» only when it covers a station today, and names every other standing (N14)", () => {
+    const draft = (pendingReason: string | null) => [{ id: contractId, code: "CTR-2026-0001", status: "Draft", pendingReason,
+      versionsAwaitingSignatures: [] }];
+    expect(standingBadge(null)).toBeNull();
+    expect(standingBadge({ organizationId, status: "Active", readOnly: false, stations: [{ ...station, current: true }],
+      contracts: [] })).toEqual({ label: "Contrato en vigor", tone: "ok" });
+    // An active contract whose version starts later covers no station today.
+    expect(standingBadge({ organizationId, status: "Active", readOnly: true, stations: [], contracts: [] }))
+      .toEqual({ label: "Contrato activo · sin estación en vigor", tone: "pending" });
+    expect(standingBadge({ organizationId, status: "Pending", readOnly: true, stations: [], contracts: draft("signatures") }))
+      .toEqual({ label: "Pendiente de firmas", tone: "pending" });
+    expect(standingBadge({ organizationId, status: "Pending", readOnly: true, stations: [], contracts: draft("operating_permit") }))
+      .toEqual({ label: "Pendiente de permiso de operación", tone: "pending" });
+    expect(standingBadge({ organizationId, status: "Pending", readOnly: true, stations: [], contracts: draft(null) }))
+      .toEqual({ label: "Pendiente de activación", tone: "pending" });
+    expect(standingBadge({ organizationId, status: "Suspended", readOnly: true, stations: [station], contracts: [] }))
+      .toEqual({ label: "Contrato suspendido", tone: "warning" });
+    expect(standingBadge({ organizationId, status: "Expired", readOnly: true, stations: [station], contracts: [] }))
+      .toEqual({ label: "Contrato vencido", tone: "none" });
+    expect(standingBadge({ organizationId, status: "Terminated", readOnly: true, stations: [station], contracts: [] }))
+      .toEqual({ label: "Contrato terminado", tone: "none" });
+    expect(standingBadge({ organizationId, status: "None", readOnly: true, stations: [], contracts: [] }))
+      .toEqual({ label: "Sin contrato con AVIAM", tone: "none" });
+  });
+
+  it("takes the stations in force from the standing once it is read, and from the bootstrap until then (N14)", () => {
+    const sdq = { id: "20000000-0000-7000-8000-000000000004", code: "SDQ", name: "Santo Domingo",
+      ianaTimeZone: "America/Santo_Domingo" };
+    expect(stationsInForce(null, [sdq]).map(item => item.code)).toEqual(["SDQ"]);
+    expect(stationsInForce({ organizationId, status: "Active", readOnly: false,
+      stations: [{ ...station, current: true }, { ...sdq, current: false }], contracts: [] }, [sdq]).map(item => item.code))
+      .toEqual(["PUJ"]);
+    expect(stationsInForce({ organizationId, status: "Suspended", readOnly: true, stations: [station], contracts: [] }, [sdq]))
+      .toEqual([]);
+  });
+
   it("tells a terminated contract from a scheduled termination, whose date is the first day without coverage (2-N14)", () => {
     expect(terminationNote("Active", null)).toBe("");
     expect(terminationNote("Terminated", "2026-11-01")).toBe(" · Terminado: 2026-11-01");
@@ -115,8 +151,26 @@ describe("contract labels and standing notices (2-N32, 2-N35)", () => {
     const notice = await screen.findByRole("status", { name: "Estado del contrato" });
     expect(notice).toHaveTextContent(/está suspendido/);
     expect(notice).toHaveTextContent(/facturas y pagos siguen disponibles/);
-    expect(screen.getByText(/0 estación\(es\) en vigor · 1 con historial/)).toBeInTheDocument();
+    expect(screen.getByText(/0 estaciones en vigor · 1 estación con historial/)).toBeInTheDocument();
     expect(screen.getByText(/ningún contrato está en vigor hoy/)).toBeInTheDocument();
+  });
+
+  it("never calls the home «autorizada» without a contract in force, and counts in plain Spanish (N14)", async () => {
+    mount(<AirlinePortalPage view="overview" />, { organizationId, status: "None", readOnly: true, stations: [], contracts: [] });
+    expect(await screen.findByText("Todavía no tiene un contrato aprobado con AVIAM.")).toBeInTheDocument();
+    const hero = screen.getByRole("heading", { level: 1, name: "Demo Airlines" }).closest("header")!;
+    expect(hero).toHaveTextContent("0 operaciones de hoy y los próximos 7 días · 0 estaciones en vigor · ZZ");
+    expect(document.body).not.toHaveTextContent(/autorizad/i);
+  });
+
+  it("counts the stations the standing has in force, even when the bootstrap was read before (N14)", async () => {
+    const sdq = { id: "20000000-0000-7000-8000-000000000004", code: "SDQ", name: "Santo Domingo",
+      ianaTimeZone: "America/Santo_Domingo", current: true };
+    // The bootstrap of this suite lists no station: the standing, read later, has two in force.
+    mount(<AirlinePortalPage view="overview" />, { organizationId, status: "Active", readOnly: false,
+      stations: [{ ...station, current: true }, sdq], contracts: [] });
+    const hero = (await screen.findByRole("heading", { level: 1, name: "Demo Airlines" })).closest("header")!;
+    await waitFor(() => expect(hero).toHaveTextContent("0 operaciones de hoy y los próximos 7 días · 2 estaciones en vigor · ZZ"));
   });
 
   it("offers a retry when the standing cannot be read", async () => {

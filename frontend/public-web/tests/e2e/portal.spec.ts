@@ -45,6 +45,29 @@ test("shows real tenant-scoped contract history without a demo card", async ({ p
   await expect(page.getByText("DEMO-CON-001")).toHaveCount(0);
 });
 
+// N14: an airline without a contract in force is told so by the badge and the top bar, never «autorizado»,
+// and the station value keeps the page title visible on phones, where its label is hidden.
+test("names an airline without a contract in force without horizontal overflow", async ({ page }) => {
+  await page.route("**/api/v1/airline/portal/standing", async (route) => {
+    if (route.request().method() === "OPTIONS") { await route.fallback(); return; }
+    await route.fulfill({ status: 200, headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+      body: JSON.stringify({ organizationId: "10000000-0000-7000-8000-000000000002", status: "None", readOnly: true,
+        stations: [], contracts: [] }) });
+  });
+  await page.reload();
+  await expect(page.getByText("Todavía no tiene un contrato aprobado con AVIAM.")).toBeVisible();
+  const topbar = page.getByRole("banner");
+  await expect(topbar.getByText("Sin estación en vigor")).toBeVisible();
+  const title = topbar.getByText("Inicio", { exact: true });
+  await expect(title).toBeVisible();
+  expect(await title.evaluate((element) => element.scrollWidth <= element.clientWidth), "título del portal sin recortar")
+    .toBe(true);
+  const sidebar = page.getByRole("complementary", { name: "Navegación principal" });
+  if (await sidebar.isVisible()) await expect(sidebar.getByText("Sin contrato con AVIAM")).toBeVisible();
+  expect(await page.locator("body").innerText()).not.toMatch(/autorizad/i);
+  await expectNoHorizontalOverflow(page, "/portal sin contrato en vigor");
+});
+
 test("portal has no horizontal overflow or serious accessibility blockers", async ({ page }) => {
   for (const path of ["/portal", "/portal/vuelos", "/portal/solicitudes", "/portal/contratos",
     "/portal/documentos", "/portal/finanzas", "/portal/reportes", "/portal/perfil"]) {

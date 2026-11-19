@@ -11,8 +11,16 @@ Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y
 El botón naranja **Solicitar acceso** abre `/solicitar-acceso` en cuatro pasos: servicios en páginas de seis, aerolínea predefinida con ficha de solo lectura, datos del representante y confirmación final con resumen editable. Nacionalidad, dirección, país/provincia/municipio y documento son opcionales; el par tipo/número de documento debe completarse junto cuando se usa. El catálogo y la solicitud usan la API real; una caída temporal al releer el catálogo conserva el formulario y muestra un reintento, mientras la API valida otra vez la visibilidad al enviarlo. Contratos revisa antes de que el superadministrador cree credenciales. El portal de contratos muestra propuestas en borrador y permite enviar observaciones; una tarifa no confirmada aparece **por definir**, aunque su valor inicial sea cero. Consulte [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md).
 
 `/login` y `/portal` usan la sesión real de la API de Development. La API
-determina la aerolínea y devuelve las estaciones y operaciones actuales
-autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. El
+determina la aerolínea y devuelve sus estaciones en vigor y las operaciones de
+hoy y los próximos 7 días; inicio, detalle y perfil muestran únicamente esa
+consulta y el estado de la aerolínea (`GET /api/v1/airline/portal/standing`).
+Inicio y la barra superior toman las estaciones en vigor de ese estado cuando
+ya se leyó, y del bootstrap mientras tanto; sin ninguna, la barra dice «Sin
+estación en vigor». La insignia de la barra lateral nombra el estado («Contrato
+en vigor», «Pendiente de firmas», «Contrato suspendido», «Sin contrato con
+AVIAM»…) solo cuando está cargado, así que el portal no se presenta como
+autorizado sin un contrato en vigor (`standingBadge` en
+`src/lib/contract-status.ts`). El
 layout activo solo monta `AirlineSessionProvider`; el proveedor de sesión mock
 permanece en componentes prototípicos no montados y no concede acceso al portal.
 La tarjeta del login describe la verificación pendiente sin mostrar rutas ni
@@ -114,7 +122,7 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/`: landing y acceso al flujo comercial real.
 - `/solicitar-acceso`: solicitud comercial en cuatro pasos; no crea usuario ni acepta contraseña.
 - `/login`: sesión real de aerolínea y cambio de contraseña temporal. El acceso heredado a `/login?mode=register` redirige a `/solicitar-acceso`; no existe un alta paralela con contraseña elegida por el solicitante.
-- `/portal`: alcance y operaciones actuales del bootstrap autorizado, sin rotaciones ficticias.
+- `/portal`: operaciones de hoy y los próximos 7 días del bootstrap y estaciones en vigor según el estado de la aerolínea, sin rotaciones ficticias.
 - `/portal/vuelos`: historial real paginado de operaciones propias; `/portal/vuelos/[operationId]` relee el detalle propio desde la API sin depender de la ventana del bootstrap.
 - `/portal/perfil`: identidad y estaciones de la sesión real, y «Usuarios del portal» (fase 2, bloque E): todos los usuarios de la aerolínea ven quién tiene acceso y quién firma; un representante (la cuenta aprovisionada o quien designe AVIAM) invita por correo, desactiva, reactiva y marca firmantes, nunca a sí mismo ni a otro representante. Cada comando lleva su `Idempotency-Key` y la versión en pantalla; la invitación y el aviso a los demás representantes solo quedan en cola. Solo los representantes y los firmantes firman contratos y envían permisos (`signer_required`); a los demás usuarios el portal se lo explica en lugar del formulario.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.

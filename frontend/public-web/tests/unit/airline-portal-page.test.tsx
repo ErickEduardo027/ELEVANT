@@ -269,14 +269,23 @@ it("shows only API operations on overview and flights, including an honest empty
   currentOperations = [];
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [] };
   const page = render(<AirlinePortalPage view="overview" />);
-  expect(screen.getByText(/0 operaciones reales/)).toBeInTheDocument();
-  expect(screen.getByText(/No hay operaciones en la ventana actual/)).toBeInTheDocument();
+  expect(screen.getByText(/0 operaciones de hoy y los próximos 7 días/)).toBeInTheDocument();
+  expect(screen.getByText("No hay operaciones de hoy ni de los próximos 7 días para esta aerolínea.")).toBeInTheDocument();
   expect(screen.queryByText("EV 311")).not.toBeInTheDocument();
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
   page.rerender(<AirlinePortalPage view="flights" />);
   expect(await screen.findByText(/No hay vuelos registrados para esta aerolínea/)).toBeInTheDocument();
   expect(screen.queryByText("EV 311")).not.toBeInTheDocument();
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
+});
+
+it("counts one operation and one station in the singular, without claiming anything while the standing loads (N14)", () => {
+  render(<AirlinePortalPage view="overview" />);
+  const hero = screen.getByRole("heading", { level: 1, name: "Demo Airlines" }).closest("header")!;
+  // The standing is still loading here: the stations in force are the bootstrap's.
+  expect(hero).toHaveTextContent("1 operación de hoy y los próximos 7 días · 1 estación en vigor · ZZ");
+  expect(hero).toHaveTextContent("Resumen de la aerolínea");
+  expect(hero).not.toHaveTextContent(/autorizad/i);
 });
 
 it("shows tenant-scoped operational requests without demo fixtures", async () => {
