@@ -504,7 +504,19 @@ function renewalDue(state: ActiveSessionState) {
   );
 }
 
-function pauseRenewals(issue: MobileServiceError): RenewalOutcome {
+/**
+ * Why a renewal could not finish, as the requests that wait on it fail during the pause (S3). A 409 or 404 of the
+ * session endpoint (a lost renewal answer, D-S3b) says nothing about the operation a screen shows: it fails as a request
+ * to try again, never as `conflict` or `not_found`.
+ */
+function renewalFailure(issue: MobileServiceError) {
+  return issue.code === 'conflict' || issue.code === 'not_found'
+    ? new MobileServiceError('request_failed', { traceId: issue.traceId, retryable: true })
+    : issue;
+}
+
+function pauseRenewals(failure: MobileServiceError): RenewalOutcome {
+  const issue = renewalFailure(failure);
   renewalPause = { until: Date.now() + MOBILE_SESSION_RENEWAL_BACKOFF_MS, issue };
   return { kind: 'kept', issue };
 }

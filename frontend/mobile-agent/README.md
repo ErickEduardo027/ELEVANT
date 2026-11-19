@@ -155,7 +155,9 @@ el reloj de ELEVANT (3-N18), así que un reloj adelantado no impide entrar y un
 desfase viejo solo adelanta la renovación. No hay tope de horas: la sesión
 termina al cerrar sesión, con la revocación de OCC o tras 30 días sin uso. Si se
 pierde la respuesta de una renovación (D-S3b), la tablet sigue con su access
-token; pasado el minuto de margen ELEVANT trata el refresh token viejo como
+token; si ya venció, lo que no puede leer ni enviar falla como una solicitud
+que se puede reintentar (`request_failed`), nunca como un cambio de la
+operación. Pasado el minuto de margen ELEVANT trata el refresh token viejo como
 reuso, revoca la familia y el agente vuelve a entrar sin perder lo registrado.
 
 El bearer token y el refresh token se guardan exclusivamente con

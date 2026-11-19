@@ -60,6 +60,7 @@ const {
 } = require('../src/services/mobile-auth');
 const { forgetConfirmedMobileDevice } = require('../src/services/mobile-device');
 const { getOwnCoverage } = require('../src/services/ramp-coverage');
+const { getRampOperationChecklist } = require('../src/services/ramp-operation-checklist');
 const { flushFlightReport, recordMilestone, resetFlightReportForTests } = require('../src/services/flight-report');
 const { readStoredMobileSession, replaceStoredMobileCredentialIfCurrent } = require('../src/storage/mobile-session');
 const { loadServerClock, observeServerDate, resetServerClockForTests } =
@@ -175,6 +176,10 @@ const mockElevant = {
       },
       recordRampMilestone: async () => {
         await authorized('recordRampMilestone');
+        throw new ElevantApiError({ status: 503 });
+      },
+      getRampOperationChecklist: async () => {
+        await authorized('getRampOperationChecklist');
         throw new ElevantApiError({ status: 503 });
       },
       refreshSession: async refreshToken => {
@@ -420,6 +425,31 @@ test('a lost renewal answer (D-S3b) keeps the session until ELEVANT sees the old
   expect(mockAsyncData.get(OUTBOX_KEY)).toBe(queued);
   await expect(signIn()).resolves.toEqual(expect.any(String));
   await expect(getOwnCoverage()).resolves.toEqual({ coverages: [] });
+});
+
+test('a lost renewal answer with the access token already expired never reaches the screens as an operation that changed', async () => {
+  await signIn();
+  // The app comes back after 16 minutes: the renewal goes out, ELEVANT rotates the token and the answer is lost.
+  advance(16 * MINUTE);
+  mockElevant.loseNextRefreshAnswer = true;
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'network_unavailable' });
+  expect(mockElevant.count('refreshSession')).toBe(1);
+
+  // Within ELEVANT's 60-second margin the old refresh token answers 409 with nothing new to store: the session stays,
+  // and what its expired token cannot read fails as a request to try again, not as a change of the operation.
+  advance(35_000);
+  for (const read of [() => getOwnCoverage(), () => getRampOperationChecklist(OPERATION)]) {
+    const failure = await read().then(() => null, error => error);
+    expect(failure).toMatchObject({ code: 'request_failed', retryable: true });
+    expect(failure.problemCode).toBeUndefined();
+  }
+  expect(mockElevant.count('refreshSession')).toBe(2);
+  await expect(getMobileSession()).resolves.not.toBeNull();
+
+  // After the margin it counts as reuse: ELEVANT revokes the family and the session ends.
+  advance(35_000);
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'session_expired', status: 401 });
+  expect(mockElevant.families[0].revoked).toBe(true);
 });
 
 test('a token without auth_time (an API older than ADR-0046) is never renewed', async () => {
