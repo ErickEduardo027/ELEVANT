@@ -289,7 +289,7 @@ public sealed partial class SqlServerMigrationTests
         await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
         await using var provider = await SeededFinanceProviderAsync(database, ct);
         var tablet = Guid.Parse("81000000-0000-7000-8000-0000000000e5");
-        // A session begins when its token is issued: a JWT iat, in whole seconds.
+        // A session begins at its sign-in: the auth_time of its tokens (ADR-0046), in whole seconds.
         static DateTimeOffset IssuedAfter(DateTimeOffset instant) =>
             DateTimeOffset.FromUnixTimeSeconds(instant.ToUnixTimeSeconds() + 1);
 
@@ -375,6 +375,108 @@ public sealed partial class SqlServerMigrationTests
         await RegisterAsync(IssuedAfter(third.LastSeenAt));
         Assert.True((await ReleaseAsync(Guid.NewGuid(), null)).IsSuccess);
         Assert.Empty(await OpenBindingsAsync());
+    }
+
+    /// <summary>
+    /// ADR-0046: the tablet renews its agent's session for hours. Every renewed token names the sign-in its refresh
+    /// family began with (<c>auth_time</c>), so registering with it keeps the binding of that sign-in: nothing is
+    /// renewed or audited, OCC hears nothing and keeps the same binding token. Signing in again still opens a new
+    /// binding.
+    /// </summary>
+    [Fact]
+    public async Task ARenewedTokenKeepsTheTabletBinding()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        var clock = new MovableTimeProvider(
+            DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        await using var provider = await SeededFinanceProviderAsync(database, ct, clock);
+        var tablet = Guid.Parse("81000000-0000-7000-8000-0000000000e6");
+        // A token carries whole seconds: its auth_time is the start of the refresh family, the sign-in.
+        static DateTimeOffset AuthTime(DateTimeOffset familyStart) =>
+            DateTimeOffset.FromUnixTimeSeconds(familyStart.ToUnixTimeSeconds());
+
+        async Task<IssuedRefreshToken> SignInAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return (await scope.ServiceProvider.GetRequiredService<IRefreshTokenStore>()
+                .IssueAsync(SeededRampAgentAccount, ct))!;
+        }
+        async Task<RefreshTokenRotation> RenewAsync(string token)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IRefreshTokenStore>().RotateAsync(token, ct);
+        }
+        async Task RegisterAsync(DateTimeOffset sessionStartedAt)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var registered = await scope.ServiceProvider.GetRequiredService<IMobileDeviceCommandStore>().RegisterAsync(
+                new MobileDeviceRegistrationWriteRequest(SeededRampAgentAccount, tablet, MobilePlatform.Android, "1.2.3",
+                    "Tablet T-12", "Android 16", sessionStartedAt), ct);
+            Assert.True(registered.IsSuccess, registered.Code);
+        }
+        async Task<OccMobileDeviceData> OccDeviceAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var listed = await scope.ServiceProvider.GetRequiredService<IMobileDeviceAdministrationStore>()
+                .ListAsync(OperationsAdministrator, PujStation, ct);
+            Assert.Null(listed.Failure);
+            return Assert.Single(listed.Value!.Devices, item => item.DeviceName == "Tablet T-12");
+        }
+        // Bindings of the tablet, renewals audited and the announcements OCC's tablet screen receives.
+        async Task<(int Bindings, int Renewed, int Announced)> TraceAsync(Guid device)
+        {
+            await using var check = CreateContext(database.ConnectionString);
+            var bindings = await (from item in check.MobileDevices.AsNoTracking()
+                                  join binding in check.Set<MobileDeviceAccountBinding>().AsNoTracking()
+                                      on item.Id equals binding.MobileDeviceId
+                                  where item.InstallationId == tablet
+                                  select binding.Id).CountAsync(ct);
+            var renewed = await check.AuditEntries.CountAsync(item => item.EntityPublicId == device &&
+                item.Action == "mobile_device.binding_renewed", ct);
+            var announced = (await check.OutboxMessages.AsNoTracking().Where(item => item.EventType == "account.changed.v1")
+                    .ToArrayAsync(ct)).Select(Elevant.Persistence.Realtime.AccountChangeOutboxWriter.Decode)
+                .Count(item => item.Resource == "mobile_devices" && item.ResourceId == device);
+            return (bindings, renewed, announced);
+        }
+
+        // Riley signs in on the tablet, which registers for that session.
+        var signedIn = clock.Now;
+        var refresh = await SignInAsync();
+        await RegisterAsync(AuthTime(signedIn));
+        var bound = await OccDeviceAsync();
+        Assert.Equal("Bound", bound.Status);
+        var before = await TraceAsync(bound.Id);
+        Assert.Equal((1, 0), (before.Bindings, before.Renewed));
+        Assert.True(before.Announced > 0);
+
+        // Riley works for hours: the tablet renews the token before it expires and registers with every new one.
+        foreach (var renewal in Enumerable.Range(1, 3))
+        {
+            clock.Now += TimeSpan.FromMinutes(14);
+            var renewed = await RenewAsync(refresh.Value);
+            Assert.True(renewed.IsSuccess);
+            Assert.Equal(signedIn, renewed.SessionStartedAt);
+            await RegisterAsync(AuthTime(renewed.SessionStartedAt!.Value));
+            refresh = renewed.Token!;
+        }
+        var kept = await OccDeviceAsync();
+        Assert.Equal(("Bound", bound.BoundAt, bound.Version), (kept.Status, kept.BoundAt, kept.Version));
+        Assert.True(kept.LastSeenAt > bound.LastSeenAt);
+        Assert.Equal(before, await TraceAsync(bound.Id));
+
+        // A new sign-in is another session: its first registration opens its own binding, as before (2-N02).
+        clock.Now += TimeSpan.FromMinutes(5);
+        var signedInAgain = clock.Now;
+        await SignInAsync();
+        await RegisterAsync(AuthTime(signedInAgain));
+        var reopened = await OccDeviceAsync();
+        Assert.NotEqual(bound.Version, reopened.Version);
+        var after = await TraceAsync(bound.Id);
+        Assert.Equal((2, 1), (after.Bindings, after.Renewed));
+        Assert.True(after.Announced > before.Announced);
     }
 
     [Fact]

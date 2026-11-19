@@ -112,6 +112,17 @@ la fase 2 del ciclo (`50e7778f`;
   libera al cerrar la sesión. OCC la desvincula o la revoca; una tablet
   revocada no vuelve a registrarse y su cuenta pierde sus sesiones, porque la
   revocación rota su sello de seguridad.
+- **Sesión de la tablet.** Posterior a la fase 2
+  ([ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)):
+  cada sesión del agente tiene su propio vínculo y empieza al iniciar sesión.
+  El access token lleva ese instante como `auth_time` y la renovación lo
+  conserva, así que registrar la tablet con un token renovado no abre otro
+  vínculo, no audita nada y no avisa a OCC; un inicio de sesión nuevo sí abre
+  otro. Un token sin `auth_time`, emitido antes de ese cambio, usa su `iat`.
+  Por decisión de Erick del 2026-11-19, la sesión de una cuenta de rampa no
+  tiene tope absoluto: termina al cerrar sesión, con la revocación de OCC, a
+  los 30 días sin uso, si se reutiliza un refresh token ya reemplazado o si la
+  cuenta cambia de contraseña, se desactiva o se da de baja.
 
 ## Fase 3: la operación sigue a su agente
 

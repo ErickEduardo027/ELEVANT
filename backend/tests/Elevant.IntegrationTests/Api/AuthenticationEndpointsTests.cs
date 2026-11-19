@@ -375,13 +375,78 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(HttpStatusCode.Unauthorized, afterLogout.StatusCode);
     }
 
-    /// <summary>Rotation semantics without SQL; the SQL store has its own integration test.</summary>
-    private sealed class InMemoryRefreshTokens : IRefreshTokenStore
+    /// <summary>
+    /// ADR-0046: a renewed access token keeps when its session began (<c>auth_time</c>, the sign-in) while its
+    /// <c>iat</c> moves on; a new sign-in starts another session.
+    /// </summary>
+    [Fact]
+    public async Task RefreshKeepsWhenTheSessionBegan()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var clock = new MovableClock(DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+        var signedIn = clock.Now;
+        await using var application = CreateApplication(new AuthenticationState(), clock);
+        using var client = application.CreateClient();
+        using var login = await client.PostAsJsonAsync("/api/v1/auth/session", new CreateSessionRequest(Email, Password), ct);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var session = (await login.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: ct))!;
+        Assert.Equal(signedIn.ToUnixTimeSeconds(), NumericDate(session.AccessToken, JwtRegisteredClaimNames.AuthTime));
+        Assert.Equal(signedIn.ToUnixTimeSeconds(), NumericDate(session.AccessToken, JwtRegisteredClaimNames.Iat));
+
+        // The agent keeps working: every renewal is issued later and still names the sign-in.
+        var refreshToken = session.RefreshToken!;
+        foreach (var later in new[] { TimeSpan.FromMinutes(16), TimeSpan.FromHours(9) })
+        {
+            clock.Now = signedIn + later;
+            using var refreshed = await client.PostAsJsonAsync("/api/v1/auth/session/refresh",
+                new RefreshSessionRequest(refreshToken), ct);
+            Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
+            var renewed = (await refreshed.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: ct))!;
+            Assert.Equal(signedIn.ToUnixTimeSeconds(), NumericDate(renewed.AccessToken, JwtRegisteredClaimNames.AuthTime));
+            Assert.Equal((signedIn + later).ToUnixTimeSeconds(),
+                NumericDate(renewed.AccessToken, JwtRegisteredClaimNames.Iat));
+            refreshToken = renewed.RefreshToken!;
+        }
+
+        // Signing in again starts another session.
+        using var again = await client.PostAsJsonAsync("/api/v1/auth/session", new CreateSessionRequest(Email, Password), ct);
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        var next = (await again.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: ct))!;
+        Assert.Equal(clock.Now.ToUnixTimeSeconds(), NumericDate(next.AccessToken, JwtRegisteredClaimNames.AuthTime));
+    }
+
+    /// <summary>A JWT NumericDate claim (Unix seconds), read as the JSON number the token carries.</summary>
+    private static long NumericDate(string token, string claim)
+    {
+        using var payload = JsonDocument.Parse(Base64UrlEncoder.Decode(new JsonWebToken(token).EncodedPayload));
+        Assert.True(payload.RootElement.TryGetProperty(claim, out var value), $"The token has no {claim}.");
+        Assert.Equal(JsonValueKind.Number, value.ValueKind);
+        return value.GetInt64();
+    }
+
+    /// <summary>The API's clock, moved by hand; its timers stay the system's.</summary>
+    private sealed class MovableClock(DateTimeOffset start) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = start;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    /// <summary>
+    /// Rotation semantics without SQL; the SQL store has its own integration test. A rotation reports when its family
+    /// began (the sign-in, ADR-0046).
+    /// </summary>
+    private sealed class InMemoryRefreshTokens(TimeProvider clock) : IRefreshTokenStore
     {
         private readonly Dictionary<string, (Guid Account, Guid Family, bool Rotated, bool Revoked)> tokens = [];
+        private readonly Dictionary<Guid, DateTimeOffset> families = [];
 
-        public Task<IssuedRefreshToken?> IssueAsync(Guid accountId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IssuedRefreshToken?>(Add(accountId, Guid.NewGuid()));
+        public Task<IssuedRefreshToken?> IssueAsync(Guid accountId, CancellationToken cancellationToken = default)
+        {
+            var family = Guid.NewGuid();
+            lock (tokens) families[family] = clock.GetUtcNow();
+            return Task.FromResult<IssuedRefreshToken?>(Add(accountId, family));
+        }
 
         public Task<RefreshTokenRotation> RotateAsync(string token, CancellationToken cancellationToken = default)
         {
@@ -392,7 +457,8 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
                 if (entry.Rotated)
                     return Task.FromResult(new RefreshTokenRotation(null, null, RefreshTokenFailure.AlreadyRotated));
                 tokens[token] = entry with { Rotated = true };
-                return Task.FromResult(new RefreshTokenRotation(entry.Account, Add(entry.Account, entry.Family), null));
+                return Task.FromResult(new RefreshTokenRotation(entry.Account, Add(entry.Account, entry.Family), null,
+                    families[entry.Family]));
             }
         }
 
@@ -413,7 +479,7 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
         }
     }
 
-    private WebApplicationFactory<Program> CreateApplication(AuthenticationState state) =>
+    private WebApplicationFactory<Program> CreateApplication(AuthenticationState state, TimeProvider? clock = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ICredentialVerifier>();
@@ -421,8 +487,13 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
             services.RemoveAll<ISessionSecurityVersionStore>();
             services.RemoveAll<IPasswordChangeStore>();
             services.RemoveAll<IRefreshTokenStore>();
+            if (clock is not null)
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton(clock);
+            }
             services.AddSingleton(state);
-            services.AddSingleton<IRefreshTokenStore>(new InMemoryRefreshTokens());
+            services.AddSingleton<IRefreshTokenStore>(new InMemoryRefreshTokens(clock ?? TimeProvider.System));
             services.AddScoped<ICredentialVerifier>(_ => new StubCredentialVerifier(state));
             services.AddScoped<IActorContextResolver>(_ => new StubActorContextResolver(state));
             services.AddScoped<ISessionSecurityVersionStore>(_ => new StubSecurityVersionStore(state));

@@ -13,7 +13,8 @@ namespace Elevant.Persistence.Identity;
 /// Rotating refresh tokens (ADR-0021). A token lives while it is used at least every
 /// <see cref="IdleLifetime"/>; each use replaces it. Presenting a replaced token again revokes the
 /// whole family, except within <see cref="RotationGrace"/>, when two tabs of the same browser
-/// refreshed at once and the slower one should just re-read the newer token.
+/// refreshed at once and the slower one should just re-read the newer token. A rotation reports
+/// when its family began, the sign-in every renewal keeps (ADR-0046); no session has an absolute cap.
 /// </summary>
 internal sealed class EfRefreshTokenStore(ElevantDbContext context, TimeProvider timeProvider) : IRefreshTokenStore
 {
@@ -81,7 +82,13 @@ internal sealed class EfRefreshTokenStore(ElevantDbContext context, TimeProvider
             await context.Set<RefreshToken>().Where(item => item.Id == next.Id).ExecuteDeleteAsync(cancellationToken);
             return Failed(RefreshTokenFailure.AlreadyRotated);
         }
-        return new RefreshTokenRotation(account.PublicId, new IssuedRefreshToken(value, now + IdleLifetime), null);
+        // The session began with the first token of its family, the sign-in: every renewal keeps that start
+        // (auth_time, ADR-0046). Rows of a family are never deleted, so its first one is still there.
+        var startedAt = await context.Set<RefreshToken>().AsNoTracking()
+            .Where(item => item.FamilyId == current.FamilyId)
+            .MinAsync(item => (DateTimeOffset?)item.IssuedAt, cancellationToken) ?? current.IssuedAt;
+        return new RefreshTokenRotation(account.PublicId, new IssuedRefreshToken(value, now + IdleLifetime), null,
+            startedAt);
     }
 
     public async Task RevokeFamilyAsync(string token, CancellationToken cancellationToken = default)

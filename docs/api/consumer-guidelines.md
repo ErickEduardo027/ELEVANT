@@ -27,8 +27,13 @@ scopes no viajan como autoridad en el token.
 
 `GET /api/v1/auth/session` exige ese Bearer y vuelve a resolver en SQL la cuenta,
 roles, membresías activas y estaciones vigentes. El cliente debe reemplazar su
-contexto local con esa respuesta y no inferir permisos desde el JWT. Aún no hay
-refresh, logout, revocación por `jti` ni contrato de tenant completo. El corte
+contexto local con esa respuesta y no inferir permisos desde el JWT.
+`POST /api/v1/auth/session/refresh` renueva la sesión con un refresh token
+rotativo y `POST /api/v1/auth/session/logout` revoca su familia
+([ADR-0021](../adr/0021-rotating-refresh-tokens.md)). El JWT lleva `auth_time`,
+el inicio de la sesión, que la renovación conserva
+([ADR-0046](../adr/0046-renewable-sessions-on-shared-tablets.md)). Aún no hay
+revocación por `jti` ni contrato de tenant completo. El corte
 OCC sí aplica autorización fina en sus dos lecturas y en el comando de
 asignación.
 

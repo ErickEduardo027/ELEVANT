@@ -5,7 +5,8 @@ namespace Elevant.UnitTests.Application;
 
 /// <summary>
 /// 2-N02: each session of the agent holds its own binding, and a release names a registration of the session that
-/// sends it, so a late one never frees the tablet after its agent signed in on it again.
+/// sends it, so a late one never frees the tablet after its agent signed in on it again. A session begins at its
+/// sign-in, which a renewed token keeps (ADR-0046).
 /// </summary>
 public sealed class MobileDeviceReleaseVersionTests
 {
@@ -40,14 +41,22 @@ public sealed class MobileDeviceReleaseVersionTests
     }
 
     [Fact]
-    public void ASessionBeginsWhenItsTokenIsIssuedAndRenewsOnlyABindingOfAnEarlierOne()
+    public void ASessionBeginsAtItsSignInAndRenewsOnlyABindingOfAnEarlierOne()
     {
         var issued = new DateTimeOffset(2026, 11, 7, 10, 30, 0, TimeSpan.Zero);
-        Assert.Equal(issued,
-            MobileDeviceSession.StartedAt(issued.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
-        Assert.Equal(TimeSpan.Zero, MobileDeviceSession.StartedAt("1762511400")!.Value.Offset);
+        static string Seconds(DateTimeOffset instant) =>
+            instant.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        // A token names its sign-in (auth_time), which every renewal keeps (ADR-0046)...
+        Assert.Equal(issued, MobileDeviceSession.StartedAt(Seconds(issued), Seconds(issued.AddHours(9))));
+        // ...and a token issued without it began its session when it was issued (iat).
+        Assert.Equal(issued, MobileDeviceSession.StartedAt(null, Seconds(issued)));
+        Assert.Equal(TimeSpan.Zero, MobileDeviceSession.StartedAt("1762511400", null)!.Value.Offset);
         foreach (var invalid in new[] { null, "", "ayer", "-5", "0", "1.5", " 1762511400", "999999999999999" })
-            Assert.Null(MobileDeviceSession.StartedAt(invalid));
+        {
+            Assert.Null(MobileDeviceSession.StartedAt(invalid, invalid));
+            // An unreadable auth_time counts as a missing one.
+            Assert.Equal(issued, MobileDeviceSession.StartedAt(invalid, Seconds(issued)));
+        }
 
         // A binding of an earlier session began before this one; the session's own began at or after its start.
         Assert.True(MobileDeviceSession.HeldByEarlierSession(issued.AddMilliseconds(-1), issued));
