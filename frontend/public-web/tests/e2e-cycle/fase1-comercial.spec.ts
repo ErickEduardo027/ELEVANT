@@ -143,20 +143,20 @@ test("Contratos verifica la aerolínea y al representante y aprueba la solicitud
   await review.getByLabel("ICAO (3 letras)").fill(airline.icao);
   await review.getByLabel("Fuente HTTPS").fill("https://example.com/e2e-airways/aoc");
   await review.getByRole("button", { name: "Guardar verificación" }).click();
-  await expect(page.getByRole("status")).toContainText("Aerolínea verificada");
+  await expect(page.getByRole("status").filter({ hasText: "Aerolínea verificada" })).toBeVisible();
   // 1-A: the first verification moves the request to «En revisión».
   await expect(review.getByText(/^En revisión ·/)).toBeVisible();
   // 1-N18: approval needs the recorded confirmation of the representative.
   await expect(review.getByRole("button", { name: "Aprobar y crear borrador" })).toBeDisabled();
   await review.getByLabel("Cómo se confirmó").fill("Llamada a la central de la aerolínea: la gerencia comercial confirmó a la representante.");
   await review.getByRole("button", { name: "Registrar confirmación" }).click();
-  await expect(page.getByRole("status")).toContainText("Confirmación del representante registrada");
+  await expect(page.getByRole("status").filter({ hasText: "Confirmación del representante registrada" })).toBeVisible();
   // The record names who confirmed and when; the checklist below repeats «Representante confirmado por Contratos».
   await expect(review.getByText(/Representante confirmado por .+ el \d/)).toBeVisible();
   await review.getByLabel(/PUJ/).check();
   const since = Date.now();
   await review.getByRole("button", { name: "Aprobar y crear borrador" }).click();
-  await expect(page.getByRole("status")).toContainText("Solicitud aprobada");
+  await expect(page.getByRole("status").filter({ hasText: "Solicitud aprobada" })).toBeVisible();
   await snap(page, "fase1-contratos-solicitud-aprobada");
   // 1-N02: the applicant is told about the decision.
   const decision = await waitForEmail(representative.email, /aprobada/i, since);
@@ -187,7 +187,7 @@ test("Contratos cancela con motivo una segunda solicitud de la aerolínea ya afi
   await expect(review.getByRole("note").filter({ hasText: "No admite una segunda afiliación" })).toBeVisible();
   await review.getByLabel("Cómo se confirmó").fill("Llamada a la central: la aerolínea ya tramita su contrato con AVIAM.");
   await review.getByRole("button", { name: "Registrar confirmación" }).click();
-  await expect(page.getByRole("status")).toContainText("Confirmación del representante registrada");
+  await expect(page.getByRole("status").filter({ hasText: "Confirmación del representante registrada" })).toBeVisible();
   await expect(review.getByText(/^En revisión ·/)).toBeVisible();
   await review.getByLabel(/PUJ/).check();
   await expect(review.getByRole("button", { name: "Aprobar y crear borrador" })).toBeDisabled();
@@ -195,7 +195,7 @@ test("Contratos cancela con motivo una segunda solicitud de la aerolínea ya afi
   await review.getByLabel("Motivo de cancelación").fill("Solicitud duplicada: la aerolínea ya tiene un contrato en curso.");
   const since = Date.now();
   await review.getByRole("button", { name: "Cancelar solicitud" }).click();
-  await expect(page.getByRole("status")).toContainText("Solicitud cancelada");
+  await expect(page.getByRole("status").filter({ hasText: "Solicitud cancelada" })).toBeVisible();
   await snap(page, "fase1-contratos-solicitud-cancelada");
   const notice = await waitForEmail(email, /cancelada/i, since);
   expect(notice.text).toContain("Solicitud duplicada");
@@ -248,7 +248,7 @@ test("Una aerolínea que no aparece en el listado se propone y Contratos la ve c
   await expect(review.getByText("Sin IATA")).toBeVisible();
   await review.getByLabel("Motivo de cancelación").fill("Corrida E2E: la propuesta se cierra sin publicar la ficha.");
   await review.getByRole("button", { name: "Cancelar solicitud" }).click();
-  await expect(page.getByRole("status")).toContainText("Solicitud cancelada");
+  await expect(page.getByRole("status").filter({ hasText: "Solicitud cancelada" })).toBeVisible();
 });
 
 test("Superadmin crea la cuenta del portal y envía la invitación", async ({ page }) => {

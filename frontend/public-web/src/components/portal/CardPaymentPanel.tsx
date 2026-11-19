@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { CardPaymentAttemptResponse, CardPaymentAvailabilityResponse, CardPaymentListResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { BILLING_PROBLEMS, cardPaymentProblem } from "@/lib/billing-problems";
+import { CARD_EXPIRY_ERRORS, CARD_EXPIRY_HINT, formatCardExpiry, parseCardExpiry } from "@/lib/card-expiry";
 import styles from "./AirlinePortalPage.module.css";
 import { useLiveSnapshot } from "./useLiveSnapshot";
 
@@ -12,7 +13,7 @@ const DECLINES: Record<string, string> = {
   insufficient_funds: "Tarjeta rechazada: fondos insuficientes.",
   expired_card: "Tarjeta rechazada: el banco la reporta vencida.",
   card_not_accepted: "Tarjeta rechazada: no fue aceptada.",
-  processing_error: "Error del procesador de pagos. Puedes reintentar.",
+  processing_error: "Error del procesador de pagos. Puede reintentar.",
 };
 /** 4-N05: the gateway of the simulation is labelled as such next to the card form. */
 export const CARD_SIMULATION_LABEL = "Simulación — sin validez fiscal";
@@ -39,7 +40,7 @@ function ReceiptButton({ attempt }: { attempt: Pick<CardPaymentAttemptResponse, 
       void getCardPaymentReceipt(attempt.id).then(blob => save(blob, `recibo-${attempt.authorizationCode}.pdf`))
         .then(() => setState("idle"), () => setState("error"));
     }}>{state === "loading" ? "Preparando recibo…" : "Descargar recibo"}</button>
-    {state === "error" && <p role="alert">No se pudo descargar el recibo. Inténtalo de nuevo.</p>}
+    {state === "error" && <p role="alert">No se pudo descargar el recibo. Inténtelo de nuevo.</p>}
   </>;
 }
 
@@ -61,6 +62,9 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
   const [holder, setHolder] = useState("");
   const [number, setNumber] = useState("");
   const [expiry, setExpiry] = useState("");
+  const [expiryError, setExpiryError] = useState<string | null>(null);
+  const expiryField = useRef<HTMLInputElement>(null);
+  const expiryId = useId();
   const [cvv, setCvv] = useState("");
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -81,9 +85,14 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
   }, [availabilityRetry, getCardPaymentAvailability]);
 
   const submit = useCallback(async () => {
-    const match = /^(\d{2})\s*\/\s*(\d{2}|\d{4})$/.exec(expiry.trim());
-    if (!match) { setOutcome({ kind: "rejected", text: "Escribe el vencimiento como MM/AA." }); return; }
-    const year = match[2].length === 2 ? 2000 + Number(match[2]) : Number(match[2]);
+    // S4: an expiry the API would refuse is not sent; the last answer of the server goes and the field says why.
+    const card = parseCardExpiry(expiry);
+    if (!card.ok) {
+      setOutcome(null);
+      setExpiryError(CARD_EXPIRY_ERRORS[card.reason]);
+      expiryField.current?.focus();
+      return;
+    }
     // An uncertain result is retried with the same key and body; any answered attempt gets a new key.
     const key = pending.current?.key ?? crypto.randomUUID();
     pending.current = { key };
@@ -91,7 +100,7 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
     setOutcome(null);
     try {
       const result = await payInvoiceByCard(invoiceId, { cardholderName: holder, cardNumber: number,
-        expiryMonth: Number(match[1]), expiryYear: year, securityCode: cvv, amount: balance }, key);
+        expiryMonth: card.month, expiryYear: card.year, securityCode: cvv, amount: balance }, key);
       pending.current = null;
       const attempt = result.attempt;
       if (attempt.status === "Approved") {
@@ -145,8 +154,17 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
         onChange={event => setHolder(event.target.value)} /></label>
       <label>Número de tarjeta<input required inputMode="numeric" autoComplete="cc-number" maxLength={23} value={number}
         onChange={event => { setNumber(event.target.value.replace(/[^\d ]/g, "")); pending.current = null; }} /></label>
-      <label>Vencimiento (MM/AA)<input required autoComplete="cc-exp" placeholder="MM/AA" maxLength={7} value={expiry}
-        onChange={event => { setExpiry(event.target.value); pending.current = null; }} /></label>
+      {/* S4: the input sits outside its label, so the browser's own message (formValidation.ts) never joins its name. */}
+      <div className={styles.cardField}>
+        <label htmlFor={expiryId}>Vencimiento (MM/AA)</label>
+        <input id={expiryId} ref={expiryField} required inputMode="numeric" autoComplete="cc-exp" placeholder="MM/AA"
+          maxLength={10} value={expiry} aria-invalid={expiryError ? true : undefined} aria-describedby={`${expiryId}-hint`}
+          onChange={event => { setExpiry(formatCardExpiry(event.target.value, expiry)); setExpiryError(null);
+            pending.current = null; }} />
+        {/* Always mounted and live: Enter inside the field submits without moving the focus, and the error is still heard. */}
+        <p id={`${expiryId}-hint`} className={expiryError ? styles.fieldError : styles.fieldHint} aria-live="polite">
+          {expiryError ?? CARD_EXPIRY_HINT}</p>
+      </div>
       <label>Código de seguridad<input required type="password" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={cvv}
         onChange={event => { setCvv(event.target.value.replace(/\D/g, "")); pending.current = null; }} /></label>
       <button type="submit" className={styles.loadMore} disabled={busy}>{busy ? "Procesando pago…" : `Pagar ${money(balance, currencyCode)}`}</button>

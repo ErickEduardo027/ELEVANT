@@ -25,6 +25,16 @@ export function isCountryCode(code: string): boolean {
   return countryCodeSet.has(code);
 }
 
+/**
+ * The Spanish name of a country code as a profile stores it («US», «us», « do »). Any other value is shown as it
+ * came: Intl.DisplayNames throws a RangeError for «USA» or an empty code. Null when there is nothing to show.
+ */
+export function countryLabel(code: string | null | undefined): string | null {
+  const value = code?.trim() ?? "";
+  if (!value) return null;
+  return isCountryCode(value.toUpperCase()) ? countryName(value.toUpperCase()) : value;
+}
+
 const divisionsCache = new Map<string, Promise<readonly GeoDivision[]>>();
 
 /**

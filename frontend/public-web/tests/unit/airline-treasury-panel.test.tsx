@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { SessionResponse, AirlinePortalBootstrapResponse } from "@elevant/api-client";
 import { AirlineSessionProvider, AIRLINE_SESSION_STORAGE_KEY } from "@/components/auth/AirlineSessionProvider";
 import { AirlineTreasuryPanel } from "@/components/portal/AirlineTreasuryPanel";
+import { portalDeclarations } from "./support/portal-styles";
 // The live notices of the session reach the panel through this observer.
 const observer = vi.hoisted(() => ({ onChanges: null as null | ((resources: string[]) => void) }));
 vi.mock("@/lib/airline-change-observer", () => ({ createPublicAirlineChangeObserver: (options: { onChanges: (resources: string[]) => void }) => {
@@ -51,6 +52,13 @@ it("shows tenant-only cutoff statements and separates currencies without mutatio
   await waitFor(() => expect(requests).toContain("/api/v1/airline/portal/treasury/statements?asOf=2026-10-01"));
   expect(requests.some(path => path.includes("organizationId") || path.includes("airlineId="))).toBe(false);
   expect(screen.queryByRole("button", { name: /Aplicar|Devolver|Emitir nota|Registrar cobro/ })).not.toBeInTheDocument();
+});
+// N18: the station list of the statement looks like the cut-off date beside it, not like a bare browser list.
+it("gives the station list the look of the cut-off date (N18)", async () => {
+  mount();
+  const station = await screen.findByLabelText("Estación");
+  expect(portalDeclarations(station)).toContain("border: 1px solid #b6c9e1");
+  expect(portalDeclarations(station)).toEqual(portalDeclarations(screen.getByLabelText("Fecha de corte")));
 });
 it("cuts the statement on the business day of Santo Domingo, not the UTC day (4-N10)", async () => {
   // 23:30 in Santo Domingo on 5/11 is already 6/11 in UTC.
@@ -118,4 +126,23 @@ it("offers each adjustment note's PDF in the invoice view (4-N17)", async () => 
   mount("invoice-own");
   expect(await screen.findByRole("button", { name: "Descargar PDF de Nota de crédito TC-OWN" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Factura NF-OWN · PUJ" })).toBeInTheDocument();
+});
+
+// N19: the statement addresses the airline as usted, like the rest of the portal.
+it("addresses the airline as usted without a session and after a failed read (N19)", async () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => { throw new TypeError("Failed to fetch"); }));
+  const anonymous = render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel /></AirlineSessionProvider>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Inicie sesión para consultar sus documentos financieros.");
+  anonymous.unmount();
+
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({ accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z" }));
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path.includes("/treasury/")) return new Response(JSON.stringify({ title: "private transport detail" }), { status: 500 });
+    return new Response(JSON.stringify(path.endsWith("/bootstrap") ? bootstrap : { actor }),
+      { status: 200, headers: { "content-type": "application/json" } });
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel /></AirlineSessionProvider>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo consultar el estado financiero. Inténtelo de nuevo.");
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
 });

@@ -67,7 +67,7 @@ function DownloadButton({ label, busyLabel, failure, download }: {
 export function InvoicePdfButton({ invoice }: { invoice: Pick<AirlineTreasuryInvoice, "id" | "fiscalNumber" | "number"> }) {
   const { getInvoiceDocument } = useAirlineSession();
   return <DownloadButton label={`Descargar PDF de ${invoiceTitle(invoice)}`} busyLabel="Preparando PDF…"
-    failure="No se pudo descargar el PDF. Inténtalo de nuevo."
+    failure="No se pudo descargar el PDF. Inténtelo de nuevo."
     download={() => getInvoiceDocument(invoice.id)
       .then(blob => saveBlob(blob, `factura-${invoice.fiscalNumber ?? invoice.number}.pdf`))} />;
 }
@@ -76,6 +76,6 @@ export function InvoicePdfButton({ invoice }: { invoice: Pick<AirlineTreasuryInv
 export function AdjustmentNotePdfButton({ note }: { note: Pick<AirlineTreasuryNote, "id" | "kind" | "number"> }) {
   const { getAdjustmentNoteDocument } = useAirlineSession();
   return <DownloadButton label={`Descargar PDF de ${noteTitle(note)}`} busyLabel="Preparando PDF…"
-    failure="No se pudo descargar el PDF de la nota. Inténtalo de nuevo."
+    failure="No se pudo descargar el PDF de la nota. Inténtelo de nuevo."
     download={() => getAdjustmentNoteDocument(note.id).then(blob => saveBlob(blob, `nota-${note.number}.pdf`))} />;
 }

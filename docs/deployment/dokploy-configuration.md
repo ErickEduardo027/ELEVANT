@@ -55,7 +55,7 @@ La cuenta Gmail no-reply ya tiene la verificación en 2 pasos y una contraseña 
 5. **Prueba de humo** desde el navegador:
    - En AVIAM Web, **Superadministración → Configuración → Correo del sistema** debe mostrar «SMTP configurado».
    - «Enviar correo de prueba» a un buzón real debe pasar de «Pendiente» a «Enviado» en pocos segundos.
-   - Después, «¿Olvidaste tu contraseña?» en Public Web con una cuenta de aerolínea real debe entregar el enlace.
+   - Después, «¿Olvidó su contraseña?» en Public Web con una cuenta de aerolínea real debe entregar el enlace.
 6. **Si algo falla**, la misma tarjeta muestra el motivo sin cuerpo ni credenciales:
 
    | Motivo | Acción |

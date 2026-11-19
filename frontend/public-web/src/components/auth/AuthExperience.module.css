@@ -547,6 +547,84 @@
   line-height: 1.4;
 }
 
+/* N17: the title and the one instruction of a login step (the emailed code, the
+   change of a temporary password). */
+.stepHeader {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.stepHeader h3 {
+  color: var(--auth-ink);
+  font-family: var(--auth-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.stepHeader p {
+  color: var(--auth-muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.stepHeader strong {
+  color: var(--auth-ink);
+  overflow-wrap: anywhere;
+}
+
+/* N17: the requirements of a new password, visible before anything is typed.
+   Unmet ones turn to the error colour only after a refused submit. */
+.requirements {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--auth-border);
+  border-radius: 0.42rem;
+  background: #edf2f7;
+  color: #35485f;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.requirements > p:first-child {
+  color: #1e3048;
+  font-weight: 680;
+}
+
+.requirements > p:last-child {
+  color: var(--auth-muted);
+  font-size: 0.68rem;
+}
+
+.requirements ul {
+  display: grid;
+  gap: 0.3rem;
+  list-style: none;
+}
+
+.requirements li {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.requirements li > span[aria-hidden="true"] {
+  font-weight: 700;
+  text-align: center;
+}
+
+.requirements li[data-met="true"] {
+  color: var(--auth-success);
+  font-weight: 600;
+}
+
+.requirements[data-checked="true"] li[data-met="false"] {
+  color: var(--auth-error);
+}
+
 .formOptions {
   display: grid;
   gap: 0.7rem;
@@ -1021,6 +1099,11 @@
     grid-column: 1 / -1;
   }
 
+  .requirements ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1rem;
+  }
+
   .stepper {
     padding: 1rem 1.15rem;
   }
@@ -1223,10 +1306,28 @@
     margin-top: 1.1rem;
   }
 
+  /* Only the buttons share a row: the title and the instruction of a step and
+     the requirements of a password keep the full width (N17). */
   .tabPanel .form > .field,
   .tabPanel .form > .formOptions,
-  .tabPanel .form > .feedback {
+  .tabPanel .form > .feedback,
+  .tabPanel .form > .stepHeader,
+  .tabPanel .form > .requirements {
     grid-column: 1 / -1;
+  }
+
+  .tabPanel .stepHeader h3 {
+    font-size: 1.2rem;
+  }
+
+  .tabPanel .stepHeader p {
+    font-size: 0.8rem;
+    line-height: 1.45;
+  }
+
+  .tabPanel .requirements {
+    gap: 0.35rem;
+    padding-block: 0.55rem;
   }
 
   .tabPanel .field {

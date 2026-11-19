@@ -280,11 +280,6 @@ export function HeroFlightScene({
         </strong>
         <small>18.567° N · 68.363° O</small>
       </div>
-      <div className={styles.tierBadge} aria-hidden="true">
-        {renderState === "unavailable"
-          ? "RESPALDO VISUAL"
-          : `MOTOR 3D · ${tier ?? "…"}`}
-      </div>
     </div>
   );
 }
