@@ -69,13 +69,28 @@ jest.mock('../src/config/elevant-api', () => ({
 jest.mock('../src/storage/walkaround-photos', () => ({
   keepWalkaroundPhoto: jest.fn(), readWalkaroundPhoto: jest.fn(), forgetWalkaroundPhoto: jest.fn(),
 }));
-jest.mock('expo-router', () => ({
-  router: { back: jest.fn(), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
-  useLocalSearchParams: () => ({ id: '70000000-0000-4000-8000-000000000001' }),
-  useFocusEffect: callback => require('react').useEffect(callback, [callback]),
-}));
+jest.mock('expo-router', () => {
+  // Inside the root layout, the stack shows the checklist (N6).
+  const Stack = () => require('react').createElement(require('../src/app/checklist/[id]').default);
+  Stack.Screen = () => null;
+  return {
+    Stack,
+    router: { back: jest.fn(), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
+    usePathname: () => '/checklist/70000000-0000-4000-8000-000000000001',
+    useLocalSearchParams: () => ({ id: '70000000-0000-4000-8000-000000000001' }),
+    useFocusEffect: callback => require('react').useEffect(callback, [callback]),
+  };
+});
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: require('react-native').View }));
+// The root layout's background work is not under test here.
+jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
+jest.mock('../src/services/mobile-presence', () => ({
+  startMobilePresence: jest.fn(), stopMobilePresence: jest.fn(), refreshMobilePresenceSession: jest.fn(async () => {}),
+  recordMobilePresenceActivity: jest.fn(),
+}));
+jest.mock('../src/services/mobile-change-feed', () => ({ startMobileChangeFeed: jest.fn(), stopMobileChangeFeed: jest.fn() }));
+jest.mock('../src/components/flight-report/connection-badge', () => ({ startFlightReportSync: jest.fn(() => () => {}) }));
 
 const { router } = require('expo-router');
 const { ElevantApiError } = require('@elevant/api-client');
@@ -87,6 +102,7 @@ const { flushFlightReport, resetFlightReportForTests } = require('../src/service
 const checklistService = require('../src/services/ramp-operation-checklist');
 const { resetServerClockForTests } = require('../src/synchronization/server-clock');
 const ChecklistScreen = require('../src/app/checklist/[id]').default;
+const RootLayout = require('../src/app/_layout').default;
 
 const ACCOUNT = '40000000-0000-4000-8000-000000000002';
 const OPERATION = '70000000-0000-4000-8000-000000000001';
@@ -202,12 +218,22 @@ const mockElevant = {
 const settle = (milliseconds = 50) =>
   renderer.act(() => new Promise(resolve => { setTimeout(resolve, milliseconds); }));
 
-async function mount() {
+async function mount(screen = ChecklistScreen) {
   let tree;
-  await renderer.act(async () => { tree = renderer.create(React.createElement(ChecklistScreen)); });
+  await renderer.act(async () => { tree = renderer.create(React.createElement(screen)); });
   await settle();
   return tree;
 }
+
+/** The checklist as the tablet shows it: inside the root layout, with its global session notice (N6). */
+const mountInLayout = () => mount(RootLayout);
+
+/** How many times `text` shows on the screen. */
+const occurrences = (tree, text) => screenText(tree).split(text).length - 1;
+
+/** The regions TalkBack reads out at once. */
+const assertiveRegions = tree => tree.root.findAll(node =>
+  typeof node.type === 'string' && node.props.accessibilityLiveRegion === 'assertive');
 
 /** The answer choice `label` of control `number` (OK, N/A or NO). */
 const choice = (tree, number, label) => tree.root.findAll(node => node.props?.label === label &&
@@ -518,6 +544,49 @@ describe('one numbering and the code in the background (N12, D-N12)', () => {
     expect(screenText(tree)).not.toContain('· versión');
     expect(styleOf(code).fontSize).toBeLessThanOrEqual(styleOf(version).fontSize);
     expect(weight(styleOf(code).fontWeight)).toBeLessThan(weight(styleOf(version).fontWeight));
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+});
+
+describe('inside the app, the checklist shows one session notice (N6)', () => {
+  test('one notice, one ENTRAR DE NUEVO and one announcement, never saying that answers it did not keep were kept', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mountInLayout();
+    await answerOk(tree, range(1, 3));
+    await settle(400);
+
+    mockElevant.revoke();
+    await endTheSessionWhileTheScreenIsOpen();
+    await settle();
+    expect(occurrences(tree, 'Tu sesión terminó')).toBe(1);
+    expect(tree.root.findAll(node => node.props?.title === 'ENTRAR DE NUEVO' &&
+      typeof node.props.onPress === 'function')).toHaveLength(1);
+    expect(assertiveRegions(tree)).toHaveLength(1);
+
+    // The tablet cannot save the next answer: the screen says so, and nothing on it claims that it was kept.
+    mockDraftWriteFailures = 1;
+    await answerOk(tree, [4]);
+    await settle(400);
+    expect(screenText(tree)).toContain('Las últimas respuestas no se pudieron guardar en esta tablet.');
+    expect(screenText(tree)).not.toContain('Lo que registraste queda guardado en esta tablet.');
+    expect(occurrences(tree, 'Tu sesión terminó')).toBe(1);
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('a checklist already sent shows no notice of its own, so the layout’s notice stays', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mountInLayout();
+    await answerAll(tree);
+    await settle(400);
+    await press(tree, 'ENVIAR CHECKLIST');
+    await settle(100);
+    expect(screenText(tree)).toContain('Checklist enviado');
+
+    mockElevant.revoke();
+    await endTheSessionWhileTheScreenIsOpen();
+    await settle();
+    expect(occurrences(tree, 'Tu sesión terminó')).toBe(1);
+    expect(screenText(tree)).toContain('Lo que registraste queda guardado en esta tablet.');
     await renderer.act(async () => { tree.unmount(); });
   }, 30_000);
 });

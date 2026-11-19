@@ -1,6 +1,8 @@
 // Phase 2, block E (2-N02): a shared tablet is freed at sign-out and explains why it cannot be used. Since S3
 // (ADR-0046) the sign-out also ends the session at ELEVANT, and what the release names belongs to the session.
-const mockApi = { registerMobileDevice: jest.fn(), releaseMobileDevice: jest.fn(), endSession: jest.fn() };
+const mockApi = {
+  registerMobileDevice: jest.fn(), releaseMobileDevice: jest.fn(), endSession: jest.fn(), refreshSession: jest.fn(),
+};
 const mockStorage = {
   installationId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
   session: null,
@@ -44,10 +46,15 @@ const { Platform } = require('react-native');
 const { ElevantApiError } = require('@elevant/api-client');
 const { createMobileAgentApiClient } = require('../src/config/elevant-api');
 const { registerCurrentMobileDevice, releaseCurrentMobileDevice } = require('../src/services/mobile-device');
-const { logoutMobileAgent, MOBILE_END_SESSION_TIMEOUT_MS } = require('../src/services/mobile-auth');
+const {
+  logoutMobileAgent,
+  MOBILE_END_SESSION_TIMEOUT_MS,
+  resetMobileSessionRenewalForTests,
+} = require('../src/services/mobile-auth');
 
 const platform = () => (Platform.OS === 'ios' ? 'Ios' : 'Android');
 const REFRESH_TOKEN = 'refresh-token-of-the-session-0123456789';
+const base64Url = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 
 function activeSession(accessToken = 'token-a', refreshToken = REFRESH_TOKEN) {
   return {
@@ -77,10 +84,30 @@ function activeSession(accessToken = 'token-a', refreshToken = REFRESH_TOKEN) {
   };
 }
 
+/** A session that renews (S3): its access token carries `auth_time` and expired a minute ago, its refresh token is in force. */
+function sessionWaitingForItsRenewal() {
+  const now = Math.floor(Date.now() / 1000);
+  const accessToken = `${base64Url({ alg: 'HS256', typ: 'at+jwt' })}.${base64Url({
+    sub: '40000000-0000-4000-8000-000000000002', iat: now - 960, exp: now - 60, auth_time: now - 960,
+  })}.c2lnbmF0dXJl`;
+  const session = activeSession(accessToken);
+  return {
+    ...session,
+    metadata: {
+      ...session.metadata,
+      schemaVersion: 2,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      refreshExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString(),
+    },
+  };
+}
+
 beforeEach(() => {
   mockApi.registerMobileDevice.mockReset();
   mockApi.releaseMobileDevice.mockReset();
   mockApi.endSession.mockReset();
+  mockApi.refreshSession.mockReset();
+  resetMobileSessionRenewalForTests();
   mockStorage.installationId = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
   mockStorage.session = null;
   mockStorage.cleared = 0;
@@ -228,6 +255,41 @@ describe('release at sign-out', () => {
       await logoutMobileAgent();
       expect(mockApi.endSession).toHaveBeenCalledTimes(1);
       expect(mockStorage.cleared).toBe(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('signing out renews an expired token first and waits for that renewal 5 seconds at most (S3)', async () => {
+    jest.useFakeTimers();
+    try {
+      const session = sessionWaitingForItsRenewal();
+      mockStorage.session = session;
+      mockApi.releaseMobileDevice.mockResolvedValue(undefined);
+      mockApi.endSession.mockResolvedValue(undefined);
+      let signal;
+      mockApi.refreshSession.mockImplementation((_refreshToken, options) => {
+        signal = options.signal;
+        return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () =>
+          reject(Object.assign(new Error('The request was aborted.'), { name: 'AbortError' }))));
+      });
+
+      const signingOut = logoutMobileAgent();
+      await jest.advanceTimersByTimeAsync(MOBILE_END_SESSION_TIMEOUT_MS - 1);
+      expect(mockApi.refreshSession).toHaveBeenCalledWith(REFRESH_TOKEN, expect.objectContaining({ signal }));
+      // Ending the family while the renewal is on its way would refuse it: the release and the end wait for it.
+      expect(mockApi.releaseMobileDevice).not.toHaveBeenCalled();
+      expect(mockApi.endSession).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(signingOut).resolves.toBeUndefined();
+      expect(signal.aborted).toBe(true);
+      // Without a renewed token the release goes with what the tablet holds, and the family still ends.
+      expect(mockApi.releaseMobileDevice).toHaveBeenCalledTimes(1);
+      expect(createMobileAgentApiClient.mock.calls.some(([options]) =>
+        options?.getAccessToken?.() === session.accessToken)).toBe(true);
+      expect(mockApi.endSession).toHaveBeenCalledWith(REFRESH_TOKEN, expect.anything());
+      expect(mockStorage.cleared).toBe(1);
     } finally {
       jest.useRealTimers();
     }

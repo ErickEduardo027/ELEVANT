@@ -257,7 +257,9 @@ el reloj de ELEVANT (3-N18), así que un reloj adelantado no impide entrar y un
 desfase viejo solo adelanta la renovación. No hay tope de horas: la sesión
 termina al cerrar sesión, con la revocación de OCC o tras 30 días sin uso. Si se
 pierde la respuesta de una renovación (D-S3b), la tablet sigue con su access
-token; pasado el minuto de margen ELEVANT trata el refresh token viejo como
+token; si ya venció, lo que no puede leer ni enviar falla como una solicitud
+que se puede reintentar (`request_failed`), nunca como un cambio de la
+operación. Pasado el minuto de margen ELEVANT trata el refresh token viejo como
 reuso, revoca la familia y el agente vuelve a entrar sin perder lo registrado.
 
 El bearer token y el refresh token se guardan exclusivamente con
@@ -273,7 +275,10 @@ asistencia solo necesitan la identidad de la sesión guardada en la tablet, sin
 red ni renovación. Una sesión vencida, sin un refresh token vigente, se elimina
 en cerrado; un access token vencido con el refresh vigente no borra nada.
 Cerrar sesión libera la tablet y termina la familia en ELEVANT
-(`POST /api/v1/auth/session/logout`), cada uno con un límite de 5 segundos; un
+(`POST /api/v1/auth/session/logout`), cada uno con un límite de 5 segundos. Si
+el access token venció o está en su último minuto, antes lo renueva una vez,
+aunque sea durante la pausa de 30 segundos y con el mismo límite, para que
+ELEVANT acepte la liberación; la familia termina después de esa renovación. Un
 inicio de sesión que la tablet no conserva (por ejemplo, si falla el registro
 de la tablet) también termina la familia recién emitida. Logout, el `401` de una
 renovación rechazada y `403` eliminan token, refresh token, metadata, cachés
@@ -315,7 +320,9 @@ terminó» con ENTRAR DE NUEVO (D-N6); el cierre de sesión a propósito no se
 anuncia. El checklist ya no salta solo al acceso: muestra la insignia roja
 «Sesión terminada», dice «Tu sesión terminó · Tus respuestas quedaron guardadas
 en esta tablet…», apaga ENVIAR y ofrece ENTRAR DE NUEVO, con `access_revoked`
-si la cuenta perdió el acceso. Si el envío encontró el fin de la sesión, las
+si la cuenta perdió el acceso. Mientras muestra ese aviso propio, el layout no
+repite el suyo: la pantalla tiene un solo aviso, un solo ENTRAR DE NUEVO y un
+solo anuncio, y nunca dice que guardó respuestas que no pudo guardar. Si el envío encontró el fin de la sesión, las
 respuestas quedan como se enviaron: el envío espera en la cola y sale al volver
 a entrar. ENVIAR vuelve a guardar el borrador y espera ese guardado antes de
 decidir. Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por

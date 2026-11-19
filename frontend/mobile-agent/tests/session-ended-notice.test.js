@@ -196,7 +196,8 @@ test('once the session expired every screen says so, until the agent is back on 
     'Lo que registraste queda guardado en esta tablet. Entra de nuevo con tu cuenta para enviarlo a ELEVANT.');
   expect(signInAgain(tree)).toBeDefined();
 
-  // It stays on every screen: nothing hides it but the access screen.
+  // It stays on every screen: only the access screen hides it, or a screen while it shows its own notice (the
+  // checklist; checklist-screen.test.js renders it inside this layout).
   await navigate(tree, '/checklist/70000000-0000-4000-8000-000000000001');
   expect(screenText(tree)).toContain('Tu sesión terminó');
   expect(router.replace).not.toHaveBeenCalled();

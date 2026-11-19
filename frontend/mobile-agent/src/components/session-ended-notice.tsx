@@ -1,10 +1,44 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { MobileSessionEnd } from '../services/mobile-auth';
 import { colors } from '../theme/colors';
 import { resetToLogin } from '../utils/session-navigation';
 import { PrimaryButton } from './ui';
+
+/** How many screens show their own session notice right now (N6). */
+let screenNotices = 0;
+const screenNoticeListeners = new Set<() => void>();
+
+function changeScreenNotices(by: 1 | -1) {
+  screenNotices += by;
+  screenNoticeListeners.forEach((listener) => listener());
+}
+
+function subscribeScreenNotices(listener: () => void) {
+  screenNoticeListeners.add(listener);
+  return () => {
+    screenNoticeListeners.delete(listener);
+  };
+}
+
+/**
+ * A screen that shows its own SessionEndedNotice says so while it shows it (N6): the layout's banner waits meanwhile,
+ * so the screen shows one notice, one ENTRAR DE NUEVO and one announcement. It is declared before the screen is drawn.
+ */
+export function useScreenSessionNotice(shown: boolean) {
+  useLayoutEffect(() => {
+    if (!shown) return undefined;
+    changeScreenNotices(1);
+    return () => changeScreenNotices(-1);
+  }, [shown]);
+}
+
+/** Whether a screen shows its own session notice now (N6). */
+export function useScreenShowsSessionNotice() {
+  return useSyncExternalStore(subscribeScreenNotices, () => screenNotices > 0);
+}
 
 /**
  * The session ended without its agent signing out (N6). The notice says so, never blames the device, and offers
@@ -37,7 +71,8 @@ export function SessionEndedNotice({ message, revoked = false }: {
 
 /**
  * The notice every screen but the access one shows once the tablet ended the session (N6, D-N6): it stays until the
- * agent is back on the access screen. What the agent recorded stays on the tablet for its account (3-N12).
+ * agent is back on the access screen, and waits while a screen shows its own notice. What the agent recorded stays on
+ * the tablet for its account (3-N12).
  */
 export function SessionEndedBanner({ ended }: { readonly ended: MobileSessionEnd }) {
   const revoked = ended.reason === 'forbidden';

@@ -296,6 +296,10 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   - la renovación conserva la revisión de la sesión: cachés, borradores,
     reservas, el vínculo de la tablet y la versión de su liberación siguen
     igual, y la presencia conserva su lease;
+  - «Liberar» de OCC cierra el vínculo de la tablet, no la sesión: la lectura
+    de la asistencia que ELEVANT rechaza (`403`) con el registro ya confirmado
+    vuelve a registrar la tablet, como una escritura, y solo un `403` tras ese
+    registro nuevo termina la sesión;
   - solo renueva si el JWT trae `auth_time`; frente a una API anterior la
     sesión termina a los 15 minutos, como antes;
   - sin señal, con `429` o `5xx` la sesión sigue y la siguiente renovación
@@ -308,10 +312,12 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
     access token hasta que ELEVANT trata el refresh token viejo como reuso;
     entonces termina y el agente vuelve a entrar;
   - cerrar sesión libera la tablet y termina la familia en ELEVANT, cada uno con
-    un límite de 5 segundos, y un inicio de sesión que la tablet no conserva
-    también termina su familia. No hay tope de horas, por decisión de Erick del
-    2026-11-19. La APK ya instalada no renueva: el cambio llega con la APK
-    nueva.
+    un límite de 5 segundos; si el access token ya venció o está en su último
+    minuto, antes lo renueva una vez, aunque sea durante la pausa de 30
+    segundos, para que ELEVANT acepte la liberación. Un inicio de sesión que la
+    tablet no conserva también termina su familia. No hay tope de horas, por
+    decisión de Erick del 2026-11-19. La APK ya instalada no renueva: el cambio
+    llega con la APK nueva.
 - **La pantalla de acceso.** Posterior a la fase 2 (hallazgo N7 de la corrida
   del VPS del 16 de noviembre;
   [pantalla](../../frontend/mobile-agent/src/app/index.tsx)):
@@ -393,7 +399,10 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
   - El checklist (`/checklist/[id]`) ya no salta solo al acceso: muestra la
     insignia roja «Sesión terminada», dice «Tu sesión terminó · Tus respuestas
     quedaron guardadas…», apaga ENVIAR y ofrece ENTRAR DE NUEVO. Con una cuenta
-    sin acceso nombra la causa y abre el acceso con `access_revoked`.
+    sin acceso nombra la causa y abre el acceso con `access_revoked`. Mientras
+    muestra ese aviso propio, el layout no repite el suyo: un solo aviso, un
+    solo ENTRAR DE NUEVO y un solo anuncio, sin decir que guardó respuestas que
+    no pudo guardar.
   - ENVIAR vuelve a guardar el borrador y espera ese guardado antes de decidir.
     Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por
     toque, y si vuelve a fallar pide cerrar la app y avisar a OCC.

@@ -23,8 +23,12 @@ jest.mock('../src/services/mobile-auth', () => ({
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: (...args) => mockRejectSession(...args),
 }));
+// No registration confirmed: each read here registers the tablet. Reusing it, and registering again after «Liberar»,
+// is in mobile-session-renewal.test.js.
 jest.mock('../src/services/mobile-device', () => ({
   registerCurrentMobileDevice: (...args) => mockRegister(...args),
+  hasConfirmedMobileDevice: () => false,
+  forgetConfirmedMobileDevice: () => undefined,
 }));
 jest.mock('../src/storage/attendance-draft', () => ({
   reservePendingAttendanceDraft: (...args) => mockReserve(...args),

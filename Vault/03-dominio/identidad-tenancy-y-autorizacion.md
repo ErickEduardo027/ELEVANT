@@ -143,8 +143,12 @@ A, B y C, `34e90aad`;
   de modo que una operación cuyo contrato se reactiva puede iniciarse. El chat y
   la observación de asistencia no usan ese recibo: se deduplican por su propia
   clave.
-- **Evidencia en una tablet compartida.** Un `401`, un `403` o el cierre de
-  sesión borran la credencial y las cachés, pero lo que ELEVANT no confirmó
+- **Evidencia en una tablet compartida.** Un `403`, una renovación que ELEVANT
+  rechaza (`401`), una sesión que ya no puede renovarse o el cierre de sesión
+  borran la credencial y las cachés; un `401` de una solicitud primero fuerza una
+  renovación y la solicitud se repite una vez (posterior a la fase 3, hallazgo
+  S3; [ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)).
+  En todos esos casos, lo que ELEVANT no confirmó
   queda en el dispositivo, ligado a su cuenta: solo esa cuenta lo lee y lo envía
   al volver a entrar. Otro agente que use la tablet ve cuántos registros de otra
   cuenta hay, pero no puede verlos ni descartarlos. Eso incluye notas de

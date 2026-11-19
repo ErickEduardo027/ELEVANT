@@ -54,12 +54,20 @@ const {
   getMobileSession,
   getMobileSessionIdentity,
   loginMobileAgent,
+  logoutMobileAgent,
   resetMobileSessionRenewalForTests,
+  subscribeMobileSessionEnd,
 } = require('../src/services/mobile-auth');
 const { forgetConfirmedMobileDevice } = require('../src/services/mobile-device');
+const { readRampAttendanceDraft } = require('../src/services/ramp-attendance-draft');
 const { getOwnCoverage } = require('../src/services/ramp-coverage');
+const { getRampOperationChecklist } = require('../src/services/ramp-operation-checklist');
 const { flushFlightReport, recordMilestone, resetFlightReportForTests } = require('../src/services/flight-report');
-const { readStoredMobileSession, replaceStoredMobileCredentialIfCurrent } = require('../src/storage/mobile-session');
+const {
+  readEndedMobileSession,
+  readStoredMobileSession,
+  replaceStoredMobileCredentialIfCurrent,
+} = require('../src/storage/mobile-session');
 const { loadServerClock, observeServerDate, resetServerClockForTests } =
   require('../src/synchronization/server-clock');
 
@@ -67,6 +75,7 @@ const ACCOUNT = '40000000-0000-4000-8000-000000000002';
 const OPERATION = '70000000-0000-4000-8000-000000000001';
 const CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
 const METADATA_KEY = 'elevant:mobile:session-metadata:v1';
+const ENDED_SESSION_KEY = 'elevant:mobile:ended-session:v1';
 const OUTBOX_KEY = `elevant.flightReportOutbox.v1.${ACCOUNT}`;
 const MINUTE = 60_000;
 
@@ -92,7 +101,8 @@ const mockElevant = {
     Object.assign(this, {
       skewMs: 0, offline: false, authTime: true, issuesRefresh: true, refreshStatus: null,
       loseNextRefreshAnswer: false, beforeRefresh: null, refuseAccessTokens: false, registration: null,
-      accepted: new Map(), families: [], calls: [], sequence: 0,
+      bound: false, refuseAttendance: false, beforeAttendance: null,
+      accepted: new Map(), families: [], calls: [], refused: [], sequence: 0,
     });
   },
   /** ELEVANT's clock: the tablet's minus how far ahead the tablet runs. */
@@ -146,6 +156,7 @@ const mockElevant = {
       const expiry = this.accepted.get(token);
       // The API takes a token until its expiry plus 30 seconds of clock skew.
       if (this.refuseAccessTokens || expiry === undefined || this.now() > expiry + 30_000) {
+        this.refused.push(name);
         throw new ElevantApiError({ status: 401 });
       }
     };
@@ -161,16 +172,32 @@ const mockElevant = {
       registerMobileDevice: async request => {
         await authorized('registerMobileDevice');
         if (this.registration) throw this.registration;
+        // A registration binds the tablet to the agent again, also after OCC freed it (2-N02).
+        this.bound = true;
         return { installationId: request.installationId, platform: request.platform, appVersion: '1.0.0',
           lastSeenAt: new Date(this.now()).toISOString() };
       },
-      releaseMobileDevice: async () => { await authorized('releaseMobileDevice'); },
+      releaseMobileDevice: async () => {
+        await authorized('releaseMobileDevice');
+        this.bound = false;
+      },
+      // ELEVANT serves the agent's flight only on the tablet bound to the agent: otherwise 403 without a problem code.
+      getOperationAttendanceDraft: async (operationId, assignmentId) => {
+        if (this.beforeAttendance) await this.beforeAttendance();
+        await authorized('getOperationAttendanceDraft');
+        if (!this.bound || this.refuseAttendance) throw new ElevantApiError({ status: 403 });
+        return { operationId, assignmentId, occ: null, rampAgent: null };
+      },
       getOwnRampCoverage: async () => {
         await authorized('getOwnRampCoverage');
         return { coverages: [] };
       },
       recordRampMilestone: async () => {
         await authorized('recordRampMilestone');
+        throw new ElevantApiError({ status: 503 });
+      },
+      getRampOperationChecklist: async () => {
+        await authorized('getRampOperationChecklist');
         throw new ElevantApiError({ status: 503 });
       },
       refreshSession: async refreshToken => {
@@ -418,6 +445,31 @@ test('a lost renewal answer (D-S3b) keeps the session until ELEVANT sees the old
   await expect(getOwnCoverage()).resolves.toEqual({ coverages: [] });
 });
 
+test('a lost renewal answer with the access token already expired never reaches the screens as an operation that changed', async () => {
+  await signIn();
+  // The app comes back after 16 minutes: the renewal goes out, ELEVANT rotates the token and the answer is lost.
+  advance(16 * MINUTE);
+  mockElevant.loseNextRefreshAnswer = true;
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'network_unavailable' });
+  expect(mockElevant.count('refreshSession')).toBe(1);
+
+  // Within ELEVANT's 60-second margin the old refresh token answers 409 with nothing new to store: the session stays,
+  // and what its expired token cannot read fails as a request to try again, not as a change of the operation.
+  advance(35_000);
+  for (const read of [() => getOwnCoverage(), () => getRampOperationChecklist(OPERATION)]) {
+    const failure = await read().then(() => null, error => error);
+    expect(failure).toMatchObject({ code: 'request_failed', retryable: true });
+    expect(failure.problemCode).toBeUndefined();
+  }
+  expect(mockElevant.count('refreshSession')).toBe(2);
+  await expect(getMobileSession()).resolves.not.toBeNull();
+
+  // After the margin it counts as reuse: ELEVANT revokes the family and the session ends.
+  advance(35_000);
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'session_expired', status: 401 });
+  expect(mockElevant.families[0].revoked).toBe(true);
+});
+
 test('a token without auth_time (an API older than ADR-0046) is never renewed', async () => {
   mockElevant.authTime = false;
   await signIn();
@@ -439,4 +491,119 @@ test('a sign-in whose tablet registration fails ends the family it was just issu
   expect(mockElevant.families[0].revoked).toBe(true);
   expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
   await expect(getMobileSession()).resolves.toBeNull();
+});
+
+test('signing out with an expired token renews it first, also in the pause after a failed renewal, so ELEVANT frees the tablet', async () => {
+  await signIn();
+  // More than 15 minutes in a dead zone: the renewal without signal starts the 30-second pause.
+  advance(16 * MINUTE);
+  mockElevant.offline = true;
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'network_unavailable' });
+  const renewals = mockElevant.count('refreshSession');
+
+  // Back on Wi-Fi, the agent signs out within the pause.
+  mockElevant.offline = false;
+  advance(10_000);
+  const ends = [];
+  const stopListening = subscribeMobileSessionEnd(ended => ends.push(ended));
+  try {
+    await logoutMobileAgent();
+  } finally {
+    stopListening();
+  }
+
+  expect(mockElevant.count('refreshSession')).toBe(renewals + 1);
+  // ELEVANT takes the renewed token and frees the tablet; the family ends after the renewal, never while it is on its way.
+  const names = mockElevant.calls.map(call => call.name);
+  expect(names.indexOf('releaseMobileDevice')).toBeGreaterThan(names.lastIndexOf('refreshSession'));
+  expect(names.indexOf('endSession')).toBeGreaterThan(names.lastIndexOf('refreshSession'));
+  expect(mockElevant.refused).toEqual([]);
+  expect(mockElevant.families[0].revoked).toBe(true);
+  // A sign-out on purpose: nothing is announced, no marker of an ended session stays and the credential is gone.
+  expect(ends).toEqual([]);
+  expect(mockAsyncData.has(ENDED_SESSION_KEY)).toBe(false);
+  expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
+});
+
+test('signing out 20 minutes after signing in renews the token once before the release', async () => {
+  await signIn();
+  advance(20 * MINUTE);
+
+  await logoutMobileAgent();
+
+  expect(mockElevant.count('refreshSession')).toBe(1);
+  expect(mockElevant.count('releaseMobileDevice')).toBe(1);
+  expect(mockElevant.refused).toEqual([]);
+  expect(mockElevant.families[0].revoked).toBe(true);
+});
+
+describe('«Liberar» in OCC frees the tablet and never ends the session (ADR-0046)', () => {
+  const ASSIGNMENT = '71000000-0000-4000-8000-000000000001';
+  const readAttendance = () => readRampAttendanceDraft(OPERATION, ASSIGNMENT);
+
+  test('the next attendance read registers the tablet again, as a write does, and the session goes on', async () => {
+    const sessionId = await signIn();
+    const ends = [];
+    const stopListening = subscribeMobileSessionEnd(ended => ends.push(ended));
+    try {
+      // Signing in registered the tablet, and the attendance read reuses that registration.
+      await expect(readAttendance()).resolves.toMatchObject({ operationId: OPERATION, assignmentId: ASSIGNMENT });
+      expect(mockElevant.count('registerMobileDevice')).toBe(1);
+
+      // OCC frees the tablet: its binding closes and the account keeps its security stamp.
+      mockElevant.bound = false;
+      await expect(readAttendance()).resolves.toMatchObject({ operationId: OPERATION, assignmentId: ASSIGNMENT });
+      expect(mockElevant.count('registerMobileDevice')).toBe(2);
+      expect(mockElevant.bound).toBe(true);
+
+      // That registration is the session's own again: the next read reuses it.
+      await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+      expect(mockElevant.count('registerMobileDevice')).toBe(2);
+    } finally {
+      stopListening();
+    }
+    expect(storedCredential().sessionId).toBe(sessionId);
+    await expect(getMobileSession()).resolves.not.toBeNull();
+    expect(ends).toEqual([]);
+    expect(mockAsyncData.has(ENDED_SESSION_KEY)).toBe(false);
+  });
+
+  test('a refusal that stays after the new registration still ends the session as forbidden', async () => {
+    await signIn();
+    // ELEVANT refuses the read with the tablet bound as well: the account no longer has that access.
+    mockElevant.refuseAttendance = true;
+
+    await expect(readAttendance()).rejects.toMatchObject({ code: 'forbidden', status: 403 });
+    expect(mockElevant.count('registerMobileDevice')).toBe(2);
+    expect(mockElevant.count('getOperationAttendanceDraft')).toBe(2);
+    await expect(getMobileSession()).resolves.toBeNull();
+    await expect(readEndedMobileSession()).resolves.toMatchObject({ accountId: ACCOUNT, reason: 'forbidden' });
+  });
+
+  test('a read ELEVANT answers keeps reusing the registration of the session, also after a renewal', async () => {
+    await signIn();
+    await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+    await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+    advance(16 * MINUTE);
+    await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+
+    expect(mockElevant.count('refreshSession')).toBe(1);
+    expect(mockElevant.count('getOperationAttendanceDraft')).toBe(3);
+    // Only the sign-in registered the tablet.
+    expect(mockElevant.count('registerMobileDevice')).toBe(1);
+  });
+
+  test('a read refused because its agent signed out meanwhile never binds the tablet to that agent again', async () => {
+    await signIn();
+    // The agent signs out while the read is on its way: the release frees the tablet before ELEVANT answers the read.
+    mockElevant.beforeAttendance = async () => {
+      mockElevant.beforeAttendance = null;
+      await logoutMobileAgent();
+    };
+
+    await expect(readAttendance()).rejects.toMatchObject({ code: 'cancelled' });
+    expect(mockElevant.count('releaseMobileDevice')).toBe(1);
+    expect(mockElevant.count('registerMobileDevice')).toBe(1);
+    expect(mockElevant.bound).toBe(false);
+  });
 });

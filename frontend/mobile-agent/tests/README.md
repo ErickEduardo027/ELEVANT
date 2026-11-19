@@ -29,7 +29,10 @@ tras volver a entrar. Desde N6 también comprueba que la pantalla dice que la
 sesión terminó (insignia roja, ENTRAR DE NUEVO, sin salir sola ni pedir
 desbloquear), que ENVIAR vuelve a guardar el borrador y lo espera, que
 REINTENTAR GUARDADO no entra en bucle, que un guardado `cancelled` se reintenta
-una vez y que una cuenta sin acceso abre el acceso con `access_revoked`.
+una vez y que una cuenta sin acceso abre el acceso con `access_revoked`. Dentro
+del layout raíz, el checklist muestra un solo aviso de sesión terminada, sin
+decir que guardó respuestas que no pudo guardar, y uno ya enviado deja el aviso
+del layout.
 
 `session-ended-notice.test.js` monta el layout raíz con el almacenamiento y la
 sesión reales (N6, D-N6): el aviso global aparece tras el vencimiento, sigue en
@@ -56,7 +59,13 @@ ADR-0046) contra un doble pequeño de los endpoints de sesión de ELEVANT
 el servicio de sesión y el reloj del servidor reales: una sola renovación en el
 minuto 16, sin señal la sesión sigue, `401` termina la sesión y conserva la
 cola, `409`/`429`/`503`, el `401` de una solicitud, el reloj adelantado, un
-desfase obsoleto, la respuesta perdida (D-S3b) y los tokens sin `auth_time`.
+desfase obsoleto, la respuesta perdida (D-S3b), también con el access token ya
+vencido, cuando las lecturas fallan como `request_failed` y nunca como
+`conflict`, y los tokens sin `auth_time`. También cierra sesión con el access
+token vencido, incluso en la pausa tras una renovación fallida: renueva una vez
+antes de liberar la tablet y termina la familia después.
+`mobile-device-release.test.js` comprueba que esa renovación espera 5 segundos
+como máximo.
 
 `date-format.test.js` fija el formato único de fecha y hora (N11, D-N11):
 «lun, 16 nov» y «16 nov, 19:46» con reloj de 24 horas, la zona de la estación y,
