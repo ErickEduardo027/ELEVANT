@@ -93,22 +93,42 @@ export function operationFlightLabel(operation: RampAssignedOperationResponse) {
   return arrival?.flightNumber ?? departure?.flightNumber ?? operationCode;
 }
 
-export function operationRoute(operation: RampAssignedOperationResponse) {
+/** A stop of the route: where the aircraft comes from, the station where the agent works or where it goes next. */
+export type OperationRouteStop = Readonly<{ code: string; kind: 'origin' | 'station' | 'destination' }>;
+
+/**
+ * The stops in the order the aircraft makes them (N10, D-N10): «BWI → PUJ → BWI» for a turnaround at PUJ. A missing
+ * leg is left out, never replaced by the station, so a turnaround without flights is the station alone.
+ */
+export function operationRouteStops(operation: RampAssignedOperationResponse): readonly OperationRouteStop[] {
   const { arrival, departure, station } = operation.turnaround;
+  return [
+    ...(arrival ? [{ code: arrival.origin.iataCode, kind: 'origin' as const }] : []),
+    { code: station.code, kind: 'station' as const },
+    ...(departure ? [{ code: departure.destination.iataCode, kind: 'destination' as const }] : []),
+  ];
+}
 
-  if (!arrival && !departure) {
-    return {
-      origin: station.code,
-      station: station.code,
-      destination: 'Ruta por confirmar',
-    };
+/** The route as a screen reader says it: «llega de BWI a PUJ y sale hacia BWI» (N10). */
+export function operationRouteDescription(operation: RampAssignedOperationResponse) {
+  const { arrival, departure, station } = operation.turnaround;
+  if (arrival && departure) {
+    return `llega de ${arrival.origin.iataCode} a ${station.code} y sale hacia ${departure.destination.iataCode}`;
   }
+  if (arrival) return `llega de ${arrival.origin.iataCode} a ${station.code}`;
+  if (departure) return `sale de ${station.code} hacia ${departure.destination.iataCode}`;
+  return `estación ${station.code}, ruta por confirmar`;
+}
 
-  return {
-    origin: arrival?.origin.iataCode ?? station.code,
-    station: station.code,
-    destination: departure?.destination.iataCode ?? station.code,
-  };
+// N9 (D-N9): the role OCC writes on an assignment; «primary» is the only one it writes today.
+const assignmentRoleLabels: Record<string, string> = {
+  primary: 'Agente principal',
+};
+
+/** The assignment's role in Spanish, whatever its casing; null for a role this version does not know. */
+export function assignmentRoleLabel(role: string): string | null {
+  const key = role.toLowerCase();
+  return Object.prototype.hasOwnProperty.call(assignmentRoleLabels, key) ? assignmentRoleLabels[key] : null;
 }
 
 export function operationStandLabel(operation: RampAssignedOperationResponse) {

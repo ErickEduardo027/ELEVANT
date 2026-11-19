@@ -188,6 +188,28 @@ de `ref.billing_units`: «0 / 1 hora», «1 / 1 operación» y «Cantidad ejecut
 - La Orden de Servicio conserva las abreviaturas de su PDF («1 h», «1 serv.»).
 - La APK instalada sigue mostrando el código hasta que se instale la nueva.
 
+**Ruta y asignación legibles.** Posterior al commit verificado de esta nota
+(hallazgos N10 y N9 de la corrida del VPS del 16 de noviembre, decisiones D-N10
+y D-N9), la tarjeta de una operación muestra todas las paradas de la escala en
+orden, BWI → PUJ → BWI, con un avión entre cada una, y resalta la estación donde
+trabaja el agente. Antes mostraba «BWI ✈ BWI» y ocultaba la estación. Las
+funciones están en la
+[presentación de operaciones](../../frontend/mobile-agent/src/features/assigned-operations/presentation.ts).
+
+- Si falta un tramo, la tarjeta no pone la estación en su lugar: una llegada
+  sola se lee BWI → PUJ y una salida sola, PUJ → MIA. Sin vuelos, nombra la
+  estación junto a «Ruta por confirmar».
+- El lector de pantalla dice «llega de BWI a PUJ y sale hacia BWI».
+- El riel de la hora ya no repite el código de la estación.
+- En una tarjeta angosta, la ruta pasa a una segunda línea entre dos paradas,
+  nunca dentro de una.
+- La asignación del detalle dice «Agente principal» en lugar de `primary`. No
+  muestra un rol que la tablet no conoce.
+- La posición operativa se nombra solo por su nombre: «Ramp agent» en lugar de
+  «RAMP-AGENT · Ramp agent». El nombre sembrado en Development sigue en inglés.
+- La APK instalada conserva la ruta y la asignación anteriores hasta que se
+  instale la nueva.
+
 ## Fase 2: tablets compartidas
 
 Posterior al commit verificado de esta nota: esta sección describe el código de

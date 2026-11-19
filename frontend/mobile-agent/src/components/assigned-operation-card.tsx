@@ -8,7 +8,8 @@ import {
   operationFlightLabel,
   operationPrimaryTime,
   operationPrimaryTimeLabel,
-  operationRoute,
+  operationRouteDescription,
+  operationRouteStops,
   operationStandLabel,
   operationStatusLabel,
   operationStatusTone,
@@ -28,18 +29,19 @@ export const AssignedOperationCard = memo(function AssignedOperationCard({
   readonly onOpen: (operationId: string) => void;
   readonly selected?: boolean;
 }) {
-  const route = operationRoute(operation);
+  const stops = operationRouteStops(operation);
   const timeZone = operation.turnaround.station.ianaTimeZone;
   const time = formatOperationTime(operationPrimaryTime(operation), timeZone);
   const timeLabel = operationPrimaryTimeLabel(operation);
   const operationDate = formatOperationDate(operation.turnaround.operationDate);
   const status = operationStatusLabel(operation.operation.status);
-  const hasRoute = Boolean(operation.turnaround.arrival || operation.turnaround.departure);
+  // The station alone means the turnaround has no flights yet.
+  const hasRoute = stops.length > 1;
 
   return (
     <Pressable
       accessibilityHint="Abre el manifiesto y los servicios asignados"
-      accessibilityLabel={`${operationFlightLabel(operation)}, ${status}, ${operationDate}, ${hasRoute ? `ruta ${route.origin} a ${route.destination}` : 'ruta por confirmar'}, ${timeLabel} ${time}, estación ${operation.turnaround.station.code}, ${operationStandLabel(operation)}, ${operation.services.length} servicios`}
+      accessibilityLabel={`${operationFlightLabel(operation)}, ${status}, ${operationDate}, ${operationRouteDescription(operation)}, ${timeLabel} ${time}, ${operationStandLabel(operation)}, ${operation.services.length} servicios`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={() => onOpen(operation.operation.id)}
@@ -58,10 +60,10 @@ export const AssignedOperationCard = memo(function AssignedOperationCard({
           {timeLabel}
         </Text>
         <Text style={styles.operationDate}>{operationDate}</Text>
+        {/* N10 (D-N10): the station is in the route row, so the rail no longer repeats its code. */}
         <View style={styles.railLine}>
           <View style={styles.railDot} />
         </View>
-        <Text style={styles.stationCode}>{operation.turnaround.station.code}</Text>
       </View>
 
       <View style={styles.content}>
@@ -76,22 +78,34 @@ export const AssignedOperationCard = memo(function AssignedOperationCard({
           />
         </View>
 
-        {hasRoute ? (
-          <View style={styles.routeRow}>
-            <Text style={styles.airportCode}>{route.origin}</Text>
-            <View style={styles.routeLine}>
-              <View style={styles.routeDot} />
-              <Ionicons name="airplane" size={16} color={colors.orange} />
-              <View style={styles.routeDot} />
+        {/* N10 (D-N10): every stop in order, «BWI → PUJ → BWI», with the station where the agent works highlighted.
+            A leg is the line into a stop and the stop itself, so a narrow card wraps between stops, never inside one. */}
+        <View style={styles.routeRow}>
+          {stops.map((stop, index) => (
+            <View key={stop.kind} style={[styles.routeStop, index > 0 && styles.routeLeg]}>
+              {index > 0 && (
+                <View style={styles.routeLine}>
+                  <View style={styles.routeDot} />
+                  <Ionicons name="airplane" size={16} color={colors.orange} />
+                  <View style={styles.routeDot} />
+                </View>
+              )}
+              {stop.kind === 'station' ? (
+                <View style={styles.stationStop}>
+                  <Text style={styles.airportCode}>{stop.code}</Text>
+                </View>
+              ) : (
+                <Text style={styles.airportCode}>{stop.code}</Text>
+              )}
             </View>
-            <Text style={styles.airportCode}>{route.destination}</Text>
-          </View>
-        ) : (
-          <View style={styles.routePending}>
-            <Ionicons name="time-outline" size={17} color={colors.warning} />
-            <Text style={styles.routePendingText}>Ruta por confirmar</Text>
-          </View>
-        )}
+          ))}
+          {!hasRoute && (
+            <View style={styles.routePending}>
+              <Ionicons name="time-outline" size={17} color={colors.warning} />
+              <Text style={styles.routePendingText}>Ruta por confirmar</Text>
+            </View>
+          )}
+        </View>
 
         <View style={styles.metaRow}>
           <View style={styles.metaItem}>
@@ -176,12 +190,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#FFF0E7',
   },
-  stationCode: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1.4,
-  },
   content: { flex: 1, minWidth: 0, padding: 16, gap: 17 },
   topRow: {
     flexDirection: 'row',
@@ -198,10 +206,23 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   flightLabel: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 3 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  routeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, rowGap: 6 },
+  routeStop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // Each leg's line takes the free width of its row, as the single line between two airports did.
+  routeLeg: { flexGrow: 1 },
   airportCode: { color: colors.navy, fontSize: 17, fontWeight: '900' },
+  // N10: the station's code in a pale orange box, a shape besides the colour (ADR-0031); the code stays navy.
+  stationStop: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFD0B7',
+    backgroundColor: colors.paleOrange,
+  },
   routeLine: {
     flex: 1,
+    minWidth: 26,
     height: 20,
     flexDirection: 'row',
     alignItems: 'center',

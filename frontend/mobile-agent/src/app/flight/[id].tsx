@@ -28,6 +28,7 @@ import {
 } from '../../components/ramp-service-execution-card';
 import { RampOperationChargesCard } from '../../components/ramp-operation-charges-card';
 import {
+  assignmentRoleLabel,
   flightLegTimeLabel,
   formatOperationDate,
   formatOperationTime,
@@ -612,6 +613,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
   const { assignment, turnaround } = operation;
   const timeZone = turnaround.station.ianaTimeZone;
+  // N9 (D-N9): «Agente principal»; a role this version does not know is left out, never shown as its code.
+  const assignmentRole = assignmentRoleLabel(assignment.assignmentRole);
   // 3-I: ELEVANT's view (network or saved copy) with what still waits in the device's queue applied on top: a start or
   // a service transition saved without signal already shows, marked «En el dispositivo».
   const projection = projectRampOperation(operation, queueItems);
@@ -862,10 +865,11 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
       <SectionTitle title="Asignación" />
       <Card style={styles.assignmentCard}>
-        <Meta icon="briefcase-outline" label={assignment.assignmentRole} dark />
+        {assignmentRole ? <Meta icon="briefcase-outline" label={assignmentRole} dark /> : null}
+        {/* N9: the position by its name only; its code («RAMP-AGENT») is for OCC. */}
         <Meta
           icon="ribbon-outline"
-          label={assignment.position ? `${assignment.position.code} · ${assignment.position.name}` : 'Posición operativa no especificada'}
+          label={assignment.position ? assignment.position.name : 'Posición operativa no especificada'}
           dark
         />
         <Meta

@@ -67,7 +67,7 @@ const serviceId = '73000000-0000-4000-8000-000000000001';
 function operation(status = 'Assigned', serviceStatus = 'Planned') {
   return { operation: { id: operationId, status, plannedStartAt: null, plannedEndAt: null,
     actualStartAt: status === 'Assigned' ? null : '2026-10-05T14:00:00Z', actualEndAt: null },
-  assignment: { id: '70000000-0000-4000-8000-000000000006', assignmentRole: 'Agente', position: null,
+  assignment: { id: '70000000-0000-4000-8000-000000000006', assignmentRole: 'primary', position: null,
     assignedAt: '2026-10-05T10:00:00Z' },
   services: [{ id: serviceId, lineNumber: 1, serviceDefinitionId: serviceId, code: 'BAG', name: 'Equipaje',
     contractedQuantity: 1, executedQuantity: 0, billingUnit: 'operation', status: serviceStatus }],
@@ -221,6 +221,48 @@ describe('billing units in Spanish (S5, D-S5)', () => {
     const text = screenText(tree);
     expect(text).toContain('0 / 1 operación');
     expect(text).not.toMatch(/\boperation\b/);
+    await renderer.act(async () => tree.unmount());
+  });
+});
+
+describe('a readable assignment (N9, D-N9)', () => {
+  const { Card } = require('../src/components/ui');
+  const ASSIGNED_AT = /^Asignada 5 oct\.?,? 06:00$/;
+
+  function assigned(assignment) {
+    const value = operation('InProgress');
+    return { ...value, assignment: { ...value.assignment, ...assignment } };
+  }
+
+  // The lines of the «Asignación» card, the one that says when OCC assigned the operation.
+  function assignmentLines(tree) {
+    const lines = node => node.findAll(child => child.type === 'Text' && typeof child.props.children === 'string')
+      .map(child => child.props.children);
+    const [card] = tree.root.findAll(node => node.type === Card)
+      .filter(node => lines(node).some(line => line.startsWith('Asignada ')));
+    return lines(card);
+  }
+
+  test('the role reads «Agente principal» and the position only by its name', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [assigned({ assignmentRole: 'primary',
+      position: { id: '74000000-0000-4000-8000-000000000001', code: 'RAMP-AGENT', name: 'Ramp agent' } })] });
+    const tree = await render();
+    const lines = assignmentLines(tree);
+    expect(lines).toEqual(['Agente principal', 'Ramp agent', expect.stringMatching(ASSIGNED_AT)]);
+    // The 12-hour check, scoped to the card: «Asignada …» is on a 24-hour clock.
+    expect(lines.join(' ')).not.toMatch(/[ap]\.\s?m\./);
+    const text = screenText(tree);
+    expect(text).not.toMatch(/\bprimary\b/i);
+    expect(text).not.toContain('RAMP-AGENT');
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('without a position the card says so, and a role this version does not know is left out', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [assigned({ assignmentRole: 'RampAgent',
+      position: null })] });
+    const tree = await render();
+    expect(assignmentLines(tree)).toEqual(['Posición operativa no especificada', expect.stringMatching(ASSIGNED_AT)]);
+    expect(screenText(tree)).not.toContain('RampAgent');
     await renderer.act(async () => tree.unmount());
   });
 });

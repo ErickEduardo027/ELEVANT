@@ -83,5 +83,17 @@ contratada de 1,5 operaciones se confirma y que un comando reservado se reintent
 tal cual. El manifiesto (`operation-offline-queue.test.js`) ya no muestra el
 código de la unidad.
 
+`operation-presentation.test.js` fija la ruta y el rol de la asignación (N10 y
+N9, D-N10 y D-N9). La ruta va en orden, BWI → PUJ → BWI y BWI → PUJ → MIA, y un
+tramo que falta se omite. Comprueba también la frase del lector de pantalla y
+que solo `primary` se lee «Agente principal», con cualquier mayúscula; un rol
+desconocido, «constructor» o «__proto__» dan `null`.
+`assigned-operation-card.test.js` comprueba el orden de los códigos en la
+tarjeta, que la estación sale una sola vez y resaltada, y que una llegada o una
+salida solas siguen en orden. El manifiesto (`operation-offline-queue.test.js`)
+lee la tarjeta «Asignación»: «Agente principal» y solo el nombre de la
+posición, sin «a. m.» ni «p. m.», sin `primary` ni «RAMP-AGENT»; sin posición
+dice «Posición operativa no especificada» y omite un rol desconocido.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

@@ -131,6 +131,18 @@ contiene secretos.
     regla es solo de la tablet: el servidor sigue aceptando cuatro decimales.
   - La Orden de Servicio conserva las abreviaturas de su PDF («1 h»,
     «1 serv.») con `billingUnitAbbreviation`.
+- Ruta y asignación legibles (hallazgos N10 y N9, D-N10 y D-N9):
+  - `operationRouteStops` da las paradas de la escala en orden: origen,
+    estación y siguiente destino. La tarjeta las muestra como BWI → PUJ → BWI,
+    con la estación resaltada, y `operationRouteDescription` le da al lector
+    de pantalla «llega de BWI a PUJ y sale hacia BWI».
+  - Un tramo que falta se omite, sin poner la estación en su lugar. Sin vuelos,
+    la tarjeta nombra la estación junto a «Ruta por confirmar». El riel de la
+    hora ya no repite el código de la estación.
+  - En una tarjeta angosta, la ruta pasa a otra línea entre dos paradas.
+  - `assignmentRoleLabel` escribe «Agente principal» para `primary`, sin
+    distinguir mayúsculas. Un rol desconocido da `null` y el detalle omite esa
+    fila. La posición operativa se nombra solo por su nombre, sin el código.
 
 ## Autorización y almacenamiento
 
