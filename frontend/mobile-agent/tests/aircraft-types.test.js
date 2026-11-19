@@ -72,7 +72,8 @@ test('without a copy and without signal, or against an older server, there is no
 test('a revoked session ends the read and an unexpected failure is not hidden by the copy', async () => {
   mockApi.getRampAircraftTypes.mockRejectedValueOnce(new ElevantApiError({ status: 401 }));
   await expect(getRampAircraftTypes()).rejects.toMatchObject({ code: 'unauthenticated' });
-  expect(mockReject).toHaveBeenCalledWith('s1');
+  expect(mockReject).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', accessToken: 'token' }),
+    expect.objectContaining({ code: 'unauthenticated' }));
   mockApi.getRampAircraftTypes.mockRejectedValueOnce(new ElevantApiError({ status: 500 }));
   await expect(getRampAircraftTypes()).rejects.toBeTruthy();
 });

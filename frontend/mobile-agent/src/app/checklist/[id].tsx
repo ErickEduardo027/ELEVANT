@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SessionEndedNotice, useScreenSessionNotice } from '../../components/session-ended-notice';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import {
   getRampOperationChecklist,
@@ -28,9 +29,8 @@ import {
   type RampChecklistSection,
   type SubmitRampOperationChecklistRequest,
 } from '../../services/ramp-operation-checklist';
-import { MobileServiceError } from '../../services/mobile-auth';
+import { MobileServiceError, subscribeMobileSessionEnd } from '../../services/mobile-auth';
 import { colors } from '../../theme/colors';
-import { resetToLogin } from '../../utils/session-navigation';
 
 type ChecklistScreenState =
   | 'loading'
@@ -38,8 +38,20 @@ type ChecklistScreenState =
   | 'not-found'
   | 'offline'
   | 'conflict'
-  | 'unavailable';
-type DraftSaveState = 'idle' | 'saving' | 'saved' | 'error';
+  | 'unavailable'
+  | 'session-ended';
+/** 'not-kept': the session ended and the last answers could not be kept for the account any more (N5, N6). */
+type DraftSaveState = 'idle' | 'saving' | 'saved' | 'error' | 'not-kept';
+/**
+ * How one save of the draft ended (N6): on the device with the session ('saved'), kept for the account after its
+ * session ended ('kept'), not kept because no session of the account remains ('not-kept'), or not saved by the
+ * device's storage ('failed').
+ */
+type DraftWriteOutcome = 'saved' | 'kept' | 'not-kept' | 'failed';
+/** The session ended without the agent signing out (N6); 'revoked' when the account lost its access to the app. */
+type SessionEnd = 'ended' | 'revoked';
+/** The device could not save the draft (N6): once, or again after REINTENTAR GUARDADO or another answer. */
+type DraftProblem = 'failed' | 'failed-again';
 type Notice = Readonly<{
   tone: 'success' | 'warning' | 'error';
   title: string;
@@ -47,10 +59,27 @@ type Notice = Readonly<{
 }>;
 type PendingDraftSave = Readonly<{
   operationId: string;
+  /** The account the screen loaded the draft for (N5): its answers stay with it after its session ends. */
+  accountId: string;
   draft: RampChecklistDraft;
 }>;
 
 const DRAFT_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Saves one draft for the account the screen loaded it with (N5) and says how that ended (N6). A save cancelled under
+ * the screen is tried once more for the same account; a second cancellation is a failure, never an endless «Guardando…».
+ */
+async function saveDraft(pending: PendingDraftSave, retried = false): Promise<DraftWriteOutcome> {
+  try {
+    const saved = await saveRampOperationChecklistDraft(pending.operationId, pending.draft, pending.accountId);
+    return saved === 'kept-until-sign-in' ? 'kept' : 'saved';
+  } catch (error) {
+    if (!(error instanceof MobileServiceError)) return 'failed';
+    if (error.code === 'cancelled' && !retried) return saveDraft(pending, true);
+    return error.code === 'session_expired' || error.code === 'unauthenticated' ? 'not-kept' : 'failed';
+  }
+}
 
 export default function ChecklistScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -65,16 +94,50 @@ export default function ChecklistScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submissionReconciliationRequired, setSubmissionReconciliationRequired] = useState(false);
   const [validationRequested, setValidationRequested] = useState(false);
+  const [sessionEnd, setSessionEnd] = useState<SessionEnd | null>(null);
+  const [draftProblem, setDraftProblem] = useState<DraftProblem | null>(null);
+  // N6: ENVIAR met the end of the session; the submission usually waits in the queue already, so the answers on screen
+  // stay as they were sent until the agent signs in again.
+  const [heldForSignIn, setHeldForSignIn] = useState(false);
+  const sessionEndRef = useRef<SessionEnd | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const submitRequestRef = useRef<AbortController | null>(null);
   const submitInFlightRef = useRef(false);
   const contentScrollRef = useRef<ScrollView | null>(null);
   const answersRef = useRef<Readonly<Record<string, RampChecklistDraftAnswer>>>({});
+  // N5: the account the draft was loaded for; every save names it, so answers marked after the session ended are kept.
+  const draftOwnerRef = useRef<string | null>(null);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraftSaveRef = useRef<PendingDraftSave | null>(null);
   const draftWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const draftWriteFailedRef = useRef(false);
   const mountedRef = useRef(false);
+
+  /**
+   * The session ended without the agent signing out (N6, D-N6): the screen says so and offers ENTRAR DE NUEVO; it never
+   * leaves on its own, so what the agent marked stays in view. An account that lost its access stays so.
+   */
+  const endSession = useCallback((end: SessionEnd) => {
+    if (sessionEndRef.current === 'revoked') return;
+    sessionEndRef.current = end;
+    if (mountedRef.current) setSessionEnd(end);
+  }, []);
+
+  /** Saves one draft after the ones before it, and shows how it ended (N6). */
+  const runDraftSave = useCallback((pending: PendingDraftSave) => {
+    draftWriteQueueRef.current = draftWriteQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (mountedRef.current) setDraftSaveState('saving');
+        const outcome = await saveDraft(pending);
+        draftWriteFailedRef.current = outcome === 'failed' || outcome === 'not-kept';
+        // Kept for the account without its session, or no longer kept: the session ended either way (N5).
+        if (outcome === 'kept' || outcome === 'not-kept') endSession('ended');
+        if (!mountedRef.current) return;
+        setDraftSaveState(outcome === 'failed' ? 'error' : outcome === 'not-kept' ? 'not-kept' : 'saved');
+        setDraftProblem((current) => (outcome !== 'failed' ? null : current ? 'failed-again' : 'failed'));
+      });
+  }, [endSession]);
 
   const queueDraftSave = useCallback((pending: PendingDraftSave) => {
     pendingDraftSaveRef.current = pending;
@@ -84,42 +147,17 @@ export default function ChecklistScreen() {
       const current = pendingDraftSaveRef.current;
       pendingDraftSaveRef.current = null;
       draftTimerRef.current = null;
-      if (!current) return;
-      draftWriteQueueRef.current = draftWriteQueueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          try {
-            await saveRampOperationChecklistDraft(current.operationId, current.draft);
-            draftWriteFailedRef.current = false;
-            if (mountedRef.current) setDraftSaveState('saved');
-          } catch (error) {
-            if (error instanceof MobileServiceError && error.code === 'cancelled') return;
-            draftWriteFailedRef.current = true;
-            if (mountedRef.current) setDraftSaveState('error');
-          }
-        });
+      if (current) runDraftSave(current);
     }, 250);
-  }, []);
+  }, [runDraftSave]);
 
   const flushDraftSave = useCallback(() => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = null;
     const current = pendingDraftSaveRef.current;
     pendingDraftSaveRef.current = null;
-    if (!current) return;
-    draftWriteQueueRef.current = draftWriteQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        try {
-          await saveRampOperationChecklistDraft(current.operationId, current.draft);
-          draftWriteFailedRef.current = false;
-          if (mountedRef.current) setDraftSaveState('saved');
-        } catch {
-          draftWriteFailedRef.current = true;
-          if (mountedRef.current) setDraftSaveState('error');
-        }
-      });
-  }, []);
+    if (current) runDraftSave(current);
+  }, [runDraftSave]);
 
   const load = useCallback(async (refresh = false) => {
     requestRef.current?.abort();
@@ -135,12 +173,16 @@ export default function ChecklistScreen() {
       if (refresh) {
         flushDraftSave();
         await draftWriteQueueRef.current;
+        // The screen is not read again over answers the tablet did not save (N6). The session notice explains an
+        // ended session; otherwise the device failed, and its notice offers REINTENTAR GUARDADO.
         if (draftWriteFailedRef.current) {
-          setNotice({
-            tone: 'error',
-            title: 'Borrador no protegido',
-            message: 'No actualizamos la pantalla para evitar perder tus cambios. Desbloquea el dispositivo e intenta guardar nuevamente.',
-          });
+          if (!sessionEndRef.current) {
+            setNotice({
+              tone: 'warning',
+              title: 'Pantalla sin actualizar',
+              message: 'Primero guarda tus respuestas en esta tablet: toca REINTENTAR GUARDADO.',
+            });
+          }
           return;
         }
       }
@@ -153,12 +195,14 @@ export default function ChecklistScreen() {
         signal: request.signal,
       });
       if (request.signal.aborted) return;
-      const [draft, pending] = await Promise.all([
+      const [loadedDraft, pending] = await Promise.all([
         readRampOperationChecklistDraft(id, nextSnapshot.checklist.id),
         readRampChecklistPendingSubmission(id, nextSnapshot.checklist.id),
       ]);
       if (request.signal.aborted) return;
 
+      const draft = loadedDraft.draft;
+      draftOwnerRef.current = loadedDraft.accountId;
       const mergedAnswers = mergeAnswers(nextSnapshot, draft, pending);
       const lastSection = Math.max(0, nextSnapshot.checklist.sections.length - 1);
       const initialSection = pending || nextSnapshot.checklist.status === 'Submitted'
@@ -181,20 +225,25 @@ export default function ChecklistScreen() {
       setValidationRequested(false);
       setDraftSaveState(draft ? 'saved' : 'idle');
       draftWriteFailedRef.current = false;
+      setDraftProblem(null);
       setState('ready');
     } catch (error) {
       if (request.signal.aborted) return;
-      setSnapshot(null);
       if (error instanceof MobileServiceError) {
         if (error.code === 'cancelled') return;
-        if (error.code === 'unauthenticated' || error.code === 'session_expired') {
-          resetToLogin('session_expired');
+        // N6 (D-N6): the screen says the session ended and offers ENTRAR DE NUEVO. A screen already open keeps what
+        // the agent marked in view; a screen still loading says it instead of the checklist.
+        if (error.code === 'unauthenticated' || error.code === 'session_expired' || error.code === 'forbidden') {
+          endSession(error.code === 'forbidden' ? 'revoked' : 'ended');
+          if (!refresh) {
+            setSnapshot(null);
+            setState('session-ended');
+          }
           return;
         }
-        if (error.code === 'forbidden') {
-          resetToLogin('access_revoked');
-          return;
-        }
+      }
+      setSnapshot(null);
+      if (error instanceof MobileServiceError) {
         if (error.code === 'not_found') {
           setState('not-found');
           return;
@@ -210,7 +259,15 @@ export default function ChecklistScreen() {
       }
       setState('unavailable');
     }
-  }, [flushDraftSave, id]);
+  }, [endSession, flushDraftSave, id]);
+
+  // N6: the moment the tablet ends the session, here or anywhere else (another request, the queue, the presence), the
+  // screen says so.
+  useEffect(() => subscribeMobileSessionEnd((ended) => {
+    const owner = draftOwnerRef.current;
+    if (ended.accountId && owner && ended.accountId !== owner.toLowerCase()) return;
+    endSession(ended.reason === 'forbidden' ? 'revoked' : 'ended');
+  }), [endSession]);
 
   useFocusEffect(useCallback(() => {
     mountedRef.current = true;
@@ -234,12 +291,34 @@ export default function ChecklistScreen() {
     pendingSubmission !== null || submissionReconciliationRequired
   ) && !submitted;
   const progress = useMemo(() => checklistProgress(sections, answers), [answers, sections]);
+  // N6: while this screen shows its own session notice, the layout's banner waits: one notice on the screen.
+  useScreenSessionNotice(
+    state === 'session-ended' ||
+    (state === 'ready' && snapshot !== null && currentSection !== undefined && sessionEnd !== null && !submitted),
+  );
+
+  /** The answers on screen, as the draft of the account the screen loaded it for (N5); null before that. */
+  const currentDraft = useCallback((): PendingDraftSave | null => {
+    const accountId = draftOwnerRef.current;
+    if (!snapshot || !accountId) return null;
+    return {
+      operationId: snapshot.operationId,
+      accountId,
+      draft: {
+        schemaVersion: DRAFT_SCHEMA_VERSION,
+        checklistId: snapshot.checklist.id,
+        answers: answersRef.current,
+      },
+    };
+  }, [snapshot]);
 
   const updateAnswer = useCallback((item: RampChecklistItem, answer: RampChecklistDraftAnswer) => {
     if (
       submitInFlightRef.current ||
       !snapshot ||
+      !draftOwnerRef.current ||
       frozen ||
+      heldForSignIn ||
       submitted ||
       submitting
     ) {
@@ -252,15 +331,17 @@ export default function ChecklistScreen() {
     };
     answersRef.current = next;
     setAnswers(next);
-    queueDraftSave({
-      operationId: snapshot.operationId,
-      draft: {
-        schemaVersion: DRAFT_SCHEMA_VERSION,
-        checklistId: snapshot.checklist.id,
-        answers: next,
-      },
-    });
-  }, [frozen, queueDraftSave, snapshot, submitted, submitting]);
+    const draft = currentDraft();
+    if (draft) queueDraftSave(draft);
+  }, [currentDraft, frozen, heldForSignIn, queueDraftSave, snapshot, submitted, submitting]);
+
+  /** REINTENTAR GUARDADO (N6): one more save of the answers on screen for each tap; nothing retries on its own. */
+  const retryDraftSave = useCallback(() => {
+    const draft = currentDraft();
+    if (!draft) return;
+    pendingDraftSaveRef.current = draft;
+    flushDraftSave();
+  }, [currentDraft, flushDraftSave]);
 
   const showSection = useCallback((index: number) => {
     setSectionIndex(index);
@@ -324,17 +405,19 @@ export default function ChecklistScreen() {
     setNotice(null);
 
     try {
+      // N6: the answers on screen are saved once more and the decision waits for that save, so a save that failed
+      // before is tried again instead of only being reported again.
+      if (!pendingSubmission) {
+        const draft = currentDraft();
+        if (draft) pendingDraftSaveRef.current = draft;
+      }
       flushDraftSave();
       await draftWriteQueueRef.current;
       if (request.signal.aborted) return;
-      if (draftWriteFailedRef.current && !pendingSubmission) {
-        setNotice({
-          tone: 'error',
-          title: 'Borrador no protegido',
-          message: 'No pudimos guardar tus respuestas de forma segura. Desbloquea el dispositivo y vuelve a intentar.',
-        });
-        return;
-      }
+      // Without a session the queue takes nothing (D-N5): the answers wait on the tablet and the session notice says
+      // so. If the device could not save them, its notice offers REINTENTAR GUARDADO.
+      if (sessionEndRef.current) return;
+      if (draftWriteFailedRef.current && !pendingSubmission) return;
       const outcome = await submitRampOperationChecklist(
         snapshot.operationId,
         requestBody,
@@ -377,12 +460,12 @@ export default function ChecklistScreen() {
     } catch (error) {
       if (request.signal.aborted) return;
       if (error instanceof MobileServiceError) {
-        if (error.code === 'unauthenticated' || error.code === 'session_expired') {
-          resetToLogin('session_expired');
-          return;
-        }
-        if (error.code === 'forbidden') {
-          resetToLogin('access_revoked');
+        // N6 (D-N6): the screen stays; it says the session ended and offers ENTRAR DE NUEVO. The answers wait on the
+        // tablet for the account, and the submission the queue already holds goes out once the agent signs in, so
+        // they are not changed here meanwhile.
+        if (error.code === 'unauthenticated' || error.code === 'session_expired' || error.code === 'forbidden') {
+          endSession(error.code === 'forbidden' ? 'revoked' : 'ended');
+          setHeldForSignIn(true);
           return;
         }
         let reservedPending: RampChecklistPendingSubmission | null = null;
@@ -410,8 +493,8 @@ export default function ChecklistScreen() {
         if (error.code === 'cancelled') {
           setNotice({
             tone: 'warning',
-            title: 'Sesión actualizada',
-            message: 'La revisión de sesión cambió durante el envío. Verificaremos el checklist y el comando reservado antes de continuar.',
+            title: 'Envío interrumpido',
+            message: 'Volvemos a leer el checklist antes de seguir; tus respuestas siguen en esta tablet.',
           });
           await load(true);
           return;
@@ -421,8 +504,8 @@ export default function ChecklistScreen() {
             tone: 'warning',
             title: 'Envío pendiente de confirmación',
             message: error.code === 'request_timeout'
-              ? 'La respuesta tardó demasiado. No edites el checklist: al reintentar se reutilizarán exactamente el payload y la clave reservados.'
-              : 'La conexión se perdió antes de confirmar el resultado. Al reintentar se reutilizarán exactamente el payload y la clave reservados.',
+              ? 'ELEVANT tardó demasiado en responder. No cambies las respuestas: al reintentar se envía el mismo checklist, sin duplicarlo.'
+              : 'Se perdió la conexión antes de que ELEVANT confirmara el envío. Al reintentar se envía el mismo checklist, sin duplicarlo.',
           });
           return;
         }
@@ -453,7 +536,7 @@ export default function ChecklistScreen() {
           setNotice({
             tone: 'warning',
             title: 'Respuesta no confirmada',
-            message: 'El payload quedó reservado. No edites el checklist: el próximo intento reutilizará exactamente el mismo comando.',
+            message: 'El envío quedó guardado en esta tablet. No cambies las respuestas: el próximo intento envía exactamente el mismo checklist.',
           });
           return;
         }
@@ -471,6 +554,8 @@ export default function ChecklistScreen() {
       }
     }
   }, [
+    currentDraft,
+    endSession,
     flushDraftSave,
     load,
     pendingSubmission,
@@ -480,8 +565,16 @@ export default function ChecklistScreen() {
   ]);
 
   if (state !== 'ready' || !snapshot || !currentSection) {
-    return <ChecklistStateScreen state={state} onRetry={() => void load()} />;
+    return (
+      <ChecklistStateScreen
+        onRetry={() => void load()}
+        revoked={sessionEnd === 'revoked'}
+        state={state}
+      />
+    );
   }
+
+  const draftNotSaved = draftSaveState === 'error' || draftSaveState === 'not-kept';
 
   return (
     <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.safe}>
@@ -509,12 +602,14 @@ export default function ChecklistScreen() {
               <StatusPill
                 text={submitted
                   ? 'Enviado'
-                  : submissionReconciliationRequired
-                    ? 'Estado por conciliar'
-                    : frozen
-                      ? 'En el dispositivo'
-                      : 'Borrador'}
-                tone={submitted ? 'green' : frozen ? 'orange' : 'blue'}
+                  : sessionEnd
+                    ? 'Sesión terminada'
+                    : submissionReconciliationRequired
+                      ? 'Estado por conciliar'
+                      : frozen
+                        ? 'En el dispositivo'
+                        : 'Borrador'}
+                tone={submitted ? 'green' : sessionEnd ? 'red' : frozen ? 'orange' : 'blue'}
               />
             </View>
             <View style={styles.progressRow}>
@@ -535,11 +630,11 @@ export default function ChecklistScreen() {
             </View>
             <View style={styles.saveRow}>
               <Ionicons
-                name={draftSaveState === 'error' ? 'alert-circle-outline' : 'cloud-done-outline'}
+                name={draftNotSaved ? 'alert-circle-outline' : 'cloud-done-outline'}
                 size={17}
-                color={draftSaveState === 'error' ? colors.danger : colors.muted}
+                color={draftNotSaved ? colors.danger : colors.muted}
               />
-              <Text style={[styles.saveText, draftSaveState === 'error' && styles.saveTextError]}>
+              <Text style={[styles.saveText, draftNotSaved && styles.saveTextError]}>
                 {draftSaveLabel(
                   draftSaveState,
                   frozen,
@@ -625,7 +720,7 @@ export default function ChecklistScreen() {
               return (
                 <ChecklistItemCard
                   answer={answer}
-                  disabled={frozen || submitted || submitting}
+                  disabled={frozen || heldForSignIn || submitted || submitting}
                   index={index}
                   invalid={invalid}
                   item={item}
@@ -635,6 +730,26 @@ export default function ChecklistScreen() {
               );
             })}
           </View>
+
+          {sessionEnd && !submitted && (
+            <SessionEndedNotice
+              message={sessionEndedMessage(sessionEnd, draftNotSaved)}
+              revoked={sessionEnd === 'revoked'}
+            />
+          )}
+
+          {draftProblem && (
+            <View style={styles.draftProblem}>
+              <NoticeCard notice={draftProblemNotice(draftProblem)} />
+              <PrimaryButton
+                disabled={draftSaveState === 'saving'}
+                icon="save-outline"
+                onPress={retryDraftSave}
+                secondary
+                title="REINTENTAR GUARDADO"
+              />
+            </View>
+          )}
 
           {notice && <NoticeCard notice={notice} />}
 
@@ -661,7 +776,8 @@ export default function ChecklistScreen() {
             ) : !submitted ? (
               <View style={styles.navigationButton}>
                 <PrimaryButton
-                  disabled={submitting}
+                  // N6: without a session nothing can be sent; ENTRAR DE NUEVO in the session notice is the way on.
+                  disabled={submitting || sessionEnd !== null}
                   icon={submissionReconciliationRequired ? 'refresh' : 'cloud-upload-outline'}
                   onPress={() => submissionReconciliationRequired
                     ? void load(true)
@@ -860,11 +976,29 @@ function NoticeCard({ notice }: { readonly notice: Notice }) {
 
 function ChecklistStateScreen({
   onRetry,
+  revoked,
   state,
 }: {
   readonly onRetry: () => void;
+  /** With `state` 'session-ended': the account lost its access to the app. */
+  readonly revoked: boolean;
   readonly state: ChecklistScreenState;
 }) {
+  // N6 (D-N6): the checklist cannot open without a session; the screen says so instead of leaving on its own.
+  if (state === 'session-ended') {
+    return (
+      <View style={styles.stateScreen}>
+        <View style={styles.stateNotice}>
+          <SessionEndedNotice
+            message={revoked
+              ? 'Lo que marcaste sigue guardado en esta tablet. Contacta a AVIAM antes de volver a entrar.'
+              : 'Lo que marcaste sigue guardado en esta tablet. Entra de nuevo con tu cuenta para abrir el checklist.'}
+            revoked={revoked}
+          />
+        </View>
+      </View>
+    );
+  }
   if (state === 'loading') {
     return (
       <View accessibilityLiveRegion="polite" style={styles.stateScreen}>
@@ -1003,8 +1137,40 @@ function draftSaveLabel(
   if (frozen) return 'Envío guardado en el dispositivo; sale a ELEVANT al reconectar';
   if (state === 'saving') return 'Guardando borrador en este dispositivo…';
   if (state === 'saved') return 'Borrador guardado en este dispositivo';
-  if (state === 'error') return 'No se pudo proteger el borrador';
+  if (state === 'error') return 'No se pudo guardar el borrador en este dispositivo';
+  if (state === 'not-kept') return 'Sin sesión: las últimas respuestas no se guardaron';
   return 'Las respuestas se guardarán en este dispositivo';
+}
+
+/**
+ * What the session notice says about the answers (N6): kept on the tablet for the account (N5), or the last ones no
+ * longer kept; and what the agent does next.
+ */
+function sessionEndedMessage(end: SessionEnd, answersNotSaved: boolean) {
+  const answers = answersNotSaved
+    ? 'Las últimas respuestas no se pudieron guardar en esta tablet.'
+    : 'Tus respuestas quedaron guardadas en esta tablet.';
+  return end === 'revoked'
+    ? `${answers} Contacta a AVIAM antes de volver a entrar.`
+    : `${answers} Entra de nuevo con tu cuenta para enviar el checklist.`;
+}
+
+/**
+ * The device could not save the draft (N6): REINTENTAR GUARDADO tries once per tap, and when it fails again the agent
+ * is told the way out instead of the same notice.
+ */
+function draftProblemNotice(problem: DraftProblem): Notice {
+  return problem === 'failed'
+    ? {
+        tone: 'error',
+        title: 'No se guardaron tus respuestas',
+        message: 'La tablet no pudo guardar lo último que marcaste. Toca REINTENTAR GUARDADO.',
+      }
+    : {
+        tone: 'error',
+        title: 'Tus respuestas siguen sin guardarse',
+        message: 'Cierra la app, ábrela de nuevo y avisa a OCC. Lo que no se guardó habrá que marcarlo otra vez.',
+      };
 }
 
 const styles = StyleSheet.create({
@@ -1095,6 +1261,7 @@ const styles = StyleSheet.create({
   noticeCopy: { flex: 1, minWidth: 0 },
   noticeTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   noticeText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 2 },
+  draftProblem: { gap: 10 },
   navigationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   navigationButton: { flexGrow: 1, minWidth: 150 },
   scopeNotice: { padding: 13, borderRadius: 14, backgroundColor: colors.paleBlue, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
@@ -1103,6 +1270,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.78 },
   stateScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 13, backgroundColor: colors.background },
   stateIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8EA' },
+  stateNotice: { width: '100%', maxWidth: 480 },
   stateTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', textAlign: 'center' },
   stateMessage: { maxWidth: 380, color: colors.muted, lineHeight: 20, textAlign: 'center' },
 });

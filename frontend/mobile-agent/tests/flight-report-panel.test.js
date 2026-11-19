@@ -1,9 +1,11 @@
 // The «Reporte de vuelo» panel: one tap records a milestone at ELEVANT's time (3-N18); the adjustment stays inside the
-// operation's window (3-N25), and a correction round records the times of the flight, never «AHORA» (3-N09).
+// operation's window (3-N25), and a correction round records the times of the flight, never «AHORA» (3-N09). A time or
+// the flight data the tablet could not keep says whether the session ended or the device's storage failed (N6).
 const React = require('react');
 const renderer = require('react-test-renderer');
 
 const mockRecord = jest.fn();
+const mockSaveFlightData = jest.fn();
 let mockSnapshot = { items: [], syncing: false, confirmed: {}, documents: {}, charters: {}, revisions: {} };
 let mockNow = Date.parse('2026-11-09T14:00:00.000Z');
 
@@ -22,8 +24,13 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: Object.assign(() => null, { g
 jest.mock('expo-haptics', () => ({ notificationAsync: jest.fn(() => Promise.resolve()), NotificationFeedbackType: { Success: 'success' } }));
 jest.mock('../src/services/flight-report', () => ({
   recordMilestone: (...args) => mockRecord(...args),
-  saveFlightData: jest.fn(),
+  saveFlightData: (...args) => mockSaveFlightData(...args),
   subscribeFlightReport: listener => { listener(mockSnapshot); return () => {}; },
+}));
+jest.mock('../src/services/mobile-service-error', () => ({
+  MobileServiceError: class MobileServiceError extends Error {
+    constructor(code) { super(code); this.code = code; }
+  },
 }));
 jest.mock('../src/synchronization/server-clock', () => ({
   EVIDENCE_CLOCK_TOLERANCE_MS: 120_000,
@@ -32,8 +39,10 @@ jest.mock('../src/synchronization/server-clock', () => ({
 jest.mock('../src/services/ramp-incidents', () => ({ loadRampIncidentCenter: jest.fn(), reserveRampIncident: jest.fn() }));
 jest.mock('../src/services/aircraft-types', () => ({ getRampAircraftTypes: jest.fn(), aircraftTypeLabel: () => '' }));
 
-const { DeviationAction, FlightReportPanel } = require('../src/components/flight-report/flight-report-panel');
+const { DeviationAction, FlightDataCard, FlightReportPanel } = require('../src/components/flight-report/flight-report-panel');
 const { loadRampIncidentCenter, reserveRampIncident } = require('../src/services/ramp-incidents');
+const { getRampAircraftTypes } = require('../src/services/aircraft-types');
+const { MobileServiceError } = require('../src/services/mobile-service-error');
 
 const OPERATION_ID = '70000000-0000-4000-8000-000000000001';
 const TIME_ZONE = 'America/Santo_Domingo';
@@ -66,6 +75,7 @@ beforeEach(() => {
   mockNow = Date.parse('2026-11-09T14:00:00.000Z');
   mockSnapshot = { items: [], syncing: false, confirmed: {}, documents: {}, charters: {}, revisions: {} };
   mockRecord.mockResolvedValue(undefined);
+  mockSaveFlightData.mockResolvedValue(undefined);
 });
 
 describe('correction round (3-N09)', () => {
@@ -151,4 +161,66 @@ describe('a tablet whose clock runs ahead (3-N18)', () => {
     expect(reserveRampIncident).toHaveBeenCalledWith(OPERATION_ID, expect.objectContaining({
       incidentType: 'Deviation', delayCode: '93', occurredAt: '2026-11-09T14:00:00.000Z' }));
   });
+});
+
+describe('a time or the flight data the tablet could not keep (N6)', () => {
+  /** What the old panel said whatever happened: it blamed the device. */
+  const BLAMES_THE_DEVICE = /No se pudo guardar en el dispositivo|Desbloque/;
+  // The first card a run renders loads React Native's lists, which can exceed 5 s on a cold cache (flight-data-card).
+  const COLD_RENDER_MS = 30_000;
+
+  async function tapBlockOn() {
+    const tree = await render({ operation: operation() });
+    await press(tab(tree, 'Llegada'));
+    await press(pressable(tree, 'Bloqueo. Toca para registrar ahora.'));
+    await renderer.act(async () => {});
+    return tree;
+  }
+
+  async function saveFlightDataCard() {
+    getRampAircraftTypes.mockResolvedValue({ types: [], available: false, fromCache: false });
+    const flight = operation();
+    let tree;
+    await renderer.act(async () => {
+      tree = renderer.create(React.createElement(FlightDataCard, { editable: true, operation: {
+        ...flight, operation: { ...flight.operation, passengersIn: 120, passengersOut: 118, mtowKg: 70000 },
+      } }));
+    });
+    await press(pressable(tree, 'GUARDAR DATOS DEL VUELO'));
+    await renderer.act(async () => {});
+    return tree;
+  }
+
+  test.each(['session_expired', 'unauthenticated'])('a milestone after the session ended (%s) says so', async code => {
+    mockRecord.mockRejectedValue(new MobileServiceError(code));
+    const tree = await tapBlockOn();
+    expect(mockRecord).toHaveBeenCalled();
+    expect(text(tree)).toContain('Tu sesión terminó y la hora no se guardó. Entra de nuevo con tu cuenta para registrarla.');
+    expect(text(tree)).not.toMatch(BLAMES_THE_DEVICE);
+  }, COLD_RENDER_MS);
+
+  test('a milestone the device’s storage could not keep says what to do', async () => {
+    mockRecord.mockRejectedValue(new MobileServiceError('storage_unavailable'));
+    const tree = await tapBlockOn();
+    expect(text(tree)).toContain('La tablet no pudo guardar la hora. Vuelve a intentarlo; si sigue fallando, cierra la app, ' +
+      'ábrela de nuevo y avisa a OCC.');
+    expect(text(tree)).not.toMatch(BLAMES_THE_DEVICE);
+  }, COLD_RENDER_MS);
+
+  test('the flight data after the session ended says so', async () => {
+    mockSaveFlightData.mockRejectedValue(new MobileServiceError('session_expired'));
+    const tree = await saveFlightDataCard();
+    expect(mockSaveFlightData).toHaveBeenCalled();
+    expect(text(tree)).toContain('Tu sesión terminó y los datos del vuelo no se guardaron. Entra de nuevo con tu cuenta ' +
+      'para guardarlos.');
+    expect(text(tree)).not.toMatch(BLAMES_THE_DEVICE);
+  }, COLD_RENDER_MS);
+
+  test('the flight data the device’s storage could not keep says what to do', async () => {
+    mockSaveFlightData.mockRejectedValue(new MobileServiceError('storage_unavailable'));
+    const tree = await saveFlightDataCard();
+    expect(text(tree)).toContain('La tablet no pudo guardar los datos del vuelo. Vuelve a intentarlo; si sigue fallando, ' +
+      'cierra la app, ábrela de nuevo y avisa a OCC.');
+    expect(text(tree)).not.toMatch(BLAMES_THE_DEVICE);
+  }, COLD_RENDER_MS);
 });

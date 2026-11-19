@@ -7,7 +7,10 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Elevant.Infrastructure.Authentication;
 
-/// <summary>Issues a minimal signed JWT whose subject is resolved again by the server.</summary>
+/// <summary>
+/// Issues a minimal signed JWT whose subject is resolved again by the server. Its <c>auth_time</c> is when the session
+/// began: the sign-in, which every renewal keeps (ADR-0046).
+/// </summary>
 internal sealed class JwtAccessTokenIssuer(
     IOptions<JwtAccessTokenOptions> options,
     TimeProvider timeProvider,
@@ -16,8 +19,14 @@ internal sealed class JwtAccessTokenIssuer(
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly JwtAccessTokenOptions settings = options.Value;
 
+    public Task<IssuedAccessToken?> IssueAsync(
+        ActorContext actor,
+        CancellationToken cancellationToken = default) =>
+        IssueAsync(actor, null, cancellationToken);
+
     public async Task<IssuedAccessToken?> IssueAsync(
         ActorContext actor,
+        DateTimeOffset? sessionStartedAt,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(actor);
@@ -39,6 +48,9 @@ internal sealed class JwtAccessTokenIssuer(
 
         var issuedAt = timeProvider.GetUtcNow();
         var expiresAt = issuedAt.AddMinutes(settings.AccessTokenMinutes);
+        // A session start this instance's clock has not reached yet (another instance stored it) never dates the
+        // token ahead of its own iat.
+        var authenticatedAt = sessionStartedAt is { } started && started < issuedAt ? started : issuedAt;
         var claims = new ClaimsIdentity(
         [
             new Claim(JwtRegisteredClaimNames.Sub, actor.AccountId.ToString("D")),
@@ -48,6 +60,11 @@ internal sealed class JwtAccessTokenIssuer(
 
         var descriptor = new SecurityTokenDescriptor
         {
+            // A NumericDate in whole seconds, as iat.
+            Claims = new Dictionary<string, object>
+            {
+                [JwtRegisteredClaimNames.AuthTime] = authenticatedAt.ToUnixTimeSeconds(),
+            },
             Audience = settings.Audience,
             Expires = expiresAt.UtcDateTime,
             IssuedAt = issuedAt.UtcDateTime,

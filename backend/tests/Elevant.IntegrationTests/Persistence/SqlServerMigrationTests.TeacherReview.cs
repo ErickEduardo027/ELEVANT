@@ -456,4 +456,48 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync(loggedOut.Value, ct)).Failure);
         Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync("unknown-token", ct)).Failure);
     }
+
+    /// <summary>
+    /// ADR-0046: every rotation reports when its family began, the sign-in, however long the session has been renewed;
+    /// that is the <c>auth_time</c> of the access token it renews. Another sign-in is another family; a refused
+    /// rotation reports none.
+    /// </summary>
+    [Fact]
+    public async Task RotationReturnsWhenTheFamilyBegan()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var context = CreateContext(database.ConnectionString);
+        var signedIn = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var clock = new MovableTimeProvider(signedIn);
+        var store = new Elevant.Persistence.Identity.EfRefreshTokenStore(context, clock);
+
+        var token = (await store.IssueAsync(SeededRampAgentAccount, ct))!.Value;
+        foreach (var later in new[] { TimeSpan.FromMinutes(16), TimeSpan.FromMinutes(32), TimeSpan.FromHours(9) })
+        {
+            clock.Now = signedIn + later;
+            var rotation = await store.RotateAsync(token, ct);
+            Assert.True(rotation.IsSuccess);
+            Assert.Equal(signedIn, rotation.SessionStartedAt);
+            token = rotation.Token!.Value;
+        }
+
+        // Signing in again starts another family, with its own start.
+        var again = clock.Now;
+        var other = (await store.IssueAsync(SeededRampAgentAccount, ct))!;
+        clock.Now += TimeSpan.FromMinutes(16);
+        Assert.Equal(again, (await store.RotateAsync(other.Value, ct)).SessionStartedAt);
+        // The family of the first sign-in still reports its own.
+        Assert.Equal(signedIn, (await store.RotateAsync(token, ct)).SessionStartedAt);
+
+        var refused = await store.RotateAsync("unknown-token", ct);
+        Assert.Equal(RefreshTokenFailure.Invalid, refused.Failure);
+        Assert.Null(refused.SessionStartedAt);
+        var replayed = await store.RotateAsync(other.Value, ct);
+        Assert.Equal(RefreshTokenFailure.AlreadyRotated, replayed.Failure);
+        Assert.Null(replayed.SessionStartedAt);
+    }
 }

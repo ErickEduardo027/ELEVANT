@@ -17,13 +17,16 @@ import {
   readRampChecklistDraftIfCurrent,
   removeRampChecklistDraftIfCurrent,
   writeRampChecklistCacheIfCurrent,
-  writeRampChecklistDraftIfCurrent,
+  writeRampChecklistDraftForAccount,
+  type RampChecklistDraftWrite,
 } from '../storage/mobile-session';
 import { discardFlightReportItem, readOperationQueue, sendFlightReportCommand } from './flight-report';
 import {
+  getMobileSessionIdentity,
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
+  type MobileSessionRequestContext,
 } from './mobile-auth';
 import { asMobileServiceError } from './mobile-service-error';
 
@@ -86,6 +89,21 @@ export type RampChecklistDraft = Readonly<{
   checklistId: string;
   answers: Readonly<Record<string, RampChecklistDraftAnswer>>;
 }>;
+
+/**
+ * A checklist's draft on the device and the account it belongs to: the one signed in when the screen loads it (N5).
+ * The screen keeps saving for that account, also after its session ends.
+ */
+export type RampChecklistDraftRead = Readonly<{
+  accountId: string;
+  draft: RampChecklistDraft | null;
+}>;
+
+/**
+ * Where a draft was saved (N5): with the account's session ('saved'), or kept on the device for an account whose
+ * session ended, until it signs in again ('kept-until-sign-in').
+ */
+export type RampChecklistDraftSave = 'saved' | 'kept-until-sign-in';
 
 export type RampChecklistAnswerRequest = Readonly<Omit<
   ApiRampChecklistAnswerRequest,
@@ -437,10 +455,14 @@ async function confirmSameSession(sessionId: string) {
   return confirmed;
 }
 
-async function rejectIfUnauthorized(sessionId: string, error: unknown): Promise<never> {
+/** Throws the failure of a request, unless the session renewed the credential ELEVANT refused: then 'retry' (S3). */
+async function rejectIfUnauthorized(
+  context: MobileSessionRequestContext, error: unknown, retried: boolean,
+): Promise<'retry'> {
   const normalized = asMobileServiceError(error);
   if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-    const cleared = await rejectMobileSessionRequest(sessionId);
+    const cleared = await rejectMobileSessionRequest(context, normalized);
+    if (cleared === 'retry' && !retried) return 'retry';
     if (!cleared) throw new MobileServiceError('cancelled');
   }
   throw normalized;
@@ -450,9 +472,17 @@ async function rejectIfUnauthorized(sessionId: string, error: unknown): Promise<
  * The operation's checklist. The last copy ELEVANT returned stays on the device for this account (3-I): without
  * signal the agent opens it from there, answers it and sends it to the queue; the copy is flagged as cached.
  */
-export async function getRampOperationChecklist(
+export function getRampOperationChecklist(
   operationId: string,
   options: RampChecklistRequestOptions = {},
+): Promise<GetRampOperationChecklistResponse> {
+  return readChecklist(operationId, options, false);
+}
+
+async function readChecklist(
+  operationId: string,
+  options: RampChecklistRequestOptions,
+  retried: boolean,
 ): Promise<GetRampOperationChecklistResponse> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const context = await getMobileSessionRequestContext();
@@ -480,56 +510,59 @@ export async function getRampOperationChecklist(
         }
       }
     }
-    return rejectIfUnauthorized(context.sessionId, normalized);
+    await rejectIfUnauthorized(context, normalized, retried);
+    return readChecklist(operationId, options, true);
   }
 }
 
+/** The draft of the account signed in now, and that account: the screen saves for it from then on (N5). */
 export async function readRampOperationChecklistDraft(
   operationId: string,
   checklistId: string,
-): Promise<RampChecklistDraft | null> {
+): Promise<RampChecklistDraftRead> {
   if (!isUuid(operationId) || !isUuid(checklistId)) {
     throw new MobileServiceError('request_failed');
   }
-  const context = await getMobileSessionRequestContext();
+  // The draft lives on the device: the session's identity is enough, without signal or a renewal (S3).
+  const identity = await getMobileSessionIdentity();
+  const accountId = identity.session.actor.accountId;
   try {
-    const result = await readRampChecklistDraftIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      checklistId,
-    );
+    const result = await readRampChecklistDraftIfCurrent(identity.sessionId, accountId, operationId, checklistId);
     if (result.kind !== 'current') throw new MobileServiceError('cancelled');
-    return parseDraft(result.value, checklistId);
+    return { accountId, draft: parseDraft(result.value, checklistId) };
   } catch (error) {
     throw asMobileServiceError(error);
   }
 }
 
+/**
+ * Saves the draft on the device for the account the screen loaded it with (N5); no signal nor renewal is needed (S3).
+ * Once that account's session ended without its agent signing out, the draft is still kept for it for two hours
+ * (D-N5) and comes back when it signs in again: 'kept-until-sign-in', also when the session ends while the save waits
+ * for the storage. A storage failure is thrown as `storage_unavailable`; a draft that can no longer be kept (another
+ * account signed in, the agent signed out, the window closed) as `session_expired`, never as a silent `cancelled`.
+ */
 export async function saveRampOperationChecklistDraft(
   operationId: string,
   draft: RampChecklistDraft,
-): Promise<void> {
-  if (!isUuid(operationId) || !isUuid(draft.checklistId)) {
+  accountId: string,
+): Promise<RampChecklistDraftSave> {
+  if (!isUuid(operationId) || !isUuid(draft.checklistId) || !isUuid(accountId)) {
     throw new MobileServiceError('request_failed');
   }
   const serialized = JSON.stringify(draft);
   if (!parseDraft(serialized, draft.checklistId)) {
     throw new MobileServiceError('request_failed');
   }
-  const context = await getMobileSessionRequestContext();
+  let result: RampChecklistDraftWrite;
   try {
-    const result = await writeRampChecklistDraftIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      draft.checklistId,
-      serialized,
-    );
-    if (result !== 'written') throw new MobileServiceError('cancelled');
+    result = await writeRampChecklistDraftForAccount(accountId, operationId, draft.checklistId, serialized);
   } catch (error) {
     throw asMobileServiceError(error);
   }
+  if (result === 'written') return 'saved';
+  if (result === 'kept') return 'kept-until-sign-in';
+  throw new MobileServiceError('session_expired');
 }
 
 /** The submission of this checklist still saved on the device (3-I), or null. */

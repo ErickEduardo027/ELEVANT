@@ -19,6 +19,7 @@ import {
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
+  type MobileSessionRequestContext,
 } from './mobile-auth';
 import { registerCurrentMobileDevice } from './mobile-device';
 import { getRampOperationChecklist } from './ramp-operation-checklist';
@@ -116,11 +117,23 @@ async function assertCanonicalReadiness(operationId: string, signal?: AbortSigna
   }
 }
 
-/** Reserves the full payload before POST; uncertain responses replay the exact key. */
-export async function submitRampOperation(
+/**
+ * Reserves the full payload before POST; uncertain responses replay the exact key, and so does the one more attempt
+ * after the session renewed a credential ELEVANT refused (S3).
+ */
+export function submitRampOperation(
   operationId: string,
   request: SubmitRampOperationRequest,
   options: { signal?: AbortSignal } = {},
+): Promise<RampOperationSubmissionResponse> {
+  return submitOperation(operationId, request, options, false);
+}
+
+async function submitOperation(
+  operationId: string,
+  request: SubmitRampOperationRequest,
+  options: { signal?: AbortSignal },
+  retried: boolean,
 ): Promise<RampOperationSubmissionResponse> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const validated = parseRequest(request);
@@ -128,6 +141,8 @@ export async function submitRampOperation(
   const context = await getMobileSessionRequestContext();
   const accountId = context.session.actor.accountId;
   let reservedKey: string | undefined;
+  // The credential of the last request: a refusal names it (S3).
+  let sending: MobileSessionRequestContext = context;
 
   try {
     const pending = await readRampOperationSubmitCommandIfCurrent(
@@ -151,9 +166,9 @@ export async function submitRampOperation(
     const frozen = parseRequest(payload);
     if (!frozen) throw new MobileServiceError('storage_unavailable');
 
-    const device = await registerCurrentMobileDevice(
-      { accessToken: context.accessToken }, options);
+    const device = await registerCurrentMobileDevice(context, options);
     const current = await confirmSession(context.sessionId);
+    sending = current;
     const response = await createMobileAgentApiClient({
       getAccessToken: () => current.accessToken,
     }).submitRampOperation(
@@ -180,7 +195,8 @@ export async function submitRampOperation(
       }
     }
     if (issue.code === 'unauthenticated' || issue.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(sending, issue);
+      if (cleared === 'retry' && !retried) return submitOperation(operationId, request, options, true);
       if (!cleared) throw new MobileServiceError('cancelled');
     }
     throw issue;

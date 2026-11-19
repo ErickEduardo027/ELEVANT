@@ -25,6 +25,7 @@ jest.mock('../src/services/mobile-auth', () => {
   return {
     MobileServiceError,
     getMobileSession: jest.fn(async () => null),
+    readEndedSession: jest.fn(async () => null),
     readUnsentRecords: jest.fn(async () => null),
     loginMobileAgent: (...args) => mockLogin(...args),
     changeTemporaryPassword: (...args) => mockChange(...args),
@@ -173,7 +174,7 @@ test('if the sign-in after the change fails the agent is back at sign-in, told t
   await fillNew(tree);
   await press(tree, 'CAMBIAR CONTRASEÑA');
   expect(text(tree)).toContain('Tu contraseña se cambió, pero no pudimos iniciar sesión.');
-  expect(text(tree)).toContain('Otro agente está usando esta tablet');
+  expect(text(tree)).toContain('Esta tablet sigue a nombre de otro agente');
   expect(input(tree, 'Correo de la cuenta AVIAM').props.value).toBe(email);
   expect(input(tree, 'Contraseña de la cuenta AVIAM').props.value).toBe('');
   expect(mockReplace).not.toHaveBeenCalled();

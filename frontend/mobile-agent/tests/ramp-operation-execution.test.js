@@ -55,6 +55,8 @@ jest.mock('../src/storage/walkaround-photos', () => ({
 jest.mock('../src/services/mobile-auth', () => {
   const { MobileServiceError } = jest.requireActual('../src/services/mobile-service-error');
   return {
+    // S3: commands are queued with the session's identity, the same session as the request context here.
+    getMobileSessionIdentity: (...args) => mockContext(...args),
     getMobileSessionRequestContext: (...args) => mockContext(...args),
     rejectMobileSessionRequest: (...args) => mockRejectSession(...args),
     MobileServiceError,
@@ -200,7 +202,8 @@ describe('checklist', () => {
   test('a revoked authorization rejects only the current session and keeps the submission on the device', async () => {
     mockApi.submitRampOperationChecklist.mockRejectedValue(new ElevantApiError({ status: 403 }));
     await expect(submitRampOperationChecklist(OPERATION_ID, checklistRequest())).rejects.toMatchObject({ code: 'forbidden' });
-    expect(mockRejectSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(mockRejectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION_ID }),
+      expect.objectContaining({ code: 'forbidden' }));
     expect(await readFlightReportOutbox(ACCOUNT_ID)).toHaveLength(1);
   });
 });
@@ -256,7 +259,8 @@ describe('service transitions', () => {
     mockApi.transitionRampOperationService.mockRejectedValue(new ElevantApiError({ status }));
     await expect(transitionRampOperationService(OPERATION_ID, SERVICE_ID, { targetStatus: 'InProgress' }))
       .rejects.toMatchObject({ code: status === 401 ? 'unauthenticated' : 'forbidden' });
-    expect(mockRejectSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(mockRejectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION_ID }),
+      expect.objectContaining({ status }));
     expect(await readFlightReportOutbox(ACCOUNT_ID)).toHaveLength(1);
   });
 

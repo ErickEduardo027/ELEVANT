@@ -75,18 +75,26 @@ public static class MobileDeviceCodes
 }
 
 /// <summary>
-/// The session of the tablet's agent (2-N02). It begins when its access token is issued (the token's <c>iat</c>):
-/// the app signs in for each session and never refreshes that token. Each session holds its own binding: the first
-/// registration of a session renews a binding the agent still holds from an earlier one (which signed out without
-/// releasing it, or whose release is still on its way), so a late release of the earlier session frees nothing.
+/// The session of the tablet's agent (2-N02). It begins at the sign-in: its access tokens carry that instant as
+/// <c>auth_time</c>, which every renewal keeps (ADR-0046), so renewing the token never starts a new session. A token
+/// issued without it (before ADR-0046) began its session when it was issued, its <c>iat</c>. Each session holds its own
+/// binding: the first registration of a session renews a binding the agent still holds from an earlier one (which
+/// signed out without releasing it, or whose release is still on its way), so a late release of the earlier session
+/// frees nothing.
 /// </summary>
 public static class MobileDeviceSession
 {
     private const long LastUnixSecond = 253_402_300_799;
 
-    /// <summary>When the session began, from its token's <c>iat</c> (Unix seconds); null when the token has none.</summary>
-    public static DateTimeOffset? StartedAt(string? issuedAt) =>
-        long.TryParse(issuedAt, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) &&
+    /// <summary>
+    /// When the session began: its token's <c>auth_time</c> or, when the token has no readable one, its <c>iat</c>
+    /// (both Unix seconds); null when it has neither.
+    /// </summary>
+    public static DateTimeOffset? StartedAt(string? authenticatedAt, string? issuedAt) =>
+        FromUnixSeconds(authenticatedAt) ?? FromUnixSeconds(issuedAt);
+
+    private static DateTimeOffset? FromUnixSeconds(string? value) =>
+        long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) &&
         seconds is > 0 and <= LastUnixSecond
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;

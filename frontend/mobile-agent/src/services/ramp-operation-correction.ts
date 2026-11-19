@@ -10,6 +10,7 @@ import {
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
+  type MobileSessionRequestContext,
 } from './mobile-auth';
 import { registerCurrentMobileDevice } from './mobile-device';
 import { asMobileServiceError } from './mobile-service-error';
@@ -35,14 +36,25 @@ export async function readPendingRampCorrection(operationId: string) {
   }
 }
 
-/** An uncertain response replays the same reserved command and never opens a second revision. */
-export async function reopenRampOperationCorrection(
+/**
+ * An uncertain response replays the same reserved command and never opens a second revision; a credential the session
+ * renewed sends it once more with the same key (S3).
+ */
+export function reopenRampOperationCorrection(
   operationId: string, options: { signal?: AbortSignal } = {},
+): Promise<RampOperationCorrectionResponse> {
+  return reopenCorrection(operationId, options, false);
+}
+
+async function reopenCorrection(
+  operationId: string, options: { signal?: AbortSignal }, retried: boolean,
 ): Promise<RampOperationCorrectionResponse> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const context = await getMobileSessionRequestContext();
   const accountId = context.session.actor.accountId;
   let reservedKey: string | undefined;
+  // The credential of the last request: a refusal names it (S3).
+  let sending: MobileSessionRequestContext = context;
   try {
     const pending = await readRampCorrectionCommandIfCurrent(
       context.sessionId, accountId, operationId);
@@ -63,10 +75,10 @@ export async function reopenRampOperationCorrection(
       context.sessionId, accountId, operationId);
     if (command.kind !== 'current') throw new MobileServiceError('cancelled');
     reservedKey = command.idempotencyKey;
-    const device = await registerCurrentMobileDevice(
-      { accessToken: context.accessToken }, options);
+    const device = await registerCurrentMobileDevice(context, options);
     const current = await getMobileSessionRequestContext();
     if (current.sessionId !== context.sessionId) throw new MobileServiceError('cancelled');
+    sending = current;
     const result = await createMobileAgentApiClient({
       getAccessToken: () => current.accessToken,
     }).reopenRampOperationCorrection(
@@ -91,7 +103,8 @@ export async function reopenRampOperationCorrection(
       }
     }
     if (issue.code === 'unauthenticated' || issue.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(sending, issue);
+      if (cleared === 'retry' && !retried) return reopenCorrection(operationId, options, true);
       if (!cleared) throw new MobileServiceError('cancelled');
     }
     throw issue;

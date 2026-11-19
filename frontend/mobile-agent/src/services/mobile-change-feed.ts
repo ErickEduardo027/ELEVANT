@@ -9,7 +9,8 @@ import { readOrCreateMobileInstallationId } from '../storage/mobile-session';
 type ChangeListener = (resources: readonly string[]) => void;
 const listeners = new Set<ChangeListener>();
 
-// Same hubs as the web; native clients send no Origin and authenticate with the session JWT.
+// Same hubs as the web; native clients send no Origin and authenticate with the session JWT. Each connection and
+// reconnection asks the session for its token, so a hub takes the renewed one (S3).
 const hubBase = process.env.EXPO_PUBLIC_ELEVANT_API_URL?.trim().replace(/\/$/, '');
 const hubs = hubBase ? ['/hubs/operations', '/hubs/notifications'].map(path => new HubConnectionBuilder()
   .withUrl(`${hubBase}${path}`, {
@@ -18,6 +19,12 @@ const hubs = hubBase ? ['/hubs/operations', '/hubs/notifications'].map(path => n
   .configureLogging(LogLevel.None)
   .withAutomaticReconnect([0, 2_000, 10_000, 30_000])
   .build()) : [];
+
+async function readAccountChanges(accessToken: string, after: string | undefined) {
+  const installationId = await readOrCreateMobileInstallationId();
+  return createMobileAgentApiClient({ getAccessToken: () => accessToken })
+    .getAccountChanges({ ...(after ? { after } : {}), limit: 100 }, { installationId });
+}
 
 const observer = createMobileChangeObserver({
   appState: AppState,
@@ -29,14 +36,18 @@ const observer = createMobileChangeObserver({
   },
   getChanges: async (context, after) => {
     try {
-      const installationId = await readOrCreateMobileInstallationId();
-      return await createMobileAgentApiClient({ getAccessToken: () => context.accessToken })
-        .getAccountChanges({ ...(after ? { after } : {}), limit: 100 },
-          { installationId });
+      return await readAccountChanges(context.accessToken, after);
     } catch (error) {
       const normalized = asMobileServiceError(error);
       if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-        const cleared = await rejectMobileSessionRequest(context.sessionId);
+        const cleared = await rejectMobileSessionRequest(context, normalized);
+        if (cleared === 'retry') {
+          // The same session renewed its credential: the page is read once more with it; another refusal waits for
+          // the next reconciliation.
+          const renewed = await getMobileSessionRequestContext();
+          if (renewed.sessionId !== context.sessionId) throw new MobileServiceError('cancelled');
+          return readAccountChanges(renewed.accessToken, after);
+        }
         if (!cleared) throw new MobileServiceError('cancelled');
       }
       throw normalized;

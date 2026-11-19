@@ -60,6 +60,8 @@ public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler,
                 "invalid_mobile_device");
         }
 
+        // The session began at the sign-in, which a renewed token keeps as auth_time (ADR-0046): renewing never opens a
+        // new binding. A token issued without auth_time began its session when it was issued (iat).
         var result = await handler.HandleAsync(
             new RegisterMobileDeviceCommand(
                 accountId,
@@ -68,7 +70,8 @@ public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler,
                 request.AppVersion,
                 request.DeviceName,
                 request.OperatingSystemVersion,
-                MobileDeviceSession.StartedAt(User.FindFirstValue(JwtRegisteredClaimNames.Iat))),
+                MobileDeviceSession.StartedAt(User.FindFirstValue(JwtRegisteredClaimNames.AuthTime),
+                    User.FindFirstValue(JwtRegisteredClaimNames.Iat))),
             cancellationToken);
 
         if (!result.IsSuccess)

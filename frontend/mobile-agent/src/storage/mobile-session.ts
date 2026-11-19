@@ -5,8 +5,15 @@ import {
   flightReportOutboxAccount,
   parseFlightReportOutbox,
 } from '../synchronization/flight-report-outbox';
+import { serverNow } from '../synchronization/server-clock';
 
-const ENVELOPE_SCHEMA_VERSION = 1 as const;
+/**
+ * v2 (S3, ADR-0046) adds the refresh token of the sign-in to the secret envelope; the v1 envelope the deployed APK
+ * stored is still read, without one.
+ */
+const CREDENTIAL_SCHEMA_VERSION = 2 as const;
+const LEGACY_CREDENTIAL_SCHEMA_VERSION = 1 as const;
+const METADATA_ENVELOPE_SCHEMA_VERSION = 1 as const;
 const RAMP_EXECUTION_COMMAND_SCHEMA_VERSION = 1 as const;
 const SESSION_CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
 const MOBILE_INSTALLATION_ID_KEY = 'elevant.mobile.installation-id.v1';
@@ -33,6 +40,8 @@ const OPERATION_CHAT_COMMAND_PREFIX = 'elevant:mobile:operation-chat-command:v1:
 /** Last server copy of an operation's checklist, so the agent opens it without signal (3-I); a cache only. */
 const RAMP_CHECKLIST_CACHE_PREFIX = 'elevant:mobile:ramp-checklist-cache:v1:';
 const ATTENDANCE_DRAFT_PENDING_PREFIX = 'elevant:mobile:attendance-draft-pending:v1:';
+/** The last session that ended without its agent signing out (N5): not secret, and it outlives the session. */
+const ENDED_SESSION_KEY = 'elevant:mobile:ended-session:v1';
 const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
 const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
 
@@ -53,13 +62,15 @@ const secureStoreOptions: SecureStore.SecureStoreOptions = {
 };
 
 type StoredCredentialEnvelope = Readonly<{
-  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION;
+  schemaVersion: typeof CREDENTIAL_SCHEMA_VERSION;
   sessionId: string;
   accessToken: string;
+  /** The refresh token of the sign-in, rotated by every renewal; null when ELEVANT gave none. */
+  refreshToken: string | null;
 }>;
 
 type StoredMetadataEnvelope = Readonly<{
-  schemaVersion: typeof ENVELOPE_SCHEMA_VERSION;
+  schemaVersion: typeof METADATA_ENVELOPE_SCHEMA_VERSION;
   sessionId: string;
   metadata: unknown;
 }>;
@@ -72,6 +83,74 @@ export class MobileSessionStorageError extends Error {
   }
 }
 
+/**
+ * D-N5: for this long after a session ended without its agent signing out, its account still keeps the checklist
+ * answers it marks on a screen it had open. The queue never takes a command without a session.
+ */
+export const ENDED_SESSION_DRAFT_WINDOW_MS = 2 * 60 * 60_000;
+
+/**
+ * Why a session ended without its agent signing out (N5): its access token expired and could not be renewed
+ * ('expired'), ELEVANT refused it ('refused': OCC revoked it, the password changed, 30 days without use or a reused
+ * refresh token) or the account lost its access to the app ('forbidden').
+ */
+export type MobileSessionEndReason = 'expired' | 'refused' | 'forbidden';
+
+/** The marker of that session (N5): its account, why it ended and when, by ELEVANT's clock. Never a credential. */
+export type EndedMobileSession = Readonly<{
+  accountId: string;
+  reason: MobileSessionEndReason;
+  endedAt: string;
+}>;
+
+/**
+ * What the screens hear when the tablet ends a session its agent did not sign out of (N6): why, when by ELEVANT's
+ * clock and whose, when its metadata names the account. A sign-out on purpose and a sign-in the tablet did not keep
+ * are not announced.
+ */
+export type MobileSessionEnd = Readonly<{
+  accountId: string | null;
+  reason: MobileSessionEndReason;
+  endedAt: string;
+}>;
+
+/**
+ * Where a checklist draft went (N5): to the account's active session ('written'), kept for an account whose session
+ * ended within the window ('kept'), or nowhere ('not-current').
+ */
+export type RampChecklistDraftWrite = 'written' | 'kept' | 'not-current';
+
+const SESSION_END_REASONS: readonly MobileSessionEndReason[] = ['expired', 'refused', 'forbidden'];
+
+type MobileSessionEndListener = (ended: MobileSessionEnd) => void;
+const sessionEndListeners = new Set<MobileSessionEndListener>();
+
+/**
+ * Tells `listener` every time the tablet ends a session its agent did not sign out of (N6): it expired without a
+ * refresh token in force, ELEVANT refused it, or the account lost its access to the app. Returns the function that
+ * stops listening.
+ */
+export function subscribeStoredMobileSessionEnd(listener: MobileSessionEndListener) {
+  sessionEndListeners.add(listener);
+  return () => {
+    sessionEndListeners.delete(listener);
+  };
+}
+
+function announceSessionEnd(ended: MobileSessionEnd) {
+  for (const listener of [...sessionEndListeners]) {
+    try {
+      listener(ended);
+    } catch {
+      // A screen that fails to hear it never keeps the session from ending.
+    }
+  }
+}
+
+/**
+ * 'active' while the access token is in force by ELEVANT's clock, or while a refresh token in force can renew it (S3):
+ * its access token may then be expired, and the session service renews it before a request.
+ */
 export type StoredMobileSessionState =
   | Readonly<{ kind: 'missing' }>
   | Readonly<{ kind: 'expired'; accountId?: string }>
@@ -79,6 +158,7 @@ export type StoredMobileSessionState =
       kind: 'active';
       sessionId: string;
       accessToken: string;
+      refreshToken: string | null;
       metadata: unknown;
     }>;
 
@@ -177,13 +257,19 @@ function safeAccountId(metadata: unknown) {
     : undefined;
 }
 
-function safeExpiry(metadata: unknown) {
-  if (!isRecord(metadata) || typeof metadata.expiresAt !== 'string') {
-    return undefined;
-  }
-
-  const timestamp = Date.parse(metadata.expiresAt);
+function safeInstant(value: unknown) {
+  if (typeof value !== 'string') return undefined;
+  const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function safeExpiry(metadata: unknown) {
+  return isRecord(metadata) ? safeInstant(metadata.expiresAt) : undefined;
+}
+
+/** Until when the refresh token can renew the session (S3); undefined when the session cannot be renewed. */
+function safeRefreshExpiry(metadata: unknown) {
+  return isRecord(metadata) ? safeInstant(metadata.refreshExpiresAt) : undefined;
 }
 
 function isValidAccessToken(value: unknown): value is string {
@@ -192,6 +278,11 @@ function isValidAccessToken(value: unknown): value is string {
     value.trim().length > 0 &&
     !/[\u0000-\u001f\u007f]/.test(value)
   );
+}
+
+/** A refresh token as ELEVANT issues it (ADR-0021): Base64URL, the shape the shared client accepts. */
+function isValidRefreshToken(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(value);
 }
 
 function parseJson(raw: string | null) {
@@ -209,8 +300,6 @@ function parseCredentialEnvelope(
   const candidate = parseJson(raw);
   if (
     !isRecord(candidate) ||
-    !hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'accessToken']) ||
-    candidate.schemaVersion !== ENVELOPE_SCHEMA_VERSION ||
     typeof candidate.sessionId !== 'string' ||
     !uuidPattern.test(candidate.sessionId) ||
     !isValidAccessToken(candidate.accessToken)
@@ -218,10 +307,32 @@ function parseCredentialEnvelope(
     return undefined;
   }
 
+  // The envelope the deployed APK wrote has no refresh token: its session ends with its access token.
+  if (
+    candidate.schemaVersion === LEGACY_CREDENTIAL_SCHEMA_VERSION &&
+    hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'accessToken'])
+  ) {
+    return {
+      schemaVersion: CREDENTIAL_SCHEMA_VERSION,
+      sessionId: candidate.sessionId,
+      accessToken: candidate.accessToken,
+      refreshToken: null,
+    };
+  }
+
+  if (
+    candidate.schemaVersion !== CREDENTIAL_SCHEMA_VERSION ||
+    !hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'accessToken', 'refreshToken']) ||
+    (candidate.refreshToken !== null && !isValidRefreshToken(candidate.refreshToken))
+  ) {
+    return undefined;
+  }
+
   return {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: CREDENTIAL_SCHEMA_VERSION,
     sessionId: candidate.sessionId,
     accessToken: candidate.accessToken,
+    refreshToken: candidate.refreshToken,
   };
 }
 
@@ -232,7 +343,7 @@ function parseMetadataEnvelope(
   if (
     !isRecord(candidate) ||
     !hasExactKeys(candidate, ['schemaVersion', 'sessionId', 'metadata']) ||
-    candidate.schemaVersion !== ENVELOPE_SCHEMA_VERSION ||
+    candidate.schemaVersion !== METADATA_ENVELOPE_SCHEMA_VERSION ||
     typeof candidate.sessionId !== 'string' ||
     !uuidPattern.test(candidate.sessionId) ||
     !('metadata' in candidate)
@@ -241,9 +352,28 @@ function parseMetadataEnvelope(
   }
 
   return {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: METADATA_ENVELOPE_SCHEMA_VERSION,
     sessionId: candidate.sessionId,
     metadata: candidate.metadata,
+  };
+}
+
+function parseEndedSession(raw: string | null): EndedMobileSession | undefined {
+  const candidate = parseJson(raw);
+  if (
+    !isRecord(candidate) ||
+    !hasExactKeys(candidate, ['accountId', 'reason', 'endedAt']) ||
+    !isUuid(candidate.accountId) ||
+    !SESSION_END_REASONS.includes(candidate.reason as MobileSessionEndReason) ||
+    safeInstant(candidate.endedAt) === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    accountId: candidate.accountId.toLowerCase(),
+    reason: candidate.reason as MobileSessionEndReason,
+    endedAt: candidate.endedAt as string,
   };
 }
 
@@ -350,15 +480,17 @@ function staleAsyncKeys(appKeys: readonly string[]) {
  * Removes the credential, its metadata, what the prototype left behind and the copies of ELEVANT's data. What the
  * agent recorded and ELEVANT has not confirmed stays on the device bound to its account (3-N12): a revoked or expired
  * session and a sign-out never lose unsent evidence (the Flight Report queue, the incident reports, the reserved
- * commands, the drafts and the attendance observations), and only the same account reads and sends it again.
+ * commands, the drafts and the attendance observations), and only the same account reads and sends it again. The
+ * marker of an ended session (N5) stays too, unless the agent signs out on purpose.
  */
-async function removeSessionAndCaches(appKeys: readonly string[]) {
+async function removeSessionAndCaches(appKeys: readonly string[], forgetEndedSession = false) {
   const results = await Promise.allSettled([
     SecureStore.deleteItemAsync(SESSION_CREDENTIAL_KEY),
     SecureStore.deleteItemAsync(LEGACY_ATOMIC_ENVELOPE_KEY),
     SecureStore.deleteItemAsync(LEGACY_ACCESS_TOKEN_KEY),
     AsyncStorage.multiRemove([
       SESSION_METADATA_KEY,
+      ...(forgetEndedSession ? [ENDED_SESSION_KEY] : []),
       ...new Set(staleAsyncKeys(appKeys)),
       ...allRampCacheKeys(appKeys),
     ]),
@@ -369,7 +501,7 @@ async function removeSessionAndCaches(appKeys: readonly string[]) {
   }
 }
 
-async function clearStoredMobileSessionUnlocked() {
+async function clearStoredMobileSessionUnlocked(forgetEndedSession = false) {
   let appKeys: readonly string[] = [];
   let discoveryFailed = false;
   try {
@@ -378,8 +510,47 @@ async function clearStoredMobileSessionUnlocked() {
     discoveryFailed = true;
   }
 
-  await removeSessionAndCaches(appKeys);
+  await removeSessionAndCaches(appKeys, forgetEndedSession);
   if (discoveryFailed) throw new MobileSessionStorageError();
+}
+
+/**
+ * Ends a session its agent did not sign out of (N5). Before the credential, its metadata and the caches go, the marker
+ * names its account, why and when it ended: that account still keeps the checklist answers it marks on a screen it had
+ * open, for ENDED_SESSION_DRAFT_WINDOW_MS. An expired session ended when its access token did, so a tablet left alone
+ * never opens a new window by noticing the end later. The credential goes even when the marker cannot be written; that
+ * failure is reported afterwards. Once the session is gone the screens hear it (N6), so they say that it ended instead
+ * of blaming the device.
+ */
+async function endStoredMobileSessionUnlocked(
+  metadata: unknown,
+  reason: MobileSessionEndReason,
+  now: number,
+) {
+  const accountId = safeAccountId(metadata)?.toLowerCase();
+  const expiry = safeExpiry(metadata);
+  const endedAt = new Date(reason === 'expired' && expiry !== undefined ? Math.min(now, expiry) : now).toISOString();
+  let remembered = true;
+  if (accountId !== undefined) {
+    const ended: EndedMobileSession = { accountId, reason, endedAt };
+    try {
+      await AsyncStorage.setItem(ENDED_SESSION_KEY, serializeEnvelope(ended));
+    } catch {
+      remembered = false;
+    }
+  }
+
+  await clearStoredMobileSessionUnlocked();
+  announceSessionEnd({ accountId: accountId ?? null, reason, endedAt });
+  if (!remembered) throw new MobileSessionStorageError();
+}
+
+/** Whether the marker lets this account keep a draft without a session: it names it and the window lasts (D-N5). */
+function keepsDraftsOf(ended: EndedMobileSession | undefined, accountId: string) {
+  if (ended?.accountId !== accountId.toLowerCase()) return false;
+  // ELEVANT's clock decides (3-N18), and a clock moved back never stretches the window.
+  const elapsed = serverNow().getTime() - Date.parse(ended.endedAt);
+  return elapsed >= 0 && elapsed <= ENDED_SESSION_DRAFT_WINDOW_MS;
 }
 
 async function readStoredMobileSessionUnlocked(): Promise<StoredMobileSessionState> {
@@ -408,8 +579,11 @@ async function readStoredMobileSessionUnlocked(): Promise<StoredMobileSessionSta
       return { kind: 'missing' };
     }
 
-    if (expiry <= Date.now()) {
-      await clearStoredMobileSessionUnlocked();
+    // ELEVANT's clock decides (3-N18). An expired access token ends the session only when no refresh token in force
+    // can renew it (S3), and the marker of its end stays (N5).
+    const now = serverNow().getTime();
+    if (expiry <= now && !canStillRenew(credential, metadataEnvelope.metadata, now)) {
+      await endStoredMobileSessionUnlocked(metadataEnvelope.metadata, 'expired', now);
       return { kind: 'expired', ...(accountId ? { accountId } : {}) };
     }
 
@@ -417,12 +591,19 @@ async function readStoredMobileSessionUnlocked(): Promise<StoredMobileSessionSta
       kind: 'active',
       sessionId: credential.sessionId,
       accessToken: credential.accessToken,
+      refreshToken: credential.refreshToken,
       metadata: metadataEnvelope.metadata,
     };
   } catch (error) {
     if (error instanceof MobileSessionStorageError) throw error;
     throw new MobileSessionStorageError();
   }
+}
+
+/** Whether the session's refresh token can still renew it: the metadata says until when (S3). */
+function canStillRenew(credential: StoredCredentialEnvelope, metadata: unknown, now: number) {
+  const refreshExpiry = safeRefreshExpiry(metadata);
+  return credential.refreshToken !== null && refreshExpiry !== undefined && refreshExpiry > now;
 }
 
 async function currentSessionUnlocked(expectedSessionId: string) {
@@ -445,6 +626,7 @@ async function currentAccountSessionUnlocked(
 
 async function persistSessionUnlocked(
   accessToken: string,
+  refreshToken: string | null,
   metadata: unknown,
   sessionId: string,
 ) {
@@ -457,12 +639,13 @@ async function persistSessionUnlocked(
   }
 
   const credential: StoredCredentialEnvelope = {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: CREDENTIAL_SCHEMA_VERSION,
     sessionId,
     accessToken,
+    refreshToken,
   };
   const metadataEnvelope: StoredMetadataEnvelope = {
-    schemaVersion: ENVELOPE_SCHEMA_VERSION,
+    schemaVersion: METADATA_ENVELOPE_SCHEMA_VERSION,
     sessionId,
     metadata,
   };
@@ -992,6 +1175,41 @@ export async function writeRampChecklistDraftIfCurrent(
   });
 }
 
+/**
+ * Keeps a checklist draft for the account the screen loaded it with (N5). It writes while that account's session is
+ * active, also when a renewal replaced its credential ('written'). Once that session ended without its agent signing
+ * out, it still writes while the marker of the end names the account and the window lasts ('kept'): what the agent
+ * marks after the end is not lost, and only that account reads it when it signs in again. Another account's session,
+ * a sign-out on purpose or a window that closed answer 'not-current'.
+ */
+export async function writeRampChecklistDraftForAccount(
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+  value: string,
+): Promise<RampChecklistDraftWrite> {
+  const key = rampChecklistDraftKey(accountId, operationId, checklistId);
+  if (!isJsonObjectString(value)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      const state = await readStoredMobileSessionUnlocked();
+      if (state.kind === 'active') {
+        if (safeAccountId(state.metadata)?.toLowerCase() !== accountId.toLowerCase()) return 'not-current';
+        await AsyncStorage.setItem(key, value);
+        return 'written';
+      }
+      if (!keepsDraftsOf(parseEndedSession(await AsyncStorage.getItem(ENDED_SESSION_KEY)), accountId)) {
+        return 'not-current';
+      }
+      await AsyncStorage.setItem(key, value);
+      return 'kept';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
 export async function removeRampChecklistDraftIfCurrent(
   sessionId: string,
   accountId: string,
@@ -1458,6 +1676,11 @@ export async function removeLegacyRampCommandIfCurrent(
 export type PendingEvidenceCount = Readonly<{
   /** Unsent records of the account signed in on this tablet (none without a session). */
   current: number;
+  /**
+   * Without a session, unsent records of the account whose session ended without its agent signing out (N7): the
+   * ones it sends when it signs in again. None while a session is signed in.
+   */
+  ended: number;
   /** Unsent records of other accounts: kept for them, never shown, sent or discarded by this one. */
   others: number;
 }>;
@@ -1465,24 +1688,31 @@ export type PendingEvidenceCount = Readonly<{
 /**
  * How many records this tablet keeps that ELEVANT has not confirmed (3-N12): the Flight Report queue, the incident
  * reports, the hand-off and correction commands, the attendance observations and the commands an older version
- * reserved, split between the account signed in now and the others. A checklist draft is not counted: nothing was
- * sent from it yet. It answers numbers only: nothing of another account's records leaves the storage.
+ * reserved, split between the account signed in now, the account whose session ended (N7) and the others. A
+ * checklist draft is not counted: nothing was sent from it yet. It answers numbers only: nothing of another account's
+ * records leaves the storage.
  */
 export async function countPendingEvidence(): Promise<PendingEvidenceCount> {
   return withStorageLock(async () => {
     try {
       const state = await readStoredMobileSessionUnlocked();
       const signedIn = state.kind === 'active' ? safeAccountId(state.metadata)?.toLowerCase() : undefined;
+      // The marker names the account only while nobody is signed in: a sign-in forgets it once confirmed.
+      const endedAccount = state.kind === 'active'
+        ? undefined
+        : parseEndedSession(await AsyncStorage.getItem(ENDED_SESSION_KEY))?.accountId;
       let current = 0;
+      let ended = 0;
       let others = 0;
       for (const key of await AsyncStorage.getAllKeys()) {
         const owner = evidenceOwner(key);
         if (!owner) continue;
         const records = evidenceRecords(key, await AsyncStorage.getItem(key));
         if (owner === signedIn) current += records;
+        else if (owner === endedAccount) ended += records;
         else others += records;
       }
-      return { current, others };
+      return { current, ended, others };
     } catch (error) {
       if (error instanceof MobileSessionStorageError) throw error;
       throw new MobileSessionStorageError();
@@ -1490,10 +1720,14 @@ export async function countPendingEvidence(): Promise<PendingEvidenceCount> {
   });
 }
 
+/**
+ * The agent signs out on purpose: the session and its caches go, and so does the marker of an ended session (N5), so
+ * nothing marked afterwards is kept for any account.
+ */
 export async function clearStoredMobileSession() {
   return withStorageLock(async () => {
     try {
-      await clearStoredMobileSessionUnlocked();
+      await clearStoredMobileSessionUnlocked(true);
     } catch (error) {
       if (error instanceof MobileSessionStorageError) throw error;
       throw new MobileSessionStorageError();
@@ -1501,14 +1735,63 @@ export async function clearStoredMobileSession() {
   });
 }
 
-export async function clearStoredMobileSessionIfCurrent(sessionId: string) {
+/**
+ * Clears the session only while it is the one that made the request and, given its access token, only while it still
+ * holds that credential: ELEVANT's refusal of an earlier credential never ends the session a renewal gave a new one (S3).
+ * With `endReason` the session ended without its agent signing out, and its marker stays (N5); without one (a sign-in
+ * the tablet did not keep, metadata it cannot read) nothing is marked and an earlier marker stays as it was.
+ */
+export async function clearStoredMobileSessionIfCurrent(
+  sessionId: string,
+  accessToken?: string,
+  endReason?: MobileSessionEndReason,
+) {
   return withStorageLock(async () => {
     try {
       const current = await readStoredMobileSessionUnlocked();
-      if (current.kind !== 'active' || current.sessionId !== sessionId) {
+      if (
+        current.kind !== 'active' ||
+        current.sessionId !== sessionId ||
+        (accessToken !== undefined && current.accessToken !== accessToken)
+      ) {
         return false;
       }
-      await clearStoredMobileSessionUnlocked();
+      if (endReason === undefined) await clearStoredMobileSessionUnlocked();
+      else await endStoredMobileSessionUnlocked(current.metadata, endReason, serverNow().getTime());
+      return true;
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+/**
+ * The last session that ended without its agent signing out (N5): its account, why and when. Null when there is none:
+ * a sign-out on purpose or a confirmed sign-in forgets it. Reading it first ends a session that already expired.
+ */
+export async function readEndedMobileSession(): Promise<EndedMobileSession | null> {
+  return withStorageLock(async () => {
+    try {
+      await readStoredMobileSessionUnlocked();
+      return parseEndedSession(await AsyncStorage.getItem(ENDED_SESSION_KEY)) ?? null;
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+/**
+ * A sign-in the tablet confirmed (N5): the marker of an earlier ended session goes, so no account keeps a draft without
+ * a session any more. Only while `sessionId` is the session on the device; answers whether it is.
+ */
+export async function forgetEndedMobileSession(sessionId: string) {
+  return withStorageLock(async () => {
+    try {
+      const current = await readStoredMobileSessionUnlocked();
+      if (current.kind !== 'active' || current.sessionId !== sessionId) return false;
+      await AsyncStorage.removeItem(ENDED_SESSION_KEY);
       return true;
     } catch (error) {
       if (error instanceof MobileSessionStorageError) throw error;
@@ -1521,23 +1804,95 @@ export async function readStoredMobileSession(): Promise<StoredMobileSessionStat
   return withStorageLock(readStoredMobileSessionUnlocked);
 }
 
+/** The access token while it is in force by ELEVANT's clock; one that waits for its renewal is not (S3). */
 export async function readValidMobileAccessToken() {
   const state = await readStoredMobileSession();
-  return state.kind === 'active' ? state.accessToken : undefined;
+  if (state.kind !== 'active') return undefined;
+  const expiry = safeExpiry(state.metadata);
+  return expiry !== undefined && expiry > serverNow().getTime() ? state.accessToken : undefined;
 }
 
+/**
+ * Stores a new sign-in under a new revision, with the refresh token ELEVANT issued (S3) or null. It takes the place of
+ * any earlier session, its refresh token included.
+ */
 export async function writeStoredMobileSession(
   accessToken: string,
   metadata: unknown,
+  refreshToken: string | null = null,
 ) {
-  if (!isValidAccessToken(accessToken)) {
+  if (!isValidAccessToken(accessToken) || (refreshToken !== null && !isValidRefreshToken(refreshToken))) {
     throw new MobileSessionStorageError();
   }
 
   return withStorageLock(async () => {
     const sessionId = Crypto.randomUUID();
-    await persistSessionUnlocked(accessToken, metadata, sessionId);
+    await persistSessionUnlocked(accessToken, refreshToken, metadata, sessionId);
     return sessionId;
+  });
+}
+
+/**
+ * Stores the credential a renewal returned in place of the one it renewed (S3), under the same revision: the session's
+ * caches, drafts and reservations stay, and so does the tablet's binding. Only while the session is still
+ * `expectedSessionId` with `expectedAccessToken` and the renewal names its account: a late answer never overwrites
+ * another credential nor another account. The secret goes first and the metadata after it, so the stored credential is
+ * never older than the metadata that describes it. Answers whether it replaced the credential.
+ */
+export async function replaceStoredMobileCredentialIfCurrent(
+  expectedSessionId: string,
+  expectedAccessToken: string,
+  accessToken: string,
+  refreshToken: string | null,
+  metadata: unknown,
+): Promise<boolean> {
+  const accountId = safeAccountId(metadata)?.toLowerCase();
+  if (
+    !isValidAccessToken(accessToken) ||
+    (refreshToken !== null && !isValidRefreshToken(refreshToken)) ||
+    safeExpiry(metadata) === undefined ||
+    accountId === undefined
+  ) {
+    throw new MobileSessionStorageError();
+  }
+
+  return withStorageLock(async () => {
+    try {
+      const current = await readStoredMobileSessionUnlocked();
+      if (
+        current.kind !== 'active' ||
+        current.sessionId !== expectedSessionId ||
+        current.accessToken !== expectedAccessToken ||
+        safeAccountId(current.metadata)?.toLowerCase() !== accountId
+      ) {
+        return false;
+      }
+
+      const credential: StoredCredentialEnvelope = {
+        schemaVersion: CREDENTIAL_SCHEMA_VERSION,
+        sessionId: expectedSessionId,
+        accessToken,
+        refreshToken,
+      };
+      const metadataEnvelope: StoredMetadataEnvelope = {
+        schemaVersion: METADATA_ENVELOPE_SCHEMA_VERSION,
+        sessionId: expectedSessionId,
+        metadata,
+      };
+      await SecureStore.setItemAsync(
+        SESSION_CREDENTIAL_KEY,
+        serializeEnvelope(credential),
+        secureStoreOptions,
+      );
+      await AsyncStorage.setItem(
+        SESSION_METADATA_KEY,
+        serializeEnvelope(metadataEnvelope),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
   });
 }
 
@@ -1555,6 +1910,7 @@ export async function updateStoredMobileSessionMetadata(
       const nextSessionId = Crypto.randomUUID();
       await persistSessionUnlocked(
         state.accessToken,
+        state.refreshToken,
         metadata,
         nextSessionId,
       );

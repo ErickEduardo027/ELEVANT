@@ -80,7 +80,7 @@ la sección «Fase 3» describe la cola actual.
 
 | Ruta Expo | Comportamiento observable |
 | --- | --- |
-| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta; *posterior al commit verificado,* también el cambio de la contraseña temporal del primer ingreso. |
+| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta; *posterior al commit verificado,* también el cambio de la contraseña temporal del primer ingreso y el aviso de cómo terminó la sesión anterior (N7, sección «Fase 2»). |
 | `/home` | Perfil, vuelos asignados, conteo de pendientes y acceso a chat. |
 | `/flight/[id]` | Detalle, servicios e inicio/cierre local de atención. |
 | `/checklist/[id]` | Respuestas y cierre de checklist asociado a la operación local. |
@@ -123,7 +123,7 @@ el cifrado de las cachés para datos reales siguen sin una política aprobada.
 
 | Capa | Fotografía original | Posterior al commit verificado (código de `39a85a46`) |
 | --- | --- | --- |
-| Autenticación | Servicio prototípico y token en AsyncStorage. | Sesión de la API con refresh rotativo; credencial en almacenamiento seguro. |
+| Autenticación | Servicio prototípico y token en AsyncStorage. | Sesión de la API con refresh rotativo, que la tablet guarda y usa desde S3 ([ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)); credencial en almacenamiento seguro. |
 | Vuelos | Endpoint heredado con fallback a caché. | `GetRampAssignedOperations`, con alcance derivado por cuenta, agente y estación, y caché sin conexión. |
 | Comandos offline | Outbox local y endpoint heredado de sync. | Instalación registrada, clave estable y recibo del servidor. |
 | Chat | Poll/merge contra ruta prototípica. | Conversaciones de la operación por la API; el aviso `ChangedV1` solo invita a releer. |
@@ -171,6 +171,56 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
 - **APK desplegada.** La respuesta de éxito del registro no cambió. La APK
   anterior no libera la tablet al cerrar sesión, pero el siguiente agente la
   toma igual.
+- **La sesión se renueva.** Posterior a la fase 2 (hallazgo S3 de la corrida
+  del VPS del 16 de noviembre;
+  [ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)):
+  - el inicio de sesión guarda el refresh token en el almacenamiento seguro
+    (sobre v2; el v1 de la APK anterior se sigue leyendo) y la siguiente
+    solicitud renueva el access token en su último minuto o ya vencido, una
+    sola vez para todas las que la esperan y comparando con el reloj de
+    ELEVANT ([servicio](../../frontend/mobile-agent/src/services/mobile-auth.ts));
+  - la renovación conserva la revisión de la sesión: cachés, borradores,
+    reservas, el vínculo de la tablet y la versión de su liberación siguen
+    igual, y la presencia conserva su lease;
+  - «Liberar» de OCC cierra el vínculo de la tablet, no la sesión: la lectura
+    de la asistencia que ELEVANT rechaza (`403`) con el registro ya confirmado
+    vuelve a registrar la tablet, como una escritura, y solo un `403` tras ese
+    registro nuevo termina la sesión;
+  - solo renueva si el JWT trae `auth_time`; frente a una API anterior la
+    sesión termina a los 15 minutos, como antes;
+  - sin señal, con `429` o `5xx` la sesión sigue y la siguiente renovación
+    espera 30 segundos; encolar un toque, guardar un borrador o reservar la
+    asistencia solo usan la identidad de la sesión guardada en la tablet;
+  - un `401` de una renovación termina la sesión y conserva lo registrado; un
+    `401` de una solicitud fuerza una renovación y la solicitud se repite una
+    vez;
+  - si se pierde la respuesta de una renovación (D-S3b), la sesión sigue con su
+    access token hasta que ELEVANT trata el refresh token viejo como reuso;
+    entonces termina y el agente vuelve a entrar;
+  - cerrar sesión libera la tablet y termina la familia en ELEVANT, cada uno con
+    un límite de 5 segundos; si el access token ya venció o está en su último
+    minuto, antes lo renueva una vez, aunque sea durante la pausa de 30
+    segundos, para que ELEVANT acepte la liberación. Un inicio de sesión que la
+    tablet no conserva también termina su familia. No hay tope de horas, por
+    decisión de Erick del 2026-11-19. La APK ya instalada no renueva: el cambio
+    llega con la APK nueva.
+- **La pantalla de acceso.** Posterior a la fase 2 (hallazgo N7 de la corrida
+  del VPS del 16 de noviembre;
+  [pantalla](../../frontend/mobile-agent/src/app/index.tsx)):
+  - el aviso de cómo terminó la sesión anterior está en pasado y nombra la
+    causa del marcador de fin (venció, ELEVANT la cerró o la cuenta perdió el
+    acceso); dura hasta el siguiente intento y vuelve con un aviso nuevo. Sale
+    también cuando el acceso encuentra él mismo la sesión vencida;
+  - con `device_in_use_by_active_agent` ya no pide al otro agente que cierre
+    sesión, porque el vínculo sigue mientras su operación esté en curso aunque
+    su sesión haya vencido: pide a OCC que la libere en «Tablets» y volver a
+    intentarlo. No muestra quién tiene la tablet ni precarga el correo (D-N7);
+  - tras el fin de una sesión, el aviso de pendientes cuenta solo los registros
+    de la cuenta que terminó, nunca los de otra;
+  - el correo ya no muestra una dirección de prueba como ejemplo, y el logo y
+    el formulario quedan centrados, también en vertical, con el pie al final;
+  - la APK instalada conserva los textos anteriores hasta que se instale la
+    nueva.
 
 ## Fase 3: una sola cola, el reloj de ELEVANT y la evidencia que se conserva
 
@@ -209,6 +259,44 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
   el cierre de sesión ya no borran lo que ELEVANT no confirmó: queda ligado a la
   cuenta, solo esa cuenta lo envía al volver a entrar y «Sincronización» indica
   los registros de otra cuenta, sin mostrarlos.
+- **Lo marcado después del fin de la sesión.** Posterior a la fase 3 (hallazgo N5
+  de la corrida del VPS del 16 de noviembre): lo que el agente marca en el
+  checklist después de que su sesión venció o fue rechazada ya no se pierde.
+  - Al terminar la sesión, la tablet deja un marcador no secreto con la cuenta,
+    la causa y la hora del fin
+    ([almacenamiento](../../frontend/mobile-agent/src/storage/mobile-session.ts)).
+  - La pantalla del checklist guarda para la cuenta con la que se abrió: con su
+    sesión activa o, sin sesión, durante 2 horas desde el fin (D-N5). Las
+    respuestas vuelven cuando esa cuenta inicia sesión de nuevo.
+  - Otra cuenta activa, el cierre de sesión a propósito o el plazo vencido lo
+    impiden. El cierre de sesión y un inicio de sesión confirmado borran el
+    marcador; un intento fallido no.
+  - Los comandos de la cola siguen exigiendo una sesión: el checklist se envía
+    después de volver a entrar.
+- **La app dice que la sesión terminó.** Posterior a la fase 3 (hallazgo N6 de
+  la corrida del VPS del 16 de noviembre): la tablet ya no culpa al dispositivo
+  cuando la sesión termina.
+  - Al borrar una sesión que el agente no cerró (vencida, rechazada o de una
+    cuenta que perdió el acceso), el
+    [layout raíz](../../frontend/mobile-agent/src/app/_layout.tsx) muestra en
+    todas las pantallas, salvo la de acceso, el aviso persistente «Tu sesión
+    terminó» con ENTRAR DE NUEVO (D-N6). El cierre de sesión a propósito no lo
+    muestra.
+  - El checklist (`/checklist/[id]`) ya no salta solo al acceso: muestra la
+    insignia roja «Sesión terminada», dice «Tu sesión terminó · Tus respuestas
+    quedaron guardadas…», apaga ENVIAR y ofrece ENTRAR DE NUEVO. Con una cuenta
+    sin acceso nombra la causa y abre el acceso con `access_revoked`. Mientras
+    muestra ese aviso propio, el layout no repite el suyo: un solo aviso, un
+    solo ENTRAR DE NUEVO y un solo anuncio, sin decir que guardó respuestas que
+    no pudo guardar.
+  - ENVIAR vuelve a guardar el borrador y espera ese guardado antes de decidir.
+    Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por
+    toque, y si vuelve a fallar pide cerrar la app y avisar a OCC.
+  - Los hitos y los datos del vuelo distinguen la sesión terminada de un fallo
+    del almacenamiento. Ningún texto pide desbloquear el dispositivo ni habla
+    de «payload».
+  - La APK instalada conserva los textos anteriores hasta que se instale la
+    nueva.
 - **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
   registros pendientes o rechazados de la operación, ni con la Orden de Servicio
   sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.

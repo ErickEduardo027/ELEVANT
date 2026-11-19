@@ -56,8 +56,9 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
     }
 
     /// <summary>
-    /// 2-N02: a registration tells the store when the agent's session began, its token's <c>iat</c>, so the first
-    /// registration of a new sign-in opens its own binding; the body the deployed APK validates keeps its keys.
+    /// 2-N02: a registration tells the store when the agent's session began, here the <c>iat</c> of a token issued
+    /// without <c>auth_time</c>, so the first registration of a new sign-in opens its own binding; the body the deployed
+    /// APK validates keeps its keys.
     /// </summary>
     [Fact]
     public async Task TheRegistrationNamesWhenTheAgentsSessionBegan()
@@ -85,6 +86,38 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         Assert.Equal(["installationId", "platform", "appVersion", "lastSeenAt"],
             body.RootElement.EnumerateObject().Select(property => property.Name));
+    }
+
+    /// <summary>
+    /// ADR-0046: a renewed token is issued long after its sign-in, and its <c>auth_time</c> names when the session
+    /// began. The registration uses it, not the token's <c>iat</c>, so renewing never opens a new binding.
+    /// </summary>
+    [Fact]
+    public async Task ARenewedTokenRegistersWithItsSessionStart()
+    {
+        var devices = new DeviceStub
+        {
+            Registration = MobileDeviceRegistrationWriteResult.Success(new MobileDeviceRegistrationData(InstallationId,
+                "Android", "1.2.3", new DateTimeOffset(2026, 11, 7, 10, 30, 0, 125, TimeSpan.Zero)), Guid.NewGuid()),
+        };
+        await using var application = WithServices(services =>
+        {
+            services.RemoveAll<IActorContextResolver>();
+            services.RemoveAll<IMobileDeviceCommandStore>();
+            services.AddScoped<IActorContextResolver>(_ => new RampActor());
+            services.AddSingleton<IMobileDeviceCommandStore>(devices);
+        });
+        var signedIn = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddHours(-9).ToUnixTimeSeconds());
+        using var client = Authorized(application, signedIn);
+        var ct = TestContext.Current.CancellationToken;
+        var issuedAt = new JsonWebToken(client.DefaultRequestHeaders.Authorization!.Parameter!).IssuedAt;
+        Assert.True(new DateTimeOffset(DateTime.SpecifyKind(issuedAt, DateTimeKind.Utc)) > signedIn.AddHours(8));
+
+        using var response = await client.PutAsJsonAsync("/api/v1/mobile/device",
+            new { installationId = InstallationId, platform = "Android", appVersion = "1.2.3" }, ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(signedIn, devices.Registered!.SessionStartedAt);
+        Assert.Equal(TimeSpan.Zero, devices.Registered.SessionStartedAt!.Value.Offset);
     }
 
     [Fact]
@@ -509,12 +542,20 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
         return problem.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
 
-    private static HttpClient Authorized(WebApplicationFactory<Program> application)
+    /// <summary>
+    /// A client with a token issued now; <paramref name="sessionStartedAt"/> adds the <c>auth_time</c> a renewed token
+    /// carries (ADR-0046).
+    /// </summary>
+    private static HttpClient Authorized(WebApplicationFactory<Program> application,
+        DateTimeOffset? sessionStartedAt = null)
     {
         var client = application.CreateClient();
         var now = DateTimeOffset.UtcNow;
         var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
+            Claims = sessionStartedAt is { } started
+                ? new Dictionary<string, object> { [JwtRegisteredClaimNames.AuthTime] = started.ToUnixTimeSeconds() }
+                : null,
             Audience = ElevantApiFactory.AuthenticationAudience,
             Expires = now.AddMinutes(15).UtcDateTime,
             IssuedAt = now.UtcDateTime,
