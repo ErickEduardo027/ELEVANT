@@ -73,8 +73,10 @@ describe('TurnaroundChangeDialog (3-A, 3-N19)', () => {
     const arrival = await screen.findByLabelText('Llegada programada (hora local de PUJ)');
     expect(arrival).toHaveValue('2026-11-05T13:00');
     expect(screen.getByLabelText('Salida programada (hora local de PUJ)')).toHaveValue('2026-11-05T14:30');
-    await screen.findByRole('option', { name: /A01/ });
-    expect(screen.getByRole('option', { name: 'Mantener la posición actual (B03)' })).toBeInTheDocument();
+    // Each stand by the code the map draws (N27): the seed's A01 and B03 are A1 and B3.
+    await screen.findByRole('option', { name: 'A1 · Terminal A' });
+    expect(screen.getByRole('option', { name: 'Mantener la posición actual (B3)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /A01|B03/ })).not.toBeInTheDocument();
 
     fireEvent.change(arrival, { target: { value: '2026-11-05T14:00' } });
     fireEvent.change(screen.getByLabelText('Salida programada (hora local de PUJ)'), { target: { value: '2026-11-05T15:30' } });

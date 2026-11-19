@@ -10,6 +10,7 @@ import {
 } from '../../../services/occCoverageService';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { problemMessage } from '../../../services/problemMessages';
+import { standDisplayCode } from '../../../services/standCodes';
 import OccShiftPanel from './OccShiftPanel';
 import OccAttendancePanel from './OccAttendancePanel';
 import { useTranslation } from '../../../i18n/LanguageScope';
@@ -478,7 +479,7 @@ export default function PlanningDrawer({
           <Section title={t('drawer.aircraftAndPosition')}>
             <p>{flight.aircraft ? `${flight.aircraft.manufacturer} ${flight.aircraft.model}${flight.aircraft.registration ? ` · ${flight.aircraft.registration}` : ''}` : t('drawer.noAircraft')}</p>
             <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-              {flight.position ? t('drawer.position', { code: flight.position }) : t('drawer.noPosition')} · {flight.terminal ? flight.terminal.name : t('drawer.noTerminal')}
+              {flight.position ? t('drawer.position', { code: standDisplayCode(flight.position) }) : t('drawer.noPosition')} · {flight.terminal ? flight.terminal.name : t('drawer.noTerminal')}
             </p>
           </Section>
 

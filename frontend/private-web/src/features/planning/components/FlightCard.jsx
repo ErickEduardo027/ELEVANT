@@ -5,6 +5,7 @@ import { EyeIcon } from './icons';
 import { formatCountdown } from '../planningMappers';
 import { getPlanningStatusMeta } from '../planningStatus';
 import { formatPlanningClock } from '../planningTime';
+import { standDisplayCode } from '../../../services/standCodes';
 import AssignmentSummary from './AssignmentSummary';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
@@ -92,7 +93,7 @@ export default function FlightCard({ flight, now, onSelect }) {
         <LegSummary kind="arrival" leg={flight.arrival} timeZone={timeZone} />
         <div className="flex min-w-[130px] flex-col items-center justify-center rounded-lg bg-ink-900/[0.035] px-3 py-2 text-center dark:bg-white/[0.04]">
           <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-secondary-light dark:text-text-secondary-dark">{t('card.turnaround')}</span>
-          <span className="mt-1 font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{flight.position ?? t('card.noPosition')}</span>
+          <span className="mt-1 font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{flight.position == null ? t('card.noPosition') : standDisplayCode(flight.position)}</span>
           <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">{flight.terminalCode ? t('card.terminal', { code: flight.terminalCode }) : t('card.noTerminal')}</span>
         </div>
         <LegSummary kind="departure" leg={flight.departure} timeZone={timeZone} />

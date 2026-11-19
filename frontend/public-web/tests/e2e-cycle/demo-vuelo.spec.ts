@@ -4,7 +4,7 @@ import { goPrivate, loginPrivate, openModule, snap } from "./support/browser";
 import { API } from "./support/env";
 import {
   type CoverageBoard, coverageBoard, ensureAgentShiftNow, ensureAgentShiftToday, findTurnaround, handOffUnperformed,
-  openPlanningFlight, type PlanningDetail, type PlanningTurnaround, RAMP_AGENT, tablet, tabletOperation,
+  openPlanningFlight, type PlanningDetail, type PlanningTurnaround, RAMP_AGENT, shownStandCode, tablet, tabletOperation,
 } from "./support/operations";
 
 // Vuelo demo (ADR-0041, PRs A1 and A2 of «OCC a nivel NOC»). The Superadmin loads the Punta Cana stands from
@@ -356,7 +356,8 @@ test("Superadmin dispara un vuelo demo «Al azar» y el servidor sortea la posic
   expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBeLessThan((VISIT.minutes + 1) * MINUTE);
   expect(ms(flight.onBlockAt) - ms(flight.touchdownAt)).toBe(90_000);
   expect(ms(flight.scheduledOffBlockAt) - ms(flight.onBlockAt)).toBe(VISIT.groundMinutes * MINUTE);
-  await expectDemoRow(flight, `OCC aún no lo importa · Posición sugerida ${stand!.code}`);
+  // The row names the stand as AVIAM Web shows it (N27): the seed's A01 is «A1».
+  await expectDemoRow(flight, `OCC aún no lo importa · Posición sugerida ${shownStandCode(stand!.code)}`);
   await snap(superadminPage, "demo-superadmin-vuelo-creado");
 
   // OCC's review already lists both legs, marked as demo: the arrival with the stand as its gate, its departure and the
@@ -407,7 +408,7 @@ test("OCC ve el vuelo demo con «Demo» y su posición preseleccionada y lo impo
   expect(board.data.positions.find(item => item.code === stand!.code)?.turnarounds
     .find(item => item.turnaroundId === turnaroundId)?.isDemo, "the positions board marks the demo flight").toBe(true);
   // The Superadmin's list follows OCC's side of the flight (it is read every 5 to 20 seconds).
-  await expectDemoRow(flight!, `Importado por OCC · ${operationCode} · Posición ${stand!.code}`, 45_000);
+  await expectDemoRow(flight!, `Importado por OCC · ${operationCode} · Posición ${shownStandCode(stand!.code)}`, 45_000);
   await snap(superadminPage, "demo-superadmin-importado");
 });
 

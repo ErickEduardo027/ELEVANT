@@ -3,7 +3,7 @@ import { getManualTurnaroundOptions } from '../../../services/planningService';
 import { stationLocalToUtc, utcToStationLocalInput } from '../../../services/businessDay';
 import { problemMessage } from '../../../services/problemMessages';
 import { placementReasons } from '../../../services/occFlightFeedService';
-import { sortByStandCode } from '../../../services/standCodes';
+import { sortByStandCode, standDisplayCode } from '../../../services/standCodes';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages, TURNAROUND_PROBLEM_MESSAGES, TURNAROUND_REASON_MESSAGES } from '../planningMessages';
 import { usePlanningTurnaround } from '../usePlanningTurnaround';
@@ -226,9 +226,9 @@ export default function TurnaroundChangeDialog({ turnaroundId, mode, onChanged, 
                 </label>
                 <label className={labelClass}>{t('change.stand')}
                   <select value={form.standId} onChange={event => update('standId', event.target.value)} className={`${fieldClass} mt-1`}>
-                    <option value="">{current?.stand?.code ? `${t('change.keepStand')} (${current.stand.code})` : t('change.keepStand')}</option>
+                    <option value="">{current?.stand?.code ? `${t('change.keepStand')} (${standDisplayCode(current.stand.code)})` : t('change.keepStand')}</option>
                     {stands.filter(stand => stand.id !== current?.stand?.id).map(stand =>
-                      <option key={stand.id} value={stand.id}>{t('manual.standOption', { code: stand.code, terminal: stand.terminal?.code ?? '—' })}</option>)}
+                      <option key={stand.id} value={stand.id}>{t('manual.standOption', { code: standDisplayCode(stand.code), terminal: stand.terminal?.code ?? '—' })}</option>)}
                   </select>
                 </label>
                 <label className={labelClass}>{t('change.aircraftType')}

@@ -435,6 +435,15 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
   desactivar ni borrar lo que ya existe: una posición que ya está se adopta por
   su código normalizado (`A01` es la `A1` del catálogo). Sus atributos son
   provisionales y OCC los revisa en la configuración de la cobertura.
+  *Posterior al commit verificado (hallazgo N27, 19 de noviembre de 2026):* los
+  datos no cambian: la semilla conserva `A01` y `A02`. AVIAM Web las muestra
+  como el mapa, `A1` y `A2`, en todas sus pantallas salvo «Datos maestros»,
+  donde se edita el código tal como está guardado: quita los ceros de relleno
+  de un código de mayúsculas, un número y mayúsculas, y cualquier otro código
+  se ve tal cual
+  ([`standDisplayCode`](../../frontend/private-web/src/services/standCodes.js)).
+  Los comandos siguen nombrando la posición por su id, y la tablet y el PDF no
+  cambian.
 - **La posición del vuelo demo.** «Al azar» sortea, con la `Idempotency-Key`
   como semilla, entre las posiciones elegibles: ubicadas en el mapa, libres
   durante la escala y cubiertas a la hora de llegada por un agente que pasa la

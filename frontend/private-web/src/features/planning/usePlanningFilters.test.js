@@ -124,6 +124,15 @@ describe('usePlanningFilters', () => {
     expect(result.current.filteredFlights.map(item => item.id)).toEqual(expectedIds);
   });
 
+  it('finds a stand by the code on screen as well as by its stored code (N27)', () => {
+    const { result } = renderHook(() => usePlanningFilters(FLIGHTS));
+    // Planificación shows the seed's A02 as A2, as the map draws it.
+    act(() => result.current.setFilter('search', 'a2'));
+    expect(result.current.filteredFlights.map(item => item.id)).toEqual(['turnaround-1']);
+    act(() => result.current.setFilter('search', 'A02'));
+    expect(result.current.filteredFlights.map(item => item.id)).toEqual(['turnaround-1']);
+  });
+
   it('derives the delayed quick filter from the explicit leg estimate and toggles it', () => {
     const { result } = renderHook(() => usePlanningFilters(FLIGHTS));
     act(() => result.current.setQuickFilter('delayed'));

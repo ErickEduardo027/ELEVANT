@@ -19,6 +19,26 @@ export function normalizeStandCode(code) {
   return match ? `${match[1]}${match[2]}${match[3]}` : text;
 }
 
+/** A code as «Datos maestros» stores it whose number carries zero padding: capitals, the number and capitals. */
+const STORED_PADDED = /^([A-Z]*)0+([0-9]+)([A-Z]*)$/;
+
+/**
+ * A stand code as AVIAM Web shows it (N27): one code per stand on every screen, the one the map draws. The seed created
+ * «A01» and the airport's plan says «A1», so a code of capitals, a number and capitals loses the zero padding of its
+ * number: «A01» is shown «A1», «BN06» «BN6» and «09A» «9A». Any other code is shown as it is: «E2E-XXXX-1» keeps its
+ * hyphens (normalizeStandCode would show «E2EXXXX1»), and «A10», «A0» or «a-1» stay as they are. It only changes what a
+ * screen shows: commands send the stand's id, comparisons use normalizeStandCode and «Datos maestros» shows the code as
+ * it is stored. The data does not change (D-N27).
+ *
+ * @param {unknown} code
+ * @returns {string}
+ */
+export function standDisplayCode(code) {
+  const text = String(code ?? '');
+  const match = STORED_PADDED.exec(text);
+  return match ? `${match[1]}${match[2]}${match[3]}` : text;
+}
+
 /** Numbers compared as numbers and letters without case: «A2» before «A10», «A10» before «AN1». */
 const NATURAL = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
 

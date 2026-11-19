@@ -1,5 +1,6 @@
 import { isInOperation } from '../occ-ui/statusVocabulary';
 import { toInstantMs } from '../occ-ui/occTime';
+import { standDisplayCode } from '../../services/standCodes';
 
 // The pure models of Planificación's views (design E.2, template C): «Posiciones», the stands of the day as the band of
 // occ-ui/OccTimeline.jsx, and «Tabla», the day's turnarounds as the rows of occ-ui/OccDataTable.jsx. Both read only the
@@ -29,6 +30,7 @@ export function visitState(flight) {
  * visit one bar from its arrival's best time to its departure's (a missing end stays open), with the shape of
  * OccTimeline: `{ id, turnaroundId, arrivalFlight, departureFlight, startAt, startKind, endAt, endKind, state,
  * estimated, demo, conflict, inOperation }`. A turnaround without a stand is left out (the table says «Sin posición»).
+ * A row's id is the stand's code as stored and its label the code the map draws (N27: the seed's A02 is A2).
  */
 export function planningBandRows(flights = NO_FLIGHTS) {
   const byStand = new Map();
@@ -57,7 +59,7 @@ export function planningBandRows(flights = NO_FLIGHTS) {
   const startOf = bar => toInstantMs(bar.startAt) || 0;
   return Object.freeze([...byStand.entries()]
     .sort(([left], [right]) => collator.compare(left, right))
-    .map(([code, bars]) => Object.freeze({ id: code, label: code, bars: Object.freeze(bars.sort((a, b) => startOf(a) - startOf(b))) })));
+    .map(([code, bars]) => Object.freeze({ id: code, label: standDisplayCode(code), bars: Object.freeze(bars.sort((a, b) => startOf(a) - startOf(b))) })));
 }
 
 /**

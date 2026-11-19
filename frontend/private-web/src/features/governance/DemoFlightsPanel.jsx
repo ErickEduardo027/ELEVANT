@@ -9,6 +9,7 @@ import {
   prepareDemoStation,
 } from '../../services/demoFlightsService';
 import { isConflict } from '../../services/problemMessages';
+import { standDisplayCode } from '../../services/standCodes';
 import {
   clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationStatusLabel, phaseLabel, serverClockOffset,
 } from './demoFlightStatus';
@@ -102,11 +103,11 @@ function coverText({ coveredBy, eligibleAgents }) {
 }
 
 /**
- * A stand as the field «Posición» offers it: who covers it when it is eligible, otherwise why not in words; first the
- * flags (not located, not free), then the reasons of the rule.
+ * A stand as the field «Posición» offers it, by the code the map draws (N27: the seed's A01 is A1): who covers it when it
+ * is eligible, otherwise why not in words; first the flags (not located, not free), then the reasons of the rule.
  */
 function standLabel(stand) {
-  const where = `${stand.code} · Terminal ${stand.terminalCode}`;
+  const where = `${standDisplayCode(stand.code)} · Terminal ${stand.terminalCode}`;
   if (stand.eligible) return `${where} · ${coverText(stand)}`;
   const why = reasonsSentence([...(stand.located ? [] : ['stand_not_located']), ...(stand.free ? [] : ['stand_not_free']),
     ...stand.reasons]);
@@ -353,13 +354,16 @@ function loadNotice(before, answer) {
     ? 'Se cargaron las terminales de Punta Cana que faltaban; no se pudieron cargar las posiciones.' : '';
 }
 
+/** Stand codes in a sentence, each as the map draws it (N27): «B1, B2», never «B01, B02». */
+const standList = codes => codes.map(standDisplayCode).join(', ');
+
 /**
  * What a load could not create: the catalogue's stands that are still missing once «Cargar posiciones» answered this
  * same state, because their terminal or the stand itself is inactive (the command never reactivates a row).
  */
 function stillMissingText({ missingStands }) {
   return missingStands.length > 0
-    ? `Faltan: ${missingStands.join(', ')}. Su terminal o la posición están desactivadas: OCC puede activarlas en «Datos maestros».`
+    ? `Faltan: ${standList(missingStands)}. Su terminal o la posición están desactivadas: OCC puede activarlas en «Datos maestros».`
     : 'Una terminal del plano está desactivada: OCC puede activarla en «Datos maestros».';
 }
 
@@ -418,7 +422,7 @@ function PuntaCanaStandsCard({ layout, onLoaded, onStale }) {
             {load.busy ? 'Cargando posiciones…' : 'Cargar posiciones'}</button>
         </div>}
         {layout.unmatchedStands.length > 0 && <p className={`text-xs ${muted}`}>
-          Posiciones fuera del plano de referencia: {layout.unmatchedStands.join(', ')}. OCC puede desactivarlas en
+          Posiciones fuera del plano de referencia: {standList(layout.unmatchedStands)}. OCC puede desactivarlas en
           «Datos maestros».</p>}
       </>}
       {load.error && <p role="alert" className={alertClass}>{load.error}</p>}
@@ -429,15 +433,20 @@ function PuntaCanaStandsCard({ layout, onLoaded, onStale }) {
 
 const STATE_TONE = Object.freeze({ Approach: 'info', TaxiIn: 'info', Parked: 'active', TaxiOut: 'info' });
 
-/** One flight of «Vuelos demo de hoy», where its aircraft is at the server's time `serverNow`. */
+/**
+ * One flight of «Vuelos demo de hoy», where its aircraft is at the server's time `serverNow`; its stand by the code the
+ * map draws (N27).
+ */
 function DemoFlightRow({ flight, serverNow, busy, onAction }) {
   const phase = demoFlightPhase(flight, serverNow);
   const action = demoFlightAction(flight, serverNow);
   const route = [flight.originIata || '—', flight.stationCode, flight.destinationIata || '—'].join(' → ');
   const tone = flight.state === 'Active' ? STATE_TONE[phase] ?? 'neutral' : 'neutral';
+  const stand = flight.standCode ? standDisplayCode(flight.standCode) : null;
+  const suggested = flight.suggestedStandCode ? standDisplayCode(flight.suggestedStandCode) : null;
   const occ = flight.imported
-    ? `Importado por OCC · ${flight.operationCode} · ${flight.standCode ? `Posición ${flight.standCode}` : 'Sin posición asignada'}`
-    : `OCC aún no lo importa${flight.suggestedStandCode ? ` · Posición sugerida ${flight.suggestedStandCode}` : ''}`;
+    ? `Importado por OCC · ${flight.operationCode} · ${stand ? `Posición ${stand}` : 'Sin posición asignada'}`
+    : `OCC aún no lo importa${suggested ? ` · Posición sugerida ${suggested}` : ''}`;
   const operation = operationStatusLabel(flight.operationStatus);
   return (
     <li className="space-y-1 py-3">

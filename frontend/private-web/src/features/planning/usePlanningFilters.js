@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { hasEstimatedDelay, isPendingAssignment } from './planningMappers';
+import { standDisplayCode } from '../../services/standCodes';
 
 const INITIAL_FILTERS = {
   airlineIata: '',
@@ -42,6 +43,8 @@ function searchableValues(flight) {
     flight.aircraftType,
     flight.stand?.code,
     flight.position,
+    // The stand as Planificación shows it (N27): «A2» finds the seed's A02.
+    standDisplayCode(flight.stand?.code ?? flight.position),
     flight.terminal?.code,
     flight.terminal?.name,
     flight.terminalCode,

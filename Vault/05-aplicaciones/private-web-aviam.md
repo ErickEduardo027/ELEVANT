@@ -787,6 +787,32 @@ también una B33, donde OCC la puso. Fuentes:
 [posiciones del tablero](../../frontend/private-web/src/features/dashboard/dashboardPositions.js) y
 [mapeadores del mapa](../../frontend/private-web/src/features/positions-map/positionsMapMappers.js).
 
+*Posterior al commit verificado (hallazgo N27, 19 de noviembre de 2026):* AVIAM
+Web muestra un solo código por posición, el que dibuja el mapa. La semilla creó
+`A01` y `A02` y la carga de Punta Cana las adoptó como las `A1` y `A2` del
+catálogo, pero solo los mapas quitaban los ceros al mostrarlas: Cobertura, el
+importador y Superadministración decían «A01». Ahora
+[`standDisplayCode`](../../frontend/private-web/src/services/standCodes.js)
+quita los ceros de relleno de un código de mayúsculas, un número y mayúsculas
+(«A01» se ve «A1» y «BN06», «BN6») y deja cualquier otro tal cual
+(«E2E-XXXX-1» conserva sus guiones). No es `normalizeStandCode`, que sigue
+siendo la regla para comparar. La usan:
+- las placas de posición del OCC (`OccPlate kind="stand"`): tablas, bandas,
+  tiras y fichas;
+- Cobertura de posiciones: los botones del formulario, las combinadas y el
+  nombre del selector de tamaño;
+- Planificación: las tarjetas, el cajón de la escala (también en «Asignar
+  agente» de la consola), el filtro y la búsqueda de posición, y los selectores
+  de «Nuevo vuelo» y «Editar vuelo»;
+- «Importar vuelos»: la puerta de una llegada demo y el selector de posición;
+- Mapa de posiciones: «(ahora en A1)» al traer otro vuelo;
+- Superadministración: el campo «Posición», «Vuelos demo de hoy» y las
+  posiciones fuera del plano de la tarjeta «Posiciones de Punta Cana».
+
+Los datos no cambian (D-N27): los comandos envían el id de la posición,
+«Datos maestros» muestra el código tal como está guardado porque ahí se edita, y
+la tablet y el PDF no cambian.
+
 ## Sistema visual NOC del OCC (PR U1)
 
 Posterior al commit verificado de esta nota: esta sección describe el código del

@@ -472,7 +472,8 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     prepareDemoStation.mockResolvedValueOnce(FBO_INACTIVE);
     renderPanel();
     const card = await standsCard();
-    const outside = 'Posiciones fuera del plano de referencia: B01, B02. OCC puede desactivarlas en «Datos maestros».';
+    // The seed's B01 and B02, by the code the map would draw (N27).
+    const outside = 'Posiciones fuera del plano de referencia: B1, B2. OCC puede desactivarlas en «Datos maestros».';
     expect(card).toHaveTextContent(outside);
     // Before a load the counts say what is missing, and the button creates it.
     expect(card).not.toHaveTextContent('Faltan');
@@ -619,7 +620,7 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       ['A1 · Terminal A · No está libre para ese avión en ese horario', false],
       ['A2 · Terminal A · Cubre Riley Ramp', true],
       ['A10 · Terminal A · Cubre Riley Ramp', true],
-      ['B01 · Terminal B · Sin ubicar en el mapa', false],
+      ['B1 · Terminal B · Sin ubicar en el mapa', false],
       ['B20 · Terminal B · Nadie la cubre a esa hora', false],
       ['B21 · Terminal B · Turno no compatible y menos de 3 meses: necesita un mentor en su cobertura', false],
       ['BN6 · Terminal FBO · Sin ubicar en el mapa y no está libre para ese avión en ese horario', false],
@@ -639,6 +640,28 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       ['A2 · Terminal A · Cubren Riley Ramp e Ida Pérez', true],
       ['A3 · Terminal A · Cubren Riley Ramp, Ida Pérez y 1 más (1 elegible)', true],
     ]);
+  });
+
+  it("names each stand by the code the map draws, the seed's A01 as A1, and sends its id (N27)", async () => {
+    loadDemoFlightOptions.mockResolvedValue(options({ stands: [stand('s-a01', 'A01', 'A'),
+      stand('s-e2e', 'E2E-XXXX-1', 'A', { located: false, coveredBy: [], eligibleAgents: 0, eligible: false })] }));
+    listDemoFlights.mockResolvedValue(list([flight({ suggestedStandCode: 'A01' }), imported({ standCode: 'A02' })]));
+    createDemoFlight.mockResolvedValue(flight({ suggestedStandCode: 'A01' }));
+    renderPanel();
+    await screen.findByRole('form', { name: 'Disparar vuelo demo' });
+    // A01 as the map draws it; any other code as typed.
+    expect(offered().slice(2)).toEqual([
+      ['A1 · Terminal A · Cubre Riley Ramp', true],
+      ['E2E-XXXX-1 · Terminal A · Sin ubicar en el mapa', false],
+    ]);
+    const [proposed, taken] = within(await screen.findByRole('list', { name: 'Vuelos demo de hoy' })).getAllByRole('listitem');
+    expect(proposed).toHaveTextContent('OCC aún no lo importa · Posición sugerida A1');
+    expect(taken).toHaveTextContent('Importado por OCC · PUJ-20261112-003 · Posición A2 · Operación asignada');
+    // The trigger names the stand by its id, never by the code on screen.
+    await userEvent.selectOptions(standField(), 's-a01');
+    await userEvent.click(within(form()).getByRole('button', { name: 'Disparar vuelo demo' }));
+    expect(createDemoFlight).toHaveBeenCalledWith(expect.objectContaining({ standChoice: 'Specific', standId: 's-a01' }),
+      expect.stringMatching(KEY));
   });
 
   it('warns when no stand is located', async () => {

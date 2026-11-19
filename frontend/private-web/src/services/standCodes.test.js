@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compareStandCodes, normalizeStandCode, sortByStandCode } from './standCodes';
+import { compareStandCodes, normalizeStandCode, sortByStandCode, standDisplayCode } from './standCodes';
 import { mapStandCode } from '../features/positions-map/positionsMapMappers';
 
 // ADR-0041: the API and the web compare stand codes with one rule. The cases are the file the C# tests read too
@@ -36,6 +36,40 @@ describe('normalizeStandCode (ADR-0041)', () => {
   it('mapStandCode stays as an alias', () => {
     expect(mapStandCode).toBe(normalizeStandCode);
     expect(mapStandCode('b-032')).toBe('B32');
+  });
+});
+
+describe('standDisplayCode (N27)', () => {
+  it('shows a stand without the zero padding of its number, as the map draws it', () => {
+    // The seed's A01 and A02 are the plan's A1 and A2 (ADR-0041): every screen shows them so.
+    expect(['A01', 'A02', 'B01', 'AN01', 'BN06', 'A010', 'A001', 'A00', '09A', 'A01B'].map(standDisplayCode))
+      .toEqual(['A1', 'A2', 'B1', 'AN1', 'BN6', 'A10', 'A1', 'A0', '9A', 'A1B']);
+    // A code without padding is shown as it is.
+    expect(['A1', 'A10', 'A0', 'AN1', 'B20', 'FBO', '1', '9A', '23A'].map(standDisplayCode))
+      .toEqual(['A1', 'A10', 'A0', 'AN1', 'B20', 'FBO', '1', '9A', '23A']);
+  });
+
+  it('shows any other code as it is: never as normalizeStandCode, which joins «E2E-XXXX-1» into «E2EXXXX1»', () => {
+    expect(standDisplayCode('E2E-XXXX-1')).toBe('E2E-XXXX-1');
+    expect(normalizeStandCode('E2E-XXXX-1')).toBe('E2EXXXX1');
+    // Separators, spaces and small letters are not the stored form of a code: nothing is inferred from them.
+    for (const code of ['A-01', 'a-1', 'A 1', 'A.01', ' bn-06 ', 'b032', 'A01 ', 'A1B2']) {
+      expect(standDisplayCode(code), code).toBe(code);
+    }
+    expect(standDisplayCode(null)).toBe('');
+    expect(standDisplayCode(undefined)).toBe('');
+  });
+
+  it('names the stand the shared rule names, as typed or as the rule reads it, never a third code', () => {
+    for (const { input, expected } of vectors.normalize) {
+      const shown = standDisplayCode(input);
+      expect([input, expected], input).toContain(shown);
+      expect(normalizeStandCode(shown), input).toBe(expected);
+    }
+    // A code as «Datos maestros» stores it (capitals, a number, no separators) is shown as the rule reads it.
+    const stored = vectors.normalize.filter(({ input }) => /^[A-Z]*[0-9]+[A-Z]*$/.test(input));
+    expect(stored.length).toBeGreaterThan(5);
+    for (const { input, expected } of stored) expect(standDisplayCode(input), input).toBe(expected);
   });
 });
 

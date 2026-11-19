@@ -6,6 +6,7 @@ import {
 } from '../../../services/occPositionsService';
 import { BUSINESS_TIME_ZONE, stationLocalToUtc, utcToStationLocalInput } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { standDisplayCode } from '../../../services/standCodes';
 import { useArrivalAircraftTypes, usePositionTurnarounds } from '../usePositionTurnarounds';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { occButtonClass } from '../../occ-ui/OccButton';
@@ -298,7 +299,7 @@ export default function PositionActions({ position, candidates = [], onChanged, 
               {movable.map(item => <option key={item.turnaroundId} value={item.turnaroundId}>
                 {(item.arrivalFlightNumber ?? item.operationCode)} · {item.airlineName}{item.isDemo === true ? ' · Demo' : ''}
                 {' · '}{formatTime(item.arrivalScheduledAt, zone)}
-                {item.standCode ? ` ${t('actions.nowAt', { stand: item.standCode })}` : ''}</option>)}
+                {item.standCode ? ` ${t('actions.nowAt', { stand: standDisplayCode(item.standCode) })}` : ''}</option>)}
             </select></label>
           {turnaroundId && <VersionNotice version={selected} onRetry={reload} />}
           <button type="submit" className={buttonClass} disabled={Boolean(busy) || (Boolean(turnaroundId) && !ready(turnaroundId))}>

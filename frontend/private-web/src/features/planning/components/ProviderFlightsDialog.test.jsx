@@ -291,8 +291,26 @@ describe('demo flights (ADR-0041)', () => {
     render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} />);
 
     const select = await within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).findByLabelText('Posición');
-    expect(optionTexts(select)).toEqual(['Sin posición (asignar después)', 'A01 · Terminal A', 'A02 · Terminal A',
-      'A05 · Terminal A', 'A10 · Terminal A', 'AN1 · Terminal A', 'B20 · Terminal B']);
+    // Each stand by the code the map draws (N27): the station's A01, A02 and A05 are A1, A2 and A5.
+    expect(optionTexts(select)).toEqual(['Sin posición (asignar después)', 'A1 · Terminal A', 'A2 · Terminal A',
+      'A5 · Terminal A', 'A10 · Terminal A', 'AN1 · Terminal A', 'B20 · Terminal B']);
+  });
+
+  it('names the gate by the code the map draws, as the stand it preselects (N27)', async () => {
+    getManualTurnaroundOptions.mockResolvedValue(demoCatalog);
+    // The server writes the chosen stand's code, as the station stores it, in the gate of a demo flight (ADR-0041).
+    loadOccFlightFeed.mockResolvedValue(feed([demoArrival({ gate: 'A05' }), demoDeparture({ gate: 'A05' }),
+      leg('real', 'Arrival', 'ZZ161', { gate: 'E2E-XXXX-1', suggestedDepartureId: 'rdep' }), leg('rdep', 'Departure', 'ZZ162')]));
+    render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} />);
+
+    const [demo, real] = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getAllByRole('listitem');
+    const select = await within(demo).findByLabelText('Posición (sugerida)');
+    expect(demo).toHaveTextContent('En aproximación · HIDM01 · Airbus A320 · Terminal A · Puerta A5');
+    expect(select).toHaveValue('s-a05');
+    expect(select).toHaveDisplayValue('A5 · Terminal A');
+    expect(demo).not.toHaveTextContent('A05');
+    // Any other code is shown as the provider wrote it.
+    expect(real).toHaveTextContent('Terminal B · Puerta E2E-XXXX-1');
   });
 
   it('re-reads when the planning revision changes and keeps what the user chose', async () => {

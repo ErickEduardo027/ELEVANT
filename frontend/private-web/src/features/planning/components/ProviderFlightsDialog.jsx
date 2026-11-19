@@ -12,7 +12,7 @@ import {
 import { getManualTurnaroundOptions } from '../../../services/planningService';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict } from '../../../services/problemMessages';
-import { normalizeStandCode, sortByStandCode } from '../../../services/standCodes';
+import { normalizeStandCode, sortByStandCode, standDisplayCode } from '../../../services/standCodes';
 
 const buttonClass = 'min-h-9 rounded-lg border border-accent-600/40 px-3 text-xs font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-50';
 const primaryClass = 'min-h-9 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -47,12 +47,13 @@ function Times({ item, timeZone }) {
 }
 
 // What the provider reports of an arrival, in the words the console's board gives its phase (N22): «Aterrizó», never
-// «Arrived» (dashboard/noc/boardModel.js, providerArrivalStatusKey).
+// «Arrived» (dashboard/noc/boardModel.js, providerArrivalStatusKey). The gate of a demo arrival is its stand's code, so
+// it reads as the map draws it (N27): «Puerta A1», never «Puerta A01».
 function Details({ item }) {
   return <span className="block text-xs text-text-secondary-light dark:text-text-secondary-dark">
     {consoleMessages.es.status[providerArrivalStatusKey(item)]}{item.aircraftRegistration ? ` · ${item.aircraftRegistration}` : ''}
     {item.aircraftModel ? ` · ${item.aircraftModel}` : ''}{item.terminal ? ` · Terminal ${item.terminal}` : ''}
-    {item.gate ? ` · Puerta ${item.gate}` : ''}</span>;
+    {item.gate ? ` · Puerta ${standDisplayCode(item.gate)}` : ''}</span>;
 }
 
 function Budget({ budget, lastReadAt, timeZone }) {
@@ -314,7 +315,7 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                             onChange={event => choose(arrival, 'standId', event.target.value)}>
                             <option value="">Sin posición (asignar después)</option>
                             {stands.map(stand => <option key={stand.id} value={stand.id}>
-                              {stand.code} · Terminal {stand.terminal?.code ?? '—'}</option>)}
+                              {standDisplayCode(stand.code)} · Terminal {stand.terminal?.code ?? '—'}</option>)}
                           </select></label>
                       </>}
                       <button type="button" className={primaryClass} disabled={Boolean(busy) || !choice.departureId}

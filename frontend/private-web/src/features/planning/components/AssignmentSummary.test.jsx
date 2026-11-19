@@ -13,7 +13,8 @@ describe('AssignmentSummary', () => {
       />
     );
 
-    expect(screen.getByText('A02')).toBeInTheDocument();
+    // The stand by the code the map draws (N27): the seed's A02 is A2.
+    expect(screen.getByText('A2')).toBeInTheDocument();
     expect(screen.getByText('1 agente')).toBeInTheDocument();
     expect(screen.getByText('2 equipos')).toBeInTheDocument();
     expect(screen.getByText('1 servicio')).toBeInTheDocument();

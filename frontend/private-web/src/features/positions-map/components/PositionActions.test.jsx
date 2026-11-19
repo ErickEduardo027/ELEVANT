@@ -110,7 +110,8 @@ it('registers the arrival at the local time with the flight ETag, releases the s
   render(<PositionActions position={a2} candidates={candidates} onChanged={onChanged} />);
   await userEvent.click(screen.getByRole('button', { name: 'Asignar posición' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Elige el vuelo');
-  expect(screen.getByRole('option', { name: /ZZ101 · Demo Airlines .*\(ahora en A01\)/ })).toBeInTheDocument();
+  // Where the flight is now, by the code the map draws (N27): the board's A01 is A1.
+  expect(screen.getByRole('option', { name: /ZZ101 · Demo Airlines .*\(ahora en A1\)/ })).toBeInTheDocument();
   await userEvent.selectOptions(screen.getByRole('combobox'), 't-2');
   await waitFor(() => expect(getTurnaround).toHaveBeenCalledWith('t-2', expect.anything()));
   const assign = screen.getByRole('button', { name: 'Asignar posición' });
