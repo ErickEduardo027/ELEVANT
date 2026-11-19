@@ -75,7 +75,8 @@ const nobodyEligible = (extra = {}) => options({
     stand('s-b20', 'B20', 'B', { eligibleAgents: 0, eligible: false, reasons: ['shift_not_compatible'] })],
   warnings: [{ code: 'no_eligible_stand', reasons: ['stand_not_covered', 'shift_not_compatible'] }], ...extra });
 const NO_ELIGIBLE_WARNING =
-  'Ninguna posición habilitada tiene un agente elegible a esa hora: nadie la cubre a esa hora y turno no compatible.';
+  'Ninguna posición habilitada tiene un agente elegible durante toda la escala: nadie la cubre a esa hora y turno no ' +
+  'compatible.';
 const DISABLED_OPTIONS = { enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stations: [], stationId: null,
   operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], limits: LIMITS, warnings: [],
   layout: null };
@@ -567,7 +568,8 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     await screen.findByRole('form', { name: 'Disparar vuelo demo' });
     expect(standField()).toHaveDisplayValue('Al azar');
     expect(standField()).toHaveAccessibleDescription(
-      'Al azar: el servidor elige entre las posiciones con un agente elegible a esa hora. OCC puede asignar otra al importar.');
+      'Al azar: el servidor elige entre las posiciones con un agente elegible durante toda la escala. OCC puede asignar ' +
+      'otra al importar.');
 
     await userEvent.click(within(form()).getByRole('button', { name: 'Disparar vuelo demo' }));
     expect(createDemoFlight).toHaveBeenCalledWith(expect.objectContaining({ standChoice: 'Random', standId: null }),
@@ -647,7 +649,8 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       'Aún no hay posiciones ubicadas en el mapa. Use «Cargar posiciones» para que el avión tenga dónde estacionarse.'))
       .toBeInTheDocument();
     // Nothing to draw and no reason to give: the warning says so plainly. Neither warning blocks the trigger.
-    expect(screen.getByText('Ninguna posición habilitada tiene un agente elegible a esa hora.')).toBeInTheDocument();
+    expect(screen.getByText('Ninguna posición habilitada tiene un agente elegible durante toda la escala.'))
+      .toBeInTheDocument();
     expect(within(form()).getByRole('button', { name: 'Disparar vuelo demo' })).toBeEnabled();
     expect(offered()).toEqual([['Al azar', false], ['Sin posición', true]]);
     puntaCana.unmount();

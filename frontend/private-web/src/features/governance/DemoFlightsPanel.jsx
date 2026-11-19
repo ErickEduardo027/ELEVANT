@@ -113,10 +113,13 @@ function standLabel(stand) {
   return `${where} · ${why ? capitalized(why) : standReasonText(null)}`;
 }
 
-/** The warning `no_eligible_stand`, with the reasons the most stands give (at most three, ADR-0041). */
+/**
+ * The warning `no_eligible_stand`, with the reasons the most stands give (at most three, ADR-0041). An agent is eligible
+ * when their shift covers the whole visit, not only the arrival (N24).
+ */
 function noEligibleStandText(reasons) {
   const why = reasonsSentence(reasons);
-  return `Ninguna posición habilitada tiene un agente elegible a esa hora${why ? `: ${why}` : ''}.`;
+  return `Ninguna posición habilitada tiene un agente elegible durante toda la escala${why ? `: ${why}` : ''}.`;
 }
 
 /** What the panel shows, from its two reads. The list only matters where demo flights run. */
@@ -291,8 +294,8 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
                 {standLabel(item)}</option>)}
             </select></label>
           <p id={`${id}-stand`} className={`mt-1 text-xs ${muted}`}>
-            Al azar: el servidor elige entre las posiciones con un agente elegible a esa hora. OCC puede asignar otra al
-            importar.</p>
+            Al azar: el servidor elige entre las posiciones con un agente elegible durante toda la escala. OCC puede
+            asignar otra al importar.</p>
         </div>
         <div>
           <label htmlFor={`${id}-minutes`} className="block text-xs font-semibold">Llega a la posición en (minutos)</label>

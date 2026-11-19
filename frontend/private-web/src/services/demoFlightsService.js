@@ -21,8 +21,10 @@ export const DEMO_FLIGHT_MESSAGES = Object.freeze({
   aircraft_type_unavailable: 'El tipo de avión ya no está disponible. Elija otro.',
   demo_origin_unknown: 'No se conoce ese aeropuerto. Elija uno de la lista.',
   stand_unavailable: 'La posición ya no está libre para esa escala. Elija otra o «Sin posición».',
-  stand_not_eligible: 'Esa posición ya no tiene un agente elegible a esa hora. Elija otra, «Al azar» o «Sin posición».',
-  no_eligible_stand: 'Ninguna posición tiene un agente elegible a esa hora. Dispare sin posición o cree antes la cobertura.',
+  stand_not_eligible:
+    'Esa posición ya no tiene un agente elegible durante toda la escala. Elija otra, «Al azar» o «Sin posición».',
+  no_eligible_stand:
+    'Ninguna posición tiene un agente elegible durante toda la escala. Dispare sin posición o cree antes la cobertura.',
   demo_station_unsupported: 'Solo Punta Cana (PUJ) tiene un plano de referencia.',
   demo_flight_limit_reached: 'Ya hay demasiados vuelos demo activos en esta estación. Espere a que termine uno o cancélelo.',
   demo_flight_closed: 'Ese vuelo demo ya terminó o se canceló. Se actualizó la lista.',

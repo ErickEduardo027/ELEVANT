@@ -42,7 +42,7 @@ describe('demo flights service (ADR-0041)', () => {
     expect(demoFlightMessage(failure(403))).toBe('Solo el superadministrador dispara vuelos demo.');
     expect(demoFlightMessage(new TypeError('Failed to fetch'))).toMatch(/Revise la conexión/);
     // A stand chosen by hand that is not eligible, «Al azar» with nothing to draw and a station without a catalogue.
-    expect(demoFlightMessage(failure(409, 'stand_not_eligible'))).toMatch(/no tiene un agente elegible a esa hora/);
+    expect(demoFlightMessage(failure(409, 'stand_not_eligible'))).toMatch(/no tiene un agente elegible durante toda la escala/);
     expect(demoFlightMessage(failure(409, 'no_eligible_stand'))).toMatch(/cree antes la cobertura/);
     expect(demoFlightMessage(failure(409, 'demo_station_unsupported')))
       .toBe('Solo Punta Cana (PUJ) tiene un plano de referencia.');
@@ -59,9 +59,9 @@ describe('demo flights service (ADR-0041)', () => {
   it('explains the stand and station refusals by their code', () => {
     // «Al azar» with nothing to draw, a stand chosen by hand that lost its eligible agent, and a stand taken meanwhile.
     expect(demoFlightMessage(failure(409, 'no_eligible_stand')))
-      .toBe('Ninguna posición tiene un agente elegible a esa hora. Dispare sin posición o cree antes la cobertura.');
+      .toBe('Ninguna posición tiene un agente elegible durante toda la escala. Dispare sin posición o cree antes la cobertura.');
     expect(demoFlightMessage(failure(409, 'stand_not_eligible')))
-      .toBe('Esa posición ya no tiene un agente elegible a esa hora. Elija otra, «Al azar» o «Sin posición».');
+      .toBe('Esa posición ya no tiene un agente elegible durante toda la escala. Elija otra, «Al azar» o «Sin posición».');
     expect(demoFlightMessage(failure(409, 'stand_unavailable')))
       .toBe('La posición ya no está libre para esa escala. Elija otra o «Sin posición».');
     expect(demoFlightMessage(failure(409, 'demo_station_unsupported'))).toBe('Solo Punta Cana (PUJ) tiene un plano de referencia.');
