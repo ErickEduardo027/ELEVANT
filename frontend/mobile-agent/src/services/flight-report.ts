@@ -112,12 +112,19 @@ export async function readOperationQueue(operationId: string): Promise<Operation
 
 /**
  * Saves a tap in this account's queue with the session's identity only (S3): it never waits for a renewal, so without
- * signal and with the access token expired the tap is still kept, and it goes out once the session renews.
+ * signal and with the access token expired the tap is still kept, and it goes out once the session renews. A tap it
+ * cannot keep says why (N6): a session that ended is thrown as such (`session_expired`, `unauthenticated`; the queue
+ * takes nothing without one, D-N5) and a failure of the device's storage as `storage_unavailable`.
  */
 async function enqueue(command: FlightReportCommand) {
   const identity = await getMobileSessionIdentity();
-  const items = await enqueueFlightReportCommand(identity.session.actor.accountId, command, Crypto.randomUUID(),
-    serverNow());
+  let items: readonly FlightReportOutboxItem[];
+  try {
+    items = await enqueueFlightReportCommand(identity.session.actor.accountId, command, Crypto.randomUUID(),
+      serverNow());
+  } catch {
+    throw new MobileServiceError('storage_unavailable');
+  }
   publish({ items });
   void flushFlightReport();
 }

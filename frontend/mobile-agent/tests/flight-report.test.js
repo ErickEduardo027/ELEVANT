@@ -388,6 +388,27 @@ describe('the end of a session never loses the queue (3-N12)', () => {
     expect(mockApi.recordRampMilestone).toHaveBeenCalledWith(operationId, 'BLOCK_ON', '2026-11-04T16:00:00.000Z',
       installationId, item.idempotencyKey);
   });
+
+  test('a tap the tablet cannot keep says whether the session ended or the device’s storage failed (N6)', async () => {
+    const { MobileServiceError } = require('../src/services/mobile-service-error');
+    const AsyncStorage = require('@react-native-async-storage/async-storage');
+    // No session: the queue takes nothing (D-N5) and the screen is told the session ended, not that the device failed.
+    mockIdentity.mockRejectedValueOnce(new MobileServiceError('session_expired'));
+    await expect(recordMilestone(operationId, 'BLOCK_ON', new Date('2026-11-04T16:00:00.000Z')))
+      .rejects.toMatchObject({ code: 'session_expired' });
+    mockIdentity.mockRejectedValueOnce(new MobileServiceError('unauthenticated'));
+    await expect(saveFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000,
+      aircraftRegistration: null })).rejects.toMatchObject({ code: 'unauthenticated' });
+
+    // The device's storage fails while the session is in force: the failure is the storage's.
+    AsyncStorage.setItem.mockRejectedValueOnce(new Error('The device storage failed.'));
+    await expect(recordMilestone(operationId, 'BLOCK_ON', new Date('2026-11-04T16:00:00.000Z')))
+      .rejects.toMatchObject({ code: 'storage_unavailable' });
+    AsyncStorage.setItem.mockRejectedValueOnce(new Error('The device storage failed.'));
+    await expect(saveFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000,
+      aircraftRegistration: null })).rejects.toMatchObject({ code: 'storage_unavailable' });
+    expect(await readFlightReportOutbox(accountId)).toEqual([]);
+  });
 });
 
 describe('the tablet’s clock (3-N18)', () => {

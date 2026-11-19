@@ -250,6 +250,27 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
     marcador; un intento fallido no.
   - Los comandos de la cola siguen exigiendo una sesión: el checklist se envía
     después de volver a entrar.
+- **La app dice que la sesión terminó.** Posterior a la fase 3 (hallazgo N6 de
+  la corrida del VPS del 16 de noviembre): la tablet ya no culpa al dispositivo
+  cuando la sesión termina.
+  - Al borrar una sesión que el agente no cerró (vencida, rechazada o de una
+    cuenta que perdió el acceso), el
+    [layout raíz](../../frontend/mobile-agent/src/app/_layout.tsx) muestra en
+    todas las pantallas, salvo la de acceso, el aviso persistente «Tu sesión
+    terminó» con ENTRAR DE NUEVO (D-N6). El cierre de sesión a propósito no lo
+    muestra.
+  - El checklist (`/checklist/[id]`) ya no salta solo al acceso: muestra la
+    insignia roja «Sesión terminada», dice «Tu sesión terminó · Tus respuestas
+    quedaron guardadas…», apaga ENVIAR y ofrece ENTRAR DE NUEVO. Con una cuenta
+    sin acceso nombra la causa y abre el acceso con `access_revoked`.
+  - ENVIAR vuelve a guardar el borrador y espera ese guardado antes de decidir.
+    Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por
+    toque, y si vuelve a fallar pide cerrar la app y avisar a OCC.
+  - Los hitos y los datos del vuelo distinguen la sesión terminada de un fallo
+    del almacenamiento. Ningún texto pide desbloquear el dispositivo ni habla
+    de «payload».
+  - La APK instalada conserva los textos anteriores hasta que se instale la
+    nueva.
 - **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
   registros pendientes o rechazados de la operación, ni con la Orden de Servicio
   sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.

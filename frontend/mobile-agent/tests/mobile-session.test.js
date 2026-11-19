@@ -61,6 +61,7 @@ const {
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
   replaceStoredMobileCredentialIfCurrent,
+  subscribeStoredMobileSessionEnd,
   updateStoredMobileSessionMetadata,
   writeRampChecklistDraftForAccount,
   writeRampChecklistDraftIfCurrent,
@@ -371,6 +372,43 @@ describe('answers marked after the session ended (N5)', () => {
     await expect(writeDraft(ACCOUNT_A)).resolves.toBe('not-current');
     await expect(readEndedMobileSession()).resolves.toEqual(marker);
     expect(mockAsyncData.has(draftKey(ACCOUNT_A))).toBe(false);
+  });
+
+  test('the screens hear every end the agent did not choose, with its account and cause, and nothing else (N6)', async () => {
+    const heard = [];
+    const stop = subscribeStoredMobileSessionEnd(ended => heard.push(ended));
+    try {
+      // Expired without a refresh token in force: announced when the tablet notices it, as the marker says.
+      const expired = await endSessionOfA('expired refresh');
+      await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'expired', accountId: ACCOUNT_A });
+      expect(heard).toEqual([expired]);
+      // ELEVANT refused the renewal (401) or the account lost its access (403).
+      const refused = await endSessionOfA('401 on renewal');
+      expect(heard).toEqual([expired, refused]);
+      const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+      await expect(clearStoredMobileSessionIfCurrent(sessionId, 'token-a', 'forbidden')).resolves.toBe(true);
+      expect(heard[2]).toEqual({ accountId: ACCOUNT_A, reason: 'forbidden', endedAt: new Date().toISOString() });
+
+      // A sign-out on purpose and a sign-in the tablet did not keep are no news for the screens.
+      await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+      await clearStoredMobileSession();
+      const attempt = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+      await expect(clearStoredMobileSessionIfCurrent(attempt)).resolves.toBe(true);
+      expect(heard).toHaveLength(3);
+    } finally {
+      stop();
+    }
+
+    // A listener that fails never keeps the session from ending, and one that stopped listening hears nothing.
+    const failing = subscribeStoredMobileSessionEnd(() => { throw new Error('A screen failed.'); });
+    try {
+      const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+      await expect(clearStoredMobileSessionIfCurrent(sessionId, 'token-a', 'refused')).resolves.toBe(true);
+      await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'missing' });
+      expect(heard).toHaveLength(3);
+    } finally {
+      failing();
+    }
   });
 });
 

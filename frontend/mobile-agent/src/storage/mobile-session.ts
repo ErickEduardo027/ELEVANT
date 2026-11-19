@@ -104,12 +104,48 @@ export type EndedMobileSession = Readonly<{
 }>;
 
 /**
+ * What the screens hear when the tablet ends a session its agent did not sign out of (N6): why, when by ELEVANT's
+ * clock and whose, when its metadata names the account. A sign-out on purpose and a sign-in the tablet did not keep
+ * are not announced.
+ */
+export type MobileSessionEnd = Readonly<{
+  accountId: string | null;
+  reason: MobileSessionEndReason;
+  endedAt: string;
+}>;
+
+/**
  * Where a checklist draft went (N5): to the account's active session ('written'), kept for an account whose session
  * ended within the window ('kept'), or nowhere ('not-current').
  */
 export type RampChecklistDraftWrite = 'written' | 'kept' | 'not-current';
 
 const SESSION_END_REASONS: readonly MobileSessionEndReason[] = ['expired', 'refused', 'forbidden'];
+
+type MobileSessionEndListener = (ended: MobileSessionEnd) => void;
+const sessionEndListeners = new Set<MobileSessionEndListener>();
+
+/**
+ * Tells `listener` every time the tablet ends a session its agent did not sign out of (N6): it expired without a
+ * refresh token in force, ELEVANT refused it, or the account lost its access to the app. Returns the function that
+ * stops listening.
+ */
+export function subscribeStoredMobileSessionEnd(listener: MobileSessionEndListener) {
+  sessionEndListeners.add(listener);
+  return () => {
+    sessionEndListeners.delete(listener);
+  };
+}
+
+function announceSessionEnd(ended: MobileSessionEnd) {
+  for (const listener of [...sessionEndListeners]) {
+    try {
+      listener(ended);
+    } catch {
+      // A screen that fails to hear it never keeps the session from ending.
+    }
+  }
+}
 
 /**
  * 'active' while the access token is in force by ELEVANT's clock, or while a refresh token in force can renew it (S3):
@@ -483,7 +519,8 @@ async function clearStoredMobileSessionUnlocked(forgetEndedSession = false) {
  * names its account, why and when it ended: that account still keeps the checklist answers it marks on a screen it had
  * open, for ENDED_SESSION_DRAFT_WINDOW_MS. An expired session ended when its access token did, so a tablet left alone
  * never opens a new window by noticing the end later. The credential goes even when the marker cannot be written; that
- * failure is reported afterwards.
+ * failure is reported afterwards. Once the session is gone the screens hear it (N6), so they say that it ended instead
+ * of blaming the device.
  */
 async function endStoredMobileSessionUnlocked(
   metadata: unknown,
@@ -492,13 +529,10 @@ async function endStoredMobileSessionUnlocked(
 ) {
   const accountId = safeAccountId(metadata)?.toLowerCase();
   const expiry = safeExpiry(metadata);
+  const endedAt = new Date(reason === 'expired' && expiry !== undefined ? Math.min(now, expiry) : now).toISOString();
   let remembered = true;
   if (accountId !== undefined) {
-    const ended: EndedMobileSession = {
-      accountId,
-      reason,
-      endedAt: new Date(reason === 'expired' && expiry !== undefined ? Math.min(now, expiry) : now).toISOString(),
-    };
+    const ended: EndedMobileSession = { accountId, reason, endedAt };
     try {
       await AsyncStorage.setItem(ENDED_SESSION_KEY, serializeEnvelope(ended));
     } catch {
@@ -507,6 +541,7 @@ async function endStoredMobileSessionUnlocked(
   }
 
   await clearStoredMobileSessionUnlocked();
+  announceSessionEnd({ accountId: accountId ?? null, reason, endedAt });
   if (!remembered) throw new MobileSessionStorageError();
 }
 

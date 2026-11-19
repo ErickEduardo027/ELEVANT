@@ -26,6 +26,10 @@ revisión aleatoria:
   para la cuenta que fijó la pantalla mientras su sesión está activa o, sin
   sesión, durante 2 horas desde ese fin (D-N5). El logout y un inicio de sesión
   confirmado borran el marcador; un intento fallido no;
+- una vez borrada esa sesión, `subscribeStoredMobileSessionEnd` avisa a las
+  pantallas con la cuenta, la causa y la hora del fin (N6). El logout y un
+  inicio de sesión que la tablet no conserva no se anuncian, y un oyente que
+  falla nunca impide que la sesión termine;
 - login/logout también purgan checklist, estado de vuelo, outbox y chat
   prototípicos no namespaced para que no crucen cuentas.
 

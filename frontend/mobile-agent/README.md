@@ -199,6 +199,26 @@ propósito y un inicio de sesión confirmado borran el marcador; un intento
 fallido no. El esquema del borrador no cambia y los comandos de la cola siguen
 exigiendo una sesión (D-N5).
 
+La app dice cuándo terminó la sesión y deja de culpar al dispositivo (N6). Cada
+vez que la tablet borra una sesión que el agente no cerró (vencida, rechazada
+por ELEVANT o de una cuenta que perdió el acceso), el almacenamiento lo anuncia
+(`subscribeMobileSessionEnd` en el servicio de sesión) y el layout raíz muestra
+en todas las pantallas, salvo la de acceso, el aviso persistente «Tu sesión
+terminó» con ENTRAR DE NUEVO (D-N6); el cierre de sesión a propósito no se
+anuncia. El checklist ya no salta solo al acceso: muestra la insignia roja
+«Sesión terminada», dice «Tu sesión terminó · Tus respuestas quedaron guardadas
+en esta tablet…», apaga ENVIAR y ofrece ENTRAR DE NUEVO, con `access_revoked`
+si la cuenta perdió el acceso. Si el envío encontró el fin de la sesión, las
+respuestas quedan como se enviaron: el envío espera en la cola y sale al volver
+a entrar. ENVIAR vuelve a guardar el borrador y espera ese guardado antes de
+decidir. Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por
+toque, y si vuelve a fallar pide cerrar la app y avisar a OCC; un guardado
+cancelado se reintenta una vez para la misma cuenta. Los hitos y los datos del
+vuelo distinguen la sesión terminada (`session_expired`, `unauthenticated`) de
+un fallo del almacenamiento (`storage_unavailable`). Ningún texto pide
+desbloquear el dispositivo, que en Android nunca es la causa, ni habla de
+«payload».
+
 La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
 antigüedad no supera 15 minutos. Un `401`, `403`, otro fallo HTTP, cancelación,
 caché vencida o contrato malformado se entrega como error tipado y nunca se

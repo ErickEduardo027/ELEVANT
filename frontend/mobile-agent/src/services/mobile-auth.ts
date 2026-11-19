@@ -13,7 +13,9 @@ import {
   forgetEndedMobileSession,
   readStoredMobileSession,
   replaceStoredMobileCredentialIfCurrent,
+  subscribeStoredMobileSessionEnd,
   writeStoredMobileSession,
+  type MobileSessionEnd,
   type MobileSessionEndReason,
   type PendingEvidenceCount,
 } from '../storage/mobile-session';
@@ -831,6 +833,16 @@ export async function rejectMobileSessionRequest(
 }
 
 /**
+ * Tells `listener` whenever the tablet ends a session its agent did not sign out of (N6, D-N6): it expired and could not
+ * be renewed, ELEVANT refused it, or the account lost its access to the app (reason 'forbidden'). The screens say so
+ * and offer ENTRAR DE NUEVO instead of blaming the device; a sign-out on purpose is not announced. Returns the function
+ * that stops listening.
+ */
+export function subscribeMobileSessionEnd(listener: (ended: MobileSessionEnd) => void) {
+  return subscribeStoredMobileSessionEnd(listener);
+}
+
+/**
  * What this tablet keeps that ELEVANT has not confirmed (3-N12), for the account signed in and for the others; null
  * when the device's storage cannot be read, so a screen simply shows no notice.
  */
@@ -881,3 +893,4 @@ export {
   MobileServiceError,
   type MobileServiceErrorCode,
 } from './mobile-service-error';
+export type { MobileSessionEnd } from '../storage/mobile-session';

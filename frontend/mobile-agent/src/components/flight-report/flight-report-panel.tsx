@@ -16,6 +16,7 @@ import {
   type FlightReportSnapshot,
 } from '../../services/flight-report';
 import { aircraftTypeLabel, getRampAircraftTypes, type RampAircraftTypeCatalog } from '../../services/aircraft-types';
+import { MobileServiceError } from '../../services/mobile-service-error';
 import { loadRampIncidentCenter, reserveRampIncident } from '../../services/ramp-incidents';
 import { pendingFor } from '../../synchronization/flight-report-outbox';
 import { EVIDENCE_CLOCK_TOLERANCE_MS, serverNow } from '../../synchronization/server-clock';
@@ -64,6 +65,31 @@ const SHIFTS = [-60, -10, -5, -1, 1, 5, 60] as const;
 
 function haptic() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+}
+
+/** What a time or the flight data needs said when the tablet could not keep it (N6). */
+type LocalSaveCopy = Readonly<{ sessionEnded: string; storage: string; other: string }>;
+
+const MILESTONE_NOT_SAVED: LocalSaveCopy = {
+  sessionEnded: 'Tu sesión terminó y la hora no se guardó. Entra de nuevo con tu cuenta para registrarla.',
+  storage: 'La tablet no pudo guardar la hora. Vuelve a intentarlo; si sigue fallando, cierra la app, ábrela de nuevo y avisa a OCC.',
+  other: 'No se pudo guardar la hora. Vuelve a intentarlo.',
+};
+
+const FLIGHT_DATA_NOT_SAVED: LocalSaveCopy = {
+  sessionEnded: 'Tu sesión terminó y los datos del vuelo no se guardaron. Entra de nuevo con tu cuenta para guardarlos.',
+  storage: 'La tablet no pudo guardar los datos del vuelo. Vuelve a intentarlo; si sigue fallando, cierra la app, ábrela de nuevo y avisa a OCC.',
+  other: 'No se pudieron guardar los datos del vuelo. Vuelve a intentarlo.',
+};
+
+/**
+ * Why the tablet could not keep a time or the flight data (N6): the session ended (the queue takes nothing without one,
+ * D-N5) or the device's storage failed. Neither is blamed on the other, and «unlock the device» is never the advice.
+ */
+function localSaveError(error: unknown, copy: LocalSaveCopy) {
+  if (!(error instanceof MobileServiceError)) return copy.other;
+  if (error.code === 'session_expired' || error.code === 'unauthenticated') return copy.sessionEnded;
+  return error.code === 'storage_unavailable' ? copy.storage : copy.other;
 }
 
 /** Each milestone's value: confirmed by the server, saved on the device, rejected, or empty. */
@@ -211,7 +237,8 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
   const record = (code: string, at: Date) => {
     setError('');
     haptic();
-    recordMilestone(operation.operation.id, code, at, timeZone).catch(() => setError('No se pudo guardar en el dispositivo. Intenta de nuevo.'));
+    recordMilestone(operation.operation.id, code, at, timeZone)
+      .catch(failure => setError(localSaveError(failure, MILESTONE_NOT_SAVED)));
   };
 
   return (
@@ -304,7 +331,8 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
     }
     setError('');
     haptic();
-    saveFlightData(operation.operation.id, values).catch(() => setError('No se pudo guardar en el dispositivo.'));
+    saveFlightData(operation.operation.id, values)
+      .catch(failure => setError(localSaveError(failure, FLIGHT_DATA_NOT_SAVED)));
   };
   const field = (key: keyof typeof draft, label: string, numeric = true) => (
     <View style={styles.field}>

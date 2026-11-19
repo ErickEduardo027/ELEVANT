@@ -1,19 +1,34 @@
 // «Checklist operativo» (N5): the answers marked after the session ended stay on the tablet for the account that opened
-// the checklist, and the screen shows them again once that account signs in. The screen, its services, the storage
-// and the session service are real; ELEVANT is a small fake, as in ramp-operation-checklist-draft.test.js.
+// the checklist, and the screen shows them again once that account signs in. N6: the screen says that the session
+// ended instead of blaming the device, never leaves on its own (D-N6: ENTRAR DE NUEVO), saves the answers again before
+// sending them and tells a storage failure from a session that ended. The screen, its services, the storage and the
+// session service are real; ELEVANT is a small fake, as in ramp-operation-checklist-draft.test.js.
 const React = require('react');
 const renderer = require('react-test-renderer');
 
 const mockAsyncData = new Map();
 const mockSecureData = new Map();
 let mockUuidCounter = 0;
+/** How many of the next writes of a checklist draft fail, as on a tablet whose storage fails (N6). */
+let mockDraftWriteFailures = 0;
+/** Every write of a checklist draft, failed or not. */
+const mockDraftWrites = [];
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
     getAllKeys: jest.fn(async () => [...mockAsyncData.keys()]),
     getItem: jest.fn(async key => mockAsyncData.get(key) ?? null),
-    setItem: jest.fn(async (key, value) => { mockAsyncData.set(key, value); }),
+    setItem: jest.fn(async (key, value) => {
+      if (key.startsWith('elevant:mobile:ramp-checklist-draft:v1:')) {
+        mockDraftWrites.push(key);
+        if (mockDraftWriteFailures > 0) {
+          mockDraftWriteFailures -= 1;
+          throw new Error('The device storage failed.');
+        }
+      }
+      mockAsyncData.set(key, value);
+    }),
     removeItem: jest.fn(async key => { mockAsyncData.delete(key); }),
     multiRemove: jest.fn(async keys => { keys.forEach(key => mockAsyncData.delete(key)); }),
   },
@@ -59,11 +74,14 @@ jest.mock('expo-router', () => ({
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: require('react-native').View }));
 
+const { router } = require('expo-router');
 const { ElevantApiError } = require('@elevant/api-client');
 const { loginMobileAgent, resetMobileSessionRenewalForTests } = require('../src/services/mobile-auth');
+const { MobileServiceError } = require('../src/services/mobile-service-error');
 const { forgetConfirmedMobileDevice } = require('../src/services/mobile-device');
 const { getOwnCoverage } = require('../src/services/ramp-coverage');
-const { resetFlightReportForTests } = require('../src/services/flight-report');
+const { flushFlightReport, resetFlightReportForTests } = require('../src/services/flight-report');
+const checklistService = require('../src/services/ramp-operation-checklist');
 const { resetServerClockForTests } = require('../src/synchronization/server-clock');
 const ChecklistScreen = require('../src/app/checklist/[id]').default;
 
@@ -103,10 +121,13 @@ const checklist = {
 const base64Url = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const jwt = claims => `${base64Url({ alg: 'HS256', typ: 'at+jwt' })}.${base64Url(claims)}.c2lnbmF0dXJl`;
 
-/** ELEVANT's session endpoints (ADR-0021, ADR-0046) and the operation's checklist; OCC can revoke the tablet. */
+/**
+ * ELEVANT's session endpoints (ADR-0021, ADR-0046) and the operation's checklist; OCC can revoke the tablet, and the
+ * account can lose its access to the app (403).
+ */
 const mockElevant = {
   reset() {
-    Object.assign(this, { accepted: new Set(), families: [], sequence: 0 });
+    Object.assign(this, { accepted: new Set(), families: [], sequence: 0, forbidden: false, submissions: [] });
   },
   nextRefreshToken() {
     this.sequence += 1;
@@ -131,6 +152,8 @@ const mockElevant = {
   client(options) {
     const authorized = async () => {
       if (!this.accepted.has(await options.getAccessToken?.())) throw new ElevantApiError({ status: 401 });
+      // The account no longer qualifies for the app: ELEVANT answers 403 to whatever it asks.
+      if (this.forbidden) throw new ElevantApiError({ status: 403 });
     };
     return {
       createSession: async () => {
@@ -161,6 +184,13 @@ const mockElevant = {
         await authorized();
         return checklist;
       },
+      submitRampOperationChecklist: async (_operationId, body) => {
+        await authorized();
+        this.submissions.push(body);
+        return { receiptId: '73000000-0000-4000-8000-000000000001', checklist: { id: CHECKLIST, status: 'Submitted',
+          startedAt: '2026-11-16T19:40:00.000Z', submittedAt: new Date().toISOString(),
+          answerCount: body.answers.length } };
+      },
     };
   },
 };
@@ -176,26 +206,62 @@ async function mount() {
   return tree;
 }
 
+/** The answer choice `label` of control `number` (OK, N/A or NO). */
+const choice = (tree, number, label) => tree.root.findAll(node => node.props?.label === label &&
+  node.props?.context === `Control ${number}` && typeof node.props.onPress === 'function')[0];
+
 async function answerOk(tree, numbers) {
   for (const number of numbers) {
-    const [choice] = tree.root.findAll(node => node.props?.label === 'OK' &&
-      node.props?.context === `Control ${number}` && typeof node.props.onPress === 'function');
-    await renderer.act(async () => { choice.props.onPress(); });
+    const ok = choice(tree, number, 'OK');
+    await renderer.act(async () => { ok.props.onPress(); });
   }
 }
 
+/** The 21 controls, section by section: the screen ends on the last section, where ENVIAR CHECKLIST is. */
+async function answerAll(tree) {
+  await answerOk(tree, range(1, 7));
+  await press(tree, 'SIGUIENTE');
+  await answerOk(tree, range(8, 14));
+  await press(tree, 'SIGUIENTE');
+  await answerOk(tree, range(15, 21));
+}
+
+const button = (tree, title) =>
+  tree.root.findAll(node => node.props?.title === title && typeof node.props.onPress === 'function')[0];
+
 async function press(tree, title) {
-  const [button] = tree.root.findAll(node => node.props?.title === title && typeof node.props.onPress === 'function');
-  await renderer.act(async () => { button.props.onPress(); });
+  const target = button(tree, title);
+  await renderer.act(async () => { target.props.onPress(); });
 }
 
 const progress = tree =>
   tree.root.findAll(node => node.props?.accessibilityRole === 'progressbar')[0].props.accessibilityLabel;
 
+/** Another request finds out that ELEVANT refused the session (S3); the open screen hears the end (N6). */
+const endTheSessionWhileTheScreenIsOpen = () => renderer.act(async () => {
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'unauthenticated' });
+});
+
+/** The text the screen shows, button titles included. */
+function screenText(tree) {
+  const collect = node => node == null ? [] : typeof node === 'string' ? [node]
+    : Array.isArray(node) ? node.flatMap(collect) : collect(node.children);
+  return collect(tree.toJSON()).join(' ');
+}
+
+/** The badge of the summary card. */
+const badge = tree => tree.root.findAll(node => typeof node.props?.text === 'string' && 'tone' in node.props)[0].props;
+
+/** What the old screen blamed instead of the session, and the jargon it showed (N6). */
+const BLAMES_THE_DEVICE = /Desbloque|proteger|payload/i;
+
 beforeEach(() => {
+  jest.clearAllMocks();
   mockAsyncData.clear();
   mockSecureData.clear();
   mockUuidCounter = 0;
+  mockDraftWriteFailures = 0;
+  mockDraftWrites.length = 0;
   mockElevant.reset();
   resetServerClockForTests();
   resetMobileSessionRenewalForTests();
@@ -215,7 +281,7 @@ test('the answers marked after the session ended come back, 21 of 21, when the a
 
   // OCC revokes the tablet and another request finds out: ELEVANT refuses the renewal and the session ends (S3).
   mockElevant.revoke();
-  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'unauthenticated' });
+  await endTheSessionWhileTheScreenIsOpen();
 
   // The agent goes on with the checklist: 11 more answers after the end of the session.
   await answerOk(tree, range(11, 14));
@@ -231,3 +297,185 @@ test('the answers marked after the session ended come back, 21 of 21, when the a
   expect(progress(tree)).toBe('21 de 21 controles respondidos');
   await renderer.act(async () => { tree.unmount(); });
 }, 30_000);
+
+describe('the screen says that the session ended (N6)', () => {
+  test('the moment the session ends the screen says so, keeps what the agent marks and offers ENTRAR DE NUEVO', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    await answerOk(tree, range(1, 7));
+    await press(tree, 'SIGUIENTE');
+    await answerOk(tree, range(8, 10));
+    await settle(400);
+    expect(badge(tree)).toEqual({ text: 'Borrador', tone: 'blue' });
+
+    // OCC revokes the tablet and another request finds out (S3): the screen hears the end at once.
+    mockElevant.revoke();
+    await endTheSessionWhileTheScreenIsOpen();
+    await settle();
+    expect(badge(tree)).toEqual({ text: 'Sesión terminada', tone: 'red' });
+    expect(screenText(tree)).toContain('Tu sesión terminó');
+    expect(screenText(tree)).toContain('Tus respuestas quedaron guardadas en esta tablet.');
+
+    // What the agent marks afterwards is kept for its account (N5), and nothing blames the device.
+    await answerOk(tree, range(11, 14));
+    await settle(400);
+    expect(screenText(tree)).toContain('Borrador guardado en este dispositivo');
+    expect(screenText(tree)).toContain('Tus respuestas quedaron guardadas en esta tablet.');
+    expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+
+    // The screen never leaves on its own (D-N6): the agent decides when to sign in again.
+    expect(router.replace).not.toHaveBeenCalled();
+    await press(tree, 'ENTRAR DE NUEVO');
+    expect(router.dismissAll).toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith({ pathname: '/', params: { notice: 'session_expired' } });
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('ENVIAR after OCC revoked the session: the screen stays and the checklist goes out once the agent signs in', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    await answerAll(tree);
+    await settle(400);
+
+    // OCC revoked the tablet; the screen finds out when the agent sends.
+    mockElevant.revoke();
+    await press(tree, 'ENVIAR CHECKLIST');
+    await settle(100);
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(badge(tree)).toEqual({ text: 'Sesión terminada', tone: 'red' });
+    expect(screenText(tree)).toContain('Tu sesión terminó');
+    expect(screenText(tree)).toContain('Tus respuestas quedaron guardadas en esta tablet.');
+    // ENVIAR no longer repeats a notice: without a session it is off, and ENTRAR DE NUEVO is the way on.
+    expect(button(tree, 'ENVIAR CHECKLIST').props.disabled).toBe(true);
+    expect(button(tree, 'ENTRAR DE NUEVO')).toBeDefined();
+    expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+    expect(mockElevant.submissions).toHaveLength(0);
+    // The submission waits in the queue with these answers: they stay as they were sent.
+    expect(choice(tree, 21, 'NO').props.disabled).toBe(true);
+    await renderer.act(async () => { tree.unmount(); });
+
+    // The checklist waits in the tablet's queue for the same account, which sends it after signing in.
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    await flushFlightReport();
+    expect(mockElevant.submissions).toHaveLength(1);
+    expect(mockElevant.submissions[0].answers).toHaveLength(21);
+  }, 30_000);
+
+  test('an account that lost its access: the screen says so and ENTRAR DE NUEVO explains it on the access screen', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    await answerAll(tree);
+    await settle(400);
+
+    mockElevant.forbidden = true;
+    await press(tree, 'ENVIAR CHECKLIST');
+    await settle(100);
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(badge(tree)).toEqual({ text: 'Sesión terminada', tone: 'red' });
+    expect(screenText(tree)).toContain('Tu cuenta ya no tiene acceso a la aplicación de rampa');
+    expect(screenText(tree)).toContain('Tus respuestas quedaron guardadas en esta tablet.');
+    expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+    await press(tree, 'ENTRAR DE NUEVO');
+    expect(router.replace).toHaveBeenCalledWith({ pathname: '/', params: { notice: 'access_revoked' } });
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('opening the checklist after the session ended shows ENTRAR DE NUEVO instead of leaving the screen', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    mockElevant.revoke();
+    await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'unauthenticated' });
+
+    const tree = await mount();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain('Tu sesión terminó');
+    await press(tree, 'ENTRAR DE NUEVO');
+    expect(router.replace).toHaveBeenCalledWith({ pathname: '/', params: { notice: 'session_expired' } });
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+});
+
+describe('a draft the tablet could not save (N6)', () => {
+  test('ENVIAR saves the answers again, waits for it and sends them, instead of repeating a notice', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    await answerOk(tree, range(1, 7));
+    await press(tree, 'SIGUIENTE');
+    await answerOk(tree, range(8, 14));
+    await press(tree, 'SIGUIENTE');
+    await answerOk(tree, range(15, 20));
+    await settle(400);
+
+    // The device's storage fails once: the last answer is not saved, and the screen says so without blaming the lock.
+    mockDraftWriteFailures = 1;
+    await answerOk(tree, [21]);
+    await settle(400);
+    expect(screenText(tree)).toContain('No se pudo guardar el borrador en este dispositivo');
+    expect(screenText(tree)).toContain('No se guardaron tus respuestas');
+    expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+
+    // The storage works again: ENVIAR saves the 21 answers once more and only then sends them.
+    const writes = mockDraftWrites.length;
+    await press(tree, 'ENVIAR CHECKLIST');
+    await settle(100);
+    expect(mockDraftWrites).toHaveLength(writes + 1);
+    expect(mockElevant.submissions).toHaveLength(1);
+    expect(mockElevant.submissions[0].answers).toHaveLength(21);
+    expect(screenText(tree)).toContain('Checklist enviado');
+    expect(screenText(tree)).not.toContain('No se guardaron tus respuestas');
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('REINTENTAR GUARDADO tries once per tap, never on its own, and then says what to do', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    mockDraftWriteFailures = 2;
+    await answerOk(tree, [1]);
+    await settle(400);
+    expect(screenText(tree)).toContain('No se guardaron tus respuestas');
+    expect(screenText(tree)).toContain('Toca REINTENTAR GUARDADO.');
+
+    await press(tree, 'REINTENTAR GUARDADO');
+    await settle(100);
+    expect(screenText(tree)).toContain('Cierra la app, ábrela de nuevo y avisa a OCC.');
+    // Nothing retries on its own: one write per tap.
+    await settle(600);
+    expect(mockDraftWrites).toHaveLength(2);
+
+    await press(tree, 'REINTENTAR GUARDADO');
+    await settle(100);
+    expect(mockDraftWrites).toHaveLength(3);
+    expect(screenText(tree)).toContain('Borrador guardado en este dispositivo');
+    expect(button(tree, 'REINTENTAR GUARDADO')).toBeUndefined();
+    expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('a save cancelled under the screen is tried once more for the same account, never an endless «Guardando…»', async () => {
+    const save = jest.spyOn(checklistService, 'saveRampOperationChecklistDraft');
+    try {
+      await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+      const tree = await mount();
+
+      save.mockRejectedValueOnce(new MobileServiceError('cancelled'));
+      await answerOk(tree, [1]);
+      await settle(400);
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(save.mock.calls.map(call => call[2])).toEqual([ACCOUNT, ACCOUNT]);
+      expect(screenText(tree)).toContain('Borrador guardado en este dispositivo');
+
+      // Cancelled twice: the screen stops waiting and offers to save again.
+      save.mockRejectedValueOnce(new MobileServiceError('cancelled'))
+        .mockRejectedValueOnce(new MobileServiceError('cancelled'));
+      await answerOk(tree, [2]);
+      await settle(400);
+      expect(screenText(tree)).not.toContain('Guardando borrador');
+      expect(button(tree, 'REINTENTAR GUARDADO')).toBeDefined();
+      expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+      await renderer.act(async () => { tree.unmount(); });
+    } finally {
+      save.mockRestore();
+    }
+  }, 30_000);
+});
