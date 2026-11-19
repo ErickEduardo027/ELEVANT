@@ -348,9 +348,12 @@ test("Superadmin dispara un vuelo demo «Al azar» y el servidor sortea la posic
   // The server drew the stand among the eligible ones, with the Idempotency-Key as the seed: the covered one.
   expect([flight.state, flight.imported, flight.suggestedStandCode]).toEqual(["Active", false, covered!.code]);
   stand = covered;
-  // The server owns the clock: 2 minutes to the stand leave 90 s of taxi (the minimum), so the wheels touch the
-  // runway 30 s after the trigger, and the departure is scheduled 20 minutes after the on-block.
-  expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBe(VISIT.minutes * MINUTE);
+  // The server owns the clock: it schedules from the next whole minute (N28), so the aircraft parks on a whole minute
+  // 2 to 3 minutes after the trigger; that leaves 90 s of taxi (the minimum), and the departure is scheduled 20 minutes
+  // after the on-block.
+  expect(ms(flight.onBlockAt) % MINUTE).toBe(0);
+  expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBeGreaterThanOrEqual(VISIT.minutes * MINUTE);
+  expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBeLessThan((VISIT.minutes + 1) * MINUTE);
   expect(ms(flight.onBlockAt) - ms(flight.touchdownAt)).toBe(90_000);
   expect(ms(flight.scheduledOffBlockAt) - ms(flight.onBlockAt)).toBe(VISIT.groundMinutes * MINUTE);
   await expectDemoRow(flight, `OCC aún no lo importa · Posición sugerida ${stand!.code}`);
