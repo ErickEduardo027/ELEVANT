@@ -846,28 +846,51 @@ test('a revoked session keeps every unsent record bound to its account; only tha
   // A draft is not a record sent anywhere: it is kept but not counted.
   await writeRampChecklistDraftIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, CHECKLIST_A, JSON.stringify({ answers: {} }));
   await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, others: 0 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, ended: 0, others: 0 });
 
   // ELEVANT answers 401: the credential, its metadata and the caches go; what the agent recorded stays.
   await expect(clearStoredMobileSessionIfCurrent(sessionId)).resolves.toBe(true);
   expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
   expect(mockAsyncData.has(METADATA_KEY)).toBe(false);
   expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-charges'))).toBe(false);
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, others: 5 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, ended: 0, others: 5 });
 
   // Another agent on the same tablet neither reads nor counts them as its own.
   const otherSession = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
   await expect(readRampIncidentOutboxIfCurrent(otherSession, ACCOUNT_B, OPERATION_A))
     .resolves.toEqual({ kind: 'current', items: [] });
   mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_B}`, JSON.stringify([queued('91000000-0000-4000-8000-000000000003')]));
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 1, others: 5 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 1, ended: 0, others: 5 });
   await clearStoredMobileSession();
 
   // The same account signs in again and finds its records.
   const nextSession = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, others: 1 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, ended: 0, others: 1 });
   await expect(readRampIncidentOutboxIfCurrent(nextSession, ACCOUNT_A, OPERATION_A))
     .resolves.toMatchObject({ kind: 'current', items: [{ state: 'pending' }] });
   await expect(readRampChecklistDraftIfCurrent(nextSession, ACCOUNT_A, OPERATION_A, CHECKLIST_A))
     .resolves.toEqual({ kind: 'current', value: JSON.stringify({ answers: {} }) });
+});
+
+test('without a session the records of the account whose session ended count apart from the others (N7)', async () => {
+  const queued = count => JSON.stringify(Array.from({ length: count }, (_, index) => ({
+    idempotencyKey: `91000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    command: { kind: 'milestone', operationId: OPERATION_A, code: 'BLOCK_ON', occurredAt: '2026-11-16T19:40:00.000Z' },
+    createdAt: '2026-11-16T19:40:00.000Z', state: 'pending', attempts: 0 })));
+  const sessionA = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_A}`, queued(2));
+  mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_B}`, queued(3));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 2, ended: 0, others: 3 });
+
+  // ELEVANT refused A's session: the marker names A, whose records are the ones it sends when it signs in again.
+  await expect(clearStoredMobileSessionIfCurrent(sessionA, 'token-a', 'refused')).resolves.toBe(true);
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, ended: 2, others: 3 });
+
+  // While someone is signed in nothing counts as ended, not even before its sign-in forgets the marker.
+  await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 3, ended: 0, others: 2 });
+
+  // A sign-out on purpose forgets the marker: every record is some other account's again.
+  await clearStoredMobileSession();
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, ended: 0, others: 5 });
 });

@@ -129,8 +129,13 @@ tarde, después de que el agente volvió a iniciar sesión en la misma tablet,
 responde `version_conflict` y no libera nada; las escrituras de la propia sesión
 nunca la rechazan. OCC puede liberarla o revocarla desde «Tablets»; una tablet
 revocada (`device_revoked`) no vuelve a registrarse y la app lo explica al
-iniciar sesión. La APK anterior no libera al cerrar sesión, pero el siguiente
-agente la toma igual.
+iniciar sesión. El vínculo sigue mientras la operación del otro agente esté en
+curso, aunque su sesión ya haya vencido, así que con
+`device_in_use_by_active_agent` el acceso no le pide que cierre sesión: dice
+que la tablet sigue a nombre de otro agente y pide a OCC que la libere en
+«Tablets» antes de volver a intentarlo. No muestra quién la tiene ni precarga
+el correo (N7, D-N7). La APK anterior no libera al cerrar sesión, pero el
+siguiente agente la toma igual.
 
 La sesión se renueva como en AVIAM Web (S3,
 [ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)): el
@@ -218,6 +223,19 @@ vuelo distinguen la sesión terminada (`session_expired`, `unauthenticated`) de
 un fallo del almacenamiento (`storage_unavailable`). Ningún texto pide
 desbloquear el dispositivo, que en Android nunca es la causa, ni habla de
 «payload».
+
+La pantalla de acceso dice cómo terminó la sesión anterior (N7). El aviso está
+en pasado y nombra la causa del marcador de fin: «La sesión anterior venció»,
+«ELEVANT cerró la sesión anterior» o, con `access_revoked`, que la cuenta perdió
+el acceso a la aplicación de rampa; sin marcador solo dice que terminó. Sale al
+llegar con ENTRAR DE NUEVO y también cuando la propia pantalla encuentra la
+sesión vencida. Dura hasta el siguiente intento, así que no convive con el
+error de ese intento, y vuelve con un aviso nuevo. Tras ENTRAR DE NUEVO, el
+aviso de pendientes cuenta solo los registros de la cuenta que terminó
+(`countPendingEvidence` los separa mientras nadie inició sesión): nunca le
+atribuye los de otra cuenta. El campo de correo no usa una dirección de prueba
+(«Correo de tu cuenta AVIAM») y el logo y el formulario forman un solo bloque
+centrado, también en vertical, con el pie al final.
 
 La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
 antigüedad no supera 15 minutos. Un `401`, `403`, otro fallo HTTP, cancelación,

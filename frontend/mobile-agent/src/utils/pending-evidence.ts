@@ -4,12 +4,22 @@
  */
 const records = (count: number) => `${count} ${count === 1 ? 'registro' : 'registros'}`;
 
-/** On the access screen: everything the tablet keeps, whoever recorded it; null when nothing waits. */
-export function loginPendingEvidenceNotice(count: number, notice?: string): string | null {
-  if (count <= 0) return null;
-  if (notice === 'session_expired') {
-    return `Inicia sesión de nuevo para enviar ${records(count)} ${count === 1 ? 'guardado' : 'guardados'} en esta tablet.`;
+/** What the tablet keeps unsent: of the account signed in, of the account whose session ended and of the others. */
+type UnsentRecords = Readonly<{ current: number; ended: number; others: number }>;
+
+/**
+ * On the access screen. When the agent whose session ended comes back to sign in again (`endedAccountReturns`), only
+ * that account's records count (N7): the ones it sends once it signs in, never another account's. Otherwise everything
+ * the tablet keeps, whoever recorded it. Null when nothing waits.
+ */
+export function loginPendingEvidenceNotice(unsent: UnsentRecords, endedAccountReturns: boolean): string | null {
+  if (endedAccountReturns) {
+    const own = unsent.ended;
+    if (own <= 0) return null;
+    return `Inicia sesión de nuevo para enviar ${records(own)} ${own === 1 ? 'guardado' : 'guardados'} en esta tablet.`;
   }
+  const count = unsent.current + unsent.ended + unsent.others;
+  if (count <= 0) return null;
   return `Esta tablet guarda ${records(count)} sin enviar. Inicia sesión con la cuenta que ${count === 1
     ? 'lo registró para enviarlo' : 'los registró para enviarlos'}; si esa cuenta ya no tiene acceso, avisa a OCC.`;
 }

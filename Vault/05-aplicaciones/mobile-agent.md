@@ -80,7 +80,7 @@ la sección «Fase 3» describe la cola actual.
 
 | Ruta Expo | Comportamiento observable |
 | --- | --- |
-| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta; *posterior al commit verificado,* también el cambio de la contraseña temporal del primer ingreso. |
+| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta; *posterior al commit verificado,* también el cambio de la contraseña temporal del primer ingreso y el aviso de cómo terminó la sesión anterior (N7, sección «Fase 2»). |
 | `/home` | Perfil, vuelos asignados, conteo de pendientes y acceso a chat. |
 | `/flight/[id]` | Detalle, servicios e inicio/cierre local de atención. |
 | `/checklist/[id]` | Respuestas y cierre de checklist asociado a la operación local. |
@@ -197,6 +197,23 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
     un límite de 5 segundos, y un inicio de sesión que la tablet no conserva
     también termina su familia. No hay tope de horas, por decisión de Erick del
     2026-11-19. La APK ya instalada no renueva: el cambio llega con la APK
+    nueva.
+- **La pantalla de acceso.** Posterior a la fase 2 (hallazgo N7 de la corrida
+  del VPS del 16 de noviembre;
+  [pantalla](../../frontend/mobile-agent/src/app/index.tsx)):
+  - el aviso de cómo terminó la sesión anterior está en pasado y nombra la
+    causa del marcador de fin (venció, ELEVANT la cerró o la cuenta perdió el
+    acceso); dura hasta el siguiente intento y vuelve con un aviso nuevo. Sale
+    también cuando el acceso encuentra él mismo la sesión vencida;
+  - con `device_in_use_by_active_agent` ya no pide al otro agente que cierre
+    sesión, porque el vínculo sigue mientras su operación esté en curso aunque
+    su sesión haya vencido: pide a OCC que la libere en «Tablets» y volver a
+    intentarlo. No muestra quién tiene la tablet ni precarga el correo (D-N7);
+  - tras el fin de una sesión, el aviso de pendientes cuenta solo los registros
+    de la cuenta que terminó, nunca los de otra;
+  - el correo ya no muestra una dirección de prueba como ejemplo, y el logo y
+    el formulario quedan centrados, también en vertical, con el pie al final;
+  - la APK instalada conserva los textos anteriores hasta que se instale la
     nueva.
 
 ## Fase 3: una sola cola, el reloj de ELEVANT y la evidencia que se conserva

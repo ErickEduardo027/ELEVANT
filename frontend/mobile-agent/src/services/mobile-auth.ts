@@ -11,10 +11,12 @@ import {
   clearStoredMobileSessionIfCurrent,
   countPendingEvidence,
   forgetEndedMobileSession,
+  readEndedMobileSession,
   readStoredMobileSession,
   replaceStoredMobileCredentialIfCurrent,
   subscribeStoredMobileSessionEnd,
   writeStoredMobileSession,
+  type EndedMobileSession,
   type MobileSessionEnd,
   type MobileSessionEndReason,
   type PendingEvidenceCount,
@@ -843,12 +845,27 @@ export function subscribeMobileSessionEnd(listener: (ended: MobileSessionEnd) =>
 }
 
 /**
- * What this tablet keeps that ELEVANT has not confirmed (3-N12), for the account signed in and for the others; null
- * when the device's storage cannot be read, so a screen simply shows no notice.
+ * What this tablet keeps that ELEVANT has not confirmed (3-N12), for the account signed in, for the account whose
+ * session ended (N7) and for the others; null when the device's storage cannot be read, so a screen simply shows no
+ * notice.
  */
 export async function readUnsentRecords(): Promise<PendingEvidenceCount | null> {
   try {
     return await countPendingEvidence();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The last session the tablet ended without its agent signing out (N5): whose, why and when. The access screen names
+ * that cause (N7). Null when there is none (a sign-out on purpose or a confirmed sign-in forgets it) or when the
+ * device's storage cannot be read, so the screen keeps to its route notice. Reading it first ends a session that
+ * already expired.
+ */
+export async function readEndedSession(): Promise<EndedMobileSession | null> {
+  try {
+    return await readEndedMobileSession();
   } catch {
     return null;
   }
@@ -893,4 +910,8 @@ export {
   MobileServiceError,
   type MobileServiceErrorCode,
 } from './mobile-service-error';
-export type { MobileSessionEnd } from '../storage/mobile-session';
+export type {
+  EndedMobileSession,
+  MobileSessionEnd,
+  PendingEvidenceCount,
+} from '../storage/mobile-session';

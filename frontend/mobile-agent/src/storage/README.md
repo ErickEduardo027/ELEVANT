@@ -25,7 +25,10 @@ revisión aleatoria:
   fin. `writeRampChecklistDraftForAccount` escribe el borrador del checklist
   para la cuenta que fijó la pantalla mientras su sesión está activa o, sin
   sesión, durante 2 horas desde ese fin (D-N5). El logout y un inicio de sesión
-  confirmado borran el marcador; un intento fallido no;
+  confirmado borran el marcador; un intento fallido no. Mientras nadie inició
+  sesión, `countPendingEvidence` separa los registros sin enviar de la cuenta
+  que nombra el marcador (`ended`) de los de otras cuentas, para que el acceso
+  no le atribuya los ajenos (N7);
 - una vez borrada esa sesión, `subscribeStoredMobileSessionEnd` avisa a las
   pantallas con la cuenta, la causa y la hora del fin (N6). El logout y un
   inicio de sesión que la tablet no conserva no se anuncian, y un oyente que

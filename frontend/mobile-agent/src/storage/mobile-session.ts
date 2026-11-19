@@ -1676,6 +1676,11 @@ export async function removeLegacyRampCommandIfCurrent(
 export type PendingEvidenceCount = Readonly<{
   /** Unsent records of the account signed in on this tablet (none without a session). */
   current: number;
+  /**
+   * Without a session, unsent records of the account whose session ended without its agent signing out (N7): the
+   * ones it sends when it signs in again. None while a session is signed in.
+   */
+  ended: number;
   /** Unsent records of other accounts: kept for them, never shown, sent or discarded by this one. */
   others: number;
 }>;
@@ -1683,24 +1688,31 @@ export type PendingEvidenceCount = Readonly<{
 /**
  * How many records this tablet keeps that ELEVANT has not confirmed (3-N12): the Flight Report queue, the incident
  * reports, the hand-off and correction commands, the attendance observations and the commands an older version
- * reserved, split between the account signed in now and the others. A checklist draft is not counted: nothing was
- * sent from it yet. It answers numbers only: nothing of another account's records leaves the storage.
+ * reserved, split between the account signed in now, the account whose session ended (N7) and the others. A
+ * checklist draft is not counted: nothing was sent from it yet. It answers numbers only: nothing of another account's
+ * records leaves the storage.
  */
 export async function countPendingEvidence(): Promise<PendingEvidenceCount> {
   return withStorageLock(async () => {
     try {
       const state = await readStoredMobileSessionUnlocked();
       const signedIn = state.kind === 'active' ? safeAccountId(state.metadata)?.toLowerCase() : undefined;
+      // The marker names the account only while nobody is signed in: a sign-in forgets it once confirmed.
+      const endedAccount = state.kind === 'active'
+        ? undefined
+        : parseEndedSession(await AsyncStorage.getItem(ENDED_SESSION_KEY))?.accountId;
       let current = 0;
+      let ended = 0;
       let others = 0;
       for (const key of await AsyncStorage.getAllKeys()) {
         const owner = evidenceOwner(key);
         if (!owner) continue;
         const records = evidenceRecords(key, await AsyncStorage.getItem(key));
         if (owner === signedIn) current += records;
+        else if (owner === endedAccount) ended += records;
         else others += records;
       }
-      return { current, others };
+      return { current, ended, others };
     } catch (error) {
       if (error instanceof MobileSessionStorageError) throw error;
       throw new MobileSessionStorageError();

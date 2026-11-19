@@ -40,6 +40,16 @@ tablet no pudo guardar se explican sin «payload» ni «Desbloquea».
 `flight-report-panel.test.js` comprueba que los hitos y los datos del vuelo
 distinguen la sesión terminada de un fallo del almacenamiento.
 
+`login-screen.test.js` monta la pantalla de acceso con el almacenamiento y la
+sesión reales y un doble de ELEVANT con dos cuentas (N7). `useLocalSearchParams`
+es mutable, así que el aviso de la ruta cambia con la pantalla montada. Comprueba
+que el aviso del fin de sesión está en pasado, nombra la causa del marcador
+(vencida, rechazada o sin acceso), se va al reintentar y vuelve con un aviso
+nuevo, y que también sale cuando la pantalla encuentra la sesión vencida.
+También comprueba el placeholder sin dirección de prueba, que la tablet en uso
+remite a OCC sin decir quién la tiene, que los pendientes de otra cuenta no
+cuentan y que el logo y el formulario forman un bloque centrado.
+
 `mobile-session-renewal.test.js` recorre la renovación de la sesión (S3,
 ADR-0046) contra un doble pequeño de los endpoints de sesión de ELEVANT
 (rotación, margen de 60 segundos y detección de reuso), con el almacenamiento,
