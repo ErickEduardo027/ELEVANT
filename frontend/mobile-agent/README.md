@@ -171,7 +171,10 @@ asistencia solo necesitan la identidad de la sesión guardada en la tablet, sin
 red ni renovación. Una sesión vencida, sin un refresh token vigente, se elimina
 en cerrado; un access token vencido con el refresh vigente no borra nada.
 Cerrar sesión libera la tablet y termina la familia en ELEVANT
-(`POST /api/v1/auth/session/logout`), cada uno con un límite de 5 segundos; un
+(`POST /api/v1/auth/session/logout`), cada uno con un límite de 5 segundos. Si
+el access token venció o está en su último minuto, antes lo renueva una vez,
+aunque sea durante la pausa de 30 segundos y con el mismo límite, para que
+ELEVANT acepte la liberación; la familia termina después de esa renovación. Un
 inicio de sesión que la tablet no conserva (por ejemplo, si falla el registro
 de la tablet) también termina la familia recién emitida. Logout, el `401` de una
 renovación rechazada y `403` eliminan token, refresh token, metadata, cachés

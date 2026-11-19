@@ -75,7 +75,9 @@ repite una vez, con la misma clave si es un comando. Si se pierde la respuesta
 de una renovación (D-S3b), ELEVANT responde `409` durante un minuto y después
 trata el refresh token viejo como reuso: la sesión termina y el agente vuelve a
 entrar sin perder lo que la tablet guarda. Cerrar sesión libera la tablet y
-termina la familia en ELEVANT, con un límite de 5 segundos cada uno.
+termina la familia en ELEVANT, con un límite de 5 segundos cada uno; si el
+access token ya venció, antes lo renueva una vez para que ELEVANT acepte la
+liberación.
 
 Las claves de firma/tokens futuros deben permanecer fuera de Git. Una
 evidencia real no se borrará antes de confirmación persistente ni se

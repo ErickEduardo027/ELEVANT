@@ -57,6 +57,10 @@ el servicio de sesión y el reloj del servidor reales: una sola renovación en e
 minuto 16, sin señal la sesión sigue, `401` termina la sesión y conserva la
 cola, `409`/`429`/`503`, el `401` de una solicitud, el reloj adelantado, un
 desfase obsoleto, la respuesta perdida (D-S3b) y los tokens sin `auth_time`.
+También cierra sesión con el access token vencido, incluso en la pausa tras una
+renovación fallida: renueva una vez antes de liberar la tablet y termina la
+familia después. `mobile-device-release.test.js` comprueba que esa renovación
+espera 5 segundos como máximo.
 
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

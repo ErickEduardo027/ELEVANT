@@ -158,8 +158,11 @@ type RenewalOutcome =
   | Readonly<{ kind: 'ended'; issue: MobileServiceError }>
   | Readonly<{ kind: 'kept'; issue: MobileServiceError }>;
 
+/** A renewal on its way: the credential it renews, what it leaves and how to cancel its request. */
+type Renewal = Readonly<{ accessToken: string; outcome: Promise<RenewalOutcome>; controller: AbortController }>;
+
 /** The renewal on its way, shared by every request that needs it: one refresh token is presented once. */
-let renewal: Readonly<{ accessToken: string; outcome: Promise<RenewalOutcome> }> | null = null;
+let renewal: Renewal | null = null;
 /** After a renewal that could not finish, no other one before `until` (the tablet's clock), and why. */
 let renewalPause: Readonly<{ until: number; issue: MobileServiceError }> | null = null;
 /** The access token the last renewal stored, and when (the tablet's clock). */
@@ -541,9 +544,14 @@ async function endRefusedSession(
  * One renewal of the credential `seen` names (ADR-0021, as AVIAM Web): 200 stores the new credential of the same
  * account under the same revision; 409 re-reads what the device holds; 401 ends the session with its cause; no
  * signal, 429 or 5xx keep the session and pause the renewals. A credential another renewal already replaced is never
- * presented again.
+ * presented again. `ignorePause`: the agent asked for it (the sign-out), so the pause after a failed renewal does not
+ * hold it back.
  */
-async function renewCredential(seen: ActiveSessionState): Promise<RenewalOutcome> {
+async function renewCredential(
+  seen: ActiveSessionState,
+  ignorePause: boolean,
+  signal: AbortSignal,
+): Promise<RenewalOutcome> {
   let state: LocalSessionState;
   try {
     state = await localSessionState();
@@ -555,12 +563,12 @@ async function renewCredential(seen: ActiveSessionState): Promise<RenewalOutcome
   if (!renewable(state, serverNow().getTime())) {
     return endRefusedSession(state, new MobileServiceError('session_expired'), 'expired');
   }
-  const pause = activeRenewalPause();
+  const pause = ignorePause ? null : activeRenewalPause();
   if (pause) return { kind: 'kept', issue: pause.issue };
 
   let issued: SessionResponse;
   try {
-    issued = await createMobileAgentApiClient().refreshSession(state.refreshToken as string);
+    issued = await createMobileAgentApiClient().refreshSession(state.refreshToken as string, { signal });
   } catch (error) {
     const issue = asMobileServiceError(error);
     // ELEVANT refused the family: revoked by OCC, a password change, 30 days without use or a reused token (D-S3b).
@@ -604,13 +612,45 @@ async function renewCredential(seen: ActiveSessionState): Promise<RenewalOutcome
 }
 
 /** The renewal of this credential: the one on its way, or a new one. */
-function renewSession(state: ActiveSessionState): Promise<RenewalOutcome> {
-  if (renewal?.accessToken === state.accessToken) return renewal.outcome;
-  const outcome = renewCredential(state).finally(() => {
+function renewSession(state: ActiveSessionState, ignorePause = false): Renewal {
+  if (renewal?.accessToken === state.accessToken) return renewal;
+  const controller = new AbortController();
+  const outcome = renewCredential(state, ignorePause, controller.signal).finally(() => {
     if (renewal?.outcome === outcome) renewal = null;
   });
-  renewal = { accessToken: state.accessToken, outcome };
-  return outcome;
+  renewal = { accessToken: state.accessToken, outcome, controller };
+  return renewal;
+}
+
+/**
+ * The credential the sign-out frees the tablet with (S3). A session whose access token expired, or is in its last
+ * minute, holds a token ELEVANT would refuse, and the binding would stay open: it renews first, once, also during the
+ * pause after a renewal that could not finish, and waits for it MOBILE_END_SESSION_TIMEOUT_MS at most before it
+ * cancels it. Ending the family while that renewal is on its way would refuse it, so the end waits for it too. When the
+ * renewal does not finish, the sign-out goes on with what the tablet holds, as before.
+ */
+async function signOutCredential(state: ActiveSessionState): Promise<ActiveSessionState> {
+  try {
+    const now = serverNow().getTime();
+    if (
+      Date.parse(state.session.expiresAt) - now > MOBILE_SESSION_RENEW_BEFORE_MS ||
+      renewedLately(state.accessToken, MOBILE_SESSION_RENEWAL_BACKOFF_MS) ||
+      !renewable(state, now)
+    ) {
+      return state;
+    }
+    const current = renewSession(state, true);
+    const timeout = setTimeout(() => current.controller.abort(), MOBILE_END_SESSION_TIMEOUT_MS);
+    try {
+      await current.outcome;
+    } finally {
+      clearTimeout(timeout);
+    }
+    const latest = await localSessionState();
+    return latest.kind === 'active' && latest.sessionId === state.sessionId ? latest : state;
+  } catch {
+    return state;
+  }
 }
 
 /**
@@ -782,7 +822,7 @@ export async function getMobileSessionRequestContext(): Promise<MobileSessionReq
   try {
     let state = await usableSessionState();
     if (renewalDue(state)) {
-      const outcome = await renewSession(state);
+      const outcome = await renewSession(state).outcome;
       if (outcome.kind === 'ended') throw outcome.issue;
       // Renewed, replaced by another sign-in, or kept because the renewal could not finish: the request goes out with
       // what the device holds now.
@@ -824,7 +864,7 @@ export async function rejectMobileSessionRequest(
     failure.code === 'unauthenticated' &&
     !renewedLately(context.accessToken, MOBILE_SESSION_RENEW_BEFORE_MS)
   ) {
-    const outcome = await renewSession(state);
+    const outcome = await renewSession(state).outcome;
     if (outcome.kind === 'renewed') return 'retry';
     if (outcome.kind === 'ended') return true;
     if (outcome.kind === 'superseded') return false;
@@ -873,7 +913,8 @@ export async function readEndedSession(): Promise<EndedMobileSession | null> {
 
 /**
  * Signs out: frees the tablet for the next agent (2-N02) and ends the session at ELEVANT, so its refresh token and
- * every renewal of it stop working (S3); both are best effort and bounded in time. Then it clears the session, its
+ * every renewal of it stop working (S3); both are best effort and bounded in time. An access token that expired while
+ * the session waited for its renewal is renewed first, so ELEVANT takes the release. Then it clears the session, its
  * caches and the marker of an ended session (N5): nothing marked afterwards is kept. A tablet that cannot reach ELEVANT
  * still signs out; the next agent who signs in on it takes it. What the agent recorded and ELEVANT has not confirmed
  * stays on the device for the same account (3-N12).
@@ -886,7 +927,7 @@ export async function logoutMobileAgent(): Promise<void> {
     state = null;
   }
   if (state?.kind === 'active') {
-    const { accessToken, refreshToken, sessionId } = state;
+    const { accessToken, refreshToken, sessionId } = await signOutCredential(state);
     await Promise.all([
       releaseCurrentMobileDevice({ accessToken, sessionId }),
       refreshToken === null ? undefined : endSessionAtElevant(refreshToken),

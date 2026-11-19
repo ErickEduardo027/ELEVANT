@@ -54,7 +54,9 @@ const {
   getMobileSession,
   getMobileSessionIdentity,
   loginMobileAgent,
+  logoutMobileAgent,
   resetMobileSessionRenewalForTests,
+  subscribeMobileSessionEnd,
 } = require('../src/services/mobile-auth');
 const { forgetConfirmedMobileDevice } = require('../src/services/mobile-device');
 const { getOwnCoverage } = require('../src/services/ramp-coverage');
@@ -67,6 +69,7 @@ const ACCOUNT = '40000000-0000-4000-8000-000000000002';
 const OPERATION = '70000000-0000-4000-8000-000000000001';
 const CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
 const METADATA_KEY = 'elevant:mobile:session-metadata:v1';
+const ENDED_SESSION_KEY = 'elevant:mobile:ended-session:v1';
 const OUTBOX_KEY = `elevant.flightReportOutbox.v1.${ACCOUNT}`;
 const MINUTE = 60_000;
 
@@ -92,7 +95,7 @@ const mockElevant = {
     Object.assign(this, {
       skewMs: 0, offline: false, authTime: true, issuesRefresh: true, refreshStatus: null,
       loseNextRefreshAnswer: false, beforeRefresh: null, refuseAccessTokens: false, registration: null,
-      accepted: new Map(), families: [], calls: [], sequence: 0,
+      accepted: new Map(), families: [], calls: [], refused: [], sequence: 0,
     });
   },
   /** ELEVANT's clock: the tablet's minus how far ahead the tablet runs. */
@@ -146,6 +149,7 @@ const mockElevant = {
       const expiry = this.accepted.get(token);
       // The API takes a token until its expiry plus 30 seconds of clock skew.
       if (this.refuseAccessTokens || expiry === undefined || this.now() > expiry + 30_000) {
+        this.refused.push(name);
         throw new ElevantApiError({ status: 401 });
       }
     };
@@ -439,4 +443,48 @@ test('a sign-in whose tablet registration fails ends the family it was just issu
   expect(mockElevant.families[0].revoked).toBe(true);
   expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
   await expect(getMobileSession()).resolves.toBeNull();
+});
+
+test('signing out with an expired token renews it first, also in the pause after a failed renewal, so ELEVANT frees the tablet', async () => {
+  await signIn();
+  // More than 15 minutes in a dead zone: the renewal without signal starts the 30-second pause.
+  advance(16 * MINUTE);
+  mockElevant.offline = true;
+  await expect(getOwnCoverage()).rejects.toMatchObject({ code: 'network_unavailable' });
+  const renewals = mockElevant.count('refreshSession');
+
+  // Back on Wi-Fi, the agent signs out within the pause.
+  mockElevant.offline = false;
+  advance(10_000);
+  const ends = [];
+  const stopListening = subscribeMobileSessionEnd(ended => ends.push(ended));
+  try {
+    await logoutMobileAgent();
+  } finally {
+    stopListening();
+  }
+
+  expect(mockElevant.count('refreshSession')).toBe(renewals + 1);
+  // ELEVANT takes the renewed token and frees the tablet; the family ends after the renewal, never while it is on its way.
+  const names = mockElevant.calls.map(call => call.name);
+  expect(names.indexOf('releaseMobileDevice')).toBeGreaterThan(names.lastIndexOf('refreshSession'));
+  expect(names.indexOf('endSession')).toBeGreaterThan(names.lastIndexOf('refreshSession'));
+  expect(mockElevant.refused).toEqual([]);
+  expect(mockElevant.families[0].revoked).toBe(true);
+  // A sign-out on purpose: nothing is announced, no marker of an ended session stays and the credential is gone.
+  expect(ends).toEqual([]);
+  expect(mockAsyncData.has(ENDED_SESSION_KEY)).toBe(false);
+  expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
+});
+
+test('signing out 20 minutes after signing in renews the token once before the release', async () => {
+  await signIn();
+  advance(20 * MINUTE);
+
+  await logoutMobileAgent();
+
+  expect(mockElevant.count('refreshSession')).toBe(1);
+  expect(mockElevant.count('releaseMobileDevice')).toBe(1);
+  expect(mockElevant.refused).toEqual([]);
+  expect(mockElevant.families[0].revoked).toBe(true);
 });
