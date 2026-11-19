@@ -116,6 +116,21 @@ contiene secretos.
     reduce para caber (`adjustsFontSizeToFit` con un tope de escala de fuente,
     porque Fabric ignora `minimumFontScale` en Android). En el detalle, el
     nombre del aeropuerto ya no se corta en una columna fija de 76 dp.
+- Unidades de cobro en español (hallazgo S5, D-S5): `src/utils/billing-units.ts`
+  nombra la unidad de un servicio como Finanzas, nunca con su código, y escribe
+  el plural: «0 / 1 hora», «1 / 1 operación», «0 / 3 operaciones» y
+  «Cantidad ejecutada (horas)».
+  - Un nombre heredado («Operación», «Hora», con o sin tilde, en mayúsculas o
+    minúsculas) se lee como su código, igual que `billingUnitCode` de
+    private-web. Una unidad que la tablet no conoce sale tal cual.
+  - Las unidades de conteo (operación, servicio, aeronave y pasajero) piden
+    números enteros con el teclado numérico: «Solo números enteros.». La
+    cantidad contratada que propone la tarjeta se acepta aunque tenga
+    decimales, y un comando ya reservado se reintenta tal como se reservó. Las
+    demás unidades, y las desconocidas, admiten hasta cuatro decimales. La
+    regla es solo de la tablet: el servidor sigue aceptando cuatro decimales.
+  - La Orden de Servicio conserva las abreviaturas de su PDF («1 h»,
+    «1 serv.») con `billingUnitAbbreviation`.
 
 ## Autorización y almacenamiento
 

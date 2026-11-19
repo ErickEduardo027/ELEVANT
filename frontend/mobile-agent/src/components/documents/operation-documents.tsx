@@ -24,6 +24,7 @@ import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
 import { PrimaryButton } from '../ui';
 import { SignaturePad, type Strokes } from './signature-pad';
+import { billingUnitAbbreviation } from '../../utils/billing-units';
 import { isValidSignerIdentification, normalizeSignerIdentification } from '../../utils/signer-identification';
 
 const TITLES: Record<OperationDocumentKind, string> = {
@@ -51,15 +52,6 @@ function useFlightReportSnapshot() {
 
 function pendingOf(items: readonly FlightReportOutboxItem[], operationId: string) {
   return items.filter(item => item.command.operationId === operationId);
-}
-
-/** Billing units as the agent says them on the ramp. */
-function unitLabel(unit: string) {
-  const key = unit.toLowerCase();
-  if (['perhour', 'hour', 'hours'].includes(key)) return 'h';
-  if (['perservice', 'service', 'peroperation', 'operation', 'turnaround'].includes(key)) return 'serv.';
-  if (['unit', 'perunit', 'each'].includes(key)) return 'unid.';
-  return unit;
 }
 
 function money(amount: number | null | undefined, currency: string | null | undefined) {
@@ -210,7 +202,7 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
             {summary.services.map(line => (
               <View key={line.code} style={styles.line}>
                 <Text style={styles.lineName}>{line.name}</Text>
-                <Text style={styles.lineQty}>{line.quantity.toLocaleString('es-DO')} {unitLabel(line.unit)}</Text>
+                <Text style={styles.lineQty}>{line.quantity.toLocaleString('es-DO')} {billingUnitAbbreviation(line.unit)}</Text>
                 <Text style={styles.lineAmount}>{money(line.amount, summary.currencyCode)}</Text>
               </View>
             ))}

@@ -170,6 +170,24 @@ formateadores de la
   nombre del aeropuerto del detalle ya no se corta.
 - La APK instalada conserva el formato anterior hasta que se instale la nueva.
 
+**Unidades de cobro en español.** Posterior al commit verificado de esta nota
+(hallazgo S5 de la corrida del VPS del 16 de noviembre, decisión D-S5), la
+tarjeta de cada servicio nombra su unidad como Finanzas y nunca con el código
+de `ref.billing_units`: «0 / 1 hora», «1 / 1 operación» y «Cantidad ejecutada
+(horas)», con la
+[utilidad de unidades](../../frontend/mobile-agent/src/utils/billing-units.ts).
+
+- El plural está escrito para cada unidad sembrada, y solo una cantidad igual a
+  1 va en singular.
+- Un nombre heredado («Operación», «Hora», con o sin tilde) se lee como su
+  código, igual que en private-web. Una unidad desconocida sale tal cual.
+- Operación, servicio, aeronave y pasajero son unidades de conteo: la tablet
+  pide números enteros, salvo la cantidad contratada que propone la tarjeta.
+  Las demás admiten hasta cuatro decimales. Es una regla solo del cliente: el
+  servidor sigue aceptando cuatro decimales.
+- La Orden de Servicio conserva las abreviaturas de su PDF («1 h», «1 serv.»).
+- La APK instalada sigue mostrando el código hasta que se instale la nueva.
+
 ## Fase 2: tablets compartidas
 
 Posterior al commit verificado de esta nota: esta sección describe el código de

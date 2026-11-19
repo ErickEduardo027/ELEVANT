@@ -213,3 +213,14 @@ describe('one date and time format (N11, D-N11)', () => {
     await renderer.act(async () => tree.unmount());
   });
 });
+
+describe('billing units in Spanish (S5, D-S5)', () => {
+  test('a service reads «0 / 1 operación» and the manifest never shows the unit code', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [operation('InProgress')] });
+    const tree = await render();
+    const text = screenText(tree);
+    expect(text).toContain('0 / 1 operación');
+    expect(text).not.toMatch(/\boperation\b/);
+    await renderer.act(async () => tree.unmount());
+  });
+});

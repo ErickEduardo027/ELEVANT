@@ -18,6 +18,11 @@ import type {
   TransitionRampOperationServiceRequest,
 } from '../services/ramp-operation-service-execution';
 import { colors } from '../theme/colors';
+import {
+  billingUnitDecimals,
+  billingUnitName,
+  MAX_QUANTITY_DECIMALS,
+} from '../utils/billing-units';
 import { Card, PrimaryButton, StatusPill } from './ui';
 
 export type ServiceExecutionNotice = Readonly<{
@@ -76,7 +81,16 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
     setValidationRequested(false);
   }, [pending, service]);
 
-  const parsedQuantity = useMemo(() => parseQuantity(quantity), [quantity]);
+  // S5 (D-S5): the unit in Spanish, never its code; a unit that counts things takes whole numbers only, but the
+  // contracted quantity the card proposes is accepted even when it is fractional.
+  const decimals = billingUnitDecimals(service.billingUnit);
+  const wholeNumbers = decimals === 0;
+  const unitName = billingUnitName(service.billingUnit);
+  const quantityLabel = unitName ? `Cantidad ejecutada (${unitName})` : 'Cantidad ejecutada';
+  const parsedQuantity = useMemo(
+    () => parseQuantity(quantity, decimals) ?? contractedQuantityOf(quantity, service.contractedQuantity),
+    [decimals, quantity, service.contractedQuantity],
+  );
   const noteRequired = target === 'NotPerformed' || target === 'Exception';
   const quantityRequired = target !== null;
   const formValid = (
@@ -103,6 +117,12 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
 
   const submitTerminal = () => {
     if (!target || busy || !actionable) return;
+    // A reserved command is not validated again: its retry sends exactly what was reserved, even a fractional quantity
+    // in a count unit.
+    if (pending) {
+      onTransition(pending.request);
+      return;
+    }
     if (!formValid || parsedQuantity === null) {
       setValidationRequested(true);
       return;
@@ -122,9 +142,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
         <View style={styles.copy}>
           <Text style={styles.name}>{service.name}</Text>
           <Text style={styles.code}>{service.code}</Text>
-          <Text style={styles.quantitySummary}>
-            {formatQuantity(service.executedQuantity)} / {formatQuantity(service.contractedQuantity)} {service.billingUnit}
-          </Text>
+          <Text style={styles.quantitySummary}>{quantitySummary(service)}</Text>
         </View>
         <StatusPill
           text={serviceStatusLabel(service.status)}
@@ -269,12 +287,12 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
               </View>
 
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Cantidad ejecutada ({service.billingUnit})</Text>
+                <Text style={styles.fieldLabel}>{quantityLabel}</Text>
                 <TextInput
-                  accessibilityHint="Usa hasta cuatro decimales"
-                  accessibilityLabel={`Cantidad ejecutada en ${service.billingUnit}`}
+                  accessibilityHint={wholeNumbers ? 'Usa solo números enteros' : 'Usa hasta cuatro decimales'}
+                  accessibilityLabel={quantityLabel}
                   editable={actionable && !busy && !frozen && target !== 'NotPerformed'}
-                  keyboardType="decimal-pad"
+                  keyboardType={wholeNumbers ? 'number-pad' : 'decimal-pad'}
                   maxLength={20}
                   onChangeText={setQuantity}
                   placeholder="0"
@@ -286,7 +304,9 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                   ]}
                   value={quantity}
                 />
-                <Text style={styles.helperText}>Máximo 4 decimales.</Text>
+                <Text style={styles.helperText}>
+                  {wholeNumbers ? 'Solo números enteros.' : 'Máximo 4 decimales.'}
+                </Text>
                 {validationRequested && parsedQuantity === null && (
                   <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
                     Ingresa una cantidad válida, igual o mayor que cero.
@@ -443,14 +463,22 @@ function initialQuantity(
   );
 }
 
-function parseQuantity(raw: string) {
+/** A quantity written with a comma or a point and at most `decimals` decimals (none in a count unit). */
+function parseQuantity(raw: string, decimals: number) {
   const normalized = raw.trim().replace(',', '.');
-  if (!/^\d{1,14}(?:\.\d{1,4})?$/.test(normalized)) return null;
+  const match = /^\d{1,14}(?:\.(\d{1,4}))?$/.exec(normalized);
+  if (!match || (match[1]?.length ?? 0) > decimals) return null;
   const value = Number(normalized);
   if (!Number.isFinite(value) || value < 0 || value > 99_999_999_999_999.9999) {
     return null;
   }
   return value;
+}
+
+/** The contracted quantity when that is what the field holds: the card proposes it even if a count unit has decimals. */
+function contractedQuantityOf(raw: string, contracted: number) {
+  const value = parseQuantity(raw, MAX_QUANTITY_DECIMALS);
+  return value !== null && value === contracted ? value : null;
 }
 
 function formatQuantityInput(value: number) {
@@ -459,6 +487,13 @@ function formatQuantityInput(value: number) {
 
 function formatQuantity(value: number) {
   return new Intl.NumberFormat('es-DO', { maximumFractionDigits: 4 }).format(value);
+}
+
+/** «0 / 1 hora» in one string: the unit, in Spanish, agrees with the contracted quantity next to it. */
+function quantitySummary(service: RampOperationServiceResponse) {
+  const quantities = `${formatQuantity(service.executedQuantity)} / ${formatQuantity(service.contractedQuantity)}`;
+  const unit = billingUnitName(service.billingUnit, service.contractedQuantity);
+  return unit ? `${quantities} ${unit}` : quantities;
 }
 
 function targetLabel(target: TerminalTarget) {

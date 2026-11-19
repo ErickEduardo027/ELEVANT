@@ -72,5 +72,16 @@ manifiesto (`operation-offline-queue.test.js`), «Sincronización»
 (`sync-screen.test.js`) y el ajuste de un hito (`flight-report-panel.test.js`)
 comprueban el mismo formato, sin «a. m.» ni «p. m.».
 
+`billing-units.test.js` fija las unidades de cobro en español (S5, D-S5): el
+plural con 0, 1, 1,5 y 3, los nombres heredados con o sin tilde, que
+«constructor» o «__proto__» no son unidades, los decimales de cada unidad y las
+abreviaturas de la Orden de Servicio. `ramp-service-execution-card.test.js`
+monta la tarjeta de un servicio: «0 / 1 hora» y «1 / 1 operación» en una sola
+línea, «Cantidad ejecutada (horas)», que una unidad de conteo rechaza «1,5» y
+acepta «2» con el teclado numérico, que la hora acepta «1,5», que una cantidad
+contratada de 1,5 operaciones se confirma y que un comando reservado se reintenta
+tal cual. El manifiesto (`operation-offline-queue.test.js`) ya no muestra el
+código de la unidad.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.
