@@ -249,10 +249,14 @@ queda además como respaldo para los navegadores sin `svh`. En una ventana de
 escritorio de hasta 50 rem de alto el héroe ocupa la pantalla sin el mínimo de
 44 rem. El héroe ya no muestra la pastilla técnica «MOTOR 3D · LITE» ni
 «RESPALDO VISUAL»: la calidad elegida y el estado del render siguen en los
-atributos `data-graphics-tier` y `data-render-state` de la escena. Tras la
-primera carga de la fuente, Chrome puede mostrar el titular un instante con una
-línea más, hasta que recalcula su ancho máximo en `ch` con la fuente cargada
-([estilos](../../frontend/public-web/src/app/globals.css),
+atributos `data-graphics-tier` y `data-render-state` de la escena. El ancho
+máximo del titular va en `em`, los mismos 11 y 10,5 `ch` de Bricolage Grotesque
+Bold, así que no depende de qué fuente esté cargada: en una primera visita, con
+la fuente aún en camino, el titular ya tiene el ancho que conservará con ella.
+Antes iba en `ch`, que Chrome medía con la fuente de respaldo mientras llegaba
+la del titular; si llegaba durante la animación de entrada podía conservar ese
+ancho, y el titular quedaba en cinco líneas con «verificable.» bajo el borde
+inferior ([estilos](../../frontend/public-web/src/app/globals.css),
 [escena](../../frontend/public-web/src/components/three/HeroFlightScene.tsx),
 [prueba de la escena](../../frontend/public-web/tests/unit/hero-flight-scene.test.tsx)
 y [ventanas medidas en el navegador](../../frontend/public-web/tests/e2e/marketing.spec.ts)).

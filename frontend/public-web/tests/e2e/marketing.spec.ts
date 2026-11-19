@@ -182,14 +182,9 @@ test.describe("landing pública", () => {
 
       const title = page.getByRole("heading", { level: 1, name: /historia verificable/ });
       await expect(title).toBeVisible();
-      // Right after a cold font load Chrome may still apply the fallback font's `ch` to the
-      // headline's max-width (one line more) and reflow shortly after, so the bottom is polled.
-      await expect.poll(async () => {
-        const box = (await title.boundingBox())!;
-        return Math.ceil(box.y + box.height);
-      }, { message: `El titular termina dentro de los ${viewport.height}px de alto` })
-        .toBeLessThanOrEqual(viewport.height);
       const titleBox = (await title.boundingBox())!;
+      expect(Math.ceil(titleBox.y + titleBox.height), `El titular termina dentro de los ${viewport.height}px de alto`)
+        .toBeLessThanOrEqual(viewport.height);
       const headerBox = (await page.locator(".site-header").boundingBox())!;
       expect(titleBox.y, "El titular empieza debajo del encabezado")
         .toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
@@ -200,6 +195,55 @@ test.describe("landing pública", () => {
         return [...range.getClientRects()].filter((line) => line.top < fold && line.bottom > fold).length;
       }, viewport.height);
       expect(slicedLines, "Ninguna línea de la entradilla queda cortada por el borde inferior").toBe(0);
+    });
+  }
+
+  // N20: on a first visit the display font arrives late. The headline already wraps at the width it keeps once the
+  // font is in, so it never stays on a fifth line below the fold, not even with its entrance animation running.
+  for (const viewport of [{ width: 1366, height: 657 }, { width: 1568, height: 653 }]) {
+    test(`el titular cabe en ${viewport.width}x${viewport.height} aunque la fuente llegue tarde`, async ({
+      page,
+    }, testInfo) => {
+      test.skip(testInfo.project.name !== "desktop", "Fixed window sizes");
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.setViewportSize(viewport);
+      let releaseFonts!: () => void;
+      const fontsHeld = new Promise<void>((resolve) => { releaseFonts = resolve; });
+      await page.route("**/assets/fonts/**", async (route) => {
+        await fontsHeld;
+        await route.continue();
+      });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+
+      const title = page.getByRole("heading", { level: 1, name: /historia verificable/ });
+      // Until the font arrives the headline is laid out in the fallback font.
+      const headlineAnimation = (atLeast: number) => page.waitForFunction((ms) => {
+        const animation = document.querySelector(".hero h1")?.getAnimations()[0];
+        return Boolean(animation && Number(animation.currentTime) >= ms);
+      }, atLeast, { polling: "raf" });
+      await headlineAnimation(0);
+      const widthBeforeFont = await title.evaluate((element) => getComputedStyle(element).maxWidth);
+      // The font arrives halfway through the entrance animation: with a max-width in `ch`, Chrome could keep the
+      // fallback font's width there for good, and the headline stayed on five lines.
+      await headlineAnimation(450);
+      releaseFonts();
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await Promise.all(document.querySelector(".hero h1")!.getAnimations().map((animation) => animation.finished));
+      });
+
+      // Measured once: nothing is polled, the first layout with the font must already fit.
+      const lines = await title.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return new Set([...range.getClientRects()].map((line) => Math.round(line.top))).size;
+      });
+      const box = (await title.boundingBox())!;
+      expect(lines, "El titular ocupa cuatro líneas").toBe(4);
+      expect(Math.ceil(box.y + box.height), `El titular termina dentro de los ${viewport.height}px de alto`)
+        .toBeLessThanOrEqual(viewport.height);
+      expect(await title.evaluate((element) => getComputedStyle(element).maxWidth),
+        "El ancho del titular no depende de qué fuente está cargada").toBe(widthBeforeFont);
     });
   }
 

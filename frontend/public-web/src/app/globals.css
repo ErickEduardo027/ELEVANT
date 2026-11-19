@@ -590,7 +590,10 @@ h2 {
 }
 
 .hero h1 {
-  max-width: 11ch;
+  /* N20: 11ch of Bricolage Grotesque Bold (its «0» is 0.665em), in em so the wrap width never depends on the font
+     that is loaded: with ch, Chrome took the fallback font's «0» while the display font was on its way, and could
+     keep it, leaving the headline on one more line below the fold. */
+  max-width: 7.315em;
   margin-top: 1.2rem;
   font-size: clamp(3.2rem, 12vw, 8.7rem);
   letter-spacing: -0.065em;
@@ -1960,7 +1963,7 @@ h2 {
   }
 
   .hero h1 {
-    max-width: 10.5ch;
+    max-width: 6.9825em; /* N20: 10.5ch of Bricolage Grotesque Bold, in em like the base rule. */
     font-size: clamp(5.5rem, 8.5vw, 9.2rem);
     /* N20: in a short window the four lines also fit below the ~12rem of padding and eyebrow above them, so
        the headline ends just above the fold and the lead starts below it; never under the 3.2rem of phones.
