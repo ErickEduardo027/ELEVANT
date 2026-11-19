@@ -59,10 +59,15 @@ const {
   subscribeMobileSessionEnd,
 } = require('../src/services/mobile-auth');
 const { forgetConfirmedMobileDevice } = require('../src/services/mobile-device');
+const { readRampAttendanceDraft } = require('../src/services/ramp-attendance-draft');
 const { getOwnCoverage } = require('../src/services/ramp-coverage');
 const { getRampOperationChecklist } = require('../src/services/ramp-operation-checklist');
 const { flushFlightReport, recordMilestone, resetFlightReportForTests } = require('../src/services/flight-report');
-const { readStoredMobileSession, replaceStoredMobileCredentialIfCurrent } = require('../src/storage/mobile-session');
+const {
+  readEndedMobileSession,
+  readStoredMobileSession,
+  replaceStoredMobileCredentialIfCurrent,
+} = require('../src/storage/mobile-session');
 const { loadServerClock, observeServerDate, resetServerClockForTests } =
   require('../src/synchronization/server-clock');
 
@@ -96,6 +101,7 @@ const mockElevant = {
     Object.assign(this, {
       skewMs: 0, offline: false, authTime: true, issuesRefresh: true, refreshStatus: null,
       loseNextRefreshAnswer: false, beforeRefresh: null, refuseAccessTokens: false, registration: null,
+      bound: false, refuseAttendance: false, beforeAttendance: null,
       accepted: new Map(), families: [], calls: [], refused: [], sequence: 0,
     });
   },
@@ -166,10 +172,22 @@ const mockElevant = {
       registerMobileDevice: async request => {
         await authorized('registerMobileDevice');
         if (this.registration) throw this.registration;
+        // A registration binds the tablet to the agent again, also after OCC freed it (2-N02).
+        this.bound = true;
         return { installationId: request.installationId, platform: request.platform, appVersion: '1.0.0',
           lastSeenAt: new Date(this.now()).toISOString() };
       },
-      releaseMobileDevice: async () => { await authorized('releaseMobileDevice'); },
+      releaseMobileDevice: async () => {
+        await authorized('releaseMobileDevice');
+        this.bound = false;
+      },
+      // ELEVANT serves the agent's flight only on the tablet bound to the agent: otherwise 403 without a problem code.
+      getOperationAttendanceDraft: async (operationId, assignmentId) => {
+        if (this.beforeAttendance) await this.beforeAttendance();
+        await authorized('getOperationAttendanceDraft');
+        if (!this.bound || this.refuseAttendance) throw new ElevantApiError({ status: 403 });
+        return { operationId, assignmentId, occ: null, rampAgent: null };
+      },
       getOwnRampCoverage: async () => {
         await authorized('getOwnRampCoverage');
         return { coverages: [] };
@@ -517,4 +535,75 @@ test('signing out 20 minutes after signing in renews the token once before the r
   expect(mockElevant.count('releaseMobileDevice')).toBe(1);
   expect(mockElevant.refused).toEqual([]);
   expect(mockElevant.families[0].revoked).toBe(true);
+});
+
+describe('«Liberar» in OCC frees the tablet and never ends the session (ADR-0046)', () => {
+  const ASSIGNMENT = '71000000-0000-4000-8000-000000000001';
+  const readAttendance = () => readRampAttendanceDraft(OPERATION, ASSIGNMENT);
+
+  test('the next attendance read registers the tablet again, as a write does, and the session goes on', async () => {
+    const sessionId = await signIn();
+    const ends = [];
+    const stopListening = subscribeMobileSessionEnd(ended => ends.push(ended));
+    try {
+      // Signing in registered the tablet, and the attendance read reuses that registration.
+      await expect(readAttendance()).resolves.toMatchObject({ operationId: OPERATION, assignmentId: ASSIGNMENT });
+      expect(mockElevant.count('registerMobileDevice')).toBe(1);
+
+      // OCC frees the tablet: its binding closes and the account keeps its security stamp.
+      mockElevant.bound = false;
+      await expect(readAttendance()).resolves.toMatchObject({ operationId: OPERATION, assignmentId: ASSIGNMENT });
+      expect(mockElevant.count('registerMobileDevice')).toBe(2);
+      expect(mockElevant.bound).toBe(true);
+
+      // That registration is the session's own again: the next read reuses it.
+      await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+      expect(mockElevant.count('registerMobileDevice')).toBe(2);
+    } finally {
+      stopListening();
+    }
+    expect(storedCredential().sessionId).toBe(sessionId);
+    await expect(getMobileSession()).resolves.not.toBeNull();
+    expect(ends).toEqual([]);
+    expect(mockAsyncData.has(ENDED_SESSION_KEY)).toBe(false);
+  });
+
+  test('a refusal that stays after the new registration still ends the session as forbidden', async () => {
+    await signIn();
+    // ELEVANT refuses the read with the tablet bound as well: the account no longer has that access.
+    mockElevant.refuseAttendance = true;
+
+    await expect(readAttendance()).rejects.toMatchObject({ code: 'forbidden', status: 403 });
+    expect(mockElevant.count('registerMobileDevice')).toBe(2);
+    expect(mockElevant.count('getOperationAttendanceDraft')).toBe(2);
+    await expect(getMobileSession()).resolves.toBeNull();
+    await expect(readEndedMobileSession()).resolves.toMatchObject({ accountId: ACCOUNT, reason: 'forbidden' });
+  });
+
+  test('a read ELEVANT answers keeps reusing the registration of the session, also after a renewal', async () => {
+    await signIn();
+    await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+    await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+    advance(16 * MINUTE);
+    await expect(readAttendance()).resolves.toMatchObject({ assignmentId: ASSIGNMENT });
+
+    expect(mockElevant.count('refreshSession')).toBe(1);
+    expect(mockElevant.count('getOperationAttendanceDraft')).toBe(3);
+    // Only the sign-in registered the tablet.
+    expect(mockElevant.count('registerMobileDevice')).toBe(1);
+  });
+
+  test('a read refused because its agent signed out meanwhile never binds the tablet to that agent again', async () => {
+    await signIn();
+    // The agent signs out while the read is on its way: the release frees the tablet before ELEVANT answers the read.
+    mockElevant.beforeAttendance = async () => {
+      mockElevant.beforeAttendance = null;
+      await logoutMobileAgent();
+    };
+
+    await expect(readAttendance()).rejects.toMatchObject({ code: 'cancelled' });
+    expect(mockElevant.count('releaseMobileDevice')).toBe(1);
+    expect(mockElevant.count('registerMobileDevice')).toBe(1);
+    expect(mockElevant.bound).toBe(false);
+  });
 });

@@ -182,6 +182,10 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   - la renovación conserva la revisión de la sesión: cachés, borradores,
     reservas, el vínculo de la tablet y la versión de su liberación siguen
     igual, y la presencia conserva su lease;
+  - «Liberar» de OCC cierra el vínculo de la tablet, no la sesión: la lectura
+    de la asistencia que ELEVANT rechaza (`403`) con el registro ya confirmado
+    vuelve a registrar la tablet, como una escritura, y solo un `403` tras ese
+    registro nuevo termina la sesión;
   - solo renueva si el JWT trae `auth_time`; frente a una API anterior la
     sesión termina a los 15 minutos, como antes;
   - sin señal, con `429` o `5xx` la sesión sigue y la siguiente renovación

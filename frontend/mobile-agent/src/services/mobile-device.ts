@@ -127,6 +127,14 @@ export function forgetConfirmedMobileDevice() {
 }
 
 /**
+ * Whether a read of the session reuses the registration it confirmed (`reuseForSession`). «Liberar» in OCC closes that
+ * binding and keeps the session, so a read ELEVANT refuses with it registers the tablet again (ADR-0046).
+ */
+export function hasConfirmedMobileDevice(sessionId: string) {
+  return confirmedForSession?.sessionId === sessionId;
+}
+
+/**
  * Frees the tablet when the agent signs out (2-N02), so the next agent who signs in on it holds it. It is best
  * effort: it never blocks the sign-out, and a tablet another agent, OCC or the end of the agent's duty already freed
  * answers `device_not_bound`. The release names the newest registration this session confirmed, also after the session

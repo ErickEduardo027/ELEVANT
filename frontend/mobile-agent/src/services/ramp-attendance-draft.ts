@@ -15,7 +15,11 @@ import {
   rejectMobileSessionRequest,
   type MobileSessionRequestContext,
 } from './mobile-auth';
-import { registerCurrentMobileDevice } from './mobile-device';
+import {
+  forgetConfirmedMobileDevice,
+  hasConfirmedMobileDevice,
+  registerCurrentMobileDevice,
+} from './mobile-device';
 import { asMobileServiceError, MobileServiceError } from './mobile-service-error';
 
 type Options = Readonly<{ signal?: AbortSignal }>;
@@ -63,20 +67,39 @@ async function readAttendanceDraft(
 ): Promise<AttendanceDraftSnapshotResponse> {
   const context = await getMobileSessionRequestContext();
   try {
-    const { installationId } = await registerCurrentMobileDevice(
-      context, { signal: options.signal, reuseForSession: true });
-    if (!(await sameIdentity(context))) throw new MobileServiceError('cancelled');
-    const snapshot = await createMobileAgentApiClient({
-      getAccessToken: () => context.accessToken,
-    }).getOperationAttendanceDraft(operationId, assignmentId,
-      { signal: options.signal, installationId });
-    if (!(await sameIdentity(context))) throw new MobileServiceError('cancelled');
-    return snapshot;
+    const reused = hasConfirmedMobileDevice(context.sessionId);
+    try {
+      return await readWithDevice(operationId, assignmentId, context, options, true);
+    } catch (error) {
+      // «Liberar» in OCC closes the binding the session confirmed and keeps the session (ADR-0046), so ELEVANT refuses
+      // the read (403). The read registers the tablet again, as a write does, and reads once more: only a refusal after
+      // a new registration goes to the session. A session that ended meanwhile never binds the tablet again.
+      if (!reused || asMobileServiceError(error).code !== 'forbidden') throw error;
+      if (!(await sameIdentity(context))) throw new MobileServiceError('cancelled');
+      forgetConfirmedMobileDevice();
+      return await readWithDevice(operationId, assignmentId, context, options, false);
+    }
   } catch (error) {
     const failure = await normalizeFailure(error, context, retried);
     if (failure === 'retry') return readAttendanceDraft(operationId, assignmentId, options, true);
     throw failure;
   }
+}
+
+/** One read with the tablet registered: the registration the session confirmed (`reuseForSession`) or a new one. */
+async function readWithDevice(
+  operationId: string, assignmentId: string, context: MobileSessionRequestContext, options: Options,
+  reuseForSession: boolean,
+): Promise<AttendanceDraftSnapshotResponse> {
+  const { installationId } = await registerCurrentMobileDevice(
+    context, { signal: options.signal, reuseForSession });
+  if (!(await sameIdentity(context))) throw new MobileServiceError('cancelled');
+  const snapshot = await createMobileAgentApiClient({
+    getAccessToken: () => context.accessToken,
+  }).getOperationAttendanceDraft(operationId, assignmentId,
+    { signal: options.signal, installationId });
+  if (!(await sameIdentity(context))) throw new MobileServiceError('cancelled');
+  return snapshot;
 }
 
 export function saveRampAttendanceDraft(

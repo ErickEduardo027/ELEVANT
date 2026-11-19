@@ -80,5 +80,5 @@ Se evaluó poner un tope absoluto a la sesión de las cuentas de rampa, de 16 ho
 
 - Un tope por turno o por antigüedad de la sesión, y un bloqueo de la app por inactividad.
 - Tolerancia del servidor a una respuesta de renovación perdida.
-- Que «Liberar» en OCC cierre la sesión del agente. Liberar sigue sin cerrar sesiones; revocar sí las cierra.
+- Que «Liberar» en OCC cierre la sesión del agente. Liberar sigue sin cerrar sesiones; revocar sí las cierra. Tras «Liberar», la lectura de la asistencia vuelve a registrar la tablet, como una escritura.
 - Subir la duración del access token en el VPS, que decide el operador.
