@@ -70,7 +70,8 @@
 .nestedLine { padding-left: .75rem; }
 .disputeForm, .disputeRecord { display: grid; gap: .65rem; padding: .9rem; border: 1px solid #c5d7ed; border-radius: .6rem; background: #f7faff; }
 .disputeForm label { display: grid; gap: .3rem; font-weight: 600; font-size: .8rem; }
-.disputeForm input, .disputeForm textarea { width: 100%; border: 1px solid #b6c9e1; border-radius: .4rem; padding: .55rem; color: #0b1d39; background: #fff; }
+/* N18: the station list of the statement looks like the cut-off date beside it. */
+.disputeForm input, .disputeForm select, .disputeForm textarea { width: 100%; border: 1px solid #b6c9e1; border-radius: .4rem; padding: .55rem; color: #0b1d39; background: #fff; }
 .disputeForm textarea { min-height: 6rem; resize: vertical; }
 /* S4: a card field whose input sits outside its label, with a hint or an error under it. Its input inherits the
    font of the field, like the inputs inside a label. */
@@ -88,8 +89,16 @@
 .draftCommentForm { display: grid; gap: .55rem; margin-top: 1rem; }
 .draftCommentForm label { font-size: .8rem; font-weight: 700; }
 .draftCommentForm textarea { width: 100%; resize: vertical; border: 1px solid #b8c9db; border-radius: .45rem; padding: .7rem; font: inherit; }
-.draftCommentForm button { justify-self: start; border: 0; border-radius: .4rem; background: #1757d8; color: white; padding: .7rem 1rem; font-weight: 700; cursor: pointer; }
-.draftCommentForm button:disabled { opacity: .5; cursor: wait; }
+/* N18: the fields and lists of a portal form are the ones of the flight search, never bare browser controls. */
+.draftCommentForm input:not([type="checkbox"]):not([type="radio"]), .draftCommentForm select { min-height: 2.75rem; padding: .7rem .85rem; border: 1px solid #b8c9db; border-radius: .55rem; background: #fff; color: #102138; font: inherit; }
+.draftCommentForm input:focus-visible, .draftCommentForm select:focus-visible { outline: 2px solid #1757d8; outline-offset: 2px; }
+/* N18: only the form's own button is primary; a button inside a field, like «Borrar firma», keeps its own look. */
+.draftCommentForm > button { justify-self: start; border: 0; border-radius: .4rem; background: #1757d8; color: white; padding: .7rem 1rem; font-weight: 700; cursor: pointer; }
+.draftCommentForm > button:disabled { opacity: .5; cursor: wait; }
+/* N18: a secondary action inside the flow («Ver línea de tiempo», «Reintentar»), with the look of .loadMore but
+   aligned to the start instead of centered. */
+.secondaryAction { padding: .7rem 1rem; border: 1px solid #b8c9df; border-radius: .5rem; background: #fff; color: #1155b4; font-weight: 700; cursor: pointer; }
+.secondaryAction:disabled { cursor: wait; opacity: .65; }
 .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metrics strong { font-size: clamp(1.5rem, 6cqi, 2rem); }
 .sectionHeading, .requestCardHeading { flex-wrap: wrap; }
@@ -109,7 +118,7 @@
 
 /* Printing the web view (Ctrl+P) keeps only the contract content. */
 @media print {
-  .pdfActions, .draftCommentForm, .loadMore { display: none !important; }
+  .pdfActions, .draftCommentForm, .loadMore, .secondaryAction { display: none !important; }
   .panel { break-inside: avoid; box-shadow: none !important; border: 1px solid #c8d3e0; }
   .contractRateList > div { background: none; border-bottom: 1px solid #dce6f0; border-radius: 0; }
 }

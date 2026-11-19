@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { SessionResponse, AirlinePortalBootstrapResponse } from "@elevant/api-client";
 import { AirlineSessionProvider, AIRLINE_SESSION_STORAGE_KEY } from "@/components/auth/AirlineSessionProvider";
 import { AirlineTreasuryPanel } from "@/components/portal/AirlineTreasuryPanel";
+import { portalDeclarations } from "./support/portal-styles";
 // The live notices of the session reach the panel through this observer.
 const observer = vi.hoisted(() => ({ onChanges: null as null | ((resources: string[]) => void) }));
 vi.mock("@/lib/airline-change-observer", () => ({ createPublicAirlineChangeObserver: (options: { onChanges: (resources: string[]) => void }) => {
@@ -51,6 +52,13 @@ it("shows tenant-only cutoff statements and separates currencies without mutatio
   await waitFor(() => expect(requests).toContain("/api/v1/airline/portal/treasury/statements?asOf=2026-10-01"));
   expect(requests.some(path => path.includes("organizationId") || path.includes("airlineId="))).toBe(false);
   expect(screen.queryByRole("button", { name: /Aplicar|Devolver|Emitir nota|Registrar cobro/ })).not.toBeInTheDocument();
+});
+// N18: the station list of the statement looks like the cut-off date beside it, not like a bare browser list.
+it("gives the station list the look of the cut-off date (N18)", async () => {
+  mount();
+  const station = await screen.findByLabelText("Estación");
+  expect(portalDeclarations(station)).toContain("border: 1px solid #b6c9e1");
+  expect(portalDeclarations(station)).toEqual(portalDeclarations(screen.getByLabelText("Fecha de corte")));
 });
 it("cuts the statement on the business day of Santo Domingo, not the UTC day (4-N10)", async () => {
   // 23:30 in Santo Domingo on 5/11 is already 6/11 in UTC.

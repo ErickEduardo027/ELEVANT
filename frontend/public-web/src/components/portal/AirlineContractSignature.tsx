@@ -55,7 +55,7 @@ export function AirlineContractSignature({ versionId, fileName }: { versionId: s
     event.preventDefault();
     if (!document) return;
     if (name.trim().length < 3 || title.trim().length < 2 || !accepted || !drawn) {
-      setMessage("Escriba su nombre completo y cargo, dibuje su firma y confirme que acepta el contrato.");
+      setMessage("Escriba su nombre completo y cargo, confirme que acepta el contrato y dibuje su firma.");
       return;
     }
     setBusy("sign"); setMessage("");
@@ -100,14 +100,15 @@ export function AirlineContractSignature({ versionId, fileName }: { versionId: s
         !document.signatures.some(item => item.party === "Airline") && document.signableBy !== "Airline" &&
         <p className={styles.note}>La firma de su aerolínea está pendiente. Solo sus representantes y firmantes firman
           contratos: pida a su representante que lo firme o que lo marque como firmante en «Perfil».</p>}
+      {/* N18: AVIAM's order: who signs, the acceptance and then the drawn signature, right above the button. */}
       {document.signableBy === "Airline" && <form onSubmit={sign} noValidate className={styles.draftCommentForm}>
         <label htmlFor={`signer-${versionId}`}>Nombre completo de quien firma</label>
         <input id={`signer-${versionId}`} value={name} maxLength={160} onChange={event => setName(event.target.value)} />
         <label htmlFor={`title-${versionId}`}>Cargo</label>
         <input id={`title-${versionId}`} value={title} maxLength={120} onChange={event => setTitle(event.target.value)} />
-        <SignaturePad id={`signature-${versionId}`} label="Firma" onChange={setDrawn} />
         <label><input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} />{" "}
           Acepto este contrato en nombre de mi aerolínea tal como figura en el PDF (huella {document.contentSha256.slice(0, 12)}…).</label>
+        <SignaturePad id={`signature-${versionId}`} label="Firma" onChange={setDrawn} />
         <button type="submit" disabled={busy === "sign"}>{busy === "sign" ? "Firmando…" : "Acepto y firmo"}</button>
       </form>}
     </>}

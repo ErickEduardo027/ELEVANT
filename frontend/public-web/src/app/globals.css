@@ -80,12 +80,14 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
 
 button,
 input,
+select,
 textarea {
   border-radius: 0;
 }

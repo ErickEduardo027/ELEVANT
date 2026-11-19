@@ -1,7 +1,13 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
-import { stubAirlineApi } from "./airline-api";
+import { expect, test, type Locator } from "@playwright/test";
+import { signableContract, stubAirlineApi } from "./airline-api";
 import { expectNoHorizontalOverflow } from "./layout";
+
+/** The computed value of each CSS property, by its name. */
+function computed(locator: Locator, properties: string[]) {
+  return locator.evaluate((element, names) => Object.fromEntries(names.map((name) =>
+    [name, getComputedStyle(element).getPropertyValue(name)])), properties);
+}
 
 test.beforeEach(async ({ page }) => {
   await stubAirlineApi(page);
@@ -66,6 +72,65 @@ test("names an airline without a contract in force without horizontal overflow",
   if (await sidebar.isVisible()) await expect(sidebar.getByText("Sin contrato con AVIAM")).toBeVisible();
   expect(await page.locator("body").innerText()).not.toMatch(/autorizad/i);
   await expectNoHorizontalOverflow(page, "/portal sin contrato en vigor");
+});
+
+// N18: the portal forms reuse the field of the flight search and only their own button is primary, so «Borrar firma»
+// stays secondary; «Reintentar» and the timeline's toggle are styled, the airline accepts the contract before drawing
+// its signature, as AVIAM countersigns, and the dark navigation draws a dark, thin scrollbar.
+test("styles the portal forms in AVIAM's signing order without horizontal overflow", async ({ page }) => {
+  const headers = { "content-type": "application/json", "access-control-allow-origin": "*" };
+  await page.route(`**/api/v1/contract-versions/${signableContract.versionId}/document`, async (route) => {
+    if (route.request().method() === "OPTIONS") { await route.fallback(); return; }
+    await route.fulfill({ status: 200, headers, body: JSON.stringify(signableContract.document) });
+  });
+  // A failed read of the permits offers «Reintentar» above their form.
+  await page.route("**/api/v1/airline/permits", async (route) => {
+    if (route.request().method() === "OPTIONS") { await route.fallback(); return; }
+    await route.fulfill({ status: 503, headers, body: JSON.stringify({ status: 503, title: "Unavailable" }) });
+  });
+  await page.goto("/portal/contratos");
+  const submit = page.getByRole("button", { name: "Acepto y firmo" });
+  await expect(submit).toBeVisible();
+
+  const title = page.getByLabel("Cargo", { exact: true });
+  const acceptance = page.getByRole("checkbox", { name: /Acepto este contrato en nombre de mi aerolínea/ });
+  const signature = page.getByRole("img", { name: "Firma" });
+  const tops = await Promise.all([title, acceptance, signature, submit].map(async (item) => (await item.boundingBox())!.y));
+  expect.soft(tops, "cargo, casilla, firma y botón, en ese orden").toEqual([...tops].sort((a, b) => a - b));
+
+  const field = { "min-height": "44px", "border-top": "1px solid rgb(184, 201, 219)", "border-top-left-radius": "8.8px",
+    "background-color": "rgb(255, 255, 255)", color: "rgb(16, 33, 56)" };
+  const permits = page.getByRole("region", { name: "Permisos de la aerolínea" });
+  const kind = permits.getByLabel("Tipo de documento");
+  for (const control of [page.getByLabel("Nombre completo de quien firma"), title, kind,
+    permits.getByLabel("Número", { exact: true }), permits.getByLabel("Fecha de emisión")])
+    expect.soft(await computed(control, Object.keys(field))).toEqual(field);
+  // The list takes the font of its form, like the fields.
+  expect.soft(await kind.evaluate((element) =>
+    getComputedStyle(element).fontFamily === getComputedStyle(element.parentElement!).fontFamily)).toBe(true);
+
+  const primary = { "background-color": "rgb(23, 87, 216)", color: "rgb(255, 255, 255)" };
+  for (const button of [submit, permits.getByRole("button", { name: "Enviar permiso" })])
+    expect.soft(await computed(button, Object.keys(primary))).toEqual(primary);
+  expect.soft(await computed(page.getByRole("button", { name: "Borrar firma" }), ["background-color", "color", "border-top"]))
+    .toEqual({ "background-color": "rgb(255, 255, 255)", color: "rgb(17, 44, 70)", "border-top": "1px solid rgb(200, 211, 223)" });
+  const secondary = { "background-color": "rgb(255, 255, 255)", color: "rgb(17, 85, 180)",
+    "border-top": "1px solid rgb(184, 201, 223)" };
+  for (const button of [permits.getByRole("button", { name: "Reintentar" }),
+    page.getByRole("button", { name: "Ver línea de tiempo del contrato" })])
+    expect.soft(await computed(button, Object.keys(secondary))).toEqual(secondary);
+
+  const dark = { "color-scheme": "dark", "scrollbar-width": "thin" };
+  const sidebar = page.getByRole("complementary", { name: "Navegación principal" });
+  if (await sidebar.isVisible()) expect.soft(await computed(sidebar, Object.keys(dark))).toEqual(dark);
+  else {
+    await page.getByRole("button", { name: "Abrir navegación" }).click();
+    const panel = page.getByRole("dialog", { name: "Navegación" }).locator(":scope > div");
+    await expect(panel).toBeVisible();
+    expect.soft(await computed(panel, Object.keys(dark))).toEqual(dark);
+    await page.getByRole("button", { name: "Cerrar navegación" }).click();
+  }
+  await expectNoHorizontalOverflow(page, "/portal/contratos con el formulario de firma");
 });
 
 test("portal has no horizontal overflow or serious accessibility blockers", async ({ page }) => {

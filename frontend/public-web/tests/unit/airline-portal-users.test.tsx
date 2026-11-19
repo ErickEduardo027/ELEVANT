@@ -4,6 +4,7 @@ import { ElevantApiError, type AirlinePortalUserData, type AirlinePortalUsersDat
 import { AirlinePortalUsersSection } from "@/components/portal/AirlinePortalUsersSection";
 import { createCommandKeyHolder } from "@/lib/command-key";
 import { PORTAL_USER_PROBLEMS, portalUserProblem } from "@/lib/portal-user-problems";
+import { FIELD, PRIMARY_BUTTON, portalDeclarations } from "./support/portal-styles";
 
 // Phase 2, block E (2-N20): the airline manages its own portal users from «Perfil».
 const representativeId = "40000000-0000-7000-8000-000000000003";
@@ -60,6 +61,16 @@ describe("portal users of the profile", () => {
       { firstName: "Ana", lastName: "Rivera", email: "ana@demo-air.test", signer: true }, key);
     await waitFor(() => expect(session.getPortalUsers).toHaveBeenCalledTimes(2));
     expect(within(form).getByLabelText("Nombre")).toHaveValue("");
+  });
+
+  // N18: the invitation reuses the field of the flight search and its submit stays primary; the checkbox keeps its size.
+  it("styles the invitation like the other portal forms and keeps its submit primary (N18)", async () => {
+    render(<AirlinePortalUsersSection airlineName="Demo Airlines" />);
+    const form = await screen.findByRole("form", { name: "Invitar a un usuario" });
+    for (const label of ["Nombre", "Apellido", "Correo"])
+      expect(portalDeclarations(within(form).getByLabelText(label))).toEqual(expect.arrayContaining(FIELD));
+    expect(portalDeclarations(within(form).getByRole("checkbox"))).not.toContain(FIELD[0]);
+    expect(portalDeclarations(within(form).getByRole("button", { name: "Invitar usuario" }))).toContain(PRIMARY_BUTTON);
   });
 
   it("never offers to change the representative itself nor another representative", async () => {

@@ -31,6 +31,14 @@
   display: none;
 }
 
+/* N18: the dark navigation draws a dark, thin scrollbar, not the light one of the page. */
+.sidebar,
+.drawerPanel {
+  color-scheme: dark;
+  scrollbar-color: rgb(145 178 224 / 32%) transparent;
+  scrollbar-width: thin;
+}
+
 .workspace {
   min-width: 0;
   min-height: 100dvh;
