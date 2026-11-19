@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SessionEndedNotice } from '../../components/session-ended-notice';
+import { SessionEndedNotice, useScreenSessionNotice } from '../../components/session-ended-notice';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import {
   getRampOperationChecklist,
@@ -291,6 +291,11 @@ export default function ChecklistScreen() {
     pendingSubmission !== null || submissionReconciliationRequired
   ) && !submitted;
   const progress = useMemo(() => checklistProgress(sections, answers), [answers, sections]);
+  // N6: while this screen shows its own session notice, the layout's banner waits: one notice on the screen.
+  useScreenSessionNotice(
+    state === 'session-ended' ||
+    (state === 'ready' && snapshot !== null && currentSection !== undefined && sessionEnd !== null && !submitted),
+  );
 
   /** The answers on screen, as the draft of the account the screen loaded it for (N5); null before that. */
   const currentDraft = useCallback((): PendingDraftSave | null => {

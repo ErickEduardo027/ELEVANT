@@ -29,7 +29,10 @@ tras volver a entrar. Desde N6 también comprueba que la pantalla dice que la
 sesión terminó (insignia roja, ENTRAR DE NUEVO, sin salir sola ni pedir
 desbloquear), que ENVIAR vuelve a guardar el borrador y lo espera, que
 REINTENTAR GUARDADO no entra en bucle, que un guardado `cancelled` se reintenta
-una vez y que una cuenta sin acceso abre el acceso con `access_revoked`.
+una vez y que una cuenta sin acceso abre el acceso con `access_revoked`. Dentro
+del layout raíz, el checklist muestra un solo aviso de sesión terminada, sin
+decir que guardó respuestas que no pudo guardar, y uno ya enviado deja el aviso
+del layout.
 
 `session-ended-notice.test.js` monta el layout raíz con el almacenamiento y la
 sesión reales (N6, D-N6): el aviso global aparece tras el vencimiento, sigue en

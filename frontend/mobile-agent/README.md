@@ -218,7 +218,9 @@ terminó» con ENTRAR DE NUEVO (D-N6); el cierre de sesión a propósito no se
 anuncia. El checklist ya no salta solo al acceso: muestra la insignia roja
 «Sesión terminada», dice «Tu sesión terminó · Tus respuestas quedaron guardadas
 en esta tablet…», apaga ENVIAR y ofrece ENTRAR DE NUEVO, con `access_revoked`
-si la cuenta perdió el acceso. Si el envío encontró el fin de la sesión, las
+si la cuenta perdió el acceso. Mientras muestra ese aviso propio, el layout no
+repite el suyo: la pantalla tiene un solo aviso, un solo ENTRAR DE NUEVO y un
+solo anuncio, y nunca dice que guardó respuestas que no pudo guardar. Si el envío encontró el fin de la sesión, las
 respuestas quedan como se enviaron: el envío espera en la cola y sale al volver
 a entrar. ENVIAR vuelve a guardar el borrador y espera ese guardado antes de
 decidir. Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por

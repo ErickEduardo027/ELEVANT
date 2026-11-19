@@ -281,7 +281,10 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
   - El checklist (`/checklist/[id]`) ya no salta solo al acceso: muestra la
     insignia roja «Sesión terminada», dice «Tu sesión terminó · Tus respuestas
     quedaron guardadas…», apaga ENVIAR y ofrece ENTRAR DE NUEVO. Con una cuenta
-    sin acceso nombra la causa y abre el acceso con `access_revoked`.
+    sin acceso nombra la causa y abre el acceso con `access_revoked`. Mientras
+    muestra ese aviso propio, el layout no repite el suyo: un solo aviso, un
+    solo ENTRAR DE NUEVO y un solo anuncio, sin decir que guardó respuestas que
+    no pudo guardar.
   - ENVIAR vuelve a guardar el borrador y espera ese guardado antes de decidir.
     Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por
     toque, y si vuelve a fallar pide cerrar la app y avisar a OCC.
