@@ -95,5 +95,19 @@ lee la tarjeta «Asignación»: «Agente principal» y solo el nombre de la
 posición, sin «a. m.» ni «p. m.», sin `primary` ni «RAMP-AGENT»; sin posición
 dice «Posición operativa no especificada» y omite un rol desconocido.
 
+`checklist-item-number.test.js` fija la numeración del checklist (N12, D-N12):
+ARR-01 da 1 y PUSH-11 da 11, como en el PDF, y un código que no termina en un
+número (PREUSE-EXTERIOR, CHOCKS) o cuyo número es solo ceros toma su posición
+en la sección. También monta la tarjeta del control: muestra «11» y no
+«PUSH-11», con la etiqueta como texto principal, y sus respuestas siguen
+funcionando. `checklist-screen.test.js` comprueba en la pantalla real que la
+segunda sección sigue en 8 en lugar de volver a 1, sin códigos, y que el resumen
+dice «Versión 1» con el código de la plantilla en pequeño.
+`ramp-service-execution-card.test.js` y `ramp-operation-charges-card.test.js`
+comprueban que el nombre es el texto principal, que el código es un texto
+secundario pequeño y sin negrita, y que dos líneas del mismo servicio se
+distinguen por su número de línea («1 · Aire acondicionado» y
+«2 · Aire acondicionado» en «Cargos aplicados»).
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

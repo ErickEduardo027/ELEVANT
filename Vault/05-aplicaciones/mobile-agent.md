@@ -210,6 +210,30 @@ funciones están en la
 - La APK instalada conserva la ruta y la asignación anteriores hasta que se
   instale la nueva.
 
+**Códigos internos en segundo plano y una sola numeración.** Posterior al
+commit verificado de esta nota (hallazgo N12 de la corrida del VPS del 16 de
+noviembre, decisión D-N12), los códigos internos quedan como texto secundario
+mientras AVIAM no decida retirarlos, y cada control del checklist lleva un solo
+número.
+
+- La tarjeta de un servicio tiene el nombre como título y el código
+  («RAMP-AC») debajo, pequeño y sin negrita.
+- «Cargos aplicados» pone el número de línea delante del nombre,
+  «1 · Aire acondicionado», como las tarjetas de servicio, y el código debajo.
+  Antes decía «RAMP-AC · Aire acondicionado», y dos líneas del mismo servicio
+  no se distinguían.
+- El checklist dice «Versión 1» bajo el nombre del formulario y deja el código
+  de la plantilla debajo, en pequeño, en lugar de «FLIGHT-REPORT · versión 1».
+- Cada control lleva el número que imprime el PDF, con la
+  [presentación del checklist](../../frontend/mobile-agent/src/features/checklist/presentation.ts):
+  el número en que termina su código, así que el Reporte de Vuelo va de 1 a 21
+  en sus dos secciones. Si el código no termina en un número, como en el
+  Check-List del puente, es su posición dentro de la sección. Antes cada
+  sección empezaba en 1 y el control mostraba además su código («1» junto a
+  «PUSH-11»).
+- La APK instalada conserva los textos anteriores hasta que se instale la
+  nueva.
+
 ## Fase 2: tablets compartidas
 
 Posterior al commit verificado de esta nota: esta sección describe el código de

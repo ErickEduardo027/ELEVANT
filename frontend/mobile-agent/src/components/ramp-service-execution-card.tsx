@@ -140,6 +140,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
       <View style={styles.heading}>
         <View style={styles.number}><Text style={styles.numberText}>{service.lineNumber}</Text></View>
         <View style={styles.copy}>
+          {/* N12 (D-N12): the name is the title; the code stays as a small secondary text until AVIAM decides. */}
           <Text style={styles.name}>{service.name}</Text>
           <Text style={styles.code}>{service.code}</Text>
           <Text style={styles.quantitySummary}>{quantitySummary(service)}</Text>
@@ -519,7 +520,7 @@ const styles = StyleSheet.create({
   numberText: { color: colors.navy, fontSize: 12, fontWeight: '900' },
   copy: { flex: 1, minWidth: 0 },
   name: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  code: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  code: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   quantitySummary: { color: colors.navy, fontSize: 12, fontWeight: '700', marginTop: 4, fontVariant: ['tabular-nums'] },
   executionArea: { paddingTop: 13, borderTopWidth: 1, borderTopColor: colors.border, gap: 11 },
   disabledHint: { padding: 10, borderRadius: 12, backgroundColor: '#FFF8EA', flexDirection: 'row', alignItems: 'flex-start', gap: 8 },

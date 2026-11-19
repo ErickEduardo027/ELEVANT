@@ -1,5 +1,9 @@
+// «Cargos aplicados»: the agent marks only the type of charge on each service, without prices (ADR-0034).
+// N12 (D-N12): each service is named by its line number and its name, «1 · Equipaje», and its code is a small
+// secondary text, so two lines of the same service are told apart.
 const React = require('react');
 const renderer = require('react-test-renderer');
+const { StyleSheet } = require('react-native');
 
 const mockGet = jest.fn();
 const mockChange = jest.fn();
@@ -25,6 +29,7 @@ jest.mock('../src/services/flight-report', () => ({
 }));
 
 const { projectCharges, RampOperationChargesCard } = require('../src/components/ramp-operation-charges-card');
+const { colors } = require('../src/theme/colors');
 
 const OPERATION_ID = '70000000-0000-4000-8000-000000000001';
 const SERVICE_ID = '73000000-0000-4000-8000-000000000001';
@@ -37,16 +42,22 @@ const charges = (applied = [], canEdit = true) => ({ operationId: OPERATION_ID,
 const mark = { id: '75000000-0000-4000-8000-000000000001', chargeId: CHARGE_ID, code: 'NIGHT',
   name: 'Recargo nocturno', appliedAt: '2026-10-08T03:10:00.000+00:00' };
 
-async function render() {
+async function render(list = services) {
   let tree;
   await renderer.act(async () => {
     tree = renderer.create(React.createElement(RampOperationChargesCard,
-      { operationId: OPERATION_ID, refreshKey: 'a', services }));
+      { operationId: OPERATION_ID, refreshKey: 'a', services: list }));
   });
   return tree;
 }
 
 const chip = tree => tree.root.findAll(node => node.props.accessibilityRole === 'checkbox' && typeof node.props.onPress === 'function')[0];
+/** The text of each host Text whose only child is a string: what a test sees as one contiguous line. */
+const lines = tree => tree.root.findAll(node => node.type === 'Text' && typeof node.props.children === 'string')
+  .map(node => node.props.children);
+const textNode = (tree, value) => tree.root.findAll(node => node.type === 'Text' && node.props.children === value)[0];
+const styleOf = node => StyleSheet.flatten(node.props.style) ?? {};
+const weight = value => ({ normal: 400, bold: 700 })[value] ?? Number(value ?? 400);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -111,4 +122,30 @@ it('shows an automatic or OCC charge as applied but never lets the agent remove 
   expect(chip(tree).props.disabled).toBe(true);
   expect(chip(tree).props.accessibilityLabel).toContain('automático');
   expect(JSON.stringify(tree.toJSON())).toContain('" · automático"');
+});
+
+describe('each service by its line number and name, its code in the background (N12, D-N12)', () => {
+  it('names the service «1 · Equipaje» and keeps its code as a small secondary text', async () => {
+    mockGet.mockResolvedValue({ charges: charges(), fromCache: false });
+    const tree = await render();
+    expect(lines(tree)).toContain('1 · Equipaje');
+    expect(lines(tree)).toContain('BAGGAGE');
+    expect(JSON.stringify(tree.toJSON())).not.toContain('BAGGAGE · ');
+    const name = styleOf(textNode(tree, '1 · Equipaje'));
+    const code = styleOf(textNode(tree, 'BAGGAGE'));
+    expect(code.fontSize).toBeLessThan(name.fontSize);
+    expect(code.color).toBe(colors.muted);
+    expect(weight(code.fontWeight)).toBeLessThanOrEqual(500);
+  });
+
+  it('tells two lines of the same service apart by their line numbers', async () => {
+    const twin = '73000000-0000-4000-8000-000000000002';
+    const airConditioning = (id, lineNumber) => ({ id, lineNumber, serviceDefinitionId: SERVICE_ID, code: 'RAMP-AC',
+      name: 'Aire acondicionado', contractedQuantity: 1, executedQuantity: 0, billingUnit: 'hour', status: 'InProgress' });
+    mockGet.mockResolvedValue({ fromCache: false, charges: { operationId: OPERATION_ID, services: [SERVICE_ID, twin]
+      .map(serviceId => ({ serviceId, canEdit: true, available: [option], applied: [] })) } });
+    const tree = await render([airConditioning(SERVICE_ID, 1), airConditioning(twin, 2)]);
+    expect(lines(tree).filter(line => line.endsWith('Aire acondicionado')))
+      .toEqual(['1 · Aire acondicionado', '2 · Aire acondicionado']);
+  });
 });

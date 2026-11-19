@@ -153,7 +153,12 @@ export function RampOperationChargesCard({
         const editable = item.canEdit;
         return (
           <View key={item.serviceId} style={styles.service}>
-            <Text style={styles.serviceName}>{service ? `${service.code} · ${service.name}` : 'Servicio'}</Text>
+            {/* N12 (D-N12): the line number in front of the name tells two lines of the same service apart, as on
+                the service cards; the code stays as a small secondary text until AVIAM decides. */}
+            <View style={styles.serviceHeading}>
+              <Text style={styles.serviceName}>{service ? `${service.lineNumber} · ${service.name}` : 'Servicio'}</Text>
+              {service && <Text style={styles.serviceCode}>{service.code}</Text>}
+            </View>
             {!item.canEdit && <Text style={styles.hint}>Disponible cuando el servicio esté en curso, completado o en excepción.</Text>}
             <View style={styles.chips}>
               {item.available.map(option => {
@@ -218,7 +223,9 @@ const styles = StyleSheet.create({
   retry: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
   retryText: { color: colors.blue, fontWeight: '700' },
   service: { gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 },
+  serviceHeading: { gap: 2 },
   serviceName: { color: colors.ink, fontWeight: '700', fontSize: 14 },
+  serviceCode: { color: colors.muted, fontSize: 11, fontWeight: '500' },
   hint: { color: colors.muted, fontSize: 12 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {

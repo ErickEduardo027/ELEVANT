@@ -3,8 +3,11 @@
 // ended instead of blaming the device, never leaves on its own (D-N6: ENTRAR DE NUEVO), saves the answers again before
 // sending them and tells a storage failure from a session that ended. The screen, its services, the storage and the
 // session service are real; ELEVANT is a small fake, as in ramp-operation-checklist-draft.test.js.
+// N12 (D-N12): each control carries one number, the PDF's, and no internal code; the summary reads «Versión 1» and
+// keeps the template's code as a small secondary text.
 const React = require('react');
 const renderer = require('react-test-renderer');
+const { StyleSheet } = require('react-native');
 
 const mockAsyncData = new Map();
 const mockSecureData = new Map();
@@ -255,6 +258,15 @@ const badge = tree => tree.root.findAll(node => typeof node.props?.text === 'str
 /** What the old screen blamed instead of the session, and the jargon it showed (N6). */
 const BLAMES_THE_DEVICE = /Desbloque|proteger|payload/i;
 
+/** The texts of each control card of the section on screen, in order: its number comes first (N12). */
+const controlTexts = tree => tree.root
+  .findAll(node => typeof node.type === 'function' && node.props.item !== undefined &&
+    typeof node.props.onChange === 'function')
+  .map(card => card.findAll(node => node.type === 'Text').map(node => [].concat(node.props.children).join('')));
+const textNode = (tree, value) => tree.root.findAll(node => node.type === 'Text' && node.props.children === value)[0];
+const styleOf = node => StyleSheet.flatten(node.props.style) ?? {};
+const weight = value => ({ normal: 400, bold: 700 })[value] ?? Number(value ?? 400);
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockAsyncData.clear();
@@ -477,5 +489,35 @@ describe('a draft the tablet could not save (N6)', () => {
     } finally {
       save.mockRestore();
     }
+  }, 30_000);
+});
+
+describe('one numbering and the code in the background (N12, D-N12)', () => {
+  test('each control carries the number of its code, 8 to 14 in the second section, and no internal code', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    expect(controlTexts(tree).map(texts => texts.slice(0, 2)))
+      .toEqual(range(1, 7).map(number => [String(number), `Control ${number}`]));
+
+    await answerOk(tree, range(1, 7));
+    await press(tree, 'SIGUIENTE');
+    // One numbering, as in the PDF: the second section goes on from 8 instead of starting again at 1.
+    expect(controlTexts(tree).map(texts => texts.slice(0, 2)))
+      .toEqual(range(8, 14).map(number => [String(number), `Control ${number}`]));
+    expect(screenText(tree)).not.toMatch(/RAMP-\d/);
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('the summary reads «Versión 1» and keeps the template code as a small secondary text', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    const version = textNode(tree, 'Versión 1');
+    const code = textNode(tree, 'RAMP-AC');
+    expect(version).toBeDefined();
+    expect(code).toBeDefined();
+    expect(screenText(tree)).not.toContain('· versión');
+    expect(styleOf(code).fontSize).toBeLessThanOrEqual(styleOf(version).fontSize);
+    expect(weight(styleOf(code).fontWeight)).toBeLessThan(weight(styleOf(version).fontWeight));
+    await renderer.act(async () => { tree.unmount(); });
   }, 30_000);
 });

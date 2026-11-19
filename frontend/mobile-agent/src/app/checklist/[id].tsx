@@ -9,10 +9,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChecklistItemCard } from '../../components/checklist-item-card';
 import { SessionEndedNotice } from '../../components/session-ended-notice';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import {
@@ -590,9 +590,9 @@ export default function ChecklistScreen() {
                 <Text accessibilityRole="header" style={styles.title}>
                   {snapshot.checklist.template.name}
                 </Text>
-                <Text style={styles.templateMeta}>
-                  {snapshot.checklist.template.code} · versión {snapshot.checklist.template.version}
-                </Text>
+                {/* N12 (D-N12): the version in words, and the template's code as a small secondary text. */}
+                <Text style={styles.templateVersion}>{`Versión ${snapshot.checklist.template.version}`}</Text>
+                <Text style={styles.templateCode}>{snapshot.checklist.template.code}</Text>
               </View>
               <StatusPill
                 text={submitted
@@ -809,134 +809,6 @@ export default function ChecklistScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
-  );
-}
-
-function ChecklistItemCard({
-  answer,
-  disabled,
-  index,
-  invalid,
-  item,
-  onChange,
-}: {
-  readonly answer: RampChecklistDraftAnswer | undefined;
-  readonly disabled: boolean;
-  readonly index: number;
-  readonly invalid: boolean;
-  readonly item: RampChecklistItem;
-  readonly onChange: (answer: RampChecklistDraftAnswer) => void;
-}) {
-  const noteRequired = answer?.value === 'NotOk' && item.requiresNoteWhenNotOk;
-  return (
-    <Card style={[styles.itemCard, invalid && styles.itemCardInvalid]}>
-      <View style={styles.itemHeading}>
-        <View style={styles.itemNumber}><Text style={styles.itemNumberText}>{index + 1}</Text></View>
-        <View style={styles.itemCopy}>
-          <Text style={styles.itemCode}>{item.code}</Text>
-          <Text style={styles.itemLabel}>{item.label}</Text>
-          <Text style={styles.requiredLabel}>{item.isRequired ? 'Obligatorio' : 'Opcional'}</Text>
-        </View>
-      </View>
-      <View accessibilityRole="radiogroup" style={styles.answerRow}>
-        <AnswerChoice
-          checked={answer?.value === 'Ok'}
-          context={item.label}
-          disabled={disabled}
-          icon="checkmark"
-          label="OK"
-          onPress={() => onChange({ value: 'Ok' })}
-          tone="success"
-        />
-        <AnswerChoice
-          checked={answer?.value === 'NotApplicable'}
-          context={item.label}
-          disabled={disabled}
-          icon="remove"
-          label="N/A"
-          onPress={() => onChange({ value: 'NotApplicable' })}
-          tone="neutral"
-        />
-        <AnswerChoice
-          checked={answer?.value === 'NotOk'}
-          context={item.label}
-          disabled={disabled}
-          icon="close"
-          label="NO"
-          onPress={() => onChange({ value: 'NotOk', ...(answer?.note ? { note: answer.note } : {}) })}
-          tone="danger"
-        />
-      </View>
-      {answer?.value === 'NotOk' && (
-        <View style={styles.noteGroup}>
-          <Text style={styles.noteLabel}>
-            Observación {item.requiresNoteWhenNotOk ? '(obligatoria)' : '(opcional)'}
-          </Text>
-          <TextInput
-            accessibilityHint={item.requiresNoteWhenNotOk ? 'Describe por qué el control no cumple' : 'Agrega contexto si es necesario'}
-            accessibilityLabel={`Observación para ${item.label}`}
-            editable={!disabled}
-            maxLength={1000}
-            multiline
-            onChangeText={(note) => onChange({ value: 'NotOk', note })}
-            placeholder="Describe la condición encontrada"
-            placeholderTextColor="#7C8798"
-            style={[styles.noteInput, noteRequired && !answer.note?.trim() && styles.noteInputInvalid]}
-            textAlignVertical="top"
-            value={answer.note ?? ''}
-          />
-          {noteRequired && !answer.note?.trim() && (
-            <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
-              La observación es obligatoria cuando marcas NO.
-            </Text>
-          )}
-        </View>
-      )}
-      {invalid && !noteRequired && (
-        <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
-          Selecciona una respuesta para continuar.
-        </Text>
-      )}
-    </Card>
-  );
-}
-
-function AnswerChoice({
-  checked,
-  context,
-  disabled,
-  icon,
-  label,
-  onPress,
-  tone,
-}: {
-  readonly checked: boolean;
-  readonly context: string;
-  readonly disabled: boolean;
-  readonly icon: keyof typeof Ionicons.glyphMap;
-  readonly label: string;
-  readonly onPress: () => void;
-  readonly tone: 'success' | 'neutral' | 'danger';
-}) {
-  const color = tone === 'success' ? colors.success : tone === 'danger' ? colors.danger : colors.navy;
-  return (
-    <Pressable
-      accessibilityLabel={`Marcar ${context} como ${label}`}
-      accessibilityRole="radio"
-      accessibilityState={{ checked, disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.answerChoice,
-        checked && styles.answerChoiceChecked,
-        checked && { borderColor: color, backgroundColor: tone === 'success' ? '#E9F7EF' : tone === 'danger' ? '#FDECEC' : colors.paleBlue },
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
-      ]}
-    >
-      <Ionicons name={icon} size={20} color={checked ? color : colors.muted} />
-      <Text style={[styles.answerChoiceText, checked && { color }]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -1176,7 +1048,8 @@ const styles = StyleSheet.create({
   summaryCopy: { flex: 1, minWidth: 0 },
   eyebrow: { color: colors.orange, fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
   title: { color: colors.ink, fontSize: 21, fontWeight: '900', marginTop: 4 },
-  templateMeta: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  templateVersion: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  templateCode: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressTrack: { flex: 1, height: 10, overflow: 'hidden', borderRadius: 5, backgroundColor: colors.border },
   progressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.orange },
@@ -1209,46 +1082,6 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
   sectionHint: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   items: { gap: 12 },
-  itemCard: { gap: 14 },
-  itemCardInvalid: { borderColor: '#E4A4A4' },
-  itemHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
-  itemNumber: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paleBlue },
-  itemNumberText: { color: colors.navy, fontSize: 12, fontWeight: '900' },
-  itemCopy: { flex: 1, minWidth: 0 },
-  itemCode: { color: colors.muted, fontSize: 11, fontWeight: '900', letterSpacing: 0.7 },
-  itemLabel: { color: colors.ink, fontSize: 15, fontWeight: '800', lineHeight: 21, marginTop: 3 },
-  requiredLabel: { color: colors.muted, fontSize: 11, marginTop: 4 },
-  answerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  answerChoice: {
-    minWidth: 84,
-    minHeight: 50,
-    paddingHorizontal: 13,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 13,
-    backgroundColor: colors.white,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-  },
-  answerChoiceChecked: { borderWidth: 2 },
-  answerChoiceText: { color: colors.muted, fontSize: 13, fontWeight: '900' },
-  noteGroup: { gap: 6 },
-  noteLabel: { color: colors.ink, fontSize: 12, fontWeight: '800' },
-  noteInput: {
-    minHeight: 96,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 13,
-    backgroundColor: colors.white,
-    color: colors.ink,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  noteInputInvalid: { borderColor: colors.danger },
-  inlineError: { color: colors.danger, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   notice: { padding: 13, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   noticeSuccess: { borderColor: '#B9DFC9', backgroundColor: '#E9F7EF' },
   noticeWarning: { borderColor: '#F0C474', backgroundColor: '#FFF8EA' },
@@ -1261,7 +1094,6 @@ const styles = StyleSheet.create({
   navigationButton: { flexGrow: 1, minWidth: 150 },
   scopeNotice: { padding: 13, borderRadius: 14, backgroundColor: colors.paleBlue, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   scopeNoticeText: { flex: 1, color: colors.navy, fontSize: 12, fontWeight: '700', lineHeight: 18 },
-  disabled: { opacity: 0.45 },
   pressed: { opacity: 0.78 },
   stateScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 13, backgroundColor: colors.background },
   stateIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8EA' },

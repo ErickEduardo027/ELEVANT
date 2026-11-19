@@ -1,12 +1,16 @@
 // S5 (D-S5): a service card names its billing unit in Spanish, «0 / 1 hora» and «1 / 1 operación», never the code
 // ELEVANT stores. A unit that counts things takes whole numbers only, except the contracted quantity the card
 // proposes, and a command already reserved is retried exactly as it was reserved.
+// N12 (D-N12): the service's name is the card's title and its code («RAMP-AC») a small secondary text; the line
+// number in front of the name tells two lines of the same service apart.
 const React = require('react');
 const renderer = require('react-test-renderer');
+const { StyleSheet } = require('react-native');
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 
 const { RampServiceExecutionCard } = require('../src/components/ramp-service-execution-card');
+const { colors } = require('../src/theme/colors');
 
 const SERVICE_ID = '73000000-0000-4000-8000-000000000001';
 
@@ -46,6 +50,13 @@ async function type(tree, value) {
 async function confirm(tree, title = 'CONFIRMAR COMPLETADO') {
   await renderer.act(async () => { button(tree, title).props.onPress(); });
 }
+
+/** Every text of the card in order, numbers included: the heading comes first. */
+const texts = tree => tree.root.findAll(node => node.type === 'Text')
+  .map(node => [].concat(node.props.children).join(''));
+const textNode = (tree, value) => tree.root.findAll(node => node.type === 'Text' && node.props.children === value)[0];
+const styleOf = node => StyleSheet.flatten(node.props.style) ?? {};
+const weight = value => ({ normal: 400, bold: 700 })[value] ?? Number(value ?? 400);
 
 describe('billing units in Spanish (S5, D-S5)', () => {
   test('the quantities read «0 / 1 hora» and «1 / 1 operación» in one line, without the unit code', async () => {
@@ -134,5 +145,28 @@ describe('whole numbers in the units that count things (S5)', () => {
     expect(onTransition).toHaveBeenCalledTimes(1);
     expect(onTransition).toHaveBeenCalledWith(pending.request);
     await renderer.act(async () => tree.unmount());
+  });
+});
+
+describe('the name first and the code in the background (N12, D-N12)', () => {
+  test('the name is the title and the code a small secondary text under it, before the quantities', async () => {
+    const { tree } = await render();
+    expect(texts(tree).slice(0, 4)).toEqual(['1', 'Aire acondicionado', 'RAMP-AC', '0 / 1 hora']);
+    const name = styleOf(textNode(tree, 'Aire acondicionado'));
+    const code = styleOf(textNode(tree, 'RAMP-AC'));
+    expect(weight(name.fontWeight)).toBeGreaterThanOrEqual(700);
+    expect(code.fontSize).toBeLessThan(name.fontSize);
+    expect(code.color).toBe(colors.muted);
+    // Not bold: the code no longer competes with the name as a second title.
+    expect(weight(code.fontWeight)).toBeLessThanOrEqual(500);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('two lines of the same service are told apart by the line number in front of the name', async () => {
+    const first = await render({ service: { lineNumber: 1 } });
+    const second = await render({ service: { id: '73000000-0000-4000-8000-000000000002', lineNumber: 2 } });
+    expect(texts(first.tree).slice(0, 2)).toEqual(['1', 'Aire acondicionado']);
+    expect(texts(second.tree).slice(0, 2)).toEqual(['2', 'Aire acondicionado']);
+    await renderer.act(async () => { first.tree.unmount(); second.tree.unmount(); });
   });
 });

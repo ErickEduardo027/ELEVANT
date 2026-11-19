@@ -143,6 +143,23 @@ contiene secretos.
   - `assignmentRoleLabel` escribe «Agente principal» para `primary`, sin
     distinguir mayúsculas. Un rol desconocido da `null` y el detalle omite esa
     fila. La posición operativa se nombra solo por su nombre, sin el código.
+- Códigos internos en segundo plano y una sola numeración (hallazgo N12,
+  D-N12). Mientras AVIAM no decida retirarlos, los códigos siguen a la vista
+  como texto secundario:
+  - La tarjeta de un servicio tiene el nombre como título y el código
+    («RAMP-AC») debajo, pequeño y sin negrita.
+  - «Cargos aplicados» pone el número de línea delante del nombre,
+    «1 · Aire acondicionado», como las tarjetas de servicio, y el código
+    debajo. Así se distinguen dos líneas del mismo servicio.
+  - El checklist dice «Versión 1» y deja el código de la plantilla debajo, en
+    pequeño.
+  - Cada control lleva un solo número, el del PDF, con `checklistItemNumber`
+    (`src/features/checklist/presentation.ts`). Es el número en que termina
+    su código (ARR-01 → 1, PUSH-11 → 11), así que el Reporte de Vuelo va de 1
+    a 21. Si el código no termina en un número (PREUSE-EXTERIOR), es su
+    posición dentro de la sección. La tarjeta del control
+    (`src/components/checklist-item-card.tsx`) ya no muestra el código junto a
+    un segundo número.
 
 ## Autorización y almacenamiento
 
