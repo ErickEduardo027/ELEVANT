@@ -12,15 +12,28 @@ public sealed record OccPositionTurnaroundResponse(Guid TurnaroundId, string Ope
     DateTimeOffset? AssignedFrom, string Status,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsDemo = null);
 
+/// <summary>
+/// One coverage window of a stand (ADR-0030, N26): the agent, from when to when and whether it is a reinforcement.
+/// </summary>
+public sealed record OccPositionCoverageResponse(string AgentName, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    bool IsReinforcement);
+
 /// <param name="Latitude">WGS84 location OCC placed on the map (ADR-0027); null until placed.</param>
 /// <param name="RequiredPermits">
 /// Names of the permits the stand requires (ADR-0045); the key is written only when the stand requires one.
+/// </param>
+/// <param name="Coverage">
+/// The coverage windows of the board's date behind <paramref name="CoveredBy"/> (N26), by start: the key is written only
+/// to a read with <c>includeCoverage=true</c>, empty when nobody covers the stand that day, so a client deployed before
+/// it keeps validating the board.
 /// </param>
 public sealed record OccPositionResponse(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
     IReadOnlyList<OccPositionTurnaroundResponse> Turnarounds, decimal? Latitude, decimal? Longitude,
     bool HasBoardingBridge, bool IsRemote, string? MaxAircraftSize, string? CancelledBy, bool NarrowbodyOnly,
     IReadOnlyList<string> CoveredBy,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? RequiredPermits = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? RequiredPermits = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<OccPositionCoverageResponse>? Coverage = null);
 
 /// <summary>Both null clears the stand's location.</summary>
 public sealed record LocateOccStandRequest(decimal? Latitude, decimal? Longitude, DateOnly OperationDate);

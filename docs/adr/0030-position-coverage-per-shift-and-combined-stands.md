@@ -88,6 +88,8 @@ Hasta ahora la asignación tenía estas limitaciones:
 - si está limitada a estrecho;
 - qué posición ocupada la anula. Una posición libre anulada aparece inhabilitada, como alerta a OCC.
 
+> **Actualización (19 de noviembre de 2026, hallazgo N26).** «Quién la cubre» era la lista de nombres del día (`coveredBy`), y el mapa la leía como si fuera la de ahora. `GET occ/positions` acepta `includeCoverage=true`: entonces cada posición trae también sus ventanas de cobertura de esa fecha (`coverage`: el agente, el inicio, el fin y si es un refuerzo; vacía si nadie la cubre ese día), las mismas coberturas no liberadas que dan los nombres. Sin el parámetro, y en la respuesta de los comandos de posiciones, el tablero no cambia, clave por clave, para que un cliente desplegado antes lo siga validando. AVIAM Web las pide y dice quién cubre la posición ahora: ver la actualización de esa fecha en [ADR-0043](0043-occ-maps-one-engine.md).
+
 **Módulo `operations.coverage`** («Cobertura de posiciones»):
 - `read`;
 - `assign`, para asignar posiciones;

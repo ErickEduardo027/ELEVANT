@@ -181,6 +181,8 @@ OCC también puede liberar al agente manualmente; la operación vuelve a `Planne
 
 Desde la fase 3 del ciclo, la reasignación aplica toda la elegibilidad de la asignación y una operación iniciada se releva en lugar de liberarse: ver [La operación](#la-operación-fase-3-del-ciclo).
 
+**Quién cubre la posición, y cuándo.** *Posterior al commit verificado (hallazgo N26, 19 de noviembre de 2026):* el tablero de posiciones (`GET occ/positions`) solo traía los nombres de quienes cubren cada posición ese día, y el mapa los leía como si la cubrieran ahora. Si la lectura lo pide con `includeCoverage=true`, cada posición trae también sus ventanas de cobertura de esa fecha: el agente, desde y hasta cuándo, y si es un refuerzo; la lista queda vacía si nadie la cubre ese día ([controlador](../../backend/Elevant.Api/Controllers/OccPositionsController.cs), [tablero](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfOccPositionStore.cs)). Son las mismas coberturas no liberadas que dan los nombres, que no cambian; una ventana que empezó la noche anterior y termina ese día cuenta. Sin el parámetro, y en la respuesta de los comandos de posiciones, el tablero es el de antes, clave por clave, para que el AVIAM Web ya desplegado lo siga validando. La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) `ThePositionsBoardCarriesCoverageWindowsWhenAsked` lo comprueba con la base, y `PositionsOmitCoverageWindowsUnlessAsked`, con la API. Cómo lo usa el mapa: ver [Private Web](../05-aplicaciones/private-web-aviam.md).
+
 **Verificación.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) cubre:
 - reglas;
 - configuración;

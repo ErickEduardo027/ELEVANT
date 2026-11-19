@@ -204,6 +204,72 @@ public sealed class OccTurnaroundsEndpointsTests(ElevantApiFactory factory) : IC
         Assert.Equal((HttpStatusCode.BadRequest, "reason_required"), (noReason.StatusCode, (await ProblemAsync(noReason)).Code));
     }
 
+    /// <summary>
+    /// N26: the positions board carries each stand's coverage windows (agent, start, end and whether it is a
+    /// reinforcement) only to a read that asks for them with <c>includeCoverage=true</c>. Without it, and in the board a
+    /// command answers, every stand keeps the keys the deployed AVIAM Web validates, even when the store has the windows.
+    /// </summary>
+    [Fact]
+    public async Task PositionsOmitCoverageWindowsUnlessAsked()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var startsAt = new DateTimeOffset(2026, 11, 16, 9, 0, 0, TimeSpan.Zero);
+        var covered = new OccPositionData(Guid.NewGuid(), "A05", "A", "Contact", "occupied", [],
+            CoveredBy: ["Elena Soto", "Luis Peña"], Coverage:
+            [
+                new OccPositionCoverageData("Elena Soto", startsAt, startsAt.AddHours(12), false),
+                new OccPositionCoverageData("Luis Peña", startsAt.AddHours(12), startsAt.AddHours(14), true),
+            ]);
+        // A stand nobody covers that day: the store has no window for it.
+        var uncovered = new OccPositionData(Guid.NewGuid(), "A06", "A", "Contact", "available", [], CoveredBy: []);
+        var board = new OccPositionBoardData(StationId, "PUJ", new DateOnly(2026, 11, 16), startsAt, [covered, uncovered], [],
+            true);
+        var store = new PositionsStub
+        {
+            Read = new OccPositionResult(board, null), Result = new OccPositionResult(board, null, null, null, "AAAAAAAAB9I="),
+        };
+        await using var application = Application(services => Replace<IOccPositionStore>(services, store));
+        using var client = Authorized(application);
+        string[] older = ["standId", "code", "terminalCode", "standType", "status", "turnarounds", "latitude", "longitude",
+            "hasBoardingBridge", "isRemote", "maxAircraftSize", "cancelledBy", "narrowbodyOnly", "coveredBy"];
+        static string[] Names(JsonElement element) => element.EnumerateObject().Select(item => item.Name).ToArray();
+        async Task<JsonElement[]> PositionsAsync(HttpResponseMessage response)
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var answer = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return answer.RootElement.GetProperty("positions").EnumerateArray().Select(item => item.Clone()).ToArray();
+        }
+
+        foreach (var query in new[] { "", "&includeCoverage=false" })
+        {
+            using var plain = await client.GetAsync($"/api/v1/occ/positions?stationId={StationId}&date=2026-11-16{query}", ct);
+            Assert.All(await PositionsAsync(plain), position => Assert.Equal(older, Names(position)));
+        }
+
+        using var asked = await client.GetAsync(
+            $"/api/v1/occ/positions?stationId={StationId}&date=2026-11-16&includeCoverage=true", ct);
+        var positions = await PositionsAsync(asked);
+        Assert.Equal([.. older, "coverage"], Names(positions[0]));
+        var windows = positions[0].GetProperty("coverage").EnumerateArray().ToArray();
+        Assert.Equal(["agentName", "startsAt", "endsAt", "isReinforcement"], Names(windows[0]));
+        var expected = new (string?, DateTimeOffset, DateTimeOffset, bool)[]
+        {
+            ("Elena Soto", startsAt, startsAt.AddHours(12), false),
+            ("Luis Peña", startsAt.AddHours(12), startsAt.AddHours(14), true),
+        };
+        Assert.Equal(expected, windows.Select(item => (item.GetProperty("agentName").GetString(),
+            item.GetProperty("startsAt").GetDateTimeOffset(), item.GetProperty("endsAt").GetDateTimeOffset(),
+            item.GetProperty("isReinforcement").GetBoolean())).ToArray());
+        // A stand nobody covers that day says so to a read that asked: an empty list, never a missing key.
+        Assert.Equal([.. older, "coverage"], Names(positions[1]));
+        Assert.Empty(positions[1].GetProperty("coverage").EnumerateArray());
+
+        // The board a command answers is the one an older screen reads.
+        using var released = await SendAsync(client, HttpMethod.Post, $"occ/turnarounds/{TurnaroundId}/stand/release", null,
+            null, null);
+        Assert.All(await PositionsAsync(released), position => Assert.Equal(older, Names(position)));
+    }
+
     [Fact]
     public async Task TheTabletReadsTheActiveAircraftTypes()
     {
@@ -395,11 +461,12 @@ public sealed class OccTurnaroundsEndpointsTests(ElevantApiFactory factory) : IC
             DateTimeOffset.UtcNow, [], [], true);
 
         public OccPositionResult Result { get; set; } = new(Board, null, null, null, "AAAAAAAAB9I=");
+        public OccPositionResult Read { get; set; } = new(Board, null);
         public OccPositionCommand? LastCommand { get; private set; }
         public RecordArrivalInput? LastArrival { get; private set; }
 
         public Task<OccPositionResult> ReadAsync(Guid actorId, Guid stationId, DateOnly operationDate,
-            CancellationToken cancellationToken = default) => Task.FromResult(new OccPositionResult(Board, null));
+            CancellationToken cancellationToken = default) => Task.FromResult(Read);
 
         public Task<OccPositionResult> RecordArrivalAsync(Guid actorId, Guid turnaroundId, RecordArrivalInput input,
             OccPositionCommand command, CancellationToken cancellationToken = default)
