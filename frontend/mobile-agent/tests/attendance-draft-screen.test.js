@@ -87,3 +87,18 @@ test('does not mount assistance if the assignment identifier is missing', async 
   expect(mockCard).not.toHaveBeenCalled();
   await renderer.act(async () => tree.unmount());
 });
+
+// S6 (D-S6): the card gets the station's zone and code, and the flights' times say whose clock they use, «Hora local
+// de PUJ», never the zone's IANA id.
+test('passes the station’s zone and code to assistance and names the station’s clock', async () => {
+  let tree;
+  await renderer.act(async () => { tree = renderer.create(React.createElement(Screen)); });
+  expect(mockCard.mock.lastCall[0]).toMatchObject({ timeZone: 'America/Santo_Domingo', stationCode: 'PUJ' });
+  const collect = node => node == null ? [] : typeof node === 'string' ? [node]
+    : Array.isArray(node) ? node.flatMap(collect) : collect(node.children);
+  const texts = collect(tree.toJSON());
+  expect(texts).toContain('Hora local de PUJ');
+  expect(texts.join(' ')).not.toContain('America/Santo_Domingo');
+  expect(texts.join(' ')).not.toContain('Horario local');
+  await renderer.act(async () => tree.unmount());
+});

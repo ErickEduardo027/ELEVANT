@@ -7,7 +7,11 @@ const {
   formatStationDate,
   formatStationDateTime,
   formatStationTime,
+  stationTimeLabel,
+  stationTimeTitle,
   stationTimeZone,
+  stationWallClock,
+  stationWallClockToInstant,
 } = require('../src/utils/date-format');
 
 const PUJ = 'America/Santo_Domingo';
@@ -75,6 +79,79 @@ describe('one format (D-N11)', () => {
   });
 });
 
+// S6 (D-S6): the attendance card edits its times on the station's wall clock, «2026-11-16 19:46», and saves UTC
+// instants. A time the station's clock skips is refused, never moved to another hour; one it repeats takes its first
+// occurrence.
+describe('the station’s wall clock (S6, D-S6)', () => {
+  const NEW_YORK = 'America/New_York';
+
+  test('13:00 in Santo Domingo is 17:00 UTC, both ways', () => {
+    expect(stationWallClockToInstant('2026-11-16 13:00', PUJ)).toBe('2026-11-16T17:00:00.000Z');
+    expect(stationWallClock('2026-11-16T17:00:00.000Z', PUJ)).toBe('2026-11-16 13:00');
+  });
+
+  test('New York in summer (UTC−4) and in winter (UTC−5)', () => {
+    expect(stationWallClockToInstant('2026-07-15 13:00', NEW_YORK)).toBe('2026-07-15T17:00:00.000Z');
+    expect(stationWallClockToInstant('2026-01-15 13:00', NEW_YORK)).toBe('2026-01-15T18:00:00.000Z');
+    expect(stationWallClock('2026-07-15T17:00:00.000Z', NEW_YORK)).toBe('2026-07-15 13:00');
+    expect(stationWallClock('2026-01-15T18:00:00.000Z', NEW_YORK)).toBe('2026-01-15 13:00');
+  });
+
+  test('02:30 on 8 March does not exist in New York: undefined, not 03:30', () => {
+    expect(stationWallClockToInstant('2026-03-08 02:30', NEW_YORK)).toBeUndefined();
+    expect(stationWallClockToInstant('2026-03-08 02:00', NEW_YORK)).toBeUndefined();
+    // The minutes around the jump do exist.
+    expect(stationWallClockToInstant('2026-03-08 01:59', NEW_YORK)).toBe('2026-03-08T06:59:00.000Z');
+    expect(stationWallClockToInstant('2026-03-08 03:00', NEW_YORK)).toBe('2026-03-08T07:00:00.000Z');
+  });
+
+  test('01:30 on 1 November happens twice in New York: the first one is taken', () => {
+    expect(stationWallClockToInstant('2026-11-01 01:30', NEW_YORK)).toBe('2026-11-01T05:30:00.000Z');
+    // Both read back as 01:30.
+    expect(stationWallClock('2026-11-01T05:30:00.000Z', NEW_YORK)).toBe('2026-11-01 01:30');
+    expect(stationWallClock('2026-11-01T06:30:00.000Z', NEW_YORK)).toBe('2026-11-01 01:30');
+  });
+
+  test('a zone the tablet does not know is Santo Domingo, whatever the device says', () => {
+    for (const zone of ['Mars/Olympus_Mons', undefined, null, '']) {
+      expect(stationWallClockToInstant('2026-11-16 13:00', zone)).toBe('2026-11-16T17:00:00.000Z');
+      expect(stationWallClock('2026-11-16T17:00:00.000Z', zone)).toBe('2026-11-16 13:00');
+    }
+  });
+
+  test('a station off the hour (Kathmandu, UTC+5:45), and midnight on a 24-hour clock', () => {
+    expect(stationWallClock(EVENING, 'Asia/Kathmandu')).toBe('2026-11-17 05:31');
+    expect(stationWallClockToInstant('2026-11-17 05:31', 'Asia/Kathmandu')).toBe(EVENING);
+    expect(stationWallClock(AFTER_MIDNIGHT, PUJ)).toBe('2026-11-17 00:05');
+    expect(stationWallClockToInstant('2026-11-17 00:05', PUJ)).toBe(AFTER_MIDNIGHT);
+  });
+
+  test('an empty value is null and one that is not a time is undefined', () => {
+    for (const value of ['', '   ', null, undefined]) expect(stationWallClockToInstant(value, PUJ)).toBeNull();
+    for (const value of ['2026-11-16', '16/11/2026 13:00', '2026-11-16 1:00', '2026-02-30 10:00', '2026-11-16 24:00',
+      '2026-11-16 13:60', '2026-13-01 10:00', 'mañana']) {
+      expect(stationWallClockToInstant(value, PUJ)).toBeUndefined();
+    }
+    // Spaces around the value and a «T» between date and time are accepted.
+    expect(stationWallClockToInstant(' 2026-11-16 13:00 ', PUJ)).toBe('2026-11-16T17:00:00.000Z');
+    expect(stationWallClockToInstant('2026-11-16T13:00', PUJ)).toBe('2026-11-16T17:00:00.000Z');
+  });
+
+  test('a missing or invalid instant has no wall clock, and a Date is accepted', () => {
+    for (const value of [null, undefined, '', 'not a date']) expect(stationWallClock(value, PUJ)).toBe('');
+    expect(stationWallClock(new Date(EVENING), PUJ)).toBe('2026-11-16 19:46');
+  });
+
+  test('the label names the station: «hora local de PUJ»', () => {
+    expect(stationTimeLabel('PUJ')).toBe('hora local de PUJ');
+    expect(stationTimeTitle('PUJ')).toBe('Hora local de PUJ');
+    for (const code of [undefined, null, '', '  ']) {
+      expect(stationTimeLabel(code)).toBe('hora local de la estación');
+      expect(stationTimeTitle(code)).toBe('Hora local de la estación');
+    }
+  });
+});
+
 test('a runtime that ignores hourCycle and counts to 24 still writes 00:05 after midnight', () => {
   const NativeDateTimeFormat = Intl.DateTimeFormat;
   // Writes midnight as 24 whenever an hour cycle is asked for, like some Intl implementations.
@@ -97,4 +174,58 @@ test('a runtime that ignores hourCycle and counts to 24 still writes 00:05 after
   } finally {
     Intl.DateTimeFormat = NativeDateTimeFormat;
   }
+});
+
+// S6: the wall clock is read from `formatToParts`; a runtime without it (some Hermes builds) is read from the formatted
+// text. Neither a clock that counts to 24 nor one that ignores `hourCycle` and writes «07:46 PM» moves the saved hour.
+describe('the station’s wall clock on other Intl engines (S6)', () => {
+  const NativeDateTimeFormat = Intl.DateTimeFormat;
+  const NEW_YORK = 'America/New_York';
+
+  function withEngine(Engine, check) {
+    Intl.DateTimeFormat = Engine;
+    try {
+      jest.isolateModules(() => check(require('../src/utils/date-format')));
+    } finally {
+      Intl.DateTimeFormat = NativeDateTimeFormat;
+    }
+  }
+
+  function expectWallClock(isolated) {
+    expect(isolated.stationWallClock(EVENING, PUJ)).toBe('2026-11-16 19:46');
+    expect(isolated.stationWallClock(AFTER_MIDNIGHT, PUJ)).toBe('2026-11-17 00:05');
+    expect(isolated.stationWallClock('2026-11-16T16:30:00.000Z', PUJ)).toBe('2026-11-16 12:30');
+    expect(isolated.stationWallClockToInstant('2026-11-16 19:46', PUJ)).toBe(EVENING);
+    expect(isolated.stationWallClockToInstant('2026-11-17 00:05', PUJ)).toBe(AFTER_MIDNIGHT);
+    expect(isolated.stationWallClockToInstant('2026-11-16 12:30', PUJ)).toBe('2026-11-16T16:30:00.000Z');
+    expect(isolated.stationWallClockToInstant('2026-11-01 01:30', NEW_YORK)).toBe('2026-11-01T05:30:00.000Z');
+    expect(isolated.stationWallClockToInstant('2026-03-08 02:30', NEW_YORK)).toBeUndefined();
+  }
+
+  // Asks for the hour cycle the engine prefers instead of the one requested.
+  const hourCycleEngine = hourCycle => class extends NativeDateTimeFormat {
+    constructor(locale, options = {}) {
+      super(locale, options.hourCycle ? { ...options, hourCycle } : options);
+    }
+  };
+  // The same engine without `formatToParts`.
+  const withoutParts = Engine => {
+    const Partless = class extends Engine {};
+    Object.defineProperty(Partless.prototype, 'formatToParts', { value: undefined });
+    return Partless;
+  };
+
+  test('a runtime without formatToParts reads the formatted text', () => {
+    withEngine(withoutParts(NativeDateTimeFormat), expectWallClock);
+  });
+
+  test('a runtime that counts to 24 still reads midnight as 00', () => {
+    withEngine(hourCycleEngine('h24'), expectWallClock);
+    withEngine(withoutParts(hourCycleEngine('h24')), expectWallClock);
+  });
+
+  test('a runtime that writes «07:46 PM» still reads 19:46', () => {
+    withEngine(hourCycleEngine('h12'), expectWallClock);
+    withEngine(withoutParts(hourCycleEngine('h12')), expectWallClock);
+  });
 });

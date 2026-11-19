@@ -67,7 +67,7 @@ import type { FlightReportOutboxItem } from '../../synchronization/flight-report
 import { projectRampOperation } from '../../synchronization/ramp-command-projection';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
-import { formatStationDateTime } from '../../utils/date-format';
+import { formatStationDateTime, stationTimeTitle } from '../../utils/date-format';
 import { ConnectionBadge } from '../../components/flight-report/connection-badge';
 import { DocumentsPanel, WalkaroundCard } from '../../components/documents/operation-documents';
 import { CharterCard } from '../../components/documents/charter-card';
@@ -696,6 +696,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           operationId={operation.operation.id}
           assignmentId={assignment.id}
           active={focused}
+          stationCode={turnaround.station.code}
+          timeZone={timeZone}
         />
       )}
 
@@ -731,7 +733,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         </View>
       )}
 
-      <SectionTitle title="Movimiento aéreo" subtitle={`Horario local · ${timeZone}`} />
+      {/* S6 (D-S6): whose clock the times use, «Hora local de PUJ», never the zone's IANA id. */}
+      <SectionTitle title="Movimiento aéreo" subtitle={stationTimeTitle(turnaround.station.code)} />
       <View style={styles.legs}>
         {turnaround.arrival && (
           <FlightLegCard kind="Llegada" leg={turnaround.arrival} timeZone={timeZone} />

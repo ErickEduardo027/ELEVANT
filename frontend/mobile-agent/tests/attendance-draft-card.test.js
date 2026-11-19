@@ -226,7 +226,8 @@ test('compares attempted and canonical hours even when the notes are unchanged',
   const listener = mockSubscribe.mock.calls[0][0];
   await renderer.act(async () => listener(['attendance_draft']));
   expect(textContent()).toContain('Inicio guardado:');
-  expect(textContent()).toMatch(/Inicio de tu intento:\s+2026-10-05 12:00/);
+  // S6: the attempt reads like the saved side, «5 oct, 12:00» (no zone given: AVIAM's calendar).
+  expect(textContent()).toMatch(/Inicio de tu intento:\s+5 oct\.?,? 12:00/);
 });
 
 test('never replays a displayed pending command after its session scope disappears', async () => {
@@ -263,4 +264,105 @@ test('removes the former session snapshot if a write is cancelled by a session s
   await renderer.act(async () => press('Guardar observación'));
   expect(tree.root.findAllByType('TextInput')).toHaveLength(0);
   expect(textContent()).toContain('Observaciones no disponibles');
+});
+
+// S6 (D-S6): the card edits and shows its times on the station's clock, «hora local de PUJ», never in the device's
+// zone, and still saves UTC instants. The device here is not in the stations' zones below.
+describe('the station’s clock (S6, D-S6)', () => {
+  const IANA_ID = /\b(?:Africa|America|Asia|Atlantic|Australia|Europe|Indian|Pacific|Etc)\/[A-Za-z_]+/;
+  const field = label => tree.root.findAll(node =>
+    node.props.accessibilityLabel === label && typeof node.props.onChangeText === 'function')[0];
+  const type = (label, value) => renderer.act(async () => field(label).props.onChangeText(value));
+  function conflictText() {
+    const alert = tree.root.findAll(node => node.props.accessibilityRole === 'alert' && node.type === 'View')[0];
+    expect(alert).toBeDefined();
+    return alert.findAll(node => node.type === 'Text').map(node => node.props.children)
+      .flat(Infinity).filter(value => typeof value === 'string').join(' ');
+  }
+
+  test('in Kathmandu the card names the station’s clock, never the device’s zone', async () => {
+    mockRead.mockResolvedValue({ ...snapshot({ ...contribution(1, 'Mi nota'), observedEndAt: '2026-10-05T12:00:00Z' }),
+      occ: { ...contribution(1, 'Turno confirmado por OCC'), observedStartAt: '2026-10-05T10:00:00Z' } });
+    await render({ timeZone: 'Asia/Kathmandu', stationCode: 'KTM' });
+    const text = textContent();
+    expect(text).toContain('Las horas están en hora local de KTM.');
+    expect(text).toContain('Inicio observado · hora local de KTM');
+    expect(text).toContain('Fin observado · hora local de KTM');
+    expect(text).not.toContain('zona de este dispositivo');
+    expect(text).not.toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect(text).not.toMatch(IANA_ID);
+    // OCC's 10:00 UTC and the agent's 12:00 UTC on Kathmandu's clock (UTC+5:45).
+    expect(text).toMatch(/Inicio:\s+5 oct\.?,? 15:45/);
+    expect(field('Fin observado').props.value).toBe('2026-10-05 17:45');
+    // The labels the screen reader announces do not change.
+    expect(field('Inicio observado')).toBeDefined();
+    expect(field('Nota del agente')).toBeDefined();
+  });
+
+  test('«ahora» is the station’s wall clock and is saved as the same instant', async () => {
+    await render({ timeZone: 'Asia/Kathmandu', stationCode: 'KTM' });
+    await renderer.act(async () => press('Registrar inicio ahora'));
+    // ELEVANT's 14:07 UTC is 19:52 in Kathmandu.
+    expect(field('Inicio observado').props.value).toBe('2026-10-05 19:52');
+    await renderer.act(async () => press('Guardar observación'));
+    expect(mockSave.mock.calls[0][2].observedStartAt).toBe(new Date(mockServerNow).toISOString());
+  });
+
+  test('a time typed at the station is saved as its UTC instant', async () => {
+    await render({ timeZone: 'America/New_York', stationCode: 'JFK' });
+    // December: New York is UTC−5, an hour off Santo Domingo.
+    await type('Inicio observado', '2026-12-05 10:00');
+    await type('Fin observado', '2026-12-05 10:45');
+    await renderer.act(async () => press('Guardar observación'));
+    expect(mockSave.mock.calls[0][2]).toMatchObject({
+      observedStartAt: '2026-12-05T15:00:00.000Z', observedEndAt: '2026-12-05T15:45:00.000Z',
+    });
+  });
+
+  test('02:30 on 8 March does not exist in New York and is not saved', async () => {
+    await render({ timeZone: 'America/New_York', stationCode: 'JFK' });
+    await type('Inicio observado', '2026-03-08 02:30');
+    await renderer.act(async () => press('Guardar observación'));
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(textContent()).toContain('Comprueba fecha, hora y nota antes de guardar.');
+  });
+
+  test('a retry sends the reserved request exactly, whatever the station’s clock shows', async () => {
+    const pending = { idempotencyKey: key,
+      request: { expectedRevision: 0, observedStartAt: '2026-10-05T10:00:00.000Z', observedEndAt: null,
+        incidentNote: 'Reservado en otra versión' } };
+    mockReadPending.mockResolvedValue(pending);
+    await render({ timeZone: 'Asia/Kathmandu', stationCode: 'KTM' });
+    expect(field('Inicio observado').props.value).toBe('2026-10-05 15:45');
+    await renderer.act(async () => press('Reintentar confirmación'));
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSave.mock.calls[0][2]).toStrictEqual(pending.request);
+  });
+
+  test('the conflict shows both sides in one format, on the station’s clock', async () => {
+    mockRead.mockResolvedValueOnce(snapshot({ ...contribution(1, 'Igual'), observedStartAt: '2026-10-05T10:00:00Z' }))
+      .mockResolvedValueOnce(snapshot({ ...contribution(2, 'Igual'), observedStartAt: '2026-10-05T11:00:00Z' }));
+    await render({ timeZone: 'America/New_York', stationCode: 'JFK' });
+    expect(field('Inicio observado').props.value).toBe('2026-10-05 06:00');
+    await type('Inicio observado', '2026-10-05T08:00');
+    const listener = mockSubscribe.mock.calls[0][0];
+    await renderer.act(async () => listener(['attendance_draft']));
+    const text = conflictText();
+    // 11:00 UTC is 07:00 in New York; the attempt typed at the station reads the same way.
+    expect(text).toMatch(/Inicio guardado:\s+5 oct\.?,? 07:00/);
+    expect(text).toMatch(/Inicio de tu intento:\s+5 oct\.?,? 08:00/);
+    expect(text).toMatch(/Guardado:\s+5 oct\.?,? 06:00/);
+    expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  test('a zone the tablet does not know does not break the card: AVIAM’s calendar', async () => {
+    await render({ timeZone: 'Mars/Olympus_Mons', stationCode: 'PUJ' });
+    expect(textContent()).toContain('Las horas están en hora local de PUJ.');
+    expect(textContent()).not.toContain('Mars/Olympus_Mons');
+    await renderer.act(async () => press('Registrar inicio ahora'));
+    // 14:07 UTC is 10:07 in Santo Domingo.
+    expect(field('Inicio observado').props.value).toBe('2026-10-05 10:07');
+    await renderer.act(async () => press('Guardar observación'));
+    expect(mockSave.mock.calls[0][2].observedStartAt).toBe('2026-10-05T14:07:00.000Z');
+  });
 });

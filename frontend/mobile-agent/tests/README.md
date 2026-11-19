@@ -109,5 +109,22 @@ secundario pequeño y sin negrita, y que dos líneas del mismo servicio se
 distinguen por su número de línea («1 · Aire acondicionado» y
 «2 · Aire acondicionado» en «Cargos aplicados»).
 
+`date-format.test.js` fija también la hora de la estación de la asistencia (S6,
+D-S6): las 13:00 de Santo Domingo son las 17:00 UTC; Nueva York en verano y en
+invierno; las 02:30 del 8 de marzo no existen allí y dan `undefined`, sin
+pasarlas a otra hora; las 01:30 del 1 de noviembre toman su primera vez; una
+zona desconocida usa Santo Domingo y un valor vacío da `null`. Motores simulados
+sin `formatToParts`, que cuentan hasta 24 o que escriben «07:46 PM» leen la
+misma hora. `attendance-draft-card.test.js` monta la tarjeta con estaciones en
+otras zonas que el equipo (Katmandú, Nueva York): dice «hora local de KTM» sin
+«zona de este dispositivo» ni un identificador IANA, «ahora» y lo escrito se
+guardan como el instante de la estación, las 02:30 del 8 de marzo no se
+guardan, el reintento envía el comando reservado tal cual, el conflicto muestra
+los dos lados con el mismo formato y una zona desconocida no rompe la tarjeta.
+`attendance-draft-screen.test.js` comprueba que el detalle pasa la zona y el
+código de la estación y titula los vuelos «Hora local de PUJ».
+`incident-screen.test.js` monta las incidencias: su hora es la de la estación y,
+sin la operación o sin una zona conocida, la de Santo Domingo.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

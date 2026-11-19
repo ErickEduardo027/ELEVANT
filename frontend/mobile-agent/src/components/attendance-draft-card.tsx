@@ -18,56 +18,54 @@ import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { MobileServiceError } from '../services/mobile-service-error';
 import { serverNow } from '../synchronization/server-clock';
 import { colors } from '../theme/colors';
+import {
+  formatStationDateTime,
+  stationTimeLabel,
+  stationWallClock,
+  stationWallClockToInstant,
+} from '../utils/date-format';
 import { resetToLogin } from '../utils/session-navigation';
 import { Card, PrimaryButton } from './ui';
 
 type Form = { start: string; end: string; note: string };
 const emptyForm: Form = { start: '', end: '', note: '' };
 
-function localValue(instant: string | null | undefined) {
-  if (!instant) return '';
-  const date = new Date(instant);
-  if (!Number.isFinite(date.getTime())) return '';
-  const two = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
-}
-
-function offsetInstant(value: string): string | null | undefined {
-  if (!value.trim()) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/.exec(value.trim());
-  if (!match) return undefined;
-  const [, year, month, day, hour, minute] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
-  if (date.getFullYear() !== Number(year) || date.getMonth() + 1 !== Number(month) ||
-    date.getDate() !== Number(day) || date.getHours() !== Number(hour) ||
-    date.getMinutes() !== Number(minute)) return undefined;
-  return date.toISOString();
-}
-
-function formFrom(contribution: AttendanceDraftContributionResponse | null): Form {
+// S6 (D-S6): the fields hold the station's wall clock, «2026-10-05 10:00»; the commands keep UTC instants.
+function formFrom(contribution: AttendanceDraftContributionResponse | null, timeZone: string | null): Form {
   return contribution ? {
-    start: localValue(contribution.observedStartAt),
-    end: localValue(contribution.observedEndAt),
+    start: stationWallClock(contribution.observedStartAt, timeZone),
+    end: stationWallClock(contribution.observedEndAt, timeZone),
     note: contribution.incidentNote ?? '',
   } : emptyForm;
 }
 
-function formFromRequest(request: SaveAttendanceDraftRequest): Form {
+function formFromRequest(request: SaveAttendanceDraftRequest, timeZone: string | null): Form {
   return {
-    start: localValue(request.observedStartAt),
-    end: localValue(request.observedEndAt),
+    start: stationWallClock(request.observedStartAt, timeZone),
+    end: stationWallClock(request.observedEndAt, timeZone),
     note: request.incidentNote ?? '',
   };
 }
 
-function displayInstant(instant: string | null | undefined) {
-  return instant ? localValue(instant) : 'Sin registrar';
+function displayInstant(instant: string | null | undefined, timeZone: string | null) {
+  return instant ? formatStationDateTime(instant, timeZone) : 'Sin registrar';
 }
 
-export function AttendanceDraftCard({ operationId, assignmentId, active = true }: {
+/** An attempt beside the saved revision, in the same format; a value that is not a time is shown as written. */
+function displayAttempt(value: string, timeZone: string | null) {
+  const instant = stationWallClockToInstant(value, timeZone);
+  if (instant === null) return 'Sin registrar';
+  return instant === undefined ? value : formatStationDateTime(instant, timeZone);
+}
+
+export function AttendanceDraftCard({ operationId, assignmentId, active = true, timeZone, stationCode }: {
   readonly operationId: string;
   readonly assignmentId: string;
   readonly active?: boolean;
+  /** The station's IANA zone: the times are edited and shown on its clock. Unknown: AVIAM's calendar. */
+  readonly timeZone: string | null;
+  /** The station's code, for «hora local de PUJ». */
+  readonly stationCode: string | null;
 }) {
   const identity = `${operationId}:${assignmentId}`;
   const identityRef = useRef(identity);
@@ -87,7 +85,8 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
   const [conflictReady, setConflictReady] = useState(false);
   const [notice, setNotice] = useState('');
   const [validation, setValidation] = useState('');
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'zona del dispositivo';
+  // S6 (D-S6): «hora local de PUJ», the station's clock, never the device's zone.
+  const stationClock = stationTimeLabel(stationCode);
 
   const updatePending = (value: PendingAttendanceDraft | null) => {
     pendingRef.current = value;
@@ -144,7 +143,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       snapshotRef.current = canonical;
       setSnapshot(canonical);
       setStatus('ready');
-      if (!dirtyRef.current && !pendingRef.current) setForm(formFrom(canonical.rampAgent));
+      if (!dirtyRef.current && !pendingRef.current) setForm(formFrom(canonical.rampAgent, timeZone));
     } catch (error) {
       if (request.signal.aborted || identityRef.current !== identity) return;
       if (error instanceof MobileServiceError &&
@@ -155,7 +154,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       setStatus(current => current === 'ready' ? current : 'error');
       setNotice('No se pudo actualizar la observación. Intenta de nuevo al reconectar.');
     }
-  }, [active, assignmentId, identity, operationId, invalidateView]);
+  }, [active, assignmentId, identity, operationId, invalidateView, timeZone]);
 
   useEffect(() => {
     identityRef.current = identity;
@@ -178,7 +177,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     void readPendingAttendanceDraft(operationId, assignmentId).then(value => {
       if (cancelled || identityRef.current !== identity) return;
       updatePending(value);
-      if (value) { setForm(formFromRequest(value.request)); dirtyRef.current = true; }
+      if (value) { setForm(formFromRequest(value.request, timeZone)); dirtyRef.current = true; }
       storageReadyRef.current = true;
       setStorageReady(true);
     }).catch(() => {
@@ -236,8 +235,9 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
         }
         request = current.request;
       } else {
-        const start = offsetInstant(form.start);
-        const end = offsetInstant(form.end);
+        // A time the station's clock skips (a daylight-saving jump) is refused like a malformed one.
+        const start = stationWallClockToInstant(form.start, timeZone);
+        const end = stationWallClockToInstant(form.end, timeZone);
         const note = form.note.trim();
         if (start === undefined || end === undefined ||
           (start && end && Date.parse(end) < Date.parse(start)) ||
@@ -297,7 +297,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       setConflict(false);
       setConflictReady(false);
       if (!keepAttempt) {
-        setForm(formFrom(snapshot.rampAgent));
+        setForm(formFrom(snapshot.rampAgent, timeZone));
         dirtyRef.current = false;
       }
       setNotice(keepAttempt ? 'Revisión actual seleccionada. Confirma tu observación para guardarla.' :
@@ -310,7 +310,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
   return <Card style={styles.card}>
     <Text accessibilityRole="header" style={styles.title}>Asistencia observada</Text>
     <Text style={styles.description}>
-      Registro de observación manual; no es un fichaje biométrico. Las horas se editan en {timezone}, zona de este dispositivo.
+      {`Registro de observación manual; no es un fichaje biométrico. Las horas están en ${stationClock}.`}
     </Text>
     {status === 'loading' && <Text accessibilityLiveRegion="polite">Cargando observaciones…</Text>}
     {status === 'error' && <Text accessibilityLiveRegion="polite">Observaciones no disponibles.</Text>}
@@ -319,10 +319,10 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     {snapshot && <View style={styles.lanes}>
       <View style={styles.lane}>
         <Text style={styles.laneTitle}>Aporte de OCC</Text>
-        <Text>Inicio: {displayInstant(snapshot.occ?.observedStartAt)}</Text>
-        <Text>Fin: {displayInstant(snapshot.occ?.observedEndAt)}</Text>
+        <Text>Inicio: {displayInstant(snapshot.occ?.observedStartAt, timeZone)}</Text>
+        <Text>Fin: {displayInstant(snapshot.occ?.observedEndAt, timeZone)}</Text>
         <Text>{snapshot.occ?.incidentNote || 'Sin nota de OCC'}</Text>
-        <Text>Guardado: {displayInstant(snapshot.occ?.recordedAt)}</Text>
+        <Text>Guardado: {displayInstant(snapshot.occ?.recordedAt, timeZone)}</Text>
         <Text>Revisión {snapshot.occ?.revision ?? 0}</Text>
       </View>
       <View style={styles.lane}>
@@ -330,29 +330,30 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
         {conflict && <View accessibilityRole="alert" style={styles.conflict}>
           <Text>Conflicto con la revisión actual del agente.</Text>
           {!conflictReady && <Text>Actualiza la versión guardada antes de decidir.</Text>}
+          {/* S6: both sides in one format, on the station's clock. */}
           {conflictReady && <>
-            <Text>Inicio guardado: {displayInstant(snapshot.rampAgent?.observedStartAt)}</Text>
-            <Text>Fin guardado: {displayInstant(snapshot.rampAgent?.observedEndAt)}</Text>
+            <Text>Inicio guardado: {displayInstant(snapshot.rampAgent?.observedStartAt, timeZone)}</Text>
+            <Text>Fin guardado: {displayInstant(snapshot.rampAgent?.observedEndAt, timeZone)}</Text>
             <Text>Versión actual: {snapshot.rampAgent?.incidentNote ?? 'Sin nota'}</Text>
-            <Text>Guardado: {displayInstant(snapshot.rampAgent?.recordedAt)}</Text>
+            <Text>Guardado: {displayInstant(snapshot.rampAgent?.recordedAt, timeZone)}</Text>
           </>}
-          <Text>Inicio de tu intento: {form.start || 'Sin registrar'}</Text>
-          <Text>Fin de tu intento: {form.end || 'Sin registrar'}</Text>
+          <Text>Inicio de tu intento: {displayAttempt(form.start, timeZone)}</Text>
+          <Text>Fin de tu intento: {displayAttempt(form.end, timeZone)}</Text>
           <Text>Tu intento: {form.note || 'Sin nota'}</Text>
         </View>}
         {pending && !conflict && <Text style={styles.pending}>Pendiente de confirmar</Text>}
-        <Text>Inicio observado · {timezone}</Text>
+        <Text>{`Inicio observado · ${stationClock}`}</Text>
         <TextInput accessibilityLabel="Inicio observado" editable={!busy && !pending && !conflict}
           onChangeText={value => change('start', value)} placeholder="AAAA-MM-DD HH:mm"
           style={styles.input} value={form.start} />
         <PrimaryButton title="Registrar inicio ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('start', localValue(serverNow().toISOString()))} secondary />
-        <Text>Fin observado · {timezone}</Text>
+          onPress={() => change('start', stationWallClock(serverNow(), timeZone))} secondary />
+        <Text>{`Fin observado · ${stationClock}`}</Text>
         <TextInput accessibilityLabel="Fin observado" editable={!busy && !pending && !conflict}
           onChangeText={value => change('end', value)} placeholder="AAAA-MM-DD HH:mm"
           style={styles.input} value={form.end} />
         <PrimaryButton title="Registrar fin ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('end', localValue(serverNow().toISOString()))} secondary />
+          onPress={() => change('end', stationWallClock(serverNow(), timeZone))} secondary />
         <Text>Nota del agente</Text>
         <TextInput accessibilityLabel="Nota del agente" editable={!busy && !pending && !conflict}
           maxLength={2_000} multiline onChangeText={value => change('note', value)}

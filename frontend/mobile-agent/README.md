@@ -110,7 +110,7 @@ contiene secretos.
   - El inicio toma la zona de las operaciones asignadas para «última
     actualización» y para «Mis posiciones de hoy».
   - `formatLocalDateTime` da el mismo formato en la hora del equipo; hoy lo
-    usan chat, notificaciones e incidencias.
+    usan chat y notificaciones.
   - La tarjeta de una operación escribe «Inicio planificado» y el día tal como
     salen, sin mayúsculas forzadas. El rótulo ocupa hasta dos líneas y se
     reduce para caber (`adjustsFontSizeToFit` con un tope de escala de fuente,
@@ -160,6 +160,33 @@ contiene secretos.
     posición dentro de la sección. La tarjeta del control
     (`src/components/checklist-item-card.tsx`) ya no muestra el código junto a
     un segundo número.
+- Asistencia e incidencias en la hora de la estación (hallazgo S6, D-S6). La
+  tarjeta de asistencia ya no edita en la zona del equipo, que además podía
+  cambiar a mitad de la operación:
+  - Dice «Las horas están en hora local de PUJ» con `stationTimeLabel`, y el
+    detalle titula los vuelos «Hora local de PUJ» (`stationTimeTitle`) en
+    lugar del identificador IANA. Si falta el código, «hora local de la
+    estación».
+  - Los campos muestran la hora de la estación, «2026-10-05 10:00», con
+    `stationWallClock`. `stationWallClockToInstant` la convierte al instante
+    UTC que viaja y se guarda, comprobando que se lee igual de vuelta. Una hora
+    que el reloj de la estación salta en un cambio de horario (las 02:30 del
+    8 de marzo en Nueva York) no se guarda: nunca se pasa a otra hora. Una
+    hora que se repite toma su primera vez.
+  - Las dos funciones leen la hora con `formatToParts`. En un motor que no lo
+    trae, la leen del texto que escribe `en-US`. Un motor que cuenta hasta 24
+    o que escribe «07:46 PM» no cambia la hora guardada.
+  - El aporte de OCC y el conflicto muestran las horas con
+    `formatStationDateTime`, «5 oct, 10:00». En el conflicto, la versión
+    guardada y tu intento tienen el mismo formato.
+  - Un reintento envía el comando reservado tal cual, aunque lo haya reservado
+    una versión anterior en la zona del equipo.
+  - Las incidencias de la operación muestran su hora en la zona de la
+    estación.
+  - Si la tablet no conoce la zona, usa `America/Santo_Domingo`. La cola y el
+    almacenamiento siguen guardando instantes UTC. OCC y Gestión Humana no
+    cambian en esta entrega: el panel de OCC edita en la zona del navegador y
+    la revisión de Gestión Humana muestra UTC.
 
 ## Autorización y almacenamiento
 
@@ -326,9 +353,12 @@ desfase y lo guarda en el dispositivo, fuera de la sesión, para que «AHORA»
 siga corregido sin señal. Toda hora que captura la tablet sale de ese reloj:
 hitos y su ajuste, inicio, servicios, daños del walk-around, incidencias,
 desviaciones y observaciones de asistencia. Las pantallas siguen mostrándolas
-en la hora local de la estación. Si el desfase supera los 2 minutos que tolera
-ELEVANT, la insignia de conexión avisa que los registros se corrigen solos y
-pide revisar la hora del equipo.
+en la hora local de la estación. Hasta el hallazgo S6, la asistencia y las
+incidencias eran la excepción: se mostraban, y la asistencia se editaba, en la
+zona del equipo. Ahora también usan la hora de la estación, y la tarjeta de
+asistencia lo dice: «Las horas están en hora local de PUJ». Si el desfase supera
+los 2 minutos que tolera ELEVANT, la insignia de conexión avisa que los
+registros se corrigen solos y pide revisar la hora del equipo.
 
 Las horas de los hitos se ajustan dentro de la ventana de la operación que mide
 ELEVANT: desde el inicio o la llegada registrada, lo que ocurrió primero, hasta

@@ -163,8 +163,8 @@ formateadores de la
 - Si la tablet no conoce la zona (un comando guardado por una versión anterior,
   una estación sin operaciones en la tablet), usa `America/Santo_Domingo`, como
   private-web y el servidor, y nunca la zona del equipo.
-- Chat, notificaciones e incidencias usan el mismo formato en la hora del
-  equipo.
+- Chat y notificaciones usan el mismo formato en la hora del equipo. Las
+  incidencias pasaron a la hora de la estación con el hallazgo S6 (abajo).
 - La tarjeta de la operación escribe «Inicio planificado» y el día sin
   mayúsculas forzadas, en hasta dos líneas que se reducen para caber, y el
   nombre del aeropuerto del detalle ya no se corta.
@@ -233,6 +233,35 @@ número.
   «PUSH-11»).
 - La APK instalada conserva los textos anteriores hasta que se instale la
   nueva.
+
+**Asistencia e incidencias en la hora de la estación.** Posterior al commit
+verificado de esta nota (hallazgo S6 de la corrida del VPS del 16 de noviembre,
+decisión D-S6): la
+[tarjeta de asistencia](../../frontend/mobile-agent/src/components/attendance-draft-card.tsx)
+ya no edita en la zona del equipo. En la corrida mostró «Fin observado ·
+America/La_Paz», y esa zona cambió a mitad de la operación. D-S6 deja sin
+efecto la regla del plan del 2026-10-05, que pedía editar en la zona del
+equipo
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- La tarjeta dice «Las horas están en hora local de PUJ». El detalle titula los
+  vuelos «Hora local de PUJ» en lugar del identificador IANA de la zona.
+- Los campos y «Registrar inicio ahora» usan la hora de la estación. Lo escrito
+  viaja como instante UTC, igual que antes, con las funciones de la
+  [utilidad de fechas](../../frontend/mobile-agent/src/utils/date-format.ts).
+- Una hora que el reloj de la estación salta en un cambio de horario no se
+  guarda, y nunca se pasa a otra hora. Una hora que se repite toma su primera
+  vez.
+- El aporte de OCC y el conflicto muestran las horas en el formato de la
+  tablet, «5 oct, 10:00». En el conflicto, la versión guardada y el intento
+  tienen el mismo formato.
+- Un reintento envía el comando reservado tal cual.
+- Las incidencias de la operación muestran su hora en la zona de la estación.
+- Si la tablet no conoce la zona, usa `America/Santo_Domingo`.
+- OCC y Gestión Humana no cambian: el panel de OCC edita en la zona del
+  navegador y la revisión de Gestión Humana muestra UTC. Alinearlos queda para
+  otra entrega.
+- La APK instalada sigue en la zona del equipo hasta que se instale la nueva.
 
 ## Fase 2: tablets compartidas
 
