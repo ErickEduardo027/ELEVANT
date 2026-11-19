@@ -1,5 +1,5 @@
 import type { RampAssignedOperationResponse } from '@elevant/api-client';
-import { dateTimeFormat } from '../../utils/date-format';
+import { formatStationDate, formatStationTime } from '../../utils/date-format';
 
 export type OperationStatusTone = 'blue' | 'green' | 'orange' | 'red';
 
@@ -61,27 +61,30 @@ export function serviceStatusTone(status: string): OperationStatusTone {
   return 'orange';
 }
 
+/** «19:46» at the station (N11); a station without a known zone uses AVIAM's calendar. */
 export function formatOperationTime(
   value: string | null | undefined,
   timeZone?: string,
 ) {
-  if (!value) return '—';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || !timeZone) return '—';
-
-  try {
-    return dateTimeFormat({ hour: '2-digit', minute: '2-digit', hour12: false, timeZone }).format(date);
-  } catch {
-    return '—';
-  }
+  return formatStationTime(value, timeZone);
 }
 
+/** The operation's business day as «lun, 16 nov» (N11): the date itself, whatever the zone. */
 export function formatOperationDate(value: string) {
   const date = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) return value;
 
-  return dateTimeFormat({ weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }).format(date);
+  return formatStationDate(date, 'UTC');
+}
+
+/**
+ * Each station's IANA zone by its code, from the operations the tablet holds (N11): the only place the tablet learns
+ * it. A station missing here shows its times in AVIAM's calendar.
+ */
+export function stationTimeZonesByCode(
+  operations: readonly RampAssignedOperationResponse[],
+): ReadonlyMap<string, string> {
+  return new Map(operations.map(item => [item.turnaround.station.code, item.turnaround.station.ianaTimeZone]));
 }
 
 export function operationFlightLabel(operation: RampAssignedOperationResponse) {

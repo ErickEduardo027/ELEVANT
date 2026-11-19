@@ -126,6 +126,18 @@ describe('a running operation', () => {
     await press(pressable(tree, 'GUARDAR HORA'));
     expect(mockRecord).toHaveBeenCalledWith(OPERATION_ID, 'BLOCK_ON', new Date('2026-11-07T21:00:00.000Z'), TIME_ZONE);
   });
+
+  test('the adjustment writes the day as «sáb, 7 nov», without forced capitals (N11)', async () => {
+    mockNow = Date.parse('2026-11-07T21:00:00.000Z');
+    const tree = await render({ operation: operation({ milestones: [{ code: 'BLOCK_ON', actualAt: '2026-11-07T20:55:00.000Z' }] }) });
+    await press(tab(tree, 'Llegada'));
+    await press(pressable(tree, 'Bloqueo, 16:55, Confirmado. Toca para ajustar.'));
+    const day = tree.root.findAll(node => node.type === 'Text' && /^sáb\.?, 7 nov\.?$/.test(node.props.children))[0];
+    expect(day).toBeDefined();
+    expect(require('react-native').StyleSheet.flatten(day.props.style).textTransform).toBeUndefined();
+    // The window opened two minutes before the 16:00 start, at the station.
+    expect(text(tree)).toMatch(/Hora válida desde sáb\.?, 7 nov\.? 15:58 hasta ahora \(hora de la estación\)\./);
+  });
 });
 
 describe('a tablet whose clock runs ahead (3-N18)', () => {

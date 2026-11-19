@@ -6,15 +6,15 @@ import { StyleSheet, Text, View } from 'react-native';
 import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { getOwnCoverage } from '../services/ramp-coverage';
 import { colors } from '../theme/colors';
-
-const TIME = new Intl.DateTimeFormat('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false });
-const time = (value: string) => TIME.format(new Date(value));
+import { formatStationTime } from '../utils/date-format';
 
 /**
  * «Mis posiciones de hoy» (ADR-0030): the stands OCC handed this agent, with the window, the
  * mentor or trainee and the vehicle. Flights that block on these stands arrive on their own.
+ * N11: each window is in its station's time, from `timeZones` (station code → IANA zone); a station
+ * without one uses AVIAM's calendar.
  */
-export function MyPositionsCard() {
+export function MyPositionsCard({ timeZones }: { readonly timeZones?: ReadonlyMap<string, string> }) {
   const [coverages, setCoverages] = useState<readonly RampOwnCoverageResponse[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -34,6 +34,7 @@ export function MyPositionsCard() {
   }, [revision]));
 
   if (coverages === null && !failed) return null;
+  const time = (value: string, stationCode: string) => formatStationTime(value, timeZones?.get(stationCode));
   return (
     <View accessibilityLabel="Mis posiciones de hoy" style={styles.card}>
       <View style={styles.header}>
@@ -48,7 +49,7 @@ export function MyPositionsCard() {
                 {item.stands.map(code => <Text key={code} style={styles.stand}>{code}</Text>)}
               </View>
               <Text style={styles.detail}>
-                Terminal {item.terminalCode} · {time(item.startsAt)}–{time(item.endsAt)}
+                Terminal {item.terminalCode} · {time(item.startsAt, item.stationCode)}–{time(item.endsAt, item.stationCode)}
                 {item.partner ? ` · con ${item.partner}` : ''}{item.vehicleCode ? ` · vehículo ${item.vehicleCode}` : ''}
                 {item.isReinforcement ? ' · refuerzo' : ''}
               </Text>

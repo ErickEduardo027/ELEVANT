@@ -151,6 +151,25 @@ La app sigue la orientación del dispositivo. Según la
 Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
 lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
 
+**Un solo formato de fecha y hora.** Posterior al commit verificado de esta nota
+(hallazgo N11 de la corrida del VPS del 16 de noviembre), la tablet escribe
+«lun, 16 nov» y «16 nov, 19:46», siempre con reloj de 24 horas, con los
+formateadores de la
+[utilidad de fechas](../../frontend/mobile-agent/src/utils/date-format.ts).
+
+- Las horas de la operación, de la cola de «Sincronización», de la última
+  actualización del inicio y de «Mis posiciones de hoy» están en la hora local
+  de la estación. El inicio toma la zona de las operaciones asignadas.
+- Si la tablet no conoce la zona (un comando guardado por una versión anterior,
+  una estación sin operaciones en la tablet), usa `America/Santo_Domingo`, como
+  private-web y el servidor, y nunca la zona del equipo.
+- Chat, notificaciones e incidencias usan el mismo formato en la hora del
+  equipo.
+- La tarjeta de la operación escribe «Inicio planificado» y el día sin
+  mayúsculas forzadas, en hasta dos líneas que se reducen para caber, y el
+  nombre del aeropuerto del detalle ya no se corta.
+- La APK instalada conserva el formato anterior hasta que se instale la nueva.
+
 ## Fase 2: tablets compartidas
 
 Posterior al commit verificado de esta nota: esta sección describe el código de

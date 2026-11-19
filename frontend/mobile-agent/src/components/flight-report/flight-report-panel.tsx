@@ -22,6 +22,7 @@ import { pendingFor } from '../../synchronization/flight-report-outbox';
 import { EVIDENCE_CLOCK_TOLERANCE_MS, serverNow } from '../../synchronization/server-clock';
 import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
+import { formatStationDate, formatStationTime } from '../../utils/date-format';
 import { PrimaryButton } from '../ui';
 
 type Operation = RampAssignedOperationResponse;
@@ -31,15 +32,6 @@ function useFlightReport() {
   const [snapshot, setSnapshot] = useState<FlightReportSnapshot | null>(null);
   useEffect(() => subscribeFlightReport(setSnapshot), []);
   return snapshot;
-}
-
-function timeIn(value: string | Date, timeZone: string) {
-  return new Intl.DateTimeFormat('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone })
-    .format(new Date(value));
-}
-
-function dayIn(value: Date, timeZone: string) {
-  return new Intl.DateTimeFormat('es-DO', { weekday: 'short', day: 'numeric', month: 'short', timeZone }).format(value);
 }
 
 /**
@@ -153,10 +145,12 @@ function TimeSheet({ label, initial, opensAt, correction, timeZone, onClose, onS
       <View style={styles.sheetBackdrop}>
         <View style={styles.sheet} accessibilityViewIsModal>
           <Text style={styles.sheetTitle}>{label}</Text>
-          <Text accessibilityLiveRegion="polite" style={styles.sheetTime}>{timeIn(value, timeZone)}</Text>
-          <Text style={styles.sheetDay}>{dayIn(value, timeZone)}</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.sheetTime}>{formatStationTime(value, timeZone)}</Text>
+          <Text style={styles.sheetDay}>{formatStationDate(value, timeZone)}</Text>
           <Text style={styles.hint}>
-            {opensAt ? `Hora válida desde ${dayIn(opensAt, timeZone)} ${timeIn(opensAt, timeZone)} ${until} (hora de la estación).`
+            {opensAt
+              ? `Hora válida desde ${formatStationDate(opensAt, timeZone)} ${formatStationTime(opensAt, timeZone)} ${until} ` +
+                '(hora de la estación).'
               : `Hora válida ${until} (hora de la estación).`}
           </Text>
           <View style={styles.shiftRow}>
@@ -186,7 +180,7 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
   const recorded = Boolean(state.at);
   return (
     <Pressable accessibilityRole="button" disabled={disabled}
-      accessibilityLabel={recorded ? `${label}, ${timeIn(state.at!, timeZone)}, ${tone.label}. Toca para ajustar.`
+      accessibilityLabel={recorded ? `${label}, ${formatStationTime(state.at, timeZone)}, ${tone.label}. Toca para ajustar.`
         : correction ? `${label}. Toca para registrar su hora.` : `${label}. Toca para registrar ahora.`}
       onPress={recorded ? onEdit : onNow}
       style={({ pressed }) => [styles.milestone, { borderColor: recorded ? tone.fg : colors.border, backgroundColor: tone.bg },
@@ -194,7 +188,7 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
       <Text numberOfLines={2} style={styles.milestoneLabel}>{label}</Text>
       {recorded ? (
         <View style={styles.milestoneFooter}>
-          <Text style={[styles.milestoneTime, { color: tone.fg }]}>{timeIn(state.at!, timeZone)}</Text>
+          <Text style={[styles.milestoneTime, { color: tone.fg }]}>{formatStationTime(state.at, timeZone)}</Text>
           <Ionicons accessibilityLabel={tone.label} name={tone.icon} size={18} color={tone.fg} />
         </View>
       ) : correction ? (
@@ -488,7 +482,8 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: colors.white, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: space.xl, gap: space.md },
   sheetTitle: { ...type.title, color: colors.navy },
   sheetTime: { fontSize: 48, fontWeight: '900', color: colors.ink, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  sheetDay: { ...type.label, color: colors.muted, textAlign: 'center', textTransform: 'capitalize' },
+  // N11: the day as the formatter writes it, «sáb, 7 nov», without forced capitals.
+  sheetDay: { ...type.label, color: colors.muted, textAlign: 'center' },
   shiftRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, justifyContent: 'center' },
   shiftButton: { minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, borderWidth: 1, borderColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
   shiftText: { ...type.label, color: colors.navy },

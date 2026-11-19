@@ -99,6 +99,23 @@ contiene secretos.
 - Las fechas se formatean con `src/utils/date-format.ts`, que cachea las
   instancias de `Intl`. Las listas largas deben usar `FlatList` con filas
   memoizadas y handlers estables.
+- Un solo formato de fecha y hora (hallazgo N11): «lun, 16 nov» para el día y
+  «16 nov, 19:46» para la fecha con hora, siempre con reloj de 24 horas
+  (`hourCycle: 'h23'`; si un motor escribe «24:05», se corrige a «00:05»).
+  - `formatStationDate`, `formatStationTime` y `formatStationDateTime` dan la
+    hora local de la estación. Si la tablet no conoce su zona IANA (un comando
+    guardado por una versión anterior, una estación sin operaciones en la
+    tablet), usan `America/Santo_Domingo`, como private-web y
+    `BusinessCalendar`, nunca la zona del equipo.
+  - El inicio toma la zona de las operaciones asignadas para «última
+    actualización» y para «Mis posiciones de hoy».
+  - `formatLocalDateTime` da el mismo formato en la hora del equipo; hoy lo
+    usan chat, notificaciones e incidencias.
+  - La tarjeta de una operación escribe «Inicio planificado» y el día tal como
+    salen, sin mayúsculas forzadas. El rótulo ocupa hasta dos líneas y se
+    reduce para caber (`adjustsFontSizeToFit` con un tope de escala de fuente,
+    porque Fabric ignora `minimumFontScale` en Android). En el detalle, el
+    nombre del aeropuerto ya no se corta en una columna fija de 76 dp.
 
 ## Autorización y almacenamiento
 

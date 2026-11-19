@@ -33,7 +33,10 @@ const documentTitle = (kind: string) =>
 
 const shorten = (text: string) => (text.length > 80 ? `${text.slice(0, 79)}…` : text);
 
-/** What one queued command records, in the station's local time when the command knows its station (3-I). */
+/**
+ * What one queued command records, in the station's local time (3-I); a command an older version saved without its
+ * station's zone shows AVIAM's calendar (N11).
+ */
 function describe(item: FlightReportOutboxItem) {
   const command = item.command;
   switch (command.kind) {

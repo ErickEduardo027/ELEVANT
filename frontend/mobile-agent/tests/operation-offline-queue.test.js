@@ -173,3 +173,43 @@ describe('hand-off to OCC (3-N06)', () => {
     await renderer.act(async () => tree.unmount());
   });
 });
+
+describe('one date and time format (N11, D-N11)', () => {
+  test('the start and the assignment read «5 oct, 10:00» in the station’s time, on a 24-hour clock', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [operation('InProgress')] });
+    const tree = await render();
+    const text = screenText(tree);
+    // 14:00 UTC is 10:00 at Punta Cana; OCC assigned it at 06:00.
+    expect(text).toMatch(/Inicio registrado 5 oct\.?,? 10:00/);
+    expect(text).toMatch(/Asignada 5 oct\.?,? 06:00/);
+    expect(text).toMatch(/lun\.?, 5 oct/);
+    expect(text).not.toMatch(/[ap]\.\s?m\./);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('a start kept on the device shows its time in the same format', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'cache', operations: [operation()] });
+    mockQueue = { revisions: {}, items: [{ idempotencyKey: '91000000-0000-4000-8000-000000000001', state: 'pending',
+      attempts: 0, createdAt: '2026-10-05T14:00:00.000Z',
+      command: { kind: 'start', operationId, occurredAt: '2026-10-05T14:00:00.000Z' } }] };
+    const tree = await render();
+    expect(screenText(tree)).toMatch(/Inicio guardado en el dispositivo 5 oct\.?,? 10:00 · se envía a ELEVANT/);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('an airport name is not cut to a fixed 76 dp column', async () => {
+    const withLeg = operation('InProgress');
+    withLeg.turnaround = { ...withLeg.turnaround, arrival: { flightNumber: 'EV101', scheduledAt: '2026-10-05T13:30:00Z',
+      estimatedAt: null, actualAt: null, origin: { iataCode: 'BWI', name: 'Baltimore/Washington International' },
+      destination: { iataCode: 'PUJ', name: 'Punta Cana Development' } } };
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [withLeg] });
+    const tree = await render();
+    const name = tree.root.findAll(node => node.type === 'Text' && node.props.children === 'Punta Cana Development')[0];
+    let airport = name.parent;
+    while (airport && airport.type !== 'View') airport = airport.parent;
+    const style = require('react-native').StyleSheet.flatten(airport.props.style);
+    expect(style.width).toBeUndefined();
+    expect(style).toEqual(expect.objectContaining({ flexShrink: 1, minWidth: 76, maxWidth: '40%' }));
+    await renderer.act(async () => tree.unmount());
+  });
+});

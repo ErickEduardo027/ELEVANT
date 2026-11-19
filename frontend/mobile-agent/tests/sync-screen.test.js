@@ -97,3 +97,16 @@ test('the photo of a mark ELEVANT refused never left the tablet: it says so and 
   expect(buttons(tree, 'DESCARTAR')).toHaveLength(1);
   await renderer.act(async () => tree.unmount());
 });
+
+test('a queued time reads in the station’s 24-hour clock; one an older version saved without its zone uses AVIAM’s (N11)', async () => {
+  const { timeZone: _omitted, ...withoutZone } = blockOn;
+  const tree = await render([
+    item(6, 'pending', blockOn),
+    item(7, 'pending', { ...withoutZone, code: 'PUSHBACK', occurredAt: '2026-11-04T23:30:00.000Z' }),
+  ]);
+  // 16:00 UTC is 12:00 at Punta Cana; 23:30 UTC is 19:30 in America/Santo_Domingo.
+  expect(text(tree)).toMatch(/Bloqueo · 4 nov\.?,? 12:00/);
+  expect(text(tree)).toMatch(/PUSHBACK · 4 nov\.?,? 19:30/);
+  expect(text(tree)).not.toMatch(/[ap]\.\s?m\./);
+  await renderer.act(async () => tree.unmount());
+});

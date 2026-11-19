@@ -58,5 +58,19 @@ minuto 16, sin señal la sesión sigue, `401` termina la sesión y conserva la
 cola, `409`/`429`/`503`, el `401` de una solicitud, el reloj adelantado, un
 desfase obsoleto, la respuesta perdida (D-S3b) y los tokens sin `auth_time`.
 
+`date-format.test.js` fija el formato único de fecha y hora (N11, D-N11):
+«lun, 16 nov» y «16 nov, 19:46» con reloj de 24 horas, la zona de la estación y,
+sin una zona conocida, `America/Santo_Domingo` en lugar de la del equipo. Un
+motor simulado que escribe la medianoche como «24:05» comprueba que se lee
+«00:05». Las expresiones toleran el punto y la coma que algunas versiones de
+ICU añaden.
+`assigned-operation-card.test.js` comprueba el riel de la tarjeta: «Inicio
+planificado» en dos líneas que se reducen para caber, sin mayúsculas forzadas.
+`home-screen.test.js` monta el inicio con una estación fuera de República
+Dominicana: «última actualización» y «Mis posiciones de hoy» van en su hora. El
+manifiesto (`operation-offline-queue.test.js`), «Sincronización»
+(`sync-screen.test.js`) y el ajuste de un hito (`flight-report-panel.test.js`)
+comprueban el mismo formato, sin «a. m.» ni «p. m.».
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

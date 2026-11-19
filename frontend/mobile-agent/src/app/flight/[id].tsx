@@ -66,7 +66,7 @@ import type { FlightReportOutboxItem } from '../../synchronization/flight-report
 import { projectRampOperation } from '../../synchronization/ramp-command-projection';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
-import { dateTimeFormat } from '../../utils/date-format';
+import { formatStationDateTime } from '../../utils/date-format';
 import { ConnectionBadge } from '../../components/flight-report/connection-badge';
 import { DocumentsPanel, WalkaroundCard } from '../../components/documents/operation-documents';
 import { CharterCard } from '../../components/documents/charter-card';
@@ -870,7 +870,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         />
         <Meta
           icon="time-outline"
-          label={`Asignada ${formatDateTime(assignment.assignedAt, timeZone)}`}
+          label={`Asignada ${formatStationDateTime(assignment.assignedAt, timeZone)}`}
           dark
         />
       </Card>
@@ -942,9 +942,9 @@ function OperationStartControl({
             <Text style={styles.startedAtText}>
               {onDevice
                 ? `Inicio guardado en el dispositivo ${operation.actualStartAt
-                  ? formatDateTime(operation.actualStartAt, timeZone) : ''} · se envía a ELEVANT en cuanto haya señal`
+                  ? formatStationDateTime(operation.actualStartAt, timeZone) : ''} · se envía a ELEVANT en cuanto haya señal`
                 : operation.actualStartAt
-                  ? `Inicio registrado ${formatDateTime(operation.actualStartAt, timeZone)}`
+                  ? `Inicio registrado ${formatStationDateTime(operation.actualStartAt, timeZone)}`
                   : 'Inicio confirmado por ELEVANT'}
             </Text>
           </View>
@@ -1444,16 +1444,6 @@ function Meta({
   );
 }
 
-function formatDateTime(value: string, timeZone: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'por confirmar';
-  try {
-    return dateTimeFormat({ day: '2-digit', hour: '2-digit', minute: '2-digit', month: 'short', timeZone }).format(date);
-  } catch {
-    return 'por confirmar';
-  }
-}
-
 const styles = StyleSheet.create({
   container: { width: '100%', maxWidth: 960, alignSelf: 'center', padding: 16, paddingBottom: 38, gap: 12 },
   cachedBanner: {
@@ -1586,7 +1576,8 @@ const styles = StyleSheet.create({
   legKindText: { color: colors.navy, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
   legFlight: { color: colors.ink, fontSize: 17, fontWeight: '900' },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  airport: { width: 76 },
+  // N11: a long name («Punta Cana Development») takes up to two lines beside the route, not a fixed 76 dp column.
+  airport: { flexShrink: 1, minWidth: 76, maxWidth: '40%' },
   airportRight: { alignItems: 'flex-end' },
   airportCode: { color: colors.navy, fontSize: 20, fontWeight: '900' },
   airportName: { color: colors.muted, fontSize: 12, lineHeight: 16, marginTop: 2 },

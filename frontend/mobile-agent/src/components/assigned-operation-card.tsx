@@ -16,6 +16,9 @@ import {
 import { colors } from '../theme/colors';
 import { StatusPill } from './ui';
 
+/** The largest system font scale the narrow time rail follows before its label shrinks to fit. */
+const RAIL_FONT_SCALE = 1.3;
+
 export const AssignedOperationCard = memo(function AssignedOperationCard({
   operation,
   onOpen,
@@ -44,7 +47,16 @@ export const AssignedOperationCard = memo(function AssignedOperationCard({
     >
       <View style={styles.timeRail}>
         <Text style={styles.time}>{time}</Text>
-        <Text style={styles.timeLabel}>{timeLabel}</Text>
+        {/* N11: two lines that shrink to fit, never a word broken in two («INICIO PLANI/FICADO»). Fabric on Android
+            ignores minimumFontScale, so the system font scale is capped instead. */}
+        <Text
+          adjustsFontSizeToFit
+          maxFontSizeMultiplier={RAIL_FONT_SCALE}
+          numberOfLines={2}
+          style={styles.timeLabel}
+        >
+          {timeLabel}
+        </Text>
         <Text style={styles.operationDate}>{operationDate}</Text>
         <View style={styles.railLine}>
           <View style={styles.railDot} />
@@ -117,7 +129,7 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.82, transform: [{ scale: 0.995 }] },
   timeRail: {
-    width: 84,
+    width: 96,
     alignItems: 'center',
     backgroundColor: '#F8FAFD',
     paddingVertical: 18,
@@ -128,25 +140,24 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
+  // N11: written as the formatter and the label read («Inicio planificado», «lun, 16 nov»), without forced capitals.
   timeLabel: {
-    maxWidth: 76,
+    maxWidth: 88,
     marginTop: 4,
     color: colors.muted,
     fontSize: 12,
     fontWeight: '800',
     lineHeight: 15,
     textAlign: 'center',
-    textTransform: 'uppercase',
   },
   operationDate: {
-    maxWidth: 76,
+    maxWidth: 88,
     marginTop: 5,
     color: colors.ink,
     fontSize: 12,
     fontWeight: '800',
     lineHeight: 14,
     textAlign: 'center',
-    textTransform: 'capitalize',
   },
   railLine: {
     flex: 1,

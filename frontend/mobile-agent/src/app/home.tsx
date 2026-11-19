@@ -1,7 +1,7 @@
 import type { RampAssignedOperationResponse } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AssignedOperationCard } from '../components/assigned-operation-card';
 import { MyPositionsCard } from '../components/my-positions-card';
 import { PrimaryButton } from '../components/ui';
+import { stationTimeZonesByCode } from '../features/assigned-operations/presentation';
 import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import {
   getAssignedOperations,
@@ -35,7 +36,7 @@ import { signOutPendingEvidenceNote } from '../utils/pending-evidence';
 import { resetToLogin } from '../utils/session-navigation';
 import { useLayoutClass } from '../utils/layout-class';
 import { OperationDetail } from './flight/[id]';
-import { dateTimeFormat } from '../utils/date-format';
+import { formatStationDateTime } from '../utils/date-format';
 
 type BlockingState = 'offline' | 'unavailable' | null;
 
@@ -174,6 +175,9 @@ export default function HomeScreen() {
   );
 
   const stationCodes = actor?.stationScopes.map(scope => scope.stationCode).join(' · ') ?? 'Sin estación';
+  // N11: times in the station's zone, which only the operations carry; without one, AVIAM's calendar.
+  const timeZones = useMemo(() => stationTimeZonesByCode(operations), [operations]);
+  const agentTimeZone = actor?.stationScopes.map(scope => timeZones.get(scope.stationCode)).find(Boolean);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -203,7 +207,7 @@ export default function HomeScreen() {
           <View style={styles.bannerCopy}>
             <Text style={styles.bannerTitle}>Mostrando información guardada</Text>
             <Text style={styles.bannerText}>
-              Sin conexión · última actualización {formatUpdatedAt(updatedAt)}
+              Sin conexión · última actualización {updatedAt ? formatStationDateTime(updatedAt, agentTimeZone) : 'desconocida'}
             </Text>
           </View>
           <Pressable
@@ -224,7 +228,7 @@ export default function HomeScreen() {
         <Pressable accessibilityLabel="Abrir mis turnos y documentos" accessibilityRole="button" onPress={() => router.push('/my-schedule')} style={styles.quickAction}><Ionicons name="calendar-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Mis turnos</Text></Pressable>
       </View>
 
-      <MyPositionsCard />
+      <MyPositionsCard timeZones={timeZones} />
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionCopy}>
@@ -378,13 +382,6 @@ function BlockingScreen({
       title={state === 'offline' ? 'Sin conexión segura' : 'Operaciones no disponibles'}
     />
   );
-}
-
-function formatUpdatedAt(value: string | null) {
-  if (!value) return 'desconocida';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'desconocida';
-  return dateTimeFormat({ day: '2-digit', hour: '2-digit', minute: '2-digit', month: 'short' }).format(date);
 }
 
 const styles = StyleSheet.create({
