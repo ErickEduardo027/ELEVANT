@@ -109,9 +109,13 @@ export function standingNotice(standing: AirlinePortalStandingResponse | null | 
     case "Terminated":
       return "Su contrato con AVIAM terminó. Su historial, sus facturas y sus pagos siguen disponibles.";
     case "Pending":
-      return pending?.pendingReason === "operating_permit"
-        ? "Su contrato está firmado: se activa cuando AVIAM verifique su permiso de operación vigente."
-        : "Su contrato aún no está activo: falta la firma de ambas partes. Revíselo en Contratos.";
+      if (pending?.pendingReason === "operating_permit") {
+        return "Su contrato está firmado: se activa cuando AVIAM verifique su permiso de operación vigente.";
+      }
+      // Without a reason the contract is signed and its permit usable (the badge says «Pendiente de activación»).
+      return pending?.pendingReason === "signatures"
+        ? "Su contrato aún no está activo: falta la firma de ambas partes. Revíselo en Contratos."
+        : "Su contrato aún no está activo. Revise su estado en Contratos.";
     case "None":
       return "Todavía no tiene un contrato aprobado con AVIAM.";
     default:

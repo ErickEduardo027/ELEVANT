@@ -96,6 +96,19 @@ describe("contract labels and standing notices (2-N32, 2-N35)", () => {
       .toEqual({ label: "Sin contrato con AVIAM", tone: "none" });
   });
 
+  it("tells the same pending story in the home notice as in the badge (N14)", () => {
+    const pending = (pendingReason: string | null): AirlinePortalStandingResponse => ({ organizationId, status: "Pending",
+      readOnly: true, stations: [], contracts: [{ id: contractId, code: "CTR-2026-0001", status: "Draft", pendingReason,
+        versionsAwaitingSignatures: [] }] });
+    expect(standingNotice(pending("signatures")))
+      .toBe("Su contrato aún no está activo: falta la firma de ambas partes. Revíselo en Contratos.");
+    expect(standingNotice(pending("operating_permit")))
+      .toBe("Su contrato está firmado: se activa cuando AVIAM verifique su permiso de operación vigente.");
+    // Signed and with a usable permit, but not active yet: the badge says «Pendiente de activación», so the notice
+    // never claims that signatures are missing.
+    expect(standingNotice(pending(null))).toBe("Su contrato aún no está activo. Revise su estado en Contratos.");
+  });
+
   it("takes the stations in force from the standing once it is read, and from the bootstrap until then (N14)", () => {
     const sdq = { id: "20000000-0000-7000-8000-000000000004", code: "SDQ", name: "Santo Domingo",
       ianaTimeZone: "America/Santo_Domingo" };
