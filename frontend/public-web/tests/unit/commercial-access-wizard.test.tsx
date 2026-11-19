@@ -827,3 +827,47 @@ it("names a country code in any case and never throws on a value Intl does not a
   expect(countryLabel(null)).toBeNull();
   expect(countryLabel(undefined)).toBeNull();
 });
+
+it("takes the focus to the heading of each step it opens, never on the first render (N15)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await screen.findByRole("button", { name: "Añadir servicio +" });
+  // Opening the page leaves the focus alone. The panel is no live region, so a new step is heard through its heading.
+  expect(document.body).toHaveFocus();
+  const heading = (name: string) => screen.getByRole("heading", { level: 2, name });
+  await fillApplication();
+  expect(heading("Revise su solicitud.")).toHaveFocus();
+  // «Editar servicios» unmounts the button that had the focus.
+  fireEvent.click(screen.getByRole("button", { name: "Editar servicios" }));
+  expect(heading("¿Qué necesita su operación?")).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(heading("¿A cuál aerolínea representa?")).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "← Volver" }));
+  expect(heading("¿Qué necesita su operación?")).toHaveFocus();
+});
+
+it("announces a proposed ICAO code that is already listed and describes the field with it (N15)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const listed = { ...catalog.airlines[0], name: "Copa Airlines", icaoCode: "CMP", iataCode: "CM" };
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ...catalog, airlines: [listed] }),
+    { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Mi aerolínea no aparece" }));
+  const icao = screen.getByRole("textbox", { name: "Código ICAO" });
+  // The region exists before the note: what is inserted into it is read aloud wherever the focus is.
+  const regions = [...document.querySelectorAll('[aria-live="polite"]')];
+  fireEvent.change(icao, { target: { value: "cmp" } });
+  const note = screen.getByRole("note");
+  expect(note).toHaveTextContent("El código CMP corresponde a Copa Airlines, que ya figura en el listado.");
+  expect(regions).toContain(note.closest('[aria-live="polite"]'));
+  expect(icao).toHaveAccessibleDescription(/ya figura en el listado/);
+  // Another code takes the note away, and the description with it.
+  fireEvent.change(icao, { target: { value: "cmx" } });
+  expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  expect(icao).toHaveAccessibleDescription("Obligatorio: 3 letras, por ejemplo CMP.");
+});
