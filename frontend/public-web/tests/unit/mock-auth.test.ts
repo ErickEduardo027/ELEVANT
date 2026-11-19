@@ -79,9 +79,19 @@ describe("validación y retorno del acceso", () => {
     ).toEqual({
       ok: false,
       fieldErrors: {
-        email: "Ingresa tu correo corporativo.",
-        password: "Ingresa tu contraseña.",
+        email: "Ingrese su correo corporativo.",
+        password: "Ingrese su contraseña.",
       },
+      firstInvalidField: "email",
+    });
+  });
+
+  it("trata a la aerolínea de usted al pedir un correo válido (N19)", () => {
+    expect(
+      validateSignIn({ email: "sin-arroba", password: "x", remember: false }),
+    ).toEqual({
+      ok: false,
+      fieldErrors: { email: "Ingrese un correo corporativo válido." },
       firstInvalidField: "email",
     });
   });
@@ -168,6 +178,26 @@ describe("MockAuthGateway v2", () => {
       remember: false,
     });
     expect(result).toMatchObject({ ok: false });
+  });
+
+  it("trata a la aerolínea de usted cuando el acceso de demostración falla (N19)", async () => {
+    const { gateway } = createGateway();
+    expect(
+      await gateway.signIn({ email: "", password: "", remember: false }),
+    ).toMatchObject({ ok: false, message: "Revise los campos indicados." });
+
+    const withoutStorage = new MockAuthGateway({
+      localStorage: null,
+      sessionStorage: null,
+      crypto: webcrypto as unknown as Crypto,
+    });
+    expect(
+      await withoutStorage.signIn({ ...DEMO_CREDENTIALS, remember: false }),
+    ).toEqual({
+      ok: false,
+      message:
+        "Este navegador no permitió guardar la sesión. Habilite el almacenamiento local e inténtelo de nuevo.",
+    });
   });
 
   it("limpia sesiones corruptas o expiradas y ambos stores al cerrar", async () => {

@@ -320,7 +320,7 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
     <header className={styles.requestHeading}>
       <div><span className={styles.kicker}>Canal de servicio · {airlineName}</span>
         <h1>Solicitudes con estado visible.</h1>
-        <p>Consulta las solicitudes operativas registradas para tu aerolínea. La creación y cancelación todavía no están habilitadas.</p></div>
+        <p>Consulte las solicitudes operativas registradas para su aerolínea. La creación y cancelación todavía no están habilitadas.</p></div>
       <button type="button" disabled title="La creación de solicitudes aún no está disponible">Nueva solicitud</button>
     </header>
     <div className={styles.metrics} aria-label="Estado de las solicitudes cargadas">

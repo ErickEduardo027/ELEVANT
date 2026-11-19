@@ -13,7 +13,7 @@ const DECLINES: Record<string, string> = {
   insufficient_funds: "Tarjeta rechazada: fondos insuficientes.",
   expired_card: "Tarjeta rechazada: el banco la reporta vencida.",
   card_not_accepted: "Tarjeta rechazada: no fue aceptada.",
-  processing_error: "Error del procesador de pagos. Puedes reintentar.",
+  processing_error: "Error del procesador de pagos. Puede reintentar.",
 };
 /** 4-N05: the gateway of the simulation is labelled as such next to the card form. */
 export const CARD_SIMULATION_LABEL = "Simulación — sin validez fiscal";
@@ -40,7 +40,7 @@ function ReceiptButton({ attempt }: { attempt: Pick<CardPaymentAttemptResponse, 
       void getCardPaymentReceipt(attempt.id).then(blob => save(blob, `recibo-${attempt.authorizationCode}.pdf`))
         .then(() => setState("idle"), () => setState("error"));
     }}>{state === "loading" ? "Preparando recibo…" : "Descargar recibo"}</button>
-    {state === "error" && <p role="alert">No se pudo descargar el recibo. Inténtalo de nuevo.</p>}
+    {state === "error" && <p role="alert">No se pudo descargar el recibo. Inténtelo de nuevo.</p>}
   </>;
 }
 

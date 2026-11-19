@@ -88,7 +88,7 @@ export function AirlineContractPage() {
     </header>
     {loading && pages.length === 0 ? <section className={styles.panel} role="status">Cargando contratos autorizados…</section> : null}
     {error ? <section className={styles.panel} role="alert">
-      <p>No se pudieron cargar los contratos. Comprueba la conexión y vuelve a intentarlo.</p>
+      <p>No se pudieron cargar los contratos. Compruebe la conexión y vuelva a intentarlo.</p>
       {pages.length === 0 && <button type="button" onClick={() => {
         setLoading(true); setError(false);
         void getContracts(1).then(page => { setPages([page]); setLoading(false); })

@@ -152,9 +152,9 @@ test.describe("landing pública", () => {
       }),
     ).toBeVisible();
     await expect(
-      page.getByRole("region", { name: "Continúa al portal de tu aerolínea." }),
+      page.getByRole("region", { name: "Continúe al portal de su aerolínea." }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: "Solicita acceso aquí" }))
+    await expect(page.getByRole("link", { name: "Solicite acceso aquí" }))
       .toHaveAttribute("href", "/solicitar-acceso");
     await expect(
       page.getByRole("textbox", { name: "Correo corporativo", exact: true }),

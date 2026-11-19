@@ -95,7 +95,7 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Parte | Comportamiento verificado en el repositorio |
 | --- | --- |
 | Identidad | `POST /api/v1/auth/session` valida correo y contraseña y responde `202 code_required`; la sesión se emite en `POST /api/v1/auth/session/verify-code` con el código de 6 dígitos enviado al correo (10 minutos, 5 intentos, reenvío con `resend-code`; [ADR-0022](../../docs/adr/0022-portal-email-verification.md)). `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. *Posterior al commit verificado de esta nota (hallazgo N17 de la corrida del VPS del 16 de noviembre de 2026):* el paso del código tiene una sola instrucción, «Pedimos un código de 6 dígitos para …», que tras «Reenviar código» pasa a «Pedimos un código nuevo para … El anterior ya no sirve.»; ninguna afirma que el correo ya salió. El foco va al campo del código, que lleva esa instrucción como descripción accesible. El título y la instrucción ocupan el ancho completo también en las ventanas de escritorio bajas, donde el formulario pasa a dos columnas. La tarjeta del acceso nombra los pasos reales: «01 Cuenta → 02 Código por correo» ([pruebas](../../frontend/public-web/tests/unit/real-airline-login.test.tsx)). |
-| Activación y recuperación | Las cuentas nuevas reciben un enlace a `/activar` (72 horas) para confirmar el correo y crear su contraseña. «¿Olvidaste tu contraseña?» lleva a `/recuperar`, que envía un enlace de 30 minutos y responde igual exista o no la cuenta. Un enlace o código que vence en la cola de correo, o que otro reemplaza, se descarta sin enviarse. Ni el inicio de sesión ni `/activar` ni `/recuperar` nombran un entorno: solo muestran una etiqueta si el build define `NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL`, y hoy ni la imagen ni la plantilla de Dokploy la pasan. Ninguna de esas pantallas afirma que un correo ya salió. *Posterior al commit verificado de esta nota (hallazgo N17):* `/activar` y `/recuperar` muestran los requisitos de la contraseña antes de escribir, los mismos que en el cambio de la contraseña temporal sin «Distinta de la contraseña temporal», y no envían una contraseña que la API rechazaría. Si la API la rechaza de todos modos, el aviso remite a la lista ([pruebas](../../frontend/public-web/tests/unit/password-link.test.tsx)). |
+| Activación y recuperación | Las cuentas nuevas reciben un enlace a `/activar` (72 horas) para confirmar el correo y crear su contraseña. «¿Olvidó su contraseña?» lleva a `/recuperar`, que envía un enlace de 30 minutos y responde igual exista o no la cuenta. Un enlace o código que vence en la cola de correo, o que otro reemplaza, se descarta sin enviarse. Ni el inicio de sesión ni `/activar` ni `/recuperar` nombran un entorno: solo muestran una etiqueta si el build define `NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL`, y hoy ni la imagen ni la plantilla de Dokploy la pasan. Ninguna de esas pantallas afirma que un correo ya salió. *Posterior al commit verificado de esta nota (hallazgo N17):* `/activar` y `/recuperar` muestran los requisitos de la contraseña antes de escribir, los mismos que en el cambio de la contraseña temporal sin «Distinta de la contraseña temporal», y no envían una contraseña que la API rechazaría. Si la API la rechaza de todos modos, el aviso remite a la lista ([pruebas](../../frontend/public-web/tests/unit/password-link.test.tsx)). *Posterior al commit verificado de esta nota (hallazgo N19):* el enlace se llamaba «¿Olvidaste tu contraseña?»; estas pantallas ahora tratan de usted a la aerolínea, como se describe en «Tratamiento». |
 | Remitente | Los correos salen por la cuenta Gmail no-reply, con contraseña de aplicación y envío real verificado en local. En el VPS se activa con las variables `ELEVANT_SMTP_*` del Environment API, según el checklist de [configuración de Dokploy](../../docs/deployment/dokploy-configuration.md). Superadministración → Configuración → «Correo del sistema» muestra si SMTP está configurado, un botón de prueba y la bandeja de correos con el estado, el motivo y el documento o la cuenta de cada uno ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). |
 | Contraseña temporal | Solo para cuentas creadas con la alternativa manual: el código `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. *Posterior al commit verificado de esta nota (hallazgo N17):* el cambio es un paso del acceso, no un error. No aparece ninguna alerta: el foco va a «Nueva contraseña», cuya descripción accesible (`aria-describedby`) reúne la explicación y los requisitos. La lista se ve antes de escribir y marca cada requisito al cumplirse (`data-met`). Son los de Identity en la API: al menos 14 caracteres contados en UTF-16, una mayúscula A–Z, una minúscula a–z, un número 0–9 y un símbolo; la ñ y las letras con tilde, como la É, cuentan como símbolo. Se suma «Distinta de la contraseña temporal», porque la API rechaza el mismo valor. Una contraseña que no los cumple o que no coincide con la confirmación no se envía: el motivo aparece bajo el campo, que recibe el foco, y los requisitos pendientes pasan a rojo. Una prueba compara la [política del cliente](../../frontend/public-web/src/lib/password-policy.ts) con las opciones de Identity de la API. |
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
@@ -198,6 +198,30 @@ notas de crédito y el único cobro que inicia la aerolínea es el pago con
 tarjeta. Las tablas y migraciones se conservan. Fuentes:
 [controlador de aerolínea](../../backend/Elevant.Api/Controllers/AirlinePortalController.cs)
 y [cliente compartido](../../packages/api-client/src/client.ts).
+
+## Tratamiento
+
+*Posterior al commit verificado de esta nota (hallazgo N19 de la corrida del VPS
+del 16 de noviembre de 2026):* Public Web trata de usted a la aerolínea en todo
+lo que le muestra: la landing, la solicitud de acceso, el login y su código por
+correo, `/activar`, `/recuperar`, las páginas del portal, sus estados de carga,
+de error y de sesión no verificada, y los avisos del pago con tarjeta. Antes, el
+acceso, los pagos y los errores del portal la tuteaban («¿Olvidaste tu
+contraseña?», «Inténtalo de nuevo»), mientras la solicitud de acceso y los
+contratos ya la trataban de usted. Las etiquetas de los campos son neutras
+(«Correo corporativo», «Contraseña nueva», «Vencimiento (MM/AA)») y no
+cambiaron, porque las pruebas e2e las usan. El aviso de una sesión que no se
+pudo verificar ya no nombra la API: dice «No se pudo verificar su sesión.
+Vuelva a intentarlo en unos minutos.». Aún tutean a la aerolínea los correos
+de la API (invitación, código de acceso y restablecimiento de la contraseña),
+que la decisión D-N19 dejó fuera, y los avisos de formato del número de
+documento y del RNC en la solicitud de acceso («…; escribiste 12.»), que vienen
+del cliente compartido y del dominio del backend y también los usa AVIAM Web
+([validación compartida](../../packages/api-client/src/validation.ts)). Fuentes:
+[login](../../frontend/public-web/src/components/auth/AuthExperience.tsx),
+[activación y recuperación](../../frontend/public-web/src/components/auth/PasswordLinkExperience.tsx),
+[avisos del pago con tarjeta](../../frontend/public-web/src/lib/billing-problems.ts)
+y [estados del portal](../../frontend/public-web/tests/unit/portal-route-states.test.tsx).
 
 ## Layout responsive
 

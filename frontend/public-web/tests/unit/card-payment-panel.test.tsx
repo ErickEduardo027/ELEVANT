@@ -131,7 +131,7 @@ it("explains a failed receipt download and lets it be tried again (4-N30)", asyn
   getCardPaymentReceipt.mockRejectedValueOnce(new TypeError("Failed to fetch"));
   mount(0);
   fireEvent.click(await screen.findByRole("button", { name: "Descargar recibo" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo descargar el recibo. Inténtalo de nuevo.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo descargar el recibo. Inténtelo de nuevo.");
   expect(getCardPaymentReceipt).toHaveBeenCalledWith(approved.id);
   const createObjectURL = vi.fn(() => "blob:receipt");
   Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
@@ -181,6 +181,16 @@ it("does not call the API with the month 13: the field says why and the last ans
   fireEvent.change(field, { target: { value: "12/30" } });
   expect(field).not.toHaveAttribute("aria-invalid");
   expect(field).toHaveAccessibleDescription(CARD_EXPIRY_HINT);
+});
+
+it("says a processor error can be retried, addressing the airline as usted (N19)", async () => {
+  payInvoiceByCard.mockResolvedValueOnce({ attempt: { ...declined, status: "Error", declineCode: "processing_error" },
+    invoiceBalance: 148.09, replayed: false });
+  mount();
+  const form = await openForm();
+  fill(form);
+  pay(form);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Error del procesador de pagos. Puede reintentar.");
 });
 
 it("refuses an expired card before the API, by the fake clock (S4)", async () => {

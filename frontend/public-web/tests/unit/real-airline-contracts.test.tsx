@@ -271,3 +271,22 @@ it("retries an uncertain observation with its first key and version even if the 
   expect(posts[0]!.body).toEqual({ expectedVersion: "AAAAAAAAB9E=", body: "¿Incluye la noche?" });
   expect(posts[1]).toEqual(posts[0]);
 });
+
+// N19: Contratos addresses the airline as usted when its contracts cannot be read.
+it("asks the airline, as usted, to check the connection when the contracts cannot be read (N19)", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z",
+  }));
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/contracts")) return new Response(JSON.stringify({ title: "private transport detail" }), { status: 503 });
+    const body = path.endsWith("/bootstrap") ? bootstrap : path.endsWith("/contract-drafts") ? [] : { actor };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <AirlinePortalPage view="contracts" />
+  </AirlineSessionProvider>);
+  expect(await screen.findByText("No se pudieron cargar los contratos. Compruebe la conexión y vuelva a intentarlo."))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
+});

@@ -159,8 +159,6 @@ export const es = {
   login: {
     eyebrow: "Acceso de aerolíneas",
     title: "La operación, visible para quien debe verla.",
-    body:
-      "Inicia una sesión demostrativa o registra una aerolínea localmente para preparar el acceso al futuro portal.",
     action: "Volver a la landing",
     demoAction: "Usar credenciales de demostración",
   },

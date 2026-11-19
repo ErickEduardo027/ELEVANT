@@ -127,3 +127,22 @@ it("offers each adjustment note's PDF in the invoice view (4-N17)", async () => 
   expect(await screen.findByRole("button", { name: "Descargar PDF de Nota de crédito TC-OWN" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Factura NF-OWN · PUJ" })).toBeInTheDocument();
 });
+
+// N19: the statement addresses the airline as usted, like the rest of the portal.
+it("addresses the airline as usted without a session and after a failed read (N19)", async () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => { throw new TypeError("Failed to fetch"); }));
+  const anonymous = render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel /></AirlineSessionProvider>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Inicie sesión para consultar sus documentos financieros.");
+  anonymous.unmount();
+
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({ accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z" }));
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path.includes("/treasury/")) return new Response(JSON.stringify({ title: "private transport detail" }), { status: 500 });
+    return new Response(JSON.stringify(path.endsWith("/bootstrap") ? bootstrap : { actor }),
+      { status: 200, headers: { "content-type": "application/json" } });
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel /></AirlineSessionProvider>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo consultar el estado financiero. Inténtelo de nuevo.");
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
+});

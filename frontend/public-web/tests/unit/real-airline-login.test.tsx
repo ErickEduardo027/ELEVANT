@@ -40,15 +40,24 @@ function requirementStates() {
     .map(item => [item.getAttribute("data-requirement"), item.getAttribute("data-met")]));
 }
 
-/** Signs in with a temporary password the API asks to replace; returns the paths it was asked for. */
-async function startPasswordChange() {
+/** A Problem Details answer of the API with the given status. */
+function problem(status: number, code?: string) {
+  return new Response(JSON.stringify({ status, code, title: "Refused" }),
+    { status, headers: { "content-type": "application/problem+json" } });
+}
+
+/**
+ * Signs in with a temporary password the API asks to replace; returns the paths it was asked for. The password change
+ * answers with `changeStatus`.
+ */
+async function startPasswordChange(changeStatus = 204) {
   const paths: string[] = [];
   vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
     const path = new URL(String(input)).pathname;
     paths.push(path);
-    if (path.endsWith("password-change")) return new Response(null, { status: 204 });
-    return new Response(JSON.stringify({ status: 409, code: "password_change_required", title: "Password change required" }),
-      { status: 409, headers: { "content-type": "application/problem+json" } });
+    if (path.endsWith("password-change"))
+      return changeStatus === 204 ? new Response(null, { status: 204 }) : problem(changeStatus);
+    return problem(409, "password_change_required");
   }));
   render(<AirlineSessionProvider baseUrl="https://api.example.test">
     <AuthExperience returnTo="/portal" />
@@ -64,7 +73,7 @@ it("presents the temporary password change as a step, not as an error (N17)", as
   await startPasswordChange();
   const newPassword = screen.getByLabelText("Nueva contraseña");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(screen.queryByText(/Debes cambiar/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Debes? cambiar/)).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Cambio de la contraseña temporal" })).toBeInTheDocument();
   await waitFor(() => expect(newPassword).toHaveFocus());
   expect(newPassword).toHaveAccessibleDescription(
@@ -118,9 +127,9 @@ it("sends registration from the airline login to the canonical commercial reques
     <AuthExperience returnTo="/portal" />
   </AirlineSessionProvider>);
 
-  expect(await screen.findByRole("link", { name: "Solicita acceso aquí" }))
+  expect(await screen.findByRole("link", { name: "Solicite acceso aquí" }))
     .toHaveAttribute("href", "/solicitar-acceso");
-  expect(screen.getByText("¿No tienes credenciales?")).toBeInTheDocument();
+  expect(screen.getByText("¿No tiene credenciales?")).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "Acceso de aerolíneas" })).not.toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "Razón social" })).not.toBeInTheDocument();
@@ -198,7 +207,7 @@ it("lets an airline replace a temporary password before a fresh login", async ()
   fireEvent.change(screen.getByLabelText("Nueva contraseña"), { target: { value: "Synthetic-New-Password!2026" } });
   fireEvent.change(screen.getByLabelText("Confirmar nueva contraseña"), { target: { value: "Synthetic-New-Password!2026" } });
   fireEvent.click(screen.getByRole("button", { name: "Cambiar contraseña" }));
-  await screen.findByText(/contraseña actualizada/i);
+  await screen.findByText("Contraseña actualizada. Inicie sesión con su nueva contraseña.");
   expect(requests).toEqual(["/api/v1/auth/session", "/api/v1/auth/password-change"]);
   expect(replace).not.toHaveBeenCalledWith("/portal");
   expect(sessionStorage.length).toBe(0);
@@ -231,7 +240,7 @@ it("asks for the emailed code, resends it and enters the portal with it (ADR-002
     // ADR-0022, 1-N08: the code was only queued; the screen never claims it was sent. N17: one instruction, not
     // the same one twice, and the focus waits in the code field, which the instruction describes.
     expect(screen.getAllByText(/Pedimos un código/)).toHaveLength(1);
-    expect(screen.queryByText(/Escribe el código/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Escrib[ae] el código/)).not.toBeInTheDocument();
     expect(code).toHaveAccessibleDescription("Pedimos un código de 6 dígitos para a••••t@dev.elevant.test. "
       + "Puede tardar unos minutos en llegar; revise también la carpeta de spam.");
     await waitFor(() => expect(code).toHaveFocus());
@@ -290,5 +299,104 @@ it("links to password recovery from the login form", async () => {
   render(<AirlineSessionProvider baseUrl="https://api.example.test">
     <AuthExperience returnTo="/portal" />
   </AirlineSessionProvider>);
-  expect(await screen.findByRole("link", { name: "¿Olvidaste tu contraseña?" })).toHaveAttribute("href", "/recuperar");
+  expect(await screen.findByRole("link", { name: "¿Olvidó su contraseña?" })).toHaveAttribute("href", "/recuperar");
+});
+
+// N19: the login addresses the airline as usted, like the access request and the portal.
+it("addresses the airline as usted before it signs in (N19)", async () => {
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider>);
+  expect(await screen.findByRole("region", { name: "Continúe al portal de su aerolínea." })).toBeInTheDocument();
+  expect(screen.getByText("Utilice la cuenta emitida para su aerolínea. Al entrar comprobamos su acceso y las "
+    + "estaciones autorizadas para su cuenta.")).toBeInTheDocument();
+  expect(screen.getByText("Consulte las operaciones de su aerolínea en las estaciones autorizadas para su cuenta."))
+    .toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Revise los campos indicados para continuar.");
+  expect(screen.getByRole("textbox", { name: "Correo corporativo" }))
+    .toHaveAccessibleDescription("Ingrese su correo corporativo.");
+  expect(screen.getByLabelText("Contraseña")).toHaveAccessibleDescription("Ingrese su contraseña.");
+});
+
+it.each([
+  [401, "No se pudo validar la cuenta. Revise el correo y la contraseña."],
+  [404, "Los datos de su aerolínea no están disponibles ahora. Reintente en unos minutos."],
+  [429, "Demasiados intentos. Espere un momento antes de reintentar."],
+  [503, "No se pudo conectar con ELEVANT. Compruebe la conexión y reintente."],
+])("explains a login refused with %i as usted (N19)", async (status, message) => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => problem(status)));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider>);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Correo corporativo" }), { target: { value: actor.email } });
+  fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Password!2026" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+});
+
+it.each([
+  [429, "Demasiados intentos. Espere antes de reintentar."],
+  [503, "No se pudo cambiar la contraseña. Reintente en unos minutos."],
+])("explains a temporary password change refused with %i as usted (N19)", async (status, message) => {
+  await startPasswordChange(status);
+  fireEvent.change(screen.getByLabelText("Nueva contraseña"), { target: { value: "Synthetic-New-Password!2026" } });
+  fireEvent.change(screen.getByLabelText("Confirmar nueva contraseña"), { target: { value: "Synthetic-New-Password!2026" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cambiar contraseña" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+});
+
+it("explains a wrong, a refused and a lost code as usted (N19)", async () => {
+  const challengeId = "7a000000-0000-7000-8000-000000000002";
+  const verifications = [problem(401), problem(409, "password_change_required")];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/auth/session") && init?.method === "POST")
+      return new Response(JSON.stringify({ challengeId, emailHint: "a••••t@dev.elevant.test",
+        expiresAt: "2099-01-01T00:10:00Z", code: "code_required" }), { status: 202, headers: { "content-type": "application/json" } });
+    if (path.endsWith("/verify-code")) return verifications.shift() ?? problem(401);
+    return problem(404);
+  }));
+  const realNow = Date.now.bind(Date);
+  try {
+    render(<AirlineSessionProvider baseUrl="https://api.example.test">
+      <AuthExperience returnTo="/portal" />
+    </AirlineSessionProvider>);
+    fireEvent.change(await screen.findByRole("textbox", { name: "Correo corporativo" }), { target: { value: actor.email } });
+    fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Password!2026" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+    const code = await screen.findByRole("textbox", { name: /Código de verificación/ });
+
+    fireEvent.change(code, { target: { value: "111111" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verificar y entrar" }));
+    expect(await screen.findByRole("alert"))
+      .toHaveTextContent("El código no es válido o ya venció. Revise el último correo o pida uno nuevo.");
+    fireEvent.change(code, { target: { value: "222222" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verificar y entrar" }));
+    expect(await screen.findByText("Debe cambiar la contraseña temporal antes de entrar.")).toBeInTheDocument();
+
+    // Past the 30 s resend cooldown, the API no longer knows the challenge.
+    vi.spyOn(Date, "now").mockImplementation(() => realNow() + 31_000);
+    fireEvent.click(await screen.findByRole("button", { name: "Reenviar código" }, { timeout: 3000 }));
+    expect(await screen.findByText("El código venció o se bloqueó. Inicie sesión de nuevo.")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /Código de verificación/ })).not.toBeInTheDocument();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
+it("asks for a new code once the emailed one expired, as usted (N19)", async () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+    challengeId: "7a000000-0000-7000-8000-000000000003", emailHint: "a••••t@dev.elevant.test",
+    expiresAt: "2000-01-01T00:00:00Z", code: "code_required",
+  }), { status: 202, headers: { "content-type": "application/json" } })));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider>);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Correo corporativo" }), { target: { value: actor.email } });
+  fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Password!2026" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+  expect(await screen.findByText("El código venció; pida uno nuevo.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Verificar y entrar" })).toBeDisabled();
 });

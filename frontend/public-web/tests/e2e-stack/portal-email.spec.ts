@@ -45,7 +45,7 @@ test("password recovery and the emailed login code work end to end through Mailp
   await forwardApi(page);
   const password = `Stack-E2E-${Date.now()}!Aa`;
 
-  // 1. «¿Olvidaste tu contraseña?» sends a real email with a reset link.
+  // 1. «¿Olvidó su contraseña?» sends a real email with a reset link.
   const resetRequested = Date.now() - 2000;
   await page.goto("/recuperar");
   await page.getByLabel("Correo corporativo").fill(EMAIL);

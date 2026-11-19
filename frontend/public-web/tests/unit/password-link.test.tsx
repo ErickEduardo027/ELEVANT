@@ -74,7 +74,8 @@ it("activates the invited account with the link token and a new password", async
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><PasswordLinkExperience mode="activate" token={token} /></AirlineSessionProvider>);
   fill("Synthetic-Activated!2026");
   fireEvent.click(screen.getByRole("button", { name: "Activar cuenta" }));
-  expect(await screen.findByText(/Cuenta activada/)).toBeInTheDocument();
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Cuenta activada. Ya puede iniciar sesión: al entrar le pediremos el código que llega a su correo.");
   expect(screen.getByRole("link", { name: "Ir a iniciar sesión" })).toHaveAttribute("href", "/login");
   expect(calls.filter(call => call.path.endsWith("/auth/account/activate")).map(call => call.body))
     .toEqual([{ token, newPassword: "Synthetic-Activated!2026" }]);
@@ -86,7 +87,7 @@ it("explains a used or expired link without exposing the server text", async () 
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><PasswordLinkExperience mode="reset" token={token} /></AirlineSessionProvider>);
   fill("Synthetic-Reset!2026x");
   fireEvent.click(screen.getByRole("button", { name: "Guardar contraseña" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Solicita uno nuevo");
+  expect(await screen.findByRole("alert")).toHaveTextContent("El enlace no es válido, ya se usó o venció. Solicite uno nuevo.");
 });
 
 it("requests a reset link with the same answer whether or not the account exists", async () => {
@@ -94,6 +95,60 @@ it("requests a reset link with the same answer whether or not the account exists
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><PasswordLinkExperience mode="reset" /></AirlineSessionProvider>);
   fireEvent.change(screen.getByLabelText("Correo corporativo"), { target: { value: "nobody@example.test" } });
   fireEvent.click(screen.getByRole("button", { name: "Enviar enlace" }));
-  expect(await screen.findByRole("status")).toHaveTextContent("Si el correo pertenece a una cuenta del portal");
+  expect(await screen.findByRole("status"))
+    .toHaveTextContent("Si el correo pertenece a una cuenta del portal, recibirá un enlace válido por 30 minutos.");
   expect(calls.find(call => call.path.endsWith("/auth/password-reset"))?.body).toEqual({ email: "nobody@example.test" });
+});
+
+// N19: activation and recovery address the airline as usted, like the access request and the portal.
+it("addresses the airline as usted when it activates or recovers its account (N19)", async () => {
+  stub(() => new Response(null, { status: 204 }));
+  const { unmount } = render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <PasswordLinkExperience mode="activate" token={token} /></AirlineSessionProvider>);
+  expect(screen.getByRole("heading", { name: "Cree la contraseña de su cuenta." })).toBeInTheDocument();
+  expect(screen.getByText("Al guardarla confirmamos su correo y la cuenta queda lista para entrar al portal."))
+    .toBeInTheDocument();
+  unmount();
+
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <PasswordLinkExperience mode="reset" token={token} /></AirlineSessionProvider>);
+  expect(screen.getByRole("heading", { name: "Elija una contraseña nueva." })).toBeInTheDocument();
+  expect(screen.getByText("Al guardarla se cierran todas las sesiones abiertas de su cuenta.")).toBeInTheDocument();
+  fill("Synthetic-Reset!2026x");
+  fireEvent.click(screen.getByRole("button", { name: "Guardar contraseña" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Contraseña actualizada. Inicie sesión con la contraseña nueva.");
+});
+
+it("asks to open an incomplete activation link again, as usted (N19)", () => {
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><PasswordLinkExperience mode="activate" /></AirlineSessionProvider>);
+  expect(screen.getByRole("alert"))
+    .toHaveTextContent("El enlace de activación está incompleto. Ábralo de nuevo desde el correo.");
+});
+
+it("explains the reset request form and its errors as usted (N19)", async () => {
+  stub(() => new Response(JSON.stringify({ status: 503, title: "Unavailable" }),
+    { status: 503, headers: { "content-type": "application/problem+json" } }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><PasswordLinkExperience mode="reset" /></AirlineSessionProvider>);
+  expect(screen.getByRole("heading", { name: "¿Olvidó su contraseña?" })).toBeInTheDocument();
+  expect(screen.getByText("Escriba el correo de su cuenta y le enviaremos un enlace para crear una nueva."))
+    .toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Correo corporativo"), { target: { value: "nobody" } });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar enlace" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Escriba un correo válido.");
+  fireEvent.change(screen.getByLabelText("Correo corporativo"), { target: { value: "nobody@example.test" } });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar enlace" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo enviar la solicitud. Reintente en unos minutos.");
+});
+
+it.each([
+  ["activate", 400, "invalid_link", "El enlace no es válido, ya se usó o venció. Pida a AVIAM que reenvíe la invitación."],
+  ["reset", 429, undefined, "Demasiados intentos. Espere un momento antes de reintentar."],
+  ["reset", 503, undefined, "No se pudo conectar con ELEVANT. Reintente en unos minutos."],
+] as const)("explains the %s link refused with %i as usted (N19)", async (mode, status, code, message) => {
+  stub(() => new Response(JSON.stringify({ status, code, title: "Refused" }),
+    { status, headers: { "content-type": "application/problem+json" } }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><PasswordLinkExperience mode={mode} token={token} /></AirlineSessionProvider>);
+  fill("Synthetic-Activated!2026");
+  fireEvent.click(screen.getByRole("button", { name: mode === "activate" ? "Activar cuenta" : "Guardar contraseña" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
 });

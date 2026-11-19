@@ -114,8 +114,8 @@ export function CredentialPanel() {
         <p className={styles.kicker}>{label ? `Portal de aerolíneas · ${label}` : "Portal de aerolíneas"}</p>
         <h1 id="auth-title">La operación, visible para quien debe verla.</h1>
         <p className={styles.credentialLead}>
-          Consulta las operaciones de tu aerolínea en las estaciones autorizadas
-          para tu cuenta.
+          Consulte las operaciones de su aerolínea en las estaciones autorizadas
+          para su cuenta.
         </p>
 
         <div className={styles.routeCard}>
@@ -156,14 +156,15 @@ export function CredentialPanel() {
   );
 }
 
+// N19: everything the airline reads in the access addresses it as usted.
 function signInFailureMessage(reason: AirlineSignInFailure): string {
   switch (reason) {
-    case "invalid": return "No se pudo validar la cuenta. Revisa el correo y la contraseña.";
+    case "invalid": return "No se pudo validar la cuenta. Revise el correo y la contraseña.";
     case "forbidden": return "Esta cuenta no tiene acceso al portal de aerolíneas.";
-    case "context": return "Los datos de tu aerolínea no están disponibles ahora. Reintenta en unos minutos.";
-    case "password-change-required": return "Debes cambiar la contraseña temporal antes de entrar.";
-    case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
-    case "unavailable": return "No se pudo conectar con ELEVANT. Comprueba la conexión y reintenta.";
+    case "context": return "Los datos de su aerolínea no están disponibles ahora. Reintente en unos minutos.";
+    case "password-change-required": return "Debe cambiar la contraseña temporal antes de entrar.";
+    case "rate-limited": return "Demasiados intentos. Espere un momento antes de reintentar.";
+    case "unavailable": return "No se pudo conectar con ELEVANT. Compruebe la conexión y reintente.";
   }
 }
 
@@ -233,7 +234,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       setErrors(validation.fieldErrors);
       setFeedback({
         kind: "error",
-        message: "Revisa los campos indicados para continuar.",
+        message: "Revise los campos indicados para continuar.",
       });
       focusField(SIGN_IN_IDS, validation.firstInvalidField);
       return;
@@ -279,7 +280,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     }
     setCode("");
     setFeedback({ kind: "error", message: result.reason === "invalid"
-      ? "El código no es válido o ya venció. Revisa el último correo o pide uno nuevo."
+      ? "El código no es válido o ya venció. Revise el último correo o pida uno nuevo."
       : signInFailureMessage(result.reason as AirlineSignInFailure) });
   };
 
@@ -290,7 +291,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     setPending(false);
     if (!next) {
       setChallenge(null);
-      setFeedback({ kind: "error", message: "El código venció o se bloqueó. Inicia sesión de nuevo." });
+      setFeedback({ kind: "error", message: "El código venció o se bloqueó. Inicie sesión de nuevo." });
       return;
     }
     setChallenge(next);
@@ -331,8 +332,8 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     if (!result.ok) {
       const message = result.reason === "invalid" ? "La contraseña actual no es válida."
         : result.reason === "policy" ? "La nueva contraseña no cumple la política de seguridad. Revise los requisitos de la lista."
-          : result.reason === "rate-limited" ? "Demasiados intentos. Espera antes de reintentar."
-            : "No se pudo cambiar la contraseña. Reintenta en unos minutos.";
+          : result.reason === "rate-limited" ? "Demasiados intentos. Espere antes de reintentar."
+            : "No se pudo cambiar la contraseña. Reintente en unos minutos.";
       setFeedback({ kind: "error", message });
       return;
     }
@@ -340,7 +341,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     setNewPassword("");
     setConfirmPassword("");
     setPasswordChangeRequired(false);
-    setFeedback({ kind: "info", message: "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
+    setFeedback({ kind: "info", message: "Contraseña actualizada. Inicie sesión con su nueva contraseña." });
   };
 
   return (
@@ -353,10 +354,10 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     >
       <header className={styles.formHeader}>
         <p className={styles.formKicker}>Acceso autorizado</p>
-        <h2 id="login-heading">Continúa al portal de tu aerolínea.</h2>
+        <h2 id="login-heading">Continúe al portal de su aerolínea.</h2>
         <p>
-          Utiliza la cuenta emitida para tu aerolínea. Al entrar comprobamos tu
-          acceso y las estaciones autorizadas para tu cuenta.
+          Utilice la cuenta emitida para su aerolínea. Al entrar comprobamos su
+          acceso y las estaciones autorizadas para su cuenta.
         </p>
       </header>
 
@@ -376,7 +377,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
           onChange={(value) => { setCode(value.replace(/\D/g, "").slice(0, 6)); setFeedback(null); }}
           onBlur={() => {}} required />
         <p className={styles.localOnly} aria-live="polite">
-          {secondsLeft > 0 ? `Vence en ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "El código venció; pide uno nuevo."}
+          {secondsLeft > 0 ? `Vence en ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "El código venció; pida uno nuevo."}
         </p>
         {feedback && <div className={styles.feedback} data-kind={feedback.kind} role={feedback.kind === "error" ? "alert" : "status"}><InfoIcon /><p>{feedback.message}</p></div>}
         <button className={styles.primaryButton} type="submit" disabled={pending || code.length !== 6 || secondsLeft === 0}>
@@ -419,7 +420,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
 
         <div className={styles.formOptions}>
           <span className={styles.localOnly}>Sesión temporal en esta pestaña</span>
-          <Link href="/recuperar">¿Olvidaste tu contraseña?</Link>
+          <Link href="/recuperar">¿Olvidó su contraseña?</Link>
         </div>
 
         {feedback && !challenge && (
@@ -474,7 +475,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
         <button className={styles.primaryButton} type="submit" disabled={pending}>Cambiar contraseña</button>
       </form>}
 
-      <p className={styles.requestLink}>¿No tienes credenciales? <Link href="/solicitar-acceso">Solicita acceso aquí</Link></p>
+      <p className={styles.requestLink}>¿No tiene credenciales? <Link href="/solicitar-acceso">Solicite acceso aquí</Link></p>
 
       <p className={styles.formDisclaimer}>
         La sesión se revalida al recargar y termina al cerrar sesión o vencer el token.

@@ -1,10 +1,14 @@
 # ELEVANT Public Web
 
-El login ofrece el enlace «¿No tienes credenciales? Solicita acceso aquí»;
-la solicitud permanece en `/solicitar-acceso`. Las fotos de servicios y los
-logos del catálogo se sirven como recursos locales o por la API cuando fueron
-subidos por el equipo autorizado. Las fichas históricas sin logo oficial
-verificable usan una placa rotulada como referencia, nunca una marca simulada.
+El login ofrece el enlace «¿No tiene credenciales? Solicite acceso aquí»;
+la solicitud permanece en `/solicitar-acceso`. Los textos de Public Web (sitio
+público, acceso y portal) tratan de usted a la aerolínea y las etiquetas de los
+campos son neutras. Todavía la tutean los correos de la API y los avisos de
+formato del documento y del RNC, que vienen del cliente compartido. Las fotos
+de servicios y los logos del catálogo se sirven como recursos locales o por la
+API cuando fueron subidos por el equipo autorizado. Las fichas históricas sin
+logo oficial verificable usan una placa rotulada como referencia, nunca una
+marca simulada.
 
 Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 

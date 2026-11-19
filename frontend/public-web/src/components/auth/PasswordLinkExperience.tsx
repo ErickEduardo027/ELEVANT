@@ -21,31 +21,32 @@ const PASSWORD_IDS: Record<PasswordInputField, string> = {
   confirmation: "link-confirmation",
 };
 
+// N19: activation and recovery address the airline as usted, like the rest of the access.
 const COPY: Record<Mode, { kicker: string; title: string; lead: string; action: string; done: string }> = {
   activate: {
     kicker: "Activación de cuenta",
-    title: "Crea la contraseña de tu cuenta.",
-    lead: "Al guardarla confirmamos tu correo y la cuenta queda lista para entrar al portal.",
+    title: "Cree la contraseña de su cuenta.",
+    lead: "Al guardarla confirmamos su correo y la cuenta queda lista para entrar al portal.",
     action: "Activar cuenta",
-    done: "Cuenta activada. Ya puedes iniciar sesión: al entrar te pediremos el código que llega a tu correo.",
+    done: "Cuenta activada. Ya puede iniciar sesión: al entrar le pediremos el código que llega a su correo.",
   },
   reset: {
     kicker: "Recuperación de contraseña",
-    title: "Elige una contraseña nueva.",
-    lead: "Al guardarla se cierran todas las sesiones abiertas de tu cuenta.",
+    title: "Elija una contraseña nueva.",
+    lead: "Al guardarla se cierran todas las sesiones abiertas de su cuenta.",
     action: "Guardar contraseña",
-    done: "Contraseña actualizada. Inicia sesión con la contraseña nueva.",
+    done: "Contraseña actualizada. Inicie sesión con la contraseña nueva.",
   },
 };
 
 function linkMessage(result: Exclude<AirlineLinkResult, { ok: true }>, mode: Mode): string {
   switch (result.reason) {
     case "invalid-link": return mode === "activate"
-      ? "El enlace no es válido, ya se usó o venció. Pide a AVIAM que reenvíe la invitación."
-      : "El enlace no es válido, ya se usó o venció. Solicita uno nuevo.";
+      ? "El enlace no es válido, ya se usó o venció. Pida a AVIAM que reenvíe la invitación."
+      : "El enlace no es válido, ya se usó o venció. Solicite uno nuevo.";
     case "policy": return "La contraseña no cumple la política de seguridad. Revise los requisitos de la lista y vuelva a intentarlo.";
-    case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
-    case "unavailable": return "No se pudo conectar con ELEVANT. Reintenta en unos minutos.";
+    case "rate-limited": return "Demasiados intentos. Espere un momento antes de reintentar.";
+    case "unavailable": return "No se pudo conectar con ELEVANT. Reintente en unos minutos.";
   }
 }
 
@@ -62,7 +63,7 @@ export function PasswordLinkExperience({ mode, token }: { mode: Mode; token?: st
           <div className={styles.formShell}>
             {token ? <SetPasswordForm mode={mode} token={token} />
               : mode === "reset" ? <RequestResetForm />
-                : <p role="alert">El enlace de activación está incompleto. Ábrelo de nuevo desde el correo.</p>}
+                : <p role="alert">El enlace de activación está incompleto. Ábralo de nuevo desde el correo.</p>}
           </div>
         </section>
       </main>
@@ -155,7 +156,7 @@ function RequestResetForm() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
-      setMessage({ kind: "error", text: "Escribe un correo válido." });
+      setMessage({ kind: "error", text: "Escriba un correo válido." });
       return;
     }
     setPending(true);
@@ -163,16 +164,16 @@ function RequestResetForm() {
     setPending(false);
     // The answer never says whether the email has an account.
     setMessage(result.ok
-      ? { kind: "info", text: "Si el correo pertenece a una cuenta del portal, recibirás un enlace válido por 30 minutos." }
-      : { kind: "error", text: "No se pudo enviar la solicitud. Reintenta en unos minutos." });
+      ? { kind: "info", text: "Si el correo pertenece a una cuenta del portal, recibirá un enlace válido por 30 minutos." }
+      : { kind: "error", text: "No se pudo enviar la solicitud. Reintente en unos minutos." });
   };
 
   return (
     <div className={styles.tabPanel} role="region" aria-labelledby="reset-heading">
       <header className={styles.formHeader}>
         <p className={styles.formKicker}>{COPY.reset.kicker}</p>
-        <h2 id="reset-heading">¿Olvidaste tu contraseña?</h2>
-        <p>Escribe el correo de tu cuenta y te enviaremos un enlace para crear una nueva.</p>
+        <h2 id="reset-heading">¿Olvidó su contraseña?</h2>
+        <p>Escriba el correo de su cuenta y le enviaremos un enlace para crear una nueva.</p>
       </header>
       <form className={styles.form} onSubmit={submit} noValidate>
         <div className={styles.field}>

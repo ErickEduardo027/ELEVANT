@@ -450,3 +450,21 @@ it("explains a card rejected before the gateway and lists every attempt", async 
   fireEvent.click(within(form).getByRole("button", { name: "Pagar USD 148.09" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("El número de tarjeta no es válido.");
 });
+
+// N19: every page of the portal addresses the airline as usted.
+it("addresses the airline as usted in requests, documents and reports (N19)", async () => {
+  getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
+  const page = render(<AirlinePortalPage view="requests" />);
+  expect(screen.getByText("Consulte las solicitudes operativas registradas para su aerolínea. La creación y cancelación "
+    + "todavía no están habilitadas.")).toBeInTheDocument();
+
+  page.rerender(<AirlinePortalPage view="documents" />);
+  expect(screen.getByText("Facturas emitidas para su aerolínea en PDF.")).toBeInTheDocument();
+  getInvoiceDocument.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  fireEvent.click(await screen.findByRole("button", { name: "Descargar PDF de Factura E310000000001" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo descargar el PDF. Inténtelo de nuevo.");
+
+  page.rerender(<AirlinePortalPage view="reports" />);
+  expect(screen.getByText("Consulte las operaciones y facturas de su aerolínea. Esta vista muestra la primera página de "
+    + "cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.")).toBeInTheDocument();
+});
