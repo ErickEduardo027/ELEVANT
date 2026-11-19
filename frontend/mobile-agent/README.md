@@ -176,9 +176,10 @@ contiene secretos.
   - Las dos funciones leen la hora con `formatToParts`. En un motor que no lo
     trae, la leen del texto que escribe `en-US`. Un motor que cuenta hasta 24
     o que escribe «07:46 PM» no cambia la hora guardada.
-  - El aporte de OCC y el conflicto muestran las horas con
-    `formatStationDateTime`, «5 oct, 10:00». En el conflicto, la versión
-    guardada y tu intento tienen el mismo formato.
+  - El conflicto muestra las horas con `formatStationDateTime`,
+    «5 oct, 10:00»: la versión guardada y tu intento tienen el mismo formato.
+    El aporte de OCC también va en la hora de la estación, sin la fecha cuando
+    es la del día de la operación (hallazgo N8, abajo).
   - Un reintento envía el comando reservado tal cual, aunque lo haya reservado
     una versión anterior en la zona del equipo.
   - Las incidencias de la operación muestran su hora en la zona de la
@@ -187,6 +188,19 @@ contiene secretos.
     almacenamiento siguen guardando instantes UTC. OCC y Gestión Humana no
     cambian en esta entrega: el panel de OCC edita en la zona del navegador y
     la revisión de Gestión Humana muestra UTC.
+- La tarjeta de asistencia con el estilo de la app (hallazgo N8, en parte;
+  D-N8):
+  - Todos sus textos toman el tamaño y el peso de `type` y el color de la
+    paleta (`src/theme/tokens.ts` y `src/theme/colors.ts`). Los campos miden
+    56 dp (`touch.min`, ADR-0031) y usan la letra de «Datos del vuelo».
+  - Si OCC no registró horas ni nota, su aporte dice «OCC aún no registra
+    horas.» en una sola línea, en lugar de cinco líneas vacías. Con datos dice
+    «Inicio 19:48 · Fin —», la nota y «Registrado 16 nov, 19:50».
+  - Una hora que no cae en el día de la operación en la estación lleva su
+    fecha, «Fin 17 nov, 00:30». El detalle le pasa ese día a la tarjeta
+    (`operationDate`); sin él, todas las horas llevan su fecha.
+  - Se mantienen los contadores de revisión, y las horas se siguen escribiendo
+    a mano: D-N8 deja el selector de hora para otra entrega.
 
 ## Autorización y almacenamiento
 

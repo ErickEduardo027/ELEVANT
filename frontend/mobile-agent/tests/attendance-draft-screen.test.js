@@ -102,3 +102,11 @@ test('passes the station’s zone and code to assistance and names the station�
   expect(texts.join(' ')).not.toContain('Horario local');
   await renderer.act(async () => tree.unmount());
 });
+
+// N8: the card shows OCC's hours on the operation's day without their date, so it needs that day.
+test('passes the operation’s day to assistance', async () => {
+  let tree;
+  await renderer.act(async () => { tree = renderer.create(React.createElement(Screen)); });
+  expect(mockCard.mock.lastCall[0]).toMatchObject({ operationDate: '2026-10-05' });
+  await renderer.act(async () => tree.unmount());
+});

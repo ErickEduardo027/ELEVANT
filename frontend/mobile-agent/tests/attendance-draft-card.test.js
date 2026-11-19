@@ -1,5 +1,6 @@
 const React = require('react');
 const renderer = require('react-test-renderer');
+const { StyleSheet } = require('react-native');
 
 const mockRead = jest.fn();
 const mockSave = jest.fn();
@@ -291,8 +292,9 @@ describe('the station’s clock (S6, D-S6)', () => {
     expect(text).not.toContain('zona de este dispositivo');
     expect(text).not.toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
     expect(text).not.toMatch(IANA_ID);
-    // OCC's 10:00 UTC and the agent's 12:00 UTC on Kathmandu's clock (UTC+5:45).
-    expect(text).toMatch(/Inicio:\s+5 oct\.?,? 15:45/);
+    // OCC's 10:00 UTC and the agent's 12:00 UTC on Kathmandu's clock (UTC+5:45). Without the operation's day, OCC's
+    // time carries its date (N8).
+    expect(text).toMatch(/Inicio 5 oct\.?,? 15:45 · Fin —/);
     expect(field('Fin observado').props.value).toBe('2026-10-05 17:45');
     // The labels the screen reader announces do not change.
     expect(field('Inicio observado')).toBeDefined();
@@ -365,4 +367,172 @@ describe('the station’s clock (S6, D-S6)', () => {
     await renderer.act(async () => press('Guardar observación'));
     expect(mockSave.mock.calls[0][2].observedStartAt).toBe('2026-10-05T14:07:00.000Z');
   });
+});
+
+// N8 (D-N8, in part): the card is drawn like the rest of the tablet. Every text takes its size and weight from the
+// type tokens and its colour from the palette, and the fields are 56 dp high (touch.min, ADR-0031) with the
+// typography of «Datos del vuelo». OCC's lane says «OCC aún no registra horas.» in one line instead of five empty
+// ones; with data it reads «Inicio 19:48 · Fin —», with the date when it is not the operation's day, the note and
+// «Registrado 16 nov, 19:50». The revision counters stay, and the hours are still typed: no time picker yet.
+describe('the app’s style and OCC’s lane (N8, D-N8)', () => {
+  const tokens = require('../src/theme/tokens');
+  const { colors } = require('../src/theme/colors');
+  const TYPE_TOKENS = Object.values(tokens.type).map(token => `${token.fontSize}/${token.fontWeight}`);
+  const PALETTE = Object.values(colors);
+  const PUJ = { timeZone: 'America/Santo_Domingo', stationCode: 'PUJ' };
+  const occ = overrides => ({ ...contribution(1, null), ...overrides });
+  // A text as the agent reads it, numbers included: textContent() drops a number child such as «Revisión {1}».
+  const lineOf = node => [].concat(node.props.children).flat(Infinity)
+    .filter(value => typeof value === 'string' || typeof value === 'number').join('');
+  const box = node => {
+    let parent = node.parent;
+    while (parent && parent.type !== 'View') parent = parent.parent;
+    return parent;
+  };
+  /** The lines of the lane headed `title`, the title first. */
+  function lane(title) {
+    const heading = tree.root.findAll(node => node.type === 'Text' && lineOf(node) === title)[0];
+    expect(heading).toBeDefined();
+    return box(heading).findAll(node => node.type === 'Text').map(lineOf);
+  }
+  /** The texts drawn with the system's font, or in a colour that is not the palette's. */
+  function offTokenTexts() {
+    return tree.root.findAll(node => node.type === 'Text').filter(node => {
+      const style = StyleSheet.flatten(node.props.style) ?? {};
+      return !TYPE_TOKENS.includes(`${style.fontSize}/${style.fontWeight}`) || !PALETTE.includes(style.color);
+    }).map(lineOf);
+  }
+  const input = label => tree.root.findAll(node =>
+    node.props.accessibilityLabel === label && typeof node.props.onChangeText === 'function')[0];
+  const reread = () => renderer.act(async () => mockSubscribe.mock.calls[0][0](['attendance_draft']));
+
+  // A test that stops half-way must not leave its queued answers to the next one.
+  beforeEach(() => {
+    mockRead.mockReset().mockResolvedValue(snapshot());
+    mockReadPending.mockReset().mockResolvedValue(null);
+    mockSave.mockReset().mockResolvedValue({ contribution: contribution(1, 'Observado'), replayed: false });
+  });
+
+  test('without OCC’s contribution the lane says so in one line', async () => {
+    mockRead.mockResolvedValue({ ...snapshot(), occ: null });
+    await render(PUJ);
+    expect(textContent()).toContain('OCC aún no registra horas.');
+    // «Inicio: Sin registrar», «Fin: Sin registrar», «Sin nota de OCC», «Guardado: Sin registrar» and «Revisión 0»
+    // are gone.
+    expect(lane('Aporte de OCC')).toEqual(['Aporte de OCC', 'OCC aún no registra horas.']);
+  });
+
+  test('a note without hours is shown, with when OCC recorded it and its revision', async () => {
+    // snapshot(): OCC wrote a note at 10:00 UTC, 06:00 at PUJ, and no hours.
+    await render({ ...PUJ, operationDate: '2026-10-05' });
+    expect(lane('Aporte de OCC')).toEqual(['Aporte de OCC', 'Inicio — · Fin —', 'Turno confirmado por OCC',
+      expect.stringMatching(/^Registrado 5 oct\.?,? 06:00$/), 'Revisión 1']);
+    expect(textContent()).not.toContain('OCC aún no registra horas');
+  });
+
+  test('OCC’s hours read «Inicio 19:48 · Fin —» on the operation’s day, with their date on another', async () => {
+    mockRead.mockResolvedValueOnce({ ...snapshot(), occ: occ({ revision: 2,
+      observedStartAt: '2026-11-16T23:48:00Z', recordedAt: '2026-11-16T23:50:00Z' }) })
+      .mockResolvedValueOnce({ ...snapshot(), occ: occ({ revision: 3, observedStartAt: '2026-11-16T23:48:00Z',
+        observedEndAt: '2026-11-17T04:30:00Z', incidentNote: 'Relevo después de medianoche',
+        recordedAt: '2026-11-17T04:35:00Z' }) });
+    await render({ ...PUJ, operationDate: '2026-11-16' });
+    expect(lane('Aporte de OCC')).toEqual(['Aporte de OCC', 'Inicio 19:48 · Fin —',
+      expect.stringMatching(/^Registrado 16 nov\.?,? 19:50$/), 'Revisión 2']);
+    await reread();
+    // 04:30 UTC is 00:30 on 17 November at PUJ, the day after the operation's.
+    expect(lane('Aporte de OCC')).toEqual(['Aporte de OCC',
+      expect.stringMatching(/^Inicio 19:48 · Fin 17 nov\.?,? 00:30$/), 'Relevo después de medianoche',
+      expect.stringMatching(/^Registrado 17 nov\.?,? 00:35$/), 'Revisión 3']);
+  });
+
+  test('the operation’s day is the station’s, never UTC’s or the device’s', async () => {
+    mockRead.mockResolvedValue({ ...snapshot(), occ: occ({
+      // 01:45 on 5 October in Kathmandu (UTC+5:45): still 4 October in UTC and on this device.
+      observedStartAt: '2026-10-04T20:00:00Z',
+      // 00:45 on 6 October in Kathmandu: still 5 October in UTC and on this device.
+      observedEndAt: '2026-10-05T19:00:00Z' }) });
+    await render({ timeZone: 'Asia/Kathmandu', stationCode: 'KTM', operationDate: '2026-10-05' });
+    expect(lane('Aporte de OCC')[1]).toMatch(/^Inicio 01:45 · Fin 6 oct\.?,? 00:45$/);
+  });
+
+  test('the fields are 56 dp high (touch.min, ADR-0031) and use the typography of «Datos del vuelo»', async () => {
+    await render(PUJ);
+    const fields = tree.root.findAll(node => node.type === 'TextInput');
+    expect(fields.map(node => node.props.accessibilityLabel))
+      .toEqual(['Inicio observado', 'Fin observado', 'Nota del agente']);
+    for (const field of fields) {
+      const style = StyleSheet.flatten(field.props.style);
+      expect(style.minHeight).toBeGreaterThanOrEqual(56);
+      expect(style).toMatchObject({ fontSize: 18, fontWeight: '700', color: colors.ink });
+    }
+  });
+
+  test('both revision counters stay (D-N8)', async () => {
+    mockRead.mockResolvedValue({ ...snapshot(contribution(4, 'Mi nota')),
+      occ: occ({ revision: 2, observedStartAt: '2026-10-05T10:00:00Z' }) });
+    await render({ ...PUJ, operationDate: '2026-10-05' });
+    expect(lane('Aporte de OCC')).toContain('Revisión 2');
+    expect(lane('Tu observación')).toContain('Revisión guardada 4');
+  });
+
+  const pending = { idempotencyKey: key,
+    request: { expectedRevision: 0, observedStartAt: null, observedEndAt: null, incidentNote: 'En revisión' } };
+  const states = {
+    'loading': async () => {
+      mockRead.mockReturnValue(new Promise(() => {}));
+      await render(PUJ);
+      return 'Cargando observaciones…';
+    },
+    'unavailable, with its notice': async () => {
+      mockRead.mockRejectedValue(new MobileServiceError('network_unavailable'));
+      await render(PUJ);
+      return 'Observaciones no disponibles.';
+    },
+    'without OCC’s contribution': async () => {
+      mockRead.mockResolvedValue({ ...snapshot(), occ: null });
+      await render(PUJ);
+      return 'OCC aún no registra horas.';
+    },
+    'with OCC’s hours, the agent’s revision and a validation error': async () => {
+      mockRead.mockResolvedValue({ ...snapshot(contribution(1, 'Mi nota')),
+        occ: occ({ observedStartAt: '2026-10-05T10:00:00Z', incidentNote: 'Turno confirmado por OCC' }) });
+      await render({ ...PUJ, operationDate: '2026-10-05' });
+      await renderer.act(async () => input('Inicio observado').props.onChangeText('mañana'));
+      await renderer.act(async () => press('Guardar observación'));
+      return 'Comprueba fecha, hora y nota antes de guardar. Usa AAAA-MM-DD HH:mm.';
+    },
+    'waiting for confirmation': async () => {
+      mockReadPending.mockResolvedValue(pending);
+      await render(PUJ);
+      return 'Pendiente de confirmar';
+    },
+    'in conflict with the saved version': async () => {
+      mockRead
+        .mockResolvedValueOnce(snapshot({ ...contribution(1, 'Igual'), observedStartAt: '2026-10-05T10:00:00Z' }))
+        .mockResolvedValueOnce(snapshot({ ...contribution(2, 'Igual'), observedStartAt: '2026-10-05T11:00:00Z' }));
+      await render(PUJ);
+      await renderer.act(async () => input('Inicio observado').props.onChangeText('2026-10-05 08:00'));
+      await reread();
+      return 'Conflicto con la revisión actual del agente.';
+    },
+    'in conflict before the saved version is read': async () => {
+      mockRead.mockResolvedValueOnce(snapshot(contribution(1, 'Inicial')))
+        .mockRejectedValueOnce(new MobileServiceError('network_unavailable'));
+      mockSave.mockRejectedValueOnce(new MobileServiceError('conflict', { status: 409 }));
+      mockReadPending.mockResolvedValueOnce(null).mockResolvedValue({ ...pending,
+        request: { ...pending.request, expectedRevision: 1 } });
+      await render(PUJ);
+      await renderer.act(async () => input('Nota del agente').props.onChangeText('En revisión'));
+      await renderer.act(async () => press('Guardar observación'));
+      return 'Actualiza la versión guardada antes de decidir.';
+    },
+  };
+
+  test.each(Object.keys(states))('every text takes its type from the tokens and its colour from the palette: %s',
+    async name => {
+      const shown = await states[name]();
+      expect(textContent()).toContain(shown);
+      expect(offTokenTexts()).toEqual([]);
+    });
 });

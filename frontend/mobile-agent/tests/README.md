@@ -126,5 +126,17 @@ código de la estación y titula los vuelos «Hora local de PUJ».
 `incident-screen.test.js` monta las incidencias: su hora es la de la estación y,
 sin la operación o sin una zona conocida, la de Santo Domingo.
 
+`attendance-draft-card.test.js` fija también el estilo de la tarjeta de
+asistencia (N8, D-N8). En cada estado (cargando, no disponible, sin aporte de
+OCC, con horas y un error de validación, pendiente de confirmar y los dos
+conflictos), todos los textos usan un tamaño y un peso de `type` y un color de
+la paleta. Los tres campos miden 56 dp o más con la letra de «Datos del vuelo».
+Sin aporte de OCC, su carril dice solo «OCC aún no registra horas.». Una nota
+sin horas se muestra con «Inicio — · Fin —», «Registrado …» y su revisión. Las
+horas del día de la operación salen sin fecha y las de otro día con ella, según
+el día en la estación (Katmandú) y no el de UTC ni el del equipo. Los dos
+contadores de revisión siguen. `attendance-draft-screen.test.js` comprueba que
+el detalle pasa el día de la operación a la tarjeta.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

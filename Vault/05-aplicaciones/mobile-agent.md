@@ -254,7 +254,9 @@ equipo
   vez.
 - El aporte de OCC y el conflicto muestran las horas en el formato de la
   tablet, «5 oct, 10:00». En el conflicto, la versión guardada y el intento
-  tienen el mismo formato.
+  tienen el mismo formato. Desde el hallazgo N8, el aporte de OCC omite la
+  fecha de las horas del día de la operación, «Inicio 10:00 · Fin —»
+  ([asistencia compartida](asistencia-compartida-occ-agente.md)).
 - Un reintento envía el comando reservado tal cual.
 - Las incidencias de la operación muestran su hora en la zona de la estación.
 - Si la tablet no conoce la zona, usa `America/Santo_Domingo`.

@@ -698,6 +698,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           active={focused}
           stationCode={turnaround.station.code}
           timeZone={timeZone}
+          operationDate={turnaround.operationDate}
         />
       )}
 
