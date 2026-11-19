@@ -361,6 +361,19 @@ bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
 - **Relevo.** OCC pasa una operación en curso o devuelta a otro agente
   elegible, con motivo; la operación conserva su estado y su evidencia. Una
   operación iniciada sigue a su agente aunque cambien su posición o su terminal.
+- **El turno cubre toda la escala.** *Posterior al commit verificado (hallazgo
+  N24, 19 de noviembre de 2026):* un agente solo es elegible si su turno en la
+  terminal cubre toda la ventana planificada de la operación, de la llegada a la
+  salida, y no solo su inicio
+  ([`OccShiftCoveragePolicy`](../../backend/Elevant.Application/Operations/OccShiftCoveragePolicy.cs)).
+  Con un turno de 11:00 a 20:00, una escala de 19:53 a 20:53 da «Turno no
+  compatible» (`shift_not_compatible`), y Planificación sigue ofreciendo
+  «Ajustar turno del día». Una asignación hecha después del inicio planificado
+  solo exige lo que queda de la escala, desde la hora del servidor; una escala
+  que ya terminó se juzga entera, y una operación sin ventana, a su hora de
+  referencia, como antes. La regla del mentor no cambia (D-N24). La regla es la
+  misma en la asignación, la reasignación por cambio de posición, el relevo y el
+  sorteo del vuelo demo.
 - **Contrato.** La tablet no inicia una operación si ningún contrato cubre ya su
   fecha, salvo un charter, y OCC recibe un aviso por cada operación sin iniciar
   cuando un contrato deja de estar en vigor.
@@ -428,6 +441,10 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
   regla real de asignación. Una posición elegida a mano también tiene que ser
   elegible
   ([elegibilidad](../../backend/Elevant.Application/Operations/DemoStation/DemoStandEligibility.cs)).
+  *Posterior al commit verificado (hallazgo N24, 19 de noviembre de 2026):* esa
+  regla exige que el turno del agente cubra toda la escala, de la llegada a la
+  salida, así que «Al azar» ya no elige una posición cuyo agente termina su
+  turno antes de que el avión salga.
 
 No se ha verificado en el VPS.
 

@@ -4580,13 +4580,15 @@ public sealed partial class SqlServerMigrationTests
                         cancellationToken);
                 Assert.Equal(1, changed);
 
+                // N24: the night shift runs past the end of the stay (10:30), so it covers all of it, as the day
+                // shift does: two compatible shifts leave the position ambiguous.
                 var overlappingShiftChanged = await administratorContext.ShiftAssignments
                     .Where(item => item.RampAgentId == riley.Id &&
                         item.WorkDate == new DateOnly(2026, 8, 18))
                     .ExecuteUpdateAsync(
                         setters => setters
                             .SetProperty(item => item.StartsAtLocal, new TimeOnly(22, 0))
-                            .SetProperty(item => item.EndsAtLocal, new TimeOnly(9, 0)),
+                            .SetProperty(item => item.EndsAtLocal, new TimeOnly(11, 0)),
                         cancellationToken);
                 Assert.Equal(1, overlappingShiftChanged);
             }

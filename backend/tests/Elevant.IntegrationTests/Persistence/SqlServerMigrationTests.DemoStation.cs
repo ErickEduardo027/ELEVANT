@@ -612,7 +612,7 @@ public sealed partial class SqlServerMigrationTests
     /// The options evaluate the visit the form asks about: a wide-body is not free on a narrow-body stand, a flight
     /// planned later only overlaps the longer visit (and cancels the stand a combined-stand rule ties to its own), every
     /// stand is judged as each command that places a flight judges it, and an agent whose shift ends before the aircraft
-    /// parks may not take it although their coverage goes on.
+    /// leaves may not take it although their coverage goes on (N24).
     /// </summary>
     [Fact]
     public async Task OptionsUseTheFormWindowAndTheAircraftSize()
@@ -641,7 +641,7 @@ public sealed partial class SqlServerMigrationTests
             LocalAt(demo.Day, 21, 30), LocalAt(demo.Day, 22, 30), ct);
         Assert.True(planned.IsSuccess, planned.Code);
         Assert.False((await demo.Stand("A02", Visit(8))).Free);
-        Assert.True((await demo.Stand("A02", Visit(8, ground: 20))).Eligible);
+        Assert.True((await demo.Stand("A02", Visit(8, ground: 20))).Free);
         // A combined stand (ADR-0030): while A02 is occupied it cancels A03, which is not free for the hour either.
         Assert.Null((await demo.Run(services => services.GetRequiredService<IPositionCoverageStore>()
             .AddConstraintAsync(SeededOccAccount, new StandConstraintInput(demo.Stands["A02"], demo.Stands["A03"], "Cancels"),
@@ -671,11 +671,53 @@ public sealed partial class SqlServerMigrationTests
                 (Reasons("A02"), Reasons("A03"), Reasons("BN6"), Reasons("A01")));
         }
 
-        // The agent's coverage of A01 goes on until 23:00, but their shift ends at 21:00: parking at 20:48 they may take
-        // the flight, at 21:10 they may not.
+        // The agent's coverage of A01 goes on until 23:00, but their shift ends at 21:00: an hour from 20:48 leaves
+        // after it, and the shift must cover the whole visit (N24). With the shift from 06:00 to 22:00 that hour is
+        // theirs, while an hour from 21:10 still leaves after their shift ends, although their coverage goes on.
         await CoverStandsAsync(database.ConnectionString, demo.Agent, ["A01"], LocalAt(demo.Day, 20), LocalAt(demo.Day, 23), ct);
+        Assert.Equal(("A01", true, "Riley Ramp", 0, false, "shift_not_compatible"),
+            DemoStandRow(await demo.Stand("A01", Visit(8))));
+        await using (var setup = CreateContext(database.ConnectionString))
+            await setup.ShiftAssignments.Where(item => item.RampAgentId == demo.Agent && item.WorkDate == demo.Day)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.StartsAtLocal, new TimeOnly(6, 0))
+                    .SetProperty(item => item.EndsAtLocal, new TimeOnly(22, 0)), ct);
         Assert.Equal(("A01", true, "Riley Ramp", 1, true, ""), DemoStandRow(await demo.Stand("A01", Visit(8))));
         Assert.Equal(("A01", true, "Riley Ramp", 0, false, "shift_not_compatible"),
             DemoStandRow(await demo.Stand("A01", Visit(30))));
+    }
+
+    /// <summary>
+    /// N24: «Al azar» only draws a stand whose covering agent may work the whole visit. At 20:00 an hour on the
+    /// ground leaves at 21:08, after the seeded agent's shift ends at 21:00: none of the stands they cover is
+    /// eligible, the options say why and «Al azar» has nothing to draw. Fifty minutes leave at 20:58, within the
+    /// shift: «Al azar» draws one of those stands.
+    /// </summary>
+    [Fact]
+    public async Task RandomDemoStandNeedsTheWholeTurnaroundCovered()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var demo = await DemoFlightsAsync(database, ct, start: day => LocalAt(day, 20));
+        var hour = DemoFlightOptionsQuery.Default(SeededPujStation);
+        var covered = (await demo.Options(hour)).Stands.Where(item => DemoCoveredStands.Contains(item.Code));
+        Assert.Equal(DemoCoveredStands.Select(code => (code, true, "Riley Ramp", 0, false, "shift_not_compatible")),
+            covered.Select(DemoStandRow));
+        Assert.Equal([("no_eligible_stand", "shift_not_compatible")],
+            (await demo.Options(hour)).Warnings.Select(DemoWarningRow));
+        var refused = await demo.Trigger(demo.Command() with { StandChoice = "Random" });
+        Assert.Equal((MasterDataFailure.Conflict, "no_eligible_stand", "shift_not_compatible"),
+            (refused.Failure, refused.Code, string.Join('|', refused.Reasons ?? [])));
+        await using (var check = CreateContext(database.ConnectionString))
+            Assert.False(await check.Set<ExternalFlightProposal>().AnyAsync(item => item.Provider == DemoProvider, ct));
+
+        // Leaving at 20:58, the visit is within the shift.
+        var shorter = hour with { GroundMinutes = 50 };
+        Assert.All((await demo.Options(shorter)).Stands.Where(item => DemoCoveredStands.Contains(item.Code)),
+            item => Assert.Equal((item.Code, 1, true), (item.Code, item.EligibleAgents, item.Eligible)));
+        var drawn = await demo.Trigger(demo.Command(ground: 50) with { StandChoice = "Random" });
+        Assert.True(drawn.Failure is null, drawn.Code);
+        Assert.Contains(DemoCoveredStands, code => code == drawn.Value!.SuggestedStandCode);
     }
 }

@@ -5,8 +5,9 @@ namespace Elevant.Application.Operations.DemoStation;
 /// <summary>
 /// Which stands a demo flight can be sent to (ADR-0041, owner decision 22, contracts 1.1): a stand is eligible when the
 /// map knows where it is, it is free during the visit and an agent who covers it at the on-block instant passes the
-/// real assignment rule (<see cref="OccAgentEligibilityPolicy"/>). Only eligible stands enter the random draw, and a
-/// stand chosen by hand must be eligible too.
+/// real assignment rule (<see cref="OccAgentEligibilityPolicy"/>) for the whole visit, so their shift lasts until the
+/// aircraft leaves (N24, <see cref="OccShiftCoveragePolicy.CoversOperation"/>). Only eligible stands enter the random
+/// draw, and a stand chosen by hand must be eligible too.
 /// </summary>
 public static class DemoStandEligibility
 {
@@ -40,7 +41,8 @@ public static class DemoStandEligibility
 
     /// <summary>
     /// Whether a stand is eligible, given whether it is located and free and the agents who cover it at the on-block
-    /// instant, evaluated with the assignment rule. <c>EligibleAgents</c> counts the covering agents who pass it.
+    /// instant, evaluated with the assignment rule for the whole visit. <c>EligibleAgents</c> counts the covering
+    /// agents who pass it.
     /// <c>Reasons</c> explains a located and free stand that is not eligible: <c>stand_not_covered</c> when nobody covers
     /// it, otherwise the rule's codes of the agents who do, each once and in <see cref="ReasonOrder"/>. It is empty for an
     /// eligible stand and for one that is not located or not free, which its flags already explain.
