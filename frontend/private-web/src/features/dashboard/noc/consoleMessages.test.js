@@ -132,6 +132,13 @@ describe('consoleMessages', () => {
     // Every status of a strip and every action of a pending item has its words.
     for (const key of FLIGHT_STATUS_KEYS) expect(consoleMessages.es.status[key], key).toBeTruthy();
     for (const action of PENDING_ACTIONS) expect(consoleMessages.es.pending.actions[action], action).toBeTruthy();
+    // N25: a tab whose flights all wait in «Por importar» counts them, in both languages.
+    for (const language of ['es', 'en']) {
+      for (const key of ['noneImportedArrivals', 'noneImportedDepartures']) {
+        expect(placeholdersOf(String(consoleMessages[language].board[key] ?? '')), `${language}: board.${key}`)
+          .toEqual(['count']);
+      }
+    }
   });
 
   it('keeps the honesty texts of the old dashboard word for word', () => {

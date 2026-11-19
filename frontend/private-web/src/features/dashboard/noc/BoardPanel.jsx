@@ -28,6 +28,12 @@ const TABS = Object.freeze(['arrivals', 'departures', 'turnarounds']);
 const DIRECTION_TAB = Object.freeze({ Arrival: 'arrivals', Departure: 'departures' });
 const NO_ITEMS = Object.freeze([]);
 const NO_TO_IMPORT = Object.freeze({ arrivals: NO_ITEMS, departures: NO_ITEMS });
+// What a tab of flights says without a strip of its own: none in the map's window, or none imported while «Por
+// importar» lists some. Its count includes those (N25): «Llegadas 2» never sits over «No hay llegadas…».
+const EMPTY_TAB = Object.freeze({
+  arrivals: Object.freeze({ none: 'board.emptyArrivals', toImport: 'board.noneImportedArrivals' }),
+  departures: Object.freeze({ none: 'board.emptyDepartures', toImport: 'board.noneImportedDepartures' }),
+});
 
 /** The id an item of the board is selected by: its map flight's key, else its leg or its turnaround. */
 const itemId = item => item?.flightKey ?? item?.legId ?? item?.turnaroundId ?? null;
@@ -206,12 +212,13 @@ export default function BoardPanel({
   } else {
     const shown = tab === 'arrivals' ? arrivals : departures;
     const pending = tab === 'arrivals' ? toImport.arrivals : toImport.departures;
+    const empty = t(EMPTY_TAB[tab][pending.length > 0 ? 'toImport' : 'none'], { count: pending.length });
     legendKeys = boardLegendKeys({ strips: [...shown, ...pending] });
     panel = (
       <>
         {shown.length > 0
           ? <div className="p-1"><StripList items={shown} {...strip} /></div>
-          : <OccEmptyState title={t(tab === 'arrivals' ? 'board.emptyArrivals' : 'board.emptyDepartures')} className="p-3" />}
+          : <OccEmptyState title={empty} className="p-3" />}
         {pending.length > 0 ? (
           <section aria-labelledby={`${ids}-import`} className="border-t border-occ-line">
             <h3 id={`${ids}-import`} className={CONSOLE_SECTION_TITLE}>{t('board.toImport')}</h3>

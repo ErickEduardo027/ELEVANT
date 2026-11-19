@@ -52,6 +52,9 @@ export const consoleMessages = {
       emptyFilter: 'Ninguna escala coincide con este filtro.',
       emptyArrivals: 'No hay llegadas en la ventana del mapa.',
       emptyDepartures: 'No hay salidas en la ventana del mapa.',
+      // N25: a tab whose flights all wait in «Por importar», which its count includes.
+      noneImportedArrivals: 'Ninguna llegada importada: {count} por importar.',
+      noneImportedDepartures: 'Ninguna salida importada: {count} por importar.',
       visit: {
         noArrival: 'Sin llegada',
         noDeparture: 'Sin salida',
@@ -348,6 +351,8 @@ export const consoleMessages = {
       emptyFilter: 'No turnaround matches this filter.',
       emptyArrivals: 'There are no arrivals in the map window.',
       emptyDepartures: 'There are no departures in the map window.',
+      noneImportedArrivals: 'No arrivals imported: {count} to import.',
+      noneImportedDepartures: 'No departures imported: {count} to import.',
       visit: {
         noArrival: 'No arrival',
         noDeparture: 'No departure',

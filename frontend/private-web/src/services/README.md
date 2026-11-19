@@ -16,7 +16,7 @@ Reservado para adaptadores de API, SignalR y capacidades del navegador. No conti
 
 `commandKeys.js` guarda la `Idempotency-Key` de una intención del usuario: conserva la misma UUID mientras se reintenta la misma acción con el mismo cuerpo tras un resultado incierto (sin respuesta o `5xx`) y la descarta tras cualquier `2xx` o `4xx`. En React se guarda en `useRef(createCommandKeyHolder())`.
 
-`billingUnits.js` muestra las unidades de cobro en español y traduce un nombre heredado («operación») al código activo de «Unidades de cobro». El ciclo comercial guarda siempre el código; las pantallas proponen una unidad activa y nunca envían el nombre.
+`billingUnits.js` muestra las unidades de cobro en español y traduce un nombre heredado («operación») al código activo de «Unidades de cobro». El ciclo comercial guarda siempre el código; las pantallas proponen una unidad activa y nunca envían el nombre. `billingUnitQuantity` escribe una cantidad con su unidad en palabras, en singular solo para 1: «1 hora», «2 horas», «0.5 horas», «0 operaciones» y, en inglés, «2 operations». Una unidad que no conoce no se declina: «2 × código» (hallazgo N21).
 
 `financeErrors.js` reúne los mensajes de Finanzas por `code`: la aprobación de contratos, los tarifarios de servicios y cargos, las unidades de cobro y las tasas de cambio. `financePackagesService.js` hace lo mismo para los paquetes, incluidos el descarte y el retiro.
 

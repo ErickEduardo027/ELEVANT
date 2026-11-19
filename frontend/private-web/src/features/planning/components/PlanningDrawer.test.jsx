@@ -273,6 +273,8 @@ describe('PlanningDrawer', () => {
 
     expect(section.getByText('DEV-CONTRACT').closest('p')).toHaveTextContent('DEV-CONTRACT · versión 1 · USD');
     expect(section.getByText('BAGGAGE').parentElement).toHaveTextContent('BAGGAGE · Baggage handling');
+    // N21: the minimum says its unit in words, as «Asignar agente» of the console shows it too.
+    expect(section.getByText('BAGGAGE').closest('li')).toHaveTextContent(/1 operación$/);
     expect(section.getByText('Elegible')).toBeInTheDocument();
     expect(section.getByText('No elegible')).toBeInTheDocument();
     expect(section.getByText('Turno no compatible')).toBeInTheDocument();
