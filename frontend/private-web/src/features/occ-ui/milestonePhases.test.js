@@ -1,6 +1,6 @@
 import { FLIGHT_REPORT_MILESTONES, FLIGHT_REPORT_PHASES } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
-import { buildMilestonePhases } from './milestonePhases';
+import { buildMilestonePhases, milestoneSequenceNotes } from './milestonePhases';
 
 describe('milestonePhases', () => {
   it('builds the four phases of the flight report with totals 6, 13, 4 and 2', () => {
@@ -47,5 +47,58 @@ describe('milestonePhases', () => {
     expect(arrival.find(item => item.code === 'STAIRS_JETBRIDGE').actualAt).toBeNull();
     expect(phases[2].milestones.find(item => item.code === 'BOARDING').actualAt).toBeNull();
     expect(phases.flatMap(phase => phase.milestones).some(item => item.code === 'FUEL')).toBe(false);
+  });
+});
+
+// N2 (D-N2): a push-back recorded with «En posición» and «Salida» empty released the stand and closed the ground time,
+// and ELEVANT only refuses a block-on after the push-back (3-N25). OCC's review flags such a sequence.
+describe('milestoneSequenceNotes', () => {
+  const notesOf = (milestones, language) => milestoneSequenceNotes(buildMilestonePhases(milestones, language));
+
+  it('says nothing without a recorded push-back', () => {
+    expect(notesOf([])).toEqual([]);
+    expect(notesOf([{ code: 'BLOCK_ON', actualAt: '2026-11-14T18:41:00Z' }])).toEqual([]);
+    // A push-back without a valid time is not recorded.
+    expect(notesOf([{ code: 'PUSHBACK', actualAt: 'pronto' }])).toEqual([]);
+    expect(milestoneSequenceNotes(null)).toEqual([]);
+  });
+
+  it('flags a push-back recorded without the block-on and before «En posición» and «Salida»', () => {
+    expect(notesOf([{ code: 'PUSHBACK', actualAt: '2026-11-14T19:36:00Z' }])).toEqual([
+      { kind: 'noBlockOn' },
+      { kind: 'emptyPhase', phase: 'on_stand', label: 'En posición' },
+      { kind: 'emptyPhase', phase: 'departure', label: 'Salida' },
+    ]);
+    // The phase is named in the review's language.
+    expect(notesOf([
+      { code: 'BLOCK_ON', actualAt: '2026-11-14T18:41:00Z' },
+      { code: 'FIRST_CUSTOMS', actualAt: '2026-11-14T18:52:00Z' },
+      { code: 'PUSHBACK', actualAt: '2026-11-14T19:36:00Z' },
+    ], 'en')).toEqual([{ kind: 'emptyPhase', phase: 'departure', label: 'Departure' }]);
+  });
+
+  it('counts the milestones recorded after the push-back, whatever their phase', () => {
+    expect(notesOf([
+      { code: 'BLOCK_ON', actualAt: '2026-11-14T18:41:00Z' },
+      { code: 'FIRST_CUSTOMS', actualAt: '2026-11-14T18:52:00Z' },
+      { code: 'PUSHBACK', actualAt: '2026-11-14T19:00:00Z' },
+      // At the push-back's own time is not after it.
+      { code: 'PAX_DOOR_CLOSED', actualAt: '2026-11-14T19:00:00Z' },
+      { code: 'LOAD_SHEET', actualAt: '2026-11-14T19:10:00Z' },
+      { code: 'BOARDING', actualAt: '2026-11-14T19:20:00Z' },
+      { code: 'STAIRS_JETBRIDGE_REMOVED', actualAt: '2026-11-14T19:35:00Z' },
+    ])).toEqual([{ kind: 'afterPushback', count: 3 }]);
+  });
+
+  it('leaves a sequence that ends with the push-back alone', () => {
+    expect(notesOf([
+      { code: 'BLOCK_ON', actualAt: '2026-11-14T18:41:00Z' },
+      { code: 'WALKAROUND_START', actualAt: '2026-11-14T18:43:00Z' },
+      { code: 'LOAD_SHEET', actualAt: '2026-11-14T19:05:00Z' },
+      { code: 'BOARDING', actualAt: '2026-11-14T19:10:00Z' },
+      { code: 'PAX_DOOR_CLOSED', actualAt: '2026-11-14T19:28:00Z' },
+      { code: 'STAIRS_JETBRIDGE_REMOVED', actualAt: '2026-11-14T19:30:00Z' },
+      { code: 'PUSHBACK', actualAt: '2026-11-14T19:36:00Z' },
+    ])).toEqual([]);
   });
 });

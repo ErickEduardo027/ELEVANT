@@ -13,7 +13,7 @@ import OccGlyph from '../../occ-ui/OccGlyph';
 import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
 import OccPanel from '../../occ-ui/OccPanel';
 import OccStatusPill from '../../occ-ui/OccStatusPill';
-import { buildMilestonePhases } from '../../occ-ui/milestonePhases';
+import { buildMilestonePhases, milestoneSequenceNotes } from '../../occ-ui/milestonePhases';
 
 // A label over its figure, as the review's other figures read; the figure keeps tabular digits.
 const TERM = 'text-xs font-medium text-occ-muted';
@@ -34,6 +34,9 @@ const ROW = 'flex flex-wrap items-center justify-between gap-2 py-2';
  *
  * U6: the panel keeps the region «Cierre de la operación»; the milestones are the full strip of the flight report in the
  * station's time, and each change is confirmed in a dialog drawn inside the panel, named after its confirm button.
+ *
+ * N2: above the strip, a push-back recorded out of sequence (without the block-on, with «En posición» or «Salida»
+ * empty, or before other milestones) is flagged with attention pills: it released the stand and ended the ground time.
  */
 export default function OperationCloseSection({ detail, disabled, onChanged }) {
   const { t, locale, language } = useTranslation(reviewMessages);
@@ -51,6 +54,11 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const phases = useMemo(() => buildMilestonePhases(close.milestones, language), [close.milestones, language]);
+  const sequence = useMemo(() => milestoneSequenceNotes(phases), [phases]);
+  const sequenceLabel = note => (note.kind === 'emptyPhase' ? t('close.sequence.emptyPhase', { phase: note.label })
+    : note.kind === 'afterPushback'
+      ? t(note.count === 1 ? 'close.sequence.afterPushbackOne' : 'close.sequence.afterPushback', { count: note.count })
+      : t('close.sequence.noBlockOn'));
   const timing = close.timing;
   const minutes = value => (value === null || value === undefined ? t('close.unknown') : t('close.minutes', { value: Math.round(value) }));
   const overrun = timing.groundMinutes != null && timing.allowedGroundMinutes != null
@@ -151,6 +159,18 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
         </dl>
         <div>
           <h4 className={SUBHEADING}>{t('close.milestones')}</h4>
+          {sequence.length > 0 && (
+            <div className="mt-2">
+              <ul aria-label={t('close.sequence.label')} className="flex flex-wrap gap-x-3 gap-y-1">
+                {sequence.map(note => (
+                  <li key={note.kind === 'emptyPhase' ? `${note.kind}:${note.phase}` : note.kind}>
+                    <OccStatusPill size="sm" tone="attention" label={sequenceLabel(note)} />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs text-occ-muted">{t('close.sequence.hint')}</p>
+            </div>
+          )}
           {close.milestones.length === 0 ? <p className="mt-1 text-occ-muted">{t('close.noMilestones')}</p> : (
             <OccMilestoneStrip variant="full" phases={phases} locale={locale} timeZone={detail.ianaTimeZone}
               className="mt-2 sm:grid-cols-2" />

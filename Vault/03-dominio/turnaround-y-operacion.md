@@ -424,6 +424,22 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
   candidatos del relevo y la programación del turno siguen nombrando la
   posición del vuelo, y «Liberar» de OCC la sigue cerrando. Corregir la hora del
   push-back mantiene libre la posición.
+- **Aviso antes del push-back.** Posterior también al PR A2 (hallazgo N2 de la
+  corrida del VPS del 16 de noviembre, D-N2): un push-back registrado con un
+  toque, con «En posición» en 0/13, «Salida» en 0/4 y los servicios
+  planificados, liberó la posición, cerró el tiempo en tierra y fijó la hora de
+  salida de la Orden de Servicio. La regla del servidor no cambia (solo
+  `BLOCK_ON ≤ PUSHBACK`); avisan los clientes, sin bloquear.
+  - La tablet pide confirmar el primer push-back de la operación, fuera de una
+    ronda de corrección, si falta el bloqueo, si «En posición» o «Salida» no
+    tienen ningún hito, si ningún servicio salió de planificado o si la Orden de
+    Servicio ya tiene una firma, que el push-back obliga a repetir
+    ([motivos](../../frontend/mobile-agent/src/features/assigned-operations/pushback.ts)).
+    La hoja dice que registrarlo libera la posición en OCC y que corregir la
+    hora después no la vuelve a ocupar. Sin motivos sigue siendo un toque.
+  - La revisión de OCC señala con avisos de atención un push-back sin bloqueo,
+    con «En posición» o «Salida» vacías o con hitos registrados después de él
+    ([secuencia](../../frontend/private-web/src/features/occ-ui/milestonePhases.js)).
 - **Plano de Punta Cana.** Donde están encendidos los vuelos demo, el
   superadministrador crea las terminales y las posiciones del catálogo de Punta
   Cana que faltan (41, sin la B33), activas, sin coordenadas y sin cambiar,
