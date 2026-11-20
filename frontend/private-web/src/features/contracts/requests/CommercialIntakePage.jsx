@@ -10,8 +10,10 @@ import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { airlineIdentityErrors } from './airlineIdentity';
-import { checkTaxRegistration, maskRnc, rncFeedback } from '@elevant/api-client';
-import { BLOCKING_REGISTRY_STATUSES, countryName, documentLabel, registryVerdictLabel, requestStatusLabel } from './requestLabels';
+import { checkTaxRegistration, formatPhone, maskRnc, rncFeedback } from '@elevant/api-client';
+import {
+  BLOCKING_REGISTRY_STATUSES, countryName, documentLabel, registryVerdictLabel, requestReferenceLabel, requestStatusLabel,
+} from './requestLabels';
 import { representativeDomainCheck } from './representativeDomain';
 import { billingUnitLabel } from '../../../services/billingUnits';
 
@@ -131,7 +133,10 @@ export default function CommercialIntakePage({ canVerify = true, canApprove = tr
           {view.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-status-danger/20 bg-status-danger/10 p-3 text-sm text-status-danger"><span>{view.error}</span><button type="button" onClick={() => { void reload(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
           {view.status === 'loading' ? <p className="p-6 text-sm">Cargando solicitudes…</p>
             : view.status === 'error' ? <p className="p-8 text-center text-sm text-text-secondary-light">La bandeja no está disponible por ahora.</p>
-              : requests.length ? <div className="divide-y divide-black/5 dark:divide-white/5">{requests.map(item => <button type="button" key={item.id} onClick={() => setSelectedId(item.id)} className={`flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-accent-600/[.04] ${selectedId === item.id ? 'bg-accent-600/[.07]' : ''}`}><span><strong className="block text-sm">{item.airline}</strong><span className="mt-1 block text-xs text-text-secondary-light">{item.representativeName} · {item.representativeEmail}</span><span className="mt-1 block font-mono text-[11px] text-text-secondary-light">{item.reference.slice(0, 16)} · {dateTime(item.submittedAt)}</span></span><span className="flex flex-wrap items-center gap-2">{item.proposedAirline && !item.airlineProfileId && <span className="rounded-full bg-status-warning/10 px-2.5 py-1 text-xs font-semibold">Aerolínea propuesta</span>}<span className="rounded-full bg-accent-600/10 px-2.5 py-1 text-xs font-semibold text-accent-600">{requestStatusLabel(item.status)}</span></span></button>)}</div>
+              : requests.length ? <div className="divide-y divide-black/5 dark:divide-white/5">{requests.map(item => {
+                const reference = requestReferenceLabel(item.reference, { list: true });
+                return <button type="button" key={item.id} onClick={() => setSelectedId(item.id)} className={`flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-accent-600/[.04] ${selectedId === item.id ? 'bg-accent-600/[.07]' : ''}`}><span><strong className="block text-sm">{item.airline}</strong><span className="mt-1 block text-xs text-text-secondary-light">{item.representativeName} · <EmailAddress value={item.representativeEmail} /></span><span className="mt-1 block font-mono text-[11px] text-text-secondary-light"><span title={reference.title}>{reference.text}</span> · {dateTime(item.submittedAt)}</span></span><span className="flex flex-wrap items-center gap-2">{item.proposedAirline && !item.airlineProfileId && <span className="rounded-full bg-status-warning/10 px-2.5 py-1 text-xs font-semibold">Aerolínea propuesta</span>}<span className="rounded-full bg-accent-600/10 px-2.5 py-1 text-xs font-semibold text-accent-600">{requestStatusLabel(item.status)}</span></span></button>;
+              })}</div>
                 : <p className="p-8 text-center text-sm text-text-secondary-light">No hay solicitudes con este filtro.</p>}
           {inbox && view.status === 'ready' && inbox.total > PAGE_SIZE && <div className="flex items-center justify-between gap-3 border-t border-black/5 p-3 text-xs dark:border-white/5"><button type="button" disabled={page <= 1} onClick={() => changeQuery({ page: page - 1 })} className="rounded-lg border border-black/10 px-3 py-1 disabled:opacity-50">Anterior</button><span>Página {page} de {pages}</span><button type="button" disabled={!inbox.hasMore} onClick={() => changeQuery({ page: page + 1 })} className="rounded-lg border border-black/10 px-3 py-1 disabled:opacity-50">Siguiente</button></div>}
         </section>
@@ -186,7 +191,7 @@ function RequestReview({ request, stations, permissions, onCompleted, onRefresh,
     'Solicitud cancelada. Quedó en cola un correo al solicitante con el motivo.');
 
   return <div className="space-y-5">
-    <div><p className="text-xs font-mono uppercase text-signal-500">{request.reference}</p><h2 className="mt-1 text-xl font-bold">{request.airline}</h2><p className="text-xs text-text-secondary-light">{requestStatusLabel(request.status)} · Recibida el {dateTime(request.submittedAt)}</p></div>
+    <div><p className="break-all text-xs font-mono text-signal-500">{requestReferenceLabel(request.reference).text}</p><h2 className="mt-1 text-xl font-bold">{request.airline}</h2><p className="text-xs text-text-secondary-light">{requestStatusLabel(request.status)} · Recibida el {dateTime(request.submittedAt)}</p></div>
     {open && request.existingCustomer && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">La aerolínea ya tiene un contrato vigente o en curso, o cuentas activas en el portal. No admite una segunda afiliación: amplíe los servicios con una enmienda o una renovación de su contrato, o cancele esta solicitud.</p>}
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     <AirlineSection request={request} canVerify={permissions.canVerify && open} busy={busy} onVerify={verify} />
@@ -195,7 +200,7 @@ function RequestReview({ request, stations, permissions, onCompleted, onRefresh,
     <div><h3 className="text-sm font-bold">Servicios solicitados</h3><ul className="mt-2 space-y-1">{request.services.map((service, index) => <li key={`${service.serviceId}-${index}`} className="rounded bg-accent-600/[.06] px-3 py-2 text-sm">{service.name} <span className="text-xs text-text-secondary-light">· por {billingUnitLabel(service.unit)}</span></li>)}</ul></div>
     {open && (permissions.canApprove || permissions.canReject) && <DecisionSection request={request} stations={stations} canApprove={permissions.canApprove} canReject={permissions.canReject} busy={busy} onDecide={decide} />}
     {open && permissions.canCancel && <CancelSection busy={busy} onCancel={cancel} />}
-    {!open && <p className="rounded-lg bg-black/[.04] p-4 text-sm dark:bg-white/[.04]">Estado: {requestStatusLabel(request.status)}{request.cancelledAt && ` el ${dateTime(request.cancelledAt)}`}{request.decisionReason && ` · ${request.decisionReason}`}{request.contractId && ` · Borrador ${request.contractId.slice(0, 12)}`}</p>}
+    {!open && <p className="rounded-lg bg-black/[.04] p-4 text-sm dark:bg-white/[.04]">Estado: {requestStatusLabel(request.status)}{request.cancelledAt && ` el ${dateTime(request.cancelledAt)}`}{request.decisionReason && ` · ${request.decisionReason}`}{request.contractId && ' · Se creó un contrato en borrador'}</p>}
   </div>;
 }
 
@@ -203,9 +208,18 @@ function Detail({ label, children }) {
   return <div><dt className="text-xs text-text-secondary-light">{label}</dt><dd className="break-words">{children}</dd></div>;
 }
 
+/** An email that wraps before its «@» when it does not fit (N35), never in the middle of a word. */
+function EmailAddress({ value }) {
+  const at = typeof value === 'string' ? value.lastIndexOf('@') : -1;
+  return at > 0 ? <>{value.slice(0, at)}<wbr />{value.slice(at)}</> : value;
+}
+
 function AirlineSection({ request, canVerify, busy, onVerify }) {
   const proposal = request.proposedAirline;
   const linked = Boolean(request.airlineProfileId);
+  // Who verified the identity (N35): Superadministración by hand, as the API reports, or else Contratos.
+  const identityTitle = !request.airlineVerified ? 'Identidad legal pendiente de verificación'
+    : request.manualVerification ? 'Identidad verificada a mano por Superadministración' : 'Identidad verificada por Contratos';
   const [mode, setMode] = useState('create');
   const [editing, setEditing] = useState(!request.airlineVerified);
   // What the applicant proposed fills the form until Contratos confirms it; its website is only a starting source.
@@ -279,7 +293,7 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
 
   return <div className="space-y-3">
     {proposal && <div className="rounded-lg border border-status-warning/40 bg-status-warning/[.06] p-4 text-sm"><strong>Aerolínea propuesta por el solicitante</strong><p className="mt-1 text-xs text-text-secondary-light">No figuraba en el catálogo público. {linked ? 'Contratos ya la vinculó a una ficha del catálogo.' : 'Verifíquela con una fuente oficial: cree su ficha o vincúlela a una existente.'}</p><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Nombre">{proposal.name}</Detail><Detail label="País">{countryName(proposal.countryCode) ?? 'Sin dato'}</Detail><Detail label="IATA">{proposal.iataCode ?? 'Sin IATA'}</Detail><Detail label="ICAO">{proposal.icaoCode}</Detail>{proposal.websiteUrl && <Detail label="Sitio web">{proposal.websiteUrl}</Detail>}</dl></div>}
-    {linked && <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>{request.airlineVerified ? 'Identidad verificada por Contratos' : 'Identidad legal pendiente de verificación'}</strong><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Razón social">{request.legalName ?? 'Sin confirmar'}</Detail><Detail label="País">{countryName(request.countryCode) ?? 'Sin confirmar'}</Detail><Detail label="IATA">{request.iataCode ?? (request.airlineVerified ? 'No tiene' : 'Sin confirmar')}</Detail><Detail label="ICAO">{request.icaoCode ?? 'Sin confirmar'}</Detail>{request.verificationSourceUrl && <Detail label="Fuente">{request.verificationSourceUrl}</Detail>}</dl></div>}
+    {linked && <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>{identityTitle}</strong><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Razón social">{request.legalName ?? 'Sin confirmar'}</Detail><Detail label="País">{countryName(request.countryCode) ?? 'Sin confirmar'}</Detail><Detail label="IATA">{request.iataCode ?? (request.airlineVerified ? 'No tiene' : 'Sin confirmar')}</Detail><Detail label="ICAO">{request.icaoCode ?? 'Sin confirmar'}</Detail>{request.verificationSourceUrl && <Detail label="Fuente">{request.verificationSourceUrl}</Detail>}</dl></div>}
     <dl className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><Detail label="Identificación fiscal">{request.taxRegistration?.display ?? 'Sin registrar en la solicitud'}</Detail></dl>
     <AirlineFleetFacts icaoCode={request.icaoCode ?? proposal?.icaoCode} iataCode={request.iataCode ?? proposal?.iataCode} auto className="rounded-lg border border-black/10 p-3 dark:border-white/10" />
     {canVerify && !editing && <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-accent-600 underline">Corregir la verificación</button>}
@@ -312,7 +326,9 @@ function TaxFields({ id, tax, error, onChange }) {
 
 /**
  * The public-registry check of the airline (ADR-0023) in plain Spanish, and the Superadmin exception: an airline
- * the registries do not confirm is approved only after Superadministración verifies it by hand with a source.
+ * the registries do not confirm is approved only after Superadministración verifies it by hand with a source. Such an
+ * approval asks no registry (DecideCommercialRequestHandler), so the section says who verified it, when and with which
+ * source, shown as it is and never called official (N35, D-N35).
  */
 function RegistrySection({ request, open }) {
   const check = request.registryCheck;
@@ -320,8 +336,9 @@ function RegistrySection({ request, open }) {
   const blocked = BLOCKING_REGISTRY_STATUSES.includes(check?.status);
   return <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>Registros públicos</strong>
     {check ? <p className="mt-1">{registryVerdictLabel(check)} <span className="text-xs text-text-secondary-light">· {check.fromCatalog ? 'comprobación de Superadministración' : 'comprobación automática'} del {dateTime(check.checkedAt)}</span></p>
-      : <p className="mt-1 text-xs text-text-secondary-light">Se comprobará automáticamente al aprobar.</p>}
-    {manual && <p className="mt-2 rounded-lg bg-status-success/10 p-2 text-xs">✓ Verificada a mano por Superadmin · fuente {manual.verificationSourceUrl ?? 'sin dirección'}</p>}
+      : !manual && <p className="mt-1 text-xs text-text-secondary-light">{open ? 'Se comprobará automáticamente al aprobar.' : 'No se consultó a los registros públicos.'}</p>}
+    {manual && <p className="mt-2 break-words rounded-lg bg-status-success/10 p-2 text-xs">✓ Verificada a mano por Superadministración el {dateTime(manual.verifiedAt)} · fuente {manual.verificationSourceUrl ?? 'sin dirección'}</p>}
+    {open && manual && <p className="mt-1 text-xs text-text-secondary-light">Al aprobar no se consulta a los registros públicos.</p>}
     {open && blocked && !manual && <p role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">No se puede aprobar mientras los registros públicos no la confirmen. Superadministración debe verificarla a mano con una fuente oficial en Superadministración › Aerolíneas; luego actualice esta solicitud y apruébela.</p>}
     {open && check?.status === 'Unavailable' && !manual && <p role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">Ningún registro público respondió. Puede aprobar, pero confirme la aerolínea con su fuente oficial.</p>}
   </div>;
@@ -347,7 +364,7 @@ function RepresentativeSection({ request, canConfirm, busy, onConfirm }) {
     if (await onConfirm(note.trim())) setNote('');
   }
   return <div className="space-y-3">
-    <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>Representante legal</strong><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Nombre">{request.representativeName}</Detail><Detail label="Cargo">{request.representativeTitle}</Detail><Detail label="Correo"><span className="break-all">{request.representativeEmail}</span></Detail><Detail label="Teléfono">{request.representativePhone}</Detail>{details.map(([label, value]) => <Detail key={label} label={label}>{value}</Detail>)}</dl><p className="mt-2 text-xs">{request.authorityDeclared ? '✓ Declaró autorización para representar a la aerolínea.' : 'No declaró autorización.'}</p></div>
+    <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>Representante legal</strong><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Nombre">{request.representativeName}</Detail><Detail label="Cargo">{request.representativeTitle}</Detail><Detail label="Correo"><EmailAddress value={request.representativeEmail} /></Detail><Detail label="Teléfono">{formatPhone(request.representativePhone) || 'Sin dato'}</Detail>{details.map(([label, value]) => <Detail key={label} label={label}>{value}</Detail>)}</dl><p className="mt-2 text-xs">{request.authorityDeclared ? '✓ Declaró autorización para representar a la aerolínea.' : 'No declaró autorización.'}</p></div>
     {check.kind === 'mismatch' && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">El dominio del correo ({check.emailDomain}) no coincide con el sitio oficial de la aerolínea ({check.site}). Confirme al representante por un canal oficial de la aerolínea antes de aprobar.</p>}
     {check.kind === 'match' && <p className="text-xs text-text-secondary-light">El dominio del correo coincide con el sitio oficial de la aerolínea ({check.site}).</p>}
     {check.kind === 'unknown' && <p className="text-xs text-text-secondary-light">No hay un sitio oficial de la aerolínea con el cual comparar el dominio del correo.</p>}
@@ -361,14 +378,18 @@ function DecisionSection({ request, stations, canApprove, canReject, busy, onDec
   const [stationIds, setStationIds] = useState([]);
   const [reason, setReason] = useState('');
   const confirmed = Boolean(request.representativeConfirmation);
+  const manual = Boolean(request.manualVerification);
   const ready = request.airlineVerified && confirmed && request.authorityDeclared && !request.existingCustomer;
+  // N35: the source is whatever the verifier recorded (OpenFlights too), so the list never calls it official; an
+  // airline verified by hand is approved without asking the registries.
   const checklist = [
-    [request.airlineVerified, 'Aerolínea verificada con una fuente oficial'],
+    [request.airlineVerified, 'Identidad de la aerolínea verificada con su fuente'],
     [confirmed, 'Representante confirmado por Contratos'],
     [request.authorityDeclared, 'Autorización declarada por el representante'],
     [!request.existingCustomer, 'La aerolínea no tiene un contrato vigente ni cuentas activas'],
-    [Boolean(request.manualVerification) || !BLOCKING_REGISTRY_STATUSES.includes(request.registryCheck?.status),
-      'Confirmada en registros públicos o verificada a mano por Superadmin (se comprueba al aprobar)'],
+    manual ? [true, 'Verificada a mano por Superadministración (al aprobar no se consulta a los registros públicos)']
+      : [!BLOCKING_REGISTRY_STATUSES.includes(request.registryCheck?.status),
+        'Confirmada en registros públicos o verificada a mano por Superadministración (se comprueba al aprobar)'],
     [stationIds.length > 0, 'Al menos una estación elegida'],
   ];
   return <div className="border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-bold">Decisión contractual</h3><p className="mt-1 text-xs text-text-secondary-light">Al aprobar se crea un contrato y versión en borrador. La operación requiere activación posterior. El solicitante recibe un correo con la decisión.</p>

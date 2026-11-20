@@ -16,6 +16,7 @@ import { formatChargeValue, formatMoney, listBillingUnits } from '../../../servi
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftProblemMessage } from './draftProblemMessages';
 import { afterFinanceApproval } from '../approvalEffect';
+import { contractCodeLabel } from '../requests/requestLabels';
 
 const LOAD_FAILED = 'No se pudieron cargar los borradores. Revise la conexión e intente de nuevo.';
 // Comments, scope and discards (contract_drafts) and Finance decisions (contract_approvals) re-read the list.
@@ -27,6 +28,11 @@ const VERSION_STATUS = {
   Draft: 'Borrador',
   PendingFinanceApproval: 'Pendiente de aprobación de Finanzas',
 };
+/**
+ * The draft inside a sentence (N35): «el borrador 1cc18541…» of a new contract, «el borrador de CTR-2026-0007» of a
+ * signed one (an amendment or a renewal).
+ */
+const draftPhrase = code => (code.draftId ? `el borrador ${code.draftId}` : `el borrador de ${code.text}`);
 /**
  * 409 codes after which the draft on screen is stale: it changed or moved on, so the editor drops its edits
  * and reads it again before a new attempt. Any other 409 is a rule the server refused (package_not_eligible,
@@ -100,7 +106,10 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_500px]"><section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Versiones pendientes</h2>
         {view.status === 'loading' ? <p className="mt-5 text-sm">Cargando…</p>
           : view.status === 'error' ? <div role="alert" className="mt-5 space-y-2 text-sm text-status-danger"><p>{view.error}</p>{retry}</div>
-            : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span className="text-xs text-text-secondary-light">{item.contractCode} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>)}</div>
+            : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => {
+              const code = contractCodeLabel(item.contractCode);
+              return <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span title={code.title} className="text-xs text-text-secondary-light">{code.text} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>;
+            })}</div>
               : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
         <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
     </>}
@@ -239,8 +248,9 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
   const canSubmit = ready && !dirty && !locked;
   const currencyChanged = form.currencyCode !== draft.currencyCode;
   const repriced = currencyChanged ? form.charges.filter(repricedByCurrency).map(charge => charge.code) : [];
+  const code = contractCodeLabel(draft.contractCode);
 
-  return <div><p className="text-xs font-mono text-signal-500">{draft.contractCode}</p><h2 className="mt-1 text-xl font-bold">{draft.airline}</h2><p className="mt-1 text-xs text-text-secondary-light">Estaciones: {draft.stations.join(' · ') || 'sin estaciones'}</p>
+  return <div><p title={code.title} className="text-xs font-mono text-signal-500">{code.text}</p><h2 className="mt-1 text-xl font-bold">{draft.airline}</h2><p className="mt-1 text-xs text-text-secondary-light">Estaciones: {draft.stations.join(' · ') || 'sin estaciones'}</p>
     <ContractPdfButtons versionId={draft.id} fileName={`borrador-${draft.contractCode}.pdf`} draft className="mt-3" />
     <p className="mt-2 inline-flex rounded-full bg-black/5 px-2.5 py-1 text-xs font-semibold dark:bg-white/10">{VERSION_STATUS[draft.versionStatus] ?? draft.versionStatus ?? 'Borrador'}</p>
     {draft.financeDecision === 'Returned' && !pending && <p role="alert" className="mt-3 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">Finanzas devolvió el contrato: {draft.financeReason}</p>}
@@ -293,7 +303,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
       <button type="button" disabled={!canSubmit} onClick={() => setConfirmSubmit(true)} className="mt-3 rounded-lg border border-status-success px-4 py-2 text-sm font-semibold text-status-success disabled:opacity-50">Enviar a Finanzas</button></div>}
     {pending && <p className="mt-6 rounded-lg bg-status-warning/10 p-3 text-sm">En revisión por Finanzas. Si lo devuelve, podrá editarlo de nuevo.</p>}
     {canDiscard && <DiscardSection draft={draft} busy={busy === 'discard'} locked={locked} onDiscard={discard} />}
-    <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draft.contractCode} a Finanzas para aprobar los precios? ${afterFinance}`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
+    <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draftPhrase(code)} a Finanzas para aprobar los precios? ${afterFinance}`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
   </div>;
 }
 
@@ -383,7 +393,7 @@ function DiscardSection({ draft, busy, locked, onDiscard }) {
   }
   return <div className="mt-6 border-t border-black/10 pt-4 dark:border-white/10">
     <button type="button" disabled={locked} onClick={() => { setError(''); setOpen(true); }} className="rounded-lg border border-status-danger px-4 py-2 text-sm font-semibold text-status-danger disabled:opacity-50">Descartar borrador</button>
-    <Modal open={open} onClose={() => { if (!busy) close(); }} tone="danger" title={`Descartar el borrador de ${draft.contractCode}`}
+    <Modal open={open} onClose={() => { if (!busy) close(); }} tone="danger" title={`Descartar ${draftPhrase(contractCodeLabel(draft.contractCode))}`}
       footer={<><button type="button" disabled={busy} onClick={close} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
         <button type="button" disabled={busy || !validReason(reason)} onClick={() => { void confirm(); }} className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Descartando…' : 'Descartar'}</button></>}>
       <div className="space-y-3 text-sm">

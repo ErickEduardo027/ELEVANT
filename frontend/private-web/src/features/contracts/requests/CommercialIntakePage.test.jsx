@@ -34,6 +34,8 @@ const base = {
 const counts = { pending: 1, inReview: 0, approved: 7, rejected: 2, cancelled: 1 };
 const inboxOf = (requests, extra = {}) => ({ page: 1, limit: 25, total: requests.length, hasMore: false, counts, requests, ...extra });
 const failure = (status, code) => Object.assign(new Error('Server title that must not be shown'), { status, code });
+// The page's stamps (toLocaleString), as the screen reads once its spaces are normalized.
+const stamp = value => new Date(value).toLocaleString('es-DO').replace(/\s+/g, ' ');
 
 beforeEach(() => {
   getCommercialStations.mockResolvedValue([station]);
@@ -315,9 +317,12 @@ it('shows the RNC and the registry verdict in Spanish and points to the Superadm
   manualVerification: { verifiedAt: '2026-11-05T12:30:00Z', verificationSourceUrl: 'https://aoc.example.test/cmp' } };
   const verified = await open(manual);
   expect(within(verified).getByText(/No coincide: Con esos códigos el registro muestra «Otra Air»/)).toBeInTheDocument();
-  expect(within(verified).getByText('✓ Verificada a mano por Superadmin · fuente https://aoc.example.test/cmp')).toBeInTheDocument();
+  expect(within(verified).getByText(
+    `✓ Verificada a mano por Superadministración el ${stamp('2026-11-05T12:30:00Z')} · fuente https://aoc.example.test/cmp`))
+    .toBeInTheDocument();
   expect(within(verified).queryByText(/Superadministración debe verificarla a mano/)).not.toBeInTheDocument();
-  expect(within(verified).getByText(/✓ Confirmada en registros públicos/)).toBeInTheDocument();
+  expect(within(verified).getByText(
+    '✓ Verificada a mano por Superadministración (al aprobar no se consulta a los registros públicos)')).toBeInTheDocument();
 });
 
 it('corrects the RNC while verifying and refuses an incomplete one before sending', async () => {
@@ -378,6 +383,72 @@ it('drops the registry refusal once Superadministración verified the airline an
   getCommercialRequestInbox.mockResolvedValue(inboxOf([{ ...ready, version: 'AAAAAAAAB+E=',
     manualVerification: { verifiedAt: '2026-11-05T12:30:00Z', verificationSourceUrl: 'https://aoc.example.test/cmp' } }]));
   await userEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
-  expect(await within(review).findByText(/✓ Verificada a mano por Superadmin/)).toBeInTheDocument();
+  expect(await within(review).findByText(/^✓ Verificada a mano por Superadministración el /)).toBeInTheDocument();
   expect(within(review).queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('shows the reference as it is in the review and shortens a GUID in the list, whole in its title (N35)', async () => {
+  const review = await open();
+  const item = screen.getByRole('button', { name: /^Copa Airlines/ });
+  expect(within(item).getByText('0b1c2d3e…')).toHaveAttribute('title', '0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e');
+  expect(within(item).queryByText(/0b1c2d3e4f5a6b7c/)).not.toBeInTheDocument();
+  // The review writes it as the API sends it, never in capitals.
+  const reference = within(review).getByText('0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e');
+  expect(reference).not.toHaveClass('uppercase');
+  cleanup();
+
+  await open({ ...base, reference: 'REQ-2026-000001' });
+  const coded = within(screen.getByRole('button', { name: /^Copa Airlines/ })).getByText('REQ-2026-000001');
+  expect(coded).not.toHaveAttribute('title');
+});
+
+it('names who verified the airline by hand, when and with which source, and that approving asks no registry (N35)', async () => {
+  const source = 'https://openflights.org/airline/CMP';
+  const manual = { ...base, status: 'InReview', airlineVerified: true, verificationSourceUrl: source,
+    manualVerification: { verifiedAt: '2026-11-05T12:30:00Z', verificationSourceUrl: source } };
+  const review = await open(manual);
+  expect(within(review).getByText('Identidad verificada a mano por Superadministración')).toBeInTheDocument();
+  expect(within(review).queryByText(/verificada por Contratos/)).not.toBeInTheDocument();
+  expect(within(review).getByText(
+    `✓ Verificada a mano por Superadministración el ${stamp('2026-11-05T12:30:00Z')} · fuente ${source}`)).toBeInTheDocument();
+  expect(within(review).getByText('Al aprobar no se consulta a los registros públicos.')).toBeInTheDocument();
+  expect(within(review).queryByText(/Se comprobará automáticamente|se comprueba al aprobar/)).not.toBeInTheDocument();
+  // D-N35: a source such as OpenFlights is shown as it is, never called official.
+  expect(within(review).queryByText(/fuente oficial/)).not.toBeInTheDocument();
+  expect(within(review).getByText('✓ Identidad de la aerolínea verificada con su fuente')).toBeInTheDocument();
+  expect(within(review).getByText(
+    '✓ Verificada a mano por Superadministración (al aprobar no se consulta a los registros públicos)')).toBeInTheDocument();
+});
+
+it('keeps «verificada por Contratos» and the check at approval when Superadministración did not verify it (N35)', async () => {
+  const review = await open({ ...base, status: 'InReview', airlineVerified: true,
+    verificationSourceUrl: 'https://www.copaair.com/' });
+  expect(within(review).getByText('Identidad verificada por Contratos')).toBeInTheDocument();
+  expect(within(review).getByText('Se comprobará automáticamente al aprobar.')).toBeInTheDocument();
+  expect(within(review).queryByText(/Verificada a mano|no se consulta/)).not.toBeInTheDocument();
+  expect(within(review).getByText('✓ Identidad de la aerolínea verificada con su fuente')).toBeInTheDocument();
+  expect(within(review).getByText(
+    '✓ Confirmada en registros públicos o verificada a mano por Superadministración (se comprueba al aprobar)'))
+    .toBeInTheDocument();
+});
+
+it('says a decided request created a draft without a prefix of its id, and promises no check after it (N35)', async () => {
+  const contractId = '7f3e2d1c-0b9a-4876-9543-210fedcba987';
+  const review = await open({ ...base, status: 'Approved', airlineVerified: true, contractId,
+    reviewedAt: '2026-11-06T10:00:00Z' });
+  expect(within(review).getByText('Estado: Aprobada · Se creó un contrato en borrador')).toBeInTheDocument();
+  expect(within(review).queryByText(/7f3e2d1c/)).not.toBeInTheDocument();
+  expect(within(review).getByText('No se consultó a los registros públicos.')).toBeInTheDocument();
+  expect(within(review).queryByText(/Se comprobará/)).not.toBeInTheDocument();
+});
+
+it('wraps the email only before its @ and writes the phone as people read it (N35)', async () => {
+  const review = await open({ ...base, representativeEmail: 'ana.rivera@copaair.com' });
+  const email = within(review).getByText((_, node) => node?.tagName === 'DD' && node.textContent === 'ana.rivera@copaair.com');
+  expect(email.innerHTML).toBe('ana.rivera<wbr>@copaair.com');
+  expect(within(review).getByText('+1 809-555-0142', { selector: 'dd' })).toBeInTheDocument();
+  expect(within(review).queryByText('+18095550142')).not.toBeInTheDocument();
+  // The list breaks the email at the same place.
+  const item = screen.getByRole('button', { name: /^Copa Airlines/ });
+  expect(within(item).getByText(/^Ana Rivera ·/).innerHTML).toBe('Ana Rivera · ana.rivera<wbr>@copaair.com');
 });

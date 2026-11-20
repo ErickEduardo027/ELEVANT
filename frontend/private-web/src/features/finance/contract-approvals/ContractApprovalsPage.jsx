@@ -17,6 +17,7 @@ import { financeContractApprovalMessage } from '../../../services/financeErrors'
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { CONTRACT_APPROVAL_STATUS, packageScopeLabel, statusMeta } from '../financeLabels';
 import { financeApprovalEffect } from '../../contracts/approvalEffect';
+import { contractCodeLabel } from '../../contracts/requests/requestLabels';
 
 const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
 const DETAIL_FAILED = 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.';
@@ -149,6 +150,8 @@ export default function ContractApprovalsPage() {
   }
 
   const currency = detail?.summary.currencyCode;
+  // N35: a new contract reads «Borrador 1cc18541…», its DRAFT- code whole in the title.
+  const detailCode = detail ? contractCodeLabel(detail.summary.contractCode) : null;
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Finanzas" title="Aprobación de contratos"
@@ -164,12 +167,13 @@ export default function ContractApprovalsPage() {
           <ul className="space-y-2">
             {items.map(item => {
               const status = statusMeta(CONTRACT_APPROVAL_STATUS, item.status);
+              const code = contractCodeLabel(item.contractCode);
               return (
                 <li key={item.versionId}>
                   <button type="button" onClick={() => select(item.versionId)}
                     className={`w-full rounded-xl border p-3 text-left ${selected === item.versionId ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 bg-white dark:border-white/10 dark:bg-surface-dark-card'}`}>
                     <div className="flex items-center justify-between gap-2"><strong className="text-sm">{item.airline}</strong><StatusBadge tone={status.tone} label={status.label} /></div>
-                    <p className="mt-1 text-xs text-text-secondary-light">{item.contractCode} · {item.currencyCode} · desde {formatBusinessDate(item.validFrom)}</p>
+                    <p title={code.title} className="mt-1 text-xs text-text-secondary-light">{code.text} · {item.currencyCode} · desde {formatBusinessDate(item.validFrom)}</p>
                     {(item.ratesBelowBase > 0 || item.ratesWithoutBase > 0) && (
                       <p className="mt-1 text-xs text-status-warning">{item.ratesBelowBase} por debajo de la base · {item.ratesWithoutBase} sin base</p>
                     )}
@@ -189,7 +193,7 @@ export default function ContractApprovalsPage() {
             <section aria-label="Contrato seleccionado" className="min-w-0 space-y-4 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
               {read.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{financeContractApprovalMessage(read.error, { fallback: DETAIL_FAILED })}</span><button type="button" onClick={retryDetail} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
               <div>
-                <h2 className="text-lg font-bold">{detail.summary.airline} · {detail.summary.contractCode}</h2>
+                <h2 title={detailCode.title} className="text-lg font-bold">{detail.summary.airline} · {detailCode.text}</h2>
                 <p className="text-xs text-text-secondary-light">{currency} · {formatBusinessDate(detail.summary.validFrom)}{detail.summary.validTo ? ` a ${formatBusinessDate(detail.summary.validTo)}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
                 <p className="text-xs text-text-secondary-light">{effect.validity}</p>
               </div>

@@ -160,6 +160,41 @@ mostró la bandeja; un conflicto obliga a releer.
 - Aprobar, rechazar y cancelar encolan un correo al solicitante con la
   decisión y, cuando lo hay, el motivo.
 
+*Posterior al commit verificado (hallazgo N35 y decisión D-N35, 19 de noviembre
+de 2026).* La prueba del VPS del 16 de noviembre encontró la referencia en cuatro
+formatos, una verificación a mano atribuida a Contratos y el teléfono en E.164.
+Ahora:
+
+- **Referencia.** La de una solicitud pública es su UUID en 32 caracteres
+  hexadecimales. La revisión la muestra completa, tal como la envía la API y sin
+  mayúsculas. Las listas de Solicitudes, de Superadministración › Inicio y de la
+  portada de Contratos la acortan a sus 8 primeros caracteres («1cc18541…») y
+  guardan la completa en el `title`. Una referencia que no es un UUID
+  («REQ-2026-000001») nunca se corta. No hay una referencia consecutiva «SOL-…»
+  (D-N35).
+- **Código del borrador.** El código `DRAFT-…` de un contrato nuevo se lee
+  «Borrador 1cc18541…», con el código completo en el `title`, en Borradores, en
+  la aprobación de contratos de Finanzas y en la portada de Contratos. Dentro de
+  una frase es «el borrador 1cc18541…». Un código definitivo («CTR-2026-0007») no
+  cambia ([etiquetas](../../frontend/private-web/src/features/contracts/requests/requestLabels.js)).
+  Una solicitud decidida dice «Se creó un contrato en borrador», sin el prefijo
+  del UUID del contrato; la bandeja no recibe su código.
+- **Quién verificó la aerolínea.** Si Superadministración verificó la ficha a
+  mano, la identidad se titula «Identidad verificada a mano por
+  Superadministración», no «por Contratos». «Registros públicos» dice «✓
+  Verificada a mano por Superadministración el … · fuente …», con la fecha y la
+  hora de la verificación y la dirección tal cual. La fuente nunca se llama
+  oficial: OpenFlights vale solo como verificación manual con su fuente a la
+  vista (D-N35). Mientras la solicitud está abierta, añade «Al aprobar no se
+  consulta a los registros públicos.», porque la API no los consulta en ese
+  caso, y la lista de la decisión ya no dice «se comprueba al aprobar». Una
+  solicitud cerrada sin veredicto dice «No se consultó a los registros
+  públicos.».
+- **Contacto del representante.** El correo solo se parte antes de la «@». El
+  teléfono, guardado en E.164, se escribe «+1 809-555-0520»; el de otro país
+  lleva su prefijo aparte («+34 600123456»), con `formatPhone` de
+  `@elevant/api-client`.
+
 ### Identificador fiscal y registros públicos (revisión del profesor)
 
 - La solicitud pública exige el **identificador fiscal** de la aerolínea. Si la
@@ -177,8 +212,8 @@ mostró la bandeja; un conflicto obliga a releer.
 - La aprobación con «no encontrada», «inactiva» o «no coincide» se rechaza
   (`airline_not_in_public_registry`). La excepción es una ficha verificada a
   mano por Superadministración con su fuente, que la bandeja muestra como
-  «Verificada a mano por Superadmin · fuente». «No se pudo comprobar» no
-  bloquea. El paso a paso está en la [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#una-aerolínea-que-los-registros-públicos-no-confirman)
+  «✓ Verificada a mano por Superadministración el … · fuente …». «No se pudo
+  comprobar» no bloquea. El paso a paso está en la [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#una-aerolínea-que-los-registros-públicos-no-confirman)
   y la regla en [ADR-0023](../../docs/adr/0023-airline-public-registry-check.md).
   Cuando Contratos pulsa **Actualizar** después de la verificación a mano, el
   aviso del rechazo anterior desaparece.

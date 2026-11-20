@@ -210,6 +210,19 @@ describe('ContractApprovalsPage', () => {
     expect(screen.queryByText(/2026-09-01|2027-08-31/)).not.toBeInTheDocument();
   });
 
+  it('names a new contract «Borrador» and the start of its id instead of its DRAFT- code (N35)', async () => {
+    const code = 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d';
+    const draft = { ...summary, contractCode: code };
+    listContractApprovals.mockResolvedValue([draft]);
+    getContractApproval.mockResolvedValue({ summary: draft, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
+    renderWith(<ContractApprovalsPage />);
+    const item = await screen.findByRole('button', { name: /Demo Airlines/ });
+    expect(within(item).getByText('Borrador 1cc18541… · USD · desde 01/09/2026')).toHaveAttribute('title', code);
+    await userEvent.click(item);
+    expect(await screen.findByRole('heading', { name: 'Demo Airlines · Borrador 1cc18541…' })).toHaveAttribute('title', code);
+    expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+  });
+
   it('names each service and charge first and writes every charge value with its currency or unit (N34)', async () => {
     listContractApprovals.mockResolvedValue([summary]);
     getContractApproval.mockResolvedValue({ summary, terms: null, stations: ['PUJ'], history: [],

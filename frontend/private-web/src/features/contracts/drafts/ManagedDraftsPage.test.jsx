@@ -251,6 +251,34 @@ it('answers the airline and discards the draft with a reason', async () => {
   expect(await screen.findByRole('status')).toHaveTextContent('Borrador descartado');
 });
 
+it('names a new contract «Borrador» and the start of its id, and a signed one by its code (N35)', async () => {
+  const code = 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d';
+  getManagedDrafts.mockResolvedValue([draft({ contractCode: code })]);
+  getContractDraftReadiness.mockResolvedValue(readiness());
+  await open({ canDiscard: true });
+  const item = screen.getByRole('button', { name: /Demo Airlines/ });
+  expect(within(item).getByText(/^Borrador 1cc18541… · Borrador · /)).toHaveAttribute('title', code);
+  expect(screen.getByText('Borrador 1cc18541…', { selector: 'p' })).toHaveAttribute('title', code);
+  const submit = screen.getByRole('button', { name: 'Enviar a Finanzas' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  expect(within(screen.getByRole('alertdialog'))
+    .getByText(/^¿Enviar el borrador 1cc18541… a Finanzas para aprobar los precios\?/)).toBeInTheDocument();
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancelar' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Descartar borrador' }));
+  expect(screen.getByRole('alertdialog', { name: 'Descartar el borrador 1cc18541…' })).toBeInTheDocument();
+  expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+  cleanup();
+
+  // An amendment or a renewal keeps the code its contract was signed with.
+  getManagedDrafts.mockResolvedValue([draft({ contractCode: 'CTR-2026-0007' })]);
+  await open({ canDiscard: true });
+  expect(within(screen.getByRole('button', { name: /Demo Airlines/ })).getByText(/^CTR-2026-0007 · Borrador · /))
+    .not.toHaveAttribute('title');
+  await userEvent.click(screen.getByRole('button', { name: 'Descartar borrador' }));
+  expect(screen.getByRole('alertdialog', { name: 'Descartar el borrador de CTR-2026-0007' })).toBeInTheDocument();
+});
+
 it('keeps the edits and blocks the submission when a rule refuses the save', async () => {
   getContractDraftReadiness.mockResolvedValue(readiness());
   updateManagedDraft.mockRejectedValueOnce(failure(409, 'package_not_eligible'));
