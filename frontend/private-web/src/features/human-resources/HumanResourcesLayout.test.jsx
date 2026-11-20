@@ -31,7 +31,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
 
     expect(shellProps.navigation.map(item => item.id)).toEqual(['expenses', 'dashboard', 'employees', 'positions', 'requisitions',
       'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports', 'audit', 'notifications',
-      'access-requests', 'department-users']);
+      'access-requests', 'department-users', 'settings']);
     expect(shellProps.navigation.find(item => item.id === 'certifications').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'permits').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'schedules').badge).toBeNull();
@@ -62,6 +62,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
       'notifications',
       'access-requests',
       'department-users',
+      'settings',
     ]);
     expect(shellProps.notificationsSource).toBe('department');
     expect(shellProps.notificationsEnabled).toBe(true);

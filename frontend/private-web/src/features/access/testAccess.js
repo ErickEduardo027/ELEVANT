@@ -16,7 +16,7 @@ export const DepartmentPermissionCodes = {
     requisitions: ['read', 'attend'], ramp_profiles: ['read', 'update'], qualifications: ['read', 'create', 'update'],
     permits: ['read', 'create', 'update'], schedules: ['read'], availability: ['read', 'create', 'decide'],
     attendance: ['read', 'validate'], reports: ['read', 'export'], audit: ['read'], notifications: ['read'],
-    access_requests: ['read', 'validate'],
+    access_requests: ['read', 'validate'], settings: ['read', 'create', 'update'],
   }),
   contracts: codes('contracts', {
     home: ['read'], agreements: ['read', 'sign'], agreed_services: ['read'], drafts: ['read', 'update', 'activate'],
