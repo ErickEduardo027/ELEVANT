@@ -172,6 +172,36 @@ describe('hand-off to OCC (3-N06)', () => {
     expect(button(tree, 'ENTREGAR A OCC').props.disabled).toBe(false);
     await renderer.act(async () => tree.unmount());
   });
+
+  // N3 (D-N3): the forms that say «No hace falta para entregar a OCC» really do not hold the hand-off.
+  test('an unsigned Flight Report or bridge checklist does not hold the hand-off', async () => {
+    mockGetAssigned.mockResolvedValue(ready());
+    mockQueue = { revisions: {}, items: [], documents: { [operationId]: { operationId, damageMarks: [], documents: [
+      { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [] },
+      { kind: 'FlightReport', isFullySigned: false, staleRoles: [] },
+      { kind: 'BridgeChecklist', isFullySigned: false, staleRoles: ['BridgeOperator'] },
+    ] } } };
+    const tree = await render();
+    expect(screenText(tree)).not.toContain('Falta firmar');
+    expect(button(tree, 'ENTREGAR A OCC').props.disabled).toBe(false);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the forms panel hears the execution is open only while the operation is in progress', async () => {
+    const { DocumentsPanel } = require('../src/components/documents/operation-documents');
+    mockGetAssigned.mockResolvedValue(ready());
+    let tree = await render();
+    expect(tree.root.findByType(DocumentsPanel).props).toEqual(expect.objectContaining({ operationId, editable: true,
+      executionOpen: true }));
+    await renderer.act(async () => tree.unmount());
+
+    // Handed off: the forms can still be signed, but the hand-off is behind.
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [operation('PendingReview', 'Completed')] });
+    tree = await render();
+    expect(tree.root.findByType(DocumentsPanel).props).toEqual(expect.objectContaining({ operationId, editable: true,
+      executionOpen: false }));
+    await renderer.act(async () => tree.unmount());
+  });
 });
 
 describe('one date and time format (N11, D-N11)', () => {

@@ -235,6 +235,16 @@ describe('hand-off readiness (3-N06)', () => {
     expect(mockApi.submitRampOperation).not.toHaveBeenCalled();
   });
 
+  // N3 (D-N3): the tablet says these forms are not needed to hand off; the service agrees.
+  test('an unsigned Flight Report or bridge checklist does not hold the hand-off', async () => {
+    const documents = serviceOrder();
+    documents.documents.push({ kind: 'BridgeChecklist', isFullySigned: false, staleRoles: ['BridgeOperator'] });
+    mockDocuments.mockResolvedValue(documents);
+    await submitRampOperation(OPERATION_ID, FROZEN);
+    expect(mockApi.submitRampOperation).toHaveBeenCalledWith(
+      OPERATION_ID, FROZEN, INSTALLATION_ID, IDEMPOTENCY_KEY, { signal: undefined });
+  });
+
   test('an uncertain hand-off already reserved is replayed without the checks', async () => {
     mockReadCommand.mockResolvedValue({ kind: 'current', command: COMMAND });
     mockQueue.mockResolvedValue({ pending: 1, blocked: 0 });

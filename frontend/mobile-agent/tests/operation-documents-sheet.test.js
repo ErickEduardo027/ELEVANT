@@ -2,6 +2,8 @@
 // that scrolls and a fixed header that closes the sheet without signing, so in landscape the buttons are never below
 // the fold. A scroll that starts on the pad and takes the gesture away (Android's scroll view terminates the pad's
 // responder; it never releases it) drops the stroke in progress and gives the scroll back; the strokes already kept stay.
+// The Service Order's total says it is a contract-price subtotal without ITBIS (N4, D-N4), and the forms whose
+// signatures the hand-off to OCC does not wait for say so and use a secondary button (N3, D-N3).
 const React = require('react');
 const renderer = require('react-test-renderer');
 
@@ -69,13 +71,23 @@ function serviceOrder(overrides = {}) {
 
 const charterRequest = () => serviceOrder({ kind: 'CharterServiceRequest', number: 'SS-PUJ-0001',
   title: 'Solicitud de Servicio', formCode: 'AV-OPS-04', requiredRoles: ['AirlineRepresentative'] });
+const flightReport = (overrides = {}) => serviceOrder({ kind: 'FlightReport', title: 'Reporte de Vuelo',
+  formCode: 'F-OCC-AVL-6.2.12/A9', requiredRoles: ['Coordinator'], ...overrides });
+const bridgeChecklist = (overrides = {}) => serviceOrder({ kind: 'BridgeChecklist', title: 'Check-List del puente',
+  formCode: 'F-MGO-AVL 8.14.1/A1-A2', requiredRoles: ['BridgeOperator'], ...overrides });
+/** A Service Order whose summary differs from the default one. */
+const serviceOrderWith = summary => serviceOrder({ summary: { ...serviceOrder().summary, ...summary } });
 
-async function render(documents = [serviceOrder()]) {
-  mockSnapshot = { items: [], syncing: false, confirmed: {}, revisions: {}, charters: {},
+/**
+ * The forms panel of an operation in progress, unless told otherwise: `editable` is what the screen passes while the
+ * forms can still be signed (in progress, pending review or returned) and `executionOpen` only while in progress.
+ */
+async function render(documents = [serviceOrder()], { editable = true, executionOpen = true, items = [] } = {}) {
+  mockSnapshot = { items, syncing: false, confirmed: {}, revisions: {}, charters: {},
     documents: { [OPERATION_ID]: { operationId: OPERATION_ID, documents, damageMarks: [] } } };
   let tree;
   await renderer.act(async () => {
-    tree = renderer.create(React.createElement(DocumentsPanel, { operationId: OPERATION_ID, editable: true }));
+    tree = renderer.create(React.createElement(DocumentsPanel, { operationId: OPERATION_ID, editable, executionOpen }));
   });
   return tree;
 }
@@ -112,6 +124,31 @@ function boxAbove(node) {
   while (box && box.type !== 'View') box = box.parent;
   return box;
 }
+/** The texts on screen in the sheet, in order. */
+const sheetTexts = tree => modal(tree).findAll(node => node.type === 'Text').map(textOf);
+/** A form's row in the panel: the nearest host View above its title that also holds its signers. */
+function documentRow(tree, title) {
+  const heading = tree.root.findAll(node => node.type === 'Text' && node.props.children === title)[0];
+  for (let node = heading.parent; node; node = node.parent) {
+    if (node.type === 'View' && node.findAll(text => text.type === 'Text' && /^(Representante|AVIAM|Coordinador|Operador)/
+      .test(textOf(text))).length > 0) return node;
+  }
+  return null;
+}
+/** The FIRMAR buttons of the panel, or of one form's row. */
+const signButtons = scope => scope.findAll(node => node.props.accessibilityRole === 'button' &&
+  typeof node.props.onPress === 'function' &&
+  node.findAll(text => text.type === 'Text' && text.props.children === 'FIRMAR').length > 0);
+/** WCAG 2 contrast ratio between two #RRGGBB colours. */
+function contrast(first, second) {
+  const luminance = hex => {
+    const [r, g, b] = [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16) / 255)
+      .map(channel => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [light, dark] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
 
 async function layOut(tree, width = PAD_WIDTH) {
   await renderer.act(async () => {
@@ -119,9 +156,12 @@ async function layOut(tree, width = PAD_WIDTH) {
   });
 }
 
-/** Opens the sheet with the FIRMAR of the row that names the role, and lays the pad out. */
-async function openSheet(tree, role = AIRLINE) {
-  const label = tree.root.findAll(node => node.type === 'Text' && node.props.children === role)[0];
+/**
+ * Opens the sheet with the FIRMAR of the row that names the role, and lays the pad out. Roles repeat across forms:
+ * `scope` (a form's row, see `documentRow`) picks the form.
+ */
+async function openSheet(tree, role = AIRLINE, scope = tree.root) {
+  const label = scope.findAll(node => node.type === 'Text' && node.props.children === role)[0];
   let button;
   for (let node = label.parent; node && !button; node = node.parent) {
     button = node.findAll(candidate => candidate.props.accessibilityRole === 'button' &&
@@ -343,5 +383,189 @@ describe('guards', () => {
     } finally {
       dismiss.mockRestore();
     }
+  });
+});
+
+describe('the Service Order’s total says what it is (N4, D-N4)', () => {
+  const NOTE = 'Subtotal a precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al facturar.';
+  const SURCHARGES = 'Los recargos listados se valoran al facturar.';
+  const textNode = (tree, predicate) => modal(tree).findAll(node => node.type === 'Text' && predicate(textOf(node)))[0];
+
+  test('under the total, a note says it is the subtotal at contract price, without ITBIS', async () => {
+    const tree = await render();
+    await openSheet(tree);
+    const label = textNode(tree, text => text === 'Monto total');
+    const note = textNode(tree, text => text.startsWith('Subtotal a precio de contrato'));
+    expect(note).toBeDefined();
+    expect(textOf(note)).toBe(NOTE);
+    expect(sheetTexts(tree)).toContain('USD 300.00');
+    // Right under the total, in the same box as the lines, and before the pad.
+    const nodes = modal(tree).findAll(() => true);
+    expect(nodes.indexOf(note)).toBeGreaterThan(nodes.indexOf(label));
+    expect(nodes.indexOf(note)).toBeLessThan(nodes.indexOf(pad(tree)));
+    expect(boxAbove(note)).toBe(boxAbove(boxAbove(label)));
+    expect(sheetTexts(tree).join(' ')).not.toContain(SURCHARGES);
+  });
+
+  test('with surcharges listed, the note adds that they are valued when invoicing', async () => {
+    const tree = await render([serviceOrderWith({ surcharges: ['Recargo nocturno · RAMP-AC'] })]);
+    await openSheet(tree);
+    expect(sheetTexts(tree)).toContain('Recargo: Recargo nocturno · RAMP-AC');
+    expect(sheetTexts(tree)).toContain(`${NOTE} ${SURCHARGES}`);
+  });
+
+  test('a total not valued yet reads «Pendiente de valoración», without the note', async () => {
+    const tree = await render([serviceOrderWith({ totalAmount: null,
+      services: [{ code: 'RAMP-AC', name: 'Aire acondicionado', quantity: 1, unit: 'hour', amount: null }] })]);
+    await openSheet(tree);
+    const label = textNode(tree, text => text === 'Monto total');
+    const value = textNode(tree, text => text === 'Pendiente de valoración');
+    expect(value).toBeDefined();
+    expect(contains(boxAbove(label), value)).toBe(true);
+    expect(sheetTexts(tree).join(' ')).not.toContain('ITBIS');
+  });
+
+  test('the Flight Report carries no note', async () => {
+    const tree = await render([flightReport()]);
+    await openSheet(tree, 'Coordinador');
+    expect(sheetTexts(tree).join(' ')).toContain('puntos del checklist');
+    expect(sheetTexts(tree).join(' ')).not.toContain('ITBIS');
+  });
+
+  test('a charter carries no note, neither on its Service Request nor on its Service Order', async () => {
+    const tree = await render([charterRequest(), serviceOrder()]);
+    await openSheet(tree, AIRLINE, documentRow(tree, 'Solicitud de Servicio'));
+    expect(sheetTexts(tree)).toContain('Solicitud de Servicio · SS-PUJ-0001');
+    expect(sheetTexts(tree)).toContain('Monto total');
+    expect(sheetTexts(tree).join(' ')).not.toContain('ITBIS');
+    await press(closeButton(tree));
+    // A charter is priced at Finance's base tariff, not a contract: «a precio de contrato» would be false.
+    await openSheet(tree, AIRLINE, documentRow(tree, 'Orden de Servicio'));
+    expect(sheetTexts(tree)).toContain('Orden de Servicio · OS-PUJ-0001');
+    expect(sheetTexts(tree)).toContain('Monto total');
+    expect(sheetTexts(tree).join(' ')).not.toContain('ITBIS');
+  });
+});
+
+describe('signatures the hand-off to OCC does not wait for (N3, D-N3)', () => {
+  const OPTIONAL = 'No hace falta para entregar a OCC';
+  const noteIn = scope => scope.findAll(node => node.type === 'Text' && textOf(node) === OPTIONAL)[0];
+  const allForms = () => [charterRequest(), serviceOrder(), flightReport(), bridgeChecklist()];
+
+  test('only the Flight Report and the bridge checklist say so, with an icon', async () => {
+    const tree = await render(allForms());
+    expect(noteIn(documentRow(tree, 'Solicitud de Servicio'))).toBeUndefined();
+    expect(noteIn(documentRow(tree, 'Orden de Servicio'))).toBeUndefined();
+    for (const title of ['Reporte de Vuelo', 'Check-List del puente']) {
+      const note = noteIn(documentRow(tree, title));
+      expect(note).toBeDefined();
+      expect(boxAbove(note).findAll(node => node.props.name === 'information-circle-outline')).toHaveLength(1);
+    }
+  });
+
+  test('their FIRMAR is a secondary navy button with AA contrast; the others stay orange', async () => {
+    const tree = await render(allForms());
+    const style = button => StyleSheet.flatten(button.props.style({ pressed: false }));
+    const label = button => StyleSheet.flatten(button.findAll(node => node.type === 'Text' &&
+      node.props.children === 'FIRMAR')[0].props.style);
+    const icon = button => button.findAll(node => node.props.name === 'pencil')[0].props.color;
+    for (const title of ['Reporte de Vuelo', 'Check-List del puente']) {
+      const [button] = signButtons(documentRow(tree, title));
+      expect(style(button)).toEqual(expect.objectContaining({ backgroundColor: colors.white, borderColor: colors.navy }));
+      expect(label(button).color).toBe(colors.navy);
+      expect(icon(button)).toBe(colors.navy);
+      expect(contrast(label(button).color, style(button).backgroundColor)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(style(button).borderColor, colors.white)).toBeGreaterThanOrEqual(3);
+      const note = noteIn(documentRow(tree, title));
+      expect(contrast(StyleSheet.flatten(note.props.style).color, colors.white)).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const title of ['Solicitud de Servicio', 'Orden de Servicio']) {
+      for (const button of signButtons(documentRow(tree, title))) {
+        expect(style(button).backgroundColor).toBe(colors.orange);
+        expect(label(button).color).toBe(colors.white);
+      }
+    }
+  });
+
+  test('every FIRMAR names its role for the screen reader, «Firmar: {rol}»', async () => {
+    const tree = await render(allForms());
+    expect(signButtons(tree.root).map(button => button.props.accessibilityLabel)).toEqual([
+      'Firmar: Representante de la aerolínea',
+      'Firmar: Representante de la aerolínea', 'Firmar: AVIAM · Responsable',
+      'Firmar: Coordinador',
+      'Firmar: Operador del puente',
+    ]);
+    // A screen reader that jumps from button to button still hears that the Flight Report is not needed.
+    const [optional] = signButtons(documentRow(tree, 'Reporte de Vuelo'));
+    expect(optional.props.accessibilityHint).toBe(OPTIONAL);
+    const [required] = signButtons(documentRow(tree, 'Orden de Servicio'));
+    expect(required.props.accessibilityHint).toBeUndefined();
+  });
+
+  test('the secondary FIRMAR opens the same signature sheet', async () => {
+    const tree = await render([flightReport()]);
+    await openSheet(tree, 'Coordinador');
+    await drawStroke(tree, [[60, 30], [120, 60]]);
+    await press(sheetButton(tree, 'FIRMAR'));
+    expect(mockSign).toHaveBeenCalledWith(OPERATION_ID, 'FlightReport', 'Coordinator', 'Riley Ramp', SHA,
+      [[0.1, 0.15, 0.2, 0.3]], undefined);
+  });
+
+  const SIGNED = { isFullySigned: true,
+    signatures: [{ role: 'Coordinator', signerName: 'Riley Ramp', signedAt: '2026-10-05T15:00:00Z' }] };
+  const WAITING = [{ idempotencyKey: '91000000-0000-4000-8000-000000000009', state: 'pending', attempts: 0,
+    createdAt: '2026-10-05T15:00:00.000Z', command: { kind: 'signature', operationId: OPERATION_ID,
+      documentKind: 'FlightReport', role: 'Coordinator', signerName: 'Riley Ramp' } }];
+  test.each([
+    ['the form is signed', [flightReport(SIGNED)], {}],
+    ['its signature waits on the device', [flightReport()], { items: WAITING }],
+    ['the forms cannot be signed (editable=false)', [flightReport()], { editable: false }],
+    ['the execution is closed, handed off to OCC', [flightReport()], { executionOpen: false }],
+  ])('the note goes away when %s', async (_description, documents, options) => {
+    const tree = await render(documents, options);
+    expect(noteIn(documentRow(tree, 'Reporte de Vuelo'))).toBeUndefined();
+    expect(JSON.stringify(tree.toJSON())).not.toContain(OPTIONAL);
+  });
+
+  test('with the forms still signable after the hand-off, the button stays secondary and names its role', async () => {
+    const tree = await render([flightReport()], { executionOpen: false });
+    const [button] = signButtons(documentRow(tree, 'Reporte de Vuelo'));
+    expect(StyleSheet.flatten(button.props.style({ pressed: false })).backgroundColor).toBe(colors.white);
+    expect(button.props.accessibilityLabel).toBe('Firmar: Coordinador');
+    expect(button.props.accessibilityHint).toBeUndefined();
+  });
+});
+
+describe('the one form the hand-off waits for (N3, handoff.ts)', () => {
+  const {
+    HANDOFF_REQUIRED_FORM,
+    isOptionalForHandoff,
+    isServiceOrderSigned,
+  } = require('../src/features/assigned-operations/handoff');
+  const forms = (...documents) => ({ documents });
+
+  test('the Service Order is the form that holds the hand-off', () => {
+    expect(HANDOFF_REQUIRED_FORM).toBe('ServiceOrder');
+    expect(isServiceOrderSigned(forms({ kind: HANDOFF_REQUIRED_FORM, isFullySigned: true, staleRoles: [] }))).toBe(true);
+  });
+
+  test.each([
+    ['FlightReport', true],
+    ['BridgeChecklist', true],
+    ['ServiceOrder', false],
+    ['CharterServiceRequest', false],
+    ['SomethingNew', false],
+    ['constructor', false],
+  ])('isOptionalForHandoff(%s) is %s', (kind, optional) => {
+    expect(isOptionalForHandoff(kind)).toBe(optional);
+  });
+
+  test('unsigned optional forms do not change whether the hand-off waits', () => {
+    expect(isServiceOrderSigned(forms(
+      { kind: 'FlightReport', isFullySigned: false, staleRoles: [] },
+      { kind: 'BridgeChecklist', isFullySigned: false, staleRoles: ['BridgeOperator'] },
+      { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [] },
+    ))).toBe(true);
+    expect(isServiceOrderSigned(forms({ kind: 'FlightReport', isFullySigned: true, staleRoles: [] }))).toBe(false);
   });
 });

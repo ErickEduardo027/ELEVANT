@@ -227,6 +227,24 @@ contiene secretos.
     sale de la pantalla a mitad de un trazo devuelve el desplazamiento.
   - Sin dos columnas en pantallas anchas (D-S2) y sin
     `react-native-gesture-handler`.
+- El monto de la Orden y las firmas que la entrega no espera (hallazgos N4 y
+  N3, D-N4 y D-N3):
+  - Bajo el total de la Orden de Servicio, la hoja de firma dice «Subtotal a
+    precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al
+    facturar.» y, si la Orden lista recargos, «Los recargos listados se valoran
+    al facturar.». Un total nulo dice «Pendiente de valoración», sin la nota.
+    Ni el Reporte de Vuelo ni un charter, que se cobra a la tarifa base, llevan
+    la nota, y el PDF no cambia.
+  - `src/features/assigned-operations/handoff.ts` nombra el único formulario
+    cuyas firmas espera la entrega (`HANDOFF_REQUIRED_FORM`, la Orden de
+    Servicio) y los que no (`isOptionalForHandoff`: el Reporte de Vuelo y el
+    Check-List del puente).
+  - Mientras la operación está en curso (`executionOpen` del panel de
+    formularios) y queda una firma por dar, esos dos dicen «No hace falta para
+    entregar a OCC» con un icono. Su FIRMAR es un botón secundario azul marino
+    (13,5:1 sobre blanco); la Solicitud de Servicio del charter queda como
+    estaba, en naranja.
+  - Cada FIRMAR se anuncia como «Firmar: {rol}».
 
 ## Autorización y almacenamiento
 

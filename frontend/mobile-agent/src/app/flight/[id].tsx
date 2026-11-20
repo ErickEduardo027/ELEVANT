@@ -686,7 +686,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           <CharterCard operationId={operation.operation.id} editable={executing}
             existingServiceIds={operation.services.map(service => service.serviceDefinitionId)} />
           <DocumentsPanel operationId={operation.operation.id} editable={executing || shown.operation.status === 'PendingReview' ||
-            shown.operation.status === 'Returned'} />
+            shown.operation.status === 'Returned'} executionOpen={executing} />
         </>
       )}
 

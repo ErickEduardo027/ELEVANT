@@ -209,6 +209,14 @@ Los formularios de AVIAM ya no se transcriben: se generan desde el registro de l
 
 **Walk-around.** `ops.operation_damage_marks` guarda la posición en la silueta (0–1), la nota y, opcionalmente, una foto JPEG o PNG en almacenamiento privado con su SHA-256. Las fotos no entran en la huella: se anexan al PDF del Reporte de Vuelo.
 
+**El monto y las firmas en la tablet.** Posterior al commit verificado de esta nota (hallazgos N4 y N3 de la corrida del VPS del 16 de noviembre, decisiones D-N4 y D-N3):
+
+- Bajo el total de la Orden de Servicio, la hoja de firma dice «Subtotal a precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al facturar.». Si la Orden lista recargos, añade «Los recargos listados se valoran al facturar.».
+- Un total que todavía no se valora dice «Pendiente de valoración», sin la nota.
+- La nota no sale en el Reporte de Vuelo ni en un charter, que se cobra a la tarifa base. El PDF no cambia.
+- Entre las firmas, la entrega a OCC desde la tablet solo espera las de la Orden de Servicio ([`handoff.ts`](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts)). Mientras la operación está en curso, el Reporte de Vuelo y el Check-List del puente dicen «No hace falta para entregar a OCC» y se firman con un botón secundario. La Solicitud de Servicio del charter queda como estaba.
+- Queda por consultar con el contador si una Orden al contado sin ITBIS es válida.
+
 **Fuera de este bloque:** la valoración de recargos (bloque 5).
 
 ## Charter sin contrato

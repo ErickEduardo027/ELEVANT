@@ -595,6 +595,36 @@ el desplazamiento de la hoja.
   [pruebas de la hoja](../../frontend/mobile-agent/tests/operation-documents-sheet.test.js).
 - La APK instalada conserva la hoja anterior hasta que se instale la nueva.
 
+**El monto y las firmas que la entrega no espera.** Posterior al commit
+verificado de esta nota (hallazgos N4 y N3 de la corrida del VPS del 16 de
+noviembre, decisiones D-N4 y D-N3). El total de la Orden no decía que era
+antes del ITBIS, y la firma del Reporte de Vuelo tenía el mismo FIRMAR naranja
+que las firmas que la entrega exige.
+
+- Bajo el total de la Orden de Servicio, la hoja de firma dice «Subtotal a
+  precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al
+  facturar.». Si la Orden lista recargos, añade «Los recargos listados se
+  valoran al facturar.».
+- Un total que todavía no se valora dice «Pendiente de valoración», sin la
+  nota.
+- La nota no sale en el Reporte de Vuelo ni en los formularios de un charter,
+  que se cobra a la tarifa base y no a un precio de contrato. El PDF no cambia.
+- Entre las firmas, la entrega a OCC solo espera las de la Orden de Servicio
+  ([`handoff.ts`](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts):
+  `HANDOFF_REQUIRED_FORM` e `isOptionalForHandoff`).
+- Mientras la operación está en curso y queda una firma por dar, el Reporte de
+  Vuelo y el Check-List del puente dicen «No hace falta para entregar a OCC»,
+  con un icono. El aviso se va con la firma hecha o guardada en el
+  dispositivo, y después de la entrega.
+- Su FIRMAR es un botón secundario, con borde y texto azul marino sobre blanco
+  (contraste 13,5:1). El de la Orden y el de la Solicitud del charter siguen
+  en naranja.
+- Cada FIRMAR se anuncia como «Firmar: {rol}». Mientras se ve el aviso, el
+  botón lo repite como sugerencia para el lector de pantalla.
+- Lo cubren las mismas pruebas de la hoja.
+- La APK instalada conserva el total sin nota y el FIRMAR naranja hasta que se
+  instale la nueva.
+
 ## Fase 3, bloque 5: recargos automáticos
 
 Desde el cierre OCC → Finanzas ([ADR-0034](../../docs/adr/0034-operational-close-occ-to-finance.md)), la [tarjeta de cargos](../../frontend/mobile-agent/src/components/ramp-operation-charges-card.tsx) muestra con su origen («automático» u «OCC») los recargos que marcó ELEVANT al entregar o que agregó OCC en la revisión.

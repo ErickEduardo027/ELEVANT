@@ -11,6 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Polygon, Text as SvgText } from 'react-native-svg';
+import { isOptionalForHandoff } from '../../features/assigned-operations/handoff';
 import { getMobileSessionRequestContext } from '../../services/mobile-auth';
 import {
   loadOperationDocuments,
@@ -45,6 +46,12 @@ const ROLES: Record<OperationSignatureRole, string> = {
 /** Roles AVIAM signs: the name is the agent's own; the airline representative types theirs. */
 const AVIAM_ROLES = new Set<OperationSignatureRole>(['AviamAgent', 'Coordinator', 'BridgeOperator']);
 
+/** N3 (D-N3): beside a form whose signatures the hand-off to OCC does not wait for. */
+const NOT_NEEDED_FOR_HANDOFF = 'No hace falta para entregar a OCC';
+/** N4 (D-N4): under the Service Order's total, on the tablet only; the PDF keeps its own wording. */
+const SUBTOTAL_NOTE = 'Subtotal a precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al facturar.';
+const SURCHARGES_NOTE = 'Los recargos listados se valoran al facturar.';
+
 function useFlightReportSnapshot() {
   const [snapshot, setSnapshot] = useState<FlightReportSnapshot | null>(null);
   useEffect(() => subscribeFlightReport(setSnapshot), []);
@@ -64,12 +71,20 @@ function money(amount: number | null | undefined, currency: string | null | unde
  * already captured. Each shows who still has to sign; a signature is saved on the device and sent
  * with signal, and a form that changed after signing asks only for its own signatures again.
  */
-export function DocumentsPanel({ operationId, editable }: { operationId: string; editable: boolean }) {
+export function DocumentsPanel({ operationId, editable, executionOpen }: {
+  operationId: string;
+  /** The forms can be signed: while in progress, pending OCC's review or returned for correction. */
+  editable: boolean;
+  /** The operation is in progress, its hand-off to OCC still ahead (N3). */
+  executionOpen: boolean;
+}) {
   const snapshot = useFlightReportSnapshot();
   const [state, setState] = useState<'loading' | 'ready' | 'offline'>('loading');
   const [signing, setSigning] = useState<{ document: OperationDocumentResponse; role: OperationSignatureRole } | null>(null);
   const [agentName, setAgentName] = useState('');
   const documents = snapshot?.documents[operationId];
+  // A charter (ADR-0033) is the only flight with a Service Request; its forms are priced at Finance's base tariff.
+  const charterFlight = documents?.documents.some(item => item.kind === 'CharterServiceRequest') ?? false;
   const queued = pendingOf(snapshot?.items ?? [], operationId);
   const syncedCount = queued.length;
 
@@ -102,11 +117,11 @@ export function DocumentsPanel({ operationId, editable }: { operationId: string;
       )}
       {documents?.documents.map(document => (
         <DocumentRow key={document.kind} document={document} queued={queued} editable={editable}
-          onSign={role => setSigning({ document, role })} />
+          executionOpen={executionOpen} onSign={role => setSigning({ document, role })} />
       ))}
       {signing && (
         <SignSheet document={signing.document} role={signing.role} defaultName={AVIAM_ROLES.has(signing.role) ? agentName : ''}
-          onClose={() => setSigning(null)}
+          charterFlight={charterFlight} onClose={() => setSigning(null)}
           onSign={(name, strokes, identification) => {
             void signDocument(operationId, signing.document.kind as OperationDocumentKind, signing.role, name,
               signing.document.contentSha256, strokes, identification);
@@ -118,11 +133,22 @@ export function DocumentsPanel({ operationId, editable }: { operationId: string;
   );
 }
 
-function DocumentRow({ document, queued, editable, onSign }: {
-  document: OperationDocumentResponse; queued: readonly FlightReportOutboxItem[]; editable: boolean;
+function DocumentRow({ document, queued, editable, executionOpen, onSign }: {
+  document: OperationDocumentResponse; queued: readonly FlightReportOutboxItem[]; editable: boolean; executionOpen: boolean;
   onSign: (role: OperationSignatureRole) => void;
 }) {
   const kind = document.kind as OperationDocumentKind;
+  const signers = (document.requiredRoles as OperationSignatureRole[]).map(role => ({
+    role,
+    signature: document.signatures.find(item => item.role === role),
+    pending: queued.find(item => item.command.kind === 'signature' && item.command.documentKind === kind &&
+      item.command.role === role),
+    stale: (document.staleRoles as string[]).includes(role),
+  }));
+  // N3 (D-N3): the hand-off waits only for the Service Order. A form it does not wait for signs with a secondary
+  // button, and says so while the execution is open and one of its signatures is still to give.
+  const optional = isOptionalForHandoff(kind);
+  const notNeeded = optional && editable && executionOpen && signers.some(item => !item.signature && !item.pending);
   return (
     <View style={[styles.document, document.isFullySigned && styles.documentDone]}>
       <View style={styles.documentHeader}>
@@ -134,11 +160,13 @@ function DocumentRow({ document, queued, editable, onSign }: {
         </View>
         {document.isFullySigned && <Text style={styles.doneChip}>Firmado</Text>}
       </View>
-      {(document.requiredRoles as OperationSignatureRole[]).map(role => {
-        const signature = document.signatures.find(item => item.role === role);
-        const pending = queued.find(item => item.command.kind === 'signature' && item.command.documentKind === kind &&
-          item.command.role === role);
-        const stale = (document.staleRoles as string[]).includes(role);
+      {notNeeded && (
+        <View style={styles.notNeeded}>
+          <Ionicons name="information-circle-outline" size={20} color={colors.muted} />
+          <Text style={styles.notNeededText}>{NOT_NEEDED_FOR_HANDOFF}</Text>
+        </View>
+      )}
+      {signers.map(({ role, signature, pending, stale }) => {
         const tone = signature ? syncTone.confirmed : pending ? (pending.state === 'blocked' ? syncTone.blocked : syncTone.device)
           : null;
         return (
@@ -157,10 +185,13 @@ function DocumentRow({ document, queued, editable, onSign }: {
                 <Text style={[styles.chipText, { color: tone.fg }]}>{tone.label}</Text>
               </View>
             ) : (
-              <Pressable accessibilityRole="button" disabled={!editable} onPress={() => onSign(role)}
-                style={({ pressed }) => [styles.signButton, !editable && styles.disabled, pressed && styles.pressed]}>
-                <Ionicons name="pencil" size={18} color={colors.white} />
-                <Text style={styles.signText}>FIRMAR</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Firmar: ${ROLES[role]}`}
+                accessibilityHint={notNeeded ? NOT_NEEDED_FOR_HANDOFF : undefined} disabled={!editable}
+                onPress={() => onSign(role)}
+                style={({ pressed }) => [styles.signButton, optional && styles.signButtonSecondary,
+                  !editable && styles.disabled, pressed && styles.pressed]}>
+                <Ionicons name="pencil" size={18} color={optional ? colors.navy : colors.white} />
+                <Text style={[styles.signText, optional && styles.signTextSecondary]}>FIRMAR</Text>
               </Pressable>
             )}
           </View>
@@ -170,8 +201,10 @@ function DocumentRow({ document, queued, editable, onSign }: {
   );
 }
 
-function SignSheet({ document, role, defaultName, onClose, onSign }: {
+function SignSheet({ document, role, defaultName, charterFlight, onClose, onSign }: {
   document: OperationDocumentResponse; role: OperationSignatureRole; defaultName: string;
+  /** The flight is a charter (ADR-0033): no contract prices its forms. */
+  charterFlight: boolean;
   onClose: () => void; onSign: (name: string, strokes: Strokes, identification?: string) => void;
 }) {
   const [name, setName] = useState(defaultName);
@@ -183,6 +216,11 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
   const [strokes, setStrokes] = useState<Strokes>([]);
   const [drawing, setDrawing] = useState(false);
   const summary = document.summary;
+  // N4 (D-N4): the Service Order's total is the services at contract price, before ITBIS and before the listed
+  // surcharges are valued; Finance invoices the final amount. Not on a charter: its prices are the base tariff's.
+  const subtotalNote = document.kind === 'ServiceOrder' && !charterFlight && summary.totalAmount != null
+    ? (summary.surcharges.length > 0 ? `${SUBTOTAL_NOTE} ${SURCHARGES_NOTE}` : SUBTOTAL_NOTE)
+    : null;
   const ready = name.trim().length >= 2 && strokes.length > 0 && idValid;
   const fingerprint = `${document.contentSha256.slice(0, 12)}…${document.contentSha256.slice(-6)}`;
   // S2: FIRMAR and CANCELAR stay in the frame's fixed footer, within reach in landscape; only the body scrolls, and
@@ -232,8 +270,12 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
           {summary.surcharges.map(item => <Text key={item} style={styles.surcharge}>Recargo: {item}</Text>)}
           <View style={styles.total}>
             <Text style={styles.totalLabel}>Monto total</Text>
-            <Text style={styles.totalValue}>{money(summary.totalAmount, summary.currencyCode)}</Text>
+            {/* Null until there are lines and every one has a price: no amount yet, so no note either. */}
+            {summary.totalAmount == null
+              ? <Text style={styles.totalPending}>Pendiente de valoración</Text>
+              : <Text style={styles.totalValue}>{money(summary.totalAmount, summary.currencyCode)}</Text>}
           </View>
+          {subtotalNote && <Text style={styles.totalNote}>{subtotalNote}</Text>}
         </View>
       ) : (
         <Text style={styles.hint}>
@@ -387,6 +429,11 @@ const styles = StyleSheet.create({
   signButton: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.orange, minHeight: touch.min,
     paddingHorizontal: space.xl, borderRadius: radius.pill },
   signText: { ...type.label, color: colors.white, letterSpacing: 0.6 },
+  // N3: a signature the hand-off does not wait for. Navy on white is 13.5:1 (AA asks 4.5:1 for text, 3:1 for the edge).
+  signButtonSecondary: { backgroundColor: colors.white, borderWidth: 2, borderColor: colors.navy },
+  signTextSecondary: { color: colors.navy },
+  notNeeded: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  notNeededText: { ...type.body, color: colors.muted, flex: 1 },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.75 },
   sheet: { padding: space.xl, gap: space.md, backgroundColor: colors.background, flexGrow: 1 },
@@ -404,6 +451,8 @@ const styles = StyleSheet.create({
   total: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.sm },
   totalLabel: { ...type.label, color: colors.navy },
   totalValue: { ...type.time, color: colors.navy },
+  totalPending: { ...type.label, color: colors.navy, flexShrink: 1, textAlign: 'right' },
+  totalNote: { ...type.body, color: colors.muted },
   fieldLabel: { ...type.label, color: colors.ink },
   input: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, minHeight: touch.min,
     paddingHorizontal: space.md, ...type.body, fontSize: 18, color: colors.ink },

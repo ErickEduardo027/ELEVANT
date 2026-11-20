@@ -162,5 +162,21 @@ como máximo 720 dp en 3:1. Las guardas: solo se firman los trazos visibles, el
 charter exige la cédula normalizada y empezar un trazo no cierra el teclado.
 `react-native-svg` se simula con componentes host para contar los trazos.
 
+`operation-documents-sheet.test.js` fija también el monto de la Orden y las
+firmas que la entrega no espera (N4 y N3, D-N4 y D-N3). Bajo el total de la
+Orden comprueba la nota exacta, con y sin recargos; un total nulo dice
+«Pendiente de valoración» sin la nota, y ni el Reporte de Vuelo ni la
+Solicitud de un charter ni su Orden la llevan. Solo el Reporte de Vuelo y el
+Check-List del puente dicen «No hace falta para entregar a OCC», con su icono;
+su FIRMAR es secundario y azul marino, con el contraste AA calculado sobre los
+estilos, y los demás siguen en naranja. Cada FIRMAR se anuncia «Firmar: {rol}».
+El aviso se va con el formulario firmado, con la firma guardada en el
+dispositivo, con `editable=false` y con la ejecución cerrada. También fija los
+exports de `handoff.ts`. Las guardas: el manifiesto
+(`operation-offline-queue.test.js`) entrega con el Reporte de Vuelo y el
+Check-List del puente sin firmar y le dice al panel si la ejecución está
+abierta, y `ramp-operation-submission.test.js` envía la entrega con ellos sin
+firmar.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.
