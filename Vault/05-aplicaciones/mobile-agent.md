@@ -90,7 +90,7 @@ la sección «Fase 3» describe la cola actual.
 
 *Posterior al commit verificado de esta nota:* una cuenta que Gestión Humana creó con contraseña temporal recibe `409` con el código `password_change_required` al iniciar sesión. La misma pantalla `/` pasa a «Cambia tu contraseña temporal»: la temporal viene oculta y precargada, la nueva se escribe dos veces y una lista muestra en vivo la política de la API (14 caracteres o más, mayúscula, minúscula, número y símbolo, y distinta de la temporal). Al enviar, la app llama a `POST /api/v1/auth/password-change` sin sesión. Con `204` inicia sesión sola con la nueva contraseña y sigue el flujo normal, incluido el registro de la tablet. Con `400` explica la política, con `401` que la temporal no es válida y con `429` que espere un minuto. Ninguna contraseña se guarda ni se registra ([pantalla](../../frontend/mobile-agent/src/app/index.tsx), [formulario](../../frontend/mobile-agent/src/components/temporary-password-change.tsx), [servicio](../../frontend/mobile-agent/src/services/mobile-auth.ts)).
 
-El cierre de atención exige un checklist completo en el estado local. Esa regla de interfaz no es todavía una invariante del servidor ni un contrato público.
+*Corregido posterior al commit verificado de esta nota (hallazgo N1 de la corrida del VPS del 16 de noviembre):* esta línea decía que exigir el checklist completo para cerrar era solo una regla de la interfaz. Es una regla del servidor: la entrega a OCC (`POST …/submit`) responde `409` si el último checklist de ejecución de la operación no está enviado (`Submitted`) o si queda un servicio sin terminar ([política](../../backend/Elevant.Application/Operations/RampOperationSubmissionPolicy.cs), [almacenamiento](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfRampOperationSubmissionStore.cs)). La tablet lo comprueba antes, junto con lo que el servidor no exige (viñeta «Entrega» de la sección «Fase 3»).
 
 > [!note] Rama `feat/finance-refinement`
 > El detalle de operación añade «Cargos aplicados»: el agente marca solo el tipo de cargo (nocturno, tiempo extra…) en servicios en curso, completados o en excepción, sin ver precios. Usa `GET/POST /api/v1/ramp/operations/{id}/…/charges` con clave idempotente estable por servicio, cargo y acción y conserva la última lista como caché sin conexión. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
@@ -148,8 +148,135 @@ La app sigue la orientación del dispositivo. Según la
   seleccionado;
 - entre 600 y 899 dp, la lista usa dos columnas.
 
+`android/` no se versiona: se regenera desde `app.json` con
+`npx expo prebuild --clean`
+([README del cliente](../../frontend/mobile-agent/README.md)). Una copia generada
+antes de `fce328ca`, cuando `app.json` fijaba el vertical, deja la app bloqueada
+en vertical. En la corrida del VPS del 16 de noviembre, el letterbox en
+horizontal salió de una copia así, no de las pantallas.
+
 Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
 lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
+
+**Un solo formato de fecha y hora.** Posterior al commit verificado de esta nota
+(hallazgo N11 de la corrida del VPS del 16 de noviembre), las pantallas que usan
+los formateadores de la
+[utilidad de fechas](../../frontend/mobile-agent/src/utils/date-format.ts)
+escriben «lun, 16 nov» y «16 nov, 19:46», siempre con reloj de 24 horas: la
+tarjeta y el detalle de la operación, «Sincronización», el inicio y «Mis
+posiciones de hoy», las incidencias, el chat y las notificaciones.
+
+- Las horas de la operación, de la cola de «Sincronización», de la última
+  actualización del inicio y de «Mis posiciones de hoy» están en la hora local
+  de la estación. El inicio toma la zona de las operaciones asignadas.
+- Si la tablet no conoce la zona (un comando guardado por una versión anterior,
+  una estación sin operaciones en la tablet), usa `America/Santo_Domingo`, como
+  private-web y el servidor, y nunca la zona del equipo.
+- Chat y notificaciones usan el mismo formato en la hora del equipo. Las
+  incidencias pasaron a la hora de la estación con el hallazgo S6 (abajo).
+- La tarjeta de la operación escribe «Inicio planificado» y el día sin
+  mayúsculas forzadas, en hasta dos líneas que se reducen para caber, y el
+  nombre del aeropuerto del detalle ya no se corta.
+- [«Mis turnos y documentos»](../../frontend/mobile-agent/src/app/my-schedule.tsx)
+  escribe el día del turno igual, «lun, 16 nov», sin mayúsculas forzadas y sin que
+  la zona del equipo lo mueva. El vencimiento de los documentos sigue como
+  «vence el 16/11/2026».
+- La APK instalada conserva el formato anterior hasta que se instale la nueva.
+
+**Unidades de cobro en español.** Posterior al commit verificado de esta nota
+(hallazgo S5 de la corrida del VPS del 16 de noviembre, decisión D-S5), la
+tarjeta de cada servicio nombra su unidad como Finanzas y nunca con el código
+de `ref.billing_units`: «0 / 1 hora», «1 / 1 operación» y «Cantidad ejecutada
+(horas)», con la
+[utilidad de unidades](../../frontend/mobile-agent/src/utils/billing-units.ts).
+
+- El plural está escrito para cada unidad sembrada, y solo una cantidad igual a
+  1 va en singular.
+- Un nombre heredado («Operación», «Hora», con o sin tilde) se lee como su
+  código, igual que en private-web. Una unidad desconocida sale tal cual.
+- Operación, servicio, aeronave y pasajero son unidades de conteo: la tablet
+  pide números enteros, salvo la cantidad contratada que propone la tarjeta.
+  Las demás admiten hasta cuatro decimales. Es una regla solo del cliente: el
+  servidor sigue aceptando cuatro decimales.
+- La Orden de Servicio conserva las abreviaturas de su PDF («1 h», «1 serv.»).
+- La APK instalada sigue mostrando el código hasta que se instale la nueva.
+
+**Ruta y asignación legibles.** Posterior al commit verificado de esta nota
+(hallazgos N10 y N9 de la corrida del VPS del 16 de noviembre, decisiones D-N10
+y D-N9), la tarjeta de una operación muestra todas las paradas de la escala en
+orden, BWI → PUJ → BWI, con un avión entre cada una, y resalta la estación donde
+trabaja el agente. Antes mostraba «BWI ✈ BWI» y ocultaba la estación. Las
+funciones están en la
+[presentación de operaciones](../../frontend/mobile-agent/src/features/assigned-operations/presentation.ts).
+
+- Si falta un tramo, la tarjeta no pone la estación en su lugar: una llegada
+  sola se lee BWI → PUJ y una salida sola, PUJ → MIA. Sin vuelos, nombra la
+  estación junto a «Ruta por confirmar».
+- El lector de pantalla dice «llega de BWI a PUJ y sale hacia BWI».
+- El riel de la hora ya no repite el código de la estación.
+- En una tarjeta angosta, la ruta pasa a una segunda línea entre dos paradas,
+  nunca dentro de una.
+- La asignación del detalle dice «Agente principal» en lugar de `primary`. No
+  muestra un rol que la tablet no conoce.
+- La posición operativa se nombra solo por su nombre: «Ramp agent» en lugar de
+  «RAMP-AGENT · Ramp agent». El nombre sembrado en Development sigue en inglés.
+- La APK instalada conserva la ruta y la asignación anteriores hasta que se
+  instale la nueva.
+
+**Códigos internos en segundo plano y una sola numeración.** Posterior al
+commit verificado de esta nota (hallazgo N12 de la corrida del VPS del 16 de
+noviembre, decisión D-N12), los códigos internos quedan como texto secundario
+mientras AVIAM no decida retirarlos, y cada control del checklist lleva un solo
+número.
+
+- La tarjeta de un servicio tiene el nombre como título y el código
+  («RAMP-AC») debajo, pequeño y sin negrita.
+- «Cargos aplicados» pone el número de línea delante del nombre,
+  «1 · Aire acondicionado», como las tarjetas de servicio, y el código debajo.
+  Antes decía «RAMP-AC · Aire acondicionado», y dos líneas del mismo servicio
+  no se distinguían.
+- El checklist dice «Versión 1» bajo el nombre del formulario y deja el código
+  de la plantilla debajo, en pequeño, en lugar de «FLIGHT-REPORT · versión 1».
+- Cada control lleva el número que imprime el PDF, con la
+  [presentación del checklist](../../frontend/mobile-agent/src/features/checklist/presentation.ts):
+  el número en que termina su código, así que el Reporte de Vuelo va de 1 a 21
+  en sus dos secciones. Si el código no termina en un número, como en el
+  Check-List del puente, es su posición dentro de la sección. Antes cada
+  sección empezaba en 1 y el control mostraba además su código («1» junto a
+  «PUSH-11»).
+- La APK instalada conserva los textos anteriores hasta que se instale la
+  nueva.
+
+**Asistencia e incidencias en la hora de la estación.** Posterior al commit
+verificado de esta nota (hallazgo S6 de la corrida del VPS del 16 de noviembre,
+decisión D-S6): la
+[tarjeta de asistencia](../../frontend/mobile-agent/src/components/attendance-draft-card.tsx)
+ya no edita en la zona del equipo. En la corrida mostró «Fin observado ·
+America/La_Paz», y esa zona cambió a mitad de la operación. D-S6 deja sin
+efecto la regla del plan del 2026-10-05, que pedía editar en la zona del
+equipo
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- La tarjeta dice «Las horas están en hora local de PUJ». El detalle titula los
+  vuelos «Hora local de PUJ» en lugar del identificador IANA de la zona.
+- Los campos y «Registrar inicio ahora» usan la hora de la estación. Lo escrito
+  viaja como instante UTC, igual que antes, con las funciones de la
+  [utilidad de fechas](../../frontend/mobile-agent/src/utils/date-format.ts).
+- Una hora que el reloj de la estación salta en un cambio de horario no se
+  guarda, y nunca se pasa a otra hora. Una hora que se repite toma su primera
+  vez.
+- El aporte de OCC y el conflicto muestran las horas en el formato de la
+  tablet, «5 oct, 10:00». En el conflicto, la versión guardada y el intento
+  tienen el mismo formato. Desde el hallazgo N8, el aporte de OCC omite la
+  fecha de las horas del día de la operación, «Inicio 10:00 · Fin —»
+  ([asistencia compartida](asistencia-compartida-occ-agente.md)).
+- Un reintento envía el comando reservado tal cual.
+- Las incidencias de la operación muestran su hora en la zona de la estación.
+- Si la tablet no conoce la zona, usa `America/Santo_Domingo`.
+- OCC y Gestión Humana no cambian: el panel de OCC edita en la zona del
+  navegador y la revisión de Gestión Humana muestra UTC. Alinearlos queda para
+  otra entrega.
+- La APK instalada sigue en la zona del equipo hasta que se instale la nueva.
 
 ## Fase 2: tablets compartidas
 
@@ -300,6 +427,49 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
 - **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
   registros pendientes o rechazados de la operación, ni con la Orden de Servicio
   sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.
+- **El cierre comprueba todos los requisitos.** Posterior a la fase 3 (hallazgo N1
+  de la corrida del VPS del 16 de noviembre): con el checklist en 0/21, el cierre
+  solo pedía la firma, y un diálogo nativo pedía al agente confirmar lo que la
+  tablet puede comprobar.
+  - La tarjeta de entrega lista, en orden, «Servicios terminados», «Checklist
+    enviado», «Incidencias enviadas», «Datos del vuelo completos», «Orden de
+    Servicio firmada» y «Registros enviados a ELEVANT», cada uno con su estado
+    ([requisitos](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts),
+    [lista y hoja](../../frontend/mobile-agent/src/components/handoff-requirements.tsx)).
+    Lo que falta apaga ENTREGAR A OCC y ofrece su salida: ABRIR CHECKLIST, ABRIR
+    INCIDENCIAS o ABRIR SINCRONIZACIÓN.
+  - Lo que la tablet no puede comprobar (sin señal, la copia guardada de un
+    checklist no enviado, los formularios aún sin leer) queda «por confirmar» y
+    no bloquea: el servicio lo vuelve a comprobar antes de enviar. Un envío del
+    checklist que espera en la cola lo cubre el requisito de la cola.
+  - «Datos del vuelo completos» (hallazgo S1, D-S1) solo avisa y nunca bloquea:
+    lee el resumen de la Orden de Servicio y dice si le faltan los pasajeros o
+    el MTOW. Con la Orden firmada, también con una firma que espera en la
+    tablet, añade que se puede entregar sin ellos y que guardarlos ahora obliga
+    a firmarla de nuevo; con los datos en la cola, que llegan a la Orden al
+    enviarse. La fila de la Orden, su hoja de firma, el cierre y la hoja del
+    push-back usan la misma regla para saber si la Orden ya tiene una firma. El
+    servicio de entrega no lo comprueba.
+  - La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
+    actualizar a mano y tras abrir la corrección, nunca con cada recarga del
+    feed, y cuenta las incidencias que siguen en la tablet en cada carga.
+  - El servicio vacía la cola antes de leer los servicios y el checklist, así
+    que lo recién enviado cuenta, y no se fía de la copia guardada del
+    checklist: sin señal, la entrega espera. Rechaza con los códigos de la
+    tablet `checklist_not_submitted` y `pending_incidents`, que la tarjeta
+    explica como «Entrega en espera».
+  - ENTREGAR A OCC abre una hoja propia, con el
+    [marco de hoja](../../frontend/mobile-agent/src/components/sheet-frame.tsx):
+    lista lo que la tablet comprobó, avisa que la ejecución queda cerrada y
+    ofrece SEGUIR REVISANDO y ENTREGAR A OCC. REINTENTAR ENTREGA sigue sin hoja.
+  - Después de la entrega, VER CHECKLIST abre el checklist enviado en solo
+    lectura; antes, el botón se apagaba. La tarjeta del checklist dice «Sin
+    enviar», «Envío guardado en el dispositivo» o «Enviado a ELEVANT».
+  - «Cargos aplicados» dice en una sola nota que la ejecución está cerrada o, en
+    una operación devuelta, que hay que abrir la corrección. Antes culpaba al
+    estado de cada servicio.
+  - La regla del servidor no cambia, y la APK instalada conserva el diálogo y la
+    regla anteriores hasta que se instale la nueva.
 - **Lista y alcance.** La lista trae las operaciones activas y las que OCC aprobó
   en las últimas 48 horas, contadas desde la aprobación y no desde el fin de la
   operación, con las activas primero. Una operación iniciada sigue en
@@ -307,6 +477,24 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
 - **Datos del vuelo y charter.** «Datos del vuelo» captura el tipo de avión de
   la lista de ELEVANT, fijo desde la primera entrega. En un charter con el
   prepago confirmado, la tarjeta oculta «AGREGAR» y lo explica.
+  - Posterior a la fase 3 (hallazgo S1 de la corrida del VPS del 16 de
+    noviembre): la Orden de Servicio se firmó con «Pasajeros —» y «MTOW —». Un
+    error genérico no decía qué campo fallaba ni su rango, «1.5» se leía como 15
+    y la tarjeta se sembraba una sola vez, antes de que llegara la cola.
+  - Cada campo se lee tal como se escribió
+    ([datos del vuelo](../../frontend/mobile-agent/src/utils/flight-data.ts)):
+    números enteros con miles separados por coma o espacio, nunca un punto, un
+    signo ni decimales, y un campo vacío no es 0. Cada campo con error dice su
+    rango y se marca en rojo, el primero recibe el foco y no se guarda nada; un
+    MTOW de 1 a 999 pregunta «¿Toneladas?».
+  - La tarjeta muestra lo que espera en la cola aunque llegue después de
+    abrirla, sin pisar lo que el agente escribió. Dice «Faltan: …» y «Sin
+    guardar», y la insignia sigue diciendo dónde está lo guardado.
+  - Faltar pasajeros o el MTOW solo avisa (D-S1): 0 pasajeros es un valor, la
+    Orden se firma y se entrega igual, también después del push-back, y el
+    servidor no cambia. La fila de la Orden y el principio de su hoja de firma
+    lo dicen antes de firmar.
+  - La APK instalada conserva la tarjeta anterior hasta que se instale la nueva.
 - **Códigos en español.** Los rechazos se explican por su código, como
   «Contrato no vigente», y cada estado de incidencia sale en español.
 - **APK desplegada.** Sigue funcionando: ninguna respuesta que lee ganó claves y
@@ -417,6 +605,62 @@ Las [pruebas](../../frontend/mobile-agent/tests/flight-report.test.js) cubren cu
 
 Las fotos del walk-around no estaban en ese bloque; llegan en el bloque 4.
 
+**El push-back con el vuelo a medio registrar se confirma.** Posterior al commit
+verificado de esta nota (hallazgo N2 de la corrida del VPS del 16 de noviembre,
+D-N2): un push-back registrado con un toque, con «En posición» en 0/13, «Salida»
+en 0/4 y los servicios planificados, liberó la posición en OCC, cerró el tiempo
+en tierra y fijó la hora de salida de la Orden.
+
+- El primer toque del push-back, fuera de una ronda de corrección y sin otro
+  push-back en la cola, abre la hoja «¿Registrar el push-back ahora?» cuando hay
+  algún motivo ([motivos](../../frontend/mobile-agent/src/features/assigned-operations/pushback.ts),
+  [hoja](../../frontend/mobile-agent/src/components/flight-report/pushback-sheet.tsx),
+  sobre el [marco de hoja](../../frontend/mobile-agent/src/components/sheet-frame.tsx)):
+  - falta el bloqueo;
+  - «En posición» o «Salida» no tienen ningún hito;
+  - ningún servicio salió de planificado, solo si la operación tiene servicios;
+  - la Orden de Servicio ya tiene una firma, en ELEVANT o en la cola, y el
+    push-back obliga a repetirla.
+- La hoja dice el efecto: libera la posición en OCC, cierra el tiempo en tierra
+  y fija la hora de salida de la Orden, y corregir la hora después no vuelve a
+  ocupar la posición. REGISTRAR PUSH-BACK lo graba con la hora de ELEVANT del
+  momento en que el agente confirma; VOLVER, el botón de la cabecera y el botón
+  atrás cierran sin grabar.
+- Sin motivos sigue siendo un toque. Un push-back ya registrado o en la cola
+  abre el ajuste, y en una corrección el hito vacío abre el ajuste como antes.
+- Solo avisa: el servidor no cambia, y la APK instalada sigue grabándolo con un
+  toque hasta que se instale la nueva. La revisión de OCC señala esa secuencia
+  ([nota de AVIAM Web](private-web-aviam.md)).
+
+**Hitos del vuelo, la ayuda de JB y los avisos de servicio.** Posterior al
+commit verificado de esta nota (hallazgo N13 de la corrida del VPS del 16 de
+noviembre, D-N13): «Reporte de vuelo» nombraba tres cosas distintas, «JB» salía
+sin explicar y el aviso «Servicio actualizado…» quedaba bajo el formulario y se
+acumulaba, uno por servicio
+([panel](../../frontend/mobile-agent/src/components/flight-report/flight-report-panel.tsx),
+[tarjeta de servicio](../../frontend/mobile-agent/src/components/ramp-service-execution-card.tsx)).
+
+- El panel de los hitos se llama «Hitos del vuelo». «Reporte de Vuelo» queda
+  para el formulario de AVIAM que se firma, y la pantalla del checklist se
+  encabeza «CHECKLIST OPERATIVO», como su tarjeta en el detalle.
+- Los hitos conservan las palabras del formulario: el catálogo compartido no
+  cambia. En la fase que muestra «Retiro escalera / JB», el panel dice «JB:
+  pasarela de abordaje (jet bridge).».
+- Un cambio de servicio que ELEVANT confirmó se dice en una frase con la hora
+  del toque en la estación: «Aire acondicionado en ejecución desde las 19:59.»
+  o «Aire acondicionado: completado a las 19:59.». Reabrir un servicio en una
+  corrección dice «…: corrección abierta a las 19:59. Registra el nuevo
+  resultado.»
+  ([frases](../../frontend/mobile-agent/src/features/assigned-operations/presentation.ts)).
+  La transición confirmada devuelve esa hora (`occurredAt`).
+- Una confirmación nueva borra las de los demás servicios y la siguiente acción
+  la quita, sin temporizador; con el formulario del resultado abierto no se
+  muestra. Las advertencias y los rechazos se quedan.
+- Los avisos del checklist, del detalle, de la tarjeta de servicio y de la de
+  asistencia ya no dicen «comando», «canónico», «fuente de verdad» ni
+  «payload». Con el envío del checklist sin confirmar, su botón es ACTUALIZAR.
+- La APK instalada conserva los textos anteriores hasta que se instale la nueva.
+
 ## Fase 3, bloque 4: formularios, firmas y walk-around
 
 En la rama de la fase 3 ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)), la pantalla de operación suma dos tarjetas.
@@ -445,6 +689,84 @@ Las [pruebas](../../frontend/mobile-agent/tests/operation-documents.test.js) cub
 - el formulario que cambió, que queda retenido;
 - el almacenamiento de fotos caído, que deja la foto pendiente;
 - la última vista del servidor guardada por operación.
+
+**La hoja de firma con los botones al alcance.** Posterior al commit verificado
+de esta nota (hallazgo S2 de la corrida del VPS del 16 de noviembre, decisión
+D-S2). En horizontal, FIRMAR y CANCELAR quedaban bajo el pliegue y la hoja no
+tenía cabecera. Ahora la hoja usa el
+[marco de hoja](../../frontend/mobile-agent/src/components/sheet-frame.tsx):
+
+- una cabecera fija con el formulario y «Cerrar sin firmar»; el botón atrás de
+  Android también cierra sin firmar;
+- un cuerpo que se desplaza, con el nombre y la cédula al principio, donde el
+  pie no los tapa, después los datos y al final el pad;
+- un pie fijo con la huella, CANCELAR y FIRMAR, en fila desde 600 dp y apilado
+  en compact;
+- el área segura, que deja la cabecera y el pie fuera de las barras del
+  sistema, y las cuatro orientaciones también en iOS;
+- con el teclado abierto, el pie sube por encima del teclado y el cuerpo se
+  acorta, porque la ventana del modal no se encoge: Android la dibuja de borde
+  a borde e iOS nunca redimensiona un modal. Sigue pendiente de comprobar en
+  una tablet.
+
+Un desplazamiento que empezaba sobre el pad dejaba un trazo suelto y bloqueaba
+el desplazamiento de la hoja.
+
+- Solo un dedo levantado guarda un trazo. Si la hoja se queda con el gesto, el
+  trazo en curso se descarta y la hoja vuelve a desplazarse; los trazos ya
+  hechos se conservan.
+- «Borrar firma» borra también el trazo en curso.
+- El pad mide como máximo 720 dp de ancho, centrado y en 3:1.
+- Sin dos columnas en pantallas anchas (D-S2).
+- Lo cubren las
+  [pruebas de la hoja](../../frontend/mobile-agent/tests/operation-documents-sheet.test.js).
+- La APK instalada conserva la hoja anterior hasta que se instale la nueva.
+
+**El monto y las firmas que la entrega no espera.** Posterior al commit
+verificado de esta nota (hallazgos N4 y N3 de la corrida del VPS del 16 de
+noviembre, decisiones D-N4 y D-N3). El total de la Orden no decía que era
+antes del ITBIS, y la firma del Reporte de Vuelo tenía el mismo FIRMAR naranja
+que las firmas que la entrega exige.
+
+- Bajo el total de la Orden de Servicio, la hoja de firma dice «Subtotal a
+  precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al
+  facturar.». Si la Orden lista recargos, añade «Los recargos listados se
+  valoran al facturar.».
+- Un total que todavía no se valora dice «Pendiente de valoración», sin la
+  nota.
+- La nota no sale en el Reporte de Vuelo ni en los formularios de un charter,
+  que se cobra a la tarifa base y no a un precio de contrato. El PDF no cambia.
+- Entre las firmas, la entrega a OCC solo espera las de la Orden de Servicio
+  ([`handoff.ts`](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts):
+  `HANDOFF_REQUIRED_FORM` e `isOptionalForHandoff`).
+- Mientras la operación está en curso y queda una firma por dar, el Reporte de
+  Vuelo y el Check-List del puente dicen «No hace falta para entregar a OCC»,
+  con un icono. El aviso se va con la firma hecha o guardada en el
+  dispositivo, y después de la entrega.
+- Su FIRMAR es un botón secundario, con borde y texto azul marino sobre blanco
+  (contraste 13,5:1). El de la Orden y el de la Solicitud del charter siguen
+  en naranja.
+- Cada FIRMAR se anuncia como «Firmar: {rol}». Mientras se ve el aviso, el
+  botón lo repite como sugerencia para el lector de pantalla.
+- Lo cubren las mismas pruebas de la hoja.
+- La APK instalada conserva el total sin nota y el FIRMAR naranja hasta que se
+  instale la nueva.
+
+**Tuteo y conteos en palabras.** Posterior al commit verificado de esta nota
+(hallazgo N13 de la corrida del VPS del 16 de noviembre, D-N13): la tablet
+mezclaba usted y tú y escribía «daño(s)».
+
+- El walk-around, su hoja, el panel de formularios y el
+  [charter](../../frontend/mobile-agent/src/components/documents/charter-card.tsx)
+  le hablan de tú al agente: «Toca el avión donde encontraste una anomalía.
+  Agrega una nota y una foto.», «Qué encontraste», «Lo que agregues aquí».
+- Lo que lee el firmante es neutro: «Solo letras, números o guiones (4 a 40).»
+  y «Los datos cambiaron después de la firma: hay que firmar de nuevo.». El pad
+  conserva «Firme aquí con el dedo» (D-N13).
+- Los daños se cuentan en palabras, «Sin daños», «1 daño» y «2 daños», y el
+  resumen del Reporte de Vuelo y del Check-List del puente dice «4 hitos ·
+  21/21 puntos del checklist · Sin daños».
+- La APK instalada conserva los textos anteriores hasta que se instale la nueva.
 
 ## Fase 3, bloque 5: recargos automáticos
 

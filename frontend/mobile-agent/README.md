@@ -93,12 +93,204 @@ contiene secretos.
 - La app sigue la orientación del dispositivo. `src/utils/layout-class.ts`
   clasifica el ancho: desde 900 dp el inicio muestra la lista junto al
   manifiesto (`OperationDetail`), y entre 600 y 899 dp usa dos columnas.
+  `android/` no se versiona: se regenera con `npx expo prebuild --clean`. Un
+  `android/` generado antes de fce328ca, cuando `app.json` decía
+  `"orientation": "portrait"`, deja la app bloqueada en vertical; esa fue la
+  causa del letterbox en horizontal de la corrida del VPS del 16 de noviembre.
 - Tras la primera carga las pantallas revalidan en segundo plano sin spinner a
   pantalla completa. Los sondeos usan `startForegroundInterval` y se pausan con
   la app en segundo plano.
 - Las fechas se formatean con `src/utils/date-format.ts`, que cachea las
   instancias de `Intl`. Las listas largas deben usar `FlatList` con filas
   memoizadas y handlers estables.
+- Un solo formato de fecha y hora (hallazgo N11) en las pantallas que usan
+  `src/utils/date-format.ts`: la tarjeta y el detalle de la operación,
+  «Sincronización», el inicio y «Mis posiciones de hoy», las incidencias, el
+  chat y las notificaciones. Escriben «lun, 16 nov» para el día y
+  «16 nov, 19:46» para la fecha con hora, siempre con reloj de 24 horas
+  (`hourCycle: 'h23'`; si un motor escribe «24:05», se corrige a «00:05»).
+  - `formatStationDate`, `formatStationTime` y `formatStationDateTime` dan la
+    hora local de la estación. Si la tablet no conoce su zona IANA (un comando
+    guardado por una versión anterior, una estación sin operaciones en la
+    tablet), usan `America/Santo_Domingo`, como private-web y
+    `BusinessCalendar`, nunca la zona del equipo.
+  - El inicio toma la zona de las operaciones asignadas para «última
+    actualización» y para «Mis posiciones de hoy».
+  - `formatLocalDateTime` da el mismo formato en la hora del equipo; hoy lo
+    usan chat y notificaciones.
+  - La tarjeta de una operación escribe «Inicio planificado» y el día tal como
+    salen, sin mayúsculas forzadas. El rótulo ocupa hasta dos líneas y se
+    reduce para caber (`adjustsFontSizeToFit` con un tope de escala de fuente,
+    porque Fabric ignora `minimumFontScale` en Android). En el detalle, el
+    nombre del aeropuerto ya no se corta en una columna fija de 76 dp.
+  - «Mis turnos y documentos» (`src/app/my-schedule.tsx`) escribe el día del
+    turno con `formatBusinessDay`, «lun, 16 nov», sin mayúsculas forzadas: es
+    un día del calendario, así que ninguna zona horaria lo mueve. El
+    vencimiento de los documentos sigue como «vence el 16/11/2026».
+- Unidades de cobro en español (hallazgo S5, D-S5): `src/utils/billing-units.ts`
+  nombra la unidad de un servicio como Finanzas, nunca con su código, y escribe
+  el plural: «0 / 1 hora», «1 / 1 operación», «0 / 3 operaciones» y
+  «Cantidad ejecutada (horas)».
+  - Un nombre heredado («Operación», «Hora», con o sin tilde, en mayúsculas o
+    minúsculas) se lee como su código, igual que `billingUnitCode` de
+    private-web. Una unidad que la tablet no conoce sale tal cual.
+  - Las unidades de conteo (operación, servicio, aeronave y pasajero) piden
+    números enteros con el teclado numérico: «Solo números enteros.». La
+    cantidad contratada que propone la tarjeta se acepta aunque tenga
+    decimales, y un comando ya reservado se reintenta tal como se reservó. Las
+    demás unidades, y las desconocidas, admiten hasta cuatro decimales. La
+    regla es solo de la tablet: el servidor sigue aceptando cuatro decimales.
+  - La Orden de Servicio conserva las abreviaturas de su PDF («1 h»,
+    «1 serv.») con `billingUnitAbbreviation`.
+- Ruta y asignación legibles (hallazgos N10 y N9, D-N10 y D-N9):
+  - `operationRouteStops` da las paradas de la escala en orden: origen,
+    estación y siguiente destino. La tarjeta las muestra como BWI → PUJ → BWI,
+    con la estación resaltada, y `operationRouteDescription` le da al lector
+    de pantalla «llega de BWI a PUJ y sale hacia BWI».
+  - Un tramo que falta se omite, sin poner la estación en su lugar. Sin vuelos,
+    la tarjeta nombra la estación junto a «Ruta por confirmar». El riel de la
+    hora ya no repite el código de la estación.
+  - En una tarjeta angosta, la ruta pasa a otra línea entre dos paradas.
+  - `assignmentRoleLabel` escribe «Agente principal» para `primary`, sin
+    distinguir mayúsculas. Un rol desconocido da `null` y el detalle omite esa
+    fila. La posición operativa se nombra solo por su nombre, sin el código.
+- Códigos internos en segundo plano y una sola numeración (hallazgo N12,
+  D-N12). Mientras AVIAM no decida retirarlos, los códigos siguen a la vista
+  como texto secundario:
+  - La tarjeta de un servicio tiene el nombre como título y el código
+    («RAMP-AC») debajo, pequeño y sin negrita.
+  - «Cargos aplicados» pone el número de línea delante del nombre,
+    «1 · Aire acondicionado», como las tarjetas de servicio, y el código
+    debajo. Así se distinguen dos líneas del mismo servicio.
+  - El checklist dice «Versión 1» y deja el código de la plantilla debajo, en
+    pequeño.
+  - Cada control lleva un solo número, el del PDF, con `checklistItemNumber`
+    (`src/features/checklist/presentation.ts`). Es el número en que termina
+    su código (ARR-01 → 1, PUSH-11 → 11), así que el Reporte de Vuelo va de 1
+    a 21. Si el código no termina en un número (PREUSE-EXTERIOR), es su
+    posición dentro de la sección. La tarjeta del control
+    (`src/components/checklist-item-card.tsx`) ya no muestra el código junto a
+    un segundo número.
+- Asistencia e incidencias en la hora de la estación (hallazgo S6, D-S6). La
+  tarjeta de asistencia ya no edita en la zona del equipo, que además podía
+  cambiar a mitad de la operación:
+  - Dice «Las horas están en hora local de PUJ» con `stationTimeLabel`, y el
+    detalle titula los vuelos «Hora local de PUJ» (`stationTimeTitle`) en
+    lugar del identificador IANA. Si falta el código, «hora local de la
+    estación».
+  - Los campos muestran la hora de la estación, «2026-10-05 10:00», con
+    `stationWallClock`. `stationWallClockToInstant` la convierte al instante
+    UTC que viaja y se guarda, comprobando que se lee igual de vuelta. Una hora
+    que el reloj de la estación salta en un cambio de horario (las 02:30 del
+    8 de marzo en Nueva York) no se guarda: nunca se pasa a otra hora. Una
+    hora que se repite toma su primera vez.
+  - Las dos funciones leen la hora con `formatToParts`. En un motor que no lo
+    trae, la leen del texto que escribe `en-US`. Un motor que cuenta hasta 24
+    o que escribe «07:46 PM» no cambia la hora guardada.
+  - El conflicto muestra las horas con `formatStationDateTime`,
+    «5 oct, 10:00»: la versión guardada y tu intento tienen el mismo formato.
+    El aporte de OCC también va en la hora de la estación, sin la fecha cuando
+    es la del día de la operación (hallazgo N8, abajo).
+  - Un reintento envía el comando reservado tal cual, aunque lo haya reservado
+    una versión anterior en la zona del equipo.
+  - Las incidencias de la operación muestran su hora en la zona de la
+    estación.
+  - Si la tablet no conoce la zona, usa `America/Santo_Domingo`. La cola y el
+    almacenamiento siguen guardando instantes UTC. OCC y Gestión Humana no
+    cambian en esta entrega: el panel de OCC edita en la zona del navegador y
+    la revisión de Gestión Humana muestra UTC.
+- La tarjeta de asistencia con el estilo de la app (hallazgo N8, en parte;
+  D-N8):
+  - Todos sus textos toman el tamaño y el peso de `type` y el color de la
+    paleta (`src/theme/tokens.ts` y `src/theme/colors.ts`). Los campos miden
+    56 dp (`touch.min`, ADR-0031) y usan la letra de «Datos del vuelo».
+  - Si OCC no registró horas ni nota, su aporte dice «OCC aún no registra
+    horas.» en una sola línea, en lugar de cinco líneas vacías. Con datos dice
+    «Inicio 19:48 · Fin —», la nota y «Registrado 16 nov, 19:50».
+  - Una hora que no cae en el día de la operación en la estación lleva su
+    fecha, «Fin 17 nov, 00:30». El detalle le pasa ese día a la tarjeta
+    (`operationDate`); sin él, todas las horas llevan su fecha.
+  - Se mantienen los contadores de revisión, y las horas se siguen escribiendo
+    a mano: D-N8 deja el selector de hora para otra entrega.
+- La hoja de firma con los botones siempre al alcance (hallazgo S2, D-S2):
+  - `src/components/sheet-frame.tsx` es el marco de las hojas a pantalla
+    completa: una cabecera fija con el título y un botón que cierra la hoja
+    («Cerrar sin firmar» en la de firma), un cuerpo que se desplaza y un pie
+    fijo con las acciones. Desde 600 dp el pie pone su nota y sus botones en
+    una fila; en compact los apila. El botón atrás de Android también cierra.
+    El marco sigue la orientación también en iOS (`supportedOrientations`) y
+    deja la cabecera y el pie fuera de las barras del sistema (`SafeAreaView`),
+    que un modal de Android cubre de borde a borde.
+  - Con el teclado abierto, el marco sube el pie por encima del teclado y
+    acorta el cuerpo (`KeyboardAvoidingView` con `padding`, en Android y en
+    iOS), porque la ventana del modal no se encoge: con `edgeToEdgeEnabled`,
+    RN 0.81 la dibuja de borde a borde y `adjustResize` no hace nada, e iOS
+    nunca redimensiona un modal. Sigue pendiente de comprobar en una tablet
+    Android 11 o posterior en horizontal y en un iPad.
+  - La hoja de firma lleva en el pie la huella del documento, CANCELAR y
+    FIRMAR. El nombre y la cédula van al principio del cuerpo, donde el pie no
+    los tapa; después vienen los datos y, al final, el pad. Empezar un trazo no
+    cierra el teclado: el cambio de layout movería el pad bajo el primer trazo.
+  - El pad (`src/components/documents/signature-pad.tsx`) mide como máximo
+    720 dp de ancho, centrado, y conserva la proporción 3:1.
+  - Solo un dedo levantado guarda un trazo. Si el desplazamiento de la hoja se
+    queda con el gesto (un deslizamiento que empieza sobre el pad), el trazo
+    en curso se descarta y la hoja vuelve a desplazarse; los trazos ya hechos
+    se conservan. «Borrar firma» borra también el trazo en curso, y un pad que
+    sale de la pantalla a mitad de un trazo devuelve el desplazamiento.
+  - Sin dos columnas en pantallas anchas (D-S2) y sin
+    `react-native-gesture-handler`.
+- El monto de la Orden y las firmas que la entrega no espera (hallazgos N4 y
+  N3, D-N4 y D-N3):
+  - Bajo el total de la Orden de Servicio, la hoja de firma dice «Subtotal a
+    precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al
+    facturar.» y, si la Orden lista recargos, «Los recargos listados se valoran
+    al facturar.». Un total nulo dice «Pendiente de valoración», sin la nota.
+    Ni el Reporte de Vuelo ni un charter, que se cobra a la tarifa base, llevan
+    la nota, y el PDF no cambia.
+  - `src/features/assigned-operations/handoff.ts` nombra el único formulario
+    cuyas firmas espera la entrega (`HANDOFF_REQUIRED_FORM`, la Orden de
+    Servicio) y los que no (`isOptionalForHandoff`: el Reporte de Vuelo y el
+    Check-List del puente).
+  - Mientras la operación está en curso (`executionOpen` del panel de
+    formularios) y queda una firma por dar, esos dos dicen «No hace falta para
+    entregar a OCC» con un icono. Su FIRMAR es un botón secundario azul marino
+    (13,5:1 sobre blanco); la Solicitud de Servicio del charter queda como
+    estaba, en naranja.
+  - Cada FIRMAR se anuncia como «Firmar: {rol}».
+- Tuteo, plurales, ayuda de JB y avisos de servicio que no estorban (hallazgo
+  N13, D-N13):
+  - La tablet le habla de tú al agente: el walk-around («Toca el avión donde
+    encontraste una anomalía»), los formularios («lo que ya registraste») y el
+    charter («Lo que agregues aquí»). Lo que lee el firmante es neutro («Solo
+    letras, números o guiones», «hay que firmar de nuevo»), y el pad conserva
+    «Firme aquí con el dedo».
+  - Los conteos van en palabras: «Sin daños», «1 daño» y «2 daños»
+    (`damageCountLabel`), «1 hito» en el resumen del Reporte de Vuelo, «1
+    servicio» también para el lector de pantalla y «1 pendiente de envío» en
+    «Sincronización».
+  - El panel de los hitos se llama «Hitos del vuelo»: «Reporte de Vuelo» queda
+    para el formulario de AVIAM, y el checklist se encabeza «CHECKLIST
+    OPERATIVO». Los hitos conservan las palabras del formulario (el catálogo
+    compartido no cambia) y la fase que muestra «Retiro escalera / JB» explica
+    «JB: pasarela de abordaje (jet bridge).».
+  - Un cambio de servicio que ELEVANT confirmó se dice en una frase, con la hora
+    del toque en la estación: «Aire acondicionado en ejecución desde las
+    19:59.», «Aire acondicionado: completado a las 19:59.» (el resultado va tras
+    el nombre, como en su insignia, y concuerda con cualquier nombre). Reabrir
+    un servicio en una corrección tiene su propio texto, «…: corrección abierta
+    a las 19:59. Registra el nuevo resultado.» (`serviceChangeSentence` en
+    `src/features/assigned-operations/presentation.ts`). La confirmación de
+    `transitionRampOperationService` trae `occurredAt`, la hora que envió.
+  - Una confirmación nueva borra las de los demás servicios y la siguiente
+    acción la quita, sin temporizador; con el formulario del resultado abierto
+    no se muestra. Las advertencias y los rechazos se quedan.
+  - Ningún aviso dice «comando», «canónico», «fuente de verdad» ni «payload»:
+    el checklist, el detalle, la tarjeta de servicio y la de asistencia lo
+    dicen con palabras del agente, como «No pudimos confirmar el envío guardado
+    en esta tablet. Actualiza antes de seguir editando.». En ese estado el
+    botón del checklist es ACTUALIZAR, y el reintento de un servicio guardado
+    en la tablet, REINTENTAR ENVÍO.
 
 ## Autorización y almacenamiento
 
@@ -272,9 +464,12 @@ desfase y lo guarda en el dispositivo, fuera de la sesión, para que «AHORA»
 siga corregido sin señal. Toda hora que captura la tablet sale de ese reloj:
 hitos y su ajuste, inicio, servicios, daños del walk-around, incidencias,
 desviaciones y observaciones de asistencia. Las pantallas siguen mostrándolas
-en la hora local de la estación. Si el desfase supera los 2 minutos que tolera
-ELEVANT, la insignia de conexión avisa que los registros se corrigen solos y
-pide revisar la hora del equipo.
+en la hora local de la estación. Hasta el hallazgo S6, la asistencia y las
+incidencias eran la excepción: se mostraban, y la asistencia se editaba, en la
+zona del equipo. Ahora también usan la hora de la estación, y la tarjeta de
+asistencia lo dice: «Las horas están en hora local de PUJ». Si el desfase supera
+los 2 minutos que tolera ELEVANT, la insignia de conexión avisa que los
+registros se corrigen solos y pide revisar la hora del equipo.
 
 Las horas de los hitos se ajustan dentro de la ventana de la operación que mide
 ELEVANT: desde el inicio o la llegada registrada, lo que ocurrió primero, hasta
@@ -286,6 +481,33 @@ entrega y el ajuste lo indica. El reenvío mide el tiempo en tierra hasta esa
 primera entrega. Los daños del walk-around, las incidencias y las desviaciones
 se registran con la hora actual, sin selector, y ELEVANT también los acepta
 durante la corrección.
+
+Desde el hallazgo N2 de la corrida del VPS del 16 de noviembre (D-N2), el
+primer toque del push-back pregunta antes de grabar cuando el vuelo no está
+registrado como debería, porque el push-back libera la posición en OCC
+(ADR-0041, decisión 23), cierra el tiempo en tierra y fija la hora de salida de
+la Orden de Servicio:
+
+- `pushbackConcerns` (`src/features/assigned-operations/pushback.ts`) da los
+  motivos, en el orden del vuelo: falta el bloqueo; «En posición» o «Salida» no
+  tienen ningún hito; ningún servicio salió de planificado, solo si la operación
+  tiene servicios (uno no realizado o con excepción cuenta como atendido), y la
+  Orden de Servicio ya tiene una firma, en ELEVANT o esperando en la cola, que
+  el push-back obliga a repetir.
+- Con algún motivo, la hoja «¿Registrar el push-back ahora?»
+  (`src/components/flight-report/pushback-sheet.tsx`, sobre `sheet-frame`) los
+  lista con el efecto: registrarlo libera la posición, cierra el tiempo en
+  tierra y fija la hora de salida de la Orden, y corregir la hora después no
+  vuelve a ocupar la posición. REGISTRAR PUSH-BACK lo graba con la hora de
+  ELEVANT del momento en que el agente confirma; VOLVER, el botón de la cabecera
+  («Cerrar sin registrar») y el botón atrás cierran sin grabar.
+- Sin motivos sigue siendo un toque. Un push-back ya registrado, o que espera en
+  la cola, abre el ajuste, y en una ronda de corrección el hito vacío abre el
+  ajuste como siempre, sin la hoja.
+- Solo avisa: el servidor sigue aceptando el push-back sin otros hitos (solo
+  exige que el bloqueo no vaya después), y la APK instalada lo graba con un
+  toque hasta que se instale la nueva. La revisión de OCC señala esa secuencia
+  en «Cierre de la operación».
 
 La cola se vacía al abrir la app, al recuperar señal, al volver a primer plano
 y cada minuto mientras quede algo pendiente; después salen las incidencias
@@ -300,6 +522,42 @@ Details, se explica en español y espera en «Sincronización» a que el agente 
 revise. La pantalla de la operación muestra lo que espera en la cola aplicado
 sobre la vista de ELEVANT o su copia guardada, marcado «En el dispositivo».
 
+Desde el hallazgo S1 de la corrida del VPS del 16 de noviembre, «Datos del
+vuelo» lee cada campo tal como se escribió (`src/utils/flight-data.ts`), con los
+límites de ELEVANT (`RampExecutionPolicy.HasValidFlightData`):
+
+- `parseWholeNumber` acepta solo dígitos ASCII, con miles separados por coma,
+  espacio o espacio de no separación en grupos de tres («351,500», «1 000»). Un
+  punto, un signo, decimales, un exponente o dígitos no ASCII son un error:
+  «1.5» ya no se lee como 15, ni «-5» como 5, ni un texto como NaN. Un campo
+  vacío no es 0: viaja como null, también cuando borra un valor confirmado.
+- `validateFlightDataDraft` da un mensaje por campo, con su rango: pasajeros de
+  0 a 999, MTOW de 1,000 a 700,000 kg y matrícula de 2 a 10 letras, números o
+  guiones. Un MTOW de 1 a 999 pregunta «¿Toneladas?» y dice cuántos kg serían.
+  Mientras haya un error no se guarda nada: el campo se marca en rojo, su
+  mensaje va debajo y en `accessibilityHint`, un resumen acompaña al botón y el
+  foco va al primer campo con error.
+- Los campos muestran el rango y la unidad («0 a 999», «1,000 a 700,000 kg»),
+  admiten 4 caracteres en pasajeros y 9 en el MTOW, y la tecla «Siguiente» pasa
+  al campo que sigue.
+- Un campo que el agente no tocó muestra siempre lo guardado. Los datos que
+  esperan en la cola aparecen aunque la cola se lea después de abrir la
+  pantalla, sin pisar lo que el agente ya escribió, y un guardado aceptado
+  vuelve a mostrar lo guardado. La respuesta de ELEVANT manda sobre la operación
+  leída antes, también cuando dice que un valor se borró.
+- «Faltan: …» dice qué les falta todavía a los formularios y «Sin guardar», que
+  hay algo escrito sin guardar. La insignia sigue diciendo dónde está lo
+  guardado: con un solo valor también dice «Confirmado».
+- Faltar pasajeros o el MTOW solo avisa (D-S1): 0 pasajeros es un valor, la
+  Orden de Servicio se firma igual, también después del push-back, y el servidor
+  no tiene una regla nueva. La fila de la Orden y el principio de su hoja de
+  firma dicen qué falta y qué hacer: escribirlo antes de firmar; si la Orden ya
+  tiene una firma, que guardarlo obliga a firmarla de nuevo, y si los datos
+  esperan en la cola, que llegan a la Orden al enviarse. Una firma que espera en
+  la cola de la tablet también cuenta, con la misma regla que el push-back
+  (`serviceOrderHasSignature` en `src/features/assigned-operations/handoff.ts`):
+  sale antes que los datos guardados después y quedaría vieja al llegar ellos.
+
 La entrega final a OCC sigue reservando su payload y su clave antes de tocar la
 red y requiere conexión, checklist enviado, servicios terminados y cola de
 incidencias sincronizada. Desde el hueco 3-N06 la tablet vacía antes su cola y
@@ -308,10 +566,59 @@ mientras la Orden de Servicio no tenga las firmas de la aerolínea y de AVIAM
 sobre su contenido actual; la tarjeta de entrega dice qué falta. El servidor no
 rechaza esa entrega (la APK anterior sigue funcionando): mientras OCC revisa,
 acepta los hitos y daños capturados antes de la entrega, recalcula los recargos
-y la evidencia y OCC debe releer. El agente confirma explícitamente el cierre y
-puede agregar una nota opcional. Si se pierde la respuesta, la app congela la nota y
-reintenta el mismo comando; nunca genera una segunda entrega por
-incertidumbre. El estado confirmado pasa a `PendingReview`.
+y la evidencia y OCC debe releer. El agente puede agregar una nota opcional. Si
+se pierde la respuesta, la app congela la nota y reintenta el mismo comando;
+nunca genera una segunda entrega por incertidumbre. El estado confirmado pasa a
+`PendingReview`.
+
+Desde el hallazgo N1 de la corrida del VPS del 16 de noviembre, el cierre lista y
+comprueba todos los requisitos de la entrega, no solo la firma:
+
+- `handoffRequirements` (`src/features/assigned-operations/handoff.ts`) da, en
+  orden, «Servicios terminados», «Checklist enviado», «Incidencias enviadas»,
+  «Datos del vuelo completos», «Orden de Servicio firmada» y «Registros
+  enviados a ELEVANT», cada uno con su estado (listo, falta, por confirmar o
+  aviso) y si bloquea. La tarjeta de
+  entrega los muestra con un icono y una frase
+  (`src/components/handoff-requirements.tsx`), y lo que falta ofrece su salida:
+  ABRIR CHECKLIST, ABRIR INCIDENCIAS o ABRIR SINCRONIZACIÓN. El ABRIR CHECKLIST
+  de la lista se anuncia distinto del de la tarjeta del checklist.
+- Solo bloquea lo que la tablet sabe que falta. Un checklist que no pudo leer, o
+  que su copia guardada da por no enviado, unas incidencias que no pudo contar y
+  los formularios aún sin leer quedan «por confirmar» y no bloquean: el servicio
+  los vuelve a comprobar antes de enviar. Un envío del checklist que espera en
+  la cola lo cubre el requisito de la cola.
+- «Datos del vuelo completos» (hallazgo S1, D-S1) es un aviso que nunca
+  bloquea. Lee el resumen de la Orden de Servicio: si le faltan los pasajeros o
+  el MTOW, lo dice y, con la Orden firmada (también con una firma que espera en
+  la cola, `serviceOrderHasSignature`), añade que se puede entregar sin ellos y
+  que guardarlos ahora obliga a firmarla de nuevo. Si los datos esperan
+  en la cola (`flightDataQueuedFor`), dice que llegan a la Orden al enviarse;
+  sin el resumen, queda «por confirmar». El servicio de entrega no lo comprueba.
+- La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
+  actualizar a mano y tras abrir la corrección, nunca con cada recarga del feed;
+  una lectura que encuentra la sesión terminada lleva al acceso. Cuenta las
+  incidencias que siguen en la tablet en cada carga, sin red
+  (`countUnsentRampIncidents`).
+- El servicio vacía la cola antes de leer los servicios y el checklist, así que
+  lo recién enviado cuenta, y rechaza con los códigos locales
+  `checklist_not_submitted` y `pending_incidents`, que la tarjeta explica como
+  «Entrega en espera». No se fía de la copia guardada del checklist, que puede
+  ser anterior a lo que la cola acaba de enviar: sin señal, la entrega espera.
+- ENTREGAR A OCC abre una hoja propia sobre `src/components/sheet-frame.tsx`,
+  en lugar del diálogo nativo que pedía confirmar lo que la tablet comprueba:
+  lista lo comprobado, avisa que la ejecución queda cerrada y ofrece SEGUIR
+  REVISANDO y ENTREGAR A OCC. REINTENTAR ENTREGA sigue sin hoja.
+- Después de la entrega, VER CHECKLIST abre el checklist enviado, que la
+  pantalla ya muestra en solo lectura; solo una operación sin iniciar lo deja
+  apagado. La tarjeta del checklist dice «Sin enviar», «Envío guardado en el
+  dispositivo» o «Enviado a ELEVANT».
+- «Cargos aplicados» (`executionClosed`) dice en una sola nota que la ejecución
+  está cerrada o, si OCC la devolvió, que hay que abrir la corrección, en lugar
+  de culpar al estado de cada servicio; sus cargos quedan en solo lectura aunque
+  una copia guardada diga otra cosa.
+- La regla del servidor no cambia. La APK instalada conserva el diálogo y la
+  regla anteriores hasta que se instale la nueva.
 
 Cada incidencia se guarda primero en una cola local acotada de 25 reportes por
 operación. Incluye tipo, impacto, descripción, hora UTC de ocurrencia y una
@@ -325,6 +632,8 @@ El servidor registra la combinación dispositivo + clave y devuelve el mismo res
 ## Entrega APK y tiendas
 
 Antes de una APK compartida se deben fijar application ID, perfil Development, custodia de claves, versión, permisos, URL API y estrategia de actualización. Las claves de firma nunca se suben a Git. Un build Development no comparte URL, credenciales, storage ni firma con Production.
+
+Antes de construir una APK, `android/` se regenera desde `app.json` con `npx expo prebuild --clean`. Como no se versiona, una copia local puede quedar vieja: una generada antes de fce328ca fija `"orientation": "portrait"` y deja la app bloqueada en vertical, aunque `app.json` diga `"default"` y las pantallas sigan la orientación del dispositivo.
 
 Play Store/App Store será una fase posterior con identificadores estables, políticas de privacidad, ficha, firma administrada, pruebas internas/cerradas y promoción controlada. La URL privada del tailnet no se usará como endpoint de una app pública de Production.
 

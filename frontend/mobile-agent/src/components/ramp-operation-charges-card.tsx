@@ -20,6 +20,17 @@ import { Card } from './ui';
 type LoadState = 'loading' | 'ready' | 'error';
 
 /**
+ * Why the agent can no longer mark charges once the execution closed (N1): the operation went to OCC ('closed'), or OCC
+ * returned it and the correction is not open yet ('returned').
+ */
+export type ChargesExecutionClosed = 'closed' | 'returned';
+
+const CLOSED_NOTES: Readonly<Record<ChargesExecutionClosed, string>> = {
+  closed: 'La ejecución está cerrada: ya no puedes cambiar los cargos desde la tablet.',
+  returned: 'Abre la corrección para volver a marcar cargos.',
+};
+
+/**
  * The charges as the agent left them on the device (3-I): each mark or unmark still waiting in the queue is applied,
  * in its order, over ELEVANT's copy. A mark saved on the device carries the source «Device» until ELEVANT confirms it.
  */
@@ -59,10 +70,16 @@ export function projectCharges(
  * recorded times; Finance reviews them before invoicing.
  */
 export function RampOperationChargesCard({
+  executionClosed,
   operationId,
   refreshKey,
   services,
 }: Readonly<{
+  /**
+   * Set once the execution closed (N1): one note says why for the whole card instead of blaming each service, and the
+   * charges stay read-only even if a saved copy still says they can change. Unset before the start and while it runs.
+   */
+  executionClosed?: ChargesExecutionClosed;
   operationId: string;
   /** Changes whenever service statuses change, so editability is re-read. */
   refreshKey: string;
@@ -140,7 +157,10 @@ export function RampOperationChargesCard({
         </View>
       </View>
       {state === 'loading' && <ActivityIndicator color={colors.blue} accessibilityLabel="Cargando cargos" />}
-      {fromCache && <Text style={styles.warning}>Sin conexión: se muestra la última copia guardada; lo que marques se envía al reconectar.</Text>}
+      {executionClosed && <Text style={styles.closed}>{CLOSED_NOTES[executionClosed]}</Text>}
+      {fromCache && <Text style={styles.warning}>{executionClosed
+        ? 'Sin conexión: se muestra la última copia guardada.'
+        : 'Sin conexión: se muestra la última copia guardada; lo que marques se envía al reconectar.'}</Text>}
       {message && <Text accessibilityRole="alert" style={styles.error}>{message}</Text>}
       {state === 'error' && (
         <Pressable accessibilityRole="button" onPress={() => { setState('loading'); void load(); }} style={styles.retry}>
@@ -149,12 +169,21 @@ export function RampOperationChargesCard({
       )}
       {withOptions.map(item => {
         const service = services.find(candidate => candidate.id === item.serviceId);
-        // 3-I: without signal the agent still marks; the queue sends it in order when there is signal.
-        const editable = item.canEdit;
+        // 3-I: without signal the agent still marks; the queue sends it in order when there is signal. N1: not once the
+        // execution closed, whatever a saved copy says.
+        const editable = item.canEdit && !executionClosed;
         return (
           <View key={item.serviceId} style={styles.service}>
-            <Text style={styles.serviceName}>{service ? `${service.code} · ${service.name}` : 'Servicio'}</Text>
-            {!item.canEdit && <Text style={styles.hint}>Disponible cuando el servicio esté en curso, completado o en excepción.</Text>}
+            {/* N12 (D-N12): the line number in front of the name tells two lines of the same service apart, as on
+                the service cards; the code stays as a small secondary text until AVIAM decides. */}
+            <View style={styles.serviceHeading}>
+              <Text style={styles.serviceName}>{service ? `${service.lineNumber} · ${service.name}` : 'Servicio'}</Text>
+              {service && <Text style={styles.serviceCode}>{service.code}</Text>}
+            </View>
+            {/* N1: once the execution closed, the card's note says why; the service's state is not the reason. */}
+            {!item.canEdit && !executionClosed && (
+              <Text style={styles.hint}>Disponible cuando el servicio esté en curso, completado o en excepción.</Text>
+            )}
             <View style={styles.chips}>
               {item.available.map(option => {
                 const marks = item.applied.filter(applied => applied.chargeId === option.id);
@@ -214,11 +243,14 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontSize: 16, fontWeight: '700' },
   subtitle: { color: colors.muted, fontSize: 13 },
   warning: { color: colors.warning, fontSize: 13 },
+  closed: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   error: { color: colors.danger, fontSize: 13 },
   retry: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
   retryText: { color: colors.blue, fontWeight: '700' },
   service: { gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 },
+  serviceHeading: { gap: 2 },
   serviceName: { color: colors.ink, fontWeight: '700', fontSize: 14 },
+  serviceCode: { color: colors.muted, fontSize: 11, fontWeight: '500' },
   hint: { color: colors.muted, fontSize: 12 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {

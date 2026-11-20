@@ -17,7 +17,7 @@ import {
 import { serverNow } from '../../synchronization/server-clock';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
-import { formatLocalDateTime } from '../../utils/date-format';
+import { formatStationDateTime } from '../../utils/date-format';
 
 const types: readonly { value: RampIncidentType; label: string }[] = [
   { value: 'Operational', label: 'Operativa' },
@@ -51,15 +51,17 @@ function labelFor(value: string) {
     severities.find(item => item.value === value)?.label ?? value;
 }
 
-function displayTime(value: string) {
+// S6 (D-S6): on the station's clock, like the rest of the operation; without its zone, AVIAM's calendar.
+function displayTime(value: string, timeZone: string | null) {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? formatLocalDateTime(value) : 'Hora no disponible';
+  return Number.isFinite(date.getTime()) ? formatStationDateTime(value, timeZone) : 'Hora no disponible';
 }
 
 export default function IncidentScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const [center, setCenter] = useState<RampIncidentCenter | null>(null);
   const [operationCode, setOperationCode] = useState<string | null>(null);
+  const [timeZone, setTimeZone] = useState<string | null>(null);
   const [canReport, setCanReport] = useState(false);
   const [incidentType, setIncidentType] = useState<RampIncidentType>('Operational');
   const [severity, setSeverity] = useState<RampIncidentSeverity>('Medium');
@@ -87,6 +89,7 @@ export default function IncidentScreen() {
         if (request.signal.aborted) return;
         const operation = assigned.operations.find(item => item.operation.id === id);
         setOperationCode(operation?.turnaround.operationCode ?? null);
+        setTimeZone(operation?.turnaround.station.ianaTimeZone ?? null);
         setCanReport(operation?.operation.status === 'InProgress');
       } catch (error) {
         if (request.signal.aborted || handleSessionError(error)) return;
@@ -252,7 +255,7 @@ export default function IncidentScreen() {
             <Card key={item.idempotencyKey} style={styles.reportCard}>
               <View style={styles.reportTop}>
                 <StatusPill text={item.state === 'pending' ? 'PENDIENTE DE ENVÍO' : 'REQUIERE REVISIÓN'} tone={item.state === 'pending' ? 'orange' : 'red'} />
-                <Text style={styles.time}>{displayTime(item.createdAt)}</Text>
+                <Text style={styles.time}>{displayTime(item.createdAt, timeZone)}</Text>
               </View>
               <Text style={styles.reportTitle}>{labelFor(item.request.incidentType)} · {labelFor(item.request.severity)}</Text>
               <Text style={styles.reportDescription}>{item.request.description}</Text>
@@ -265,7 +268,7 @@ export default function IncidentScreen() {
             <Card key={incident.id} style={styles.reportCard}>
               <View style={styles.reportTop}>
                 <StatusPill text={incidentStatusLabel(incident.status).toUpperCase()} tone="green" />
-                <Text style={styles.time}>{displayTime(incident.reportedAt)}</Text>
+                <Text style={styles.time}>{displayTime(incident.reportedAt, timeZone)}</Text>
               </View>
               <Text style={styles.reportTitle}>{labelFor(incident.incidentType)} · {labelFor(incident.severity)}</Text>
               <Text style={styles.reportDescription}>{incident.description}</Text>

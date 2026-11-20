@@ -1258,6 +1258,14 @@ escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
   hitos del Reporte de Vuelo, en la hora de la estación, con los datos que el
   detalle ya traía, y el exceso del paquete con el triángulo de atención
   ([cierre](../../frontend/private-web/src/features/review/components/OperationCloseSection.jsx)).
+  Posterior también a U6 (hallazgo N2 de la corrida del VPS del 16 de
+  noviembre, D-N2): encima de la tira sale un aviso de atención por cada cosa
+  que no cuadra con un push-back registrado: falta el bloqueo, «En posición» o
+  «Salida» no tienen ningún hito, o hay hitos con una hora posterior a la suya
+  ([secuencia](../../frontend/private-web/src/features/occ-ui/milestonePhases.js),
+  textos en español e inglés). Como el push-back cierra el tiempo en tierra y
+  libera la posición, una línea pide revisar su hora antes de decidir. Es una
+  lectura del cliente: la API no cambia.
 - **Cobertura de posiciones**
   ([ruta](../../frontend/private-web/src/features/position-coverage/CoverageRoute.jsx)).
   La barra lleva la fecha y «Terminal y vista». El tablero «Posiciones de la

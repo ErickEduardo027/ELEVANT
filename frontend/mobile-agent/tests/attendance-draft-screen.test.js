@@ -53,6 +53,11 @@ jest.mock('../src/services/ramp-operation-service-execution', () => ({
   readRampOperationServicePendingTransition: jest.fn(async () => null),
   transitionRampOperationService: jest.fn(),
 }));
+// N1: the close reads the operation's checklist and counts its incident reports still on the device.
+jest.mock('../src/services/ramp-operation-checklist', () => ({
+  getRampOperationChecklist: jest.fn(async () => ({ fromCache: false, checklist: { status: 'Submitted' } })),
+}));
+jest.mock('../src/services/ramp-incidents', () => ({ countUnsentRampIncidents: jest.fn(async () => 0) }));
 
 const Screen = require('../src/app/flight/[id]').default;
 const operationId = '70000000-0000-4000-8000-000000000005';
@@ -85,5 +90,28 @@ test('does not mount assistance if the assignment identifier is missing', async 
   let tree;
   await renderer.act(async () => { tree = renderer.create(React.createElement(Screen)); });
   expect(mockCard).not.toHaveBeenCalled();
+  await renderer.act(async () => tree.unmount());
+});
+
+// S6 (D-S6): the card gets the station's zone and code, and the flights' times say whose clock they use, «Hora local
+// de PUJ», never the zone's IANA id.
+test('passes the station’s zone and code to assistance and names the station’s clock', async () => {
+  let tree;
+  await renderer.act(async () => { tree = renderer.create(React.createElement(Screen)); });
+  expect(mockCard.mock.lastCall[0]).toMatchObject({ timeZone: 'America/Santo_Domingo', stationCode: 'PUJ' });
+  const collect = node => node == null ? [] : typeof node === 'string' ? [node]
+    : Array.isArray(node) ? node.flatMap(collect) : collect(node.children);
+  const texts = collect(tree.toJSON());
+  expect(texts).toContain('Hora local de PUJ');
+  expect(texts.join(' ')).not.toContain('America/Santo_Domingo');
+  expect(texts.join(' ')).not.toContain('Horario local');
+  await renderer.act(async () => tree.unmount());
+});
+
+// N8: the card shows OCC's hours on the operation's day without their date, so it needs that day.
+test('passes the operation’s day to assistance', async () => {
+  let tree;
+  await renderer.act(async () => { tree = renderer.create(React.createElement(Screen)); });
+  expect(mockCard.mock.lastCall[0]).toMatchObject({ operationDate: '2026-10-05' });
   await renderer.act(async () => tree.unmount());
 });

@@ -70,6 +70,10 @@ const problemMessages: ReadonlyMap<string, string> = new Map([
   // 3-N06: the tablet's own reasons not to hand the operation off to OCC yet.
   ['pending_queue', 'Faltan registros por enviar a ELEVANT. Abre Sincronización y espera a que se envíen.'],
   ['service_order_unsigned', 'Falta firmar la Orden de Servicio (aerolínea y AVIAM) sobre su contenido actual.'],
+  // N1: the checklist and the incident reports, which the close now lists and checks too.
+  ['checklist_not_submitted', 'Falta enviar el checklist a ELEVANT: ábrelo, complétalo y envíalo antes de entregar.'],
+  ['pending_incidents',
+    'Hay incidencias de esta operación que no llegaron a ELEVANT: ábrelas en Incidencias antes de entregar.'],
   // 3-N06: a walk-around photo that does not reach ELEVANT never holds the hand-off without a way out.
   ['walkaround_photo_unavailable',
     'ELEVANT no pudo guardar la foto; la tablet la reintenta sola. Para entregar la operación sin ella, descártala.'],

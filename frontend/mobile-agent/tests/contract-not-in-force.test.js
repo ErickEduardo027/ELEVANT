@@ -69,6 +69,11 @@ jest.mock('../src/services/ramp-operation-service-execution', () => ({
   readRampOperationServicePendingTransition: jest.fn(async () => null),
   transitionRampOperationService: jest.fn(),
 }));
+// N1: the close reads the operation's checklist and counts its incident reports still on the device.
+jest.mock('../src/services/ramp-operation-checklist', () => ({
+  getRampOperationChecklist: jest.fn(async () => ({ fromCache: false, checklist: { status: 'Submitted' } })),
+}));
+jest.mock('../src/services/ramp-incidents', () => ({ countUnsentRampIncidents: jest.fn(async () => 0) }));
 
 const { ElevantApiError } = require('@elevant/api-client');
 const { asMobileServiceError, MobileServiceError } = require('../src/services/mobile-service-error');

@@ -64,6 +64,15 @@ const button = (tree, label) => tree.root.findAll(node => node.props.accessibili
 
 beforeEach(() => jest.clearAllMocks());
 
+describe('tú to the agent (N13, D-N13)', () => {
+  test('the card tells the agent with tú where what they add appears', async () => {
+    mockSnapshot = snapshot('Pending');
+    const tree = await render();
+    expect(text(tree)).toContain('Lo que agregues aquí aparece en la Solicitud de Servicio que firma el representante.');
+    expect(text(tree)).not.toContain('agregue aquí');
+  });
+});
+
 describe('charter card prepayment (3-N24)', () => {
   test('with the prepayment pending the agent adds a service', async () => {
     mockSnapshot = snapshot('Pending');

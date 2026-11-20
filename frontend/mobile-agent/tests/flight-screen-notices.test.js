@@ -1,5 +1,6 @@
 // N6: when the tablet cannot keep a start, a service change or the hand-off, the operation's screen says what happened
-// and what to do, in plain words: never «Desbloquea» (on Android the lock is never the cause) nor «payload». The screen
+// and what to do, in plain words: never «Desbloquea» (on Android the lock is never the cause) nor «payload». N13: nor
+// «comando», «canónico» or «fuente de verdad» when ELEVANT refused, changed or did not confirm something. The screen
 // is real; its services are doubles, as in contract-not-in-force.test.js.
 const React = require('react');
 const renderer = require('react-test-renderer');
@@ -62,15 +63,22 @@ jest.mock('../src/services/ramp-operation-service-execution', () => ({
   readRampOperationServicePendingTransition: jest.fn(async () => null),
   transitionRampOperationService: (...args) => mockTransition(...args),
 }));
+// N1: the close reads the operation's checklist and counts its incident reports still on the device.
+jest.mock('../src/services/ramp-operation-checklist', () => ({
+  getRampOperationChecklist: jest.fn(async () => ({ fromCache: false, checklist: { status: 'Submitted' } })),
+}));
+jest.mock('../src/services/ramp-incidents', () => ({ countUnsentRampIncidents: jest.fn(async () => 0) }));
 
-const { Alert } = require('react-native');
 const { MobileServiceError } = require('../src/services/mobile-service-error');
 const Screen = require('../src/app/flight/[id]').default;
 
 const operationId = '70000000-0000-4000-8000-000000000005';
 const serviceId = '73000000-0000-4000-8000-000000000001';
-/** The jargon and the advice the old notices gave: neither belongs in front of a ramp agent (N6). */
-const JARGON_OR_LOCK = /payload|idempotente|Desbloque/i;
+/**
+ * The jargon and the advice the old notices gave: neither belongs in front of a ramp agent (N6); nor do «comando»,
+ * «canónico» and «fuente de verdad» (N13).
+ */
+const JARGON_OR_LOCK = /payload|idempotente|Desbloque|canónic|comando|fuente de verdad/i;
 const WHAT_TO_DO = 'Vuelve a intentarlo; si sigue fallando, cierra la app, ábrela de nuevo y avisa a OCC.';
 
 function assigned(status, serviceStatus) {
@@ -140,20 +148,130 @@ test('a service change the tablet could not keep says so and what to do, without
 }, 30_000);
 
 test('a hand-off the tablet could not keep says so and what to do, without jargon', async () => {
-  // The agent confirms the hand-off in the dialog.
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => buttons?.[1]?.onPress?.());
-  try {
-    mockSubmit.mockRejectedValue(new MobileServiceError('storage_unavailable'));
-    const tree = await render(assigned('InProgress', 'Completed'));
-    await press(tree, 'ENTREGAR A OCC');
+  mockSubmit.mockRejectedValue(new MobileServiceError('storage_unavailable'));
+  const tree = await render(assigned('InProgress', 'Completed'));
+  await press(tree, 'ENTREGAR A OCC');
+  // N1: the agent confirms the hand-off in the tablet's own sheet, not in a native dialog.
+  const [sheet] = tree.root.findAll(node => node.type === 'Modal');
+  const [confirm] = sheet.findAll(node => node.props?.title === 'ENTREGAR A OCC' && typeof node.props.onPress === 'function');
+  await renderer.act(async () => { confirm.props.onPress(); });
 
-    expect(mockSubmit).toHaveBeenCalled();
-    const text = screenText(tree);
-    expect(text).toContain('Entrega no guardada');
-    expect(text).toContain(`La tablet no pudo guardar la entrega. ${WHAT_TO_DO}`);
-    expect(text).not.toMatch(JARGON_OR_LOCK);
-    await renderer.act(async () => tree.unmount());
-  } finally {
-    alert.mockRestore();
-  }
+  expect(mockSubmit).toHaveBeenCalled();
+  const text = screenText(tree);
+  expect(text).toContain('Entrega no guardada');
+  expect(text).toContain(`La tablet no pudo guardar la entrega. ${WHAT_TO_DO}`);
+  expect(text).not.toMatch(JARGON_OR_LOCK);
+  await renderer.act(async () => tree.unmount());
 }, 30_000);
+
+// N13 (D-N13): a review of the PR 1 found «comando reservado» and «estado canónico» still on this screen. Each state
+// that showed them says the same in plain words, with tú.
+describe('plain words when ELEVANT refused, changed or did not confirm something (N13, D-N13)', () => {
+  const { Alert } = require('react-native');
+  const submission = () => require('../src/services/ramp-operation-submission');
+  const correction = () => require('../src/services/ramp-operation-correction');
+  const returned = { ...assigned('Returned', 'Completed'), review: { submissionId: '78000000-0000-4000-8000-000000000001',
+    revisionNumber: 1, status: 'Returned', returnReason: 'Falta la firma de la aerolínea.' } };
+  const twoServices = () => {
+    const operation = assigned('InProgress', 'Planned');
+    return { ...operation, services: [...operation.services, { ...operation.services[0],
+      id: '73000000-0000-4000-8000-000000000002', lineNumber: 2, serviceDefinitionId: '73000000-0000-4000-8000-000000000002',
+      code: 'FUEL', name: 'Combustible' }] };
+  };
+  /** ENTREGAR on the card opens the tablet's sheet (N1); its own ENTREGAR A OCC hands off. */
+  async function handOff(tree) {
+    await press(tree, 'ENTREGAR A OCC');
+    const [sheet] = tree.root.findAll(node => node.type === 'Modal');
+    const [confirm] = sheet.findAll(node => node.props?.title === 'ENTREGAR A OCC' && typeof node.props.onPress === 'function');
+    await renderer.act(async () => { confirm.props.onPress(); });
+  }
+
+  beforeEach(() => {
+    mockStart.mockReset();
+    mockTransition.mockReset();
+    mockSubmit.mockReset();
+    submission().readRampOperationPendingSubmission.mockReset();
+    submission().readRampOperationPendingSubmission.mockResolvedValue(null);
+    correction().readPendingRampCorrection.mockReset();
+    correction().readPendingRampCorrection.mockResolvedValue(false);
+  });
+
+  test.each([
+    ['a service ELEVANT changed meanwhile', () => assigned('InProgress', 'Planned'),
+      () => { mockTransition.mockRejectedValue(new MobileServiceError('conflict')); },
+      tree => press(tree, 'INICIAR SERVICIO'),
+      ['El servicio cambió', 'Actualizamos el servicio con lo que tiene ELEVANT. Revísalo antes de registrar otro resultado.']],
+    ['a service change ELEVANT did not take', () => assigned('InProgress', 'Planned'),
+      () => { mockTransition.mockRejectedValue(new MobileServiceError('malformed_response')); },
+      tree => press(tree, 'INICIAR SERVICIO'),
+      ['Servicio no actualizado', 'No pudimos registrar el cambio. Actualiza el detalle y revisa el servicio antes de continuar.']],
+    ['another service still changing', twoServices,
+      () => { mockTransition.mockReturnValue(new Promise(() => {})); },
+      tree => press(tree, 'INICIAR SERVICIO'),
+      ['Espera a que termine el cambio del otro servicio.']],
+    ['a start ELEVANT changed meanwhile', () => assigned('Assigned'),
+      () => { mockStart.mockRejectedValue(new MobileServiceError('conflict')); },
+      tree => press(tree, 'INICIAR OPERACIÓN'),
+      ['La operación cambió', 'Actualizamos la operación con lo que tiene ELEVANT. Revísala antes de volver a intentarlo.']],
+    ['a start whose answer the connection lost', () => assigned('Assigned'),
+      () => { mockStart.mockRejectedValue(new MobileServiceError('network_unavailable')); },
+      tree => press(tree, 'INICIAR OPERACIÓN'),
+      ['Inicio pendiente de confirmación', 'Se perdió la conexión antes de que ELEVANT confirmara el inicio. Reconecta y ' +
+        'vuelve a intentarlo sin cerrar sesión: el inicio no se duplica.']],
+    ['a start ELEVANT answered too late', () => assigned('Assigned'),
+      () => { mockStart.mockRejectedValue(new MobileServiceError('request_timeout')); },
+      tree => press(tree, 'INICIAR OPERACIÓN'),
+      ['Inicio pendiente de confirmación', 'ELEVANT tardó demasiado en responder. Vuelve a intentarlo sin cerrar sesión: el ' +
+        'inicio no se duplica.']],
+    ['a hand-off whose copy the tablet cannot read back', () => assigned('InProgress', 'Completed'),
+      () => {
+        mockSubmit.mockRejectedValue(new MobileServiceError('request_failed'));
+        return () => submission().readRampOperationPendingSubmission.mockRejectedValueOnce(new Error('storage'));
+      },
+      handOff,
+      ['Entrega por confirmar', 'No pudimos confirmar la entrega guardada en esta tablet. Actualiza el detalle antes de ' +
+        'volver a enviarla.', 'Para entregar, actualiza el detalle con señal y espera a que terminen los cambios en curso.']],
+    ['a hand-off ELEVANT did not confirm, kept on the tablet', () => assigned('InProgress', 'Completed'),
+      () => {
+        mockSubmit.mockRejectedValue(new MobileServiceError('network_unavailable'));
+        return () => submission().readRampOperationPendingSubmission.mockResolvedValueOnce({
+          idempotencyKey: '50000000-0000-4000-8000-000000000001', request: { agentNote: undefined } });
+      },
+      handOff,
+      ['Entrega pendiente de confirmación', 'La entrega quedó guardada en esta tablet. Vuelve a intentarlo sin cerrar ' +
+        'sesión: se envía la misma, sin duplicarla.']],
+    ['a correction ELEVANT did not confirm, kept on the tablet', () => returned,
+      () => {
+        correction().reopenRampOperationCorrection.mockRejectedValueOnce(new MobileServiceError('network_unavailable'));
+        return () => correction().readPendingRampCorrection.mockResolvedValueOnce(true);
+      },
+      tree => press(tree, 'ABRIR CORRECCIÓN'),
+      ['Corrección por confirmar', 'ELEVANT no confirmó la corrección. Vuelve a intentarlo sin cerrar sesión: no se ' +
+        'abre dos veces.']],
+    ['a correction whose copy the tablet cannot read back', () => returned,
+      () => {
+        correction().reopenRampOperationCorrection.mockRejectedValueOnce(new MobileServiceError('request_failed'));
+        return () => correction().readPendingRampCorrection.mockRejectedValueOnce(new Error('storage'));
+      },
+      tree => press(tree, 'ABRIR CORRECCIÓN'),
+      ['Corrección sin confirmar', 'No pudimos confirmar la corrección guardada en esta tablet. Actualiza el detalle ' +
+        'antes de volver a intentarlo.']],
+  ])('%s says so in plain words', async (_description, operation, arrange, act, expected) => {
+    // The correction asks first in a native dialog; the agent confirms it.
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => buttons?.[1]?.onPress?.());
+    try {
+      // What the services answer; a case whose doubles must be set once the screen loaded returns that step.
+      const afterRender = arrange();
+      const tree = await render(operation());
+      if (typeof afterRender === 'function') afterRender();
+      await act(tree);
+      await renderer.act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+      const text = screenText(tree);
+      for (const line of expected) expect(text).toContain(line);
+      expect(text).not.toMatch(JARGON_OR_LOCK);
+      await renderer.act(async () => tree.unmount());
+    } finally {
+      alert.mockRestore();
+    }
+  }, 30_000);
+});

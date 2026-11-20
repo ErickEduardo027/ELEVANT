@@ -3,10 +3,12 @@ import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-n
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-export function PrimaryButton({ title, onPress, icon, disabled, secondary = false, danger = false }: {
+export function PrimaryButton({ title, onPress, icon, disabled, secondary = false, danger = false, accessibilityLabel }: {
   title: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap; disabled?: boolean; secondary?: boolean; danger?: boolean;
+  /** What a screen reader says when the title alone does not tell two buttons apart; the title otherwise. */
+  accessibilityLabel?: string;
 }) {
-  return <Pressable accessibilityLabel={title} accessibilityRole="button" accessibilityState={{ disabled: Boolean(disabled) }} onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.button, secondary && styles.secondary, danger && styles.danger, disabled && styles.disabled, pressed && styles.pressed]}>
+  return <Pressable accessibilityLabel={accessibilityLabel ?? title} accessibilityRole="button" accessibilityState={{ disabled: Boolean(disabled) }} onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.button, secondary && styles.secondary, danger && styles.danger, disabled && styles.disabled, pressed && styles.pressed]}>
     {icon && <Ionicons name={icon} size={20} color={danger ? colors.danger : secondary ? colors.navy : colors.white} />}
     <Text style={[styles.buttonText, secondary && styles.secondaryText, danger && styles.dangerText]}>{title}</Text>
   </Pressable>;

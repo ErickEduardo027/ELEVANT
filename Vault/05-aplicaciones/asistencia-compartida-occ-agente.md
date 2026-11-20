@@ -90,6 +90,33 @@ exigen una lectura exitosa y una decisión explícita. Respuestas tardías de un
 sesión reemplazada no borran la sesión nueva ni mantienen visible el aporte
 anterior; OCC además rechaza horas locales inexistentes por salto horario.
 
+*Posterior al commit verificado de esta nota (hallazgo S6 de la corrida del VPS
+del 16 de noviembre, decisión D-S6): la tarjeta de la tablet edita y muestra
+las horas en la hora local de la estación, «Las horas están en hora local de
+PUJ», y no en la zona del equipo. Si no conoce la zona, usa
+`America/Santo_Domingo`. Una hora que el reloj de la estación salta en un
+cambio de horario no se guarda, y en el conflicto la versión guardada y el
+intento tienen el mismo formato. Sigue enviando instantes UTC, y la cola no
+cambia. D-S6 deja sin efecto, para la tablet, la regla del plan del 2026-10-05
+de editar en la zona del dispositivo. OCC aún edita y muestra las horas de su
+panel en la zona del navegador
+([panel de OCC](../../frontend/private-web/src/features/planning/components/OccAttendancePanel.jsx)),
+y la [revisión de G.H.](../../frontend/private-web/src/features/human-resources/attendance/AttendanceReviewPage.jsx)
+las muestra en UTC. Alinear las dos pantallas queda para otra entrega.*
+
+*Posterior al commit verificado de esta nota (hallazgo N8 de la corrida del VPS
+del 16 de noviembre, en parte, y decisión D-N8): la tarjeta de la tablet usa la
+tipografía y los colores de los
+[tokens de diseño](../../frontend/mobile-agent/src/theme/tokens.ts) en todos sus
+textos, y sus campos miden 56 dp, con la letra de «Datos del vuelo», como fija
+[ADR-0031](../../docs/adr/0031-flight-report-capture-on-the-tablet.md). Si OCC
+no registró horas ni nota, su aporte dice «OCC aún no registra horas.» en una
+sola línea, en lugar de cinco líneas vacías. Con datos dice
+«Inicio 19:48 · Fin —», la nota y «Registrado 16 nov, 19:50». Una hora que no
+cae en el día de la operación en la estación lleva su fecha,
+«Fin 17 nov, 00:30». Los contadores de revisión se mantienen y las horas se
+siguen escribiendo a mano: D-N8 deja el selector de hora para otra entrega.*
+
 *Posterior al commit verificado de esta nota: desde la fase 3 del ciclo
 ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)),
 cerrar, vencer o revocar la sesión ya no elimina el aporte que la tablet no

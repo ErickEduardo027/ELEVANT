@@ -18,56 +18,77 @@ import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { MobileServiceError } from '../services/mobile-service-error';
 import { serverNow } from '../synchronization/server-clock';
 import { colors } from '../theme/colors';
+import { radius, space, touch, type } from '../theme/tokens';
+import {
+  formatStationDateTime,
+  formatStationTime,
+  stationTimeLabel,
+  stationWallClock,
+  stationWallClockToInstant,
+} from '../utils/date-format';
 import { resetToLogin } from '../utils/session-navigation';
 import { Card, PrimaryButton } from './ui';
 
 type Form = { start: string; end: string; note: string };
 const emptyForm: Form = { start: '', end: '', note: '' };
 
-function localValue(instant: string | null | undefined) {
-  if (!instant) return '';
-  const date = new Date(instant);
-  if (!Number.isFinite(date.getTime())) return '';
-  const two = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
-}
-
-function offsetInstant(value: string): string | null | undefined {
-  if (!value.trim()) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/.exec(value.trim());
-  if (!match) return undefined;
-  const [, year, month, day, hour, minute] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
-  if (date.getFullYear() !== Number(year) || date.getMonth() + 1 !== Number(month) ||
-    date.getDate() !== Number(day) || date.getHours() !== Number(hour) ||
-    date.getMinutes() !== Number(minute)) return undefined;
-  return date.toISOString();
-}
-
-function formFrom(contribution: AttendanceDraftContributionResponse | null): Form {
+// S6 (D-S6): the fields hold the station's wall clock, «2026-10-05 10:00»; the commands keep UTC instants.
+function formFrom(contribution: AttendanceDraftContributionResponse | null, timeZone: string | null): Form {
   return contribution ? {
-    start: localValue(contribution.observedStartAt),
-    end: localValue(contribution.observedEndAt),
+    start: stationWallClock(contribution.observedStartAt, timeZone),
+    end: stationWallClock(contribution.observedEndAt, timeZone),
     note: contribution.incidentNote ?? '',
   } : emptyForm;
 }
 
-function formFromRequest(request: SaveAttendanceDraftRequest): Form {
+function formFromRequest(request: SaveAttendanceDraftRequest, timeZone: string | null): Form {
   return {
-    start: localValue(request.observedStartAt),
-    end: localValue(request.observedEndAt),
+    start: stationWallClock(request.observedStartAt, timeZone),
+    end: stationWallClock(request.observedEndAt, timeZone),
     note: request.incidentNote ?? '',
   };
 }
 
-function displayInstant(instant: string | null | undefined) {
-  return instant ? localValue(instant) : 'Sin registrar';
+function displayInstant(instant: string | null | undefined, timeZone: string | null) {
+  return instant ? formatStationDateTime(instant, timeZone) : 'Sin registrar';
 }
 
-export function AttendanceDraftCard({ operationId, assignmentId, active = true }: {
+/** An attempt beside the saved revision, in the same format; a value that is not a time is shown as written. */
+function displayAttempt(value: string, timeZone: string | null) {
+  const instant = stationWallClockToInstant(value, timeZone);
+  if (instant === null) return 'Sin registrar';
+  return instant === undefined ? value : formatStationDateTime(instant, timeZone);
+}
+
+/** OCC's lane has something to show: hours or a note (N8). Without either it is one line, not five empty ones. */
+function occRecorded(contribution: AttendanceDraftContributionResponse | null) {
+  return contribution && (contribution.observedStartAt || contribution.observedEndAt || contribution.incidentNote)
+    ? contribution : null;
+}
+
+/**
+ * One of OCC's hours (N8): «19:48» on the operation's day at the station, «17 nov, 00:30» on another day or when that
+ * day is not known, «—» when OCC did not record it.
+ */
+function occTime(instant: string | null, timeZone: string | null, operationDate: string | null) {
+  if (!instant) return '—';
+  const day = stationWallClock(instant, timeZone).slice(0, 10);
+  return operationDate && day === operationDate
+    ? formatStationTime(instant, timeZone) : formatStationDateTime(instant, timeZone);
+}
+
+export function AttendanceDraftCard({
+  operationId, assignmentId, active = true, timeZone, stationCode, operationDate,
+}: {
   readonly operationId: string;
   readonly assignmentId: string;
   readonly active?: boolean;
+  /** The station's IANA zone: the times are edited and shown on its clock. Unknown: AVIAM's calendar. */
+  readonly timeZone: string | null;
+  /** The station's code, for «hora local de PUJ». */
+  readonly stationCode: string | null;
+  /** The operation's day at the station, «2026-11-16»: OCC's hours on that day show without their date. */
+  readonly operationDate: string | null;
 }) {
   const identity = `${operationId}:${assignmentId}`;
   const identityRef = useRef(identity);
@@ -87,7 +108,8 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
   const [conflictReady, setConflictReady] = useState(false);
   const [notice, setNotice] = useState('');
   const [validation, setValidation] = useState('');
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'zona del dispositivo';
+  // S6 (D-S6): «hora local de PUJ», the station's clock, never the device's zone.
+  const stationClock = stationTimeLabel(stationCode);
 
   const updatePending = (value: PendingAttendanceDraft | null) => {
     pendingRef.current = value;
@@ -98,7 +120,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     storageReadyRef.current = false;
     setStorageReady(false);
     setStatus('error');
-    setNotice('No se pudo verificar la observación pendiente. No se enviará otro comando.');
+    setNotice('No se pudo verificar la observación pendiente. No se enviará otra observación mientras tanto.');
   };
 
   const invalidateView = useCallback((code: MobileServiceError['code']) => {
@@ -144,7 +166,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       snapshotRef.current = canonical;
       setSnapshot(canonical);
       setStatus('ready');
-      if (!dirtyRef.current && !pendingRef.current) setForm(formFrom(canonical.rampAgent));
+      if (!dirtyRef.current && !pendingRef.current) setForm(formFrom(canonical.rampAgent, timeZone));
     } catch (error) {
       if (request.signal.aborted || identityRef.current !== identity) return;
       if (error instanceof MobileServiceError &&
@@ -155,7 +177,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       setStatus(current => current === 'ready' ? current : 'error');
       setNotice('No se pudo actualizar la observación. Intenta de nuevo al reconectar.');
     }
-  }, [active, assignmentId, identity, operationId, invalidateView]);
+  }, [active, assignmentId, identity, operationId, invalidateView, timeZone]);
 
   useEffect(() => {
     identityRef.current = identity;
@@ -178,13 +200,13 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     void readPendingAttendanceDraft(operationId, assignmentId).then(value => {
       if (cancelled || identityRef.current !== identity) return;
       updatePending(value);
-      if (value) { setForm(formFromRequest(value.request)); dirtyRef.current = true; }
+      if (value) { setForm(formFromRequest(value.request, timeZone)); dirtyRef.current = true; }
       storageReadyRef.current = true;
       setStorageReady(true);
     }).catch(() => {
       if (cancelled || identityRef.current !== identity) return;
       setStatus('error');
-      setNotice('No se pudo leer la observación pendiente. No se enviará otro comando.');
+      setNotice('No se pudo leer la observación pendiente. No se enviará otra observación mientras tanto.');
     });
     return () => { cancelled = true; readRef.current?.abort(); };
     // Reset only when the operation/assignment identity changes.
@@ -236,8 +258,9 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
         }
         request = current.request;
       } else {
-        const start = offsetInstant(form.start);
-        const end = offsetInstant(form.end);
+        // A time the station's clock skips (a daylight-saving jump) is refused like a malformed one.
+        const start = stationWallClockToInstant(form.start, timeZone);
+        const end = stationWallClockToInstant(form.end, timeZone);
         const note = form.note.trim();
         if (start === undefined || end === undefined ||
           (start && end && Date.parse(end) < Date.parse(start)) ||
@@ -297,7 +320,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       setConflict(false);
       setConflictReady(false);
       if (!keepAttempt) {
-        setForm(formFrom(snapshot.rampAgent));
+        setForm(formFrom(snapshot.rampAgent, timeZone));
         dirtyRef.current = false;
       }
       setNotice(keepAttempt ? 'Revisión actual seleccionada. Confirma tu observación para guardarla.' :
@@ -307,53 +330,68 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     } finally { if (identityRef.current === identity) setBusy(false); }
   };
 
+  const occ = snapshot ? occRecorded(snapshot.occ) : null;
+
+  // N8 (D-N8): every text takes the app's type and colour tokens; the revision counters stay.
   return <Card style={styles.card}>
     <Text accessibilityRole="header" style={styles.title}>Asistencia observada</Text>
-    <Text style={styles.description}>
-      Registro de observación manual; no es un fichaje biométrico. Las horas se editan en {timezone}, zona de este dispositivo.
+    <Text style={styles.hint}>
+      {`Registro de observación manual; no es un fichaje biométrico. Las horas están en ${stationClock}.`}
     </Text>
-    {status === 'loading' && <Text accessibilityLiveRegion="polite">Cargando observaciones…</Text>}
-    {status === 'error' && <Text accessibilityLiveRegion="polite">Observaciones no disponibles.</Text>}
+    {status === 'loading' &&
+      <Text accessibilityLiveRegion="polite" style={styles.hint}>Cargando observaciones…</Text>}
+    {status === 'error' &&
+      <Text accessibilityLiveRegion="polite" style={styles.hint}>Observaciones no disponibles.</Text>}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     <PrimaryButton title="Actualizar observaciones" onPress={() => void reload()} secondary />
     {snapshot && <View style={styles.lanes}>
       <View style={styles.lane}>
         <Text style={styles.laneTitle}>Aporte de OCC</Text>
-        <Text>Inicio: {displayInstant(snapshot.occ?.observedStartAt)}</Text>
-        <Text>Fin: {displayInstant(snapshot.occ?.observedEndAt)}</Text>
-        <Text>{snapshot.occ?.incidentNote || 'Sin nota de OCC'}</Text>
-        <Text>Guardado: {displayInstant(snapshot.occ?.recordedAt)}</Text>
-        <Text>Revisión {snapshot.occ?.revision ?? 0}</Text>
+        {/* N8: one line while OCC has recorded nothing; otherwise its hours, its note and when it recorded them. */}
+        {occ ? <>
+          <Text style={styles.hours}>
+            {`Inicio ${occTime(occ.observedStartAt, timeZone, operationDate)} · ` +
+              `Fin ${occTime(occ.observedEndAt, timeZone, operationDate)}`}
+          </Text>
+          {occ.incidentNote ? <Text style={styles.body}>{occ.incidentNote}</Text> : null}
+          <Text style={styles.caption}>{`Registrado ${displayInstant(occ.recordedAt, timeZone)}`}</Text>
+          <Text style={styles.caption}>{`Revisión ${occ.revision}`}</Text>
+        </> : <Text style={styles.hint}>OCC aún no registra horas.</Text>}
       </View>
       <View style={styles.lane}>
         <Text style={styles.laneTitle}>Tu observación</Text>
         {conflict && <View accessibilityRole="alert" style={styles.conflict}>
-          <Text>Conflicto con la revisión actual del agente.</Text>
-          {!conflictReady && <Text>Actualiza la versión guardada antes de decidir.</Text>}
+          <Text style={styles.conflictTitle}>Conflicto con la revisión actual del agente.</Text>
+          {!conflictReady && <Text style={styles.body}>Actualiza la versión guardada antes de decidir.</Text>}
+          {/* S6: both sides in one format, on the station's clock. */}
           {conflictReady && <>
-            <Text>Inicio guardado: {displayInstant(snapshot.rampAgent?.observedStartAt)}</Text>
-            <Text>Fin guardado: {displayInstant(snapshot.rampAgent?.observedEndAt)}</Text>
-            <Text>Versión actual: {snapshot.rampAgent?.incidentNote ?? 'Sin nota'}</Text>
-            <Text>Guardado: {displayInstant(snapshot.rampAgent?.recordedAt)}</Text>
+            <Text style={styles.body}>
+              Inicio guardado: {displayInstant(snapshot.rampAgent?.observedStartAt, timeZone)}
+            </Text>
+            <Text style={styles.body}>
+              Fin guardado: {displayInstant(snapshot.rampAgent?.observedEndAt, timeZone)}
+            </Text>
+            <Text style={styles.body}>Versión actual: {snapshot.rampAgent?.incidentNote ?? 'Sin nota'}</Text>
+            <Text style={styles.body}>Guardado: {displayInstant(snapshot.rampAgent?.recordedAt, timeZone)}</Text>
           </>}
-          <Text>Inicio de tu intento: {form.start || 'Sin registrar'}</Text>
-          <Text>Fin de tu intento: {form.end || 'Sin registrar'}</Text>
-          <Text>Tu intento: {form.note || 'Sin nota'}</Text>
+          <Text style={styles.body}>Inicio de tu intento: {displayAttempt(form.start, timeZone)}</Text>
+          <Text style={styles.body}>Fin de tu intento: {displayAttempt(form.end, timeZone)}</Text>
+          <Text style={styles.body}>Tu intento: {form.note || 'Sin nota'}</Text>
         </View>}
         {pending && !conflict && <Text style={styles.pending}>Pendiente de confirmar</Text>}
-        <Text>Inicio observado · {timezone}</Text>
+        <Text style={styles.caption}>{`Inicio observado · ${stationClock}`}</Text>
         <TextInput accessibilityLabel="Inicio observado" editable={!busy && !pending && !conflict}
           onChangeText={value => change('start', value)} placeholder="AAAA-MM-DD HH:mm"
           style={styles.input} value={form.start} />
         <PrimaryButton title="Registrar inicio ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('start', localValue(serverNow().toISOString()))} secondary />
-        <Text>Fin observado · {timezone}</Text>
+          onPress={() => change('start', stationWallClock(serverNow(), timeZone))} secondary />
+        <Text style={styles.caption}>{`Fin observado · ${stationClock}`}</Text>
         <TextInput accessibilityLabel="Fin observado" editable={!busy && !pending && !conflict}
           onChangeText={value => change('end', value)} placeholder="AAAA-MM-DD HH:mm"
           style={styles.input} value={form.end} />
         <PrimaryButton title="Registrar fin ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('end', localValue(serverNow().toISOString()))} secondary />
-        <Text>Nota del agente</Text>
+          onPress={() => change('end', stationWallClock(serverNow(), timeZone))} secondary />
+        <Text style={styles.caption}>Nota del agente</Text>
         <TextInput accessibilityLabel="Nota del agente" editable={!busy && !pending && !conflict}
           maxLength={2_000} multiline onChangeText={value => change('note', value)}
           style={[styles.input, styles.note]} value={form.note} />
@@ -365,27 +403,32 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
             onPress={() => void resolveConflict(false)} secondary />
         </View> : <PrimaryButton title={pending ? 'Reintentar confirmación' : 'Guardar observación'}
           disabled={busy || !storageReady || status !== 'ready'} onPress={() => void save()} />}
-        <Text style={styles.revision}>Revisión guardada {snapshot.rampAgent?.revision ?? 0}</Text>
+        <Text style={styles.caption}>{`Revisión guardada ${snapshot.rampAgent?.revision ?? 0}`}</Text>
       </View>
     </View>}
   </Card>;
 }
 
 const styles = StyleSheet.create({
-  card: { gap: 12 },
-  title: { color: colors.ink, fontSize: 20, fontWeight: '800' },
-  description: { color: colors.muted, lineHeight: 20 },
+  card: { gap: space.md },
+  title: { ...type.title, color: colors.navy },
+  hint: { ...type.body, color: colors.muted },
+  notice: { ...type.body, color: colors.navy },
   lanes: { gap: 14 },
-  lane: { gap: 9, padding: 14, borderRadius: 14, backgroundColor: colors.background },
-  laneTitle: { color: colors.navy, fontSize: 17, fontWeight: '800' },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10,
-    paddingHorizontal: 12, backgroundColor: colors.white, color: colors.ink },
-  note: { minHeight: 88, textAlignVertical: 'top', paddingTop: 12 },
-  notice: { color: colors.navy },
-  validation: { color: colors.danger },
-  pending: { color: colors.warning, fontWeight: '700' },
-  conflict: { gap: 6, padding: 12, borderWidth: 1, borderColor: colors.warning,
-    backgroundColor: colors.paleOrange, borderRadius: 10 },
-  revision: { color: colors.muted, fontSize: 12 },
-  actions: { gap: 8 },
+  lane: { gap: 9, padding: 14, borderRadius: radius.md, backgroundColor: colors.background },
+  laneTitle: { ...type.label, color: colors.navy },
+  hours: { ...type.label, color: colors.ink, fontVariant: ['tabular-nums'] },
+  body: { ...type.body, color: colors.ink },
+  // The fields' labels, as in «Datos del vuelo», and the record and revision lines.
+  caption: { ...type.caption, color: colors.muted },
+  // The fields of «Datos del vuelo» (FlightDataCard): 56 dp, for gloves (ADR-0031), and the same type.
+  input: { minHeight: touch.min, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: space.md, fontSize: 18, fontWeight: '700', color: colors.ink, backgroundColor: colors.white },
+  note: { minHeight: 88, textAlignVertical: 'top', paddingTop: space.md },
+  validation: { ...type.label, color: colors.danger },
+  pending: { ...type.label, color: colors.warning },
+  conflict: { gap: 6, padding: space.md, borderWidth: 1, borderColor: colors.warning,
+    backgroundColor: colors.paleOrange, borderRadius: radius.sm },
+  conflictTitle: { ...type.label, color: colors.warning },
+  actions: { gap: space.sm },
 });

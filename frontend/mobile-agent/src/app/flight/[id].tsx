@@ -22,12 +22,14 @@ import {
 } from 'react-native';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import { AttendanceDraftCard } from '../../components/attendance-draft-card';
+import { HandoffRequirementList, HandoffSheet } from '../../components/handoff-requirements';
 import {
   RampServiceExecutionCard,
   type ServiceExecutionNotice,
 } from '../../components/ramp-service-execution-card';
-import { RampOperationChargesCard } from '../../components/ramp-operation-charges-card';
+import { RampOperationChargesCard, type ChargesExecutionClosed } from '../../components/ramp-operation-charges-card';
 import {
+  assignmentRoleLabel,
   flightLegTimeLabel,
   formatOperationDate,
   formatOperationTime,
@@ -36,7 +38,7 @@ import {
   operationStandLabel,
   operationStatusLabel,
   operationStatusTone,
-  serviceStatusLabel,
+  serviceChangeSentence,
 } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
@@ -52,10 +54,20 @@ import {
   type RampOperationPendingSubmission,
 } from '../../services/ramp-operation-submission';
 import {
-  HANDOFF_PENDING_QUEUE,
-  HANDOFF_SERVICE_ORDER_UNSIGNED,
-  isServiceOrderSigned,
+  checklistQueuedFor,
+  checklistStanding,
+  flightDataQueuedFor,
+  handoffHoldsFor,
+  handoffRequirements,
+  isHandoffHold,
+  isServiceFinished,
+  serviceOrderHasSignature,
+  type ChecklistStanding,
+  type HandoffChecklistRead,
+  type HandoffRequirement,
 } from '../../features/assigned-operations/handoff';
+import { getRampOperationChecklist } from '../../services/ramp-operation-checklist';
+import { countUnsentRampIncidents } from '../../services/ramp-incidents';
 import {
   transitionRampOperationService,
   type RampOperationServiceExecutionResponse,
@@ -66,7 +78,7 @@ import type { FlightReportOutboxItem } from '../../synchronization/flight-report
 import { projectRampOperation } from '../../synchronization/ramp-command-projection';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
-import { dateTimeFormat } from '../../utils/date-format';
+import { formatStationDateTime, stationTimeTitle } from '../../utils/date-format';
 import { ConnectionBadge } from '../../components/flight-report/connection-badge';
 import { DocumentsPanel, WalkaroundCard } from '../../components/documents/operation-documents';
 import { CharterCard } from '../../components/documents/charter-card';
@@ -81,6 +93,18 @@ type StartNotice = Readonly<{
 
 /** N6: what the agent does when the tablet could not keep a command; the lock of the device is never the cause. */
 const LOCAL_SAVE_WAY_OUT = 'Vuelve a intentarlo; si sigue fallando, cierra la app, ábrela de nuevo y avisa a OCC.';
+
+/**
+ * N13 (D-N13): the service notices that stay when a service's change starts or ELEVANT confirms it: the warnings and
+ * errors of the other services. Confirmations do not pile up, and the service's own notice is replaced.
+ */
+function withoutConfirmations(
+  notices: Readonly<Record<string, ServiceExecutionNotice>>,
+  serviceId: string,
+): Readonly<Record<string, ServiceExecutionNotice>> {
+  return Object.fromEntries(Object.entries(notices)
+    .filter(([id, notice]) => id !== serviceId && notice.tone !== 'success'));
+}
 
 export default function OperationDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -111,6 +135,17 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const [correcting, setCorrecting] = useState(false);
   const [correctionPending, setCorrectionPending] = useState(false);
   const [correctionNotice, setCorrectionNotice] = useState<StartNotice | null>(null);
+  // N1: the last read of the operation's checklist (null when it failed) and how many of its incident reports are
+  // still on the device (null when they could not be read), each with the operation it belongs to.
+  const [checklistRead, setChecklistRead] = useState<Readonly<{
+    operationId: string;
+    read: HandoffChecklistRead | null;
+  }> | null>(null);
+  const [unsentIncidents, setUnsentIncidents] = useState<Readonly<{
+    operationId: string;
+    count: number | null;
+  }> | null>(null);
+  const checklistRequestRef = useRef<AbortController | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const startRequestRef = useRef<AbortController | null>(null);
   const serviceRequestRef = useRef<AbortController | null>(null);
@@ -174,11 +209,16 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         lastServiceExecutionsRef.current.clear();
       }
       let pendingHandoff: RampOperationPendingSubmission | null = null;
+      let incidents: number | null = null;
       if (found) {
         pendingHandoff = await readRampOperationPendingSubmission(found.operation.id);
         setCorrectionPending(await readPendingRampCorrection(found.operation.id));
+        // N1: the reports still on the device hold the hand-off. They are read from the device, so every reload has
+        // them; one that cannot be read leaves them unknown, which holds nothing.
+        incidents = await countUnsentRampIncidents(found.operation.id).catch(() => null);
       }
       if (request.signal.aborted) return;
+      setUnsentIncidents(found ? { operationId: found.operation.id, count: incidents } : null);
       setOperation(found);
       setCached(snapshot.source === 'cache');
       setState(found ? 'ready' : 'not-found');
@@ -216,6 +256,39 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     }
   }, [id]);
 
+  /**
+   * N1: reads the operation's checklist for the close and its card: when the screen gains focus, when the queue moves
+   * and after the correction opens, never with each reload of the feed. A read that fails leaves the checklist unknown,
+   * which holds nothing; a session that ended goes to the access screen.
+   */
+  const readChecklist = useCallback(async () => {
+    if (!id) return;
+    checklistRequestRef.current?.abort();
+    const request = new AbortController();
+    checklistRequestRef.current = request;
+    try {
+      const result = await getRampOperationChecklist(id, { signal: request.signal });
+      if (request.signal.aborted) return;
+      setChecklistRead({ operationId: id, read: { status: result.checklist.status, fromCache: result.fromCache === true } });
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof MobileServiceError) {
+        if (error.code === 'cancelled') return;
+        if (error.code === 'unauthenticated' || error.code === 'session_expired') {
+          resetToLogin('session_expired');
+          return;
+        }
+        if (error.code === 'forbidden') {
+          resetToLogin('access_revoked');
+          return;
+        }
+      }
+      setChecklistRead({ operationId: id, read: null });
+    } finally {
+      if (checklistRequestRef.current === request) checklistRequestRef.current = null;
+    }
+  }, [id]);
+
   useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
     if (resources.includes('ramp_operations')) void load('silent');
   }), [load]));
@@ -231,15 +304,20 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   useEffect(() => {
     if (queueRevision === seenRevisionRef.current) return;
     seenRevisionRef.current = queueRevision;
-    if (loadedOperationIdRef.current === id) void load('silent');
-  }, [id, load, queueRevision]);
+    if (loadedOperationIdRef.current !== id) return;
+    void load('silent');
+    // N1: what ELEVANT just confirmed may be the checklist itself.
+    void readChecklist();
+  }, [id, load, queueRevision, readChecklist]);
 
   useFocusEffect(useCallback(() => {
     setFocused(true);
     void load(loadedOperationIdRef.current === id ? 'silent' : false);
+    void readChecklist();
     return () => {
       setFocused(false);
       requestRef.current?.abort();
+      checklistRequestRef.current?.abort();
       startRequestRef.current?.abort();
       serviceRequestRef.current?.abort();
       submissionRequestRef.current?.abort();
@@ -249,7 +327,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       submissionInFlightRef.current = false;
       correctionInFlightRef.current = false;
     };
-  }, [id, load]));
+  }, [id, load, readChecklist]));
 
   const startOperation = useCallback(async () => {
     // 3-I: with or without signal, the tap is saved on the device with its time and goes out on its own.
@@ -342,7 +420,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       !operation ||
       !projected ||
       projected.operation.status !== 'InProgress' ||
-      (isTerminalServiceStatus(current.status) &&
+      (isServiceFinished(current.status) &&
         !(operation.review?.status === 'Returned' &&
           transitionRequest.targetStatus === 'InProgress'))
     ) {
@@ -354,11 +432,10 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     serviceRequestRef.current = request;
     serviceInFlightRef.current = true;
     setBusyServiceId(service.id);
-    setServiceNotices((notices) => {
-      const next = { ...notices };
-      delete next[service.id];
-      return next;
-    });
+    // N13: the agent's next action clears the confirmations on screen, without a timer; warnings stay.
+    setServiceNotices((notices) => withoutConfirmations(notices, service.id));
+    // N13: a finished service goes back to «en ejecución» only to be corrected, in a round OCC returned.
+    const reopening = isServiceFinished(current.status) && transitionRequest.targetStatus === 'InProgress';
 
     try {
       const outcome = await transitionRampOperationService(
@@ -387,12 +464,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
                 : candidate),
           }
         : value);
+      // N13 (D-N13): one natural sentence with the tapped time at the station; it replaces the other confirmations.
       setServiceNotices((notices) => ({
-        ...notices,
+        ...withoutConfirmations(notices, service.id),
         [service.id]: {
           tone: 'success',
-          title: 'Servicio actualizado',
-          message: `${service.name} quedó en estado ${serviceStatusLabel(response.service.status).toLowerCase()}.`,
+          title: serviceChangeSentence(service.name, response.service.status, outcome.occurredAt,
+            operation.turnaround.station.ianaTimeZone, reopening),
         },
       }));
       await load(true);
@@ -441,7 +519,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       (!pendingSubmission && (
         operation.operation.status !== 'InProgress' ||
         operation.services.length === 0 ||
-        operation.services.some(service => !isTerminalServiceStatus(service.status))
+        operation.services.some(service => !isServiceFinished(service.status))
       ))
     ) return;
 
@@ -492,6 +570,11 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         resetToLogin('access_revoked');
         return;
       }
+      // N1: the service found a requirement the close had as met or unknown; reading them again shows which.
+      if (error instanceof MobileServiceError && isHandoffHold(error.problemCode)) {
+        void load('silent');
+        void readChecklist();
+      }
       try {
         const pending = await readRampOperationPendingSubmission(operation.operation.id);
         setPendingSubmission(pending);
@@ -502,8 +585,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         setSubmissionReconciliationRequired(true);
         setSubmissionNotice({
           tone: 'error',
-          title: 'Entrega por conciliar',
-          message: 'No pudimos verificar el comando reservado. Actualiza el detalle antes de volver a enviar.',
+          title: 'Entrega por confirmar',
+          message: 'No pudimos confirmar la entrega guardada en esta tablet. Actualiza el detalle antes de volver a ' +
+            'enviarla.',
         });
       }
     } finally {
@@ -513,22 +597,16 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setSubmitting(false);
       }
     }
-  }, [busyServiceId, cached, operation, pendingSubmission, submissionNote, submissionReconciliationRequired]);
-
-  const confirmHandoff = useCallback(() => {
-    if (pendingSubmission) {
-      void handoffOperation();
-      return;
-    }
-    Alert.alert(
-      'Entregar operación a OCC',
-      'Confirma que el checklist está enviado, los servicios terminaron, la Orden de Servicio está firmada y los hitos, datos del vuelo, daños, firmas e incidencias ya llegaron a ELEVANT. Una vez entregada, la ejecución queda cerrada para revisión.',
-      [
-        { text: 'Seguir revisando', style: 'cancel' },
-        { text: 'Entregar a OCC', onPress: () => void handoffOperation() },
-      ],
-    );
-  }, [handoffOperation, pendingSubmission]);
+  }, [
+    busyServiceId,
+    cached,
+    load,
+    operation,
+    pendingSubmission,
+    readChecklist,
+    submissionNote,
+    submissionReconciliationRequired,
+  ]);
 
   const reopenCorrection = useCallback(async () => {
     if (correctionInFlightRef.current || !operation || cached ||
@@ -552,6 +630,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         } }
         : current);
       await load(true);
+      // N1: the correction brings a new checklist, which the close waits for again.
+      void readChecklist();
       setCorrectionNotice({
         tone: 'success', title: `Corrección ${result.revisionNumber} abierta`,
         message: 'El checklist nuevo está listo. El envío anterior permanece intacto.',
@@ -571,12 +651,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         setCorrectionNotice({
           tone: 'warning', title: pending ? 'Corrección por confirmar' : 'No se abrió la corrección',
           message: pending
-            ? 'La respuesta no se confirmó. Reintenta con la misma clave sin cerrar sesión.'
+            ? 'ELEVANT no confirmó la corrección. Vuelve a intentarlo sin cerrar sesión: no se abre dos veces.'
             : 'Actualiza el detalle y comprueba que OCC devolvió la operación.',
         });
       } catch {
-        setCorrectionNotice({ tone: 'error', title: 'Estado local por conciliar',
-          message: 'Actualiza el detalle antes de intentar otro comando.' });
+        setCorrectionNotice({ tone: 'error', title: 'Corrección sin confirmar',
+          message: 'No pudimos confirmar la corrección guardada en esta tablet. Actualiza el detalle antes de ' +
+            'volver a intentarlo.' });
       }
     } finally {
       if (correctionRequestRef.current === request) {
@@ -585,7 +666,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setCorrecting(false);
       }
     }
-  }, [cached, correctionPending, load, operation]);
+  }, [cached, correctionPending, load, operation, readChecklist]);
 
   const confirmCorrection = useCallback(() => {
     if (correctionPending) { void reopenCorrection(); return; }
@@ -612,6 +693,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
   const { assignment, turnaround } = operation;
   const timeZone = turnaround.station.ianaTimeZone;
+  // N9 (D-N9): «Agente principal»; a role this version does not know is left out, never shown as its code.
+  const assignmentRole = assignmentRoleLabel(assignment.assignmentRole);
   // 3-I: ELEVANT's view (network or saved copy) with what still waits in the device's queue applied on top: a start or
   // a service transition saved without signal already shows, marked «En el dispositivo».
   const projection = projectRampOperation(operation, queueItems);
@@ -619,8 +702,30 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   // Every operation carries an execution checklist (ADR-0031): the bridge one or the Flight Report.
   const hasOperationalChecklist = true;
   const executing = shown.operation.status === 'InProgress';
-  // 3-N06: a new hand-off waits until everything recorded reached ELEVANT and the Service Order is signed.
-  const handoffHolds = pendingSubmission ? [] : handoffHoldsFor(projection.pending + projection.blocked, documents);
+  const notStarted = shown.operation.status === 'Assigned' || shown.operation.status === 'Planned';
+  // N1: once it ran, an operation that is no longer in progress is closed for the agent: handed off to OCC, approved,
+  // or returned and waiting for the correction to open.
+  const executionClosed: ChargesExecutionClosed | undefined = shown.operation.status === 'Returned'
+    ? 'returned' : !executing && !notStarted ? 'closed' : undefined;
+  // N1: where the checklist stands, and everything a new hand-off needs (3-N06): the services as the agent left them,
+  // the checklist, the incident reports still on the device, the flight data on the Service Order (S1, a warning only),
+  // the signed Service Order and the queue.
+  const checklist = checklistStanding(
+    checklistRead && checklistRead.operationId === id ? checklistRead.read : null,
+    checklistQueuedFor(queueItems, operation.operation.id),
+  );
+  const requirements = handoffRequirements({
+    services: shown.services,
+    checklist,
+    unsentIncidents: unsentIncidents?.operationId === operation.operation.id ? unsentIncidents.count : null,
+    documents,
+    flightDataQueued: flightDataQueuedFor(queueItems, operation.operation.id),
+    // The push-back's rule (N2): a signature of the Order waiting in the queue counts as signed.
+    orderSigned: serviceOrderHasSignature(documents, queueItems, operation.operation.id),
+    waitingRecords: projection.pending + projection.blocked,
+  });
+  const openChecklist = () => router.push({ pathname: '/checklist/[id]', params: { id: operation.operation.id } });
+  const openIncidents = () => router.push({ pathname: '/incident/[id]', params: { id: operation.operation.id } });
 
   return (
     <ScrollView
@@ -629,7 +734,10 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         <RefreshControl
           accessibilityLabel="Actualizar detalle de la operación"
           colors={[colors.navy]}
-          onRefresh={() => void load(true)}
+          onRefresh={() => {
+            void load(true);
+            void readChecklist();
+          }}
           refreshing={refreshing}
           tintColor={colors.navy}
         />
@@ -683,7 +791,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           <CharterCard operationId={operation.operation.id} editable={executing}
             existingServiceIds={operation.services.map(service => service.serviceDefinitionId)} />
           <DocumentsPanel operationId={operation.operation.id} editable={executing || shown.operation.status === 'PendingReview' ||
-            shown.operation.status === 'Returned'} />
+            shown.operation.status === 'Returned'} executionOpen={executing} />
         </>
       )}
 
@@ -693,6 +801,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           operationId={operation.operation.id}
           assignmentId={assignment.id}
           active={focused}
+          stationCode={turnaround.station.code}
+          timeZone={timeZone}
+          operationDate={turnaround.operationDate}
         />
       )}
 
@@ -728,7 +839,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         </View>
       )}
 
-      <SectionTitle title="Movimiento aéreo" subtitle={`Horario local · ${timeZone}`} />
+      {/* S6 (D-S6): whose clock the times use, «Hora local de PUJ», never the zone's IANA id. */}
+      <SectionTitle title="Movimiento aéreo" subtitle={stationTimeTitle(turnaround.station.code)} />
       <View style={styles.legs}>
         {turnaround.arrival && (
           <FlightLegCard kind="Llegada" leg={turnaround.arrival} timeZone={timeZone} />
@@ -764,7 +876,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
               !executing
                 ? 'Inicia la operación antes de ejecutar sus servicios.'
                 : busyServiceId && busyServiceId !== service.id
-                  ? 'Espera a que termine el comando del otro servicio.'
+                  ? 'Espera a que termine el cambio del otro servicio.'
                   : undefined
             }
             key={service.id}
@@ -784,6 +896,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       </View>
       {shown.services.length > 0 && (
         <RampOperationChargesCard
+          executionClosed={executionClosed}
           operationId={operation.operation.id}
           refreshKey={`${shown.operation.status}:${operation.review?.status ?? ''}:${shown.services.map(service => service.status).join(',')}`}
           services={shown.services}
@@ -802,7 +915,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
             </Text>
             <PrimaryButton
               icon="alert-circle-outline"
-              onPress={() => router.push({ pathname: '/incident/[id]', params: { id: operation.operation.id } })}
+              onPress={openIncidents}
               title="ABRIR INCIDENCIAS"
             />
           </View>
@@ -816,10 +929,14 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           </View>
           <View style={styles.nextPhaseCopy}>
             <Text style={styles.nextPhaseTitle}>Checklist operativo</Text>
+            {/* N1: where the checklist stands, once the operation started; nothing while the tablet cannot tell. */}
+            {!notStarted && <ChecklistStandingPill standing={checklist} />}
             <Text style={styles.nextPhaseText}>
-              Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.
+              {executionClosed
+                ? 'La ejecución está cerrada: el checklist se consulta tal como se envió.'
+                : 'Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.'}
             </Text>
-            {shown.operation.status === 'Assigned' && (
+            {notStarted && (
               <Text style={styles.nextPhaseWarning}>
                 Inicia la operación antes de completar el checklist.
               </Text>
@@ -829,14 +946,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
                 Sin señal se abre la última copia del checklist guardada en el dispositivo; el envío sale al reconectar.
               </Text>
             )}
+            {/* N1: after the hand-off the sent checklist still opens, read-only; only an operation not started keeps
+                it off. */}
             <PrimaryButton
-              disabled={!executing || busyServiceId !== null}
-              icon="clipboard-outline"
-              onPress={() => router.push({
-                pathname: '/checklist/[id]',
-                params: { id: operation.operation.id },
-              })}
-              title="ABRIR CHECKLIST"
+              disabled={notStarted || busyServiceId !== null}
+              icon={executionClosed ? 'eye-outline' : 'clipboard-outline'}
+              onPress={openChecklist}
+              title={executionClosed ? 'VER CHECKLIST' : 'ABRIR CHECKLIST'}
             />
           </View>
         </View>
@@ -845,32 +961,34 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       {(hasOperationalChecklist || pendingSubmission || operation.operation.status === 'PendingReview') && (
         <OperationSubmissionControl
           blocked={cached || busyServiceId !== null || submissionReconciliationRequired}
-          holds={handoffHolds}
           note={submissionNote}
           notice={submissionNotice}
           onChangeNote={setSubmissionNote}
-          onSubmit={confirmHandoff}
+          onOpenChecklist={openChecklist}
+          onOpenIncidents={openIncidents}
+          onSubmit={() => void handoffOperation()}
           operation={operation.operation}
           correctionRevision={operation.review?.status === 'Returned'
             ? operation.review.revisionNumber + 1 : null}
           pending={pendingSubmission}
-          servicesReady={operation.services.length > 0 && operation.services.every(
-            service => isTerminalServiceStatus(service.status))}
+          requirements={requirements}
+          serviceBusy={busyServiceId !== null}
           submitting={submitting}
         />
       )}
 
       <SectionTitle title="Asignación" />
       <Card style={styles.assignmentCard}>
-        <Meta icon="briefcase-outline" label={assignment.assignmentRole} dark />
+        {assignmentRole ? <Meta icon="briefcase-outline" label={assignmentRole} dark /> : null}
+        {/* N9: the position by its name only; its code («RAMP-AGENT») is for OCC. */}
         <Meta
           icon="ribbon-outline"
-          label={assignment.position ? `${assignment.position.code} · ${assignment.position.name}` : 'Posición operativa no especificada'}
+          label={assignment.position ? assignment.position.name : 'Posición operativa no especificada'}
           dark
         />
         <Meta
           icon="time-outline"
-          label={`Asignada ${formatDateTime(assignment.assignedAt, timeZone)}`}
+          label={`Asignada ${formatStationDateTime(assignment.assignedAt, timeZone)}`}
           dark
         />
       </Card>
@@ -942,9 +1060,9 @@ function OperationStartControl({
             <Text style={styles.startedAtText}>
               {onDevice
                 ? `Inicio guardado en el dispositivo ${operation.actualStartAt
-                  ? formatDateTime(operation.actualStartAt, timeZone) : ''} · se envía a ELEVANT en cuanto haya señal`
+                  ? formatStationDateTime(operation.actualStartAt, timeZone) : ''} · se envía a ELEVANT en cuanto haya señal`
                 : operation.actualStartAt
-                  ? `Inicio registrado ${formatDateTime(operation.actualStartAt, timeZone)}`
+                  ? `Inicio registrado ${formatStationDateTime(operation.actualStartAt, timeZone)}`
                   : 'Inicio confirmado por ELEVANT'}
             </Text>
           </View>
@@ -1002,33 +1120,71 @@ function OperationStartControl({
 
 function OperationSubmissionControl({
   blocked,
-  holds,
   note,
   notice,
   onChangeNote,
+  onOpenChecklist,
+  onOpenIncidents,
   onSubmit,
   operation,
   correctionRevision,
   pending,
-  servicesReady,
+  requirements,
+  serviceBusy,
   submitting,
 }: {
   readonly blocked: boolean;
-  /** 3-N06: why a new hand-off waits (records still on the device, the Service Order without its signatures). */
-  readonly holds: readonly HandoffHold[];
   readonly note: string;
   readonly notice: StartNotice | null;
   readonly onChangeNote: (value: string) => void;
+  readonly onOpenChecklist: () => void;
+  readonly onOpenIncidents: () => void;
+  /** Sends the hand-off; a new one first passes through the confirmation sheet, a reserved one goes straight. */
   readonly onSubmit: () => void;
   readonly operation: RampGroundOperationResponse;
   readonly correctionRevision: number | null;
   readonly pending: RampOperationPendingSubmission | null;
-  readonly servicesReady: boolean;
+  /** N1 (3-N06): everything a new hand-off needs, with its state; what is missing holds it. */
+  readonly requirements: readonly HandoffRequirement[];
+  /** A service command is in flight: the checklist does not open meanwhile, as on its card. */
+  readonly serviceBusy: boolean;
   readonly submitting: boolean;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const delivered = operation.status === 'PendingReview' && !pending;
+  const awaitingHandoff = operation.status === 'InProgress' && !pending;
   const canSubmit = !blocked && !submitting && (
-    pending !== null || (operation.status === 'InProgress' && servicesReady && holds.length === 0));
+    pending !== null || (operation.status === 'InProgress' && handoffHoldsFor(requirements).length === 0));
+  const title = delivered ? 'Pendiente de revisión OCC' : correctionRevision
+    ? `Reenviar corrección ${correctionRevision} a OCC` : 'Entregar operación a OCC';
+  // N1: the tablet's own sheet confirms a new hand-off; REINTENTAR ENTREGA resends the reserved one without it.
+  const submit = () => {
+    if (pending) onSubmit();
+    else setConfirming(true);
+  };
+  /**
+   * The button a missing requirement offers. Its title is the one of the card that leads to the same place, so its
+   * spoken label names what is missing: a screen reader tells the two apart.
+   */
+  const actionFor = (requirement: HandoffRequirement) => {
+    if (requirement.state !== 'missing') return null;
+    if (requirement.kind === 'checklist') {
+      return (
+        <PrimaryButton accessibilityLabel="Abrir el checklist que falta para entregar" disabled={serviceBusy}
+          icon="clipboard-outline" onPress={onOpenChecklist} secondary title="ABRIR CHECKLIST" />
+      );
+    }
+    if (requirement.kind === 'incidents') {
+      return (
+        <PrimaryButton accessibilityLabel="Abrir las incidencias que faltan por enviar" icon="alert-circle-outline"
+          onPress={onOpenIncidents} secondary title="ABRIR INCIDENCIAS" />
+      );
+    }
+    if (requirement.kind === 'queue') {
+      return <PrimaryButton icon="sync" onPress={() => router.push('/sync')} secondary title="ABRIR SINCRONIZACIÓN" />;
+    }
+    return null;
+  };
 
   return (
     <View style={[styles.handoffCard, delivered && styles.handoffDelivered]}>
@@ -1042,10 +1198,7 @@ function OperationSubmissionControl({
         </View>
         <View style={styles.handoffCopy}>
           <Text style={styles.startEyebrow}>CIERRE DE EJECUCIÓN</Text>
-          <Text accessibilityRole="header" style={styles.handoffTitle}>
-            {delivered ? 'Pendiente de revisión OCC' : correctionRevision
-              ? `Reenviar corrección ${correctionRevision} a OCC` : 'Entregar operación a OCC'}
-          </Text>
+          <Text accessibilityRole="header" style={styles.handoffTitle}>{title}</Text>
         </View>
       </View>
       <Text style={styles.startDescription}>
@@ -1076,28 +1229,31 @@ function OperationSubmissionControl({
           Hay un envío reservado con nota fija. Reconecta y reintenta; no se creará una segunda entrega.
         </Text>
       )}
-      {!servicesReady && operation.status === 'InProgress' && !pending && (
-        <Text style={styles.nextPhaseWarning}>Termina todos los servicios antes de entregar.</Text>
-      )}
-      {operation.status === 'InProgress' && !pending && holds.map(hold => (
-        <View key={hold.kind} style={styles.handoffHold}>
-          <Text style={styles.nextPhaseWarning}>{hold.message}</Text>
-          {hold.kind === 'queue' && (
-            <PrimaryButton icon="sync" onPress={() => router.push('/sync')} secondary title="ABRIR SINCRONIZACIÓN" />
-          )}
-        </View>
-      ))}
+      {/* N1: what the hand-off needs, each with its state, instead of asking the agent to confirm it. */}
+      {awaitingHandoff && <HandoffRequirementList actionFor={actionFor} requirements={requirements} />}
       {blocked && !delivered && (
         <Text style={styles.nextPhaseWarning}>
-          Actualiza en línea y concilia los comandos pendientes antes de entregar.
+          Para entregar, actualiza el detalle con señal y espera a que terminen los cambios en curso.
         </Text>
       )}
       {(operation.status === 'InProgress' || pending) && (
         <PrimaryButton
           disabled={!canSubmit}
           icon={pending ? 'refresh-outline' : 'send-outline'}
-          onPress={onSubmit}
+          onPress={submit}
           title={submitting ? 'ENVIANDO…' : pending ? 'REINTENTAR ENTREGA' : 'ENTREGAR A OCC'}
+        />
+      )}
+      {confirming && awaitingHandoff && (
+        <HandoffSheet
+          canConfirm={canSubmit}
+          onClose={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            onSubmit();
+          }}
+          requirements={requirements}
+          title={title}
         />
       )}
       {notice && (
@@ -1125,8 +1281,19 @@ function OperationSubmissionControl({
   );
 }
 
-function isTerminalServiceStatus(status: string) {
-  return status === 'Completed' || status === 'NotPerformed' || status === 'Exception';
+/** N1: where the checklist stands, on its card; nothing while the tablet cannot tell. */
+const CHECKLIST_STANDINGS: Readonly<Partial<Record<ChecklistStanding, Readonly<{
+  text: string;
+  tone: 'green' | 'orange' | 'blue';
+}>>>> = {
+  submitted: { text: 'Enviado a ELEVANT', tone: 'green' },
+  queued: { text: 'Envío guardado en el dispositivo', tone: 'orange' },
+  'not-submitted': { text: 'Sin enviar', tone: 'blue' },
+};
+
+function ChecklistStandingPill({ standing }: { readonly standing: ChecklistStanding }) {
+  const pill = CHECKLIST_STANDINGS[standing];
+  return pill ? <StatusPill text={pill.text} tone={pill.tone} /> : null;
 }
 
 /** 3-I: «Iniciar» saved on the device: it goes out on its own with the tapped time. */
@@ -1168,7 +1335,7 @@ function serviceTransitionErrorNotice(
     return {
       tone: 'warning',
       title: 'El servicio cambió',
-      message: 'Actualizamos el estado canónico. Revísalo antes de registrar otro resultado.',
+      message: 'Actualizamos el servicio con lo que tiene ELEVANT. Revísalo antes de registrar otro resultado.',
     };
   }
   if (error.code === 'not_found') {
@@ -1212,23 +1379,8 @@ function serviceTransitionErrorNotice(
     title: 'Servicio no actualizado',
     message: error.retryable
       ? 'No pudimos confirmar el cambio. Actualiza el detalle y vuelve a intentarlo.'
-      : 'El cambio fue rechazado. Revisa el estado canónico antes de continuar.',
+      : 'No pudimos registrar el cambio. Actualiza el detalle y revisa el servicio antes de continuar.',
   };
-}
-
-/** 3-N06: one reason a new hand-off waits, with the text the hand-off card shows. */
-type HandoffHold = Readonly<{ kind: 'queue' | 'signatures'; message: string }>;
-
-function handoffHoldsFor(waitingRecords: number, documents: OperationDocumentsResponse | undefined): HandoffHold[] {
-  const holds: HandoffHold[] = [];
-  if (waitingRecords > 0) {
-    holds.push({ kind: 'queue', message: `Faltan ${waitingRecords} ${waitingRecords === 1 ? 'registro' : 'registros'} por enviar a ELEVANT: abre Sincronización.` });
-  }
-  // Before the forms are read the service decides: it checks them again right before sending the hand-off.
-  if (documents && !isServiceOrderSigned(documents)) {
-    holds.push({ kind: 'signatures', message: 'Falta firmar la Orden de Servicio (aerolínea y AVIAM).' });
-  }
-  return holds;
 }
 
 function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
@@ -1236,12 +1388,13 @@ function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
     return {
       tone: 'warning',
       title: 'Entrega pendiente de confirmación',
-      message: 'El comando quedó protegido. Reintenta con la misma sesión y la misma clave; no edites la nota ni crees otra entrega.',
+      message: 'La entrega quedó guardada en esta tablet. Vuelve a intentarlo sin cerrar sesión: se envía la ' +
+        'misma, sin duplicarla.',
     };
   }
   if (error instanceof MobileServiceError) {
-    if (error.code === 'conflict' &&
-        (error.problemCode === HANDOFF_PENDING_QUEUE || error.problemCode === HANDOFF_SERVICE_ORDER_UNSIGNED)) {
+    // 3-N06, N1: one of the tablet's own reasons to wait, which the requirement list names.
+    if (error.code === 'conflict' && isHandoffHold(error.problemCode)) {
       return { tone: 'warning', title: 'Entrega en espera', message: error.message };
     }
     if (error.code === 'conflict' || error.code === 'not_found') {
@@ -1294,21 +1447,22 @@ function startErrorNotice(error: MobileServiceError): StartNotice {
     return {
       tone: 'warning',
       title: 'La operación cambió',
-      message: 'Actualizamos el estado canónico. Revísalo antes de volver a intentar.',
+      message: 'Actualizamos la operación con lo que tiene ELEVANT. Revísala antes de volver a intentarlo.',
     };
   }
   if (error.code === 'network_unavailable') {
     return {
       tone: 'warning',
       title: 'Inicio pendiente de confirmación',
-      message: 'Se perdió la conexión antes de confirmar el estado. Sin cerrar sesión, reconecta y vuelve a intentar: ELEVANT reutilizará el mismo comando sin duplicar el inicio.',
+      message: 'Se perdió la conexión antes de que ELEVANT confirmara el inicio. Reconecta y vuelve a intentarlo sin ' +
+        'cerrar sesión: el inicio no se duplica.',
     };
   }
   if (error.code === 'request_timeout') {
     return {
       tone: 'warning',
       title: 'Inicio pendiente de confirmación',
-      message: 'La respuesta tardó demasiado. Sin cerrar sesión, vuelve a intentar: ELEVANT reutilizará el mismo comando sin duplicar el inicio.',
+      message: 'ELEVANT tardó demasiado en responder. Vuelve a intentarlo sin cerrar sesión: el inicio no se duplica.',
     };
   }
   if (error.code === 'storage_unavailable') {
@@ -1444,16 +1598,6 @@ function Meta({
   );
 }
 
-function formatDateTime(value: string, timeZone: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'por confirmar';
-  try {
-    return dateTimeFormat({ day: '2-digit', hour: '2-digit', minute: '2-digit', month: 'short', timeZone }).format(date);
-  } catch {
-    return 'por confirmar';
-  }
-}
-
 const styles = StyleSheet.create({
   container: { width: '100%', maxWidth: 960, alignSelf: 'center', padding: 16, paddingBottom: 38, gap: 12 },
   cachedBanner: {
@@ -1558,7 +1702,6 @@ const styles = StyleSheet.create({
   handoffCopy: { flex: 1, minWidth: 0 },
   handoffTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 2 },
   handoffNoteGroup: { gap: 6 },
-  handoffHold: { gap: 8 },
   handoffLabel: { color: colors.navy, fontSize: 13, fontWeight: '800' },
   handoffNoteInput: {
     minHeight: 96,
@@ -1586,7 +1729,8 @@ const styles = StyleSheet.create({
   legKindText: { color: colors.navy, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
   legFlight: { color: colors.ink, fontSize: 17, fontWeight: '900' },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  airport: { width: 76 },
+  // N11: a long name («Punta Cana Development») takes up to two lines beside the route, not a fixed 76 dp column.
+  airport: { flexShrink: 1, minWidth: 76, maxWidth: '40%' },
   airportRight: { alignItems: 'flex-end' },
   airportCode: { color: colors.navy, fontSize: 20, fontWeight: '900' },
   airportName: { color: colors.muted, fontSize: 12, lineHeight: 16, marginTop: 2 },

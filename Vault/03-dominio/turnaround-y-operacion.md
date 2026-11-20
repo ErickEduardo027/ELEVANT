@@ -211,6 +211,14 @@ Los formularios de AVIAM ya no se transcriben: se generan desde el registro de l
 
 **Walk-around.** `ops.operation_damage_marks` guarda la posición en la silueta (0–1), la nota y, opcionalmente, una foto JPEG o PNG en almacenamiento privado con su SHA-256. Las fotos no entran en la huella: se anexan al PDF del Reporte de Vuelo.
 
+**El monto y las firmas en la tablet.** Posterior al commit verificado de esta nota (hallazgos N4 y N3 de la corrida del VPS del 16 de noviembre, decisiones D-N4 y D-N3):
+
+- Bajo el total de la Orden de Servicio, la hoja de firma dice «Subtotal a precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al facturar.». Si la Orden lista recargos, añade «Los recargos listados se valoran al facturar.».
+- Un total que todavía no se valora dice «Pendiente de valoración», sin la nota.
+- La nota no sale en el Reporte de Vuelo ni en un charter, que se cobra a la tarifa base. El PDF no cambia.
+- Entre las firmas, la entrega a OCC desde la tablet solo espera las de la Orden de Servicio ([`handoff.ts`](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts)). Mientras la operación está en curso, el Reporte de Vuelo y el Check-List del puente dicen «No hace falta para entregar a OCC» y se firman con un botón secundario. La Solicitud de Servicio del charter queda como estaba.
+- Queda por consultar con el contador si una Orden al contado sin ITBIS es válida.
+
 **Fuera de este bloque:** la valoración de recargos (bloque 5).
 
 ## Charter sin contrato
@@ -431,6 +439,22 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
   candidatos del relevo y la programación del turno siguen nombrando la
   posición del vuelo, y «Liberar» de OCC la sigue cerrando. Corregir la hora del
   push-back mantiene libre la posición.
+- **Aviso antes del push-back.** Posterior también al PR A2 (hallazgo N2 de la
+  corrida del VPS del 16 de noviembre, D-N2): un push-back registrado con un
+  toque, con «En posición» en 0/13, «Salida» en 0/4 y los servicios
+  planificados, liberó la posición, cerró el tiempo en tierra y fijó la hora de
+  salida de la Orden de Servicio. La regla del servidor no cambia (solo
+  `BLOCK_ON ≤ PUSHBACK`); avisan los clientes, sin bloquear.
+  - La tablet pide confirmar el primer push-back de la operación, fuera de una
+    ronda de corrección, si falta el bloqueo, si «En posición» o «Salida» no
+    tienen ningún hito, si ningún servicio salió de planificado o si la Orden de
+    Servicio ya tiene una firma, que el push-back obliga a repetir
+    ([motivos](../../frontend/mobile-agent/src/features/assigned-operations/pushback.ts)).
+    La hoja dice que registrarlo libera la posición en OCC y que corregir la
+    hora después no la vuelve a ocupar. Sin motivos sigue siendo un toque.
+  - La revisión de OCC señala con avisos de atención un push-back sin bloqueo,
+    con «En posición» o «Salida» vacías o con hitos registrados después de él
+    ([secuencia](../../frontend/private-web/src/features/occ-ui/milestonePhases.js)).
 - **Plano de Punta Cana.** Donde están encendidos los vuelos demo, el
   superadministrador crea las terminales y las posiciones del catálogo de Punta
   Cana que faltan (41, sin la B33), activas, sin coordenadas y sin cambiar,
