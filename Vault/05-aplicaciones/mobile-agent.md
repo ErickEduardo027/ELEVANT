@@ -90,7 +90,7 @@ la sección «Fase 3» describe la cola actual.
 
 *Posterior al commit verificado de esta nota:* una cuenta que Gestión Humana creó con contraseña temporal recibe `409` con el código `password_change_required` al iniciar sesión. La misma pantalla `/` pasa a «Cambia tu contraseña temporal»: la temporal viene oculta y precargada, la nueva se escribe dos veces y una lista muestra en vivo la política de la API (14 caracteres o más, mayúscula, minúscula, número y símbolo, y distinta de la temporal). Al enviar, la app llama a `POST /api/v1/auth/password-change` sin sesión. Con `204` inicia sesión sola con la nueva contraseña y sigue el flujo normal, incluido el registro de la tablet. Con `400` explica la política, con `401` que la temporal no es válida y con `429` que espere un minuto. Ninguna contraseña se guarda ni se registra ([pantalla](../../frontend/mobile-agent/src/app/index.tsx), [formulario](../../frontend/mobile-agent/src/components/temporary-password-change.tsx), [servicio](../../frontend/mobile-agent/src/services/mobile-auth.ts)).
 
-El cierre de atención exige un checklist completo en el estado local. Esa regla de interfaz no es todavía una invariante del servidor ni un contrato público.
+*Corregido posterior al commit verificado de esta nota (hallazgo N1 de la corrida del VPS del 16 de noviembre):* esta línea decía que exigir el checklist completo para cerrar era solo una regla de la interfaz. Es una regla del servidor: la entrega a OCC (`POST …/submit`) responde `409` si el último checklist de ejecución de la operación no está enviado (`Submitted`) o si queda un servicio sin terminar ([política](../../backend/Elevant.Application/Operations/RampOperationSubmissionPolicy.cs), [almacenamiento](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfRampOperationSubmissionStore.cs)). La tablet lo comprueba antes, junto con lo que el servidor no exige (viñeta «Entrega» de la sección «Fase 3»).
 
 > [!note] Rama `feat/finance-refinement`
 > El detalle de operación añade «Cargos aplicados»: el agente marca solo el tipo de cargo (nocturno, tiempo extra…) en servicios en curso, completados o en excepción, sin ver precios. Usa `GET/POST /api/v1/ramp/operations/{id}/…/charges` con clave idempotente estable por servicio, cargo y acción y conserva la última lista como caché sin conexión. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
@@ -421,6 +421,41 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
 - **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
   registros pendientes o rechazados de la operación, ni con la Orden de Servicio
   sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.
+- **El cierre comprueba todos los requisitos.** Posterior a la fase 3 (hallazgo N1
+  de la corrida del VPS del 16 de noviembre): con el checklist en 0/21, el cierre
+  solo pedía la firma, y un diálogo nativo pedía al agente confirmar lo que la
+  tablet puede comprobar.
+  - La tarjeta de entrega lista, en orden, «Servicios terminados», «Checklist
+    enviado», «Incidencias enviadas», «Orden de Servicio firmada» y «Registros
+    enviados a ELEVANT», cada uno con su estado
+    ([requisitos](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts),
+    [lista y hoja](../../frontend/mobile-agent/src/components/handoff-requirements.tsx)).
+    Lo que falta apaga ENTREGAR A OCC y ofrece su salida: ABRIR CHECKLIST, ABRIR
+    INCIDENCIAS o ABRIR SINCRONIZACIÓN.
+  - Lo que la tablet no puede comprobar (sin señal, la copia guardada de un
+    checklist no enviado, los formularios aún sin leer) queda «por confirmar» y
+    no bloquea: el servicio lo vuelve a comprobar antes de enviar. Un envío del
+    checklist que espera en la cola lo cubre el requisito de la cola.
+  - La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
+    actualizar a mano y tras abrir la corrección, nunca con cada recarga del
+    feed, y cuenta las incidencias que siguen en la tablet en cada carga.
+  - El servicio vacía la cola antes de leer los servicios y el checklist, así
+    que lo recién enviado cuenta, y no se fía de la copia guardada del
+    checklist: sin señal, la entrega espera. Rechaza con los códigos de la
+    tablet `checklist_not_submitted` y `pending_incidents`, que la tarjeta
+    explica como «Entrega en espera».
+  - ENTREGAR A OCC abre una hoja propia, con el
+    [marco de hoja](../../frontend/mobile-agent/src/components/sheet-frame.tsx):
+    lista lo que la tablet comprobó, avisa que la ejecución queda cerrada y
+    ofrece SEGUIR REVISANDO y ENTREGAR A OCC. REINTENTAR ENTREGA sigue sin hoja.
+  - Después de la entrega, VER CHECKLIST abre el checklist enviado en solo
+    lectura; antes, el botón se apagaba. La tarjeta del checklist dice «Sin
+    enviar», «Envío guardado en el dispositivo» o «Enviado a ELEVANT».
+  - «Cargos aplicados» dice en una sola nota que la ejecución está cerrada o, en
+    una operación devuelta, que hay que abrir la corrección. Antes culpaba al
+    estado de cada servicio.
+  - La regla del servidor no cambia, y la APK instalada conserva el diálogo y la
+    regla anteriores hasta que se instale la nueva.
 - **Lista y alcance.** La lista trae las operaciones activas y las que OCC aprobó
   en las últimas 48 horas, contadas desde la aprobación y no desde el fin de la
   operación, con las activas primero. Una operación iniciada sigue en

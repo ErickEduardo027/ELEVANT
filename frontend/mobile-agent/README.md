@@ -457,10 +457,51 @@ mientras la Orden de Servicio no tenga las firmas de la aerolínea y de AVIAM
 sobre su contenido actual; la tarjeta de entrega dice qué falta. El servidor no
 rechaza esa entrega (la APK anterior sigue funcionando): mientras OCC revisa,
 acepta los hitos y daños capturados antes de la entrega, recalcula los recargos
-y la evidencia y OCC debe releer. El agente confirma explícitamente el cierre y
-puede agregar una nota opcional. Si se pierde la respuesta, la app congela la nota y
-reintenta el mismo comando; nunca genera una segunda entrega por
-incertidumbre. El estado confirmado pasa a `PendingReview`.
+y la evidencia y OCC debe releer. El agente puede agregar una nota opcional. Si
+se pierde la respuesta, la app congela la nota y reintenta el mismo comando;
+nunca genera una segunda entrega por incertidumbre. El estado confirmado pasa a
+`PendingReview`.
+
+Desde el hallazgo N1 de la corrida del VPS del 16 de noviembre, el cierre lista y
+comprueba todos los requisitos de la entrega, no solo la firma:
+
+- `handoffRequirements` (`src/features/assigned-operations/handoff.ts`) da, en
+  orden, «Servicios terminados», «Checklist enviado», «Incidencias enviadas»,
+  «Orden de Servicio firmada» y «Registros enviados a ELEVANT», cada uno con su
+  estado (listo, falta, por confirmar o aviso) y si bloquea. La tarjeta de
+  entrega los muestra con un icono y una frase
+  (`src/components/handoff-requirements.tsx`), y lo que falta ofrece su salida:
+  ABRIR CHECKLIST, ABRIR INCIDENCIAS o ABRIR SINCRONIZACIÓN. El ABRIR CHECKLIST
+  de la lista se anuncia distinto del de la tarjeta del checklist.
+- Solo bloquea lo que la tablet sabe que falta. Un checklist que no pudo leer, o
+  que su copia guardada da por no enviado, unas incidencias que no pudo contar y
+  los formularios aún sin leer quedan «por confirmar» y no bloquean: el servicio
+  los vuelve a comprobar antes de enviar. Un envío del checklist que espera en
+  la cola lo cubre el requisito de la cola.
+- La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
+  actualizar a mano y tras abrir la corrección, nunca con cada recarga del feed;
+  una lectura que encuentra la sesión terminada lleva al acceso. Cuenta las
+  incidencias que siguen en la tablet en cada carga, sin red
+  (`countUnsentRampIncidents`).
+- El servicio vacía la cola antes de leer los servicios y el checklist, así que
+  lo recién enviado cuenta, y rechaza con los códigos locales
+  `checklist_not_submitted` y `pending_incidents`, que la tarjeta explica como
+  «Entrega en espera». No se fía de la copia guardada del checklist, que puede
+  ser anterior a lo que la cola acaba de enviar: sin señal, la entrega espera.
+- ENTREGAR A OCC abre una hoja propia sobre `src/components/sheet-frame.tsx`,
+  en lugar del diálogo nativo que pedía confirmar lo que la tablet comprueba:
+  lista lo comprobado, avisa que la ejecución queda cerrada y ofrece SEGUIR
+  REVISANDO y ENTREGAR A OCC. REINTENTAR ENTREGA sigue sin hoja.
+- Después de la entrega, VER CHECKLIST abre el checklist enviado, que la
+  pantalla ya muestra en solo lectura; solo una operación sin iniciar lo deja
+  apagado. La tarjeta del checklist dice «Sin enviar», «Envío guardado en el
+  dispositivo» o «Enviado a ELEVANT».
+- «Cargos aplicados» (`executionClosed`) dice en una sola nota que la ejecución
+  está cerrada o, si OCC la devolvió, que hay que abrir la corrección, en lugar
+  de culpar al estado de cada servicio; sus cargos quedan en solo lectura aunque
+  una copia guardada diga otra cosa.
+- La regla del servidor no cambia. La APK instalada conserva el diálogo y la
+  regla anteriores hasta que se instale la nueva.
 
 Cada incidencia se guarda primero en una cola local acotada de 25 reportes por
 operación. Incluye tipo, impacto, descripción, hora UTC de ocurrencia y una

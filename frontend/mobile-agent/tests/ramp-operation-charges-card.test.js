@@ -42,11 +42,11 @@ const charges = (applied = [], canEdit = true) => ({ operationId: OPERATION_ID,
 const mark = { id: '75000000-0000-4000-8000-000000000001', chargeId: CHARGE_ID, code: 'NIGHT',
   name: 'Recargo nocturno', appliedAt: '2026-10-08T03:10:00.000+00:00' };
 
-async function render(list = services) {
+async function render(list = services, props = {}) {
   let tree;
   await renderer.act(async () => {
     tree = renderer.create(React.createElement(RampOperationChargesCard,
-      { operationId: OPERATION_ID, refreshKey: 'a', services: list }));
+      { operationId: OPERATION_ID, refreshKey: 'a', services: list, ...props }));
   });
   return tree;
 }
@@ -147,5 +147,49 @@ describe('each service by its line number and name, its code in the background (
     const tree = await render([airConditioning(SERVICE_ID, 1), airConditioning(twin, 2)]);
     expect(lines(tree).filter(line => line.endsWith('Aire acondicionado')))
       .toEqual(['1 · Aire acondicionado', '2 · Aire acondicionado']);
+  });
+});
+
+// N1: after the hand-off the card blamed each service («Disponible cuando el servicio esté en curso…») although the
+// services had finished: what closed is the execution. One note says so, and in a returned operation it points to the
+// correction.
+describe('a closed execution explains itself once (N1)', () => {
+  const SERVICE_HINT = 'Disponible cuando el servicio esté en curso, completado o en excepción.';
+  const twin = '73000000-0000-4000-8000-000000000002';
+  const finished = [services[0], { ...services[0], id: twin, lineNumber: 2, status: 'Completed' }];
+  const readOnly = () => ({ operationId: OPERATION_ID,
+    services: [SERVICE_ID, twin].map(serviceId => ({ serviceId, canEdit: false, available: [option], applied: [] })) });
+
+  it('says the execution is closed in one note, never that the services are not ready', async () => {
+    mockGet.mockResolvedValue({ charges: readOnly(), fromCache: false });
+    const tree = await render(finished, { executionClosed: 'closed' });
+    expect(lines(tree).filter(line => line ===
+      'La ejecución está cerrada: ya no puedes cambiar los cargos desde la tablet.')).toHaveLength(1);
+    expect(JSON.stringify(tree.toJSON())).not.toContain(SERVICE_HINT);
+    expect(chip(tree).props.disabled).toBe(true);
+  });
+
+  it('in a returned operation it points to the correction', async () => {
+    mockGet.mockResolvedValue({ charges: readOnly(), fromCache: false });
+    const tree = await render(finished, { executionClosed: 'returned' });
+    expect(lines(tree)).toContain('Abre la corrección para volver a marcar cargos.');
+    expect(JSON.stringify(tree.toJSON())).not.toContain(SERVICE_HINT);
+    expect(JSON.stringify(tree.toJSON())).not.toContain('La ejecución está cerrada');
+  });
+
+  it('keeps the charges read-only even when the saved copy still says they can change', async () => {
+    mockGet.mockResolvedValue({ charges: charges(), fromCache: true });
+    const tree = await render(services, { executionClosed: 'closed' });
+    expect(chip(tree).props.disabled).toBe(true);
+    expect(JSON.stringify(tree.toJSON())).not.toContain('lo que marques se envía al reconectar');
+  });
+
+  // Assigned, or a planned service while the operation runs: the service's state is the reason.
+  it('before the execution closes, the service still explains why it cannot be marked', async () => {
+    mockGet.mockResolvedValue({ charges: charges([], false), fromCache: false });
+    const tree = await render([{ ...services[0], status: 'Planned' }]);
+    expect(lines(tree)).toContain(SERVICE_HINT);
+    expect(JSON.stringify(tree.toJSON())).not.toContain('La ejecución está cerrada');
+    expect(JSON.stringify(tree.toJSON())).not.toContain('Abre la corrección');
   });
 });

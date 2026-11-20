@@ -62,8 +62,12 @@ jest.mock('../src/services/ramp-operation-service-execution', () => ({
   readRampOperationServicePendingTransition: jest.fn(async () => null),
   transitionRampOperationService: (...args) => mockTransition(...args),
 }));
+// N1: the close reads the operation's checklist and counts its incident reports still on the device.
+jest.mock('../src/services/ramp-operation-checklist', () => ({
+  getRampOperationChecklist: jest.fn(async () => ({ fromCache: false, checklist: { status: 'Submitted' } })),
+}));
+jest.mock('../src/services/ramp-incidents', () => ({ countUnsentRampIncidents: jest.fn(async () => 0) }));
 
-const { Alert } = require('react-native');
 const { MobileServiceError } = require('../src/services/mobile-service-error');
 const Screen = require('../src/app/flight/[id]').default;
 
@@ -140,20 +144,18 @@ test('a service change the tablet could not keep says so and what to do, without
 }, 30_000);
 
 test('a hand-off the tablet could not keep says so and what to do, without jargon', async () => {
-  // The agent confirms the hand-off in the dialog.
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => buttons?.[1]?.onPress?.());
-  try {
-    mockSubmit.mockRejectedValue(new MobileServiceError('storage_unavailable'));
-    const tree = await render(assigned('InProgress', 'Completed'));
-    await press(tree, 'ENTREGAR A OCC');
+  mockSubmit.mockRejectedValue(new MobileServiceError('storage_unavailable'));
+  const tree = await render(assigned('InProgress', 'Completed'));
+  await press(tree, 'ENTREGAR A OCC');
+  // N1: the agent confirms the hand-off in the tablet's own sheet, not in a native dialog.
+  const [sheet] = tree.root.findAll(node => node.type === 'Modal');
+  const [confirm] = sheet.findAll(node => node.props?.title === 'ENTREGAR A OCC' && typeof node.props.onPress === 'function');
+  await renderer.act(async () => { confirm.props.onPress(); });
 
-    expect(mockSubmit).toHaveBeenCalled();
-    const text = screenText(tree);
-    expect(text).toContain('Entrega no guardada');
-    expect(text).toContain(`La tablet no pudo guardar la entrega. ${WHAT_TO_DO}`);
-    expect(text).not.toMatch(JARGON_OR_LOCK);
-    await renderer.act(async () => tree.unmount());
-  } finally {
-    alert.mockRestore();
-  }
+  expect(mockSubmit).toHaveBeenCalled();
+  const text = screenText(tree);
+  expect(text).toContain('Entrega no guardada');
+  expect(text).toContain(`La tablet no pudo guardar la entrega. ${WHAT_TO_DO}`);
+  expect(text).not.toMatch(JARGON_OR_LOCK);
+  await renderer.act(async () => tree.unmount());
 }, 30_000);

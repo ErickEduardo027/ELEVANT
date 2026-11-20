@@ -178,5 +178,29 @@ Check-List del puente sin firmar y le dice al panel si la ejecución está
 abierta, y `ramp-operation-submission.test.js` envía la entrega con ellos sin
 firmar.
 
+`handoff-requirements.test.js` fija los requisitos de la entrega (N1): el orden
+(servicios, checklist, incidencias, Orden firmada y cola), cada texto con su
+plural, que lo que la tablet no puede comprobar no bloquea, que un envío del
+checklist en la cola lo cubre el requisito de la cola, dónde queda el checklist
+(`checklistStanding`, también con la copia guardada) y los cuatro códigos
+locales. `ramp-operation-submission.test.js` comprueba `checklist_not_submitted`
+y `pending_incidents`, que la cola sale antes de leer los servicios y el
+checklist, de modo que lo recién enviado cuenta, y que una copia guardada del
+checklist espera la señal en lugar de darlo por no enviado. `ramp-incidents.test.js` cuenta
+las incidencias que siguen en la tablet sin red ni renovación, y
+`ramp-operation-charges-card.test.js`, la nota única de la ejecución cerrada y la
+de la corrección. El manifiesto (`operation-offline-queue.test.js`, con dobles de
+`ramp-operation-checklist` y `ramp-incidents`) recorre la lista: dos requisitos
+pendientes apagan ENTREGAR y el ABRIR CHECKLIST de la lista navega y se anuncia
+distinto del de la tarjeta; ENTREGAR abre la hoja propia sin `Alert.alert` y su
+ENTREGAR A OCC entrega; SEGUIR REVISANDO y el botón atrás cierran sin entregar;
+REINTENTAR ENTREGA va sin hoja; VER CHECKLIST después de la entrega; los tres
+estados de la tarjeta del checklist; una incidencia pendiente; el checklist que
+vuelve a faltar al abrir la corrección; una lectura con la sesión terminada va
+al acceso y una sin red no bloquea, y el checklist se lee al enfocar y al
+moverse la cola, nunca con el feed. `flight-screen-notices.test.js` confirma la
+entrega en la hoja. Las demás pruebas que montan el manifiesto simulan los dos
+servicios nuevos.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

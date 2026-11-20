@@ -53,6 +53,11 @@ jest.mock('../src/services/ramp-operation-service-execution', () => ({
   readRampOperationServicePendingTransition: jest.fn(async () => null),
   transitionRampOperationService: jest.fn(),
 }));
+// N1: the close reads the operation's checklist and counts its incident reports still on the device.
+jest.mock('../src/services/ramp-operation-checklist', () => ({
+  getRampOperationChecklist: jest.fn(async () => ({ fromCache: false, checklist: { status: 'Submitted' } })),
+}));
+jest.mock('../src/services/ramp-incidents', () => ({ countUnsentRampIncidents: jest.fn(async () => 0) }));
 
 const Screen = require('../src/app/flight/[id]').default;
 const operationId = '70000000-0000-4000-8000-000000000005';

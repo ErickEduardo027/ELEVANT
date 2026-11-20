@@ -2,6 +2,7 @@ const mockApi = { getRampIncidents: jest.fn(), reportRampIncident: jest.fn() };
 const mockContext = jest.fn();
 const mockRegister = jest.fn();
 const mockReject = jest.fn();
+const mockIdentity = jest.fn();
 let mockItems = [];
 let mockOperations = [];
 
@@ -39,6 +40,7 @@ jest.mock('../src/storage/mobile-session', () => ({
   MobileSessionStorageError: class MobileSessionStorageError extends Error {},
 }));
 jest.mock('../src/services/mobile-auth', () => ({
+  getMobileSessionIdentity: (...args) => mockIdentity(...args),
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: (...args) => mockReject(...args),
   MobileServiceError: jest.requireActual('../src/services/mobile-service-error').MobileServiceError,
@@ -48,7 +50,9 @@ jest.mock('../src/services/mobile-device', () => ({
 }));
 
 const { ElevantApiError } = require('@elevant/api-client');
-const { flushPendingRampIncidents, loadRampIncidentCenter, reserveRampIncident } = require('../src/services/ramp-incidents');
+const {
+  countUnsentRampIncidents, flushPendingRampIncidents, loadRampIncidentCenter, reserveRampIncident,
+} = require('../src/services/ramp-incidents');
 const ACCOUNT = '20000000-0000-4000-8000-000000000001';
 const OPERATION = '70000000-0000-4000-8000-000000000005';
 const KEY = '82000000-0000-4000-8000-000000000031';
@@ -69,6 +73,10 @@ beforeEach(() => {
     session: { actor: { accountId: ACCOUNT } },
   });
   mockReject.mockResolvedValue(true);
+  mockIdentity.mockResolvedValue({
+    sessionId: '30000000-0000-4000-8000-000000000001',
+    session: { actor: { accountId: ACCOUNT } },
+  });
   mockRegister.mockResolvedValue({ installationId: '81000000-0000-4000-8000-000000000001' });
   mockApi.getRampIncidents.mockResolvedValue({ operationId: OPERATION, incidents: [] });
   mockApi.reportRampIncident.mockResolvedValue({
@@ -167,5 +175,30 @@ describe('reconnection (3-I)', () => {
     await expect(flushPendingRampIncidents()).resolves.toBeUndefined();
     expect(mockApi.reportRampIncident).not.toHaveBeenCalled();
     expect(mockItems).toHaveLength(1);
+  });
+});
+
+// N1: the close lists the reports still on the device among the hand-off's requirements; it counts them from the
+// device alone, so it works without signal and never renews the session for it.
+describe('the reports the hand-off waits for (N1)', () => {
+  const { readRampIncidentOutboxIfCurrent } = require('../src/storage/mobile-session');
+
+  test('counts the reports waiting to go out and the ones ELEVANT refused, from the device alone', async () => {
+    await reserveRampIncident(OPERATION, report);
+    mockItems.push({ ...mockItems[0], idempotencyKey: '82000000-0000-4000-8000-000000000032', state: 'blocked' });
+    jest.clearAllMocks();
+    await expect(countUnsentRampIncidents(OPERATION)).resolves.toBe(2);
+    expect(readRampIncidentOutboxIfCurrent).toHaveBeenCalledWith('30000000-0000-4000-8000-000000000001', ACCOUNT,
+      OPERATION);
+    expect(mockContext).not.toHaveBeenCalled();
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(mockApi.getRampIncidents).not.toHaveBeenCalled();
+  });
+
+  test('nothing on the device counts as none; another session in between cancels the read', async () => {
+    await expect(countUnsentRampIncidents(OPERATION)).resolves.toBe(0);
+    readRampIncidentOutboxIfCurrent.mockResolvedValueOnce({ kind: 'not-current' });
+    await expect(countUnsentRampIncidents(OPERATION)).rejects.toMatchObject({ code: 'cancelled' });
+    await expect(countUnsentRampIncidents('not-an-operation')).rejects.toMatchObject({ code: 'request_failed' });
   });
 });

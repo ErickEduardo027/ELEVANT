@@ -22,11 +22,12 @@ import {
 } from 'react-native';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import { AttendanceDraftCard } from '../../components/attendance-draft-card';
+import { HandoffRequirementList, HandoffSheet } from '../../components/handoff-requirements';
 import {
   RampServiceExecutionCard,
   type ServiceExecutionNotice,
 } from '../../components/ramp-service-execution-card';
-import { RampOperationChargesCard } from '../../components/ramp-operation-charges-card';
+import { RampOperationChargesCard, type ChargesExecutionClosed } from '../../components/ramp-operation-charges-card';
 import {
   assignmentRoleLabel,
   flightLegTimeLabel,
@@ -53,10 +54,18 @@ import {
   type RampOperationPendingSubmission,
 } from '../../services/ramp-operation-submission';
 import {
-  HANDOFF_PENDING_QUEUE,
-  HANDOFF_SERVICE_ORDER_UNSIGNED,
-  isServiceOrderSigned,
+  checklistQueuedFor,
+  checklistStanding,
+  handoffHoldsFor,
+  handoffRequirements,
+  isHandoffHold,
+  isServiceFinished,
+  type ChecklistStanding,
+  type HandoffChecklistRead,
+  type HandoffRequirement,
 } from '../../features/assigned-operations/handoff';
+import { getRampOperationChecklist } from '../../services/ramp-operation-checklist';
+import { countUnsentRampIncidents } from '../../services/ramp-incidents';
 import {
   transitionRampOperationService,
   type RampOperationServiceExecutionResponse,
@@ -112,6 +121,17 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const [correcting, setCorrecting] = useState(false);
   const [correctionPending, setCorrectionPending] = useState(false);
   const [correctionNotice, setCorrectionNotice] = useState<StartNotice | null>(null);
+  // N1: the last read of the operation's checklist (null when it failed) and how many of its incident reports are
+  // still on the device (null when they could not be read), each with the operation it belongs to.
+  const [checklistRead, setChecklistRead] = useState<Readonly<{
+    operationId: string;
+    read: HandoffChecklistRead | null;
+  }> | null>(null);
+  const [unsentIncidents, setUnsentIncidents] = useState<Readonly<{
+    operationId: string;
+    count: number | null;
+  }> | null>(null);
+  const checklistRequestRef = useRef<AbortController | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const startRequestRef = useRef<AbortController | null>(null);
   const serviceRequestRef = useRef<AbortController | null>(null);
@@ -175,11 +195,16 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         lastServiceExecutionsRef.current.clear();
       }
       let pendingHandoff: RampOperationPendingSubmission | null = null;
+      let incidents: number | null = null;
       if (found) {
         pendingHandoff = await readRampOperationPendingSubmission(found.operation.id);
         setCorrectionPending(await readPendingRampCorrection(found.operation.id));
+        // N1: the reports still on the device hold the hand-off. They are read from the device, so every reload has
+        // them; one that cannot be read leaves them unknown, which holds nothing.
+        incidents = await countUnsentRampIncidents(found.operation.id).catch(() => null);
       }
       if (request.signal.aborted) return;
+      setUnsentIncidents(found ? { operationId: found.operation.id, count: incidents } : null);
       setOperation(found);
       setCached(snapshot.source === 'cache');
       setState(found ? 'ready' : 'not-found');
@@ -217,6 +242,39 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     }
   }, [id]);
 
+  /**
+   * N1: reads the operation's checklist for the close and its card: when the screen gains focus, when the queue moves
+   * and after the correction opens, never with each reload of the feed. A read that fails leaves the checklist unknown,
+   * which holds nothing; a session that ended goes to the access screen.
+   */
+  const readChecklist = useCallback(async () => {
+    if (!id) return;
+    checklistRequestRef.current?.abort();
+    const request = new AbortController();
+    checklistRequestRef.current = request;
+    try {
+      const result = await getRampOperationChecklist(id, { signal: request.signal });
+      if (request.signal.aborted) return;
+      setChecklistRead({ operationId: id, read: { status: result.checklist.status, fromCache: result.fromCache === true } });
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof MobileServiceError) {
+        if (error.code === 'cancelled') return;
+        if (error.code === 'unauthenticated' || error.code === 'session_expired') {
+          resetToLogin('session_expired');
+          return;
+        }
+        if (error.code === 'forbidden') {
+          resetToLogin('access_revoked');
+          return;
+        }
+      }
+      setChecklistRead({ operationId: id, read: null });
+    } finally {
+      if (checklistRequestRef.current === request) checklistRequestRef.current = null;
+    }
+  }, [id]);
+
   useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
     if (resources.includes('ramp_operations')) void load('silent');
   }), [load]));
@@ -232,15 +290,20 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   useEffect(() => {
     if (queueRevision === seenRevisionRef.current) return;
     seenRevisionRef.current = queueRevision;
-    if (loadedOperationIdRef.current === id) void load('silent');
-  }, [id, load, queueRevision]);
+    if (loadedOperationIdRef.current !== id) return;
+    void load('silent');
+    // N1: what ELEVANT just confirmed may be the checklist itself.
+    void readChecklist();
+  }, [id, load, queueRevision, readChecklist]);
 
   useFocusEffect(useCallback(() => {
     setFocused(true);
     void load(loadedOperationIdRef.current === id ? 'silent' : false);
+    void readChecklist();
     return () => {
       setFocused(false);
       requestRef.current?.abort();
+      checklistRequestRef.current?.abort();
       startRequestRef.current?.abort();
       serviceRequestRef.current?.abort();
       submissionRequestRef.current?.abort();
@@ -250,7 +313,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       submissionInFlightRef.current = false;
       correctionInFlightRef.current = false;
     };
-  }, [id, load]));
+  }, [id, load, readChecklist]));
 
   const startOperation = useCallback(async () => {
     // 3-I: with or without signal, the tap is saved on the device with its time and goes out on its own.
@@ -343,7 +406,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       !operation ||
       !projected ||
       projected.operation.status !== 'InProgress' ||
-      (isTerminalServiceStatus(current.status) &&
+      (isServiceFinished(current.status) &&
         !(operation.review?.status === 'Returned' &&
           transitionRequest.targetStatus === 'InProgress'))
     ) {
@@ -442,7 +505,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       (!pendingSubmission && (
         operation.operation.status !== 'InProgress' ||
         operation.services.length === 0 ||
-        operation.services.some(service => !isTerminalServiceStatus(service.status))
+        operation.services.some(service => !isServiceFinished(service.status))
       ))
     ) return;
 
@@ -493,6 +556,11 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         resetToLogin('access_revoked');
         return;
       }
+      // N1: the service found a requirement the close had as met or unknown; reading them again shows which.
+      if (error instanceof MobileServiceError && isHandoffHold(error.problemCode)) {
+        void load('silent');
+        void readChecklist();
+      }
       try {
         const pending = await readRampOperationPendingSubmission(operation.operation.id);
         setPendingSubmission(pending);
@@ -514,22 +582,16 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setSubmitting(false);
       }
     }
-  }, [busyServiceId, cached, operation, pendingSubmission, submissionNote, submissionReconciliationRequired]);
-
-  const confirmHandoff = useCallback(() => {
-    if (pendingSubmission) {
-      void handoffOperation();
-      return;
-    }
-    Alert.alert(
-      'Entregar operación a OCC',
-      'Confirma que el checklist está enviado, los servicios terminaron, la Orden de Servicio está firmada y los hitos, datos del vuelo, daños, firmas e incidencias ya llegaron a ELEVANT. Una vez entregada, la ejecución queda cerrada para revisión.',
-      [
-        { text: 'Seguir revisando', style: 'cancel' },
-        { text: 'Entregar a OCC', onPress: () => void handoffOperation() },
-      ],
-    );
-  }, [handoffOperation, pendingSubmission]);
+  }, [
+    busyServiceId,
+    cached,
+    load,
+    operation,
+    pendingSubmission,
+    readChecklist,
+    submissionNote,
+    submissionReconciliationRequired,
+  ]);
 
   const reopenCorrection = useCallback(async () => {
     if (correctionInFlightRef.current || !operation || cached ||
@@ -553,6 +615,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         } }
         : current);
       await load(true);
+      // N1: the correction brings a new checklist, which the close waits for again.
+      void readChecklist();
       setCorrectionNotice({
         tone: 'success', title: `Corrección ${result.revisionNumber} abierta`,
         message: 'El checklist nuevo está listo. El envío anterior permanece intacto.',
@@ -586,7 +650,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setCorrecting(false);
       }
     }
-  }, [cached, correctionPending, load, operation]);
+  }, [cached, correctionPending, load, operation, readChecklist]);
 
   const confirmCorrection = useCallback(() => {
     if (correctionPending) { void reopenCorrection(); return; }
@@ -622,8 +686,26 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   // Every operation carries an execution checklist (ADR-0031): the bridge one or the Flight Report.
   const hasOperationalChecklist = true;
   const executing = shown.operation.status === 'InProgress';
-  // 3-N06: a new hand-off waits until everything recorded reached ELEVANT and the Service Order is signed.
-  const handoffHolds = pendingSubmission ? [] : handoffHoldsFor(projection.pending + projection.blocked, documents);
+  const notStarted = shown.operation.status === 'Assigned' || shown.operation.status === 'Planned';
+  // N1: once it ran, an operation that is no longer in progress is closed for the agent: handed off to OCC, approved,
+  // or returned and waiting for the correction to open.
+  const executionClosed: ChargesExecutionClosed | undefined = shown.operation.status === 'Returned'
+    ? 'returned' : !executing && !notStarted ? 'closed' : undefined;
+  // N1: where the checklist stands, and everything a new hand-off needs (3-N06): the services as the agent left them,
+  // the checklist, the incident reports still on the device, the signed Service Order and the queue.
+  const checklist = checklistStanding(
+    checklistRead && checklistRead.operationId === id ? checklistRead.read : null,
+    checklistQueuedFor(queueItems, operation.operation.id),
+  );
+  const requirements = handoffRequirements({
+    services: shown.services,
+    checklist,
+    unsentIncidents: unsentIncidents?.operationId === operation.operation.id ? unsentIncidents.count : null,
+    documents,
+    waitingRecords: projection.pending + projection.blocked,
+  });
+  const openChecklist = () => router.push({ pathname: '/checklist/[id]', params: { id: operation.operation.id } });
+  const openIncidents = () => router.push({ pathname: '/incident/[id]', params: { id: operation.operation.id } });
 
   return (
     <ScrollView
@@ -632,7 +714,10 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         <RefreshControl
           accessibilityLabel="Actualizar detalle de la operación"
           colors={[colors.navy]}
-          onRefresh={() => void load(true)}
+          onRefresh={() => {
+            void load(true);
+            void readChecklist();
+          }}
           refreshing={refreshing}
           tintColor={colors.navy}
         />
@@ -791,6 +876,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       </View>
       {shown.services.length > 0 && (
         <RampOperationChargesCard
+          executionClosed={executionClosed}
           operationId={operation.operation.id}
           refreshKey={`${shown.operation.status}:${operation.review?.status ?? ''}:${shown.services.map(service => service.status).join(',')}`}
           services={shown.services}
@@ -809,7 +895,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
             </Text>
             <PrimaryButton
               icon="alert-circle-outline"
-              onPress={() => router.push({ pathname: '/incident/[id]', params: { id: operation.operation.id } })}
+              onPress={openIncidents}
               title="ABRIR INCIDENCIAS"
             />
           </View>
@@ -823,10 +909,14 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           </View>
           <View style={styles.nextPhaseCopy}>
             <Text style={styles.nextPhaseTitle}>Checklist operativo</Text>
+            {/* N1: where the checklist stands, once the operation started; nothing while the tablet cannot tell. */}
+            {!notStarted && <ChecklistStandingPill standing={checklist} />}
             <Text style={styles.nextPhaseText}>
-              Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.
+              {executionClosed
+                ? 'La ejecución está cerrada: el checklist se consulta tal como se envió.'
+                : 'Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.'}
             </Text>
-            {shown.operation.status === 'Assigned' && (
+            {notStarted && (
               <Text style={styles.nextPhaseWarning}>
                 Inicia la operación antes de completar el checklist.
               </Text>
@@ -836,14 +926,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
                 Sin señal se abre la última copia del checklist guardada en el dispositivo; el envío sale al reconectar.
               </Text>
             )}
+            {/* N1: after the hand-off the sent checklist still opens, read-only; only an operation not started keeps
+                it off. */}
             <PrimaryButton
-              disabled={!executing || busyServiceId !== null}
-              icon="clipboard-outline"
-              onPress={() => router.push({
-                pathname: '/checklist/[id]',
-                params: { id: operation.operation.id },
-              })}
-              title="ABRIR CHECKLIST"
+              disabled={notStarted || busyServiceId !== null}
+              icon={executionClosed ? 'eye-outline' : 'clipboard-outline'}
+              onPress={openChecklist}
+              title={executionClosed ? 'VER CHECKLIST' : 'ABRIR CHECKLIST'}
             />
           </View>
         </View>
@@ -852,17 +941,18 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       {(hasOperationalChecklist || pendingSubmission || operation.operation.status === 'PendingReview') && (
         <OperationSubmissionControl
           blocked={cached || busyServiceId !== null || submissionReconciliationRequired}
-          holds={handoffHolds}
           note={submissionNote}
           notice={submissionNotice}
           onChangeNote={setSubmissionNote}
-          onSubmit={confirmHandoff}
+          onOpenChecklist={openChecklist}
+          onOpenIncidents={openIncidents}
+          onSubmit={() => void handoffOperation()}
           operation={operation.operation}
           correctionRevision={operation.review?.status === 'Returned'
             ? operation.review.revisionNumber + 1 : null}
           pending={pendingSubmission}
-          servicesReady={operation.services.length > 0 && operation.services.every(
-            service => isTerminalServiceStatus(service.status))}
+          requirements={requirements}
+          serviceBusy={busyServiceId !== null}
           submitting={submitting}
         />
       )}
@@ -1010,33 +1100,71 @@ function OperationStartControl({
 
 function OperationSubmissionControl({
   blocked,
-  holds,
   note,
   notice,
   onChangeNote,
+  onOpenChecklist,
+  onOpenIncidents,
   onSubmit,
   operation,
   correctionRevision,
   pending,
-  servicesReady,
+  requirements,
+  serviceBusy,
   submitting,
 }: {
   readonly blocked: boolean;
-  /** 3-N06: why a new hand-off waits (records still on the device, the Service Order without its signatures). */
-  readonly holds: readonly HandoffHold[];
   readonly note: string;
   readonly notice: StartNotice | null;
   readonly onChangeNote: (value: string) => void;
+  readonly onOpenChecklist: () => void;
+  readonly onOpenIncidents: () => void;
+  /** Sends the hand-off; a new one first passes through the confirmation sheet, a reserved one goes straight. */
   readonly onSubmit: () => void;
   readonly operation: RampGroundOperationResponse;
   readonly correctionRevision: number | null;
   readonly pending: RampOperationPendingSubmission | null;
-  readonly servicesReady: boolean;
+  /** N1 (3-N06): everything a new hand-off needs, with its state; what is missing holds it. */
+  readonly requirements: readonly HandoffRequirement[];
+  /** A service command is in flight: the checklist does not open meanwhile, as on its card. */
+  readonly serviceBusy: boolean;
   readonly submitting: boolean;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const delivered = operation.status === 'PendingReview' && !pending;
+  const awaitingHandoff = operation.status === 'InProgress' && !pending;
   const canSubmit = !blocked && !submitting && (
-    pending !== null || (operation.status === 'InProgress' && servicesReady && holds.length === 0));
+    pending !== null || (operation.status === 'InProgress' && handoffHoldsFor(requirements).length === 0));
+  const title = delivered ? 'Pendiente de revisión OCC' : correctionRevision
+    ? `Reenviar corrección ${correctionRevision} a OCC` : 'Entregar operación a OCC';
+  // N1: the tablet's own sheet confirms a new hand-off; REINTENTAR ENTREGA resends the reserved one without it.
+  const submit = () => {
+    if (pending) onSubmit();
+    else setConfirming(true);
+  };
+  /**
+   * The button a missing requirement offers. Its title is the one of the card that leads to the same place, so its
+   * spoken label names what is missing: a screen reader tells the two apart.
+   */
+  const actionFor = (requirement: HandoffRequirement) => {
+    if (requirement.state !== 'missing') return null;
+    if (requirement.kind === 'checklist') {
+      return (
+        <PrimaryButton accessibilityLabel="Abrir el checklist que falta para entregar" disabled={serviceBusy}
+          icon="clipboard-outline" onPress={onOpenChecklist} secondary title="ABRIR CHECKLIST" />
+      );
+    }
+    if (requirement.kind === 'incidents') {
+      return (
+        <PrimaryButton accessibilityLabel="Abrir las incidencias que faltan por enviar" icon="alert-circle-outline"
+          onPress={onOpenIncidents} secondary title="ABRIR INCIDENCIAS" />
+      );
+    }
+    if (requirement.kind === 'queue') {
+      return <PrimaryButton icon="sync" onPress={() => router.push('/sync')} secondary title="ABRIR SINCRONIZACIÓN" />;
+    }
+    return null;
+  };
 
   return (
     <View style={[styles.handoffCard, delivered && styles.handoffDelivered]}>
@@ -1050,10 +1178,7 @@ function OperationSubmissionControl({
         </View>
         <View style={styles.handoffCopy}>
           <Text style={styles.startEyebrow}>CIERRE DE EJECUCIÓN</Text>
-          <Text accessibilityRole="header" style={styles.handoffTitle}>
-            {delivered ? 'Pendiente de revisión OCC' : correctionRevision
-              ? `Reenviar corrección ${correctionRevision} a OCC` : 'Entregar operación a OCC'}
-          </Text>
+          <Text accessibilityRole="header" style={styles.handoffTitle}>{title}</Text>
         </View>
       </View>
       <Text style={styles.startDescription}>
@@ -1084,17 +1209,8 @@ function OperationSubmissionControl({
           Hay un envío reservado con nota fija. Reconecta y reintenta; no se creará una segunda entrega.
         </Text>
       )}
-      {!servicesReady && operation.status === 'InProgress' && !pending && (
-        <Text style={styles.nextPhaseWarning}>Termina todos los servicios antes de entregar.</Text>
-      )}
-      {operation.status === 'InProgress' && !pending && holds.map(hold => (
-        <View key={hold.kind} style={styles.handoffHold}>
-          <Text style={styles.nextPhaseWarning}>{hold.message}</Text>
-          {hold.kind === 'queue' && (
-            <PrimaryButton icon="sync" onPress={() => router.push('/sync')} secondary title="ABRIR SINCRONIZACIÓN" />
-          )}
-        </View>
-      ))}
+      {/* N1: what the hand-off needs, each with its state, instead of asking the agent to confirm it. */}
+      {awaitingHandoff && <HandoffRequirementList actionFor={actionFor} requirements={requirements} />}
       {blocked && !delivered && (
         <Text style={styles.nextPhaseWarning}>
           Actualiza en línea y concilia los comandos pendientes antes de entregar.
@@ -1104,8 +1220,20 @@ function OperationSubmissionControl({
         <PrimaryButton
           disabled={!canSubmit}
           icon={pending ? 'refresh-outline' : 'send-outline'}
-          onPress={onSubmit}
+          onPress={submit}
           title={submitting ? 'ENVIANDO…' : pending ? 'REINTENTAR ENTREGA' : 'ENTREGAR A OCC'}
+        />
+      )}
+      {confirming && awaitingHandoff && (
+        <HandoffSheet
+          canConfirm={canSubmit}
+          onClose={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            onSubmit();
+          }}
+          requirements={requirements}
+          title={title}
         />
       )}
       {notice && (
@@ -1133,8 +1261,19 @@ function OperationSubmissionControl({
   );
 }
 
-function isTerminalServiceStatus(status: string) {
-  return status === 'Completed' || status === 'NotPerformed' || status === 'Exception';
+/** N1: where the checklist stands, on its card; nothing while the tablet cannot tell. */
+const CHECKLIST_STANDINGS: Readonly<Partial<Record<ChecklistStanding, Readonly<{
+  text: string;
+  tone: 'green' | 'orange' | 'blue';
+}>>>> = {
+  submitted: { text: 'Enviado a ELEVANT', tone: 'green' },
+  queued: { text: 'Envío guardado en el dispositivo', tone: 'orange' },
+  'not-submitted': { text: 'Sin enviar', tone: 'blue' },
+};
+
+function ChecklistStandingPill({ standing }: { readonly standing: ChecklistStanding }) {
+  const pill = CHECKLIST_STANDINGS[standing];
+  return pill ? <StatusPill text={pill.text} tone={pill.tone} /> : null;
 }
 
 /** 3-I: «Iniciar» saved on the device: it goes out on its own with the tapped time. */
@@ -1224,21 +1363,6 @@ function serviceTransitionErrorNotice(
   };
 }
 
-/** 3-N06: one reason a new hand-off waits, with the text the hand-off card shows. */
-type HandoffHold = Readonly<{ kind: 'queue' | 'signatures'; message: string }>;
-
-function handoffHoldsFor(waitingRecords: number, documents: OperationDocumentsResponse | undefined): HandoffHold[] {
-  const holds: HandoffHold[] = [];
-  if (waitingRecords > 0) {
-    holds.push({ kind: 'queue', message: `Faltan ${waitingRecords} ${waitingRecords === 1 ? 'registro' : 'registros'} por enviar a ELEVANT: abre Sincronización.` });
-  }
-  // Before the forms are read the service decides: it checks them again right before sending the hand-off.
-  if (documents && !isServiceOrderSigned(documents)) {
-    holds.push({ kind: 'signatures', message: 'Falta firmar la Orden de Servicio (aerolínea y AVIAM).' });
-  }
-  return holds;
-}
-
 function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
   if (pending) {
     return {
@@ -1248,8 +1372,8 @@ function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
     };
   }
   if (error instanceof MobileServiceError) {
-    if (error.code === 'conflict' &&
-        (error.problemCode === HANDOFF_PENDING_QUEUE || error.problemCode === HANDOFF_SERVICE_ORDER_UNSIGNED)) {
+    // 3-N06, N1: one of the tablet's own reasons to wait, which the requirement list names.
+    if (error.code === 'conflict' && isHandoffHold(error.problemCode)) {
       return { tone: 'warning', title: 'Entrega en espera', message: error.message };
     }
     if (error.code === 'conflict' || error.code === 'not_found') {
@@ -1556,7 +1680,6 @@ const styles = StyleSheet.create({
   handoffCopy: { flex: 1, minWidth: 0 },
   handoffTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 2 },
   handoffNoteGroup: { gap: 6 },
-  handoffHold: { gap: 8 },
   handoffLabel: { color: colors.navy, fontSize: 13, fontWeight: '800' },
   handoffNoteInput: {
     minHeight: 96,

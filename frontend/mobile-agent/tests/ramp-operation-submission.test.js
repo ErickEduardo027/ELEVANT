@@ -254,3 +254,62 @@ describe('hand-off readiness (3-N06)', () => {
       OPERATION_ID, FROZEN, INSTALLATION_ID, IDEMPOTENCY_KEY, { signal: undefined });
   });
 });
+
+describe('every requirement names its cause (N1)', () => {
+  test('a checklist ELEVANT has not received holds the hand-off with checklist_not_submitted', async () => {
+    mockChecklist.mockResolvedValue({ checklist: { status: 'InProgress' } });
+    await expect(submitRampOperation(OPERATION_ID, FROZEN)).rejects.toMatchObject({ code: 'conflict',
+      problemCode: 'checklist_not_submitted',
+      message: 'Falta enviar el checklist a ELEVANT: ábrelo, complétalo y envíalo antes de entregar.' });
+    expect(mockGetCommand).not.toHaveBeenCalled();
+    expect(mockApi.submitRampOperation).not.toHaveBeenCalled();
+  });
+
+  // The run of the VPS of 16 November: the checklist sent a moment before still waited in the queue when the hand-off
+  // read it. The queue goes out first, so what the agent just sent counts.
+  test('the queue goes out before the checklist is read, so a checklist just sent counts', async () => {
+    let sent = false;
+    mockFlush.mockImplementation(async () => { sent = true; });
+    mockChecklist.mockImplementation(async () => ({ checklist: { status: sent ? 'Submitted' : 'InProgress' } }));
+    await submitRampOperation(OPERATION_ID, FROZEN);
+    expect(mockFlush.mock.invocationCallOrder[0]).toBeLessThan(mockChecklist.mock.invocationCallOrder[0]);
+    expect(mockQueue.mock.invocationCallOrder[0]).toBeLessThan(mockChecklist.mock.invocationCallOrder[0]);
+    expect(mockApi.submitRampOperation).toHaveBeenCalledWith(
+      OPERATION_ID, FROZEN, INSTALLATION_ID, IDEMPOTENCY_KEY, { signal: undefined });
+  });
+
+  // The device's copy may be older than the checklist the queue just sent: without signal the hand-off waits for
+  // signal, and never says the checklist is missing.
+  test.each(['InProgress', 'Submitted'])('a checklist read only from the saved copy (%s) waits for signal', async status => {
+    mockChecklist.mockResolvedValue({ fromCache: true, checklist: { status } });
+    await expect(submitRampOperation(OPERATION_ID, FROZEN)).rejects.toMatchObject({ code: 'network_unavailable' });
+    expect(mockGetCommand).not.toHaveBeenCalled();
+    expect(mockApi.submitRampOperation).not.toHaveBeenCalled();
+  });
+
+  test('the queue goes out before the services are read, so a service just finished counts', async () => {
+    let sent = false;
+    mockFlush.mockImplementation(async () => { sent = true; });
+    mockAssigned.mockImplementation(async () => assigned('InProgress', [{ status: sent ? 'Completed' : 'InProgress' }]));
+    await submitRampOperation(OPERATION_ID, FROZEN);
+    expect(mockFlush.mock.invocationCallOrder[0]).toBeLessThan(mockAssigned.mock.invocationCallOrder[0]);
+    expect(mockApi.submitRampOperation).toHaveBeenCalled();
+  });
+
+  test.each([
+    ['waiting to go out', 'pending'],
+    ['refused by ELEVANT', 'blocked'],
+  ])('an incident report %s holds the hand-off with pending_incidents', async (_description, state) => {
+    mockIncidents.mockResolvedValue({ online: true, outbox: [{ state }] });
+    await expect(submitRampOperation(OPERATION_ID, FROZEN)).rejects.toMatchObject({ code: 'conflict',
+      problemCode: 'pending_incidents',
+      message: 'Hay incidencias de esta operación que no llegaron a ELEVANT: ábrelas en Incidencias antes de entregar.' });
+    expect(mockGetCommand).not.toHaveBeenCalled();
+  });
+
+  test('without signal for the incidents the hand-off keeps that failure', async () => {
+    const issue = new (require('../src/services/mobile-service-error').MobileServiceError)('network_unavailable');
+    mockIncidents.mockResolvedValue({ online: false, outbox: [], issue });
+    await expect(submitRampOperation(OPERATION_ID, FROZEN)).rejects.toBe(issue);
+  });
+});
