@@ -214,3 +214,14 @@ it('explains a countersignature over other content by its code (2-N28)', async (
   await userEvent.click(screen.getByRole('button', { name: 'Acepto y firmo' }));
   expect(await screen.findByText(/La aerolínea firmó un contenido distinto al actual/)).toBeInTheDocument();
 });
+
+it('writes the validity and the day both parties signed in full inside their sentences (N36)', async () => {
+  const aviamSignature = { ...airlineSignature, party: 'Aviam', signerName: 'Ana Pérez', signerTitle: 'Gerente' };
+  getContractDocument.mockResolvedValueOnce({ ...document, contractStatus: 'Active', signableBy: null,
+    signatures: [airlineSignature, aviamSignature], signedOn: '2026-11-03' });
+  render(<ContractDetailDrawer versionId="v-1" onClose={vi.fn()} />);
+  const drawer = await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' });
+  expect(drawer).toHaveTextContent('Del 3 de noviembre de 2026 al 2 de noviembre de 2027 · USD · versión aprobada');
+  expect(screen.getByText('Firmado por ambas partes el 3 de noviembre de 2026.')).toBeInTheDocument();
+  expect(drawer).not.toHaveTextContent(/2026-11-03|2027-11-02/);
+});

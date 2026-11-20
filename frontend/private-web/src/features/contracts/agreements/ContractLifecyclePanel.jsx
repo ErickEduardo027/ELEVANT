@@ -3,7 +3,7 @@ import Modal from '../../../components/Modal';
 import ReasonField, { validReason } from '../../../components/ReasonField';
 import StatusBadge from '../../../components/StatusBadge';
 import { applyContractLifecycle, createContractAmendment, getContractTimeline } from '../../../services/commercialGovernanceApi';
-import { addDays, businessToday } from '../../../services/businessDay';
+import { addDays, businessToday, formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractLifecycleMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
@@ -29,7 +29,8 @@ const KIND_DOT = {
   permit: 'bg-amber-500', status: 'bg-emerald-600', upcoming: 'border-2 border-dashed border-slate-400 bg-transparent',
 };
 const stamp = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-const day = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`));
+/** Every day of the panel sits inside a sentence, so it is written in full (N36). */
+const day = value => formatBusinessDate(value, { style: 'long' });
 /** 1-C: an amendment changes prices mid-term of a contract in force or suspended. */
 const AMENDABLE = ['Active', 'Suspended'];
 const EMPTY_FORM = { reason: '', validFrom: '', validTo: '', mode: 'notice', effectiveOn: '', cause: '' };

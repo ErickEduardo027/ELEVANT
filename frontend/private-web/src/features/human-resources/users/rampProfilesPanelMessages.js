@@ -13,8 +13,8 @@ export const rampProfilesPanelMessages = {
     inactive: 'Inactivo',
     account: {
       none: 'Sin cuenta móvil vinculada',
-      active: 'Cuenta IAM activa; acceso móvil según permisos',
-      disabled: 'Cuenta IAM deshabilitada',
+      active: 'Cuenta de acceso activa; acceso móvil según permisos',
+      disabled: 'Cuenta de acceso deshabilitada',
       pending: 'Cuenta pendiente de activación',
       unknown: 'Cuenta vinculada; estado no disponible',
     },
@@ -76,8 +76,8 @@ export const rampProfilesPanelMessages = {
     inactive: 'Inactive',
     account: {
       none: 'No linked mobile account',
-      active: 'IAM account active; mobile access according to permissions',
-      disabled: 'IAM account disabled',
+      active: 'Access account active; mobile access according to permissions',
+      disabled: 'Access account disabled',
       pending: 'Account pending activation',
       unknown: 'Linked account; status unavailable',
     },

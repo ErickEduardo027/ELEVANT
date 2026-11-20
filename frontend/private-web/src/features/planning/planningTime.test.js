@@ -16,6 +16,8 @@ describe('planning time formatting', () => {
     expect(formatPlanningDate('2026-08-19')).toBe('19/08/2026');
     expect(formatPlanningDate('2026-8-19')).toBe('—');
     expect(formatPlanningDate(null)).toBe('—');
+    // The shared business date (N36): an impossible day is not rolled over to the next month.
+    expect(formatPlanningDate('2026-02-30')).toBe('—');
   });
 
   it('formats civil dates with the requested locale', () => {

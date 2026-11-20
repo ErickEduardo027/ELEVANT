@@ -57,6 +57,16 @@ it('marks superseded tariffs as historical even if their dates overlap', async (
   expect(screen.getByText('USD 85.0000')).toBeInTheDocument();
 });
 
+it('writes the validity of each version dd/mm/aaaa in the lists (N36)', async () => {
+  const dated = { ...agreement, approvedVersions: [{ ...agreement.approvedVersions[0], validTo: '2027-08-31' }] };
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false, contracts: [dated] });
+  const { unmount } = render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByText('Versión 2 · Aprobada · 01/09/2026 — 31/08/2027 · USD')).toBeInTheDocument();
+  unmount();
+  render(<ManagedAgreementsPage mode="services" />);
+  expect(await screen.findByText('01/09/2026 — 31/08/2027')).toBeInTheDocument();
+});
+
 it('distinguishes permission denial from a recoverable transport failure', async () => {
   getManagedContracts.mockRejectedValueOnce({ status: 403 });
   const view = render(<ManagedAgreementsPage mode="reports" />);

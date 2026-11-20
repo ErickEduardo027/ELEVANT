@@ -8,8 +8,9 @@ import InvoicesPage from './invoices/InvoicesPage';
 import ChargesPage, { RULES_BY_METHOD } from './charges/ChargesPage';
 import ExchangeRatesPage from './exchange-rates/ExchangeRatesPage';
 import {
-  decideContractApproval, getContractApproval, getFinanceInvoice, listBillingUnits, listCharges, listContractApprovals,
-  listExchangeRates, listFinanceInvoices, listFinanceServices, recordExchangeRate, saveCharge,
+  decideContractApproval, getChargeTariff, getContractApproval, getFinanceInvoice, listBillingUnits, listCharges,
+  listChargeTariffs, listContractApprovals, listExchangeRates, listFinanceInvoices, listFinanceServices, publishChargeTariff,
+  recordExchangeRate, saveCharge,
 } from '../../services/financeBookService';
 import * as financeBook from '../../services/financeBookService';
 
@@ -18,7 +19,7 @@ vi.mock('../../services/financeBookService', async importOriginal => ({
   listContractApprovals: vi.fn(), getContractApproval: vi.fn(), decideContractApproval: vi.fn(),
   listFinanceInvoices: vi.fn(), getFinanceInvoice: vi.fn(),
   listCharges: vi.fn(), saveCharge: vi.fn(), listFinanceServices: vi.fn(), listBillingUnits: vi.fn(),
-  listChargeTariffs: vi.fn().mockResolvedValue([]),
+  listChargeTariffs: vi.fn().mockResolvedValue([]), getChargeTariff: vi.fn(), publishChargeTariff: vi.fn(),
   listExchangeRates: vi.fn(), recordExchangeRate: vi.fn(),
 }));
 vi.mock('../../services/financeTreasuryService', async original => ({ ...(await original()),
@@ -187,6 +188,18 @@ describe('ContractApprovalsPage', () => {
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
 
+  it('writes the validity dd/mm/aaaa in the list and in the detail (N36)', async () => {
+    const dated = { ...summary, validTo: '2027-08-31' };
+    listContractApprovals.mockResolvedValue([dated]);
+    getContractApproval.mockResolvedValue({ summary: dated, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
+    renderWith(<ContractApprovalsPage />);
+    const item = await screen.findByRole('button', { name: /Demo Airlines/ });
+    expect(within(item).getByText('QA-1 · USD · desde 01/09/2026')).toBeInTheDocument();
+    await userEvent.click(item);
+    expect(await screen.findByText('USD · 01/09/2026 a 31/08/2027 · Estaciones PUJ')).toBeInTheDocument();
+    expect(screen.queryByText(/2026-09-01|2027-08-31/)).not.toBeInTheDocument();
+  });
+
   it('names package scopes, units and replaced versions in Spanish (1-N26)', async () => {
     const replaced = { ...summary, versionId: 'v-0', status: 'Superseded', airline: 'Old Airlines' };
     listContractApprovals.mockResolvedValue([replaced]);
@@ -266,6 +279,29 @@ describe('ChargesPage', () => {
     const [first, second] = saveCharge.mock.calls;
     expect(second[1]).toEqual(first[1]);
     expect(second[2]).toBe(first[2]);
+  });
+});
+
+describe('ChargesPage tariff dates (N36)', () => {
+  it('lists its versions dd/mm/aaaa and writes in full the start a new version must follow', async () => {
+    listCharges.mockResolvedValue([]);
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    const published = { id: 'ct-1', currencyCode: 'USD', status: 'Published', validFrom: '2026-10-01', validTo: null,
+      note: null, rateCount: 0, publishedBy: 'Finanzas', publishedAt: '2026-09-20T12:00:00Z', version: 'v1' };
+    const draft = { ...published, id: 'ct-2', status: 'Draft', validFrom: '2026-09-15', publishedBy: null, publishedAt: null };
+    listChargeTariffs.mockResolvedValueOnce([draft, published]);
+    getChargeTariff.mockResolvedValueOnce({ summary: draft, rates: [] });
+    renderWith(<ChargesPage />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Importes' }));
+    expect(await screen.findByText('USD · desde 15/09/2026')).toBeInTheDocument();
+    expect(screen.getByText('USD · desde 01/10/2026')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Publicar' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Publicar' }));
+    expect(await screen.findByText('La vigencia debe empezar después del 1 de octubre de 2026, inicio de la última versión '
+      + 'publicada. Cambie «Vigente desde» y guarde.')).toBeInTheDocument();
+    expect(publishChargeTariff).not.toHaveBeenCalled();
+    expect(getChargeTariff).toHaveBeenCalledWith('ct-2');
   });
 });
 

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { getFinanceTariffs } from '../../../services/financeTariffsService';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
+/** A list writes its dates dd/mm/aaaa (N36); a validity may have no end. */
 function date(value) {
-  return value ?? 'Sin vencimiento';
+  return value ? formatBusinessDate(value) : 'Sin vencimiento';
 }
 
 export default function TariffsPage({ initialStationId, embedded = false }) {

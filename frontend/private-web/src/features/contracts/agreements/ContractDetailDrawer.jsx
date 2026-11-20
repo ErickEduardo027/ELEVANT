@@ -3,6 +3,7 @@ import Drawer from '../../../components/Drawer';
 import Modal from '../../../components/Modal';
 import { getContractDocument, signContractVersion, withdrawContractVersion } from '../../../services/commercialGovernanceApi';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractDocumentMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
@@ -13,9 +14,9 @@ import ContractValidityForm from './ContractValidityForm';
 
 const PARTY = { Aviam: 'AVIAM', Airline: 'Aerolínea' };
 
+/** The drawer's dates sit inside sentences, so they are written in full (N36); a validity may have no end. */
 function date(value) {
-  return value ? new Intl.DateTimeFormat('es-DO', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`))
-    : 'Sin vencimiento';
+  return value ? formatBusinessDate(value, { style: 'long' }) : 'Sin vencimiento';
 }
 
 /** Validity and renewal terms in plain words (ADR-0025). */

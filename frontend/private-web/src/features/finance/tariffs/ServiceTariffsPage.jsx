@@ -18,7 +18,7 @@ import {
 import { financeTariffMessage } from '../../../services/financeErrors';
 import { isConflict } from '../../../services/problemMessages';
 import { statusMeta, TARIFF_VERSION_STATUS } from '../financeLabels';
-import { businessToday } from '../../../services/businessDay';
+import { businessToday, formatBusinessDate } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const VERSION_STATUS = TARIFF_VERSION_STATUS;
@@ -34,11 +34,11 @@ export function VersionList({ versions, selectedId, onSelect }) {
             <button type="button" onClick={() => onSelect(version.id)}
               className={`w-full rounded-xl border p-3 text-left transition ${selectedId === version.id ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 bg-white hover:border-accent-600/40 dark:border-white/10 dark:bg-surface-dark-card'}`}>
               <div className="flex items-center justify-between gap-2">
-                <strong className="text-sm">{version.currencyCode} · desde {version.validFrom}</strong>
+                <strong className="text-sm">{version.currencyCode} · desde {formatBusinessDate(version.validFrom)}</strong>
                 <StatusBadge tone={status.tone} label={status.label} />
               </div>
               <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {version.rateCount} tarifas{version.validTo ? ` · hasta ${version.validTo}` : ''}{version.publishedBy ? ` · ${version.publishedBy}` : ''}
+                {version.rateCount} tarifas{version.validTo ? ` · hasta ${formatBusinessDate(version.validTo)}` : ''}{version.publishedBy ? ` · ${version.publishedBy}` : ''}
               </p>
             </button>
           </li>
@@ -167,7 +167,7 @@ function BaseTariff() {
   async function publish() {
     const latest = latestPublishedStart(versions);
     if (latest && detail.summary.validFrom <= latest) {
-      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
       return;
     }
     const { id, version } = detail.summary;
@@ -263,7 +263,7 @@ function BaseTariff() {
         </div>
       )}
       <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifa base"
-        description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde ${meta.validFrom}; la anterior quedará como histórica. Guarde antes los cambios pendientes.`}
+        description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde el ${formatBusinessDate(meta.validFrom, { style: 'long' })}; la anterior quedará como histórica. Guarde antes los cambios pendientes.`}
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
         onConfirm={async () => { setConfirm(null); await publish(); }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador y sus precios se eliminarán."

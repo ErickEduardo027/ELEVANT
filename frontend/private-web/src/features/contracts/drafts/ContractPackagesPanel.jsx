@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { formatMoney } from '../../../services/financeBookService';
 import {
   createPackageCommand, financePackageError, listContractPackages, listFinancePackages, setContractPackages,
@@ -36,7 +37,7 @@ function PackageDefinition({ item }) {
     <p className="mt-1">{statusMeta(PACKAGE_STATUS, item.status).label} · {formatMoney(item.basePrice, item.currencyCode)} · {packageScopeLabel(item.scope)}
       {item.scope === 'Flight' && ` · ${FLIGHT_DIRECTION_LABELS[item.flightDirection] ?? 'Sin dirección'}`}
       {item.scope === 'Period' && ` · ${item.periodDays} días`}</p>
-    <p className="mt-1 text-text-secondary-light">Desde {item.validFrom}{item.validTo ? ` hasta ${item.validTo}` : ' · sin fecha final'}</p>
+    <p className="mt-1 text-text-secondary-light">Desde {formatBusinessDate(item.validFrom)}{item.validTo ? ` hasta ${formatBusinessDate(item.validTo)}` : ' · sin fecha final'}</p>
     <ul className="mt-2 space-y-1 text-text-secondary-light dark:text-text-secondary-dark">
       {item.components.map(component => <li key={component.serviceId} className="break-words">
         {component.serviceCode} · {component.serviceName}: incluye {component.includedQuantity} (unidad: {billingUnitLabel(component.billingUnit)}); excedente de {component.excessBlockSize} por {formatMoney(component.excessBlockPrice, item.currencyCode)}.

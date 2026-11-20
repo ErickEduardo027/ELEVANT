@@ -123,6 +123,32 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
   });
 });
 
+describe('ServiceTariffsPage dates (N36)', () => {
+  it('lists its versions dd/mm/aaaa and writes the start in full inside its sentences', async () => {
+    const published = { ...summary('v0'), id: 'tv-1', status: 'Published', validFrom: '2026-11-01', validTo: '2026-12-31',
+      publishedBy: 'Finanzas', publishedAt: '2026-10-01T12:00:00Z' };
+    listServiceTariffs.mockResolvedValue([summary('v1'), published]);
+    getServiceTariff.mockResolvedValue(detail('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', DepartmentPermissionCodes.finance)}>
+      <ServiceTariffsPage /></DepartmentAccessProvider>);
+    await screen.findByLabelText('Precio de BAGGAGE');
+    expect(screen.getByText('USD · desde 08/10/2026')).toBeInTheDocument();
+    expect(screen.getByText('USD · desde 01/11/2026')).toBeInTheDocument();
+    expect(screen.getByText(/ · hasta 31\/12\/2026 · Finanzas$/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Publicar' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('La versión pasará a ser la vigente en USD desde el 8 de octubre de 2026; la anterior '
+      + 'quedará como histórica.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Publicar' }));
+    expect(await screen.findByText('La vigencia debe empezar después del 1 de noviembre de 2026, inicio de la última versión '
+      + 'publicada. Cambie «Vigente desde» y guarde.')).toBeInTheDocument();
+    expect(publishServiceTariff).not.toHaveBeenCalled();
+    expect(screen.queryByText(/2026-10-08|2026-11-01|2026-12-31/)).not.toBeInTheDocument();
+  });
+});
+
 describe('latestPublishedStart', () => {
   it('ignores drafts and returns the latest published or superseded start', async () => {
     const { latestPublishedStart } = await import('./ServiceTariffsPage');

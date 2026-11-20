@@ -16,7 +16,7 @@ import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
   listCharges, listChargeTariffs, listFinanceServices, publishChargeTariff, saveCharge, saveChargeTariffDraft,
 } from '../../../services/financeBookService';
-import { businessToday } from '../../../services/businessDay';
+import { businessToday, formatBusinessDate } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -336,7 +336,7 @@ function ChargeTariff({ perms }) {
           setConfirm(null);
           const latest = latestPublishedStart(versions);
           if (latest && detail.summary.validFrom <= latest) {
-            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
             return;
           }
           await publish();

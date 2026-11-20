@@ -32,6 +32,13 @@ it('verifies with the version and a key, and tells the contract the server activ
   expect(await screen.findByRole('status')).toHaveTextContent('El contrato CTR-2026-0001 ya quedó activo.');
 });
 
+it('writes the issue and expiry dates of a permit dd/mm/aaaa (N36)', async () => {
+  render(<AirlinePermitsPage canVerify />);
+  expect(await screen.findByText('Demo Airlines')).toBeInTheDocument();
+  expect(screen.getByText('Emitido').nextElementSibling).toHaveTextContent(/^01\/10\/2026$/);
+  expect(screen.getByText('Vence').nextElementSibling).toHaveTextContent(/^20\/11\/2026$/);
+});
+
 it('never promises an activation the server did not make', () => {
   expect(decisionNotice(decision({ review: 'Verified' }), 'verify')).toMatch(/Ningún contrato cambió de estado/);
   expect(decisionNotice(decision({ review: 'Verified', kind: 'Insurance' }), 'verify'))

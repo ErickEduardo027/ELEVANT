@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
 import { contractStatusLabel } from '../contractStatus';
 import ContractDetailDrawer from './ContractDetailDrawer';
@@ -11,9 +12,9 @@ const TITLES = {
   reports: ['Reportes contractuales', 'Indicadores de los acuerdos publicados en esta página.'],
 };
 
+/** A list writes its dates dd/mm/aaaa (N36); a validity may have no end. */
 function date(value) {
-  return value ? new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeZone: 'UTC' })
-    .format(new Date(`${value}T12:00:00Z`)) : 'Sin vencimiento';
+  return value ? formatBusinessDate(value) : 'Sin vencimiento';
 }
 
 export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, canManageLifecycle = false,

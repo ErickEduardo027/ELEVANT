@@ -51,20 +51,34 @@ it('lets Operations limit terminals to chosen stations and only offer its own st
   expect(screen.getByRole('status')).toHaveTextContent('Perfil operativo guardado.');
 });
 
-it('labels IAM lifecycle without implying effective mobile access', async () => {
-  const profile = (id, firstName, hasAccount, accountStatus) => ({ id, firstName,
-    lastName: 'Rampa', employeeNumber: id, category: 'Agente', hireDate: '2025-01-01',
-    stations: [], terminals: [], isActive: true, hasAccount, accountStatus });
-  getRampProfiles.mockResolvedValue({ profiles: [
-    profile('RA-1', 'Lucia', true, 'Active'),
-    profile('RA-2', 'Miguel', true, 'Disabled'),
-    profile('RA-3', 'Ana', false, null),
-  ], availableStations: [], availableTerminals: [] });
+const accountProfile = (id, firstName, hasAccount, accountStatus) => ({ id, firstName,
+  lastName: 'Rampa', employeeNumber: id, category: 'Agente', hireDate: '2025-01-01',
+  stations: [], terminals: [], isActive: true, hasAccount, accountStatus });
+const accountProfiles = () => ({ profiles: [
+  accountProfile('RA-1', 'Lucia', true, 'Active'),
+  accountProfile('RA-2', 'Miguel', true, 'Disabled'),
+  accountProfile('RA-3', 'Ana', false, null),
+], availableStations: [], availableTerminals: [] });
+
+it('labels the access account lifecycle without implying effective mobile access or naming IAM (N36)', async () => {
+  getRampProfiles.mockResolvedValue(accountProfiles());
   render(<RampProfilesPanel />);
   await screen.findByText('Lucia Rampa');
-  expect(screen.getByText(/Cuenta IAM activa; acceso móvil según permisos/)).toBeInTheDocument();
-  expect(screen.getByText(/Cuenta IAM deshabilitada/)).toBeInTheDocument();
+  expect(screen.getByText(/Cuenta de acceso activa; acceso móvil según permisos/)).toBeInTheDocument();
+  expect(screen.getByText(/Cuenta de acceso deshabilitada/)).toBeInTheDocument();
   expect(screen.getByText(/Sin cuenta móvil vinculada/)).toBeInTheDocument();
+  expect(screen.queryByText(/\bIAM\b/)).not.toBeInTheDocument();
+});
+
+it('labels the access account lifecycle in English without naming IAM (N36)', async () => {
+  getRampProfiles.mockResolvedValue(accountProfiles());
+  act(() => resetLanguageForTests('en'));
+  render(<LanguageScope><RampProfilesPanel /></LanguageScope>);
+  await screen.findByText('Lucia Rampa');
+  expect(screen.getByText(/Access account active; mobile access according to permissions/)).toBeInTheDocument();
+  expect(screen.getByText(/Access account disabled/)).toBeInTheDocument();
+  expect(screen.getByText(/No linked mobile account/)).toBeInTheDocument();
+  expect(screen.queryByText(/\bIAM\b/)).not.toBeInTheDocument();
 });
 
 it('loads persisted terminal and supervisor and clears both on deactivation', async () => {
@@ -269,7 +283,7 @@ it('follows the English choice inside a language scope', async () => {
   act(() => resetLanguageForTests('en'));
   render(<LanguageScope><RampProfilesPanel canEdit /></LanguageScope>);
   await screen.findByText('Lucia Ramos');
-  expect(screen.getByText(/IAM account active; mobile access according to permissions/)).toBeInTheDocument();
+  expect(screen.getByText(/Access account active; mobile access according to permissions/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Edit operational profile' }));
   expect(screen.getByRole('textbox', { name: 'Category' })).toHaveAttribute('title', 'Edited in the Human Resources employee record');
   expect(screen.getByText('There are no active terminals for the selected station.')).toBeInTheDocument();

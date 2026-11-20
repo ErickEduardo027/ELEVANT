@@ -8,14 +8,15 @@
  * force keeps being billed, and a suspended contract applies the new prices once it is reactivated.
  */
 
+import { formatBusinessDate } from '../../services/businessDay';
+
 const IN_FORCE = Object.freeze(['Active', 'Suspended']);
 
 /** The contract is already in force (active or suspended): the signed version replaces the current one. */
 export const contractInForce = contractStatus => IN_FORCE.includes(contractStatus);
 
-/** «1 de septiembre de 2026» from an ISO date, without a time zone shift. */
-export const longDay = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'long', timeZone: 'UTC' })
-  .format(new Date(`${value}T12:00:00Z`));
+/** «1 de septiembre de 2026» from an ISO date, without a time zone shift: the long date of a sentence (N36). */
+export const longDay = value => formatBusinessDate(value, { style: 'long' });
 
 /** Contratos, when it sends a version to Finance: what happens once the prices are approved. */
 export function afterFinanceApproval(contractStatus, validFrom) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import Modal from '../../../components/Modal';
 import StatusBadge from '../../../components/StatusBadge';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { getAirlinePermitsForContracts, openPrivateDocument, reviewAirlinePermit, revokeAirlinePermit } from '../../../services/commercialGovernanceApi';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { airlinePermitMessage } from '../../../services/commercialProblems';
@@ -33,7 +34,6 @@ const DECISIONS = {
   revoke: { title: 'Revocar la verificación del permiso', field: 'Motivo de la revocación (la aerolínea lo verá)',
     confirm: 'Revocar verificación' },
 };
-const date = value => new Date(`${value}T00:00:00`).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
 const stamp = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 const codes = contracts => contracts.map(item => item.contractCode).join(', ');
 
@@ -129,8 +129,8 @@ export default function AirlinePermitsPage({ canVerify }) {
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <dt className="text-text-secondary-light">Número</dt><dd className="font-mono">{permit.number}</dd>
                 <dt className="text-text-secondary-light">Emisor</dt><dd>{permit.issuer}</dd>
-                <dt className="text-text-secondary-light">Emitido</dt><dd>{date(permit.issuedOn)}</dd>
-                <dt className="text-text-secondary-light">Vence</dt><dd>{date(permit.expiresOn)}</dd>
+                <dt className="text-text-secondary-light">Emitido</dt><dd>{formatBusinessDate(permit.issuedOn)}</dd>
+                <dt className="text-text-secondary-light">Vence</dt><dd>{formatBusinessDate(permit.expiresOn)}</dd>
               </dl>
               {permit.reviewNote && <p className="mt-2 text-xs text-text-secondary-light">{permit.review === 'Rejected' ? 'Motivo del rechazo' : 'Nota de la verificación'}: {permit.reviewNote}</p>}
               {permit.review === 'Revoked' && permit.revokedAt && <p className="mt-2 text-xs text-status-danger">Verificación revocada el {stamp(permit.revokedAt)}{permit.revocationReason ? `. Motivo: ${permit.revocationReason}` : '.'}</p>}

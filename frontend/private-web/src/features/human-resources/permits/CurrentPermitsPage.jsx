@@ -14,6 +14,7 @@ import { localToday, validityLabel, validityTone } from '../documents/documentVa
 import PermitRecordForm from './PermitRecordForm';
 import usePermitTypeCatalog from './usePermitTypeCatalog';
 import { permitTypeName } from '../../../services/humanResourcesSettingsService';
+import { formatBusinessDate } from '../../../services/businessDay';
 
 const PAGE_LIMIT = 20;
 const EMPTY_FILTERS = { search: '', documentType: '', validity: '' };
@@ -146,7 +147,7 @@ export default function CurrentPermitsPage() {
     </div>}
 
     {state.status === 'success' && <>
-      <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página · vigencia al {asOf}</p>
+      <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página · vigencia al {formatBusinessDate(asOf)}</p>
       {state.data.permits.length ? <section className="overflow-x-auto rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
         <table className="table-stack w-full min-w-[780px] text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
@@ -159,7 +160,7 @@ export default function CurrentPermitsPage() {
               <td className="px-5 py-4 font-semibold">{item.agentName}<span className="block text-xs font-normal text-text-secondary-light">{item.employeeNumber}</span></td>
               <td className="px-5 py-4">{typeLabel(item.documentType)}<span className="block text-xs text-text-secondary-light">Ciclo {item.cycleNumber}</span></td>
               <td className="px-5 py-4">{item.documentNumber}</td>
-              <td className="px-5 py-4">{item.issuedOn}</td><td className="px-5 py-4">{item.expiresOn}</td>
+              <td className="px-5 py-4">{formatBusinessDate(item.issuedOn)}</td><td className="px-5 py-4">{formatBusinessDate(item.expiresOn)}</td>
               <td className="px-5 py-4"><StatusBadge tone={validityTone(item.validity)} label={validityLabel(item.validity, 'masculine')} /></td>
               <td className="px-5 py-4"><div className="flex flex-wrap gap-3">
                 <button type="button" onClick={() => setHistory(item)}
@@ -188,8 +189,8 @@ export default function CurrentPermitsPage() {
       subtitle={history ? `${history.agentName} · ${history.employeeNumber}` : undefined}
       renderCycle={cycle => <dl className="grid grid-cols-3 gap-2 text-xs">
         <div><dt className="text-text-secondary-light">Número</dt><dd>{cycle.documentNumber}</dd></div>
-        <div><dt className="text-text-secondary-light">Emitido</dt><dd>{cycle.issuedOn}</dd></div>
-        <div><dt className="text-text-secondary-light">Vence</dt><dd>{cycle.expiresOn}</dd></div>
+        <div><dt className="text-text-secondary-light">Emitido</dt><dd>{formatBusinessDate(cycle.issuedOn)}</dd></div>
+        <div><dt className="text-text-secondary-light">Vence</dt><dd>{formatBusinessDate(cycle.expiresOn)}</dd></div>
       </dl>} />
   </div>;
 }

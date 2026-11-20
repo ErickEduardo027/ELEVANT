@@ -72,6 +72,16 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.unstu
 
 describe('ContractPackagesPanel', () => {
 
+  it('writes the validity of each package dd/mm/aaaa (N36)', async () => {
+    currentDraft = draft({ validTo: '2027-06-30' });
+    catalog = [packageVersion({ validTo: '2027-12-31' }), packageVersion({ id: 'p2', code: 'BAGS', components: [component('bags')] })];
+    mount();
+    const basic = await screen.findByRole('group', { name: 'Paquete BASIC v2' });
+    expect(within(basic).getByText('Desde 01/10/2026 hasta 31/12/2027')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Paquete BAGS v2' })).getByText('Desde 01/10/2026 · sin fecha final'))
+      .toBeInTheDocument();
+  });
+
   it.each([
     ['2026-12-31', 'Seleccionar GPU v1', 'Seleccionar GPU v2', 'gpu-v1'],
     ['2027-01-01', 'Seleccionar GPU v2', 'Seleccionar GPU v1', 'gpu-v2'],

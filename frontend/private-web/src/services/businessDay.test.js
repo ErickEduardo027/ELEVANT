@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, BUSINESS_TIME_ZONE, businessToday, formatBusinessDateTime, stationLocalToUtc,
+import { addDays, BUSINESS_TIME_ZONE, businessToday, formatBusinessDate, formatBusinessDateTime, stationLocalToUtc,
   utcToStationLocalInput } from './businessDay';
 
 describe('business day (2-F)', () => {
@@ -23,6 +23,43 @@ describe('business day (2-F)', () => {
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
     expect(addDays('2026-11-05', 30)).toBe('2026-12-05');
     expect(() => addDays('05/11/2026', 1)).toThrow(TypeError);
+  });
+});
+
+describe('business date (N36)', () => {
+  it('writes a civil date dd/mm/aaaa in lists and in full inside a sentence', () => {
+    expect(formatBusinessDate('2026-09-01')).toBe('01/09/2026');
+    expect(formatBusinessDate('2026-12-31', { style: 'short' })).toBe('31/12/2026');
+    expect(formatBusinessDate('2026-09-01', { style: 'long' })).toBe('1 de septiembre de 2026');
+    expect(formatBusinessDate('2026-08-19', { locale: 'en-US' })).toBe('08/19/2026');
+  });
+
+  it('shows a dash for anything that is not a calendar date or an instant with its zone', () => {
+    for (const value of ['2026-8-19', '2026-02-30', '2026-13-01', '19/08/2026', 'not a date', '',
+      '2026-11-06T02:30:00', null, undefined, 20260901, new Date(Number.NaN)]) {
+      expect(formatBusinessDate(value)).toBe('—');
+      expect(formatBusinessDate(value, { style: 'long' })).toBe('—');
+    }
+  });
+
+  it('writes an instant with its day in AVIAM calendar or the station zone, never the UTC day', () => {
+    // 22:30 on 5 November in Punta Cana is already 6 November in UTC.
+    expect(formatBusinessDate('2026-11-06T02:30:00Z')).toBe('05/11/2026');
+    expect(formatBusinessDate('2026-11-06T02:30:00.123+00:00', { style: 'long' })).toBe('5 de noviembre de 2026');
+    expect(formatBusinessDate(new Date('2026-11-06T02:30:00Z'), { timeZone: 'Europe/Madrid' })).toBe('06/11/2026');
+    expect(formatBusinessDate('2026-11-06T02:30:00Z', { timeZone: 'Mars/Olympus_Mons' })).toBe('05/11/2026');
+  });
+
+  it('gives the same result whatever the zone of the browser', () => {
+    const priorZone = process.env.TZ;
+    try {
+      for (const zone of ['Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Tokyo', 'UTC']) {
+        process.env.TZ = zone;
+        expect(formatBusinessDate('2026-09-01')).toBe('01/09/2026');
+        expect(formatBusinessDate('2026-01-01', { style: 'long' })).toBe('1 de enero de 2026');
+        expect(formatBusinessDate('2026-11-06T02:30:00Z')).toBe('05/11/2026');
+      }
+    } finally { process.env.TZ = priorZone; }
   });
 });
 

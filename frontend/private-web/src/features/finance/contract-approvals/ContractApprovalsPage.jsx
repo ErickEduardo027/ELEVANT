@@ -10,6 +10,7 @@ import { ApprovedServicesIcon } from '../components/icons';
 import { METHOD_LABELS } from '../charges/ChargesPage';
 import { decideContractApproval, formatMoney, getContractApproval, listContractApprovals } from '../../../services/financeBookService';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeContractApprovalMessage } from '../../../services/financeErrors';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
@@ -144,7 +145,7 @@ export default function ContractApprovalsPage() {
                   <button type="button" onClick={() => select(item.versionId)}
                     className={`w-full rounded-xl border p-3 text-left ${selected === item.versionId ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 bg-white dark:border-white/10 dark:bg-surface-dark-card'}`}>
                     <div className="flex items-center justify-between gap-2"><strong className="text-sm">{item.airline}</strong><StatusBadge tone={status.tone} label={status.label} /></div>
-                    <p className="mt-1 text-xs text-text-secondary-light">{item.contractCode} · {item.currencyCode} · desde {item.validFrom}</p>
+                    <p className="mt-1 text-xs text-text-secondary-light">{item.contractCode} · {item.currencyCode} · desde {formatBusinessDate(item.validFrom)}</p>
                     {(item.ratesBelowBase > 0 || item.ratesWithoutBase > 0) && (
                       <p className="mt-1 text-xs text-status-warning">{item.ratesBelowBase} por debajo de la base · {item.ratesWithoutBase} sin base</p>
                     )}
@@ -165,7 +166,7 @@ export default function ContractApprovalsPage() {
               {read.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{financeContractApprovalMessage(read.error, { fallback: DETAIL_FAILED })}</span><button type="button" onClick={retryDetail} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
               <div>
                 <h2 className="text-lg font-bold">{detail.summary.airline} · {detail.summary.contractCode}</h2>
-                <p className="text-xs text-text-secondary-light">{currency} · {detail.summary.validFrom}{detail.summary.validTo ? ` a ${detail.summary.validTo}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
+                <p className="text-xs text-text-secondary-light">{currency} · {formatBusinessDate(detail.summary.validFrom)}{detail.summary.validTo ? ` a ${formatBusinessDate(detail.summary.validTo)}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
                 <p className="text-xs text-text-secondary-light">{effect.validity}</p>
               </div>
               <StackedTable>

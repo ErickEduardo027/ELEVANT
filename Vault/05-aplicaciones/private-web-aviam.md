@@ -98,6 +98,40 @@ que usan tanto Tailwind como los hooks; incluye `3xl` (1920 px).
 La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 1920 px contra la API Development. No acredita un despliegue en el VPS.
 
+## Convenciones de texto
+
+*Posterior al commit verificado (hallazgo N36 y decisión D-N36, 19 de noviembre
+de 2026).* Las pantallas de Contratos, Finanzas y Gestión Humana que recorrió la
+prueba del VPS del 16 de noviembre mostraban las fechas en cinco formatos, ISO
+incluido («2026-09-01»). Ahora siguen una sola regla:
+
+- **Fechas.** Una fecha del calendario (`yyyy-mm-dd`, como la envía la API) se
+  escribe con
+  [`formatBusinessDate`](../../frontend/private-web/src/services/businessDay.js):
+  «01/09/2026» en listas, tablas y fichas, y «1 de septiembre de 2026» solo
+  dentro de una frase («Firmado por ambas partes el 3 de noviembre de 2026.»).
+  Se lee en UTC, así que el día no cambia con la zona del navegador. Un instante
+  se escribe con su día en el calendario de AVIAM, nunca con el día UTC, y un
+  valor ilegible, un día imposible incluido, se ve «—».
+- **Dónde.** Contratos: la lista de contratos, los servicios pactados, el detalle
+  del contrato con su ciclo, los paquetes de Borradores y los permisos de
+  aerolíneas. Finanzas: la aprobación de contratos, el tarifario de servicios
+  (tarifa base y tarifas por contrato) y el de cargos. Gestión Humana: las
+  habilitaciones y los permisos, con sus historiales. También la fecha del
+  vuelo en Planificación, que en inglés sigue el formato del idioma
+  («08/19/2026»), y las frases de la aprobación de precios.
+- **«¿Puede operar?».** Dice «1 turno en los próximos 14 días.», en singular, y
+  escribe «Vence el 13/11/2026.» con barras aunque el servidor corra con otra
+  cultura ([reglas](../../backend/Elevant.Application/Identity/RampAgentReadiness.cs)).
+- **Cuentas.** «Agentes de rampa» dice «Cuenta de acceso activa; acceso móvil
+  según permisos» y «Cuenta de acceso deshabilitada», sin la sigla IAM; en
+  inglés, «Access account active; mobile access according to permissions» y
+  «Access account disabled».
+
+Los sellos con fecha y hora (firmas, ciclo del contrato, revisiones e
+historiales) conservan su formato, y las pantallas fuera de ese recorrido no
+cambiaron.
+
 ## Ficha de frontera
 
 | Dimensión | Estado verificado |

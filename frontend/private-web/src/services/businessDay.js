@@ -95,6 +95,47 @@ export function stationLocalToUtc(localValue, timeZone = null) {
   return new Date(instant).toISOString();
 }
 
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/i;
+const DATE_STYLES = {
+  short: { day: '2-digit', month: '2-digit', year: 'numeric' },
+  long: { dateStyle: 'long' },
+};
+const dateFormatters = new Map();
+
+function dateFormatter(locale, style, timeZone) {
+  const key = `${locale}|${style}|${timeZone}`;
+  let format = dateFormatters.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { ...DATE_STYLES[style], timeZone });
+    dateFormatters.set(key, format);
+  }
+  return format;
+}
+
+/**
+ * A date as AVIAM's internal screens write it (N36): «01/09/2026» in lists, tables and records, and the long
+ * «1 de septiembre de 2026» only inside a sentence (`style: 'long'`). A calendar date (`yyyy-mm-dd`, as the API
+ * sends contract, permit and document dates) is read in UTC, so its day never moves with the browser's zone; an
+ * instant (ISO with `Z` or an offset, or a Date) shows its day in the station's zone, or in AVIAM's calendar like
+ * `businessToday`, never the UTC day. Anything else, an impossible day included, is «—».
+ *
+ * @param {string | Date | null | undefined} value
+ * @param {{ style?: 'short' | 'long', locale?: string, timeZone?: string | null }} [options]
+ */
+export function formatBusinessDate(value, { style = 'short', locale = 'es-DO', timeZone = null } = {}) {
+  const shape = style === 'long' ? 'long' : 'short';
+  if (typeof value === 'string' && DATE.test(value)) {
+    const day = Date.parse(`${value}T00:00:00Z`);
+    // The engine rolls an impossible day over (2026-02-30 would be 2 March): only a real calendar day is a date.
+    if (Number.isNaN(day) || new Date(day).toISOString().slice(0, 10) !== value) return '—';
+    return dateFormatter(locale, shape, 'UTC').format(new Date(day));
+  }
+  const instant = value instanceof Date ? value.getTime()
+    : typeof value === 'string' && INSTANT.test(value) ? Date.parse(value) : Number.NaN;
+  if (Number.isNaN(instant)) return '—';
+  return dateFormatter(locale, shape, knownZone(timeZone)).format(new Date(instant));
+}
+
 /**
  * A UTC instant as a date and a 24-hour time in the station's local time (phase 3, block E): «26/10/2026, 08:00».
  * Reports and their «Generado» use it instead of the browser's zone; an unknown zone falls back to AVIAM's calendar,

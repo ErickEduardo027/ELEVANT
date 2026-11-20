@@ -277,3 +277,29 @@ it('shows the unauthorized state when the history is forbidden', async () => {
   expect(await screen.findByText('Tu acceso no permite consultar el ciclo de este contrato.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
 });
+
+it('writes the dates of a termination and of an amendment in full inside their sentences (N36)', async () => {
+  getContractTimeline.mockResolvedValueOnce({ ...timeline('Active'), terminatesOn: null, earliestTerminationOn: '2026-12-05' })
+    .mockResolvedValueOnce({ ...timeline('Active'), terminatesOn: '2026-12-10', earliestTerminationOn: null });
+  applyContractLifecycle.mockResolvedValue({ status: 'Active', draftVersionId: null });
+  const { unmount } = render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Terminar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Terminar contrato CT-001' });
+  expect(dialog).toHaveTextContent('Desde el 5 de diciembre de 2026, según el preaviso de la versión vigente.');
+  const effective = within(dialog).getByLabelText(/Fecha efectiva/);
+  await userEvent.clear(effective);
+  await userEvent.type(effective, '2026-12-10');
+  await userEvent.type(within(dialog).getByLabelText('Motivo'), 'Fin de la relación comercial.');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Se programó la terminación: el contrato cubre operaciones '
+    + 'hasta el 9 de diciembre de 2026 y termina el 10 de diciembre de 2026.');
+  expect(await screen.findByRole('note')).toHaveTextContent('Terminación programada: el contrato cubre operaciones '
+    + 'hasta el 9 de diciembre de 2026 y termina el 10 de diciembre de 2026.');
+  unmount();
+  getContractTimeline.mockResolvedValue(timeline('Active'));
+  render(<ContractLifecyclePanel versionId="v-1" canAmend
+    currentVersion={{ versionNumber: 1, validFrom: '2026-01-01', validTo: '2026-12-31' }} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
+  expect(screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' }))
+    .toHaveTextContent('(versión 1, del 1 de enero de 2026 al 31 de diciembre de 2026)');
+});
