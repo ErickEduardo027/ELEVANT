@@ -9,6 +9,7 @@ import { contractLifecycleMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import { amendmentProblemMessage } from '../drafts/draftProblemMessages';
 import { CONTRACT_STATUS } from '../contractStatus';
+import { contractCodeLabel } from '../requests/requestLabels';
 import { validityRange } from './agreementLabels';
 
 // 2-N26: one Spanish map of contract statuses for every Contratos screen.
@@ -172,6 +173,8 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   if (state.status === 'loading') return <p role="status" className="text-sm">Cargando ciclo del contrato…</p>;
   if (state.status === 'forbidden') return <p role="alert" className="text-sm">Tu acceso no permite consultar el ciclo de este contrato.</p>;
   if (state.status === 'error') return <p role="alert" className="text-sm">No se pudo cargar la línea de tiempo. <button type="button" onClick={() => void load()} className="font-semibold text-accent-600 underline">Reintentar</button></p>;
+  // N35: a new contract's «DRAFT-…» code reads «Borrador 1cc18541…», as in Solicitudes.
+  const code = contractCodeLabel(timeline.contractCode);
   const available = Object.entries(ACTIONS).filter(([, meta]) => meta.from.includes(timeline.status) &&
     (!meta.scheduled || scheduledOn) && (!meta.unscheduled || !scheduledOn));
   const amendable = canAmend && AMENDABLE.includes(timeline.status);
@@ -216,9 +219,9 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
         ))}
       </ol>
       <Modal open={Boolean(action)} onClose={closeAction} title={action === 'Terminate' && timeline.status === 'Draft'
-        ? `Descartar el contrato ${timeline.contractCode}`
-        : action === 'CancelTermination' ? `Cancelar la terminación del contrato ${timeline.contractCode}`
-          : `${ACTIONS[action]?.label ?? ''} contrato ${timeline.contractCode}`}
+        ? `Descartar el contrato ${code.text}`
+        : action === 'CancelTermination' ? `Cancelar la terminación del contrato ${code.text}`
+          : `${ACTIONS[action]?.label ?? ''} contrato ${code.text}`}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAction} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || !ready} onClick={() => void submit()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Aplicando…' : 'Confirmar'}</button></div>}>
@@ -258,7 +261,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
           {action === 'CancelTermination' && <p className="text-xs">El contrato seguirá vigente después de la fecha programada. Los borradores y versiones que se cerraron al programarla no se restauran.</p>}
         </div>
       </Modal>
-      <Modal open={amending} onClose={closeAmendment} title={`Crear enmienda del contrato ${timeline.contractCode}`}
+      <Modal open={amending} onClose={closeAmendment} title={`Crear enmienda del contrato ${code.text}`}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAmendment} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || !amendFrom} onClick={() => void amend()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Creando…' : 'Crear enmienda'}</button></div>}>

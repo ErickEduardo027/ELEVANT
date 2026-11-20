@@ -8,6 +8,7 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractDocumentMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import SignaturePad from '../../../components/SignaturePad';
+import { contractCodeLabel } from '../requests/requestLabels';
 import { airlineCodeLabel, countLabel, validityRange } from './agreementLabels';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
@@ -83,6 +84,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
   }, [versionId, revision]);
 
   const document = state.status === 'success' ? state.document : null;
+  // N35: a new contract's «DRAFT-…» code reads «Borrador 1cc18541…», as in Solicitudes; the PDF's file name keeps it.
+  const code = document ? contractCodeLabel(document.contractCode) : null;
   // 2-N10: Contratos withdraws, with a reason, an approved version that does not govern yet. One that governs has the
   // day it counts as signed: both signatures over the same content, or the legacy first version of a contract
   // activated without them (2-C). That legacy version keeps governing with a single signature, which only the server
@@ -144,7 +147,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
 
   return (
     <Drawer open={Boolean(versionId)} onClose={onClose} widthClassName="lg:w-[640px]"
-      title={document ? `Contrato ${document.contractCode} · versión ${document.versionNumber}` : 'Detalle de contrato'}
+      title={document ? `Contrato ${code.text} · versión ${document.versionNumber}` : 'Detalle de contrato'}
       description={document ? document.airlineName : undefined}
       footer={document && !withdrawn && <ContractPdfButtons versionId={versionId}
         fileName={`contrato-${document.contractCode}-v${document.versionNumber}.pdf`} className="justify-end" />}>
@@ -246,7 +249,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
         </div>
       )}
       <Modal open={withdrawing} onClose={() => setWithdrawingId(null)}
-        title={document ? `Retirar la versión ${document.versionNumber} del contrato ${document.contractCode}` : 'Retirar versión'}
+        title={document ? `Retirar la versión ${document.versionNumber} del contrato ${code.text}` : 'Retirar versión'}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setWithdrawingId(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy === 'withdraw' || withdrawReason.trim().length < 5} onClick={() => void withdraw()}
             className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === 'withdraw' ? 'Retirando…' : 'Retirar versión'}</button></div>}>

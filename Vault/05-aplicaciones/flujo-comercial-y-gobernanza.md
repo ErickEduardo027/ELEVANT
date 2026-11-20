@@ -174,8 +174,12 @@ Ahora:
   (D-N35).
 - **Código del borrador.** El código `DRAFT-…` de un contrato nuevo se lee
   «Borrador 1cc18541…», con el código completo en el `title`, en Borradores, en
-  la aprobación de contratos de Finanzas y en la portada de Contratos. Dentro de
-  una frase es «el borrador 1cc18541…». Un código definitivo («CTR-2026-0007») no
+  la aprobación de contratos de Finanzas, en la portada de Contratos, en
+  Contratos › Servicios pactados y en Contratos › Contratos: la lista, el
+  detalle («Contrato Borrador 1cc18541… · versión 2») y sus diálogos («Retirar
+  la versión 2 del contrato Borrador 1cc18541…», «Descartar el contrato
+  Borrador 1cc18541…»). El nombre del PDF conserva el código. Dentro de una
+  frase es «el borrador 1cc18541…». Un código definitivo («CTR-2026-0007») no
   cambia ([etiquetas](../../frontend/private-web/src/features/contracts/requests/requestLabels.js)).
   Una solicitud decidida dice «Se creó un contrato en borrador», sin el prefijo
   del UUID del contrato; la bandeja no recibe su código.

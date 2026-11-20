@@ -130,3 +130,22 @@ it('explains the steps of a contract in their real order (N33)', async () => {
   expect(help).toHaveTextContent('En el detalle se fija la vigencia, se descarga el PDF y AVIAM contrafirma; la aerolínea firma desde su portal.');
   expect(help).not.toHaveTextContent(/firman AVIAM y la aerolínea/);
 });
+
+it('names a new contract «Borrador 1cc18541…» as Solicitudes does, whole in the title, and keeps a final code (N35)', async () => {
+  // Until Contratos fixes its validity, a new contract's code is «DRAFT-» and the id of the request it came from.
+  const draftCode = 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d';
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false, contracts: [
+    { ...agreement, code: draftCode, status: 'Draft' },
+    { ...agreement, id: 'contract-two', code: 'CTR-2026-0001', airline: 'Final Air',
+      approvedVersions: [{ ...agreement.approvedVersions[0], id: 'version-two' }] },
+  ] });
+  const { unmount } = render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByText('Borrador 1cc18541…')).toHaveAttribute('title', draftCode);
+  expect(screen.getByText('CTR-2026-0001')).not.toHaveAttribute('title');
+  expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+  unmount();
+  render(<ManagedAgreementsPage mode="services" />);
+  expect(await screen.findByText('Borrador 1cc18541…')).toHaveAttribute('title', draftCode);
+  expect(screen.getByText('CTR-2026-0001')).not.toHaveAttribute('title');
+  expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+});

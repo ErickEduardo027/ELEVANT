@@ -263,6 +263,19 @@ it('writes one month and one day of renewal and notice in the singular (N33)', (
   ]);
 });
 
+it('names a new contract «Borrador 1cc18541…» in its title and its withdrawal, never by its DRAFT- code (N35)', async () => {
+  // Until Contratos fixes its validity, a new contract's code is «DRAFT-» and the id of the request it came from. A
+  // final code stays as the API sends it: the other tests of this file read «Contrato CTR-2026-0001 · versión 2».
+  getContractDocument.mockResolvedValue({ ...document, contractCode: 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d',
+    validity: null, signatures: [], signableBy: null });
+  render(<ContractDetailDrawer versionId="v-1" canManageLifecycle onClose={vi.fn()} />);
+  const drawer = await screen.findByRole('dialog', { name: 'Contrato Borrador 1cc18541… · versión 2' });
+  expect(within(drawer).getByRole('heading', { name: 'Contrato Borrador 1cc18541… · versión 2' })).toBeInTheDocument();
+  await userEvent.click(within(drawer).getByRole('button', { name: 'Retirar versión' }));
+  expect(screen.getByRole('dialog', { name: 'Retirar la versión 2 del contrato Borrador 1cc18541…' })).toBeInTheDocument();
+  expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+});
+
 it('keeps every field of the validity form inside its column and names one day in the singular (N33)', async () => {
   getContractDocument.mockResolvedValueOnce({ ...document, contractCode: 'DRAFT-1', validity: null, signatures: [], signableBy: null });
   render(<ContractDetailDrawer versionId="v-1" canSetValidity onClose={vi.fn()} />);

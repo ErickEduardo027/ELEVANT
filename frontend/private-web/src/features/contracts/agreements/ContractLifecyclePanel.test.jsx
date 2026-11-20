@@ -307,6 +307,16 @@ it('writes the dates of a termination and of an amendment in full inside their s
     .toHaveTextContent('(versión 1, del 1 de enero de 2026 al 31 de diciembre de 2026)');
 });
 
+it('names a new contract «Borrador 1cc18541…» when discarding it, never by its DRAFT- code (N35)', async () => {
+  // Until Contratos fixes its validity, a new contract's code is «DRAFT-» and the id of the request it came from; a
+  // final code stays as it is («Descartar el contrato CT-001» above).
+  getContractTimeline.mockResolvedValue({ ...timeline('Draft'), contractCode: 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d' });
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Descartar contrato' }));
+  expect(screen.getByRole('dialog', { name: 'Descartar el contrato Borrador 1cc18541…' })).toBeInTheDocument();
+  expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+});
+
 it('names the source version of an amendment with no end in words (N33)', async () => {
   getContractTimeline.mockResolvedValue(timeline('Active'));
   render(<ContractLifecyclePanel versionId="v-1" canAmend
