@@ -19,6 +19,7 @@ import { tariffBookMessage } from '../../../services/financeErrors';
 import { isConflict } from '../../../services/problemMessages';
 import { statusMeta, TARIFF_VERSION_STATUS } from '../financeLabels';
 import { businessToday, formatBusinessDate } from '../../../services/businessDay';
+import { countLabel } from '../../contracts/agreements/agreementLabels';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const VERSION_STATUS = TARIFF_VERSION_STATUS;
@@ -38,7 +39,7 @@ export function VersionList({ versions, selectedId, onSelect }) {
                 <StatusBadge tone={status.tone} label={status.label} />
               </div>
               <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {version.rateCount} tarifas{version.validTo ? ` · hasta ${formatBusinessDate(version.validTo)}` : ''}{version.publishedBy ? ` · ${version.publishedBy}` : ''}
+                {countLabel(version.rateCount, 'tarifa', 'tarifas')}{version.validTo ? ` · hasta ${formatBusinessDate(version.validTo)}` : ''}{version.publishedBy ? ` · ${version.publishedBy}` : ''}
               </p>
             </button>
           </li>

@@ -281,6 +281,19 @@ it('names a new contract «Borrador» and the start of its id, and a signed one 
   expect(screen.getByRole('alertdialog', { name: 'Descartar el borrador de CTR-2026-0007' })).toBeInTheDocument();
 });
 
+it('counts the services and observations of each draft in the singular only for one (N33)', async () => {
+  const comment = id => ({ id, author: 'Casey Airline', body: '¿Incluye la noche?', at: '2026-11-05T12:00:00Z', isAirline: true });
+  const rate = draft().rates[0];
+  getManagedDrafts.mockResolvedValue([draft(), { ...draft({ comments: [comment('comment-1')] }), id: 'draft-2' },
+    { ...draft({ rates: [rate, { ...rate, id: 'rate-2', serviceName: 'Remolque' }],
+      comments: [comment('comment-1'), comment('comment-2')] }), id: 'draft-3' }]);
+  render(<ManagedDraftsPage />);
+  await screen.findAllByRole('button', { name: /Demo Airlines/ });
+  const lines = screen.getAllByRole('button', { name: /Demo Airlines/ }).map(item => item.querySelector('span').textContent);
+  expect(lines).toEqual(['CTR-1 · Borrador · 1 servicio · 0 observaciones', 'CTR-1 · Borrador · 1 servicio · 1 observación',
+    'CTR-1 · Borrador · 2 servicios · 2 observaciones']);
+});
+
 it('keeps the edits and blocks the submission when a rule refuses the save', async () => {
   getContractDraftReadiness.mockResolvedValue(readiness());
   updateManagedDraft.mockRejectedValueOnce(failure(409, 'package_not_eligible'));

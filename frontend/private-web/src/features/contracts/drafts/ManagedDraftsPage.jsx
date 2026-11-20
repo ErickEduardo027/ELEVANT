@@ -16,6 +16,7 @@ import { formatChargeValue, formatMoney, listBillingUnits } from '../../../servi
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftProblemMessage } from './draftProblemMessages';
 import { afterFinanceApproval } from '../approvalEffect';
+import { countLabel } from '../agreements/agreementLabels';
 import { contractCodeLabel } from '../requests/requestLabels';
 
 const LOAD_FAILED = 'No se pudieron cargar los borradores. Revisa la conexión e intenta de nuevo.';
@@ -108,7 +109,7 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
           : view.status === 'error' ? <div role="alert" className="mt-5 space-y-2 text-sm text-status-danger"><p>{view.error}</p>{retry}</div>
             : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => {
               const code = contractCodeLabel(item.contractCode);
-              return <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span title={code.title} className="text-xs text-text-secondary-light">{code.text} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>;
+              return <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span title={code.title} className="text-xs text-text-secondary-light">{code.text} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {countLabel(item.rates.length, 'servicio', 'servicios')} · {countLabel(item.comments.length, 'observación', 'observaciones')}</span></button>;
             })}</div>
               : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
         <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Selecciona un borrador para revisarlo.</p>}</section></div>

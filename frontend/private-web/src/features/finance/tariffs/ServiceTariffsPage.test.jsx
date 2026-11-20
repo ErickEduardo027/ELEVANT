@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import ServiceTariffsPage from './ServiceTariffsPage';
+import ServiceTariffsPage, { VersionList } from './ServiceTariffsPage';
 import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
 import {
@@ -203,6 +203,16 @@ describe('ServiceTariffsPage names and read-only versions (N34)', () => {
     expect(screen.queryByRole('term')).not.toBeInTheDocument();
     expect(screen.getByText('Manejo de equipaje', { selector: 'strong' }).closest('td'))
       .toHaveTextContent(/^Manejo de equipaje\s*BAGGAGE$/);
+  });
+});
+
+describe('VersionList counts (N33)', () => {
+  // The base tariff and the charge amounts (ChargesPage) list their versions with this same component.
+  it('counts the rates of each version in the singular only for one', () => {
+    const versions = [0, 1, 2].map(rateCount => ({ ...summary(`v${rateCount}`), id: `tv-${rateCount}`, rateCount }));
+    render(<VersionList versions={versions} selectedId={null} onSelect={() => {}} />);
+    expect(screen.getAllByRole('button').map(button => button.querySelector('p').textContent))
+      .toEqual(['0 tarifas', '1 tarifa', '2 tarifas']);
   });
 });
 
