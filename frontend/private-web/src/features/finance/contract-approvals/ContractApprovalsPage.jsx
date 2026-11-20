@@ -7,8 +7,9 @@ import StatusBadge from '../../../components/StatusBadge';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { ApprovedServicesIcon } from '../components/icons';
-import { METHOD_LABELS } from '../charges/ChargesPage';
-import { decideContractApproval, formatMoney, getContractApproval, listContractApprovals } from '../../../services/financeBookService';
+import {
+  decideContractApproval, formatChargeValue, formatMoney, getContractApproval, listContractApprovals,
+} from '../../../services/financeBookService';
 import { billingUnitLabel } from '../../../services/billingUnits';
 import { formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
@@ -27,6 +28,29 @@ function Difference({ value }) {
   if (value === null || value === undefined) return <span className="text-xs text-text-secondary-light">Sin tarifa base</span>;
   const tone = value < 0 ? 'text-status-danger' : value > 0 ? 'text-status-success' : 'text-text-secondary-light';
   return <span className={`font-semibold tabular-nums ${tone}`}>{value > 0 ? '+' : ''}{value} %</span>;
+}
+
+/**
+ * A charge of the version beside Finance's charge tariff in the contract currency (N34): the name is the title and
+ * the code the secondary text, and each value carries its currency or unit, the method named once.
+ */
+function ContractCharge({ charge, currency }) {
+  const negotiated = charge.contractValue !== null && charge.contractValue !== undefined;
+  const contract = charge.isExcluded ? 'Excluido'
+    : negotiated ? formatChargeValue(charge.method, charge.contractValue, currency) : 'Se aplica la tarifa base';
+  const base = charge.baseValue === null || charge.baseValue === undefined ? 'Sin importe'
+    : formatChargeValue(charge.method, charge.baseValue, currency);
+  return (
+    <li className="rounded-lg bg-black/[.03] px-3 py-2 dark:bg-white/[.04]">
+      <p className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <strong>{charge.chargeName}</strong>{' '}<span className="text-text-secondary-light">{charge.chargeCode}</span>
+      </p>
+      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+        <dt className="text-text-secondary-light">Contrato</dt><dd className="tabular-nums">{contract}</dd>
+        <dt className="text-text-secondary-light">Tarifa base</dt><dd className="tabular-nums">{base}</dd>
+      </dl>
+    </li>
+  );
 }
 
 /**
@@ -174,7 +198,7 @@ export default function ContractApprovalsPage() {
                   <thead className="text-xs uppercase text-text-secondary-light"><tr><th className="p-2">Servicio</th><th className="p-2">Unidad</th><th className="p-2">Contrato</th><th className="p-2">Tarifa base</th><th className="p-2">Diferencia</th></tr></thead>
                   <tbody>{detail.rates.map(rate => (
                     <tr key={rate.rateId} className="border-t border-black/5 dark:border-white/5">
-                      <td className="p-2"><strong>{rate.serviceCode}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceName}</span></td>
+                      <td className="p-2"><strong>{rate.serviceName}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceCode}</span></td>
                       <td className="p-2 text-xs">Por {billingUnitLabel(rate.billingUnit)} · mín. {rate.contractMinimum}</td>
                       <td className="p-2 tabular-nums">{formatMoney(rate.contractPrice, currency)}</td>
                       <td className="p-2 tabular-nums">{rate.basePrice === null ? '—' : formatMoney(rate.basePrice, currency)}</td>
@@ -186,12 +210,7 @@ export default function ContractApprovalsPage() {
               <div>
                 <h3 className="text-sm font-semibold">Cargos en este contrato</h3>
                 <ul className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
-                  {detail.charges.map(charge => (
-                    <li key={charge.chargeId} className="rounded-lg bg-black/[.03] px-3 py-2 dark:bg-white/[.04]">
-                      <strong>{charge.chargeCode}</strong> · {METHOD_LABELS[charge.method] ?? charge.method}: {charge.isExcluded ? 'excluido'
-                        : charge.contractValue !== null ? `negociado ${charge.contractValue} (base ${charge.baseValue ?? '—'})` : `tarifa base ${charge.baseValue ?? 'sin importe'}`}
-                    </li>
-                  ))}
+                  {detail.charges.map(charge => <ContractCharge key={charge.chargeId} charge={charge} currency={currency} />)}
                 </ul>
               </div>
               {detail.packages?.length > 0 && <section><h3 className="text-sm font-semibold">Paquetes contractuales</h3><ul className="mt-2 space-y-2">{detail.packages.map(item => <li key={item.id ?? item.packageVersionId ?? item.code} className="rounded-lg bg-black/5 p-3 text-xs dark:bg-white/5"><strong>{item.code} · {item.name}</strong> · versión {item.versionNumber} · {packageScopeLabel(item.scope)} · base {formatMoney(item.basePrice, item.currencyCode)}</li>)}</ul><p className="mt-2 text-xs text-text-secondary-light">Los servicios cubiertos no se cobrarán individualmente. Las inclusiones y excedentes conservan la versión aprobada del paquete.</p></section>}

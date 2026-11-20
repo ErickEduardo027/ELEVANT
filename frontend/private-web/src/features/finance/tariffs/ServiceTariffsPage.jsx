@@ -48,6 +48,23 @@ export function VersionList({ versions, selectedId, onSelect }) {
   );
 }
 
+/**
+ * The dates and note of a version this account cannot edit (published, historical, or without «Modificar») as text,
+ * never as disabled fields that look editable (N34). `facts` is a list of `[label, value]`.
+ */
+export function VersionFacts({ facts }) {
+  return (
+    <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+      {facts.map(([label, value]) => (
+        <div key={label} className="min-w-0">
+          <dt className="text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark">{label}</dt>
+          <dd className="mt-1 break-words">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Finance base price list: versioned per currency, edited as a draft and published once reviewed. */
 /** Latest start date among non-draft versions; a new version must start after it. */
 export function latestPublishedStart(versions) {
@@ -210,11 +227,17 @@ function BaseTariff() {
           <VersionList versions={versions} selectedId={selectedId} onSelect={setSelectedId} />
           {detail && (
             <section className="min-w-0 space-y-3 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <label className="text-xs font-semibold">Vigente desde<input type="date" disabled={!editable} value={meta.validFrom} onChange={event => setMeta(current => ({ ...current, validFrom: event.target.value }))} className={fieldClass} /></label>
-                <label className="text-xs font-semibold">Hasta (opcional)<input type="date" disabled={!editable} value={meta.validTo} onChange={event => setMeta(current => ({ ...current, validTo: event.target.value }))} className={fieldClass} /></label>
-                <label className="text-xs font-semibold">Nota<input maxLength={500} disabled={!editable} value={meta.note} onChange={event => setMeta(current => ({ ...current, note: event.target.value }))} className={fieldClass} /></label>
-              </div>
+              {editable ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="text-xs font-semibold">Vigente desde<input type="date" value={meta.validFrom} onChange={event => setMeta(current => ({ ...current, validFrom: event.target.value }))} className={fieldClass} /></label>
+                  <label className="text-xs font-semibold">Hasta (opcional)<input type="date" value={meta.validTo} onChange={event => setMeta(current => ({ ...current, validTo: event.target.value }))} className={fieldClass} /></label>
+                  <label className="text-xs font-semibold">Nota<input maxLength={500} value={meta.note} onChange={event => setMeta(current => ({ ...current, note: event.target.value }))} className={fieldClass} /></label>
+                </div>
+              ) : (
+                <VersionFacts facts={[['Vigente desde', formatBusinessDate(detail.summary.validFrom)],
+                  ['Hasta', detail.summary.validTo ? formatBusinessDate(detail.summary.validTo) : 'Sin fecha de fin'],
+                  ['Nota', detail.summary.note || 'Sin nota']]} />
+              )}
               <label className="block max-w-sm text-xs font-semibold">Buscar servicio<input type="search" value={search} onChange={event => setSearch(event.target.value)} className={fieldClass} /></label>
               <StackedTable>
                 <table className="table-stack w-full min-w-[620px] text-left text-sm">
@@ -222,7 +245,7 @@ function BaseTariff() {
                   <tbody>
                     {visibleRates.map(rate => (
                       <tr key={rate.key} className="border-t border-black/5 dark:border-white/5">
-                        <td className="p-2"><strong>{rate.serviceCode}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceName}</span></td>
+                        <td className="p-2"><strong>{rate.serviceName}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceCode}</span></td>
                         <td className="p-2 text-xs">{rate.stationCode ?? 'Todas'}</td>
                         <td className="p-2">{editable ? (
                           <select aria-label={`Unidad de ${rate.serviceCode}`} value={rate.billingUnit} onChange={event => update(rate.key, { billingUnit: event.target.value })} className={fieldClass}>

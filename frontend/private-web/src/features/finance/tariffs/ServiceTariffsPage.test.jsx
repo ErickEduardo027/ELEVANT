@@ -149,6 +149,52 @@ describe('ServiceTariffsPage dates (N36)', () => {
   });
 });
 
+describe('ServiceTariffsPage names and read-only versions (N34)', () => {
+  const renderPage = (codes = DepartmentPermissionCodes.finance) => render(<DepartmentAccessProvider observe={false}
+    initialAccess={administratorAccess('finance', codes)}><ServiceTariffsPage /></DepartmentAccessProvider>);
+  const facts = () => Object.fromEntries(screen.getAllByRole('term')
+    .map(term => [term.textContent, term.nextElementSibling.textContent]));
+  const published = { ...summary('v0'), id: 'tv-1', status: 'Published', validFrom: '2026-11-01', validTo: '2026-12-31',
+    note: 'Temporada alta', publishedBy: 'Finanzas', publishedAt: '2026-10-01T12:00:00Z' };
+  const named = (version, tariff) => ({ ...detail(version), ...tariff,
+    rates: [{ ...detail(version).rates[0], serviceName: 'Manejo de equipaje' }] });
+
+  it('shows a published version as text, not as fields that look editable, and names each service first', async () => {
+    listServiceTariffs.mockResolvedValue([published]);
+    getServiceTariff.mockResolvedValue(named('v0', { summary: published }));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    renderPage();
+    const service = (await screen.findByText('Manejo de equipaje', { selector: 'strong' })).closest('td');
+    expect(service).toHaveTextContent(/^Manejo de equipaje\s*BAGGAGE$/);
+    expect(within(service.closest('tr')).getAllByRole('cell').slice(1).map(cell => cell.textContent))
+      .toEqual(['Todas', 'Por operación', 'USD 130.00', '1']);
+    expect(facts()).toEqual({ 'Vigente desde': '01/11/2026', Hasta: '31/12/2026', Nota: 'Temporada alta' });
+    for (const field of ['Vigente desde', 'Hasta (opcional)', 'Nota'])
+      expect(screen.queryByLabelText(field)).not.toBeInTheDocument();
+  });
+
+  it('shows a draft as text to an account that cannot edit it, and as fields to one that can', async () => {
+    listServiceTariffs.mockResolvedValue([summary('v1')]);
+    getServiceTariff.mockResolvedValue(named('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    const { unmount } = renderPage(['finance.tariffs.read']);
+    await screen.findByText('Manejo de equipaje', { selector: 'strong' });
+    expect(facts()).toEqual({ 'Vigente desde': '08/10/2026', Hasta: 'Sin fecha de fin', Nota: 'Sin nota' });
+    expect(screen.queryByLabelText('Vigente desde')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Precio de BAGGAGE')).not.toBeInTheDocument();
+    unmount();
+    renderPage();
+    expect(await screen.findByLabelText('Vigente desde')).toHaveValue('2026-10-08');
+    expect(screen.getByLabelText('Hasta (opcional)')).toHaveValue('');
+    expect(screen.getByLabelText('Nota')).toHaveValue('');
+    expect(screen.queryByRole('term')).not.toBeInTheDocument();
+    expect(screen.getByText('Manejo de equipaje', { selector: 'strong' }).closest('td'))
+      .toHaveTextContent(/^Manejo de equipaje\s*BAGGAGE$/);
+  });
+});
+
 describe('latestPublishedStart', () => {
   it('ignores drafts and returns the latest published or superseded start', async () => {
     const { latestPublishedStart } = await import('./ServiceTariffsPage');

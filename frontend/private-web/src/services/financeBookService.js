@@ -138,3 +138,20 @@ export function formatMoney(value, currency) {
   if (!Number.isFinite(number)) return '—';
   return `${currency ? `${currency} ` : ''}${number.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
+/** What a time or unit based charge is priced by. A fixed amount and a percentage need no word. */
+const CHARGE_PRICED_BY = Object.freeze({ PerHour: 'Por hora', PerMinute: 'Por minuto', PerUnit: 'Por unidad' });
+
+/**
+ * A charge value with its currency or unit, naming the method once, so a screen shows it without the method beside
+ * it (N34): «Por hora: USD 40.00», «USD 15.00» for a fixed amount and «25 %» for a percentage of the service, which
+ * has no currency. A method the screen does not know keeps the amount; a missing or unreadable value is «—».
+ */
+export function formatChargeValue(method, value, currency) {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  if (method === 'PercentOfService') return `${number.toLocaleString('es-DO', { maximumFractionDigits: 4 })} %`;
+  const amount = formatMoney(number, currency);
+  return Object.hasOwn(CHARGE_PRICED_BY, method) ? `${CHARGE_PRICED_BY[method]}: ${amount}` : amount;
+}

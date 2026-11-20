@@ -12,7 +12,7 @@ import {
 } from '../../../services/commercialGovernanceApi';
 import { billingUnitLabel } from '../../../services/billingUnits';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
-import { listBillingUnits } from '../../../services/financeBookService';
+import { formatChargeValue, formatMoney, listBillingUnits } from '../../../services/financeBookService';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftProblemMessage } from './draftProblemMessages';
 import { afterFinanceApproval } from '../approvalEffect';
@@ -39,6 +39,8 @@ const staleDraft = failure => failure?.status === 404 || (isConflict(failure) &&
 const goneDraft = failure => failure?.status === 404 || (isConflict(failure) && failure.code === 'draft_closed');
 /** 1-N07: only an exclusion or a plain percentage survives a change of currency; an amount goes back to the base. */
 const repricedByCurrency = charge => charge.mode === 'negotiated' && charge.method !== 'PercentOfService';
+/** Finance has no base price or amount for it in the currency the draft has saved. */
+const noBase = value => value === null || value === undefined;
 
 /**
  * Contract drafts of Contratos (phase 1, block B): the list, and the editor of one draft with its
@@ -258,9 +260,10 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
           <p className="text-xs text-text-secondary-light">Parten de la tarifa base de Finanzas en {draft.currencyCode}; Finanzas revisa las diferencias antes de aprobar.</p>
           {form.rates.map((rate, index) => {
             const diff = difference(rate.unitPrice, rate.basePrice);
+            // N34: Finance's base comes in the currency the draft has saved, also while another one is being chosen.
             return <div key={rate.id} className="mt-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
               <div className="flex flex-wrap items-baseline justify-between gap-2"><strong className="text-sm">{rate.serviceName}{retiredRates.has(rate.id) && <span className="ml-2 rounded-full bg-status-danger/10 px-2 py-0.5 text-[11px] font-semibold text-status-danger">Retirado</span>}</strong>
-                <span className="text-xs text-text-secondary-light">Base {rate.basePrice === null || rate.basePrice === undefined ? 'sin tarifa' : rate.basePrice}{diff !== null && <span className={diff < 0 ? ' text-status-danger' : ' text-status-success'}> · {diff > 0 ? '+' : ''}{diff} %</span>}</span></div>
+                <dl className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-text-secondary-light"><dt className="font-semibold">Tarifa base</dt><dd className="tabular-nums">{noBase(rate.basePrice) ? 'Sin importe' : formatMoney(rate.basePrice, draft.currencyCode)}{diff !== null && <span className={diff < 0 ? 'text-status-danger' : 'text-status-success'}> · {diff > 0 ? '+' : ''}{diff} %</span>}</dd></dl></div>
               {retiredRates.has(rate.id) && <p className="mt-1 text-xs text-status-danger">Servicio dado de baja del catálogo: quítelo del alcance antes de enviar a Finanzas.</p>}
               <div className="mt-2 grid grid-cols-1 gap-2 min-[400px]:grid-cols-3">
                 <label className="text-[11px]">Unidad<select required value={rate.billingUnit} onChange={event => updateRate(index, { billingUnit: event.target.value })} className={fieldClass}>
@@ -273,7 +276,9 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
         {form.charges.length > 0 && <div><h3 className="text-sm font-bold">Cargos y recargos</h3>
           <p className="text-xs text-text-secondary-light">Sin cambios se aplica el tarifario de cargos de Finanzas.</p>
           {form.charges.map(charge => <div key={charge.chargeId} className="mt-2 grid grid-cols-1 items-end gap-2 rounded-lg border border-black/10 p-3 text-xs dark:border-white/10 min-[400px]:grid-cols-[minmax(0,1fr)_9rem_7rem]">
-            <span><strong>{charge.code}</strong> · {charge.name}<span className="block text-text-secondary-light">Base {charge.baseValue ?? 'sin importe'}{charge.method === 'PercentOfService' ? ' %' : ''}</span>{currencyChanged && repricedByCurrency(charge) && <span className="block text-status-warning">Vuelve a la tarifa base en {form.currencyCode} al guardar.</span>}</span>
+            <div className="min-w-0"><p><strong>{charge.name}</strong>{' '}<span className="text-text-secondary-light">{charge.code}</span></p>
+              <dl className="flex flex-wrap items-baseline gap-x-1.5 text-text-secondary-light"><dt className="font-semibold">Tarifa base</dt><dd className="tabular-nums">{noBase(charge.baseValue) ? 'Sin importe' : formatChargeValue(charge.method, charge.baseValue, draft.currencyCode)}</dd></dl>
+              {currencyChanged && repricedByCurrency(charge) && <p className="text-status-warning">Vuelve a la tarifa base en {form.currencyCode} al guardar.</p>}</div>
             <label>Trato<select aria-label={`Trato de ${charge.code}`} value={charge.mode} onChange={event => updateCharge(charge.chargeId, { mode: event.target.value, value: event.target.value === 'negotiated' ? (charge.value ?? charge.baseValue ?? 0) : charge.value })} className={fieldClass}>
               <option value="base">Tarifa base</option><option value="negotiated">Negociado</option><option value="excluded">Excluido</option></select></label>
             {charge.mode === 'negotiated' ? <label>Importe<input aria-label={`Importe de ${charge.code}`} type="number" min="0" step="0.01" required value={charge.value ?? ''} onChange={event => updateCharge(charge.chargeId, { value: event.target.value })} className={fieldClass} /></label> : <span />}

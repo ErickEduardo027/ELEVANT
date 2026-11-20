@@ -9,7 +9,7 @@ import Tabs from '../../../components/Tabs';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
-import { latestPublishedStart, tariffCommandKeys, VersionList } from '../tariffs/ServiceTariffsPage';
+import { latestPublishedStart, tariffCommandKeys, VersionFacts, VersionList } from '../tariffs/ServiceTariffsPage';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeTariffMessage } from '../../../services/financeErrors';
 import {
@@ -167,7 +167,7 @@ function Catalog({ perms }) {
             <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-3">Cargo</th><th className="p-3">Categoría</th><th className="p-3">Cálculo</th><th className="p-3">Alcance</th><th className="p-3">Estado</th>{perms.update && <th className="p-3">Acción</th>}</tr></thead>
             <tbody>{charges.map(charge => (
               <tr key={charge.id} className="border-t border-black/5 dark:border-white/5">
-                <td className="p-3"><strong>{charge.code}</strong><span className="block text-xs text-text-secondary-light">{charge.name}</span></td>
+                <td className="p-3"><strong>{charge.name}</strong><span className="block text-xs text-text-secondary-light">{charge.code}</span></td>
                 <td className="p-3">{CATEGORY_LABELS[charge.category] ?? charge.category}</td>
                 <td className="p-3 text-xs">{METHOD_LABELS[charge.method]} · {RULE_LABELS[charge.quantityRule]}{charge.graceMinutes ? ` · gracia ${charge.graceMinutes} min` : ''}</td>
                 <td className="p-3 text-xs">{charge.appliesToAllServices ? 'Todos los servicios' : `${charge.serviceIds.length} servicio(s)`}{charge.visibleToAgents ? '' : ' · oculto en rampa'}</td>
@@ -303,13 +303,14 @@ function ChargeTariff({ perms }) {
           <VersionList versions={versions} selectedId={selectedId} onSelect={setSelectedId} />
           {detail && (
             <section className="min-w-0 space-y-3 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
-              <label className="block max-w-xs text-xs font-semibold">Vigente desde<input type="date" disabled={!editable} value={validFrom} onChange={event => setValidFrom(event.target.value)} className={fieldClass} /></label>
+              {editable ? <label className="block max-w-xs text-xs font-semibold">Vigente desde<input type="date" value={validFrom} onChange={event => setValidFrom(event.target.value)} className={fieldClass} /></label>
+                : <VersionFacts facts={[['Vigente desde', formatBusinessDate(detail.summary.validFrom)]]} />}
               <StackedTable>
                 <table className="table-stack w-full min-w-[560px] text-left text-sm">
                   <thead className="text-xs uppercase text-text-secondary-light"><tr><th className="p-2">Cargo</th><th className="p-2">Cálculo</th><th className="p-2">Importe</th><th className="p-2">Mínimo</th></tr></thead>
                   <tbody>{rows.map(({ charge, rate }) => (
                     <tr key={charge.id} className="border-t border-black/5 dark:border-white/5">
-                      <td className="p-2"><strong>{charge.code}</strong><span className="block text-xs text-text-secondary-light">{charge.name}</span></td>
+                      <td className="p-2"><strong>{charge.name}</strong><span className="block text-xs text-text-secondary-light">{charge.code}</span></td>
                       <td className="p-2 text-xs">{METHOD_LABELS[charge.method]}</td>
                       <td className="p-2">{editable ? <input aria-label={`Importe de ${charge.code}`} type="number" min="0" step="0.01" value={rate?.value ?? ''} placeholder="Sin importe" onChange={event => setRate(charge, { value: event.target.value })} className={fieldClass} />
                         : rate ? (charge.method === 'PercentOfService' ? `${rate.value} %` : formatMoney(rate.value, detail.summary.currencyCode)) : '—'}</td>

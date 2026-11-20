@@ -292,6 +292,42 @@ it('warns which negotiated charges go back to the Finance base when the currency
   expect(screen.getAllByText('Vuelve a la tarifa base en DOP al guardar.')).toHaveLength(1);
 });
 
+it('writes the Finance base of each rate and charge in the currency the draft has saved, names first (N34)', async () => {
+  getManagedDrafts.mockResolvedValue([draft({
+    rates: [{ id: 'rate-1', serviceName: 'Rampa', billingUnit: 'operation', unitPrice: 104, minimumQuantity: 1,
+      isConfirmed: false, basePrice: 130, baseMinimum: 1 }],
+    charges: [
+      { chargeId: 'ch-fee', code: 'ADMIN-FEE', name: 'Cargo administrativo', method: 'FixedAmount', baseValue: 15, isExcluded: false, value: null },
+      { chargeId: 'ch-delay', code: 'DELAY', name: 'Espera', method: 'PerHour', baseValue: 40, isExcluded: true, value: null },
+      { chargeId: 'ch-night', code: 'NIGHT', name: 'Recargo nocturno', method: 'PercentOfService', baseValue: 15, isExcluded: false, value: 20 },
+      { chargeId: 'ch-tow', code: 'TOW-WAIT', name: 'Espera del remolque', method: 'PerMinute', baseValue: null, isExcluded: false, value: null },
+    ] })]);
+  const facts = region => Object.fromEntries(within(region).getAllByRole('term')
+    .map(term => [term.textContent, term.nextElementSibling.textContent]));
+  const rateBase = () => facts(screen.getByText('Rampa', { selector: 'strong' }).parentElement);
+  const charge = name => {
+    const title = screen.getByText(name, { selector: 'strong' }).parentElement;
+    return { title: title.textContent, ...facts(title.parentElement) };
+  };
+  const bases = () => ({ rate: rateBase(), charges: ['Cargo administrativo', 'Espera', 'Recargo nocturno', 'Espera del remolque']
+    .map(charge) });
+  await open();
+  const saved = {
+    rate: { 'Tarifa base': 'USD 130.00 · -20 %' },
+    charges: [
+      { title: 'Cargo administrativo ADMIN-FEE', 'Tarifa base': 'USD 15.00' },
+      { title: 'Espera DELAY', 'Tarifa base': 'Por hora: USD 40.00' },
+      { title: 'Recargo nocturno NIGHT', 'Tarifa base': '15 %' },
+      { title: 'Espera del remolque TOW-WAIT', 'Tarifa base': 'Sin importe' },
+    ],
+  };
+  expect(bases()).toEqual(saved);
+  // An unsaved change of currency does not relabel Finance's base: it stays in the currency the draft has saved.
+  await userEvent.selectOptions(screen.getByLabelText('Moneda'), 'DOP');
+  expect(bases()).toEqual(saved);
+  expect(screen.getByText(/Parten de la tarifa base de Finanzas en USD/)).toBeInTheDocument();
+});
+
 it('shows why a discard failed inside its dialog and keeps the message once the draft left the list', async () => {
   discardContractDraft.mockRejectedValueOnce(failure(409, 'version_conflict')).mockRejectedValueOnce(failure(409, 'draft_closed'));
   await open({ canDiscard: true });

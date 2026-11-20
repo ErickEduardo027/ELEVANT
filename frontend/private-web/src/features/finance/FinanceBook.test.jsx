@@ -37,6 +37,15 @@ function renderWith(ui, codes = DepartmentPermissionCodes.finance) {
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+/** The «term → value» pairs of a record. */
+const facts = region => Object.fromEntries(within(region).getAllByRole('term')
+  .map(term => [term.textContent, term.nextElementSibling.textContent]));
+/** A charge of «Cargos en este contrato», found by its name: its title line and its values. */
+function contractCharge(name) {
+  const title = screen.getByText(name, { selector: 'strong' }).parentElement;
+  return { title: title.textContent, ...facts(title.closest('li')) };
+}
+
 describe('ContractApprovalsPage', () => {
   const summary = { versionId: 'v-1', contractId: 'c-1', contractCode: 'QA-1', airline: 'Demo Airlines', currencyCode: 'USD',
     validFrom: '2026-09-01', validTo: null, status: 'PendingFinanceApproval', submittedAt: '2026-10-08T10:00:00Z',
@@ -53,7 +62,8 @@ describe('ContractApprovalsPage', () => {
     renderWith(<ContractApprovalsPage />);
     await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
     expect(await screen.findByText('-20 %')).toBeInTheDocument();
-    expect(screen.getByText(/negociado 20 \(base 25\)/)).toBeInTheDocument();
+    // N34: the negotiated percentage beside the base one, each with its sign.
+    expect(contractCharge('Nocturno')).toEqual({ title: 'Nocturno NIGHT', Contrato: '20 %', 'Tarifa base': '25 %' });
     await userEvent.click(screen.getByRole('button', { name: 'Devolver a Contratos' }));
     await userEvent.click(screen.getByRole('button', { name: 'Devolver' }));
     expect(decideContractApproval).not.toHaveBeenCalled();
@@ -200,6 +210,38 @@ describe('ContractApprovalsPage', () => {
     expect(screen.queryByText(/2026-09-01|2027-08-31/)).not.toBeInTheDocument();
   });
 
+  it('names each service and charge first and writes every charge value with its currency or unit (N34)', async () => {
+    listContractApprovals.mockResolvedValue([summary]);
+    getContractApproval.mockResolvedValue({ summary, terms: null, stations: ['PUJ'], history: [],
+      rates: [{ rateId: 'r-1', serviceCode: 'BAGGAGE', serviceName: 'Manejo de equipaje', billingUnit: 'operation',
+        contractPrice: 104, contractMinimum: 1, basePrice: 130, baseMinimum: 1, differencePercent: -20 }],
+      charges: [
+        { chargeId: 'ch-fee', chargeCode: 'ADMIN-FEE', chargeName: 'Cargo administrativo', method: 'FixedAmount',
+          isExcluded: false, contractValue: null, baseValue: 15 },
+        { chargeId: 'ch-delay', chargeCode: 'DELAY', chargeName: 'Espera', method: 'PerHour', isExcluded: false,
+          contractValue: 50, baseValue: 40 },
+        { chargeId: 'ch-gpu', chargeCode: 'GPU-LATE', chargeName: 'Planta fuera de horario', method: 'FixedAmount',
+          isExcluded: true, contractValue: null, baseValue: 30 },
+        { chargeId: 'ch-tow', chargeCode: 'TOW-WAIT', chargeName: 'Espera del remolque', method: 'PerMinute',
+          isExcluded: false, contractValue: null, baseValue: null },
+      ] });
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    // The name is the title and the code the secondary text (D-N34).
+    expect((await screen.findByText('Manejo de equipaje', { selector: 'strong' })).closest('td'))
+      .toHaveTextContent(/^Manejo de equipaje\s*BAGGAGE$/);
+    expect(contractCharge('Cargo administrativo')).toEqual({ title: 'Cargo administrativo ADMIN-FEE',
+      Contrato: 'Se aplica la tarifa base', 'Tarifa base': 'USD 15.00' });
+    expect(contractCharge('Espera')).toEqual({ title: 'Espera DELAY', Contrato: 'Por hora: USD 50.00',
+      'Tarifa base': 'Por hora: USD 40.00' });
+    expect(contractCharge('Planta fuera de horario')).toEqual({ title: 'Planta fuera de horario GPU-LATE',
+      Contrato: 'Excluido', 'Tarifa base': 'USD 30.00' });
+    expect(contractCharge('Espera del remolque')).toEqual({ title: 'Espera del remolque TOW-WAIT',
+      Contrato: 'Se aplica la tarifa base', 'Tarifa base': 'Sin importe' });
+    // No bare number, and the method is not said twice: «DELAY · Por hora: tarifa base 40» is gone.
+    expect(screen.queryByText(/tarifa base \d|negociado \d|Por hora: tarifa/)).not.toBeInTheDocument();
+  });
+
   it('names package scopes, units and replaced versions in Spanish (1-N26)', async () => {
     const replaced = { ...summary, versionId: 'v-0', status: 'Superseded', airline: 'Old Airlines' };
     listContractApprovals.mockResolvedValue([replaced]);
@@ -302,6 +344,54 @@ describe('ChargesPage tariff dates (N36)', () => {
       + 'publicada. Cambie «Vigente desde» y guarde.')).toBeInTheDocument();
     expect(publishChargeTariff).not.toHaveBeenCalled();
     expect(getChargeTariff).toHaveBeenCalledWith('ct-2');
+  });
+});
+
+describe('ChargesPage names and read-only versions (N34)', () => {
+  const delay = { id: 'ch-delay', code: 'DELAY', name: 'Espera', description: null, category: 'AdditionalCharge',
+    method: 'PerHour', quantityRule: 'ArrivalDelay', graceMinutes: 15, roundingIncrement: 0.25, appliesToAllServices: true,
+    serviceIds: [], allowMultiple: false, visibleToAgents: true, isActive: true, billingUnit: 'hour', version: 'c1' };
+  const published = { id: 'ct-1', currencyCode: 'USD', status: 'Published', validFrom: '2026-10-01', validTo: null,
+    note: null, rateCount: 1, publishedBy: 'Finanzas', publishedAt: '2026-09-20T12:00:00Z', version: 'v1' };
+  const cellsOf = name => within(screen.getByText(name, { selector: 'strong' }).closest('tr')).getAllByRole('cell')
+    .map(cell => cell.textContent);
+
+  it('names each charge of the catalog first, with its code as secondary text', async () => {
+    listCharges.mockResolvedValue([delay]);
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    renderWith(<ChargesPage />);
+    expect((await screen.findByText('Espera', { selector: 'strong' })).closest('td')).toHaveTextContent(/^Espera\s*DELAY$/);
+  });
+
+  it('shows a published version as text, not as fields that look editable', async () => {
+    listCharges.mockResolvedValue([delay]);
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    listChargeTariffs.mockResolvedValueOnce([published]);
+    getChargeTariff.mockResolvedValueOnce({ summary: published, rates: [{ chargeId: 'ch-delay', chargeCode: 'DELAY',
+      chargeName: 'Espera', method: 'PerHour', value: 40, minimumAmount: 0 }] });
+    renderWith(<ChargesPage />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Importes' }));
+    await screen.findByText('Espera', { selector: 'strong' });
+    expect(cellsOf('Espera')).toEqual([expect.stringMatching(/^Espera\s*DELAY$/), 'Por hora', 'USD 40.00', 'USD 0.00']);
+    expect(facts(document.body)).toEqual({ 'Vigente desde': '01/10/2026' });
+    expect(screen.queryByLabelText('Vigente desde')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the fields of a draft its account can edit', async () => {
+    listCharges.mockResolvedValue([delay]);
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    const draft = { ...published, id: 'ct-2', status: 'Draft', validFrom: '2026-11-15', publishedBy: null, publishedAt: null };
+    listChargeTariffs.mockResolvedValueOnce([draft]);
+    getChargeTariff.mockResolvedValueOnce({ summary: draft, rates: [] });
+    renderWith(<ChargesPage />);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Importes' }));
+    expect(await screen.findByLabelText('Vigente desde')).toHaveValue('2026-11-15');
+    expect(screen.getByLabelText('Importe de DELAY')).toHaveAttribute('placeholder', 'Sin importe');
+    expect(screen.queryByRole('term')).not.toBeInTheDocument();
   });
 });
 

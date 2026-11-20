@@ -82,6 +82,24 @@ it('keeps the Problem Details code of a refused report export', async () => {
     .rejects.toMatchObject({ status: 500, code: undefined });
 });
 
+it('writes a charge value with its currency or unit, naming the method only once (N34)', async () => {
+  const { formatChargeValue } = await import('./financeBookService');
+  expect(formatChargeValue('PerHour', 40, 'USD')).toBe('Por hora: USD 40.00');
+  expect(formatChargeValue('PerMinute', '1.5', 'DOP')).toBe('Por minuto: DOP 1.50');
+  expect(formatChargeValue('PerUnit', 5, 'USD')).toBe('Por unidad: USD 5.00');
+  // A fixed amount is the amount itself; zero is a courtesy price, not a missing one.
+  expect(formatChargeValue('FixedAmount', 1500, 'USD')).toBe('USD 1,500.00');
+  expect(formatChargeValue('FixedAmount', 0, 'USD')).toBe('USD 0.00');
+  // A percentage of the service has no currency: the sign says how it applies.
+  expect(formatChargeValue('PercentOfService', 25, 'USD')).toBe('25 %');
+  expect(formatChargeValue('PercentOfService', '12.5', 'DOP')).toBe('12.5 %');
+  // A method the screen does not know keeps the amount with its currency, never a bare number.
+  for (const method of ['PerFlight', 'constructor', undefined])
+    expect(formatChargeValue(method, 10, 'USD')).toBe('USD 10.00');
+  for (const missing of [null, undefined, '', 'sin importe'])
+    expect(formatChargeValue('PerHour', missing, 'USD')).toBe('—');
+});
+
 it('no longer offers the retired preinvoice edits nor the legacy payment and credit note (4-A, 4-N12)', async () => {
   const book = await import('./financeBookService');
   for (const retired of ['editPreinvoiceLine', 'addPreinvoiceAdjustment', 'issueCreditNote', 'recordPartialPayment'])
