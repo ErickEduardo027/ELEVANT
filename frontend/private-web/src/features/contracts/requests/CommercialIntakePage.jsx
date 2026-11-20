@@ -217,9 +217,11 @@ function EmailAddress({ value }) {
 function AirlineSection({ request, canVerify, busy, onVerify }) {
   const proposal = request.proposedAirline;
   const linked = Boolean(request.airlineProfileId);
-  // Who verified the identity (N35): Superadministración by hand, as the API reports, or else Contratos.
+  // Who verified the identity (N35): Superadministración by hand, as the API reports. Otherwise the inbox cannot tell
+  // Contratos from a superadministrator who lost the role since (manualVerification follows the current role), so the
+  // title names no one.
   const identityTitle = !request.airlineVerified ? 'Identidad legal pendiente de verificación'
-    : request.manualVerification ? 'Identidad verificada a mano por Superadministración' : 'Identidad verificada por Contratos';
+    : request.manualVerification ? 'Identidad verificada a mano por Superadministración' : 'Identidad verificada';
   const [mode, setMode] = useState('create');
   const [editing, setEditing] = useState(!request.airlineVerified);
   // What the applicant proposed fills the form until Contratos confirms it; its website is only a starting source.

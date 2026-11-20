@@ -181,7 +181,11 @@ Ahora:
   del UUID del contrato; la bandeja no recibe su código.
 - **Quién verificó la aerolínea.** Si Superadministración verificó la ficha a
   mano, la identidad se titula «Identidad verificada a mano por
-  Superadministración», no «por Contratos». «Registros públicos» dice «✓
+  Superadministración». Si no, se titula solo «Identidad verificada», sin
+  autor: la bandeja no dice quién verificó, y la verificación de un
+  superadministrador que perdió el rol o cuya cuenta está deshabilitada o
+  bloqueada deja de contar como manual (ADR-0023), así que «por Contratos»
+  podría ser falso. «Registros públicos» dice «✓
   Verificada a mano por Superadministración el … · fuente …», con la fecha y la
   hora de la verificación y la dirección tal cual. La fuente nunca se llama
   oficial: OpenFlights vale solo como verificación manual con su fuente a la

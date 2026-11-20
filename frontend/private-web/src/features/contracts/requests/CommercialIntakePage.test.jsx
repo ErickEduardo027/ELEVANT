@@ -423,10 +423,14 @@ it('names who verified the airline by hand, when and with which source, and that
     '✓ Verificada a mano por Superadministración (al aprobar no se consulta a los registros públicos)')).toBeInTheDocument();
 });
 
-it('keeps «verificada por Contratos» and the check at approval when Superadministración did not verify it (N35)', async () => {
+it('names no author and keeps the check at approval when the API reports no manual verification (N35)', async () => {
   const review = await open({ ...base, status: 'InReview', airlineVerified: true,
     verificationSourceUrl: 'https://www.copaair.com/' });
-  expect(within(review).getByText('Identidad verificada por Contratos')).toBeInTheDocument();
+  // Without manualVerification the inbox cannot tell Contratos from a superadministrator who lost the role since
+  // (or is locked out now), so the title credits no one; «Fuente» still shows the source.
+  const title = within(review).getByText(/^Identidad verificada/, { selector: 'strong' });
+  expect(title).toHaveTextContent(/^Identidad verificada$/);
+  expect(title).not.toHaveTextContent(/por Contratos|a mano/);
   expect(within(review).getByText('Se comprobará automáticamente al aprobar.')).toBeInTheDocument();
   expect(within(review).queryByText(/Verificada a mano|no se consulta/)).not.toBeInTheDocument();
   expect(within(review).getByText('✓ Identidad de la aerolínea verificada con su fuente')).toBeInTheDocument();
