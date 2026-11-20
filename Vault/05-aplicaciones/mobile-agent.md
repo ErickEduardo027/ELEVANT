@@ -148,6 +148,13 @@ La app sigue la orientación del dispositivo. Según la
   seleccionado;
 - entre 600 y 899 dp, la lista usa dos columnas.
 
+`android/` no se versiona: se regenera desde `app.json` con
+`npx expo prebuild --clean`
+([README del cliente](../../frontend/mobile-agent/README.md)). Una copia generada
+antes de `fce328ca`, cuando `app.json` fijaba el vertical, deja la app bloqueada
+en vertical. En la corrida del VPS del 16 de noviembre, el letterbox en
+horizontal salió de una copia así, no de las pantallas.
+
 Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
 lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
 
@@ -559,6 +566,34 @@ Las [pruebas](../../frontend/mobile-agent/tests/operation-documents.test.js) cub
 - el formulario que cambió, que queda retenido;
 - el almacenamiento de fotos caído, que deja la foto pendiente;
 - la última vista del servidor guardada por operación.
+
+**La hoja de firma con los botones al alcance.** Posterior al commit verificado
+de esta nota (hallazgo S2 de la corrida del VPS del 16 de noviembre, decisión
+D-S2). En horizontal, FIRMAR y CANCELAR quedaban bajo el pliegue y la hoja no
+tenía cabecera. Ahora la hoja usa el
+[marco de hoja](../../frontend/mobile-agent/src/components/sheet-frame.tsx):
+
+- una cabecera fija con el formulario y «Cerrar sin firmar»; el botón atrás de
+  Android también cierra sin firmar;
+- un cuerpo que se desplaza, con el nombre y la cédula al principio, donde el
+  pie no los tapa, después los datos y al final el pad;
+- un pie fijo con la huella, CANCELAR y FIRMAR, en fila desde 600 dp y apilado
+  en compact;
+- el área segura, que deja la cabecera y el pie fuera de las barras del
+  sistema, y las cuatro orientaciones también en iOS.
+
+Un desplazamiento que empezaba sobre el pad dejaba un trazo suelto y bloqueaba
+el desplazamiento de la hoja.
+
+- Solo un dedo levantado guarda un trazo. Si la hoja se queda con el gesto, el
+  trazo en curso se descarta y la hoja vuelve a desplazarse; los trazos ya
+  hechos se conservan.
+- «Borrar firma» borra también el trazo en curso.
+- El pad mide como máximo 720 dp de ancho, centrado y en 3:1.
+- Sin dos columnas en pantallas anchas (D-S2).
+- Lo cubren las
+  [pruebas de la hoja](../../frontend/mobile-agent/tests/operation-documents-sheet.test.js).
+- La APK instalada conserva la hoja anterior hasta que se instale la nueva.
 
 ## Fase 3, bloque 5: recargos automáticos
 

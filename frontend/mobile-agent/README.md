@@ -93,6 +93,10 @@ contiene secretos.
 - La app sigue la orientación del dispositivo. `src/utils/layout-class.ts`
   clasifica el ancho: desde 900 dp el inicio muestra la lista junto al
   manifiesto (`OperationDetail`), y entre 600 y 899 dp usa dos columnas.
+  `android/` no se versiona: se regenera con `npx expo prebuild --clean`. Un
+  `android/` generado antes de fce328ca, cuando `app.json` decía
+  `"orientation": "portrait"`, deja la app bloqueada en vertical; esa fue la
+  causa del letterbox en horizontal de la corrida del VPS del 16 de noviembre.
 - Tras la primera carga las pantallas revalidan en segundo plano sin spinner a
   pantalla completa. Los sondeos usan `startForegroundInterval` y se pausan con
   la app en segundo plano.
@@ -201,6 +205,28 @@ contiene secretos.
     (`operationDate`); sin él, todas las horas llevan su fecha.
   - Se mantienen los contadores de revisión, y las horas se siguen escribiendo
     a mano: D-N8 deja el selector de hora para otra entrega.
+- La hoja de firma con los botones siempre al alcance (hallazgo S2, D-S2):
+  - `src/components/sheet-frame.tsx` es el marco de las hojas a pantalla
+    completa: una cabecera fija con el título y un botón que cierra la hoja
+    («Cerrar sin firmar» en la de firma), un cuerpo que se desplaza y un pie
+    fijo con las acciones. Desde 600 dp el pie pone su nota y sus botones en
+    una fila; en compact los apila. El botón atrás de Android también cierra.
+    El marco sigue la orientación también en iOS (`supportedOrientations`) y
+    deja la cabecera y el pie fuera de las barras del sistema (`SafeAreaView`),
+    que un modal de Android cubre de borde a borde.
+  - La hoja de firma lleva en el pie la huella del documento, CANCELAR y
+    FIRMAR. El nombre y la cédula van al principio del cuerpo, donde el pie no
+    los tapa; después vienen los datos y, al final, el pad. Empezar un trazo no
+    cierra el teclado: el cambio de layout movería el pad bajo el primer trazo.
+  - El pad (`src/components/documents/signature-pad.tsx`) mide como máximo
+    720 dp de ancho, centrado, y conserva la proporción 3:1.
+  - Solo un dedo levantado guarda un trazo. Si el desplazamiento de la hoja se
+    queda con el gesto (un deslizamiento que empieza sobre el pad), el trazo
+    en curso se descarta y la hoja vuelve a desplazarse; los trazos ya hechos
+    se conservan. «Borrar firma» borra también el trazo en curso, y un pad que
+    sale de la pantalla a mitad de un trazo devuelve el desplazamiento.
+  - Sin dos columnas en pantallas anchas (D-S2) y sin
+    `react-native-gesture-handler`.
 
 ## Autorización y almacenamiento
 
@@ -430,6 +456,8 @@ El servidor registra la combinación dispositivo + clave y devuelve el mismo res
 ## Entrega APK y tiendas
 
 Antes de una APK compartida se deben fijar application ID, perfil Development, custodia de claves, versión, permisos, URL API y estrategia de actualización. Las claves de firma nunca se suben a Git. Un build Development no comparte URL, credenciales, storage ni firma con Production.
+
+Antes de construir una APK, `android/` se regenera desde `app.json` con `npx expo prebuild --clean`. Como no se versiona, una copia local puede quedar vieja: una generada antes de fce328ca fija `"orientation": "portrait"` y deja la app bloqueada en vertical, aunque `app.json` diga `"default"` y las pantallas sigan la orientación del dispositivo.
 
 Play Store/App Store será una fase posterior con identificadores estables, políticas de privacidad, ficha, firma administrada, pruebas internas/cerradas y promoción controlada. La URL privada del tailnet no se usará como endpoint de una app pública de Production.
 

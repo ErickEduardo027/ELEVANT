@@ -147,5 +147,20 @@ el día en la estación (Katmandú) y no el de UTC ni el del equipo. Los dos
 contadores de revisión siguen. `attendance-draft-screen.test.js` comprueba que
 el detalle pasa el día de la operación a la tarjeta.
 
+`operation-documents-sheet.test.js` monta el panel de formularios y abre la hoja
+de firma con el FIRMAR de la fila del rol (S2, D-S2). Comprueba que FIRMAR,
+CANCELAR y la huella quedan en el pie fijo, fuera del `ScrollView`, también en
+compact; que el pie va en fila desde medium; que la hoja sigue la orientación y
+usa el área segura; que «Cerrar sin firmar» y el botón atrás cierran sin firmar,
+y que el nombre va antes de los datos y del pad. Con el `PanResponder` real y
+eventos de toque simulados, comprueba que un trazo que termina en
+`onResponderTerminate` (el `ScrollView` se queda con el gesto) devuelve el
+desplazamiento y no deja trazo, que los trazos ya hechos se conservan, que
+«Borrar firma» deja solo la línea base aunque haya un trazo en curso, que un pad
+que se desmonta a mitad de un trazo devuelve el desplazamiento y que el pad mide
+como máximo 720 dp en 3:1. Las guardas: solo se firman los trazos visibles, el
+charter exige la cédula normalizada y empezar un trazo no cierra el teclado.
+`react-native-svg` se simula con componentes host para contar los trazos.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

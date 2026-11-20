@@ -22,6 +22,7 @@ import {
 import type { FlightReportOutboxItem } from '../../synchronization/flight-report-outbox';
 import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
+import { SheetFrame } from '../sheet-frame';
 import { PrimaryButton } from '../ui';
 import { SignaturePad, type Strokes } from './signature-pad';
 import { billingUnitAbbreviation } from '../../utils/billing-units';
@@ -183,58 +184,65 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
   const [drawing, setDrawing] = useState(false);
   const summary = document.summary;
   const ready = name.trim().length >= 2 && strokes.length > 0 && idValid;
+  const fingerprint = `${document.contentSha256.slice(0, 12)}…${document.contentSha256.slice(-6)}`;
+  // S2: FIRMAR and CANCELAR stay in the frame's fixed footer, within reach in landscape; only the body scrolls, and
+  // not while a finger is on the pad.
   return (
-    <Modal animationType="slide" visible onRequestClose={onClose}>
-      <ScrollView scrollEnabled={!drawing} contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
-        <Text style={styles.sheetEyebrow}>{ROLES[role]}</Text>
-        <Text style={styles.sheetTitle}>{TITLES[document.kind as OperationDocumentKind] ?? document.title} · {document.number}</Text>
-        <View style={styles.summary}>
-          <Fact label="Vuelos" value={[summary.flightIn, summary.flightOut].filter(Boolean).join(' / ') || '—'} />
-          <Fact label="Matrícula" value={summary.registration ?? '—'} />
-          <Fact label="Aeronave" value={summary.aircraftType ?? '—'} />
-          <Fact label="Posición" value={summary.position ?? '—'} />
-          <Fact label="Pasajeros" value={`${summary.passengersIn ?? '—'} llegan · ${summary.passengersOut ?? '—'} salen`} />
-          <Fact label="MTOW" value={summary.mtowKg ? `${summary.mtowKg.toLocaleString('es-DO')} kg` : '—'} />
-        </View>
-        {document.kind === 'ServiceOrder' || document.kind === 'CharterServiceRequest' ? (
-          <View style={styles.lines}>
-            {summary.services.length === 0 && <Text style={styles.hint}>Sin servicios registrados.</Text>}
-            {summary.services.map(line => (
-              <View key={line.code} style={styles.line}>
-                <Text style={styles.lineName}>{line.name}</Text>
-                <Text style={styles.lineQty}>{line.quantity.toLocaleString('es-DO')} {billingUnitAbbreviation(line.unit)}</Text>
-                <Text style={styles.lineAmount}>{money(line.amount, summary.currencyCode)}</Text>
-              </View>
-            ))}
-            {summary.surcharges.map(item => <Text key={item} style={styles.surcharge}>Recargo: {item}</Text>)}
-            <View style={styles.total}>
-              <Text style={styles.totalLabel}>Monto total</Text>
-              <Text style={styles.totalValue}>{money(summary.totalAmount, summary.currencyCode)}</Text>
+    <SheetFrame eyebrow={ROLES[role]}
+      title={`${TITLES[document.kind as OperationDocumentKind] ?? document.title} · ${document.number}`}
+      closeLabel="Cerrar sin firmar" onClose={onClose} scrollEnabled={!drawing}
+      footerNote={<Text style={styles.fingerprint}>{`Huella del documento ${fingerprint}`}</Text>}
+      actions={(
+        <>
+          <PrimaryButton secondary title="CANCELAR" onPress={onClose} />
+          <PrimaryButton icon="checkmark" title="FIRMAR" disabled={!ready}
+            onPress={() => onSign(name.trim(), strokes, asksIdentification ? normalizedId : undefined)} />
+        </>
+      )}>
+      {/* Who signs comes first, where the fixed footer never covers the fields. */}
+      <Text style={styles.fieldLabel}>Nombre de quien firma</Text>
+      <TextInput accessibilityLabel="Nombre de quien firma" value={name} onChangeText={setName} maxLength={120}
+        autoCapitalize="words" placeholder="Nombre y apellido" style={styles.input} />
+      {asksIdentification && (
+        <>
+          <Text style={styles.fieldLabel}>Cédula o pasaporte</Text>
+          <TextInput accessibilityLabel="Cédula o pasaporte" value={identification} onChangeText={setIdentification}
+            maxLength={44} autoCapitalize="characters" autoCorrect={false} placeholder="Número del documento" style={styles.input} />
+          {identification.length > 0 && !idValid && <Text style={styles.error}>Use solo letras, números o guiones (4 a 40).</Text>}
+        </>
+      )}
+      <View style={styles.summary}>
+        <Fact label="Vuelos" value={[summary.flightIn, summary.flightOut].filter(Boolean).join(' / ') || '—'} />
+        <Fact label="Matrícula" value={summary.registration ?? '—'} />
+        <Fact label="Aeronave" value={summary.aircraftType ?? '—'} />
+        <Fact label="Posición" value={summary.position ?? '—'} />
+        <Fact label="Pasajeros" value={`${summary.passengersIn ?? '—'} llegan · ${summary.passengersOut ?? '—'} salen`} />
+        <Fact label="MTOW" value={summary.mtowKg ? `${summary.mtowKg.toLocaleString('es-DO')} kg` : '—'} />
+      </View>
+      {document.kind === 'ServiceOrder' || document.kind === 'CharterServiceRequest' ? (
+        <View style={styles.lines}>
+          {summary.services.length === 0 && <Text style={styles.hint}>Sin servicios registrados.</Text>}
+          {summary.services.map(line => (
+            <View key={line.code} style={styles.line}>
+              <Text style={styles.lineName}>{line.name}</Text>
+              <Text style={styles.lineQty}>{line.quantity.toLocaleString('es-DO')} {billingUnitAbbreviation(line.unit)}</Text>
+              <Text style={styles.lineAmount}>{money(line.amount, summary.currencyCode)}</Text>
             </View>
+          ))}
+          {summary.surcharges.map(item => <Text key={item} style={styles.surcharge}>Recargo: {item}</Text>)}
+          <View style={styles.total}>
+            <Text style={styles.totalLabel}>Monto total</Text>
+            <Text style={styles.totalValue}>{money(summary.totalAmount, summary.currencyCode)}</Text>
           </View>
-        ) : (
-          <Text style={styles.hint}>
-            {summary.milestoneCount} tiempos · {summary.checklistAnswered}/{summary.checklistTotal} puntos del checklist ·{' '}
-            {summary.damageCount} daño(s) marcados
-          </Text>
-        )}
-        <Text style={styles.fieldLabel}>Nombre de quien firma</Text>
-        <TextInput accessibilityLabel="Nombre de quien firma" value={name} onChangeText={setName} maxLength={120}
-          autoCapitalize="words" placeholder="Nombre y apellido" style={styles.input} />
-        {asksIdentification && (
-          <>
-            <Text style={styles.fieldLabel}>Cédula o pasaporte</Text>
-            <TextInput accessibilityLabel="Cédula o pasaporte" value={identification} onChangeText={setIdentification}
-              maxLength={44} autoCapitalize="characters" autoCorrect={false} placeholder="Número del documento" style={styles.input} />
-            {identification.length > 0 && !idValid && <Text style={styles.error}>Use solo letras, números o guiones (4 a 40).</Text>}
-          </>
-        )}
-        <SignaturePad value={strokes} onChange={setStrokes} onDrawing={setDrawing} />
-        <Text style={styles.fingerprint}>Huella del documento {document.contentSha256.slice(0, 12)}…{document.contentSha256.slice(-6)}</Text>
-        <PrimaryButton icon="checkmark" title="FIRMAR" disabled={!ready} onPress={() => onSign(name.trim(), strokes, asksIdentification ? normalizedId : undefined)} />
-        <PrimaryButton secondary title="CANCELAR" onPress={onClose} />
-      </ScrollView>
-    </Modal>
+        </View>
+      ) : (
+        <Text style={styles.hint}>
+          {summary.milestoneCount} tiempos · {summary.checklistAnswered}/{summary.checklistTotal} puntos del checklist ·{' '}
+          {summary.damageCount} daño(s) marcados
+        </Text>
+      )}
+      <SignaturePad value={strokes} onChange={setStrokes} onDrawing={setDrawing} />
+    </SheetFrame>
   );
 }
 
@@ -382,7 +390,6 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.75 },
   sheet: { padding: space.xl, gap: space.md, backgroundColor: colors.background, flexGrow: 1 },
-  sheetEyebrow: { ...type.caption, color: colors.orange, textTransform: 'uppercase' },
   sheetTitle: { ...type.title, color: colors.navy, fontSize: 22 },
   summary: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   fact: { flexGrow: 1, flexBasis: 200, backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: space.md },
