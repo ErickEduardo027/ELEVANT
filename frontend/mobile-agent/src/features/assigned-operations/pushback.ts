@@ -1,11 +1,4 @@
-import {
-  FLIGHT_REPORT_MILESTONES,
-  FLIGHT_REPORT_PHASES,
-  type FlightReportPhase,
-  type OperationDocumentsResponse,
-} from '@elevant/api-client';
-import type { FlightReportOutboxItem } from '../../synchronization/flight-report-outbox';
-import { HANDOFF_REQUIRED_FORM } from './handoff';
+import { FLIGHT_REPORT_MILESTONES, FLIGHT_REPORT_PHASES, type FlightReportPhase } from '@elevant/api-client';
 
 /** The flight report's last milestone (ADR-0031): the aircraft leaves the stand. */
 export const PUSHBACK_MILESTONE = 'PUSHBACK';
@@ -29,7 +22,7 @@ export type PushbackConcernsInput = Readonly<{
   recorded: ReadonlySet<string>;
   /** The services as the agent left them on the device (3-I): a start still in the queue counts. */
   services: readonly Readonly<{ status: string }>[];
-  /** The Service Order already carries a signature on its content (`serviceOrderHasSignature`). */
+  /** The Service Order already carries a signature on its content (`serviceOrderHasSignature` in handoff.ts). */
   orderSigned: boolean;
 }>;
 
@@ -87,18 +80,4 @@ export function pushbackEffect(standCode: string | null | undefined) {
     ? `Registrarlo libera la posición ${standCode} en OCC, ${closes}. Corregir la hora después no vuelve a ocupar la ` +
       'posición.'
     : `Registrarlo ${closes}.`;
-}
-
-/**
- * Whether the operation's Service Order already carries a signature that the push-back would make stale (N2): one on
- * its current content, or one saved on the device that waits to be sent. A refused signature is not on the Order, and
- * a stale one has to be given again anyway. Forms the device has not read yet give no reason: the tablet cannot tell.
- */
-export function serviceOrderHasSignature(documents: OperationDocumentsResponse | undefined,
-  items: readonly FlightReportOutboxItem[], operationId: string) {
-  const order = documents?.documents.find(item => item.kind === HANDOFF_REQUIRED_FORM);
-  if ((order?.signatures?.length ?? 0) > 0) return true;
-  return items.some(item => item.state === 'pending' && item.command.kind === 'signature' &&
-    item.command.documentKind === HANDOFF_REQUIRED_FORM &&
-    item.command.operationId.toLowerCase() === operationId.toLowerCase());
 }

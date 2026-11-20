@@ -57,6 +57,22 @@ export function isServiceOrderSigned(documents: OperationForms) {
   return Boolean(order && order.isFullySigned && order.staleRoles.length === 0);
 }
 
+/**
+ * Whether the operation's Service Order already carries a signature that a change of its content makes stale: one on
+ * its current content, or one saved on the device that waits to be sent. The push-back's reasons (N2) and the
+ * flight-data warnings (S1) ask this same question, so one screen never gives two answers about the same Order. A
+ * refused signature is not on the Order, and a stale one has to be given again anyway. Before the forms are read, only
+ * what waits in the device's queue counts.
+ */
+export function serviceOrderHasSignature(documents: OperationForms | undefined,
+  items: readonly FlightReportOutboxItem[], operationId: string) {
+  const order = documents?.documents.find(item => item.kind === HANDOFF_REQUIRED_FORM);
+  if (order && (order.isFullySigned || (order.signatures?.length ?? 0) > 0)) return true;
+  return items.some(item => item.state === 'pending' && item.command.kind === 'signature' &&
+    item.command.documentKind === HANDOFF_REQUIRED_FORM &&
+    item.command.operationId.toLowerCase() === operationId.toLowerCase());
+}
+
 /** The statuses a service ends in; ELEVANT takes the hand-off only once every service reached one. */
 const FINISHED_SERVICE_STATUSES: ReadonlySet<string> = new Set(['Completed', 'NotPerformed', 'Exception']);
 
@@ -131,6 +147,11 @@ export type HandoffRequirementsInput = Readonly<{
   documents: OperationForms | undefined;
   /** Flight data the agent saved still waits in the device's queue (`flightDataQueuedFor`). */
   flightDataQueued?: boolean;
+  /**
+   * The Service Order already has a signature, on its current content or waiting in the device's queue
+   * (`serviceOrderHasSignature`); without it, only the signatures of the forms read count.
+   */
+  orderSigned?: boolean;
   /** What of the operation is still in the device's queue, waiting or refused. */
   waitingRecords: number;
 }>;
@@ -175,7 +196,7 @@ export function handoffRequirements(input: HandoffRequirementsInput): HandoffReq
   const order = input.documents?.documents.find(item => item.kind === HANDOFF_REQUIRED_FORM);
   const missingData = missingFlightData(order?.summary);
   const flightWarning = order && missingData ? orderFlightDataWarning(missingData, {
-    signed: order.isFullySigned || (order.signatures?.length ?? 0) > 0,
+    signed: input.orderSigned ?? (order.isFullySigned || (order.signatures?.length ?? 0) > 0),
     queued: input.flightDataQueued ?? false,
     // The close lists it only while the operation is in progress, when the card can still save the data.
     editable: true,

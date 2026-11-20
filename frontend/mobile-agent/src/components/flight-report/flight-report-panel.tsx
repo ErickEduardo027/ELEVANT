@@ -9,11 +9,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { serviceOrderHasSignature } from '../../features/assigned-operations/handoff';
 import {
   PUSHBACK_MILESTONE,
   pushbackConcerns,
   pushbackEffect,
-  serviceOrderHasSignature,
   type PushbackConcern,
 } from '../../features/assigned-operations/pushback';
 import {

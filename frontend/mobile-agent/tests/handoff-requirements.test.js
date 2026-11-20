@@ -14,6 +14,7 @@ const {
   handoffRequirements,
   isHandoffHold,
   isServiceFinished,
+  serviceOrderHasSignature,
 } = require('../src/features/assigned-operations/handoff');
 
 const OPERATION_ID = '70000000-0000-4000-8000-000000000005';
@@ -158,6 +159,14 @@ describe('the flight data on the Service Order (S1, D-S1)', () => {
       .toBe('Falta el MTOW en la Orden. Puedes entregar sin él; si lo guardas ahora, hay que volver a firmarla.');
   });
 
+  // The screen passes `serviceOrderHasSignature`, the push-back's rule (N2): a signature saved on the device covers the
+  // content the data would change, so the Order would be signed again too.
+  test('a signature waiting on the device says so too (orderSigned)', () => {
+    expect(requirement(ready({ documents: orderWith({ ...COMPLETE, mtowKg: null }, { isFullySigned: false,
+      signatures: [] }), orderSigned: true }), 'flightData').detail)
+      .toBe('Falta el MTOW en la Orden. Puedes entregar sin él; si lo guardas ahora, hay que volver a firmarla.');
+  });
+
   test('an Order not signed yet asks to write them before signing; only its signature holds the hand-off', () => {
     const requirements = handoffRequirements(ready({ documents: orderWith({ ...COMPLETE, mtowKg: null },
       { isFullySigned: false, signatures: [] }) }));
@@ -195,6 +204,37 @@ describe('the flight data on the Service Order (S1, D-S1)', () => {
     expect(flightDataQueuedFor([data('blocked')], OPERATION_ID)).toBe(false);
     expect(flightDataQueuedFor([data('pending', '70000000-0000-4000-8000-000000000009')], OPERATION_ID)).toBe(false);
     expect(flightDataQueuedFor([], OPERATION_ID)).toBe(false);
+  });
+});
+
+// One rule for «the Order already has a signature» (S1, N2): the flight-data warnings and the push-back's reasons ask
+// it, so the flight screen never gives two answers about the same Order.
+describe('whether the Service Order already has a signature (S1, N2)', () => {
+  const OTHER_OPERATION = '70000000-0000-4000-8000-000000000009';
+  const forms = (signatures, staleRoles = []) => ({ documents: [
+    { kind: 'ServiceOrder', isFullySigned: false, staleRoles, signatures }] });
+  const signature = (state, command = {}) => ({ idempotencyKey: '91000000-0000-4000-8000-000000000005', state,
+    attempts: 0, createdAt: '2026-10-05T14:30:00.000Z', command: { kind: 'signature', operationId: OPERATION_ID,
+      documentKind: 'ServiceOrder', role: 'AirlineRepresentative', signerName: 'Ana Pérez', ...command } });
+
+  test('a signature on its current content, or one waiting in the queue, counts', () => {
+    expect(serviceOrderHasSignature(forms([{ role: 'AirlineRepresentative' }]), [], OPERATION_ID)).toBe(true);
+    expect(serviceOrderHasSignature({ documents: [{ kind: 'ServiceOrder', isFullySigned: true, staleRoles: [] }] }, [],
+      OPERATION_ID)).toBe(true);
+    expect(serviceOrderHasSignature(forms([]), [signature('pending')], OPERATION_ID.toUpperCase())).toBe(true);
+    // Before the forms are read, the device still knows the signature it saved.
+    expect(serviceOrderHasSignature(undefined, [signature('pending')], OPERATION_ID)).toBe(true);
+  });
+
+  test('a refused or stale signature, another form’s, another operation’s or none do not', () => {
+    expect(serviceOrderHasSignature(forms([]), [signature('blocked')], OPERATION_ID)).toBe(false);
+    expect(serviceOrderHasSignature(forms([], ['AirlineRepresentative']), [], OPERATION_ID)).toBe(false);
+    expect(serviceOrderHasSignature(forms([]),
+      [signature('pending', { documentKind: 'FlightReport', role: 'Coordinator' })], OPERATION_ID)).toBe(false);
+    expect(serviceOrderHasSignature(forms([]), [signature('pending', { operationId: OTHER_OPERATION })], OPERATION_ID))
+      .toBe(false);
+    expect(serviceOrderHasSignature(forms([]), [], OPERATION_ID)).toBe(false);
+    expect(serviceOrderHasSignature(undefined, [], OPERATION_ID)).toBe(false);
   });
 });
 

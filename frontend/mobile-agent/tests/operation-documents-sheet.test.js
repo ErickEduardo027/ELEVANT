@@ -622,6 +622,25 @@ describe('the Service Order warns about missing flight data and never holds the 
     expect(textOf(warningIn(scroll(tree)))).toBe(textOf(rowWarning(tree)));
   });
 
+  // Signed without signal: the airline's signature waits in the queue and goes out before data saved after it, so the
+  // data would make it stale. The push-back's sheet already counts it (N2); the Order's row and sheet say the same.
+  test('a signature waiting on the device counts as signed; one ELEVANT refused does not', async () => {
+    const SIGNED = 'Faltan los pasajeros que llegan y el MTOW en la Orden. Si los guardas ahora en «Datos del vuelo», ' +
+      'hay que volver a firmarla.';
+    const waiting = state => [{ idempotencyKey: '91000000-0000-4000-8000-000000000011', state, attempts: 0,
+      createdAt: '2026-10-05T15:00:00.000Z', command: { kind: 'signature', operationId: OPERATION_ID,
+        documentKind: 'ServiceOrder', role: 'AirlineRepresentative', signerName: 'Ana Pérez' } }];
+    let tree = await render([incomplete()], { items: waiting('pending') });
+    expect(textOf(rowWarning(tree))).toBe(SIGNED);
+    await openSheet(tree, 'AVIAM · Responsable');
+    expect(textOf(warningIn(scroll(tree)))).toBe(SIGNED);
+    await renderer.act(async () => tree.unmount());
+
+    tree = await render([incomplete()], { items: waiting('blocked') });
+    expect(textOf(rowWarning(tree))).toBe(WRITE);
+    await renderer.act(async () => tree.unmount());
+  });
+
   test('0 passengers is a value: only the missing MTOW is said', async () => {
     const tree = await render([serviceOrderWith({ passengersIn: 0, passengersOut: 0, mtowKg: null })]);
     expect(textOf(rowWarning(tree))).toBe('Falta el MTOW en la Orden. Escríbelo en «Datos del vuelo» antes de firmar.');

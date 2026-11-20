@@ -11,7 +11,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Polygon, Text as SvgText } from 'react-native-svg';
-import { flightDataQueuedFor, isOptionalForHandoff } from '../../features/assigned-operations/handoff';
+import {
+  flightDataQueuedFor,
+  isOptionalForHandoff,
+  serviceOrderHasSignature,
+} from '../../features/assigned-operations/handoff';
 import { getMobileSessionRequestContext } from '../../services/mobile-auth';
 import {
   loadOperationDocuments,
@@ -81,14 +85,15 @@ function money(amount: number | null | undefined, currency: string | null | unde
 /**
  * S1 (D-S1): what the Service Order lacks of the flight data, said on its row and at the top of its signature sheet. It
  * never holds the signature: 0 passengers is a value and a missing MTOW only warns. Null for the other forms, for
- * complete data and for a form read without its summary.
+ * complete data and for a form read without its summary. `signed` is `serviceOrderHasSignature`, the push-back's rule:
+ * a signature waiting on the device counts.
  */
 function flightDataWarningFor(document: OperationDocumentResponse,
-  situation: Readonly<{ queued: boolean; executionOpen: boolean }>) {
+  situation: Readonly<{ queued: boolean; signed: boolean; executionOpen: boolean }>) {
   if (document.kind !== 'ServiceOrder') return null;
   const missing = missingFlightData(document.summary);
   return missing && orderFlightDataWarning(missing, {
-    signed: (document.signatures?.length ?? 0) > 0,
+    signed: situation.signed,
     queued: situation.queued,
     editable: situation.executionOpen,
   });
@@ -115,7 +120,11 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
   const charterFlight = documents?.documents.some(item => item.kind === 'CharterServiceRequest') ?? false;
   const queued = pendingOf(snapshot?.items ?? [], operationId);
   const syncedCount = queued.length;
-  const flightData = { queued: flightDataQueuedFor(snapshot?.items ?? [], operationId), executionOpen };
+  const flightData = {
+    queued: flightDataQueuedFor(snapshot?.items ?? [], operationId),
+    signed: serviceOrderHasSignature(documents, snapshot?.items ?? [], operationId),
+    executionOpen,
+  };
 
   useEffect(() => {
     let alive = true;

@@ -61,6 +61,7 @@ import {
   handoffRequirements,
   isHandoffHold,
   isServiceFinished,
+  serviceOrderHasSignature,
   type ChecklistStanding,
   type HandoffChecklistRead,
   type HandoffRequirement,
@@ -719,6 +720,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     unsentIncidents: unsentIncidents?.operationId === operation.operation.id ? unsentIncidents.count : null,
     documents,
     flightDataQueued: flightDataQueuedFor(queueItems, operation.operation.id),
+    // The push-back's rule (N2): a signature of the Order waiting in the queue counts as signed.
+    orderSigned: serviceOrderHasSignature(documents, queueItems, operation.operation.id),
     waitingRecords: projection.pending + projection.blocked,
   });
   const openChecklist = () => router.push({ pathname: '/checklist/[id]', params: { id: operation.operation.id } });

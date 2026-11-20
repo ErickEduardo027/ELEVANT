@@ -197,11 +197,11 @@ abierta, y `ramp-operation-submission.test.js` envía la entrega con ellos sin
 firmar.
 
 `handoff-requirements.test.js` fija los requisitos de la entrega (N1): el orden
-(servicios, checklist, incidencias, Orden firmada y cola), cada texto con su
-plural, que lo que la tablet no puede comprobar no bloquea, que un envío del
-checklist en la cola lo cubre el requisito de la cola, dónde queda el checklist
-(`checklistStanding`, también con la copia guardada) y los cuatro códigos
-locales. `ramp-operation-submission.test.js` comprueba `checklist_not_submitted`
+(servicios, checklist, incidencias, datos del vuelo, Orden firmada y cola),
+cada texto con su plural, que lo que la tablet no puede comprobar no bloquea,
+que un envío del checklist en la cola lo cubre el requisito de la cola, dónde
+queda el checklist (`checklistStanding`, también con la copia guardada) y los
+cuatro códigos locales. `ramp-operation-submission.test.js` comprueba `checklist_not_submitted`
 y `pending_incidents`, que la cola sale antes de leer los servicios y el
 checklist, de modo que lo recién enviado cuenta, y que una copia guardada del
 checklist espera la señal en lugar de darlo por no enviado. `ramp-incidents.test.js` cuenta
@@ -238,8 +238,14 @@ la insignia. `handoff-requirements.test.js` fija el requisito «Datos del vuelo
 completos», que avisa y nunca bloquea, `operation-offline-queue.test.js` lo
 recorre en el cierre y en su hoja, y `operation-documents-sheet.test.js`
 comprueba el aviso en la fila de la Orden y al principio de su hoja sin apagar
-FIRMAR. En las tres, una Orden firmada menciona volver a firmar y un formulario
-sin `summary` no falla.
+FIRMAR. En las tres, una Orden firmada menciona volver a firmar, también con
+una firma de la Orden que espera en la cola, y un formulario sin `summary` no
+falla; la fila comprueba además que una firma rechazada no cuenta.
+`handoff-requirements.test.js` fija además
+`serviceOrderHasSignature`, la regla que comparten esos avisos y la hoja del
+push-back: cuenta una firma sobre el contenido actual o una pendiente en la
+cola, y no una rechazada, una vieja, la de otro formulario ni la de otra
+operación.
 
 Los textos de N13 (D-N13) se fijan donde se ven. `operation-documents-sheet.test.js`
 comprueba el tuteo del walk-around, de su hoja y del panel de formularios, el

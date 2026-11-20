@@ -444,9 +444,12 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
     checklist que espera en la cola lo cubre el requisito de la cola.
   - «Datos del vuelo completos» (hallazgo S1, D-S1) solo avisa y nunca bloquea:
     lee el resumen de la Orden de Servicio y dice si le faltan los pasajeros o
-    el MTOW. Con la Orden firmada, añade que se puede entregar sin ellos y que
-    guardarlos ahora obliga a firmarla de nuevo; con los datos en la cola, que
-    llegan a la Orden al enviarse. El servicio de entrega no lo comprueba.
+    el MTOW. Con la Orden firmada, también con una firma que espera en la
+    tablet, añade que se puede entregar sin ellos y que guardarlos ahora obliga
+    a firmarla de nuevo; con los datos en la cola, que llegan a la Orden al
+    enviarse. La fila de la Orden, su hoja de firma, el cierre y la hoja del
+    push-back usan la misma regla para saber si la Orden ya tiene una firma. El
+    servicio de entrega no lo comprueba.
   - La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
     actualizar a mano y tras abrir la corrección, nunca con cada recarga del
     feed, y cuenta las incidencias que siguen en la tablet en cada carga.

@@ -640,6 +640,21 @@ describe('the close lists and checks every requirement (N1)', () => {
       await renderer.act(async () => tree.unmount());
     });
 
+    // The same rule as the push-back's reasons (N2): a signature saved on the device covers the content the data would
+    // change, so the close says the Order would be signed again.
+    test('a signature of the Order waiting on the device counts as signed', async () => {
+      mockGetAssigned.mockResolvedValue(ready());
+      mockQueue = { revisions: {}, documents: orderWith({ passengersIn: 142, passengersOut: 138, mtowKg: null },
+        { isFullySigned: false, signatures: [] }),
+      items: [{ idempotencyKey: '91000000-0000-4000-8000-000000000005', state: 'pending', attempts: 0,
+        createdAt: '2026-10-05T14:30:00.000Z', command: { kind: 'signature', operationId,
+          documentKind: 'ServiceOrder', role: 'AirlineRepresentative', signerName: 'Ana Pérez' } }] };
+      const tree = await render();
+      expect(flightRow(tree.root)).toEqual(['Datos del vuelo completos: revisar. Falta el MTOW en la Orden. Puedes ' +
+        'entregar sin él; si lo guardas ahora, hay que volver a firmarla.']);
+      await renderer.act(async () => tree.unmount());
+    });
+
     test('0 passengers and the MTOW are complete', async () => {
       mockGetAssigned.mockResolvedValue(ready());
       mockQueue = { revisions: {}, items: [], documents: orderWith({ passengersIn: 0, passengersOut: 0, mtowKg: 70000 }) };

@@ -553,7 +553,10 @@ límites de ELEVANT (`RampExecutionPolicy.HasValidFlightData`):
   no tiene una regla nueva. La fila de la Orden y el principio de su hoja de
   firma dicen qué falta y qué hacer: escribirlo antes de firmar; si la Orden ya
   tiene una firma, que guardarlo obliga a firmarla de nuevo, y si los datos
-  esperan en la cola, que llegan a la Orden al enviarse.
+  esperan en la cola, que llegan a la Orden al enviarse. Una firma que espera en
+  la cola de la tablet también cuenta, con la misma regla que el push-back
+  (`serviceOrderHasSignature` en `src/features/assigned-operations/handoff.ts`):
+  sale antes que los datos guardados después y quedaría vieja al llegar ellos.
 
 La entrega final a OCC sigue reservando su payload y su clave antes de tocar la
 red y requiere conexión, checklist enviado, servicios terminados y cola de
@@ -587,8 +590,9 @@ comprueba todos los requisitos de la entrega, no solo la firma:
   la cola lo cubre el requisito de la cola.
 - «Datos del vuelo completos» (hallazgo S1, D-S1) es un aviso que nunca
   bloquea. Lee el resumen de la Orden de Servicio: si le faltan los pasajeros o
-  el MTOW, lo dice y, con la Orden firmada, añade que se puede entregar sin
-  ellos y que guardarlos ahora obliga a firmarla de nuevo. Si los datos esperan
+  el MTOW, lo dice y, con la Orden firmada (también con una firma que espera en
+  la cola, `serviceOrderHasSignature`), añade que se puede entregar sin ellos y
+  que guardarlos ahora obliga a firmarla de nuevo. Si los datos esperan
   en la cola (`flightDataQueuedFor`), dice que llegan a la Orden al enviarse;
   sin el resumen, queda «por confirmar». El servicio de entrega no lo comprueba.
 - La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
