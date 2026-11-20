@@ -51,6 +51,51 @@ describe("OCC positions client", () => {
     }
   });
 
+  it("asks for the coverage windows only when told to and validates them (N26)", async () => {
+    const windows = [
+      { agentName: "Elena Soto", startsAt: "2026-08-18T09:00:00+00:00", endsAt: "2026-08-18T21:00:00+00:00", isReinforcement: false },
+      { agentName: "Luis Peña", startsAt: "2026-08-18T21:00:00+00:00", endsAt: "2026-08-19T03:00:00+00:00", isReinforcement: true },
+    ];
+    const covered = { ...board, positions: [{ ...board.positions[0], coverage: windows }] };
+    const urls: string[] = [];
+    const reading = (answer: unknown) => createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async input => {
+      urls.push(String(input).replace("https://api.example.test", ""));
+      return Response.json(answer);
+    } });
+    const plain = `/api/v1/occ/positions?stationId=${stationId}&date=2026-08-18`;
+
+    // Asked: the parameter travels and the windows are kept; an older API that ignores it answers without them.
+    await expect(reading(covered).getOccPositions(stationId, "2026-08-18", { includeCoverage: true }))
+      .resolves.toMatchObject({ positions: [{ coverage: windows }] });
+    await expect(reading(board).getOccPositions(stationId, "2026-08-18", { includeCoverage: true }))
+      .resolves.toMatchObject({ stationCode: "PUJ" });
+    // A stand nobody covers that day answers an empty list.
+    await expect(reading({ ...board, positions: [{ ...board.positions[0], coverage: [] }] })
+      .getOccPositions(stationId, "2026-08-18", { includeCoverage: true })).resolves.toMatchObject({ positions: [{ coverage: [] }] });
+    // Not asked: no parameter, as older clients send it.
+    await reading(board).getOccPositions(stationId, "2026-08-18", { includeCoverage: false });
+    await reading(board).getOccPositions(stationId, "2026-08-18");
+    expect(urls).toEqual([`${plain}&includeCoverage=true`, `${plain}&includeCoverage=true`, `${plain}&includeCoverage=true`,
+      plain, plain]);
+
+    // Each window is closed and ends after it starts.
+    const window = windows[0]!;
+    for (const coverage of [
+      null, "Elena Soto", [{ ...window, stand: "A01" }], [{ ...window, agentName: " " }], [{ ...window, startsAt: "09:00" }],
+      [{ ...window, endsAt: window.startsAt }], [{ ...window, endsAt: "2026-08-18T08:00:00Z" }],
+      [{ ...window, isReinforcement: "no" }], [{ agentName: "Elena Soto", startsAt: window.startsAt, endsAt: window.endsAt }],
+    ]) {
+      await expect(reading({ ...board, positions: [{ ...board.positions[0], coverage }] })
+        .getOccPositions(stationId, "2026-08-18", { includeCoverage: true }), JSON.stringify(coverage))
+        .rejects.toMatchObject({ kind: "malformed-response" });
+    }
+    // Only a read that asked receives them: an unasked board, or a command's, that carries them is malformed.
+    await expect(reading(covered).getOccPositions(stationId, "2026-08-18")).rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(reading(covered).releaseOccStand(turnaroundId)).rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(reading(board).getOccPositions(stationId, "2026-08-18", { includeCoverage: "yes" as unknown as boolean }))
+      .rejects.toThrow(TypeError);
+  });
+
   it("rejects invalid registrations and unknown stand states", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json({ ...board, positions: [{ ...board.positions[0], status: "parked" }] }) });

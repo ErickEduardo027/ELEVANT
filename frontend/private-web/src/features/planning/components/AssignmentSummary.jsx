@@ -1,6 +1,7 @@
 import { MapPinIcon, UsersIcon } from '../../dashboard/components/icons';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
+import { standDisplayCode } from '../../../services/standCodes';
 
 export default function AssignmentSummary({
   position,
@@ -20,7 +21,7 @@ export default function AssignmentSummary({
       {position && (
         <span className="inline-flex items-center gap-1">
           <MapPinIcon className="h-3.5 w-3.5" />
-          {position}
+          {standDisplayCode(position)}
         </span>
       )}
       <span className="inline-flex items-center gap-1" title={t('summary.assignedAgents')}>

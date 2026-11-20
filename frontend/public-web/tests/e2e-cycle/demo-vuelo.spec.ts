@@ -4,7 +4,7 @@ import { goPrivate, loginPrivate, openModule, snap } from "./support/browser";
 import { API } from "./support/env";
 import {
   type CoverageBoard, coverageBoard, ensureAgentShiftNow, ensureAgentShiftToday, findTurnaround, handOffUnperformed,
-  openPlanningFlight, type PlanningDetail, type PlanningTurnaround, RAMP_AGENT, tablet, tabletOperation,
+  openPlanningFlight, type PlanningDetail, type PlanningTurnaround, RAMP_AGENT, shownStandCode, tablet, tabletOperation,
 } from "./support/operations";
 
 // Vuelo demo (ADR-0041, PRs A1 and A2 of «OCC a nivel NOC»). The Superadmin loads the Punta Cana stands from
@@ -348,12 +348,16 @@ test("Superadmin dispara un vuelo demo «Al azar» y el servidor sortea la posic
   // The server drew the stand among the eligible ones, with the Idempotency-Key as the seed: the covered one.
   expect([flight.state, flight.imported, flight.suggestedStandCode]).toEqual(["Active", false, covered!.code]);
   stand = covered;
-  // The server owns the clock: 2 minutes to the stand leave 90 s of taxi (the minimum), so the wheels touch the
-  // runway 30 s after the trigger, and the departure is scheduled 20 minutes after the on-block.
-  expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBe(VISIT.minutes * MINUTE);
+  // The server owns the clock: it schedules from the next whole minute (N28), so the aircraft parks on a whole minute
+  // 2 to 3 minutes after the trigger; that leaves 90 s of taxi (the minimum), and the departure is scheduled 20 minutes
+  // after the on-block.
+  expect(ms(flight.onBlockAt) % MINUTE).toBe(0);
+  expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBeGreaterThanOrEqual(VISIT.minutes * MINUTE);
+  expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBeLessThan((VISIT.minutes + 1) * MINUTE);
   expect(ms(flight.onBlockAt) - ms(flight.touchdownAt)).toBe(90_000);
   expect(ms(flight.scheduledOffBlockAt) - ms(flight.onBlockAt)).toBe(VISIT.groundMinutes * MINUTE);
-  await expectDemoRow(flight, `OCC aún no lo importa · Posición sugerida ${stand!.code}`);
+  // The row names the stand as AVIAM Web shows it (N27): the seed's A01 is «A1».
+  await expectDemoRow(flight, `OCC aún no lo importa · Posición sugerida ${shownStandCode(stand!.code)}`);
   await snap(superadminPage, "demo-superadmin-vuelo-creado");
 
   // OCC's review already lists both legs, marked as demo: the arrival with the stand as its gate, its departure and the
@@ -404,7 +408,7 @@ test("OCC ve el vuelo demo con «Demo» y su posición preseleccionada y lo impo
   expect(board.data.positions.find(item => item.code === stand!.code)?.turnarounds
     .find(item => item.turnaroundId === turnaroundId)?.isDemo, "the positions board marks the demo flight").toBe(true);
   // The Superadmin's list follows OCC's side of the flight (it is read every 5 to 20 seconds).
-  await expectDemoRow(flight!, `Importado por OCC · ${operationCode} · Posición ${stand!.code}`, 45_000);
+  await expectDemoRow(flight!, `Importado por OCC · ${operationCode} · Posición ${shownStandCode(stand!.code)}`, 45_000);
   await snap(superadminPage, "demo-superadmin-importado");
 });
 

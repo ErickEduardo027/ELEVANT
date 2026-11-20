@@ -19,6 +19,20 @@ describe('ContractsHomePage', () => {
     expect(screen.queryByText(/Datos sintéticos/)).not.toBeInTheDocument();
   });
 
+  it('shortens a GUID reference and names a new contract «Borrador», each whole in its title (N35)', () => {
+    const reference = '0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e';
+    const code = 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d';
+    render(<ContractsHomePage status="success" onRetry={() => {}} onNavigate={() => {}} data={{ ...DATA,
+      recentRequests: [...DATA.recentRequests, { id: 'three', reference, airline: 'Copa', status: 'InReview',
+        submittedAt: '2026-11-05T12:00:00Z' }],
+      pendingDrafts: [...DATA.pendingDrafts, { id: 'four', contractCode: code, airline: 'Copa', comments: [] }] }} />);
+    expect(screen.getByText('0b1c2d3e…')).toHaveAttribute('title', reference);
+    expect(screen.getByText('SOL-1')).not.toHaveAttribute('title');
+    expect(screen.getByText('Borrador 1cc18541…')).toHaveAttribute('title', code);
+    expect(screen.getByText('Borrador 2')).toHaveAttribute('title', 'DRAFT-2');
+    expect(screen.queryByText(/DRAFT-|0b1c2d3e4f/)).not.toBeInTheDocument();
+  });
+
   it('navigates to the real requests and draft modules', async () => {
     const onNavigate = vi.fn();
     render(<ContractsHomePage status="success" data={DATA} onRetry={() => {}} onNavigate={onNavigate} />);
@@ -35,11 +49,13 @@ describe('ContractsHomePage', () => {
     // The server title or exception text never reaches the screen.
     rerender(<ContractsHomePage status="error" error={Object.assign(new Error('Internal failure'), { status: 503 })}
       onRetry={onRetry} onNavigate={() => {}} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Revise la conexión e intente nuevamente.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Revisa la conexión e intenta nuevamente.');
     expect(screen.getByRole('alert')).not.toHaveTextContent('Internal failure');
     await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalledOnce();
     rerender(<ContractsHomePage status="error" error={{ status: 403 }} onRetry={onRetry} onNavigate={() => {}} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('No tiene permiso para ver las solicitudes o los borradores.');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso para ver las solicitudes o los borradores.');
+    rerender(<ContractsHomePage status="error" error={{ status: 401 }} onRetry={onRetry} onNavigate={() => {}} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.');
   });
 });

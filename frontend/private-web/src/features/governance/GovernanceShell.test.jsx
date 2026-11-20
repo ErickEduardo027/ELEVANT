@@ -106,6 +106,15 @@ describe('GovernanceShell', () => {
     expect(notice).not.toHaveTextContent(/Enviamos/);
   });
 
+  it('shows a coded request reference whole and shortens a GUID, whole in its title (N35)', async () => {
+    const guid = '1cc18541e2a94f3b8c7d6e5f4a3b2c1d';
+    getProvisioning.mockResolvedValue([task, { ...task, requestId: 'req-2', reference: guid, airline: 'Otra Air' }]);
+    renderShell();
+    expect(await screen.findByText('REQ-2026-000001')).not.toHaveAttribute('title');
+    expect(screen.getByText('1cc18541…')).toHaveAttribute('title', guid);
+    expect(screen.queryByText(guid)).not.toBeInTheDocument();
+  });
+
   it('explains a refused provisioning by its code, never by the server title', async () => {
     getProvisioning.mockResolvedValue([task]);
     provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Provisioning request is no longer available.'),

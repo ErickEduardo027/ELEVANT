@@ -3,30 +3,40 @@ import Drawer from '../../../components/Drawer';
 import Modal from '../../../components/Modal';
 import { getContractDocument, signContractVersion, withdrawContractVersion } from '../../../services/commercialGovernanceApi';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractDocumentMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import SignaturePad from '../../../components/SignaturePad';
+import { contractCodeLabel } from '../requests/requestLabels';
+import { airlineCodeLabel, countLabel, validityRange } from './agreementLabels';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
 import ContractValidityForm from './ContractValidityForm';
 
 const PARTY = { Aviam: 'AVIAM', Airline: 'Aerolínea' };
 
-function date(value) {
-  return value ? new Intl.DateTimeFormat('es-DO', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`))
-    : 'Sin vencimiento';
+/** The drawer's dates sit inside sentences, so they are written in full (N36). */
+const day = value => formatBusinessDate(value, { style: 'long' });
+
+/** The validity opens its line: «Del 3 de noviembre de 2026 al …» or «Desde el 3 de noviembre de 2026, sin vencimiento» (N33). */
+function validityLine(document) {
+  const range = validityRange(document.validFrom, document.validTo, { style: 'long' });
+  return range.charAt(0).toUpperCase() + range.slice(1);
 }
 
-/** Validity and renewal terms in plain words (ADR-0025). */
+const months = count => countLabel(count, 'mes', 'meses');
+const days = count => countLabel(count, 'día', 'días');
+
+/** Validity and renewal terms in plain words (ADR-0025), with «1 mes» and «1 día» in the singular (N33). */
 export function validityLines(document) {
   const validity = document.validity;
   if (!validity) return [];
   return [
     validity.renewalMode === 'Automatic'
-      ? `Renovación automática por ${validity.renewalTermMonths} meses: la nueva versión se inicia ${validity.renewalNoticeDays} días antes del fin.`
-      : `Renovación manual${validity.renewalTermMonths ? ` por períodos de ${validity.renewalTermMonths} meses` : ''}; aviso ${validity.renewalNoticeDays} días antes.`,
-    `Terminación con ${validity.terminationNoticeDays} días de preaviso.${validity.terminationTerms ? ` ${validity.terminationTerms}` : ''}`,
+      ? `Renovación automática por ${months(validity.renewalTermMonths)}: la nueva versión se inicia ${days(validity.renewalNoticeDays)} antes del fin.`
+      : `Renovación manual${validity.renewalTermMonths ? ` por períodos de ${months(validity.renewalTermMonths)}` : ''}; aviso ${days(validity.renewalNoticeDays)} antes.`,
+    `Terminación con ${days(validity.terminationNoticeDays)} de preaviso.${validity.terminationTerms ? ` ${validity.terminationTerms}` : ''}`,
   ];
 }
 
@@ -74,6 +84,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
   }, [versionId, revision]);
 
   const document = state.status === 'success' ? state.document : null;
+  // N35: a new contract's «DRAFT-…» code reads «Borrador 1cc18541…», as in Solicitudes; the PDF's file name keeps it.
+  const code = document ? contractCodeLabel(document.contractCode) : null;
   // 2-N10: Contratos withdraws, with a reason, an approved version that does not govern yet. One that governs has the
   // day it counts as signed: both signatures over the same content, or the legacy first version of a contract
   // activated without them (2-C). That legacy version keeps governing with a single signature, which only the server
@@ -135,7 +147,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
 
   return (
     <Drawer open={Boolean(versionId)} onClose={onClose} widthClassName="lg:w-[640px]"
-      title={document ? `Contrato ${document.contractCode} · versión ${document.versionNumber}` : 'Detalle de contrato'}
+      title={document ? `Contrato ${code.text} · versión ${document.versionNumber}` : 'Detalle de contrato'}
       description={document ? document.airlineName : undefined}
       footer={document && !withdrawn && <ContractPdfButtons versionId={versionId}
         fileName={`contrato-${document.contractCode}-v${document.versionNumber}.pdf`} className="justify-end" />}>
@@ -153,8 +165,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
         <div className="space-y-5 text-sm">
           <section>
             <h3 className="font-semibold">Partes y vigencia</h3>
-            <p>AVIAM (prestador) y {document.airlineLegalName ?? document.airlineName} ({document.airlineCode}).</p>
-            <p>Del {date(document.validFrom)} al {date(document.validTo)} · {document.currencyCode} · versión {document.versionStatus === 'Approved' ? 'aprobada' : 'reemplazada'}</p>
+            <p>AVIAM (prestador) y {document.airlineLegalName ?? document.airlineName} ({airlineCodeLabel(document.airlineCode)}).</p>
+            <p>{validityLine(document)} · {document.currencyCode} · versión {document.versionStatus === 'Approved' ? 'aprobada' : 'reemplazada'}</p>
             <p className="text-xs text-text-secondary-light">Estaciones: {document.stations.join('; ') || 'ninguna'}</p>
             {validityLines(document).map(line => <p key={line} className="text-xs">{line}</p>)}
             {!document.validity && document.versionStatus === 'Approved' && document.signatures.length === 0 && (
@@ -197,7 +209,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
               })}
             </ul>
             {document.signedOn && document.signatures.length === 2 && (
-              <p className="font-semibold">Firmado por ambas partes el {date(document.signedOn)}.</p>
+              <p className="font-semibold">Firmado por ambas partes el {day(document.signedOn)}.</p>
             )}
           </section>
           {canSign && document.signableBy === 'Aviam' && (
@@ -237,7 +249,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
         </div>
       )}
       <Modal open={withdrawing} onClose={() => setWithdrawingId(null)}
-        title={document ? `Retirar la versión ${document.versionNumber} del contrato ${document.contractCode}` : 'Retirar versión'}
+        title={document ? `Retirar la versión ${document.versionNumber} del contrato ${code.text}` : 'Retirar versión'}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setWithdrawingId(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy === 'withdraw' || withdrawReason.trim().length < 5} onClick={() => void withdraw()}
             className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === 'withdraw' ? 'Retirando…' : 'Retirar versión'}</button></div>}>

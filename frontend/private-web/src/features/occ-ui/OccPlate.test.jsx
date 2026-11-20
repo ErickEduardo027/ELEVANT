@@ -22,6 +22,20 @@ describe('OccPlate', () => {
     expect(container.firstChild).toHaveAttribute('data-occ-plate', 'code');
   });
 
+  it('draws a stand by the code the map draws, «A01» as «A1», and any other plate as it comes (N27)', () => {
+    const { container } = render(
+      <p>
+        <OccPlate kind="stand">A01</OccPlate>
+        <OccPlate kind="stand">BN06</OccPlate>
+        <OccPlate kind="stand">E2E-XXXX-1</OccPlate>
+        {PLATE_KINDS.filter(kind => kind !== 'stand').map(kind => <OccPlate key={kind} kind={kind}>A01</OccPlate>)}
+      </p>,
+    );
+    expect([...container.querySelectorAll('[data-occ-plate]')].map(plate => [plate.dataset.occPlate, plate.textContent]))
+      .toEqual([['stand', 'A1'], ['stand', 'BN6'], ['stand', 'E2E-XXXX-1'], ['flight', 'A01'], ['registration', 'A01'],
+        ['code', 'A01'], ['station', 'A01']]);
+  });
+
   it('is text and not a control: its text is what assistive technology reads, and the keyboard passes it by', async () => {
     render(<><OccPlate kind="station">PUJ</OccPlate><button type="button">Después</button></>);
     expect(screen.getAllByRole('button')).toHaveLength(1);

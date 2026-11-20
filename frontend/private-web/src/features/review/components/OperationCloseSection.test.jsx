@@ -89,7 +89,8 @@ describe('OperationCloseSection (ADR-0034)', () => {
       expect(pill).toHaveAttribute('data-tone', 'attention');
       expect(pill.querySelector('[data-occ-glyph="attention"]')).not.toBeNull();
     }
-    expect(screen.getByText('El push-back cierra el tiempo en tierra y libera la posición: revisa su hora antes de ' +
+    // The hint addresses OCC as «usted», as the rest of «Cierre de la operación» does («Seleccione»).
+    expect(screen.getByText('El push-back cierra el tiempo en tierra y libera la posición: revise su hora antes de ' +
       'decidir.')).toBeTruthy();
     unmount();
 
@@ -113,7 +114,7 @@ describe('OperationCloseSection (ADR-0034)', () => {
     ] } };
     render(<OperationCloseSection detail={normal} onChanged={() => {}} />);
     expect(screen.queryByRole('list', { name: 'Secuencia de hitos por revisar' })).toBeNull();
-    expect(screen.queryByText(/revisa su hora/)).toBeNull();
+    expect(screen.queryByText(/revise su hora/)).toBeNull();
   });
 
   it('confirms each charge change in a dialog named after its confirm button, and closes it on Cancelar or Esc', async () => {

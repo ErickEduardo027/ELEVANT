@@ -142,6 +142,33 @@ describe('OccFlightStrip', () => {
     expect(partOf(stripOf(DEMO_ARRIVAL), 'time')).toHaveTextContent('Sin hora');
   });
 
+  it('an arrival on its runway time says «aterrizó hace»: that time only says that it landed (N23)', () => {
+    // ZZ9001 touched down at 14:24, as the feed or the demo worker writes it (`actualKind: 'Runway'`).
+    const landed = { ...DEMO_ARRIVAL, time: { at: '2026-11-14T18:24:00Z', kind: 'actual', actualKind: 'Runway' },
+      status: { label: 'Aterrizó', signal: null } };
+    const countdown = () => partOf(stripOf(DEMO_ARRIVAL), 'countdown');
+    const { rerender } = render(strip({ flight: landed, onSelect: vi.fn() }));
+    expect(countdown()).toHaveTextContent(/^aterrizó hace 8 min$/);
+    expect(screen.getByRole('button', {
+      name: 'Llegada, 14:24 real, ZZ9001, Demo, desde MIA, posición A7, Aterrizó, aterrizó hace 8 min',
+    })).toBe(stripOf(DEMO_ARRIVAL));
+    // In the same minute it is «ahora», as any time.
+    rerender(strip({ flight: landed, now: Date.parse('2026-11-14T18:24:40Z') }));
+    expect(countdown()).toHaveTextContent(/^ahora$/);
+    // OCC's on-block time, a departure's take-off and a time that tells no kind keep the plain words.
+    rerender(strip({ flight: { ...landed, time: { ...landed.time, actualKind: 'OnBlock' } } }));
+    expect(countdown()).toHaveTextContent(/^hace 8 min$/);
+    rerender(strip({ flight: { ...landed, direction: 'Departure' } }));
+    expect(countdown()).toHaveTextContent(/^hace 8 min$/);
+    rerender(strip({ flight: { ...landed, time: { at: landed.time.at, kind: 'actual' } } }));
+    expect(countdown()).toHaveTextContent(/^hace 8 min$/);
+    cleanup();
+
+    resetLanguageForTests('en');
+    render(<LanguageScope>{strip({ flight: landed })}</LanguageScope>);
+    expect(countdown()).toHaveTextContent(/^landed 8 min ago$/);
+  });
+
   it('is a toggle button with aria-pressed and the cyan casing when selected, and plain text without onSelect', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();

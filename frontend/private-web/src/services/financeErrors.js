@@ -4,24 +4,52 @@ import { problemMessage } from './problemMessages';
  * Spanish explanation of each Problem Details code of Finance (phase 1). Block B wrote the codes of the
  * contract approval (one per blocking cause, 1-N07); block C adds the tariff books, billing units,
  * exchange rates and packages (1-E, 1-N27). The screens never show the server title.
+ *
+ * AVIAM Web addresses its users as tú (D-N36). In Finance, the contract approval, the tariff books and the
+ * charge catalog are converted; the other screens keep usted until Finance converts them.
  */
 export const CONTRACT_APPROVAL_MESSAGES = Object.freeze({
   version_conflict: 'El contrato cambió o ya fue decidido. Se actualizó la lista.',
-  idempotency_conflict: 'Esa decisión ya se envió con otros datos. Se actualizó la lista; revísela e intente de nuevo.',
-  package_not_eligible: 'Un paquete del contrato ya no corresponde a su moneda o vigencia. Devuélvalo a Contratos para que lo cambie.',
-  package_retired: 'Finanzas retiró un paquete que el contrato incluye. Devuélvalo a Contratos para que lo quite.',
-  service_retired: 'El contrato incluye un servicio dado de baja del catálogo. Devuélvalo a Contratos para que lo quite.',
-  valid_from_not_after_current: 'La vigencia empieza antes que la versión aprobada vigente. Devuélvalo a Contratos para que la corrija.',
-  ambiguous_package_coverage: 'Un servicio está cubierto por más de un paquete. Devuélvalo a Contratos.',
-  package_service_not_in_contract: 'Un paquete cubre un servicio que el contrato no incluye. Devuélvalo a Contratos.',
-  invalid_contract_decision: 'Para devolver el contrato escriba un motivo de 3 a 1000 caracteres.',
-  not_found: 'El contrato ya no está pendiente o no pertenece a sus estaciones.',
+  idempotency_conflict: 'Esa decisión ya se envió con otros datos. Se actualizó la lista; revísala e intenta de nuevo.',
+  package_not_eligible: 'Un paquete del contrato ya no corresponde a su moneda o vigencia. Devuélvelo a Contratos para que lo cambie.',
+  package_retired: 'Finanzas retiró un paquete que el contrato incluye. Devuélvelo a Contratos para que lo quite.',
+  service_retired: 'El contrato incluye un servicio dado de baja del catálogo. Devuélvelo a Contratos para que lo quite.',
+  valid_from_not_after_current: 'La vigencia empieza antes que la versión aprobada vigente. Devuélvelo a Contratos para que la corrija.',
+  ambiguous_package_coverage: 'Un servicio está cubierto por más de un paquete. Devuélvelo a Contratos.',
+  package_service_not_in_contract: 'Un paquete cubre un servicio que el contrato no incluye. Devuélvelo a Contratos.',
+  invalid_contract_decision: 'Para devolver el contrato escribe un motivo de 3 a 1000 caracteres.',
+  not_found: 'El contrato ya no está pendiente o no pertenece a tus estaciones.',
   // Phase 2, block A (2-N15): a terminated contract, or a version that starts on or after its scheduled termination.
-  contract_terminated: 'El contrato está terminado: sus precios ya no se aprueban. Devuélvalo a Contratos.',
-  termination_scheduled: 'La versión empieza en la fecha de terminación programada del contrato o después. Devuélvala a Contratos.',
+  contract_terminated: 'El contrato está terminado: sus precios ya no se aprueban. Devuélvelo a Contratos.',
+  termination_scheduled: 'La versión empieza en la fecha de terminación programada del contrato o después. Devuélvela a Contratos.',
 });
 
-/** Billing units, the service and charge tariffs, the charge catalog and the exchange rates (1-E). */
+/**
+ * The service and charge tariff books and the charge catalog, as tú (D-N36): the codes their commands answer
+ * (EfFinanceTariffBookStore.ServiceTariffs and .Charges). The shared codes and statuses come from problemMessage.
+ */
+export const TARIFF_BOOK_MESSAGES = Object.freeze({
+  billing_unit_unknown: 'La unidad de cobro no existe o está inactiva. Elige una unidad de la lista.',
+  billing_unit_required: 'Los cargos por unidad necesitan una unidad de cobro.',
+  invalid_tariff: 'Revisa la vigencia, la nota y los precios de la tarifa.',
+  tariff_draft_exists: 'Ya hay un borrador en esa moneda. Ábrelo para continuar.',
+  tariff_not_found: 'La versión de origen ya no existe. Actualiza la vista.',
+  tariff_empty: 'Añade al menos un precio y guarda antes de publicar.',
+  tariff_start_not_after_current: 'La vigencia debe empezar después de la versión vigente. Cambia «Vigente desde» y guarda.',
+  service_not_found: 'Un servicio de la tarifa ya no existe en el catálogo. Actualiza la vista.',
+  stations_invalid: 'Una estación de la tarifa ya no existe. Actualiza la vista.',
+  invalid_charge: 'Revisa el código, el nombre, el cálculo y la cantidad del cargo.',
+  charge_code_exists: 'Ya existe un cargo con ese código.',
+  charge_not_found: 'Un cargo de la tarifa ya no existe. Actualiza la vista.',
+  invalid_finance_data: 'Revisa los datos e intenta de nuevo.',
+  version_conflict: 'El registro cambió mientras lo editabas. Se actualizó la vista; revisa los datos e intenta de nuevo.',
+  not_found: 'El registro ya no existe. Actualiza la vista.',
+});
+
+/**
+ * Billing units, the service and charge tariffs, the charge catalog and the exchange rates (1-E), as usted. The
+ * billing units and the exchange rates still use it; the tariff books and the charge catalog use TARIFF_BOOK_MESSAGES.
+ */
 export const FINANCE_TARIFF_MESSAGES = Object.freeze({
   billing_unit_unknown: 'La unidad de cobro no existe o está inactiva. Elija una unidad de la lista.',
   billing_unit_required: 'Los cargos por unidad necesitan una unidad de cobro.',
@@ -173,7 +201,17 @@ export const invoiceListMessage = (error, options) => problemMessage(error, INVO
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const financeContractApprovalMessage = (error, options) =>
-  problemMessage(error, CONTRACT_APPROVAL_MESSAGES, options);
+  problemMessage(error, CONTRACT_APPROVAL_MESSAGES, { register: 'tu', ...options });
 
-/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+/**
+ * The tariff books and the charge catalog, as tú (D-N36).
+ * @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options]
+ */
+export const tariffBookMessage = (error, options) =>
+  problemMessage(error, TARIFF_BOOK_MESSAGES, { register: 'tu', ...options });
+
+/**
+ * The billing units and the exchange rates, still as usted.
+ * @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options]
+ */
 export const financeTariffMessage = (error, options) => problemMessage(error, FINANCE_TARIFF_MESSAGES, options);

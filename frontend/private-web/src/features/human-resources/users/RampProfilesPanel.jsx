@@ -56,8 +56,10 @@ function accountStatusKey(profile) {
  * Operational profiles of ramp agents. Human Resources consults them; the
  * Operations administrator maintains them (`canEdit`). New agents are requested
  * by Operations and created when Human Resources validates the request.
+ * `lead` is drawn inside the page, after its heading and before the directory:
+ * Human Resources puts «¿Puede operar?» there (N37).
  */
-export default function RampProfilesPanel({ canEdit = false, embedded = false, stationFilter = null }) {
+export default function RampProfilesPanel({ canEdit = false, embedded = false, stationFilter = null, lead = null }) {
   const { t } = useTranslation(rampProfilesPanelMessages);
   const [catalog, setCatalog] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -181,6 +183,7 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
     {!embedded && <header><p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">{t('eyebrow')}</p>
       <h1 className="mt-1 text-2xl font-bold">{t('title')}</h1>
       <p className="mt-1 text-sm text-text-secondary-light">{t('description')}</p></header>}
+    {lead}
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{t(notice)}</p>}
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm">{t(error)}</p>}
     <div className={showForm ? 'grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_390px]' : 'grid grid-cols-1 gap-5'}>

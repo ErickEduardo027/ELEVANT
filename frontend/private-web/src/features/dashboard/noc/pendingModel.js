@@ -1,3 +1,4 @@
+import { isOpenAfterDeparture } from '../../operations/openAfterDeparture';
 import { durationText, relativeTimeParts } from '../../occ-ui/occTime';
 import { awaitingDecision } from '../dashboardModel';
 import { bestTime, DUE_SOON_MS, instantMs } from './boardModel';
@@ -5,11 +6,12 @@ import { bestTime, DUE_SOON_MS, instantMs } from './boardModel';
 // «Pendientes de la jornada» (contratos 2.5, design D.1, the old «Requiere atención»): the conditions of the day that are
 // still open, with no receipt, each with the action that closes it. Pure, and no thresholds of its own: what is pending
 // comes from the reads (the planning snapshot, the readiness marks, the review queue and the board's map flights), and
-// the only hour is contratos 2.4's (a flight due within 60 minutes asks for attention). `nowMs` is the server's time.
+// the only hours are contratos 2.4's (a flight due within 60 minutes asks for attention) and D-N30's (an operation still
+// open an hour after its aircraft left, operations/openAfterDeparture.js). `nowMs` is the server's time.
 
 /** What can be pending. */
 export const PENDING_KINDS = Object.freeze(['noStand', 'noAgent', 'agentCannotOperate', 'toImport', 'toReview',
-  'overdue']);
+  'overdue', 'openAfterDeparture']);
 
 /** The actions that close a pending item, with their words (consoleMessages `pending.actions.*`). */
 export const PENDING_ACTIONS = Object.freeze(['chooseStand', 'assign', 'import', 'review']);
@@ -17,7 +19,8 @@ export const PENDING_ACTIONS = Object.freeze(['chooseStand', 'assign', 'import',
 /**
  * The reads the pending items come from, with their names (consoleMessages `pending.sources.*`): the planning snapshot
  * (`noStand`, `noAgent`), the readiness marks of its day (`agentCannotOperate`), the map flights (`toImport`,
- * `overdue`) and the review queue (`toReview`).
+ * `overdue`, and `openAfterDeparture`, which the board also takes from the snapshot for a turnaround the map's window
+ * leaves out) and the review queue (`toReview`).
  */
 export const PENDING_SOURCES = Object.freeze(['planning', 'readiness', 'flights', 'reviewQueue']);
 
@@ -47,9 +50,15 @@ function deadlineOf(flight, visit) {
 // A stand assigned or released on another screen reads here as on the board's strip.
 const standOf = (flight, visit) => (visit?.source === 'map' ? visit.standCode : flight.stand?.code ?? null);
 
+// An arrival's time that is its runway time (the map flights' `actualKind`, boardModel.js: bestTime): it only says that
+// the aircraft landed, never that it arrived on its stand (N23).
+const isLanding = deadline => deadline.direction === 'Arrival' && deadline.time.kind === 'actual'
+  && deadline.time.actualKind === 'Runway';
+
 /**
- * «llega en 23 min», «llega ahora», «llegó hace 5 min» (an actual time) or «debía llegar hace 5 min» (a time that
- * passed with nothing recorded); the same for a departure. An empty text without a deadline.
+ * «llega en 23 min», «llega ahora», «llegó hace 5 min» (an actual time), «aterrizó hace 5 min» (an arrival's runway
+ * time) or «debía llegar hace 5 min» (a time that passed with nothing recorded); the same for a departure. An empty
+ * text without a deadline.
  */
 function whenWords(deadline, nowMs, t) {
   if (deadline === null) return '';
@@ -59,6 +68,7 @@ function whenWords(deadline, nowMs, t) {
   if (parts.tense === 'now') return t(`pending.when.${leg}Now`);
   const duration = durationText(parts, t);
   if (parts.tense === 'future') return t(`pending.when.${leg}`, { duration });
+  if (isLanding(deadline)) return t('pending.when.landedPast', { duration });
   return t(deadline.time.kind === 'actual' ? `pending.when.${leg}Past` : `pending.when.${leg}Due`, { duration });
 }
 
@@ -69,6 +79,9 @@ const priorityOf = (deadline, nowMs) => (deadline !== null && Number.isFinite(no
   && deadline.time.at - nowMs <= DUE_SOON_MS ? 'attention' : 'notice');
 
 const nameOf = flight => flight.arrival?.flightNumber ?? flight.departure?.flightNumber ?? flight.operationCode ?? '';
+// A visit of the board by the flight that left: its departure, else its arrival, else its operation.
+const departureNameOf = visit => visit.departure?.flightNumber || visit.arrival?.flightNumber || visit.operationCode
+  || '';
 
 function entry(kind, key, fields) {
   return Object.freeze({ id: `${kind}:${key}`, kind, flightKey: null, turnaroundId: null, ...fields });
@@ -89,7 +102,12 @@ function entry(kind, key, fields) {
  * - `toReview` («Revisar»): an operation of the queue awaiting OCC's decision, a notice;
  * - `overdue`: an aircraft still on its stand after its departure time (the board's visits, on their stand by the
  *   evidence of the stand states, boardModel.js: aircraftOnStand), amber, with no action of its own (the console
- *   selects the flight).
+ *   selects the flight);
+ * - `openAfterDeparture` (N30): a visit of the board whose operation is still on the agent's side (Assigned,
+ *   InProgress or Returned, never PendingReview or Approved) more than an hour after its aircraft left the stand
+ *   (`departedAt`: its PUSHBACK, its departure once it departed, the demo clock's off-block or, out of the map's window,
+ *   the snapshot's departure time; operations/openAfterDeparture.js), amber, at that instant and with no action of its
+ *   own: the agent hands it off, or OCC hands it over. An aircraft still on its stand never left: it is `overdue`.
  * `target` is the turnaround id, the proposal id or the operation id the action opens.
  */
 export function buildPending({ board = null, planningFlights = null, readiness = null, reviewQueue = null, nowMs, t } = {}) {
@@ -156,6 +174,18 @@ export function buildPending({ board = null, planningFlights = null, readiness =
     entries.push(entry('overdue', visit.id, {
       priority: 'attention', at: departure.time.at, flightKey: departure.flightKey, turnaroundId: visit.turnaroundId,
       label: t('pending.overdue', { flight: departure.flightNumber }), action: null,
+    }));
+  }
+
+  // «ZZ9002 con la operación abierta, salió hace 1 h 5 min»: no sweep of the server closes or flags it (D-N30).
+  for (const visit of board?.visits ?? NO_ROWS) {
+    if (!isOpenAfterDeparture(visit?.operationStatus, visit?.departedAt, nowMs)) continue;
+    const left = { time: { at: visit.departedAt, kind: 'actual' }, direction: 'Departure' };
+    entries.push(entry('openAfterDeparture', visit.id, {
+      priority: 'attention', at: visit.departedAt, turnaroundId: visit.turnaroundId,
+      flightKey: visit.departure?.flightKey ?? visit.arrival?.flightKey ?? null,
+      label: withWhen(t('pending.openAfterDeparture', { flight: departureNameOf(visit) }), whenWords(left, nowMs, t), t),
+      action: null,
     }));
   }
 

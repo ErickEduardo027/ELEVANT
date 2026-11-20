@@ -16,8 +16,8 @@ import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situa
 import { standInputsOf } from '../traffic/standInputs';
 import {
   ARRIVING_WINDOW_MS, COVERAGE_WINDOW_MS, MILESTONES_TOTAL, RELEASING_WINDOW_MS, STILL_BELOW_MS, attachStandGeometry,
-  coverageInitials, deriveDisplayStatus, displayFromStatus, floorToMinute, minutesUntil, sameAgentCodes, standDrawState,
-  standStateOf, unlocatedStands, withStandDisplay,
+  coverageInitials, deriveDisplayStatus, displayFromStatus, floorToMinute, minutesUntil, sameAgentCodes, standCoverageNames,
+  standDrawState, standStateOf, unlocatedStands, visitCoverageNames, withStandDisplay,
 } from './standModel';
 
 // 14:07 in Punta Cana (UTC−4). Every time of the fixtures is relative to it.
@@ -502,10 +502,12 @@ describe('deriveDisplayStatus with the map situation (PR M6)', () => {
     const shown = read(a2Of(-1), zz300(done, -1));
     expect(shown).toMatchObject({ state: 'releasing', milestonesDone: 9, signals: [{ kind: 'attention', reason: 'overdue' }] });
     expect(Object.keys(shown).sort()).toEqual([
-      'aircraftType', 'arrivalAt', 'cancelledBy', 'departureAt', 'detail', 'flightNumber', 'footprint', 'isDemo',
-      'milestonesDone', 'milestonesTotal', 'minutesToArrival', 'minutesToDeparture', 'next', 'signals', 'state', 'typeSpec',
-      'visit',
+      'aircraftType', 'arrivalAt', 'cancelledBy', 'coverage', 'departureAt', 'detail', 'flightNumber', 'footprint',
+      'isDemo', 'milestonesDone', 'milestonesTotal', 'minutesToArrival', 'minutesToDeparture', 'next', 'signals', 'state',
+      'typeSpec', 'visit',
     ]);
+    // Without the board's coverage windows (an older API) the display says nothing of them (N26).
+    expect(shown.coverage).toBeNull();
     // The detail of the visit (owner request of 2026-11-15): its airline, its times and its legs, from what was read.
     expect(shown.detail).toMatchObject({ arrival: expect.any(Object), departure: expect.any(Object) });
     expect(Array.isArray(shown.detail.legs)).toBe(true);
@@ -592,6 +594,239 @@ describe('deriveDisplayStatus with the map situation (PR M6)', () => {
     expect(read(a6, options)).toMatchObject({
       state: 'occupied', isDemo: true, footprint: 'solid', typeSpec: AIRCRAFT_TYPES.A320, signals: [],
     });
+  });
+});
+
+// N23, the run of 16 November: the detail of a visit kept one actual time, the board's first, which for a feed or demo
+// leg is its runway time, so at 19:57 the map said «Ocupada por WN9001 desde las 19:49 (llegada registrada)» of an
+// aircraft that landed at 19:49 and parked at 19:54. Synthetic, as the demo worker leaves the scene: the runway time on
+// the arrival leg (`actualKind: 'Runway'`) and as the board's arrival time, the server's on-block on the whole minute
+// (N28) and the tablet's BLOCK_ON a little later.
+describe('the detail of a visit tells the landing from the stand (N23)', () => {
+  const utc = time => Date.parse(`2026-11-16T${time}Z`);
+  const T1950 = utc('23:50:00');
+  const TOUCHDOWN = utc('23:49:12');
+  const ON_BLOCK = utc('23:54:00');
+  const BLOCK_ON = utc('23:54:40');
+  const demo = {
+    demoFlightId: 'demo-wn9001', state: 'Active', phase: 'TaxiIn', appearAt: iso(TOUCHDOWN - 6 * MINUTE),
+    touchdownAt: iso(TOUCHDOWN), onBlockAt: iso(ON_BLOCK), scheduledOffBlockAt: iso(ON_BLOCK + 60 * MINUTE),
+    offBlockAt: null, takeoffAt: null, vanishAt: null,
+  };
+  const a11 = positionOf('A11', boardStand('A11', { coveredBy: [marta], turnarounds: [boardVisit({
+    nowMs: T1950, flight: 'WN9001', arrivalInMin: 4, departureInMin: 64, arrivedAt: iso(TOUCHDOWN), isDemo: true,
+  })] }));
+  const demoLegs = milestones => ({ 'turn-WN9001': [
+    { direction: 'Arrival', flightNumber: 'WN9001', phase: 'landed', scheduledAt: iso(ON_BLOCK), estimatedAt: iso(ON_BLOCK),
+      actualAt: iso(TOUCHDOWN), actualKind: 'Runway', isDemo: true, demo, milestones },
+    { direction: 'Departure', flightNumber: 'WN9002', phase: 'scheduled', scheduledAt: iso(ON_BLOCK + 60 * MINUTE),
+      actualAt: null, actualKind: null, isDemo: true, demo, milestones },
+  ] });
+  const readA11 = (nowMs, milestones = []) => deriveDisplayStatus(a11, { nowMs, flightsByTurnaround: demoLegs(milestones) });
+
+  it('the run of 16 November: landed at 19:49 and arriving at 19:50, on the stand since 19:54 at 19:57', () => {
+    expect(a11.status).toBe('occupied');
+    // 19:50: it landed and taxis in; nothing puts it on the stand yet.
+    const taxiing = readA11(T1950);
+    expect(taxiing).toMatchObject({ state: 'arriving', minutesToArrival: 4,
+      detail: { arrival: { landedAt: TOUCHDOWN, onStandAt: null, onStandRecorded: false } } });
+    // 19:57: parked at the server's on-block, and the tablet recorded BLOCK_ON at 19:54:40, which is said first.
+    const parked = readA11(T1950 + 7 * MINUTE, [{ code: 'BLOCK_ON', actualAt: iso(BLOCK_ON) }]);
+    expect(parked).toMatchObject({ state: 'occupied',
+      detail: { arrival: { landedAt: TOUCHDOWN, onStandAt: BLOCK_ON, onStandRecorded: true } } });
+    // Without BLOCK_ON, the demo chocks: the time the server planned, which nobody recorded.
+    expect(readA11(T1950 + 7 * MINUTE).detail.arrival)
+      .toMatchObject({ landedAt: TOUCHDOWN, onStandAt: ON_BLOCK, onStandRecorded: false });
+    // The one actual time of before stays, for what reads it: the stand's time, else the runway's.
+    expect([taxiing.detail.arrival.actualAt, parked.detail.arrival.actualAt]).toEqual([TOUCHDOWN, BLOCK_ON]);
+  });
+
+  it('a real flight: OCC\'s on-block, the earliest BLOCK_ON, an aircraft seen in the box and the board alone', () => {
+    const position = positionOf('A5', onA5([visit({ flight: 'DM301', arrivalInMin: -12, departureInMin: 60, arrived: true })]));
+    const legs = (arrival, arrivalMilestones = [], departureMilestones = arrivalMilestones) => ({ 'turn-DM301': [
+      { direction: 'Arrival', flightNumber: 'DM301', phase: 'landed', scheduledAt: iso(NOW - 15 * MINUTE),
+        milestones: arrivalMilestones, ...arrival },
+      { direction: 'Departure', flightNumber: 'DM302', phase: 'scheduled', scheduledAt: iso(NOW + 60 * MINUTE),
+        milestones: departureMilestones },
+    ] });
+    const arrivalOf = (flightsByTurnaround, options = {}) => deriveDisplayStatus(position, { nowMs: NOW,
+      flightsByTurnaround, ...options });
+    const blockOn = minutes => ({ code: 'BLOCK_ON', actualAt: iso(NOW + minutes * MINUTE) });
+    const runway = { actualAt: iso(NOW - 12 * MINUTE), actualKind: 'Runway' };
+
+    // OCC's «Registrar llegada» writes the on-block time: on the stand since then, recorded; no runway time is known.
+    expect(arrivalOf(legs({ phase: 'arrived', actualAt: iso(NOW - 9 * MINUTE), actualKind: 'OnBlock' })))
+      .toMatchObject({ state: 'occupied', detail: { arrival: {
+        landedAt: null, onStandAt: NOW - 9 * MINUTE, onStandRecorded: true, actualAt: NOW - 9 * MINUTE } } });
+    // The feed's runway time and the tablet's BLOCK_ON, without demo chocks: the earliest BLOCK_ON of its legs.
+    expect(arrivalOf(legs(runway, [blockOn(-6)], [blockOn(-7)]))).toMatchObject({ state: 'occupied', detail: { arrival: {
+      landedAt: NOW - 12 * MINUTE, onStandAt: NOW - 7 * MINUTE, onStandRecorded: true } } });
+    // A BLOCK_ON ahead of the stand's clock is never said.
+    expect(arrivalOf(legs(runway, [blockOn(2)])).detail.arrival).toMatchObject({ onStandAt: null, onStandRecorded: false });
+    // Its aircraft stands in the box with only its runway time: it is there, and nobody knows since when.
+    const [lng, lat] = position.geometry.center;
+    expect(arrivalOf(legs(runway), { aircraftByTurnaround: { 'turn-DM301': { latitude: lat, longitude: lng } } }))
+      .toMatchObject({ state: 'occupied', signals: [{ kind: 'notice', reason: 'arrivalNotRecorded' }], detail: { arrival: {
+        landedAt: NOW - 12 * MINUTE, onStandAt: null, onStandRecorded: false } } });
+    // The board alone, or without the arrival leg: its arrival time tells no kind (a runway or an on-block time), so
+    // it stays only as the actual time of before.
+    const boardOnly = { landedAt: null, onStandAt: null, onStandRecorded: false, actualAt: NOW - 12 * MINUTE };
+    expect(deriveDisplayStatus(position, { nowMs: NOW })).toMatchObject({ state: 'occupied', detail: { arrival: boardOnly } });
+    expect(arrivalOf({ 'turn-DM301': [legs(runway)['turn-DM301'][1]] })).toMatchObject({ state: 'occupied',
+      detail: { arrival: boardOnly } });
+  });
+});
+
+// N26, the run of 16 November: at 19:50 A5 and A6 still read «CM», though that agent's coverage ended at 17:00, and
+// «Sin agente que la cubra» never rose: the board brought the names of the day, which the map read as «now». With the
+// board's coverage windows (`includeCoverage`) a stand reads who covers it at the minute of the stand clock: the aircraft
+// on the stand now, the one to come at its time on the stand (D-N26). Synthetic: the agents and flights are invented.
+describe('who covers a stand, from the coverage windows of its date (N26)', () => {
+  const DAY = '2026-11-16';
+  const T1950 = Date.parse('2026-11-16T23:50:00Z');
+  const elena = 'Elena Soto';
+  // An instant of Punta Cana (UTC−4) on the 16th, or `dayOffset` days after it.
+  const local = (hour, minute = 0, dayOffset = 0) => Date.UTC(2026, 10, 16 + dayOffset, hour + 4, minute);
+  const cover = (agentName, from, to, isReinforcement = false) => ({
+    agentName, startsAt: iso(from), endsAt: iso(to), isReinforcement,
+  });
+  // A5 of the board of `operationDate` with its windows (the names of the day are theirs, as the API gives them).
+  const a5With = (coverage, turnarounds, operationDate = DAY) => positionsOf({ operationDate, positions: [boardStand('A05', {
+    coveredBy: [...new Set(coverage.map(window => window.agentName))], coverage, turnarounds,
+  })] }).find(position => position.id === 'A5');
+  // On the stand since 30 minutes before `nowMs`, leaving 40 minutes after it; or due `arrivalInMin` after it.
+  const parkedAt = nowMs => boardVisit({ nowMs, flight: 'WN301', arrivalInMin: -30, departureInMin: 40, arrived: true });
+  const dueAt = (nowMs, arrivalInMin) => boardVisit({ nowMs, flight: 'WN303', arrivalInMin, departureInMin: arrivalInMin + 60 });
+  const uncovered = { kind: 'attention', reason: 'uncovered' };
+  const signalsAt = (position, nowMs) => deriveDisplayStatus(position, { nowMs }).signals;
+  const shownAt = (position, nowMs) => withStandDisplay([position], { nowMs })[0];
+
+  it('a coverage that ended: nobody covers the aircraft on the stand, and the stand says until when she did', () => {
+    const a5 = a5With([cover(elena, local(5), local(17))], [parkedAt(T1950)]);
+    // The names of the day still list her; her window ended at 17:00.
+    expect(a5.coveredBy).toEqual([elena]);
+    const shown = deriveDisplayStatus(a5, { nowMs: T1950 });
+    expect(shown).toMatchObject({ state: 'occupied', signals: [uncovered] });
+    expect(shown.coverage).toEqual({
+      live: true, now: [], visit: [], ended: [{ name: elena, endsAt: local(17), isReinforcement: false }], upcoming: [],
+      windows: [{ name: elena, startsAt: local(5), endsAt: local(17), isReinforcement: false }],
+    });
+    expect(standCoverageNames(shownAt(a5, T1950))).toEqual([]);
+    expect(visitCoverageNames(shownAt(a5, T1950))).toEqual([]);
+    // At 16:59 she still covered it.
+    const before = a5With([cover(elena, local(5), local(17))], [parkedAt(local(16, 59))]);
+    expect(signalsAt(before, local(16, 59))).toEqual([]);
+    expect(standCoverageNames(shownAt(before, local(16, 59)))).toEqual([elena]);
+    // Without the windows (an API that does not send them) the names of the day still read as before.
+    const older = { ...a5, coverage: null };
+    expect(signalsAt(older, T1950)).toEqual([]);
+    expect(standCoverageNames(shownAt(older, T1950))).toEqual([elena]);
+  });
+
+  it('a coverage that ends in the middle of a visit: the aircraft on the stand is judged now, the one to come at its chocks', () => {
+    const windows = [cover(elena, local(5), local(20))];
+    // On the stand since 19:20, leaving at 20:30: covered at 19:50, not from 20:00 on.
+    const parked = a5With(windows, [parkedAt(T1950)]);
+    expect(signalsAt(parked, T1950)).toEqual([]);
+    expect(signalsAt(parked, local(20))).toEqual([uncovered]);
+    expect(deriveDisplayStatus(parked, { nowMs: local(20) }).coverage.ended)
+      .toEqual([{ name: elena, endsAt: local(20), isReinforcement: false }]);
+    // Due at 19:55 and staying until 20:55: she covers its chocks, so the stand asks for nobody (D-N26).
+    const coming = a5With(windows, [dueAt(T1950, 5)]);
+    expect(deriveDisplayStatus(coming, { nowMs: T1950 })).toMatchObject({ state: 'arriving', signals: [] });
+    expect(visitCoverageNames(shownAt(coming, T1950))).toEqual([elena]);
+    // Due at 20:10, once she has left.
+    expect(signalsAt(a5With(windows, [dueAt(T1950, 20)]), T1950)).toEqual([uncovered]);
+  });
+
+  it('a coverage that has not started: it covers the flights that reach the stand once it starts', () => {
+    const windows = [cover(luis, local(20, 30), local(23, 59))];
+    const parked = deriveDisplayStatus(a5With(windows, [parkedAt(T1950)]), { nowMs: T1950 });
+    expect(parked.signals).toEqual([uncovered]);
+    expect(parked.coverage).toMatchObject({
+      now: [], ended: [], upcoming: [{ name: luis, startsAt: local(20, 30), isReinforcement: false }],
+    });
+    // Due at 20:20, before it starts; due at 20:40, once it has.
+    expect(signalsAt(a5With(windows, [dueAt(T1950, 30)]), T1950)).toEqual([uncovered]);
+    expect(signalsAt(a5With(windows, [dueAt(T1950, 50)]), T1950)).toEqual([]);
+    expect(visitCoverageNames(shownAt(a5With(windows, [dueAt(T1950, 50)]), T1950))).toEqual([luis]);
+    // A flight late on its time reaches the stand now at the earliest: it is judged now, not at its past time.
+    expect(signalsAt(a5With(windows, [dueAt(local(20, 31), -20)]), local(20, 31))).toEqual([]);
+  });
+
+  it('only a reinforcement covers it: that agent covers the stand, after any primary one', () => {
+    const reinforcement = cover(ana, local(17), local(23), true);
+    const alone = deriveDisplayStatus(a5With([reinforcement], [parkedAt(T1950)]), { nowMs: T1950 });
+    expect(alone.signals).toEqual([]);
+    expect(alone.coverage.now).toEqual([{ name: ana, isReinforcement: true }]);
+    const both = deriveDisplayStatus(a5With([reinforcement, cover(luis, local(17), local(23))], [parkedAt(T1950)]),
+      { nowMs: T1950 });
+    expect(both.coverage.now).toEqual([{ name: luis, isReinforcement: false }, { name: ana, isReinforcement: true }]);
+  });
+
+  it('across midnight: a window counts by its instants, whatever day it starts or ends', () => {
+    const night = cover(luis, local(22), local(6, 0, 1));
+    const late = local(23, 50);
+    // The aircraft on the stand at 23:50, and a flight of the 16th delayed to 00:20.
+    expect(signalsAt(a5With([night], [parkedAt(late)]), late)).toEqual([]);
+    expect(signalsAt(a5With([night], [dueAt(late, 30)]), late)).toEqual([]);
+    // A coverage that ends at midnight says nothing of the flight due at 00:10: the board of the 16th never brings a
+    // window that starts at midnight, so the names of the day decide, as before N26.
+    expect(signalsAt(a5With([cover(elena, local(16), local(0, 0, 1))], [dueAt(late, 20)]), late)).toEqual([]);
+    // At 00:30 the board of the 17th brings the same night window, which covers the stand then.
+    const after = local(0, 30, 1);
+    const tomorrow = a5With([night], [parkedAt(after)], '2026-11-17');
+    expect(deriveDisplayStatus(tomorrow, { nowMs: after })).toMatchObject({
+      signals: [], coverage: { live: true, now: [{ name: luis, isReinforcement: false }] },
+    });
+  });
+
+  it('past the board\'s midnight nobody in its windows says nothing: the names of the day decide', () => {
+    // At 23:25 on the 16th, WN303 of the 16th is due on A5 at 00:15 on the 17th. The board of the 16th brings the
+    // windows of its day, 08:00 to 16:00 and 16:00 to 24:00; the one from 00:00 on the 17th is never among them.
+    const at2325 = local(23, 25);
+    const day = [cover(elena, local(8), local(16)), cover(luis, local(16), local(0, 0, 1))];
+    const late = a5With(day, [dueAt(at2325, 50)]);
+    const shown = deriveDisplayStatus(late, { nowMs: at2325 });
+    expect(shown).toMatchObject({ state: 'planned', signals: [] });
+    // Who covers it then is unknown: its «Agente» is who covers the stand now.
+    expect(shown.coverage).toMatchObject({ live: true, now: [{ name: luis, isReinforcement: false }], visit: null });
+    expect(visitCoverageNames(shownAt(late, at2325))).toEqual([luis]);
+    // A window of the day that runs past midnight still names who covers it then.
+    const night = a5With([cover(marta, local(22), local(6, 0, 1))], [dueAt(at2325, 50)]);
+    expect(deriveDisplayStatus(night, { nowMs: at2325 }).coverage.visit).toEqual([{ name: marta, isReinforcement: false }]);
+    // Before midnight the windows still judge it: due at 23:55 on a stand nobody covers from 16:00.
+    expect(signalsAt(a5With([cover(elena, local(8), local(16))], [dueAt(at2325, 30)]), at2325)).toEqual([uncovered]);
+    // And a stand nobody covers that day still raises it past midnight, as the names of the day said before N26.
+    expect(signalsAt(a5With([], [dueAt(at2325, 50)]), at2325)).toEqual([uncovered]);
+  });
+
+  it('another date: the windows are listed and never judged against the clock', () => {
+    // Planificación on the 17th, read at 19:50 on the 16th.
+    const windows = [cover(elena, local(5, 0, 1), local(17, 0, 1)), cover(luis, local(17, 0, 1), local(23, 0, 1), true)];
+    const tomorrow = a5With(windows, [dueAt(T1950, 24 * 60)], '2026-11-17');
+    expect(deriveDisplayStatus(tomorrow, { nowMs: T1950 }).coverage).toEqual({
+      live: false, now: [], visit: null, ended: [], upcoming: [], windows: [
+        { name: elena, startsAt: local(5, 0, 1), endsAt: local(17, 0, 1), isReinforcement: false },
+        { name: luis, startsAt: local(17, 0, 1), endsAt: local(23, 0, 1), isReinforcement: true },
+      ],
+    });
+    // Who covers it is the day's, as before.
+    expect(standCoverageNames(shownAt(tomorrow, T1950))).toEqual([elena, luis]);
+    expect(visitCoverageNames(shownAt(tomorrow, T1950))).toEqual([elena, luis]);
+  });
+
+  it('the ring of the same agent follows who covers now', () => {
+    const board = { operationDate: DAY, positions: [
+      boardStand('A05', { coveredBy: [elena], coverage: [cover(elena, local(5), local(17))], turnarounds: [parkedAt(T1950)] }),
+      boardStand('A06', { coveredBy: [elena, luis], coverage: [cover(elena, local(5), local(17)), cover(luis, local(17), local(23))] }),
+      boardStand('A07', { coveredBy: [luis], coverage: [cover(luis, local(17), local(23))] }),
+    ] };
+    const at1950 = withStandDisplay(positionsOf(board), { nowMs: T1950 });
+    expect([...sameAgentCodes(at1950, 'A5')]).toEqual([]);
+    expect([...sameAgentCodes(at1950, 'A6')]).toEqual(['A7']);
+    // At 16:00 she still covers A5 and A6.
+    expect([...sameAgentCodes(withStandDisplay(positionsOf(board), { nowMs: local(16) }), 'A5')]).toEqual(['A6']);
   });
 });
 

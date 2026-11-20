@@ -26,7 +26,9 @@ import {
 import {
   featureStatePlan, findStandByCode, isOutsideSafeArea, sameAgentMark, standFlags, standTooltip,
 } from '../stands/standInteractions';
-import { STAND_GHOST_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standOverlay } from '../stands/standLayers';
+import {
+  STAND_GHOST_SOURCE, STAND_LABEL_LAYER_IDS, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standLabelFilter, standOverlay,
+} from '../stands/standLayers';
 import { attachStandGeometry, standStateOf } from '../stands/standModel';
 import {
   AIRFIELD_LAYER_IDS, AIRFIELD_SOURCE, airfieldKindsOnScreen, airfieldOverlay, airfieldTooltip,
@@ -1396,9 +1398,11 @@ const OccMapView = forwardRef(function OccMapView({
       overlayData: {}, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights, standLabels: props.standLabels,
       drawsAirfield: Boolean(props.layout),
       // The feature-state flags of the stands (the legend reads the same-agent ring from them) and the placing boxes;
-      // the stand selected when the map starts is framed by the view, not eased to.
+      // the stand selected when the map starts is framed by the view, not eased to. The stand labels start without a
+      // filter: no stand's label is left out yet (N29).
       standFlags: NO_FLAGS, ghost: null, pendingGhost: null, ghostKey: '[]', placingCode: null,
       easedFor: props.selection?.kind === 'stand' ? mapStandCode(props.selection.id) || null : null,
+      labelsWithout: null,
     };
     // The traffic of this engine: what its source holds, and the trails and route written.
     Object.assign(appliedRef.current, { drawsTraffic: props.drawsTraffic, trafficById: new Map(), trails: null,
@@ -1833,9 +1837,10 @@ const OccMapView = forwardRef(function OccMapView({
   }, [overlayData]);
 
   // The selection: one feature in the selection source (a stand's label point with its texts, a flight's ring),
-  // written only when it changes; the flags of the stands as feature state (the casing of the selected stand, the stand
-  // of a selected flight, and the stands covered by the same agent as the hovered or selected one), written only where
-  // they change; and, once per newly selected stand, the camera when that stand lies outside the area in sight.
+  // written only when it changes; the filter that leaves the selected stand's own label out of the stand labels (N29),
+  // written only when the stand changes; the flags of the stands as feature state (the casing of the selected stand, the
+  // stand of a selected flight, and the stands covered by the same agent as the hovered or selected one), written only
+  // where they change; and, once per newly selected stand, the camera when that stand lies outside the area in sight.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -1851,6 +1856,15 @@ const OccMapView = forwardRef(function OccMapView({
     }
     if (!applied.drawsStands) return;
     const code = selection?.kind === 'stand' ? mapStandCode(selection.id) || null : null;
+    // The selected stand's cyan label is the selection source's: its own label leaves the stand labels by their
+    // filter, so it never shows beside the cyan one, and the cyan one needs no wide margin that would push the labels
+    // of the stands beside it away. MapLibre keeps the filter through a context loss.
+    if (applied.labelsWithout !== code) {
+      applied.labelsWithout = code;
+      const filter = standLabelFilter(code);
+      for (const id of STAND_LABEL_LAYER_IDS) engine.setFilter(id, filter);
+      markSettled(rootRef.current, false);
+    }
     // The stand of a chosen flight: from the flights the map draws, else (PR M6) from the aircraft its traffic draws for it.
     const related = selection?.kind === 'flight'
       ? relatedEntities(selection, { flights }).standCode ?? trafficStandOf(trafficAircraft, selection) : null;

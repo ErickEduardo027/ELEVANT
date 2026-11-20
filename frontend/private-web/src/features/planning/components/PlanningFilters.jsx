@@ -5,6 +5,7 @@ import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
 import { occButtonClass } from '../../occ-ui/OccButton';
 import { occControlClass } from '../../occ-ui/OccField';
+import { standDisplayCode } from '../../../services/standCodes';
 
 const QUICK_FILTERS = ['delayed', 'unassigned'];
 
@@ -97,7 +98,7 @@ export default function PlanningFilters({
           <FilterSelect label={t('filters.airline')} value={filters.airlineIata} onChange={value => onFilterChange('airlineIata', value)} options={options.airlines} />
           <FilterSelect label={t('filters.status')} value={filters.status} onChange={value => onFilterChange('status', value)} options={options.statuses} formatOption={option => getPlanningStatusMeta(option, language).label} />
           <FilterSelect label={t('filters.aircraft')} value={filters.aircraftType} onChange={value => onFilterChange('aircraftType', value)} options={options.aircraftTypes} />
-          <FilterSelect label={t('filters.position')} value={filters.position} onChange={value => onFilterChange('position', value)} options={options.positions} />
+          <FilterSelect label={t('filters.position')} value={filters.position} onChange={value => onFilterChange('position', value)} options={options.positions} formatOption={standDisplayCode} />
           <FilterSelect label={t('filters.terminal')} value={filters.terminal} onChange={value => onFilterChange('terminal', value)} options={options.terminals} />
           <FilterSelect label={t('filters.agent')} value={filters.agent} onChange={value => onFilterChange('agent', value)} options={options.agents} />
         </div>

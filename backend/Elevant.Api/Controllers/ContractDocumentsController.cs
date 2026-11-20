@@ -175,8 +175,12 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
             ? Failure<ContractDocumentResponse>(failure, result.Code) : Ok(Map(result.Document!));
     }
 
+    /// <summary>
+    /// N33: SQL reads a two-letter IATA code padded to the ICAO column's width («WN »). The answer trims it, while
+    /// <see cref="ContractDocumentData.ContentSha256"/> stays the hash of the stored content the parties signed.
+    /// </summary>
     private static ContractDocumentResponse Map(ContractDocumentData item) => new(item.ContractId, item.VersionId,
-        item.ContractCode, item.ContractStatus, item.AirlineName, item.AirlineCode, item.AirlineLegalName,
+        item.ContractCode, item.ContractStatus, item.AirlineName, item.AirlineCode.Trim(), item.AirlineLegalName,
         item.VersionNumber, item.VersionStatus, item.ValidFrom, item.ValidTo, item.CurrencyCode, item.Stations,
         item.Rates.Select(rate => new ContractDocumentRateResponse(rate.ServiceCode, rate.ServiceName, rate.BillingUnit,
             rate.UnitPrice, rate.MinimumQuantity)).ToArray(),

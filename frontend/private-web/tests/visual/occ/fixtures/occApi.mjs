@@ -70,6 +70,8 @@ const PLANNED = new Map([['A4', 6], ['A9', 7], ['B25', 8], ['AN2', 9]]);
 const ARRIVING = new Map([['A3', [10, 8]], ['B24', [11, 12]]]);
 const RELEASING = new Map([['A7', 12]]);
 const UNCOVERED = new Set(['B24', 'AN2']);
+// N26: the coverage of BN8 ended two hours ago, though the names of the day still list its agent; the map asks for one.
+const COVERAGE_ENDED = new Set(['BN8']);
 const CANCELLED_BY = new Map([['A10', 'A9']]);
 
 const MINUTE_MS = 60 * 1000;
@@ -104,9 +106,17 @@ function turnaround(index, now, { arrived, arrivalInMin = arrived ? -40 : 50, de
  * GET occ/positions?stationId=&date=: the board of the station for that operation date, as of `now`. `located` maps a
  * stand id to the location OCC saved for it (`{ latitude, longitude }`, «Ubicar en el mapa»); every other stand has
  * none. With `demo` (demoClock), the visit on A3 is that demo flight: due at its on-block, arrived at its touchdown once
- * that is past, as the demo worker records it (PR M6).
+ * that is past, as the demo worker records it (PR M6). With `includeCoverage` (`includeCoverage=true`, N26) every stand
+ * also carries its coverage windows, as the API writes them only then: the agent of the day covers from six hours before
+ * `now` to six hours after it, except on BN8, whose coverage ended two hours ago.
  */
-export function positionsBoard({ stationId = STATION.stationId, date, now = Date.now(), located = new Map(), demo = null } = {}) {
+export function positionsBoard({ stationId = STATION.stationId, date, now = Date.now(), located = new Map(), demo = null,
+  includeCoverage = false } = {}) {
+  const minute = Math.floor(now / MINUTE_MS) * MINUTE_MS;
+  const hours = count => minute + count * 60 * MINUTE_MS;
+  const windowsOf = (agentName, ended) => (agentName === null ? [] : [{
+    agentName, startsAt: iso(hours(ended ? -8 : -6)), endsAt: iso(hours(ended ? -2 : 6)), isReinforcement: false,
+  }]);
   return {
     stationId,
     stationCode: STATION.stationCode,
@@ -127,6 +137,7 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
         const [visitIndex, arrivalInMin] = ARRIVING.get(code);
         visit = turnaround(visitIndex, now, { arrived: false, arrivalInMin, departureInMin: arrivalInMin + 60 });
       } else if (PLANNED.has(code)) visit = turnaround(PLANNED.get(code), now, { arrived: false });
+      const coveredBy = visit && !UNCOVERED.has(code) ? ['Agente de prueba'] : [];
       return {
         standId,
         code,
@@ -141,7 +152,8 @@ export function positionsBoard({ stationId = STATION.stationId, date, now = Date
         maxAircraftSize: null,
         cancelledBy: CANCELLED_BY.get(code) ?? null,
         narrowbodyOnly: false,
-        coveredBy: visit && !UNCOVERED.has(code) ? ['Agente de prueba'] : [],
+        coveredBy,
+        ...(includeCoverage ? { coverage: windowsOf(coveredBy[0] ?? null, COVERAGE_ENDED.has(code)) } : {}),
       };
     }),
     unassigned: [],
@@ -454,7 +466,9 @@ export function createOccApi({ startedAt = Date.now() } = {}) {
     reads: 0, weatherReads: 0, mapReads: { airPicture: 0, flights: 0, track: 0, ping: 0 }, locates: [], located: new Map(),
     startedAt, demo: demoClock(startedAt),
   };
-  const board = (date, stationId = STATION.stationId) => positionsBoard({ stationId, date, located: api.located, demo: api.demo });
+  const board = (date, stationId = STATION.stationId, includeCoverage = false) => positionsBoard({
+    stationId, date, located: api.located, demo: api.demo, includeCoverage,
+  });
   api.handle = (request, url) => {
     const location = request.method() === 'PUT' ? LOCATION_PATH.exec(url.pathname) : null;
     if (location) {
@@ -475,7 +489,10 @@ export function createOccApi({ startedAt = Date.now() } = {}) {
     }
     if (url.pathname === '/api/v1/occ/positions') {
       api.reads += 1;
-      return { status: 200, json: board(url.searchParams.get('date'), stationId) };
+      // N26: the coverage windows only to a read that asks for them, as the API writes them.
+      return {
+        status: 200, json: board(url.searchParams.get('date'), stationId, url.searchParams.get('includeCoverage') === 'true'),
+      };
     }
     if (url.pathname === '/api/v1/occ/map/air-picture') {
       api.mapReads.airPicture += 1;

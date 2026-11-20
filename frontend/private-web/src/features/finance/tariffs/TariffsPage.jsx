@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { getFinanceTariffs } from '../../../services/financeTariffsService';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
+/** A list writes its dates dd/mm/aaaa (N36); a validity may have no end. */
 function date(value) {
-  return value ?? 'Sin vencimiento';
+  return value ? formatBusinessDate(value) : 'Sin vencimiento';
 }
 
 export default function TariffsPage({ initialStationId, embedded = false }) {
@@ -82,7 +84,7 @@ export default function TariffsPage({ initialStationId, embedded = false }) {
       className="rounded-2xl border border-status-danger/30 bg-white/70 p-5 dark:bg-surface-dark-card">
       <p className="font-semibold text-status-danger">{state.status === 'forbidden'
         ? 'No hay una estación financiera autorizada para consultar tarifas.'
-        : state.status === 'unauthorized' ? 'La sesión expiró. Vuelva a iniciar sesión.'
+        : state.status === 'unauthorized' ? 'La sesión expiró. Vuelve a iniciar sesión.'
           : 'No se pudieron cargar las tarifas contractuales.'}</p>
       {state.status === 'error' && <button type="button" onClick={() => setRevision(value => value + 1)}
         className="mt-3 rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">Reintentar</button>}

@@ -467,6 +467,38 @@ describe('map engine', () => {
     expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(2);
   });
 
+  it('setFilter gives a layer its filter once the style has loaded, and MapLibre keeps it through a context loss', () => {
+    const { engine, map, state } = setup();
+    const filter = ['!=', ['get', 'code'], 'A11'];
+    const filterCalls = () => map.calls.filter(call => call.method === 'setFilter');
+    // Asked before the style loads, it waits for it, like every call that needs the style.
+    engine.setFilter('occ-stand-codes', filter);
+    expect(filterCalls()).toEqual([]);
+    state.emit(map, 'style.load');
+    expect(map.getLayer('occ-stand-codes').filter).toEqual(filter);
+    // It replaces the layer's filter; null takes it away. A layer the style lacks is left alone.
+    engine.setFilter('occ-stand-points', null);
+    expect(map.getLayer('occ-stand-points')).not.toHaveProperty('filter');
+    expect(() => engine.setFilter('occ-nowhere', filter)).not.toThrow();
+    expect(filterCalls().map(call => call.args.slice(0, 2))).toEqual([['occ-stand-codes', filter], ['occ-stand-points', null]]);
+
+    // MapLibre 6.16 rebuilds the style after a context loss or a worker restart with the filters it was last given, so
+    // the engine puts nothing back.
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(map.getLayer('occ-stand-codes').filter).toEqual(filter);
+    expect(map.getLayer('occ-stand-points')).not.toHaveProperty('filter');
+    state.restartWorkers(map);
+    state.emit(map, 'style.load');
+    expect(map.getLayer('occ-stand-codes').filter).toEqual(filter);
+    expect(filterCalls()).toHaveLength(2);
+    // After destroy nothing reaches MapLibre.
+    engine.destroy();
+    expect(() => engine.setFilter('occ-stand-codes', null)).not.toThrow();
+    expect(filterCalls()).toHaveLength(2);
+  });
+
   it('stays unavailable when the context comes back without WebGL2 and removes the map at once', async () => {
     vi.useFakeTimers();
     const onStatus = vi.fn();

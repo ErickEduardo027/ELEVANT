@@ -47,6 +47,22 @@ it('shows published contract rates without a fake mutation action', async () => 
   expect(screen.queryByRole('button', { name: 'Programar cambio' })).not.toBeInTheDocument();
 });
 
+it('asks as tú to sign in again when the session expired (N36)', async () => {
+  vi.mocked(getFinanceTariffs).mockRejectedValueOnce(Object.assign(new Error('expired'), { status: 401 }));
+  render(<TariffsPage initialStationId={stationId} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.');
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+});
+
+it('writes the validity of each rate dd/mm/aaaa (N36)', async () => {
+  vi.mocked(getFinanceTariffs).mockResolvedValue({ stationId, page: 1, limit: 20, hasMore: false,
+    tariffs: [{ ...tariff, validTo: '2026-12-31' }] });
+  render(<TariffsPage initialStationId={stationId} />);
+  const table = await screen.findByRole('table');
+  expect(await within(table).findByText('01/01/2026 — 31/12/2026')).toBeInTheDocument();
+  expect(within(table).queryByText(/2026-01-01|2026-12-31/)).not.toBeInTheDocument();
+});
+
 it('pages through real rates and revalidates after a durable change', async () => {
   vi.mocked(getFinanceTariffs).mockResolvedValueOnce({ stationId, page: 1,
     limit: 20, hasMore: true, tariffs: [tariff] })

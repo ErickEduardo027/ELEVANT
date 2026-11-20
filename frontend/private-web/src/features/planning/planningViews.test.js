@@ -36,6 +36,12 @@ describe('planningViews', () => {
     expect(rows[1].bars[0]).toMatchObject({ startAt: '2026-11-16T14:00:00Z', endAt: '2026-11-16T15:00:00Z', state: 'planned' });
   });
 
+  it('labels a row by the code the map draws and keeps the stored code as its id (N27)', () => {
+    const rows = planningBandRows([visit('t-5', 'A02', leg('ZZ501', '2026-11-16T11:00:00Z'), null),
+      visit('t-6', 'E2E-XXXX-1', leg('ZZ601', '2026-11-16T12:00:00Z'), null)]);
+    expect(rows.map(row => [row.id, row.label])).toEqual([['A02', 'A2'], ['E2E-XXXX-1', 'E2E-XXXX-1']]);
+  });
+
   it('shows the station day, widened to the visits that fall outside it', () => {
     const rows = planningBandRows(DAY);
     expect(planningBandWindow(rows, '2026-11-16', 'America/Santo_Domingo')).toEqual({

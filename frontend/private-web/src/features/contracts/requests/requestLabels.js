@@ -21,6 +21,38 @@ export const documentLabel = type => DOCUMENT_TYPE_LABELS[type] ?? 'Otro documen
 
 export const requestStatusLabel = status => REQUEST_STATUS_LABELS[status] ?? 'Estado desconocido';
 
+// A public request's reference is its id as 32 hex digits (with dashes, the same id); a new contract keeps «DRAFT-» and
+// that id as its code until Contratos confirms its validity and it gets its final code («CTR-2026-0007»).
+const GUID = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const DRAFT_CODE = /^DRAFT-(.+)$/;
+const trimmed = value => (typeof value === 'string' ? value.trim() : '');
+const shortGuid = value => (GUID.test(value) ? `${value.slice(0, 8)}…` : value);
+
+/**
+ * The request's reference as the API sends it (N35). A list shortens a GUID to its first 8 characters and keeps it
+ * whole in `title`; a reference such as «REQ-2026-000001» is never cut, and nothing is rewritten.
+ * @returns {{ text: string, title: string | undefined }}
+ */
+export function requestReferenceLabel(reference, { list = false } = {}) {
+  const value = trimmed(reference);
+  if (!value) return { text: '—', title: undefined };
+  const text = list ? shortGuid(value) : value;
+  return { text, title: text === value ? undefined : value };
+}
+
+/**
+ * The contract's code as people read it (N35): a new contract's «DRAFT-1cc18541…» is «Borrador 1cc18541…», with the
+ * whole code in `title` and the id it shows in `draftId`; a final code stays as it is, with a null `draftId`.
+ * @returns {{ text: string, title: string | undefined, draftId: string | null }}
+ */
+export function contractCodeLabel(code) {
+  const value = trimmed(code);
+  const draft = DRAFT_CODE.exec(value);
+  if (!draft) return { text: value || '—', title: undefined, draftId: null };
+  const draftId = shortGuid(draft[1]);
+  return { text: `Borrador ${draftId}`, title: value, draftId };
+}
+
 /** Verdicts that block the approval unless Superadministración verified the airline by hand (ADR-0023). */
 export const BLOCKING_REGISTRY_STATUSES = Object.freeze(['NotFound', 'Defunct', 'Mismatch']);
 

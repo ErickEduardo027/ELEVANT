@@ -2,6 +2,8 @@ import { createElevantApiClient } from '@elevant/api-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildBoard } from '../src/features/dashboard/noc/boardModel';
 import { consoleMessages } from '../src/features/dashboard/noc/consoleMessages';
+import { buildFigures } from '../src/features/dashboard/noc/consoleModel';
+import { buildPending } from '../src/features/dashboard/noc/pendingModel';
 import { RAMP_POSITIONS } from '../src/features/dashboard/positionsData';
 import { mapOccupancyToRampPositions } from '../src/features/positions-map/positionsMapMappers';
 import { toWeatherReading } from '../src/services/weatherService';
@@ -63,6 +65,13 @@ describe('visual suite console fixtures', () => {
       await expect(clientAnswering(flights).getOccMapFlights({ stationId: STATION.stationId })).resolves.toEqual(flights);
       await expect(clientAnswering(flights).getOccMapFlights({ stationId: OTHER_STATION })).rejects.toThrow();
     }
+    // The day with ZZ800, whose operation is still open after its departure (N30).
+    const openPlanning = planningSnapshot({ now: NOW, openAfterDeparture: true });
+    await expect(clientAnswering(openPlanning).getOccPlanningSnapshot({ stationId: STATION.stationId }))
+      .resolves.toEqual(openPlanning);
+    const openFlights = mapFlights({ now: NOW, openAfterDeparture: true });
+    await expect(clientAnswering(openFlights).getOccMapFlights({ stationId: STATION.stationId }))
+      .resolves.toEqual(openFlights);
 
     for (const trails of ['short', 'none']) {
       const picture = airPicture({ now: NOW, trails });
@@ -98,6 +107,21 @@ describe('visual suite console fixtures', () => {
       .toEqual(['available', 'disabled', 'occupied', 'planned', 'unverified']);
     expect(stands.find(stand => stand.id === 'A5')).toMatchObject({ status: 'planned', coveredBy: ['Marta Castillo'] });
     expect(stands.find(stand => stand.id === 'B30')).toMatchObject({ status: 'planned', coveredBy: [] });
+  });
+
+  it('with ZZ800 the day has an operation open after its departure, which the console lists and counts (N30)', () => {
+    const t = createTranslator(consoleMessages, 'es');
+    const planning = planningSnapshot({ now: NOW, openAfterDeparture: true });
+    const board = buildBoard({ flights: mapFlights({ now: NOW, openAfterDeparture: true }).flights,
+      planningTurnarounds: planning.turnarounds, nowMs: NOW, t });
+    expect(buildPending({ board, nowMs: NOW, t }).filter(item => item.kind === 'openAfterDeparture')
+      .map(item => item.label)).toEqual(['ZZ801 con la operación abierta, salió hace 1 h 20 min']);
+    expect(buildFigures({ planning, visits: board.visits, nowMs: NOW })).toMatchObject({ inOperation: 2,
+      openAfterDeparture: 1 });
+    // Without it, the day of the other specs has none: ZZ700 was handed off.
+    const usual = buildBoard({ flights: mapFlights({ now: NOW }).flights,
+      planningTurnarounds: planningSnapshot({ now: NOW }).turnarounds, nowMs: NOW, t });
+    expect(buildPending({ board: usual, nowMs: NOW, t }).map(item => item.kind)).not.toContain('openAfterDeparture');
   });
 
   it('the stub answers the reads, keeps «Recibido» and announces the demo flight once', async () => {

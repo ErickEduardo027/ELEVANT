@@ -15,14 +15,15 @@ import {
   createServiceTariffDraft, deleteServiceTariffDraft, FINANCE_CURRENCIES, formatMoney, getServiceTariff, listFinanceServices,
   listBillingUnits, listServiceTariffs, publishServiceTariff, saveServiceTariffDraft,
 } from '../../../services/financeBookService';
-import { financeTariffMessage } from '../../../services/financeErrors';
+import { tariffBookMessage } from '../../../services/financeErrors';
 import { isConflict } from '../../../services/problemMessages';
 import { statusMeta, TARIFF_VERSION_STATUS } from '../financeLabels';
-import { businessToday } from '../../../services/businessDay';
+import { businessToday, formatBusinessDate } from '../../../services/businessDay';
+import { countLabel } from '../../contracts/agreements/agreementLabels';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const VERSION_STATUS = TARIFF_VERSION_STATUS;
-const LOAD_FAILED = 'No se pudieron cargar las tarifas. Revise la conexión e intente de nuevo.';
+const LOAD_FAILED = 'No se pudieron cargar las tarifas. Revisa la conexión e intenta de nuevo.';
 
 export function VersionList({ versions, selectedId, onSelect }) {
   return (
@@ -34,17 +35,34 @@ export function VersionList({ versions, selectedId, onSelect }) {
             <button type="button" onClick={() => onSelect(version.id)}
               className={`w-full rounded-xl border p-3 text-left transition ${selectedId === version.id ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 bg-white hover:border-accent-600/40 dark:border-white/10 dark:bg-surface-dark-card'}`}>
               <div className="flex items-center justify-between gap-2">
-                <strong className="text-sm">{version.currencyCode} · desde {version.validFrom}</strong>
+                <strong className="text-sm">{version.currencyCode} · desde {formatBusinessDate(version.validFrom)}</strong>
                 <StatusBadge tone={status.tone} label={status.label} />
               </div>
               <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {version.rateCount} tarifas{version.validTo ? ` · hasta ${version.validTo}` : ''}{version.publishedBy ? ` · ${version.publishedBy}` : ''}
+                {countLabel(version.rateCount, 'tarifa', 'tarifas')}{version.validTo ? ` · hasta ${formatBusinessDate(version.validTo)}` : ''}{version.publishedBy ? ` · ${version.publishedBy}` : ''}
               </p>
             </button>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * The dates and note of a version this account cannot edit (published, historical, or without «Modificar») as text,
+ * never as disabled fields that look editable (N34). `facts` is a list of `[label, value]`.
+ */
+export function VersionFacts({ facts }) {
+  return (
+    <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+      {facts.map(([label, value]) => (
+        <div key={label} className="min-w-0">
+          <dt className="text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark">{label}</dt>
+          <dd className="mt-1 break-words">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -97,8 +115,8 @@ function BaseTariff() {
       setSelectedId(target);
     } catch (error) {
       setVersions(null);
-      setLoadError(loadFailure(error, financeTariffMessage(error, { fallback: LOAD_FAILED,
-        forbidden: 'No tiene permiso para consultar la tarifa base.' })));
+      setLoadError(loadFailure(error, tariffBookMessage(error, { fallback: LOAD_FAILED,
+        forbidden: 'No tienes permiso para consultar la tarifa base.' })));
     }
   }, [currency]);
 
@@ -121,7 +139,7 @@ function BaseTariff() {
       setDetail(result);
       setRates(result.rates.map(rate => ({ ...rate, key: `${rate.serviceId}:${rate.stationId ?? '*'}` })));
       setMeta({ validFrom: result.summary.validFrom, validTo: result.summary.validTo ?? '', note: result.summary.note ?? '' });
-    }).catch(error => active && setMessage({ tone: 'error', text: financeTariffMessage(error, { fallback: LOAD_FAILED }) }));
+    }).catch(error => active && setMessage({ tone: 'error', text: tariffBookMessage(error, { fallback: LOAD_FAILED }) }));
     return () => { active = false; };
   }, [selectedId, reloads]);
 
@@ -146,7 +164,7 @@ function BaseTariff() {
       await load(result?.id ?? selectedId);
       return true;
     } catch (error) {
-      setMessage({ tone: 'error', text: financeTariffMessage(error) });
+      setMessage({ tone: 'error', text: tariffBookMessage(error) });
       if (isConflict(error)) await load(selectedId);
       return false;
     } finally {
@@ -167,7 +185,7 @@ function BaseTariff() {
   async function publish() {
     const latest = latestPublishedStart(versions);
     if (latest && detail.summary.validFrom <= latest) {
-      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambia «Vigente desde» y guarda.` });
       return;
     }
     const { id, version } = detail.summary;
@@ -210,11 +228,17 @@ function BaseTariff() {
           <VersionList versions={versions} selectedId={selectedId} onSelect={setSelectedId} />
           {detail && (
             <section className="min-w-0 space-y-3 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <label className="text-xs font-semibold">Vigente desde<input type="date" disabled={!editable} value={meta.validFrom} onChange={event => setMeta(current => ({ ...current, validFrom: event.target.value }))} className={fieldClass} /></label>
-                <label className="text-xs font-semibold">Hasta (opcional)<input type="date" disabled={!editable} value={meta.validTo} onChange={event => setMeta(current => ({ ...current, validTo: event.target.value }))} className={fieldClass} /></label>
-                <label className="text-xs font-semibold">Nota<input maxLength={500} disabled={!editable} value={meta.note} onChange={event => setMeta(current => ({ ...current, note: event.target.value }))} className={fieldClass} /></label>
-              </div>
+              {editable ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="text-xs font-semibold">Vigente desde<input type="date" value={meta.validFrom} onChange={event => setMeta(current => ({ ...current, validFrom: event.target.value }))} className={fieldClass} /></label>
+                  <label className="text-xs font-semibold">Hasta (opcional)<input type="date" value={meta.validTo} onChange={event => setMeta(current => ({ ...current, validTo: event.target.value }))} className={fieldClass} /></label>
+                  <label className="text-xs font-semibold">Nota<input maxLength={500} value={meta.note} onChange={event => setMeta(current => ({ ...current, note: event.target.value }))} className={fieldClass} /></label>
+                </div>
+              ) : (
+                <VersionFacts facts={[['Vigente desde', formatBusinessDate(detail.summary.validFrom)],
+                  ['Hasta', detail.summary.validTo ? formatBusinessDate(detail.summary.validTo) : 'Sin fecha de fin'],
+                  ['Nota', detail.summary.note || 'Sin nota']]} />
+              )}
               <label className="block max-w-sm text-xs font-semibold">Buscar servicio<input type="search" value={search} onChange={event => setSearch(event.target.value)} className={fieldClass} /></label>
               <StackedTable>
                 <table className="table-stack w-full min-w-[620px] text-left text-sm">
@@ -222,7 +246,7 @@ function BaseTariff() {
                   <tbody>
                     {visibleRates.map(rate => (
                       <tr key={rate.key} className="border-t border-black/5 dark:border-white/5">
-                        <td className="p-2"><strong>{rate.serviceCode}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceName}</span></td>
+                        <td className="p-2"><strong>{rate.serviceName}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceCode}</span></td>
                         <td className="p-2 text-xs">{rate.stationCode ?? 'Todas'}</td>
                         <td className="p-2">{editable ? (
                           <select aria-label={`Unidad de ${rate.serviceCode}`} value={rate.billingUnit} onChange={event => update(rate.key, { billingUnit: event.target.value })} className={fieldClass}>
@@ -246,7 +270,7 @@ function BaseTariff() {
                       serviceName: service.name, stationId: null, stationCode: null, billingUnit: proposedBillingUnit(service.defaultBillingUnit, units),
                       unitPrice: 0, minimumBillableQuantity: 0 }]);
                   }} className={fieldClass}>
-                    <option value="">Seleccione…</option>
+                    <option value="">Selecciona…</option>
                     {missingServices.map(service => <option key={service.id} value={service.id}>{service.code} · {service.name}</option>)}
                   </select>
                 </label>
@@ -263,7 +287,7 @@ function BaseTariff() {
         </div>
       )}
       <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifa base"
-        description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde ${meta.validFrom}; la anterior quedará como histórica. Guarde antes los cambios pendientes.`}
+        description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde el ${formatBusinessDate(meta.validFrom, { style: 'long' })}; la anterior quedará como histórica. Guarda antes los cambios pendientes.`}
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
         onConfirm={async () => { setConfirm(null); await publish(); }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador y sus precios se eliminarán."

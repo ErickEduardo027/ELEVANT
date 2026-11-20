@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import StatusBadge from '../../components/StatusBadge';
+import TitledSelect from '../../components/TitledSelect';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import {
@@ -9,8 +10,10 @@ import {
   prepareDemoStation,
 } from '../../services/demoFlightsService';
 import { isConflict } from '../../services/problemMessages';
+import { standDisplayCode } from '../../services/standCodes';
 import {
-  clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationStatusLabel, phaseLabel, serverClockOffset,
+  clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationOpenAfterDeparture, operationStatusLabel,
+  phaseLabel, serverClockOffset,
 } from './demoFlightStatus';
 import { reasonsSentence, standReasonText } from './demoStandReasons';
 
@@ -92,6 +95,15 @@ function defaultSizedWindow({ aircraftTypes, limits }) {
     groundMinutes: String(limits.defaultGroundMinutes) }, limits);
 }
 
+/** A station as «Estación» offers it: «PUJ · Punta Cana». */
+const stationOption = station => ({ value: station.id, label: `${station.code} · ${station.name}` });
+
+/** An airport as «Origen» and «Destino de la salida» offer it: «MIA · Miami». */
+const airportOption = airport => ({ value: airport.iataCode, label: `${airport.iataCode} · ${airport.city}` });
+
+/** An aircraft type by its code first, as OCC's importer also names it (N37): «A320 · Airbus A320». */
+const aircraftTypeLabel = type => `${type.icaoCode} · ${type.manufacturer} ${type.model}`;
+
 /** Who covers an eligible stand when the aircraft parks, by name, and how many of them OCC may assign when not all. */
 function coverText({ coveredBy, eligibleAgents }) {
   const names = coveredBy.length > 2 ? [...coveredBy.slice(0, 2), `${coveredBy.length - 2} más`] : coveredBy;
@@ -102,21 +114,24 @@ function coverText({ coveredBy, eligibleAgents }) {
 }
 
 /**
- * A stand as the field «Posición» offers it: who covers it when it is eligible, otherwise why not in words; first the
- * flags (not located, not free), then the reasons of the rule.
+ * A stand as the field «Posición» offers it, by the code the map draws (N27: the seed's A01 is A1): who covers it when it
+ * is eligible, otherwise why not in words; first the flags (not located, not free), then the reasons of the rule.
  */
 function standLabel(stand) {
-  const where = `${stand.code} · Terminal ${stand.terminalCode}`;
+  const where = `${standDisplayCode(stand.code)} · Terminal ${stand.terminalCode}`;
   if (stand.eligible) return `${where} · ${coverText(stand)}`;
   const why = reasonsSentence([...(stand.located ? [] : ['stand_not_located']), ...(stand.free ? [] : ['stand_not_free']),
     ...stand.reasons]);
   return `${where} · ${why ? capitalized(why) : standReasonText(null)}`;
 }
 
-/** The warning `no_eligible_stand`, with the reasons the most stands give (at most three, ADR-0041). */
+/**
+ * The warning `no_eligible_stand`, with the reasons the most stands give (at most three, ADR-0041). An agent is eligible
+ * when their shift covers the whole visit, not only the arrival (N24).
+ */
 function noEligibleStandText(reasons) {
   const why = reasonsSentence(reasons);
-  return `Ninguna posición habilitada tiene un agente elegible a esa hora${why ? `: ${why}` : ''}.`;
+  return `Ninguna posición habilitada tiene un agente elegible durante toda la escala${why ? `: ${why}` : ''}.`;
 }
 
 /** What the panel shows, from its two reads. The list only matters where demo flights run. */
@@ -194,6 +209,10 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
       : canDraw ? RANDOM_STAND : NO_STAND;
   const minutes = draft.minutes ?? String(limits.defaultMinutesToOnBlock);
   const groundMinutes = draft.groundMinutes ?? String(limits.defaultGroundMinutes);
+  // «Al azar» while there is a stand to draw, «Sin posición» always, then every stand: one that is not eligible says why.
+  const standOptions = [{ value: RANDOM_STAND, label: 'Al azar', disabled: !canDraw },
+    { value: NO_STAND, label: 'Sin posición' },
+    ...stands.map(item => ({ value: item.standId, label: standLabel(item), disabled: !item.eligible }))];
 
   const set = (key, value) => {
     setDraft(current => ({ ...current, [key]: value }));
@@ -249,50 +268,38 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
     <form onSubmit={submit} noValidate aria-label="Disparar vuelo demo" className={`${inset} space-y-3`}>
       <h3 className="text-base font-bold">Disparar vuelo demo</h3>
       {warnings.map(warningOf)}
+      {/* Each field names the option it shows in its title (N37); the type and the stand, the longest, take both columns. */}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-semibold">Estación
-          <select className={fieldClass} value={data.stationId} disabled={busy}
-            onChange={event => onStation(event.target.value)}>
-            {data.stations.map(station => <option key={station.id} value={station.id}>{station.code} · {station.name}</option>)}
-          </select></label>
+          <TitledSelect className={fieldClass} value={data.stationId} disabled={busy}
+            onChange={event => onStation(event.target.value)} options={data.stations.map(stationOption)} /></label>
         <div>
           <label className="block text-xs font-semibold">Aerolínea
-            <select className={fieldClass} value={airlineId} disabled={busy || !airlines.length}
-              aria-describedby={`${id}-airline`} onChange={event => set('airlineId', event.target.value)}>
-              {airlines.map(airline => <option key={airline.id} value={airline.id}>{airline.name}</option>)}
-            </select></label>
+            <TitledSelect className={fieldClass} value={airlineId} disabled={busy || !airlines.length}
+              aria-describedby={`${id}-airline`} onChange={event => set('airlineId', event.target.value)}
+              options={airlines.map(airline => ({ value: airline.id, label: airline.name }))} /></label>
           <p id={`${id}-airline`} className={`mt-1 text-xs ${muted}`}>
             Solo aerolíneas con contrato vigente hoy en la estación. El vuelo se opera y se factura como cualquier otro: use
             una aerolínea de prueba.</p>
         </div>
         <label className="block text-xs font-semibold">Origen
-          <select className={fieldClass} value={originIata} disabled={busy || !airports.length}
-            onChange={event => set('originIata', event.target.value)}>
-            {airports.map(airport => <option key={airport.iataCode} value={airport.iataCode}>{airport.iataCode} · {airport.city}</option>)}
-          </select></label>
+          <TitledSelect className={fieldClass} value={originIata} disabled={busy || !airports.length}
+            onChange={event => set('originIata', event.target.value)} options={airports.map(airportOption)} /></label>
         <label className="block text-xs font-semibold">Destino de la salida
-          <select className={fieldClass} value={destinationIata} disabled={busy}
-            onChange={event => set('destinationIata', event.target.value)}>
-            <option value="">El mismo aeropuerto</option>
-            {airports.map(airport => <option key={airport.iataCode} value={airport.iataCode}>{airport.iataCode} · {airport.city}</option>)}
-          </select></label>
-        <label className="block text-xs font-semibold">Tipo de avión
-          <select className={fieldClass} value={aircraftTypeId} disabled={busy || !aircraftTypes.length}
-            onChange={event => set('aircraftTypeId', event.target.value)}>
-            {aircraftTypes.map(type => <option key={type.id} value={type.id}>{type.icaoCode} · {type.manufacturer} {type.model}</option>)}
-          </select></label>
-        <div>
+          <TitledSelect className={fieldClass} value={destinationIata} disabled={busy}
+            onChange={event => set('destinationIata', event.target.value)}
+            options={[{ value: '', label: 'El mismo aeropuerto' }, ...airports.map(airportOption)]} /></label>
+        <label className="block text-xs font-semibold sm:col-span-2">Tipo de avión
+          <TitledSelect className={fieldClass} value={aircraftTypeId} disabled={busy || !aircraftTypes.length}
+            onChange={event => set('aircraftTypeId', event.target.value)}
+            options={aircraftTypes.map(type => ({ value: type.id, label: aircraftTypeLabel(type) }))} /></label>
+        <div className="sm:col-span-2">
           <label className="block text-xs font-semibold">Posición
-            <select className={fieldClass} value={stand} disabled={busy} aria-describedby={`${id}-stand`}
-              onChange={event => set('stand', event.target.value)}>
-              <option value={RANDOM_STAND} disabled={!canDraw}>Al azar</option>
-              <option value={NO_STAND}>Sin posición</option>
-              {stands.map(item => <option key={item.standId} value={item.standId} disabled={!item.eligible}>
-                {standLabel(item)}</option>)}
-            </select></label>
+            <TitledSelect className={fieldClass} value={stand} disabled={busy} aria-describedby={`${id}-stand`}
+              onChange={event => set('stand', event.target.value)} options={standOptions} /></label>
           <p id={`${id}-stand`} className={`mt-1 text-xs ${muted}`}>
-            Al azar: el servidor elige entre las posiciones con un agente elegible a esa hora. OCC puede asignar otra al
-            importar.</p>
+            Al azar: el servidor elige entre las posiciones con un agente elegible durante toda la escala. OCC puede
+            asignar otra al importar.</p>
         </div>
         <div>
           <label htmlFor={`${id}-minutes`} className="block text-xs font-semibold">Llega a la posición en (minutos)</label>
@@ -350,13 +357,16 @@ function loadNotice(before, answer) {
     ? 'Se cargaron las terminales de Punta Cana que faltaban; no se pudieron cargar las posiciones.' : '';
 }
 
+/** Stand codes in a sentence, each as the map draws it (N27): «B1, B2», never «B01, B02». */
+const standList = codes => codes.map(standDisplayCode).join(', ');
+
 /**
  * What a load could not create: the catalogue's stands that are still missing once «Cargar posiciones» answered this
  * same state, because their terminal or the stand itself is inactive (the command never reactivates a row).
  */
 function stillMissingText({ missingStands }) {
   return missingStands.length > 0
-    ? `Faltan: ${missingStands.join(', ')}. Su terminal o la posición están desactivadas: OCC puede activarlas en «Datos maestros».`
+    ? `Faltan: ${standList(missingStands)}. Su terminal o la posición están desactivadas: OCC puede activarlas en «Datos maestros».`
     : 'Una terminal del plano está desactivada: OCC puede activarla en «Datos maestros».';
 }
 
@@ -415,7 +425,7 @@ function PuntaCanaStandsCard({ layout, onLoaded, onStale }) {
             {load.busy ? 'Cargando posiciones…' : 'Cargar posiciones'}</button>
         </div>}
         {layout.unmatchedStands.length > 0 && <p className={`text-xs ${muted}`}>
-          Posiciones fuera del plano de referencia: {layout.unmatchedStands.join(', ')}. OCC puede desactivarlas en
+          Posiciones fuera del plano de referencia: {standList(layout.unmatchedStands)}. OCC puede desactivarlas en
           «Datos maestros».</p>}
       </>}
       {load.error && <p role="alert" className={alertClass}>{load.error}</p>}
@@ -426,16 +436,25 @@ function PuntaCanaStandsCard({ layout, onLoaded, onStale }) {
 
 const STATE_TONE = Object.freeze({ Approach: 'info', TaxiIn: 'info', Parked: 'active', TaxiOut: 'info' });
 
-/** One flight of «Vuelos demo de hoy», where its aircraft is at the server's time `serverNow`. */
+/**
+ * One flight of «Vuelos demo de hoy», where its aircraft is at the server's time `serverNow`; its stand by the code the
+ * map draws (N27). An imported flight whose operation is still open more than an hour after its aircraft left takes the
+ * warning tone and says so, as OCC's «Pendientes de la jornada» does (N30).
+ */
 function DemoFlightRow({ flight, serverNow, busy, onAction }) {
   const phase = demoFlightPhase(flight, serverNow);
   const action = demoFlightAction(flight, serverNow);
   const route = [flight.originIata || '—', flight.stationCode, flight.destinationIata || '—'].join(' → ');
-  const tone = flight.state === 'Active' ? STATE_TONE[phase] ?? 'neutral' : 'neutral';
+  const openAfterDeparture = operationOpenAfterDeparture(flight, serverNow);
+  let tone = flight.state === 'Active' ? STATE_TONE[phase] ?? 'neutral' : 'neutral';
+  if (openAfterDeparture) tone = 'warning';
+  const stand = flight.standCode ? standDisplayCode(flight.standCode) : null;
+  const suggested = flight.suggestedStandCode ? standDisplayCode(flight.suggestedStandCode) : null;
   const occ = flight.imported
-    ? `Importado por OCC · ${flight.operationCode} · ${flight.standCode ? `Posición ${flight.standCode}` : 'Sin posición asignada'}`
-    : `OCC aún no lo importa${flight.suggestedStandCode ? ` · Posición sugerida ${flight.suggestedStandCode}` : ''}`;
-  const operation = operationStatusLabel(flight.operationStatus);
+    ? `Importado por OCC · ${flight.operationCode} · ${stand ? `Posición ${stand}` : 'Sin posición asignada'}`
+    : `OCC aún no lo importa${suggested ? ` · Posición sugerida ${suggested}` : ''}`;
+  const status = operationStatusLabel(flight.operationStatus);
+  const operation = status && openAfterDeparture ? `${status}, abierta tras la salida` : status;
   return (
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">

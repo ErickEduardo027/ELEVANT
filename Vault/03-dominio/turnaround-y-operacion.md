@@ -181,6 +181,8 @@ OCC también puede liberar al agente manualmente; la operación vuelve a `Planne
 
 Desde la fase 3 del ciclo, la reasignación aplica toda la elegibilidad de la asignación y una operación iniciada se releva en lugar de liberarse: ver [La operación](#la-operación-fase-3-del-ciclo).
 
+**Quién cubre la posición, y cuándo.** *Posterior al commit verificado (hallazgo N26, 19 de noviembre de 2026):* el tablero de posiciones (`GET occ/positions`) solo traía los nombres de quienes cubren cada posición ese día, y el mapa los leía como si la cubrieran ahora. Si la lectura lo pide con `includeCoverage=true`, cada posición trae también sus ventanas de cobertura de esa fecha: el agente, desde y hasta cuándo, y si es un refuerzo; la lista queda vacía si nadie la cubre ese día ([controlador](../../backend/Elevant.Api/Controllers/OccPositionsController.cs), [tablero](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfOccPositionStore.cs)). Son las mismas coberturas no liberadas que dan los nombres, que no cambian; una ventana que empezó la noche anterior y termina ese día cuenta. Sin el parámetro, y en la respuesta de los comandos de posiciones, el tablero es el de antes, clave por clave, para que el AVIAM Web ya desplegado lo siga validando. La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) `ThePositionsBoardCarriesCoverageWindowsWhenAsked` lo comprueba con la base, y `PositionsOmitCoverageWindowsUnlessAsked`, con la API. Cómo lo usa el mapa: ver [Private Web](../05-aplicaciones/private-web-aviam.md).
+
 **Verificación.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) cubre:
 - reglas;
 - configuración;
@@ -369,6 +371,22 @@ bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
 - **Relevo.** OCC pasa una operación en curso o devuelta a otro agente
   elegible, con motivo; la operación conserva su estado y su evidencia. Una
   operación iniciada sigue a su agente aunque cambien su posición o su terminal.
+- **El turno cubre toda la escala.** *Posterior al commit verificado (hallazgo
+  N24, 19 de noviembre de 2026):* un agente solo es elegible si su turno en la
+  terminal cubre toda la ventana planificada de la operación, de la llegada a la
+  salida, y no solo su inicio
+  ([`OccShiftCoveragePolicy`](../../backend/Elevant.Application/Operations/OccShiftCoveragePolicy.cs)).
+  Con un turno de 11:00 a 20:00, una escala de 19:53 a 20:53 da «Turno no
+  compatible» (`shift_not_compatible`), y Planificación sigue ofreciendo
+  «Ajustar turno del día». Una asignación hecha después del inicio planificado
+  solo exige lo que queda de la escala, desde la hora del servidor; una escala
+  que ya terminó se juzga entera, y una operación sin ventana, a su hora de
+  referencia, como antes. La regla del mentor no cambia (D-N24). La regla es la
+  misma en la asignación, la reasignación por cambio de posición, el relevo y el
+  sorteo del vuelo demo. «Editar vuelo» juzga al agente asignado con la misma
+  ventana: conserva el vuelo reprogramado si su turno cubre la nueva escala o,
+  una vez empezada, lo que queda de ella; si no, OCC lo libera primero
+  (`assigned_agent_unavailable` con `shift_not_covering`).
 - **Contrato.** La tablet no inicia una operación si ningún contrato cubre ya su
   fecha, salvo un charter, y OCC recibe un aviso por cada operación sin iniciar
   cuando un contrato deja de estar en vigor.
@@ -446,12 +464,25 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
   desactivar ni borrar lo que ya existe: una posición que ya está se adopta por
   su código normalizado (`A01` es la `A1` del catálogo). Sus atributos son
   provisionales y OCC los revisa en la configuración de la cobertura.
+  *Posterior al commit verificado (hallazgo N27, 19 de noviembre de 2026):* los
+  datos no cambian: la semilla conserva `A01` y `A02`. AVIAM Web las muestra
+  como el mapa, `A1` y `A2`, en todas sus pantallas salvo «Datos maestros»,
+  donde se edita el código tal como está guardado: quita los ceros de relleno
+  de un código de mayúsculas, un número y mayúsculas, y cualquier otro código
+  se ve tal cual
+  ([`standDisplayCode`](../../frontend/private-web/src/services/standCodes.js)).
+  Los comandos siguen nombrando la posición por su id, y la tablet y el PDF no
+  cambian.
 - **La posición del vuelo demo.** «Al azar» sortea, con la `Idempotency-Key`
   como semilla, entre las posiciones elegibles: ubicadas en el mapa, libres
   durante la escala y cubiertas a la hora de llegada por un agente que pasa la
   regla real de asignación. Una posición elegida a mano también tiene que ser
   elegible
   ([elegibilidad](../../backend/Elevant.Application/Operations/DemoStation/DemoStandEligibility.cs)).
+  *Posterior al commit verificado (hallazgo N24, 19 de noviembre de 2026):* esa
+  regla exige que el turno del agente cubra toda la escala, de la llegada a la
+  salida, así que «Al azar» ya no elige una posición cuyo agente termina su
+  turno antes de que el avión salga.
 
 No se ha verificado en el VPS.
 

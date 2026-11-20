@@ -11,7 +11,9 @@ import { OCC_ACCESS, STATION, aerodromeWeather } from './occApi.mjs';
 // ZZ300 from YYZ on A2 with its agent at work; ZZ500 from MIA due on B30 within the hour with nobody assigned and nobody
 // covering the stand; ZZ610 from BOG later today without a stand or an agent; ZZ700, done and waiting for review. Once
 // `triggerDemo()` is called, the demo pair ZZ9001/ZZ9002 from JFK appears in the map flights (not imported, in
-// approach, B21 suggested) and the change feed announces `occ_planning`, as when the superadministrator fires it.
+// approach, B21 suggested) and the change feed announces `occ_planning`, as when the superadministrator fires it. With
+// `openAfterDeparture` (N30) the day also has ZZ800, which left A4 80 minutes ago while its agent never handed the
+// operation off: «Pendientes de la jornada» lists it and «En operación» says it is open after its departure.
 
 export const CONSOLE_PATHS = Object.freeze({
   access: '/api/v1/governance/me/access',
@@ -122,6 +124,16 @@ const VISITS = Object.freeze([
     milestones: [['BLOCK_ON', -140], ['PUSHBACK', -58]] },
 ]);
 
+// With `openAfterDeparture` (N30): ZZ800 pushed back from A4 80 minutes ago and took off 5 minutes later, and its
+// operation is still in progress, more than the hour of D-N30 after it left.
+const OPEN_AFTER_DEPARTURE = Object.freeze({ n: 800, code: '006', from: 'MIA', arrival: 'ZZ800', departure: 'ZZ801',
+  scheduledIn: -200, arrivedIn: -195, departureIn: -85, departedIn: -75, stand: 'A4', status: 'InProgress',
+  operation: 'InProgress', agent: 'marta', aircraft: 'ZZ-TST6', type: ['A320', 'A320-200'], phase: 'arrived',
+  milestones: [['BLOCK_ON', -195], ['PUSHBACK', -80]] });
+const visitsOf = openAfterDeparture => (openAfterDeparture ? [...VISITS, OPEN_AFTER_DEPARTURE] : VISITS);
+// The arrivals whose time left the map's window (2 hours back): their departures are still in it.
+const OUT_OF_WINDOW = new Set(['ZZ700', 'ZZ800']);
+
 const turnaroundId = visit => uuid('6a600000', visit.n);
 const operationId = visit => uuid('6a700000', visit.n);
 const legId = (visit, direction) => uuid('6a800000', visit.n * 10 + (direction === 'Arrival' ? 1 : 2));
@@ -169,13 +181,13 @@ function planningTurnaround(visit, now, day) {
   };
 }
 
-/** GET occ/planning?stationId=: the station's day as the server decides it. */
-export function planningSnapshot({ now = Date.now(), stationId = STATION.stationId } = {}) {
+/** GET occ/planning?stationId=: the station's day as the server decides it, with ZZ800 when `openAfterDeparture`. */
+export function planningSnapshot({ now = Date.now(), stationId = STATION.stationId, openAfterDeparture = false } = {}) {
   const day = stationDay(now);
   return {
     station: { id: stationId, code: STATION.stationCode, name: STATION_NAME, ianaTimeZone: STATION_TIME_ZONE },
     date: day,
-    turnarounds: VISITS.map(visit => planningTurnaround(visit, now, day)),
+    turnarounds: visitsOf(openAfterDeparture).map(visit => planningTurnaround(visit, now, day)),
   };
 }
 
@@ -319,15 +331,18 @@ function demoLegs(now) {
   ];
 }
 
-/** GET occ/map/flights?stationId=: the ELEVANT flights of the window (2 hours back, 12 ahead), the demo pair with `demo`. */
-export function mapFlights({ now = Date.now(), stationId = STATION.stationId, demo = false } = {}) {
+/**
+ * GET occ/map/flights?stationId=: the ELEVANT flights of the window (2 hours back, 12 ahead), the demo pair with `demo`
+ * and ZZ800's departure with `openAfterDeparture`.
+ */
+export function mapFlights({ now = Date.now(), stationId = STATION.stationId, demo = false, openAfterDeparture = false } = {}) {
   const day = stationDay(now);
   return {
     stationId, stationCode: STATION.stationCode, serverTime: new Date(now).toISOString(),
     windowFrom: minutes(now, -120), windowTo: minutes(now, 720), stationAirport: mapAirport('PUJ'),
-    // ZZ700 left more than two hours of window behind with its arrival; its departure is still in it.
-    flights: [...VISITS.flatMap(visit => mapLegs(visit, now, day)).filter(flight => flight.flightNumber !== 'ZZ700'),
-      ...(demo ? demoLegs(now) : [])],
+    // ZZ700 (and ZZ800) left more than two hours of window behind with its arrival; its departure is still in it.
+    flights: [...visitsOf(openAfterDeparture).flatMap(visit => mapLegs(visit, now, day))
+      .filter(flight => !OUT_OF_WINDOW.has(flight.flightNumber)), ...(demo ? demoLegs(now) : [])],
   };
 }
 
@@ -391,9 +406,10 @@ export function ping({ now = Date.now() } = {}) {
  * The API handler of the console for support/isolate.mjs. It answers every read of the console from the day above at the
  * moment of each request, and «Recibido» (PUT notifications/{id}/read), which the next read of the notices keeps. Every
  * other path is the isolation's 404. `triggerDemo()` fires the demo flight: from then on the map flights carry the demo
- * pair and the change feed announces `occ_planning` once. `reads` counts what was served, by path name.
+ * pair and the change feed announces `occ_planning` once. `openAfterDeparture` adds ZZ800, whose operation is still open
+ * after its departure, to the planning and the map flights. `reads` counts what was served, by path name.
  */
-export function createConsoleApi({ demo = false } = {}) {
+export function createConsoleApi({ demo = false, openAfterDeparture = false } = {}) {
   const state = { demo, changes: [], received: new Set() };
   const api = { reads: {}, acknowledged: [] };
   const count = name => { api.reads[name] = (api.reads[name] ?? 0) + 1; };
@@ -421,7 +437,9 @@ export function createConsoleApi({ demo = false } = {}) {
     }
     switch (url.pathname) {
       case CONSOLE_PATHS.access: count('access'); return { status: 200, json: OCC_ACCESS };
-      case CONSOLE_PATHS.planning: count('planning'); return { status: 200, json: planningSnapshot({ now, stationId }) };
+      case CONSOLE_PATHS.planning:
+        count('planning');
+        return { status: 200, json: planningSnapshot({ now, stationId, openAfterDeparture }) };
       case CONSOLE_PATHS.readiness:
         count('readiness');
         return { status: 200, json: assignmentReadiness({ stationId, date: url.searchParams.get('date') }) };
@@ -432,7 +450,7 @@ export function createConsoleApi({ demo = false } = {}) {
       case CONSOLE_PATHS.notices: count('notices'); return { status: 200, json: notices({ now, received: state.received }) };
       case CONSOLE_PATHS.mapFlights:
         count('mapFlights');
-        return { status: 200, json: mapFlights({ now, stationId, demo: state.demo }) };
+        return { status: 200, json: mapFlights({ now, stationId, demo: state.demo, openAfterDeparture }) };
       case CONSOLE_PATHS.airPicture:
         count('airPicture');
         return { status: 200, json: airPicture({ now, stationId, trails: url.searchParams.get('trails') ?? 'short' }) };

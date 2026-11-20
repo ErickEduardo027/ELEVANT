@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
-import { standStateOf } from '../../maps/stands/standModel';
+import { standCoverageNames, standStateOf, visitCoverageNames } from '../../maps/stands/standModel';
 import DemoTag from '../../occ-ui/DemoTag';
 import OccDataTable from '../../occ-ui/OccDataTable';
 import OccEmptyState from '../../occ-ui/OccEmptyState';
@@ -19,9 +19,25 @@ import { positionsMapMessages } from '../positionsMapMessages';
 
 const REASONS = Object.freeze(['no-positions', 'no-results']);
 
-/** Who covers a stand: the board's coverage, else the agent of its flight; `null` without either. */
+/**
+ * Who covers a stand: the board's coverage (now, with its windows of today: N26, standCoverageNames), else the agent of
+ * its flight; `null` without either. Once the windows say nobody covers it now, the names of the day are no answer.
+ */
 export function standAgentOf(position) {
-  if (Array.isArray(position?.coveredBy) && position.coveredBy.length > 0) return position.coveredBy.join(', ');
+  const names = standCoverageNames(position);
+  if (names.length > 0) return names.join(', ');
+  if (position?.display?.coverage?.live === true) return null;
+  return position?.assignedAgent ?? null;
+}
+
+/**
+ * Who covers the flight a stand shows (D-N26: visitCoverageNames), as its turnaround's «Agente» says it: the aircraft on
+ * the stand now, the one to come when it reaches the stand; else the agent of its flight; `null` without either.
+ */
+export function visitAgentOf(position) {
+  const names = visitCoverageNames(position);
+  if (names.length > 0) return names.join(', ');
+  if (position?.display?.coverage?.live === true) return null;
   return position?.assignedAgent ?? null;
 }
 

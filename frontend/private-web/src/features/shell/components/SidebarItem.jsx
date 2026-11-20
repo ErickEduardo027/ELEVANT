@@ -21,7 +21,8 @@ function ItemContent({ Icon, label, expanded, hasBadge, badgeCount, badgeToneCla
 
       <Icon className="h-4 w-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
 
-      {expanded && <span className="min-w-0 flex-1 truncate text-left font-medium">{label}</span>}
+      {/* Up to two lines, then «…», with the whole label on hover (D-N37). Collapsed, the tooltip below names it. */}
+      {expanded && <span title={label} className="min-w-0 flex-1 break-words text-left font-medium line-clamp-2">{label}</span>}
 
       {expanded && hasBadge && (
         <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-white ${badgeToneClass}`}>

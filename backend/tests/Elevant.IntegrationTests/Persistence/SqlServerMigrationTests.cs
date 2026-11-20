@@ -2596,8 +2596,11 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!;
         var published = Assert.Single(agreementPage.Contracts,
             item => item.Code == contract.ContractCode);
-        Assert.Equal((await context.Airlines.AsNoTracking().SingleAsync(item =>
-            item.Id == contract.AirlineId, cancellationToken)).Name, published.Airline);
+        var publishedAirline = await context.Airlines.AsNoTracking().SingleAsync(item =>
+            item.Id == contract.AirlineId, cancellationToken);
+        Assert.Equal(publishedAirline.Name, published.Airline);
+        // N33: the IATA code «ZX» is shown as is, never padded to the ICAO column's width («ZX »).
+        Assert.Equal(("ZX", "ZX"), (publishedAirline.IataCode, published.AirlineCode));
         Assert.Equal("Approved", Assert.Single(published.ApprovedVersions).Status);
         Assert.Single(Assert.Single(published.ApprovedVersions).Rates);
         var historicalVersion = await context.ContractVersions.SingleAsync(item =>
@@ -4580,13 +4583,15 @@ public sealed partial class SqlServerMigrationTests
                         cancellationToken);
                 Assert.Equal(1, changed);
 
+                // N24: the night shift runs past the end of the stay (10:30), so it covers all of it, as the day
+                // shift does: two compatible shifts leave the position ambiguous.
                 var overlappingShiftChanged = await administratorContext.ShiftAssignments
                     .Where(item => item.RampAgentId == riley.Id &&
                         item.WorkDate == new DateOnly(2026, 8, 18))
                     .ExecuteUpdateAsync(
                         setters => setters
                             .SetProperty(item => item.StartsAtLocal, new TimeOnly(22, 0))
-                            .SetProperty(item => item.EndsAtLocal, new TimeOnly(9, 0)),
+                            .SetProperty(item => item.EndsAtLocal, new TimeOnly(11, 0)),
                         cancellationToken);
                 Assert.Equal(1, overlappingShiftChanged);
             }

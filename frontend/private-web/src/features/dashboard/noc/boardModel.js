@@ -45,13 +45,17 @@ export function instantMs(value) {
 
 /**
  * The best time of a leg (a map flight or a planning leg): its actual time, else its estimate, else its schedule, as
- * `{ at, kind }` with `at` in milliseconds and `kind` `actual`, `estimated` or `scheduled`; `null` without any.
+ * `{ at, kind }` with `at` in milliseconds and `kind` `actual`, `estimated` or `scheduled`; `null` without any. An
+ * actual time keeps the kind a map flight gives it (contracts 1.3) as `actualKind`: `Runway`, which only says that the
+ * aircraft landed or took off, or `OnBlock`, OCC's «Registrar llegada» (N23). A planning leg tells none.
  */
 export function bestTime(leg) {
   if (!isObject(leg)) return null;
   for (const [field, kind] of TIME_FIELDS) {
     const at = instantMs(leg[field]);
-    if (at !== null) return Object.freeze({ at, kind });
+    if (at === null) continue;
+    return Object.freeze(kind === 'actual' && typeof leg.actualKind === 'string'
+      ? { at, kind, actualKind: leg.actualKind } : { at, kind });
   }
   return null;
 }
@@ -88,6 +92,14 @@ export function aircraftOnStand(legs, { nowMs, arrivedAt = null } = {}) {
 
 const dueSoon = (time, nowMs) => time !== null && Number.isFinite(nowMs) && time.at - nowMs <= DUE_SOON_MS;
 
+// The status of an arrival by its phase alone (contratos 1.3), the board's (flightStatus) and the importer's
+// (providerArrivalStatusKey): the provider's «Arrived» only says that it landed, and a flight that departed from its
+// origin is en route.
+const ARRIVAL_PHASE_KEYS = new Map([['scheduled', 'scheduled'], ['departed', 'enroute'], ['enroute', 'enroute'],
+  ['approaching', 'approaching'], ['landed', 'landed'], ['arrived', 'landed'], ['cancelled', 'cancelled'],
+  ['diverted', 'diverted']]);
+const arrivalPhaseKey = phase => ARRIVAL_PHASE_KEYS.get(phase) ?? 'unknown';
+
 /**
  * What a map flight is doing, as a status key and its signal (contratos 2.4: a normal state carries no hue):
  * - a cancelled or diverted leg asks for attention; a turnaround Completed is `completed`;
@@ -118,12 +130,36 @@ export function flightStatus(flight, { nowMs, onStand } = {}) {
   const parked = typeof onStand === 'boolean' ? onStand
     : assignedStandCode(flight) !== null && !endsItsVisit(flight) && aircraftOnStand([flight], { nowMs });
   if (parked) return { key: 'onStand', signal: null };
-  if (arrival) {
-    if (phase === 'landed' || phase === 'arrived') return { key: 'landed', signal: null };
-    if (phase === 'approaching') return { key: 'approaching', signal: null };
-    if (phase === 'enroute' || phase === 'departed') return { key: 'enroute', signal: null };
-  }
+  if (arrival) return { key: arrivalPhaseKey(phase), signal: null };
   return { key: phase === 'scheduled' ? 'scheduled' : 'unknown', signal: null };
+}
+
+// The provider's words (the statuses AeroDataBox reports, which the demo flights use too), lower-case, and the phase
+// the server gives a map flight for each before the flight's time: the table of `Waiting` and `Of` in
+// backend/Elevant.Application/Operations/MapFlights/MapFlightPhases.cs (ADR-0042, decision 7). Keep the two in step.
+const PROVIDER_WORD_PHASES = new Map([
+  ['expected', 'scheduled'], ['unknown', 'scheduled'], ['checkin', 'scheduled'], ['boarding', 'scheduled'],
+  ['gateclosed', 'scheduled'], ['delayed', 'scheduled'], ['departed', 'departed'], ['enroute', 'enroute'],
+  ['approaching', 'approaching'], ['arrived', 'arrived'], ['canceled', 'cancelled'], ['cancelled', 'cancelled'],
+  ['canceleduncertain', 'cancelled'], ['diverted', 'diverted'],
+]);
+
+/**
+ * The status key (consoleMessages `status.*`) of an arrival the feed proposes, by what the provider reports, so that
+ * «Importar vuelos» (planning/components/ProviderFlightsDialog.jsx) names it as the board names its phase, never in
+ * the provider's words (N22). Its runway time (`runwayAt`) decides first: `landed`, whatever the word. Without one,
+ * the provider's word (`providerStatus`), in any case and without the spaces around it, gives the phase the server
+ * gives a map flight (MapFlightPhases.cs) and the board's status for that phase: Expected, Unknown, CheckIn,
+ * Boarding, GateClosed and Delayed, or no word, `scheduled`; Departed and EnRoute `enroute`; Approaching
+ * `approaching`; Arrived `landed`; Canceled, Cancelled and CanceledUncertain `cancelled`; Diverted `diverted`; any
+ * other word `unknown`. It has no clock: an arrival the provider still expects stays `scheduled` after its time, when
+ * the server's phase is already `enroute`. Only for an arrival: `null` for anything else.
+ */
+export function providerArrivalStatusKey(item) {
+  if (item?.direction !== 'Arrival') return null;
+  if (instantMs(item.runwayAt) !== null) return 'landed';
+  const word = String(item.providerStatus ?? '').trim().toLowerCase();
+  return arrivalPhaseKey(word === '' ? 'scheduled' : (PROVIDER_WORD_PHASES.get(word) ?? 'unknown'));
 }
 
 // The status of a planning leg the map's window leaves out: only what the planning snapshot knows, with the stand of its
@@ -189,19 +225,48 @@ function planningStrip(turnaround, leg, direction, { nowMs, t }) {
 export const isToImport = item => item?.proposalId != null && item.imported !== true;
 
 /**
+ * When a leg says its aircraft left its stand (N30), once the leg ended its visit by leaving it (mapSelection.js:
+ * endsItsVisit): its PUSHBACK, a departure's best time once it departed, or the off-block of the demo clock once the
+ * server's timeline took the aircraft off the stand, the first of them, in milliseconds. A diverted flight or a
+ * cancelled arrival ends its visit without leaving the stand: `null`, as for a leg that did not end it.
+ */
+function leftStandAt(leg) {
+  if (!endsItsVisit(leg)) return null;
+  const pushback = Array.isArray(leg.milestones)
+    ? leg.milestones.find(item => item?.code === 'PUSHBACK' && item.actualAt != null) ?? null : null;
+  const times = [
+    instantMs(pushback?.actualAt ?? null),
+    leg.direction === 'Departure' && leg.phase === 'departed' ? bestTime(leg)?.at ?? null : null,
+    instantMs(leg.demo?.offBlockAt ?? null),
+  ].filter(Number.isFinite);
+  return times.length > 0 ? Math.min(...times) : null;
+}
+
+// When the aircraft of a visit left its stand: the first instant its legs give, else, when the map's window leaves its
+// departure out, the departure time the planning snapshot recorded; `null` while nothing says that it left.
+function departedAtOf(legs, plan) {
+  const times = legs.map(leftStandAt).filter(Number.isFinite);
+  if (times.length > 0) return Math.min(...times);
+  return legs.some(leg => leg.direction === 'Departure') ? null : instantMs(plan?.departure?.actualAt ?? null);
+}
+
+/**
  * What the map flights say of one visit, the fresh read (contratos 2.7: they are re-read on `occ_planning`, the planning
  * snapshot only on its 60 s poll): the stand they assign it (the open assignment, the same on every leg; `null` without
- * one), whether a leg ended the visit (mapSelection.js: endsItsVisit, its PUSHBACK among them) and whether its aircraft
+ * one), whether a leg ended the visit (mapSelection.js: endsItsVisit, its PUSHBACK among them), whether its aircraft
  * is on that stand (aircraftOnStand; without the arrival leg in the map's window, the arrival the planning snapshot
- * recorded). A visit without a stand, or one a leg ended, is not on a stand, as on the stands the map draws.
+ * recorded) and when it left it (`departedAt`, departedAtOf). A visit without a stand, or one a leg ended, is not on a
+ * stand, as on the stands the map draws.
  */
 function visitFactsOf(legs, plan, nowMs) {
   const standCode = legs.map(assignedStandCode).find(Boolean) ?? null;
   const ended = legs.some(endsItsVisit);
   const onStand = standCode !== null && !ended
     && aircraftOnStand(legs, { nowMs, arrivedAt: plan?.arrival?.actualAt ?? null });
-  return Object.freeze({ standCode, ended, onStand });
+  return Object.freeze({ standCode, ended, onStand, departedAt: departedAtOf(legs, plan) });
 }
+
+const isText = value => typeof value === 'string' && value !== '';
 
 function firstTime(...items) {
   const times = items.map(item => item?.sortAt).filter(Number.isFinite);
@@ -214,10 +279,11 @@ function visit(fields) {
 
 /**
  * A visit of the map: the legs of one turnaround (one visitKey) with the planning turnaround, if the day has it. Its
- * stand, its end and whether its aircraft is on the stand are what its map flights say (`facts`, visitFactsOf), fresher
- * than the snapshot: a stand assigned, moved or released on another screen reads here as on its strips at once. A leg the
- * map's window leaves out (a departure far ahead) comes from the planning snapshot with that stand, and so does what the
- * turnaround lacks: its stand as the map flights give it, its agents as the snapshot lists them.
+ * stand, its end, whether its aircraft is on the stand, when it left it and the state of its operation are what its map
+ * flights say (`facts`, visitFactsOf), fresher than the snapshot: a stand assigned, moved or released on another screen
+ * reads here as on its strips at once. A leg the map's window leaves out (a departure far ahead) comes from the planning
+ * snapshot with that stand, and so does what the turnaround lacks: its stand as the map flights give it, its agents as
+ * the snapshot lists them, the state of its operation while the map flights carry none.
  */
 function mapVisit(turnaroundId, legs, strips, plan, facts, context) {
   const arrivalLeg = legs.find(leg => leg.direction === 'Arrival') ?? null;
@@ -237,9 +303,11 @@ function mapVisit(turnaroundId, legs, strips, plan, facts, context) {
     arrival: arrival ?? null, departure: departure ?? null,
     standCode: facts.standCode,
     status: turnaround?.status ?? plan?.status ?? null,
+    operationStatus: legs.map(leg => leg.turnaround?.operationStatus).find(isText) ?? plan?.operation?.status ?? null,
     inOperation: legs.some(leg => isInOperation(leg)) || (plan !== null && isInOperation(plan)),
     onStand: facts.onStand,
     ended: facts.ended,
+    departedAt: facts.departedAt,
     // Unknown (null) until the planning snapshot has the turnaround: the map flights carry no agents.
     missing: planned ? Object.freeze(missingResources(planned)) : null,
     agentsCount: plan ? (plan.agents ?? []).length : null,
@@ -256,8 +324,10 @@ function planningVisit(turnaround, context) {
   return visit({
     id: `t:${turnaround.id}`, visitKey: `t:${turnaround.id}`, turnaroundId: turnaround.id,
     operationCode: turnaround.operationCode ?? null, airlineName: turnaround.airline?.name ?? null, arrival, departure,
-    standCode: assignedStandCode(turnaround), status: turnaround.status ?? null, inOperation: isInOperation(turnaround),
+    standCode: assignedStandCode(turnaround), status: turnaround.status ?? null,
+    operationStatus: turnaround.operation?.status ?? null, inOperation: isInOperation(turnaround),
     onStand: false, ended: CLOSED.has(normalize(turnaround.status)) || Boolean(turnaround.departure?.actualAt),
+    departedAt: instantMs(turnaround.departure?.actualAt ?? null),
     missing: Object.freeze(missingResources(turnaround)), agentsCount: (turnaround.agents ?? []).length,
     demo: turnaround.isDemo === true, sortAt: firstTime(arrival, departure), source: 'planning',
   });
@@ -280,11 +350,15 @@ const byVisitTime = (left, right) => (left.sortAt !== right.sortAt ? (left.sortA
  * - `visits`: «Escalas», one per visit with a turnaround: the map's legs of each turnaround (their visitKey), a leg the
  *   window leaves out taken from the planning snapshot, then the turnarounds of the day (`planningTurnarounds`, the
  *   snapshot as the API sends it) the window leaves out whole. Each `{ id, visitKey,
- *   turnaroundId, operationCode, airlineName, arrival, departure, standCode, status, inOperation, onStand, ended,
- *   completed, missing, agentsCount, demo, sortAt, source }`. A visit the map flights hold (`source: 'map'`) takes its
- *   `standCode`, `ended` and `onStand` from them (visitFactsOf), and `missing` (`stand`, `agents`) has that stand and
- *   the agents of the planning turnaround; `missing` and `agentsCount` are `null` while the snapshot does not have it.
- *   The strips of its legs read «En posición» by the same `onStand`.
+ *   turnaroundId, operationCode, airlineName, arrival, departure, standCode, status, operationStatus, inOperation,
+ *   onStand, ended, departedAt, completed, missing, agentsCount, demo, sortAt, source }`. A visit the map flights hold
+ *   (`source: 'map'`) takes its `standCode`, `ended`, `onStand` and `departedAt` from them (visitFactsOf), and `missing`
+ *   (`stand`, `agents`) has that stand and the agents of the planning turnaround; `missing` and `agentsCount` are
+ *   `null` while the snapshot does not have it. The strips of its legs read «En posición» by the same `onStand`.
+ *   `operationStatus` is the state of its ground operation (the map flights', else the snapshot's; `null` without
+ *   one) and `departedAt` when its aircraft left the stand, in milliseconds (N30): its PUSHBACK, its departure once it
+ *   departed or the demo clock's off-block, and for a turnaround the window leaves out, the departure time the
+ *   snapshot recorded; `null` while nothing says that it left.
  * - `counts`: `{ arrivals, departures, toImport, visits }`.
  * `t` translates consoleMessages (the status words).
  */

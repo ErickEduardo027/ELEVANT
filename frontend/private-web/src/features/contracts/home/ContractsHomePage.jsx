@@ -1,6 +1,7 @@
 import KpiCard from '../../../components/KpiCard';
 import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { ContractIcon, RequestIcon, ArrowIcon } from '../components/icons';
+import { contractCodeLabel, requestReferenceLabel } from '../requests/requestLabels';
 
 const statusLabels = {
   Pending: 'Pendiente', InReview: 'En revisión', Approved: 'Aprobada',
@@ -23,8 +24,8 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
   if (status === 'error') return <div role="alert" className="rounded-2xl border border-status-danger/30 bg-white/70 p-6 dark:bg-surface-dark-card">
     <p className="font-semibold text-status-danger">No se pudo cargar el resumen contractual.</p>
     <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{commercialRequestMessage(error, {
-      fallback: 'Revise la conexión e intente nuevamente.',
-      forbidden: 'No tiene permiso para ver las solicitudes o los borradores.',
+      fallback: 'Revisa la conexión e intenta nuevamente.',
+      forbidden: 'No tienes permiso para ver las solicitudes o los borradores.',
     })}</p>
     <button type="button" onClick={onRetry} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Reintentar</button>
   </div>;
@@ -48,18 +49,22 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <SectionCard title="Solicitudes recientes" actionLabel="Ver solicitudes" onAction={() => onNavigate('contracts-requests')}>
         {isLoading ? <div data-testid="requests-skeleton" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" /> :
-          data?.recentRequests?.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">{data.recentRequests.map(request =>
-            <li key={request.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 text-sm">
-              <span><strong className="block">{request.airline}</strong><span className="font-mono text-xs text-text-secondary-light">{request.reference}</span></span>
+          data?.recentRequests?.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">{data.recentRequests.map(request => {
+            const reference = requestReferenceLabel(request.reference, { list: true });
+            return <li key={request.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 text-sm">
+              <span><strong className="block">{request.airline}</strong><span title={reference.title} className="font-mono text-xs text-text-secondary-light">{reference.text}</span></span>
               <span className="rounded-full bg-accent-600/10 px-2.5 py-1 text-xs font-semibold text-accent-600">{statusLabels[request.status] ?? request.status}</span>
-            </li>)}</ul> : <p className="p-6 text-sm text-text-secondary-light">No hay solicitudes comerciales registradas.</p>}
+            </li>;
+          })}</ul> : <p className="p-6 text-sm text-text-secondary-light">No hay solicitudes comerciales registradas.</p>}
       </SectionCard>
       <SectionCard title="Borradores por activar" actionLabel="Ver borradores" onAction={() => onNavigate('contracts-drafts')}>
         {isLoading ? <div data-testid="drafts-skeleton" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" /> :
-          data?.pendingDrafts?.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">{data.pendingDrafts.map(draft =>
-            <li key={draft.id} className="px-5 py-4 text-sm"><strong className="block">{draft.airline}</strong>
-              <span className="font-mono text-xs text-text-secondary-light">{draft.contractCode}</span>
-            </li>)}</ul> : <p className="p-6 text-sm text-text-secondary-light">No hay versiones pendientes de activar.</p>}
+          data?.pendingDrafts?.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">{data.pendingDrafts.map(draft => {
+            const code = contractCodeLabel(draft.contractCode);
+            return <li key={draft.id} className="px-5 py-4 text-sm"><strong className="block">{draft.airline}</strong>
+              <span title={code.title} className="font-mono text-xs text-text-secondary-light">{code.text}</span>
+            </li>;
+          })}</ul> : <p className="p-6 text-sm text-text-secondary-light">No hay versiones pendientes de activar.</p>}
       </SectionCard>
     </div>
   </div>;

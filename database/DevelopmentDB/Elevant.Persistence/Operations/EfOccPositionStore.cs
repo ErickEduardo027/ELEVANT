@@ -456,14 +456,19 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             .Select(item => item.IanaTimeZone).SingleAsync(cancellationToken);
         var dayStart = BusinessCalendar.StartOfDay(operationDate, zone).ToUniversalTime();
         var dayEnd = dayStart.AddDays(1);
+        // The coverages of the day with their windows (N26): who covers a stand when, not only who does that day.
         var coverage = (await (from item in context.Set<PositionCoverage>().AsNoTracking()
                                join coveredStand in context.Set<PositionCoverageStand>().AsNoTracking() on item.Id equals coveredStand.PositionCoverageId
                                join agent in context.RampAgents.AsNoTracking() on item.RampAgentId equals agent.Id
                                join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
                                where item.StationId == stationId && item.ReleasedAt == null && item.StartsAt < dayEnd && dayStart < item.EndsAt
-                               select new { coveredStand.StandId, Name = (person.FirstName + " " + person.LastName).Trim() })
+                               select new
+                               {
+                                   coveredStand.StandId, Name = (person.FirstName + " " + person.LastName).Trim(), item.StartsAt,
+                                   item.EndsAt, item.IsReinforcement,
+                               })
                 .ToArrayAsync(cancellationToken))
-            .ToLookup(item => item.StandId, item => item.Name);
+            .ToLookup(item => item.StandId);
         // The day's turnarounds plus any aircraft still parked from an earlier day.
         var turnarounds = await (from turnaround in context.Turnarounds.AsNoTracking()
                                  join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
@@ -517,8 +522,13 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 stand.Latitude, stand.Longitude, stand.HasBoardingBridge, stand.IsRemote, stand.MaxAircraftSize?.ToString(),
                 cancelled.GetValueOrDefault(stand.Id),
                 stand.MaxAircraftSize == AircraftSizeCategory.Narrowbody || limited.Contains(stand.Id),
-                coverage[stand.Id].Distinct().ToArray(),
-                required.TryGetValue(stand.Id, out var permits) ? permits.Select(item => item.Name).ToArray() : null);
+                coverage[stand.Id].Select(item => item.Name).Distinct().ToArray(),
+                required.TryGetValue(stand.Id, out var permits) ? permits.Select(item => item.Name).ToArray() : null,
+                coverage[stand.Id]
+                    .Select(item => new OccPositionCoverageData(item.Name, item.StartsAt.ToUniversalTime(),
+                        item.EndsAt.ToUniversalTime(), item.IsReinforcement))
+                    .Distinct().OrderBy(item => item.StartsAt).ThenBy(item => item.EndsAt)
+                    .ThenBy(item => item.AgentName, StringComparer.Ordinal).ToArray());
         }).ToArray();
         var unassigned = turnarounds.Where(item => !assignmentOf.ContainsKey(item.Id) && !departed.Contains(item.Id) &&
                 item.CurrentStatus is not (TurnaroundStatus.Completed or TurnaroundStatus.Diverted))

@@ -167,6 +167,19 @@ public static class DemoFlightRules
         return new DemoFlightOptionsQuery(stationId, aircraftTypeId, minutes, ground);
     }
 
+    /// <summary>
+    /// The instant a demo flight is scheduled from: <paramref name="now"/> rounded up to the next whole minute, itself on
+    /// one, in the offset it was given (offsets are whole minutes). The trigger adds the minutes to the stand to it, so
+    /// the on-block and the departure fall on whole minutes: the screens show times without seconds and count down to
+    /// the minute, and an on-block at 19:53:40 would read «19:53 · en 4 min» at 19:50 (N28). The minutes asked for are a
+    /// minimum, with less than one more; the aircraft still appears when the flight is triggered.
+    /// </summary>
+    public static DateTimeOffset ScheduledFrom(DateTimeOffset now)
+    {
+        var intoMinute = now.UtcTicks % TimeSpan.TicksPerMinute;
+        return intoMinute == 0 ? now : now.AddTicks(TimeSpan.TicksPerMinute - intoMinute);
+    }
+
     /// <summary>The intent of a cancel command by its exact name; null for anything else.</summary>
     public static DemoFlightIntent? ParseIntent(string? value) => ExactName<DemoFlightIntent>(value);
 

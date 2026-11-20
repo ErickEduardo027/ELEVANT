@@ -231,6 +231,74 @@ public sealed partial class SqlServerMigrationTests
         (result.Failure, result.Code);
 
     /// <summary>
+    /// N26: the positions board brings, per stand, the windows of the coverages of its date (the agent, from when to when
+    /// and whether it is a reinforcement), which the API writes to a read that asks for them (<c>includeCoverage=true</c>):
+    /// with them a screen tells who covers the stand now, which the names of the day alone do not. A window from the
+    /// night before that ends in the day counts; a released coverage and one of the next day do not. The names stay.
+    /// </summary>
+    [Fact]
+    public async Task ThePositionsBoardCarriesCoverageWindowsWhenAsked()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await SeedDevelopmentAsync(database, ct);
+        var day = new DateOnly(2026, 11, 16);
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var station = await context.Stations.Where(item => item.PublicId == SeededPujStation).Select(item => item.Id)
+                .SingleAsync(ct);
+            var a01 = await context.Stands.Where(item => item.StationId == station && item.Code == "A01")
+                .Select(item => new { item.Id, item.TerminalId }).SingleAsync(ct);
+            var occ = await context.Users.Where(user => user.PublicId == SeededOccAccount).Select(user => user.Id)
+                .SingleAsync(ct);
+            var agents = await context.RampAgents
+                .Where(item => item.EmployeeNumber == "DEV-RA-001" || item.EmployeeNumber == "DEV-RA-002")
+                .ToDictionaryAsync(item => item.EmployeeNumber, item => item.Id, ct);
+            var now = DateTimeOffset.UtcNow;
+            PositionCoverage Window(string agent, DateTimeOffset startsAt, DateTimeOffset endsAt, bool reinforcement = false,
+                bool released = false) => new()
+            {
+                PublicId = Guid.CreateVersion7(), StationId = station, TerminalId = a01.TerminalId!.Value,
+                RampAgentId = agents[agent], IsReinforcement = reinforcement, StartsAt = startsAt, EndsAt = endsAt,
+                AssignedByAccountId = occ, ReleasedAt = released ? now : null, ReleasedByAccountId = released ? occ : null,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            PositionCoverage[] windows =
+            [
+                // The night before, until 02:00; the day shift; and the evening's reinforcement.
+                Window("DEV-RA-002", LocalAt(day.AddDays(-1), 22), LocalAt(day, 2)),
+                Window("DEV-RA-001", LocalAt(day, 5), LocalAt(day, 17)),
+                Window("DEV-RA-002", LocalAt(day, 17), LocalAt(day, 23), reinforcement: true),
+                // Not the day's: a coverage OCC released and one of the next day.
+                Window("DEV-RA-002", LocalAt(day, 8), LocalAt(day, 10), released: true),
+                Window("DEV-RA-001", LocalAt(day.AddDays(1), 5), LocalAt(day.AddDays(1), 9)),
+            ];
+            context.AddRange(windows);
+            await context.SaveChangesAsync(ct);
+            context.AddRange(windows.Select(item => new PositionCoverageStand { PositionCoverageId = item.Id, StandId = a01.Id }));
+            await context.SaveChangesAsync(ct);
+        }
+
+        await using var provider = CreateAuthenticationProvider(database.ConnectionString, new PasswordHashCounter());
+        await using var scope = provider.CreateAsyncScope();
+        var board = (await scope.ServiceProvider.GetRequiredService<IOccPositionStore>()
+            .ReadAsync(SeededOccAccount, SeededPujStation, day, ct)).Board!;
+        var a01Board = board.Positions.Single(position => position.Code == "A01");
+        Assert.Equal(
+        [
+            new OccPositionCoverageData("Mateo Candidato", LocalAt(day.AddDays(-1), 22), LocalAt(day, 2), false),
+            new OccPositionCoverageData("Riley Ramp", LocalAt(day, 5), LocalAt(day, 17), false),
+            new OccPositionCoverageData("Mateo Candidato", LocalAt(day, 17), LocalAt(day, 23), true),
+        ], a01Board.Coverage);
+        Assert.Equal(["Mateo Candidato", "Riley Ramp"], (a01Board.CoveredBy ?? []).Order(StringComparer.Ordinal));
+        // A stand nobody covers that day has no window, and its list of names stays empty.
+        var a02 = board.Positions.Single(position => position.Code == "A02");
+        Assert.Equal((0, 0), (a02.Coverage?.Count ?? -1, a02.CoveredBy?.Count ?? -1));
+    }
+
+    /// <summary>
     /// 3-C: a recorded arrival only means the aircraft is on blocks. OCC assigns the first agent after it, and another
     /// one after releasing the first; the operation is still Planned, so the options load and the assignment commits.
     /// </summary>

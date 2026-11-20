@@ -224,6 +224,30 @@ describe('fake MapLibre', () => {
     expect(map.featureStateOf('points', 9)).toBeUndefined();
   });
 
+  it('setFilter replaces a layer\'s filter, null takes it away, and a context loss keeps it, like MapLibre 6.16', () => {
+    const { fake, map } = newMap();
+    const filter = ['!=', ['get', 'code'], 'A11'];
+    expect(() => map.setFilter('dots', filter)).toThrow('Style is not done loading.');
+    fake.state.emit(map, 'style.load');
+    expect(map.getFilter('dots')).toBeUndefined();
+    map.setFilter('dots', filter);
+    expect(map.getFilter('dots')).toEqual(filter);
+    expect(map.getLayer('dots').filter).toEqual(filter);
+    expect(map.filterCalls).toEqual([{ id: 'dots', filter }]);
+    // Stricter than MapLibre, which fires an error event: a missing layer throws.
+    expect(() => map.setFilter('nope', filter)).toThrow(/does not exist/);
+
+    // The style MapLibre rebuilds after a context loss keeps the filter the layer was last given.
+    fake.state.loseContext(map);
+    expect(map.snapshot.layers.find(layer => layer.id === 'dots').filter).toEqual(filter);
+    fake.state.restoreContext(map);
+    fake.state.emit(map, 'style.load');
+    expect(map.getFilter('dots')).toEqual(filter);
+    map.setFilter('dots', null);
+    expect(map.getLayer('dots')).not.toHaveProperty('filter');
+    expect(map.filterCalls.at(-1)).toEqual({ id: 'dots', filter: null });
+  });
+
   it('a raster source takes new tiles with setTiles and a context loss rebuilds it with them, like MapLibre 6.16', () => {
     const fake = createFakeMapLibre();
     fake.module.setWorkerUrl(SERVED_WORKER_URL);

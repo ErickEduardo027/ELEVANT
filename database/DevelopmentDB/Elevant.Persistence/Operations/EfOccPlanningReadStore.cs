@@ -480,14 +480,18 @@ internal sealed class EfOccPlanningReadStore(
     /// <summary>
     /// The agents of the station and the facts OCC's eligibility evaluates for one operation
     /// (<see cref="OccAgentEligibilityPolicy"/>): account, scopes, documents and qualification on
-    /// <paramref name="operationDate"/>, the shift and absences at <paramref name="referenceTime"/> in the station's
-    /// calendar, the mentor a junior needs, and the simultaneous operations in [<paramref name="plannedStartAt"/>,
-    /// <paramref name="plannedEndAt"/>) (<see cref="AgentSimultaneity"/>; the operation itself never counts, and without
-    /// an operation every overlapping one does). The stand reassignment, the handover and the demo flight options
-    /// (ADR-0041, with no operation yet) evaluate only <paramref name="onlyAgentIds"/>, with the same rules as the manual
-    /// assignment. With <paramref name="standId"/>, the permits that stand requires (ADR-0045) are part of the facts and
-    /// each candidate carries the required codes it holds current on <paramref name="operationDate"/>; without it, every
-    /// code it holds current, so a caller can judge several stands (the demo flight options).
+    /// <paramref name="operationDate"/>; a shift, in the station's calendar, that covers the whole of
+    /// [<paramref name="plannedStartAt"/>, <paramref name="plannedEndAt"/>), or what is left of it once the planned
+    /// start has passed (N24, <see cref="OccShiftCoveragePolicy.WindowToCover"/>), and without that window the shift at
+    /// <paramref name="referenceTime"/>; the absences on the day of <paramref name="referenceTime"/> and of that shift;
+    /// the mentor a junior needs at <paramref name="referenceTime"/>; and the simultaneous operations in
+    /// [<paramref name="plannedStartAt"/>, <paramref name="plannedEndAt"/>) (<see cref="AgentSimultaneity"/>; the
+    /// operation itself never counts, and without an operation every overlapping one does). The stand reassignment, the
+    /// handover and the demo flight options (ADR-0041, with no operation yet) evaluate only
+    /// <paramref name="onlyAgentIds"/>, with the same rules as the manual assignment. With <paramref name="standId"/>,
+    /// the permits that stand requires (ADR-0045) are part of the facts and each candidate carries the required codes it
+    /// holds current on <paramref name="operationDate"/>; without it, every code it holds current, so a caller can judge
+    /// several stands (the demo flight options).
     /// </summary>
     internal async Task<AgentCandidate[]> BuildAgentCandidatesAsync(
         long? operationId,
@@ -513,6 +517,17 @@ internal sealed class EfOccPlanningReadStore(
         var localDate = DateOnly.FromDateTime(localReference.DateTime);
         var localTime = TimeOnly.FromDateTime(localReference.DateTime);
         var previousDate = localDate.AddDays(-1);
+        var now = timeProvider.GetUtcNow();
+        // N24: the shift covers the whole stay, or what is left of it after a late start (D-N24), in local time.
+        (DateTime Start, DateTime End)? windowLocal =
+            OccShiftCoveragePolicy.WindowToCover(plannedStartAt, plannedEndAt, now) is { } window
+                ? (TimeZoneInfo.ConvertTime(window.Start, zone).DateTime,
+                    TimeZoneInfo.ConvertTime(window.End, zone).DateTime)
+                : null;
+        // A shift that covers it starts that day or the day before (it lasts at most sixteen hours).
+        var coverDate = windowLocal is { } local ? DateOnly.FromDateTime(local.Start) : localDate;
+        var firstShiftDate = (coverDate < localDate ? coverDate : localDate).AddDays(-1);
+        var lastShiftDate = coverDate > localDate ? coverDate : localDate;
         var agents = await (
                 from agent in context.RampAgents.AsNoTracking()
                 join person in context.Persons.AsNoTracking()
@@ -557,7 +572,6 @@ internal sealed class EfOccPlanningReadStore(
 
         var personIds = agents.Select(agent => agent.PersonId).ToArray();
         var agentIds = agents.Select(agent => agent.Id).ToArray();
-        var now = timeProvider.GetUtcNow();
 
         var accounts = await context.Users
             .AsNoTracking()
@@ -672,7 +686,7 @@ internal sealed class EfOccPlanningReadStore(
                 .Where(shift => agentIds.Contains(shift.RampAgentId) &&
                     shift.StationId == stationId &&
                     shift.TerminalId == terminalId.Value &&
-                    (shift.WorkDate == localDate || shift.WorkDate == previousDate))
+                    shift.WorkDate >= firstShiftDate && shift.WorkDate <= lastShiftDate)
                 .Select(shift => new
                 {
                     shift.RampAgentId,
@@ -690,7 +704,7 @@ internal sealed class EfOccPlanningReadStore(
                 request.Status == AvailabilityRequestStatus.Approved &&
                 (request.Type == AvailabilityRequestType.DayOff ||
                  request.Type == AvailabilityRequestType.Restriction) &&
-                request.StartsOn <= localDate && request.EndsOn >= previousDate)
+                request.StartsOn <= lastShiftDate && request.EndsOn >= firstShiftDate)
             .Select(request => new
             {
                 request.RampAgentId,
@@ -785,12 +799,12 @@ internal sealed class EfOccPlanningReadStore(
             var hasAccountStationScope = agentAccounts.Any(account =>
                 accountScopes.Contains(account.Id));
             var compatibleShifts = shiftsByAgent[agent.Id]
-                .Where(shift => OccShiftCoveragePolicy.Covers(
+                .Where(shift => OccShiftCoveragePolicy.CoversOperation(
                     shift.WorkDate,
                     shift.StartsAtLocal,
                     shift.EndsAtLocal,
-                    localDate,
-                    localTime))
+                    localReference.DateTime,
+                    windowLocal))
                 .ToArray();
             var hasShift = compatibleShifts.Length > 0;
             var hasApprovedAbsence = absencesByAgent[agent.Id].Any(absence =>

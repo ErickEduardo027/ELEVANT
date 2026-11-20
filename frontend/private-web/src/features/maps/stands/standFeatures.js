@@ -8,7 +8,7 @@ import { TERMINALS, isRetired, standCodeOf, standTerminalOf } from '../core/came
 import { mapMessages } from '../mapMessages';
 import { standPaint } from './standLayers';
 import {
-  STILL_BELOW_MS, coverageInitials, displayFromStatus, floorToMinute, minutesUntil, standStateOf,
+  STILL_BELOW_MS, coverageInitials, displayFromStatus, floorToMinute, minutesUntil, standCoverageNames, standStateOf,
 } from './standModel';
 
 // The stands of a screen as the GeoJSON of the stand layers (stands/standLayers.js): the polygons with their state,
@@ -90,9 +90,9 @@ const collection = features => ({ type: 'FeatureCollection', features });
 const hasAircraft = state => standPaint(state).glyph === 'aircraft';
 
 // «Llega 14:20 · en 12 min», «Llega 14:20», «Sale 15:05 · en 8 min» or «Sale 15:05» (the departure of an aircraft on
-// the stand, the arrival of one to come, counted down at `now`; only for a visit of the board), then the covering
-// agents' initials, which a stand without a visit shows alone: who covers a stand is a fact of the stand, and the
-// tooltip and the drawer say it in full («Cubre M. Castillo»).
+// the stand, the arrival of one to come, counted down at `now`; only for a visit of the board), then the initials of the
+// agents who cover it now (N26: standCoverageNames), which a stand without a visit shows alone: who covers a stand is a
+// fact of the stand, and the tooltip and the drawer say it in full («Cubre M. Castillo»).
 function timeLine(stand, { t, clock, now }) {
   let time = null;
   if (stand.display.visit != null) {
@@ -102,7 +102,7 @@ function timeLine(stand, { t, clock, now }) {
     const verb = onStand ? 'departs' : 'arrives';
     if (Number.isFinite(at)) time = minutes > 0 ? t(`stand.${verb}In`, { time: clock(at), minutes }) : t(`stand.${verb}`, { time: clock(at) });
   }
-  const line = [time, coverageInitials(stand.position.coveredBy)].filter(Boolean).join(SEPARATOR);
+  const line = [time, coverageInitials(standCoverageNames(stand.position))].filter(Boolean).join(SEPARATOR);
   return line === '' ? null : line;
 }
 

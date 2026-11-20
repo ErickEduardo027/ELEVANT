@@ -50,7 +50,7 @@ export const reviewMessages = {
         emptyPhase: 'Push-back sin hitos en «{phase}»',
         afterPushbackOne: '1 hito registrado después del push-back',
         afterPushback: '{count} hitos registrados después del push-back',
-        hint: 'El push-back cierra el tiempo en tierra y libera la posición: revisa su hora antes de decidir.',
+        hint: 'El push-back cierra el tiempo en tierra y libera la posición: revise su hora antes de decidir.',
       },
       damages: '{count} daño(s) marcados en el walk-around',
       charges: 'Recargos',

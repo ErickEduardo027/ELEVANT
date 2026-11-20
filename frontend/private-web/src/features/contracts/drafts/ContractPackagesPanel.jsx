@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { formatMoney } from '../../../services/financeBookService';
 import {
-  createPackageCommand, financePackageError, listContractPackages, listFinancePackages, setContractPackages,
+  contractPackageError, createPackageCommand, listContractPackages, listFinancePackages, setContractPackages,
 } from '../../../services/financePackagesService';
 import { FLIGHT_DIRECTION_LABELS, PACKAGE_STATUS, packageScopeLabel, statusMeta } from '../../finance/financeLabels';
 
@@ -36,7 +37,7 @@ function PackageDefinition({ item }) {
     <p className="mt-1">{statusMeta(PACKAGE_STATUS, item.status).label} · {formatMoney(item.basePrice, item.currencyCode)} · {packageScopeLabel(item.scope)}
       {item.scope === 'Flight' && ` · ${FLIGHT_DIRECTION_LABELS[item.flightDirection] ?? 'Sin dirección'}`}
       {item.scope === 'Period' && ` · ${item.periodDays} días`}</p>
-    <p className="mt-1 text-text-secondary-light">Desde {item.validFrom}{item.validTo ? ` hasta ${item.validTo}` : ' · sin fecha final'}</p>
+    <p className="mt-1 text-text-secondary-light">Desde {formatBusinessDate(item.validFrom)}{item.validTo ? ` hasta ${formatBusinessDate(item.validTo)}` : ' · sin fecha final'}</p>
     <ul className="mt-2 space-y-1 text-text-secondary-light dark:text-text-secondary-dark">
       {item.components.map(component => <li key={component.serviceId} className="break-words">
         {component.serviceCode} · {component.serviceName}: incluye {component.includedQuantity} (unidad: {billingUnitLabel(component.billingUnit)}); excedente de {component.excessBlockSize} por {formatMoney(component.excessBlockPrice, item.currencyCode)}.
@@ -67,8 +68,8 @@ export default function ContractPackagesPanel({ draft, canEdit = true, disabled 
         if (!active) return;
         setState({ status: bound.status === 'fulfilled' ? 'ready' : 'error',
           bound: bound.status === 'fulfilled' ? bound.value : [], catalog: catalog.status === 'fulfilled' ? catalog.value : [],
-          error: bound.status === 'rejected' ? financePackageError(bound.reason) : '',
-          catalogError: catalog.status === 'rejected' ? financePackageError(catalog.reason) : '' });
+          error: bound.status === 'rejected' ? contractPackageError(bound.reason) : '',
+          catalogError: catalog.status === 'rejected' ? contractPackageError(catalog.reason) : '' });
         setSelectedIds(bound.status === 'fulfilled' ? bound.value.map(item => item.id) : []);
       });
     return () => { active = false; };
@@ -96,8 +97,8 @@ export default function ContractPackagesPanel({ draft, canEdit = true, disabled 
       onDirtyChange?.(false);
       setNotice('Paquetes guardados.');
       try { await onSaved?.(); }
-      catch { setError('Los paquetes se guardaron. Actualice el borrador para obtener su versión vigente antes de continuar.'); }
-    } catch (failure) { setError(financePackageError(failure)); }
+      catch { setError('Los paquetes se guardaron. Actualiza el borrador para obtener su versión vigente antes de continuar.'); }
+    } catch (failure) { setError(contractPackageError(failure)); }
     finally { setBusy(false); onBusyChange?.(false); }
   }
 
@@ -110,7 +111,7 @@ export default function ContractPackagesPanel({ draft, canEdit = true, disabled 
         : <>
           {state.bound.length === 0 && <p className="text-xs text-text-secondary-light">Este contrato no tiene paquetes seleccionados.</p>}
           {state.catalogError && <p role="alert" className="text-xs text-status-danger">{state.catalogError}</p>}
-          {editable && <p className="text-xs text-text-secondary-light">Seleccione la versión vigente al inicio y con cobertura durante todo el contrato. Cada servicio puede estar cubierto por un solo paquete.</p>}
+          {editable && <p className="text-xs text-text-secondary-light">Selecciona la versión vigente al inicio y con cobertura durante todo el contrato. Cada servicio puede estar cubierto por un solo paquete.</p>}
           {choices.map(item => <div key={item.id} role="group" aria-label={`Paquete ${item.code} v${item.versionNumber}`} className="flex items-start gap-3 rounded-lg border border-black/10 p-3 dark:border-white/10">
             {editable && <input type="checkbox" aria-label={`Seleccionar ${item.code} v${item.versionNumber}`} checked={selectedIds.includes(item.id)}
               disabled={locked || Boolean(state.catalogError) || (!selectedIds.includes(item.id) && !available.some(candidate => candidate.id === item.id))}
@@ -118,9 +119,9 @@ export default function ContractPackagesPanel({ draft, canEdit = true, disabled 
             <PackageDefinition item={item} />
           </div>)}
           {editable && available.length === 0 && !state.catalogError && <p className="text-xs text-text-secondary-light">No hay paquetes en {draft.currencyCode} elegibles para la vigencia del contrato.</p>}
-          {editable && !state.catalogError && hasIneligible && <p role="alert" className="text-xs text-status-danger">Un paquete seleccionado ya no es elegible. Quite esa selección y elija una versión vigente en la moneda del contrato antes de guardar.</p>}
-          {editable && disabled && <p className="text-xs text-text-secondary-light">Guarde primero los cambios del borrador para seleccionar paquetes.</p>}
-          {editable && !draft.version && <p role="alert" className="text-xs text-status-danger">Actualice el borrador para obtener su versión vigente.</p>}
+          {editable && !state.catalogError && hasIneligible && <p role="alert" className="text-xs text-status-danger">Un paquete seleccionado ya no es elegible. Quita esa selección y elige una versión vigente en la moneda del contrato antes de guardar.</p>}
+          {editable && disabled && <p className="text-xs text-text-secondary-light">Guarda primero los cambios del borrador para seleccionar paquetes.</p>}
+          {editable && !draft.version && <p role="alert" className="text-xs text-status-danger">Actualiza el borrador para obtener su versión vigente.</p>}
           {editable && <button type="button" disabled={locked || !dirty || hasIneligible || Boolean(state.catalogError)} onClick={() => void save()} className={`${buttonClass} border-accent-600 text-accent-600`}>Guardar paquetes</button>}
         </>}
     {notice && <p role="status" className="text-xs text-status-success">{notice}</p>}

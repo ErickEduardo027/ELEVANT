@@ -19,6 +19,7 @@ import {
 
 const NOW = Date.UTC(2026, 10, 13, 15, 0);
 const DATE = '2026-11-13';
+const HOUR = 60 * 60 * 1000;
 
 function clientAnswering(body) {
   return createElevantApiClient({
@@ -34,6 +35,31 @@ describe('visual suite OCC fixtures', () => {
     await expect(clientAnswering(board).getOccPositions(STATION.stationId, DATE)).resolves.toEqual(board);
     // Another station's board is refused, as the page would refuse it.
     await expect(clientAnswering(board).getOccPositions('0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', DATE)).rejects.toThrow();
+  });
+
+  it('asked for them, the board brings the coverage windows the client accepts, BN8\'s ended two hours ago (N26)', async () => {
+    const board = positionsBoard({ date: DATE, now: NOW, includeCoverage: true });
+    await expect(clientAnswering(board).getOccPositions(STATION.stationId, DATE, { includeCoverage: true }))
+      .resolves.toEqual(board);
+    // Only a read that asked receives them.
+    await expect(clientAnswering(board).getOccPositions(STATION.stationId, DATE)).rejects.toThrow();
+    const windowsOf = code => board.positions.find(stand => stand.code === code).coverage;
+    expect(windowsOf('BN8')).toEqual([{ agentName: 'Agente de prueba', startsAt: new Date(NOW - 8 * HOUR).toISOString(),
+      endsAt: new Date(NOW - 2 * HOUR).toISOString(), isReinforcement: false }]);
+    expect(windowsOf('A2')).toMatchObject([{ agentName: 'Agente de prueba', endsAt: new Date(NOW + 6 * HOUR).toISOString() }]);
+    expect(windowsOf('B24')).toEqual([]);
+    // Read as the positions map reads it: BN8 asks for an agent; A2 keeps the one of the day.
+    const stands = withStandDisplay(mapOccupancyToRampPositions(RAMP_POSITIONS, board, new Date(NOW).toISOString()),
+      { nowMs: NOW });
+    const signalsOf = code => stands.find(stand => stand.id === code).signals;
+    expect(signalsOf('BN8')).toEqual([{ kind: 'attention', reason: 'uncovered' }]);
+    expect(signalsOf('A2')).toEqual([]);
+    // The stub answers them only to a read that asks.
+    const api = createOccApi({ startedAt: NOW });
+    const read = query => api.handle({ method: () => 'GET' },
+      new URL(`https://api.elevant.test/api/v1/occ/positions?stationId=${STATION.stationId}&date=${DATE}${query}`)).json;
+    expect(read('&includeCoverage=true').positions.every(stand => Array.isArray(stand.coverage))).toBe(true);
+    expect(read('').positions.some(stand => 'coverage' in stand)).toBe(false);
   });
 
   it('the board draws the stands of the map with every state the page can show', () => {

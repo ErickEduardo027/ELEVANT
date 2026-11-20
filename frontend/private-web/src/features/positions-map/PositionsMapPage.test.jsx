@@ -574,7 +574,8 @@ describe('PositionsMapPage inside the OCC frame (PR M6)', () => {
     expect(stub).toHaveAttribute('data-traffic-selection', `flight:${TRAFFIC_FLIGHT_KEY.arrival}`);
     expect(stub).toHaveAttribute('data-selected', '');
     const block = within(stub).getByRole('dialog', { name: 'Vuelo ZZ161' });
-    expect(block).toHaveStyle({ top: '12px', left: '56px' });
+    // Right of the page's map tools, one block 38 px wide with its joint (N29), 12 px from the map's edge.
+    expect(block).toHaveStyle({ top: '12px', left: '58px' });
     // «Cerrar» lets it go, keeping the other keys of the URL.
     act(() => within(block).getByRole('button', { name: 'Cerrar' }).click());
     expect(query().has('flightId')).toBe(false);

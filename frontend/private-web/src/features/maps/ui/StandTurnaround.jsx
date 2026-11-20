@@ -5,25 +5,31 @@ import { operationStatusLabel } from '../../operations/operationLabels';
 import { buildMilestonePhases } from '../../occ-ui/milestonePhases';
 import OccMilestoneStrip from '../../occ-ui/OccMilestoneStrip';
 import { mapMessages } from '../mapMessages';
-import { displayFromStatus } from '../stands/standModel';
+import { displayFromStatus, visitCoverageNames } from '../stands/standModel';
 import { stationTime } from '../traffic/stationTime';
 
 // The visits of a stand on the OCC maps (owner request of 2026-11-15), for its drawer on Mapa de posiciones and the
 // console's inspector: the turnaround on it (or the one coming, on a stand still waiting) with its flight and airline,
-// its aircraft, origin and destination, the scheduled, estimated and actual times of its arrival and departure, the
-// countdown of what comes next, its agent and the state of its operation, its milestones (occ-ui/OccMilestoneStrip.jsx,
-// from the map flights' `milestones`), and the next turnaround onto the stand. From what the screen already read
-// (useStandDisplay over the positions board and the map flights: stands/standModel.js, `display.detail` and
-// `display.next`): no read is added. Times are the station's.
+// its aircraft, origin and destination, the scheduled, estimated and actual times of its arrival (when it landed apart
+// from when it reached the stand, N23) and departure, the countdown of what comes next, its agent and the state of its
+// operation, its milestones (occ-ui/OccMilestoneStrip.jsx, from the map flights' `milestones`), and the next
+// turnaround onto the stand. From what the screen already read (useStandDisplay over the positions board and the map
+// flights: stands/standModel.js, `display.detail` and `display.next`): no read is added. Times are the station's.
 
 const text = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 const KNOWN_STATUSES = new Set(Object.keys(mapMessages.es.turnaround.statuses));
 
-/** The times of one leg: «Prog. 10:40 · Est. 10:52 · Real 10:55», what is known of them, or null. */
+/**
+ * The times of one leg, what is known of them, or null: «Prog. 10:40 · Est. 10:52 · Real 10:55». An arrival tells its
+ * landing from its stand (stands/standModel.js: visitDetail, N23): «Aterrizó 10:49 · En posición 10:55». «Real» is an
+ * actual time that tells no kind: a departure's, or the board's arrival time alone.
+ */
 export function legTimes(times, t, locale) {
-  const parts = ['scheduled', 'estimated', 'actual']
-    .map(kind => {
-      const time = stationTime(times?.[`${kind}At`] ?? null, locale);
+  const told = Number.isFinite(times?.landedAt) || Number.isFinite(times?.onStandAt);
+  const parts = [['scheduled', 'scheduledAt'], ['estimated', 'estimatedAt'], ['landed', 'landedAt'],
+    ['onStand', 'onStandAt'], ...(told ? [] : [['actual', 'actualAt']])]
+    .map(([kind, field]) => {
+      const time = stationTime(times?.[field] ?? null, locale);
       return time === null ? null : t(`turnaround.${kind}`, { time });
     })
     .filter(Boolean);
@@ -71,7 +77,8 @@ export default function StandTurnaround({ position, milestones = true, className
     .filter(Boolean).join(' · ') || unknown;
   const route = detail && (detail.origin || detail.destination)
     ? `${detail.origin ?? unknown} – ${detail.destination ?? unknown}` : unknown;
-  const agents = Array.isArray(position.coveredBy) ? position.coveredBy.filter(name => text(name)) : [];
+  // Who covers the visit (N26, D-N26): the aircraft on the stand now, the one to come when it reaches the stand.
+  const agents = visitCoverageNames(position);
   const agent = agents.length > 0 ? new Intl.ListFormat(locale, { type: 'conjunction' }).format(agents)
     : t('turnaround.unassigned');
   // «Operación» is the state of the ground operation (Asignada, En curso, Devuelta…: operations/operationLabels.js, the

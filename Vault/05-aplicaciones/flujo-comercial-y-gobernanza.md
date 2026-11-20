@@ -160,6 +160,70 @@ mostró la bandeja; un conflicto obliga a releer.
 - Aprobar, rechazar y cancelar encolan un correo al solicitante con la
   decisión y, cuando lo hay, el motivo.
 
+*Posterior al commit verificado (hallazgo N35 y decisión D-N35, 19 de noviembre
+de 2026).* La prueba del VPS del 16 de noviembre encontró la referencia en cuatro
+formatos, una verificación a mano atribuida a Contratos y el teléfono en E.164.
+Ahora:
+
+- **Referencia.** La de una solicitud pública es su UUID en 32 caracteres
+  hexadecimales. La revisión la muestra completa, tal como la envía la API y sin
+  mayúsculas. Las listas de Solicitudes, de Superadministración › Inicio y de la
+  portada de Contratos la acortan a sus 8 primeros caracteres («1cc18541…») y
+  guardan la completa en el `title`. Una referencia que no es un UUID
+  («REQ-2026-000001») nunca se corta. No hay una referencia consecutiva «SOL-…»
+  (D-N35).
+- **Código del borrador.** El código `DRAFT-…` de un contrato nuevo se lee
+  «Borrador 1cc18541…», con el código completo en el `title`, en Borradores, en
+  la aprobación de contratos de Finanzas, en la portada de Contratos, en
+  Contratos › Servicios pactados y en Contratos › Contratos: la lista, el
+  detalle («Contrato Borrador 1cc18541… · versión 2») y sus diálogos («Retirar
+  la versión 2 del contrato Borrador 1cc18541…», «Descartar el contrato
+  Borrador 1cc18541…»). El nombre del PDF conserva el código. Dentro de una
+  frase es «el borrador 1cc18541…». Un código definitivo («CTR-2026-0007») no
+  cambia ([etiquetas](../../frontend/private-web/src/features/contracts/requests/requestLabels.js)).
+  Una solicitud decidida dice «Se creó un contrato en borrador», sin el prefijo
+  del UUID del contrato; la bandeja no recibe su código.
+- **Quién verificó la aerolínea.** Si Superadministración verificó la ficha a
+  mano, la identidad se titula «Identidad verificada a mano por
+  Superadministración». Si no, se titula solo «Identidad verificada», sin
+  autor: la bandeja no dice quién verificó, y la verificación de un
+  superadministrador que perdió el rol o cuya cuenta está deshabilitada o
+  bloqueada deja de contar como manual (ADR-0023), así que «por Contratos»
+  podría ser falso. «Registros públicos» dice «✓
+  Verificada a mano por Superadministración el … · fuente …», con la fecha y la
+  hora de la verificación y la dirección tal cual. La fuente nunca se llama
+  oficial: OpenFlights vale solo como verificación manual con su fuente a la
+  vista (D-N35). Mientras la solicitud está abierta, añade «Al aprobar no se
+  consulta a los registros públicos.», porque la API no los consulta en ese
+  caso, y la lista de la decisión ya no dice «se comprueba al aprobar». Una
+  solicitud cerrada sin veredicto dice «No se consultó a los registros
+  públicos.».
+- **Contacto del representante.** El correo solo se parte antes de la «@». El
+  teléfono, guardado en E.164, se escribe «+1 809-555-0520»; el de otro país
+  lleva su prefijo aparte («+34 600123456»), con `formatPhone` de
+  `@elevant/api-client`.
+
+*Posterior al commit verificado (hallazgo N31, 20 de noviembre de 2026).* En el
+VPS de Development, «Servicios solicitados» decía «Aire acondicionado · por
+operación», la unidad del catálogo, mientras la tarifa base de RAMP-AC en
+Finanzas era por hora y el borrador nacía por hora. Ahora la unidad de un
+servicio solicitado sigue una sola regla, la del borrador: la de la tarifa base
+de Finanzas en USD del día hábil de AVIAM o, si el servicio no tiene tarifa
+base, la del catálogo, siempre como código
+([regla](../../database/DevelopmentDB/Elevant.Persistence/Commercial/ContractDraftUnits.cs)).
+
+- **Abierta.** Mientras la solicitud está pendiente o en revisión, muestra la
+  unidad con la que nacería hoy el borrador. Como todavía no tiene estaciones,
+  usa la tarifa de todas las estaciones.
+- **Al aprobar.** La solicitud guarda, en la misma transacción, la unidad con la
+  que nace el borrador, aunque sea la de la tarifa propia de su única estación:
+  la solicitud aprobada y su borrador coinciden. Sin tarifa base, el borrador
+  toma la unidad que el catálogo tiene en ese momento.
+- **Decidida.** Una solicitud aprobada, rechazada o cancelada muestra la unidad
+  que guardó. Las decididas antes de este cambio conservan la suya, porque
+  ninguna fila se reescribe.
+- La respuesta de la bandeja no cambia de forma.
+
 ### Identificador fiscal y registros públicos (revisión del profesor)
 
 - La solicitud pública exige el **identificador fiscal** de la aerolínea. Si la
@@ -177,8 +241,8 @@ mostró la bandeja; un conflicto obliga a releer.
 - La aprobación con «no encontrada», «inactiva» o «no coincide» se rechaza
   (`airline_not_in_public_registry`). La excepción es una ficha verificada a
   mano por Superadministración con su fuente, que la bandeja muestra como
-  «Verificada a mano por Superadmin · fuente». «No se pudo comprobar» no
-  bloquea. El paso a paso está en la [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#una-aerolínea-que-los-registros-públicos-no-confirman)
+  «✓ Verificada a mano por Superadministración el … · fuente …». «No se pudo
+  comprobar» no bloquea. El paso a paso está en la [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#una-aerolínea-que-los-registros-públicos-no-confirman)
   y la regla en [ADR-0023](../../docs/adr/0023-airline-public-registry-check.md).
   Cuando Contratos pulsa **Actualizar** después de la verificación a mano, el
   aviso del rechazo anterior desaparece.
@@ -299,6 +363,35 @@ Desde la fase 2 del ciclo
   ([roles](../../database/DevelopmentDB/Elevant.Persistence/Commercial/AirlinePortalRoles.cs)).
   Una aerolínea cuyas cuentas creó solo Superadministración, sin
   aprovisionamiento, no tiene representante hasta que se designe uno.
+
+*Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026).* La
+prueba del VPS del 16 de noviembre encontró «al Sin vencimiento», el código
+«(WN )», una ayuda con las firmas al revés y un permiso sin verificar en verde.
+Ahora:
+
+- **Código de la aerolínea.** SQL lee un IATA de dos letras con el relleno de la
+  columna ICAO («WN »), y las versiones se firmaron sobre ese valor. La
+  [respuesta del documento](../../backend/Elevant.Api/Controllers/ContractDocumentsController.cs),
+  el [PDF](../../backend/Elevant.Infrastructure/Commercial/ContractPdfRenderer.cs),
+  la [lista de contratos](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfManagedContractReadStore.cs)
+  y AVIAM Web lo recortan al presentarlo: «(WN)», y un ICAO queda entero
+  («(SWA)»). La huella SHA-256 se sigue calculando sobre el valor guardado, así
+  que ninguna firma deja de coincidir con su documento y no hace falta un ADR.
+  Cambiar el tipo de la columna quedó descartado: exigiría un plan para las
+  huellas ya firmadas.
+- **Vigencia.** El detalle escribe «Del 3 de noviembre de 2026 al 2 de noviembre
+  de 2027» o, sin fin, «Desde el 3 de noviembre de 2026, sin vencimiento»; la
+  lista conserva «01/09/2026 — Sin vencimiento»
+  ([`validityRange`](../../frontend/private-web/src/features/contracts/agreements/agreementLabels.js)).
+- **Orden de los pasos.** La ayuda de Contratos › Contratos sigue el orden que
+  aplica el servidor: Finanzas aprueba los precios, Contratos fija la vigencia,
+  firma la aerolínea, AVIAM contrafirma y, con el permiso JAC verificado, el
+  contrato se activa. Antes decía «firman AVIAM y la aerolínea» y no nombraba la
+  vigencia ni el permiso.
+- **Permiso sin verificar.** Un permiso enviado, rechazado o con la verificación
+  revocada cuyas fechas están vigentes se ve «Fechas vigentes» en tono neutro;
+  «Vigente» en verde queda para un permiso verificado
+  ([permisos](../../frontend/private-web/src/features/contracts/permits/AirlinePermitsPage.jsx)).
 
 ## Catálogo y fichas de aerolínea
 

@@ -97,6 +97,25 @@ public sealed class ContractDocumentEndpointsTests(ElevantApiFactory factory) : 
     }
 
     [Fact]
+    public async Task TheDocumentAnswersTheAirlineCodeTrimmedWithTheHashOfItsStoredContent()
+    {
+        // N33: SQL reads a two-letter IATA code padded to the ICAO column's width («WN »), and the parties signed that
+        // stored content. The answer trims the code, and its hash stays the one a signature was made over.
+        var store = new DocumentStub { AirlineCode = "WN " };
+        await using var application = Application(services => Replace<IContractDocumentStore>(services, store));
+        using var client = Authorized(application);
+
+        using var read = await client.GetAsync($"/api/v1/contract-versions/{VersionId}/document",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        using var answer = JsonDocument.Parse(await read.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("WN", answer.RootElement.GetProperty("airlineCode").GetString());
+        var stored = Document("WN ").ContentSha256;
+        Assert.NotEqual(Document("WN").ContentSha256, stored);
+        Assert.Equal(stored, answer.RootElement.GetProperty("contentSha256").GetString());
+    }
+
+    [Fact]
     public async Task ATerminationCarriesItsEffectiveDateOrImmediateCause()
     {
         var lifecycle = new LifecycleStub();
@@ -170,9 +189,9 @@ public sealed class ContractDocumentEndpointsTests(ElevantApiFactory factory) : 
         return client;
     }
 
-    private static ContractDocumentData Document() => new(Guid.NewGuid(), VersionId, "CTR-2026-0001", "Active", "Demo Air",
-        "DM", null, 2, "Approved", new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 31), "USD", ["PUJ · Punta Cana"],
-        [new ContractDocumentRate("RAMP", "Rampa", "operation", 150m, 1m)], "Pago a 30 días.", null, []);
+    private static ContractDocumentData Document(string airlineCode = "DM") => new(Guid.NewGuid(), VersionId, "CTR-2026-0001",
+        "Active", "Demo Air", airlineCode, null, 2, "Approved", new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 31), "USD",
+        ["PUJ · Punta Cana"], [new ContractDocumentRate("RAMP", "Rampa", "operation", 150m, 1m)], "Pago a 30 días.", null, []);
 
     private sealed class DocumentStub : IContractDocumentStore
     {
@@ -181,23 +200,25 @@ public sealed class ContractDocumentEndpointsTests(ElevantApiFactory factory) : 
         public ContractPricingTermsResult Pricing { get; set; } = new(new ContractPricingTermsData(VersionId, "USD", true, false,
             [new ContractDocumentCharge("NIGHT", "Recargo nocturno", "PercentOfService", null, "One", 0, 0m, true, null, null)],
             []), null);
+        /// <summary>The airline's designator as the store reads it; SQL pads a two-letter IATA code («WN »).</summary>
+        public string AirlineCode { get; init; } = "DM";
         public (Guid Key, WithdrawContractVersionInput Input)? LastWithdrawal { get; private set; }
         public Guid? LastValidityKey { get; private set; }
 
         public Task<ContractDocumentResult> ReadAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ContractDocumentResult(Document(), null));
+            Task.FromResult(new ContractDocumentResult(Document(AirlineCode), null));
 
         public Task<ContractDocumentResult> ReadDraftAsync(Guid actorId, Guid versionId,
-            CancellationToken cancellationToken = default) => Task.FromResult(new ContractDocumentResult(Document(), null));
+            CancellationToken cancellationToken = default) => Task.FromResult(new ContractDocumentResult(Document(AirlineCode), null));
 
         public Task<ContractDocumentResult> SignAsync(Guid actorId, Guid versionId, SignContractInput input,
-            CancellationToken cancellationToken = default) => Task.FromResult(new ContractDocumentResult(Document(), null));
+            CancellationToken cancellationToken = default) => Task.FromResult(new ContractDocumentResult(Document(AirlineCode), null));
 
         public Task<ContractDocumentResult> SetValidityAsync(Guid actorId, Guid versionId, ContractValidityInput input,
             Guid? idempotencyKey, CancellationToken cancellationToken = default)
         {
             LastValidityKey = idempotencyKey;
-            return Task.FromResult(new ContractDocumentResult(Document(), null));
+            return Task.FromResult(new ContractDocumentResult(Document(AirlineCode), null));
         }
 
         public Task<ContractWithdrawalResult> WithdrawAsync(Guid actorId, Guid versionId, WithdrawContractVersionInput input,

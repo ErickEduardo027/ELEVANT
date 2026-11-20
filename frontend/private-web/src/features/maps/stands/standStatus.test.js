@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { createTranslator } from '../../../i18n/languageStore';
 import { mapMessages } from '../mapMessages';
+import { boardVisit } from '../testing/mapFixtures';
 import { nextChangeText, reasonText, coordinatesText } from '../ui/StandDetailFacts';
+import { withStandDisplay } from './standModel';
 import { cardinalOf, standAircraftOf, standCharacteristics, standStatus, WINGSPAN_LIMIT_M } from './standStatus';
 
 // Synthetic stands at 14:07 in Punta Cana (18:07 UTC), with the display the stand model derives (stands/standModel.js).
@@ -66,6 +68,60 @@ describe('standStatus: why a stand reads its state and what comes next (owner re
     expect(seen.reason.key).toBe('occupiedSeen');
     expect(seen.next).toBeNull();
     expect(standStatus(stand('occupied', { visit })).reason.key).toBe('occupiedNoTime');
+  });
+
+  it('occupied since its aircraft reached the stand, never since its runway time (N23)', () => {
+    // The board's arrival time is the runway time (13:59): it never says since when the stand is taken.
+    const parked = arrival => stand('occupied', {
+      visit: { ...visit, arrivedAt: '2026-11-13T17:59:00Z' }, departureAt: NOW + 63 * MIN, minutesToDeparture: 63,
+      detail: { arrival: { landedAt: NOW - 8 * MIN, onStandAt: null, onStandRecorded: false, ...arrival }, departure: {} },
+    });
+    // OCC's on-block or a BLOCK_ON: recorded.
+    const recorded = standStatus(parked({ onStandAt: NOW - 4 * MIN, onStandRecorded: true, actualAt: NOW - 4 * MIN }));
+    expect(recorded.reason).toEqual({ key: 'occupiedRecorded', params: { flight: 'ZZ9001', sinceAt: NOW - 4 * MIN } });
+    expect(reasonText(recorded.reason, t, 'es-DO')).toBe('Ocupada por ZZ9001 desde las 14:03 (llegada registrada)');
+    // The demo chocks: the time the server planned, which nobody recorded.
+    const chocks = standStatus(parked({ onStandAt: NOW - 4 * MIN, actualAt: NOW - 4 * MIN }));
+    expect(reasonText(chocks.reason, t, 'es-DO')).toBe('Ocupada por ZZ9001 desde las 14:03');
+    // Only its runway time (its aircraft seen in the box): nobody knows since when it is there.
+    const landedOnly = standStatus(parked({ actualAt: NOW - 8 * MIN }));
+    expect(landedOnly.reason).toEqual({ key: 'occupiedNoTime', params: { flight: 'ZZ9001', sinceAt: null } });
+    expect(reasonText(landedOnly.reason, t, 'es-DO')).toBe('Ocupada por ZZ9001');
+    expect(reasonText(recorded.reason, en, 'en-US')).toBe('Occupied by ZZ9001 since 14:03 (arrival recorded)');
+  });
+
+  it('arriving: «aterrizó» is its runway time, never the time it reached the stand (N23)', () => {
+    const arriving = arrival => standStatus(stand('arriving', { visit, arrivalAt: NOW + 3 * MIN, minutesToArrival: 3,
+      detail: { arrival: { landedAt: null, onStandAt: null, onStandRecorded: false, ...arrival }, departure: {} } }));
+    expect(reasonText(arriving({ landedAt: NOW - 2 * MIN, actualAt: NOW - 2 * MIN }).reason, t, 'es-DO'))
+      .toBe('Llegando: ZZ9001 aterrizó 14:05, llega en 3 min');
+    // OCC's on-block while its aircraft is still seen outside the box: no landing time is known.
+    const onBlock = arriving({ onStandAt: NOW - MIN, onStandRecorded: true, actualAt: NOW - MIN });
+    expect(onBlock.reason).toEqual({ key: 'arriving', params: { flight: 'ZZ9001', landedAt: null, arrivalAt: NOW + 3 * MIN,
+      minutes: 3 } });
+  });
+
+  it('the run of 16 November at A11: «aterrizó 19:49» at 19:50, «Ocupada… desde las 19:54» at 19:57 (N23)', () => {
+    // As the demo worker leaves it (stands/standModel.test.js): the runway time on the arrival leg and as the board's
+    // arrival time, the server's on-block at 19:54 and the tablet's BLOCK_ON at 19:54:40.
+    const iso = ms => new Date(ms).toISOString();
+    const utc = time => Date.parse(`2026-11-16T${time}Z`);
+    const [T1950, touchdown, onBlock] = [utc('23:50:00'), utc('23:49:12'), utc('23:54:00')];
+    const demo = { touchdownAt: iso(touchdown), onBlockAt: iso(onBlock), scheduledOffBlockAt: iso(onBlock + 60 * MIN),
+      offBlockAt: null };
+    const a11 = { id: 'A11', standId: 'stand-A11', status: 'occupied', coveredBy: ['Marta'], turnarounds: [boardVisit({
+      nowMs: T1950, flight: 'WN9001', arrivalInMin: 4, departureInMin: 64, arrivedAt: iso(touchdown), isDemo: true })] };
+    const legs = milestones => ({ 'turn-WN9001': [
+      { direction: 'Arrival', flightNumber: 'WN9001', phase: 'landed', actualAt: iso(touchdown), actualKind: 'Runway',
+        isDemo: true, demo, milestones },
+      { direction: 'Departure', flightNumber: 'WN9002', phase: 'scheduled', isDemo: true, demo, milestones },
+    ] });
+    const reasonAt = (nowMs, milestones = []) => reasonText(standStatus(withStandDisplay([a11],
+      { nowMs, flightsByTurnaround: legs(milestones) })[0]).reason, t, 'es-DO');
+    expect(reasonAt(T1950)).toBe('Llegando: WN9001 aterrizó 19:49, llega en 4 min');
+    expect(reasonAt(T1950 + 7 * MIN, [{ code: 'BLOCK_ON', actualAt: iso(utc('23:54:40')) }]))
+      .toBe('Ocupada por WN9001 desde las 19:54 (llegada registrada)');
+    expect(reasonAt(T1950 + 7 * MIN)).toBe('Ocupada por WN9001 desde las 19:54');
   });
 
   it('releasing: its departure, estimated or late, and the next visit or the stand free', () => {

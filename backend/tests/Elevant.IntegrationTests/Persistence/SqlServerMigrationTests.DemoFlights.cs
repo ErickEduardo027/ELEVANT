@@ -410,6 +410,32 @@ public sealed partial class SqlServerMigrationTests
     }
 
     /// <summary>
+    /// N28: the trigger schedules from the next whole minute (<see cref="DemoFlightRules.ScheduledFrom"/>), so the
+    /// arrival parks and the departure is due on whole minutes, and a countdown to the minute matches the time the
+    /// screens show. The aircraft still appears when the flight is triggered, so its taxi takes the extra seconds.
+    /// </summary>
+    [Fact]
+    public async Task DemoFlightIsScheduledOnWholeMinutes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var demo = await DemoFlightsAsync(database, ct,
+            start: day => LocalAt(day, 10).AddSeconds(20).AddMilliseconds(500));
+        var triggeredAt = demo.Now;
+
+        var flight = await demo.Triggered(minutes: 8, ground: 60);
+        var onBlock = LocalAt(demo.Day, 10, 9);
+        Assert.Equal((triggeredAt, onBlock, onBlock.AddMinutes(60)),
+            (flight.AppearAt, flight.OnBlockAt, flight.ScheduledOffBlockAt));
+        Assert.Equal(onBlock - DemoFlightTimeline.TaxiIn(onBlock - triggeredAt), flight.TouchdownAt);
+        var rows = await demo.Rows(flight.Id);
+        Assert.Equal((onBlock, (DateTimeOffset?)onBlock, onBlock.AddMinutes(60), triggeredAt),
+            (rows.Arrival.ScheduledAt, rows.Arrival.RevisedAt, rows.Departure.ScheduledAt, rows.Arrival.FirstSeenAt));
+    }
+
+    /// <summary>
     /// A paid feed that counts its calls: the synchronizer reads it exactly as it reads AeroDataBox, and it reports no
     /// flights. Nothing here reaches a provider.
     /// </summary>
@@ -1487,6 +1513,10 @@ public sealed partial class SqlServerMigrationTests
         demo.Clock.Now = LocalAt(demo.Day, 23, 29);
         var night = await demo.Options();
         Assert.Equal([("no_eligible_stand", "stand_not_covered")], night.Warnings.Select(DemoWarningRow));
+        // A second later a flight is scheduled from 23:30, the next whole minute (N28): 30 minutes park at midnight.
+        demo.Clock.Now = LocalAt(demo.Day, 23, 29).AddSeconds(1);
+        Assert.Equal([("crosses_local_midnight", ""), ("no_eligible_stand", "stand_not_covered")],
+            (await demo.Options()).Warnings.Select(DemoWarningRow));
         demo.Clock.Now = LocalAt(demo.Day, 23, 30);
         var late = await demo.Options();
         Assert.Equal([("crosses_local_midnight", ""), ("no_eligible_stand", "stand_not_covered")],

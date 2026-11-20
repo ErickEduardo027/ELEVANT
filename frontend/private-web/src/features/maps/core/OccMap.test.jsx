@@ -19,6 +19,7 @@ import { REFERENCE_LAYER_IDS, ourAirportsFeatures, referenceFeatures } from '../
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
 import { ghostFeatures, placingGhost } from '../stands/placing';
 import { buildStandFeatures, diffStandFeatures } from '../stands/standFeatures';
+import { STAND_LABEL_LAYER_IDS, standLabelFilter } from '../stands/standLayers';
 import { attachStandGeometry, withStandDisplay } from '../stands/standModel';
 import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, createMapStands, createRampScenario, standPoint } from '../testing/mapFixtures';
@@ -712,6 +713,42 @@ describe('OccMap', () => {
     loadStyle(map);
     expect(map.featureStateOf('occ-stands', 'A3')).toEqual({ selected: true });
     expect(map.getSource('occ-selection').data.features[0].properties).toMatchObject({ kind: 'stand', id: 'A3' });
+  });
+
+  it('leaves the selected stand\'s own label out of the stand labels with a layer filter, so the one beside it keeps its label (N29)', () => {
+    const { map, rerender } = renderMap({ selection: { kind: 'stand', id: 'a11' } });
+    loadStyle(map);
+    const filters = () => STAND_LABEL_LAYER_IDS.map(id => map.getLayer(id).filter ?? null);
+    const filterCalls = () => map.calls.filter(call => call.method === 'setFilter').length;
+    // The stand labels draw every stand but A11, whose cyan label comes from the selection source alone; A10 keeps its
+    // own. The selected label's layer keeps its filter.
+    expect(filters()).toEqual([standLabelFilter('A11'), standLabelFilter('A11')]);
+    expect(map.getLayer('occ-stand-label-selected').filter).toEqual(['==', ['get', 'kind'], 'stand']);
+    // Another stand moves the filter; the same stand in a new object, or a refresh of the stands, writes no filter.
+    rerender({ selection: { kind: 'stand', id: 'A10' } });
+    expect(filters()).toEqual([standLabelFilter('A10'), standLabelFilter('A10')]);
+    const calls = filterCalls();
+    rerender({ selection: { kind: 'stand', id: 'a10' } });
+    rerender({ selection: { kind: 'stand', id: 'A10' }, stands: STANDS.map(stand => ({ ...stand })) });
+    expect(filterCalls()).toBe(calls);
+    // A flight chosen, or nothing: every stand label is drawn again.
+    rerender({ selection: { kind: 'flight', id: 'leg-7' } });
+    expect(filters()).toEqual([null, null]);
+    rerender({ selection: { kind: 'stand', id: 'B21' } });
+    expect(filters()).toEqual([standLabelFilter('B21'), standLabelFilter('B21')]);
+    rerender({ selection: null });
+    expect(filters()).toEqual([null, null]);
+    // Never through the opacity of the labels, which would leave an invisible label taking its neighbours' room.
+    expect(map.paintCalls.filter(call => call.name === 'text-opacity')).toEqual([]);
+
+    // MapLibre keeps the filter in the style it rebuilds after a context loss: nothing has to put it back.
+    rerender({ selection: { kind: 'stand', id: 'A11' } });
+    const kept = filterCalls();
+    act(() => fake.state.loseContext(map));
+    act(() => fake.state.restoreContext(map));
+    loadStyle(map);
+    expect(filters()).toEqual([standLabelFilter('A11'), standLabelFilter('A11')]);
+    expect(filterCalls()).toBe(kept);
   });
 
   it('selects what is clicked, opens a terminal from its chip, reports the point while placing and sets the cursor once per frame', async () => {

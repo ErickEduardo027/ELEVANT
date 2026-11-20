@@ -20,6 +20,7 @@ import { formatClock } from '../occ-ui/occTime';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict } from '../../services/problemMessages';
+import { standDisplayCode } from '../../services/standCodes';
 import { stationDate } from '../../services/positionsMapService';
 import {
   addOccStandConstraint, createOccCoverage, describeReasons, loadOccCoverage, releaseOccCoverage,
@@ -155,12 +156,13 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
             <div className="flex flex-wrap gap-1.5">
               {stands.map(stand => {
                 const on = selected.includes(stand.standId);
-                // The name is the stand's code alone (the cycle E2E presses it); the bridge mark describes it.
+                // The name is the stand's code alone, as the map draws it (N27: the seed's A01 is A1; the cycle E2E
+                // presses it); the bridge mark describes it.
                 return (
                   <button key={stand.standId} type="button" aria-pressed={on} onClick={() => toggle(stand.standId)}
                     aria-describedby={stand.hasBoardingBridge ? bridgeMarkId : undefined}
                     className={`${STAND_TOGGLE} ${on ? STAND_ON : STAND_OFF}`}>
-                    {stand.code}{stand.hasBoardingBridge ? <span aria-hidden="true">⌁</span> : null}
+                    {standDisplayCode(stand.code)}{stand.hasBoardingBridge ? <span aria-hidden="true">⌁</span> : null}
                   </button>
                 );
               })}
@@ -374,7 +376,7 @@ function StandAttributes({ stands, date, onChange, onStale }) {
     {
       key: 'size', header: t('configuration.attributes.columns.size'), width: '11rem',
       render: stand => (
-        <select aria-label={t('configuration.attributes.size', { code: stand.code })}
+        <select aria-label={t('configuration.attributes.size', { code: standDisplayCode(stand.code) })}
           className={`${occControlClass({ kind: 'select' })} w-40`} value={draftOf(stand).maxAircraftSize ?? ''}
           onChange={event => edit(stand, { maxAircraftSize: event.target.value || null })}>
           <option value="">{t('configuration.attributes.anySize')}</option>
@@ -469,7 +471,7 @@ function Configuration({ board, terminal, date, onChange, onStale }) {
                 <OccSelectField key={key} label={label} className="w-28" value={rule[key]}
                   onChange={event => setRule(value => ({ ...value, [key]: event.target.value }))}>
                   <option value="">{t('configuration.combined.none')}</option>
-                  {board.stands.map(stand => <option key={stand.standId} value={stand.standId}>{stand.code}</option>)}
+                  {board.stands.map(stand => <option key={stand.standId} value={stand.standId}>{standDisplayCode(stand.code)}</option>)}
                 </OccSelectField>
               ))}
               <OccSelectField label={t('configuration.combined.effect')} className="w-44" value={rule.kind}

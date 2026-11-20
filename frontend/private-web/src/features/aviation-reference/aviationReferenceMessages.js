@@ -38,9 +38,14 @@ export const aviationReferenceMessages = {
     fleet: {
       title: 'Flota según AeroDataBox',
       summary: 'Flota según AeroDataBox: {count} aviones',
+      summaryOne: 'Flota según AeroDataBox: 1 avión',
+      inSample: 'en una muestra de {count}',
       sample: 'Tipos en una muestra de {count}',
+      noType: 'sin tipo',
       none: 'Sin flota registrada en AeroDataBox',
-      noneHint: 'Advertencia, no bloquea: revise que la aerolínea opere aviones propios o arrendados.',
+      // Contratos (tú) and the airline catalog of Superadministración (usted until converted) share it: no form of
+      // address (D-N36).
+      noneHint: 'Advertencia, no bloquea: conviene comprobar que la aerolínea opere aviones propios o arrendados.',
       noCode: 'Sin código OACI ni IATA para consultar la flota',
       check: 'Consultar flota',
     },
@@ -108,7 +113,10 @@ export const aviationReferenceMessages = {
     fleet: {
       title: 'Fleet according to AeroDataBox',
       summary: 'Fleet according to AeroDataBox: {count} aircraft',
+      summaryOne: 'Fleet according to AeroDataBox: 1 aircraft',
+      inSample: 'in a sample of {count}',
       sample: 'Types in a sample of {count}',
+      noType: 'no type',
       none: 'No fleet registered in AeroDataBox',
       noneHint: 'A warning, not a block: check that the airline operates its own or leased aircraft.',
       noCode: 'No ICAO or IATA code to look the fleet up',

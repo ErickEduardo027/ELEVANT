@@ -163,6 +163,17 @@ concuerda con sus partes. El código nuevo es `invalid_weather_query`; una
 estación fuera de alcance, desconocida o cuyo aeropuerto no tiene código OACI
 responde `not_found`. La app móvil no lee esta respuesta.
 
+Tablero de posiciones (hallazgo N26): `getOccPositions(stationId, date, {
+includeCoverage? })` lee las posiciones de la estación con las escalas de la
+fecha. Con `includeCoverage: true` la URL lleva `includeCoverage=true` y cada
+posición trae `coverage`, sus ventanas de cobertura de esa fecha (`agentName`,
+`startsAt`, `endsAt` e `isReinforcement`; vacía si nadie la cubre ese día),
+además de los nombres de `coveredBy`. El validador solo las acepta en una
+lectura que las pidió: un tablero que no las pidió, o el de un comando, con
+`coverage` es una respuesta malformada; sin el parámetro, que no viaja, el
+tablero es el que valida el AVIAM Web desplegado antes. Una API anterior que no
+conoce el parámetro responde sin ellas, y la lectura sigue siendo válida.
+
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,

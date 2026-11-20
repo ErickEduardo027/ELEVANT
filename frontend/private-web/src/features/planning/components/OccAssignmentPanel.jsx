@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { billingUnitQuantity } from '../../../services/billingUnits';
 import { planningMessages } from '../planningMessages';
 import { reasonTexts } from '../planningMappers';
 
@@ -54,7 +55,7 @@ export default function OccAssignmentPanel({
   onAssign,
   onRetryOptions,
 }) {
-  const { t } = useTranslation(planningMessages);
+  const { t, locale } = useTranslation(planningMessages);
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const optionVersion = `${optionsState.data?.turnaround?.id ?? ''}|${optionsState.etag ?? ''}`;
 
@@ -177,8 +178,9 @@ export default function OccAssignmentPanel({
                     <span className="text-xs">
                       <strong>{service.code}</strong> · {service.name}
                     </span>
+                    {/* N21: the minimum with its unit in words («1 hora», «2 operaciones»), never the unit code. */}
                     <span className="whitespace-nowrap font-mono text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
-                      {service.minimumQuantity} {service.billingUnit}
+                      {billingUnitQuantity(service.minimumQuantity, service.billingUnit, locale)}
                     </span>
                   </li>
                 ))}

@@ -52,7 +52,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
 
         writer.Heading("1", "Objeto");
         writer.Paragraph("AVIAM, operador de servicios de asistencia en tierra (en adelante, «el Prestador»), y " +
-            $"{document.AirlineLegalName ?? document.AirlineName} ({document.AirlineCode}" +
+            $"{document.AirlineLegalName ?? document.AirlineName} ({Designator(document)}" +
             (document.AirlineTaxRegistration is { } tax ? $", {TaxRegistrations.Display(tax.Number, tax.CountryCode)}" : string.Empty) +
             "), en adelante «la Aerolínea», " +
             "acuerdan los servicios, tarifas y condiciones de esta versión del contrato.");
@@ -144,6 +144,12 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     }
 
     private static string Date(DateOnly value) => value.ToString("d 'de' MMMM 'de' yyyy", Spanish);
+
+    /// <summary>
+    /// The airline's designator as printed (N33). SQL reads a two-letter IATA code padded to the ICAO column's width
+    /// («WN »), and the parties signed that stored value: the printout trims it, the fingerprint never does.
+    /// </summary>
+    private static string Designator(ContractDocumentData document) => document.AirlineCode.Trim();
 
     /// <summary>Spanish noun of the units every environment starts with; another code prints as stored.</summary>
     private static string Unit(string? code) => code?.Trim().ToLowerInvariant() switch
@@ -274,7 +280,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
             {
                 ("EL PRESTADOR", "AVIAM", "Operador de servicios de asistencia en tierra", (string?)null),
                 ("LA AEROLÍNEA", document.AirlineLegalName ?? document.AirlineName,
-                    $"{document.AirlineName} · código {document.AirlineCode}", tax),
+                    $"{document.AirlineName} · código {Designator(document)}", tax),
             };
             for (var index = 0; index < boxes.Length; index++)
             {

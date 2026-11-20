@@ -276,10 +276,11 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
             standId = placement.StandId;
         }
 
-        // The assigned agent keeps the flight only if their shift covers the new window and they stay within three
-        // simultaneous operations; otherwise OCC releases them first (nothing is released silently).
+        // The assigned agent keeps the flight only if their shift covers the new window (what is left of it once it has
+        // started, D-N24) and they stay within three simultaneous operations; otherwise OCC releases them first (nothing
+        // is released silently).
         if (operation is { CurrentStatus: GroundOperationStatus.Assigned } &&
-            await AgentReasonsAsync(scope, operation.Id, arrivalAt, departureAt, cancellationToken) is { Count: > 0 } reasons)
+            await AgentReasonsAsync(scope, operation.Id, arrivalAt, departureAt, now, cancellationToken) is { Count: > 0 } reasons)
             return Step.Fail(MasterDataFailure.Conflict, "assigned_agent_unavailable", reasons);
 
         // The audit names airports, aircraft types and stands by their codes, never by internal keys.
@@ -409,17 +410,23 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
         return Step.Done(turnaround.PublicId);
     }
 
-    /// <summary>Why the assigned agents cannot keep the rescheduled flight: their shift or the three-operation limit.</summary>
+    /// <summary>
+    /// Why the assigned agents cannot keep the rescheduled flight: a shift that does not cover the new window, or what is
+    /// left of it at <paramref name="now"/> once it has started (D-N24, <see cref="OccShiftCoveragePolicy.WindowToCover"/>,
+    /// as the assignment judges it), or the three-operation limit over the whole new window.
+    /// </summary>
     private async Task<IReadOnlyList<string>> AgentReasonsAsync(Scope scope, long operationId, DateTimeOffset start,
-        DateTimeOffset end, CancellationToken cancellationToken)
+        DateTimeOffset end, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var agents = await context.OperationAgentAssignments.AsNoTracking()
             .Where(item => item.GroundOperationId == operationId && item.ReleasedAt == null)
             .Select(item => item.RampAgentId).Distinct().ToArrayAsync(cancellationToken);
         if (agents.Length == 0) return [];
         var zone = BusinessCalendar.Zone(scope.TimeZone);
-        var startLocal = TimeZoneInfo.ConvertTime(start, zone).DateTime;
-        var endLocal = TimeZoneInfo.ConvertTime(end, zone).DateTime;
+        var (coverFrom, coverTo) = OccShiftCoveragePolicy.WindowToCover(start, end, now) ?? (start, end);
+        var startLocal = TimeZoneInfo.ConvertTime(coverFrom, zone).DateTime;
+        var endLocal = TimeZoneInfo.ConvertTime(coverTo, zone).DateTime;
+        // A shift that covers it starts that day or the day before (it lasts at most sixteen hours).
         var day = DateOnly.FromDateTime(startLocal);
         var previousDay = day.AddDays(-1);
         var shifts = await context.ShiftAssignments.AsNoTracking()

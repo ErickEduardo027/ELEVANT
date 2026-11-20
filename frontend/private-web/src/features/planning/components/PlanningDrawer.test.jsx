@@ -258,6 +258,13 @@ describe('PlanningDrawer', () => {
     expect(screen.getAllByText(/BAGGAGE · Baggage handling/).length).toBeGreaterThan(0);
   });
 
+  it("names the stand by the code the map draws: the seed's A02 is A2 (N27)", () => {
+    renderDrawer({ flight: ASSIGNED_FLIGHT });
+    const section = screen.getByRole('heading', { name: 'Aeronave y posición' }).closest('section');
+    expect(section).toHaveTextContent('Posición A2 · Terminal A');
+    expect(section).not.toHaveTextContent('A02');
+  });
+
   it('shows the operation, equipment and unit codes in Spanish (3-N22)', () => {
     renderDrawer({ flight: createPlanningFlight({ operationStatus: 'PendingReview' }) });
 
@@ -273,6 +280,8 @@ describe('PlanningDrawer', () => {
 
     expect(section.getByText('DEV-CONTRACT').closest('p')).toHaveTextContent('DEV-CONTRACT · versión 1 · USD');
     expect(section.getByText('BAGGAGE').parentElement).toHaveTextContent('BAGGAGE · Baggage handling');
+    // N21: the minimum says its unit in words, as «Asignar agente» of the console shows it too.
+    expect(section.getByText('BAGGAGE').closest('li')).toHaveTextContent(/1 operación$/);
     expect(section.getByText('Elegible')).toBeInTheDocument();
     expect(section.getByText('No elegible')).toBeInTheDocument();
     expect(section.getByText('Turno no compatible')).toBeInTheDocument();

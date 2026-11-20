@@ -294,20 +294,21 @@ internal sealed partial class EfContractDraftStore
                     context.Set<ContractVersionStation>().Add(new ContractVersionStation
                     { ContractVersionId = row.Version.Id, StationId = stationId });
                 context.ContractServiceRates.RemoveRange(removed);
-                // New services start from the Finance base tariff of the new scope, unconfirmed (1-N04, 1-N06).
-                var baseRates = await FinanceTariffLookup.ServiceRatesAsync(context, row.Version.CurrencyCode,
-                    row.Version.ValidFrom, ContractDraftRules.BaseStation(stationIds),
-                    added.Select(service => service.Id).ToArray(), cancellationToken);
-                var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+                // New services start from the Finance base tariff of the new scope, unconfirmed (1-N04, 1-N06), with
+                // the unit rule of the draft's creation (N31).
+                var startingRates = await ContractDraftUnits.StartingRatesAsync(context,
+                    added.Select(service => service.Id).ToArray(), row.Version.CurrencyCode, row.Version.ValidFrom,
+                    stationIds, cancellationToken);
                 foreach (var service in added)
                 {
-                    var baseRate = baseRates.GetValueOrDefault(service.Id);
+                    var starting = startingRates[service.Id];
                     context.ContractServiceRates.Add(new ContractServiceRate
                     {
                         PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id,
                         ServiceDefinitionId = service.Id,
-                        BillingUnit = baseRate?.BillingUnit ?? units.CodeOrDefault(service.DefaultBillingUnit),
-                        UnitPrice = baseRate?.UnitPrice ?? 0, MinimumQuantity = baseRate?.MinimumBillableQuantity ?? 0,
+                        BillingUnit = starting.BillingUnit,
+                        UnitPrice = starting.BaseRate?.UnitPrice ?? 0,
+                        MinimumQuantity = starting.BaseRate?.MinimumBillableQuantity ?? 0,
                         IsConfirmed = false, CreatedAt = now, UpdatedAt = now,
                     });
                 }

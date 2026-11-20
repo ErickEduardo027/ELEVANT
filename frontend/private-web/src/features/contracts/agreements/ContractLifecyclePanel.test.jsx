@@ -136,14 +136,17 @@ it('creates an amendment from «Vigente desde» with the status on screen and op
   await userEvent.type(start, '2026-09-01');
   await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
   // An uncertain result stays inside the dialog as an alert, so the same intent is retried from there.
-  expect(await within(dialog).findByRole('alert')).toHaveTextContent(/No se pudo completar la acción/);
+  expect(await within(dialog).findByRole('alert'))
+    .toHaveTextContent('No se pudo completar la acción. Revisa la conexión e intenta de nuevo.');
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   // The retry of the same intent keeps the date and the Idempotency-Key.
   expect(within(dialog).getByLabelText('Vigente desde')).toHaveValue('2026-09-01');
   await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
   expect(await screen.findByText(/Se creó la enmienda como borrador/)).toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(screen.getByRole('status')).toHaveTextContent(/Se creó la enmienda como borrador/);
+  // N36: the notice addresses Contratos as tú, like the rest of the panel.
+  expect(screen.getByRole('status')).toHaveTextContent('Se creó la enmienda como borrador, con las tarifas sin confirmar. '
+    + 'Revísala en Borradores y envíala a Finanzas.');
   const [first, second] = createContractAmendment.mock.calls;
   expect(first.slice(0, 2)).toEqual(['v-1', { expectedStatus: 'Active', validFrom: '2026-09-01' }]);
   expect(second[2]).toBe(first[2]);
@@ -156,7 +159,7 @@ it('creates an amendment from «Vigente desde» with the status on screen and op
 it.each([
   ['valid_from_not_after_current', 409, /debe empezar después del inicio de la versión aprobada vigente/],
   ['valid_from_after_current_end', 409, /no puede empezar después del fin de la versión aprobada vigente/],
-  ['invalid_amendment', 400, /Indique la fecha de inicio de la enmienda/],
+  ['invalid_amendment', 400, /Indica la fecha de inicio de la enmienda/],
 ])('keeps the amendment dialog open with %s next to «Vigente desde» (1-C)', async (code, status, text) => {
   getContractTimeline.mockResolvedValue(timeline('Active'));
   createContractAmendment.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status, code }))
@@ -276,4 +279,50 @@ it('shows the unauthorized state when the history is forbidden', async () => {
   render(<ContractLifecyclePanel versionId="v-1" canManage />);
   expect(await screen.findByText('Tu acceso no permite consultar el ciclo de este contrato.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+});
+
+it('writes the dates of a termination and of an amendment in full inside their sentences (N36)', async () => {
+  getContractTimeline.mockResolvedValueOnce({ ...timeline('Active'), terminatesOn: null, earliestTerminationOn: '2026-12-05' })
+    .mockResolvedValueOnce({ ...timeline('Active'), terminatesOn: '2026-12-10', earliestTerminationOn: null });
+  applyContractLifecycle.mockResolvedValue({ status: 'Active', draftVersionId: null });
+  const { unmount } = render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Terminar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Terminar contrato CT-001' });
+  expect(dialog).toHaveTextContent('Desde el 5 de diciembre de 2026, según el preaviso de la versión vigente.');
+  const effective = within(dialog).getByLabelText(/Fecha efectiva/);
+  await userEvent.clear(effective);
+  await userEvent.type(effective, '2026-12-10');
+  await userEvent.type(within(dialog).getByLabelText('Motivo'), 'Fin de la relación comercial.');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Se programó la terminación: el contrato cubre operaciones '
+    + 'hasta el 9 de diciembre de 2026 y termina el 10 de diciembre de 2026.');
+  expect(await screen.findByRole('note')).toHaveTextContent('Terminación programada: el contrato cubre operaciones '
+    + 'hasta el 9 de diciembre de 2026 y termina el 10 de diciembre de 2026.');
+  unmount();
+  getContractTimeline.mockResolvedValue(timeline('Active'));
+  render(<ContractLifecyclePanel versionId="v-1" canAmend
+    currentVersion={{ versionNumber: 1, validFrom: '2026-01-01', validTo: '2026-12-31' }} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
+  expect(screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' }))
+    .toHaveTextContent('(versión 1, del 1 de enero de 2026 al 31 de diciembre de 2026)');
+});
+
+it('names a new contract «Borrador 1cc18541…» when discarding it, never by its DRAFT- code (N35)', async () => {
+  // Until Contratos fixes its validity, a new contract's code is «DRAFT-» and the id of the request it came from; a
+  // final code stays as it is («Descartar el contrato CT-001» above).
+  getContractTimeline.mockResolvedValue({ ...timeline('Draft'), contractCode: 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d' });
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Descartar contrato' }));
+  expect(screen.getByRole('dialog', { name: 'Descartar el contrato Borrador 1cc18541…' })).toBeInTheDocument();
+  expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+});
+
+it('names the source version of an amendment with no end in words (N33)', async () => {
+  getContractTimeline.mockResolvedValue(timeline('Active'));
+  render(<ContractLifecyclePanel versionId="v-1" canAmend
+    currentVersion={{ versionNumber: 1, validFrom: '2026-01-01', validTo: null }} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
+  const dialog = screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' });
+  expect(dialog).toHaveTextContent('(versión 1, desde el 1 de enero de 2026, sin vencimiento)');
+  expect(dialog).not.toHaveTextContent(/del 1 de enero de 2026 sin vencimiento/);
 });

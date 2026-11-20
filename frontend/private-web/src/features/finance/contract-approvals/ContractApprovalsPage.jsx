@@ -7,18 +7,21 @@ import StatusBadge from '../../../components/StatusBadge';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { ApprovedServicesIcon } from '../components/icons';
-import { METHOD_LABELS } from '../charges/ChargesPage';
-import { decideContractApproval, formatMoney, getContractApproval, listContractApprovals } from '../../../services/financeBookService';
+import {
+  decideContractApproval, formatChargeValue, formatMoney, getContractApproval, listContractApprovals,
+} from '../../../services/financeBookService';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeContractApprovalMessage } from '../../../services/financeErrors';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { CONTRACT_APPROVAL_STATUS, packageScopeLabel, statusMeta } from '../financeLabels';
 import { financeApprovalEffect } from '../../contracts/approvalEffect';
+import { contractCodeLabel } from '../../contracts/requests/requestLabels';
 
-const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
-const DETAIL_FAILED = 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.';
-const DETAIL_FORBIDDEN = 'No tiene permiso para ver este contrato: alguna de sus estaciones no está en su alcance.';
+const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revisa la conexión e intenta de nuevo.';
+const DETAIL_FAILED = 'No se pudo cargar el contrato. Revisa la conexión e intenta de nuevo.';
+const DETAIL_FORBIDDEN = 'No tienes permiso para ver este contrato: alguna de sus estaciones no está en tu alcance.';
 /** No contract read yet: the detail of a new selection starts here, so the previous one is never shown. */
 const NO_DETAIL = Object.freeze({ versionId: null, detail: null, error: null });
 
@@ -26,6 +29,29 @@ function Difference({ value }) {
   if (value === null || value === undefined) return <span className="text-xs text-text-secondary-light">Sin tarifa base</span>;
   const tone = value < 0 ? 'text-status-danger' : value > 0 ? 'text-status-success' : 'text-text-secondary-light';
   return <span className={`font-semibold tabular-nums ${tone}`}>{value > 0 ? '+' : ''}{value} %</span>;
+}
+
+/**
+ * A charge of the version beside Finance's charge tariff in the contract currency (N34): the name is the title and
+ * the code the secondary text, and each value carries its currency or unit, the method named once.
+ */
+function ContractCharge({ charge, currency }) {
+  const negotiated = charge.contractValue !== null && charge.contractValue !== undefined;
+  const contract = charge.isExcluded ? 'Excluido'
+    : negotiated ? formatChargeValue(charge.method, charge.contractValue, currency) : 'Se aplica la tarifa base';
+  const base = charge.baseValue === null || charge.baseValue === undefined ? 'Sin importe'
+    : formatChargeValue(charge.method, charge.baseValue, currency);
+  return (
+    <li className="rounded-lg bg-black/[.03] px-3 py-2 dark:bg-white/[.04]">
+      <p className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <strong>{charge.chargeName}</strong>{' '}<span className="text-text-secondary-light">{charge.chargeCode}</span>
+      </p>
+      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+        <dt className="text-text-secondary-light">Contrato</dt><dd className="tabular-nums">{contract}</dd>
+        <dt className="text-text-secondary-light">Tarifa base</dt><dd className="tabular-nums">{base}</dd>
+      </dl>
+    </li>
+  );
 }
 
 /**
@@ -124,13 +150,15 @@ export default function ContractApprovalsPage() {
   }
 
   const currency = detail?.summary.currencyCode;
+  // N35: a new contract reads «Borrador 1cc18541…», its DRAFT- code whole in the title.
+  const detailCode = detail ? contractCodeLabel(detail.summary.contractCode) : null;
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Finanzas" title="Aprobación de contratos"
-        description="Versiones que envía Contratos. Compare cada precio con la tarifa base antes de aprobarlos." />
+        description="Versiones que envía Contratos. Compara cada precio con la tarifa base antes de aprobarlos." />
       <label className="flex min-h-[40px] items-center gap-2 text-sm"><input type="checkbox" checked={!pendingOnly} onChange={event => setPendingOnly(!event.target.checked)} />Ver también decididos en los últimos 90 días</label>
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
-      {loadState.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">No tiene permiso para ver las aprobaciones de contratos.</p>
+      {loadState.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">No tienes permiso para ver las aprobaciones de contratos.</p>
         : loadState.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{loadState.error}</span><button type="button" onClick={() => { void load(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
       {loadState.status === 'forbidden' || loadState.status === 'error' ? null : !items ? <p role="status" className="text-sm">Cargando contratos…</p> : items.length === 0 ? (
         <EmptyState icon={ApprovedServicesIcon} title="Sin contratos por aprobar" description="Los contratos que Contratos envíe aparecerán aquí." />
@@ -139,12 +167,13 @@ export default function ContractApprovalsPage() {
           <ul className="space-y-2">
             {items.map(item => {
               const status = statusMeta(CONTRACT_APPROVAL_STATUS, item.status);
+              const code = contractCodeLabel(item.contractCode);
               return (
                 <li key={item.versionId}>
                   <button type="button" onClick={() => select(item.versionId)}
                     className={`w-full rounded-xl border p-3 text-left ${selected === item.versionId ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 bg-white dark:border-white/10 dark:bg-surface-dark-card'}`}>
                     <div className="flex items-center justify-between gap-2"><strong className="text-sm">{item.airline}</strong><StatusBadge tone={status.tone} label={status.label} /></div>
-                    <p className="mt-1 text-xs text-text-secondary-light">{item.contractCode} · {item.currencyCode} · desde {item.validFrom}</p>
+                    <p title={code.title} className="mt-1 text-xs text-text-secondary-light">{code.text} · {item.currencyCode} · desde {formatBusinessDate(item.validFrom)}</p>
                     {(item.ratesBelowBase > 0 || item.ratesWithoutBase > 0) && (
                       <p className="mt-1 text-xs text-status-warning">{item.ratesBelowBase} por debajo de la base · {item.ratesWithoutBase} sin base</p>
                     )}
@@ -164,8 +193,8 @@ export default function ContractApprovalsPage() {
             <section aria-label="Contrato seleccionado" className="min-w-0 space-y-4 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
               {read.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{financeContractApprovalMessage(read.error, { fallback: DETAIL_FAILED })}</span><button type="button" onClick={retryDetail} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
               <div>
-                <h2 className="text-lg font-bold">{detail.summary.airline} · {detail.summary.contractCode}</h2>
-                <p className="text-xs text-text-secondary-light">{currency} · {detail.summary.validFrom}{detail.summary.validTo ? ` a ${detail.summary.validTo}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
+                <h2 title={detailCode.title} className="text-lg font-bold">{detail.summary.airline} · {detailCode.text}</h2>
+                <p className="text-xs text-text-secondary-light">{currency} · {formatBusinessDate(detail.summary.validFrom)}{detail.summary.validTo ? ` a ${formatBusinessDate(detail.summary.validTo)}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
                 <p className="text-xs text-text-secondary-light">{effect.validity}</p>
               </div>
               <StackedTable>
@@ -173,7 +202,7 @@ export default function ContractApprovalsPage() {
                   <thead className="text-xs uppercase text-text-secondary-light"><tr><th className="p-2">Servicio</th><th className="p-2">Unidad</th><th className="p-2">Contrato</th><th className="p-2">Tarifa base</th><th className="p-2">Diferencia</th></tr></thead>
                   <tbody>{detail.rates.map(rate => (
                     <tr key={rate.rateId} className="border-t border-black/5 dark:border-white/5">
-                      <td className="p-2"><strong>{rate.serviceCode}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceName}</span></td>
+                      <td className="p-2"><strong>{rate.serviceName}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceCode}</span></td>
                       <td className="p-2 text-xs">Por {billingUnitLabel(rate.billingUnit)} · mín. {rate.contractMinimum}</td>
                       <td className="p-2 tabular-nums">{formatMoney(rate.contractPrice, currency)}</td>
                       <td className="p-2 tabular-nums">{rate.basePrice === null ? '—' : formatMoney(rate.basePrice, currency)}</td>
@@ -185,12 +214,7 @@ export default function ContractApprovalsPage() {
               <div>
                 <h3 className="text-sm font-semibold">Cargos en este contrato</h3>
                 <ul className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
-                  {detail.charges.map(charge => (
-                    <li key={charge.chargeId} className="rounded-lg bg-black/[.03] px-3 py-2 dark:bg-white/[.04]">
-                      <strong>{charge.chargeCode}</strong> · {METHOD_LABELS[charge.method] ?? charge.method}: {charge.isExcluded ? 'excluido'
-                        : charge.contractValue !== null ? `negociado ${charge.contractValue} (base ${charge.baseValue ?? '—'})` : `tarifa base ${charge.baseValue ?? 'sin importe'}`}
-                    </li>
-                  ))}
+                  {detail.charges.map(charge => <ContractCharge key={charge.chargeId} charge={charge} currency={currency} />)}
                 </ul>
               </div>
               {detail.packages?.length > 0 && <section><h3 className="text-sm font-semibold">Paquetes contractuales</h3><ul className="mt-2 space-y-2">{detail.packages.map(item => <li key={item.id ?? item.packageVersionId ?? item.code} className="rounded-lg bg-black/5 p-3 text-xs dark:bg-white/5"><strong>{item.code} · {item.name}</strong> · versión {item.versionNumber} · {packageScopeLabel(item.scope)} · base {formatMoney(item.basePrice, item.currencyCode)}</li>)}</ul><p className="mt-2 text-xs text-text-secondary-light">Los servicios cubiertos no se cobrarán individualmente. Las inclusiones y excedentes conservan la versión aprobada del paquete.</p></section>}

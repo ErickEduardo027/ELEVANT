@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import RampProfilesPanel from './RampProfilesPanel';
+import { rampProfilesPanelMessages } from './rampProfilesPanelMessages';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { getRampProfiles, saveRampProfile } from '../../../services/commercialGovernanceApi';
@@ -28,6 +29,27 @@ it('is a read-only directory for Human Resources', async () => {
   expect(screen.queryByText(/Solicitar acceso móvil/)).not.toBeInTheDocument();
 });
 
+it('draws its lead after its heading and before the directory, inside the page (N37)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [] });
+  render(<RampProfilesPanel lead={<section aria-label="¿Puede operar?"><h2>¿Puede operar?</h2></section>} />);
+  await screen.findByText('Lucia Ramos');
+  const heading = screen.getByRole('heading', { level: 1, name: 'Agentes de rampa' });
+  const lead = screen.getByRole('region', { name: '¿Puede operar?' });
+  const directory = screen.getByRole('heading', { level: 2, name: 'Personal registrado' });
+  expect(heading.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(lead.compareDocumentPosition(directory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(heading.closest('header').parentElement).toContainElement(lead);
+});
+
+it('draws no lead unless it is given one (N37)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [] });
+  const { container } = render(<RampProfilesPanel />);
+  await screen.findByText('Lucia Ramos');
+  // The heading, then the directory: nothing in between.
+  expect(container.querySelector('header').nextElementSibling).toContainElement(
+    screen.getByRole('heading', { level: 2, name: 'Personal registrado' }));
+});
+
 it('lets Operations limit terminals to chosen stations and only offer its own stations', async () => {
   getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [
     { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
@@ -51,20 +73,34 @@ it('lets Operations limit terminals to chosen stations and only offer its own st
   expect(screen.getByRole('status')).toHaveTextContent('Perfil operativo guardado.');
 });
 
-it('labels IAM lifecycle without implying effective mobile access', async () => {
-  const profile = (id, firstName, hasAccount, accountStatus) => ({ id, firstName,
-    lastName: 'Rampa', employeeNumber: id, category: 'Agente', hireDate: '2025-01-01',
-    stations: [], terminals: [], isActive: true, hasAccount, accountStatus });
-  getRampProfiles.mockResolvedValue({ profiles: [
-    profile('RA-1', 'Lucia', true, 'Active'),
-    profile('RA-2', 'Miguel', true, 'Disabled'),
-    profile('RA-3', 'Ana', false, null),
-  ], availableStations: [], availableTerminals: [] });
+const accountProfile = (id, firstName, hasAccount, accountStatus) => ({ id, firstName,
+  lastName: 'Rampa', employeeNumber: id, category: 'Agente', hireDate: '2025-01-01',
+  stations: [], terminals: [], isActive: true, hasAccount, accountStatus });
+const accountProfiles = () => ({ profiles: [
+  accountProfile('RA-1', 'Lucia', true, 'Active'),
+  accountProfile('RA-2', 'Miguel', true, 'Disabled'),
+  accountProfile('RA-3', 'Ana', false, null),
+], availableStations: [], availableTerminals: [] });
+
+it('labels the access account lifecycle without implying effective mobile access or naming IAM (N36)', async () => {
+  getRampProfiles.mockResolvedValue(accountProfiles());
   render(<RampProfilesPanel />);
   await screen.findByText('Lucia Rampa');
-  expect(screen.getByText(/Cuenta IAM activa; acceso móvil según permisos/)).toBeInTheDocument();
-  expect(screen.getByText(/Cuenta IAM deshabilitada/)).toBeInTheDocument();
+  expect(screen.getByText(/Cuenta de acceso activa; acceso móvil según permisos/)).toBeInTheDocument();
+  expect(screen.getByText(/Cuenta de acceso deshabilitada/)).toBeInTheDocument();
   expect(screen.getByText(/Sin cuenta móvil vinculada/)).toBeInTheDocument();
+  expect(screen.queryByText(/\bIAM\b/)).not.toBeInTheDocument();
+});
+
+it('labels the access account lifecycle in English without naming IAM (N36)', async () => {
+  getRampProfiles.mockResolvedValue(accountProfiles());
+  act(() => resetLanguageForTests('en'));
+  render(<LanguageScope><RampProfilesPanel /></LanguageScope>);
+  await screen.findByText('Lucia Rampa');
+  expect(screen.getByText(/Access account active; mobile access according to permissions/)).toBeInTheDocument();
+  expect(screen.getByText(/Access account disabled/)).toBeInTheDocument();
+  expect(screen.getByText(/No linked mobile account/)).toBeInTheDocument();
+  expect(screen.queryByText(/\bIAM\b/)).not.toBeInTheDocument();
 });
 
 it('loads persisted terminal and supervisor and clears both on deactivation', async () => {
@@ -233,7 +269,7 @@ it('re-reads a profile that changed meanwhile and saves it again with its new ve
   await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(
-    'El perfil cambió mientras lo editaba. Cargamos sus datos actuales: revíselos y guarde de nuevo.');
+    'El perfil cambió mientras lo editabas. Cargamos sus datos actuales: revísalos y guarda de nuevo.');
   expect(screen.queryByText('El registro cambió.')).not.toBeInTheDocument();
   // The form now shows the profile as it is, active again: the user decides on the current data.
   expect(screen.getByRole('textbox', { name: 'Categoría' })).toHaveValue('Agente líder');
@@ -257,9 +293,46 @@ it('explains a refused supervisor by its code and keeps the edit', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
   await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('El supervisor elegido depende de este agente. Elija otro.');
+  expect(await screen.findByRole('alert')).toHaveTextContent('El supervisor elegido depende de este agente. Elige otro.');
   expect(getRampProfiles).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
+});
+
+it('tells as tú why a profile cannot be saved (N36)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [{ ...agent, stations: [] }], availableStations: [
+    { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
+  ] });
+  saveRampProfile.mockRejectedValueOnce(Object.assign(new Error('Los datos no son válidos.'), { status: 400, code: 'stations_invalid' }))
+    .mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }))
+    .mockRejectedValueOnce(Object.assign(new Error('Expired'), { status: 401 }));
+  render(<RampProfilesPanel canEdit />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Selecciona al menos una estación.');
+  expect(saveRampProfile).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('checkbox', { name: /PUJ/ }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+    'Alguna estación ya no está activa o no está bajo tu alcance. Actualiza la lista y elige de nuevo.'));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso para guardar este perfil.'));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.'));
+});
+
+it('words the other refusals of a profile as tú too (N36)', () => {
+  expect(rampProfilesPanelMessages.es.errors).toMatchObject({
+    noTerminal: 'Selecciona al menos una terminal de las estaciones autorizadas.',
+    recordChanged: 'El expediente del empleado cambió mientras editabas el perfil. Cargamos los datos actuales: revísalos y '
+      + 'guarda de nuevo.',
+    employeeNumberInUse: 'El número de empleado ya pertenece a otro agente. Corrígelo en el expediente de Gestión Humana.',
+    terminalsInvalid: 'Alguna terminal ya no está activa o no pertenece a las estaciones elegidas. Actualiza la lista y elige '
+      + 'de nuevo.',
+    supervisorInvalid: 'El supervisor elegido ya no es un agente activo. Elige otro.',
+    avatarInvalid: 'La foto ya no está disponible; vuelve a cargarla.',
+    invalid: 'Revisa los datos del perfil e intenta de nuevo.',
+  });
 });
 
 it('follows the English choice inside a language scope', async () => {
@@ -269,7 +342,7 @@ it('follows the English choice inside a language scope', async () => {
   act(() => resetLanguageForTests('en'));
   render(<LanguageScope><RampProfilesPanel canEdit /></LanguageScope>);
   await screen.findByText('Lucia Ramos');
-  expect(screen.getByText(/IAM account active; mobile access according to permissions/)).toBeInTheDocument();
+  expect(screen.getByText(/Access account active; mobile access according to permissions/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Edit operational profile' }));
   expect(screen.getByRole('textbox', { name: 'Category' })).toHaveAttribute('title', 'Edited in the Human Resources employee record');
   expect(screen.getByText('There are no active terminals for the selected station.')).toBeInTheDocument();

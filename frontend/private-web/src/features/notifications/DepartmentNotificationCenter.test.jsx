@@ -37,6 +37,11 @@ it('pops up only alerts that arrive after the first read and opens their menu op
   await act(async () => { announce(['notifications']); });
   const toast = await screen.findByText('Nueva solicitud comercial: Caribe Air');
   expect(toast.closest('[role="status"]')).not.toContainElement(document.activeElement);
+  // D-N33: an alert pops up at the bottom right, never over the bell and the user menu of the topbar.
+  const stack = toast.closest('[data-placement]');
+  expect(stack).toHaveAttribute('data-placement', 'bottom-right');
+  expect(stack.className.split(/\s+/)).toEqual(expect.arrayContaining(['fixed', 'bottom-4']));
+  expect(stack.className.split(/\s+/).some(name => name.startsWith('top-'))).toBe(false);
   expect(screen.getByRole('button', { name: 'Campana 2' })).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole('button', { name: 'Abrir' }));

@@ -3,17 +3,15 @@
 import { useState } from 'react';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { useAviationReferenceRead, useAviationReferenceService } from './AviationReferenceContext';
-import { fleetSummary, hasNoFleet, statusWords } from './aviationReferenceFormat';
+import { fleetSampleLine, fleetSummary, hasNoFleet, statusWords } from './aviationReferenceFormat';
 import { aviationReferenceMessages } from './aviationReferenceMessages';
 
 // The fleet of an airline according to AeroDataBox (ADR-0028, note of 15 November 2026), for Contratos' request intake
-// and the superadministrator's airline catalog: «Flota según AeroDataBox: 87 aviones · A320, B738…» or «Sin flota
-// registrada» as a warning. It informs the reviewer and blocks nothing: no approval reads it. The ICAO code is asked
-// (IATA when there is none). `auto` reads as soon as it mounts (one request in review); without it a «Consultar flota»
-// button reads on demand, so a list of airlines never spends units by being shown. Without an AviationReferenceProvider
-// it renders nothing.
-
-const TYPES_SHOWN = 6;
+// and the superadministrator's airline catalog: «Flota según AeroDataBox: 87 aviones; en una muestra de 25: A320,
+// B738…» and, below, how many aircraft of that sample each type has, or «Sin flota registrada» as a warning. It informs
+// the reviewer and blocks nothing: no approval reads it. The ICAO code is asked (IATA when there is none). `auto` reads
+// as soon as it mounts (one request in review); without it a «Consultar flota» button reads on demand, so a list of
+// airlines never spends units by being shown. Without an AviationReferenceProvider it renders nothing.
 
 export default function AirlineFleetFacts({ icaoCode = null, iataCode = null, auto = false, className = '' }) {
   const service = useAviationReferenceService();
@@ -33,20 +31,14 @@ export default function AirlineFleetFacts({ icaoCode = null, iataCode = null, au
 
   const fleet = read.data;
   const summary = fleetSummary(t, fleet);
+  const sample = summary ? fleetSampleLine(t, fleet) : null;
   const none = read.status === 'success' && hasNoFleet(fleet);
   const status = none ? null : statusWords(t, read, summary !== null);
-  const types = (fleet?.types ?? []).slice(0, TYPES_SHOWN);
   return (
     <div data-airline-fleet={none ? 'none' : summary ? 'fleet' : read.status} aria-live="polite"
       className={`text-xs ${className}`.trim()}>
       {summary && <p className="font-semibold">{summary}</p>}
-      {summary && types.length > 0 && (
-        <p className="text-text-secondary-light">
-          {t('fleet.sample', { count: fleet.sampledAircraft })}
-          {': '}
-          {types.map(type => `${type.model} (${type.count})`).join(' · ')}
-        </p>
-      )}
+      {sample && <p className="text-text-secondary-light">{sample}</p>}
       {none && (
         <p className="rounded-md border border-status-warning/40 bg-status-warning/10 px-2 py-1 text-status-warning">
           <strong>{t('fleet.none')}</strong>

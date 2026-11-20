@@ -70,6 +70,26 @@ it('shows authorized current permits with real recording entry points and pages 
   expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
 });
 
+it('writes the dates of the list and of the history dd/mm/aaaa (N36)', async () => {
+  getHumanResourcesPermits.mockResolvedValue({ page: 1, limit: 20, hasMore: false, permits: [permit] });
+  getHumanResourcesPermitHistory.mockResolvedValue({ rampProfileId: permit.rampProfileId,
+    agentName: permit.agentName, employeeNumber: permit.employeeNumber, documentType: 'AirportId',
+    cycles: [{ id: permit.id, cycleNumber: 1, isCurrent: true, documentNumber: 'DEV-AIRPORT-ID',
+      issuedOn: '2026-01-01', expiresOn: '2099-12-31', recordedAt: '2026-01-01T12:00:00Z', recordedByName: null }] });
+  const user = userEvent.setup();
+  render(<CurrentPermitsPage />);
+  const table = await screen.findByRole('table');
+  expect(within(table).getByText('01/01/2026')).toBeInTheDocument();
+  expect(within(table).getByText('31/12/2099')).toBeInTheDocument();
+  expect(screen.getByText(/· vigencia al \d{2}\/\d{2}\/\d{4}$/)).toBeInTheDocument();
+  expect(screen.queryByText(/\d{4}-\d{2}-\d{2}/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Historial de Riley Ramp · Carnet aeroportuario' }));
+  const drawer = screen.getByRole('dialog', { name: 'Historial · Carnet aeroportuario' });
+  expect(await within(drawer).findByText('DEV-AIRPORT-ID')).toBeInTheDocument();
+  expect(within(drawer).getByText('Emitido').nextElementSibling).toHaveTextContent(/^01\/01\/2026$/);
+  expect(within(drawer).getByText('Vence').nextElementSibling).toHaveTextContent(/^31\/12\/2099$/);
+});
+
 it('opens renewal, refreshes after save and hides rows after denial', async () => {
   getHumanResourcesPermits.mockResolvedValue({ page: 1, limit: 20,
     hasMore: false, permits: [permit] });

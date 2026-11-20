@@ -98,6 +98,123 @@ que usan tanto Tailwind como los hooks; incluye `3xl` (1920 px).
 La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 1920 px contra la API Development. No acredita un despliegue en el VPS.
 
+*Posterior al commit verificado (hallazgo N37 y decisión D-N37, 20 de noviembre
+de 2026).* La prueba del VPS del 16 de noviembre encontró etiquetas del menú y
+opciones de selectores cortadas a media palabra. Ahora:
+
+- **Menú lateral.** En Contratos, Finanzas, Gestión Humana y
+  Superadministración, cada etiqueta del menú ocupa hasta dos líneas y, si aun
+  así no cabe, termina en «…». Al pasar el puntero, `title` la muestra entera
+  («Carnets y permisos aeroportuarios»). Vale para el rail completo, el cajón de
+  navegación y el menú flotante de un grupo en el rail plegado. Los iconos del
+  rail plegado conservan su rótulo emergente, sin añadir el del navegador
+  ([elemento](../../frontend/private-web/src/features/shell/components/SidebarItem.jsx) y
+  [grupo](../../frontend/private-web/src/features/shell/components/SidebarGroup.jsx)).
+  El riel del OCC no cambió.
+- **Selectores.** Cada selector de «Disparar vuelo demo» (Superadministración →
+  Configuración) y de la fila de cada llegada en «Importar vuelos»
+  (Planificación) repite en su `title` la opción que muestra
+  ([selector](../../frontend/private-web/src/components/TitledSelect.jsx)). En el
+  vuelo demo, «Tipo de avión» y «Posición» ocupan las dos columnas del
+  formulario. En el importador, cada selector mide lo que su opción más larga
+  sin pasar del ancho de la fila (antes tenía un tope de 14 rem), y el tipo de
+  avión lleva el código primero, como en el vuelo demo: «A320 · Airbus A320
+  Development», no «Airbus A320 Development · A320». «Nuevo vuelo» y «Editar
+  vuelo» siguen con el nombre primero.
+
+Las pruebas lo comprueban por las clases y los atributos; la revisión visual a
+1440 y 1920 px está pendiente.
+
+## Convenciones de texto
+
+*Posterior al commit verificado (hallazgo N36 y decisión D-N36, 19 de noviembre
+de 2026).* Las pantallas de Contratos, Finanzas y Gestión Humana que recorrió la
+prueba del VPS del 16 de noviembre mostraban las fechas en cinco formatos, ISO
+incluido («2026-09-01»). Ahora siguen una sola regla:
+
+- **Fechas.** Una fecha del calendario (`yyyy-mm-dd`, como la envía la API) se
+  escribe con
+  [`formatBusinessDate`](../../frontend/private-web/src/services/businessDay.js):
+  «01/09/2026» en listas, tablas y fichas, y «1 de septiembre de 2026» solo
+  dentro de una frase («Firmado por ambas partes el 3 de noviembre de 2026.»).
+  Se lee en UTC, así que el día no cambia con la zona del navegador. Un instante
+  se escribe con su día en el calendario de AVIAM, nunca con el día UTC, y un
+  valor ilegible, un día imposible incluido, se ve «—».
+- **Dónde.** Contratos: la lista de contratos, los servicios pactados, el detalle
+  del contrato con su ciclo, los paquetes de Borradores y los permisos de
+  aerolíneas. Finanzas: la aprobación de contratos, el tarifario de servicios
+  (tarifa base y tarifas por contrato) y el de cargos. Gestión Humana: las
+  habilitaciones y los permisos, con sus historiales. También la fecha del
+  vuelo en Planificación, que en inglés sigue el formato del idioma
+  («08/19/2026»), y las frases de la aprobación de precios.
+- **«¿Puede operar?».** Dice «1 turno en los próximos 14 días.», en singular, y
+  escribe «Vence el 13/11/2026.» con barras aunque el servidor corra con otra
+  cultura ([reglas](../../backend/Elevant.Application/Identity/RampAgentReadiness.cs)).
+- **Cuentas.** «Agentes de rampa» dice «Cuenta de acceso activa; acceso móvil
+  según permisos» y «Cuenta de acceso deshabilitada», sin la sigla IAM; en
+  inglés, «Access account active; mobile access according to permissions» y
+  «Access account disabled».
+
+Los sellos con fecha y hora (firmas, ciclo del contrato, revisiones e
+historiales) conservan su formato, y las pantallas fuera de ese recorrido no
+cambiaron.
+
+*Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026).* En
+Contratos, la vigencia de una versión se escribe con
+[`validityRange`](../../frontend/private-web/src/features/contracts/agreements/agreementLabels.js):
+en una lista, «01/09/2026 — 31/08/2027» o «01/09/2026 — Sin vencimiento»; dentro
+de una frase, «del 3 de noviembre de 2026 al 2 de noviembre de 2027» o «desde el
+3 de noviembre de 2026, sin vencimiento». Un conteo va en singular solo para 1:
+«1 versión publicada», «1 tarifa pactada», «1 mes», «1 día».
+
+*Posterior al commit verificado (hallazgo N36 y decisión D-N36, 20 de noviembre
+de 2026).* AVIAM Web trata de tú a su personal. La prueba del VPS del 16 de
+noviembre encontró los dos tratos en las mismas pantallas: «Confirme al
+representante…» en Solicitudes y «después de tu aprobación» en la aprobación de
+precios. La regla:
+
+- **Trato.** Tú en las instrucciones, los avisos y los errores: «Selecciona una
+  solicitud», «Revisa la conexión e intenta de nuevo», «No tienes permiso para
+  ver los borradores de contrato. Pide acceso al administrador de Contratos.»,
+  «La sesión expiró. Vuelve a iniciar sesión.». Lo que describe a un tercero
+  sigue en tercera persona («Contratos fija la vigencia», «¿Puede operar?»).
+- **Dónde ya rige.** Contratos: Inicio, Solicitudes, Borradores con sus
+  paquetes, Contratos con su detalle, su ciclo y la enmienda, Servicios pactados,
+  Reportes y Permisos de aerolíneas. Finanzas: Aprobación de contratos, Tarifario
+  de servicios (con «Tarifas por contrato») y Tarifario de cargos. Gestión
+  Humana: Agentes de rampa, Habilitaciones y certificaciones, y Carnets y
+  permisos aeroportuarios, que ya tuteaban. También la campana de esos tres
+  departamentos. El panel de Agentes de rampa es también la pestaña «Perfiles
+  operativos» de los usuarios del OCC, así que esa pestaña ya tutea.
+- **Mensajes compartidos.** Los errores comunes (sesión vencida, permiso,
+  conflicto, conexión) salen de
+  [`problemMessage`](../../frontend/private-web/src/services/problemMessages.js):
+  en usted por defecto y en tú cuando la pantalla lo pide con `register: 'tu'`,
+  como hacen los mensajes de las pantallas de la lista anterior. Unidades de
+  cobro, Tasas de cambio y Paquetes de Finanzas siguen en usted, así que los
+  tarifarios y los paquetes de un borrador tienen sus propios mensajes
+  ([tarifarios](../../frontend/private-web/src/services/financeErrors.js),
+  [paquetes](../../frontend/private-web/src/services/financePackagesService.js)).
+- **Textos que vienen de otras pantallas.** El aviso de flota de AeroDataBox,
+  que también sale en el catálogo de aerolíneas de Superadministración, se
+  escribe sin trato: «Advertencia, no bloquea: conviene comprobar que la
+  aerolínea opere aviones propios o arrendados.». Los avisos del identificador
+  fiscal, que el cliente compartido escribe en usted para el portal, se leen en
+  tú en Solicitudes: «Elige el país que emitió el identificador fiscal.»
+  ([identidad](../../frontend/private-web/src/features/contracts/requests/airlineIdentity.js)).
+
+El resto de AVIAM Web sigue en usted o mezcla los dos tratos: el OCC,
+Superadministración, Servicios y sus clausuras en Contratos, las demás pantallas
+de Finanzas y de Gestión Humana, «Usuarios del departamento» y el aviso «Sin
+módulos asignados» que comparten los cuatro departamentos. Se convertirán por
+módulo en otros PR. El portal de la aerolínea trata de usted (D-N19,
+[Tratamiento](public-web-portal.md#tratamiento)). La bandeja de correos de
+Superadministración remite un enlace de recuperación perdido a «¿Olvidó su
+contraseña?» del portal: solo una cuenta del portal recibe ese enlace
+([servidor](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfAccountEmailStore.cs)),
+y «¿Olvidaste tu contraseña?» de AVIAM Web solo explica que la recuperación en
+línea aún no está disponible.
+
 ## Ficha de frontera
 
 | Dimensión | Estado verificado |
@@ -516,6 +633,15 @@ La fase 2 del ciclo cambió quitar turnos, copiar la semana y las ausencias: ver
 [Pre-operación (fase 2)](#pre-operación-fase-2). La fase 3 sumó «Ajustar
 horario»: ver [La operación (fase 3)](#la-operación-fase-3).
 
+*Posterior al commit verificado (hallazgo N37, 20 de noviembre de 2026):*
+«¿Puede operar?» se dibuja dentro de la página «Agentes de rampa», después de
+su encabezado («Gestión Humana / Personal» y «Agentes de rampa») y antes de
+«Personal registrado», en la misma columna centrada que el resto de la página.
+Antes salía encima del encabezado y a todo el ancho del contenido. La página lo
+recibe por la prop `lead` de
+[RampProfilesPanel](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx),
+que le pasa [HRModulePage](../../frontend/private-web/src/features/human-resources/HRModulePage.jsx).
+
 ## OCC listo: contratos listos, posiciones ubicadas y mapa en Planificación
 
 Admin OCC suma «Contratos listos»: por fecha, las aerolíneas con contrato activo y
@@ -553,6 +679,46 @@ avión, la posición y la restauración: ver
 [Pre-operación (fase 2)](#pre-operación-fase-2). Desde la fase 3, importar un
 vuelo que ya está planificado lo vincula a esa escala en lugar de duplicarla:
 ver [La operación (fase 3)](#la-operación-fase-3).
+
+*Posterior al commit verificado (hallazgo N28, 19 de noviembre de 2026):* el
+diálogo escribe sus horas en 24 horas y en la zona de la estación, como la
+consola del OCC: «10:05 → 19:53 · aterrizó 19:58», nunca «7:53 p. m.»
+([`formatClock`](../../frontend/private-web/src/features/occ-ui/occTime.js)).
+Lo mismo hacen la lista de vuelos de la vista «Mapa» de Planificación y las
+acciones de una posición en Mapa de posiciones. La cuenta atrás de las tiras de
+vuelo y de «Pendientes de la jornada» cuenta la diferencia entre los minutos que
+muestran los relojes, no el desfase exacto redondeado, y el disparo programa el
+vuelo demo desde el minuto entero siguiente
+([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)): a las
+19:50, su llegada de las 19:53 dice «en 3 min» en la consola y en el mapa, cuya
+cuenta regresiva no cambió.
+
+*Posterior al commit verificado (hallazgo N22, 19 de noviembre de 2026):* el
+diálogo nombra el estado que informa el proveedor de cada llegada con las
+palabras con que el Tablero de la consola nombra su fase, nunca con las del
+proveedor: «Aterrizó · HIDM01», no «Arrived · HIDM01». Lo hace en «Con
+contrato», «Charter sin contrato» y «Descartadas». La hora de pista manda
+primero: con ella, la llegada dice «Aterrizó», diga lo que diga el proveedor. Si
+no la hay, la palabra se lee como la lee el servidor para el mapa
+([`MapFlightPhases`](../../backend/Elevant.Application/Operations/MapFlights/MapFlightPhases.cs),
+decisión 7 de [ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)),
+sin distinguir mayúsculas ni espacios alrededor, y se agrupa como en el Tablero:
+- Expected, Unknown, CheckIn, Boarding, GateClosed y Delayed dicen «Programado»;
+- Departed y EnRoute, «En ruta»; Approaching, «En aproximación»;
+- Arrived, «Aterrizó»: solo dice que tocó pista;
+- Canceled, Cancelled y CanceledUncertain, «Cancelado»; Diverted, «Desviado»;
+- cualquier otra palabra, «Sin estado».
+
+Los matices del proveedor no se conservan: un retraso se ve en la hora revisada
+([`providerArrivalStatusKey`](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
+El diálogo no tiene reloj, así que una llegada que el proveedor aún espera sigue
+«Programado» después de su hora, cuando el mapa ya la da «En ruta».
+
+*Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* la
+hora de pista que informa el proveedor (`runwayAt`) ya no se rotula «real»,
+porque no dice cuándo el avión llegó a su posición ni cuándo la dejó: en una
+llegada dice «aterrizó» («10:05 → 19:53 · aterrizó 19:58») y en una salida,
+«despegó».
 
 ## Chat con presencia y cierre de sesión confirmado
 
@@ -605,10 +771,10 @@ rehízo las pantallas comerciales sobre una convención común:
 | Pantalla | Comportamiento |
 | --- | --- |
 | Contratos → Solicitudes | Bandeja paginada con contadores, filtro por estado y búsqueda en el servidor. La revisión verifica la aerolínea (o vincula la propuesta a una ficha), registra la confirmación del representante, aprueba o rechaza, y cancela con motivo si la cuenta tiene el permiso. Avisa cuando la aerolínea ya es cliente y muestra documento, nacionalidad y distrito en español. Inicio toma sus indicadores de los contadores. |
-| Contratos → Borradores | Muestra la lista de requisitos que devuelve el servidor y el estado de la cuenta del portal, y solo habilita «Enviar a Finanzas» cuando no falta ninguno. Edita servicios y estaciones, marca los servicios dados de baja o cubiertos por un paquete, responde a la aerolínea y descarta con motivo. |
+| Contratos → Borradores | Muestra la lista de requisitos que devuelve el servidor y el estado de la cuenta del portal, y solo habilita «Enviar a Finanzas» cuando no falta ninguno. Edita servicios y estaciones, marca los servicios dados de baja o cubiertos por un paquete, responde a la aerolínea y descarta con motivo. *Posterior al commit verificado (hallazgo N34, 19 de noviembre de 2026):* la «Tarifa base» de Finanzas de cada tarifa y de cada cargo lleva la moneda que el borrador tiene guardada, también mientras se elige otra sin guardar, porque el servidor la calcula en esa moneda: «USD 130.00 · -20 %», «Por hora: USD 40.00», «15 %» o «Sin importe». Antes decía «Base 15», sin moneda. Cada cargo lleva su nombre primero y el código como texto secundario. |
 | Contratos → Contratos | El detalle descarta un contrato que nunca se activó y crea una enmienda de un contrato activo o suspendido, con acceso directo a Borradores. |
 | Contratos → Servicios | Separa ocultar del catálogo, dar de baja con motivo y reactivar; si un contrato impide la baja, ofrece ocultar. Las clausuras solo ofrecen republicar un servicio activo y explican cada código en español y en inglés. |
-| Finanzas | La aprobación de contratos aprueba precios, explica lo que falta para la activación y avisa que la aerolínea no verá el motivo de una devolución. Paquetes descarta borradores y retira versiones publicadas con motivo. Tarifarios, cargos, unidades y tasas muestran errores por código y unidades en español. Una factura emitida muestra el estado de sus correos. |
+| Finanzas | La aprobación de contratos aprueba precios, explica lo que falta para la activación y avisa que la aerolínea no verá el motivo de una devolución. Paquetes descarta borradores y retira versiones publicadas con motivo. Tarifarios, cargos, unidades y tasas muestran errores por código y unidades en español. Una factura emitida muestra el estado de sus correos. *Posterior al commit verificado (hallazgo N34 y decisión D-N34, 19 de noviembre de 2026):* la aprobación de contratos y los tarifarios de servicios y de cargos nombran cada servicio y cada cargo primero; el código queda como texto secundario. En la aprobación, cada cargo muestra «Contrato» y «Tarifa base» con su moneda o su unidad, y el método una sola vez: «Por hora: USD 40.00», «USD 15.00», «25 %», «Excluido», «Se aplica la tarifa base» o «Sin importe» ([`formatChargeValue`](../../frontend/private-web/src/services/financeBookService.js)). Antes decía «DELAY · Por hora: tarifa base 40». Una versión de tarifa que la cuenta no puede editar (vigente, histórica o sin «Modificar») muestra como texto «Vigente desde» y, en la tarifa base, «Hasta» y «Nota», no como campos deshabilitados que parecían editables. |
 | Superadministración | El aprovisionamiento invita por correo por defecto y ofrece vincular una cuenta del portal que ya existe. Clientes asigna una contraseña temporal que cierra una invitación pendiente. Aerolíneas bloquea la identidad de una aerolínea que ya opera. Configuración muestra la bandeja de correos con estado, motivo y referencia. |
 
 Contratos recibe además notificaciones cuando la cuenta del portal queda lista
@@ -635,8 +801,8 @@ el día UTC del navegador.
 
 | Pantalla | Comportamiento |
 | --- | --- |
-| Contratos → Contratos | El ciclo de vida termina con la fecha que permite el preaviso firmado o con una causa inmediata, cancela una terminación programada y avisa cuando hay una. El detalle ofrece «Retirar versión» para una versión aprobada que no firmaron ambas partes. La vigencia se envía con su clave, y los estados del contrato salen de un mapa compartido ([estados](../../frontend/private-web/src/features/contracts/contractStatus.js)). El listado todavía muestra «Aprobada» para una versión que espera las firmas. |
-| Contratos → Permisos de aerolíneas | «Revocar verificación» con motivo, filtro «Revocados» y un aviso que se arma con los contratos que el servidor activó, reanudó o suspendió. |
+| Contratos → Contratos | El ciclo de vida termina con la fecha que permite el preaviso firmado o con una causa inmediata, cancela una terminación programada y avisa cuando hay una. El detalle ofrece «Retirar versión» para una versión aprobada que no firmaron ambas partes. La vigencia se envía con su clave, y los estados del contrato salen de un mapa compartido ([estados](../../frontend/private-web/src/features/contracts/contractStatus.js)). El listado todavía muestra «Aprobada» para una versión que espera las firmas. *Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026):* el detalle escribe una vigencia sin fin «Desde el 3 de noviembre de 2026, sin vencimiento», antes «al Sin vencimiento», y el código de la aerolínea sin el relleno de SQL: «(WN)», antes «(WN )». La lista dice «1 versión publicada» y «1 tarifa pactada», y su ayuda sigue el orden real: Finanzas, vigencia, firma de la aerolínea, contrafirma de AVIAM y permiso JAC verificado. Los campos de «Vigencia y renovación» ya no se salen de su columna (el selector «Renovación» lo hacía), y la renovación y los avisos dicen «1 mes» y «1 día». |
+| Contratos → Permisos de aerolíneas | «Revocar verificación» con motivo, filtro «Revocados» y un aviso que se arma con los contratos que el servidor activó, reanudó o suspendió. *Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026):* un permiso sin verificar (enviado, rechazado o revocado) con fechas vigentes dice «Fechas vigentes» en tono neutro; «Vigente», en verde, queda para un permiso verificado. |
 | Superadministración | «Estaciones» crea, renombra y desactiva estaciones, y cambia su zona horaria mientras no tienen historia ([panel](../../frontend/private-web/src/features/governance/StationsPanel.jsx)). «Clientes» designa representantes y firmantes de cada aerolínea. Las altas y ediciones de gobernanza envían una clave por intención y explican cada código. |
 | OCC → Datos maestros | `/admin-occ/master-data`, con `operations.master_data.read`: terminales y posiciones de la estación, y los tipos de avión compartidos por todas, con alta, edición y desactivación ([pantalla](../../frontend/private-web/src/features/master-data/MasterDataRoute.jsx)). |
 | OCC → Cobertura de posiciones | Explica `stand_in_use` cuando se intenta desactivar una posición en uso y enlaza a Datos maestros. El selector de mentor marca y deshabilita a quien tiene una ausencia aprobada o no tiene carnet vigente. |
@@ -659,6 +825,14 @@ la barra de estado ([Marco del OCC](#marco-del-occ-pr-u2)). Fuentes:
 [avisos de departamento](../../frontend/private-web/src/features/notifications/departmentNotifications.js) y
 [avisos de OCC](../../frontend/private-web/src/features/notifications/notificationKinds.js).
 
+*Posterior al commit verificado (hallazgo N33 y decisión D-N33, 19 de noviembre
+de 2026).* En Contratos, Finanzas y Gestión Humana el aviso emergente que trae
+la campana sale abajo a la derecha: arriba tapaba la campana y el menú de
+usuario del topbar. El [aviso](../../frontend/private-web/src/components/Toast.jsx)
+admite `placement` (`top-right`, el de siempre, o `bottom-right`) y el
+[centro de avisos](../../frontend/private-web/src/features/notifications/DepartmentNotificationCenter.jsx)
+pide `bottom-right`. Los avisos del OCC no cambian de sitio.
+
 ## La operación (fase 3)
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
@@ -676,7 +850,7 @@ las horas locales, de
 
 | Pantalla | Comportamiento |
 | --- | --- |
-| OCC → Planificación | Sin fecha abre el día de hoy de la estación. El detalle de la escala ofrece «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» con `operations.planning.update` y según las acciones que permite el servidor; las horas se escriben en la hora local de la estación. «Nuevo vuelo» y «Editar vuelo» explican el mismo vuelo planificado dos veces («Ese vuelo ya está planificado ese día.»), y «Nuevo vuelo» da de alta la aerolínea mínima de un charter. «Liberar agente» envía la asignación que OCC ve, y «Relevar agente» pasa una operación en curso o devuelta a otro agente elegible, con motivo. Tras el relevo vuelve a leer sus opciones y muestra al agente actual nuevo; «Asistencia compartida» incluye a los agentes relevados después del inicio, como «{nombre} (relevado)», para registrar su asistencia. Si el agente ya tiene turno ese día, «Ajustar turno del día» lo amplía hasta cubrir el vuelo. La elegibilidad explica «Ya tiene 3 operaciones simultáneas» y «necesita un mentor», y el detalle muestra las incidencias de la operación. Ya no ofrece «Crear Work Order» ni «Exportar». |
+| OCC → Planificación | Sin fecha abre el día de hoy de la estación. El detalle de la escala ofrece «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» con `operations.planning.update` y según las acciones que permite el servidor; las horas se escriben en la hora local de la estación. «Nuevo vuelo» y «Editar vuelo» explican el mismo vuelo planificado dos veces («Ese vuelo ya está planificado ese día.»), y «Nuevo vuelo» da de alta la aerolínea mínima de un charter. «Liberar agente» envía la asignación que OCC ve, y «Relevar agente» pasa una operación en curso o devuelta a otro agente elegible, con motivo. Tras el relevo vuelve a leer sus opciones y muestra al agente actual nuevo; «Asistencia compartida» incluye a los agentes relevados después del inicio, como «{nombre} (relevado)», para registrar su asistencia. Si el agente ya tiene turno ese día, «Ajustar turno del día» lo amplía hasta cubrir el vuelo. La elegibilidad explica «Ya tiene 3 operaciones simultáneas» y «necesita un mentor», y el detalle muestra las incidencias de la operación. Ya no ofrece «Crear Work Order» ni «Exportar». *Posterior al commit verificado (hallazgo N21, 19 de noviembre de 2026):* el manifiesto de «Asignar agente», aquí y en la consola, escribe el mínimo de cada servicio con su unidad en palabras, en singular solo para 1: «1 hora», «2 horas», «0.5 horas», «0 operaciones» y, en inglés, «2 operations» ([`billingUnitQuantity`](../../frontend/private-web/src/services/billingUnits.js)). Son las palabras decididas también para la tablet (D-S5). Ya no muestra el código de la unidad («1 hour»), y una unidad que la web no conoce se lee «2 × código». |
 | OCC → Mapa de posiciones | Los comandos de cada vuelo esperan su versión («Consultando la versión del vuelo…»); si no se puede leer, el vuelo ofrece «Reintentar» o explica el permiso que falta, y la llegada, la asignación y la liberación viajan siempre con su `Idempotency-Key` e `If-Match`. Registra la llegada con la hora local y el tipo de avión: sin tocar la hora, un vuelo que aún no la tiene registra la del servidor al guardar, y cambiar una hora ya informada pide «Motivo del cambio de hora». «Corregir llegada» pide motivo y aparece con `operations.positions_map.assign` aunque la cuenta no tenga Planificación. Desde la primera entrega la llegada ya no se registra ni se corrige. |
 | OCC → Revisión | La cola, el detalle y las incidencias se releen solos con `occ_review`. «Aprobar» solo se habilita con la Orden de Servicio firmada o corregida por OCC, y la etiqueta dice su estado. «Excluir de la facturación» y «Volver a facturar» piden motivo para un servicio en excepción con cantidad. Con `operations.review.reopen`, «Reabrir revisión» reabre una aprobación que no se facturó, y esa revisión ya no ofrece «Devolver». El panel «Incidencias de la operación» (`operations.incidents.*`) cambia estados con nota y reporta las de OCC en hora local, también mientras la operación sigue en rampa. Con la operación aprobada o cancelada solo ofrece resolver o cerrar, y un rechazo `operation_closed` explica que sus incidencias quedan como historia y relee la lista. Las marcas del walk-around ofrecen «Ver foto». |
 | OCC → Reportes | Exporta el período completo o nada: hasta 25 000 filas en Excel y CSV y 5 000 en PDF. Un período mayor se explica con `report_too_large` y, desde el PDF, sugiere Excel o CSV. «Generado» se muestra en hora local. |
@@ -710,7 +884,7 @@ Posterior al commit verificado de esta nota: esta sección describe el código d
 
 | Pantalla | Comportamiento |
 | --- | --- |
-| Superadministración → Configuración | El panel «Vuelo demo», encima de «Correo del sistema», dice si el entorno lo permite. «Disparar vuelo demo» pide estación, aerolínea con contrato vigente hoy, origen, destino («El mismo aeropuerto» por defecto), tipo de avión, «Sin posición» o una posición libre, «Llega a la posición en (minutos)» (de 2 a 30, con atajos de 3, 5, 8 y 15) y «Tiempo en tierra (minutos)» (de 20 a 240, 60 por defecto). «Vuelos demo de hoy» muestra cada vuelo con su fase («En aproximación», «Aterrizó, rueda a la posición», «En posición», «Saliendo», «Despegó», «Terminado» o «Cancelado») y su cuenta regresiva, calculadas en el navegador con el reloj del servidor; si OCC ya lo importó, con qué código y en qué posición, y «Cancelar vuelo» antes de tocar pista o «Terminar demo» después, con su confirmación y su `Idempotency-Key`. Se relee cada 5 segundos mientras un avión se mueve y cada 20 si no, nunca con la pestaña oculta. Las opciones del formulario cambian con la hora (el aviso `crosses_local_midnight`, las aerolíneas con contrato vigente hoy y las posiciones libres): se releen con la lista cuando tienen 5 minutos, y al volver a la pestaña o a su ventana (al recuperar el foco) el panel relee las opciones y la lista enseguida. Cada código se explica en español; apagado, el panel dice que los vuelos demo solo funcionan en el entorno de desarrollo. |
+| Superadministración → Configuración | El panel «Vuelo demo», encima de «Correo del sistema», dice si el entorno lo permite. «Disparar vuelo demo» pide estación, aerolínea con contrato vigente hoy, origen, destino («El mismo aeropuerto» por defecto), tipo de avión, «Sin posición» o una posición libre, «Llega a la posición en (minutos)» (de 2 a 30, con atajos de 3, 5, 8 y 15) y «Tiempo en tierra (minutos)» (de 20 a 240, 60 por defecto). «Vuelos demo de hoy» muestra cada vuelo con su fase («En aproximación», «Aterrizó, rueda a la posición», «En posición», «Saliendo», «Despegó», «Terminado» o «Cancelado») y su cuenta regresiva, calculadas en el navegador con el reloj del servidor; si OCC ya lo importó, con qué código y en qué posición, y «Cancelar vuelo» antes de tocar pista o «Terminar demo» después, con su confirmación y su `Idempotency-Key`. Se relee cada 5 segundos mientras un avión se mueve y cada 20 si no, nunca con la pestaña oculta. Las opciones del formulario cambian con la hora (el aviso `crosses_local_midnight`, las aerolíneas con contrato vigente hoy y las posiciones libres): se releen con la lista cuando tienen 5 minutos, y al volver a la pestaña o a su ventana (al recuperar el foco) el panel relee las opciones y la lista enseguida. Cada código se explica en español; apagado, el panel dice que los vuelos demo solo funcionan en el entorno de desarrollo. *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* un vuelo importado cuya operación sigue asignada, en curso o devuelta más de una hora después de que su avión dejó la posición lleva el punto de aviso y dice «Operación en curso, abierta tras la salida», como el pendiente del Panorama ([estado](../../frontend/private-web/src/features/governance/demoFlightStatus.js)). |
 | OCC → Planificación → «Importar vuelos» | Los tramos de un vuelo demo llevan la etiqueta «Demo». El diálogo relee con `occ_planning` sin perder lo elegido; la posición cuyo código normalizado coincide con la puerta de la llegada demo viene preseleccionada («Posición (sugerida)»: `A01` es `A1`), y las posiciones van en orden natural (A1, A2, A10). Un vuelo demo no necesita «Actualizar ahora». |
 | OCC → Planificación, Mapa de posiciones y Panorama | La tarjeta del vuelo, el cajón de la posición y la fila del tablero muestran «Demo» cuando la API marca la escala con `isDemo`: la palabra sobre rayas a 45°, sin color ([etiqueta](../../frontend/private-web/src/features/occ-ui/DemoTag.jsx)). |
 
@@ -731,7 +905,7 @@ del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
 
 | Pantalla | Comportamiento |
 | --- | --- |
-| Superadministración → Configuración | Encima del formulario, la tarjeta «Posiciones de Punta Cana» cuenta las terminales y las posiciones del catálogo que tiene la estación y cuántas de sus posiciones están ubicadas en el mapa («Terminales: 3 de 3 · Posiciones: 41 de 41 · Ubicadas en el mapa: …»). «Cargar posiciones» crea, con su `Idempotency-Key`, lo que falte, sin coordenadas y sin tocar lo que ya existe; con todo cargado, la tarjeta lo dice y no muestra el botón. Nombra las posiciones fuera del plano (B01 y B02 en la semilla) y, si una carga no pudo crear alguna porque su terminal o la posición están desactivadas, cuáles faltan. El aviso de la carga dice si se cargó todo o cuántas posiciones se cargaron; si la carga no creó nada, no da aviso de éxito. En otra estación dice que solo Punta Cana tiene un plano de referencia. En «Disparar vuelo demo», «Posición» ofrece «Al azar» por defecto (el servidor elige entre las posiciones con un agente elegible a esa hora), «Sin posición» y todas las posiciones: las elegibles dicen quién las cubre y las demás van deshabilitadas con su motivo. Al cambiar el tipo de avión o los minutos, el panel relee las posiciones para esa escala. Si ninguna tiene un agente elegible, avisa con los motivos y ofrece «Disparar sin posición» y la indicación «Crear cobertura»: lo hace OCC en «Cobertura de posiciones», con una cuenta de OCC (por ejemplo, en otro navegador o en una ventana privada); no es un enlace porque esa pantalla no se abre con la cuenta de superadministración. Si la estación no tiene ningún tipo de fuselaje estrecho, el panel relee las posiciones para el tipo de fuselaje ancho que envía por defecto. Cada código se explica en español. |
+| Superadministración → Configuración | Encima del formulario, la tarjeta «Posiciones de Punta Cana» cuenta las terminales y las posiciones del catálogo que tiene la estación y cuántas de sus posiciones están ubicadas en el mapa («Terminales: 3 de 3 · Posiciones: 41 de 41 · Ubicadas en el mapa: …»). «Cargar posiciones» crea, con su `Idempotency-Key`, lo que falte, sin coordenadas y sin tocar lo que ya existe; con todo cargado, la tarjeta lo dice y no muestra el botón. Nombra las posiciones fuera del plano (B01 y B02 en la semilla) y, si una carga no pudo crear alguna porque su terminal o la posición están desactivadas, cuáles faltan. El aviso de la carga dice si se cargó todo o cuántas posiciones se cargaron; si la carga no creó nada, no da aviso de éxito. En otra estación dice que solo Punta Cana tiene un plano de referencia. En «Disparar vuelo demo», «Posición» ofrece «Al azar» por defecto (el servidor elige entre las posiciones con un agente elegible a esa hora), «Sin posición» y todas las posiciones: las elegibles dicen quién las cubre y las demás van deshabilitadas con su motivo. Al cambiar el tipo de avión o los minutos, el panel relee las posiciones para esa escala. Si ninguna tiene un agente elegible, avisa con los motivos y ofrece «Disparar sin posición» y la indicación «Crear cobertura»: lo hace OCC en «Cobertura de posiciones», con una cuenta de OCC (por ejemplo, en otro navegador o en una ventana privada); no es un enlace porque esa pantalla no se abre con la cuenta de superadministración. Si la estación no tiene ningún tipo de fuselaje estrecho, el panel relee las posiciones para el tipo de fuselaje ancho que envía por defecto. Cada código se explica en español. *Posterior al commit verificado (hallazgo N24, 19 de noviembre de 2026):* «elegible» quiere decir que el turno del agente que cubre la posición dura toda la escala, hasta que el avión sale, y no solo que cubre la llegada. El panel lo dice así: «Al azar: el servidor elige entre las posiciones con un agente elegible durante toda la escala.», «Ninguna posición habilitada tiene un agente elegible durante toda la escala: …» y, tras un `409`, los mensajes de `stand_not_eligible` y `no_eligible_stand` ([panel](../../frontend/private-web/src/features/governance/DemoFlightsPanel.jsx), [mensajes](../../frontend/private-web/src/services/demoFlightsService.js)). Un tiempo en tierra más corto puede volver elegible una posición cuyo agente termina pronto su turno. |
 | OCC → Mapa de posiciones y mapa de Planificación | Leen el tablero de posiciones, que da libre una posición en cuanto la tablet registra el `PUSHBACK` de su vuelo: ya no lo lista en la posición ni entre los vuelos sin posición. Planificación, los documentos y la tablet siguen nombrando la posición del vuelo, y «Liberar» sigue cerrando la asignación a mano. |
 
 La B33, retirada por la enmienda AIP de 2026, lleva `retired: true` en el
@@ -746,6 +920,32 @@ también una B33, donde OCC la puso. Fuentes:
 [datos del mapa](../../frontend/private-web/src/features/dashboard/positionsData.js),
 [posiciones del tablero](../../frontend/private-web/src/features/dashboard/dashboardPositions.js) y
 [mapeadores del mapa](../../frontend/private-web/src/features/positions-map/positionsMapMappers.js).
+
+*Posterior al commit verificado (hallazgo N27, 19 de noviembre de 2026):* AVIAM
+Web muestra un solo código por posición, el que dibuja el mapa. La semilla creó
+`A01` y `A02` y la carga de Punta Cana las adoptó como las `A1` y `A2` del
+catálogo, pero solo los mapas quitaban los ceros al mostrarlas: Cobertura, el
+importador y Superadministración decían «A01». Ahora
+[`standDisplayCode`](../../frontend/private-web/src/services/standCodes.js)
+quita los ceros de relleno de un código de mayúsculas, un número y mayúsculas
+(«A01» se ve «A1» y «BN06», «BN6») y deja cualquier otro tal cual
+(«E2E-XXXX-1» conserva sus guiones). No es `normalizeStandCode`, que sigue
+siendo la regla para comparar. La usan:
+- las placas de posición del OCC (`OccPlate kind="stand"`): tablas, bandas,
+  tiras y fichas;
+- Cobertura de posiciones: los botones del formulario, las combinadas y el
+  nombre del selector de tamaño;
+- Planificación: las tarjetas, el cajón de la escala (también en «Asignar
+  agente» de la consola), el filtro y la búsqueda de posición, y los selectores
+  de «Nuevo vuelo» y «Editar vuelo»;
+- «Importar vuelos»: la puerta de cada llegada y el selector de posición;
+- Mapa de posiciones: «(ahora en A1)» al traer otro vuelo;
+- Superadministración: el campo «Posición», «Vuelos demo de hoy» y las
+  posiciones fuera del plano de la tarjeta «Posiciones de Punta Cana».
+
+Los datos no cambian (D-N27): los comandos envían el id de la posición,
+«Datos maestros» muestra el código tal como está guardado porque ahí se edita, y
+la tablet y el PDF no cambian.
 
 ## Sistema visual NOC del OCC (PR U1)
 
@@ -1494,14 +1694,62 @@ cambia.
   ([`StandTurnaround.jsx`](../../frontend/private-web/src/features/maps/ui/StandTurnaround.jsx))
   solo da por «Real» una hora ya alcanzada en el reloj de las posiciones: los
   instantes de un vuelo demo son su plan, así que «aterrizó» y «Real» esperan a
-  su toque. «Operación» dice el estado de la operación de tierra que traen los
+  su toque. *Posterior al commit verificado (hallazgo N23, 19 de noviembre de
+  2026):* la llegada separa la hora de pista de la hora en la posición
+  ([`standModel.js`](../../frontend/private-web/src/features/maps/stands/standModel.js),
+  `visitDetail`). La fila «Llegada» dice «Aterrizó 19:49» (la hora de pista o
+  el toque demo) y «En posición 19:54»: la hora de «Registrar llegada» o el
+  `BLOCK_ON` más temprano y, si nadie la registró, los calzos demo. «Real» queda
+  para una hora que no dice de qué tipo es, como la de la salida o la del
+  tablero sin los vuelos del mapa. «Estado en el mapa» dice «Ocupada por WN9001
+  desde las 19:54 (llegada registrada)» con la hora en la posición, nunca con la
+  de pista (antes decía «desde las 19:49», la del aterrizaje), y «(llegada
+  registrada)» solo con una hora registrada; con solo la hora de pista no dice
+  desde cuándo. «Llegando» sigue diciendo «aterrizó 19:49». «Operación» dice el
+  estado de la operación de tierra que traen los
   vuelos del mapa (Asignada, En curso, Devuelta…, con las palabras de
   Planificación) y, sin operación, el de la escala. «Tipo de aeronave» toma el
   de la escala cuando el tablero no lo trae. El cajón dice el estado
   una sola vez, con las palabras del mapa: su cabecera ya no muestra la del
   tablero, que podía contradecirla («Planificada» frente a «Llegando»). La
   cámara solo se mueve si la posición elegida queda fuera de la vista. Una `Esc`
-  cierra el cajón y la siguiente limpia la selección.
+  cierra el cajón y la siguiente limpia la selección. *Posterior al commit
+  verificado (hallazgo N29, 19 de noviembre de 2026):* el rótulo cian de la
+  posición elegida ya no aparta 44 px a su alrededor, sino 2 px, y parte sus
+  líneas más largas a unos 14 em. El rótulo normal de esa misma posición sale de
+  las capas de rótulos por un filtro de capa, no por transparencia
+  ([`standLayers.js`](../../frontend/private-web/src/features/maps/stands/standLayers.js),
+  `standLabelFilter`). Así, las vecinas conservan su rótulo donde no tocan el
+  elegido: con A11 elegida, A10 vuelve a decir «Anulada por A9» en las capturas
+  a 1920 px y en 3D a 1440 px; en 2D a 1440 px su rótulo tocaría el propio
+  «A11» y sigue sin mostrarse. Dónde va el rótulo de una posición con avión no
+  cambia: queda para decidirlo con una captura (D-N29). *Posterior al commit
+  verificado (hallazgo N26, 19 de noviembre de 2026):* el mapa dice quién cubre
+  la posición ahora, no quién la cubre ese día. A las 19:50 del 16 de noviembre,
+  A5 y A6 decían «CM» aunque esa cobertura terminó a las 17:00, y «Sin agente
+  que la cubra» nunca salía: el tablero solo traía los nombres del día. Ahora
+  las tres pantallas que lo leen (Mapa de posiciones, la consola y el mapa de
+  Planificación) lo piden con `includeCoverage=true`
+  ([`occPositionsService.js`](../../frontend/private-web/src/services/occPositionsService.js)),
+  y cada posición trae sus ventanas de cobertura.
+  [`standModel.js`](../../frontend/private-web/src/features/maps/stands/standModel.js)
+  (`deriveDisplayStatus`) las lee al minuto del reloj de las posiciones cuando
+  la fecha del tablero es la de hoy. Las iniciales del rótulo, la ficha, el
+  anillo del mismo agente, la lista y «Cubre …» del cajón nombran a quien la
+  cubre en ese minuto (`standCoverageNames`), un refuerzo incluido; los dos
+  «Agente» del cajón, el de la escala y el de los datos del vuelo, nombran a
+  quien cubre el avión que está en la posición y, para el que viene, a quien la
+  cubre a la hora de sus calzos (`visitCoverageNames`).
+  «Sin agente que la cubra» se evalúa igual: ahora para el avión en la posición
+  y a la hora de los calzos para el que viene (D-N26). El tablero de una fecha
+  solo trae las ventanas de esa fecha, así que, pasada su medianoche, que nadie
+  esté en ellas no dice nada: un vuelo de la fecha que llega después sin una
+  ventana que lo cubra solo da la señal si nadie cubre la posición ese día, como
+  antes de N26, y su «Agente» es quien la cubre ahora. El cajón dice, atenuado,
+  «La cobertura de … terminó a las 17:00» y «La cobertura de … empieza a las
+  …». En otra fecha (Planificación de otro día) el cajón lista cada ventana,
+  «Cubre … de 05:00 a 17:00», sin decir quién cubre ahora, y lo demás sigue con
+  los nombres del día, igual que cuando la API no trae las ventanas.
 - **Combinadas.** La posición que una combinada anula se dibuja «Inhabilitada»,
   con «Anulada por A9» y un enlace a trazos hasta la que la anula. «Solo
   fuselaje estrecho» suma una caja punteada de letra C dentro de una posición
@@ -1729,6 +1977,21 @@ tampoco.
   de calzos del vuelo demo, el hito `BLOCK_ON` o la hora de calzos que escribe
   «Registrar llegada»; el «Arrived» del proveedor solo dice «Aterrizó»
   ([tablero](../../frontend/private-web/src/features/dashboard/noc/boardModel.js)).
+  *Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* la
+  cuenta atrás de una llegada cuya hora es la de pista dice «aterrizó hace 8 min»,
+  no «hace 8 min»; la palabra de la hora sigue siendo «real», porque «aterrizó» no
+  cabe en su columna.
+  *Posterior al commit verificado (hallazgo N25, 19 de noviembre de 2026):* la
+  cuenta de «Llegadas» y de «Salidas» incluye los vuelos por importar, así que
+  una pestaña cuyos vuelos esperan todos en «Por importar» ya no dice «No hay
+  llegadas en la ventana del mapa.» bajo «Llegadas 2»: dice «Ninguna llegada
+  importada: 2 por importar.», o «Ninguna salida importada: 1 por importar.», y
+  en inglés «No arrivals imported: 2 to import.»
+  ([tablero](../../frontend/private-web/src/features/dashboard/noc/BoardPanel.jsx)).
+  «No hay llegadas en la ventana del mapa.» queda para una pestaña sin ningún
+  vuelo. «Alertas» y «Pendientes de la jornada» no cambian (D-N25 mantiene el
+  [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md)): el vuelo por
+  importar sigue entre los pendientes, con «Importar».
   El encabezado del tablero lleva su leyenda, solo con lo que dibuja la pestaña
   a la vista: el triángulo de «Atención» y el octágono de «Urgente» con su
   palabra, y «Demo» y «est.» con lo que significan, con las palabras de
@@ -1742,6 +2005,29 @@ tampoco.
   cierra cuando la hay: «Elegir posición», «Asignar agente», «Revisar» o
   «Importar»
   ([pendientes](../../frontend/private-web/src/features/dashboard/noc/pendingModel.js)).
+  *Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* una
+  llegada cuya hora es la de pista dice «WN9001 sin agente, aterrizó hace 8 min»,
+  nunca «llegó hace»; con la hora de «Registrar llegada» sigue «llegó hace».
+  *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* una
+  operación que sigue asignada, en curso o devuelta al agente más de una hora
+  después de que su avión dejó la posición es un pendiente ámbar y sin acción
+  propia (D-N30): «ZZ9002 con la operación abierta, salió hace 1 h 5 min». La
+  salida es lo primero que la registra en los vuelos del mapa (el `PUSHBACK`, la
+  hora real de una salida que despegó o el desbloqueo del reloj del vuelo demo)
+  y, para una escala que ya quedó fuera de su ventana, la hora real de salida de
+  la planificación. Una operación entregada (pendiente de revisión o en
+  revisión) o aprobada no es un pendiente, y un avión que sigue en la posición
+  sigue diciendo «pasó su hora de salida». La entrega el agente en la tablet o,
+  si no puede, OCC la pasa a otro agente; el servidor no la barre ni avisa por
+  su cuenta
+  ([regla](../../frontend/private-web/src/features/operations/openAfterDeparture.js)).
+  Una escala que OCC planificó a mano no recibe hora real de salida: cuando sus
+  vuelos salen de la ventana de dos horas del mapa, su `PUSHBACK` deja de verse
+  y el pendiente desaparece. Y la consola solo lee el día de la estación y los
+  vuelos del mapa de las dos últimas horas: una operación que sigue abierta tras
+  una salida de la noche sale de «En operación» y de su línea a la medianoche de
+  la estación, y de los pendientes a esa medianoche o dos horas después de su
+  salida si eso es más tarde, mientras no exista un barrido del servidor.
   Esos pendientes salen de cuatro lecturas (la planificación, la disponibilidad
   de los agentes, los vuelos del mapa y la cola de revisión), y cada una apaga
   solo lo suyo: la que no respondió, falló, fue rechazada o muestra datos
@@ -1757,6 +2043,13 @@ tampoco.
   puede leer dice «No tienes permiso para ver esta información.»; solo la
   planificación, que lee el día de la estación, dice «No hay una estación OCC
   autorizada para consultar este panorama.».
+  *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* «En
+  operación» sigue contando la operación abierta tras la salida y lo dice debajo
+  de la cifra, con el triángulo ámbar: «1 abierta tras la salida» o «2 abiertas
+  tras la salida»
+  ([cifras](../../frontend/private-web/src/features/dashboard/noc/FiguresPanel.jsx)).
+  Esa línea solo cuenta las que la cifra cuenta: una operación asignada que nunca
+  empezó sale en «Pendientes de la jornada», pero no ahí.
 - **Posiciones.** Plegado, dice las escalas del día, las que están en operación
   y cuántas posiciones hay en cada estado. Abierto, la banda de las posiciones en
   el tiempo, una fila por posición con sus escalas bajo la línea «ahora», con
@@ -2060,8 +2353,15 @@ demás), y cada pantalla pide su dato solo cuando lo muestra.
     contrario.
 - **Mapa de posiciones.** Al elegir una posición, el cajón muestra la aeronave estacionada o que llega.
 - **Diálogo de importación.** Muestra la aeronave a pedido, con «Ver la aeronave …».
-- **Contratos.** La bandeja muestra «Flota según AeroDataBox: 87 aviones · A320, B738…» o el aviso «Sin flota
-  registrada»; es un aviso y no cambia la aprobación.
+- **Contratos.** La bandeja muestra «Flota según AeroDataBox: 802 aviones; en una muestra de 25: B38M, B39M» y,
+  debajo, cuántos aviones de esa muestra tiene cada tipo («Tipos en una muestra de 25: B38M (24) · B39M (1)»), o el
+  aviso «Sin flota registrada»; es un aviso y no cambia la aprobación. *Posterior al commit verificado (hallazgo N32,
+  19 de noviembre de 2026):* cada tipo se nombra con la clave con que la API agrupa la muestra: su código OACI; sin
+  código, su modelo, y sin ninguno de los dos, «sin tipo»
+  ([`fleetTypeLabel`](../../frontend/private-web/src/features/aviation-reference/aviationReferenceFormat.js)). Así
+  ningún tipo sale dos veces: la prueba del VPS del 16 de noviembre mostraba «B38M (24) · B38M (1)», sin el B39M,
+  porque la línea usaba el modelo del proveedor. El resumen ya no presenta los tipos de la muestra como si fueran los
+  de toda la flota. Nombra tres tipos y la línea de la muestra cuenta seis; las dos terminan en «…» cuando hay más.
 - **Superadministración.** El catálogo de aerolíneas consulta la flota con un botón, para no gastar unidades por
   listar.
 - **Estados.** Un tope alcanzado se dice en palabras («Límite diario alcanzado»), nunca como error.
@@ -2236,7 +2536,13 @@ carril de mapas, con las mismas props.
   cuenta las posiciones por estado y, abierta, dibuja sus escalas en el tiempo
   con la línea «ahora». Por debajo de 1536 px la lista se pliega mientras el
   inspector está abierto. Un enlace con `stand=` centra esa posición en el
-  mapa. Los textos de los comandos tienen inglés.
+  mapa. Los textos de los comandos tienen inglés. *Posterior (hallazgo N29, 19
+  de noviembre de 2026):* los botones 2D/3D, «Centrar PUJ» y pantalla completa,
+  arriba a la izquierda del mapa, van en un solo bloque opaco con su junta, como
+  los grupos de controles del propio mapa
+  ([`MapControls.jsx`](../../frontend/private-web/src/features/positions-map/components/MapControls.jsx)).
+  Antes eran tres botones translúcidos separados, y en 3D la placa «Demo»
+  asomaba entre ellos. El bloque de datos de un vuelo sigue a su derecha.
 - **Planificación**
   ([vista](../../frontend/private-web/src/features/planning/PlanningPage.jsx)).
   La barra lleva «Nuevo vuelo», «Importar vuelos» y «Actualizar»; debajo, los

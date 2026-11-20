@@ -132,6 +132,13 @@ describe('consoleMessages', () => {
     // Every status of a strip and every action of a pending item has its words.
     for (const key of FLIGHT_STATUS_KEYS) expect(consoleMessages.es.status[key], key).toBeTruthy();
     for (const action of PENDING_ACTIONS) expect(consoleMessages.es.pending.actions[action], action).toBeTruthy();
+    // N25: a tab whose flights all wait in «Por importar» counts them, in both languages.
+    for (const language of ['es', 'en']) {
+      for (const key of ['noneImportedArrivals', 'noneImportedDepartures']) {
+        expect(placeholdersOf(String(consoleMessages[language].board[key] ?? '')), `${language}: board.${key}`)
+          .toEqual(['count']);
+      }
+    }
   });
 
   it('keeps the honesty texts of the old dashboard word for word', () => {
@@ -165,6 +172,28 @@ describe('consoleMessages', () => {
     expect(es.assign.agentReleased).toBe('Agente liberado. Ya puedes asignar a otro.');
     expect(en.assign.agentReleased).toBe('Agent released. You can assign another one.');
     expect(es.board.legend).toBe('Leyenda del tablero');
+  });
+
+  it('says an operation still open after its departure, in Pendientes and under «En operación» (N30)', () => {
+    for (const language of ['es', 'en']) {
+      const { pending, figures } = consoleMessages[language];
+      expect(placeholdersOf(String(pending.openAfterDeparture ?? '')), `${language}: pending`).toEqual(['flight']);
+      expect(placeholdersOf(String(figures.openAfterDeparture ?? '')), `${language}: figures`).toEqual(['count']);
+      expect(placeholdersOf(String(figures.openAfterDepartureOne ?? 'x{count}')), `${language}: one`).toEqual([]);
+    }
+    const es = createTranslator(consoleMessages, 'es');
+    const en = createTranslator(consoleMessages, 'en');
+    expect(es('figures.openAfterDepartureOne')).toBe('1 abierta tras la salida');
+    expect(es('figures.openAfterDeparture', { count: 2 })).toBe('2 abiertas tras la salida');
+    expect(en('figures.openAfterDepartureOne')).toBe('1 open after departure');
+    expect(en('figures.openAfterDeparture', { count: 2 })).toBe('2 open after departure');
+    // The pending item says when it left with the words of a departure that happened.
+    expect(es('pending.withWhen', { what: es('pending.openAfterDeparture', { flight: 'ZZ9002' }),
+      when: es('pending.when.departsPast', { duration: '1 h 5 min' }) }))
+      .toBe('ZZ9002 con la operación abierta, salió hace 1 h 5 min');
+    expect(en('pending.withWhen', { what: en('pending.openAfterDeparture', { flight: 'ZZ9002' }),
+      when: en('pending.when.departsPast', { duration: '1 h 5 min' }) }))
+      .toBe('ZZ9002 with its operation still open, departed 1 h 5 min ago');
   });
 
   it('says the signals of a stand with the map words and counts with the words of occTime', () => {

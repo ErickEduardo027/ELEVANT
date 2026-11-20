@@ -11,6 +11,7 @@ import EmailDeliveryPanel from './EmailDeliveryPanel';
 import InternalUsersPanel from './InternalUsersPanel';
 import StationsPanel from './StationsPanel';
 import AccessValidationsPage from '../department-users/AccessValidationsPage';
+import { requestReferenceLabel } from '../contracts/requests/requestLabels';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
@@ -197,6 +198,8 @@ function ProvisioningCard({ task, onDone, onRefresh }) {
   const [existing, setExisting] = useState(null);
   const provisionKeys = useRef(createCommandKeyHolder());
   const linkKeys = useRef(createCommandKeyHolder());
+  // The request's reference as Contratos sees it in its list (N35): a GUID shortened, whole in its title.
+  const reference = requestReferenceLabel(task.reference, { list: true });
 
   async function fail(failure) {
     setError(provisioningMessage(failure));
@@ -234,7 +237,7 @@ function ProvisioningCard({ task, onDone, onRefresh }) {
   }
 
   return <form onSubmit={submit} className="rounded-xl border border-accent-600/20 bg-accent-600/[.035] p-5">
-    <div className="flex items-center justify-between gap-3"><strong>{task.airline}</strong><span className="text-xs font-mono text-text-secondary-light">{task.reference.slice(0, 12)}</span></div>
+    <div className="flex items-center justify-between gap-3"><strong>{task.airline}</strong><span title={reference.title} className="text-xs font-mono text-text-secondary-light">{reference.text}</span></div>
     <p className="mt-1 text-sm text-text-secondary-light">Representante: {task.representativeName}</p>
     <label className="mt-4 block text-xs font-semibold">Correo de acceso<input type="email" required value={email} onChange={event => { setEmail(event.target.value); setExisting(null); }} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" /></label>
     <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={manual} onChange={event => setManual(event.target.checked)} /> Entregar una contraseña temporal en lugar de la invitación por correo</label>

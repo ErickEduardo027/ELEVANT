@@ -9,14 +9,14 @@ import Tabs from '../../../components/Tabs';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
-import { latestPublishedStart, tariffCommandKeys, VersionList } from '../tariffs/ServiceTariffsPage';
+import { latestPublishedStart, tariffCommandKeys, VersionFacts, VersionList } from '../tariffs/ServiceTariffsPage';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
-import { financeTariffMessage } from '../../../services/financeErrors';
+import { tariffBookMessage } from '../../../services/financeErrors';
 import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
   listCharges, listChargeTariffs, listFinanceServices, publishChargeTariff, saveCharge, saveChargeTariffDraft,
 } from '../../../services/financeBookService';
-import { businessToday } from '../../../services/businessDay';
+import { businessToday, formatBusinessDate } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -67,9 +67,9 @@ function ChargeDrawer({ open, charge, services, units, onClose, onSaved }) {
     try {
       // The same key goes with a retry of the same charge after an uncertain result (1-E).
       await saveKeys.current.run('save', { id: id ?? null, ...values }, key => saveCharge(id, values, key));
-      onSaved(charge ? 'Cargo actualizado.' : 'Cargo creado. Asígnele un importe en el tarifario de cargos.');
+      onSaved(charge ? 'Cargo actualizado.' : 'Cargo creado. Asígnale un importe en el tarifario de cargos.');
     } catch (failure) {
-      setError(financeTariffMessage(failure, { fallback: 'No se pudo guardar el cargo. Intente de nuevo.' }));
+      setError(tariffBookMessage(failure, { fallback: 'No se pudo guardar el cargo. Intenta de nuevo.' }));
     } finally {
       setBusy(false);
     }
@@ -142,9 +142,9 @@ function Catalog({ perms }) {
   const load = useCallback(async () => {
     try { setCharges(await listCharges()); setLoadError(null); }
     catch (failure) {
-      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
-        fallback: 'No se pudieron cargar los cargos. Revise la conexión e intente de nuevo.',
-        forbidden: 'No tiene permiso para consultar los cargos.' })));
+      setLoadError(loadFailure(failure, tariffBookMessage(failure, {
+        fallback: 'No se pudieron cargar los cargos. Revisa la conexión e intenta de nuevo.',
+        forbidden: 'No tienes permiso para consultar los cargos.' })));
     }
   }, []);
   useEffect(() => {
@@ -160,14 +160,14 @@ function Catalog({ perms }) {
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       <LoadFailure failure={loadError} onRetry={() => { void load(); }} />
       {!charges ? !loadError && <p role="status" className="text-sm">Cargando cargos…</p> : charges.length === 0 ? (
-        <EmptyState icon={TariffIcon} title="Sin cargos" description="Cree los cargos y recargos que los agentes podrán aplicar." />
+        <EmptyState icon={TariffIcon} title="Sin cargos" description="Crea los cargos y recargos que los agentes podrán aplicar." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
           <table className="table-stack w-full min-w-[720px] text-left text-sm">
             <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-3">Cargo</th><th className="p-3">Categoría</th><th className="p-3">Cálculo</th><th className="p-3">Alcance</th><th className="p-3">Estado</th>{perms.update && <th className="p-3">Acción</th>}</tr></thead>
             <tbody>{charges.map(charge => (
               <tr key={charge.id} className="border-t border-black/5 dark:border-white/5">
-                <td className="p-3"><strong>{charge.code}</strong><span className="block text-xs text-text-secondary-light">{charge.name}</span></td>
+                <td className="p-3"><strong>{charge.name}</strong><span className="block text-xs text-text-secondary-light">{charge.code}</span></td>
                 <td className="p-3">{CATEGORY_LABELS[charge.category] ?? charge.category}</td>
                 <td className="p-3 text-xs">{METHOD_LABELS[charge.method]} · {RULE_LABELS[charge.quantityRule]}{charge.graceMinutes ? ` · gracia ${charge.graceMinutes} min` : ''}</td>
                 <td className="p-3 text-xs">{charge.appliesToAllServices ? 'Todos los servicios' : `${charge.serviceIds.length} servicio(s)`}{charge.visibleToAgents ? '' : ' · oculto en rampa'}</td>
@@ -211,9 +211,9 @@ function ChargeTariff({ perms }) {
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null);
     } catch (failure) {
       setVersions(null);
-      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
-        fallback: 'No se pudo cargar el tarifario de cargos. Revise la conexión e intente de nuevo.',
-        forbidden: 'No tiene permiso para consultar el tarifario de cargos.' })));
+      setLoadError(loadFailure(failure, tariffBookMessage(failure, {
+        fallback: 'No se pudo cargar el tarifario de cargos. Revisa la conexión e intenta de nuevo.',
+        forbidden: 'No tienes permiso para consultar el tarifario de cargos.' })));
     }
   }, [currency]);
   useEffect(() => { void load(); }, [load]);
@@ -226,8 +226,8 @@ function ChargeTariff({ perms }) {
       setDetail(result);
       setRates(result.rates);
       setValidFrom(result.summary.validFrom);
-    }).catch(failure => active && setMessage({ tone: 'error', text: financeTariffMessage(failure, {
-      fallback: 'No se pudo cargar la versión. Revise la conexión e intente de nuevo.' }) }));
+    }).catch(failure => active && setMessage({ tone: 'error', text: tariffBookMessage(failure, {
+      fallback: 'No se pudo cargar la versión. Revisa la conexión e intenta de nuevo.' }) }));
     return () => { active = false; };
   }, [selectedId, reloads]);
 
@@ -246,7 +246,7 @@ function ChargeTariff({ perms }) {
       setMessage({ tone: 'success', text: success });
       await load(result?.id ?? selectedId);
     } catch (failure) {
-      setMessage({ tone: 'error', text: financeTariffMessage(failure) });
+      setMessage({ tone: 'error', text: tariffBookMessage(failure) });
       await load(selectedId);
     } finally {
       setBusy(false);
@@ -303,13 +303,14 @@ function ChargeTariff({ perms }) {
           <VersionList versions={versions} selectedId={selectedId} onSelect={setSelectedId} />
           {detail && (
             <section className="min-w-0 space-y-3 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
-              <label className="block max-w-xs text-xs font-semibold">Vigente desde<input type="date" disabled={!editable} value={validFrom} onChange={event => setValidFrom(event.target.value)} className={fieldClass} /></label>
+              {editable ? <label className="block max-w-xs text-xs font-semibold">Vigente desde<input type="date" value={validFrom} onChange={event => setValidFrom(event.target.value)} className={fieldClass} /></label>
+                : <VersionFacts facts={[['Vigente desde', formatBusinessDate(detail.summary.validFrom)]]} />}
               <StackedTable>
                 <table className="table-stack w-full min-w-[560px] text-left text-sm">
                   <thead className="text-xs uppercase text-text-secondary-light"><tr><th className="p-2">Cargo</th><th className="p-2">Cálculo</th><th className="p-2">Importe</th><th className="p-2">Mínimo</th></tr></thead>
                   <tbody>{rows.map(({ charge, rate }) => (
                     <tr key={charge.id} className="border-t border-black/5 dark:border-white/5">
-                      <td className="p-2"><strong>{charge.code}</strong><span className="block text-xs text-text-secondary-light">{charge.name}</span></td>
+                      <td className="p-2"><strong>{charge.name}</strong><span className="block text-xs text-text-secondary-light">{charge.code}</span></td>
                       <td className="p-2 text-xs">{METHOD_LABELS[charge.method]}</td>
                       <td className="p-2">{editable ? <input aria-label={`Importe de ${charge.code}`} type="number" min="0" step="0.01" value={rate?.value ?? ''} placeholder="Sin importe" onChange={event => setRate(charge, { value: event.target.value })} className={fieldClass} />
                         : rate ? (charge.method === 'PercentOfService' ? `${rate.value} %` : formatMoney(rate.value, detail.summary.currencyCode)) : '—'}</td>
@@ -330,13 +331,13 @@ function ChargeTariff({ perms }) {
           )}
         </div>
       )}
-      <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifario de cargos" description="La versión pasa a ser la vigente y la anterior queda como histórica. Guarde antes los cambios pendientes."
+      <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifario de cargos" description="La versión pasa a ser la vigente y la anterior queda como histórica. Guarda antes los cambios pendientes."
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
         onConfirm={async () => {
           setConfirm(null);
           const latest = latestPublishedStart(versions);
           if (latest && detail.summary.validFrom <= latest) {
-            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambia «Vigente desde» y guarda.` });
             return;
           }
           await publish();

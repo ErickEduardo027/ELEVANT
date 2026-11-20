@@ -42,16 +42,23 @@ export function minutesBetween(at, now) {
   return delta < 0 ? -minutes : minutes;
 }
 
+// The minute a clock shows for an instant: its seconds dropped, as formatClock drops them. Every zone in use today is
+// offset from UTC by whole minutes, so the minute changes at the same instant at the station as in UTC.
+const shownMinute = ms => Math.floor(ms / MINUTE_MS);
+
 /**
  * How far `at` is from `now`, as the words of a countdown need it: `{ tense, hours, minutes }`, with `tense` `now`
- * (less than a minute either way), `future` or `past`, and the distance rounded to the minute and split into hours and
- * minutes. `null` without two valid instants.
+ * (the same minute on the clock), `future` or `past`, and the distance split into hours and minutes. It counts the
+ * minutes between the two clocks a screen shows, never the exact gap rounded (N28): at 19:50 a time due at 19:53:40
+ * reads «19:53 · en 3 min». `null` without two valid instants.
  */
 export function relativeTimeParts(at, now) {
-  const delta = toInstantMs(at) - toInstantMs(now);
-  if (!Number.isFinite(delta)) return null;
-  if (Math.abs(delta) < MINUTE_MS) return { tense: 'now', hours: 0, minutes: 0 };
-  const total = Math.round(Math.abs(delta) / MINUTE_MS);
+  const atMs = toInstantMs(at);
+  const nowMs = toInstantMs(now);
+  if (!Number.isFinite(atMs) || !Number.isFinite(nowMs)) return null;
+  const delta = shownMinute(atMs) - shownMinute(nowMs);
+  if (delta === 0) return { tense: 'now', hours: 0, minutes: 0 };
+  const total = Math.abs(delta);
   return { tense: delta > 0 ? 'future' : 'past', hours: Math.floor(total / 60), minutes: total % 60 };
 }
 

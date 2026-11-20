@@ -13,6 +13,7 @@ import DocumentHistoryDrawer from '../documents/DocumentHistoryDrawer';
 import DocumentValiditySummary from '../documents/DocumentValiditySummary';
 import { localToday, validityLabel, validityTone } from '../documents/documentValidity';
 import QualificationRecordForm from './QualificationRecordForm';
+import { formatBusinessDate } from '../../../services/businessDay';
 
 const PAGE_LIMIT = 20;
 const EMPTY_FILTERS = { search: '', equipmentTypeId: '', validity: '' };
@@ -149,7 +150,7 @@ export default function CurrentQualificationsPage() {
     </div>}
 
     {state.status === 'success' && <>
-      <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página · vigencia al {asOf}</p>
+      <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página · vigencia al {formatBusinessDate(asOf)}</p>
       {state.data.qualifications.length ? <section className="overflow-x-auto rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
         <table className="table-stack w-full min-w-[780px] text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
@@ -161,7 +162,7 @@ export default function CurrentQualificationsPage() {
             {state.data.qualifications.map(item => <tr key={item.id}>
               <td className="px-5 py-4 font-semibold">{item.agentName}<span className="block text-xs font-normal text-text-secondary-light">{item.employeeNumber}</span></td>
               <td className="px-5 py-4">{item.equipmentName}<span className="block text-xs text-text-secondary-light">{item.equipmentCode} · ciclo {item.cycleNumber}</span></td>
-              <td className="px-5 py-4">{item.obtainedOn}</td><td className="px-5 py-4">{item.expiresOn}</td>
+              <td className="px-5 py-4">{formatBusinessDate(item.obtainedOn)}</td><td className="px-5 py-4">{formatBusinessDate(item.expiresOn)}</td>
               <td className="px-5 py-4"><StatusBadge tone={validityTone(item.validity)} label={validityLabel(item.validity)} /></td>
               <td className="px-5 py-4">{item.certifyingEntity}<span className="block text-xs text-text-secondary-light">{item.instructorName}</span></td>
               <td className="px-5 py-4"><div className="flex flex-wrap gap-3">
@@ -190,9 +191,9 @@ export default function CurrentQualificationsPage() {
       title={history ? `Historial · ${history.equipmentCode}` : 'Historial'}
       subtitle={history ? `${history.agentName} · ${history.employeeNumber} · ${history.equipmentName}` : undefined}
       renderCycle={cycle => <dl className="grid grid-cols-2 gap-2 text-xs">
-        <div><dt className="text-text-secondary-light">Entrenamiento</dt><dd>{cycle.trainingDate}</dd></div>
-        <div><dt className="text-text-secondary-light">Obtenida</dt><dd>{cycle.obtainedOn}</dd></div>
-        <div><dt className="text-text-secondary-light">Vence</dt><dd>{cycle.expiresOn}</dd></div>
+        <div><dt className="text-text-secondary-light">Entrenamiento</dt><dd>{formatBusinessDate(cycle.trainingDate)}</dd></div>
+        <div><dt className="text-text-secondary-light">Obtenida</dt><dd>{formatBusinessDate(cycle.obtainedOn)}</dd></div>
+        <div><dt className="text-text-secondary-light">Vence</dt><dd>{formatBusinessDate(cycle.expiresOn)}</dd></div>
         <div><dt className="text-text-secondary-light">Emisor</dt><dd>{cycle.certifyingEntity}</dd></div>
         <div className="col-span-2"><dt className="text-text-secondary-light">Instructor</dt><dd>{cycle.instructorName}</dd></div>
         {cycle.notes && <div className="col-span-2"><dt className="text-text-secondary-light">Notas</dt><dd className="whitespace-pre-line">{cycle.notes}</dd></div>}

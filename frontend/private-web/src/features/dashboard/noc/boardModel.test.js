@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import {
-  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON, trafficInstant,
+  createAirPicture, createDemoBlock, createDemoFlights, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON,
+  trafficInstant,
 } from '../../maps/testing/trafficFixtures';
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import { readSelection, writeSelection } from '../../maps/core/mapSelection';
 import {
-  BOARD_LEGEND_KEYS, bestTime, boardLegendKeys, buildBoard, filterVisits, flightStatus, selectionIdOf, VISIT_FILTERS,
+  BOARD_LEGEND_KEYS, bestTime, boardLegendKeys, buildBoard, filterVisits, flightStatus, providerArrivalStatusKey,
+  selectionIdOf, VISIT_FILTERS,
 } from './boardModel';
 import { consoleMessages } from './consoleMessages';
 
@@ -45,7 +47,7 @@ describe('boardModel', () => {
     // ZZ300 landed 22 min ago (actual), ZZ161 comes in 10 min (estimated), ZZ500 in 48 (estimated).
     expect(numbers(board.arrivals)).toEqual(['ZZ300', 'ZZ161', 'ZZ500']);
     expect(board.arrivals.map(item => item.time)).toEqual([
-      { at: NOW - 22 * MINUTE, kind: 'actual' }, { at: NOW + 10 * MINUTE, kind: 'estimated' },
+      { at: NOW - 22 * MINUTE, kind: 'actual', actualKind: 'OnBlock' }, { at: NOW + 10 * MINUTE, kind: 'estimated' },
       { at: NOW + 48 * MINUTE, kind: 'estimated' },
     ]);
     expect(numbers(board.departures)).toEqual(['ZZ700', 'ZZ301', 'ZZ162']);
@@ -64,6 +66,20 @@ describe('boardModel', () => {
     expect(board.departures[0].status).toMatchObject({ key: 'departed', label: 'Salió' });
     expect(board.arrivals[2].status.label).toBe('En ruta');
     expect(board.counts).toEqual({ arrivals: 3, departures: 3, toImport: 2, visits: 4 });
+  });
+
+  it('an actual time keeps the kind the map flights give it: a runway time only says that it landed (N23)', () => {
+    const leg = actualKind => ({ scheduledAt: '2026-11-13T15:00:00Z', actualAt: '2026-11-13T14:58:00Z', actualKind });
+    expect(bestTime(leg('Runway'))).toEqual({ at: NOW - 2 * MINUTE, kind: 'actual', actualKind: 'Runway' });
+    expect(bestTime(leg('OnBlock'))).toEqual({ at: NOW - 2 * MINUTE, kind: 'actual', actualKind: 'OnBlock' });
+    // A planning leg tells no kind, and an estimate or a schedule has none.
+    expect(bestTime(leg(undefined))).toEqual({ at: NOW - 2 * MINUTE, kind: 'actual' });
+    expect(bestTime({ scheduledAt: '2026-11-13T15:00:00Z', actualAt: null, actualKind: null }))
+      .toEqual({ at: NOW, kind: 'scheduled' });
+    // The strips carry it: ZZ300's on-block time, written by «Registrar llegada», and ZZ700's take-off.
+    const board = buildBoard({ flights: FLIGHTS, nowMs: NOW, t });
+    expect(board.arrivals.find(item => item.flightNumber === 'ZZ300').time.actualKind).toBe('OnBlock');
+    expect(board.departures.find(item => item.flightNumber === 'ZZ700').time.actualKind).toBe('Runway');
   });
 
   it('an arrival without a stand reads «Llegada sin posición asignada» and turns attention within 60 min', () => {
@@ -303,6 +319,100 @@ describe('boardModel', () => {
     expect(demoVisit(NOW)).toMatchObject({ onStand: false, arrival: { status: { key: 'approaching' } } });
     expect(demoVisit(NOW + 6 * MINUTE)).toMatchObject({ onStand: true, arrival: { status: { key: 'onStand' } },
       departure: { status: { key: 'onStand' } } });
+  });
+
+  it('says what operation each visit has and when its aircraft left its stand (N30)', () => {
+    const visitOf = (board, turnaroundId) => board.visits.find(item => item.turnaroundId === turnaroundId);
+    const id700 = legOf(TRAFFIC_FLIGHT_KEY.departed).turnaroundId;
+    const board = buildBoard({ flights: FLIGHTS, nowMs: NOW, t });
+    // ZZ700 pushed back 14 minutes ago and took off 8 minutes ago: the first evidence, its PUSHBACK, says when it left.
+    expect(visitOf(board, id700)).toMatchObject({ operationStatus: 'PendingReview', departedAt: NOW - 14 * MINUTE,
+      ended: true });
+    // Without its PUSHBACK, its take-off.
+    const takeoffOnly = FLIGHTS.map(flight => (flight.turnaroundId === id700 ? { ...flight, milestones: [] } : flight));
+    expect(visitOf(buildBoard({ flights: takeoffOnly, nowMs: NOW, t }), id700).departedAt).toBe(NOW - 8 * MINUTE);
+    // ZZ300 is still on A2, its operation in progress; ZZ500 has no operation yet. Neither left.
+    expect(visitOf(board, legOf(TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId))
+      .toMatchObject({ operationStatus: 'InProgress', departedAt: null, onStand: true });
+    expect(visitOf(board, legOf(TRAFFIC_FLIGHT_KEY.noFix).turnaroundId))
+      .toMatchObject({ operationStatus: null, departedAt: null });
+    // A diverted or a cancelled arrival ends its visit without leaving the stand.
+    const id161 = legOf(TRAFFIC_FLIGHT_KEY.arrival).turnaroundId;
+    for (const phase of ['diverted', 'cancelled']) {
+      const flights = FLIGHTS.map(flight => (flight.flightKey === TRAFFIC_FLIGHT_KEY.arrival ? { ...flight, phase } : flight));
+      expect(visitOf(buildBoard({ flights, nowMs: NOW, t }), id161), phase).toMatchObject({ ended: true, departedAt: null });
+    }
+
+    // A demo flight OCC imported: the server's clock took its aircraft off the stand 82 minutes ago (its off-block,
+    // 30 minutes after its on-block), with neither a PUSHBACK nor a take-off time on its legs.
+    const left = createDemoFlights(createDemoBlock({ imported: true, offBlockAfterMin: 30,
+      appearAt: NOW - 120 * MINUTE }), { imported: true });
+    const demoId = left.flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.demoArrival).turnaroundId;
+    expect(visitOf(buildBoard({ flights: left.flights, nowMs: NOW, t }), demoId))
+      .toMatchObject({ operationStatus: 'Assigned', departedAt: NOW - 82 * MINUTE, ended: true });
+    // An off-block the clock already decided is no departure while the timeline keeps the aircraft parked.
+    const parked = createDemoFlights(createDemoBlock({ imported: true, offBlockAfterMin: 30,
+      appearAt: NOW - 20 * MINUTE }), { imported: true });
+    expect(visitOf(buildBoard({ flights: parked.flights, nowMs: NOW, t }), demoId))
+      .toMatchObject({ departedAt: null, onStand: true });
+
+    // A turnaround the map's window leaves out: the planning snapshot's departure time and operation.
+    const morning = planTurnaround('5d000000-0000-4000-8000-000000000050', {
+      departure: { id: 'leg-51', flightNumber: 'ZZ51', origin: { iataCode: 'PUJ' }, destination: { iataCode: 'SDQ' },
+        scheduledAt: '2026-11-13T07:00:00Z', estimatedAt: null, actualAt: '2026-11-13T07:04:00Z' },
+      operation: { id: 'op-50', status: 'InProgress' } });
+    expect(visitOf(buildBoard({ flights: FLIGHTS, planningTurnarounds: [morning], nowMs: NOW, t }), morning.id))
+      .toMatchObject({ source: 'planning', operationStatus: 'InProgress', departedAt: Date.parse('2026-11-13T07:04:00Z') });
+    expect(visitOf(buildBoard({ flights: FLIGHTS, planningTurnarounds: [planTurnaround(morning.id)], nowMs: NOW, t }),
+      morning.id)).toMatchObject({ operationStatus: null, departedAt: null });
+    // The map flights are fresher than the snapshot: ZZ700's operation is theirs.
+    const stale = planTurnaround(id700, { operation: { id: 'op-700', status: 'InProgress' } });
+    expect(visitOf(buildBoard({ flights: FLIGHTS, planningTurnarounds: [stale], nowMs: NOW, t }), id700).operationStatus)
+      .toBe('PendingReview');
+  });
+
+  it('names a proposed arrival as the board names its phase, never in the provider’s words (N22)', () => {
+    const arrival = (providerStatus, extra = {}) => ({ direction: 'Arrival', flightNumber: 'ZZ9001', providerStatus,
+      runwayAt: null, ...extra });
+    const said = (providerStatus, extra) => t(`status.${providerArrivalStatusKey(arrival(providerStatus, extra))}`);
+    // The server's table (MapFlightPhases.cs, ADR-0042 decision 7): the phase of each word of the provider before the
+    // flight's time; a word it does not know, «Landed» and «En Route» among them, is `unknown`.
+    const phases = {
+      Expected: 'scheduled', Unknown: 'scheduled', CheckIn: 'scheduled', Boarding: 'scheduled', GateClosed: 'scheduled',
+      Delayed: 'scheduled', Departed: 'departed', EnRoute: 'enroute', Approaching: 'approaching', Arrived: 'arrived',
+      Canceled: 'cancelled', Cancelled: 'cancelled', CanceledUncertain: 'cancelled', Diverted: 'diverted',
+      Landed: 'unknown', 'En Route': 'unknown', 'Something else': 'unknown',
+    };
+    // What the board says of an arrival in that phase, on its assigned stand and not there yet.
+    const boardKey = phase => flightStatus({ direction: 'Arrival', phase, stand: { code: 'A05' } },
+      { nowMs: NOW, onStand: false }).key;
+    for (const [word, phase] of Object.entries(phases)) {
+      // In any case and without the spaces around it, as the server reads it.
+      for (const written of [word, word.toUpperCase(), word.toLowerCase(), `  ${word}\t`]) {
+        expect(providerArrivalStatusKey(arrival(written)), written).toBe(boardKey(phase));
+      }
+    }
+
+    // Grouped as the board groups them: the provider's nuances are not kept.
+    expect(['Approaching', 'Arrived', 'EnRoute', 'Departed', 'Canceled', 'Diverted'].map(word => said(word)))
+      .toEqual(['En aproximación', 'Aterrizó', 'En ruta', 'En ruta', 'Cancelado', 'Desviado']);
+    expect(['Delayed', 'CheckIn', 'GateClosed', 'Expected'].map(word => said(word))).toEqual(Array(4).fill('Programado'));
+    // A word the server does not know is «Sin estado», as on the board.
+    expect([said('Holding'), said('Landed'), said('En Route')]).toEqual(Array(3).fill('Sin estado'));
+    // Without a word, as a leg nobody reports.
+    expect([said(null), said(''), said('   ')]).toEqual(Array(3).fill('Programado'));
+
+    // The runway time decides first: it landed, whatever the provider still says.
+    for (const word of ['Expected', 'Approaching', 'Delayed', 'Canceled', 'Something else', null]) {
+      expect(providerArrivalStatusKey(arrival(word, { runwayAt: '2026-11-13T14:58:00Z' })), String(word)).toBe('landed');
+    }
+    expect(said('Expected', { runwayAt: '2026-11-13T14:58:00.1234567+00:00' })).toBe('Aterrizó');
+
+    // Only an arrival: a departure, or no item, has no answer.
+    expect(providerArrivalStatusKey({ direction: 'Departure', providerStatus: 'Departed', runwayAt: null })).toBeNull();
+    expect(providerArrivalStatusKey({ direction: 'Departure', providerStatus: 'Expected',
+      runwayAt: '2026-11-13T14:58:00Z' })).toBeNull();
+    expect(providerArrivalStatusKey(null)).toBeNull();
   });
 
   it('selects through the one store with the flightKey of the map flight', () => {

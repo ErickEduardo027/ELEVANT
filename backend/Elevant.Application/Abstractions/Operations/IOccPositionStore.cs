@@ -12,15 +12,28 @@ public sealed record OccPositionTurnaroundData(Guid TurnaroundId, string Operati
     DateTimeOffset? ArrivalScheduledAt, DateTimeOffset? ArrivedAt, DateTimeOffset? DepartureScheduledAt,
     DateTimeOffset? AssignedFrom, string Status, bool? IsDemo = null);
 
+/// <summary>
+/// One coverage window of a stand (ADR-0030): the agent who covers it, from when to when (UTC) and whether OCC marked
+/// it as a reinforcement. N26: with the windows a screen tells who covers the stand at a given instant, which the names
+/// of the day alone do not say.
+/// </summary>
+public sealed record OccPositionCoverageData(string AgentName, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    bool IsReinforcement);
+
 /// <param name="Latitude">WGS84 location OCC placed (ADR-0027); null until placed.</param>
 /// <param name="CancelledBy">Code of the occupied stand that cancels this one right now (ADR-0030), an alert to OCC.</param>
 /// <param name="NarrowbodyOnly">Limited to narrow-body now, by its own size or an occupied neighbour.</param>
 /// <param name="CoveredBy">Agents covering the stand on the board's date.</param>
 /// <param name="RequiredPermits">Names of the permits the stand requires (ADR-0045); null when none.</param>
+/// <param name="Coverage">
+/// The windows of the coverages behind <paramref name="CoveredBy"/> (N26), by start; the API writes them only to a read
+/// that asks for them.
+/// </param>
 public sealed record OccPositionData(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
     IReadOnlyList<OccPositionTurnaroundData> Turnarounds, decimal? Latitude = null, decimal? Longitude = null,
     bool HasBoardingBridge = false, bool IsRemote = false, string? MaxAircraftSize = null, string? CancelledBy = null,
-    bool NarrowbodyOnly = false, IReadOnlyList<string>? CoveredBy = null, IReadOnlyList<string>? RequiredPermits = null);
+    bool NarrowbodyOnly = false, IReadOnlyList<string>? CoveredBy = null, IReadOnlyList<string>? RequiredPermits = null,
+    IReadOnlyList<OccPositionCoverageData>? Coverage = null);
 
 public sealed record OccPositionBoardData(Guid StationId, string StationCode, DateOnly OperationDate, DateTimeOffset AsOf,
     IReadOnlyList<OccPositionData> Positions, IReadOnlyList<OccPositionTurnaroundData> Unassigned, bool CanAssign);

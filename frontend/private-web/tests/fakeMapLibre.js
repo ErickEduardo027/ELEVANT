@@ -12,7 +12,8 @@
 // - `updateData` applies its diff to the source's `data` as MapLibre 6.16 does, `removeAllProperties` dropping the
 //   properties that come with it;
 // - a raster source has `setTiles` (a list of URL templates, anything else throws) and `serialize`, and a context loss
-//   rebuilds it with the tiles it was last given, as MapLibre 6.16 does.
+//   rebuilds it with the tiles it was last given, as MapLibre 6.16 does;
+// - `setFilter` replaces a layer's filter (a missing layer throws), and a context loss keeps it, as MapLibre 6.16 does.
 // Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
 // pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
 // ended with `emit(map, 'moveend', { originalEvent })`.
@@ -329,6 +330,7 @@ function createModule(state) {
       this.paintCalls = [];
       this.layoutCalls = [];
       this.zoomRangeCalls = [];
+      this.filterCalls = [];
       this.featureStates = new Map();
       this.cameraCalls = [];
       this.controls = [];
@@ -549,6 +551,24 @@ function createModule(state) {
       layer.maxzoom = maxzoom;
       this.zoomRangeCalls.push({ id, minzoom, maxzoom });
       return this;
+    }
+
+    // As MapLibre 6.16: the filter replaces the layer's own, and null or undefined takes it away. The layer keeps it, so
+    // the snapshot of a context loss does too. Stricter than MapLibre, which fires an error: a missing layer throws.
+    setFilter(id, filter, options) {
+      this._requireStyle();
+      this._record('setFilter', [id, filter, options]);
+      const layer = this._layer(id);
+      if (filter === null || filter === undefined) delete layer.filter;
+      else layer.filter = clone(filter);
+      this.filterCalls.push({ id, filter: filter ?? null });
+      return this;
+    }
+
+    getFilter(id) {
+      this._requireStyle();
+      const { filter } = this._layer(id);
+      return filter === undefined ? undefined : clone(filter);
     }
 
     // Feature state.
@@ -880,9 +900,9 @@ function addHelpers(state) {
     },
 
     // MapLibre 6.16 on a lost WebGL context: it keeps a snapshot of the style (sources with their data, layers with
-    // their layout, paint and zoom ranges, images), drops the style, and loses custom layers and feature state. Its
-    // style's destroy() calls onRemove of every custom layer before the map fires `webglcontextlost` (PR M7); a worker
-    // restart (restartWorkers) drops them without it.
+    // their layout, paint, filters and zoom ranges, images), drops the style, and loses custom layers and feature
+    // state. Its style's destroy() calls onRemove of every custom layer before the map fires `webglcontextlost` (PR M7);
+    // a worker restart (restartWorkers) drops them without it.
     loseContext(map, { removeCustomLayers = true } = {}) {
       if (removeCustomLayers) {
         for (const layer of map.layers.filter(item => item.type === 'custom')) layer.onRemove?.(map, null);

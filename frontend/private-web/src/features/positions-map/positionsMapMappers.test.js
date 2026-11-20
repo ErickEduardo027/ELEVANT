@@ -268,4 +268,25 @@ describe('mapOccupancyToRampPositions over the airport layout (PR M4)', () => {
       status: 'unverified', coveredBy: null, maxAircraftSize: null, standType: null, isRemote: false, cancelledBy: null,
     });
   });
+
+  it('carries the coverage windows of the board\'s date when the read brought them (N26)', () => {
+    const reference = layoutStandReferences(MDPC_LAYOUT).filter(item => ['A1', 'A2', 'A3'].includes(item.id));
+    const windows = [
+      { agentName: 'Elena Soto', startsAt: '2026-11-16T09:00:00+00:00', endsAt: '2026-11-16T21:00:00+00:00', isReinforcement: false },
+      { agentName: 'Luis Peña', startsAt: '2026-11-16T21:00:00+00:00', endsAt: '2026-11-17T03:00:00+00:00', isReinforcement: true },
+    ];
+    const board = { operationDate: '2026-11-16', positions: [
+      boardStand('A01', { coveredBy: ['Elena Soto', 'Luis Peña'], coverage: windows }),
+      boardStand('A02', { coverage: [] }),
+    ] };
+    const [a1, a2, a3] = mapOccupancyToRampPositions(reference, board, nowIso);
+    expect(a1.coverage).toEqual({ date: '2026-11-16', windows });
+    // Copies: the position never shares the board's lists.
+    expect(a1.coverage.windows).not.toBe(windows);
+    expect(a1.coverage.windows[0]).not.toBe(windows[0]);
+    expect(a2.coverage).toEqual({ date: '2026-11-16', windows: [] });
+    // No stand row, or a board without the windows (an API that does not send them): nothing is known.
+    expect(a3.coverage).toBeNull();
+    expect(mapOccupancyToRampPositions(reference, { ...board, positions: [boardStand('A01')] }, nowIso)[0].coverage).toBeNull();
+  });
 });

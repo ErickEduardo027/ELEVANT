@@ -71,6 +71,15 @@ it('shows the stands with flights and opens a flight in planning', async () => {
   expect(onSelectFlight).toHaveBeenLastCalledWith('t2');
 });
 
+it('writes the flights’ times on 24 hours in the station zone (N28)', async () => {
+  // Punta Cana is UTC−4: 14:00Z is 10:00 there and 23:53Z, 19:53 (never «7:53 p. m.»).
+  loadOccPositions.mockResolvedValue({ ...board, unassigned: [{ ...waiting, arrivalScheduledAt: '2026-11-03T23:53:00Z' }] });
+  render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }, { id: 't2' }]} />);
+  expect(await screen.findByRole('button', { name: 'DM300 · Arajet · 19:53' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'pin A1' }));
+  expect(screen.getByRole('button', { name: 'DM161 · Arajet · 10:00' })).toBeInTheDocument();
+});
+
 it('a stand click writes stand= and shows its flights', async () => {
   loadOccPositions.mockResolvedValue(board);
   render(<PlanningMap stationId={stationId} date="2026-11-03" flights={[{ id: 't1' }, { id: 't2' }]} />);

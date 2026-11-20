@@ -86,10 +86,13 @@ Corrección del profesor: una aerolínea inexistente no debe llegar a contrato.
   la relectura que exige el 409 lo muestra. `Unavailable` no bloquea; la bandeja avisa.
 - **Excepción.** La ficha está verificada con una fuente (`verified_at`, `verified_by_account_id`
   y `verification_source_url`, ya auditados) por una cuenta que es superadministradora. En ese caso
-  la aprobación no consulta los registros y la bandeja muestra «Verificada a mano por Superadmin ·
-  fuente». Confirmar la misma identidad y la misma fuente ya no reemplaza a quien verificó, tanto en
-  Contratos como en Superadministración. Si un superadministrador guarda en **Aerolíneas** una
-  ficha verificada por Contratos, la toma como suya.
+  la aprobación no consulta los registros. La tarjeta «Registros públicos» de la bandeja muestra
+  «✓ Verificada a mano por Superadministración el … · fuente …», con la fecha y la hora de la
+  verificación y la dirección de la fuente tal cual, y, mientras la solicitud está abierta, «Al
+  aprobar no se consulta a los registros públicos.» (hallazgo N35). Confirmar la misma identidad y
+  la misma fuente ya no reemplaza a quien verificó, tanto en Contratos como en Superadministración.
+  Si un superadministrador guarda en **Aerolíneas** una ficha verificada por Contratos, la toma
+  como suya.
 - **Alcance.** La regla vive en `DecideCommercialRequestHandler`, que es el camino de la API.
   `ICommercialWorkflowStore.DecideAsync` sin la compuerta no la aplica; lo usan las pruebas de
   persistencia. Las pruebas automáticas inyectan registros falsos y nunca consultan Wikidata.

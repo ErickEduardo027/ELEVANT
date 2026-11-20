@@ -22,10 +22,13 @@ const childClassName = active =>
       : 'text-text-secondary-light hover:bg-black/5 hover:text-ink-900 dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark'
   }`;
 
+/** A label of the menu on up to two lines, then «…», with the whole label on hover (D-N37). */
+const labelClassName = 'min-w-0 flex-1 break-words line-clamp-2';
+
 function ChildLink({ child, active, useModuleNavigation, onSelect, onNavigate, role }) {
   const content = <>
     <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? 'bg-accent-600' : 'bg-current opacity-40'}`} />
-    <span className="min-w-0 flex-1 truncate">{child.label}</span>
+    <span title={child.label} className={labelClassName}>{child.label}</span>
     {Number(child.badge?.count ?? child.badge) > 0 && (
       <span className="shrink-0 rounded-full bg-signal-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
         {child.badge?.count ?? child.badge}
@@ -121,7 +124,7 @@ export default function SidebarGroup({
         <button type="button" ref={buttonRef} aria-expanded={open} aria-controls={panelId}
           onClick={() => setToggled(!open)} className={buttonClassName}>
           <Icon className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-left font-medium">{item.label}</span>
+          <span title={item.label} className={`${labelClassName} text-left font-medium`}>{item.label}</span>
           {!open && badgeTotal > 0 && (
             <span className="shrink-0 rounded-full bg-signal-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{badgeTotal}</span>
           )}

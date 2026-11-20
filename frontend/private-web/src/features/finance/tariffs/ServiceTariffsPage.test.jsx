@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import ServiceTariffsPage from './ServiceTariffsPage';
+import ServiceTariffsPage, { VersionList } from './ServiceTariffsPage';
 import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
 import {
@@ -85,6 +85,8 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
     saveServiceTariffDraft.mockResolvedValue({ id: 'tv-2' });
     renderPage();
     await screen.findByLabelText('Precio de BAGGAGE');
+    // N36: the list of services to add starts with «Selecciona…».
+    expect(within(await screen.findByLabelText('Añadir servicio')).getByRole('option', { name: 'Selecciona…' })).toBeInTheDocument();
     await userEvent.selectOptions(await screen.findByLabelText('Añadir servicio'), 's-2');
     expect(screen.getByLabelText('Unidad de RAMP-CARGO')).toHaveValue('operation');
     expect(within(screen.getByLabelText('Unidad de RAMP-CARGO')).queryByRole('option', { name: /no activa/ })).not.toBeInTheDocument();
@@ -96,7 +98,7 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
 
   it.each([
     ['billing_unit_unknown', 400, /La unidad de cobro no existe o está inactiva/],
-    ['tariff_start_not_after_current', 409, /debe empezar después de la versión vigente/],
+    ['tariff_start_not_after_current', 409, /debe empezar después de la versión vigente\. Cambia «Vigente desde» y guarda\./],
   ])('explains %s in Spanish instead of the server title', async (code, status, text) => {
     listServiceTariffs.mockResolvedValue([summary('v1')]);
     getServiceTariff.mockResolvedValue(detail('v1'));
@@ -116,10 +118,101 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
     listFinanceServices.mockResolvedValue([]);
     listBillingUnits.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText(/No se pudieron cargar las tarifas/)).toBeInTheDocument();
+    expect(await screen.findByText('No se pudieron cargar las tarifas. Revisa la conexión e intenta de nuevo.')).toBeInTheDocument();
     expect(screen.queryByText('Sin tarifa base')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByLabelText('Precio de BAGGAGE')).toBeInTheDocument();
+  });
+
+  it('says as tú that the account cannot read the base tariff, without «Reintentar» (N36)', async () => {
+    listServiceTariffs.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByText('No tienes permiso para consultar la tarifa base.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ServiceTariffsPage dates (N36)', () => {
+  it('lists its versions dd/mm/aaaa and writes the start in full inside its sentences', async () => {
+    const published = { ...summary('v0'), id: 'tv-1', status: 'Published', validFrom: '2026-11-01', validTo: '2026-12-31',
+      publishedBy: 'Finanzas', publishedAt: '2026-10-01T12:00:00Z' };
+    listServiceTariffs.mockResolvedValue([summary('v1'), published]);
+    getServiceTariff.mockResolvedValue(detail('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', DepartmentPermissionCodes.finance)}>
+      <ServiceTariffsPage /></DepartmentAccessProvider>);
+    await screen.findByLabelText('Precio de BAGGAGE');
+    expect(screen.getByText('USD · desde 08/10/2026')).toBeInTheDocument();
+    expect(screen.getByText('USD · desde 01/11/2026')).toBeInTheDocument();
+    expect(screen.getByText(/ · hasta 31\/12\/2026 · Finanzas$/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Publicar' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('La versión pasará a ser la vigente en USD desde el 8 de octubre de 2026; la anterior '
+      + 'quedará como histórica. Guarda antes los cambios pendientes.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Publicar' }));
+    expect(await screen.findByText('La vigencia debe empezar después del 1 de noviembre de 2026, inicio de la última versión '
+      + 'publicada. Cambia «Vigente desde» y guarda.')).toBeInTheDocument();
+    expect(publishServiceTariff).not.toHaveBeenCalled();
+    expect(screen.queryByText(/2026-10-08|2026-11-01|2026-12-31/)).not.toBeInTheDocument();
+  });
+});
+
+describe('ServiceTariffsPage names and read-only versions (N34)', () => {
+  const renderPage = (codes = DepartmentPermissionCodes.finance) => render(<DepartmentAccessProvider observe={false}
+    initialAccess={administratorAccess('finance', codes)}><ServiceTariffsPage /></DepartmentAccessProvider>);
+  const facts = () => Object.fromEntries(screen.getAllByRole('term')
+    .map(term => [term.textContent, term.nextElementSibling.textContent]));
+  const published = { ...summary('v0'), id: 'tv-1', status: 'Published', validFrom: '2026-11-01', validTo: '2026-12-31',
+    note: 'Temporada alta', publishedBy: 'Finanzas', publishedAt: '2026-10-01T12:00:00Z' };
+  const named = (version, tariff) => ({ ...detail(version), ...tariff,
+    rates: [{ ...detail(version).rates[0], serviceName: 'Manejo de equipaje' }] });
+
+  it('shows a published version as text, not as fields that look editable, and names each service first', async () => {
+    listServiceTariffs.mockResolvedValue([published]);
+    getServiceTariff.mockResolvedValue(named('v0', { summary: published }));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    renderPage();
+    const service = (await screen.findByText('Manejo de equipaje', { selector: 'strong' })).closest('td');
+    expect(service).toHaveTextContent(/^Manejo de equipaje\s*BAGGAGE$/);
+    expect(within(service.closest('tr')).getAllByRole('cell').slice(1).map(cell => cell.textContent))
+      .toEqual(['Todas', 'Por operación', 'USD 130.00', '1']);
+    expect(facts()).toEqual({ 'Vigente desde': '01/11/2026', Hasta: '31/12/2026', Nota: 'Temporada alta' });
+    for (const field of ['Vigente desde', 'Hasta (opcional)', 'Nota'])
+      expect(screen.queryByLabelText(field)).not.toBeInTheDocument();
+  });
+
+  it('shows a draft as text to an account that cannot edit it, and as fields to one that can', async () => {
+    listServiceTariffs.mockResolvedValue([summary('v1')]);
+    getServiceTariff.mockResolvedValue(named('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    const { unmount } = renderPage(['finance.tariffs.read']);
+    await screen.findByText('Manejo de equipaje', { selector: 'strong' });
+    expect(facts()).toEqual({ 'Vigente desde': '08/10/2026', Hasta: 'Sin fecha de fin', Nota: 'Sin nota' });
+    expect(screen.queryByLabelText('Vigente desde')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Precio de BAGGAGE')).not.toBeInTheDocument();
+    unmount();
+    renderPage();
+    expect(await screen.findByLabelText('Vigente desde')).toHaveValue('2026-10-08');
+    expect(screen.getByLabelText('Hasta (opcional)')).toHaveValue('');
+    expect(screen.getByLabelText('Nota')).toHaveValue('');
+    expect(screen.queryByRole('term')).not.toBeInTheDocument();
+    expect(screen.getByText('Manejo de equipaje', { selector: 'strong' }).closest('td'))
+      .toHaveTextContent(/^Manejo de equipaje\s*BAGGAGE$/);
+  });
+});
+
+describe('VersionList counts (N33)', () => {
+  // The base tariff and the charge amounts (ChargesPage) list their versions with this same component.
+  it('counts the rates of each version in the singular only for one', () => {
+    const versions = [0, 1, 2].map(rateCount => ({ ...summary(`v${rateCount}`), id: `tv-${rateCount}`, rateCount }));
+    render(<VersionList versions={versions} selectedId={null} onSelect={() => {}} />);
+    expect(screen.getAllByRole('button').map(button => button.querySelector('p').textContent))
+      .toEqual(['0 tarifas', '1 tarifa', '2 tarifas']);
   });
 });
 

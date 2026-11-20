@@ -75,7 +75,8 @@ const nobodyEligible = (extra = {}) => options({
     stand('s-b20', 'B20', 'B', { eligibleAgents: 0, eligible: false, reasons: ['shift_not_compatible'] })],
   warnings: [{ code: 'no_eligible_stand', reasons: ['stand_not_covered', 'shift_not_compatible'] }], ...extra });
 const NO_ELIGIBLE_WARNING =
-  'Ninguna posición habilitada tiene un agente elegible a esa hora: nadie la cubre a esa hora y turno no compatible.';
+  'Ninguna posición habilitada tiene un agente elegible durante toda la escala: nadie la cubre a esa hora y turno no ' +
+  'compatible.';
 const DISABLED_OPTIONS = { enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stations: [], stationId: null,
   operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], limits: LIMITS, warnings: [],
   layout: null };
@@ -344,6 +345,48 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     expect(cancelDemoFlight).not.toHaveBeenCalled();
   });
 
+  it('draws in the warning tone an imported flight whose operation is still open an hour after it left (N30)', async () => {
+    // At 12:09 in Punta Cana (16:09Z). Each aircraft left its stand at `offBlockAt`, took off 5 minutes later and was
+    // gone 10 minutes after that.
+    const left = (id, numbers, offBlockAt, extra = {}) => {
+      const offBlock = at(offBlockAt);
+      return imported({ id, arrivalFlightNumber: numbers[0], departureFlightNumber: numbers[1], state: 'Finished',
+        phase: 'Gone', offBlockAt, takeoffAt: iso(offBlock + 5 * 60_000), vanishAt: iso(offBlock + 15 * 60_000),
+        operationStatus: 'InProgress', ...extra });
+    };
+    clock = at('2026-11-12T16:09:00Z');
+    listDemoFlights.mockResolvedValue(list([
+      // Left B22 at 11:08, 61 minutes ago, and its agent never handed the operation off.
+      left('70000000-0000-7000-8000-000000000011', ['ZZ9011', 'ZZ9012'], '2026-11-12T15:08:00.000Z'),
+      // Left at 11:30: the agent still has time to hand it off.
+      left('70000000-0000-7000-8000-000000000013', ['ZZ9013', 'ZZ9014'], '2026-11-12T15:30:00.000Z'),
+      // Handed off to OCC after it left at 10:30.
+      left('70000000-0000-7000-8000-000000000015', ['ZZ9015', 'ZZ9016'], '2026-11-12T14:30:00.000Z',
+        { operationStatus: 'PendingReview' }),
+      // Returned to its agent, who has not sent it again since it left at 10:30.
+      left('70000000-0000-7000-8000-000000000017', ['ZZ9017', 'ZZ9018'], '2026-11-12T14:30:00.000Z',
+        { operationStatus: 'Returned' }),
+    ], '2026-11-12T16:09:00+00:00'));
+    renderPanel();
+    const [open, recent, handedOff, returned] = within(await screen.findByRole('list', { name: 'Vuelos demo de hoy' }))
+      .getAllByRole('listitem');
+
+    const dot = row => within(row).getByTestId('status-dot');
+    expect(open).toHaveTextContent(
+      'Importado por OCC · PUJ-20261112-003 · Posición B22 · Operación en curso, abierta tras la salida');
+    expect(open).toHaveTextContent('Terminado');
+    expect(dot(open)).toHaveClass('bg-status-warning');
+    expect(returned).toHaveTextContent('Operación devuelta, abierta tras la salida');
+    expect(dot(returned)).toHaveClass('bg-status-warning');
+    // Within the hour, or once handed off, the row stays as it was.
+    for (const row of [recent, handedOff]) {
+      expect(row).not.toHaveTextContent('abierta tras la salida');
+      expect(dot(row)).toHaveClass('bg-status-neutral');
+    }
+    expect(recent).toHaveTextContent('Operación en curso');
+    expect(handedOff).toHaveTextContent('Operación pendiente de revisión');
+  });
+
   it('shows the loading, empty, unauthorized and recoverable error states', async () => {
     let answer;
     loadDemoFlightOptions.mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
@@ -471,7 +514,8 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     prepareDemoStation.mockResolvedValueOnce(FBO_INACTIVE);
     renderPanel();
     const card = await standsCard();
-    const outside = 'Posiciones fuera del plano de referencia: B01, B02. OCC puede desactivarlas en «Datos maestros».';
+    // The seed's B01 and B02, by the code the map would draw (N27).
+    const outside = 'Posiciones fuera del plano de referencia: B1, B2. OCC puede desactivarlas en «Datos maestros».';
     expect(card).toHaveTextContent(outside);
     // Before a load the counts say what is missing, and the button creates it.
     expect(card).not.toHaveTextContent('Faltan');
@@ -567,7 +611,8 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     await screen.findByRole('form', { name: 'Disparar vuelo demo' });
     expect(standField()).toHaveDisplayValue('Al azar');
     expect(standField()).toHaveAccessibleDescription(
-      'Al azar: el servidor elige entre las posiciones con un agente elegible a esa hora. OCC puede asignar otra al importar.');
+      'Al azar: el servidor elige entre las posiciones con un agente elegible durante toda la escala. OCC puede asignar ' +
+      'otra al importar.');
 
     await userEvent.click(within(form()).getByRole('button', { name: 'Disparar vuelo demo' }));
     expect(createDemoFlight).toHaveBeenCalledWith(expect.objectContaining({ standChoice: 'Random', standId: null }),
@@ -617,7 +662,7 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       ['A1 · Terminal A · No está libre para ese avión en ese horario', false],
       ['A2 · Terminal A · Cubre Riley Ramp', true],
       ['A10 · Terminal A · Cubre Riley Ramp', true],
-      ['B01 · Terminal B · Sin ubicar en el mapa', false],
+      ['B1 · Terminal B · Sin ubicar en el mapa', false],
       ['B20 · Terminal B · Nadie la cubre a esa hora', false],
       ['B21 · Terminal B · Turno no compatible y menos de 3 meses: necesita un mentor en su cobertura', false],
       ['BN6 · Terminal FBO · Sin ubicar en el mapa y no está libre para ese avión en ese horario', false],
@@ -639,6 +684,63 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     ]);
   });
 
+  it("names each stand by the code the map draws, the seed's A01 as A1, and sends its id (N27)", async () => {
+    loadDemoFlightOptions.mockResolvedValue(options({ stands: [stand('s-a01', 'A01', 'A'),
+      stand('s-e2e', 'E2E-XXXX-1', 'A', { located: false, coveredBy: [], eligibleAgents: 0, eligible: false })] }));
+    listDemoFlights.mockResolvedValue(list([flight({ suggestedStandCode: 'A01' }), imported({ standCode: 'A02' })]));
+    createDemoFlight.mockResolvedValue(flight({ suggestedStandCode: 'A01' }));
+    renderPanel();
+    await screen.findByRole('form', { name: 'Disparar vuelo demo' });
+    // A01 as the map draws it; any other code as typed.
+    expect(offered().slice(2)).toEqual([
+      ['A1 · Terminal A · Cubre Riley Ramp', true],
+      ['E2E-XXXX-1 · Terminal A · Sin ubicar en el mapa', false],
+    ]);
+    const [proposed, taken] = within(await screen.findByRole('list', { name: 'Vuelos demo de hoy' })).getAllByRole('listitem');
+    expect(proposed).toHaveTextContent('OCC aún no lo importa · Posición sugerida A1');
+    expect(taken).toHaveTextContent('Importado por OCC · PUJ-20261112-003 · Posición A2 · Operación asignada');
+    // The trigger names the stand by its id, never by the code on screen.
+    await userEvent.selectOptions(standField(), 's-a01');
+    await userEvent.click(within(form()).getByRole('button', { name: 'Disparar vuelo demo' }));
+    expect(createDemoFlight).toHaveBeenCalledWith(expect.objectContaining({ standChoice: 'Specific', standId: 's-a01' }),
+      expect.stringMatching(KEY));
+  });
+
+  it('gives «Tipo de avión» and «Posición» both columns and names the chosen option in each title (N37)', async () => {
+    // The seed's types carry «Development» in their model: «A320 · Airbus A320 Development» no longer fits half the form.
+    loadDemoFlightOptions.mockResolvedValue(options({ aircraftTypes: [
+      { id: A320, icaoCode: 'A320', manufacturer: 'Airbus', model: 'A320 Development', sizeCategory: 'Narrowbody' },
+      { id: B77W, icaoCode: 'B77W', manufacturer: 'Boeing', model: '777-300ER Development', sizeCategory: 'Widebody' }] }));
+    renderPanel();
+    await screen.findByRole('form', { name: 'Disparar vuelo demo' });
+    const field = label => within(form()).getByLabelText(label);
+    const type = field('Tipo de avión');
+    expect(within(type).getAllByRole('option').map(option => option.textContent))
+      .toEqual(['A320 · Airbus A320 Development', 'B77W · Boeing 777-300ER Development']);
+    // The two longest fields take the form's two columns; the others keep one.
+    expect(type.closest('label')).toHaveClass('sm:col-span-2');
+    expect(standField().closest('label').parentElement).toHaveClass('sm:col-span-2');
+    expect(field('Origen').closest('label')).not.toHaveClass('sm:col-span-2');
+
+    // Every field names the option it shows, whole, for when the field still cuts it.
+    expect(field('Estación')).toHaveAttribute('title', 'PUJ · Punta Cana');
+    expect(field('Aerolínea')).toHaveAttribute('title', 'Demo Airlines');
+    expect(field('Origen')).toHaveAttribute('title', 'MIA · Miami');
+    expect(field('Destino de la salida')).toHaveAttribute('title', 'El mismo aeropuerto');
+    expect(type).toHaveAttribute('title', 'A320 · Airbus A320 Development');
+    expect(standField()).toHaveAttribute('title', 'Al azar');
+
+    // The title follows the choice.
+    await userEvent.selectOptions(field('Destino de la salida'), 'BOG');
+    expect(field('Destino de la salida')).toHaveAttribute('title', 'BOG · Bogotá');
+    await userEvent.selectOptions(type, B77W);
+    expect(type).toHaveAttribute('title', 'B77W · Boeing 777-300ER Development');
+    await userEvent.selectOptions(standField(), 's-a2');
+    expect(standField()).toHaveAttribute('title', 'A2 · Terminal A · Cubre Riley Ramp');
+    // The hint is still what describes «Posición».
+    expect(standField()).toHaveAccessibleDescription(/^Al azar: el servidor elige/);
+  });
+
   it('warns when no stand is located', async () => {
     loadDemoFlightOptions.mockResolvedValueOnce(options({ stands: [], warnings: [{ code: 'no_located_stands', reasons: [] },
       { code: 'no_eligible_stand', reasons: [] }] }));
@@ -647,7 +749,8 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       'Aún no hay posiciones ubicadas en el mapa. Use «Cargar posiciones» para que el avión tenga dónde estacionarse.'))
       .toBeInTheDocument();
     // Nothing to draw and no reason to give: the warning says so plainly. Neither warning blocks the trigger.
-    expect(screen.getByText('Ninguna posición habilitada tiene un agente elegible a esa hora.')).toBeInTheDocument();
+    expect(screen.getByText('Ninguna posición habilitada tiene un agente elegible durante toda la escala.'))
+      .toBeInTheDocument();
     expect(within(form()).getByRole('button', { name: 'Disparar vuelo demo' })).toBeEnabled();
     expect(offered()).toEqual([['Al azar', false], ['Sin posición', true]]);
     puntaCana.unmount();

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Elevant.Application.Identity;
 
 namespace Elevant.UnitTests.Application;
@@ -63,4 +64,32 @@ public sealed class RampAgentReadinessTests
     [InlineData(31, "Current")]
     public void DocumentValidityUsesThirtyDays(int days, string expected) =>
         Assert.Equal(expected, RampAgentReadiness.Validity(Today.AddDays(days), Today));
+
+    [Theory]
+    [InlineData(0, "Sin turnos en los próximos 14 días.")]
+    [InlineData(1, "1 turno en los próximos 14 días.")]
+    [InlineData(2, "2 turnos en los próximos 14 días.")]
+    public void UpcomingShiftsUseTheSingularForOne(int shifts, string expected) =>
+        Assert.Equal(expected, RampAgentReadiness.Evaluate(Guid.NewGuid(), "x", "E", Ready() with { ShiftsNextTwoWeeks = shifts }, Today)
+            .Items.Single(item => item.Key == "upcoming_shifts").Detail);
+
+    [Fact]
+    public void DatesAreWrittenDayMonthYearWhateverTheCultureOfTheServer()
+    {
+        var previous = CultureInfo.CurrentCulture;
+        var dotted = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        dotted.DateTimeFormat.DateSeparator = ".";
+        CultureInfo.CurrentCulture = dotted;
+        try
+        {
+            var items = RampAgentReadiness.Evaluate(Guid.NewGuid(), "x", "E",
+                Ready() with { AirportIdExpiresOn = Today.AddDays(10), NextAbsenceStartsOn = Today.AddDays(2) }, Today).Items;
+            Assert.Equal("Vence el 13/11/2026.", items.Single(item => item.Key == "airport_id").Detail);
+            Assert.Equal("Ausencia aprobada desde el 05/11/2026.", items.Single(item => item.Key == "approved_absence").Detail);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
+    }
 }

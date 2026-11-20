@@ -314,6 +314,27 @@ describe('buildStandFeatures', () => {
     expect(label3(at(NOW + 41 * MINUTE))).toBe('A5\nDM601\nLlega 14:47 · MC');
   });
 
+  it('the initials name who covers the stand now, from the coverage windows of its date (N26)', () => {
+    // 19:50 on 16 November in Punta Cana: Elena Soto covered A5 and A6 until 17:00, Luis Peña covers A6 since then.
+    const T1950 = Date.parse('2026-11-16T23:50:00Z');
+    const local = (hour, minute = 0) => Date.UTC(2026, 10, 16, hour + 4, minute);
+    const cover = (agentName, from, to) => ({
+      agentName, startsAt: new Date(from).toISOString(), endsAt: new Date(to).toISOString(), isReinforcement: false,
+    });
+    const elena = cover('Elena Soto', local(5), local(17));
+    const board = { asOf: new Date(T1950).toISOString(), operationDate: '2026-11-16', positions: [
+      boardStand('A05', { coveredBy: ['Elena Soto'], coverage: [elena], turnarounds: [
+        boardVisit({ nowMs: T1950, flight: 'WN301', arrivalInMin: -30, departureInMin: 40, arrived: true }),
+      ] }),
+      boardStand('A06', { coveredBy: ['Elena Soto', 'Luis Peña'], coverage: [elena, cover('Luis Peña', local(17), local(23))] }),
+    ] };
+    const labelsAt = nowMs => buildStandFeatures(positionsOf(board, { nowMs }), { nowMs }).labels;
+    expect(propertiesOf(labelsAt(T1950), 'A5').label3).toBe('A5\nWN302\nSale 20:30 · en 40 min\nSin agente que la cubra');
+    expect(propertiesOf(labelsAt(T1950), 'A6').label3).toBe('A6\nLP');
+    // At 16:30 she still covered them.
+    expect(propertiesOf(labelsAt(local(16, 30)), 'A6').label3).toBe('A6\nES');
+  });
+
   it('what is in sight: the stands whose box meets the view, and the features of a collection there', () => {
     const { positions, features } = scenario();
     const a1 = positions.find(item => item.id === 'A1').geometry;

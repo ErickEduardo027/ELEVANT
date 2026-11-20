@@ -1,3 +1,4 @@
+using System.Globalization;
 using Elevant.Application.Abstractions.Identity;
 
 namespace Elevant.Application.Identity;
@@ -61,11 +62,16 @@ public static class RampAgentReadiness
             : new("qualifications", current[0].ExpiresOn <= today.AddDays(ExpiringDays) ? "Expiring" : "Ok",
                 string.Join(", ", current.Select(item => item.EquipmentType).Distinct().Order()), current[0].ExpiresOn));
 
-        items.Add(new("upcoming_shifts", "Info", facts.ShiftsNextTwoWeeks == 0
-            ? "Sin turnos en los próximos 14 días."
-            : $"{facts.ShiftsNextTwoWeeks} turnos en los próximos 14 días."));
+        // N36: «1 turno» in the singular; dates are dd/MM/yyyy whatever the culture the server runs with.
+        items.Add(new("upcoming_shifts", "Info", facts.ShiftsNextTwoWeeks switch
+        {
+            0 => "Sin turnos en los próximos 14 días.",
+            1 => "1 turno en los próximos 14 días.",
+            var shifts => string.Create(CultureInfo.InvariantCulture, $"{shifts} turnos en los próximos 14 días."),
+        }));
         if (facts.NextAbsenceStartsOn is { } absence)
-            items.Add(new("approved_absence", "Info", $"Ausencia aprobada desde el {absence:dd/MM/yyyy}.", absence));
+            items.Add(new("approved_absence", "Info",
+                string.Create(CultureInfo.InvariantCulture, $"Ausencia aprobada desde el {absence:dd/MM/yyyy}."), absence));
 
         var ready = items.All(item => item.Status is "Ok" or "Expiring" or "Info");
         return new RampAgentReadinessData(rampProfileId, name, employeeNumber, ready, items);
@@ -78,5 +84,6 @@ public static class RampAgentReadiness
     private static RampAgentReadinessItem Document(string key, DateOnly? expiresOn, DateOnly today, string missing) =>
         expiresOn is not { } end || end < today
             ? new(key, "Missing", missing)
-            : new(key, end <= today.AddDays(ExpiringDays) ? "Expiring" : "Ok", $"Vence el {end:dd/MM/yyyy}.", end);
+            : new(key, end <= today.AddDays(ExpiringDays) ? "Expiring" : "Ok",
+                string.Create(CultureInfo.InvariantCulture, $"Vence el {end:dd/MM/yyyy}."), end);
 }

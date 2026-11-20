@@ -132,6 +132,29 @@ it('hides the previous list and private exception after a failed revalidation', 
   expect(screen.queryByText(/internal SQL trace/)).not.toBeInTheDocument();
 });
 
+it('writes the dates of the list and of the history dd/mm/aaaa (N36)', async () => {
+  getHumanResourcesQualifications.mockResolvedValue({ page: 1, limit: 20, hasMore: false, qualifications: [row] });
+  getHumanResourcesQualificationHistory.mockResolvedValue({ rampProfileId: row.rampProfileId,
+    agentName: row.agentName, employeeNumber: row.employeeNumber, equipmentTypeId: row.equipmentTypeId,
+    equipmentCode: 'GPU', equipmentName: 'Ground power unit', cycles: [
+      { id: row.id, cycleNumber: 1, isCurrent: true, trainingDate: '2026-01-02', obtainedOn: '2026-01-03',
+        expiresOn: '2099-12-31', certifyingEntity: 'Synthetic Training Center', instructorName: 'Instructor',
+        notes: null, recordedAt: '2026-01-03T12:00:00Z', recordedByName: null }] });
+  const user = userEvent.setup();
+  render(<CurrentQualificationsPage />);
+  const table = await screen.findByRole('table');
+  expect(within(table).getByText('03/01/2026')).toBeInTheDocument();
+  expect(within(table).getByText('31/12/2099')).toBeInTheDocument();
+  expect(screen.getByText(/· vigencia al \d{2}\/\d{2}\/\d{4}$/)).toBeInTheDocument();
+  expect(screen.queryByText(/\d{4}-\d{2}-\d{2}/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Historial de Riley Ramp · GPU' }));
+  const drawer = screen.getByRole('dialog', { name: 'Historial · GPU' });
+  expect(await within(drawer).findByText('Ciclo 1 · actual')).toBeInTheDocument();
+  expect(within(drawer).getByText('Entrenamiento').nextElementSibling).toHaveTextContent(/^02\/01\/2026$/);
+  expect(within(drawer).getByText('Obtenida').nextElementSibling).toHaveTextContent(/^03\/01\/2026$/);
+  expect(within(drawer).getByText('Vence').nextElementSibling).toHaveTextContent(/^31\/12\/2099$/);
+});
+
 it('distinguishes an authorized empty page from a forbidden response', async () => {
   getHumanResourcesQualifications.mockResolvedValueOnce({ page: 1, limit: 20,
     hasMore: false, qualifications: [] }).mockRejectedValueOnce({ status: 403 });

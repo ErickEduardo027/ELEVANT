@@ -64,6 +64,17 @@ describe('ManualTurnaroundDialog', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('2026-09-26', 'MAN-TEST'));
   });
 
+  it("names each stand by the code the map draws, the seed's A01 as A1, and sends its id (N27)", async () => {
+    renderDialog();
+    await fillForm();
+    const stands = screen.getByLabelText('Posición de estacionamiento');
+    expect(within(stands).getByRole('option', { name: 'A1 · Terminal A' })).toHaveValue(options.stands[0].id);
+    expect(within(stands).queryByRole('option', { name: /A01/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Crear vuelo' }));
+    await waitFor(() => expect(createManualTurnaround).toHaveBeenCalledWith(
+      expect.objectContaining({ standId: options.stands[0].id }), expect.anything()));
+  });
+
   it('explains a flight already planned that day instead of a generic conflict (3-A)', async () => {
     vi.mocked(createManualTurnaround).mockRejectedValueOnce(Object.assign(new Error('conflict'),
       { status: 409, code: 'manual-conflict', problemCode: 'flight_already_planned' }));

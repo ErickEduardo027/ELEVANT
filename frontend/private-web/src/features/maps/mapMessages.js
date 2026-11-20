@@ -150,6 +150,10 @@ export const mapMessages = {
       departure: 'Salida',
       scheduled: 'Prog. {time}',
       estimated: 'Est. {time}',
+      // An arrival's landing and its stand, apart (N23), in the data block's words (`dataBlock.landed`, `onBlock`);
+      // «Real» is an actual time that tells no kind.
+      landed: 'Aterrizó {time}',
+      onStand: 'En posición {time}',
       actual: 'Real {time}',
       arrivesIn: 'Llega en {minutes} min',
       departsIn: 'Sale en {minutes} min',
@@ -222,6 +226,12 @@ export const mapMessages = {
       departs: 'Sale {time}',
       departsIn: 'Sale {time} · en {minutes} min',
       coveredBy: 'Cubre {names}',
+      // Who covers it from the coverage windows of the day (N26), in its drawer: the ones that are not now, dimmed, and
+      // on another date each window with its times.
+      coverageEnded: 'La cobertura de {name} terminó a las {time}',
+      coverageStarts: 'La cobertura de {name} empieza a las {time}',
+      coverageWindow: 'Cubre {name} de {from} a {to}',
+      reinforcement: '{name} (refuerzo)',
       uncovered: 'Sin agente que la cubra',
       overdue: 'Pasó su hora de salida',
       conflict: 'Otra aeronave llega a esta posición',
@@ -572,6 +582,8 @@ export const mapMessages = {
       departure: 'Departure',
       scheduled: 'Sched. {time}',
       estimated: 'Est. {time}',
+      landed: 'Landed {time}',
+      onStand: 'On stand {time}',
       actual: 'Actual {time}',
       arrivesIn: 'Arrives in {minutes} min',
       departsIn: 'Departs in {minutes} min',
@@ -634,6 +646,10 @@ export const mapMessages = {
       departs: 'Departs {time}',
       departsIn: 'Departs {time} · in {minutes} min',
       coveredBy: 'Covered by {names}',
+      coverageEnded: 'Coverage by {name} ended at {time}',
+      coverageStarts: 'Coverage by {name} starts at {time}',
+      coverageWindow: 'Covered by {name} from {from} to {to}',
+      reinforcement: '{name} (reinforcement)',
       uncovered: 'No agent covers it',
       overdue: 'Past its departure time',
       conflict: 'Another aircraft is arriving at this stand',

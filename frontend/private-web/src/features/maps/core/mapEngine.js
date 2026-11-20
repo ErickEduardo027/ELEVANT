@@ -9,8 +9,8 @@ import { ensureWorkerUrl } from './workerUrl';
 //   terminal: the map is gone and the screen shows its fallback); the map is `ready` on `style.load`, because the
 //   airfield and the stands are own data and work without the base map, whose health is reported apart (`degraded`
 //   is a chip);
-// - calls that need the style (data, feature state, visibility, zoom ranges, clusters, custom layers) wait until it
-//   has loaded and then run in the order they were made;
+// - calls that need the style (data, feature state, visibility, filters, zoom ranges, clusters, custom layers) wait
+//   until it has loaded and then run in the order they were made;
 // - after a WebGL context loss or a worker restart MapLibre 6.16 rebuilds the style with its data and images, but not
 //   the custom layers or the feature state: the engine puts those back;
 // - listeners are map-level only and read features with queryRenderedFeatures (MapLibre 6.16 does not restore
@@ -518,6 +518,17 @@ export function createMapEngine({
       }
       whenStyleReady(() => {
         if (map.getSource(sourceId)) map.removeFeatureState(id === undefined ? { source: sourceId } : { source: sourceId, id }, key);
+      });
+    },
+
+    /**
+     * Gives a layer of the style `filter` in place of its own (`null` takes it away; N29: the stand labels leave out
+     * the selected stand's). MapLibre keeps it in the style it rebuilds after a context loss or a worker restart, as it
+     * keeps the zoom ranges, so the engine has nothing to put back. A layer the style lacks is left alone.
+     */
+    setFilter(layerId, filter) {
+      whenStyleReady(() => {
+        if (map.getLayer(layerId)) map.setFilter(layerId, filter ?? null);
       });
     },
 

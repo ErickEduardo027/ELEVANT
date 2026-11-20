@@ -17,7 +17,9 @@ describe('FlightCard', () => {
     expect(screen.getByText('SDQ → PUJ')).toBeInTheDocument();
     expect(screen.getByText('ZZ103')).toBeInTheDocument();
     expect(screen.getByText('PUJ → JFK')).toBeInTheDocument();
-    expect(screen.getAllByText('A02')).toHaveLength(2);
+    // The stand by the code the map draws (N27): the seed's A02 is A2.
+    expect(screen.getAllByText('A2')).toHaveLength(2);
+    expect(screen.queryByText('A02')).not.toBeInTheDocument();
     expect(screen.getByText('En 30 min')).toBeInTheDocument();
   });
 

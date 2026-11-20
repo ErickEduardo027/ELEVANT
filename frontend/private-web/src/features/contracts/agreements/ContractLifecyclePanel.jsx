@@ -3,12 +3,14 @@ import Modal from '../../../components/Modal';
 import ReasonField, { validReason } from '../../../components/ReasonField';
 import StatusBadge from '../../../components/StatusBadge';
 import { applyContractLifecycle, createContractAmendment, getContractTimeline } from '../../../services/commercialGovernanceApi';
-import { addDays, businessToday } from '../../../services/businessDay';
+import { addDays, businessToday, formatBusinessDate } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractLifecycleMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import { amendmentProblemMessage } from '../drafts/draftProblemMessages';
 import { CONTRACT_STATUS } from '../contractStatus';
+import { contractCodeLabel } from '../requests/requestLabels';
+import { validityRange } from './agreementLabels';
 
 // 2-N26: one Spanish map of contract statuses for every Contratos screen.
 export { CONTRACT_STATUS };
@@ -29,7 +31,8 @@ const KIND_DOT = {
   permit: 'bg-amber-500', status: 'bg-emerald-600', upcoming: 'border-2 border-dashed border-slate-400 bg-transparent',
 };
 const stamp = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-const day = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`));
+/** Every day of the panel sits inside a sentence, so it is written in full (N36). */
+const day = value => formatBusinessDate(value, { style: 'long' });
 /** 1-C: an amendment changes prices mid-term of a contract in force or suspended. */
 const AMENDABLE = ['Active', 'Suspended'];
 const EMPTY_FORM = { reason: '', validFrom: '', validTo: '', mode: 'notice', effectiveOn: '', cause: '' };
@@ -156,7 +159,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
     try {
       await amendKeys.current.run('amend', { versionId, ...command }, key => createContractAmendment(versionId, command, key));
       setAmending(false); setAmendFrom(''); setAmended(true);
-      setMessage(succeeded('Se creó la enmienda como borrador, con las tarifas sin confirmar. Revísela en Borradores y envíela a Finanzas.'));
+      setMessage(succeeded('Se creó la enmienda como borrador, con las tarifas sin confirmar. Revísala en Borradores y envíala a Finanzas.'));
       await load();
     } catch (failure) {
       const text = amendmentProblemMessage(failure);
@@ -170,6 +173,8 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   if (state.status === 'loading') return <p role="status" className="text-sm">Cargando ciclo del contrato…</p>;
   if (state.status === 'forbidden') return <p role="alert" className="text-sm">Tu acceso no permite consultar el ciclo de este contrato.</p>;
   if (state.status === 'error') return <p role="alert" className="text-sm">No se pudo cargar la línea de tiempo. <button type="button" onClick={() => void load()} className="font-semibold text-accent-600 underline">Reintentar</button></p>;
+  // N35: a new contract's «DRAFT-…» code reads «Borrador 1cc18541…», as in Solicitudes.
+  const code = contractCodeLabel(timeline.contractCode);
   const available = Object.entries(ACTIONS).filter(([, meta]) => meta.from.includes(timeline.status) &&
     (!meta.scheduled || scheduledOn) && (!meta.unscheduled || !scheduledOn));
   const amendable = canAmend && AMENDABLE.includes(timeline.status);
@@ -214,9 +219,9 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
         ))}
       </ol>
       <Modal open={Boolean(action)} onClose={closeAction} title={action === 'Terminate' && timeline.status === 'Draft'
-        ? `Descartar el contrato ${timeline.contractCode}`
-        : action === 'CancelTermination' ? `Cancelar la terminación del contrato ${timeline.contractCode}`
-          : `${ACTIONS[action]?.label ?? ''} contrato ${timeline.contractCode}`}
+        ? `Descartar el contrato ${code.text}`
+        : action === 'CancelTermination' ? `Cancelar la terminación del contrato ${code.text}`
+          : `${ACTIONS[action]?.label ?? ''} contrato ${code.text}`}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAction} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || !ready} onClick={() => void submit()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Aplicando…' : 'Confirmar'}</button></div>}>
@@ -256,14 +261,14 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
           {action === 'CancelTermination' && <p className="text-xs">El contrato seguirá vigente después de la fecha programada. Los borradores y versiones que se cerraron al programarla no se restauran.</p>}
         </div>
       </Modal>
-      <Modal open={amending} onClose={closeAmendment} title={`Crear enmienda del contrato ${timeline.contractCode}`}
+      <Modal open={amending} onClose={closeAmendment} title={`Crear enmienda del contrato ${code.text}`}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAmendment} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || !amendFrom} onClick={() => void amend()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Creando…' : 'Crear enmienda'}</button></div>}>
         <div className="space-y-3 text-sm">
           {amendError && !amendError.onDate && <p role="alert" className="rounded-lg bg-status-danger/10 p-2 text-xs text-status-danger">{amendError.text}</p>}
           <p className="text-xs">La enmienda cambia precios a mitad de la vigencia. Parte de la última versión aprobada{currentVersion
-            ? ` (versión ${currentVersion.versionNumber}, del ${day(currentVersion.validFrom)} ${currentVersion.validTo ? `al ${day(currentVersion.validTo)}` : 'sin vencimiento'})` : ''}, conserva su fin, sus estaciones, cargos y paquetes, y copia las tarifas sin confirmar para que Contratos las revise antes de enviarla a Finanzas.</p>
+            ? ` (versión ${currentVersion.versionNumber}, ${validityRange(currentVersion.validFrom, currentVersion.validTo, { style: 'long' })})` : ''}, conserva su fin, sus estaciones, cargos y paquetes, y copia las tarifas sin confirmar para que Contratos las revise antes de enviarla a Finanzas.</p>
           <label className="block text-xs font-semibold">Vigente desde
             <input type="date" min={earliestAmendment} max={latestAmendment} value={amendFrom}
               onChange={event => { setAmendFrom(event.target.value); if (amendError?.onDate) setAmendError(null); }}

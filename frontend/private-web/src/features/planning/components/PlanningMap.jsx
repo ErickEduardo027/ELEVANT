@@ -10,6 +10,7 @@ import { attachStandGeometry } from '../../maps/stands/standModel';
 import { useStandDisplay } from '../../maps/stands/useStandDisplay';
 import { standInputsOf } from '../../maps/traffic/standInputs';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
+import { formatClock } from '../../occ-ui/occTime';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { planningMessages } from '../planningMessages';
 
@@ -21,9 +22,9 @@ const PositionMap = dynamic(() => import('../../positions-map/components/Positio
 
 const panelClass = 'rounded-2xl border border-black/5 bg-white/70 dark:border-white/5 dark:bg-surface-dark-card';
 
+// «19:53», on 24 hours in the station's zone as the OCC console writes it (N28); «—» without a time.
 function time(value, timeZone) {
-  return value ? new Intl.DateTimeFormat('es-DO', { timeStyle: 'short', timeZone: timeZone ?? 'America/Santo_Domingo' })
-    .format(new Date(value)) : '—';
+  return value ? formatClock(value, 'es-DO', timeZone ?? 'America/Santo_Domingo') : '—';
 }
 
 /**

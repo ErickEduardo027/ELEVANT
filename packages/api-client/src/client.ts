@@ -795,6 +795,11 @@ export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "meth
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "method">;
+/**
+ * A positions board read. `includeCoverage` also asks for each stand's coverage windows of the day (`coverage`: agent,
+ * start, end and whether it is a reinforcement, N26); without it the parameter stays out of the URL.
+ */
+export type GetOccPositionsOptions = GetHumanResourcesReportOptions & { includeCoverage?: boolean };
 
 /** A stand coverage OCC hands an agent (ADR-0030); both times null take the agent's shift. */
 export interface OccCoverageCommand {
@@ -1516,7 +1521,11 @@ export interface ElevantApiClient {
     query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
   listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
-  getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /**
+   * The stands of a station with the turnarounds of `date`. `options.includeCoverage` also asks for each stand's
+   * coverage windows (N26); only a read that asked accepts them, and an API that ignores the parameter answers without.
+   */
+  getOccPositions(stationId: string, date: string, options?: GetOccPositionsOptions): Promise<OccPositionBoardResponse>;
   /**
    * Records the arrival (3-N08): the registration, the actual time (now when omitted), the aircraft type (3-B) and, to
    * correct a recorded one, the reason. `options.idempotencyKey` and `options.ifMatch` are optional (3-N10); a key needs
@@ -3520,14 +3529,28 @@ function isOccPositionTurnaround(value: unknown): boolean {
     isOptionalNullable(value.assignedFrom, isDateTimeOffset) && isNonEmptyString(value.status);
 }
 
-function isOccPositionBoard(value: unknown, stationId?: string): value is OccPositionBoardResponse {
+/** One coverage window of a stand (N26): a closed record whose end comes after its start. */
+function isOccPositionCoverage(value: unknown): boolean {
+  return isRecord(value) && hasOnlyKeys(value, ["agentName", "startsAt", "endsAt", "isReinforcement"]) &&
+    isNonEmptyString(value.agentName) && isDateTimeOffset(value.startsAt) && isDateTimeOffset(value.endsAt) &&
+    Date.parse(value.startsAt) < Date.parse(value.endsAt) && typeof value.isReinforcement === "boolean";
+}
+
+/**
+ * A positions board. `coverage` says whether the read asked for the coverage windows (N26): only then may a stand carry
+ * them, and even then an API that ignores the parameter answers without.
+ */
+function isOccPositionBoard(value: unknown, stationId?: string, coverage = false): value is OccPositionBoardResponse {
   return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "operationDate", "asOf", "positions", "unassigned", "canAssign"]) &&
     isUuid(value.stationId) && (stationId === undefined || value.stationId.toLowerCase() === stationId) &&
     isNonEmptyString(value.stationCode) && isDateOnly(value.operationDate) && isDateTimeOffset(value.asOf) &&
     typeof value.canAssign === "boolean" && Array.isArray(value.unassigned) && value.unassigned.every(isOccPositionTurnaround) &&
     Array.isArray(value.positions) && value.positions.every(position => isRecord(position) &&
       hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds", "latitude", "longitude",
-        "hasBoardingBridge", "isRemote", "maxAircraftSize", "cancelledBy", "narrowbodyOnly", "coveredBy", "requiredPermits"]) &&
+        "hasBoardingBridge", "isRemote", "maxAircraftSize", "cancelledBy", "narrowbodyOnly", "coveredBy", "requiredPermits",
+        ...(coverage ? ["coverage"] : [])]) &&
+      (position.coverage === undefined || (Array.isArray(position.coverage) && position.coverage.length <= 100 &&
+        position.coverage.every(isOccPositionCoverage))) &&
       isPermitNameList(position.requiredPermits) &&
       typeof position.hasBoardingBridge === "boolean" && typeof position.isRemote === "boolean" &&
       (position.maxAircraftSize == null || AIRCRAFT_SIZES.has(position.maxAircraftSize as string)) &&
@@ -7795,11 +7818,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isContractPricingTerms(result.data, version)) throw malformedResponse(result.status);
       return result.data;
     },
-    async getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+    async getOccPositions(stationId: string, date: string, options?: GetOccPositionsOptions) {
       const station = validatedUuid(stationId, "stationId");
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
-      const result = await execute(getGetOccPositionsUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
-      if (!isOccPositionBoard(result.data, station)) throw malformedResponse(result.status);
+      const { includeCoverage, ...init } = options ?? {};
+      if (includeCoverage !== undefined && typeof includeCoverage !== "boolean")
+        throw new TypeError("includeCoverage must be a boolean.");
+      // Without coverage the parameter stays out of the URL, as older clients send it (N26).
+      const query = includeCoverage ? { stationId: station, date, includeCoverage: true } : { stationId: station, date };
+      const result = await execute(getGetOccPositionsUrl(query), { ...init, method: "GET" }, true);
+      if (!isOccPositionBoard(result.data, station, includeCoverage === true)) throw malformedResponse(result.status);
       return result.data;
     },
     async recordOccArrival(turnaroundId: string,

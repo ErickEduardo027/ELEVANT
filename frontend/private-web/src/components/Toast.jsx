@@ -12,13 +12,24 @@ const TONE_CLASSES = {
   info: 'border-accent-600/30 text-accent-600',
 };
 
-// Pila de toasts fija en la esquina superior derecha, alimentada por
-// `useToast`. Presentacional puro: no decide cuándo mostrarse.
-export default function Toast({ toasts, onDismiss }) {
+/**
+ * Where the stack sits. `top-right` (the default) keeps the corner the OCC screens use. `bottom-right` (D-N33) is for
+ * the department shells, whose topbar has the bell and the user menu at the top right: a toast there covered them.
+ * Literal classes, so that Tailwind generates them; below 640 px the stack spans the screen with a 1 rem margin.
+ */
+export const TOAST_PLACEMENTS = Object.freeze({
+  'top-right': 'fixed inset-x-4 top-4 z-toast flex flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm',
+  'bottom-right': 'fixed inset-x-4 bottom-4 z-toast flex flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm',
+});
+
+// The toasts `useToast` feeds, in the corner `placement` names (a key of TOAST_PLACEMENTS; any other value takes the
+// top right). Purely presentational: it never decides when a toast shows.
+export default function Toast({ toasts, onDismiss, placement = 'top-right' }) {
   if (!toasts.length) return null;
+  const corner = Object.hasOwn(TOAST_PLACEMENTS, placement) ? placement : 'top-right';
 
   return (
-    <div className="fixed inset-x-4 top-4 z-toast flex flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm">
+    <div data-placement={corner} className={TOAST_PLACEMENTS[corner]}>
       {toasts.map(toast => {
         const Icon = TONE_ICON[toast.tone] ?? TONE_ICON.success;
         return (

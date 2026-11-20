@@ -51,8 +51,8 @@ it('assigns stands to an agent and explains every broken rule in Spanish', async
   const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
   fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
   expect(within(form).getByText('Menos de 3 meses: va con mentor')).toBeInTheDocument();
-  fireEvent.click(within(form).getByRole('button', { name: 'A01' }));
-  fireEvent.click(within(form).getByRole('button', { name: 'A02' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'A1' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'A2' }));
   fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
   expect(await screen.findByText(/necesita un mentor experimentado/)).toBeInTheDocument();
   expect(createOccCoverage).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'ag-1', terminalId: 't-a',
@@ -82,7 +82,7 @@ it('retries an uncertain coverage with the same key and re-reads the board on a 
   render(<CoverageRoute />);
   const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
   fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
-  fireEvent.click(within(form).getByRole('button', { name: 'A01' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'A1' }));
   fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
   expect(await screen.findByText('No fue posible completar la acción. Intenta de nuevo.')).toBeInTheDocument();
   // The same coverage after an answer that never came: the same key, so the server never covers twice.
@@ -112,7 +112,7 @@ it('switches terminals and shows the bridge stands of terminal B', async () => {
   render(<CoverageRoute />);
   fireEvent.click(await screen.findByRole('button', { name: 'Terminal B' }));
   const stands = screen.getByRole('region', { name: 'Posiciones de la terminal' });
-  expect(within(stands).getByText('B01')).toBeInTheDocument();
+  expect(within(stands).getByText('B1')).toBeInTheDocument();
   expect(within(stands).getByText('Puente')).toBeInTheDocument();
   expect(screen.getByText(/exige habilitación de puente/)).toBeInTheDocument();
 });
@@ -125,7 +125,7 @@ it('explains in Configuración why a stand in use stays active, and where new st
   render(<CoverageRoute />);
   fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
   const stands = screen.getByRole('region', { name: 'Atributos de las posiciones' });
-  const row = within(stands).getByText('A01').closest('tr');
+  const row = within(stands).getByText('A1').closest('tr');
   fireEvent.click(within(row).getByLabelText('Activa'));
   fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
   expect(await within(row).findByRole('alert')).toHaveTextContent('La posición tiene vuelos sin terminar o coberturas abiertas');
@@ -144,7 +144,7 @@ it('keeps the key of an uncertain stand change and reads the board again when th
   render(<CoverageRoute />);
   fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
   const stands = screen.getByRole('region', { name: 'Atributos de las posiciones' });
-  const row = within(stands).getByText('A01').closest('tr');
+  const row = within(stands).getByText('A1').closest('tr');
   fireEvent.click(within(row).getByLabelText('Remota'));
   fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
   expect(await within(row).findByRole('alert')).toHaveTextContent('No fue posible completar la acción');
@@ -166,7 +166,7 @@ it('explains why a stand of an inactive terminal is not reactivated from Configu
     reasons: ['terminal_inactive'] }));
   render(<CoverageRoute />);
   fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
-  const row = within(screen.getByRole('region', { name: 'Atributos de las posiciones' })).getByText('A01').closest('tr');
+  const row = within(screen.getByRole('region', { name: 'Atributos de las posiciones' })).getByText('A1').closest('tr');
   fireEvent.click(within(row).getByLabelText('Activa'));
   fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
   expect(await within(row).findByRole('alert')).toHaveTextContent('La terminal de esta posición está desactivada');
@@ -193,7 +193,7 @@ it('marks absent or permitless mentors and explains the mentor rules of 2-N23', 
   expect(within(mentor).getByRole('option', { name: 'Lucía Ramp · carnet vencido' })).toBeDisabled();
   expect(within(mentor).getByRole('option', { name: 'Pedro Ramp' })).not.toBeDisabled();
   fireEvent.change(mentor, { target: { value: 'ag-4' } });
-  fireEvent.click(within(form).getByRole('button', { name: 'A01' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'A1' }));
   fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
   // The server still decides: a mentor who became absent meanwhile is explained in Spanish.
   expect(await screen.findByText('El mentor tiene una ausencia aprobada ese día.')).toBeInTheDocument();
@@ -278,23 +278,23 @@ it('shows the board as a table and the day coverages as a list', async () => {
   expect(within(table).getAllByRole('columnheader').map(header => header.textContent))
     .toEqual(['Posición', 'Atributos', 'Cubierta por', 'Estado']);
   const rowOf = code => within(table).getByText(code).closest('tr');
-  expect(rowOf('A01').querySelector('[data-occ-plate="stand"]')).toHaveTextContent('A01');
-  expect(rowOf('A01')).toHaveTextContent('Riley Ramp');
-  expect(rowOf('A02').querySelector('[data-occ-status]')).toHaveAttribute('data-tone', 'muted');
-  expect(rowOf('A02')).toHaveTextContent('Desactivada');
+  expect(rowOf('A1').querySelector('[data-occ-plate="stand"]').textContent).toBe('A1');
+  expect(rowOf('A1')).toHaveTextContent('Riley Ramp');
+  expect(rowOf('A2').querySelector('[data-occ-status]')).toHaveAttribute('data-tone', 'muted');
+  expect(rowOf('A2')).toHaveTextContent('Desactivada');
   // An attribute is a word with its glyph, never an alarm: «Estrecho» is no longer amber.
-  expect(within(rowOf('A03')).getByText('Estrecho').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'neutral');
-  expect(within(rowOf('A04')).getByText('Puente').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'neutral');
-  expect(rowOf('A04')).toHaveTextContent('Sin agente');
+  expect(within(rowOf('A3')).getByText('Estrecho').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'neutral');
+  expect(within(rowOf('A4')).getByText('Puente').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'neutral');
+  expect(rowOf('A4')).toHaveTextContent('Sin agente');
   // A normal stand says nothing in «Estado».
-  expect(rowOf('A01').querySelector('[data-occ-status]')).toBeNull();
+  expect(rowOf('A1').querySelector('[data-occ-status]')).toBeNull();
 
   // The coverages of the day: one item per agent, with its stands as plates and its window in the identifiers' face.
   const day = screen.getByRole('region', { name: 'Coberturas del día' });
   const [item] = within(within(day).getByRole('list', { name: 'Coberturas del día' })).getAllByRole('listitem');
   expect(within(item).getByText('Riley Ramp').tagName).toBe('STRONG');
   expect(within(item).getByText('Refuerzo').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'neutral');
-  expect([...item.querySelectorAll('[data-occ-plate="stand"]')].map(plate => plate.textContent)).toEqual(['A01', 'A03']);
+  expect([...item.querySelectorAll('[data-occ-plate="stand"]')].map(plate => plate.textContent)).toEqual(['A1', 'A3']);
   expect(within(item).getByText('06:00–14:00').closest('.font-mono')).not.toBeNull();
   expect(item).toHaveTextContent('Mateo Ramp');
   expect(item.querySelector('[data-occ-plate="code"]')).toHaveTextContent('VH-07');
@@ -304,7 +304,7 @@ it('shows the board as a table and the day coverages as a list', async () => {
   // blocks a coverage asks for attention, never urgency.
   const form = screen.getByRole('form', { name: 'Asignar posiciones' });
   expect(within(form).getByRole('combobox', { name: 'Agente' })).toBeRequired();
-  const bridgeStand = within(form).getByRole('button', { name: 'A04' });
+  const bridgeStand = within(form).getByRole('button', { name: 'A4' });
   expect(bridgeStand).toHaveAccessibleDescription('con puente');
   expect(bridgeStand).toHaveAttribute('aria-pressed', 'false');
   fireEvent.click(bridgeStand);
@@ -364,7 +364,7 @@ it('reads the board again when the frame announces occ_planning, without an obse
   const view = render(<CoverageRoute />);
   await screen.findByRole('region', { name: 'Posiciones de la terminal' });
   const rowOf = code => within(screen.getByRole('table', { name: 'Posiciones de la terminal' })).getByText(code).closest('tr');
-  expect(rowOf('A01')).toHaveTextContent('Sin agente');
+  expect(rowOf('A1')).toHaveTextContent('Sin agente');
   // It listens on the shell's channel, to occ_planning only: the tab's one observer stays the frame's (contratos 2.7).
   expect(shell.subscriptions()).toEqual(['occ_planning']);
   expect(createPrivateWebAccountChangeObserver).not.toHaveBeenCalled();
@@ -375,7 +375,7 @@ it('reads the board again when the frame announces occ_planning, without an obse
 
   // Another OCC seat covered A01: the page reads the day's board again and shows who covers it.
   act(() => shell.announce(['occ_planning']));
-  await waitFor(() => expect(rowOf('A01')).toHaveTextContent('Riley Ramp'));
+  await waitFor(() => expect(rowOf('A1')).toHaveTextContent('Riley Ramp'));
   expect(loadOccCoverage).toHaveBeenCalledTimes(2);
   // The same station and day, read once more.
   const [first, second] = loadOccCoverage.mock.calls;
@@ -430,11 +430,55 @@ it('lists the stands in natural order on the board, the form and each coverage r
       endsAt: '2026-08-19T18:00:00Z', mentorAgentId: null, mentorName: null, vehicleCode: null, isReinforcement: false }] });
   render(<CoverageRoute />);
   const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
-  const natural = ['A01', 'A02', 'A3', 'A9', 'A10', 'A11'];
+  // Shown as the map draws them (N27): the seed's A01 and A02 are A1 and A2.
+  const natural = ['A1', 'A2', 'A3', 'A9', 'A10', 'A11'];
   expect(within(form).getAllByRole('button').map(button => button.textContent).filter(text => natural.includes(text)))
     .toEqual(natural);
   const day = await screen.findByRole('region', { name: 'Coberturas del día' });
   const row = within(day).getByText('Riley Ramp').closest('[data-occ-row]');
   expect(within(row).getByText('A9').compareDocumentPosition(within(row).getByText('A10')) & Node.DOCUMENT_POSITION_FOLLOWING)
     .toBeTruthy();
+});
+
+it('shows every stand by the code the map draws, without its zero padding, and sends its id (N27)', async () => {
+  // The seed's A01 and A02 are the plan's A1 and A2; a code with separators is shown as typed.
+  const padded = { ...board,
+    stands: [stand('A01', 't-a', { hasBoardingBridge: true }), stand('A02', 't-a'), stand('E2E-XXXX-1', 't-a'),
+      stand('B01', 't-b')],
+    constraints: [{ id: 'c-1', standId: 's-A01', standCode: 'A01', affectedStandId: 's-A02', affectedStandCode: 'A02',
+      kind: 'Cancels' }],
+    coverages: [{ id: 'cv-1', agentId: 'ag-1', agentName: 'Riley Ramp', terminalId: 't-a', terminalCode: 'A',
+      stands: [{ standId: 's-A01', code: 'A01' }, { standId: 's-A02', code: 'A02' }], startsAt: '2026-08-19T10:00:00Z',
+      endsAt: '2026-08-19T18:00:00Z', mentorAgentId: null, mentorName: null, vehicleCode: null, isReinforcement: false }] };
+  loadOccCoverage.mockResolvedValue(padded);
+  createOccCoverage.mockResolvedValueOnce(padded);
+  render(<CoverageRoute />);
+  const plates = region => [...region.querySelectorAll('[data-occ-plate="stand"]')].map(plate => plate.textContent);
+
+  const table = await screen.findByRole('table', { name: 'Posiciones de la terminal' });
+  expect(plates(table)).toEqual(['A1', 'A2', 'E2E-XXXX-1']);
+  expect(plates(screen.getByRole('list', { name: 'Coberturas del día' }))).toEqual(['A1', 'A2']);
+  const form = screen.getByRole('form', { name: 'Asignar posiciones' });
+  expect(within(form).getByRole('button', { name: 'A1' })).toHaveAccessibleDescription('con puente');
+  expect(within(form).getByRole('button', { name: 'E2E-XXXX-1' })).toBeInTheDocument();
+  expect(within(form).queryByRole('button', { name: /^A0/ })).toBeNull();
+  // The command names the stands by their ids, never by the code on screen.
+  fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'A2' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+  await waitFor(() => expect(within(form).getByLabelText('Agente')).toHaveValue(''));
+  expect(createOccCoverage).toHaveBeenCalledWith(expect.objectContaining({ standIds: ['s-A02'] }),
+    { idempotencyKey: expect.any(String) });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Configuración' }));
+  const attributes = screen.getByRole('region', { name: 'Atributos de las posiciones' });
+  expect(plates(attributes)).toEqual(['A1', 'A2', 'E2E-XXXX-1']);
+  expect(within(attributes).getByRole('combobox', { name: 'Tamaño máximo de A1' })).toBeInTheDocument();
+  const combined = screen.getByRole('region', { name: 'Posiciones combinadas' });
+  expect(plates(combined)).toEqual(['A1', 'A2']);
+  const when = within(combined).getByRole('combobox', { name: 'Si se ocupa' });
+  expect(within(when).getAllByRole('option').map(option => option.textContent).slice(1))
+    .toEqual(['A1', 'A2', 'B1', 'E2E-XXXX-1']);
+  fireEvent.change(when, { target: { value: 's-A01' } });
+  expect(when).toHaveDisplayValue('A1');
 });

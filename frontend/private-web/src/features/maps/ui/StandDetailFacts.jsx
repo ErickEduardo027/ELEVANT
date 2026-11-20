@@ -11,11 +11,13 @@ import { stationTime } from '../traffic/stationTime';
 // What a stand says of itself on the OCC maps (PR M4), for its drawer on Mapa de posiciones, the console's inspector
 // and the panel beside the planning map. «Estado en el mapa»: its state in the words of the vocabulary (the board's
 // status words do not know «Llegando» or «Por liberar») with its glyph, why it reads that state and since when, the next
-// change expected with its time and countdown (owner request of 2026-11-15), who covers it, the reasons of its signals
-// with their shape (PR M6: the plain notice «El avión ya está en la posición. Registra la llegada.» among them) and the
-// milestones of the turnaround on it. «Características»: what the stand is, from the positions board and the airport
-// layout (stands/standStatus.js). The map's tooltip and, zoomed in, its label say part of it, so nothing lives only on
-// the map. Content of the maps lane; the drawer, the inspector and the panel only place it. No read is added.
+// change expected with its time and countdown (owner request of 2026-11-15), who covers it (N26: now, with the coverages
+// that ended or are still to start dimmed, from the board's windows of today; on another date, each window with its
+// times), the reasons of its signals with their shape (PR M6: the plain notice «El avión ya está en la posición.
+// Registra la llegada.» among them) and the milestones of the turnaround on it. «Características»: what the stand is,
+// from the positions board and the airport layout (stands/standStatus.js). The map's tooltip and, zoomed in, its label
+// say part of it, so nothing lives only on the map. Content of the maps lane; the drawer, the inspector and the panel
+// only place it. No read is added.
 
 export { locationOrigin };
 
@@ -101,7 +103,12 @@ export default function StandDetailFacts({ position, layout = MDPC_LAYOUT, aircr
   const word = entry => entry[language] ?? entry.es;
   const state = standStateOf(position);
   const display = position.display ?? displayFromStatus(position);
-  const names = cleanNames(position.coveredBy);
+  // Who covers it (N26): with the board's windows of today, who covers it now; on another date, nobody «now» (each
+  // window is listed below); without windows, the names of the day.
+  const windows = display.coverage ?? null;
+  const covering = windows === null ? cleanNames(position.coveredBy).map(name => ({ name, isReinforcement: false }))
+    : windows.live ? windows.now : [];
+  const agentWord = agent => (agent.isReinforcement ? t('stand.reinforcement', { name: agent.name }) : agent.name);
   const signals = (Array.isArray(position.signals) ? position.signals : display.signals ?? [])
     .filter(signal => signal?.reason && SIGNAL_KINDS.has(signal.kind));
   // The progress of the turnaround on the stand, as its bar draws it: while its aircraft is on it and the milestones
@@ -128,8 +135,11 @@ export default function StandDetailFacts({ position, layout = MDPC_LAYOUT, aircr
   if (facts.sizeLetter && facts.wingspanLimitM) {
     size = t('standInfo.sizeLetter', { letter: facts.sizeLetter, span: facts.wingspanLimitM });
   } else if (facts.sizeLetter) size = t('standInfo.sizeLetterOnly', { letter: facts.sizeLetter });
-  // Who covers it is said once, in the state list («Cubre …»); here only that nobody does, when the screen knows it.
-  const coverage = names.length === 0 && facts.coveredBy !== null ? t('standInfo.noCoverage') : null;
+  // Who covers it is said once, in the state list («Cubre …»); here only that nobody covers it that day, when the screen
+  // knows it.
+  const noneThatDay = windows !== null ? windows.windows.length === 0 : covering.length === 0 && facts.coveredBy !== null;
+  const coverage = noneThatDay ? t('standInfo.noCoverage') : null;
+  const listOf = items => new Intl.ListFormat(locale, { type: 'conjunction' }).format(items);
 
   return (
     <div data-testid="stand-detail-facts" data-state={state} className={`space-y-2 text-sm text-occ-text ${className}`.trim()}>
@@ -145,11 +155,28 @@ export default function StandDetailFacts({ position, layout = MDPC_LAYOUT, aircr
             {nextChange}
           </li>
         )}
-        {names.length > 0 && (
-          <li data-fact="coverage">
-            {t('stand.coveredBy', { names: new Intl.ListFormat(locale, { type: 'conjunction' }).format(names) })}
-          </li>
+        {covering.length > 0 && (
+          <li data-fact="coverage">{t('stand.coveredBy', { names: listOf(covering.map(agentWord)) })}</li>
         )}
+        {/* N26: dimmed, the coverages of today that are not now. */}
+        {windows?.live && windows.ended.map(item => (
+          <li key={`ended:${item.name}`} data-fact="coverage-ended" className="text-occ-muted">
+            {t('stand.coverageEnded', { name: agentWord(item), time: stationTime(item.endsAt, locale) })}
+          </li>
+        ))}
+        {windows?.live && windows.upcoming.map(item => (
+          <li key={`upcoming:${item.name}`} data-fact="coverage-upcoming" className="text-occ-muted">
+            {t('stand.coverageStarts', { name: agentWord(item), time: stationTime(item.startsAt, locale) })}
+          </li>
+        ))}
+        {/* Another date: each window with its times, never judged against the clock. */}
+        {windows !== null && !windows.live && windows.windows.map(item => (
+          <li key={`window:${item.name}:${item.startsAt}`} data-fact="coverage-window">
+            {t('stand.coverageWindow', {
+              name: agentWord(item), from: stationTime(item.startsAt, locale), to: stationTime(item.endsAt, locale),
+            })}
+          </li>
+        ))}
         {signals.map(signal => (
           <li key={`${signal.kind}:${signal.reason}`} data-fact="signal" data-signal={signal.kind} className="flex items-center gap-2">
             <OccGlyph name={signal.kind} title={word(SIGNALS[signal.kind])} />

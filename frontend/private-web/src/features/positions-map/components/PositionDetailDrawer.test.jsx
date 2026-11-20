@@ -1,11 +1,11 @@
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { withStandDisplay } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
-import { createRampScenario } from '../../maps/testing/mapFixtures';
+import { boardStand, boardVisit, createRampScenario } from '../../maps/testing/mapFixtures';
 import { mapOccupancyToRampPositions } from '../positionsMapMappers';
 import PositionDetailDrawer from './PositionDetailDrawer';
 
@@ -79,6 +79,71 @@ it('shows the stand facts and keeps its test id and «Ubicar en el mapa»', asyn
   expect(within(drawer).getByTestId('combined-position-banner')).toBeInTheDocument();
   await userEvent.click(within(drawer).getByRole('button', { name: 'Ubicar en el mapa' }));
   expect(onStartPlacing).toHaveBeenCalledExactlyOnceWith(stand);
+});
+
+it('names who covers the stand now, never the names of the day once their coverage ended (N26)', () => {
+  // A5 at 19:50 on 16 November in Punta Cana: an aircraft on it since 19:20; Elena Soto covered it until 17:00.
+  const T1950 = Date.parse('2026-11-16T23:50:00Z');
+  const elena = { agentName: 'Elena Soto', startsAt: '2026-11-16T09:00:00Z', endsAt: '2026-11-16T21:00:00Z',
+    isReinforcement: false };
+  const [stand] = withStandDisplay(mapOccupancyToRampPositions([{ id: 'A5', terminal: 'A', lat: 18.56, lon: -68.36 }], {
+    operationDate: '2026-11-16', positions: [boardStand('A05', { coveredBy: ['Elena Soto'], coverage: [elena], turnarounds: [
+      boardVisit({ nowMs: T1950, flight: 'WN301', arrivalInMin: -30, departureInMin: 40, arrived: true }),
+    ] })],
+  }, new Date(T1950).toISOString()), { nowMs: T1950 });
+  expect(stand.assignedAgent).toBe('Elena Soto');
+  render(<PositionDetailDrawer position={stand} onClose={() => {}} onViewFlightInMonitoring={() => {}} />);
+  const drawer = screen.getByTestId('position-detail-drawer');
+  // «Agente» of the turnaround and of the flight's fields: nobody now; the facts say until when she covered it.
+  expect(within(drawer).getByText('Sin agente')).toBeInTheDocument();
+  expect(within(drawer).getByText('Sin asignar')).toBeInTheDocument();
+  expect(within(drawer).getByText('La cobertura de Elena Soto terminó a las 17:00')).toBeInTheDocument();
+  expect(within(drawer).queryByText('Elena Soto')).toBeNull();
+});
+
+describe('the «Agente» of a flight still to come (D-N26)', () => {
+  // A5 at 19:50 on 16 November in Punta Cana; WN303 is due on it at 20:10. Elena Soto covers it until 20:00.
+  const T1950 = Date.parse('2026-11-16T23:50:00Z');
+  const elena = { agentName: 'Elena Soto', startsAt: '2026-11-16T09:00:00Z', endsAt: '2026-11-17T00:00:00Z',
+    isReinforcement: false };
+  const luis = { agentName: 'Luis Peña', startsAt: '2026-11-17T00:00:00Z', endsAt: '2026-11-17T04:00:00Z',
+    isReinforcement: false };
+  function drawerWith(coverage) {
+    const [stand] = withStandDisplay(mapOccupancyToRampPositions([{ id: 'A5', terminal: 'A', lat: 18.56, lon: -68.36 }], {
+      operationDate: '2026-11-16', positions: [boardStand('A05', {
+        coveredBy: coverage.map(window => window.agentName), coverage,
+        turnarounds: [boardVisit({ nowMs: T1950, flight: 'WN303', arrivalInMin: 20 })],
+      })],
+    }, new Date(T1950).toISOString()), { nowMs: T1950 });
+    expect(stand.display.state).toBe('planned');
+    render(<PositionDetailDrawer position={stand} onClose={() => {}} onViewFlightInMonitoring={() => {}} />);
+    const drawer = screen.getByTestId('position-detail-drawer');
+    return {
+      drawer,
+      turnaroundAgent: drawer.querySelector('[data-testid="stand-turnaround"] [data-fact="agent"] dd'),
+      // The «Agente» of the flight's fields, below the turnaround: it names the same flight.
+      flightAgent: [...drawer.querySelectorAll('dt')]
+        .find(term => term.textContent === 'Agente' && !term.closest('[data-testid="stand-turnaround"]'))
+        ?.nextElementSibling,
+    };
+  }
+
+  it('names who covers it when it reaches the stand, in the turnaround and in the flight\'s fields alike', () => {
+    const { drawer, turnaroundAgent, flightAgent } = drawerWith([elena, luis]);
+    expect(turnaroundAgent).toHaveTextContent(/^Luis Peña$/);
+    expect(flightAgent).toHaveTextContent(/^Luis Peña$/);
+    // Elena covers the stand now, and only the facts say so.
+    expect(within(drawer).getByText('Cubre Elena Soto')).toBeInTheDocument();
+    expect(drawer.textContent.match(/Elena Soto/g)).toHaveLength(1);
+  });
+
+  it('names nobody when nobody covers it then, next to «Sin agente que la cubra»', () => {
+    const { drawer, turnaroundAgent, flightAgent } = drawerWith([elena]);
+    expect(within(drawer).getByText('Sin agente que la cubra')).toBeInTheDocument();
+    expect(turnaroundAgent).toHaveTextContent(/^Sin agente$/);
+    expect(flightAgent).toHaveTextContent(/^Sin asignar$/);
+    expect(drawer.textContent.match(/Elena Soto/g)).toHaveLength(1);
+  });
 });
 
 it('says the state once, in the words of the map: «Llegando» for a flight due within 15 minutes, never the board\'s «Planificada»', () => {

@@ -4998,6 +4998,13 @@ export interface OccPositionTurnaroundResponse {
   isDemo?: boolean | null;
 }
 
+export interface OccPositionCoverageResponse {
+  agentName: string;
+  startsAt: string;
+  endsAt: string;
+  isReinforcement: boolean;
+}
+
 export interface OccPositionResponse {
   standId: string;
   code: string;
@@ -5021,6 +5028,8 @@ export interface OccPositionResponse {
   coveredBy: string[];
   /** @nullable */
   requiredPermits?: string[] | null;
+  /** @nullable */
+  coverage?: OccPositionCoverageResponse[] | null;
 }
 
 export interface OccPositionBoardResponse {
@@ -7543,6 +7552,7 @@ date: string;
 export type GetOccPositionsParams = {
 stationId: string;
 date: string;
+includeCoverage?: boolean;
 };
 
 export type ListOccReadyContractsParams = {
@@ -19273,6 +19283,11 @@ export const getGetOccPositionsUrl = (params: GetOccPositionsParams,) => {
   return stringifiedParams.length > 0 ? `/api/v1/occ/positions?${stringifiedParams}` : `/api/v1/occ/positions`
 }
 
+/**
+ * @summary The stands of the station with the turnarounds of the day. With `includeCoverage=true` every stand also
+carries its coverage windows of the day (`coverage`, N26); without it the board keeps the keys a client
+deployed before them validates.
+ */
 export const getOccPositions = async (params: GetOccPositionsParams, options?: RequestInit): Promise<OccPositionBoardResponse> => {
 
   const res = await fetch(getGetOccPositionsUrl(params),

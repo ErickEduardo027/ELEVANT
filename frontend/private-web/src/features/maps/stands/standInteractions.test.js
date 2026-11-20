@@ -6,7 +6,7 @@ import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMap
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { layoutStandReferences } from '../airport/layoutIndex';
 import { mapMessages } from '../mapMessages';
-import { SCENARIO_AGENTS, createRampScenario } from '../testing/mapFixtures';
+import { SCENARIO_AGENTS, boardStand, createRampScenario } from '../testing/mapFixtures';
 import {
   SAFE_AREA_MARGIN, STAND_FLAG_KEYS, featureStatePlan, findStandByCode, isOutsideSafeArea, sameAgentMark, standFlags,
   standTooltip,
@@ -172,6 +172,20 @@ describe('stand interactions', () => {
     ]);
     expect(findStandByCode(stands, 'a-05')?.id).toBe('A5');
     expect(findStandByCode([{ id: 'B33', retired: true }], 'B33')).toBeNull();
+  });
+
+  it('«Cubre …» names who covers the stand now, from the coverage windows of its date (N26)', () => {
+    // 19:50 on 16 November in Punta Cana: Elena Soto covered A5 until 17:00; Luis Peña covers it until 21:00.
+    const T1950 = Date.parse('2026-11-16T23:50:00Z');
+    const elena = { agentName: 'Elena Soto', startsAt: '2026-11-16T09:00:00Z', endsAt: '2026-11-16T21:00:00Z',
+      isReinforcement: false };
+    const luisNow = { agentName: 'Luis Peña', startsAt: '2026-11-16T21:00:00Z', endsAt: '2026-11-17T01:00:00Z',
+      isReinforcement: false };
+    const read = coverage => withStandDisplay(attachStandGeometry(mapOccupancyToRampPositions(REFERENCES, {
+      operationDate: '2026-11-16', positions: [boardStand('A05', { coveredBy: coverage.map(item => item.agentName), coverage })],
+    }, new Date(T1950).toISOString()), MDPC_LAYOUT), { nowMs: T1950 });
+    expect(standTooltip('A5', read([elena]), spanish).detail).toBeNull();
+    expect(standTooltip('A5', read([elena, luisNow]), spanish).detail).toBe('Cubre Luis Peña');
   });
 
   it('a stand is outside the safe area when it reaches into the band along the edges of the view, or beyond it', () => {

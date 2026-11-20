@@ -6,7 +6,7 @@ import DemoTag from './DemoTag';
 import EstimatedTag from './EstimatedTag';
 import OccGlyph from './OccGlyph';
 import OccPlate from './OccPlate';
-import { formatClock, relativeTimeText, toInstantMs } from './occTime';
+import { durationText, formatClock, relativeTimeParts, relativeTimeText, toInstantMs } from './occTime';
 import { occUiMessages } from './occUiMessages';
 import { SIGNALS, TAGS } from './statusVocabulary';
 
@@ -49,6 +49,18 @@ function checkFlight(flight) {
 
 const hasInstant = time => Number.isFinite(toInstantMs(time?.at));
 
+// The countdown of a strip with a time: «en 12 min», «ahora» or «hace 3 min». An arrival's runway time (`actualKind:
+// 'Runway'`, as the feed and the demo worker write it) says what it is, «aterrizó hace 3 min»: it only says that the
+// aircraft landed, never that it reached its stand (N23).
+function countdownText(flight, now, t) {
+  const parts = relativeTimeParts(flight.time.at, now);
+  if (parts?.tense === 'past' && flight.direction === 'Arrival' && flight.time.kind === 'actual'
+    && flight.time.actualKind === 'Runway') {
+    return t('flightStrip.landedAgo', { duration: durationText(parts, t) });
+  }
+  return relativeTimeText(flight.time.at, now, t);
+}
+
 /**
  * The strip read out in full words, in the order of its cells: «Llegada, 14:44 estimada, ZZ9001, Demo, desde MIA,
  * posición A7, En aproximación, en 12 min». `t` translates occUiMessages; `now` (milliseconds or an instant) adds the
@@ -70,7 +82,7 @@ export function flightStripName(flight, { t, language = 'es', locale, timeZone =
     flight.counterpartIata ? t(direction.counterpart, { code: flight.counterpartIata }) : '',
     flight.standCode ? t('flightStrip.stand', { code: flight.standCode }) : t('flightStrip.noStand'),
     status?.label ? (signal ? `${SIGNALS[signal][language]}: ${status.label}` : status.label) : '',
-    hasInstant(flight.time) ? relativeTimeText(flight.time.at, now, t) : '',
+    hasInstant(flight.time) ? countdownText(flight, now, t) : '',
   ];
   return parts.filter(part => typeof part === 'string' && part.length > 0).join(', ');
 }
@@ -79,7 +91,7 @@ function Cells({ flight, t, language, locale, timeZone, now }) {
   const direction = DIRECTIONS[flight.direction];
   const timed = hasInstant(flight.time);
   const signal = flight.status?.signal ?? null;
-  const countdown = timed ? relativeTimeText(flight.time.at, now, t) : '';
+  const countdown = timed ? countdownText(flight, now, t) : '';
   const dateTime = timed ? new Date(toInstantMs(flight.time.at)).toISOString() : undefined;
 
   return (
@@ -137,10 +149,12 @@ function Cells({ flight, t, language, locale, timeZone, now }) {
 /**
  * One flight as a strip of the board (design F): its cells always in the order of OCC_FLIGHT_STRIP_PARTS, direction
  * glyph · time with its kind («real», «est.», «prog.») · flight plate · «Demo» and «est.» tags · the other airport ·
- * stand plate or «Sin posición» · status · countdown («en 12 min», «ahora», «hace 3 min», once `now` is given).
- * `flight` is `{ id, direction: 'Arrival' | 'Departure', flightNumber, counterpartIata, time: { at, kind } | null,
- * standCode, status: { label, signal: null | 'attention' | 'urgent' } | null, demo, estimated }`; the board model
- * builds it (the status words are its own).
+ * stand plate or «Sin posición» · status · countdown («en 12 min», «ahora», «hace 3 min», once `now` is given;
+ * «aterrizó hace 3 min» for an arrival's runway time, N23).
+ * `flight` is `{ id, direction: 'Arrival' | 'Departure', flightNumber, counterpartIata, time: { at, kind, actualKind? }
+ * | null, standCode, status: { label, signal: null | 'attention' | 'urgent' } | null, demo, estimated }`, `actualKind`
+ * the kind of an actual time when it is known (`Runway` or `OnBlock`, dashboard/noc/boardModel.js: bestTime); the board
+ * model builds it (the status words are its own).
  * - With `onSelect` it is a toggle button with `aria-pressed`, named in full words (flightStripName), that calls
  *   `onSelect(flight)`; `selected` draws the cyan casing. Without `onSelect` it is text, not a control.
  * - A status with a signal draws its glyph next to its words; a normal status carries no hue.

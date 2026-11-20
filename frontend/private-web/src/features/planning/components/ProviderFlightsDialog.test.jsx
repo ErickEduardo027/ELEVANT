@@ -178,6 +178,106 @@ it('explains a paused feed in Spanish, never by its raw code (2-N29)', async () 
   expect(screen.queryByText(/quota_exceeded/)).not.toBeInTheDocument();
 });
 
+it('writes every time on 24 hours in the station zone, as the OCC console does (N28)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  // Punta Cana is UTC−4: 14:05Z is 10:05 there, 23:53Z is 19:53 and 01:30Z the next day is 21:30.
+  loadOccFlightFeed.mockResolvedValue({
+    ...feed([leg('arr', 'Arrival', 'ZZ161', { suggestedDepartureId: 'dep', revisedAt: '2026-11-03T23:53:00Z',
+      runwayAt: '2026-11-03T23:58:00Z' }), leg('dep', 'Departure', 'ZZ162', { scheduledAt: '2026-11-04T01:30:00Z' })],
+    { pausedUntil: '2026-11-04T00:05:00Z', pauseReason: 'quota_exceeded' }),
+    lastReadAt: '2026-11-03T16:00:00Z', nextManualRefreshAt: '2026-11-03T22:40:00Z',
+  });
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
+  expect(arrival).toHaveTextContent('10:05 → 19:53 · aterrizó 19:58');
+  expect(within(arrival).getByRole('option', { name: 'ZZ162 · hacia JFK · 21:30' })).toBeInTheDocument();
+  expect(screen.getByText(/Lecturas en pausa hasta las 20:05:/)).toBeInTheDocument();
+  expect(screen.getByText(/última lectura 12:00$/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Actualizar ahora' })).toHaveAttribute('title', 'Disponible a las 18:40');
+  // Never «7:53 p. m.»: the dialog has no 12-hour clock.
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/[ap]\.\s?m\./i);
+});
+
+it('names the provider’s status of each arrival as the board does, in every view (N22)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  loadOccFlightFeed.mockImplementation((id, day, { view }) => Promise.resolve(view === 'Dismissed'
+    ? feed([leg('gone', 'Arrival', 'ZZ171', { status: 'Dismissed', providerStatus: 'Approaching' }),
+      leg('late', 'Arrival', 'ZZ173', { status: 'Dismissed', providerStatus: 'Delayed', aircraftRegistration: null,
+        revisedAt: '2026-11-03T15:00:00Z' })])
+    : feed([leg('exp', 'Arrival', 'ZZ161'), leg('app', 'Arrival', 'ZZ163', { providerStatus: 'Approaching' }),
+      leg('arr', 'Arrival', 'ZZ165', { providerStatus: 'Arrived' }),
+      leg('rwy', 'Arrival', 'ZZ167', { runwayAt: '2026-11-03T14:01:00Z' }),
+      leg('odd', 'Arrival', 'ZZ169', { providerStatus: 'Holding' })])));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const proposed = await screen.findByRole('list', { name: 'Llegadas propuestas' });
+  const [expected, approaching, arrived, landed, odd] = within(proposed).getAllByRole('listitem');
+  expect(expected).toHaveTextContent('Programado · HI1055 · Airbus A320 · Terminal B');
+  expect(approaching).toHaveTextContent('En aproximación · HI1055');
+  // The provider's «Arrived» only says that it landed, as on the board; a runway time says so whatever the word.
+  expect(arrived).toHaveTextContent('Aterrizó · HI1055');
+  expect(landed).toHaveTextContent('· aterrizó 10:01');
+  expect(landed).toHaveTextContent('Aterrizó · HI1055');
+  // A word the board does not know is «Sin estado», never the word itself.
+  expect(odd).toHaveTextContent('Sin estado · HI1055');
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/Expected|Approaching|Arrived|Holding/);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Descartadas' }));
+  const dismissed = await screen.findByRole('list', { name: 'Llegadas descartadas' });
+  const [gone, late] = within(dismissed).getAllByRole('listitem');
+  expect(gone).toHaveTextContent('En aproximación · HI1055');
+  // «Delayed» is scheduled, as on the board: the revised time says how late it comes.
+  expect(late).toHaveTextContent('10:05 → 11:00');
+  expect(late).toHaveTextContent('Programado · Airbus A320 · Terminal B');
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/Approaching|Delayed/);
+});
+
+it('names the runway time «aterrizó» on an arrival and «despegó» on a departure, never «real» (N23)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  // Punta Cana is UTC−4: ZZ161 touched down at 10:01; ZZ900 took off at 11:12.
+  loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161', { runwayAt: '2026-11-03T14:01:00Z' }),
+    leg('gone', 'Departure', 'ZZ900', { runwayAt: '2026-11-03T15:12:00Z' })]));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
+  expect(arrival).toHaveTextContent('ZZ161 · Demo Airlines · desde SDQ · 10:05 · aterrizó 10:01');
+  const departure = within(screen.getByRole('list', { name: 'Salidas sin llegada' })).getByRole('listitem');
+  expect(departure).toHaveTextContent('ZZ900 · Demo Airlines · hacia JFK · 10:05 · despegó 11:12');
+  expect(screen.getByRole('dialog')).not.toHaveTextContent(/· real /);
+});
+
+it('names each aircraft type by its code first and every chosen option whole (N37)', async () => {
+  // The seed's type carries «Development» in its model: cut at 14 rem, «Airbus A320 Development · A320» lost its code.
+  getManualTurnaroundOptions.mockResolvedValue({ ...options, aircraftTypes: [{ ...a320, model: 'A320 Development' }, b738] });
+  loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161', { suggestedDepartureId: 'dep',
+    suggestedAircraftTypeId: 't-a320' }), leg('dep', 'Departure', 'ZZ162')]));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
+  const type = await within(arrival).findByLabelText('Tipo de avión (sugerido)');
+  expect(within(type).getAllByRole('option').map(option => option.textContent))
+    .toEqual(['Sin tipo de avión', 'A320 · Airbus A320 Development', 'B738 · Boeing 737-800']);
+  // Each field is as wide as its longest option, never wider than its row.
+  const fields = within(arrival).getAllByRole('combobox');
+  expect(fields).toHaveLength(3);
+  for (const select of fields) {
+    expect(select).toHaveClass('max-w-full');
+    expect(select).not.toHaveClass('max-w-56');
+  }
+  // Each one names the option it shows, whole, and follows the choice.
+  expect(within(arrival).getByLabelText('Sale como')).toHaveAttribute('title', 'ZZ162 · hacia JFK · 10:05');
+  expect(type).toHaveAttribute('title', 'A320 · Airbus A320 Development');
+  const stand = within(arrival).getByLabelText('Posición');
+  expect(stand).toHaveAttribute('title', 'Sin posición (asignar después)');
+  fireEvent.change(stand, { target: { value: 's-a01' } });
+  expect(stand).toHaveAttribute('title', 'A1 · Terminal A');
+  fireEvent.change(type, { target: { value: 't-b738' } });
+  expect(type).toHaveAttribute('title', 'B738 · Boeing 737-800');
+  fireEvent.change(type, { target: { value: '' } });
+  expect(type).toHaveAttribute('title', 'Sin tipo de avión');
+});
+
 describe('demo flights (ADR-0041)', () => {
   const terminalA = { id: 'ta', code: 'A', name: 'Terminal A' };
   const stand = (id, code, terminal = terminalA) => ({ id, code, terminal });
@@ -222,8 +322,26 @@ describe('demo flights (ADR-0041)', () => {
     render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} />);
 
     const select = await within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).findByLabelText('Posición');
-    expect(optionTexts(select)).toEqual(['Sin posición (asignar después)', 'A01 · Terminal A', 'A02 · Terminal A',
-      'A05 · Terminal A', 'A10 · Terminal A', 'AN1 · Terminal A', 'B20 · Terminal B']);
+    // Each stand by the code the map draws (N27): the station's A01, A02 and A05 are A1, A2 and A5.
+    expect(optionTexts(select)).toEqual(['Sin posición (asignar después)', 'A1 · Terminal A', 'A2 · Terminal A',
+      'A5 · Terminal A', 'A10 · Terminal A', 'AN1 · Terminal A', 'B20 · Terminal B']);
+  });
+
+  it('names the gate by the code the map draws, as the stand it preselects (N27)', async () => {
+    getManualTurnaroundOptions.mockResolvedValue(demoCatalog);
+    // The server writes the chosen stand's code, as the station stores it, in the gate of a demo flight (ADR-0041).
+    loadOccFlightFeed.mockResolvedValue(feed([demoArrival({ gate: 'A05' }), demoDeparture({ gate: 'A05' }),
+      leg('real', 'Arrival', 'ZZ161', { gate: 'E2E-XXXX-1', suggestedDepartureId: 'rdep' }), leg('rdep', 'Departure', 'ZZ162')]));
+    render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} />);
+
+    const [demo, real] = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getAllByRole('listitem');
+    const select = await within(demo).findByLabelText('Posición (sugerida)');
+    expect(demo).toHaveTextContent('En aproximación · HIDM01 · Airbus A320 · Terminal A · Puerta A5');
+    expect(select).toHaveValue('s-a05');
+    expect(select).toHaveDisplayValue('A5 · Terminal A');
+    expect(demo).not.toHaveTextContent('A05');
+    // A code that is not capitals, a number and capitals is shown as the provider wrote it.
+    expect(real).toHaveTextContent('Terminal B · Puerta E2E-XXXX-1');
   });
 
   it('re-reads when the planning revision changes and keeps what the user chose', async () => {
@@ -245,7 +363,9 @@ describe('demo flights (ADR-0041)', () => {
     expect(within(arrivals).getByLabelText('Posición')).toHaveValue('s-b20');
     await act(async () => answer(feed([demoArrival({ version: 'v-arr-2', providerStatus: 'Arrived' }), demoDeparture(),
       leg('other', 'Departure', 'ZZ9006')])));
-    expect(await screen.findByText(/Arrived/)).toBeInTheDocument();
+    // The provider's «Arrived» in the board's words (N22): it landed.
+    expect(await screen.findByText(/^Aterrizó · HIDM01/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent(/Approaching|Arrived|Expected/);
     const refreshed = screen.getByRole('list', { name: 'Llegadas propuestas' });
     expect(within(refreshed).getByLabelText('Sale como')).toHaveValue('other');
     expect(within(refreshed).getByLabelText('Tipo de avión')).toHaveValue('t-b738');
@@ -278,7 +398,7 @@ describe('demo flights (ADR-0041)', () => {
     // The aircraft landed meanwhile: the planning changed and the dialog read the new versions before the import.
     view.rerender(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} onImported={onImported}
       revision={5} />);
-    expect(await screen.findByText(/· real \d/)).toBeInTheDocument();
+    expect(await screen.findByText(/· aterrizó \d/)).toBeInTheDocument();
     const arrivals = screen.getByRole('list', { name: 'Llegadas propuestas' });
     fireEvent.click(within(arrivals).getByRole('button', { name: 'Importar escala' }));
     expect(await screen.findByText('Escala importada (PUJ-20261112-003).')).toBeInTheDocument();

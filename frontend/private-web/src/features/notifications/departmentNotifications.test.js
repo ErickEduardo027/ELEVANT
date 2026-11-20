@@ -44,13 +44,20 @@ describe('contract lifecycle notifications (phase 2, block A)', () => {
 describe('contract notifications without a title or a destination before (2-N29)', () => {
   it.each([
     ['contract_validity', 'Se fijó la vigencia de un contrato: ya puede firmarse', CONTRACT_MODULE_IDS.CONTRACTS],
-    ['contract_renewal_started', 'Empezó la renovación automática de un contrato: complete el borrador', CONTRACT_MODULE_IDS.DRAFTS],
+    ['contract_renewal_started', 'Empezó la renovación automática de un contrato: completa el borrador', CONTRACT_MODULE_IDS.DRAFTS],
     ['contract_suspended', 'Contrato suspendido por falta de un permiso de operación vigente', CONTRACT_MODULE_IDS.CONTRACTS],
     ['contract_expiring', 'Un contrato está por vencer', CONTRACT_MODULE_IDS.CONTRACTS],
   ])('%s has a Spanish title and opens its module', (kind, title, moduleId) => {
     const described = describeNotification({ kind, subject: 'CTR-2026-0001 · Demo Air' });
     expect(described.title).toBe(title);
     expect(described.target).toEqual({ moduleId });
+  });
+
+  it.each([
+    ['portal_account_ready', 'La cuenta del portal de la aerolínea está lista: ya puedes enviar el borrador a Finanzas'],
+    ['contract_approved', 'Finanzas aprobó los precios de un contrato: fija la vigencia y gestiona las firmas'],
+  ])('%s tells Contratos what to do next as tú, like the rest of the bell (D-N36)', (kind, title) => {
+    expect(describeNotification({ kind, subject: 'CTR-2026-0001 · Demo Air' }).title).toBe(title);
   });
 
   it('still names an unknown kind in Spanish without a destination', () => {
@@ -71,8 +78,8 @@ describe('ramp agent notices of phase 2 (block D)', () => {
 
   it('tells Finanzas that OCC cancelled a charter with a prepayment and opens the charters (3-A)', () => {
     const described = describeNotification({ kind: 'charter_cancelled', subject: 'PUJ-20261105-004', stationCode: 'PUJ' });
-    expect(described.title).toBe('OCC canceló un charter con prepago: revise la devolución');
-    expect(described.message).toBe('OCC canceló un charter con prepago: revise la devolución: PUJ-20261105-004 · PUJ');
+    expect(described.title).toBe('OCC canceló un charter con prepago: revisa la devolución');
+    expect(described.message).toBe('OCC canceló un charter con prepago: revisa la devolución: PUJ-20261105-004 · PUJ');
     expect(described.target).toEqual({ moduleId: 'finance-charters' });
   });
 

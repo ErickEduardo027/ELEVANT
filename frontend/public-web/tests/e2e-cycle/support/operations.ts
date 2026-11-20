@@ -15,6 +15,13 @@ import { loadRun, STATE_DIR } from "./env";
 /** The seeded ramp agent (DEV-RA-001), scoped to Terminal A of PUJ. */
 export const RAMP_AGENT = "Riley Ramp";
 
+/**
+ * A stand code as AVIAM Web shows it (N27, `standDisplayCode` in frontend/private-web/src/services/standCodes.js): a
+ * code of capitals, a number and capitals loses the zero padding of its number, so the seed's A01 reads A1; any other
+ * code, such as a run's `E2E-XXXX-1`, reads as stored. The API and the commands keep the stored code.
+ */
+export const shownStandCode = (code: string) => code.replace(/^([A-Z]*)0+(\d+)([A-Z]*)$/, "$1$2$3");
+
 const MINUTE = 60_000;
 /** AVIAM's stations keep the calendar of Santo Domingo: UTC−4 all year, without DST. */
 const STATION_ZONE = "America/Santo_Domingo";

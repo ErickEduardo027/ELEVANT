@@ -77,6 +77,26 @@ describe('Sidebar', () => {
     expect(within(nav).getByRole('tooltip', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
+  it('writes a long label on up to two lines and names it whole on hover (N37)', () => {
+    const label = 'Carnets y permisos aeroportuarios';
+    render(<Sidebar {...baseProps({ modules: [...MODULES, { id: 'permits', label, icon: ChecklistIcon }] })} />);
+    const text = within(screen.getByRole('navigation')).getByText(label);
+    expect(text).toHaveAttribute('title', label);
+    expect(text).toHaveClass('line-clamp-2');
+    expect(text).not.toHaveClass('truncate');
+    // The title is the label's own: the item keeps the label as its name.
+    expect(screen.getByRole('button', { name: label })).not.toHaveAttribute('title');
+  });
+
+  it('keeps the tooltip of each icon in the collapsed rail and adds no native one (N37)', () => {
+    render(<Sidebar {...baseProps({ railExpanded: false })} />);
+    const nav = screen.getByRole('navigation');
+    expect(within(nav).getByRole('tooltip', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(within(nav).getByRole('tooltip', { name: 'Aprobaciones' })).toBeInTheDocument();
+    // A title would show the browser's tooltip over the rail's own.
+    expect(nav.querySelector('[title]')).toBeNull();
+  });
+
   it('closes the overlay when the backdrop is clicked on tablet/mobile', async () => {
     const onCloseOverlay = vi.fn();
     render(

@@ -96,6 +96,17 @@ describe('map messages', () => {
       .toEqual(['No agent covers it', 'Past its departure time', 'Another aircraft is arriving at this stand', 'Not placed']);
   });
 
+  it('names the landing and the stand of a visit\'s arrival with the words of the data block (N23)', () => {
+    for (const language of ['es', 'en']) {
+      const words = createTranslator(mapMessages, language);
+      expect(words('turnaround.landed', { time: '19:49' }), language).toBe(words('dataBlock.landed', { time: '19:49' }));
+      expect(words('turnaround.onStand', { time: '19:54' }), language).toBe(words('dataBlock.onBlock', { time: '19:54' }));
+    }
+    const es = createTranslator(mapMessages, 'es');
+    expect([es('turnaround.landed', { time: '19:49' }), es('turnaround.onStand', { time: '19:54' })])
+      .toEqual(['Aterrizó 19:49', 'En posición 19:54']);
+  });
+
   it('says «Ubicar en el mapa» with its confirmation in the words of design D5, and names the new legend marks', () => {
     const es = createTranslator(mapMessages, 'es');
     const en = createTranslator(mapMessages, 'en');

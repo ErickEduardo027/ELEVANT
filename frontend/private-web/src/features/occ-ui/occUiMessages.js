@@ -73,6 +73,8 @@ export const occUiMessages = {
       noStand: 'Sin posición',
       noTime: 'Sin hora',
       estimated: 'posición estimada',
+      // The countdown of an arrival's runway time, which only says that it landed (N23).
+      landedAgo: 'aterrizó hace {duration}',
       timeKind: {
         actual: 'real',
         estimated: 'estimada',
@@ -191,6 +193,7 @@ export const occUiMessages = {
       noStand: 'No stand',
       noTime: 'No time',
       estimated: 'estimated position',
+      landedAgo: 'landed {duration} ago',
       timeKind: {
         actual: 'actual',
         estimated: 'estimated',

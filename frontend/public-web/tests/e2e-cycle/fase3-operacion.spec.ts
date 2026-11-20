@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { call, expectCall, login } from "./support/api";
 import { goPrivate, loginPortal, loginPrivate, snap } from "./support/browser";
 import { API, loadRun, saveRun } from "./support/env";
+import { shownStandCode } from "./support/operations";
 import { pdfText } from "./support/pdf";
 
 // Fase 3 · La operación: OCC registers the run's flight and assigns it to the ramp agent from the
@@ -1244,7 +1245,8 @@ test("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotente
   // The label wraps the select, so its text includes the options: select it by its accessible name.
   const agents = form.getByRole("combobox", { name: "Agente", exact: true });
   await agents.selectOption((await agents.locator("option").filter({ hasText: AGENT }).getAttribute("value"))!);
-  await form.getByRole("button", { name: stand!.code, exact: true }).click();
+  // The chip names the stand as AVIAM Web shows it (N27): the seed's A01 is «A1».
+  await form.getByRole("button", { name: shownStandCode(stand!.code), exact: true }).click();
   await snap(page, "fase3-hueco-3j-cobertura");
   await form.getByRole("button", { name: "Asignar posiciones" }).click();
   const row = page.getByRole("region", { name: "Coberturas del día" }).getByRole("listitem").filter({ hasText: AGENT });

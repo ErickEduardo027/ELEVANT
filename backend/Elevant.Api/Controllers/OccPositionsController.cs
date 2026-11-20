@@ -22,6 +22,11 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/occ")]
 public sealed class OccPositionsController(IOccPositionStore store) : ControllerBase
 {
+    /// <summary>
+    /// The stands of the station with the turnarounds of the day. With <c>includeCoverage=true</c> every stand also
+    /// carries its coverage windows of the day (<c>coverage</c>, N26); without it the board keeps the keys a client
+    /// deployed before them validates.
+    /// </summary>
     [HttpGet("positions", Name = "GetOccPositions")]
     [ProducesResponseType<OccPositionBoardResponse>(200, "application/json")]
     [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
@@ -29,11 +34,12 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     public async Task<ActionResult<OccPositionBoardResponse>> Get([FromQuery, BindRequired] Guid stationId,
-        [FromQuery(Name = "date"), BindRequired] DateOnly date, CancellationToken cancellationToken)
+        [FromQuery(Name = "date"), BindRequired] DateOnly date, [FromQuery] bool includeCoverage = false,
+        CancellationToken cancellationToken = default)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<OccPositionBoardResponse>();
         if (stationId == Guid.Empty) return Coded(400, "La estación es obligatoria.", "invalid_position_request");
-        return Map(await store.ReadAsync(actorId, stationId, date, cancellationToken), false);
+        return Map(await store.ReadAsync(actorId, stationId, date, cancellationToken), false, includeCoverage);
     }
 
     /// <summary>
@@ -123,7 +129,9 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
 
     /// <param name="result">The board after the command, or its failure with the stable code.</param>
     /// <param name="preconditioned">The request carried If-Match: a stale version is 412, otherwise 409.</param>
-    private ActionResult<OccPositionBoardResponse> Map(OccPositionResult result, bool preconditioned)
+    /// <param name="includeCoverage">The read asked for the coverage windows (N26); a command's board never has them.</param>
+    private ActionResult<OccPositionBoardResponse> Map(OccPositionResult result, bool preconditioned,
+        bool includeCoverage = false)
     {
         if (result.Failure is { } failure)
         {
@@ -153,7 +161,7 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
             return Coded(status, Title(code), code, result.Reasons);
         }
         if (result.Version is { } version) Response.Headers.ETag = $"\"{version}\"";
-        return Ok(Board(result.Board!));
+        return Ok(Board(result.Board!, includeCoverage));
     }
 
     private static string Title(string code) => code switch
@@ -192,12 +200,20 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
     private ObjectResult InvalidPrecondition() =>
         Coded(400, "La versión enviada en If-Match no es válida.", "invalid_position_request");
 
-    private static OccPositionBoardResponse Board(OccPositionBoardData board) => new(board.StationId, board.StationCode,
-        board.OperationDate, board.AsOf,
+    /// <summary>
+    /// The board as the API writes it. N26: with <paramref name="includeCoverage"/> every stand carries its coverage
+    /// windows, empty when nobody covers it that day; without it the key is not written (expand).
+    /// </summary>
+    private static OccPositionBoardResponse Board(OccPositionBoardData board, bool includeCoverage) => new(board.StationId,
+        board.StationCode, board.OperationDate, board.AsOf,
         board.Positions.Select(position => new OccPositionResponse(position.StandId, position.Code, position.TerminalCode,
             position.StandType, position.Status, position.Turnarounds.Select(Turnaround).ToArray(), position.Latitude,
             position.Longitude, position.HasBoardingBridge, position.IsRemote, position.MaxAircraftSize, position.CancelledBy,
-            position.NarrowbodyOnly, position.CoveredBy ?? [], position.RequiredPermits)).ToArray(),
+            position.NarrowbodyOnly, position.CoveredBy ?? [], position.RequiredPermits,
+            includeCoverage
+                ? (position.Coverage ?? []).Select(window => new OccPositionCoverageResponse(window.AgentName,
+                    window.StartsAt, window.EndsAt, window.IsReinforcement)).ToArray()
+                : null)).ToArray(),
         board.Unassigned.Select(Turnaround).ToArray(), board.CanAssign);
 
     private static OccPositionTurnaroundResponse Turnaround(OccPositionTurnaroundData item) => new(item.TurnaroundId,

@@ -95,6 +95,17 @@ describe('PlanningFilters', () => {
     expect(props.onReset).toHaveBeenCalledTimes(1);
   });
 
+  it('names each stand by the code the map draws and filters by its stored code (N27)', async () => {
+    const props = renderFilters();
+    const stands = screen.getByLabelText('Posición');
+
+    // The seed's A02 is A2 on screen; the filter keeps the code the flights carry.
+    expect(within(stands).getAllByRole('option').map(option => [option.textContent, option.value]))
+      .toEqual([['Todos', ''], ['A2', 'A02'], ['B21', 'B21']]);
+    await userEvent.selectOptions(stands, 'A2');
+    expect(props.onFilterChange).toHaveBeenCalledWith('position', 'A02');
+  });
+
   it('uses the shared status vocabulary', () => {
     renderFilters();
 

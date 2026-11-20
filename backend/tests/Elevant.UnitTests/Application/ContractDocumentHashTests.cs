@@ -43,6 +43,16 @@ public sealed class ContractDocumentHashTests
     }
 
     [Fact]
+    public void TheSignedContentKeepsTheAirlineCodeAsTheDatabaseReadsIt()
+    {
+        // N33: SQL pads a two-letter IATA code to the width of the ICAO column («WN» is read «WN »), and versions were
+        // signed over that value. Only the screens, the API answer and the PDF trim it; the hash never does.
+        var padded = Document() with { AirlineCode = "WN " };
+        Assert.Equal("7b14bbf0c356b0a04bc8692f34d03c6b11af94012423c745de827dcde5881ed5", padded.ContentSha256);
+        Assert.NotEqual(padded.ContentSha256, (padded with { AirlineCode = "WN" }).ContentSha256);
+    }
+
+    [Fact]
     public void ChangesWhenAnySignedTermChanges()
     {
         var hash = Document().ContentSha256;

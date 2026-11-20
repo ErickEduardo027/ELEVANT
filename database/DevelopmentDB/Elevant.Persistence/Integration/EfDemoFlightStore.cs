@@ -244,7 +244,8 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
 
     /// <summary>
     /// What the form offers, with every stand evaluated for the visit the form asks about
-    /// (<see cref="EvaluateStandsAsync"/>): it parks <see cref="DemoFlightOptionsQuery.MinutesToOnBlock"/> from now for
+    /// (<see cref="EvaluateStandsAsync"/>): it parks <see cref="DemoFlightOptionsQuery.MinutesToOnBlock"/> from the next
+    /// whole minute, as the trigger schedules it (<see cref="DemoFlightRules.ScheduledFrom"/>), for
     /// <see cref="DemoFlightOptionsQuery.GroundMinutes"/>, with the size of the aircraft type when it is an active one.
     /// The warnings are the form's (no OCC account, local midnight) and then the stands' (none located, none eligible).
     /// </summary>
@@ -280,8 +281,10 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
             .ToArrayAsync(cancellationToken);
 
         var active = await ActiveAsync(station.Id, now, cancellationToken);
-        // The visit the form asks about: the create evaluates its stand again for the window it is asked for.
-        var onBlockAt = now.AddMinutes(visit.MinutesToOnBlock);
+        // The visit the form asks about, scheduled as a trigger now would schedule it: the create evaluates its stand
+        // again for the window it is asked for.
+        var scheduledFrom = DemoFlightRules.ScheduledFrom(now);
+        var onBlockAt = scheduledFrom.AddMinutes(visit.MinutesToOnBlock);
         var offBlockAt = onBlockAt.AddMinutes(visit.GroundMinutes);
         // Without an aircraft type, or with one that is no longer active, any stand size will do.
         var size = activeTypes.FirstOrDefault(type => type.PublicId == visit.AircraftTypeId)?.SizeCategory;
@@ -292,7 +295,7 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
         if ((await OperationalNotificationWriter.OccRecipientsAsync(context, station.Id, now, null, cancellationToken)).Length == 0)
             warnings.Add(new DemoFlightWarningData(NoOccAccounts, []));
         // The operation date is the local day of the arrival: a flight that parks after midnight is tomorrow's.
-        if (BusinessCalendar.Today(now.AddMinutes(DemoFlightRules.MaxMinutesToOnBlock), station.IanaTimeZone) != today)
+        if (BusinessCalendar.Today(scheduledFrom.AddMinutes(DemoFlightRules.MaxMinutesToOnBlock), station.IanaTimeZone) != today)
             warnings.Add(new DemoFlightWarningData(CrossesLocalMidnight, []));
         warnings.AddRange(DemoStandEligibility.Warnings(stands));
         return new DemoFlightOptionsData(true, now, listed, station.PublicId, today, airlines,
@@ -344,7 +347,8 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
                 if (station is null) return Step.Fail(MasterDataFailure.NotFound, "station_unavailable");
                 if (DemoFlightRules.UsesStationAirport(station.AirportIata, request.OriginIata, request.DestinationIata))
                     return Step.Fail(MasterDataFailure.Invalid, DemoFlightCodes.Invalid);
-                var onBlockAt = now.AddMinutes(request.MinutesToOnBlock);
+                // From the next whole minute (N28): the screens show the on-block without seconds and count down to it.
+                var onBlockAt = DemoFlightRules.ScheduledFrom(now).AddMinutes(request.MinutesToOnBlock);
                 var offBlockAt = onBlockAt.AddMinutes(request.GroundMinutes);
                 var operationDate = BusinessCalendar.Today(onBlockAt, station.IanaTimeZone);
 

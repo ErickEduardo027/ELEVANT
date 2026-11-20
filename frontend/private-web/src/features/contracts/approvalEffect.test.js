@@ -5,6 +5,8 @@ describe('what the Finance approval does, by contract status (1-F, 2-C)', () => 
   it('reads an ISO date in Spanish without shifting the day', () => {
     expect(longDay('2026-09-01')).toBe('1 de septiembre de 2026');
     expect(longDay('2026-12-31')).toBe('31 de diciembre de 2026');
+    // The shared business date (N36): a missing date reads «—» instead of breaking the sentence.
+    expect(longDay(undefined)).toBe('—');
   });
 
   it('treats only active or suspended contracts as in force', () => {

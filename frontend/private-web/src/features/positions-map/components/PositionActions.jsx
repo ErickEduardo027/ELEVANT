@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import DemoTag from '../../occ-ui/DemoTag';
+import { formatClock } from '../../occ-ui/occTime';
 import {
   assignOccStand, isStalePosition, locateOccStand, positionVersionMessage, recordOccArrival, releaseOccStand,
 } from '../../../services/occPositionsService';
 import { BUSINESS_TIME_ZONE, stationLocalToUtc, utcToStationLocalInput } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { standDisplayCode } from '../../../services/standCodes';
 import { useArrivalAircraftTypes, usePositionTurnarounds } from '../usePositionTurnarounds';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { occButtonClass } from '../../occ-ui/OccButton';
@@ -22,14 +24,16 @@ const REGISTRATION = /^[A-Z0-9-]{2,10}$/;
 /** How often an untouched arrival time follows the clock. */
 const CLOCK_TICK_MS = 15_000;
 
-/** A clock time in the station's zone (3-N19); AVIAM's calendar until the flight's station is known. */
+/**
+ * A clock time on 24 hours in the station's zone, as the OCC console writes it (3-N19, N28); AVIAM's calendar until the
+ * flight's station is known, or when its zone is not one Intl knows.
+ */
 function formatTime(value, timeZone) {
   if (!value) return '—';
-  const format = zone => new Intl.DateTimeFormat('es-DO', { timeStyle: 'short', timeZone: zone }).format(new Date(value));
   try {
-    return format(timeZone ?? BUSINESS_TIME_ZONE);
+    return formatClock(value, 'es-DO', timeZone ?? BUSINESS_TIME_ZONE);
   } catch {
-    return format(BUSINESS_TIME_ZONE);
+    return formatClock(value, 'es-DO', BUSINESS_TIME_ZONE);
   }
 }
 
@@ -295,7 +299,7 @@ export default function PositionActions({ position, candidates = [], onChanged, 
               {movable.map(item => <option key={item.turnaroundId} value={item.turnaroundId}>
                 {(item.arrivalFlightNumber ?? item.operationCode)} · {item.airlineName}{item.isDemo === true ? ' · Demo' : ''}
                 {' · '}{formatTime(item.arrivalScheduledAt, zone)}
-                {item.standCode ? ` ${t('actions.nowAt', { stand: item.standCode })}` : ''}</option>)}
+                {item.standCode ? ` ${t('actions.nowAt', { stand: standDisplayCode(item.standCode) })}` : ''}</option>)}
             </select></label>
           {turnaroundId && <VersionNotice version={selected} onRetry={reload} />}
           <button type="submit" className={buttonClass} disabled={Boolean(busy) || (Boolean(turnaroundId) && !ready(turnaroundId))}>

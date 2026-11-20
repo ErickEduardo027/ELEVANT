@@ -14,8 +14,8 @@ const t = createTranslator(consoleMessages, 'es');
 // Turnarounds of the planning snapshot as the API sends them, with only what the figures read.
 const turnaround = (id, status, extra = {}) => ({ id, operationCode: id, status, stand: { code: 'A1' },
   agents: [{ agentId: 'agent-1', displayName: 'Agente de prueba' }], operation: null, ...extra });
-const NOTHING = Object.freeze({ turnarounds: null, inOperation: null, arriving60: null, needsResources: null,
-  toReview: null, toReviewIsLowerBound: false, completed: null });
+const NOTHING = Object.freeze({ turnarounds: null, inOperation: null, openAfterDeparture: null, arriving60: null,
+  needsResources: null, toReview: null, toReviewIsLowerBound: false, completed: null });
 
 describe('buildFigures', () => {
   it('counts in operation with isInOperation (turnaround or operation InProgress/Returned)', () => {
@@ -32,6 +32,37 @@ describe('buildFigures', () => {
     expect(figures).toMatchObject({ turnarounds: 6, inOperation: 3, needsResources: 1, completed: 1 });
     // The old summary counted only the turnaround's own status.
     expect(classifyTurnarounds(turnarounds).inProgress).toHaveLength(1);
+  });
+
+  it('says how many of «En operación» are still open more than an hour after their departure (N30)', () => {
+    const { flights } = createMapFlights();
+    const id700 = flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.departed).turnaroundId;
+    const id300 = flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId;
+    // ZZ700 pushed back 14 minutes before noon; its agent has not handed it off. ZZ300 is still on its stand.
+    const withOperation = operationStatus => flights.map(flight => (flight.turnaroundId !== id700 ? flight
+      : { ...flight, turnaround: { ...flight.turnaround, operationStatus } }));
+    const working = [
+      turnaround(id700, 'InProgress', { operation: { id: 'op-700', status: 'InProgress' } }),
+      turnaround(id300, 'InProgress', { operation: { id: 'op-300', status: 'InProgress' } }),
+    ];
+    const figuresAt = (nowMs, { operationStatus = 'InProgress', turnarounds = working } = {}) => buildFigures({
+      planning: { turnarounds }, nowMs,
+      visits: buildBoard({ flights: withOperation(operationStatus), planningTurnarounds: turnarounds, nowMs, t }).visits,
+    });
+
+    // An hour and a minute after the push-back «En operación» still counts both, and says one is open after it left.
+    expect(figuresAt(NOW + 47 * MINUTE)).toMatchObject({ inOperation: 2, openAfterDeparture: 1 });
+    // Within the hour: none yet.
+    expect(figuresAt(NOW + 46 * MINUTE)).toMatchObject({ inOperation: 2, openAfterDeparture: 0 });
+    // Handed off on the tablet (the map flights read it first): nothing is open any more.
+    expect(figuresAt(NOW + 47 * MINUTE, { operationStatus: 'PendingReview' }).openAfterDeparture).toBe(0);
+    // An operation «En operación» does not count (assigned, never started) is not in its line either: Pendientes lists it.
+    const assigned = [turnaround(id700, 'Confirmed', { operation: { id: 'op-700', status: 'Assigned' } })];
+    expect(figuresAt(NOW + 47 * MINUTE, { operationStatus: 'Assigned', turnarounds: assigned }))
+      .toMatchObject({ inOperation: 0, openAfterDeparture: 0 });
+    // Without the board's visits or the server's time, the line waits.
+    expect(buildFigures({ planning: { turnarounds: working }, nowMs: NOW + 47 * MINUTE }).openAfterDeparture).toBeNull();
+    expect(buildFigures({ planning: { turnarounds: working }, visits: [] }).openAfterDeparture).toBeNull();
   });
 
   it('a source that has not answered yields null, not zero', () => {

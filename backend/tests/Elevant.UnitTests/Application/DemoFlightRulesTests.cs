@@ -1,3 +1,4 @@
+using System.Globalization;
 using Elevant.Application.Integration.DemoFlights;
 
 namespace Elevant.UnitTests.Application;
@@ -123,6 +124,40 @@ public sealed class DemoFlightRulesTests
     }
 
     [Theory]
+    // On a whole minute the schedule starts then; any fraction of a minute past it waits for the next one (N28).
+    [InlineData("2026-11-16T23:50:00.000+00:00", "2026-11-16T23:50:00.000+00:00")]
+    [InlineData("2026-11-16T23:45:20.123+00:00", "2026-11-16T23:46:00.000+00:00")]
+    [InlineData("2026-11-16T23:45:00.001+00:00", "2026-11-16T23:46:00.000+00:00")]
+    [InlineData("2026-11-16T23:45:59.999+00:00", "2026-11-16T23:46:00.000+00:00")]
+    // Across midnight, and in the offset it was given (a quarter-hour zone too).
+    [InlineData("2026-11-16T23:59:30.000+00:00", "2026-11-17T00:00:00.000+00:00")]
+    [InlineData("2026-11-16T19:45:20.000-04:00", "2026-11-16T19:46:00.000-04:00")]
+    [InlineData("2026-11-16T23:50:20.000+05:45", "2026-11-16T23:51:00.000+05:45")]
+    public void SchedulesFromNowRoundedUpToTheWholeMinute(string now, string expected)
+    {
+        var start = DemoFlightRules.ScheduledFrom(Instant(now));
+
+        Assert.Equal(Instant(expected), start);
+        Assert.Equal(Instant(now).Offset, start.Offset);
+    }
+
+    [Fact]
+    public void TheDemoFlightParksOnAWholeMinuteAndNeverSoonerThanAsked()
+    {
+        var minute = Instant("2026-11-16T23:50:00+00:00");
+        Assert.Equal(minute, DemoFlightRules.ScheduledFrom(minute.AddTicks(-1)));
+        Assert.Equal(minute.AddMinutes(1), DemoFlightRules.ScheduledFrom(minute.AddTicks(1)));
+
+        // Triggered at 19:45:20 at the station with 8 minutes to the stand: it parks at 19:54, so at 19:50 the map reads
+        // «19:54 · en 4 min», as the clocks on screen do. The minutes asked for are a minimum, at most one minute more.
+        var triggeredAt = Instant("2026-11-16T19:45:20-04:00");
+        var onBlockAt = DemoFlightRules.ScheduledFrom(triggeredAt).AddMinutes(8);
+        Assert.Equal(Instant("2026-11-16T19:54:00-04:00"), onBlockAt);
+        Assert.InRange(onBlockAt - triggeredAt, TimeSpan.FromMinutes(8), TimeSpan.FromMinutes(9));
+        Assert.Equal(0, onBlockAt.UtcTicks % TimeSpan.TicksPerMinute);
+    }
+
+    [Theory]
     [InlineData("PUJ", "PUJ", "MIA", true)]
     [InlineData("PUJ", "MIA", "PUJ", true)]
     [InlineData("PUJ", "PUJ", "PUJ", true)]
@@ -143,4 +178,6 @@ public sealed class DemoFlightRulesTests
         string?[] unknown = [null, "", "cancel", "FINISH", " Cancel", "Finish ", "0", "1", "Cancel,Finish", "Dismiss"];
         Assert.All(unknown, value => Assert.Null(DemoFlightRules.ParseIntent(value)));
     }
+
+    private static DateTimeOffset Instant(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
