@@ -12,7 +12,6 @@ using Elevant.Domain.Enumerations;
 using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
-using Elevant.Persistence.Finance;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
@@ -76,6 +75,7 @@ internal sealed class EfCommercialWorkflowStore(
             .Where(service => serviceIds.Contains(service.Id))
             .Select(service => new { service.Id, service.PublicId })
             .ToDictionaryAsync(service => service.Id, service => service.PublicId, cancellationToken);
+        var openUnits = await OpenRequestUnitsAsync(requests.Select(item => item.request), items, cancellationToken);
         return requests.Select(item => new CommercialRequestData(
             item.request.PublicId, item.request.RequestCode,
             item.request.RequestedAirlineName, item.profile.PublicId,
@@ -93,7 +93,7 @@ internal sealed class EfCommercialWorkflowStore(
             item.request.AuthorityDeclared, item.request.Status.ToString(),
             item.request.SubmittedAt, item.request.DecisionReason,
             contracts.FirstOrDefault(contract => contract.OriginatingServiceRequestId == item.request.Id)?.PublicId,
-            ServicesOf(items, item.request.Id, servicePublicIds), item.request.ContactDistrict)).ToArray();
+            ServicesOf(items, item.request, servicePublicIds, openUnits), item.request.ContactDistrict)).ToArray();
     }
 
     public async Task<CommercialInboxData?> ListInboxAsync(Guid actorId, CommercialInboxQuery query,
@@ -156,6 +156,7 @@ internal sealed class EfCommercialWorkflowStore(
             .Where(service => serviceIds.Contains(service.Id))
             .Select(service => new { service.Id, service.PublicId })
             .ToDictionaryAsync(service => service.Id, service => service.PublicId, cancellationToken);
+        var openUnits = await OpenRequestUnitsAsync(page, items, cancellationToken);
         var confirmerIds = page.Where(request => request.RepresentativeConfirmedByAccountId != null)
             .Select(request => request.RepresentativeConfirmedByAccountId!.Value).Distinct().ToArray();
         var confirmers = await (from user in context.Users.AsNoTracking()
@@ -209,7 +210,7 @@ internal sealed class EfCommercialWorkflowStore(
                         request.ProposedAirlineWebsiteUrl)
                     : null,
                 profile?.CanonicalAirlineId is long airlineId && customers.Contains(airlineId),
-                ServicesOf(items, request.Id, servicePublicIds), Version(request, profile),
+                ServicesOf(items, request, servicePublicIds, openUnits), Version(request, profile),
                 TaxOf(request.TaxRegistration, request.TaxRegistrationCountryCode),
                 RegistryOf(request, profile), manual);
         }).ToArray();
@@ -549,7 +550,7 @@ internal sealed class EfCommercialWorkflowStore(
                 PublicId = Guid.CreateVersion7(), ContractId = contract.Id,
                 VersionNumber = 1, Status = ContractVersionStatus.Draft,
                 // 2-F: the proposed start is AVIAM's business day.
-                ValidFrom = BusinessCalendar.Today(now), CurrencyCode = "USD",
+                ValidFrom = BusinessCalendar.Today(now), CurrencyCode = ContractDraftUnits.Currency,
             };
             context.ContractVersions.Add(version);
             await context.SaveChangesAsync(cancellationToken);
@@ -562,23 +563,29 @@ internal sealed class EfCommercialWorkflowStore(
             // The draft starts from the Finance base tariff; Contracts negotiates from there. The station
             // rule is the one the editor and the Finance comparison use (1-N06). A retired service is
             // copied too and stays marked in the draft until Contratos removes it (1-N10).
-            var baseRates = await FinanceTariffLookup.ServiceRatesAsync(context, version.CurrencyCode,
-                version.ValidFrom, ContractDraftRules.BaseStation(stations.Select(station => station.Id).ToArray()),
+            var startingRates = await ContractDraftUnits.StartingRatesAsync(context,
                 requestedServices.Where(item => item.ServiceDefinitionId != null)
-                    .Select(item => item.ServiceDefinitionId!.Value).ToArray(), cancellationToken);
-            // 1-E: a rate without a base price keeps the requested unit as a code of ref.billing_units.
-            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+                    .Select(item => item.ServiceDefinitionId!.Value).ToArray(),
+                version.CurrencyCode, version.ValidFrom, stations.Select(station => station.Id).ToArray(),
+                cancellationToken);
             foreach (var service in requestedServices)
             {
-                if (service.ServiceDefinitionId is not long definitionId)
+                if (service.ServiceDefinitionId is not long definitionId ||
+                    !startingRates.TryGetValue(definitionId, out var starting))
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_commercial_request");
-                var baseRate = baseRates.GetValueOrDefault(definitionId);
+                // N31: the request keeps the unit its draft is born with, so the approved request and the draft agree.
+                if (service.RequestedUnit != starting.BillingUnit)
+                {
+                    service.RequestedUnit = starting.BillingUnit;
+                    service.UpdatedAt = now;
+                }
                 context.ContractServiceRates.Add(new ContractServiceRate
                 {
                     PublicId = Guid.CreateVersion7(), ContractVersionId = version.Id,
                     ServiceDefinitionId = definitionId,
-                    BillingUnit = baseRate?.BillingUnit ?? units.CodeOrDefault(service.RequestedUnit),
-                    UnitPrice = baseRate?.UnitPrice ?? 0, MinimumQuantity = baseRate?.MinimumBillableQuantity ?? 0,
+                    BillingUnit = starting.BillingUnit,
+                    UnitPrice = starting.BaseRate?.UnitPrice ?? 0,
+                    MinimumQuantity = starting.BaseRate?.MinimumBillableQuantity ?? 0,
                     IsConfirmed = false,
                 });
             }
@@ -943,14 +950,30 @@ internal sealed class EfCommercialWorkflowStore(
     private Task<long> ActorDatabaseIdAsync(Guid actorId, CancellationToken cancellationToken) =>
         context.Users.Where(user => user.PublicId == actorId).Select(user => user.Id).SingleAsync(cancellationToken);
 
-    private static CommercialRequestItemData[] ServicesOf(IEnumerable<ServiceRequestItem> items, long requestId,
-        IReadOnlyDictionary<long, Guid> servicePublicIds) =>
-        items.Where(service => service.ServiceRequestId == requestId)
+    /// <summary>
+    /// N31: an open request shows the unit each service would have in a draft born now (<paramref name="openUnits"/>);
+    /// a decided one shows its copy, the unit its draft was born with when it was approved.
+    /// </summary>
+    private static CommercialRequestItemData[] ServicesOf(IEnumerable<ServiceRequestItem> items, ServiceRequest request,
+        IReadOnlyDictionary<long, Guid> servicePublicIds, IReadOnlyDictionary<long, string> openUnits) =>
+        items.Where(service => service.ServiceRequestId == request.Id)
             .Select(service => new CommercialRequestItemData(
                 service.ServiceDefinitionId is long id && servicePublicIds.TryGetValue(id, out var publicId)
                     ? publicId : Guid.Empty,
-                service.RequestedServiceName, service.RequestedUnit ?? string.Empty))
+                service.RequestedServiceName,
+                IsOpen(request.Status) && service.ServiceDefinitionId is long definitionId &&
+                openUnits.TryGetValue(definitionId, out var unit) ? unit : service.RequestedUnit ?? string.Empty))
             .ToArray();
+
+    /// <summary>The unit each service of the open requests would have in the draft of an approval now (N31).</summary>
+    private async Task<IReadOnlyDictionary<long, string>> OpenRequestUnitsAsync(IEnumerable<ServiceRequest> requests,
+        IEnumerable<ServiceRequestItem> items, CancellationToken cancellationToken)
+    {
+        var open = requests.Where(request => IsOpen(request.Status)).Select(request => request.Id).ToHashSet();
+        var serviceIds = items.Where(item => open.Contains(item.ServiceRequestId) && item.ServiceDefinitionId != null)
+            .Select(item => item.ServiceDefinitionId!.Value).Distinct().ToArray();
+        return await ContractDraftUnits.RequestUnitsAsync(context, serviceIds, DateTimeOffset.UtcNow, cancellationToken);
+    }
 
     /// <summary>Official identity: legal name, ISO country, ICAO always and IATA only when the airline has one.</summary>
     private static AirlineIdentity? Identity(string? legalName, string? countryCode, string? iataCode,

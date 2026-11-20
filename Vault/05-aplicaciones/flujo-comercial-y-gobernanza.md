@@ -195,6 +195,27 @@ Ahora:
   lleva su prefijo aparte («+34 600123456»), con `formatPhone` de
   `@elevant/api-client`.
 
+*Posterior al commit verificado (hallazgo N31, 20 de noviembre de 2026).* En el
+VPS de Development, «Servicios solicitados» decía «Aire acondicionado · por
+operación», la unidad del catálogo, mientras la tarifa base de RAMP-AC en
+Finanzas era por hora y el borrador nacía por hora. Ahora la unidad de un
+servicio solicitado sigue una sola regla, la del borrador: la de la tarifa base
+de Finanzas en USD del día hábil de AVIAM o, si el servicio no tiene tarifa
+base, la del catálogo, siempre como código
+([regla](../../database/DevelopmentDB/Elevant.Persistence/Commercial/ContractDraftUnits.cs)).
+
+- **Abierta.** Mientras la solicitud está pendiente o en revisión, muestra la
+  unidad con la que nacería hoy el borrador. Como todavía no tiene estaciones,
+  usa la tarifa de todas las estaciones.
+- **Al aprobar.** La solicitud guarda, en la misma transacción, la unidad con la
+  que nace el borrador, aunque sea la de la tarifa propia de su única estación:
+  la solicitud aprobada y su borrador coinciden. Sin tarifa base, el borrador
+  toma la unidad que el catálogo tiene en ese momento.
+- **Decidida.** Una solicitud aprobada, rechazada o cancelada muestra la unidad
+  que guardó. Las decididas antes de este cambio conservan la suya, porque
+  ninguna fila se reescribe.
+- La respuesta de la bandeja no cambia de forma.
+
 ### Identificador fiscal y registros públicos (revisión del profesor)
 
 - La solicitud pública exige el **identificador fiscal** de la aerolínea. Si la

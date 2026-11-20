@@ -140,6 +140,14 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - Un nombre heredado («operación») se traduce al leer y al guardar, sin reescribir filas (`BillingUnitNames`).
   - Una unidad desconocida responde `billing_unit_unknown`.
   - Las pantallas proponen una unidad activa y la muestran en español; el portal también.
+
+  > **Actualización (20 de noviembre de 2026, hallazgo N31).** La solicitud copiaba la unidad del catálogo y el borrador nacía con la de la tarifa base de Finanzas. En el VPS de Development, «Servicios solicitados» decía «Aire acondicionado · por operación» mientras la tarifa base de RAMP-AC era por hora. Ahora hay una sola regla, la del borrador (`ContractDraftUnits` en Persistence): la unidad de la tarifa base en USD, en el día hábil de AVIAM y con la regla de la estación base, o, si el servicio no tiene tarifa base, la del catálogo, siempre como código.
+  > - Al recibirla, la solicitud guarda la unidad con la que nacería ese día su borrador. Se lee antes de la transacción serializable del envío público, porque es informativa.
+  > - Mientras la solicitud está pendiente o en revisión, la bandeja muestra la unidad con la que nacería hoy el borrador. La solicitud todavía no tiene estaciones, así que se usa la tarifa de todas las estaciones.
+  > - Aprobar fija en la solicitud, en el mismo comando y la misma transacción, la unidad con la que nace el borrador, aunque sea la de la tarifa propia de su única estación. Una solicitud aprobada y su borrador coinciden. Sin tarifa base, el borrador toma la unidad que el catálogo tiene al aprobar, ya no la copia de la solicitud.
+  > - Una solicitud aprobada, rechazada o cancelada muestra su copia. Las que se decidieron antes de este cambio conservan la que tenían: ninguna fila se reescribe.
+  > - Ampliar el alcance de un borrador usa la misma regla, con la moneda, el inicio y las estaciones del borrador.
+  > - La forma de la API no cambia: cada servicio de la solicitud sigue siendo `serviceId`, `name` y `unit`.
 - **Seed de Development.** Crea los servicios `RAMP-*` nuevos con la unidad `operation`; los ya sembrados conservan «operación», que la API traduce al leer y al guardar. También publica, solo insertando, la tarifa base en USD y en DOP de los siete servicios públicos, incluso en bases ya sembradas.
 - **Tarifarios.** Tarifas, cargos, unidades de cobro y tasas de cambio responden un código por causa (`tariff_draft_exists`, `tariff_start_not_after_current`, `billing_unit_exists`, `charge_code_exists`, `exchange_rate_exists`, `invalid_exchange_rate`…).
 - **Paquetes.** Dos comandos nuevos, con clave, versión y motivo de 5 a 500 caracteres:

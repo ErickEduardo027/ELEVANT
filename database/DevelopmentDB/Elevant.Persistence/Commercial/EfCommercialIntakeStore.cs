@@ -8,7 +8,6 @@ using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Persistence;
-using Elevant.Persistence.Finance;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -42,6 +41,14 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
             return previous.SubmissionHash == hash
                 ? CommercialSubmissionResult.Success(previous.RequestCode, true)
                 : CommercialSubmissionResult.Failed(CommercialSubmissionFailure.Conflict);
+
+        // N31: each line keeps the unit its contract draft would be born with today: Finance's base rate or, without
+        // one, the catalog unit. It is informative, so it is read before the serializable transaction.
+        var serviceKeys = await context.ServiceDefinitions.AsNoTracking()
+            .Where(service => command.ServiceIds.Contains(service.PublicId))
+            .Select(service => service.Id).ToArrayAsync(cancellationToken);
+        var requestedUnits = await ContractDraftUnits.RequestUnitsAsync(context, serviceKeys, DateTimeOffset.UtcNow,
+            cancellationToken);
 
         var strategy = context.Database.CreateExecutionStrategy();
         try
@@ -110,8 +117,6 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                         SubmittedAt = DateTimeOffset.UtcNow,
                     };
                     context.ServiceRequests.Add(request);
-                    // 1-E: the request keeps the unit code; a legacy catalog name is stored as its code.
-                    var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
                     foreach (var serviceId in command.ServiceIds)
                     {
                         var service = services.Single(item => item.PublicId == serviceId);
@@ -120,7 +125,8 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                             ServiceRequest = request,
                             ServiceDefinitionId = service.Id,
                             RequestedServiceName = service.Name,
-                            RequestedUnit = units.Normalize(service.DefaultBillingUnit),
+                            // 1-E: a unit code. Every service read here was read before the transaction too.
+                            RequestedUnit = requestedUnits.GetValueOrDefault(service.Id),
                         });
                     }
 
