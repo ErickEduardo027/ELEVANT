@@ -123,10 +123,10 @@ contiene secretos.
     reduce para caber (`adjustsFontSizeToFit` con un tope de escala de fuente,
     porque Fabric ignora `minimumFontScale` en Android). En el detalle, el
     nombre del aeropuerto ya no se corta en una columna fija de 76 dp.
-  - Pendiente: «Mis turnos y documentos» (`src/app/my-schedule.tsx`) aún
-    escribe el día con su propio formato largo y cada palabra en mayúscula
-    («Lunes, 16 De Noviembre»), y el vencimiento de los documentos como
-    «vence el 16/11/2026».
+  - «Mis turnos y documentos» (`src/app/my-schedule.tsx`) escribe el día del
+    turno con `formatBusinessDay`, «lun, 16 nov», sin mayúsculas forzadas: es
+    un día del calendario, así que ninguna zona horaria lo mueve. El
+    vencimiento de los documentos sigue como «vence el 16/11/2026».
 - Unidades de cobro en español (hallazgo S5, D-S5): `src/utils/billing-units.ts`
   nombra la unidad de un servicio como Finanzas, nunca con su código, y escribe
   el plural: «0 / 1 hora», «1 / 1 operación», «0 / 3 operaciones» y

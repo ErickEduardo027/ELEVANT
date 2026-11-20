@@ -177,9 +177,9 @@ posiciones de hoy», las incidencias, el chat y las notificaciones.
 - La tarjeta de la operación escribe «Inicio planificado» y el día sin
   mayúsculas forzadas, en hasta dos líneas que se reducen para caber, y el
   nombre del aeropuerto del detalle ya no se corta.
-- Pendiente: [«Mis turnos y documentos»](../../frontend/mobile-agent/src/app/my-schedule.tsx)
-  aún escribe el día con su propio formato largo y cada palabra en mayúscula
-  («Lunes, 16 De Noviembre»), y el vencimiento de los documentos como
+- [«Mis turnos y documentos»](../../frontend/mobile-agent/src/app/my-schedule.tsx)
+  escribe el día del turno igual, «lun, 16 nov», sin mayúsculas forzadas y sin que
+  la zona del equipo lo mueva. El vencimiento de los documentos sigue como
   «vence el 16/11/2026».
 - La APK instalada conserva el formato anterior hasta que se instale la nueva.
 

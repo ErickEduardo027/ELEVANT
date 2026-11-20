@@ -229,3 +229,20 @@ describe('the station’s wall clock on other Intl engines (S6)', () => {
     withEngine(withoutParts(hourCycleEngine('h12')), expectWallClock);
   });
 });
+
+describe('a calendar day (N11): «Mis turnos»', () => {
+  const { formatBusinessDay } = require('../src/utils/date-format');
+
+  test('a shift day reads «lun, 16 nov», whatever the device zone', () => {
+    expect(formatBusinessDay('2026-11-16')).toMatch(/^lun\.?, 16 nov\.?$/);
+    expect(formatBusinessDay('2026-01-01')).toMatch(/^jue\.?, 1 ene\.?$/);
+  });
+
+  test('an empty or impossible day reads «—»', () => {
+    expect(formatBusinessDay('')).toBe('—');
+    expect(formatBusinessDay(null)).toBe('—');
+    expect(formatBusinessDay(undefined)).toBe('—');
+    expect(formatBusinessDay('2026-02-30')).toBe('—');
+    expect(formatBusinessDay('16/11/2026')).toBe('—');
+  });
+});

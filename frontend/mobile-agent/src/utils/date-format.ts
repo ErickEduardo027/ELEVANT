@@ -98,6 +98,19 @@ export function formatLocalDateTime(value: Instant) {
 }
 
 /**
+ * A calendar day such as a shift's workDate («2026-11-16»), «lun, 16 nov» like every other day on the tablet. It is a
+ * day, not an instant, so no time zone moves it; an empty or impossible day is «—».
+ */
+export function formatBusinessDay(value?: string | null) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? '');
+  if (!match) return '—';
+  const [, year, month, day] = match.map(Number);
+  const noon = new Date(Date.UTC(year, month - 1, day, 12));
+  if (noon.getUTCFullYear() !== year || noon.getUTCMonth() !== month - 1 || noon.getUTCDate() !== day) return '—';
+  return format(DATE, noon, 'UTC');
+}
+
+/**
  * How the tablet names the station's clock (S6, D-S6): «hora local de PUJ». Without a code, «hora local de la
  * estación».
  */

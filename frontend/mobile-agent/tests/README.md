@@ -94,6 +94,8 @@ Dominicana: «última actualización» y «Mis posiciones de hoy» van en su hor
 manifiesto (`operation-offline-queue.test.js`), «Sincronización»
 (`sync-screen.test.js`) y el ajuste de un hito (`flight-report-panel.test.js`)
 comprueban el mismo formato, sin «a. m.» ni «p. m.».
+`my-schedule-screen.test.js` monta «Mis turnos y documentos»: el día del turno
+dice «lun, 16 nov», sin mayúsculas forzadas, también en su etiqueta accesible.
 
 `billing-units.test.js` fija las unidades de cobro en español (S5, D-S5): el
 plural con 0, 1, 1,5 y 3, los nombres heredados con o sin tilde, que
