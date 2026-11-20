@@ -623,6 +623,35 @@ en tierra y fijó la hora de salida de la Orden.
   toque hasta que se instale la nueva. La revisión de OCC señala esa secuencia
   ([nota de AVIAM Web](private-web-aviam.md)).
 
+**Hitos del vuelo, la ayuda de JB y los avisos de servicio.** Posterior al
+commit verificado de esta nota (hallazgo N13 de la corrida del VPS del 16 de
+noviembre, D-N13): «Reporte de vuelo» nombraba tres cosas distintas, «JB» salía
+sin explicar y el aviso «Servicio actualizado…» quedaba bajo el formulario y se
+acumulaba, uno por servicio
+([panel](../../frontend/mobile-agent/src/components/flight-report/flight-report-panel.tsx),
+[tarjeta de servicio](../../frontend/mobile-agent/src/components/ramp-service-execution-card.tsx)).
+
+- El panel de los hitos se llama «Hitos del vuelo». «Reporte de Vuelo» queda
+  para el formulario de AVIAM que se firma, y la pantalla del checklist se
+  encabeza «CHECKLIST OPERATIVO», como su tarjeta en el detalle.
+- Los hitos conservan las palabras del formulario: el catálogo compartido no
+  cambia. En la fase que muestra «Retiro escalera / JB», el panel dice «JB:
+  pasarela de abordaje (jet bridge).».
+- Un cambio de servicio que ELEVANT confirmó se dice en una frase con la hora
+  del toque en la estación: «Aire acondicionado en ejecución desde las 19:59.»
+  o «Aire acondicionado: completado a las 19:59.». Reabrir un servicio en una
+  corrección dice «…: corrección abierta a las 19:59. Registra el nuevo
+  resultado.»
+  ([frases](../../frontend/mobile-agent/src/features/assigned-operations/presentation.ts)).
+  La transición confirmada devuelve esa hora (`occurredAt`).
+- Una confirmación nueva borra las de los demás servicios y la siguiente acción
+  la quita, sin temporizador; con el formulario del resultado abierto no se
+  muestra. Las advertencias y los rechazos se quedan.
+- Los avisos del checklist, del detalle, de la tarjeta de servicio y de la de
+  asistencia ya no dicen «comando», «canónico», «fuente de verdad» ni
+  «payload». Con el envío del checklist sin confirmar, su botón es ACTUALIZAR.
+- La APK instalada conserva los textos anteriores hasta que se instale la nueva.
+
 ## Fase 3, bloque 4: formularios, firmas y walk-around
 
 En la rama de la fase 3 ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)), la pantalla de operación suma dos tarjetas.
@@ -709,6 +738,22 @@ que las firmas que la entrega exige.
 - Lo cubren las mismas pruebas de la hoja.
 - La APK instalada conserva el total sin nota y el FIRMAR naranja hasta que se
   instale la nueva.
+
+**Tuteo y conteos en palabras.** Posterior al commit verificado de esta nota
+(hallazgo N13 de la corrida del VPS del 16 de noviembre, D-N13): la tablet
+mezclaba usted y tú y escribía «daño(s)».
+
+- El walk-around, su hoja, el panel de formularios y el
+  [charter](../../frontend/mobile-agent/src/components/documents/charter-card.tsx)
+  le hablan de tú al agente: «Toca el avión donde encontraste una anomalía.
+  Agrega una nota y una foto.», «Qué encontraste», «Lo que agregues aquí».
+- Lo que lee el firmante es neutro: «Solo letras, números o guiones (4 a 40).»
+  y «Los datos cambiaron después de la firma: hay que firmar de nuevo.». El pad
+  conserva «Firme aquí con el dedo» (D-N13).
+- Los daños se cuentan en palabras, «Sin daños», «1 daño» y «2 daños», y el
+  resumen del Reporte de Vuelo y del Check-List del puente dice «4 hitos ·
+  21/21 puntos del checklist · Sin daños».
+- La APK instalada conserva los textos anteriores hasta que se instale la nueva.
 
 ## Fase 3, bloque 5: recargos automáticos
 

@@ -53,6 +53,17 @@ const NOT_NEEDED_FOR_HANDOFF = 'No hace falta para entregar a OCC';
 const SUBTOTAL_NOTE = 'Subtotal a precio de contrato, sin ITBIS. El importe final lo calcula Finanzas al facturar.';
 const SURCHARGES_NOTE = 'Los recargos listados se valoran al facturar.';
 
+/** N13 (D-N13): the damages marked, in words: «Sin daños», «1 daño», «2 daños», never «daño(s)». */
+export function damageCountLabel(count: number) {
+  if (count === 0) return 'Sin daños';
+  return count === 1 ? '1 daño' : `${count} daños`;
+}
+
+/** N13: the milestones a form counts, by the name of the panel that records them, «Hitos del vuelo». */
+function milestoneCountLabel(count: number) {
+  return count === 1 ? '1 hito' : `${count} hitos`;
+}
+
 function useFlightReportSnapshot() {
   const [snapshot, setSnapshot] = useState<FlightReportSnapshot | null>(null);
   useEffect(() => subscribeFlightReport(setSnapshot), []);
@@ -125,7 +136,7 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
         <Ionicons name="document-text-outline" size={22} color={colors.navy} />
         <Text style={styles.panelTitle}>Formularios y firmas</Text>
       </View>
-      <Text style={styles.hint}>Se llenan solos con lo que ya registró. Quien firma revisa los datos en pantalla.</Text>
+      <Text style={styles.hint}>Se llenan solos con lo que ya registraste. Quien firma revisa los datos en pantalla.</Text>
       {!documents && state === 'loading' && <Text style={styles.hint}>Cargando formularios…</Text>}
       {!documents && state === 'offline' && (
         <View style={styles.notice}>
@@ -199,8 +210,11 @@ function DocumentRow({ document, queued, editable, executionOpen, flightDataWarn
               {signature && <Text style={styles.roleDetail}>{signature.signerName}</Text>}
               {!signature && pending?.command.kind === 'signature' && (
                 <Text style={styles.roleDetail}>{pending.command.signerName}</Text>)}
+              {/* N13 (D-N13): neutral, the agent reads it about whoever signs. */}
               {!signature && !pending && stale && (
-                <Text style={[styles.roleDetail, { color: colors.warning }]}>Los datos cambiaron después de firmar: firme de nuevo.</Text>)}
+                <Text style={[styles.roleDetail, { color: colors.warning }]}>
+                  Los datos cambiaron después de la firma: hay que firmar de nuevo.
+                </Text>)}
             </View>
             {tone ? (
               <View style={[styles.chip, { backgroundColor: tone.bg }]}>
@@ -273,7 +287,7 @@ function SignSheet({ document, role, defaultName, charterFlight, flightDataWarni
           <Text style={styles.fieldLabel}>Cédula o pasaporte</Text>
           <TextInput accessibilityLabel="Cédula o pasaporte" value={identification} onChangeText={setIdentification}
             maxLength={44} autoCapitalize="characters" autoCorrect={false} placeholder="Número del documento" style={styles.input} />
-          {identification.length > 0 && !idValid && <Text style={styles.error}>Use solo letras, números o guiones (4 a 40).</Text>}
+          {identification.length > 0 && !idValid && <Text style={styles.error}>Solo letras, números o guiones (4 a 40).</Text>}
         </>
       )}
       <View style={styles.summary}>
@@ -306,8 +320,8 @@ function SignSheet({ document, role, defaultName, charterFlight, flightDataWarni
         </View>
       ) : (
         <Text style={styles.hint}>
-          {summary.milestoneCount} tiempos · {summary.checklistAnswered}/{summary.checklistTotal} puntos del checklist ·{' '}
-          {summary.damageCount} daño(s) marcados
+          {`${milestoneCountLabel(summary.milestoneCount)} · ${summary.checklistAnswered}/${summary.checklistTotal} ` +
+            `puntos del checklist · ${damageCountLabel(summary.damageCount)}`}
         </Text>
       )}
       <SignaturePad value={strokes} onChange={setStrokes} onDrawing={setDrawing} />
@@ -365,10 +379,10 @@ export function WalkaroundCard({ operationId, editable }: { operationId: string;
       <View style={styles.panelHeader}>
         <Ionicons name="airplane-outline" size={22} color={colors.navy} />
         <Text style={styles.panelTitle}>Walk-around 360°</Text>
-        <Text style={styles.count}>{marks.length} daño(s)</Text>
+        <Text style={styles.count}>{damageCountLabel(marks.length)}</Text>
       </View>
-      <Text style={styles.hint}>Toque el avión donde encontró una anomalía. Agregue una nota y una foto.</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Silueta del avión: toque para marcar un daño" disabled={!editable}
+      <Text style={styles.hint}>Toca el avión donde encontraste una anomalía. Agrega una nota y una foto.</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Silueta del avión: toca para marcar un daño" disabled={!editable}
         onLayout={event => setWidth(event.nativeEvent.layout.width)}
         onPress={event => width > 0 && setDraft({
           x: Math.min(1, Math.max(0, event.nativeEvent.locationX / width)),
@@ -420,7 +434,7 @@ function DamageSheet({ onClose, onSave }: {
   const takePhoto = async () => {
     setCameraIssue(null);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) { setCameraIssue('Sin permiso de cámara: actívelo en los ajustes de la tablet.'); return; }
+    if (!permission.granted) { setCameraIssue('Sin permiso de cámara: actívalo en los ajustes de la tablet.'); return; }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.5, exif: false });
     const asset = result.canceled ? null : result.assets[0];
     if (asset) setPhoto({ uri: asset.uri, contentType: asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg' });
@@ -429,8 +443,8 @@ function DamageSheet({ onClose, onSave }: {
     <Modal animationType="slide" visible onRequestClose={onClose}>
       <ScrollView contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
         <Text style={styles.sheetTitle}>Daño en el walk-around</Text>
-        <TextInput accessibilityLabel="Qué encontró" value={note} onChangeText={setNote} maxLength={500} multiline
-          placeholder="Qué encontró (mínimo 3 caracteres)" style={[styles.input, styles.note]} />
+        <TextInput accessibilityLabel="Qué encontraste" value={note} onChangeText={setNote} maxLength={500} multiline
+          placeholder="Qué encontraste (mínimo 3 caracteres)" style={[styles.input, styles.note]} />
         {photo ? <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="cover" /> : null}
         {cameraIssue && <Text accessibilityRole="alert" style={styles.error}>{cameraIssue}</Text>}
         <PrimaryButton secondary icon="camera" title={photo ? 'TOMAR OTRA FOTO' : 'TOMAR FOTO'} onPress={() => void takePhoto()} />

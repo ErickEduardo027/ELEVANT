@@ -5,6 +5,7 @@
 // The Service Order's total says it is a contract-price subtotal without ITBIS (N4, D-N4), and the forms whose
 // signatures the hand-off to OCC does not wait for say so and use a secondary button (N3, D-N3). A Service Order that
 // lacks passengers or the MTOW says so on its row and at the top of its sheet, without holding the signature (S1, D-S1).
+// The walk-around and the forms speak with tú to the agent, neutrally to the signer, and count in words (N13, D-N13).
 const React = require('react');
 const renderer = require('react-test-renderer');
 
@@ -365,7 +366,7 @@ describe('guards', () => {
     expect(sheetButton(tree, 'FIRMAR').props.disabled).toBe(true);
     await type(tree, 'Cédula o pasaporte', 'A1');
     expect(JSON.stringify(modal(tree).findAll(node => node.type === 'Text').map(textOf)))
-      .toContain('Use solo letras, números o guiones (4 a 40).');
+      .toContain('Solo letras, números o guiones (4 a 40).');
     expect(sheetButton(tree, 'FIRMAR').props.disabled).toBe(true);
     await type(tree, 'Cédula o pasaporte', ' pa 123-4567 ');
     expect(sheetButton(tree, 'FIRMAR').props.disabled).toBe(false);
@@ -644,5 +645,94 @@ describe('the one form the hand-off waits for (N3, handoff.ts)', () => {
       { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [] },
     ))).toBe(true);
     expect(isServiceOrderSigned(forms({ kind: 'FlightReport', isFullySigned: true, staleRoles: [] }))).toBe(false);
+  });
+});
+
+// N13 (D-N13): the tablet mixed usted and tú, and wrote «daño(s)». It speaks to the agent with tú now; what the signer
+// reads is neutral, except the pad's «Firme aquí con el dedo». Counts are written in words: «Sin daños», «1 daño»,
+// «2 daños», and the forms' summary counts «hitos», the name of the panel that records them.
+describe('tú to the agent, neutral to the signer and counts in words (N13, D-N13)', () => {
+  const { WalkaroundCard, damageCountLabel } = require('../src/components/documents/operation-documents');
+  const ImagePicker = require('expo-image-picker');
+  /** The usted the tablet wrote, as whole words: «registró» inside «la cuenta que lo registró» is not the agent's. */
+  const USTED = /(?<!\p{L})(Toque|toque|Agregue|registró|encontró|actívelo|firme de nuevo|Use solo)(?!\p{L})/u;
+  const texts = tree => tree.root.findAll(node => node.type === 'Text').map(textOf);
+  const mark = n => ({ id: `76000000-0000-4000-8000-00000000000${n}`, x: 0.5, y: 0.5, note: `Daño ${n}` });
+  const silhouette = tree => tree.root.findAll(node => node.props.accessibilityRole === 'button' &&
+    typeof node.props.onPress === 'function' && String(node.props.accessibilityLabel).startsWith('Silueta del avión'))[0];
+
+  async function renderWalkaround(damageMarks = []) {
+    mockSnapshot = { items: [], syncing: false, confirmed: {}, revisions: {}, charters: {},
+      documents: { [OPERATION_ID]: { operationId: OPERATION_ID, documents: [], damageMarks } } };
+    let tree;
+    await renderer.act(async () => {
+      tree = renderer.create(React.createElement(WalkaroundCard, { operationId: OPERATION_ID, editable: true }));
+    });
+    return tree;
+  }
+
+  test('damageCountLabel writes the count in words', () => {
+    expect([0, 1, 2, 12].map(damageCountLabel)).toEqual(['Sin daños', '1 daño', '2 daños', '12 daños']);
+  });
+
+  test('the walk-around speaks with tú and counts its damages in words', async () => {
+    let tree = await renderWalkaround();
+    expect(texts(tree)).toContain('Sin daños');
+    expect(texts(tree)).toContain('Toca el avión donde encontraste una anomalía. Agrega una nota y una foto.');
+    expect(silhouette(tree).props.accessibilityLabel).toBe('Silueta del avión: toca para marcar un daño');
+    expect(texts(tree).join(' ')).not.toMatch(USTED);
+    expect(texts(tree).join(' ')).not.toContain('(s)');
+    await renderer.act(async () => tree.unmount());
+
+    tree = await renderWalkaround([mark(1)]);
+    expect(texts(tree)).toContain('1 daño');
+    await renderer.act(async () => tree.unmount());
+    tree = await renderWalkaround([mark(1), mark(2)]);
+    expect(texts(tree)).toContain('2 daños');
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the damage sheet asks what the agent found, and says how to allow the camera, with tú', async () => {
+    ImagePicker.requestCameraPermissionsAsync.mockResolvedValue({ granted: false });
+    const tree = await renderWalkaround();
+    await renderer.act(async () => {
+      silhouette(tree).props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 200 } } });
+    });
+    await renderer.act(async () => { silhouette(tree).props.onPress({ nativeEvent: { locationX: 200, locationY: 100 } }); });
+    const [note] = modal(tree).findAll(node => node.type === 'TextInput');
+    expect(note.props.accessibilityLabel).toBe('Qué encontraste');
+    expect(note.props.placeholder).toBe('Qué encontraste (mínimo 3 caracteres)');
+    await press(sheetButton(tree, 'TOMAR FOTO'));
+    expect(texts(tree)).toContain('Sin permiso de cámara: actívalo en los ajustes de la tablet.');
+    expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
+    expect(texts(tree).join(' ')).not.toMatch(USTED);
+  });
+
+  test('the forms panel speaks with tú to the agent and neutrally of who signs again', async () => {
+    const tree = await render([serviceOrder({ staleRoles: ['AirlineRepresentative'] })]);
+    expect(texts(tree)).toContain('Se llenan solos con lo que ya registraste. Quien firma revisa los datos en pantalla.');
+    expect(texts(tree)).toContain('Los datos cambiaron después de la firma: hay que firmar de nuevo.');
+    expect(texts(tree).join(' ')).not.toMatch(USTED);
+  });
+
+  test('the signer reads neutral text, except the pad’s «Firme aquí con el dedo»', async () => {
+    const tree = await render([charterRequest()]);
+    await openSheet(tree);
+    await type(tree, 'Cédula o pasaporte', 'A1');
+    expect(sheetTexts(tree)).toContain('Solo letras, números o guiones (4 a 40).');
+    expect(sheetTexts(tree)).toContain('Firme aquí con el dedo');
+    expect(sheetTexts(tree).join(' ')).not.toMatch(USTED);
+  });
+
+  test('the Flight Report’s summary counts its milestones and damages in words', async () => {
+    let tree = await render([flightReport()]);
+    await openSheet(tree, 'Coordinador');
+    expect(sheetTexts(tree)).toContain('4 hitos · 21/21 puntos del checklist · Sin daños');
+    await renderer.act(async () => tree.unmount());
+
+    tree = await render([flightReport({ summary: { ...serviceOrder().summary, milestoneCount: 1, damageCount: 1 } })]);
+    await openSheet(tree, 'Coordinador');
+    expect(sheetTexts(tree)).toContain('1 hito · 21/21 puntos del checklist · 1 daño');
+    expect(sheetTexts(tree).join(' ')).not.toContain('(s)');
   });
 });

@@ -245,6 +245,39 @@ contiene secretos.
     (13,5:1 sobre blanco); la Solicitud de Servicio del charter queda como
     estaba, en naranja.
   - Cada FIRMAR se anuncia como «Firmar: {rol}».
+- Tuteo, plurales, ayuda de JB y avisos de servicio que no estorban (hallazgo
+  N13, D-N13):
+  - La tablet le habla de tú al agente: el walk-around («Toca el avión donde
+    encontraste una anomalía»), los formularios («lo que ya registraste») y el
+    charter («Lo que agregues aquí»). Lo que lee el firmante es neutro («Solo
+    letras, números o guiones», «hay que firmar de nuevo»), y el pad conserva
+    «Firme aquí con el dedo».
+  - Los conteos van en palabras: «Sin daños», «1 daño» y «2 daños»
+    (`damageCountLabel`), «1 hito» en el resumen del Reporte de Vuelo, «1
+    servicio» también para el lector de pantalla y «1 pendiente de envío» en
+    «Sincronización».
+  - El panel de los hitos se llama «Hitos del vuelo»: «Reporte de Vuelo» queda
+    para el formulario de AVIAM, y el checklist se encabeza «CHECKLIST
+    OPERATIVO». Los hitos conservan las palabras del formulario (el catálogo
+    compartido no cambia) y la fase que muestra «Retiro escalera / JB» explica
+    «JB: pasarela de abordaje (jet bridge).».
+  - Un cambio de servicio que ELEVANT confirmó se dice en una frase, con la hora
+    del toque en la estación: «Aire acondicionado en ejecución desde las
+    19:59.», «Aire acondicionado: completado a las 19:59.» (el resultado va tras
+    el nombre, como en su insignia, y concuerda con cualquier nombre). Reabrir
+    un servicio en una corrección tiene su propio texto, «…: corrección abierta
+    a las 19:59. Registra el nuevo resultado.» (`serviceChangeSentence` en
+    `src/features/assigned-operations/presentation.ts`). La confirmación de
+    `transitionRampOperationService` trae `occurredAt`, la hora que envió.
+  - Una confirmación nueva borra las de los demás servicios y la siguiente
+    acción la quita, sin temporizador; con el formulario del resultado abierto
+    no se muestra. Las advertencias y los rechazos se quedan.
+  - Ningún aviso dice «comando», «canónico», «fuente de verdad» ni «payload»:
+    el checklist, el detalle, la tarjeta de servicio y la de asistencia lo
+    dicen con palabras del agente, como «No pudimos confirmar el envío guardado
+    en esta tablet. Actualiza antes de seguir editando.». En ese estado el
+    botón del checklist es ACTUALIZAR, y el reintento de un servicio guardado
+    en la tablet, REINTENTAR ENVÍO.
 
 ## Autorización y almacenamiento
 

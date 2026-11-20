@@ -38,7 +38,7 @@ import {
   operationStandLabel,
   operationStatusLabel,
   operationStatusTone,
-  serviceStatusLabel,
+  serviceChangeSentence,
 } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
@@ -92,6 +92,18 @@ type StartNotice = Readonly<{
 
 /** N6: what the agent does when the tablet could not keep a command; the lock of the device is never the cause. */
 const LOCAL_SAVE_WAY_OUT = 'Vuelve a intentarlo; si sigue fallando, cierra la app, ábrela de nuevo y avisa a OCC.';
+
+/**
+ * N13 (D-N13): the service notices that stay when a service's change starts or ELEVANT confirms it: the warnings and
+ * errors of the other services. Confirmations do not pile up, and the service's own notice is replaced.
+ */
+function withoutConfirmations(
+  notices: Readonly<Record<string, ServiceExecutionNotice>>,
+  serviceId: string,
+): Readonly<Record<string, ServiceExecutionNotice>> {
+  return Object.fromEntries(Object.entries(notices)
+    .filter(([id, notice]) => id !== serviceId && notice.tone !== 'success'));
+}
 
 export default function OperationDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -419,11 +431,10 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     serviceRequestRef.current = request;
     serviceInFlightRef.current = true;
     setBusyServiceId(service.id);
-    setServiceNotices((notices) => {
-      const next = { ...notices };
-      delete next[service.id];
-      return next;
-    });
+    // N13: the agent's next action clears the confirmations on screen, without a timer; warnings stay.
+    setServiceNotices((notices) => withoutConfirmations(notices, service.id));
+    // N13: a finished service goes back to «en ejecución» only to be corrected, in a round OCC returned.
+    const reopening = isServiceFinished(current.status) && transitionRequest.targetStatus === 'InProgress';
 
     try {
       const outcome = await transitionRampOperationService(
@@ -452,12 +463,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
                 : candidate),
           }
         : value);
+      // N13 (D-N13): one natural sentence with the tapped time at the station; it replaces the other confirmations.
       setServiceNotices((notices) => ({
-        ...notices,
+        ...withoutConfirmations(notices, service.id),
         [service.id]: {
           tone: 'success',
-          title: 'Servicio actualizado',
-          message: `${service.name} quedó en estado ${serviceStatusLabel(response.service.status).toLowerCase()}.`,
+          title: serviceChangeSentence(service.name, response.service.status, outcome.occurredAt,
+            operation.turnaround.station.ianaTimeZone, reopening),
         },
       }));
       await load(true);
@@ -572,8 +584,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         setSubmissionReconciliationRequired(true);
         setSubmissionNotice({
           tone: 'error',
-          title: 'Entrega por conciliar',
-          message: 'No pudimos verificar el comando reservado. Actualiza el detalle antes de volver a enviar.',
+          title: 'Entrega por confirmar',
+          message: 'No pudimos confirmar la entrega guardada en esta tablet. Actualiza el detalle antes de volver a ' +
+            'enviarla.',
         });
       }
     } finally {
@@ -637,12 +650,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         setCorrectionNotice({
           tone: 'warning', title: pending ? 'Corrección por confirmar' : 'No se abrió la corrección',
           message: pending
-            ? 'La respuesta no se confirmó. Reintenta con la misma clave sin cerrar sesión.'
+            ? 'ELEVANT no confirmó la corrección. Vuelve a intentarlo sin cerrar sesión: no se abre dos veces.'
             : 'Actualiza el detalle y comprueba que OCC devolvió la operación.',
         });
       } catch {
-        setCorrectionNotice({ tone: 'error', title: 'Estado local por conciliar',
-          message: 'Actualiza el detalle antes de intentar otro comando.' });
+        setCorrectionNotice({ tone: 'error', title: 'Corrección sin confirmar',
+          message: 'No pudimos confirmar la corrección guardada en esta tablet. Actualiza el detalle antes de ' +
+            'volver a intentarlo.' });
       }
     } finally {
       if (correctionRequestRef.current === request) {
@@ -859,7 +873,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
               !executing
                 ? 'Inicia la operación antes de ejecutar sus servicios.'
                 : busyServiceId && busyServiceId !== service.id
-                  ? 'Espera a que termine el comando del otro servicio.'
+                  ? 'Espera a que termine el cambio del otro servicio.'
                   : undefined
             }
             key={service.id}
@@ -1216,7 +1230,7 @@ function OperationSubmissionControl({
       {awaitingHandoff && <HandoffRequirementList actionFor={actionFor} requirements={requirements} />}
       {blocked && !delivered && (
         <Text style={styles.nextPhaseWarning}>
-          Actualiza en línea y concilia los comandos pendientes antes de entregar.
+          Para entregar, actualiza el detalle con señal y espera a que terminen los cambios en curso.
         </Text>
       )}
       {(operation.status === 'InProgress' || pending) && (
@@ -1318,7 +1332,7 @@ function serviceTransitionErrorNotice(
     return {
       tone: 'warning',
       title: 'El servicio cambió',
-      message: 'Actualizamos el estado canónico. Revísalo antes de registrar otro resultado.',
+      message: 'Actualizamos el servicio con lo que tiene ELEVANT. Revísalo antes de registrar otro resultado.',
     };
   }
   if (error.code === 'not_found') {
@@ -1362,7 +1376,7 @@ function serviceTransitionErrorNotice(
     title: 'Servicio no actualizado',
     message: error.retryable
       ? 'No pudimos confirmar el cambio. Actualiza el detalle y vuelve a intentarlo.'
-      : 'El cambio fue rechazado. Revisa el estado canónico antes de continuar.',
+      : 'No pudimos registrar el cambio. Actualiza el detalle y revisa el servicio antes de continuar.',
   };
 }
 
@@ -1371,7 +1385,8 @@ function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
     return {
       tone: 'warning',
       title: 'Entrega pendiente de confirmación',
-      message: 'El comando quedó protegido. Reintenta con la misma sesión y la misma clave; no edites la nota ni crees otra entrega.',
+      message: 'La entrega quedó guardada en esta tablet. Vuelve a intentarlo sin cerrar sesión: se envía la ' +
+        'misma, sin duplicarla.',
     };
   }
   if (error instanceof MobileServiceError) {
@@ -1429,21 +1444,22 @@ function startErrorNotice(error: MobileServiceError): StartNotice {
     return {
       tone: 'warning',
       title: 'La operación cambió',
-      message: 'Actualizamos el estado canónico. Revísalo antes de volver a intentar.',
+      message: 'Actualizamos la operación con lo que tiene ELEVANT. Revísala antes de volver a intentarlo.',
     };
   }
   if (error.code === 'network_unavailable') {
     return {
       tone: 'warning',
       title: 'Inicio pendiente de confirmación',
-      message: 'Se perdió la conexión antes de confirmar el estado. Sin cerrar sesión, reconecta y vuelve a intentar: ELEVANT reutilizará el mismo comando sin duplicar el inicio.',
+      message: 'Se perdió la conexión antes de que ELEVANT confirmara el inicio. Reconecta y vuelve a intentarlo sin ' +
+        'cerrar sesión: el inicio no se duplica.',
     };
   }
   if (error.code === 'request_timeout') {
     return {
       tone: 'warning',
       title: 'Inicio pendiente de confirmación',
-      message: 'La respuesta tardó demasiado. Sin cerrar sesión, vuelve a intentar: ELEVANT reutilizará el mismo comando sin duplicar el inicio.',
+      message: 'ELEVANT tardó demasiado en responder. Vuelve a intentarlo sin cerrar sesión: el inicio no se duplica.',
     };
   }
   if (error.code === 'storage_unavailable') {

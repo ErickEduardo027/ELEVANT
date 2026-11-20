@@ -107,7 +107,7 @@ export default function SyncScreen() {
         <ConnectionBadge />
         <Text style={styles.summary}>
           {items.length === 0 ? 'Todo lo que registraste ya está confirmado en ELEVANT.'
-            : `${pending} pendientes de envío · ${items.length - pending} por revisar`}
+            : `${pending} ${pending === 1 ? 'pendiente' : 'pendientes'} de envío · ${items.length - pending} por revisar`}
         </Text>
         {pending > 0 && <PrimaryButton disabled={snapshot?.syncing} icon="sync" title={snapshot?.syncing ? 'ENVIANDO…' : 'ENVIAR AHORA'}
           onPress={() => void flushFlightReport()} />}

@@ -483,10 +483,11 @@ export default function ChecklistScreen() {
           setDraftSaveState('error');
         }
         if (pendingReadFailed) {
+          // N13 (D-N13): in the agent's words; the answers stay frozen until ACTUALIZAR reads both copies again.
           setNotice({
             tone: 'error',
-            title: 'Estado local por conciliar',
-            message: 'No pudimos verificar el comando reservado. La edición seguirá bloqueada hasta actualizar el estado canónico y el almacenamiento del dispositivo.',
+            title: 'Envío por confirmar',
+            message: 'No pudimos confirmar el envío guardado en esta tablet. Actualiza antes de seguir editando.',
           });
           return;
         }
@@ -514,8 +515,8 @@ export default function ChecklistScreen() {
             tone: 'warning',
             title: error.code === 'not_found' ? 'Checklist no disponible' : 'El checklist cambió',
             message: error.problemCode
-              ? `${error.message} Consultaremos nuevamente el estado canónico antes de permitir otra acción.`
-              : 'Consultaremos nuevamente el estado canónico antes de permitir otra acción.',
+              ? `${error.message} Volvemos a leer el checklist en ELEVANT antes de permitir otra acción.`
+              : 'Volvemos a leer el checklist en ELEVANT antes de permitir otra acción.',
           });
           await load(true);
           return;
@@ -591,7 +592,8 @@ export default function ChecklistScreen() {
           <Card style={styles.summaryCard}>
             <View style={styles.summaryTop}>
               <View style={styles.summaryCopy}>
-                <Text style={styles.eyebrow}>CONTROL OPERACIONAL</Text>
+                {/* N13 (D-N13): the name the operation screen gives it; the title is the form's, from ELEVANT. */}
+                <Text style={styles.eyebrow}>CHECKLIST OPERATIVO</Text>
                 <Text accessibilityRole="header" style={styles.title}>
                   {snapshot.checklist.template.name}
                 </Text>
@@ -605,7 +607,7 @@ export default function ChecklistScreen() {
                   : sessionEnd
                     ? 'Sesión terminada'
                     : submissionReconciliationRequired
-                      ? 'Estado por conciliar'
+                      ? 'Envío por confirmar'
                       : frozen
                         ? 'En el dispositivo'
                         : 'Borrador'}
@@ -660,11 +662,12 @@ export default function ChecklistScreen() {
               notice={{
                 tone: submissionReconciliationRequired ? 'error' : 'warning',
                 title: submissionReconciliationRequired
-                  ? 'Edición bloqueada hasta conciliar el estado'
+                  ? 'Edición en pausa'
                   : 'Envío guardado en el dispositivo',
                 message: submissionReconciliationRequired
-                  ? 'Actualiza para verificar el estado canónico y si existe un comando reservado antes de continuar.'
-                  : 'Se envía a ELEVANT en cuanto haya señal, con estas mismas respuestas y la misma clave. Para enviarlo ahora toca REINTENTAR ENVÍO.',
+                  ? 'Toca ACTUALIZAR para comprobar si el checklist ya se envió antes de seguir.'
+                  : 'Se envía a ELEVANT en cuanto haya señal, con estas mismas respuestas. Para enviarlo ahora toca ' +
+                    'REINTENTAR ENVÍO.',
               }}
             />
           )}
@@ -785,7 +788,7 @@ export default function ChecklistScreen() {
                   title={submitting
                     ? 'ENVIANDO…'
                     : submissionReconciliationRequired
-                      ? 'CONCILIAR ESTADO'
+                      ? 'ACTUALIZAR'
                       : frozen
                         ? 'REINTENTAR ENVÍO'
                         : 'ENVIAR CHECKLIST'}
@@ -883,9 +886,9 @@ function ChecklistStateScreen({
   const copy: readonly [string, string] = state === 'not-found'
     ? ['Checklist no disponible', 'La operación o su checklist ya no están asignados a tu cuenta.']
     : state === 'offline'
-      ? ['Sin conexión segura', 'El catálogo no se guarda como fuente de verdad. Reconecta para cargar el checklist canónico.']
+      ? ['Sin conexión segura', 'Esta tablet no tiene una copia de este checklist. Reconecta para cargarlo desde ELEVANT.']
       : state === 'conflict'
-        ? ['La operación cambió', 'Vuelve al detalle, actualiza el estado canónico e intenta nuevamente.']
+        ? ['La operación cambió', 'Vuelve al detalle, actualízalo y abre el checklist de nuevo.']
         : ['Checklist no disponible', 'No pudimos consultar el checklist en este momento.'];
   return (
     <View accessibilityLiveRegion="assertive" style={styles.stateScreen}>
@@ -1005,7 +1008,7 @@ function draftSaveLabel(
   reconciliationRequired: boolean,
 ) {
   if (submitted) return 'Envío confirmado por ELEVANT';
-  if (reconciliationRequired) return 'Comando local pendiente de verificación';
+  if (reconciliationRequired) return 'Envío sin confirmar en esta tablet';
   if (frozen) return 'Envío guardado en el dispositivo; sale a ELEVANT al reconectar';
   if (state === 'saving') return 'Guardando borrador en este dispositivo…';
   if (state === 'saved') return 'Borrador guardado en este dispositivo';

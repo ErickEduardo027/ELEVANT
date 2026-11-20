@@ -659,3 +659,96 @@ describe('the close lists and checks every requirement (N1)', () => {
     });
   });
 });
+
+// N13 (D-N13): «Servicio actualizado · Equipaje quedó en estado en ejecución.» stayed under the service's form and piled
+// up, one per service. A change ELEVANT confirmed says it in one natural sentence with the tapped time at the station;
+// a correction has its own text; a new confirmation replaces those of the other services and the next action clears
+// it, without a timer. Warnings and refusals stay.
+describe('service notices that replace each other (N13, D-N13)', () => {
+  const { MobileServiceError } = require('../src/services/mobile-service-error');
+  const FUEL_ID = '73000000-0000-4000-8000-000000000002';
+  const RUNNING = 'Equipaje en ejecución desde las 10:05.';
+  const withFuel = (status = 'InProgress', serviceStatus = 'Planned') => {
+    const value = operation(status, serviceStatus);
+    return { ...value, services: [...value.services, { ...value.services[0], id: FUEL_ID, lineNumber: 2,
+      serviceDefinitionId: FUEL_ID, code: 'FUEL', name: 'Combustible' }] };
+  };
+  /** What the service returns once ELEVANT confirmed a change: the response and the tapped time it sent. */
+  const confirmed = (id, status, occurredAt) => ({ state: 'confirmed', occurredAt, response: {
+    receiptId: '79000000-0000-4000-8000-000000000001',
+    service: { id, status, contractedQuantity: 1, executedQuantity: status === 'Completed' ? 1 : 0,
+      billingUnit: 'operation' } } });
+  const card = (tree, id) => tree.root.findAll(node => node.props?.service?.id === id && 'actionable' in node.props)[0];
+  async function transition(tree, id, request = { targetStatus: 'InProgress' }) {
+    await renderer.act(async () => { card(tree, id).props.onTransition(request); });
+  }
+
+  beforeEach(() => {
+    mockTransition.mockReset();
+  });
+
+  test('a confirmed start reads «Equipaje en ejecución desde las 10:05.», in the station’s time', async () => {
+    mockGetAssigned.mockResolvedValueOnce({ source: 'network', operations: [operation('InProgress', 'Planned')] })
+      .mockResolvedValue({ source: 'network', operations: [operation('InProgress', 'InProgress')] });
+    // 14:05 UTC is 10:05 at Punta Cana.
+    mockTransition.mockResolvedValue(confirmed(serviceId, 'InProgress', '2026-10-05T14:05:00.000Z'));
+    const tree = await render();
+    await transition(tree, serviceId);
+    const text = screenText(tree);
+    expect(text).toContain(RUNNING);
+    expect(text).not.toContain('quedó en estado');
+    expect(text).not.toContain('Servicio actualizado');
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the second confirmation replaces the first', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [withFuel()] });
+    mockTransition.mockResolvedValueOnce(confirmed(serviceId, 'InProgress', '2026-10-05T14:05:00.000Z'))
+      .mockResolvedValueOnce(confirmed(FUEL_ID, 'InProgress', '2026-10-05T14:07:00.000Z'));
+    const tree = await render();
+    await transition(tree, serviceId);
+    expect(screenText(tree)).toContain(RUNNING);
+    await transition(tree, FUEL_ID);
+    expect(screenText(tree)).toContain('Combustible en ejecución desde las 10:07.');
+    expect(screenText(tree)).not.toContain(RUNNING);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the next action clears a confirmation, also when that action waits on the device', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [withFuel()] });
+    mockTransition.mockResolvedValueOnce(confirmed(serviceId, 'InProgress', '2026-10-05T14:05:00.000Z'))
+      .mockResolvedValueOnce({ state: 'queued' });
+    const tree = await render();
+    await transition(tree, serviceId);
+    await transition(tree, FUEL_ID);
+    expect(screenText(tree)).not.toContain(RUNNING);
+    expect(screenText(tree)).toContain('Combustible se envía a ELEVANT en cuanto haya señal');
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('a refusal on one service stays when another one is confirmed', async () => {
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [withFuel()] });
+    mockTransition.mockRejectedValueOnce(new MobileServiceError('conflict', { problemCode: 'service_time_out_of_order' }))
+      .mockResolvedValueOnce(confirmed(FUEL_ID, 'InProgress', '2026-10-05T14:07:00.000Z'));
+    const tree = await render();
+    await transition(tree, serviceId);
+    expect(screenText(tree)).toContain('Servicio rechazado');
+    await transition(tree, FUEL_ID);
+    expect(screenText(tree)).toContain('Combustible en ejecución desde las 10:07.');
+    expect(screenText(tree)).toContain('Servicio rechazado');
+    expect(screenText(tree)).toContain('La hora del servicio es anterior a su último cambio registrado.');
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('reopening a finished service in a correction round has its own text', async () => {
+    const review = { submissionId: '78000000-0000-4000-8000-000000000001', revisionNumber: 1, status: 'Returned',
+      returnReason: 'Falta la firma de la aerolínea.' };
+    mockGetAssigned.mockResolvedValue({ source: 'network', operations: [{ ...operation('InProgress', 'Completed'), review }] });
+    mockTransition.mockResolvedValue(confirmed(serviceId, 'InProgress', '2026-10-05T14:30:00.000Z'));
+    const tree = await render();
+    await transition(tree, serviceId, { targetStatus: 'InProgress', note: 'OCC pidió ajustar la cantidad.' });
+    expect(screenText(tree)).toContain('Equipaje: corrección abierta a las 10:30. Registra el nuevo resultado.');
+    expect(screenText(tree)).not.toContain('Equipaje en ejecución desde');
+    await renderer.act(async () => tree.unmount());
+  });
+});

@@ -222,6 +222,19 @@ describe('service transitions', () => {
     expect(await readFlightReportOutbox(ACCOUNT_ID)).toEqual([]);
   });
 
+  // N13: the screen says «… en ejecución desde las 19:59.» with the time the tablet sent, captured before sending.
+  test('a confirmed transition also returns the tapped time it sent, by ELEVANT’s clock', async () => {
+    mockApi.transitionRampOperationService.mockImplementationOnce(async () => {
+      // ELEVANT answers a minute later: the time of the notice is still the tap's.
+      jest.setSystemTime(new Date('2026-09-17T18:01:00.000Z'));
+      return transitioned('InProgress');
+    });
+    const outcome = await transitionRampOperationService(OPERATION_ID, SERVICE_ID, { targetStatus: 'InProgress' });
+    expect(outcome).toMatchObject({ state: 'confirmed', occurredAt: TAPPED_AT,
+      response: { service: { status: 'InProgress' } } });
+    expect(mockApi.transitionRampOperationService.mock.calls[0][2].occurredAt).toBe(outcome.occurredAt);
+  });
+
   test('rejects invalid terminal service payloads before saving anything', async () => {
     await expect(transitionRampOperationService(OPERATION_ID, SERVICE_ID,
       { targetStatus: 'NotPerformed', executedQuantity: 1, note: 'No disponible' })).rejects.toMatchObject({ code: 'request_failed' });

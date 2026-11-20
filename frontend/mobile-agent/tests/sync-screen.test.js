@@ -110,3 +110,12 @@ test('a queued time reads in the station’s 24-hour clock; one an older version
   expect(text(tree)).not.toMatch(/[ap]\.\s?m\./);
   await renderer.act(async () => tree.unmount());
 });
+
+test('the summary agrees in number: «1 pendiente de envío», «2 pendientes de envío» (N13)', async () => {
+  let tree = await render([item(8, 'pending', blockOn)]);
+  expect(text(tree)).toContain('1 pendiente de envío · 0 por revisar');
+  await renderer.act(async () => tree.unmount());
+  tree = await render([item(8, 'pending', blockOn), item(9, 'pending', { ...blockOn, code: 'PUSHBACK' })]);
+  expect(text(tree)).toContain('2 pendientes de envío · 0 por revisar');
+  await renderer.act(async () => tree.unmount());
+});

@@ -3,6 +3,7 @@
 // 24-hour clock.
 // N10 (D-N10): the route row shows the stops the aircraft makes, in order, with the station highlighted between them
 // («BWI → PUJ → BWI»); the rail no longer repeats the station's code.
+// N13: what the screen reader hears agrees in number with the services, «1 servicio».
 const React = require('react');
 const renderer = require('react-test-renderer');
 const { StyleSheet } = require('react-native');
@@ -25,13 +26,13 @@ function leg(flightNumber, origin, destination) {
 }
 
 function operation({ plannedStartAt = '2026-11-16T23:46:00.000Z', actualStartAt = null,
-  arrival = leg('EV101', 'BWI', 'PUJ'), departure = null } = {}) {
+  arrival = leg('EV101', 'BWI', 'PUJ'), departure = null, services = [] } = {}) {
   return {
     operation: { id: OPERATION_ID, status: 'Assigned', plannedStartAt, plannedEndAt: null, actualStartAt,
       actualEndAt: null },
     assignment: { id: '70000000-0000-4000-8000-000000000002', assignmentRole: 'primary', position: null,
       assignedAt: '2026-11-16T12:00:00.000Z' },
-    services: [],
+    services,
     review: null,
     turnaround: {
       operationCode: 'EV-001', operationDate: '2026-11-16',
@@ -135,6 +136,21 @@ describe('the route as the aircraft flies it (N10, D-N10)', () => {
     expect(codes(tree)).toEqual(['PUJ']);
     expect(texts(tree, /^Ruta por confirmar$/)).toHaveLength(1);
     expect(spoken(tree)).toContain('estación PUJ, ruta por confirmar');
+    await renderer.act(async () => tree.unmount());
+  });
+});
+
+describe('the services in the singular and the plural (N13)', () => {
+  const service = n => ({ id: `73000000-0000-4000-8000-00000000000${n}`, lineNumber: n,
+    serviceDefinitionId: `73000000-0000-4000-8000-00000000000${n}`, code: 'RAMP-AC', name: 'Aire acondicionado',
+    contractedQuantity: 1, executedQuantity: 0, billingUnit: 'hour', status: 'Planned' });
+
+  test.each([
+    [[1], '1 servicio'],
+    [[1, 2], '2 servicios'],
+  ])('a card with %j service lines is read as «%s», as it shows', async (lines, words) => {
+    const tree = await render({ services: lines.map(service) });
+    expect(spoken(tree)).toMatch(new RegExp(`, ${words}$`));
     await renderer.act(async () => tree.unmount());
   });
 });

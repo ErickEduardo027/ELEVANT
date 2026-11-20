@@ -267,6 +267,30 @@ test('removes the former session snapshot if a write is cancelled by a session s
   expect(textContent()).toContain('Observaciones no disponibles');
 });
 
+// N13 (D-N13): when the tablet cannot read the observation it keeps pending, the card says what happens in plain words;
+// it never names a «comando».
+describe('plain words when the pending observation cannot be read (N13, D-N13)', () => {
+  const WAITS = 'No se enviará otra observación mientras tanto.';
+
+  test('on opening the card', async () => {
+    mockReadPending.mockRejectedValue(new Error('raw storage detail'));
+    await render();
+    expect(textContent()).toContain(`No se pudo leer la observación pendiente. ${WAITS}`);
+    expect(textContent()).not.toMatch(/comando/i);
+  });
+
+  test('after a save ELEVANT did not confirm', async () => {
+    await render();
+    const note = tree.root.findAll(node => node.props.accessibilityLabel === 'Nota del agente')[0];
+    await renderer.act(async () => note.props.onChangeText('Inicio observado en rampa'));
+    mockSave.mockRejectedValueOnce(new MobileServiceError('request_failed'));
+    mockReadPending.mockRejectedValueOnce(new Error('raw storage detail'));
+    await renderer.act(async () => press('Guardar observación'));
+    expect(textContent()).toContain(`No se pudo verificar la observación pendiente. ${WAITS}`);
+    expect(textContent()).not.toMatch(/comando/i);
+  });
+});
+
 // S6 (D-S6): the card edits and shows its times on the station's clock, «hora local de PUJ», never in the device's
 // zone, and still saves UTC instants. The device here is not in the stations' zones below.
 describe('the station’s clock (S6, D-S6)', () => {

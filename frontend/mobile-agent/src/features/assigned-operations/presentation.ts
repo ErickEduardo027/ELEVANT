@@ -61,6 +61,32 @@ export function serviceStatusTone(status: string): OperationStatusTone {
   return 'orange';
 }
 
+/**
+ * What a service change ELEVANT confirmed says (N13, D-N13): one natural sentence with the tapped time at the station
+ * (3-I), «Aire acondicionado en ejecución desde las 19:59.». A result follows the service's name as its status pill
+ * says it, «Aire acondicionado: completado a las 19:59.», so it reads right whatever the name's gender or number.
+ * Reopening a finished service in a correction round has its own text. Without a readable time the sentence leaves the
+ * time out; one o'clock takes «la».
+ */
+export function serviceChangeSentence(
+  name: string,
+  status: string,
+  occurredAt: string | null | undefined,
+  timeZone?: string | null,
+  reopened = false,
+) {
+  const time = formatStationTime(occurredAt, timeZone);
+  const known = time !== '—';
+  const at = (preposition: 'a' | 'desde') =>
+    (known ? ` ${preposition} ${time.startsWith('01:') ? 'la' : 'las'} ${time}` : '');
+  if (reopened) return `${name}: corrección abierta${at('a')}. Registra el nuevo resultado.`;
+  if (status === 'InProgress') return `${name} en ejecución${at('desde')}.`;
+  if (status === 'Completed') return `${name}: completado${at('a')}.`;
+  if (status === 'NotPerformed') return `${name}: no realizado${known ? `, registrado${at('a')}` : ''}.`;
+  if (status === 'Exception') return `${name}: excepción registrada${at('a')}.`;
+  return `${name}: ${serviceStatusLabel(status).toLowerCase()}${at('a')}.`;
+}
+
 /** «19:46» at the station (N11); a station without a known zone uses AVIAM's calendar. */
 export function formatOperationTime(
   value: string | null | undefined,

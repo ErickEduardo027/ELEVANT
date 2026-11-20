@@ -78,6 +78,13 @@ const SHIFTS = [-60, -10, -5, -1, 1, 5, 60] as const;
 /** N2: the push-back sheet names the phase the push-back belongs to, as its tab does. */
 const PUSHBACK_PHASE_LABEL = FLIGHT_REPORT_PHASES.find(phase => phase.id === 'pushback')?.label ?? 'Retroempuje';
 
+/**
+ * N13 (D-N13): the milestones keep the form's words, from the shared catalog; the tablet says what «JB» is in the phase
+ * that shows it.
+ */
+const JET_BRIDGE_HELP = 'JB: pasarela de abordaje (jet bridge).';
+const mentionsJetBridge = (label: string) => /\bJB\b/.test(label);
+
 function haptic() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 }
@@ -224,8 +231,10 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
 }
 
 /**
- * «Reporte de Vuelo» by phase (ADR-0031): Llegada → En posición → Salida → Retroempuje. One tap
- * records the time on the device, with a vibration; the queue sends it when there is signal.
+ * «Hitos del vuelo», the milestones of AVIAM's «Reporte de Vuelo» by phase (ADR-0031): Llegada → En posición → Salida →
+ * Retroempuje. The panel has a name of its own (N13, D-N13): «Reporte de Vuelo» is the AVIAM form signed in «Formularios
+ * y firmas», and the checklist is «Checklist operativo». One tap records the time on the device, with a vibration; the
+ * queue sends it when there is signal.
  * In a correction round (OCC returned the operation) the facts of the flight already happened: an empty milestone
  * opens the adjustment at the last recorded time instead of recording «AHORA» (3-N09).
  * The push-back releases the stand in OCC for good (decision 23), so its first tap asks first when the flight is not
@@ -282,16 +291,18 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
     record(code, serverNow());
   };
 
+  const phaseMilestones = FLIGHT_REPORT_MILESTONES.filter(item => item.phase === phase);
+
   return (
-    <View style={styles.panel} accessibilityLabel="Reporte de vuelo">
+    <View style={styles.panel} accessibilityLabel="Hitos del vuelo">
       <View style={styles.panelHeader}>
         <Ionicons name="time-outline" size={22} color={colors.navy} />
-        <Text style={styles.panelTitle}>Reporte de vuelo</Text>
+        <Text style={styles.panelTitle}>Hitos del vuelo</Text>
       </View>
       {!editable && <Text style={styles.hint}>Inicia la operación para registrar los tiempos.</Text>}
       <PhaseBar phase={phase} onChange={setPhase} done={done} />
       <View style={styles.grid}>
-        {FLIGHT_REPORT_MILESTONES.filter(item => item.phase === phase).map(item => (
+        {phaseMilestones.map(item => (
           <MilestoneButton key={item.code} label={item.label} state={states.get(item.code)!} timeZone={timeZone}
             disabled={!editable} correction={correction}
             onNow={() => (correction ? setEditing({ code: item.code, label: item.label, at: lastRecorded() })
@@ -299,6 +310,9 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
             onEdit={() => setEditing({ code: item.code, label: item.label, at: new Date(states.get(item.code)!.at!) })} />
         ))}
       </View>
+      {phaseMilestones.some(item => mentionsJetBridge(item.label)) ? (
+        <Text style={styles.hint}>{JET_BRIDGE_HELP}</Text>
+      ) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {correction && (
         <Text style={styles.hint}>Corrección: registra cada hora como ocurrió en el vuelo, no la hora actual.</Text>

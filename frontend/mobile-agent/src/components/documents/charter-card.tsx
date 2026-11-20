@@ -66,7 +66,7 @@ export function CharterCard({ operationId, editable, existingServiceIds }: {
         )}
       </View>
       <Text style={styles.hint}>
-        Se cobra a la tarifa estándar de Finanzas. Lo que agregue aquí aparece en la Solicitud de Servicio que firma el representante.
+        Se cobra a la tarifa estándar de Finanzas. Lo que agregues aquí aparece en la Solicitud de Servicio que firma el representante.
       </Text>
       {!charter && state === 'loading' && <Text style={styles.hint}>Cargando tarifas…</Text>}
       {!charter && state === 'offline' && (

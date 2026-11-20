@@ -5,6 +5,8 @@
 // session service are real; ELEVANT is a small fake, as in ramp-operation-checklist-draft.test.js.
 // N12 (D-N12): each control carries one number, the PDF's, and no internal code; the summary reads «Versión 1» and
 // keeps the template's code as a small secondary text.
+// N13 (D-N13): the summary is headed «CHECKLIST OPERATIVO», and what the screen says when a send or a read goes wrong
+// is plain, with tú: no «comando», «canónico» nor «fuente de verdad».
 const React = require('react');
 const renderer = require('react-test-renderer');
 const { StyleSheet } = require('react-native');
@@ -281,8 +283,11 @@ function screenText(tree) {
 /** The badge of the summary card. */
 const badge = tree => tree.root.findAll(node => typeof node.props?.text === 'string' && 'tone' in node.props)[0].props;
 
-/** What the old screen blamed instead of the session, and the jargon it showed (N6). */
-const BLAMES_THE_DEVICE = /Desbloque|proteger|payload/i;
+/**
+ * What the old screen blamed instead of the session, and the jargon it showed (N6): also «comando», «canónico» and
+ * «fuente de verdad», which a ramp agent never needs to read (N13).
+ */
+const BLAMES_THE_DEVICE = /Desbloque|proteger|payload|canónic|comando|fuente de verdad/i;
 
 /** The texts of each control card of the section on screen, in order: its number comes first (N12). */
 const controlTexts = tree => tree.root
@@ -588,5 +593,92 @@ describe('inside the app, the checklist shows one session notice (N6)', () => {
     expect(occurrences(tree, 'Tu sesión terminó')).toBe(1);
     expect(screenText(tree)).toContain('Lo que registraste queda guardado en esta tablet.');
     await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+});
+
+// N13 (D-N13): a review of the PR 1 found the internal jargon still on screen («comando reservado», «estado canónico»,
+// «fuente de verdad», «Comando local pendiente de verificación»). The screen says the same in plain words, with tú.
+describe('plain words when a send or a read goes wrong (N13, D-N13)', () => {
+  test('the summary is headed «CHECKLIST OPERATIVO», the name the operation screen gives it', async () => {
+    await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+    const tree = await mount();
+    expect(screenText(tree)).toContain('CHECKLIST OPERATIVO');
+    expect(screenText(tree)).not.toContain('CONTROL OPERACIONAL');
+    await renderer.act(async () => { tree.unmount(); });
+  }, 30_000);
+
+  test('a send ELEVANT did not confirm, whose copy the tablet cannot read back, asks to update before editing', async () => {
+    const submit = jest.spyOn(checklistService, 'submitRampOperationChecklist');
+    const readPending = jest.spyOn(checklistService, 'readRampChecklistPendingSubmission');
+    try {
+      await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+      const tree = await mount();
+      await answerAll(tree);
+      await settle(400);
+      submit.mockRejectedValueOnce(new MobileServiceError('request_failed'));
+      readPending.mockRejectedValueOnce(new Error('The device storage failed.'));
+      await press(tree, 'ENVIAR CHECKLIST');
+      await settle(100);
+
+      expect(screenText(tree)).toContain('No pudimos confirmar el envío guardado en esta tablet. Actualiza antes de ' +
+        'seguir editando.');
+      expect(badge(tree)).toEqual({ text: 'Envío por confirmar', tone: 'orange' });
+      expect(button(tree, 'ACTUALIZAR')).toBeDefined();
+      expect(choice(tree, 21, 'NO').props.disabled).toBe(true);
+      expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+
+      // ACTUALIZAR reads the checklist and the tablet's copy again; with both read, the agent edits again.
+      await press(tree, 'ACTUALIZAR');
+      await settle(100);
+      expect(button(tree, 'ENVIAR CHECKLIST')).toBeDefined();
+      expect(choice(tree, 21, 'NO').props.disabled).toBe(false);
+      await renderer.act(async () => { tree.unmount(); });
+    } finally {
+      submit.mockRestore();
+      readPending.mockRestore();
+    }
+  }, 30_000);
+
+  test.each([
+    ['without a code', new MobileServiceError('conflict'), ''],
+    ['with the code ELEVANT explains', new MobileServiceError('conflict', { problemCode: 'ramp_operation_state_conflict' }),
+      'La operación ya no admite este registro: está entregada, aprobada o en otro estado. '],
+  ])('a send ELEVANT refused because the checklist changed (%s) says it reads the checklist again', async (_d, error,
+    cause) => {
+    const submit = jest.spyOn(checklistService, 'submitRampOperationChecklist').mockRejectedValueOnce(error);
+    try {
+      await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+      const tree = await mount();
+      await answerAll(tree);
+      await settle(400);
+      await press(tree, 'ENVIAR CHECKLIST');
+      await settle(100);
+      expect(screenText(tree)).toContain('El checklist cambió');
+      expect(screenText(tree)).toContain(`${cause}Volvemos a leer el checklist en ELEVANT antes de permitir otra acción.`);
+      expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+      await renderer.act(async () => { tree.unmount(); });
+    } finally {
+      submit.mockRestore();
+    }
+  }, 30_000);
+
+  test.each([
+    ['without signal nor a copy on the tablet', 'network_unavailable', 'Sin conexión segura',
+      'Esta tablet no tiene una copia de este checklist. Reconecta para cargarlo desde ELEVANT.'],
+    ['after the operation changed', 'conflict', 'La operación cambió',
+      'Vuelve al detalle, actualízalo y abre el checklist de nuevo.'],
+  ])('a checklist that cannot open %s says why in plain words', async (_d, code, title, message) => {
+    const read = jest.spyOn(checklistService, 'getRampOperationChecklist')
+      .mockRejectedValueOnce(new MobileServiceError(code));
+    try {
+      await loginMobileAgent('ramp.agent@dev.elevant.test', 'Clave-Segura-2026!');
+      const tree = await mount();
+      expect(screenText(tree)).toContain(title);
+      expect(screenText(tree)).toContain(message);
+      expect(screenText(tree)).not.toMatch(BLAMES_THE_DEVICE);
+      await renderer.act(async () => { tree.unmount(); });
+    } finally {
+      read.mockRestore();
+    }
   }, 30_000);
 });

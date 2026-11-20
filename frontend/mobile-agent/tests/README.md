@@ -237,5 +237,31 @@ comprueba el aviso en la fila de la Orden y al principio de su hoja sin apagar
 FIRMAR. En las tres, una Orden firmada menciona volver a firmar y un formulario
 sin `summary` no falla.
 
+Los textos de N13 (D-N13) se fijan donde se ven. `operation-documents-sheet.test.js`
+comprueba el tuteo del walk-around, de su hoja y del panel de formularios, el
+texto neutro del firmante (el pad conserva «Firme aquí con el dedo») y los
+conteos en palabras (`damageCountLabel`, «4 hitos»), con una expresión de usted
+que solo cuenta palabras enteras. `charter-card.test.js` comprueba «Lo que
+agregues aquí». `flight-report-panel.test.js` fija «Hitos del vuelo» y la ayuda
+de «JB» solo en la fase que la muestra; su doble del catálogo trae «Retiro
+escalera / JB». `operation-presentation.test.js` fija cada frase de
+`serviceChangeSentence`, con la hora de la estación, «a la 01:20» y sin hora
+legible. `ramp-operation-execution.test.js` comprueba que la confirmación
+devuelve el `occurredAt` que envió. `operation-offline-queue.test.js` recorre los
+avisos de servicio: la frase con la hora, la segunda confirmación que borra la
+primera, la siguiente acción que la quita, el rechazo que se queda y la
+corrección. `ramp-service-execution-card.test.js` comprueba que el formulario
+abierto oculta la confirmación y que no vuelve al cerrarlo, que una advertencia
+se queda y que la tarjeta no dice «comando» ni «payload».
+`checklist-screen.test.js` y `flight-screen-notices.test.js` amplían su guarda
+de jerga con `/canónic|comando|fuente de verdad/` y recorren los estados que la
+mostraban: el envío sin confirmar con la copia ilegible (ACTUALIZAR), el
+conflicto, sin señal ni copia y la operación cambiada en el checklist; el
+servicio cambiado o rechazado, el otro servicio en curso, el inicio cambiado o
+sin respuesta, la entrega y la corrección sin confirmar en el detalle.
+`attendance-draft-card.test.js`, `assigned-operation-card.test.js` y
+`sync-screen.test.js` cubren la tarjeta de asistencia sin «comando», «1
+servicio» y «1 pendiente de envío».
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

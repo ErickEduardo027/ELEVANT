@@ -1,7 +1,8 @@
-// The «Reporte de vuelo» panel: one tap records a milestone at ELEVANT's time (3-N18); the adjustment stays inside the
+// The «Hitos del vuelo» panel: one tap records a milestone at ELEVANT's time (3-N18); the adjustment stays inside the
 // operation's window (3-N25), and a correction round records the times of the flight, never «AHORA» (3-N09). A time or
 // the flight data the tablet could not keep says whether the session ended or the device's storage failed (N6). A
-// push-back with the flight still half recorded asks first, with its reasons (N2, decision 23).
+// push-back with the flight still half recorded asks first, with its reasons (N2, decision 23). The panel has a name of
+// its own, and the form's «JB» is explained where it shows (N13, D-N13).
 const React = require('react');
 const renderer = require('react-test-renderer');
 
@@ -13,7 +14,8 @@ let mockNow = Date.parse('2026-11-09T14:00:00.000Z');
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined), removeItem: jest.fn(async () => undefined),
 }));
-// The four phases of the flight report, with fewer milestones than the form: two on stand and one at departure.
+// The four phases of the flight report, with fewer milestones than the form: two on stand, one at departure, and the
+// removal of the stairs or the JB before the push-back, with the form's label.
 jest.mock('@elevant/api-client', () => ({
   FLIGHT_REPORT_PHASES: [
     { id: 'arrival', label: 'Llegada' }, { id: 'on_stand', label: 'En posición' },
@@ -24,6 +26,7 @@ jest.mock('@elevant/api-client', () => ({
     { code: 'FIRST_CUSTOMS', label: 'Primeras aduanas', phase: 'on_stand' },
     { code: 'LOAD_SHEET', label: 'Hoja de carga', phase: 'on_stand' },
     { code: 'BOARDING', label: 'Abordaje', phase: 'departure' },
+    { code: 'STAIRS_JETBRIDGE_REMOVED', label: 'Retiro escalera / JB', phase: 'pushback' },
     { code: 'PUSHBACK', label: 'Push-back', phase: 'pushback' },
   ],
   IATA_DELAY_CODES: [{ code: '93', label: 'Rotación de la aeronave' }],
@@ -85,6 +88,30 @@ beforeEach(() => {
   mockSnapshot = { items: [], syncing: false, confirmed: {}, documents: {}, charters: {}, revisions: {} };
   mockRecord.mockResolvedValue(undefined);
   mockSaveFlightData.mockResolvedValue(undefined);
+});
+
+// N13 (D-N13): «Reporte de vuelo» named three things on the tablet: this panel, the AVIAM form and the checklist. The
+// panel is «Hitos del vuelo»; the form keeps its name, and the milestones keep the form's words, with help for «JB».
+describe('the panel’s name and the form’s words (N13, D-N13)', () => {
+  const JB_HELP = 'JB: pasarela de abordaje (jet bridge).';
+
+  test('the panel is «Hitos del vuelo» on screen and for the screen reader', async () => {
+    const tree = await render({ operation: operation() });
+    const panel = tree.root.findAll(node => node.type === 'View' &&
+      ['Hitos del vuelo', 'Reporte de vuelo'].includes(node.props.accessibilityLabel))[0];
+    expect(panel.props.accessibilityLabel).toBe('Hitos del vuelo');
+    expect(tree.root.findAll(node => node.type === 'Text' && node.props.children === 'Hitos del vuelo')).toHaveLength(1);
+    expect(text(tree)).not.toMatch(/Reporte de vuelo/i);
+  });
+
+  test('«JB» is explained in the phase that shows it, and the button keeps the form’s label', async () => {
+    const tree = await render({ operation: operation() });
+    await press(tab(tree, 'Llegada'));
+    expect(text(tree)).not.toContain(JB_HELP);
+    await press(tab(tree, 'Retroempuje'));
+    expect(pressable(tree, 'Retiro escalera / JB. Toca para registrar ahora.')).toBeDefined();
+    expect(text(tree)).toContain(JB_HELP);
+  });
 });
 
 describe('correction round (3-N09)', () => {

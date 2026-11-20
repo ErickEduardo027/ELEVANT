@@ -37,11 +37,13 @@ export const AssignedOperationCard = memo(function AssignedOperationCard({
   const status = operationStatusLabel(operation.operation.status);
   // The station alone means the turnaround has no flights yet.
   const hasRoute = stops.length > 1;
+  // N13: one text for the card and the screen reader, «1 servicio» or «2 servicios».
+  const servicesLabel = `${operation.services.length} ${operation.services.length === 1 ? 'servicio' : 'servicios'}`;
 
   return (
     <Pressable
       accessibilityHint="Abre el manifiesto y los servicios asignados"
-      accessibilityLabel={`${operationFlightLabel(operation)}, ${status}, ${operationDate}, ${operationRouteDescription(operation)}, ${timeLabel} ${time}, ${operationStandLabel(operation)}, ${operation.services.length} servicios`}
+      accessibilityLabel={`${operationFlightLabel(operation)}, ${status}, ${operationDate}, ${operationRouteDescription(operation)}, ${timeLabel} ${time}, ${operationStandLabel(operation)}, ${servicesLabel}`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={() => onOpen(operation.operation.id)}
@@ -115,7 +117,7 @@ export const AssignedOperationCard = memo(function AssignedOperationCard({
           <View style={styles.metaItem}>
             <Ionicons name="construct-outline" size={16} color={colors.navy} />
             <Text style={styles.metaText}>
-              {operation.services.length} {operation.services.length === 1 ? 'servicio' : 'servicios'}
+              {servicesLabel}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.navy} />

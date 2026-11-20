@@ -120,7 +120,7 @@ export function AttendanceDraftCard({
     storageReadyRef.current = false;
     setStorageReady(false);
     setStatus('error');
-    setNotice('No se pudo verificar la observación pendiente. No se enviará otro comando.');
+    setNotice('No se pudo verificar la observación pendiente. No se enviará otra observación mientras tanto.');
   };
 
   const invalidateView = useCallback((code: MobileServiceError['code']) => {
@@ -206,7 +206,7 @@ export function AttendanceDraftCard({
     }).catch(() => {
       if (cancelled || identityRef.current !== identity) return;
       setStatus('error');
-      setNotice('No se pudo leer la observación pendiente. No se enviará otro comando.');
+      setNotice('No se pudo leer la observación pendiente. No se enviará otra observación mientras tanto.');
     });
     return () => { cancelled = true; readRef.current?.abort(); };
     // Reset only when the operation/assignment identity changes.

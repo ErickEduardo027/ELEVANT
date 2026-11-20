@@ -1,9 +1,11 @@
 // N10 and N9 (D-N10, D-N9): the tablet writes a turnaround's route as the stops the aircraft makes, in order, with the
 // station where the agent works between them («BWI → PUJ → BWI»), and the assignment's role in Spanish.
+// N13 (D-N13): a service change ELEVANT confirmed reads as one natural sentence with the tapped time at the station.
 const {
   assignmentRoleLabel,
   operationRouteDescription,
   operationRouteStops,
+  serviceChangeSentence,
 } = require('../src/features/assigned-operations/presentation');
 
 const airports = {
@@ -91,5 +93,37 @@ describe('the assignment role in Spanish (N9, D-N9)', () => {
     expect(assignmentRoleLabel('constructor')).toBeNull();
     expect(assignmentRoleLabel('toString')).toBeNull();
     expect(assignmentRoleLabel('__proto__')).toBeNull();
+  });
+});
+
+describe('a confirmed service change in one natural sentence (N13, D-N13)', () => {
+  const PUJ = 'America/Santo_Domingo';
+  // 23:59 UTC is 19:59 at Punta Cana.
+  const AT = '2026-11-16T23:59:00.000Z';
+
+  test.each([
+    ['InProgress', false, 'Aire acondicionado en ejecución desde las 19:59.'],
+    ['Completed', false, 'Aire acondicionado: completado a las 19:59.'],
+    ['NotPerformed', false, 'Aire acondicionado: no realizado, registrado a las 19:59.'],
+    ['Exception', false, 'Aire acondicionado: excepción registrada a las 19:59.'],
+    ['InProgress', true, 'Aire acondicionado: corrección abierta a las 19:59. Registra el nuevo resultado.'],
+  ])('%s (reopened: %s) reads «%s»', (status, reopened, sentence) => {
+    expect(serviceChangeSentence('Aire acondicionado', status, AT, PUJ, reopened)).toBe(sentence);
+  });
+
+  test('the time is the station’s, on a 24-hour clock, and one o’clock takes «la»', () => {
+    expect(serviceChangeSentence('Equipaje', 'InProgress', '2026-10-05T14:05:00.000Z', PUJ))
+      .toBe('Equipaje en ejecución desde las 10:05.');
+    expect(serviceChangeSentence('Equipaje', 'Completed', '2026-10-05T05:20:00.000Z', PUJ))
+      .toBe('Equipaje: completado a la 01:20.');
+    expect(serviceChangeSentence('Equipaje', 'InProgress', '2026-10-05T04:00:00.000Z', PUJ))
+      .toBe('Equipaje en ejecución desde las 00:00.');
+  });
+
+  test('without a readable time the sentence leaves the time out, never «las —»', () => {
+    expect(serviceChangeSentence('Equipaje', 'InProgress', undefined, PUJ)).toBe('Equipaje en ejecución.');
+    expect(serviceChangeSentence('Equipaje', 'Completed', 'not a time', PUJ)).toBe('Equipaje: completado.');
+    expect(serviceChangeSentence('Equipaje', 'InProgress', null, PUJ, true))
+      .toBe('Equipaje: corrección abierta. Registra el nuevo resultado.');
   });
 });

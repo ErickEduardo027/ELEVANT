@@ -3,6 +3,8 @@
 // proposes, and a command already reserved is retried exactly as it was reserved.
 // N12 (D-N12): the service's name is the card's title and its code («RAMP-AC») a small secondary text; the line
 // number in front of the name tells two lines of the same service apart.
+// N13 (D-N13): a confirmation steps aside while a result form is open and once the agent acts on the card again, and a
+// warning stays; the card speaks the agent's words, never «comando», «canónico» nor «payload».
 const React = require('react');
 const renderer = require('react-test-renderer');
 const { StyleSheet } = require('react-native');
@@ -141,7 +143,7 @@ describe('whole numbers in the units that count things (S5)', () => {
       request: { targetStatus: 'Completed', executedQuantity: 1.5, note: 'Media operación por la lluvia' } };
     const { tree, onTransition } = await render({ pending, service: { billingUnit: 'operation' } });
     expect(quantityInput(tree).props.editable).toBe(false);
-    await confirm(tree, 'REINTENTAR COMANDO');
+    await confirm(tree, 'REINTENTAR ENVÍO');
     expect(onTransition).toHaveBeenCalledTimes(1);
     expect(onTransition).toHaveBeenCalledWith(pending.request);
     await renderer.act(async () => tree.unmount());
@@ -168,5 +170,84 @@ describe('the name first and the code in the background (N12, D-N12)', () => {
     expect(texts(first.tree).slice(0, 2)).toEqual(['1', 'Aire acondicionado']);
     expect(texts(second.tree).slice(0, 2)).toEqual(['2', 'Aire acondicionado']);
     await renderer.act(async () => { first.tree.unmount(); second.tree.unmount(); });
+  });
+});
+
+describe('notices that do not get in the way, in the agent’s words (N13, D-N13)', () => {
+  const SUCCESS = { tone: 'success', title: 'Aire acondicionado en ejecución desde las 19:59.' };
+  const WARNING = { tone: 'warning', title: 'El servicio cambió',
+    message: 'Actualizamos el servicio con lo que tiene ELEVANT. Revísalo antes de registrar otro resultado.' };
+  const JARGON = /canónic|comando|payload|clave/i;
+  const KEY = '91000000-0000-4000-8000-000000000001';
+  const closeForm = async tree => {
+    await renderer.act(async () => { pressable(tree, 'Cancelar edición del resultado').props.onPress(); });
+  };
+
+  test('an open result form hides a confirmation, and closing the form does not bring it back', async () => {
+    const { tree, onTransition } = await render({ notice: SUCCESS });
+    expect(lines(tree)).toContain(SUCCESS.title);
+    await chooseCompleted(tree);
+    expect(lines(tree)).not.toContain(SUCCESS.title);
+    await closeForm(tree);
+    expect(lines(tree)).not.toContain(SUCCESS.title);
+    // The next confirmation shows again.
+    await renderer.act(async () => {
+      tree.update(React.createElement(RampServiceExecutionCard,
+        { actionable: true, busy: false, onTransition, service: service(), notice: { ...SUCCESS } }));
+    });
+    expect(lines(tree)).toContain(SUCCESS.title);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('a result form already open, kept on the tablet, does not show a confirmation either', async () => {
+    const { tree } = await render({ notice: SUCCESS, pending: { idempotencyKey: KEY,
+      request: { targetStatus: 'Completed', executedQuantity: 1 } } });
+    expect(button(tree, 'REINTENTAR ENVÍO')).toBeDefined();
+    expect(lines(tree)).not.toContain(SUCCESS.title);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('a warning stays with the form open', async () => {
+    const { tree } = await render({ notice: WARNING });
+    await chooseCompleted(tree);
+    expect(lines(tree)).toContain(WARNING.title);
+    expect(lines(tree)).toContain(WARNING.message);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('typing the reason of a correction is the next action: the confirmation steps aside', async () => {
+    const notice = { tone: 'success', title: 'Aire acondicionado: completado a las 20:10.' };
+    const { tree } = await render({ correctionMode: true, notice, service: { status: 'Completed', executedQuantity: 1 } });
+    expect(lines(tree)).toContain(notice.title);
+    const reason = tree.root.findAll(node => node.type === 'TextInput' &&
+      node.props.accessibilityLabel === 'Motivo de corrección de Aire acondicionado')[0];
+    await renderer.act(async () => { reason.props.onChangeText('OCC pidió ajustar la cantidad'); });
+    expect(lines(tree)).not.toContain(notice.title);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the card speaks the agent’s words, also for a change kept on the tablet', async () => {
+    let { tree } = await render({ pending: { idempotencyKey: KEY,
+      request: { targetStatus: 'Completed', executedQuantity: 1 } } });
+    expect(lines(tree)).toContain('Guardado en esta tablet: el reintento envía la misma cantidad y la misma nota.');
+    expect(button(tree, 'REINTENTAR ENVÍO')).toBeDefined();
+    expect(JSON.stringify(tree.toJSON())).not.toMatch(JARGON);
+    await renderer.act(async () => tree.unmount());
+
+    ({ tree } = await render({ correctionMode: true, service: { status: 'Completed', executedQuantity: 1 },
+      pending: { idempotencyKey: KEY, request: { targetStatus: 'InProgress', note: 'Ajuste pedido por OCC' } } }));
+    expect(lines(tree)).toContain('El motivo quedó guardado en esta tablet: el reintento lo envía tal cual.');
+    expect(JSON.stringify(tree.toJSON())).not.toMatch(JARGON);
+    await renderer.act(async () => tree.unmount());
+
+    ({ tree } = await render({ actionable: false }));
+    expect(lines(tree)).toContain('Actualiza el detalle antes de registrar este servicio.');
+    expect(JSON.stringify(tree.toJSON())).not.toMatch(JARGON);
+    await renderer.act(async () => tree.unmount());
+
+    ({ tree } = await render({ service: { status: 'Cancelled' } }));
+    expect(lines(tree)).toContain('Este servicio no se puede cambiar desde la tablet en su estado actual.');
+    expect(JSON.stringify(tree.toJSON())).not.toMatch(JARGON);
+    await renderer.act(async () => tree.unmount());
   });
 });

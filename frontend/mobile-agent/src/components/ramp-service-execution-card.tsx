@@ -25,10 +25,14 @@ import {
 } from '../utils/billing-units';
 import { Card, PrimaryButton, StatusPill } from './ui';
 
+/**
+ * What the screen says on a service's card. A confirmation (N13) is one sentence, its title alone; a warning or an
+ * error also says what to do.
+ */
 export type ServiceExecutionNotice = Readonly<{
   tone: 'success' | 'warning' | 'error';
   title: string;
-  message: string;
+  message?: string;
 }>;
 
 type TerminalTarget = 'Completed' | 'NotPerformed' | 'Exception';
@@ -69,6 +73,12 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
   const frozen = pending !== undefined;
   const terminal = isTerminalStatus(service.status);
   const executableStatus = service.status === 'Planned' || service.status === 'InProgress';
+  // N13 (D-N13): a confirmation steps aside while a result form is open and once the agent acts on the card again,
+  // without a timer; the screen also drops it with the next change of any service. A warning or an error stays.
+  const [dismissedNotice, setDismissedNotice] = useState<ServiceExecutionNotice | null>(null);
+  const confirmation = notice?.tone === 'success';
+  const shownNotice = notice && !(confirmation && (target !== null || dismissedNotice === notice)) ? notice : undefined;
+  const dismissConfirmation = () => { if (confirmation) setDismissedNotice(notice ?? null); };
 
   useEffect(() => {
     const pendingTarget = pending?.request.targetStatus;
@@ -101,6 +111,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
 
   const chooseTarget = (next: TerminalTarget) => {
     if (busy || frozen || !actionable) return;
+    dismissConfirmation();
     setTarget(next);
     setQuantity(
       next === 'NotPerformed'
@@ -117,8 +128,8 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
 
   const submitTerminal = () => {
     if (!target || busy || !actionable) return;
-    // A reserved command is not validated again: its retry sends exactly what was reserved, even a fractional quantity
-    // in a count unit.
+    // A change kept on the tablet is not validated again: its retry sends exactly what was kept, even a fractional
+    // quantity in a count unit.
     if (pending) {
       onTransition(pending.request);
       return;
@@ -181,7 +192,10 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
             editable={actionable && !busy && !frozen}
             maxLength={1000}
             multiline
-            onChangeText={setNote}
+            onChangeText={(value) => {
+              dismissConfirmation();
+              setNote(value);
+            }}
             placeholder="Describe el ajuste solicitado por OCC"
             placeholderTextColor={colors.muted}
             style={[styles.noteInput, validationRequested && !note.trim() && styles.inputInvalid]}
@@ -195,7 +209,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
           )}
           {frozen && pending?.request.targetStatus === 'InProgress' && (
             <Text style={styles.replayHintText}>
-              Reintenta con el mismo motivo y la misma clave reservada.
+              El motivo quedó guardado en esta tablet: el reintento lo envía tal cual.
             </Text>
           )}
           <PrimaryButton
@@ -216,7 +230,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
             <View accessibilityLiveRegion="polite" style={styles.disabledHint}>
               <Ionicons name="lock-closed-outline" size={18} color={colors.warning} />
               <Text style={styles.disabledHintText}>
-                El estado actual no admite comandos desde Mobile Agent.
+                Este servicio no se puede cambiar desde la tablet en su estado actual.
               </Text>
             </View>
           )}
@@ -224,7 +238,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
             <View accessibilityLiveRegion="polite" style={styles.disabledHint}>
               <Ionicons name="lock-closed-outline" size={18} color={colors.warning} />
               <Text style={styles.disabledHintText}>
-                {disabledReason ?? 'Actualiza el estado canónico antes de ejecutar este servicio.'}
+                {disabledReason ?? 'Actualiza el detalle antes de registrar este servicio.'}
               </Text>
             </View>
           )}
@@ -346,7 +360,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                 <View accessibilityLiveRegion="polite" style={styles.replayHint}>
                   <Ionicons name="shield-checkmark-outline" size={19} color={colors.warning} />
                   <Text style={styles.replayHintText}>
-                    Payload reservado. El reintento usa exactamente la cantidad, la nota y la clave originales.
+                    Guardado en esta tablet: el reintento envía la misma cantidad y la misma nota.
                   </Text>
                 </View>
               )}
@@ -355,14 +369,14 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                 disabled={!actionable || busy}
                 icon="checkmark-circle-outline"
                 onPress={submitTerminal}
-                title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR COMANDO' : `CONFIRMAR ${targetShortLabel(target)}`}
+                title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR ENVÍO' : `CONFIRMAR ${targetShortLabel(target)}`}
               />
             </View>
           )}
         </View>
       )}
 
-      {notice && <ServiceNotice notice={notice} />}
+      {shownNotice && <ServiceNotice notice={shownNotice} />}
     </Card>
   );
 });
@@ -440,7 +454,7 @@ function ServiceNotice({ notice }: { readonly notice: ServiceExecutionNotice }) 
       />
       <View style={styles.noticeCopy}>
         <Text style={styles.noticeTitle}>{notice.title}</Text>
-        <Text style={styles.noticeText}>{notice.message}</Text>
+        {notice.message ? <Text style={styles.noticeText}>{notice.message}</Text> : null}
       </View>
     </View>
   );
