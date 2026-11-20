@@ -159,10 +159,12 @@ Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
 lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
 
 **Un solo formato de fecha y hora.** Posterior al commit verificado de esta nota
-(hallazgo N11 de la corrida del VPS del 16 de noviembre), la tablet escribe
-«lun, 16 nov» y «16 nov, 19:46», siempre con reloj de 24 horas, con los
-formateadores de la
-[utilidad de fechas](../../frontend/mobile-agent/src/utils/date-format.ts).
+(hallazgo N11 de la corrida del VPS del 16 de noviembre), las pantallas que usan
+los formateadores de la
+[utilidad de fechas](../../frontend/mobile-agent/src/utils/date-format.ts)
+escriben «lun, 16 nov» y «16 nov, 19:46», siempre con reloj de 24 horas: la
+tarjeta y el detalle de la operación, «Sincronización», el inicio y «Mis
+posiciones de hoy», las incidencias, el chat y las notificaciones.
 
 - Las horas de la operación, de la cola de «Sincronización», de la última
   actualización del inicio y de «Mis posiciones de hoy» están en la hora local
@@ -175,6 +177,10 @@ formateadores de la
 - La tarjeta de la operación escribe «Inicio planificado» y el día sin
   mayúsculas forzadas, en hasta dos líneas que se reducen para caber, y el
   nombre del aeropuerto del detalle ya no se corta.
+- Pendiente: [«Mis turnos y documentos»](../../frontend/mobile-agent/src/app/my-schedule.tsx)
+  aún escribe el día con su propio formato largo y cada palabra en mayúscula
+  («Lunes, 16 De Noviembre»), y el vencimiento de los documentos como
+  «vence el 16/11/2026».
 - La APK instalada conserva el formato anterior hasta que se instale la nueva.
 
 **Unidades de cobro en español.** Posterior al commit verificado de esta nota

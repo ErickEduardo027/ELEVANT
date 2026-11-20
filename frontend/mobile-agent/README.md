@@ -103,7 +103,10 @@ contiene secretos.
 - Las fechas se formatean con `src/utils/date-format.ts`, que cachea las
   instancias de `Intl`. Las listas largas deben usar `FlatList` con filas
   memoizadas y handlers estables.
-- Un solo formato de fecha y hora (hallazgo N11): «lun, 16 nov» para el día y
+- Un solo formato de fecha y hora (hallazgo N11) en las pantallas que usan
+  `src/utils/date-format.ts`: la tarjeta y el detalle de la operación,
+  «Sincronización», el inicio y «Mis posiciones de hoy», las incidencias, el
+  chat y las notificaciones. Escriben «lun, 16 nov» para el día y
   «16 nov, 19:46» para la fecha con hora, siempre con reloj de 24 horas
   (`hourCycle: 'h23'`; si un motor escribe «24:05», se corrige a «00:05»).
   - `formatStationDate`, `formatStationTime` y `formatStationDateTime` dan la
@@ -120,6 +123,10 @@ contiene secretos.
     reduce para caber (`adjustsFontSizeToFit` con un tope de escala de fuente,
     porque Fabric ignora `minimumFontScale` en Android). En el detalle, el
     nombre del aeropuerto ya no se corta en una columna fija de 76 dp.
+  - Pendiente: «Mis turnos y documentos» (`src/app/my-schedule.tsx`) aún
+    escribe el día con su propio formato largo y cada palabra en mayúscula
+    («Lunes, 16 De Noviembre»), y el vencimiento de los documentos como
+    «vence el 16/11/2026».
 - Unidades de cobro en español (hallazgo S5, D-S5): `src/utils/billing-units.ts`
   nombra la unidad de un servicio como Finanzas, nunca con su código, y escribe
   el plural: «0 / 1 hora», «1 / 1 operación», «0 / 3 operaciones» y
