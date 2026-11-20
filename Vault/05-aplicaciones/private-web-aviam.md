@@ -938,7 +938,7 @@ siendo la regla para comparar. La usan:
 - Planificación: las tarjetas, el cajón de la escala (también en «Asignar
   agente» de la consola), el filtro y la búsqueda de posición, y los selectores
   de «Nuevo vuelo» y «Editar vuelo»;
-- «Importar vuelos»: la puerta de una llegada demo y el selector de posición;
+- «Importar vuelos»: la puerta de cada llegada y el selector de posición;
 - Mapa de posiciones: «(ahora en A1)» al traer otro vuelo;
 - Superadministración: el campo «Posición», «Vuelos demo de hoy» y las
   posiciones fuera del plano de la tarjeta «Posiciones de Punta Cana».

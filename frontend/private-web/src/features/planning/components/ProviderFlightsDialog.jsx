@@ -49,8 +49,8 @@ function Times({ item, timeZone }) {
 }
 
 // What the provider reports of an arrival, in the words the console's board gives its phase (N22): «Aterrizó», never
-// «Arrived» (dashboard/noc/boardModel.js, providerArrivalStatusKey). The gate of a demo arrival is its stand's code, so
-// it reads as the map draws it (N27): «Puerta A1», never «Puerta A01».
+// «Arrived» (dashboard/noc/boardModel.js, providerArrivalStatusKey). Every gate reads as the map draws a stand (N27):
+// a demo arrival's, its stand's code, reads «Puerta A1», never «Puerta A01», and a provider's «B03» reads «B3».
 function Details({ item }) {
   return <span className="block text-xs text-text-secondary-light dark:text-text-secondary-dark">
     {consoleMessages.es.status[providerArrivalStatusKey(item)]}{item.aircraftRegistration ? ` · ${item.aircraftRegistration}` : ''}

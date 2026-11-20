@@ -340,7 +340,7 @@ describe('demo flights (ADR-0041)', () => {
     expect(select).toHaveValue('s-a05');
     expect(select).toHaveDisplayValue('A5 · Terminal A');
     expect(demo).not.toHaveTextContent('A05');
-    // Any other code is shown as the provider wrote it.
+    // A code that is not capitals, a number and capitals is shown as the provider wrote it.
     expect(real).toHaveTextContent('Terminal B · Puerta E2E-XXXX-1');
   });
 
