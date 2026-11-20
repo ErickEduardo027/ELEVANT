@@ -2,6 +2,7 @@ using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Common;
 using Elevant.Application.Operations;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Elevant.IntegrationTests.Persistence;
 
@@ -98,5 +99,58 @@ public sealed partial class SqlServerMigrationTests
         clock.Now = LocalAt(day.AddDays(1), 0, 10);
         var assigned = await AssignThroughPlanningAsync(provider, flight, RileyProfile, ct);
         Assert.True(assigned.IsSuccess, assigned.Failure?.ToString());
+    }
+
+    /// <summary>
+    /// D-N24 in «Editar vuelo»: the agent assigned late keeps the flight when it is rescheduled if their shift covers
+    /// what is left of the new stay, from the server's clock, as the assignment judged it. The stay runs from 23:30 to
+    /// 00:30 and the agent's only shift is the next day's, from midnight to 08:00.
+    /// </summary>
+    [Fact]
+    public async Task ARescheduleKeepsALateAgentWhoseShiftCoversWhatIsLeftOfTheStay()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        var day = BusinessCalendar.Today(DateTimeOffset.UtcNow, StationZone).AddDays(2);
+        var clock = new MovableTimeProvider(LocalAt(day, 23));
+        await using var provider = await SeededFinanceProviderAsync(database, ct, clock);
+        var connection = database.ConnectionString;
+        var (airline, stands) = await PlanningFixtureAsync(connection, ct);
+        long riley;
+        await using (var setup = CreateContext(connection))
+            riley = await setup.RampAgents.Where(item => item.PublicId == RileyProfile).Select(item => item.Id).SingleAsync(ct);
+        await AddRampShiftAsync(connection, riley, day.AddDays(1), "A", 0, 8, ct);
+        var planned = await PlanManualFlightAsync(provider, airline, stands["A01"], day, "ZZ965", LocalAt(day, 23, 30),
+            LocalAt(day.AddDays(1), 0, 30), ct);
+        Assert.True(planned.Failure is null, planned.Code ?? planned.Failure?.ToString());
+        var flight = planned.TurnaroundId!.Value;
+        clock.Now = LocalAt(day.AddDays(1), 0, 10);
+        var assigned = await AssignThroughPlanningAsync(provider, flight, RileyProfile, ct);
+        Assert.True(assigned.IsSuccess, assigned.Failure?.ToString());
+
+        IOccTurnaroundStore Turnarounds(IServiceProvider services) => services.GetRequiredService<IOccTurnaroundStore>();
+        async Task<MasterDataResult<OccTurnaroundDetailData>> MoveDepartureAsync(DateTimeOffset departure)
+        {
+            var version = (await RunScopedAsync(provider, services => Turnarounds(services).ReadAsync(SeededOccAccount, flight,
+                ct))).Value!.Version;
+            return await RunScopedAsync(provider, services => Turnarounds(services).RescheduleAsync(SeededOccAccount, flight,
+                new RescheduleTurnaroundInput("ZZ965", "MIA", LocalAt(day, 23, 30), "ZZ965D", "MIA", departure, null, null,
+                    "Retraso informado por la aerolínea", version), Guid.NewGuid(), ct));
+        }
+
+        // At 00:15 the airline delays the departure to 00:45: the shift covers what is left, so the agent keeps it.
+        clock.Now = LocalAt(day.AddDays(1), 0, 15);
+        var delayed = await MoveDepartureAsync(LocalAt(day.AddDays(1), 0, 45));
+        Assert.True(delayed.Failure is null, delayed.Code ?? delayed.Failure?.ToString());
+        Assert.Equal(LocalAt(day.AddDays(1), 0, 45), delayed.Value!.Turnaround.Departure!.ScheduledAt);
+        Assert.Equal("Assigned", delayed.Value.Turnaround.Operation!.Status);
+        Assert.Contains(delayed.Value.Turnaround.Agents, agent => agent.EmployeeNumber == "DEV-RA-001");
+
+        // A departure at 08:30 is past the end of the shift: OCC releases the agent first.
+        var unavailable = await MoveDepartureAsync(LocalAt(day.AddDays(1), 8, 30));
+        Assert.Equal("assigned_agent_unavailable", unavailable.Code);
+        Assert.Equal(["shift_not_covering"], unavailable.Reasons!);
     }
 }

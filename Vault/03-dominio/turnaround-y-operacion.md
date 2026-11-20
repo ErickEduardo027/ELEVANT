@@ -383,7 +383,10 @@ bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
   que ya terminó se juzga entera, y una operación sin ventana, a su hora de
   referencia, como antes. La regla del mentor no cambia (D-N24). La regla es la
   misma en la asignación, la reasignación por cambio de posición, el relevo y el
-  sorteo del vuelo demo.
+  sorteo del vuelo demo. «Editar vuelo» juzga al agente asignado con la misma
+  ventana: conserva el vuelo reprogramado si su turno cubre la nueva escala o,
+  una vez empezada, lo que queda de ella; si no, OCC lo libera primero
+  (`assigned_agent_unavailable` con `shift_not_covering`).
 - **Contrato.** La tablet no inicia una operación si ningún contrato cubre ya su
   fecha, salvo un charter, y OCC recibe un aviso por cada operación sin iniciar
   cuando un contrato deja de estar en vigor.
