@@ -47,6 +47,23 @@ public sealed class ContractPdfRendererTests
     }
 
     [Fact]
+    public void APaddedAirlineCodePrintsTrimmedAndItsSignatureStillMatchesTheContent()
+    {
+        // N33: SQL reads a two-letter IATA code padded to the ICAO column's width («ZZ »), and the parties signed
+        // that stored value. The printout trims it; the fingerprint stays the one of the stored content.
+        var padded = Document("Approved", terms: 3) with { AirlineCode = "ZZ " };
+        var signed = padded with { Signatures = [padded.Signatures[0] with { DocumentSha256 = padded.ContentSha256 }] };
+
+        var text = PdfFontInspector.Text(Render(signed));
+        var lines = text.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
+        Assert.Contains("(ZZ),", text);
+        Assert.DoesNotContain("(ZZ )", text);
+        Assert.Contains("Demo Airlines · código ZZ", lines);
+        Assert.Contains("Huella coincidente con este documento.", text);
+        Assert.Contains(padded.ContentSha256, lines);
+    }
+
+    [Fact]
     public void ApprovedContractPaginatesWithItsCodeAndNoDraftMark()
     {
         var document = Document("Approved");

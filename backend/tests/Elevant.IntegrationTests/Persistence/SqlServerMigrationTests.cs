@@ -2596,8 +2596,11 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!;
         var published = Assert.Single(agreementPage.Contracts,
             item => item.Code == contract.ContractCode);
-        Assert.Equal((await context.Airlines.AsNoTracking().SingleAsync(item =>
-            item.Id == contract.AirlineId, cancellationToken)).Name, published.Airline);
+        var publishedAirline = await context.Airlines.AsNoTracking().SingleAsync(item =>
+            item.Id == contract.AirlineId, cancellationToken);
+        Assert.Equal(publishedAirline.Name, published.Airline);
+        // N33: the IATA code «ZX» is shown as is, never padded to the ICAO column's width («ZX »).
+        Assert.Equal(("ZX", "ZX"), (publishedAirline.IataCode, published.AirlineCode));
         Assert.Equal("Approved", Assert.Single(published.ApprovedVersions).Status);
         Assert.Single(Assert.Single(published.ApprovedVersions).Rates);
         var historicalVersion = await context.ContractVersions.SingleAsync(item =>

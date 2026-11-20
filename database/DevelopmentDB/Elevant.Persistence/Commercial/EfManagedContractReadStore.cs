@@ -54,10 +54,12 @@ internal sealed class EfManagedContractReadStore(
                 rate.BillingUnit, rate.UnitPrice, rate.MinimumQuantity })
             .ToArrayAsync(cancellationToken);
 
+        // N33: COALESCE(char(2), char(3)) pads a two-letter IATA code («WN »). The list trims it in memory, after the
+        // read; the signed document (ContractDocuments.LoadAsync) keeps the stored value, which its hash covers.
         return new ManagedContractPageData(page, limit, rows.Length > limit,
             selected.Select(contract => new ManagedContractData(
                 contract.PublicId, contract.ContractCode, contract.Airline,
-                contract.AirlineCode, contract.Status.ToString(), contract.SignedOn,
+                contract.AirlineCode.Trim(), contract.Status.ToString(), contract.SignedOn,
                 contract.TerminatedOn,
                 versions.Where(version => version.ContractId == contract.Id)
                     .Select(version => new ManagedContractVersionData(
