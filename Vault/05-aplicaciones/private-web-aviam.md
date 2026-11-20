@@ -2236,8 +2236,15 @@ demás), y cada pantalla pide su dato solo cuando lo muestra.
     contrario.
 - **Mapa de posiciones.** Al elegir una posición, el cajón muestra la aeronave estacionada o que llega.
 - **Diálogo de importación.** Muestra la aeronave a pedido, con «Ver la aeronave …».
-- **Contratos.** La bandeja muestra «Flota según AeroDataBox: 87 aviones · A320, B738…» o el aviso «Sin flota
-  registrada»; es un aviso y no cambia la aprobación.
+- **Contratos.** La bandeja muestra «Flota según AeroDataBox: 802 aviones; en una muestra de 25: B38M, B39M» y,
+  debajo, cuántos aviones de esa muestra tiene cada tipo («Tipos en una muestra de 25: B38M (24) · B39M (1)»), o el
+  aviso «Sin flota registrada»; es un aviso y no cambia la aprobación. *Posterior al commit verificado (hallazgo N32,
+  19 de noviembre de 2026):* cada tipo se nombra con la clave con que la API agrupa la muestra: su código OACI; sin
+  código, su modelo, y sin ninguno de los dos, «sin tipo»
+  ([`fleetTypeLabel`](../../frontend/private-web/src/features/aviation-reference/aviationReferenceFormat.js)). Así
+  ningún tipo sale dos veces: la prueba del VPS del 16 de noviembre mostraba «B38M (24) · B38M (1)», sin el B39M,
+  porque la línea usaba el modelo del proveedor. El resumen ya no presenta los tipos de la muestra como si fueran los
+  de toda la flota. Nombra tres tipos y la línea de la muestra cuenta seis; las dos terminan en «…» cuando hay más.
 - **Superadministración.** El catálogo de aerolíneas consulta la flota con un botón, para no gastar unidades por
   listar.
 - **Estados.** Un tope alcanzado se dice en palabras («Límite diario alcanzado»), nunca como error.

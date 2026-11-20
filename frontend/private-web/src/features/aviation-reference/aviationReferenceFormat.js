@@ -49,16 +49,49 @@ export function delayTone(index) {
   return index < 3 ? 'watch' : 'high';
 }
 
+/** How many types of the sample the one-line summary names, and how many the sample line counts. */
+const SUMMARY_TYPES = 3;
+const SAMPLE_TYPES = 6;
+
+/** How many aircraft the provider sent as a sample, when the answer brings their types; null otherwise. */
+const sampleSize = fleet => (Array.isArray(fleet?.types) && fleet.types.length > 0 &&
+  Number.isInteger(fleet.sampledAircraft) && fleet.sampledAircraft > 0 ? fleet.sampledAircraft : null);
+
 /**
- * The fleet in one line: «Flota según AeroDataBox: 87 aviones · A320, B738…» (the first three types of the sample,
- * most frequent first, «…» when there are more), or null without a count.
+ * The name of a type of the fleet sample: its ICAO type code, the key the API groups the sample by, or its model when
+ * the provider gave no code, so that no type is named twice (N32: the provider's model of a B39M can say «B38M»). The
+ * API's group of the aircraft with neither («?») is «sin tipo».
+ */
+export function fleetTypeLabel(t, type) {
+  const label = [type?.icaoType, type?.model].find(value => typeof value === 'string' && value.trim())?.trim();
+  return label && label !== '?' ? label : t('fleet.noType');
+}
+
+/**
+ * The fleet in one line: «Flota según AeroDataBox: 802 aviones; en una muestra de 25: B38M, B39M» (the first three
+ * types of the sample, most frequent first, «…» when there are more). The types are said as the sample's, never as the
+ * whole fleet's. Only the count without a sample; null without a count.
  */
 export function fleetSummary(t, fleet) {
   if (!fleet || !Number.isInteger(fleet.totalAircraft) || fleet.totalAircraft <= 0) return null;
-  const names = (fleet.types ?? []).map(type => type.icaoType ?? type.model).filter(Boolean);
-  const shown = names.slice(0, 3).join(', ');
-  const more = names.length > 3 ? '…' : '';
-  return shown ? `${t('fleet.summary', { count: fleet.totalAircraft })} · ${shown}${more}` : t('fleet.summary', { count: fleet.totalAircraft });
+  const total = fleet.totalAircraft === 1 ? t('fleet.summaryOne') : t('fleet.summary', { count: fleet.totalAircraft });
+  const size = sampleSize(fleet);
+  if (size === null) return total;
+  const names = fleet.types.map(type => fleetTypeLabel(t, type));
+  const more = names.length > SUMMARY_TYPES ? '…' : '';
+  return `${total}; ${t('fleet.inSample', { count: size })}: ${names.slice(0, SUMMARY_TYPES).join(', ')}${more}`;
+}
+
+/**
+ * How many aircraft of the sample each type has: «Tipos en una muestra de 25: B38M (24) · B39M (1)» (the first six
+ * types, « · …» when there are more), or null without a sample.
+ */
+export function fleetSampleLine(t, fleet) {
+  const size = sampleSize(fleet);
+  if (size === null) return null;
+  const shown = fleet.types.slice(0, SAMPLE_TYPES).map(type => `${fleetTypeLabel(t, type)} (${type.count})`);
+  const more = fleet.types.length > SAMPLE_TYPES ? ' · …' : '';
+  return `${t('fleet.sample', { count: size })}: ${shown.join(' · ')}${more}`;
 }
 
 /** Whether the answer says the airline has no fleet the provider knows: a warning, never a block. */
