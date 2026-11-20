@@ -3,8 +3,10 @@ import { setContractValidity } from '../../../services/commercialGovernanceApi';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { CONTRACT_VALIDITY_MESSAGES, contractValidityMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
+import { countLabel } from './agreementLabels';
 
-const input = 'rounded-lg border border-black/10 px-3 py-2 dark:border-white/10 dark:bg-surface-dark-card';
+// N33: a select is as wide as its longest option unless it may shrink; `w-full min-w-0` keeps every field in its column.
+const input = 'w-full min-w-0 rounded-lg border border-black/10 px-3 py-2 dark:border-white/10 dark:bg-surface-dark-card';
 
 /**
  * Validity step Contratos completes after Finance approves the rates and before anyone signs
@@ -87,7 +89,7 @@ export default function ContractValidityForm({ document, onSaved }) {
           placeholder="Ej.: incumplimiento grave de pago o de las normas de seguridad en rampa." /></label>
       {form.renewalMode === 'Automatic' && (
         <p className="text-xs text-text-secondary-light">
-          La renovación automática crea la nueva versión {form.renewalNoticeDays || 0} días antes del fin; esa versión vuelve a
+          La renovación automática crea la nueva versión {countLabel(Number(form.renewalNoticeDays) || 0, 'día', 'días')} antes del fin; esa versión vuelve a
           pasar por Finanzas, la vigencia y las firmas. Nada se prorroga en silencio.
         </p>
       )}

@@ -10,7 +10,8 @@ const dateFormat = new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeS
 /**
  * Bell feed of a department shell: alerts pop up on screen as they arrive (a toast with
  * «Abrir» that never takes focus, so typing in a form is not interrupted) and the drawer
- * lists the latest ones. `onOpen` receives the alert's target menu option.
+ * lists the latest ones. `onOpen` receives the alert's target menu option. The toasts sit at
+ * the bottom right (D-N33): at the top right they covered the bell and the user menu.
  */
 export function useDepartmentNotificationCenter({ enabled = true, onOpen }) {
   const [open, setOpen] = useState(false);
@@ -34,7 +35,7 @@ export function useDepartmentNotificationCenter({ enabled = true, onOpen }) {
 
   const ui = enabled ? (
     <>
-      <Toast toasts={toasts} onDismiss={dismissToast} />
+      <Toast toasts={toasts} onDismiss={dismissToast} placement="bottom-right" />
       <Drawer open={open} onClose={() => setOpen(false)} title="Notificaciones"
         description="Avisos de tu departamento. Se actualizan solos cuando llega algo nuevo."
         footer={notifications.unreadCount > 0 && (

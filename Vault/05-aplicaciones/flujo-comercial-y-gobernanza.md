@@ -335,6 +335,35 @@ Desde la fase 2 del ciclo
   Una aerolínea cuyas cuentas creó solo Superadministración, sin
   aprovisionamiento, no tiene representante hasta que se designe uno.
 
+*Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026).* La
+prueba del VPS del 16 de noviembre encontró «al Sin vencimiento», el código
+«(WN )», una ayuda con las firmas al revés y un permiso sin verificar en verde.
+Ahora:
+
+- **Código de la aerolínea.** SQL lee un IATA de dos letras con el relleno de la
+  columna ICAO («WN »), y las versiones se firmaron sobre ese valor. La
+  [respuesta del documento](../../backend/Elevant.Api/Controllers/ContractDocumentsController.cs),
+  el [PDF](../../backend/Elevant.Infrastructure/Commercial/ContractPdfRenderer.cs),
+  la [lista de contratos](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfManagedContractReadStore.cs)
+  y AVIAM Web lo recortan al presentarlo: «(WN)», y un ICAO queda entero
+  («(SWA)»). La huella SHA-256 se sigue calculando sobre el valor guardado, así
+  que ninguna firma deja de coincidir con su documento y no hace falta un ADR.
+  Cambiar el tipo de la columna quedó descartado: exigiría un plan para las
+  huellas ya firmadas.
+- **Vigencia.** El detalle escribe «Del 3 de noviembre de 2026 al 2 de noviembre
+  de 2027» o, sin fin, «Desde el 3 de noviembre de 2026, sin vencimiento»; la
+  lista conserva «01/09/2026 — Sin vencimiento»
+  ([`validityRange`](../../frontend/private-web/src/features/contracts/agreements/agreementLabels.js)).
+- **Orden de los pasos.** La ayuda de Contratos › Contratos sigue el orden que
+  aplica el servidor: Finanzas aprueba los precios, Contratos fija la vigencia,
+  firma la aerolínea, AVIAM contrafirma y, con el permiso JAC verificado, el
+  contrato se activa. Antes decía «firman AVIAM y la aerolínea» y no nombraba la
+  vigencia ni el permiso.
+- **Permiso sin verificar.** Un permiso enviado, rechazado o con la verificación
+  revocada cuyas fechas están vigentes se ve «Fechas vigentes» en tono neutro;
+  «Vigente» en verde queda para un permiso verificado
+  ([permisos](../../frontend/private-web/src/features/contracts/permits/AirlinePermitsPage.jsx)).
+
 ## Catálogo y fichas de aerolínea
 
 El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas conserva 51 nombres históricos de AVIAM, países y enlaces de investigación, con seis identidades cotejadas contra IATA. Una parte de las fichas usa iconos de sitios oficiales servidos localmente en ambas webs; las demás usan una placa de referencia que no se presenta como logo oficial. Los campos no corroborados permanecen como «Sin dato confirmado». Desde el 16 de noviembre de 2026, todas las aerolíneas activas de la lista tienen identidad: sus códigos IATA e ICAO vienen de la copia de OpenFlights del repositorio (`openflights-airlines.tsv`), cotejados por nombre, o, para las que esa copia no tiene, de sus designadores públicos con su sitio oficial como fuente. ARKEFLY, marca histórica de TUIFLY NETHERLANDS, deja a esta los designadores OR/TFL. En Development, «Completar fichas AVIAM» también pone un **RNC ficticio de demostración** (`AviamAirlineReference.DevelopmentTaxRegistrations`) a las fichas sin identificador, solo con `AirlineCatalogEnrichment:IncludeDevelopmentTaxRegistrations`, que únicamente Development y Test permiten; no son los RNC reales de las aerolíneas. Superadministración administra las fichas y con **Completar fichas AVIAM** completa las que nadie editó: las del seed y las que solo cambiaron la propia acción o un check de registro, según la auditoría. Nunca toca una ficha guardada, verificada o creada por una persona, una que ya opera ni un designador que otra ficha verificada usa; por eso pulsarlo otra vez aplica las identidades nuevas. Fuera de Development el RNC no se completa así. El seed no actualiza datos existentes. Cada ficha se puede verificar en un registro público («Verificar en registro»: primero las aerolíneas ya vistas en los vuelos de AeroDataBox, sin costo; luego Wikidata y, si no responde, una copia de OpenFlights; [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). Solo se publica para el paso 2 con el check verde o con la verificación manual con su fuente, y el asistente muestra el sello «Verificada en registro público» ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). Cuando la aerolínea ya opera (tiene su fila en `ref.airlines` o una solicitud aprobada), Superadministración no puede cambiar su razón social, su IATA, su ICAO ni su verificación; el nombre comercial, el logo y la publicación siguen editables. Desde el 16 de noviembre de 2026, **Corregir identidad** en **Editar aerolínea** permite a un superadministrador corregir esos datos (por ejemplo, identidades de prueba) con un **Motivo de la corrección** obligatorio de 10 a 500 caracteres y la verificación con su fuente HTTPS: la API (`identityCorrectionReason`) lo audita como `commercial.airline.identity_corrected` con los valores anteriores y nuevos y el motivo, la verificación pasa a su nombre y se limpia el check del registro. Los designadores siguen siendo únicos entre fichas verificadas. Los contratos, las facturas, las solicitudes y la aerolínea canónica (`ref.airlines`) conservan los datos con los que se hicieron: la corrección cambia solo la ficha del catálogo.

@@ -132,6 +132,14 @@ Los sellos con fecha y hora (firmas, ciclo del contrato, revisiones e
 historiales) conservan su formato, y las pantallas fuera de ese recorrido no
 cambiaron.
 
+*Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026).* En
+Contratos, la vigencia de una versión se escribe con
+[`validityRange`](../../frontend/private-web/src/features/contracts/agreements/agreementLabels.js):
+en una lista, «01/09/2026 — 31/08/2027» o «01/09/2026 — Sin vencimiento»; dentro
+de una frase, «del 3 de noviembre de 2026 al 2 de noviembre de 2027» o «desde el
+3 de noviembre de 2026, sin vencimiento». Un conteo va en singular solo para 1:
+«1 versión publicada», «1 tarifa pactada», «1 mes», «1 día».
+
 ## Ficha de frontera
 
 | Dimensión | Estado verificado |
@@ -709,8 +717,8 @@ el día UTC del navegador.
 
 | Pantalla | Comportamiento |
 | --- | --- |
-| Contratos → Contratos | El ciclo de vida termina con la fecha que permite el preaviso firmado o con una causa inmediata, cancela una terminación programada y avisa cuando hay una. El detalle ofrece «Retirar versión» para una versión aprobada que no firmaron ambas partes. La vigencia se envía con su clave, y los estados del contrato salen de un mapa compartido ([estados](../../frontend/private-web/src/features/contracts/contractStatus.js)). El listado todavía muestra «Aprobada» para una versión que espera las firmas. |
-| Contratos → Permisos de aerolíneas | «Revocar verificación» con motivo, filtro «Revocados» y un aviso que se arma con los contratos que el servidor activó, reanudó o suspendió. |
+| Contratos → Contratos | El ciclo de vida termina con la fecha que permite el preaviso firmado o con una causa inmediata, cancela una terminación programada y avisa cuando hay una. El detalle ofrece «Retirar versión» para una versión aprobada que no firmaron ambas partes. La vigencia se envía con su clave, y los estados del contrato salen de un mapa compartido ([estados](../../frontend/private-web/src/features/contracts/contractStatus.js)). El listado todavía muestra «Aprobada» para una versión que espera las firmas. *Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026):* el detalle escribe una vigencia sin fin «Desde el 3 de noviembre de 2026, sin vencimiento», antes «al Sin vencimiento», y el código de la aerolínea sin el relleno de SQL: «(WN)», antes «(WN )». La lista dice «1 versión publicada» y «1 tarifa pactada», y su ayuda sigue el orden real: Finanzas, vigencia, firma de la aerolínea, contrafirma de AVIAM y permiso JAC verificado. Los campos de «Vigencia y renovación» ya no se salen de su columna (el selector «Renovación» lo hacía), y la renovación y los avisos dicen «1 mes» y «1 día». |
+| Contratos → Permisos de aerolíneas | «Revocar verificación» con motivo, filtro «Revocados» y un aviso que se arma con los contratos que el servidor activó, reanudó o suspendió. *Posterior al commit verificado (hallazgo N33, 19 de noviembre de 2026):* un permiso sin verificar (enviado, rechazado o revocado) con fechas vigentes dice «Fechas vigentes» en tono neutro; «Vigente», en verde, queda para un permiso verificado. |
 | Superadministración | «Estaciones» crea, renombra y desactiva estaciones, y cambia su zona horaria mientras no tienen historia ([panel](../../frontend/private-web/src/features/governance/StationsPanel.jsx)). «Clientes» designa representantes y firmantes de cada aerolínea. Las altas y ediciones de gobernanza envían una clave por intención y explican cada código. |
 | OCC → Datos maestros | `/admin-occ/master-data`, con `operations.master_data.read`: terminales y posiciones de la estación, y los tipos de avión compartidos por todas, con alta, edición y desactivación ([pantalla](../../frontend/private-web/src/features/master-data/MasterDataRoute.jsx)). |
 | OCC → Cobertura de posiciones | Explica `stand_in_use` cuando se intenta desactivar una posición en uso y enlaza a Datos maestros. El selector de mentor marca y deshabilita a quien tiene una ausencia aprobada o no tiene carnet vigente. |
@@ -732,6 +740,14 @@ la barra de estado ([Marco del OCC](#marco-del-occ-pr-u2)). Fuentes:
 [ausencias](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx),
 [avisos de departamento](../../frontend/private-web/src/features/notifications/departmentNotifications.js) y
 [avisos de OCC](../../frontend/private-web/src/features/notifications/notificationKinds.js).
+
+*Posterior al commit verificado (hallazgo N33 y decisión D-N33, 19 de noviembre
+de 2026).* En Contratos, Finanzas y Gestión Humana el aviso emergente que trae
+la campana sale abajo a la derecha: arriba tapaba la campana y el menú de
+usuario del topbar. El [aviso](../../frontend/private-web/src/components/Toast.jsx)
+admite `placement` (`top-right`, el de siempre, o `bottom-right`) y el
+[centro de avisos](../../frontend/private-web/src/features/notifications/DepartmentNotificationCenter.jsx)
+pide `bottom-right`. Los avisos del OCC no cambian de sitio.
 
 ## La operación (fase 3)
 

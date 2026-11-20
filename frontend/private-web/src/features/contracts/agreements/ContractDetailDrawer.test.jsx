@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import ContractDetailDrawer from './ContractDetailDrawer';
+import ContractDetailDrawer, { validityLines } from './ContractDetailDrawer';
 import {
   createContractAmendment, getContractDocument, loadContractPdf, setContractValidity, signContractVersion,
   withdrawContractVersion,
@@ -224,4 +224,57 @@ it('writes the validity and the day both parties signed in full inside their sen
   expect(drawer).toHaveTextContent('Del 3 de noviembre de 2026 al 2 de noviembre de 2027 · USD · versión aprobada');
   expect(screen.getByText('Firmado por ambas partes el 3 de noviembre de 2026.')).toBeInTheDocument();
   expect(drawer).not.toHaveTextContent(/2026-11-03|2027-11-02/);
+});
+
+it('trims a padded airline code and keeps an ICAO code whole (N33)', async () => {
+  getContractDocument.mockResolvedValueOnce({ ...document, airlineName: 'Southwest', airlineLegalName: 'Southwest Airlines Co.',
+    airlineCode: 'WN ' });
+  const { unmount } = render(<ContractDetailDrawer versionId="v-1" onClose={vi.fn()} />);
+  const drawer = await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' });
+  expect(drawer).toHaveTextContent('AVIAM (prestador) y Southwest Airlines Co. (WN).');
+  expect(drawer).not.toHaveTextContent('(WN )');
+  unmount();
+  getContractDocument.mockResolvedValueOnce({ ...document, airlineName: 'Southwest', airlineLegalName: 'Southwest Airlines Co.',
+    airlineCode: 'SWA' });
+  render(<ContractDetailDrawer versionId="v-1" onClose={vi.fn()} />);
+  expect(await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' }))
+    .toHaveTextContent('AVIAM (prestador) y Southwest Airlines Co. (SWA).');
+});
+
+it('writes a validity with no end in words, never «al Sin vencimiento» (N33)', async () => {
+  getContractDocument.mockResolvedValueOnce({ ...document, validTo: null });
+  render(<ContractDetailDrawer versionId="v-1" onClose={vi.fn()} />);
+  const drawer = await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' });
+  expect(drawer).toHaveTextContent('Desde el 3 de noviembre de 2026, sin vencimiento · USD · versión aprobada');
+  expect(drawer).not.toHaveTextContent(/al Sin vencimiento/);
+});
+
+it('writes one month and one day of renewal and notice in the singular (N33)', () => {
+  const one = { renewalTermMonths: 1, renewalNoticeDays: 1, terminationNoticeDays: 1, terminationTerms: null };
+  expect(validityLines({ validity: { ...one, renewalMode: 'Automatic' } })).toEqual([
+    'Renovación automática por 1 mes: la nueva versión se inicia 1 día antes del fin.',
+    'Terminación con 1 día de preaviso.',
+  ]);
+  expect(validityLines({ validity: { ...one, renewalMode: 'Manual' } })[0])
+    .toBe('Renovación manual por períodos de 1 mes; aviso 1 día antes.');
+  expect(validityLines({ validity })).toEqual([
+    'Renovación automática por 12 meses: la nueva versión se inicia 30 días antes del fin.',
+    'Terminación con 60 días de preaviso. Incumplimiento grave.',
+  ]);
+});
+
+it('keeps every field of the validity form inside its column and names one day in the singular (N33)', async () => {
+  getContractDocument.mockResolvedValueOnce({ ...document, contractCode: 'DRAFT-1', validity: null, signatures: [], signableBy: null });
+  render(<ContractDetailDrawer versionId="v-1" canSetValidity onClose={vi.fn()} />);
+  const form = await screen.findByRole('form', { name: 'Vigencia y renovación' });
+  const renewal = within(form).getByLabelText('Renovación');
+  // A select is as wide as its longest option unless it may shrink: «Automática: se inicia sola…» left its column.
+  for (const field of [renewal, ...within(form).getAllByRole('spinbutton'), within(form).getByLabelText('Inicio de la vigencia'),
+    within(form).getByLabelText('Condiciones de terminación')]) {
+    expect(field).toHaveClass('w-full', 'min-w-0');
+  }
+  await userEvent.selectOptions(renewal, 'Automatic');
+  await userEvent.clear(within(form).getByLabelText('Aviso de renovación (días antes)'));
+  await userEvent.type(within(form).getByLabelText('Aviso de renovación (días antes)'), '1');
+  expect(form).toHaveTextContent('La renovación automática crea la nueva versión 1 día antes del fin;');
 });

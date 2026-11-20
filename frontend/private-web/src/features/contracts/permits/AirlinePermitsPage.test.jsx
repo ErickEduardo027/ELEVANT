@@ -39,6 +39,30 @@ it('writes the issue and expiry dates of a permit dd/mm/aaaa (N36)', async () =>
   expect(screen.getByText('Vence').nextElementSibling).toHaveTextContent(/^20\/11\/2026$/);
 });
 
+it('shows the current dates of a permit nobody verified in a neutral tone, never «Vigente» in green (N33)', async () => {
+  const badge = text => screen.getByText(text).querySelector('[data-testid="status-dot"]');
+  getAirlinePermitsForContracts.mockResolvedValue([{ ...permit, validity: 'Current' }]);
+  const { unmount } = render(<AirlinePermitsPage canVerify />);
+  expect(await screen.findByText('Fechas vigentes')).toBeInTheDocument();
+  expect(badge('Fechas vigentes')).toHaveClass('bg-status-neutral');
+  expect(screen.queryByText('Vigente')).not.toBeInTheDocument();
+  unmount();
+  for (const review of ['Rejected', 'Revoked']) {
+    getAirlinePermitsForContracts.mockResolvedValueOnce([{ ...permit, review, validity: 'Current' }]);
+    const view = render(<AirlinePermitsPage canVerify />);
+    expect(await screen.findByText('Fechas vigentes')).toBeInTheDocument();
+    expect(screen.queryByText('Vigente')).not.toBeInTheDocument();
+    view.unmount();
+  }
+  // Only a verified permit is «Vigente», in green; an expiring one keeps its warning either way.
+  getAirlinePermitsForContracts.mockResolvedValue([{ ...verified, validity: 'Current' }, { ...permit, id: 'p-2' }]);
+  render(<AirlinePermitsPage canVerify />);
+  expect(await screen.findByText('Vigente')).toBeInTheDocument();
+  expect(badge('Vigente')).toHaveClass('bg-status-success');
+  expect(badge('Vence en 30 días o menos')).toHaveClass('bg-status-warning');
+  expect(screen.queryByText('Fechas vigentes')).not.toBeInTheDocument();
+});
+
 it('never promises an activation the server did not make', () => {
   expect(decisionNotice(decision({ review: 'Verified' }), 'verify')).toMatch(/Ningún contrato cambió de estado/);
   expect(decisionNotice(decision({ review: 'Verified', kind: 'Insurance' }), 'verify'))

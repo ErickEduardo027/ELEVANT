@@ -90,3 +90,39 @@ it('shows the contract status and the billing unit in Spanish, never their codes
   expect(await screen.findAllByText(/Por operación · mínimo 1/)).not.toHaveLength(0);
   expect(screen.queryByText(/Por operation/)).not.toBeInTheDocument();
 });
+
+it('names one version and one rate in the singular and trims a padded airline code (N33)', async () => {
+  const second = { ...agreement.approvedVersions[0], id: 'version-two', versionNumber: 1, status: 'Superseded',
+    rates: [{ ...agreement.approvedVersions[0].rates[0], id: 'rate-two' }, { ...agreement.approvedVersions[0].rates[0], id: 'rate-three' }] };
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false, contracts: [
+    { ...agreement, airlineCode: 'WN ' },
+    { ...agreement, id: 'contract-two', code: 'CTR-2026-2', approvedVersions: [agreement.approvedVersions[0], second] },
+  ] });
+  render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByText('WN · Activo')).toBeInTheDocument();
+  expect(screen.getByText('1 versión publicada')).toBeInTheDocument();
+  expect(screen.getByText('2 versiones publicadas')).toBeInTheDocument();
+  expect(screen.getAllByText('1 tarifa pactada')).toHaveLength(2);
+  expect(screen.getByText('2 tarifas pactadas')).toBeInTheDocument();
+  expect(screen.queryByText(/1 versiones|1 tarifas/)).not.toBeInTheDocument();
+});
+
+it('keeps the list neutral for a validity with no end (N33)', async () => {
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false, contracts: [agreement] });
+  const { unmount } = render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByText('Versión 2 · Aprobada · 01/09/2026 — Sin vencimiento · USD')).toBeInTheDocument();
+  unmount();
+  render(<ManagedAgreementsPage mode="services" />);
+  expect(await screen.findByText('01/09/2026 — Sin vencimiento')).toBeInTheDocument();
+});
+
+it('explains the steps of a contract in their real order (N33)', async () => {
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false, contracts: [] });
+  render(<ManagedAgreementsPage mode="contracts" />);
+  const help = (await screen.findByText(/Todo contrato nace de una solicitud comercial aprobada/)).closest('p');
+  expect(help).toHaveTextContent('Solicitudes → Borradores (términos y tarifas) → aprobación de precios de Finanzas → '
+    + 'Contratos fija la vigencia → firma la aerolínea → AVIAM contrafirma → con el permiso JAC verificado en Permisos de '
+    + 'aerolíneas, el contrato se activa.');
+  expect(help).toHaveTextContent('En el detalle se fija la vigencia, se descarga el PDF y AVIAM contrafirma; la aerolínea firma desde su portal.');
+  expect(help).not.toHaveTextContent(/firman AVIAM y la aerolínea/);
+});

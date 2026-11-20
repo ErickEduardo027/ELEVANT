@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { billingUnitLabel } from '../../../services/billingUnits';
-import { formatBusinessDate } from '../../../services/businessDay';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
 import { contractStatusLabel } from '../contractStatus';
+import { airlineCodeLabel, countLabel, validityRange } from './agreementLabels';
 import ContractDetailDrawer from './ContractDetailDrawer';
 
 const TITLES = {
@@ -11,11 +11,6 @@ const TITLES = {
   services: ['Servicios pactados', 'Tarifas aprobadas por contrato y estación.'],
   reports: ['Reportes contractuales', 'Indicadores de los acuerdos publicados en esta página.'],
 };
-
-/** A list writes its dates dd/mm/aaaa (N36); a validity may have no end. */
-function date(value) {
-  return value ? formatBusinessDate(value) : 'Sin vencimiento';
-}
 
 export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, canManageLifecycle = false,
   canSetValidity = false, canAmend = false, onOpenDrafts, onNewContract }) {
@@ -57,9 +52,13 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
         <button type="button" onClick={refresh} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Recargar</button>
       </div>
     </header>
+    {/* N33: the steps in the order the server enforces them (ADR-0025, ADR-0024): the validity before any signature,
+        the airline signs first and AVIAM countersigns the same content, and a verified permit activates the contract. */}
     {mode === 'contracts' && <p className="rounded-xl border border-accent-600/20 bg-accent-600/5 p-4 text-sm">
       Todo contrato nace de una solicitud comercial aprobada: <strong>Solicitudes</strong> → <strong>Borradores</strong> (términos y tarifas)
-      → aprobación de precios de <strong>Finanzas</strong> → contrato aprobado. Desde el detalle se descarga el PDF y firman AVIAM y la aerolínea.
+      → aprobación de precios de <strong>Finanzas</strong> → Contratos fija la vigencia → firma la aerolínea → AVIAM contrafirma → con
+      el permiso JAC verificado en <strong>Permisos de aerolíneas</strong>, el contrato se activa. En el detalle se fija la vigencia, se
+      descarga el PDF y AVIAM contrafirma; la aerolínea firma desde su portal.
     </p>}
     {['error', 'forbidden', 'unauthorized'].includes(state.status) ? <div role="alert" className="rounded-xl border border-status-danger/30 p-5">
       <p>{state.error}</p>{state.status === 'error' && <button type="button" onClick={refresh} className="mt-3 text-accent-600">Reintentar</button>}
@@ -69,12 +68,12 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
           <div className="flex flex-wrap items-start justify-between gap-3"><div>
             <p className="font-mono text-xs text-accent-600">{contract.code}</p>
             <h2 className="mt-1 font-semibold">{contract.airline}</h2>
-            <p className="text-xs text-text-secondary-light">{contract.airlineCode} · {contractStatusLabel(contract.status)}</p>
-          </div><span className="text-xs text-text-secondary-light">{contract.approvedVersions.length} versiones publicadas</span></div>
+            <p className="text-xs text-text-secondary-light">{airlineCodeLabel(contract.airlineCode)} · {contractStatusLabel(contract.status)}</p>
+          </div><span className="text-xs text-text-secondary-light">{countLabel(contract.approvedVersions.length, 'versión publicada', 'versiones publicadas')}</span></div>
           {contract.approvedVersions.map(version => <div key={version.id} className="mt-3 border-t border-black/5 pt-3 text-sm dark:border-white/10">
-            <p>Versión {version.versionNumber} · {version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'} · {date(version.validFrom)} — {date(version.validTo)} · {version.currencyCode}</p>
+            <p>Versión {version.versionNumber} · {version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'} · {validityRange(version.validFrom, version.validTo)} · {version.currencyCode}</p>
             <p className="mt-1 text-xs text-text-secondary-light">Estaciones: {version.stations.map(station => <span key={station.id} className="mr-2">{station.code}</span>)}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-3"><p className="text-xs text-text-secondary-light">{version.rates.length} tarifas pactadas</p>
+            <div className="mt-1 flex flex-wrap items-center gap-3"><p className="text-xs text-text-secondary-light">{countLabel(version.rates.length, 'tarifa pactada', 'tarifas pactadas')}</p>
               <button type="button" onClick={() => setDetailId(version.id)} className="text-xs font-semibold text-accent-600 underline">
                 Ver detalle, PDF y firmas · versión {version.versionNumber}</button></div>
           </div>)}</article>)}</div> : <p className="rounded-xl border p-8 text-center">No hay contratos aprobados en esta página.</p>)}
@@ -86,7 +85,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
           <td className="p-3">{rate.version.currencyCode} {Number(rate.unitPrice).toFixed(4)}<span className="block text-xs">Por {billingUnitLabel(rate.billingUnit)} · mínimo {rate.minimumQuantity}</span></td>
           <td className="p-3">{rate.version.stations.map(station => station.code).join(', ') || 'Sin estación'}</td>
           <td className="p-3">{rate.version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'}</td>
-          <td className="p-3">{date(rate.version.validFrom)} — {date(rate.version.validTo)}</td>
+          <td className="p-3">{validityRange(rate.version.validFrom, rate.version.validTo)}</td>
         </tr>)}</tbody></table></div> : <p className="rounded-xl border p-8 text-center">No hay servicios pactados en esta página.</p>)}
       {mode === 'reports' && <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-dark-card">
         <p className="text-xs text-text-secondary-light">Indicadores de la página {page}, no del total histórico.</p>

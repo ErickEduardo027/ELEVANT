@@ -20,6 +20,17 @@ export const PERMIT_VALIDITY = {
   Expiring: { label: 'Vence en 30 días o menos', tone: 'warning' },
   Expired: { label: 'Vencido', tone: 'danger' },
 };
+/** N33: the current dates of a permit nobody verified, in a neutral tone; «Vigente» in green read as a permit that counts. */
+const CURRENT_DATES_UNVERIFIED = { label: 'Fechas vigentes', tone: 'neutral' };
+
+/**
+ * The validity badge of a permit. Only a verified permit counts for a contract, so a submitted, rejected or revoked one
+ * with current dates says «Fechas vigentes» in a neutral tone; an expiring or expired one keeps its warning either way.
+ */
+export function permitValidityBadge(permit) {
+  if (permit.validity === 'Current' && permit.review !== 'Verified') return CURRENT_DATES_UNVERIFIED;
+  return PERMIT_VALIDITY[permit.validity] ?? { label: permit.validity, tone: undefined };
+}
 const REVIEW = {
   Submitted: { label: 'Por verificar', tone: 'warning' },
   Verified: { label: 'Verificado', tone: 'success' },
@@ -124,7 +135,7 @@ export default function AirlinePermitsPage({ canVerify }) {
             <li key={permit.id} className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div><strong>{permit.airline}</strong><p className="text-xs text-text-secondary-light">{PERMIT_KINDS[permit.kind] ?? permit.kind}</p></div>
-                <div className="flex flex-wrap gap-1"><StatusBadge tone={REVIEW[permit.review]?.tone} label={REVIEW[permit.review]?.label ?? permit.review} /><StatusBadge tone={PERMIT_VALIDITY[permit.validity]?.tone} label={PERMIT_VALIDITY[permit.validity]?.label ?? permit.validity} /></div>
+                <div className="flex flex-wrap gap-1"><StatusBadge tone={REVIEW[permit.review]?.tone} label={REVIEW[permit.review]?.label ?? permit.review} /><StatusBadge {...permitValidityBadge(permit)} /></div>
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <dt className="text-text-secondary-light">Número</dt><dd className="font-mono">{permit.number}</dd>

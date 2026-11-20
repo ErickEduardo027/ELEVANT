@@ -303,3 +303,13 @@ it('writes the dates of a termination and of an amendment in full inside their s
   expect(screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' }))
     .toHaveTextContent('(versión 1, del 1 de enero de 2026 al 31 de diciembre de 2026)');
 });
+
+it('names the source version of an amendment with no end in words (N33)', async () => {
+  getContractTimeline.mockResolvedValue(timeline('Active'));
+  render(<ContractLifecyclePanel versionId="v-1" canAmend
+    currentVersion={{ versionNumber: 1, validFrom: '2026-01-01', validTo: null }} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
+  const dialog = screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' });
+  expect(dialog).toHaveTextContent('(versión 1, desde el 1 de enero de 2026, sin vencimiento)');
+  expect(dialog).not.toHaveTextContent(/del 1 de enero de 2026 sin vencimiento/);
+});

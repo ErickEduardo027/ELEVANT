@@ -9,6 +9,7 @@ import { contractLifecycleMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import { amendmentProblemMessage } from '../drafts/draftProblemMessages';
 import { CONTRACT_STATUS } from '../contractStatus';
+import { validityRange } from './agreementLabels';
 
 // 2-N26: one Spanish map of contract statuses for every Contratos screen.
 export { CONTRACT_STATUS };
@@ -264,7 +265,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
         <div className="space-y-3 text-sm">
           {amendError && !amendError.onDate && <p role="alert" className="rounded-lg bg-status-danger/10 p-2 text-xs text-status-danger">{amendError.text}</p>}
           <p className="text-xs">La enmienda cambia precios a mitad de la vigencia. Parte de la última versión aprobada{currentVersion
-            ? ` (versión ${currentVersion.versionNumber}, del ${day(currentVersion.validFrom)} ${currentVersion.validTo ? `al ${day(currentVersion.validTo)}` : 'sin vencimiento'})` : ''}, conserva su fin, sus estaciones, cargos y paquetes, y copia las tarifas sin confirmar para que Contratos las revise antes de enviarla a Finanzas.</p>
+            ? ` (versión ${currentVersion.versionNumber}, ${validityRange(currentVersion.validFrom, currentVersion.validTo, { style: 'long' })})` : ''}, conserva su fin, sus estaciones, cargos y paquetes, y copia las tarifas sin confirmar para que Contratos las revise antes de enviarla a Finanzas.</p>
           <label className="block text-xs font-semibold">Vigente desde
             <input type="date" min={earliestAmendment} max={latestAmendment} value={amendFrom}
               onChange={event => { setAmendFrom(event.target.value); if (amendError?.onDate) setAmendError(null); }}

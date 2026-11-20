@@ -8,26 +8,34 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractDocumentMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import SignaturePad from '../../../components/SignaturePad';
+import { airlineCodeLabel, countLabel, validityRange } from './agreementLabels';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
 import ContractValidityForm from './ContractValidityForm';
 
 const PARTY = { Aviam: 'AVIAM', Airline: 'Aerolínea' };
 
-/** The drawer's dates sit inside sentences, so they are written in full (N36); a validity may have no end. */
-function date(value) {
-  return value ? formatBusinessDate(value, { style: 'long' }) : 'Sin vencimiento';
+/** The drawer's dates sit inside sentences, so they are written in full (N36). */
+const day = value => formatBusinessDate(value, { style: 'long' });
+
+/** The validity opens its line: «Del 3 de noviembre de 2026 al …» or «Desde el 3 de noviembre de 2026, sin vencimiento» (N33). */
+function validityLine(document) {
+  const range = validityRange(document.validFrom, document.validTo, { style: 'long' });
+  return range.charAt(0).toUpperCase() + range.slice(1);
 }
 
-/** Validity and renewal terms in plain words (ADR-0025). */
+const months = count => countLabel(count, 'mes', 'meses');
+const days = count => countLabel(count, 'día', 'días');
+
+/** Validity and renewal terms in plain words (ADR-0025), with «1 mes» and «1 día» in the singular (N33). */
 export function validityLines(document) {
   const validity = document.validity;
   if (!validity) return [];
   return [
     validity.renewalMode === 'Automatic'
-      ? `Renovación automática por ${validity.renewalTermMonths} meses: la nueva versión se inicia ${validity.renewalNoticeDays} días antes del fin.`
-      : `Renovación manual${validity.renewalTermMonths ? ` por períodos de ${validity.renewalTermMonths} meses` : ''}; aviso ${validity.renewalNoticeDays} días antes.`,
-    `Terminación con ${validity.terminationNoticeDays} días de preaviso.${validity.terminationTerms ? ` ${validity.terminationTerms}` : ''}`,
+      ? `Renovación automática por ${months(validity.renewalTermMonths)}: la nueva versión se inicia ${days(validity.renewalNoticeDays)} antes del fin.`
+      : `Renovación manual${validity.renewalTermMonths ? ` por períodos de ${months(validity.renewalTermMonths)}` : ''}; aviso ${days(validity.renewalNoticeDays)} antes.`,
+    `Terminación con ${days(validity.terminationNoticeDays)} de preaviso.${validity.terminationTerms ? ` ${validity.terminationTerms}` : ''}`,
   ];
 }
 
@@ -154,8 +162,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
         <div className="space-y-5 text-sm">
           <section>
             <h3 className="font-semibold">Partes y vigencia</h3>
-            <p>AVIAM (prestador) y {document.airlineLegalName ?? document.airlineName} ({document.airlineCode}).</p>
-            <p>Del {date(document.validFrom)} al {date(document.validTo)} · {document.currencyCode} · versión {document.versionStatus === 'Approved' ? 'aprobada' : 'reemplazada'}</p>
+            <p>AVIAM (prestador) y {document.airlineLegalName ?? document.airlineName} ({airlineCodeLabel(document.airlineCode)}).</p>
+            <p>{validityLine(document)} · {document.currencyCode} · versión {document.versionStatus === 'Approved' ? 'aprobada' : 'reemplazada'}</p>
             <p className="text-xs text-text-secondary-light">Estaciones: {document.stations.join('; ') || 'ninguna'}</p>
             {validityLines(document).map(line => <p key={line} className="text-xs">{line}</p>)}
             {!document.validity && document.versionStatus === 'Approved' && document.signatures.length === 0 && (
@@ -198,7 +206,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
               })}
             </ul>
             {document.signedOn && document.signatures.length === 2 && (
-              <p className="font-semibold">Firmado por ambas partes el {date(document.signedOn)}.</p>
+              <p className="font-semibold">Firmado por ambas partes el {day(document.signedOn)}.</p>
             )}
           </section>
           {canSign && document.signableBy === 'Aviam' && (
