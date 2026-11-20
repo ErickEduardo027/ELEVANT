@@ -9,8 +9,11 @@ import {
   removeRampOperationSubmitCommandIfCurrent,
 } from '../storage/mobile-session';
 import {
+  HANDOFF_CHECKLIST_NOT_SUBMITTED,
+  HANDOFF_PENDING_INCIDENTS,
   HANDOFF_PENDING_QUEUE,
   HANDOFF_SERVICE_ORDER_UNSIGNED,
+  isServiceFinished,
   isServiceOrderSigned,
 } from '../features/assigned-operations/handoff';
 import { getAssignedOperations } from './assigned-operations';
@@ -84,31 +87,40 @@ export async function readRampOperationPendingSubmission(
   }
 }
 
+/**
+ * Checks the requirements of a new hand-off on ELEVANT's side (3-N06, N1), the ones the close lists with
+ * `handoffRequirements`. A requirement the tablet keeps for itself is refused with its local code.
+ */
 async function assertCanonicalReadiness(operationId: string, signal?: AbortSignal) {
-  const snapshot = await getAssignedOperations({ signal });
-  const operation = snapshot.operations.find(item => item.operation.id === operationId);
-  if (!operation) throw new MobileServiceError('not_found');
-  if (snapshot.source !== 'network' || operation.operation.status !== 'InProgress' ||
-      operation.services.length === 0 ||
-      operation.services.some(service =>
-        !['Completed', 'NotPerformed', 'Exception'].includes(service.status))) {
-    throw new MobileServiceError('conflict');
-  }
-  const checklist = await getRampOperationChecklist(operationId, { signal });
-  if (checklist.checklist.status !== 'Submitted') throw new MobileServiceError('conflict');
-
   // 3-N06: the milestones, flight data, damages, signatures, services and messages must reach ELEVANT before the
-  // execution window closes; what is still on the device, or was refused, holds the hand-off.
+  // execution window closes; what is still on the device, or was refused, holds the hand-off. N1: the queue goes out
+  // first, so a service finished or a checklist sent a moment ago counts as ELEVANT reads them below.
   await flushFlightReport();
   const queue = await readOperationQueue(operationId);
   if (queue.pending + queue.blocked > 0) {
     throw new MobileServiceError('conflict', { problemCode: HANDOFF_PENDING_QUEUE });
   }
 
+  const snapshot = await getAssignedOperations({ signal });
+  const operation = snapshot.operations.find(item => item.operation.id === operationId);
+  if (!operation) throw new MobileServiceError('not_found');
+  if (snapshot.source !== 'network' || operation.operation.status !== 'InProgress' ||
+      operation.services.length === 0 ||
+      operation.services.some(service => !isServiceFinished(service.status))) {
+    throw new MobileServiceError('conflict');
+  }
+  const checklist = await getRampOperationChecklist(operationId, { signal });
+  // N1: the device's copy may be older than the checklist the queue just sent; the hand-off needs signal anyway.
+  if (checklist.fromCache) throw new MobileServiceError('network_unavailable');
+  if (checklist.checklist.status !== 'Submitted') {
+    throw new MobileServiceError('conflict', { problemCode: HANDOFF_CHECKLIST_NOT_SUBMITTED });
+  }
+
   // A local report must reach the server before closing the execution window.
   const incidents = await loadRampIncidentCenter(operationId, { signal });
-  if (!incidents.online || incidents.issue || incidents.outbox.length > 0) {
-    throw incidents.issue ?? new MobileServiceError('conflict');
+  if (!incidents.online || incidents.issue) throw incidents.issue ?? new MobileServiceError('conflict');
+  if (incidents.outbox.length > 0) {
+    throw new MobileServiceError('conflict', { problemCode: HANDOFF_PENDING_INCIDENTS });
   }
 
   // 3-N06: what OCC approves and Finance invoices is the Service Order the airline and AVIAM signed.

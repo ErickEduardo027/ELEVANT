@@ -18,12 +18,21 @@ import type {
   TransitionRampOperationServiceRequest,
 } from '../services/ramp-operation-service-execution';
 import { colors } from '../theme/colors';
+import {
+  billingUnitDecimals,
+  billingUnitName,
+  MAX_QUANTITY_DECIMALS,
+} from '../utils/billing-units';
 import { Card, PrimaryButton, StatusPill } from './ui';
 
+/**
+ * What the screen says on a service's card. A confirmation (N13) is one sentence, its title alone; a warning or an
+ * error also says what to do.
+ */
 export type ServiceExecutionNotice = Readonly<{
   tone: 'success' | 'warning' | 'error';
   title: string;
-  message: string;
+  message?: string;
 }>;
 
 type TerminalTarget = 'Completed' | 'NotPerformed' | 'Exception';
@@ -64,6 +73,12 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
   const frozen = pending !== undefined;
   const terminal = isTerminalStatus(service.status);
   const executableStatus = service.status === 'Planned' || service.status === 'InProgress';
+  // N13 (D-N13): a confirmation steps aside while a result form is open and once the agent acts on the card again,
+  // without a timer; the screen also drops it with the next change of any service. A warning or an error stays.
+  const [dismissedNotice, setDismissedNotice] = useState<ServiceExecutionNotice | null>(null);
+  const confirmation = notice?.tone === 'success';
+  const shownNotice = notice && !(confirmation && (target !== null || dismissedNotice === notice)) ? notice : undefined;
+  const dismissConfirmation = () => { if (confirmation) setDismissedNotice(notice ?? null); };
 
   useEffect(() => {
     const pendingTarget = pending?.request.targetStatus;
@@ -76,7 +91,16 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
     setValidationRequested(false);
   }, [pending, service]);
 
-  const parsedQuantity = useMemo(() => parseQuantity(quantity), [quantity]);
+  // S5 (D-S5): the unit in Spanish, never its code; a unit that counts things takes whole numbers only, but the
+  // contracted quantity the card proposes is accepted even when it is fractional.
+  const decimals = billingUnitDecimals(service.billingUnit);
+  const wholeNumbers = decimals === 0;
+  const unitName = billingUnitName(service.billingUnit);
+  const quantityLabel = unitName ? `Cantidad ejecutada (${unitName})` : 'Cantidad ejecutada';
+  const parsedQuantity = useMemo(
+    () => parseQuantity(quantity, decimals) ?? contractedQuantityOf(quantity, service.contractedQuantity),
+    [decimals, quantity, service.contractedQuantity],
+  );
   const noteRequired = target === 'NotPerformed' || target === 'Exception';
   const quantityRequired = target !== null;
   const formValid = (
@@ -87,6 +111,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
 
   const chooseTarget = (next: TerminalTarget) => {
     if (busy || frozen || !actionable) return;
+    dismissConfirmation();
     setTarget(next);
     setQuantity(
       next === 'NotPerformed'
@@ -103,6 +128,12 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
 
   const submitTerminal = () => {
     if (!target || busy || !actionable) return;
+    // A change kept on the tablet is not validated again: its retry sends exactly what was kept, even a fractional
+    // quantity in a count unit.
+    if (pending) {
+      onTransition(pending.request);
+      return;
+    }
     if (!formValid || parsedQuantity === null) {
       setValidationRequested(true);
       return;
@@ -120,11 +151,10 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
       <View style={styles.heading}>
         <View style={styles.number}><Text style={styles.numberText}>{service.lineNumber}</Text></View>
         <View style={styles.copy}>
+          {/* N12 (D-N12): the name is the title; the code stays as a small secondary text until AVIAM decides. */}
           <Text style={styles.name}>{service.name}</Text>
           <Text style={styles.code}>{service.code}</Text>
-          <Text style={styles.quantitySummary}>
-            {formatQuantity(service.executedQuantity)} / {formatQuantity(service.contractedQuantity)} {service.billingUnit}
-          </Text>
+          <Text style={styles.quantitySummary}>{quantitySummary(service)}</Text>
         </View>
         <StatusPill
           text={serviceStatusLabel(service.status)}
@@ -162,7 +192,10 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
             editable={actionable && !busy && !frozen}
             maxLength={1000}
             multiline
-            onChangeText={setNote}
+            onChangeText={(value) => {
+              dismissConfirmation();
+              setNote(value);
+            }}
             placeholder="Describe el ajuste solicitado por OCC"
             placeholderTextColor={colors.muted}
             style={[styles.noteInput, validationRequested && !note.trim() && styles.inputInvalid]}
@@ -176,7 +209,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
           )}
           {frozen && pending?.request.targetStatus === 'InProgress' && (
             <Text style={styles.replayHintText}>
-              Reintenta con el mismo motivo y la misma clave reservada.
+              El motivo quedó guardado en esta tablet: el reintento lo envía tal cual.
             </Text>
           )}
           <PrimaryButton
@@ -197,7 +230,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
             <View accessibilityLiveRegion="polite" style={styles.disabledHint}>
               <Ionicons name="lock-closed-outline" size={18} color={colors.warning} />
               <Text style={styles.disabledHintText}>
-                El estado actual no admite comandos desde Mobile Agent.
+                Este servicio no se puede cambiar desde la tablet en su estado actual.
               </Text>
             </View>
           )}
@@ -205,7 +238,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
             <View accessibilityLiveRegion="polite" style={styles.disabledHint}>
               <Ionicons name="lock-closed-outline" size={18} color={colors.warning} />
               <Text style={styles.disabledHintText}>
-                {disabledReason ?? 'Actualiza el estado canónico antes de ejecutar este servicio.'}
+                {disabledReason ?? 'Actualiza el detalle antes de registrar este servicio.'}
               </Text>
             </View>
           )}
@@ -269,12 +302,12 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
               </View>
 
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Cantidad ejecutada ({service.billingUnit})</Text>
+                <Text style={styles.fieldLabel}>{quantityLabel}</Text>
                 <TextInput
-                  accessibilityHint="Usa hasta cuatro decimales"
-                  accessibilityLabel={`Cantidad ejecutada en ${service.billingUnit}`}
+                  accessibilityHint={wholeNumbers ? 'Usa solo números enteros' : 'Usa hasta cuatro decimales'}
+                  accessibilityLabel={quantityLabel}
                   editable={actionable && !busy && !frozen && target !== 'NotPerformed'}
-                  keyboardType="decimal-pad"
+                  keyboardType={wholeNumbers ? 'number-pad' : 'decimal-pad'}
                   maxLength={20}
                   onChangeText={setQuantity}
                   placeholder="0"
@@ -286,7 +319,9 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                   ]}
                   value={quantity}
                 />
-                <Text style={styles.helperText}>Máximo 4 decimales.</Text>
+                <Text style={styles.helperText}>
+                  {wholeNumbers ? 'Solo números enteros.' : 'Máximo 4 decimales.'}
+                </Text>
                 {validationRequested && parsedQuantity === null && (
                   <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
                     Ingresa una cantidad válida, igual o mayor que cero.
@@ -325,7 +360,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                 <View accessibilityLiveRegion="polite" style={styles.replayHint}>
                   <Ionicons name="shield-checkmark-outline" size={19} color={colors.warning} />
                   <Text style={styles.replayHintText}>
-                    Payload reservado. El reintento usa exactamente la cantidad, la nota y la clave originales.
+                    Guardado en esta tablet: el reintento envía la misma cantidad y la misma nota.
                   </Text>
                 </View>
               )}
@@ -334,14 +369,14 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                 disabled={!actionable || busy}
                 icon="checkmark-circle-outline"
                 onPress={submitTerminal}
-                title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR COMANDO' : `CONFIRMAR ${targetShortLabel(target)}`}
+                title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR ENVÍO' : `CONFIRMAR ${targetShortLabel(target)}`}
               />
             </View>
           )}
         </View>
       )}
 
-      {notice && <ServiceNotice notice={notice} />}
+      {shownNotice && <ServiceNotice notice={shownNotice} />}
     </Card>
   );
 });
@@ -419,7 +454,7 @@ function ServiceNotice({ notice }: { readonly notice: ServiceExecutionNotice }) 
       />
       <View style={styles.noticeCopy}>
         <Text style={styles.noticeTitle}>{notice.title}</Text>
-        <Text style={styles.noticeText}>{notice.message}</Text>
+        {notice.message ? <Text style={styles.noticeText}>{notice.message}</Text> : null}
       </View>
     </View>
   );
@@ -443,14 +478,22 @@ function initialQuantity(
   );
 }
 
-function parseQuantity(raw: string) {
+/** A quantity written with a comma or a point and at most `decimals` decimals (none in a count unit). */
+function parseQuantity(raw: string, decimals: number) {
   const normalized = raw.trim().replace(',', '.');
-  if (!/^\d{1,14}(?:\.\d{1,4})?$/.test(normalized)) return null;
+  const match = /^\d{1,14}(?:\.(\d{1,4}))?$/.exec(normalized);
+  if (!match || (match[1]?.length ?? 0) > decimals) return null;
   const value = Number(normalized);
   if (!Number.isFinite(value) || value < 0 || value > 99_999_999_999_999.9999) {
     return null;
   }
   return value;
+}
+
+/** The contracted quantity when that is what the field holds: the card proposes it even if a count unit has decimals. */
+function contractedQuantityOf(raw: string, contracted: number) {
+  const value = parseQuantity(raw, MAX_QUANTITY_DECIMALS);
+  return value !== null && value === contracted ? value : null;
 }
 
 function formatQuantityInput(value: number) {
@@ -459,6 +502,13 @@ function formatQuantityInput(value: number) {
 
 function formatQuantity(value: number) {
   return new Intl.NumberFormat('es-DO', { maximumFractionDigits: 4 }).format(value);
+}
+
+/** «0 / 1 hora» in one string: the unit, in Spanish, agrees with the contracted quantity next to it. */
+function quantitySummary(service: RampOperationServiceResponse) {
+  const quantities = `${formatQuantity(service.executedQuantity)} / ${formatQuantity(service.contractedQuantity)}`;
+  const unit = billingUnitName(service.billingUnit, service.contractedQuantity);
+  return unit ? `${quantities} ${unit}` : quantities;
 }
 
 function targetLabel(target: TerminalTarget) {
@@ -484,7 +534,7 @@ const styles = StyleSheet.create({
   numberText: { color: colors.navy, fontSize: 12, fontWeight: '900' },
   copy: { flex: 1, minWidth: 0 },
   name: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  code: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  code: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   quantitySummary: { color: colors.navy, fontSize: 12, fontWeight: '700', marginTop: 4, fontVariant: ['tabular-nums'] },
   executionArea: { paddingTop: 13, borderTopWidth: 1, borderTopColor: colors.border, gap: 11 },
   disabledHint: { padding: 10, borderRadius: 12, backgroundColor: '#FFF8EA', flexDirection: 'row', alignItems: 'flex-start', gap: 8 },

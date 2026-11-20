@@ -76,6 +76,34 @@ tienen respuesta en decisiones y código:
 | PQ-10 | ¿Qué indicadores ayudan a decidir y cómo se calculan? | Convertir números mock en métricas contractuales | Diccionario de métricas, fuente, ventana y owner |
 | PQ-11 | ¿Qué accesibilidad, idioma, zona horaria y condiciones ambientales exige cada cliente? | UX no utilizable en operación real | Pruebas con dispositivos, usuarios y estaciones objetivo |
 
+### D-S1: datos del vuelo antes de firmar la Orden (cerrada)
+
+*Posterior al commit verificado de esta nota (hallazgo S1 de la corrida del VPS
+del 16 de noviembre de 2026):* la Orden de Servicio se firmó y se entregó con
+«Pasajeros —» y «MTOW —», y nada avisó antes. D-S1 preguntaba si los pasajeros
+y el MTOW son obligatorios antes de firmar la Orden, si valen 0 pasajeros, qué
+pasa sin MTOW y si la Orden se firma después del push-back.
+
+1. **Respuesta y alcance:** avisar sin bloquear. 0 pasajeros es un valor
+   válido, sin MTOW solo se avisa y la Orden se firma también después del
+   push-back, porque su huella incluye la salida. Avisan la tarjeta «Datos del
+   vuelo» («Faltan: …»), la fila y la hoja de firma de la Orden y el cierre de
+   la ejecución («Datos del vuelo completos»).
+2. **Evidencia:** las pruebas de la tablet que acompañan a la
+   [lectura de los datos del vuelo](../../frontend/mobile-agent/src/utils/flight-data.ts).
+3. **Owner y fecha:** el dueño del producto, el 2026-11-19, con el valor
+   recomendado.
+4. **Consecuencias:** solo cambia la tablet; la APK instalada sigue igual hasta
+   que se instale la nueva. El servidor no tiene una regla nueva: una regla
+   `flight_data_incomplete` cambiaría la semántica para la APK desplegada, y
+   nunca iría en `RampOperationSubmissionPolicy`, porque contradice la decisión
+   3-N06 de [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+5. **Fuente de verdad:** [Mobile Agent](../05-aplicaciones/mobile-agent.md) y su
+   [README](../../frontend/mobile-agent/README.md).
+
+Queda abierto si AVIAM querrá exigir esos datos más adelante; haría falta un
+plan de versión para la APK ya instalada.
+
 ## Antes de Production
 
 | ID | Pregunta abierta | Riesgo si no se responde | Evidencia necesaria |

@@ -9,10 +9,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChecklistItemCard } from '../../components/checklist-item-card';
 import { SessionEndedNotice, useScreenSessionNotice } from '../../components/session-ended-notice';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import {
@@ -483,10 +483,11 @@ export default function ChecklistScreen() {
           setDraftSaveState('error');
         }
         if (pendingReadFailed) {
+          // N13 (D-N13): in the agent's words; the answers stay frozen until ACTUALIZAR reads both copies again.
           setNotice({
             tone: 'error',
-            title: 'Estado local por conciliar',
-            message: 'No pudimos verificar el comando reservado. La edición seguirá bloqueada hasta actualizar el estado canónico y el almacenamiento del dispositivo.',
+            title: 'Envío por confirmar',
+            message: 'No pudimos confirmar el envío guardado en esta tablet. Actualiza antes de seguir editando.',
           });
           return;
         }
@@ -514,8 +515,8 @@ export default function ChecklistScreen() {
             tone: 'warning',
             title: error.code === 'not_found' ? 'Checklist no disponible' : 'El checklist cambió',
             message: error.problemCode
-              ? `${error.message} Consultaremos nuevamente el estado canónico antes de permitir otra acción.`
-              : 'Consultaremos nuevamente el estado canónico antes de permitir otra acción.',
+              ? `${error.message} Volvemos a leer el checklist en ELEVANT antes de permitir otra acción.`
+              : 'Volvemos a leer el checklist en ELEVANT antes de permitir otra acción.',
           });
           await load(true);
           return;
@@ -591,13 +592,14 @@ export default function ChecklistScreen() {
           <Card style={styles.summaryCard}>
             <View style={styles.summaryTop}>
               <View style={styles.summaryCopy}>
-                <Text style={styles.eyebrow}>CONTROL OPERACIONAL</Text>
+                {/* N13 (D-N13): the name the operation screen gives it; the title is the form's, from ELEVANT. */}
+                <Text style={styles.eyebrow}>CHECKLIST OPERATIVO</Text>
                 <Text accessibilityRole="header" style={styles.title}>
                   {snapshot.checklist.template.name}
                 </Text>
-                <Text style={styles.templateMeta}>
-                  {snapshot.checklist.template.code} · versión {snapshot.checklist.template.version}
-                </Text>
+                {/* N12 (D-N12): the version in words, and the template's code as a small secondary text. */}
+                <Text style={styles.templateVersion}>{`Versión ${snapshot.checklist.template.version}`}</Text>
+                <Text style={styles.templateCode}>{snapshot.checklist.template.code}</Text>
               </View>
               <StatusPill
                 text={submitted
@@ -605,7 +607,7 @@ export default function ChecklistScreen() {
                   : sessionEnd
                     ? 'Sesión terminada'
                     : submissionReconciliationRequired
-                      ? 'Estado por conciliar'
+                      ? 'Envío por confirmar'
                       : frozen
                         ? 'En el dispositivo'
                         : 'Borrador'}
@@ -660,11 +662,12 @@ export default function ChecklistScreen() {
               notice={{
                 tone: submissionReconciliationRequired ? 'error' : 'warning',
                 title: submissionReconciliationRequired
-                  ? 'Edición bloqueada hasta conciliar el estado'
+                  ? 'Edición en pausa'
                   : 'Envío guardado en el dispositivo',
                 message: submissionReconciliationRequired
-                  ? 'Actualiza para verificar el estado canónico y si existe un comando reservado antes de continuar.'
-                  : 'Se envía a ELEVANT en cuanto haya señal, con estas mismas respuestas y la misma clave. Para enviarlo ahora toca REINTENTAR ENVÍO.',
+                  ? 'Toca ACTUALIZAR para comprobar si el checklist ya se envió antes de seguir.'
+                  : 'Se envía a ELEVANT en cuanto haya señal, con estas mismas respuestas. Para enviarlo ahora toca ' +
+                    'REINTENTAR ENVÍO.',
               }}
             />
           )}
@@ -785,7 +788,7 @@ export default function ChecklistScreen() {
                   title={submitting
                     ? 'ENVIANDO…'
                     : submissionReconciliationRequired
-                      ? 'CONCILIAR ESTADO'
+                      ? 'ACTUALIZAR'
                       : frozen
                         ? 'REINTENTAR ENVÍO'
                         : 'ENVIAR CHECKLIST'}
@@ -814,134 +817,6 @@ export default function ChecklistScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
-  );
-}
-
-function ChecklistItemCard({
-  answer,
-  disabled,
-  index,
-  invalid,
-  item,
-  onChange,
-}: {
-  readonly answer: RampChecklistDraftAnswer | undefined;
-  readonly disabled: boolean;
-  readonly index: number;
-  readonly invalid: boolean;
-  readonly item: RampChecklistItem;
-  readonly onChange: (answer: RampChecklistDraftAnswer) => void;
-}) {
-  const noteRequired = answer?.value === 'NotOk' && item.requiresNoteWhenNotOk;
-  return (
-    <Card style={[styles.itemCard, invalid && styles.itemCardInvalid]}>
-      <View style={styles.itemHeading}>
-        <View style={styles.itemNumber}><Text style={styles.itemNumberText}>{index + 1}</Text></View>
-        <View style={styles.itemCopy}>
-          <Text style={styles.itemCode}>{item.code}</Text>
-          <Text style={styles.itemLabel}>{item.label}</Text>
-          <Text style={styles.requiredLabel}>{item.isRequired ? 'Obligatorio' : 'Opcional'}</Text>
-        </View>
-      </View>
-      <View accessibilityRole="radiogroup" style={styles.answerRow}>
-        <AnswerChoice
-          checked={answer?.value === 'Ok'}
-          context={item.label}
-          disabled={disabled}
-          icon="checkmark"
-          label="OK"
-          onPress={() => onChange({ value: 'Ok' })}
-          tone="success"
-        />
-        <AnswerChoice
-          checked={answer?.value === 'NotApplicable'}
-          context={item.label}
-          disabled={disabled}
-          icon="remove"
-          label="N/A"
-          onPress={() => onChange({ value: 'NotApplicable' })}
-          tone="neutral"
-        />
-        <AnswerChoice
-          checked={answer?.value === 'NotOk'}
-          context={item.label}
-          disabled={disabled}
-          icon="close"
-          label="NO"
-          onPress={() => onChange({ value: 'NotOk', ...(answer?.note ? { note: answer.note } : {}) })}
-          tone="danger"
-        />
-      </View>
-      {answer?.value === 'NotOk' && (
-        <View style={styles.noteGroup}>
-          <Text style={styles.noteLabel}>
-            Observación {item.requiresNoteWhenNotOk ? '(obligatoria)' : '(opcional)'}
-          </Text>
-          <TextInput
-            accessibilityHint={item.requiresNoteWhenNotOk ? 'Describe por qué el control no cumple' : 'Agrega contexto si es necesario'}
-            accessibilityLabel={`Observación para ${item.label}`}
-            editable={!disabled}
-            maxLength={1000}
-            multiline
-            onChangeText={(note) => onChange({ value: 'NotOk', note })}
-            placeholder="Describe la condición encontrada"
-            placeholderTextColor="#7C8798"
-            style={[styles.noteInput, noteRequired && !answer.note?.trim() && styles.noteInputInvalid]}
-            textAlignVertical="top"
-            value={answer.note ?? ''}
-          />
-          {noteRequired && !answer.note?.trim() && (
-            <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
-              La observación es obligatoria cuando marcas NO.
-            </Text>
-          )}
-        </View>
-      )}
-      {invalid && !noteRequired && (
-        <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
-          Selecciona una respuesta para continuar.
-        </Text>
-      )}
-    </Card>
-  );
-}
-
-function AnswerChoice({
-  checked,
-  context,
-  disabled,
-  icon,
-  label,
-  onPress,
-  tone,
-}: {
-  readonly checked: boolean;
-  readonly context: string;
-  readonly disabled: boolean;
-  readonly icon: keyof typeof Ionicons.glyphMap;
-  readonly label: string;
-  readonly onPress: () => void;
-  readonly tone: 'success' | 'neutral' | 'danger';
-}) {
-  const color = tone === 'success' ? colors.success : tone === 'danger' ? colors.danger : colors.navy;
-  return (
-    <Pressable
-      accessibilityLabel={`Marcar ${context} como ${label}`}
-      accessibilityRole="radio"
-      accessibilityState={{ checked, disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.answerChoice,
-        checked && styles.answerChoiceChecked,
-        checked && { borderColor: color, backgroundColor: tone === 'success' ? '#E9F7EF' : tone === 'danger' ? '#FDECEC' : colors.paleBlue },
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
-      ]}
-    >
-      <Ionicons name={icon} size={20} color={checked ? color : colors.muted} />
-      <Text style={[styles.answerChoiceText, checked && { color }]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -1011,9 +886,9 @@ function ChecklistStateScreen({
   const copy: readonly [string, string] = state === 'not-found'
     ? ['Checklist no disponible', 'La operación o su checklist ya no están asignados a tu cuenta.']
     : state === 'offline'
-      ? ['Sin conexión segura', 'El catálogo no se guarda como fuente de verdad. Reconecta para cargar el checklist canónico.']
+      ? ['Sin conexión segura', 'Esta tablet no tiene una copia de este checklist. Reconecta para cargarlo desde ELEVANT.']
       : state === 'conflict'
-        ? ['La operación cambió', 'Vuelve al detalle, actualiza el estado canónico e intenta nuevamente.']
+        ? ['La operación cambió', 'Vuelve al detalle, actualízalo y abre el checklist de nuevo.']
         : ['Checklist no disponible', 'No pudimos consultar el checklist en este momento.'];
   return (
     <View accessibilityLiveRegion="assertive" style={styles.stateScreen}>
@@ -1133,7 +1008,7 @@ function draftSaveLabel(
   reconciliationRequired: boolean,
 ) {
   if (submitted) return 'Envío confirmado por ELEVANT';
-  if (reconciliationRequired) return 'Comando local pendiente de verificación';
+  if (reconciliationRequired) return 'Envío sin confirmar en esta tablet';
   if (frozen) return 'Envío guardado en el dispositivo; sale a ELEVANT al reconectar';
   if (state === 'saving') return 'Guardando borrador en este dispositivo…';
   if (state === 'saved') return 'Borrador guardado en este dispositivo';
@@ -1181,7 +1056,8 @@ const styles = StyleSheet.create({
   summaryCopy: { flex: 1, minWidth: 0 },
   eyebrow: { color: colors.orange, fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
   title: { color: colors.ink, fontSize: 21, fontWeight: '900', marginTop: 4 },
-  templateMeta: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  templateVersion: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  templateCode: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressTrack: { flex: 1, height: 10, overflow: 'hidden', borderRadius: 5, backgroundColor: colors.border },
   progressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.orange },
@@ -1214,46 +1090,6 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
   sectionHint: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   items: { gap: 12 },
-  itemCard: { gap: 14 },
-  itemCardInvalid: { borderColor: '#E4A4A4' },
-  itemHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
-  itemNumber: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paleBlue },
-  itemNumberText: { color: colors.navy, fontSize: 12, fontWeight: '900' },
-  itemCopy: { flex: 1, minWidth: 0 },
-  itemCode: { color: colors.muted, fontSize: 11, fontWeight: '900', letterSpacing: 0.7 },
-  itemLabel: { color: colors.ink, fontSize: 15, fontWeight: '800', lineHeight: 21, marginTop: 3 },
-  requiredLabel: { color: colors.muted, fontSize: 11, marginTop: 4 },
-  answerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  answerChoice: {
-    minWidth: 84,
-    minHeight: 50,
-    paddingHorizontal: 13,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 13,
-    backgroundColor: colors.white,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-  },
-  answerChoiceChecked: { borderWidth: 2 },
-  answerChoiceText: { color: colors.muted, fontSize: 13, fontWeight: '900' },
-  noteGroup: { gap: 6 },
-  noteLabel: { color: colors.ink, fontSize: 12, fontWeight: '800' },
-  noteInput: {
-    minHeight: 96,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 13,
-    backgroundColor: colors.white,
-    color: colors.ink,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  noteInputInvalid: { borderColor: colors.danger },
-  inlineError: { color: colors.danger, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   notice: { padding: 13, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   noticeSuccess: { borderColor: '#B9DFC9', backgroundColor: '#E9F7EF' },
   noticeWarning: { borderColor: '#F0C474', backgroundColor: '#FFF8EA' },
@@ -1266,7 +1102,6 @@ const styles = StyleSheet.create({
   navigationButton: { flexGrow: 1, minWidth: 150 },
   scopeNotice: { padding: 13, borderRadius: 14, backgroundColor: colors.paleBlue, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   scopeNoticeText: { flex: 1, color: colors.navy, fontSize: 12, fontWeight: '700', lineHeight: 18 },
-  disabled: { opacity: 0.45 },
   pressed: { opacity: 0.78 },
   stateScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 13, backgroundColor: colors.background },
   stateIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8EA' },

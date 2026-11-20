@@ -1,5 +1,5 @@
 import type { RampAssignedOperationResponse } from '@elevant/api-client';
-import { dateTimeFormat } from '../../utils/date-format';
+import { formatStationDate, formatStationTime } from '../../utils/date-format';
 
 export type OperationStatusTone = 'blue' | 'green' | 'orange' | 'red';
 
@@ -61,27 +61,56 @@ export function serviceStatusTone(status: string): OperationStatusTone {
   return 'orange';
 }
 
+/**
+ * What a service change ELEVANT confirmed says (N13, D-N13): one natural sentence with the tapped time at the station
+ * (3-I), «Aire acondicionado en ejecución desde las 19:59.». A result follows the service's name as its status pill
+ * says it, «Aire acondicionado: completado a las 19:59.», so it reads right whatever the name's gender or number.
+ * Reopening a finished service in a correction round has its own text. Without a readable time the sentence leaves the
+ * time out; one o'clock takes «la».
+ */
+export function serviceChangeSentence(
+  name: string,
+  status: string,
+  occurredAt: string | null | undefined,
+  timeZone?: string | null,
+  reopened = false,
+) {
+  const time = formatStationTime(occurredAt, timeZone);
+  const known = time !== '—';
+  const at = (preposition: 'a' | 'desde') =>
+    (known ? ` ${preposition} ${time.startsWith('01:') ? 'la' : 'las'} ${time}` : '');
+  if (reopened) return `${name}: corrección abierta${at('a')}. Registra el nuevo resultado.`;
+  if (status === 'InProgress') return `${name} en ejecución${at('desde')}.`;
+  if (status === 'Completed') return `${name}: completado${at('a')}.`;
+  if (status === 'NotPerformed') return `${name}: no realizado${known ? `, registrado${at('a')}` : ''}.`;
+  if (status === 'Exception') return `${name}: excepción registrada${at('a')}.`;
+  return `${name}: ${serviceStatusLabel(status).toLowerCase()}${at('a')}.`;
+}
+
+/** «19:46» at the station (N11); a station without a known zone uses AVIAM's calendar. */
 export function formatOperationTime(
   value: string | null | undefined,
   timeZone?: string,
 ) {
-  if (!value) return '—';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || !timeZone) return '—';
-
-  try {
-    return dateTimeFormat({ hour: '2-digit', minute: '2-digit', hour12: false, timeZone }).format(date);
-  } catch {
-    return '—';
-  }
+  return formatStationTime(value, timeZone);
 }
 
+/** The operation's business day as «lun, 16 nov» (N11): the date itself, whatever the zone. */
 export function formatOperationDate(value: string) {
   const date = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) return value;
 
-  return dateTimeFormat({ weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }).format(date);
+  return formatStationDate(date, 'UTC');
+}
+
+/**
+ * Each station's IANA zone by its code, from the operations the tablet holds (N11): the only place the tablet learns
+ * it. A station missing here shows its times in AVIAM's calendar.
+ */
+export function stationTimeZonesByCode(
+  operations: readonly RampAssignedOperationResponse[],
+): ReadonlyMap<string, string> {
+  return new Map(operations.map(item => [item.turnaround.station.code, item.turnaround.station.ianaTimeZone]));
 }
 
 export function operationFlightLabel(operation: RampAssignedOperationResponse) {
@@ -90,22 +119,42 @@ export function operationFlightLabel(operation: RampAssignedOperationResponse) {
   return arrival?.flightNumber ?? departure?.flightNumber ?? operationCode;
 }
 
-export function operationRoute(operation: RampAssignedOperationResponse) {
+/** A stop of the route: where the aircraft comes from, the station where the agent works or where it goes next. */
+export type OperationRouteStop = Readonly<{ code: string; kind: 'origin' | 'station' | 'destination' }>;
+
+/**
+ * The stops in the order the aircraft makes them (N10, D-N10): «BWI → PUJ → BWI» for a turnaround at PUJ. A missing
+ * leg is left out, never replaced by the station, so a turnaround without flights is the station alone.
+ */
+export function operationRouteStops(operation: RampAssignedOperationResponse): readonly OperationRouteStop[] {
   const { arrival, departure, station } = operation.turnaround;
+  return [
+    ...(arrival ? [{ code: arrival.origin.iataCode, kind: 'origin' as const }] : []),
+    { code: station.code, kind: 'station' as const },
+    ...(departure ? [{ code: departure.destination.iataCode, kind: 'destination' as const }] : []),
+  ];
+}
 
-  if (!arrival && !departure) {
-    return {
-      origin: station.code,
-      station: station.code,
-      destination: 'Ruta por confirmar',
-    };
+/** The route as a screen reader says it: «llega de BWI a PUJ y sale hacia BWI» (N10). */
+export function operationRouteDescription(operation: RampAssignedOperationResponse) {
+  const { arrival, departure, station } = operation.turnaround;
+  if (arrival && departure) {
+    return `llega de ${arrival.origin.iataCode} a ${station.code} y sale hacia ${departure.destination.iataCode}`;
   }
+  if (arrival) return `llega de ${arrival.origin.iataCode} a ${station.code}`;
+  if (departure) return `sale de ${station.code} hacia ${departure.destination.iataCode}`;
+  return `estación ${station.code}, ruta por confirmar`;
+}
 
-  return {
-    origin: arrival?.origin.iataCode ?? station.code,
-    station: station.code,
-    destination: departure?.destination.iataCode ?? station.code,
-  };
+// N9 (D-N9): the role OCC writes on an assignment; «primary» is the only one it writes today.
+const assignmentRoleLabels: Record<string, string> = {
+  primary: 'Agente principal',
+};
+
+/** The assignment's role in Spanish, whatever its casing; null for a role this version does not know. */
+export function assignmentRoleLabel(role: string): string | null {
+  const key = role.toLowerCase();
+  return Object.prototype.hasOwnProperty.call(assignmentRoleLabels, key) ? assignmentRoleLabels[key] : null;
 }
 
 export function operationStandLabel(operation: RampAssignedOperationResponse) {

@@ -12,6 +12,7 @@ import {
   type StoredRampIncidentOutboxItem,
 } from '../storage/mobile-session';
 import {
+  getMobileSessionIdentity,
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
@@ -307,6 +308,20 @@ export async function flushPendingRampIncidents(): Promise<void> {
     }
   } catch {
     // The reports stay on the device; the next reconnection sends them.
+  }
+}
+
+/**
+ * How many of this operation's incident reports are still on the device, waiting to go out or refused by ELEVANT: the
+ * hand-off waits for them (N1). It reads the device with the session's identity only, without signal or a renewal (S3).
+ */
+export async function countUnsentRampIncidents(operationId: string): Promise<number> {
+  if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
+  const identity = await getMobileSessionIdentity();
+  try {
+    return (await readOutbox(identity.sessionId, identity.session.actor.accountId, operationId)).length;
+  } catch (error) {
+    throw asMobileServiceError(error);
   }
 }
 

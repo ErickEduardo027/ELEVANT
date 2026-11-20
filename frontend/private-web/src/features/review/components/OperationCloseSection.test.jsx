@@ -66,6 +66,54 @@ describe('OperationCloseSection (ADR-0034)', () => {
     render(<OperationCloseSection detail={{ ...detail, close: { ...detail.close, milestones: [] } }} onChanged={() => {}} />);
     expect(screen.getByText('Sin hitos registrados.')).toBeTruthy();
     expect(screen.queryByRole('list', { name: 'Hitos de la escala' })).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Secuencia de hitos por revisar' })).toBeNull();
+  });
+
+  // N2 (D-N2): the push-back released the stand and closed the ground time with «En posición» and «Salida» empty.
+  it('flags a push-back recorded out of sequence with attention pills, and a normal sequence with none', () => {
+    const early = { ...detail, close: { ...detail.close, milestones: [
+      { code: 'PUSHBACK', actualAt: '2026-11-05T14:30:00Z' },
+      { code: 'FIRST_CUSTOMS', actualAt: '2026-11-05T14:40:00Z' },
+    ] } };
+    const { unmount } = render(<OperationCloseSection detail={early} onChanged={() => {}} />);
+    const sequence = screen.getByRole('list', { name: 'Secuencia de hitos por revisar' });
+    const notes = within(sequence).getAllByRole('listitem');
+    expect(notes.map(note => note.textContent)).toEqual([
+      'Push-back sin bloqueo registrado',
+      'Push-back sin hitos en «Salida»',
+      '1 hito registrado después del push-back',
+    ]);
+    // Each note asks for attention with its triangle and its words, never with a colour alone.
+    for (const note of notes) {
+      const pill = note.querySelector('[data-occ-status]');
+      expect(pill).toHaveAttribute('data-tone', 'attention');
+      expect(pill.querySelector('[data-occ-glyph="attention"]')).not.toBeNull();
+    }
+    expect(screen.getByText('El push-back cierra el tiempo en tierra y libera la posición: revisa su hora antes de ' +
+      'decidir.')).toBeTruthy();
+    unmount();
+
+    const counted = { ...detail, close: { ...detail.close, milestones: [
+      { code: 'BLOCK_ON', actualAt: '2026-11-05T14:00:00Z' },
+      { code: 'FIRST_CUSTOMS', actualAt: '2026-11-05T14:20:00Z' },
+      { code: 'PUSHBACK', actualAt: '2026-11-05T14:30:00Z' },
+      { code: 'LOAD_SHEET', actualAt: '2026-11-05T14:35:00Z' },
+      { code: 'BOARDING', actualAt: '2026-11-05T14:40:00Z' },
+    ] } };
+    const second = render(<OperationCloseSection detail={counted} onChanged={() => {}} />);
+    expect(within(screen.getByRole('list', { name: 'Secuencia de hitos por revisar' })).getAllByRole('listitem')
+      .map(note => note.textContent)).toEqual(['2 hitos registrados después del push-back']);
+    second.unmount();
+
+    const normal = { ...detail, close: { ...detail.close, milestones: [
+      { code: 'BLOCK_ON', actualAt: '2026-11-05T14:00:00Z' },
+      { code: 'FIRST_CUSTOMS', actualAt: '2026-11-05T14:20:00Z' },
+      { code: 'BOARDING', actualAt: '2026-11-05T14:25:00Z' },
+      { code: 'PUSHBACK', actualAt: '2026-11-05T14:30:00Z' },
+    ] } };
+    render(<OperationCloseSection detail={normal} onChanged={() => {}} />);
+    expect(screen.queryByRole('list', { name: 'Secuencia de hitos por revisar' })).toBeNull();
+    expect(screen.queryByText(/revisa su hora/)).toBeNull();
   });
 
   it('confirms each charge change in a dialog named after its confirm button, and closes it on Cancelar or Esc', async () => {

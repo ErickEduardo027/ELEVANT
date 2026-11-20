@@ -8,6 +8,7 @@ import { MobileServiceError } from '../services/mobile-service-error';
 import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { getOwnSchedule, SCHEDULE_DAYS } from '../services/ramp-schedule';
 import { colors } from '../theme/colors';
+import { formatBusinessDay } from '../utils/date-format';
 import { resetToLogin } from '../utils/session-navigation';
 
 const BLOCK: Record<string, string> = { Morning: 'Mañana', Afternoon: 'Tarde', Night: 'Noche' };
@@ -17,10 +18,6 @@ const VALIDITY: Record<string, { label: string; color: string }> = {
   Expired: { label: 'Vencido', color: colors.danger },
 };
 
-function day(value: string): string {
-  const [year, month, date] = value.split('-').map(Number);
-  return new Date(year, month - 1, date).toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
-}
 
 const time = (value: string) => value.slice(0, 5);
 
@@ -76,8 +73,8 @@ export default function MyScheduleScreen() {
 }
 
 function ShiftCard({ shift }: Readonly<{ shift: RampAgentShiftData }>) {
-  return <View style={styles.card} accessible accessibilityLabel={`Turno ${day(shift.workDate)} de ${time(shift.startsAtLocal)} a ${time(shift.endsAtLocal)}`}>
-    <Text style={styles.cardTitle}>{day(shift.workDate)}</Text>
+  return <View style={styles.card} accessible accessibilityLabel={`Turno ${formatBusinessDay(shift.workDate)} de ${time(shift.startsAtLocal)} a ${time(shift.endsAtLocal)}`}>
+    <Text style={styles.shiftTitle}>{formatBusinessDay(shift.workDate)}</Text>
     <Text style={styles.cardLine}>{time(shift.startsAtLocal)}–{time(shift.endsAtLocal)} · {BLOCK[shift.block] ?? shift.block}</Text>
     <Text style={styles.muted}>{shift.stationCode} · terminal {shift.terminalCode}</Text>
   </View>;
@@ -107,6 +104,8 @@ const styles = StyleSheet.create({
   empty: { color: colors.muted, padding: 8 },
   card: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, backgroundColor: colors.white, gap: 4 },
   cardTitle: { fontWeight: '800', color: colors.navy, fontSize: 15, textTransform: 'capitalize', flexShrink: 1 },
+  // N11: the day is written like every other day on the tablet, «lun, 16 nov», with no forced capitals.
+  shiftTitle: { fontWeight: '800', color: colors.navy, fontSize: 15, flexShrink: 1 },
   cardLine: { fontSize: 15, color: colors.navy },
   muted: { fontSize: 12, color: colors.muted },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },

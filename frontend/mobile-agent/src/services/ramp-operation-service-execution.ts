@@ -189,10 +189,11 @@ function parseResponse(
 /**
  * What happened to a service transition (3-I): ELEVANT confirmed it, or it is saved on the device with the tapped time
  * and goes out on its own, after the operation's earlier commands. A refusal is thrown with its Problem Details code
- * and leaves the queue, because the agent saw it on this screen.
+ * and leaves the queue, because the agent saw it on this screen. A confirmation also carries the tapped time it sent
+ * (`occurredAt`, by ELEVANT's clock), which ELEVANT keeps and the screen says (N13).
  */
 export type RampServiceTransitionOutcome =
-  | Readonly<{ state: 'confirmed'; response: RampOperationServiceTransitionResponse }>
+  | Readonly<{ state: 'confirmed'; response: RampOperationServiceTransitionResponse; occurredAt: string }>
   | Readonly<{ state: 'queued'; issue?: MobileServiceError }>;
 
 /**
@@ -211,6 +212,8 @@ export async function transitionRampOperationService(
   }
   const validatedRequest = parseRequest(request);
   if (!validatedRequest) throw new MobileServiceError('request_failed');
+  // The tap's time, taken before sending: the command carries it and the confirmation returns it (N13).
+  const occurredAt = serverNow().toISOString();
   const sent = await sendFlightReportCommand({
     kind: 'serviceTransition',
     operationId: operationId.toLowerCase(),
@@ -218,10 +221,14 @@ export async function transitionRampOperationService(
     targetStatus: validatedRequest.targetStatus,
     executedQuantity: validatedRequest.executedQuantity ?? null,
     note: validatedRequest.note ?? null,
-    occurredAt: serverNow().toISOString(),
+    occurredAt,
     ...(options.serviceName ? { serviceName: options.serviceName } : {}),
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
   }, { discardRefused: true });
   if (sent.state === 'queued') return { state: 'queued', ...(sent.issue ? { issue: sent.issue } : {}) };
-  return { state: 'confirmed', response: parseResponse(sent.result, serviceId, validatedRequest.targetStatus) };
+  return {
+    state: 'confirmed',
+    response: parseResponse(sent.result, serviceId, validatedRequest.targetStatus),
+    occurredAt,
+  };
 }

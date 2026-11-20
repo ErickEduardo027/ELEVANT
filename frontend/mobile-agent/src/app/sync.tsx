@@ -33,7 +33,10 @@ const documentTitle = (kind: string) =>
 
 const shorten = (text: string) => (text.length > 80 ? `${text.slice(0, 79)}…` : text);
 
-/** What one queued command records, in the station's local time when the command knows its station (3-I). */
+/**
+ * What one queued command records, in the station's local time (3-I); a command an older version saved without its
+ * station's zone shows AVIAM's calendar (N11).
+ */
 function describe(item: FlightReportOutboxItem) {
   const command = item.command;
   switch (command.kind) {
@@ -104,7 +107,7 @@ export default function SyncScreen() {
         <ConnectionBadge />
         <Text style={styles.summary}>
           {items.length === 0 ? 'Todo lo que registraste ya está confirmado en ELEVANT.'
-            : `${pending} pendientes de envío · ${items.length - pending} por revisar`}
+            : `${pending} ${pending === 1 ? 'pendiente' : 'pendientes'} de envío · ${items.length - pending} por revisar`}
         </Text>
         {pending > 0 && <PrimaryButton disabled={snapshot?.syncing} icon="sync" title={snapshot?.syncing ? 'ENVIANDO…' : 'ENVIAR AHORA'}
           onPress={() => void flushFlightReport()} />}

@@ -7,8 +7,15 @@ import {
 } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { serviceOrderHasSignature } from '../../features/assigned-operations/handoff';
+import {
+  PUSHBACK_MILESTONE,
+  pushbackConcerns,
+  pushbackEffect,
+  type PushbackConcern,
+} from '../../features/assigned-operations/pushback';
 import {
   recordMilestone,
   saveFlightData,
@@ -22,7 +29,21 @@ import { pendingFor } from '../../synchronization/flight-report-outbox';
 import { EVIDENCE_CLOCK_TOLERANCE_MS, serverNow } from '../../synchronization/server-clock';
 import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
+import { formatStationDate, formatStationTime } from '../../utils/date-format';
+import {
+  FLIGHT_DATA_FIELDS,
+  FLIGHT_DATA_LABELS,
+  FLIGHT_DATA_PLACEHOLDERS,
+  missingFlightData,
+  missingFlightDataLine,
+  refusedFlightDataSummary,
+  validateFlightDataDraft,
+  type FlightDataDraft,
+  type FlightDataField,
+  type FlightDataValues,
+} from '../../utils/flight-data';
 import { PrimaryButton } from '../ui';
+import { PushbackSheet } from './pushback-sheet';
 
 type Operation = RampAssignedOperationResponse;
 type Tone = keyof typeof syncTone;
@@ -31,15 +52,6 @@ function useFlightReport() {
   const [snapshot, setSnapshot] = useState<FlightReportSnapshot | null>(null);
   useEffect(() => subscribeFlightReport(setSnapshot), []);
   return snapshot;
-}
-
-function timeIn(value: string | Date, timeZone: string) {
-  return new Intl.DateTimeFormat('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone })
-    .format(new Date(value));
-}
-
-function dayIn(value: Date, timeZone: string) {
-  return new Intl.DateTimeFormat('es-DO', { weekday: 'short', day: 'numeric', month: 'short', timeZone }).format(value);
 }
 
 /**
@@ -62,6 +74,16 @@ export function clampMilestoneTime(value: Date, opensAt: Date | null, now: Date)
 
 /** Whole-minute steps of the adjustment; an hour at a time reaches a correction days later (3-N09). */
 const SHIFTS = [-60, -10, -5, -1, 1, 5, 60] as const;
+
+/** N2: the push-back sheet names the phase the push-back belongs to, as its tab does. */
+const PUSHBACK_PHASE_LABEL = FLIGHT_REPORT_PHASES.find(phase => phase.id === 'pushback')?.label ?? 'Retroempuje';
+
+/**
+ * N13 (D-N13): the milestones keep the form's words, from the shared catalog; the tablet says what «JB» is in the phase
+ * that shows it.
+ */
+const JET_BRIDGE_HELP = 'JB: pasarela de abordaje (jet bridge).';
+const mentionsJetBridge = (label: string) => /\bJB\b/.test(label);
 
 function haptic() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -153,10 +175,12 @@ function TimeSheet({ label, initial, opensAt, correction, timeZone, onClose, onS
       <View style={styles.sheetBackdrop}>
         <View style={styles.sheet} accessibilityViewIsModal>
           <Text style={styles.sheetTitle}>{label}</Text>
-          <Text accessibilityLiveRegion="polite" style={styles.sheetTime}>{timeIn(value, timeZone)}</Text>
-          <Text style={styles.sheetDay}>{dayIn(value, timeZone)}</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.sheetTime}>{formatStationTime(value, timeZone)}</Text>
+          <Text style={styles.sheetDay}>{formatStationDate(value, timeZone)}</Text>
           <Text style={styles.hint}>
-            {opensAt ? `Hora válida desde ${dayIn(opensAt, timeZone)} ${timeIn(opensAt, timeZone)} ${until} (hora de la estación).`
+            {opensAt
+              ? `Hora válida desde ${formatStationDate(opensAt, timeZone)} ${formatStationTime(opensAt, timeZone)} ${until} ` +
+                '(hora de la estación).'
               : `Hora válida ${until} (hora de la estación).`}
           </Text>
           <View style={styles.shiftRow}>
@@ -186,7 +210,7 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
   const recorded = Boolean(state.at);
   return (
     <Pressable accessibilityRole="button" disabled={disabled}
-      accessibilityLabel={recorded ? `${label}, ${timeIn(state.at!, timeZone)}, ${tone.label}. Toca para ajustar.`
+      accessibilityLabel={recorded ? `${label}, ${formatStationTime(state.at, timeZone)}, ${tone.label}. Toca para ajustar.`
         : correction ? `${label}. Toca para registrar su hora.` : `${label}. Toca para registrar ahora.`}
       onPress={recorded ? onEdit : onNow}
       style={({ pressed }) => [styles.milestone, { borderColor: recorded ? tone.fg : colors.border, backgroundColor: tone.bg },
@@ -194,7 +218,7 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
       <Text numberOfLines={2} style={styles.milestoneLabel}>{label}</Text>
       {recorded ? (
         <View style={styles.milestoneFooter}>
-          <Text style={[styles.milestoneTime, { color: tone.fg }]}>{timeIn(state.at!, timeZone)}</Text>
+          <Text style={[styles.milestoneTime, { color: tone.fg }]}>{formatStationTime(state.at, timeZone)}</Text>
           <Ionicons accessibilityLabel={tone.label} name={tone.icon} size={18} color={tone.fg} />
         </View>
       ) : correction ? (
@@ -207,10 +231,14 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
 }
 
 /**
- * «Reporte de Vuelo» by phase (ADR-0031): Llegada → En posición → Salida → Retroempuje. One tap
- * records the time on the device, with a vibration; the queue sends it when there is signal.
+ * «Hitos del vuelo», the milestones of AVIAM's «Reporte de Vuelo» by phase (ADR-0031): Llegada → En posición → Salida →
+ * Retroempuje. The panel has a name of its own (N13, D-N13): «Reporte de Vuelo» is the AVIAM form signed in «Formularios
+ * y firmas», and the checklist is «Checklist operativo». One tap records the time on the device, with a vibration; the
+ * queue sends it when there is signal.
  * In a correction round (OCC returned the operation) the facts of the flight already happened: an empty milestone
  * opens the adjustment at the last recorded time instead of recording «AHORA» (3-N09).
+ * The push-back releases the stand in OCC for good (decision 23), so its first tap asks first when the flight is not
+ * recorded as it should be (N2, D-N2): a sheet lists the reasons and what recording it does.
  */
 export function FlightReportPanel({ operation, timeZone, editable }: { operation: Operation; timeZone: string; editable: boolean }) {
   const snapshot = useFlightReport();
@@ -223,6 +251,8 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
   const firstOpen = FLIGHT_REPORT_PHASES.find(phase => done[phase.id][0] < done[phase.id][1])?.id ?? 'pushback';
   const [phase, setPhase] = useState<FlightReportPhase>(firstOpen);
   const [editing, setEditing] = useState<{ code: string; label: string; at: Date } | null>(null);
+  // N2: the reasons the push-back sheet lists, as they stood at the tap; null while it is closed.
+  const [pushbackAsk, setPushbackAsk] = useState<readonly PushbackConcern[] | null>(null);
   const [error, setError] = useState('');
   const correction = editable && operation.review?.status === 'Returned';
   const opensAt = evidenceWindowOpens(operation);
@@ -240,24 +270,49 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
     recordMilestone(operation.operation.id, code, at, timeZone)
       .catch(failure => setError(localSaveError(failure, MILESTONE_NOT_SAVED)));
   };
+  /**
+   * An empty milestone's tap outside a correction: it records now, except a push-back whose flight is not recorded as
+   * it should be, which asks first (N2). A push-back already recorded, or waiting in the queue, opens the adjustment.
+   */
+  const recordNow = (code: string) => {
+    if (code === PUSHBACK_MILESTONE) {
+      const id = operation.operation.id;
+      const concerns = pushbackConcerns({
+        recorded: new Set(FLIGHT_REPORT_MILESTONES.filter(item => states.get(item.code)?.at).map(item => item.code)),
+        services: operation.services,
+        orderSigned: serviceOrderHasSignature(snapshot?.documents[id] ?? snapshot?.documents[id.toLowerCase()],
+          snapshot?.items ?? [], id),
+      });
+      if (concerns.length > 0) {
+        setPushbackAsk(concerns);
+        return;
+      }
+    }
+    record(code, serverNow());
+  };
+
+  const phaseMilestones = FLIGHT_REPORT_MILESTONES.filter(item => item.phase === phase);
 
   return (
-    <View style={styles.panel} accessibilityLabel="Reporte de vuelo">
+    <View style={styles.panel} accessibilityLabel="Hitos del vuelo">
       <View style={styles.panelHeader}>
         <Ionicons name="time-outline" size={22} color={colors.navy} />
-        <Text style={styles.panelTitle}>Reporte de vuelo</Text>
+        <Text style={styles.panelTitle}>Hitos del vuelo</Text>
       </View>
       {!editable && <Text style={styles.hint}>Inicia la operación para registrar los tiempos.</Text>}
       <PhaseBar phase={phase} onChange={setPhase} done={done} />
       <View style={styles.grid}>
-        {FLIGHT_REPORT_MILESTONES.filter(item => item.phase === phase).map(item => (
+        {phaseMilestones.map(item => (
           <MilestoneButton key={item.code} label={item.label} state={states.get(item.code)!} timeZone={timeZone}
             disabled={!editable} correction={correction}
             onNow={() => (correction ? setEditing({ code: item.code, label: item.label, at: lastRecorded() })
-              : record(item.code, serverNow()))}
+              : recordNow(item.code))}
             onEdit={() => setEditing({ code: item.code, label: item.label, at: new Date(states.get(item.code)!.at!) })} />
         ))}
       </View>
+      {phaseMilestones.some(item => mentionsJetBridge(item.label)) ? (
+        <Text style={styles.hint}>{JET_BRIDGE_HELP}</Text>
+      ) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {correction && (
         <Text style={styles.hint}>Corrección: registra cada hora como ocurrió en el vuelo, no la hora actual.</Text>
@@ -265,11 +320,36 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
       {editing && <TimeSheet label={editing.label} initial={editing.at} opensAt={opensAt} correction={correction}
         timeZone={timeZone} onClose={() => setEditing(null)}
         onSave={value => { record(editing.code, value); setEditing(null); }} />}
+      {/* N2: «ahora» is when the agent confirms, by ELEVANT's clock; nothing is recorded while the sheet is open. */}
+      {pushbackAsk && editable && !correction ? (
+        <PushbackSheet eyebrow={PUSHBACK_PHASE_LABEL} concerns={pushbackAsk}
+          effect={pushbackEffect(operation.turnaround.stand?.code)} onClose={() => setPushbackAsk(null)}
+          onConfirm={() => { setPushbackAsk(null); record(PUSHBACK_MILESTONE, serverNow()); }} />
+      ) : null}
     </View>
   );
 }
 
-const toInt = (text: string) => (text.trim() === '' ? null : Number.parseInt(text.replace(/\D/g, ''), 10));
+/** S1: what each field takes; a passenger count fits in 4 characters and the MTOW in 9 («700,000» with room to spare). */
+const FIELD_LENGTH: Readonly<Record<FlightDataField, number>> = {
+  passengersIn: 4, passengersOut: 4, mtowKg: 9, aircraftRegistration: 10,
+};
+
+/** What a screen reader says of a field without an error: its range, as its placeholder shows it. */
+const FIELD_HINTS: Readonly<Record<FlightDataField, string>> = {
+  passengersIn: `De ${FLIGHT_DATA_PLACEHOLDERS.passengersIn}`,
+  passengersOut: `De ${FLIGHT_DATA_PLACEHOLDERS.passengersOut}`,
+  mtowKg: `De ${FLIGHT_DATA_PLACEHOLDERS.mtowKg}`,
+  aircraftRegistration: 'De 2 a 10 letras, números o guiones',
+};
+
+/** The saved flight data as its fields show it. */
+const fieldsOf = (saved: FlightDataValues): FlightDataDraft => ({
+  passengersIn: saved.passengersIn?.toString() ?? '',
+  passengersOut: saved.passengersOut?.toString() ?? '',
+  mtowKg: saved.mtowKg?.toString() ?? '',
+  aircraftRegistration: saved.aircraftRegistration ?? '',
+});
 
 /** The active aircraft types of ELEVANT; without them (no signal and no copy, an older server) the type is read-only. */
 function useAircraftTypeCatalog() {
@@ -288,28 +368,44 @@ function useAircraftTypeCatalog() {
  * Passengers, MTOW, registration and aircraft type, typed once; every AVIAM form takes them from here. The type (3-B)
  * is chosen from ELEVANT's catalog only while the operation runs: the ground-time allowance and the package-exceeded
  * surcharge read it. Leaving it untouched keeps the current one.
+ * S1: each field is read exactly (`validateFlightDataDraft`) and says its own error with its range; the first wrong
+ * one takes the focus and nothing is saved. A field the agent has not touched shows the saved data, so the queue read
+ * after the first render, or a save, shows at once, and what the agent typed is never overwritten. «Faltan…» says what
+ * the forms still lack and «Sin guardar» what is not saved yet; the chip keeps saying where the saved data stands.
  */
 export function FlightDataCard({ operation, editable }: { operation: Operation; editable: boolean }) {
   const snapshot = useFlightReport();
   const catalog = useAircraftTypeCatalog();
   const confirmed = snapshot?.confirmed[operation.operation.id];
   const pending = pendingFor(snapshot?.items ?? [], operation.operation.id).flightData;
-  const source = pending?.command.kind === 'flightData' ? pending.command : {
-    passengersIn: confirmed?.passengersIn ?? operation.operation.passengersIn ?? null,
-    passengersOut: confirmed?.passengersOut ?? operation.operation.passengersOut ?? null,
-    mtowKg: confirmed?.mtowKg ?? operation.operation.mtowKg ?? null,
-    aircraftRegistration: confirmed?.aircraftRegistration ?? operation.turnaround.aircraft?.registration ?? null,
+  // ELEVANT's last answer wins over the operation as last read, also when it says that a value was cleared.
+  const source: FlightDataValues = pending?.command.kind === 'flightData' ? pending.command : confirmed ? {
+    passengersIn: confirmed.passengersIn ?? null,
+    passengersOut: confirmed.passengersOut ?? null,
+    mtowKg: confirmed.mtowKg ?? null,
+    aircraftRegistration: confirmed.aircraftRegistration ?? operation.turnaround.aircraft?.registration ?? null,
+  } : {
+    passengersIn: operation.operation.passengersIn ?? null,
+    passengersOut: operation.operation.passengersOut ?? null,
+    mtowKg: operation.operation.mtowKg ?? null,
+    aircraftRegistration: operation.turnaround.aircraft?.registration ?? null,
   };
-  const [draft, setDraft] = useState({
-    passengersIn: source.passengersIn?.toString() ?? '', passengersOut: source.passengersOut?.toString() ?? '',
-    mtowKg: source.mtowKg?.toString() ?? '', aircraftRegistration: source.aircraftRegistration ?? '',
-  });
+  // What the agent typed, field by field, over the saved data; a field leaves it once a save of its text is accepted.
+  const [edits, setEdits] = useState<Partial<Record<FlightDataField, string>>>({});
+  const draft: FlightDataDraft = { ...fieldsOf(source), ...(editable ? edits : {}) };
   // Undefined: untouched here, so the type still waiting on the device (or none, which keeps the flight's) applies.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
   const waitingType = pending?.command.kind === 'flightData' ? pending.command.aircraftTypeId ?? null : null;
-  const aircraftTypeId = picked !== undefined ? picked : waitingType;
+  const aircraftTypeId = editable && picked !== undefined ? picked : waitingType;
   const [picking, setPicking] = useState(false);
-  const [error, setError] = useState('');
+  // A save refused for its fields: their errors show, and follow what the agent types, until a save is accepted.
+  const [checked, setChecked] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const inputs = useRef<Partial<Record<FlightDataField, TextInput | null>>>({});
+  const { values, errors } = validateFlightDataDraft(draft);
+  const refused = refusedFlightDataSummary(checked ? FLIGHT_DATA_FIELDS.filter(field => errors[field]) : []);
+  const dirty = editable && (Object.keys(edits).length > 0 || picked !== undefined);
+  const missingLine = missingFlightDataLine(missingFlightData(source) ?? []);
   const tone: Tone = pending ? (pending.state === 'blocked' ? 'blocked' : 'device') :
     (source.passengersIn ?? source.passengersOut ?? source.mtowKg) !== null ? 'confirmed' : 'empty';
   const currentType = operation.turnaround.aircraft;
@@ -320,28 +416,45 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
   const canPick = editable && Boolean(catalog?.available) && (catalog?.types.length ?? 0) > 0;
 
   const save = () => {
-    const values = { passengersIn: toInt(draft.passengersIn), passengersOut: toInt(draft.passengersOut), mtowKg: toInt(draft.mtowKg),
-      aircraftRegistration: draft.aircraftRegistration.trim().toUpperCase() || null,
-      ...(aircraftTypeId ? { aircraftTypeId } : {}) };
-    if ([values.passengersIn, values.passengersOut].some(value => value !== null && (value < 0 || value > 999)) ||
-        (values.mtowKg !== null && (values.mtowKg < 1000 || values.mtowKg > 700000)) ||
-        (values.aircraftRegistration && !/^[A-Z0-9-]{2,10}$/.test(values.aircraftRegistration))) {
-      setError('Revisa los datos: pasajeros de 0 a 999, MTOW en kg y matrícula como HI1055.');
+    setSaveError('');
+    const wrong = FLIGHT_DATA_FIELDS.filter(field => errors[field]);
+    if (wrong.length > 0) {
+      setChecked(true);
+      inputs.current[wrong[0]]?.focus();
       return;
     }
-    setError('');
+    setChecked(false);
     haptic();
-    saveFlightData(operation.operation.id, values)
-      .catch(failure => setError(localSaveError(failure, FLIGHT_DATA_NOT_SAVED)));
+    const sent = draft;
+    const sentType = picked;
+    saveFlightData(operation.operation.id, { ...values, ...(aircraftTypeId ? { aircraftTypeId } : {}) })
+      .then(() => {
+        // Accepted: the fields show the saved data again, except one the agent typed again meanwhile.
+        setEdits(current => Object.fromEntries(Object.entries(current)
+          .filter(([key, text]) => text !== sent[key as FlightDataField])));
+        setPicked(current => (current === sentType ? undefined : current));
+      })
+      .catch(failure => setSaveError(localSaveError(failure, FLIGHT_DATA_NOT_SAVED)));
   };
-  const field = (key: keyof typeof draft, label: string, numeric = true) => (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput accessibilityLabel={label} editable={editable} keyboardType={numeric ? 'number-pad' : 'default'}
-        autoCapitalize="characters" maxLength={numeric ? 6 : 10} value={draft[key]} style={styles.input}
-        onChangeText={text => setDraft(value => ({ ...value, [key]: text }))} />
-    </View>
-  );
+  const field = (key: FlightDataField) => {
+    const label = FLIGHT_DATA_LABELS[key];
+    const error = checked ? errors[key] : undefined;
+    const next: FlightDataField | undefined = FLIGHT_DATA_FIELDS[FLIGHT_DATA_FIELDS.indexOf(key) + 1];
+    return (
+      <View key={key} style={[styles.field, key === 'mtowKg' && styles.fieldWide]}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <TextInput ref={input => { inputs.current[key] = input; }} accessibilityLabel={label}
+          accessibilityHint={error ?? FIELD_HINTS[key]} editable={editable}
+          keyboardType={key === 'aircraftRegistration' ? 'default' : 'number-pad'} autoCapitalize="characters"
+          autoCorrect={false} maxLength={FIELD_LENGTH[key]} placeholder={FLIGHT_DATA_PLACEHOLDERS[key]}
+          placeholderTextColor={colors.muted} returnKeyType={next ? 'next' : 'done'}
+          submitBehavior={next ? 'submit' : 'blurAndSubmit'} onSubmitEditing={() => { if (next) inputs.current[next]?.focus(); }}
+          value={draft[key]} style={[styles.input, error ? styles.inputInvalid : null]}
+          onChangeText={text => setEdits(current => ({ ...current, [key]: text }))} />
+        {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      </View>
+    );
+  };
   return (
     <View style={styles.panel} accessibilityLabel="Datos del vuelo">
       <View style={styles.panelHeader}>
@@ -353,11 +466,15 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
         </View>
       </View>
       <Text style={styles.hint}>Se escriben una vez: la Orden de Servicio y el Reporte de Vuelo los toman de aquí.</Text>
+      {/* S1 (D-S1): what the forms still lack; it warns, the Order can be signed and handed off without it. */}
+      {missingLine ? (
+        <View style={styles.dataNote}>
+          <Ionicons name="warning-outline" size={18} color={colors.warning} />
+          <Text style={styles.dataMissingText}>{missingLine}</Text>
+        </View>
+      ) : null}
       <View style={styles.fields}>
-        {field('passengersIn', 'Pasajeros que llegan')}
-        {field('passengersOut', 'Pasajeros que salen')}
-        {field('mtowKg', 'MTOW (kg)')}
-        {field('aircraftRegistration', 'Matrícula', false)}
+        {FLIGHT_DATA_FIELDS.map(key => field(key))}
       </View>
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Tipo de avión</Text>
@@ -374,7 +491,14 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
         {catalog && !catalog.available && editable
           ? <Text style={styles.hint}>Sin la lista de tipos de ELEVANT el tipo no se puede cambiar desde la tablet.</Text> : null}
       </View>
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {dirty ? (
+        <View style={styles.dataNote}>
+          <Ionicons name="create-outline" size={18} color={colors.navy} />
+          <Text style={styles.unsavedText}>Sin guardar</Text>
+        </View>
+      ) : null}
+      {refused ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refused}</Text> : null}
+      {saveError ? <Text accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
       <PrimaryButton disabled={!editable} icon="save-outline" title="GUARDAR DATOS DEL VUELO" onPress={save} />
       <Modal animationType="slide" visible={picking} onRequestClose={() => setPicking(false)}>
         <View style={styles.deviationScreen}>
@@ -384,7 +508,7 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
               const selected = (aircraftTypeId ?? currentType?.id) === item.id;
               return (
                 <Pressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={aircraftTypeLabel(item)}
-                  onPress={() => { setPicked(item.id === currentType?.id ? null : item.id); setPicking(false); setError(''); }}
+                  onPress={() => { setPicked(item.id === currentType?.id ? null : item.id); setPicking(false); setSaveError(''); }}
                   style={[styles.code, selected && styles.codeSelected]}>
                   <Text style={[styles.codeNumber, selected && styles.codeSelectedText]}>{item.icaoCode}</Text>
                   <Text style={[styles.codeLabel, selected && styles.codeSelectedText]}>{item.manufacturer} {item.model}</Text>
@@ -488,7 +612,8 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: colors.white, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: space.xl, gap: space.md },
   sheetTitle: { ...type.title, color: colors.navy },
   sheetTime: { fontSize: 48, fontWeight: '900', color: colors.ink, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  sheetDay: { ...type.label, color: colors.muted, textAlign: 'center', textTransform: 'capitalize' },
+  // N11: the day as the formatter writes it, «sáb, 7 nov», without forced capitals.
+  sheetDay: { ...type.label, color: colors.muted, textAlign: 'center' },
   shiftRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, justifyContent: 'center' },
   shiftButton: { minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, borderWidth: 1, borderColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
   shiftText: { ...type.label, color: colors.navy },
@@ -496,8 +621,17 @@ const styles = StyleSheet.create({
   syncText: { fontSize: 12, fontWeight: '800' },
   fields: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
   field: { flexGrow: 1, flexBasis: 140, gap: 4 },
+  // S1: room for its placeholder, «1,000 a 700,000 kg», at the input's 18 pt.
+  fieldWide: { flexBasis: 200 },
   fieldLabel: { ...type.caption, color: colors.muted },
   input: { minHeight: touch.min, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: space.md, fontSize: 18, fontWeight: '700', color: colors.ink, backgroundColor: colors.white },
+  // S1: a wrong field has a red edge and its message under it (danger on white is 5.3:1).
+  inputInvalid: { borderColor: colors.danger, borderWidth: 2 },
+  fieldError: { ...type.body, fontSize: 14, fontWeight: '700', color: colors.danger },
+  dataNote: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  // Warning on white is 6.6:1.
+  dataMissingText: { ...type.body, color: colors.warning, flex: 1 },
+  unsavedText: { ...type.label, color: colors.navy, flex: 1 },
   deviation: { minHeight: touch.large, flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.lg, padding: space.lg, backgroundColor: colors.danger },
   deviationCopy: { flex: 1 },
   deviationTitle: { ...type.title, color: colors.white },
