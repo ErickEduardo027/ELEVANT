@@ -35,7 +35,9 @@ export default function HumanResourcesLayout({
           item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.ACCESS_REQUESTS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ||
-          item.id === HUMAN_RESOURCES_MODULE_IDS.DEPARTMENT_USERS)
+          item.id === HUMAN_RESOURCES_MODULE_IDS.DEPARTMENT_USERS ||
+          // ADR-0045: the Development VPS runs this demo mode, and Configuración is real data.
+          item.id === HUMAN_RESOURCES_MODULE_IDS.SETTINGS)
         .map(item =>
         dashboardReadOnlyDemo && (item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||

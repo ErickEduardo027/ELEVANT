@@ -409,6 +409,9 @@ y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHum
 En las dos pestañas hay una tabla y un formulario lateral para crear, editar y desactivar. Cada guardado lleva su
 Idempotency-Key y la versión, y los errores se explican por código.
 
+La entrada también aparece con `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`, el modo de la build de Development.
+Hasta el 20-nov la lista de módulos de ese modo la omitía, y el VPS no la mostraba aunque la cuenta tuviera el permiso.
+
 El formulario de carnets ofrece los tipos del sistema y los personalizados activos. La lista y el reporte de
 vencimientos nombran los tipos personalizados con el catálogo. Sin acceso al catálogo, se quedan con los nombres del
 sistema.
