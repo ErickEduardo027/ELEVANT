@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkIdentityDocument, identityDocumentExample, identityDocumentRequirements, normalizeIdentityDocument,
-  normalizePhone } from "../src";
+import { checkIdentityDocument, formatPhone, identityDocumentExample, identityDocumentRequirements,
+  normalizeIdentityDocument, normalizePhone } from "../src";
 
 const withLuhn = (ten: string) => {
   let sum = 0;
@@ -23,6 +23,30 @@ describe("phone normalization (mirrors PhoneNumbers.cs)", () => {
 
   it.each(["305-555-0100", "555-0100", "+1 849 246 337", "849-ABC-3371", ""])("rejects %s",
     (input) => expect(normalizePhone(input)).toBeNull());
+});
+
+describe("phone display (N35)", () => {
+  it.each([
+    ["+18095550520", "+1 809-555-0520"],
+    ["+18492463371", "+1 849-246-3371"],
+    ["+13055550100", "+1 305-555-0100"],
+    ["+34600123456", "+34 600123456"],
+    ["+50761234567", "+507 61234567"],
+    ["+4915112345678", "+49 15112345678"],
+    ["+74951234567", "+7 4951234567"],
+    ["+886912345678", "+886 912345678"],
+    ["  +18095550520 ", "+1 809-555-0520"],
+  ])("writes the stored %s as %s", (stored, shown) => expect(formatPhone(stored)).toBe(shown));
+
+  it("reads back as the same E.164 number", () => {
+    for (const stored of ["+18095550520", "+34600123456", "+50761234567", "+74951234567"])
+      expect(normalizePhone(formatPhone(stored))).toBe(stored);
+  });
+
+  it.each(["809-555-0520", "(809) 555 0520", "Central: 809-555-0520", "+0123456789", "+12345"])(
+    "keeps %s as it was typed when it is not an E.164 number", (value) => expect(formatPhone(value)).toBe(value));
+
+  it.each([null, undefined, "", "   "])("writes nothing for %s", (value) => expect(formatPhone(value)).toBe(""));
 });
 
 describe("identity documents (mirrors IdentityDocuments.cs)", () => {

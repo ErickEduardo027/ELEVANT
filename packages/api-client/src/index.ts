@@ -122,6 +122,7 @@ export {
   PASSPORT_PATTERNS,
   checkIdentityDocument,
   checkTaxRegistration,
+  formatPhone,
   formatTaxRegistration,
   maskRnc,
   rncFeedback,

@@ -26,6 +26,30 @@ export function normalizePhone(input: string | null | undefined): string | null 
     ? `+1${digits}` : null;
 }
 
+// ITU-T E.164 country codes are prefix-free: 1 and 7 have one digit, these two, and every other code three.
+const TWO_DIGIT_COUNTRY_CODES = new Set(["20", "27", "30", "31", "32", "33", "34", "36", "39", "40", "41", "43", "44",
+  "45", "46", "47", "48", "49", "51", "52", "53", "54", "55", "56", "57", "58", "60", "61", "62", "63", "64", "65", "66",
+  "81", "82", "84", "86", "90", "91", "92", "93", "94", "95", "98"]);
+
+const countryCodeLength = (digits: string) =>
+  digits.startsWith("1") || digits.startsWith("7") ? 1 : TWO_DIGIT_COUNTRY_CODES.has(digits.slice(0, 2)) ? 2 : 3;
+
+/**
+ * A stored phone as people read it, for display only (the API keeps E.164): a North American number, the Dominican
+ * Republic's included, is «+1 809-555-0520»; any other E.164 number shows its country code apart, «+34 600123456».
+ * A value that is not E.164, such as one typed before phones were normalized, is returned trimmed and unchanged.
+ */
+export function formatPhone(input: string | null | undefined): string {
+  if (typeof input !== "string") return "";
+  const phone = input.trim();
+  const northAmerican = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(phone);
+  if (northAmerican) return `+1 ${northAmerican[1]}-${northAmerican[2]}-${northAmerican[3]}`;
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) return phone;
+  const digits = phone.slice(1);
+  const length = countryCodeLength(digits);
+  return `+${digits.slice(0, length)} ${digits.slice(length)}`;
+}
+
 export type IdentityDocumentKind = "Cedula" | "Residence" | "Passport" | "Rnc";
 
 /** Canonical number when valid, or the first position that fails (Spanish, same text as the API). */
