@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import StatusBadge from '../../components/StatusBadge';
+import TitledSelect from '../../components/TitledSelect';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import {
@@ -93,6 +94,15 @@ function defaultSizedWindow({ aircraftTypes, limits }) {
   return windowOf({ aircraftTypeId: type.id, minutes: String(limits.defaultMinutesToOnBlock),
     groundMinutes: String(limits.defaultGroundMinutes) }, limits);
 }
+
+/** A station as «Estación» offers it: «PUJ · Punta Cana». */
+const stationOption = station => ({ value: station.id, label: `${station.code} · ${station.name}` });
+
+/** An airport as «Origen» and «Destino de la salida» offer it: «MIA · Miami». */
+const airportOption = airport => ({ value: airport.iataCode, label: `${airport.iataCode} · ${airport.city}` });
+
+/** An aircraft type by its code first, as OCC's importer also names it (N37): «A320 · Airbus A320». */
+const aircraftTypeLabel = type => `${type.icaoCode} · ${type.manufacturer} ${type.model}`;
 
 /** Who covers an eligible stand when the aircraft parks, by name, and how many of them OCC may assign when not all. */
 function coverText({ coveredBy, eligibleAgents }) {
@@ -199,6 +209,10 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
       : canDraw ? RANDOM_STAND : NO_STAND;
   const minutes = draft.minutes ?? String(limits.defaultMinutesToOnBlock);
   const groundMinutes = draft.groundMinutes ?? String(limits.defaultGroundMinutes);
+  // «Al azar» while there is a stand to draw, «Sin posición» always, then every stand: one that is not eligible says why.
+  const standOptions = [{ value: RANDOM_STAND, label: 'Al azar', disabled: !canDraw },
+    { value: NO_STAND, label: 'Sin posición' },
+    ...stands.map(item => ({ value: item.standId, label: standLabel(item), disabled: !item.eligible }))];
 
   const set = (key, value) => {
     setDraft(current => ({ ...current, [key]: value }));
@@ -254,47 +268,35 @@ function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, e
     <form onSubmit={submit} noValidate aria-label="Disparar vuelo demo" className={`${inset} space-y-3`}>
       <h3 className="text-base font-bold">Disparar vuelo demo</h3>
       {warnings.map(warningOf)}
+      {/* Each field names the option it shows in its title (N37); the type and the stand, the longest, take both columns. */}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-semibold">Estación
-          <select className={fieldClass} value={data.stationId} disabled={busy}
-            onChange={event => onStation(event.target.value)}>
-            {data.stations.map(station => <option key={station.id} value={station.id}>{station.code} · {station.name}</option>)}
-          </select></label>
+          <TitledSelect className={fieldClass} value={data.stationId} disabled={busy}
+            onChange={event => onStation(event.target.value)} options={data.stations.map(stationOption)} /></label>
         <div>
           <label className="block text-xs font-semibold">Aerolínea
-            <select className={fieldClass} value={airlineId} disabled={busy || !airlines.length}
-              aria-describedby={`${id}-airline`} onChange={event => set('airlineId', event.target.value)}>
-              {airlines.map(airline => <option key={airline.id} value={airline.id}>{airline.name}</option>)}
-            </select></label>
+            <TitledSelect className={fieldClass} value={airlineId} disabled={busy || !airlines.length}
+              aria-describedby={`${id}-airline`} onChange={event => set('airlineId', event.target.value)}
+              options={airlines.map(airline => ({ value: airline.id, label: airline.name }))} /></label>
           <p id={`${id}-airline`} className={`mt-1 text-xs ${muted}`}>
             Solo aerolíneas con contrato vigente hoy en la estación. El vuelo se opera y se factura como cualquier otro: use
             una aerolínea de prueba.</p>
         </div>
         <label className="block text-xs font-semibold">Origen
-          <select className={fieldClass} value={originIata} disabled={busy || !airports.length}
-            onChange={event => set('originIata', event.target.value)}>
-            {airports.map(airport => <option key={airport.iataCode} value={airport.iataCode}>{airport.iataCode} · {airport.city}</option>)}
-          </select></label>
+          <TitledSelect className={fieldClass} value={originIata} disabled={busy || !airports.length}
+            onChange={event => set('originIata', event.target.value)} options={airports.map(airportOption)} /></label>
         <label className="block text-xs font-semibold">Destino de la salida
-          <select className={fieldClass} value={destinationIata} disabled={busy}
-            onChange={event => set('destinationIata', event.target.value)}>
-            <option value="">El mismo aeropuerto</option>
-            {airports.map(airport => <option key={airport.iataCode} value={airport.iataCode}>{airport.iataCode} · {airport.city}</option>)}
-          </select></label>
-        <label className="block text-xs font-semibold">Tipo de avión
-          <select className={fieldClass} value={aircraftTypeId} disabled={busy || !aircraftTypes.length}
-            onChange={event => set('aircraftTypeId', event.target.value)}>
-            {aircraftTypes.map(type => <option key={type.id} value={type.id}>{type.icaoCode} · {type.manufacturer} {type.model}</option>)}
-          </select></label>
-        <div>
+          <TitledSelect className={fieldClass} value={destinationIata} disabled={busy}
+            onChange={event => set('destinationIata', event.target.value)}
+            options={[{ value: '', label: 'El mismo aeropuerto' }, ...airports.map(airportOption)]} /></label>
+        <label className="block text-xs font-semibold sm:col-span-2">Tipo de avión
+          <TitledSelect className={fieldClass} value={aircraftTypeId} disabled={busy || !aircraftTypes.length}
+            onChange={event => set('aircraftTypeId', event.target.value)}
+            options={aircraftTypes.map(type => ({ value: type.id, label: aircraftTypeLabel(type) }))} /></label>
+        <div className="sm:col-span-2">
           <label className="block text-xs font-semibold">Posición
-            <select className={fieldClass} value={stand} disabled={busy} aria-describedby={`${id}-stand`}
-              onChange={event => set('stand', event.target.value)}>
-              <option value={RANDOM_STAND} disabled={!canDraw}>Al azar</option>
-              <option value={NO_STAND}>Sin posición</option>
-              {stands.map(item => <option key={item.standId} value={item.standId} disabled={!item.eligible}>
-                {standLabel(item)}</option>)}
-            </select></label>
+            <TitledSelect className={fieldClass} value={stand} disabled={busy} aria-describedby={`${id}-stand`}
+              onChange={event => set('stand', event.target.value)} options={standOptions} /></label>
           <p id={`${id}-stand`} className={`mt-1 text-xs ${muted}`}>
             Al azar: el servidor elige entre las posiciones con un agente elegible durante toda la escala. OCC puede
             asignar otra al importar.</p>

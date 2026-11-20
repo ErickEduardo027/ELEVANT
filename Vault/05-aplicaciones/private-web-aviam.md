@@ -98,6 +98,33 @@ que usan tanto Tailwind como los hooks; incluye `3xl` (1920 px).
 La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 1920 px contra la API Development. No acredita un despliegue en el VPS.
 
+*Posterior al commit verificado (hallazgo N37 y decisión D-N37, 20 de noviembre
+de 2026).* La prueba del VPS del 16 de noviembre encontró etiquetas del menú y
+opciones de selectores cortadas a media palabra. Ahora:
+
+- **Menú lateral.** En Contratos, Finanzas, Gestión Humana y
+  Superadministración, cada etiqueta del menú ocupa hasta dos líneas y, si aun
+  así no cabe, termina en «…». Al pasar el puntero, `title` la muestra entera
+  («Carnets y permisos aeroportuarios»). Vale para el rail completo, el cajón de
+  navegación y el menú flotante de un grupo en el rail plegado. Los iconos del
+  rail plegado conservan su rótulo emergente, sin añadir el del navegador
+  ([elemento](../../frontend/private-web/src/features/shell/components/SidebarItem.jsx) y
+  [grupo](../../frontend/private-web/src/features/shell/components/SidebarGroup.jsx)).
+  El riel del OCC no cambió.
+- **Selectores.** Cada selector de «Disparar vuelo demo» (Superadministración →
+  Configuración) y de la fila de cada llegada en «Importar vuelos»
+  (Planificación) repite en su `title` la opción que muestra
+  ([selector](../../frontend/private-web/src/components/TitledSelect.jsx)). En el
+  vuelo demo, «Tipo de avión» y «Posición» ocupan las dos columnas del
+  formulario. En el importador, cada selector mide lo que su opción más larga
+  sin pasar del ancho de la fila (antes tenía un tope de 14 rem), y el tipo de
+  avión lleva el código primero, como en el vuelo demo: «A320 · Airbus A320
+  Development», no «Airbus A320 Development · A320». «Nuevo vuelo» y «Editar
+  vuelo» siguen con el nombre primero.
+
+Las pruebas lo comprueban por las clases y los atributos; la revisión visual a
+1440 y 1920 px está pendiente.
+
 ## Convenciones de texto
 
 *Posterior al commit verificado (hallazgo N36 y decisión D-N36, 19 de noviembre
@@ -557,6 +584,15 @@ fijos de ejemplo. Fuentes: [editor](../../frontend/private-web/src/features/huma
 La fase 2 del ciclo cambió quitar turnos, copiar la semana y las ausencias: ver
 [Pre-operación (fase 2)](#pre-operación-fase-2). La fase 3 sumó «Ajustar
 horario»: ver [La operación (fase 3)](#la-operación-fase-3).
+
+*Posterior al commit verificado (hallazgo N37, 20 de noviembre de 2026):*
+«¿Puede operar?» se dibuja dentro de la página «Agentes de rampa», después de
+su encabezado («Gestión Humana / Personal» y «Agentes de rampa») y antes de
+«Personal registrado», en la misma columna centrada que el resto de la página.
+Antes salía encima del encabezado y a todo el ancho del contenido. La página lo
+recibe por la prop `lead` de
+[RampProfilesPanel](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx),
+que le pasa [HRModulePage](../../frontend/private-web/src/features/human-resources/HRModulePage.jsx).
 
 ## OCC listo: contratos listos, posiciones ubicadas y mapa en Planificación
 

@@ -247,6 +247,37 @@ it('names the runway time «aterrizó» on an arrival and «despegó» on a depa
   expect(screen.getByRole('dialog')).not.toHaveTextContent(/· real /);
 });
 
+it('names each aircraft type by its code first and every chosen option whole (N37)', async () => {
+  // The seed's type carries «Development» in its model: cut at 14 rem, «Airbus A320 Development · A320» lost its code.
+  getManualTurnaroundOptions.mockResolvedValue({ ...options, aircraftTypes: [{ ...a320, model: 'A320 Development' }, b738] });
+  loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161', { suggestedDepartureId: 'dep',
+    suggestedAircraftTypeId: 't-a320' }), leg('dep', 'Departure', 'ZZ162')]));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+
+  const arrival = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getByRole('listitem');
+  const type = await within(arrival).findByLabelText('Tipo de avión (sugerido)');
+  expect(within(type).getAllByRole('option').map(option => option.textContent))
+    .toEqual(['Sin tipo de avión', 'A320 · Airbus A320 Development', 'B738 · Boeing 737-800']);
+  // Each field is as wide as its longest option, never wider than its row.
+  const fields = within(arrival).getAllByRole('combobox');
+  expect(fields).toHaveLength(3);
+  for (const select of fields) {
+    expect(select).toHaveClass('max-w-full');
+    expect(select).not.toHaveClass('max-w-56');
+  }
+  // Each one names the option it shows, whole, and follows the choice.
+  expect(within(arrival).getByLabelText('Sale como')).toHaveAttribute('title', 'ZZ162 · hacia JFK · 10:05');
+  expect(type).toHaveAttribute('title', 'A320 · Airbus A320 Development');
+  const stand = within(arrival).getByLabelText('Posición');
+  expect(stand).toHaveAttribute('title', 'Sin posición (asignar después)');
+  fireEvent.change(stand, { target: { value: 's-a01' } });
+  expect(stand).toHaveAttribute('title', 'A1 · Terminal A');
+  fireEvent.change(type, { target: { value: 't-b738' } });
+  expect(type).toHaveAttribute('title', 'B738 · Boeing 737-800');
+  fireEvent.change(type, { target: { value: '' } });
+  expect(type).toHaveAttribute('title', 'Sin tipo de avión');
+});
+
 describe('demo flights (ADR-0041)', () => {
   const terminalA = { id: 'ta', code: 'A', name: 'Terminal A' };
   const stand = (id, code, terminal = terminalA) => ({ id, code, terminal });

@@ -39,7 +39,8 @@ export default function HRModulePage({ moduleId }) {
   if (moduleId === 'employees') return <EmployeesPage />;
   if (moduleId === 'positions') return <PositionsPage />;
   if (moduleId === 'requisitions') return <RequisitionsPage />;
-  if (moduleId === 'users') return <div className="space-y-5"><RampReadinessPanel /><RampProfilesPanel /></div>;
+  // «¿Puede operar?» goes inside the page of «Agentes de rampa», after its heading (N37).
+  if (moduleId === 'users') return <RampProfilesPanel lead={<RampReadinessPanel />} />;
   if (moduleId === 'certifications') return <CurrentQualificationsPage />;
   if (moduleId === 'permits') return <CurrentPermitsPage />;
   if (moduleId === 'schedules') return <CurrentShiftsPage />;

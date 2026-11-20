@@ -3,6 +3,7 @@ import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFact
 import { useAviationReferenceService } from '../../aviation-reference/AviationReferenceContext';
 import { providerArrivalStatusKey } from '../../dashboard/noc/boardModel';
 import { consoleMessages } from '../../dashboard/noc/consoleMessages';
+import TitledSelect from '../../../components/TitledSelect';
 import DemoTag from '../../occ-ui/DemoTag';
 import { formatClock } from '../../occ-ui/occTime';
 import {
@@ -16,7 +17,8 @@ import { normalizeStandCode, sortByStandCode, standDisplayCode } from '../../../
 
 const buttonClass = 'min-h-9 rounded-lg border border-accent-600/40 px-3 text-xs font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-50';
 const primaryClass = 'min-h-9 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50';
-const selectClass = 'mt-1 block min-h-9 max-w-56 rounded-lg border border-black/10 px-2 dark:border-white/10 dark:bg-surface-dark-card';
+// As wide as its longest option and never wider than its row (N37): a 14 rem cap cut «Airbus A320 Development · A320».
+const selectClass = 'mt-1 block min-h-9 max-w-full rounded-lg border border-black/10 px-2 dark:border-white/10 dark:bg-surface-dark-card';
 
 const VIEW_HINTS = {
   Contracted: 'Vuelos de aerolíneas con contrato vigente ese día. Las aerolíneas con el contrato suspendido o vencido en la estación no aparecen.',
@@ -72,8 +74,20 @@ function Budget({ budget, lastReadAt, timeZone }) {
   </div>;
 }
 
+// «A320 · Airbus A320»: the code first, as the demo panel of Superadministración names a type, so a field too narrow
+// for the whole name still shows which type it is (N37).
 function typeLabel(type) {
-  return `${type.manufacturer} ${type.model} · ${type.icaoCode}`;
+  return `${type.icaoCode} · ${type.manufacturer} ${type.model}`;
+}
+
+// «ZZ162 · hacia JFK · 10:05»: a departure the arrival can leave as.
+function departureLabel(item, timeZone) {
+  return `${item.flightNumber} · hacia ${item.counterpartIata ?? '¿?'} · ${time(item.scheduledAt, timeZone)}`;
+}
+
+// «A1 · Terminal A»: a stand by the code the map draws (N27).
+function standLabel(stand) {
+  return `${standDisplayCode(stand.code)} · Terminal ${stand.terminal?.code ?? '—'}`;
 }
 
 /** A demo flight the superadministrator triggered (ADR-0041) is always labelled as such. */
@@ -296,27 +310,24 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                         registration={arrival.aircraftRegistration} className="mt-1" />}
                     </div>}
                     {view !== 'Dismissed' && !imported && canImport && <div className="mt-2 flex flex-wrap items-end gap-2">
+                      {/* Each field names the option it shows in its title (N37). */}
                       <label className="text-xs">Sale como
-                        <select className={selectClass} value={choice.departureId}
-                          onChange={event => choose(arrival, 'departureId', event.target.value)}>
-                          <option value="">Elige la salida…</option>
-                          {openDepartures.filter(item => item.airlineId === arrival.airlineId).map(item => <option key={item.proposalId}
-                            value={item.proposalId}>{item.flightNumber} · hacia {item.counterpartIata ?? '¿?'} · {time(item.scheduledAt, timeZone)}</option>)}
-                        </select></label>
+                        <TitledSelect className={selectClass} value={choice.departureId}
+                          onChange={event => choose(arrival, 'departureId', event.target.value)}
+                          options={[{ value: '', label: 'Elige la salida…' }, ...openDepartures
+                            .filter(item => item.airlineId === arrival.airlineId)
+                            .map(item => ({ value: item.proposalId, label: departureLabel(item, timeZone) }))]} /></label>
                       {catalog.status === 'success' && <>
                         <label className="text-xs">Tipo de avión{suggested ? ' (sugerido)' : ''}
-                          <select className={selectClass} value={choice.aircraftTypeId}
-                            onChange={event => choose(arrival, 'aircraftTypeId', event.target.value)}>
-                            <option value="">Sin tipo de avión</option>
-                            {catalog.aircraftTypes.map(type => <option key={type.id} value={type.id}>{typeLabel(type)}</option>)}
-                          </select></label>
+                          <TitledSelect className={selectClass} value={choice.aircraftTypeId}
+                            onChange={event => choose(arrival, 'aircraftTypeId', event.target.value)}
+                            options={[{ value: '', label: 'Sin tipo de avión' },
+                              ...catalog.aircraftTypes.map(type => ({ value: type.id, label: typeLabel(type) }))]} /></label>
                         <label className="text-xs">Posición{standSuggested ? ' (sugerida)' : ''}
-                          <select className={selectClass} value={choice.standId}
-                            onChange={event => choose(arrival, 'standId', event.target.value)}>
-                            <option value="">Sin posición (asignar después)</option>
-                            {stands.map(stand => <option key={stand.id} value={stand.id}>
-                              {standDisplayCode(stand.code)} · Terminal {stand.terminal?.code ?? '—'}</option>)}
-                          </select></label>
+                          <TitledSelect className={selectClass} value={choice.standId}
+                            onChange={event => choose(arrival, 'standId', event.target.value)}
+                            options={[{ value: '', label: 'Sin posición (asignar después)' },
+                              ...stands.map(stand => ({ value: stand.id, label: standLabel(stand) }))]} /></label>
                       </>}
                       <button type="button" className={primaryClass} disabled={Boolean(busy) || !choice.departureId}
                         onClick={() => void importArrival(arrival)}>

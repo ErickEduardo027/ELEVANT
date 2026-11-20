@@ -28,6 +28,27 @@ it('is a read-only directory for Human Resources', async () => {
   expect(screen.queryByText(/Solicitar acceso móvil/)).not.toBeInTheDocument();
 });
 
+it('draws its lead after its heading and before the directory, inside the page (N37)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [] });
+  render(<RampProfilesPanel lead={<section aria-label="¿Puede operar?"><h2>¿Puede operar?</h2></section>} />);
+  await screen.findByText('Lucia Ramos');
+  const heading = screen.getByRole('heading', { level: 1, name: 'Agentes de rampa' });
+  const lead = screen.getByRole('region', { name: '¿Puede operar?' });
+  const directory = screen.getByRole('heading', { level: 2, name: 'Personal registrado' });
+  expect(heading.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(lead.compareDocumentPosition(directory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(heading.closest('header').parentElement).toContainElement(lead);
+});
+
+it('draws no lead unless it is given one (N37)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [] });
+  const { container } = render(<RampProfilesPanel />);
+  await screen.findByText('Lucia Ramos');
+  // The heading, then the directory: nothing in between.
+  expect(container.querySelector('header').nextElementSibling).toContainElement(
+    screen.getByRole('heading', { level: 2, name: 'Personal registrado' }));
+});
+
 it('lets Operations limit terminals to chosen stations and only offer its own stations', async () => {
   getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [
     { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },

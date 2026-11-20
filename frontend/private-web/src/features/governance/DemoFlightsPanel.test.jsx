@@ -706,6 +706,41 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       expect.stringMatching(KEY));
   });
 
+  it('gives «Tipo de avión» and «Posición» both columns and names the chosen option in each title (N37)', async () => {
+    // The seed's types carry «Development» in their model: «A320 · Airbus A320 Development» no longer fits half the form.
+    loadDemoFlightOptions.mockResolvedValue(options({ aircraftTypes: [
+      { id: A320, icaoCode: 'A320', manufacturer: 'Airbus', model: 'A320 Development', sizeCategory: 'Narrowbody' },
+      { id: B77W, icaoCode: 'B77W', manufacturer: 'Boeing', model: '777-300ER Development', sizeCategory: 'Widebody' }] }));
+    renderPanel();
+    await screen.findByRole('form', { name: 'Disparar vuelo demo' });
+    const field = label => within(form()).getByLabelText(label);
+    const type = field('Tipo de avión');
+    expect(within(type).getAllByRole('option').map(option => option.textContent))
+      .toEqual(['A320 · Airbus A320 Development', 'B77W · Boeing 777-300ER Development']);
+    // The two longest fields take the form's two columns; the others keep one.
+    expect(type.closest('label')).toHaveClass('sm:col-span-2');
+    expect(standField().closest('label').parentElement).toHaveClass('sm:col-span-2');
+    expect(field('Origen').closest('label')).not.toHaveClass('sm:col-span-2');
+
+    // Every field names the option it shows, whole, for when the field still cuts it.
+    expect(field('Estación')).toHaveAttribute('title', 'PUJ · Punta Cana');
+    expect(field('Aerolínea')).toHaveAttribute('title', 'Demo Airlines');
+    expect(field('Origen')).toHaveAttribute('title', 'MIA · Miami');
+    expect(field('Destino de la salida')).toHaveAttribute('title', 'El mismo aeropuerto');
+    expect(type).toHaveAttribute('title', 'A320 · Airbus A320 Development');
+    expect(standField()).toHaveAttribute('title', 'Al azar');
+
+    // The title follows the choice.
+    await userEvent.selectOptions(field('Destino de la salida'), 'BOG');
+    expect(field('Destino de la salida')).toHaveAttribute('title', 'BOG · Bogotá');
+    await userEvent.selectOptions(type, B77W);
+    expect(type).toHaveAttribute('title', 'B77W · Boeing 777-300ER Development');
+    await userEvent.selectOptions(standField(), 's-a2');
+    expect(standField()).toHaveAttribute('title', 'A2 · Terminal A · Cubre Riley Ramp');
+    // The hint is still what describes «Posición».
+    expect(standField()).toHaveAccessibleDescription(/^Al azar: el servidor elige/);
+  });
+
   it('warns when no stand is located', async () => {
     loadDemoFlightOptions.mockResolvedValueOnce(options({ stands: [], warnings: [{ code: 'no_located_stands', reasons: [] },
       { code: 'no_eligible_stand', reasons: [] }] }));
