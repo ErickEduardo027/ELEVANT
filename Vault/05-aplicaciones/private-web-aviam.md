@@ -2023,7 +2023,11 @@ tampoco.
   ([regla](../../frontend/private-web/src/features/operations/openAfterDeparture.js)).
   Una escala que OCC planificó a mano no recibe hora real de salida: cuando sus
   vuelos salen de la ventana de dos horas del mapa, su `PUSHBACK` deja de verse
-  y el pendiente desaparece.
+  y el pendiente desaparece. Y la consola solo lee el día de la estación y los
+  vuelos del mapa de las dos últimas horas: una operación que sigue abierta tras
+  una salida de la noche sale de «En operación» y de su línea a la medianoche de
+  la estación, y de los pendientes a esa medianoche o dos horas después de su
+  salida si eso es más tarde, mientras no exista un barrido del servidor.
   Esos pendientes salen de cuatro lecturas (la planificación, la disponibilidad
   de los agentes, los vuelos del mapa y la cola de revisión), y cada una apaga
   solo lo suyo: la que no respondió, falló, fue rechazada o muestra datos
