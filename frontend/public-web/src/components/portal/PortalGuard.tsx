@@ -19,9 +19,10 @@ export function PortalGuard({ children }: { children: ReactNode }) {
     }
   }, [pathname, router, status]);
 
+  // N19: the airline is addressed as usted, and the message names no technical part of ELEVANT.
   if (status === "unavailable") return <main className={styles.guard} role="alert">
-    <div><strong>No se pudo verificar tu sesión.</strong>
-      <p>Comprueba la conexión con la API y vuelve a intentarlo.</p>
+    <div><strong>No se pudo verificar su sesión.</strong>
+      <p>Vuelva a intentarlo en unos minutos.</p>
       <button type="button" onClick={() => void retry()}>Reintentar</button>
     </div>
   </main>;
@@ -40,7 +41,7 @@ export function PortalGuard({ children }: { children: ReactNode }) {
               ? "Validando acceso autorizado"
               : "Redirigiendo al acceso"}
           </strong>
-          <p>Preparando el contexto operativo de tu aerolínea.</p>
+          <p>Preparando el contexto operativo de su aerolínea.</p>
         </div>
       </main>
     );

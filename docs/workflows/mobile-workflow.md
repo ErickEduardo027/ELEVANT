@@ -51,11 +51,33 @@ entrega a OCC, la corrección y la observación de asistencia conservan su propi
 clave reservada fuera de esa cola. El inicio y los servicios llevan
 la hora del toque, corregida con el reloj de ELEVANT, y lo que ELEVANT no
 confirmó sobrevive a un `401`, un `403` o al cierre de sesión, ligado a su
-cuenta. Una API anterior rechaza con `400` la transición de servicio que lleva
-`occurredAt` y acepta el inicio con `startedAt`, pero ignora ese campo: el
+cuenta. Lo que el agente marca en el checklist después de que su sesión venció
+o fue rechazada también se guarda en la tablet para esa cuenta, durante 2 horas
+desde el fin (N5, D-N5), y vuelve cuando inicia sesión de nuevo; los comandos de
+la cola siguen exigiendo una sesión. Una API anterior rechaza con `400` la
+transición de servicio que lleva `occurredAt` y acepta el inicio con
+`startedAt`, pero ignora ese campo: el
 inicio queda con la hora en que llegó al servidor, no con la del toque. Por eso
 la API se despliega antes que la APK. El detalle está en
 el [estado de Mobile Agent](../../Vault/05-aplicaciones/mobile-agent.md).
+
+Desde S3 ([ADR-0046](../adr/0046-renewable-sessions-on-shared-tablets.md)) la
+sesión de la tablet se renueva como la de AVIAM Web: el inicio de sesión guarda
+el refresh token y la siguiente solicitud renueva el access token en su último
+minuto o ya vencido, una sola vez para todas las solicitudes que la esperan.
+Solo renueva si el JWT trae `auth_time`; frente a una API anterior la sesión
+termina a los 15 minutos, como antes. Sin señal la sesión no se cierra: la
+solicitud falla como sin conexión, la siguiente renovación espera 30 segundos y
+encolar un toque, guardar un borrador o reservar la asistencia solo usan la
+identidad de la sesión guardada en la tablet. Un `401` de una renovación termina
+la sesión; un `401` de una solicitud fuerza una renovación y la solicitud se
+repite una vez, con la misma clave si es un comando. Si se pierde la respuesta
+de una renovación (D-S3b), ELEVANT responde `409` durante un minuto y después
+trata el refresh token viejo como reuso: la sesión termina y el agente vuelve a
+entrar sin perder lo que la tablet guarda. Cerrar sesión libera la tablet y
+termina la familia en ELEVANT, con un límite de 5 segundos cada uno; si el
+access token ya venció, antes lo renueva una vez para que ELEVANT acepte la
+liberación.
 
 Las claves de firma/tokens futuros deben permanecer fuera de Git. Una
 evidencia real no se borrará antes de confirmación persistente ni se

@@ -25,6 +25,14 @@ const catalog = {
     logoUrl: null, isVerified: false }],
 };
 
+/** The catalog with `count` numbered services, «Servicio 1» first. */
+function catalogWith(count: number) {
+  return { ...catalog, services: Array.from({ length: count }, (_, index) => ({
+    id: `20000000-0000-7000-8000-${String(100 + index).padStart(12, "0")}`, name: `Servicio ${index + 1}`,
+    description: "Ramp service", imageUrl: null, videoUrl: null, displayOrder: index + 1 })) };
+}
+const numbered = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => `Servicio ${from + index}`);
+
 afterEach(() => {
   cleanup(); hubEvents.catalogChanged = null; vi.unstubAllGlobals(); vi.unstubAllEnvs();
 });
@@ -657,8 +665,8 @@ it("prefills the RNC of the catalog profile, masked and still editable, and says
   expect(screen.getByRole("textbox", { name: "RNC" })).toHaveValue("1-31-23456-9");
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   await fillRepresentative();
-  // The confirmation separates every fact of the airline, the RNC included.
-  expect(screen.getByText("Caribe Air S.R.L. · DO · RNC 1-31-23456-9")).toBeInTheDocument();
+  // The confirmation separates every fact of the airline, the RNC included, and names the country (N16).
+  expect(screen.getByText("Caribe Air S.R.L. · República Dominicana · RNC 1-31-23456-9")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
   expect(await screen.findByText("REQ-RNC")).toBeInTheDocument();
   expect(posts[0]).toMatchObject({ airlineProfileId: caribe, taxRegistration: "131234569", taxRegistrationCountryCode: "DO" });
@@ -725,4 +733,141 @@ it("describes each field of a proposed airline with its error and its help (1-N2
   expect(icao).toHaveAccessibleDescription(
     "Escriba el código ICAO de la aerolínea: 3 letras. Obligatorio: 3 letras, por ejemplo CMP.");
   expect(name).not.toHaveAttribute("aria-describedby");
+});
+
+const shownServices = () => within(screen.getByLabelText("Servicios disponibles"))
+  .getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
+
+it("shows six services per page and announces only the range of the page (N15)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify(catalogWith(9)),
+    { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  const range = await screen.findByText("SERVICIOS 1–6 DE 9");
+  expect(within(screen.getByLabelText("Servicios disponibles")).getAllByRole("article")).toHaveLength(6);
+  expect(shownServices()).toEqual(numbered(1, 6));
+  // The range has its own live region; the panel no longer reads every change of the step aloud.
+  expect(range).toHaveAttribute("aria-live", "polite");
+  expect(screen.getByText(/PASO 01 \/ 04/).closest("section")).not.toHaveAttribute("aria-live");
+  expect(screen.getByText("0 SELECCIONADOS")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ver servicios anteriores" })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Ver servicios siguientes" }));
+  expect(range).toHaveTextContent("SERVICIOS 7–9 DE 9");
+  expect(shownServices()).toEqual(numbered(7, 9));
+  expect(screen.getByRole("button", { name: "Ver servicios siguientes" })).toBeDisabled();
+  fireEvent.click(within(screen.getByLabelText("Servicios disponibles")).getAllByRole("button", { name: "Añadir servicio +" })[0]);
+  expect(screen.getByText("1 SELECCIONADO")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Ver servicios anteriores" }));
+  expect(range).toHaveTextContent("SERVICIOS 1–6 DE 9");
+  expect(shownServices()).toEqual(numbered(1, 6));
+});
+
+it("pages back from the page on screen after services are withdrawn (N15)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  let reads = 0;
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url) => {
+    if (!String(url).endsWith("commercial-catalog")) throw new Error(`Unexpected request: ${url}`);
+    reads += 1;
+    return new Response(JSON.stringify(catalogWith(reads === 1 ? 13 : 9)), { headers: { "content-type": "application/json" } });
+  }));
+  render(<AccessRequestWizard />);
+  const range = await screen.findByText("SERVICIOS 1–6 DE 13");
+  fireEvent.click(screen.getByRole("button", { name: "Ver servicios siguientes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ver servicios siguientes" }));
+  expect(range).toHaveTextContent("SERVICIO 13 DE 13");
+  expect(shownServices()).toEqual(["Servicio 13"]);
+
+  // Four services are withdrawn: the third page no longer exists, so the second one is on screen.
+  await act(async () => { hubEvents.catalogChanged?.(); });
+  expect(range).toHaveTextContent("SERVICIOS 7–9 DE 9");
+  // «←» goes to the page before the one on screen, not to the one before the vanished third page.
+  fireEvent.click(screen.getByRole("button", { name: "Ver servicios anteriores" }));
+  expect(range).toHaveTextContent("SERVICIOS 1–6 DE 9");
+  expect(shownServices()).toEqual(numbered(1, 6));
+});
+
+it("names the airline's country in Spanish and shows a verified identity apart (N16)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const verifiedId = "20000000-0000-7000-8000-000000000013";
+  const legacyId = "20000000-0000-7000-8000-000000000014";
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ...catalog, airlines: [
+    catalog.airlines[0],
+    { ...catalog.airlines[0], id: verifiedId, name: "Synthetic Verified", countryCode: "us", isVerified: true },
+    { ...catalog.airlines[0], id: legacyId, name: "Synthetic Legacy", countryCode: "USA" }] }),
+  { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+
+  choose("Seleccione una aerolínea", verifiedId);
+  expect(screen.getByRole("textbox", { name: "País" })).toHaveValue("Estados Unidos");
+  expect(screen.getByText("✓ Identidad verificada por AVIAM")).toHaveAttribute("data-verified", "true");
+  // A value that is not an ISO code is shown as it came, without breaking the step.
+  choose("Seleccione una aerolínea", legacyId);
+  expect(screen.getByRole("textbox", { name: "País" })).toHaveValue("USA");
+  expect(screen.getByText(/Contratos verificará la identidad legal/)).toHaveAttribute("data-verified", "false");
+  choose("Seleccione una aerolínea", airlineId);
+  expect(screen.getByRole("textbox", { name: "País" })).toHaveValue("Sin dato confirmado");
+});
+
+it("names a country code in any case and never throws on a value Intl does not accept (N16)", async () => {
+  const { countryLabel } = await import("@/lib/geo/catalog");
+  expect(countryLabel("US")).toBe("Estados Unidos");
+  expect(countryLabel("us")).toBe("Estados Unidos");
+  expect(countryLabel(" do ")).toBe("República Dominicana");
+  // Intl.DisplayNames throws a RangeError for «USA»: it is shown as it came.
+  expect(() => countryLabel("USA")).not.toThrow();
+  expect(countryLabel("USA")).toBe("USA");
+  expect(countryLabel("")).toBeNull();
+  expect(countryLabel(null)).toBeNull();
+  expect(countryLabel(undefined)).toBeNull();
+});
+
+it("takes the focus to the heading of each step it opens, never on the first render (N15)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await screen.findByRole("button", { name: "Añadir servicio +" });
+  // Opening the page leaves the focus alone. The panel is no live region, so a new step is heard through its heading.
+  expect(document.body).toHaveFocus();
+  const heading = (name: string) => screen.getByRole("heading", { level: 2, name });
+  await fillApplication();
+  expect(heading("Revise su solicitud.")).toHaveFocus();
+  // «Editar servicios» unmounts the button that had the focus.
+  fireEvent.click(screen.getByRole("button", { name: "Editar servicios" }));
+  expect(heading("¿Qué necesita su operación?")).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(heading("¿A cuál aerolínea representa?")).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "← Volver" }));
+  expect(heading("¿Qué necesita su operación?")).toHaveFocus();
+});
+
+it("announces a proposed ICAO code that is already listed and describes the field with it (N15)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const listed = { ...catalog.airlines[0], name: "Copa Airlines", icaoCode: "CMP", iataCode: "CM" };
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ...catalog, airlines: [listed] }),
+    { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Mi aerolínea no aparece" }));
+  const icao = screen.getByRole("textbox", { name: "Código ICAO" });
+  // The region exists before the note: what is inserted into it is read aloud wherever the focus is.
+  const regions = [...document.querySelectorAll('[aria-live="polite"]')];
+  fireEvent.change(icao, { target: { value: "cmp" } });
+  const note = screen.getByRole("note");
+  expect(note).toHaveTextContent("El código CMP corresponde a Copa Airlines, que ya figura en el listado.");
+  expect(regions).toContain(note.closest('[aria-live="polite"]'));
+  expect(icao).toHaveAccessibleDescription(/ya figura en el listado/);
+  // Another code takes the note away, and the description with it.
+  fireEvent.change(icao, { target: { value: "cmx" } });
+  expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  expect(icao).toHaveAccessibleDescription("Obligatorio: 3 letras, por ejemplo CMP.");
 });

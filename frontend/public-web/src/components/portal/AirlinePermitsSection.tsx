@@ -87,7 +87,8 @@ export function AirlinePermitsSection() {
       <strong className={usable ? styles.permitOk : styles.permitMissing}>{usable ? "Permiso de operación vigente" : "Falta un permiso de operación verificado"}</strong></div>
     <p className={styles.note}>Sin un permiso de operación verificado y vigente el contrato no se activa, y si vence se suspende hasta que AVIAM verifique uno nuevo.</p>
     {!permits && !failed && <p role="status">Cargando permisos…</p>}
-    {failed && <p role="alert">No se pudieron cargar los permisos. <button type="button" onClick={load}>Reintentar</button></p>}
+    {failed && <p role="alert">No se pudieron cargar los permisos.{" "}
+      <button type="button" className={styles.secondaryAction} onClick={load}>Reintentar</button></p>}
     {permits && permits.length === 0 && <p className={styles.empty}>Todavía no ha enviado permisos.</p>}
     {permits && permits.length > 0 && <ul className={styles.draftComments} aria-label="Permisos enviados">
       {permits.map(permit => <li key={permit.id}>
@@ -138,7 +139,8 @@ export function ContractTimeline({ versionId }: { versionId: string }) {
   }, [getContractTimeline, open, timeline, versionId]);
 
   return <div className={styles.contractVersion}>
-    <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "Ocultar línea de tiempo" : "Ver línea de tiempo del contrato"}</button>
+    <button type="button" className={styles.secondaryAction} aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      {open ? "Ocultar línea de tiempo" : "Ver línea de tiempo del contrato"}</button>
     {open && failed && <p role="alert">No se pudo cargar la línea de tiempo.</p>}
     {open && !timeline && !failed && <p role="status">Cargando línea de tiempo…</p>}
     {open && timeline && <ol className={styles.timeline} aria-label={`Línea de tiempo de ${timeline.contractCode}`}>

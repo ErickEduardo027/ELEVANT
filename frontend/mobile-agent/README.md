@@ -7,7 +7,8 @@ Aplicación nativa para agentes de rampa en tablets Android/iOS. Usa Expo 54, Ex
 La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
 `@elevant/api-client`:
 
-- inicio de sesión y revalidación de la cuenta actual;
+- inicio de sesión, renovación con refresh token rotativo (S3) y revalidación
+  de la cuenta actual;
 - operaciones/turnarounds y servicios asignados al agente autenticado;
 - caché de solo lectura por cuenta para conectividad intermitente;
 - registro estable de la instalación y comienzo idempotente de la operación;
@@ -121,23 +122,66 @@ operación en curso (`device_in_use_by_active_agent`). Cerrar sesión libera la
 tablet con `POST /api/v1/mobile/device/release` (mejor esfuerzo, con tiempo
 límite: sin conexión la sesión se cierra igual y el siguiente inicio de sesión
 la toma). Cada inicio de sesión abre su propio vínculo con la tablet (la API lo
-reconoce por la emisión del token) y la liberación lleva como versión esperada
-el `lastSeenAt` del registro más reciente que confirmó la sesión: si llega tarde,
-después de que el agente volvió a iniciar sesión en la misma tablet, responde
-`version_conflict` y no libera nada; las escrituras de la propia sesión nunca la
-rechazan. OCC puede liberarla o revocarla desde «Tablets»; una tablet revocada
-(`device_revoked`) no vuelve a registrarse y la app lo explica al iniciar sesión.
-La APK anterior no libera al cerrar sesión, pero el siguiente agente la toma igual.
+reconoce por el inicio de la sesión, `auth_time`, que la renovación conserva) y
+la liberación lleva como versión esperada el `lastSeenAt` del registro más
+reciente que confirmó la sesión, también después de renovar su token: si llega
+tarde, después de que el agente volvió a iniciar sesión en la misma tablet,
+responde `version_conflict` y no libera nada; las escrituras de la propia sesión
+nunca la rechazan. OCC puede liberarla o revocarla desde «Tablets»; una tablet
+revocada (`device_revoked`) no vuelve a registrarse y la app lo explica al
+iniciar sesión. El vínculo sigue mientras la operación del otro agente esté en
+curso, aunque su sesión ya haya vencido, así que con
+`device_in_use_by_active_agent` el acceso no le pide que cierre sesión: dice
+que la tablet sigue a nombre de otro agente y pide a OCC que la libere en
+«Tablets» antes de volver a intentarlo. No muestra quién la tiene ni precarga
+el correo (N7, D-N7). La APK anterior no libera al cerrar sesión, pero el
+siguiente agente la toma igual.
 
-El bearer token se guarda exclusivamente con `expo-secure-store`; nunca forma
-parte del objeto de sesión entregado a la UI, AsyncStorage ni logs. Token y
-metadata se enlazan mediante una revisión aleatoria: una pareja incompleta o
-inconsistente se rechaza en cerrado. AsyncStorage conserva actor/expiración no
-secretos, la caché versionada por `accountId`, borradores del checklist y
+La sesión se renueva como en AVIAM Web (S3,
+[ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)): el
+inicio de sesión guarda el refresh token y, en el último minuto del access token
+(o ya vencido), la siguiente solicitud lo renueva con
+`POST /api/v1/auth/session/refresh`. Una sola renovación atiende a todas las
+solicitudes que la esperan. Con `200` se reemplaza la credencial de la misma
+cuenta sin cambiar la revisión de la sesión, así que cachés, borradores,
+reservas y el vínculo de la tablet siguen; con `409` se relee lo guardado; con
+`401` la sesión termina con esa causa (`session_expired`, estado 401); sin señal,
+con `429` o `5xx` la sesión sigue con su credencial y la siguiente renovación
+espera 30 segundos. Un `401` de una solicitud fuerza una renovación y la
+solicitud se repite una vez; una credencial que ELEVANT rechaza recién renovada
+termina la sesión. Solo se renueva si el JWT trae `auth_time`: frente a una API
+anterior la sesión termina con su access token, como antes. Todo se compara con
+el reloj de ELEVANT (3-N18), así que un reloj adelantado no impide entrar y un
+desfase viejo solo adelanta la renovación. No hay tope de horas: la sesión
+termina al cerrar sesión, con la revocación de OCC o tras 30 días sin uso. Si se
+pierde la respuesta de una renovación (D-S3b), la tablet sigue con su access
+token; si ya venció, lo que no puede leer ni enviar falla como una solicitud
+que se puede reintentar (`request_failed`), nunca como un cambio de la
+operación. Pasado el minuto de margen ELEVANT trata el refresh token viejo como
+reuso, revoca la familia y el agente vuelve a entrar sin perder lo registrado.
+
+El bearer token y el refresh token se guardan exclusivamente con
+`expo-secure-store` (sobre v2; el v1 de la APK anterior se sigue leyendo, sin
+refresh); nunca forman parte del objeto de sesión entregado a la UI,
+AsyncStorage ni logs. Token y metadata se enlazan mediante una revisión
+aleatoria: una pareja incompleta o inconsistente se rechaza en cerrado.
+AsyncStorage conserva actor/expiración no secretos (y hasta cuándo renueva el
+refresh token), la caché versionada por `accountId`, borradores del checklist y
 comandos pendientes namespaced por cuenta y operación. Nunca conserva el bearer
-token. Una sesión vencida se elimina en cerrado. Logout, `401` y `403` eliminan
-token, metadata, cachés (operaciones asignadas, cargos y checklist) y todo
-estado sensible heredado del prototipo. Desde el hueco 3-N12 no eliminan lo que
+token ni el refresh token. Encolar un toque, guardar un borrador y reservar la
+asistencia solo necesitan la identidad de la sesión guardada en la tablet, sin
+red ni renovación. Una sesión vencida, sin un refresh token vigente, se elimina
+en cerrado; un access token vencido con el refresh vigente no borra nada.
+Cerrar sesión libera la tablet y termina la familia en ELEVANT
+(`POST /api/v1/auth/session/logout`), cada uno con un límite de 5 segundos. Si
+el access token venció o está en su último minuto, antes lo renueva una vez,
+aunque sea durante la pausa de 30 segundos y con el mismo límite, para que
+ELEVANT acepte la liberación; la familia termina después de esa renovación. Un
+inicio de sesión que la tablet no conserva (por ejemplo, si falla el registro
+de la tablet) también termina la familia recién emitida. Logout, el `401` de una
+renovación rechazada y `403` eliminan token, refresh token, metadata, cachés
+(operaciones asignadas, cargos y checklist) y todo estado sensible heredado del
+prototipo. Desde el hueco 3-N12 no eliminan lo que
 el agente registró y ELEVANT aún no confirmó: la cola del Reporte de Vuelo y sus
 fotos, las incidencias, los comandos reservados, la entrega y la corrección, los
 borradores del checklist y las observaciones de asistencia quedan en la tablet
@@ -146,6 +190,59 @@ acceso avisa cuántos registros guarda la tablet, el perfil avisa antes de cerra
 sesión que se conservan y «Sincronización» indica los de otra cuenta, que no se
 pueden ver ni descartar. Nada se borra solo: el agente descarta únicamente sus
 propios registros rechazados.
+
+Lo que el agente marca en el checklist después de que su sesión terminó tampoco
+se pierde (N5). Al borrar una sesión vencida o rechazada (`401` de la
+renovación o `403`), la tablet deja el marcador no secreto
+`elevant:mobile:ended-session:v1` con la cuenta, la causa (`expired`,
+`refused` o `forbidden`) y la hora del fin según el reloj de ELEVANT; una
+sesión vencida terminó cuando venció su access token, no cuando la tablet lo
+notó. La pantalla del checklist fija la cuenta al cargar el borrador y guarda
+siempre para ella: con su sesión activa responde `saved`, y sin sesión, si el
+marcador nombra esa cuenta y no pasaron más de 2 horas desde el fin (D-N5),
+`kept-until-sign-in`, también si la sesión termina mientras el guardado espera
+al almacenamiento. Las respuestas vuelven cuando esa cuenta inicia sesión de
+nuevo. Con otra cuenta activa, después de un cierre de sesión a propósito o
+fuera de ese plazo el borrador no se guarda (`session_expired`), y solo un fallo
+real del almacenamiento da `storage_unavailable`. El cierre de sesión a
+propósito y un inicio de sesión confirmado borran el marcador; un intento
+fallido no. El esquema del borrador no cambia y los comandos de la cola siguen
+exigiendo una sesión (D-N5).
+
+La app dice cuándo terminó la sesión y deja de culpar al dispositivo (N6). Cada
+vez que la tablet borra una sesión que el agente no cerró (vencida, rechazada
+por ELEVANT o de una cuenta que perdió el acceso), el almacenamiento lo anuncia
+(`subscribeMobileSessionEnd` en el servicio de sesión) y el layout raíz muestra
+en todas las pantallas, salvo la de acceso, el aviso persistente «Tu sesión
+terminó» con ENTRAR DE NUEVO (D-N6); el cierre de sesión a propósito no se
+anuncia. El checklist ya no salta solo al acceso: muestra la insignia roja
+«Sesión terminada», dice «Tu sesión terminó · Tus respuestas quedaron guardadas
+en esta tablet…», apaga ENVIAR y ofrece ENTRAR DE NUEVO, con `access_revoked`
+si la cuenta perdió el acceso. Mientras muestra ese aviso propio, el layout no
+repite el suyo: la pantalla tiene un solo aviso, un solo ENTRAR DE NUEVO y un
+solo anuncio, y nunca dice que guardó respuestas que no pudo guardar. Si el envío encontró el fin de la sesión, las
+respuestas quedan como se enviaron: el envío espera en la cola y sale al volver
+a entrar. ENVIAR vuelve a guardar el borrador y espera ese guardado antes de
+decidir. Un fallo del almacenamiento ofrece REINTENTAR GUARDADO, un intento por
+toque, y si vuelve a fallar pide cerrar la app y avisar a OCC; un guardado
+cancelado se reintenta una vez para la misma cuenta. Los hitos y los datos del
+vuelo distinguen la sesión terminada (`session_expired`, `unauthenticated`) de
+un fallo del almacenamiento (`storage_unavailable`). Ningún texto pide
+desbloquear el dispositivo, que en Android nunca es la causa, ni habla de
+«payload».
+
+La pantalla de acceso dice cómo terminó la sesión anterior (N7). El aviso está
+en pasado y nombra la causa del marcador de fin: «La sesión anterior venció»,
+«ELEVANT cerró la sesión anterior» o, con `access_revoked`, que la cuenta perdió
+el acceso a la aplicación de rampa; sin marcador solo dice que terminó. Sale al
+llegar con ENTRAR DE NUEVO y también cuando la propia pantalla encuentra la
+sesión vencida. Dura hasta el siguiente intento, así que no convive con el
+error de ese intento, y vuelve con un aviso nuevo. Tras ENTRAR DE NUEVO, el
+aviso de pendientes cuenta solo los registros de la cuenta que terminó
+(`countPendingEvidence` los separa mientras nadie inició sesión): nunca le
+atribuye los de otra cuenta. El campo de correo no usa una dirección de prueba
+(«Correo de tu cuenta AVIAM») y el logo y el formulario forman un solo bloque
+centrado, también en vertical, con el pie al final.
 
 La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
 antigüedad no supera 15 minutos. Un `401`, `403`, otro fallo HTTP, cancelación,
@@ -237,6 +334,8 @@ Play Store/App Store será una fase posterior con identificadores estables, pol�
 La ampliación local de OCC incorpora un emisor efímero en el layout raíz.
 Utiliza la identidad atómica de la sesión y el cliente compartido, observa
 interacciones táctiles y AppState, y cierra el lease anterior al cambiar de cuenta.
+La identidad del lease es la sesión y su cuenta, no el token: renovar el token
+conserva el lease y cada latido lee el token vigente (S3).
 En segundo plano se pausa; al recuperar primer plano se comprueba la identidad
 antes de reanudar. Los fallos transitorios de almacenamiento suspenden el envío
 y evitan atribuir actividad a una cuenta posiblemente sustituida.

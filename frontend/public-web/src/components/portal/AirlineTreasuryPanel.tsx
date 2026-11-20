@@ -68,7 +68,7 @@ export function AirlineTreasuryPanel({ invoiceId }: { invoiceId?: string }) {
     </section>;
   }
   if (status === "loading") return <p role="status">Validando sesión financiera…</p>;
-  if (status !== "ready") return <p role="alert">Inicia sesión para consultar tus documentos financieros.</p>;
+  if (status !== "ready") return <p role="alert">Inicie sesión para consultar sus documentos financieros.</p>;
   return <section className={styles.panel} aria-label={invoiceId ? "Tesorería de factura" : "Estado de cuenta de aerolínea"}>
     <div className={styles.requestCardHeading}><h2>{mode === "receipt" ? "Detalle del cobro" : mode === "invoice" ? "Estado de factura" : "Estado de cuenta"}</h2>
       {(receiptId || selectedInvoice) && <button type="button" className={styles.loadMore} onClick={() => { if (receiptId) setSelectedReceipt(null); else setSelectedInvoice(null); }}>Volver</button>}</div>
@@ -83,7 +83,7 @@ export function AirlineTreasuryPanel({ invoiceId }: { invoiceId?: string }) {
     </form>}
     {!snapshot.data && !snapshot.failed && <p role="status">Cargando estado financiero…</p>}
     {!snapshot.data && snapshot.failed && <div role="alert"><p>{snapshot.error instanceof ElevantApiError && snapshot.error.status === 404
-      ? "El documento no está disponible para esta cuenta." : "No se pudo consultar el estado financiero. Inténtalo de nuevo."}</p>
+      ? "El documento no está disponible para esta cuenta." : "No se pudo consultar el estado financiero. Inténtelo de nuevo."}</p>
       <button type="button" className={styles.loadMore} onClick={snapshot.retry}>Reintentar</button></div>}
     <LiveSnapshotNotice snapshot={snapshot} />
     {statement && <>

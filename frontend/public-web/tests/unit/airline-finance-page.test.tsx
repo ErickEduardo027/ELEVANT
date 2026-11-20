@@ -107,7 +107,7 @@ it("lists the invoice's credit notes by their e-NCF with a PDF that recovers fro
   getAdjustmentNoteDocument.mockRejectedValueOnce(new TypeError("Failed to fetch"));
   const button = within(notes).getByRole("button", { name: "Descargar PDF de Nota de crédito electrónica E340000000001" });
   fireEvent.click(button);
-  expect(await within(notes).findByRole("alert")).toHaveTextContent("No se pudo descargar el PDF de la nota. Inténtalo de nuevo.");
+  expect(await within(notes).findByRole("alert")).toHaveTextContent("No se pudo descargar el PDF de la nota. Inténtelo de nuevo.");
   expect(within(notes).getByText(/E340000000001/)).toBeInTheDocument();
 
   const createObjectURL = vi.fn(() => "blob:note");
@@ -117,4 +117,15 @@ it("lists the invoice's credit notes by their e-NCF with a PDF that recovers fro
   await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
   expect(getAdjustmentNoteDocument).toHaveBeenLastCalledWith("75000000-0000-7000-8000-000000000001");
   await waitFor(() => expect(within(notes).queryByRole("alert")).not.toBeInTheDocument());
+});
+
+// N19: Finanzas addresses the airline as usted, like the rest of the portal.
+it("addresses the airline as usted in its invoices and their failed reads (N19)", async () => {
+  getTreasuryStatement.mockResolvedValue(statement([invoice()]));
+  getTreasuryInvoice.mockRejectedValue(new TypeError("Failed to fetch"));
+  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  expect(screen.getByText("Facturas emitidas por AVIAM por las operaciones completadas, con su vencimiento y saldo, "
+    + "y el estado de cuenta de su aerolínea.")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Ver detalle" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo consultar la factura. Inténtelo de nuevo.");
 });

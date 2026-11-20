@@ -61,18 +61,27 @@ async function confirmSameSession(sessionId: string) {
 /**
  * Charge types the agent may mark on each service and the marks already applied.
  * The list carries no prices; the server values charges for Finance. When the
- * network fails the last saved copy is returned, flagged as cached.
+ * network fails the last saved copy is returned, flagged as cached; a credential
+ * the session renewed reads once more (S3).
  */
-export async function getRampOperationCharges(
+export function getRampOperationCharges(
   operationId: string,
   options: { signal?: AbortSignal } = {},
+): Promise<RampOperationCharges> {
+  return readOperationCharges(operationId, options, false);
+}
+
+async function readOperationCharges(
+  operationId: string,
+  options: { signal?: AbortSignal },
+  retried: boolean,
 ): Promise<RampOperationCharges> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const context = await getMobileSessionRequestContext();
   const accountId = context.session.actor.accountId;
   try {
     // The read is bound to this installation, like the charge commands.
-    const device = await registerCurrentMobileDevice({ accessToken: context.accessToken }, options);
+    const device = await registerCurrentMobileDevice(context, options);
     const charges = await apiClient(context.accessToken).getRampOperationCharges(
       operationId,
       device.installationId,
@@ -86,7 +95,8 @@ export async function getRampOperationCharges(
   } catch (error) {
     const normalized = asMobileServiceError(error);
     if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(context, normalized);
+      if (cleared === 'retry' && !retried) return readOperationCharges(operationId, options, true);
       if (!cleared) throw new MobileServiceError('cancelled');
       throw normalized;
     }

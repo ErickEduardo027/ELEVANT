@@ -36,7 +36,8 @@ test('reads fourteen days from today under the current session', async () => {
 test('a revoked session is cleared and reported', async () => {
   mockApi.getOwnRampSchedule.mockRejectedValue(new ElevantApiError({ status: 403 }));
   await expect(getOwnSchedule()).rejects.toMatchObject({ code: 'forbidden' });
-  expect(mockReject).toHaveBeenCalledWith('s-1');
+  expect(mockReject).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's-1' }),
+    expect.objectContaining({ code: 'forbidden' }));
 });
 
 test('a session that changed mid-request is cancelled', async () => {

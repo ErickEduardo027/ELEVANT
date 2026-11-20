@@ -5,6 +5,7 @@ const mockApi = {
   sendOperationalMessage: jest.fn(), recordRampDamageMark: jest.fn(), attachRampDamagePhoto: jest.fn(),
 };
 const mockContext = jest.fn();
+const mockIdentity = jest.fn();
 const mockReject = jest.fn();
 const mockRegister = jest.fn();
 const mockLegacy = { read: jest.fn(), remove: jest.fn() };
@@ -34,6 +35,7 @@ jest.mock('../src/storage/mobile-session', () => ({
   removeRampChecklistDraftIfCurrent: jest.fn(async () => 'removed'),
 }));
 jest.mock('../src/services/mobile-auth', () => ({
+  getMobileSessionIdentity: (...args) => mockIdentity(...args),
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: (...args) => mockReject(...args),
 }));
@@ -79,6 +81,7 @@ beforeEach(() => {
   resetFlightReportForTests();
   serverClock.resetServerClockForTests();
   mockContext.mockResolvedValue({ sessionId: 's1', accessToken: 'token', session: { actor: { accountId } } });
+  mockIdentity.mockResolvedValue({ sessionId: 's1', session: { actor: { accountId } } });
   mockRegister.mockResolvedValue({ installationId });
   mockReject.mockResolvedValue(true);
   mockLegacy.read.mockResolvedValue({ kind: 'current', commands: [] });
@@ -348,7 +351,8 @@ describe('the end of a session never loses the queue (3-N12)', () => {
     await enqueueFlightReportCommand(accountId, milestone('BLOCK_ON'), key(1));
     mockApi.recordRampMilestone.mockRejectedValueOnce(new ElevantApiError({ status: 401 }));
     await flushFlightReport();
-    expect(mockReject).toHaveBeenCalledWith('s1');
+    expect(mockReject).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', accessToken: 'token' }),
+      expect.objectContaining({ code: 'unauthenticated' }));
     expect(kinds(await readFlightReportOutbox(accountId))).toEqual(['milestone:pending']);
 
     // Signed out: the pass stops before sending anything.
@@ -363,6 +367,46 @@ describe('the end of a session never loses the queue (3-N12)', () => {
     await flushFlightReport();
     expect(mockApi.recordRampMilestone).toHaveBeenLastCalledWith(operationId, 'BLOCK_ON', '2026-11-04T16:00:00.000Z',
       installationId, key(1));
+    expect(await readFlightReportOutbox(accountId)).toEqual([]);
+  });
+
+  test('without signal and with the access token expired, a tap is still saved on the device (S3)', async () => {
+    // Renewing the expired access token waits for ELEVANT, and there is no signal: the tap does not wait for it.
+    let renewal;
+    mockContext.mockReturnValueOnce(new Promise(resolve => { renewal = resolve; }));
+    mockApi.recordRampMilestone.mockRejectedValue(offline());
+    const recorded = recordMilestone(operationId, 'BLOCK_ON', new Date('2026-11-04T16:00:00.000Z'));
+    const waiting = new Promise(resolve => { setTimeout(resolve, 50, 'waiting'); });
+    await expect(Promise.race([recorded.then(() => 'queued'), waiting])).resolves.toBe('queued');
+    expect(kinds(await readFlightReportOutbox(accountId))).toEqual(['milestone:pending']);
+
+    // The renewal gives up without signal and the session stays: the queue tries and waits with the same key.
+    renewal({ sessionId: 's1', accessToken: 'expired-token', session: { actor: { accountId } } });
+    await flushFlightReport();
+    const [item] = await readFlightReportOutbox(accountId);
+    expect(item).toMatchObject({ state: 'pending', command: { code: 'BLOCK_ON' } });
+    expect(mockApi.recordRampMilestone).toHaveBeenCalledWith(operationId, 'BLOCK_ON', '2026-11-04T16:00:00.000Z',
+      installationId, item.idempotencyKey);
+  });
+
+  test('a tap the tablet cannot keep says whether the session ended or the device’s storage failed (N6)', async () => {
+    const { MobileServiceError } = require('../src/services/mobile-service-error');
+    const AsyncStorage = require('@react-native-async-storage/async-storage');
+    // No session: the queue takes nothing (D-N5) and the screen is told the session ended, not that the device failed.
+    mockIdentity.mockRejectedValueOnce(new MobileServiceError('session_expired'));
+    await expect(recordMilestone(operationId, 'BLOCK_ON', new Date('2026-11-04T16:00:00.000Z')))
+      .rejects.toMatchObject({ code: 'session_expired' });
+    mockIdentity.mockRejectedValueOnce(new MobileServiceError('unauthenticated'));
+    await expect(saveFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000,
+      aircraftRegistration: null })).rejects.toMatchObject({ code: 'unauthenticated' });
+
+    // The device's storage fails while the session is in force: the failure is the storage's.
+    AsyncStorage.setItem.mockRejectedValueOnce(new Error('The device storage failed.'));
+    await expect(recordMilestone(operationId, 'BLOCK_ON', new Date('2026-11-04T16:00:00.000Z')))
+      .rejects.toMatchObject({ code: 'storage_unavailable' });
+    AsyncStorage.setItem.mockRejectedValueOnce(new Error('The device storage failed.'));
+    await expect(saveFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000,
+      aircraftRegistration: null })).rejects.toMatchObject({ code: 'storage_unavailable' });
     expect(await readFlightReportOutbox(accountId)).toEqual([]);
   });
 });

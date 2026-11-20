@@ -47,9 +47,15 @@ export const aircraftTypeLabel = (type: Pick<RampAircraftTypeResponse, 'manufact
 
 /**
  * Reads the catalog; without signal (or a timeout) it answers the last copy saved on the device, and an older server
- * that does not have the endpoint (404) answers no catalog. A revoked session ends here, as every ramp read.
+ * that does not have the endpoint (404) answers no catalog. A revoked session ends here, as every ramp read, and a
+ * credential the session renewed reads once more (S3).
  */
-export async function getRampAircraftTypes(options: { signal?: AbortSignal } = {}): Promise<RampAircraftTypeCatalog> {
+export function getRampAircraftTypes(options: { signal?: AbortSignal } = {}): Promise<RampAircraftTypeCatalog> {
+  return readRampAircraftTypes(options, false);
+}
+
+async function readRampAircraftTypes(options: { signal?: AbortSignal },
+  retried: boolean): Promise<RampAircraftTypeCatalog> {
   const context = await getMobileSessionRequestContext();
   const accountId = context.session.actor.accountId;
   try {
@@ -64,7 +70,8 @@ export async function getRampAircraftTypes(options: { signal?: AbortSignal } = {
     if (error instanceof MobileServiceError && error.code === 'cancelled') throw error;
     const normalized = asMobileServiceError(error);
     if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(context, normalized);
+      if (cleared === 'retry' && !retried) return readRampAircraftTypes(options, true);
       if (!cleared) throw new MobileServiceError('cancelled');
       throw normalized;
     }

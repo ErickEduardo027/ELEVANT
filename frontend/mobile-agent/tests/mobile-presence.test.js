@@ -77,3 +77,19 @@ test('does not attribute activity during uncertain storage and isolates a replac
   await service.refreshMobilePresenceSession();
   expect(mockLeases[1].close).toHaveBeenCalledTimes(1);
 });
+
+test('a renewed access token keeps the same lease, and the next heartbeat carries it (S3)', async () => {
+  service.startMobilePresence();
+  await service.refreshMobilePresenceSession();
+  expect(mockLeases).toHaveLength(1);
+
+  // The session renewed its access token: the same session and account, a new token.
+  mockContext.mockResolvedValue({ ...context(), accessToken: 'token-a2' });
+  await service.refreshMobilePresenceSession();
+  expect(mockLeases).toHaveLength(1);
+  expect(mockLeases[0].close).not.toHaveBeenCalled();
+
+  await mockOptions[0].write({ mode: 'foreground', sequence: 1, activityObserved: true });
+  expect(mockPut).toHaveBeenCalledTimes(1);
+  expect(mockClient.mock.calls[0][0].getAccessToken()).toBe('token-a2');
+});

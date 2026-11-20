@@ -29,14 +29,16 @@ export async function refreshMobilePresenceSession() {
   }
   if (!running || request !== revision) return;
   checking = false;
-  const next = context ? context.sessionId + '|' + context.session.actor.accountId + '|' + context.accessToken : '';
+  // The session and its account, not its token: a renewal keeps the lease (S3).
+  const next = context ? context.sessionId + '|' + context.session.actor.accountId : '';
   if (next === identity) { if (AppState.currentState === 'active') lease?.resume(); return; }
   void lease?.close();
   lease = undefined;
   identity = next;
   if (!context) return;
   try {
-  const token = context.accessToken;
+  // Each heartbeat reads the session's current token (renewed when due); the closing one keeps the last it used.
+  let token = context.accessToken;
   const client = createMobileAgentApiClient({ getAccessToken: () => token });
   lease = createPresenceLease({ clientId: Crypto.randomUUID(),
     getForeground: () => AppState.currentState === 'active',
@@ -44,10 +46,11 @@ export async function refreshMobilePresenceSession() {
       if (heartbeat.mode !== 'closed') {
         if (checking || identity !== next) throw Object.assign(new Error('Presence identity is being checked'), { status: 409 });
         const current = await getMobileSessionRequestContext();
-        const currentKey = current.sessionId + '|' + current.session.actor.accountId + '|' + current.accessToken;
+        const currentKey = current.sessionId + '|' + current.session.actor.accountId;
         if (checking || identity !== next || currentKey !== next) {
           throw Object.assign(new Error('Superseded presence identity'), { status: 409 });
         }
+        token = current.accessToken;
       }
       await client.putOperationalPresence(heartbeat);
     } });

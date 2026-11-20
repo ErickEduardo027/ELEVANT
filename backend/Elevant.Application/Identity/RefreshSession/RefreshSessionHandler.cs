@@ -18,6 +18,10 @@ public sealed record RefreshSessionResult(SessionDetails? Session, RefreshSessio
 /// <summary>
 /// Exchanges a refresh token for a new access token and a new refresh token, re-checking the
 /// account exactly as a login does: status, memberships, scopes and security stamp (ADR-0021).
+/// The new access token keeps when the session began, the start of the refresh family
+/// (<c>auth_time</c>, ADR-0046). No session has an absolute cap, not even a ramp account's on a
+/// shared tablet: it ends at logout, when a replaced token is reused, after 30 days without use
+/// or when one of these checks fails.
 /// </summary>
 public sealed class RefreshSessionHandler(
     IRefreshTokenStore refreshTokens,
@@ -44,7 +48,7 @@ public sealed class RefreshSessionHandler(
             return new(null, RefreshSessionFailure.Invalid);
         }
 
-        var accessToken = await accessTokenIssuer.IssueAsync(actor!, cancellationToken);
+        var accessToken = await accessTokenIssuer.IssueAsync(actor!, rotation.SessionStartedAt, cancellationToken);
         if (accessToken is null || string.IsNullOrWhiteSpace(accessToken.Value) ||
             accessToken.ExpiresAt <= timeProvider.GetUtcNow())
             return new(null, RefreshSessionFailure.TokenUnavailable);

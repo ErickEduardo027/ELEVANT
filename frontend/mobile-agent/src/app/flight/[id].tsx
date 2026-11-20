@@ -79,6 +79,9 @@ type StartNotice = Readonly<{
   message: string;
 }>;
 
+/** N6: what the agent does when the tablet could not keep a command; the lock of the device is never the cause. */
+const LOCAL_SAVE_WAY_OUT = 'Vuelve a intentarlo; si sigue fallando, cierra la app, ábrela de nuevo y avisa a OCC.';
+
 export default function OperationDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   return <OperationDetail operationId={id} />;
@@ -1196,11 +1199,12 @@ function serviceTransitionErrorNotice(
       message: 'Cierra sesión y solicita a AVIAM revisar el vínculo de esta instalación.',
     };
   }
+  // N6: the device's storage failed; the lock is never the cause, so the agent is told what to do instead.
   if (error.code === 'storage_unavailable') {
     return {
       tone: 'error',
-      title: 'Comando no protegido',
-      message: 'No pudimos guardar el payload idempotente. Desbloquea el dispositivo y vuelve a intentar.',
+      title: 'Cambio no guardado',
+      message: `La tablet no pudo guardar el cambio del servicio. ${LOCAL_SAVE_WAY_OUT}`,
     };
   }
   return {
@@ -1250,8 +1254,8 @@ function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
     if (error.code === 'storage_unavailable') {
       return {
         tone: 'error',
-        title: 'Comando no protegido',
-        message: 'No pudimos guardar la entrega en el dispositivo. Desbloquéalo y vuelve a intentar.',
+        title: 'Entrega no guardada',
+        message: `La tablet no pudo guardar la entrega. ${LOCAL_SAVE_WAY_OUT}`,
       };
     }
   }
@@ -1310,8 +1314,8 @@ function startErrorNotice(error: MobileServiceError): StartNotice {
   if (error.code === 'storage_unavailable') {
     return {
       tone: 'error',
-      title: 'Dispositivo no disponible',
-      message: 'No pudimos proteger la identidad del dispositivo. Desbloquéalo y vuelve a intentar.',
+      title: 'Inicio no guardado',
+      message: `La tablet no pudo guardar el inicio. ${LOCAL_SAVE_WAY_OUT}`,
     };
   }
   if (error.code === 'device_revoked' || error.code === 'device_in_use') {

@@ -18,7 +18,12 @@ public enum RefreshTokenFailure
     AlreadyRotated,
 }
 
-public sealed record RefreshTokenRotation(Guid? AccountId, IssuedRefreshToken? Token, RefreshTokenFailure? Failure)
+/// <summary>
+/// Outcome of a rotation. <paramref name="SessionStartedAt"/> is when the token's family began: the sign-in that every
+/// renewal of the session keeps (<c>auth_time</c>, ADR-0046); null when the rotation failed.
+/// </summary>
+public sealed record RefreshTokenRotation(Guid? AccountId, IssuedRefreshToken? Token, RefreshTokenFailure? Failure,
+    DateTimeOffset? SessionStartedAt = null)
 {
     public bool IsSuccess => Failure is null;
 
@@ -32,8 +37,8 @@ public interface IRefreshTokenStore
     Task<IssuedRefreshToken?> IssueAsync(Guid accountId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Replaces the presented token with a new one of the same family. A replaced token
-    /// presented again (outside a short grace window) revokes the family.
+    /// Replaces the presented token with a new one of the same family and reports when the family
+    /// began. A replaced token presented again (outside a short grace window) revokes the family.
     /// </summary>
     Task<RefreshTokenRotation> RotateAsync(string token, CancellationToken cancellationToken = default);
 

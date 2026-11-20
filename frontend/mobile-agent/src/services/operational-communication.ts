@@ -12,7 +12,9 @@ import { asMobileServiceError, MobileServiceError } from './mobile-service-error
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function authenticated<T>(request: (accessToken: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
+/** One request with the session's credential; a credential the session renewed sends it once more (S3). */
+async function authenticated<T>(request: (accessToken: string) => Promise<T>, signal?: AbortSignal,
+  retried = false): Promise<T> {
   const context = await getMobileSessionRequestContext();
   try {
     const result = await request(context.accessToken);
@@ -23,7 +25,8 @@ async function authenticated<T>(request: (accessToken: string) => Promise<T>, si
   } catch (error) {
     const normalized = asMobileServiceError(error);
     if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(context, normalized);
+      if (cleared === 'retry' && !retried) return authenticated(request, signal, true);
       if (!cleared) throw new MobileServiceError('cancelled');
     }
     throw normalized;

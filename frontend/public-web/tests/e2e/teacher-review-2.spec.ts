@@ -29,7 +29,7 @@ test("portal login asks for the emailed code, resends it and enters with the rig
 test("activation link sets the first password and recovery answers the same for any email", async ({ page }) => {
   await stubAirlineApi(page);
   await page.goto("/activar?token=aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1");
-  await expect(page.getByRole("heading", { name: "Crea la contraseña de tu cuenta." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cree la contraseña de su cuenta." })).toBeVisible();
   await page.getByLabel("Contraseña nueva", { exact: true }).fill("Synthetic-Activated!2026");
   await page.getByLabel("Confirmar contraseña", { exact: true }).fill("Synthetic-Activated!2026");
   await page.getByRole("button", { name: "Activar cuenta" }).click();
@@ -37,7 +37,7 @@ test("activation link sets the first password and recovery answers the same for 
   await page.getByRole("link", { name: "Ir a iniciar sesión" }).click();
   await expect(page).toHaveURL(/\/login$/);
 
-  await page.getByRole("link", { name: "¿Olvidaste tu contraseña?" }).click();
+  await page.getByRole("link", { name: "¿Olvidó su contraseña?" }).click();
   await expect(page).toHaveURL(/\/recuperar$/);
   await page.getByLabel("Correo corporativo").fill("nadie@example.test");
   await page.getByRole("button", { name: "Enviar enlace" }).click();

@@ -512,8 +512,16 @@ async function cacheResponse(
   return cache;
 }
 
-export async function getAssignedOperations(
+export function getAssignedOperations(
   options: GetAssignedOperationsOptions = {},
+): Promise<AssignedOperationsSnapshot> {
+  return readAssignedOperations(options, false);
+}
+
+/** A credential the session renewed reads once more (S3); without signal the cache answers, as before. */
+async function readAssignedOperations(
+  options: GetAssignedOperationsOptions,
+  retried: boolean,
 ): Promise<AssignedOperationsSnapshot> {
   const context = await getMobileSessionRequestContext();
 
@@ -539,7 +547,8 @@ export async function getAssignedOperations(
       normalized.code === 'unauthenticated' ||
       normalized.code === 'forbidden'
     ) {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
+      const cleared = await rejectMobileSessionRequest(context, normalized);
+      if (cleared === 'retry' && !retried) return readAssignedOperations(options, true);
       if (!cleared) throw new MobileServiceError('cancelled');
       throw normalized;
     }

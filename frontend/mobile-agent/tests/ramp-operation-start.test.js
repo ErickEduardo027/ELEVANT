@@ -51,6 +51,8 @@ jest.mock('../src/storage/walkaround-photos', () => ({
 jest.mock('../src/services/mobile-auth', () => {
   const { MobileServiceError } = jest.requireActual('../src/services/mobile-service-error');
   return {
+    // S3: the tap is queued with the session's identity, the same session as the request context here.
+    getMobileSessionIdentity: (...args) => mockGetMobileSessionRequestContext(...args),
     getMobileSessionRequestContext: (...args) => mockGetMobileSessionRequestContext(...args),
     rejectMobileSessionRequest: (...args) => mockRejectMobileSessionRequest(...args),
     MobileServiceError,
@@ -142,7 +144,8 @@ test('clears only the rejected session after an unauthorized start and keeps the
   mockApi.startRampOperation.mockRejectedValue(new ElevantApiError({ kind: 'http', status: 401 }));
 
   await expect(startAssignedRampOperation(OPERATION_ID)).rejects.toMatchObject({ code: 'unauthenticated', status: 401 });
-  expect(mockRejectMobileSessionRequest).toHaveBeenCalledWith(SESSION_ID);
+  expect(mockRejectMobileSessionRequest).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION_ID }),
+    expect.objectContaining({ code: 'unauthenticated' }));
   expect(await readFlightReportOutbox(ACCOUNT_ID)).toEqual([
     expect.objectContaining({ state: 'pending', command: expect.objectContaining({ kind: 'start' }) })]);
 });

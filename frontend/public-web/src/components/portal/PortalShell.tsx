@@ -15,6 +15,7 @@ import {
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { BrandMark } from "@/components/marketing/BrandMark";
+import { standingBadge, stationsInForce } from "@/lib/contract-status";
 
 import {
   ChartIcon,
@@ -146,6 +147,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { session, signOut } = useAirlineSession();
   const { standing } = useAirlineStanding();
+  const standingData = standing.status === "ready" ? standing.data : null;
+  // N14: the badge names the standing once it is read; until then, or when it cannot be read, it is not shown.
+  const badge = standingBadge(standingData);
+  const stationCodes = stationsInForce(standingData, session?.bootstrap.stations ?? []).map(
+    (station) => station.code,
+  );
 
   const airline = session?.bootstrap.name || "Aerolínea";
   const userInitials = (session?.actor.displayName ?? "EA")
@@ -194,10 +201,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
       <aside className={styles.sidebar} aria-label="Navegación principal">
         <div className={styles.brandArea}>
           <BrandMark href="/portal" />
-          <div className={styles.environmentBadge}>
-            <span aria-hidden="true" />
-            Portal autorizado
-          </div>
+          {badge && (
+            <div className={styles.standingBadge} data-tone={badge.tone}>
+              <span aria-hidden="true" />
+              {badge.label}
+            </div>
+          )}
         </div>
         <Navigation pathname={pathname} />
         <div className={styles.sidebarIdentity}>
@@ -231,10 +240,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
             <span>Portal de aerolíneas</span>
             <strong>{currentPageTitle(pathname)}</strong>
           </div>
+          {/* The label is hidden on phones, so the value explains itself: «Sin estación en vigor». */}
           <div className={styles.topbarContext}>
-            <span>Estación autorizada</span>
-            <strong>{session?.bootstrap.stations.map((station) => station.code).join(", ") ||
-              (standing.status === "ready" && standing.data.readOnly ? "Sin contrato en vigor" : "—")}</strong>
+            {stationCodes.length > 0 && (
+              <span>{stationCodes.length === 1 ? "Estación en vigor" : "Estaciones en vigor"}</span>
+            )}
+            <strong>{stationCodes.join(", ") || "Sin estación en vigor"}</strong>
           </div>
           <button className={styles.noticeButton} type="button" disabled aria-label="Notificaciones no disponibles"
             title="Notificaciones pendientes de integración">

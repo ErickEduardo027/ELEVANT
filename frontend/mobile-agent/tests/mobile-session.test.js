@@ -39,10 +39,12 @@ jest.mock('expo-crypto', () => ({
 }));
 
 const {
+  ENDED_SESSION_DRAFT_WINDOW_MS,
   assignedOperationsCacheKey,
   clearStoredMobileSession,
   clearStoredMobileSessionIfCurrent,
   countPendingEvidence,
+  forgetEndedMobileSession,
   getOrCreateRampChecklistSubmitCommandIfCurrent,
   getOrCreateRampServiceTransitionCommandIfCurrent,
   getOrCreateRampOperationSubmitCommandIfCurrent,
@@ -50,6 +52,7 @@ const {
   reserveOperationChatCommandIfCurrent,
   readOperationChatCommandIfCurrent,
   clearOperationChatCommandIfCurrent,
+  readEndedMobileSession,
   readRampChecklistDraftIfCurrent,
   readRampChecklistSubmitCommandIfCurrent,
   readRampIncidentOutboxIfCurrent,
@@ -57,7 +60,10 @@ const {
   readOrCreateMobileInstallationId,
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
+  replaceStoredMobileCredentialIfCurrent,
+  subscribeStoredMobileSessionEnd,
   updateStoredMobileSessionMetadata,
+  writeRampChecklistDraftForAccount,
   writeRampChecklistDraftIfCurrent,
   reserveRampIncidentOutboxItemIfCurrent,
   removeRampOperationSubmitCommandIfCurrent,
@@ -67,6 +73,7 @@ const {
   writeRampOperationChargesCacheIfCurrent,
   writeStoredMobileSession,
 } = require('../src/storage/mobile-session');
+const { observeServerDate, resetServerClockForTests } = require('../src/synchronization/server-clock');
 const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 const SecureStore = require('expo-secure-store');
 
@@ -88,10 +95,20 @@ function metadata(accountId, extra = {}) {
   };
 }
 
+const inMinutes = minutes => new Date(Date.now() + minutes * 60_000).toISOString();
+// Refresh tokens are 32 random bytes in Base64URL (ADR-0021): 43 characters.
+const refreshToken = letter => `refresh-${letter}-${letter.repeat(33)}`;
+const REFRESH_A = refreshToken('a');
+const REFRESH_A2 = refreshToken('b');
+const REFRESH_B = refreshToken('c');
+// The size of a real access token: header, claims (sub, jti, sv, auth_time, aud, exp, iat, iss, nbf) and signature.
+const accessToken = name => `eyJhbGciOiJIUzI1NiIsInR5cCI6ImF0K2p3dCJ9.${name}${'x'.repeat(620)}.${'s'.repeat(43)}`;
+
 beforeEach(() => {
   mockAsyncData.clear();
   mockSecureData.clear();
   mockUuidCounter = 0;
+  resetServerClockForTests();
 });
 
 test('keeps only the compact credential envelope in SecureStore', async () => {
@@ -105,12 +122,294 @@ test('keeps only the compact credential envelope in SecureStore', async () => {
   expect(secureRaw).toBeDefined();
   expect(secureRaw.length).toBeLessThan(2_048);
   expect(JSON.parse(secureRaw)).toEqual({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId: '10000000-0000-4000-8000-000000000001',
     accessToken: token,
+    refreshToken: null,
   });
   expect(metadataRaw).not.toContain(token);
   expect(JSON.parse(metadataRaw).metadata).toEqual(largeMetadata);
+});
+
+describe('a session that renews itself (S3)', () => {
+  test('the v2 envelope keeps the refresh token only in SecureStore and stays under 2048 bytes', async () => {
+    const token = accessToken('a');
+    const sessionId = await writeStoredMobileSession(token,
+      metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+
+    const secureRaw = mockSecureData.get(CREDENTIAL_KEY);
+    expect(JSON.parse(secureRaw)).toEqual({ schemaVersion: 2, sessionId, accessToken: token, refreshToken: REFRESH_A });
+    expect(secureRaw.length).toBeLessThan(2_048);
+    expect([...mockAsyncData.values()].some(value => value.includes(REFRESH_A) || value.includes(token))).toBe(false);
+  });
+
+  test('an expired access token with a refresh token in force stays active and keeps the caches, by ELEVANT’s clock', async () => {
+    const sessionId = await writeStoredMobileSession('token-a',
+      metadata(ACCOUNT_A, { expiresAt: inMinutes(-5), refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+    const cacheKey = assignedOperationsCacheKey(ACCOUNT_A);
+    await expect(writeAssignedOperationsCacheIfCurrent(sessionId, cacheKey, '{"cached":true}')).resolves.toBe('written');
+    await writeRampChecklistCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ checklistId: CHECKLIST_A }));
+
+    await expect(readStoredMobileSession()).resolves.toMatchObject({
+      kind: 'active', sessionId, accessToken: 'token-a', refreshToken: REFRESH_A,
+    });
+    expect(mockAsyncData.get(cacheKey)).toBe('{"cached":true}');
+    expect([...mockAsyncData.keys()].some(key => key.includes('ramp-checklist-cache'))).toBe(true);
+
+    // ELEVANT's clock decides, not the tablet's: an hour ahead, an access token of ten more minutes already expired.
+    expect(observeServerDate(new Date(Date.now() + 60 * 60_000).toUTCString(), Date.now(), Date.now())).toBe(true);
+    await clearStoredMobileSession();
+    await writeStoredMobileSession('token-b', metadata(ACCOUNT_B, { expiresAt: inMinutes(10) }));
+    await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'expired', accountId: ACCOUNT_B });
+  });
+
+  test('replacing the credential keeps the revision and the caches, and the secret is written first', async () => {
+    const sessionId = await writeStoredMobileSession('token-a',
+      metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+    const cacheKey = assignedOperationsCacheKey(ACCOUNT_A);
+    await writeAssignedOperationsCacheIfCurrent(sessionId, cacheKey, '{"cached":true}');
+    await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
+    SecureStore.setItemAsync.mockClear();
+    AsyncStorage.setItem.mockClear();
+
+    const renewed = metadata(ACCOUNT_A, { expiresAt: inMinutes(15), refreshExpiresAt: inMinutes(30 * 24 * 60) });
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionId, 'token-a', 'token-a2', REFRESH_A2, renewed))
+      .resolves.toBe(true);
+
+    expect(SecureStore.setItemAsync).toHaveBeenCalledTimes(1);
+    expect(SecureStore.setItemAsync.mock.invocationCallOrder[0])
+      .toBeLessThan(AsyncStorage.setItem.mock.invocationCallOrder[0]);
+    await expect(readStoredMobileSession()).resolves.toEqual({
+      kind: 'active', sessionId, accessToken: 'token-a2', refreshToken: REFRESH_A2, metadata: renewed,
+    });
+    expect(mockAsyncData.get(cacheKey)).toBe('{"cached":true}');
+    expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-charges'))).toBe(true);
+    await expect(writeAssignedOperationsCacheIfCurrent(sessionId, cacheKey, '{"next":true}')).resolves.toBe('written');
+  });
+
+  test('a late renewal never overwrites another credential nor another account', async () => {
+    const renewedA = metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) });
+    const sessionA = await writeStoredMobileSession('token-a', renewedA, REFRESH_A);
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionA, 'token-a', 'token-a2', REFRESH_A2, renewedA))
+      .resolves.toBe(true);
+    // An answer to the earlier credential arrives after that one was replaced.
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionA, 'token-a', 'token-a3', refreshToken('d'), renewedA))
+      .resolves.toBe(false);
+    await expect(readStoredMobileSession()).resolves.toMatchObject({ accessToken: 'token-a2', refreshToken: REFRESH_A2 });
+
+    // Another agent signed in on the tablet meanwhile.
+    await clearStoredMobileSession();
+    const sessionB = await writeStoredMobileSession('token-b',
+      metadata(ACCOUNT_B, { refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_B);
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionA, 'token-a2', 'token-a4', refreshToken('e'), renewedA))
+      .resolves.toBe(false);
+    // A renewal that names another account never takes the place of this one.
+    await expect(replaceStoredMobileCredentialIfCurrent(sessionB, 'token-b', 'token-x', refreshToken('f'), renewedA))
+      .resolves.toBe(false);
+    await expect(readStoredMobileSession()).resolves.toMatchObject({
+      kind: 'active', sessionId: sessionB, accessToken: 'token-b', refreshToken: REFRESH_B,
+    });
+  });
+
+  test('still reads the credential the deployed APK stored (v1)', async () => {
+    const sessionId = '30000000-0000-4000-8000-000000000009';
+    mockSecureData.set(CREDENTIAL_KEY, JSON.stringify({ schemaVersion: 1, sessionId, accessToken: 'token-v1' }));
+    mockAsyncData.set(METADATA_KEY, JSON.stringify({ schemaVersion: 1, sessionId,
+      metadata: { schemaVersion: 1, actor: { accountId: ACCOUNT_A }, expiresAt: inMinutes(10) } }));
+
+    await expect(readStoredMobileSession()).resolves.toMatchObject({
+      kind: 'active', sessionId, accessToken: 'token-v1', refreshToken: null,
+    });
+  });
+
+  test('when another account signs in, the refresh token of the earlier one is gone', async () => {
+    await writeStoredMobileSession('token-a', metadata(ACCOUNT_A, { refreshExpiresAt: inMinutes(30 * 24 * 60) }),
+      REFRESH_A);
+    expect(mockSecureData.get(CREDENTIAL_KEY)).toContain(REFRESH_A);
+
+    await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+    expect([...mockSecureData.values(), ...mockAsyncData.values()].some(value => value.includes(REFRESH_A))).toBe(false);
+    await expect(readStoredMobileSession()).resolves.toMatchObject({ accessToken: 'token-b', refreshToken: null });
+  });
+});
+
+describe('answers marked after the session ended (N5)', () => {
+  const MINUTE = 60_000;
+  const ITEM = '72000000-0000-4000-8000-000000000001';
+  const MARKER_KEY = 'elevant:mobile:ended-session:v1';
+  const draftOf = value => JSON.stringify({ schemaVersion: 1, checklistId: CHECKLIST_A, answers: { [ITEM]: { value } } });
+  const draftKey = accountId => `elevant:mobile:ramp-checklist-draft:v1:${accountId}:${OPERATION_A}:${CHECKLIST_A}`;
+  const keptValue = accountId => JSON.parse(mockAsyncData.get(draftKey(accountId))).answers[ITEM].value;
+  // The checklist screen writes for the account it loaded the draft with.
+  const writeDraft = (accountId, value = 'Ok') =>
+    writeRampChecklistDraftForAccount(accountId, OPERATION_A, CHECKLIST_A, draftOf(value));
+  const advance = milliseconds => jest.setSystemTime(Date.now() + milliseconds);
+
+  /**
+   * A's session ends through its renewal (S3), as the storage or the session service sees it: the v1 envelope of the
+   * deployed APK expires with its access token, the refresh token expired, or ELEVANT refused the renewal (401).
+   * Answers the marker it leaves.
+   */
+  async function endSessionOfA(way) {
+    const expiresAt = inMinutes(15);
+    if (way === 'v1 envelope') {
+      const sessionId = '30000000-0000-4000-8000-000000000009';
+      mockSecureData.set(CREDENTIAL_KEY, JSON.stringify({ schemaVersion: 1, sessionId, accessToken: 'token-v1' }));
+      mockAsyncData.set(METADATA_KEY, JSON.stringify({ schemaVersion: 1, sessionId,
+        metadata: { schemaVersion: 1, actor: { accountId: ACCOUNT_A }, expiresAt } }));
+      advance(16 * MINUTE);
+      return { accountId: ACCOUNT_A, reason: 'expired', endedAt: expiresAt };
+    }
+    if (way === 'expired refresh') {
+      await writeStoredMobileSession('token-a',
+        metadata(ACCOUNT_A, { expiresAt, refreshExpiresAt: inMinutes(20) }), REFRESH_A);
+      advance(21 * MINUTE);
+      return { accountId: ACCOUNT_A, reason: 'expired', endedAt: expiresAt };
+    }
+    const sessionId = await writeStoredMobileSession('token-a',
+      metadata(ACCOUNT_A, { expiresAt, refreshExpiresAt: inMinutes(30 * 24 * 60) }), REFRESH_A);
+    advance(5 * MINUTE);
+    // What the session service does when ELEVANT answers 401 to the renewal.
+    await expect(clearStoredMobileSessionIfCurrent(sessionId, 'token-a', 'refused')).resolves.toBe(true);
+    return { accountId: ACCOUNT_A, reason: 'refused', endedAt: new Date().toISOString() };
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-11-16T20:00:00.000Z'),
+      doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  });
+
+  afterEach(() => { jest.useRealTimers(); });
+
+  test.each(['v1 envelope', 'expired refresh', '401 on renewal'])(
+    'after the session ends (%s) A still writes its draft; while B is signed in it cannot', async way => {
+      const marker = await endSessionOfA(way);
+
+      await expect(writeDraft(ACCOUNT_A)).resolves.toBe('kept');
+      expect(keptValue(ACCOUNT_A)).toBe('Ok');
+      await expect(readEndedMobileSession()).resolves.toEqual(marker);
+      // The marker is not secret: the account, the cause and when, never a credential.
+      expect(mockAsyncData.get(MARKER_KEY)).not.toMatch(/token|refresh/);
+      await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'missing' });
+
+      const sessionB = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+      await expect(writeDraft(ACCOUNT_A, 'NotOk')).resolves.toBe('not-current');
+      expect(keptValue(ACCOUNT_A)).toBe('Ok');
+      await expect(writeDraft(ACCOUNT_B, 'NotApplicable')).resolves.toBe('written');
+      await expect(readRampChecklistDraftIfCurrent(sessionB, ACCOUNT_B, OPERATION_A, CHECKLIST_A))
+        .resolves.toEqual({ kind: 'current', value: draftOf('NotApplicable') });
+    });
+
+  test('when A signs in again it finds what it marked after the end; the confirmed sign-in forgets the marker', async () => {
+    await endSessionOfA('401 on renewal');
+    await expect(writeDraft(ACCOUNT_A, 'NotOk')).resolves.toBe('kept');
+
+    const next = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
+    await expect(forgetEndedMobileSession(next)).resolves.toBe(true);
+    await expect(readEndedMobileSession()).resolves.toBeNull();
+    await expect(readRampChecklistDraftIfCurrent(next, ACCOUNT_A, OPERATION_A, CHECKLIST_A))
+      .resolves.toEqual({ kind: 'current', value: draftOf('NotOk') });
+    await expect(writeDraft(ACCOUNT_A)).resolves.toBe('written');
+
+    // A session cleared without a cause (a sign-in the tablet did not keep) leaves nothing to keep a draft with.
+    await clearStoredMobileSessionIfCurrent(next);
+    await expect(writeDraft(ACCOUNT_A, 'NotApplicable')).resolves.toBe('not-current');
+    expect(keptValue(ACCOUNT_A)).toBe('Ok');
+  });
+
+  test('after signing out on purpose nothing A marks is kept', async () => {
+    await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+    await expect(writeDraft(ACCOUNT_A)).resolves.toBe('written');
+    await clearStoredMobileSession();
+    await expect(writeDraft(ACCOUNT_A, 'NotOk')).resolves.toBe('not-current');
+
+    // Signing out once the session had already ended forgets its marker too.
+    await endSessionOfA('401 on renewal');
+    await clearStoredMobileSession();
+    await expect(readEndedMobileSession()).resolves.toBeNull();
+    await expect(writeDraft(ACCOUNT_A, 'NotOk')).resolves.toBe('not-current');
+    // What was kept before stays on the device for A (3-N12).
+    expect(keptValue(ACCOUNT_A)).toBe('Ok');
+  });
+
+  test('a failed sign-in does not forget the marker', async () => {
+    const marker = await endSessionOfA('expired refresh');
+    // The access screen reads the session before anyone signs in: the tablet notices the end there.
+    await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'expired', accountId: ACCOUNT_A });
+    // B signs in, but the tablet does not keep the sign-in (its registration failed): its session goes without a cause.
+    const attempt = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+    await expect(writeDraft(ACCOUNT_A)).resolves.toBe('not-current');
+    await expect(forgetEndedMobileSession('30000000-0000-4000-8000-000000000099')).resolves.toBe(false);
+    await expect(clearStoredMobileSessionIfCurrent(attempt)).resolves.toBe(true);
+
+    await expect(readEndedMobileSession()).resolves.toEqual(marker);
+    await expect(writeDraft(ACCOUNT_A)).resolves.toBe('kept');
+  });
+
+  test('outside the D-N5 window (2 h from the end, by ELEVANT’s clock) the draft is refused', async () => {
+    expect(ENDED_SESSION_DRAFT_WINDOW_MS).toBe(2 * 60 * MINUTE);
+    await endSessionOfA('401 on renewal');
+
+    advance(ENDED_SESSION_DRAFT_WINDOW_MS - MINUTE);
+    await expect(writeDraft(ACCOUNT_A)).resolves.toBe('kept');
+    advance(2 * MINUTE);
+    await expect(writeDraft(ACCOUNT_A, 'NotOk')).resolves.toBe('not-current');
+    expect(keptValue(ACCOUNT_A)).toBe('Ok');
+
+    // ELEVANT's clock decides: a tablet whose clock runs behind does not stretch the window.
+    await clearStoredMobileSession();
+    await endSessionOfA('401 on renewal');
+    expect(observeServerDate(new Date(Date.now() + ENDED_SESSION_DRAFT_WINDOW_MS + MINUTE).toUTCString(),
+      Date.now(), Date.now())).toBe(true);
+    await expect(writeDraft(ACCOUNT_A, 'NotOk')).resolves.toBe('not-current');
+  });
+
+  test('the window of an expired session opens when its access token expired, not when the tablet notices it', async () => {
+    const marker = await endSessionOfA('v1 envelope');
+    // Nobody used the tablet: the first write comes two hours later.
+    advance(ENDED_SESSION_DRAFT_WINDOW_MS);
+
+    await expect(writeDraft(ACCOUNT_A)).resolves.toBe('not-current');
+    await expect(readEndedMobileSession()).resolves.toEqual(marker);
+    expect(mockAsyncData.has(draftKey(ACCOUNT_A))).toBe(false);
+  });
+
+  test('the screens hear every end the agent did not choose, with its account and cause, and nothing else (N6)', async () => {
+    const heard = [];
+    const stop = subscribeStoredMobileSessionEnd(ended => heard.push(ended));
+    try {
+      // Expired without a refresh token in force: announced when the tablet notices it, as the marker says.
+      const expired = await endSessionOfA('expired refresh');
+      await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'expired', accountId: ACCOUNT_A });
+      expect(heard).toEqual([expired]);
+      // ELEVANT refused the renewal (401) or the account lost its access (403).
+      const refused = await endSessionOfA('401 on renewal');
+      expect(heard).toEqual([expired, refused]);
+      const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+      await expect(clearStoredMobileSessionIfCurrent(sessionId, 'token-a', 'forbidden')).resolves.toBe(true);
+      expect(heard[2]).toEqual({ accountId: ACCOUNT_A, reason: 'forbidden', endedAt: new Date().toISOString() });
+
+      // A sign-out on purpose and a sign-in the tablet did not keep are no news for the screens.
+      await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+      await clearStoredMobileSession();
+      const attempt = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+      await expect(clearStoredMobileSessionIfCurrent(attempt)).resolves.toBe(true);
+      expect(heard).toHaveLength(3);
+    } finally {
+      stop();
+    }
+
+    // A listener that fails never keeps the session from ending, and one that stopped listening hears nothing.
+    const failing = subscribeStoredMobileSessionEnd(() => { throw new Error('A screen failed.'); });
+    try {
+      const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+      await expect(clearStoredMobileSessionIfCurrent(sessionId, 'token-a', 'refused')).resolves.toBe(true);
+      await expect(readStoredMobileSession()).resolves.toEqual({ kind: 'missing' });
+      expect(heard).toHaveLength(3);
+    } finally {
+      failing();
+    }
+  });
 });
 
 test('keeps one account-scoped chat command stable across retries and for the same account after logout (3-N12)', async () => {
@@ -547,28 +846,51 @@ test('a revoked session keeps every unsent record bound to its account; only tha
   // A draft is not a record sent anywhere: it is kept but not counted.
   await writeRampChecklistDraftIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, CHECKLIST_A, JSON.stringify({ answers: {} }));
   await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, others: 0 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, ended: 0, others: 0 });
 
   // ELEVANT answers 401: the credential, its metadata and the caches go; what the agent recorded stays.
   await expect(clearStoredMobileSessionIfCurrent(sessionId)).resolves.toBe(true);
   expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
   expect(mockAsyncData.has(METADATA_KEY)).toBe(false);
   expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-charges'))).toBe(false);
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, others: 5 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, ended: 0, others: 5 });
 
   // Another agent on the same tablet neither reads nor counts them as its own.
   const otherSession = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
   await expect(readRampIncidentOutboxIfCurrent(otherSession, ACCOUNT_B, OPERATION_A))
     .resolves.toEqual({ kind: 'current', items: [] });
   mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_B}`, JSON.stringify([queued('91000000-0000-4000-8000-000000000003')]));
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 1, others: 5 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 1, ended: 0, others: 5 });
   await clearStoredMobileSession();
 
   // The same account signs in again and finds its records.
   const nextSession = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
-  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, others: 1 });
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, ended: 0, others: 1 });
   await expect(readRampIncidentOutboxIfCurrent(nextSession, ACCOUNT_A, OPERATION_A))
     .resolves.toMatchObject({ kind: 'current', items: [{ state: 'pending' }] });
   await expect(readRampChecklistDraftIfCurrent(nextSession, ACCOUNT_A, OPERATION_A, CHECKLIST_A))
     .resolves.toEqual({ kind: 'current', value: JSON.stringify({ answers: {} }) });
+});
+
+test('without a session the records of the account whose session ended count apart from the others (N7)', async () => {
+  const queued = count => JSON.stringify(Array.from({ length: count }, (_, index) => ({
+    idempotencyKey: `91000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    command: { kind: 'milestone', operationId: OPERATION_A, code: 'BLOCK_ON', occurredAt: '2026-11-16T19:40:00.000Z' },
+    createdAt: '2026-11-16T19:40:00.000Z', state: 'pending', attempts: 0 })));
+  const sessionA = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_A}`, queued(2));
+  mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_B}`, queued(3));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 2, ended: 0, others: 3 });
+
+  // ELEVANT refused A's session: the marker names A, whose records are the ones it sends when it signs in again.
+  await expect(clearStoredMobileSessionIfCurrent(sessionA, 'token-a', 'refused')).resolves.toBe(true);
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, ended: 2, others: 3 });
+
+  // While someone is signed in nothing counts as ended, not even before its sign-in forgets the marker.
+  await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 3, ended: 0, others: 2 });
+
+  // A sign-out on purpose forgets the marker: every record is some other account's again.
+  await clearStoredMobileSession();
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, ended: 0, others: 5 });
 });

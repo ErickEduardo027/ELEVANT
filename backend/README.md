@@ -776,7 +776,10 @@ siguen sin métodos ni mensajes de negocio. El JWT es corto (15 minutos por
 defecto), está firmado con HS256 mediante `Authentication__SigningKeyBase64` inyectada
 desde el ambiente y solo transporta un `sub` y un `jti`, ambos UUID únicos y
 obligatorios, como datos de identidad, además de los claims temporales y de
-emisor/audiencia. Roles, membresías y estaciones no
+emisor/audiencia. Entre los temporales, `auth_time` es el inicio de la sesión:
+al iniciar sesión vale lo mismo que `iat`, y la renovación lo conserva
+([ADR-0046](../docs/adr/0046-renewable-sessions-on-shared-tablets.md)). Roles,
+membresías y estaciones no
 se confían al token: `GET /api/v1/auth/session` los vuelve a consultar en SQL.
 
 Los clientes SignalR de navegador pueden enviar el JWT en el parámetro
@@ -788,7 +791,14 @@ redactarla. Los hubs no deben transportar eventos reales hasta implementar
 revalidación de actor, autorización por scope y cierre/renovación al expirar o
 revocarse el token.
 
-No existen aún refresh, logout ni revocación por `jti`. Fuera de los cortes OCC
+`POST /api/v1/auth/session/refresh` renueva la sesión con un refresh token
+rotativo y `POST /api/v1/auth/session/logout` revoca su familia
+([ADR-0021](../docs/adr/0021-rotating-refresh-tokens.md)). Ninguna sesión tiene
+un tope absoluto, ni siquiera la de una cuenta de rampa en una tablet compartida.
+El registro de la tablet toma el inicio de la sesión de `auth_time`, o de `iat`
+si el token no lo trae, así que renovar el token no abre un vínculo nuevo
+([ADR-0046](../docs/adr/0046-renewable-sessions-on-shared-tablets.md)). No existe
+revocación por `jti`. Fuera de los cortes OCC
 y de lectura de asignaciones de rampa implementados tampoco existe todavía
 autorización fina por rol, tenant o estación.
 Development debe permanecer dentro

@@ -44,6 +44,8 @@ jest.mock('../src/storage/walkaround-photos', () => ({
 jest.mock('../src/services/mobile-auth', () => {
   const { MobileServiceError } = jest.requireActual('../src/services/mobile-service-error');
   return {
+    // S3: marks are queued with the session's identity, the same session as the request context here.
+    getMobileSessionIdentity: (...args) => mockContext(...args),
     getMobileSessionRequestContext: (...args) => mockContext(...args),
     rejectMobileSessionRequest: (...args) => mockRejectSession(...args),
     MobileServiceError,

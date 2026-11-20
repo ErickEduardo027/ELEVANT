@@ -65,4 +65,45 @@ test.describe("calidad responsive y accesible", () => {
       expect(blockers).toEqual([]);
     });
   }
+
+  // N15: the six services of a page fill complete rows (three, two or one per row
+  // by the panel's width) and none is hidden in a horizontal scroll.
+  test("solicitud de acceso muestra seis servicios en filas completas sin overflow horizontal", async ({
+    page,
+  }) => {
+    await page.route("**/api/v1/public/commercial-catalog", route => route.fulfill({
+      status: 200, contentType: "application/json", body: JSON.stringify({
+        services: Array.from({ length: 9 }, (_, index) => ({
+          id: `20000000-0000-7000-8000-${String(100 + index).padStart(12, "0")}`,
+          name: `Servicio ${index + 1}`, description: "Servicio de rampa",
+          imageUrl: null, videoUrl: null, displayOrder: index + 1,
+        })),
+        airlines: [],
+      }),
+    }));
+    await page.goto("/solicitar-acceso");
+    const services = page.getByLabel("Servicios disponibles");
+    await expect(services.getByRole("article")).toHaveCount(6);
+    await expect(page.getByText("SERVICIOS 1–6 DE 9")).toBeVisible();
+
+    const layout = await services.evaluate((grid) => {
+      const tops = [...grid.querySelectorAll("article")]
+        .map((card) => Math.round(card.getBoundingClientRect().top));
+      return {
+        overflowX: getComputedStyle(grid).overflowX,
+        scrollWidth: grid.scrollWidth,
+        clientWidth: grid.clientWidth,
+        rows: [...new Set(tops)].map((top) => tops.filter((value) => value === top).length),
+      };
+    });
+    expect(layout.overflowX).toBe("visible");
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect([1, 2, 3]).toContain(layout.rows[0]);
+    expect(layout.rows).toEqual(Array(6 / layout.rows[0]).fill(layout.rows[0]));
+    await expectNoHorizontalOverflow(page, "/solicitar-acceso con seis servicios");
+
+    await page.getByRole("button", { name: "Ver servicios siguientes" }).click();
+    await expect(page.getByText("SERVICIOS 7–9 DE 9")).toBeVisible();
+    await expect(services.getByRole("article")).toHaveCount(3);
+  });
 });

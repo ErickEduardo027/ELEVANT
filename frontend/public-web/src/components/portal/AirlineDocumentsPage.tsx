@@ -23,7 +23,7 @@ export function AirlineDocumentsPage() {
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Repositorio autorizado</span>
       <h1>Documentos</h1>
-      <p>Facturas emitidas para tu aerolínea en PDF.</p>
+      <p>Facturas emitidas para su aerolínea en PDF.</p>
     </header>
     {!snapshot.data && !snapshot.failed && <p role="status">Cargando documentos autorizados…</p>}
     {!snapshot.data && snapshot.failed && <div role="alert">No se pudo actualizar la consulta de documentos.

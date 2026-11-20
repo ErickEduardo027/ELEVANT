@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Elevant.Application.Identity;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Enumerations;
@@ -43,6 +44,9 @@ public sealed class JwtAccessTokenIssuerTests
         Assert.Contains(JwtRegisteredClaimNames.Iat, claimTypes);
         Assert.Contains(JwtRegisteredClaimNames.Nbf, claimTypes);
         Assert.Contains(JwtRegisteredClaimNames.Exp, claimTypes);
+        // A sign-in starts the session (ADR-0046).
+        Assert.Equal(Now.ToUnixTimeSeconds(), AuthTime(issued.Value));
+        Assert.Equal(Now.ToUnixTimeSeconds(), IssuedAt(issued.Value));
         Assert.DoesNotContain("email", claimTypes);
         Assert.DoesNotContain("name", claimTypes);
         Assert.DoesNotContain("role", claimTypes);
@@ -66,6 +70,35 @@ public sealed class JwtAccessTokenIssuerTests
             });
 
         Assert.True(validation.IsValid, validation.Exception?.Message);
+    }
+
+    /// <summary>
+    /// ADR-0046: a renewed token carries when its session began (<c>auth_time</c>), the same in every renewal and
+    /// never later than the token itself (<c>iat</c>).
+    /// </summary>
+    [Fact]
+    public async Task ARenewedTokenKeepsWhenItsSessionBegan()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var signedIn = Now.AddMilliseconds(750);
+
+        var first = await CreateIssuer(now: Now.AddMinutes(16)).IssueAsync(CreateActor(), signedIn, ct);
+        var second = await CreateIssuer(now: Now.AddHours(9)).IssueAsync(CreateActor(), signedIn, ct);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(Now.AddMinutes(31), first.ExpiresAt);
+        Assert.Equal(Now.ToUnixTimeSeconds(), AuthTime(first.Value));
+        Assert.Equal(Now.ToUnixTimeSeconds(), AuthTime(second.Value));
+        Assert.Equal(Now.AddMinutes(16).ToUnixTimeSeconds(), IssuedAt(first.Value));
+        Assert.Equal(Now.AddHours(9).ToUnixTimeSeconds(), IssuedAt(second.Value));
+
+        // A session start the issuer has not reached yet (another instance's clock) never dates the token ahead.
+        var ahead = await CreateIssuer().IssueAsync(CreateActor(), Now.AddMinutes(2), ct);
+        Assert.Equal(IssuedAt(ahead!.Value), AuthTime(ahead.Value));
+        // Without a session start the token starts one, as a sign-in does.
+        var fresh = await CreateIssuer().IssueAsync(CreateActor(), null, ct);
+        Assert.Equal(Now.ToUnixTimeSeconds(), AuthTime(fresh!.Value));
     }
 
     [Fact]
@@ -98,15 +131,29 @@ public sealed class JwtAccessTokenIssuerTests
     private static readonly Guid AccountId =
         Guid.Parse("40000000-0000-7000-8000-000000000001");
 
-    private static JwtAccessTokenIssuer CreateIssuer(string signingKeyBase64 = SigningKeyBase64) => new(
+    private static JwtAccessTokenIssuer CreateIssuer(string signingKeyBase64 = SigningKeyBase64,
+        DateTimeOffset? now = null) => new(
         Options.Create(new JwtAccessTokenOptions
         {
             Issuer = Issuer,
             Audience = Audience,
             SigningKeyBase64 = signingKeyBase64,
         }),
-        new FixedTimeProvider(Now),
+        new FixedTimeProvider(now ?? Now),
         new StubSecurityVersionStore());
+
+    /// <summary>The token's <c>auth_time</c>, which must be a JSON NumericDate (Unix seconds).</summary>
+    private static long AuthTime(string token) => NumericDate(token, JwtRegisteredClaimNames.AuthTime);
+
+    private static long IssuedAt(string token) => NumericDate(token, JwtRegisteredClaimNames.Iat);
+
+    private static long NumericDate(string token, string claim)
+    {
+        using var payload = JsonDocument.Parse(Base64UrlEncoder.Decode(new JsonWebToken(token).EncodedPayload));
+        Assert.True(payload.RootElement.TryGetProperty(claim, out var value), $"The token has no {claim}.");
+        Assert.Equal(JsonValueKind.Number, value.ValueKind);
+        return value.GetInt64();
+    }
 
     private sealed class StubSecurityVersionStore : ISessionSecurityVersionStore
     {

@@ -269,14 +269,23 @@ it("shows only API operations on overview and flights, including an honest empty
   currentOperations = [];
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [] };
   const page = render(<AirlinePortalPage view="overview" />);
-  expect(screen.getByText(/0 operaciones reales/)).toBeInTheDocument();
-  expect(screen.getByText(/No hay operaciones en la ventana actual/)).toBeInTheDocument();
+  expect(screen.getByText(/0 operaciones de hoy y los próximos 7 días/)).toBeInTheDocument();
+  expect(screen.getByText("No hay operaciones de hoy ni de los próximos 7 días para esta aerolínea.")).toBeInTheDocument();
   expect(screen.queryByText("EV 311")).not.toBeInTheDocument();
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
   page.rerender(<AirlinePortalPage view="flights" />);
   expect(await screen.findByText(/No hay vuelos registrados para esta aerolínea/)).toBeInTheDocument();
   expect(screen.queryByText("EV 311")).not.toBeInTheDocument();
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
+});
+
+it("counts one operation and one station in the singular, without claiming anything while the standing loads (N14)", () => {
+  render(<AirlinePortalPage view="overview" />);
+  const hero = screen.getByRole("heading", { level: 1, name: "Demo Airlines" }).closest("header")!;
+  // The standing is still loading here: the stations in force are the bootstrap's.
+  expect(hero).toHaveTextContent("1 operación de hoy y los próximos 7 días · 1 estación en vigor · ZZ");
+  expect(hero).toHaveTextContent("Resumen de la aerolínea");
+  expect(hero).not.toHaveTextContent(/autorizad/i);
 });
 
 it("shows tenant-scoped operational requests without demo fixtures", async () => {
@@ -393,7 +402,7 @@ async function openCardForm() {
   const form = screen.getByRole("form", { name: "Datos de la tarjeta" });
   fireEvent.change(within(form).getByLabelText("Titular de la tarjeta"), { target: { value: "Casey Airline" } });
   fireEvent.change(within(form).getByLabelText("Número de tarjeta"), { target: { value: "4000 0000 0000 0002" } });
-  fireEvent.change(within(form).getByLabelText("Vencimiento (MM/AA)"), { target: { value: "12/30" } });
+  fireEvent.change(within(form).getByLabelText("Vencimiento (MM/AA)"), { target: { value: "12/40" } });
   fireEvent.change(within(form).getByLabelText("Código de seguridad"), { target: { value: "123" } });
   return form;
 }
@@ -408,7 +417,7 @@ it("pays the whole balance by card: a declined card, then another card with a ne
   expect(await screen.findByRole("alert")).toHaveTextContent("fondos insuficientes");
   const [invoiceId, body, firstKey] = payInvoiceByCard.mock.calls[0];
   expect(invoiceId).toBe("74000000-0000-7000-8000-000000000009");
-  expect(body).toEqual({ cardholderName: "Casey Airline", cardNumber: "4000 0000 0000 0002", expiryMonth: 12, expiryYear: 2030,
+  expect(body).toEqual({ cardholderName: "Casey Airline", cardNumber: "4000 0000 0000 0002", expiryMonth: 12, expiryYear: 2040,
     securityCode: "123", amount: 148.09 });
   fireEvent.change(within(form).getByLabelText("Número de tarjeta"), { target: { value: "4111 1111 1111 1111" } });
   fireEvent.change(within(form).getByLabelText("Código de seguridad"), { target: { value: "123" } });
@@ -440,4 +449,22 @@ it("explains a card rejected before the gateway and lists every attempt", async 
   expect(screen.getByText(/Rechazado · Visa •••• 1111/)).toBeInTheDocument();
   fireEvent.click(within(form).getByRole("button", { name: "Pagar USD 148.09" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("El número de tarjeta no es válido.");
+});
+
+// N19: every page of the portal addresses the airline as usted.
+it("addresses the airline as usted in requests, documents and reports (N19)", async () => {
+  getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
+  const page = render(<AirlinePortalPage view="requests" />);
+  expect(screen.getByText("Consulte las solicitudes operativas registradas para su aerolínea. La creación y cancelación "
+    + "todavía no están habilitadas.")).toBeInTheDocument();
+
+  page.rerender(<AirlinePortalPage view="documents" />);
+  expect(screen.getByText("Facturas emitidas para su aerolínea en PDF.")).toBeInTheDocument();
+  getInvoiceDocument.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  fireEvent.click(await screen.findByRole("button", { name: "Descargar PDF de Factura E310000000001" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo descargar el PDF. Inténtelo de nuevo.");
+
+  page.rerender(<AirlinePortalPage view="reports" />);
+  expect(screen.getByText("Consulte las operaciones y facturas de su aerolínea. Esta vista muestra la primera página de "
+    + "cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.")).toBeInTheDocument();
 });

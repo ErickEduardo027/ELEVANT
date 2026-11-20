@@ -34,6 +34,15 @@ viajando durante horas.
 - **Inactividad:** el refresh token caduca a los 30 días sin uso.
 - **Cierre de sesión:** `POST auth/session/logout` revoca la familia.
 
+> **Actualización (19 de noviembre de 2026).** Todo access token lleva `auth_time`, el inicio de la
+> sesión. Al iniciar sesión vale lo mismo que `iat`, y la renovación lo conserva: la rotación
+> devuelve cuándo empezó la familia y el token nuevo lo repite. Las cuentas de rampa de las tablets
+> compartidas se renuevan con estas mismas reglas, sin tope absoluto, y el registro de la tablet toma
+> el inicio de la sesión de `auth_time`, así que renovar no abre un vínculo nuevo de la tablet. Esto
+> refina el 2-N02 de
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+> Ver [ADR-0046](0046-renewable-sessions-on-shared-tablets.md).
+
 ### Private Web
 
 - La sesión se renueva 60 segundos antes de que venza el access token. Solo una pestaña

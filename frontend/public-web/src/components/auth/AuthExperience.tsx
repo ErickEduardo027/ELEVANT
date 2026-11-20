@@ -15,7 +15,9 @@ import {
   type MockSignInInput,
   validateSignIn,
 } from "@/lib/mock-auth";
+import { meetsPasswordPolicy, PASSWORD_ERRORS, passwordRequirements } from "@/lib/password-policy";
 import { useAirlineSession, type AirlineLoginChallenge, type AirlineSignInFailure } from "./AirlineSessionProvider";
+import { PasswordRequirements } from "./PasswordRequirements";
 
 import styles from "./AuthExperience.module.css";
 
@@ -30,12 +32,19 @@ type SignInFeedback = {
   message: string;
   kind: "info" | "error";
 };
+type PasswordChangeField = "newPassword" | "confirmPassword";
 
 const SIGN_IN_IDS: Record<SignInInputField, string> = {
   email: "auth-email",
   password: "auth-password",
   remember: "auth-remember",
 };
+
+const PASSWORD_CHANGE_IDS: Record<PasswordChangeField, string> = {
+  newPassword: "airline-new-password",
+  confirmPassword: "airline-confirm-password",
+};
+const CODE_ID = "auth-code";
 
 const INITIAL_SIGN_IN: MockSignInInput = {
   email: "",
@@ -105,8 +114,8 @@ export function CredentialPanel() {
         <p className={styles.kicker}>{label ? `Portal de aerolíneas · ${label}` : "Portal de aerolíneas"}</p>
         <h1 id="auth-title">La operación, visible para quien debe verla.</h1>
         <p className={styles.credentialLead}>
-          Consulta las operaciones de tu aerolínea en las estaciones autorizadas
-          para tu cuenta.
+          Consulte las operaciones de su aerolínea en las estaciones autorizadas
+          para su cuenta.
         </p>
 
         <div className={styles.routeCard}>
@@ -126,7 +135,7 @@ export function CredentialPanel() {
             </div>
             <div>
               <strong>02</strong>
-              <span>Aerolínea y estaciones</span>
+              <span>Código por correo</span>
             </div>
           </div>
           <div className={styles.routeCardBottom}>
@@ -147,14 +156,15 @@ export function CredentialPanel() {
   );
 }
 
+// N19: everything the airline reads in the access addresses it as usted.
 function signInFailureMessage(reason: AirlineSignInFailure): string {
   switch (reason) {
-    case "invalid": return "No se pudo validar la cuenta. Revisa el correo y la contraseña.";
+    case "invalid": return "No se pudo validar la cuenta. Revise el correo y la contraseña.";
     case "forbidden": return "Esta cuenta no tiene acceso al portal de aerolíneas.";
-    case "context": return "Los datos de tu aerolínea no están disponibles ahora. Reintenta en unos minutos.";
-    case "password-change-required": return "Debes cambiar la contraseña temporal antes de entrar.";
-    case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
-    case "unavailable": return "No se pudo conectar con ELEVANT. Comprueba la conexión y reintenta.";
+    case "context": return "Los datos de su aerolínea no están disponibles ahora. Reintente en unos minutos.";
+    case "password-change-required": return "Debe cambiar la contraseña temporal antes de entrar.";
+    case "rate-limited": return "Demasiados intentos. Espere un momento antes de reintentar.";
+    case "unavailable": return "No se pudo conectar con ELEVANT. Compruebe la conexión y reintente.";
   }
 }
 
@@ -181,6 +191,19 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState<Partial<Record<PasswordChangeField, string>>>({});
+  const [passwordChecked, setPasswordChecked] = useState(false);
+  const [codeResent, setCodeResent] = useState(false);
+
+  // N17: each step of the login starts in its first field, whose description explains the step. A resent code keeps
+  // its challenge, so the focus stays where the airline left it.
+  const challengeId = challenge?.challengeId;
+  useEffect(() => {
+    if (challengeId) document.getElementById(CODE_ID)?.focus();
+  }, [challengeId]);
+  useEffect(() => {
+    if (passwordChangeRequired) document.getElementById(PASSWORD_CHANGE_IDS.newPassword)?.focus();
+  }, [passwordChangeRequired]);
 
   const update = <Field extends SignInInputField>(
     field: Field,
@@ -211,7 +234,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       setErrors(validation.fieldErrors);
       setFeedback({
         kind: "error",
-        message: "Revisa los campos indicados para continuar.",
+        message: "Revise los campos indicados para continuar.",
       });
       focusField(SIGN_IN_IDS, validation.firstInvalidField);
       return;
@@ -224,12 +247,19 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     if (result.ok) {
       router.replace(returnTo);
     } else if (result.reason === "code-required") {
+      // The instruction of the code step says what was asked for (1-N08); no message repeats it.
       setChallenge(result.challenge);
       setCode("");
+      setCodeResent(false);
       setResendAvailableAt(Date.now() + 30_000);
-      setFeedback({ kind: "info", message: `Pedimos un código de 6 dígitos para ${result.challenge.emailHint}. Puede tardar unos minutos en llegar; revisa también la carpeta de spam.` });
+    } else if (result.reason === "password-change-required") {
+      // N17: replacing the temporary password is the next step of the login, not an error.
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordErrors({});
+      setPasswordChecked(false);
+      setPasswordChangeRequired(true);
     } else {
-      if (result.reason === "password-change-required") setPasswordChangeRequired(true);
       setFeedback({ kind: "error", message: signInFailureMessage(result.reason) });
     }
   };
@@ -250,7 +280,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     }
     setCode("");
     setFeedback({ kind: "error", message: result.reason === "invalid"
-      ? "El código no es válido o ya venció. Revisa el último correo o pide uno nuevo."
+      ? "El código no es válido o ya venció. Revise el último correo o pida uno nuevo."
       : signInFailureMessage(result.reason as AirlineSignInFailure) });
   };
 
@@ -261,32 +291,49 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     setPending(false);
     if (!next) {
       setChallenge(null);
-      setFeedback({ kind: "error", message: "El código venció o se bloqueó. Inicia sesión de nuevo." });
+      setFeedback({ kind: "error", message: "El código venció o se bloqueó. Inicie sesión de nuevo." });
       return;
     }
     setChallenge(next);
     setCode("");
+    setCodeResent(true);
     setResendAvailableAt(Date.now() + 30_000);
-    setFeedback({ kind: "info", message: `Pedimos un código nuevo para ${next.emailHint}. El anterior ya no sirve.` });
+    setFeedback(null);
   };
 
   const secondsLeft = challenge ? Math.max(0, Math.ceil((Date.parse(challenge.expiresAt) - now) / 1000)) : 0;
   const resendIn = Math.max(0, Math.ceil((resendAvailableAt - now) / 1000));
 
+  const changePasswordField = (field: PasswordChangeField, value: string) => {
+    if (field === "newPassword") setNewPassword(value);
+    else setConfirmPassword(value);
+    setPasswordErrors((current) => withoutKey(current, field));
+  };
+
   const submitPasswordChange = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (newPassword.length < 14 || newPassword !== confirmPassword) {
-      setFeedback({ kind: "error", message: "La nueva contraseña debe tener al menos 14 caracteres y coincidir con la confirmación." });
+    setFeedback(null);
+    // N17: the API would refuse it (its policy, or the temporary password itself), so it is not sent.
+    if (!meetsPasswordPolicy(newPassword, input.password)) {
+      setPasswordChecked(true);
+      setPasswordErrors({ newPassword: PASSWORD_ERRORS.requirements });
+      focusField(PASSWORD_CHANGE_IDS, "newPassword");
       return;
     }
+    if (newPassword !== confirmPassword) {
+      setPasswordErrors({ confirmPassword: PASSWORD_ERRORS.confirmation });
+      focusField(PASSWORD_CHANGE_IDS, "confirmPassword");
+      return;
+    }
+    setPasswordErrors({});
     setPending(true);
     const result = await changePassword({ email: input.email.trim(), currentPassword: input.password, newPassword });
     setPending(false);
     if (!result.ok) {
       const message = result.reason === "invalid" ? "La contraseña actual no es válida."
-        : result.reason === "policy" ? "La nueva contraseña no cumple la política de seguridad."
-          : result.reason === "rate-limited" ? "Demasiados intentos. Espera antes de reintentar."
-            : "No se pudo cambiar la contraseña. Reintenta en unos minutos.";
+        : result.reason === "policy" ? "La nueva contraseña no cumple la política de seguridad. Revise los requisitos de la lista."
+          : result.reason === "rate-limited" ? "Demasiados intentos. Espere antes de reintentar."
+            : "No se pudo cambiar la contraseña. Reintente en unos minutos.";
       setFeedback({ kind: "error", message });
       return;
     }
@@ -294,7 +341,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     setNewPassword("");
     setConfirmPassword("");
     setPasswordChangeRequired(false);
-    setFeedback({ kind: "info", message: "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
+    setFeedback({ kind: "info", message: "Contraseña actualizada. Inicie sesión con su nueva contraseña." });
   };
 
   return (
@@ -307,22 +354,30 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     >
       <header className={styles.formHeader}>
         <p className={styles.formKicker}>Acceso autorizado</p>
-        <h2 id="login-heading">Continúa al portal de tu aerolínea.</h2>
+        <h2 id="login-heading">Continúe al portal de su aerolínea.</h2>
         <p>
-          Utiliza la cuenta emitida para tu aerolínea. Al entrar comprobamos tu
-          acceso y las estaciones autorizadas para tu cuenta.
+          Utilice la cuenta emitida para su aerolínea. Al entrar comprobamos su
+          acceso y las estaciones autorizadas para su cuenta.
         </p>
       </header>
 
       {challenge && <form className={styles.form} onSubmit={submitCode} noValidate aria-labelledby="code-heading">
-        <h3 id="code-heading">Código de verificación por correo</h3>
-        <p>Escribe el código de 6 dígitos del correo que llega a <strong>{challenge.emailHint}</strong>.</p>
-        <Field id="auth-code" name="code" label="Código de verificación" type="text" value={code}
-          autoComplete="one-time-code" inputMode="numeric" maxLength={6}
+        <div className={styles.stepHeader}>
+          <h3 id="code-heading">Código de verificación por correo</h3>
+          {/* 1-N08: the code was only queued, so the one instruction of the step never says it was sent. */}
+          <p id="code-instruction" aria-live="polite" aria-atomic="true">
+            {codeResent ? "Pedimos un código nuevo para " : "Pedimos un código de 6 dígitos para "}
+            <strong>{challenge.emailHint}</strong>
+            {codeResent ? ". El anterior ya no sirve." : "."}
+            {" Puede tardar unos minutos en llegar; revise también la carpeta de spam."}
+          </p>
+        </div>
+        <Field id={CODE_ID} name="code" label="Código de verificación" type="text" value={code}
+          autoComplete="one-time-code" inputMode="numeric" maxLength={6} describedBy="code-instruction"
           onChange={(value) => { setCode(value.replace(/\D/g, "").slice(0, 6)); setFeedback(null); }}
           onBlur={() => {}} required />
         <p className={styles.localOnly} aria-live="polite">
-          {secondsLeft > 0 ? `Vence en ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "El código venció; pide uno nuevo."}
+          {secondsLeft > 0 ? `Vence en ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "El código venció; pida uno nuevo."}
         </p>
         {feedback && <div className={styles.feedback} data-kind={feedback.kind} role={feedback.kind === "error" ? "alert" : "status"}><InfoIcon /><p>{feedback.message}</p></div>}
         <button className={styles.primaryButton} type="submit" disabled={pending || code.length !== 6 || secondsLeft === 0}>
@@ -365,7 +420,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
 
         <div className={styles.formOptions}>
           <span className={styles.localOnly}>Sesión temporal en esta pestaña</span>
-          <Link href="/recuperar">¿Olvidaste tu contraseña?</Link>
+          <Link href="/recuperar">¿Olvidó su contraseña?</Link>
         </div>
 
         {feedback && !challenge && (
@@ -396,19 +451,31 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
 
       </form>
 
-      {passwordChangeRequired && <form className={styles.form} onSubmit={submitPasswordChange} noValidate>
-        <p>Antes de entrar debes reemplazar la contraseña temporal de {input.email}.</p>
-        <PasswordField id="airline-new-password" name="newPassword" label="Nueva contraseña"
-          value={newPassword} autoComplete="new-password" visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
-          onChange={setNewPassword} onBlur={() => {}} />
-        <PasswordField id="airline-confirm-password" name="confirmPassword" label="Confirmar nueva contraseña"
-          value={confirmPassword} autoComplete="new-password" visible={showConfirmPassword} onVisibilityChange={() => setShowConfirmPassword((value) => !value)}
-          onChange={setConfirmPassword} onBlur={() => {}} />
+      {passwordChangeRequired && <form className={styles.form} onSubmit={submitPasswordChange} noValidate
+        aria-labelledby="password-change-heading">
+        <div className={styles.stepHeader}>
+          <h3 id="password-change-heading">Cambio de la contraseña temporal</h3>
+          <p id="password-change-explanation">
+            La contraseña de <strong>{input.email.trim()}</strong> es temporal. Elija una nueva para reemplazarla;
+            después inicie sesión con ella.
+          </p>
+        </div>
+        <PasswordField id={PASSWORD_CHANGE_IDS.newPassword} name="newPassword" label="Nueva contraseña"
+          value={newPassword} error={passwordErrors.newPassword} autoComplete="new-password"
+          describedBy={`password-change-explanation ${PASSWORD_CHANGE_IDS.newPassword}-requirements`}
+          visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
+          onChange={(value) => changePasswordField("newPassword", value)} onBlur={() => {}} />
+        <PasswordRequirements id={`${PASSWORD_CHANGE_IDS.newPassword}-requirements`}
+          requirements={passwordRequirements(newPassword, input.password)} checked={passwordChecked} />
+        <PasswordField id={PASSWORD_CHANGE_IDS.confirmPassword} name="confirmPassword" label="Confirmar nueva contraseña"
+          value={confirmPassword} error={passwordErrors.confirmPassword} autoComplete="new-password"
+          visible={showConfirmPassword} onVisibilityChange={() => setShowConfirmPassword((value) => !value)}
+          onChange={(value) => changePasswordField("confirmPassword", value)} onBlur={() => {}} />
         {feedback && <div className={styles.feedback} data-kind={feedback.kind} role="alert"><InfoIcon /><p>{feedback.message}</p></div>}
         <button className={styles.primaryButton} type="submit" disabled={pending}>Cambiar contraseña</button>
       </form>}
 
-      <p className={styles.requestLink}>¿No tienes credenciales? <Link href="/solicitar-acceso">Solicita acceso aquí</Link></p>
+      <p className={styles.requestLink}>¿No tiene credenciales? <Link href="/solicitar-acceso">Solicite acceso aquí</Link></p>
 
       <p className={styles.formDisclaimer}>
         La sesión se revalida al recargar y termina al cerrar sesión o vencer el token.
@@ -426,6 +493,8 @@ type FieldProps = {
   type?: "text" | "email" | "tel";
   autoComplete: string;
   hint?: string;
+  /** Other elements that describe the field, after its error or hint: an instruction, a list of requirements. */
+  describedBy?: string;
   maxLength?: number;
   inputMode?: "numeric" | "text" | "email";
   required?: boolean;
@@ -434,6 +503,12 @@ type FieldProps = {
   onChange: (value: string) => void;
   onBlur: () => void;
 };
+
+/** The ids the field's aria-describedby names: its error (or else its hint), then the other descriptions. */
+function descriptionIds(id: string, error?: string, hint?: string, describedBy?: string) {
+  const own = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  return [own, describedBy].filter(Boolean).join(" ") || undefined;
+}
 
 function Field({
   id,
@@ -444,6 +519,7 @@ function Field({
   type = "text",
   autoComplete,
   hint,
+  describedBy,
   maxLength,
   inputMode,
   required,
@@ -452,7 +528,7 @@ function Field({
   onChange,
   onBlur,
 }: FieldProps) {
-  const descriptionId = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  const descriptionId = descriptionIds(id, error, hint, describedBy);
 
   return (
     <div className={styles.field} data-wide={wide} data-code={code}>
@@ -501,10 +577,11 @@ function PasswordField({
   error,
   autoComplete,
   hint,
+  describedBy,
   onChange,
   onBlur,
 }: PasswordFieldProps) {
-  const descriptionId = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  const descriptionId = descriptionIds(id, error, hint, describedBy);
 
   return (
     <div className={styles.field}>

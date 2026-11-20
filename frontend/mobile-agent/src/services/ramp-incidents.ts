@@ -15,6 +15,7 @@ import {
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
+  type MobileSessionRequestContext,
 } from './mobile-auth';
 import { registerCurrentMobileDevice } from './mobile-device';
 import { asMobileServiceError } from './mobile-service-error';
@@ -103,10 +104,18 @@ async function confirmSession(sessionId: string) {
   return current;
 }
 
-async function rejectIfRevoked(sessionId: string, error: unknown): Promise<MobileServiceError> {
+/**
+ * The failure of a request with `context`'s credential. A revoked session ends here; 'retry' when the same session
+ * holds a renewed credential and the center loads once more (S3).
+ */
+async function rejectIfRevoked(
+  context: Readonly<{ sessionId: string; accessToken: string }>,
+  error: unknown,
+): Promise<MobileServiceError | 'retry'> {
   const issue = asMobileServiceError(error);
   if (issue.code === 'unauthenticated' || issue.code === 'forbidden') {
-    const cleared = await rejectMobileSessionRequest(sessionId);
+    const cleared = await rejectMobileSessionRequest(context, issue);
+    if (cleared === 'retry') return 'retry';
     if (!cleared) throw new MobileServiceError('cancelled');
     throw issue;
   }
@@ -144,33 +153,42 @@ async function reconcile(
   }
 }
 
+/**
+ * What a flush sent. `renewed` when ELEVANT refused the credential and the session renewed it: the center loads once
+ * more (S3), and `issue` is the refusal if it already did.
+ */
+type FlushResult = { sent: number; issue?: MobileServiceError; renewed?: boolean };
+
 async function flush(
-  sessionId: string,
+  context: MobileSessionRequestContext,
   accountId: string,
   operationId: string,
   signal?: AbortSignal,
-): Promise<{ sent: number; issue?: MobileServiceError }> {
+): Promise<FlushResult> {
+  const sessionId = context.sessionId;
   const pending = (await readOutbox(sessionId, accountId, operationId))
     .filter(item => item.state === 'pending');
   if (pending.length === 0) return { sent: 0 };
 
   let installationId: string;
+  let current = context;
   try {
-    const current = await confirmSession(sessionId);
-    const device = await registerCurrentMobileDevice(
-      { accessToken: current.accessToken }, { signal });
+    current = await confirmSession(sessionId);
+    const device = await registerCurrentMobileDevice(current, { signal });
     await confirmSession(sessionId);
     installationId = device.installationId;
   } catch (error) {
-    return { sent: 0, issue: await rejectIfRevoked(sessionId, error) };
+    const issue = await rejectIfRevoked(current, error);
+    return issue === 'retry' ? { sent: 0, issue: asMobileServiceError(error), renewed: true } : { sent: 0, issue };
   }
 
   let sent = 0;
   for (const item of pending) {
     try {
-      const current = await confirmSession(sessionId);
+      current = await confirmSession(sessionId);
+      const sending = current;
       await createMobileAgentApiClient({
-        getAccessToken: () => current.accessToken,
+        getAccessToken: () => sending.accessToken,
       }).reportRampIncident(
         operationId, item.request, installationId, item.idempotencyKey, { signal });
       await confirmSession(sessionId);
@@ -179,7 +197,8 @@ async function flush(
       if (updated.kind !== 'current') throw new MobileServiceError('cancelled');
       sent += 1;
     } catch (error) {
-      const issue = await rejectIfRevoked(sessionId, error);
+      const issue = await rejectIfRevoked(current, error);
+      if (issue === 'retry') return { sent, issue: asMobileServiceError(error), renewed: true };
       if (
         issue.code === 'not_found' || issue.code === 'conflict' ||
         issue.status === 400 || issue.status === 413 || issue.status === 415
@@ -195,9 +214,21 @@ async function flush(
 }
 
 /** Reads canonical reports, reconciles exact retries, then flushes queued reports in FIFO order. */
-export async function loadRampIncidentCenter(
+export function loadRampIncidentCenter(
   operationId: string,
   options: { signal?: AbortSignal } = {},
+): Promise<RampIncidentCenter> {
+  return loadIncidentCenter(operationId, options, false);
+}
+
+/**
+ * When ELEVANT refused the credential and the session renewed it, the center loads once more (S3): the reports keep
+ * their keys and the reconciliation drops what ELEVANT already has.
+ */
+async function loadIncidentCenter(
+  operationId: string,
+  options: { signal?: AbortSignal },
+  retried: boolean,
 ): Promise<RampIncidentCenter> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const context = await getMobileSessionRequestContext();
@@ -214,25 +245,35 @@ export async function loadRampIncidentCenter(
     online = true;
     await reconcile(context.sessionId, accountId, operationId, incidents);
   } catch (error) {
-    issue = await rejectIfRevoked(context.sessionId, error);
+    const failure = await rejectIfRevoked(context, error);
+    if (failure === 'retry') {
+      if (!retried) return loadIncidentCenter(operationId, options, true);
+      throw asMobileServiceError(error);
+    }
+    issue = failure;
     if (issue.code === 'cancelled') throw issue;
   }
 
   let sent = 0;
   if (online) {
-    const flushed = await flush(context.sessionId, accountId, operationId, options.signal);
+    const flushed = await flush(context, accountId, operationId, options.signal);
+    if (flushed.renewed && !retried) return loadIncidentCenter(operationId, options, true);
     sent = flushed.sent;
     issue = flushed.issue;
     if (sent > 0) {
+      let reader = context;
       try {
-        const current = await confirmSession(context.sessionId);
+        reader = await confirmSession(context.sessionId);
+        const current = reader;
         const updated = await createMobileAgentApiClient({
           getAccessToken: () => current.accessToken,
         }).getRampIncidents(operationId, { signal: options.signal });
         await confirmSession(context.sessionId);
         incidents = updated.incidents;
       } catch (error) {
-        issue = await rejectIfRevoked(context.sessionId, error);
+        const failure = await rejectIfRevoked(reader, error);
+        if (failure === 'retry' && !retried) return loadIncidentCenter(operationId, options, true);
+        issue = failure === 'retry' ? asMobileServiceError(error) : failure;
       }
     }
   }

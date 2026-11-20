@@ -78,14 +78,17 @@ describe('device registration reuse', () => {
   });
 
   test('reuses a confirmed registration only for opted-in reads of the same session', async () => {
-    await registerCurrentMobileDevice({ accessToken: 'token-a' });
-    await registerCurrentMobileDevice({ accessToken: 'token-a' }, { reuseForSession: true });
+    await registerCurrentMobileDevice({ accessToken: 'token-a', sessionId: 'session-a' });
+    await registerCurrentMobileDevice({ accessToken: 'token-a', sessionId: 'session-a' }, { reuseForSession: true });
     expect(mockRegisterMobileDevice).toHaveBeenCalledTimes(1);
 
-    await registerCurrentMobileDevice({ accessToken: 'token-a' });
+    await registerCurrentMobileDevice({ accessToken: 'token-a', sessionId: 'session-a' });
     expect(mockRegisterMobileDevice).toHaveBeenCalledTimes(2);
 
-    await registerCurrentMobileDevice({ accessToken: 'token-b' }, { reuseForSession: true });
+    // S3: a renewed token of the same session reuses it; another session registers again.
+    await registerCurrentMobileDevice({ accessToken: 'token-a2', sessionId: 'session-a' }, { reuseForSession: true });
+    expect(mockRegisterMobileDevice).toHaveBeenCalledTimes(2);
+    await registerCurrentMobileDevice({ accessToken: 'token-b', sessionId: 'session-b' }, { reuseForSession: true });
     expect(mockRegisterMobileDevice).toHaveBeenCalledTimes(3);
   });
 });

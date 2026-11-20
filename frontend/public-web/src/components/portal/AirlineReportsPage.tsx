@@ -53,7 +53,7 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Consulta autorizada · {airlineName}</span>
       <h1>Reportes operativos y financieros</h1>
-      <p>Consulta las operaciones y facturas de tu aerolínea. Esta vista muestra la primera página de cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.</p>
+      <p>Consulte las operaciones y facturas de su aerolínea. Esta vista muestra la primera página de cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.</p>
     </header>
     {!visible && !failed && <p role="status">Cargando reportes autorizados…</p>}
     {failed && <div role="alert" className={styles.unavailable}>

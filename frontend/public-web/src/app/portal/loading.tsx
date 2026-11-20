@@ -8,7 +8,7 @@ export default function PortalLoading() {
       <div className={styles.cardGrid} aria-hidden="true">
         <i /><i /><i /><i />
       </div>
-      <p>Aplicando el alcance de tu aerolínea y estación.</p>
+      <p>Aplicando el alcance de su aerolínea y estación.</p>
     </div>
   );
 }

@@ -112,6 +112,17 @@ la fase 2 del ciclo (`50e7778f`;
   libera al cerrar la sesión. OCC la desvincula o la revoca; una tablet
   revocada no vuelve a registrarse y su cuenta pierde sus sesiones, porque la
   revocación rota su sello de seguridad.
+- **Sesión de la tablet.** Posterior a la fase 2
+  ([ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)):
+  cada sesión del agente tiene su propio vínculo y empieza al iniciar sesión.
+  El access token lleva ese instante como `auth_time` y la renovación lo
+  conserva, así que registrar la tablet con un token renovado no abre otro
+  vínculo, no audita nada y no avisa a OCC; un inicio de sesión nuevo sí abre
+  otro. Un token sin `auth_time`, emitido antes de ese cambio, usa su `iat`.
+  Por decisión de Erick del 2026-11-19, la sesión de una cuenta de rampa no
+  tiene tope absoluto: termina al cerrar sesión, con la revocación de OCC, a
+  los 30 días sin uso, si se reutiliza un refresh token ya reemplazado o si la
+  cuenta cambia de contraseña, se desactiva o se da de baja.
 
 ## Fase 3: la operación sigue a su agente
 
@@ -132,8 +143,12 @@ A, B y C, `34e90aad`;
   de modo que una operación cuyo contrato se reactiva puede iniciarse. El chat y
   la observación de asistencia no usan ese recibo: se deduplican por su propia
   clave.
-- **Evidencia en una tablet compartida.** Un `401`, un `403` o el cierre de
-  sesión borran la credencial y las cachés, pero lo que ELEVANT no confirmó
+- **Evidencia en una tablet compartida.** Un `403`, una renovación que ELEVANT
+  rechaza (`401`), una sesión que ya no puede renovarse o el cierre de sesión
+  borran la credencial y las cachés; un `401` de una solicitud primero fuerza una
+  renovación y la solicitud se repite una vez (posterior a la fase 3, hallazgo
+  S3; [ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)).
+  En todos esos casos, lo que ELEVANT no confirmó
   queda en el dispositivo, ligado a su cuenta: solo esa cuenta lo lee y lo envía
   al volver a entrar. Otro agente que use la tablet ve cuántos registros de otra
   cuenta hay, pero no puede verlos ni descartarlos. Eso incluye notas de
@@ -142,6 +157,14 @@ A, B y C, `34e90aad`;
   descartar los que ELEVANT rechazó y las fotos del walk-around que no llegan a
   ELEVANT: la que ELEVANT no pudo guardar, la que la tablet no puede leer y la de
   una marca rechazada.
+- **Checklist después del fin de la sesión.** Posterior a la fase 3 (hallazgo
+  N5): cuando la sesión de una cuenta vence o ELEVANT la rechaza, lo que esa
+  cuenta marca en el checklist que tenía abierto se sigue guardando en la tablet
+  durante 2 horas desde el fin, sin sesión ni red (D-N5). Ninguna otra cuenta
+  puede escribir ese borrador, el cierre de sesión a propósito lo impide y solo
+  esa cuenta lo lee y lo envía al volver a entrar. Los comandos de la cola no se
+  aceptan sin sesión
+  ([ADR-0046](../../docs/adr/0046-renewable-sessions-on-shared-tablets.md)).
 
 ## Vocabulario de ciclo de vida
 

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { ElevantApiError, type ContractDocumentResponse } from "@elevant/api-client";
 import { AirlineContractSignature } from "@/components/portal/AirlineContractSignature";
 import { contractProblem } from "@/lib/contract-problems";
+import { FIELD, PRIMARY_BUTTON, portalDeclarations } from "./support/portal-styles";
 
 const sha = "c".repeat(64);
 const document: ContractDocumentResponse = { contractId: "c-1", versionId: "v-1", contractCode: "CT-001",
@@ -60,6 +61,27 @@ it("downloads the PDF and signs for the airline over the content hash with a sta
   await screen.findByText("Firmado por ambas partes el 2026-10-26.");
   expect(session.signContract).toHaveBeenLastCalledWith("v-1", "Luis Marte", "Director", sha, png, key);
   expect(screen.queryByRole("button", { name: "Acepto y firmo" })).not.toBeInTheDocument();
+});
+
+// N18: the airline accepts the contract before drawing its signature, as AVIAM countersigns, and only the form's own
+// button is primary: «Borrar firma» keeps the secondary look of the signature pad.
+it("asks for the acceptance before the drawn signature and keeps «Borrar firma» secondary (N18)", async () => {
+  render(<AirlineContractSignature versionId="v-1" fileName="contrato-CT-001-v1.pdf" />);
+  const submit = await screen.findByRole("button", { name: "Acepto y firmo" });
+  const controls = [...submit.closest("form")!.querySelectorAll("input, canvas, button")].map(control =>
+    control instanceof HTMLCanvasElement ? "firma"
+      : control instanceof HTMLInputElement ? control.type === "checkbox" ? "casilla" : control.labels?.[0]?.textContent
+        : control.textContent);
+  expect(controls).toEqual(["Nombre completo de quien firma", "Cargo", "casilla", "firma", "Borrar firma", "Acepto y firmo"]);
+  fireEvent.click(submit);
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Escriba su nombre completo y cargo, confirme que acepta el contrato y dibuje su firma.");
+
+  expect(portalDeclarations(submit)).toContain(PRIMARY_BUTTON);
+  expect(portalDeclarations(screen.getByRole("button", { name: "Borrar firma" }))).not.toContain(PRIMARY_BUTTON);
+  for (const label of ["Nombre completo de quien firma", "Cargo"])
+    expect(portalDeclarations(screen.getByLabelText(label))).toEqual(expect.arrayContaining(FIELD));
+  expect(portalDeclarations(screen.getByRole("checkbox"))).not.toContain(FIELD[0]);
 });
 
 it("waits for Contratos to fix the validity before offering the signature", async () => {

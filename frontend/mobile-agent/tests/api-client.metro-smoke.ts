@@ -8,8 +8,11 @@ export const apiClientBundleSmoke = createMobileAgentApiClient({
 if (
   typeof apiClientBundleSmoke.createSession !== 'function' ||
   typeof apiClientBundleSmoke.getCurrentSession !== 'function' ||
+  typeof apiClientBundleSmoke.refreshSession !== 'function' ||
+  typeof apiClientBundleSmoke.endSession !== 'function' ||
   typeof apiClientBundleSmoke.getRampAssignedOperations !== 'function' ||
   typeof apiClientBundleSmoke.registerMobileDevice !== 'function' ||
+  typeof apiClientBundleSmoke.releaseMobileDevice !== 'function' ||
   typeof apiClientBundleSmoke.startRampOperation !== 'function' ||
   typeof apiClientBundleSmoke.getSystemPing !== 'function'
 ) {
