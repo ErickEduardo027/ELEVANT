@@ -3,7 +3,8 @@
 // the fold. A scroll that starts on the pad and takes the gesture away (Android's scroll view terminates the pad's
 // responder; it never releases it) drops the stroke in progress and gives the scroll back; the strokes already kept stay.
 // The Service Order's total says it is a contract-price subtotal without ITBIS (N4, D-N4), and the forms whose
-// signatures the hand-off to OCC does not wait for say so and use a secondary button (N3, D-N3).
+// signatures the hand-off to OCC does not wait for say so and use a secondary button (N3, D-N3). A Service Order that
+// lacks passengers or the MTOW says so on its row and at the top of its sheet, without holding the signature (S1, D-S1).
 const React = require('react');
 const renderer = require('react-test-renderer');
 
@@ -533,6 +534,82 @@ describe('signatures the hand-off to OCC does not wait for (N3, D-N3)', () => {
     expect(StyleSheet.flatten(button.props.style({ pressed: false })).backgroundColor).toBe(colors.white);
     expect(button.props.accessibilityLabel).toBe('Firmar: Coordinador');
     expect(button.props.accessibilityHint).toBeUndefined();
+  });
+});
+
+// S1 (D-S1): the Service Order was signed with «Pasajeros —» and «MTOW —» and nothing warned before signing. It warns
+// now, and the signature is never held: 0 passengers is a value, a missing MTOW only warns.
+describe('the Service Order warns about missing flight data and never holds the signature (S1, D-S1)', () => {
+  const WRITE = 'Faltan los pasajeros que llegan y el MTOW en la Orden. Escríbelos en «Datos del vuelo» antes de firmar.';
+  const incomplete = (overrides = {}) => ({ ...serviceOrderWith({ passengersIn: null, mtowKg: null }), ...overrides });
+  const warningIn = scope => scope.findAll(node => node.type === 'Text' && /^Faltan? /.test(textOf(node)))[0];
+  const rowWarning = tree => warningIn(documentRow(tree, 'Orden de Servicio'));
+
+  test('its row and the top of its sheet say what is missing, and FIRMAR still signs', async () => {
+    const tree = await render([incomplete()]);
+    expect(textOf(rowWarning(tree))).toBe(WRITE);
+    expect(boxAbove(rowWarning(tree)).findAll(node => node.props.name === 'warning-outline')).toHaveLength(1);
+    expect(contrast(StyleSheet.flatten(rowWarning(tree).props.style).color, colors.paleOrange)).toBeGreaterThanOrEqual(4.5);
+    // The row's FIRMAR is not held, and a screen reader that jumps to it hears the warning.
+    const [airline] = signButtons(documentRow(tree, 'Orden de Servicio'));
+    expect(airline.props.disabled).toBe(false);
+    expect(airline.props.accessibilityHint).toBe(WRITE);
+
+    await openSheet(tree);
+    const body = scroll(tree);
+    const warning = warningIn(body);
+    expect(textOf(warning)).toBe(WRITE);
+    const nodes = body.findAll(() => true);
+    const name = body.findAll(node => node.type === 'TextInput' && node.props.accessibilityLabel === 'Nombre de quien firma')[0];
+    expect(nodes.indexOf(warning)).toBeGreaterThan(-1);
+    expect(nodes.indexOf(warning)).toBeLessThan(nodes.indexOf(name));
+    // The facts still show what the signer signs.
+    expect(sheetTexts(tree)).toContain('— llegan · 138 salen');
+    await type(tree, 'Nombre de quien firma', 'Ana Pérez');
+    await drawStroke(tree, [[60, 30], [120, 60]]);
+    expect(sheetButton(tree, 'FIRMAR').props.disabled).toBe(false);
+    await press(sheetButton(tree, 'FIRMAR'));
+    expect(mockSign).toHaveBeenCalledWith(OPERATION_ID, 'ServiceOrder', 'AirlineRepresentative', 'Ana Pérez', SHA,
+      [[0.1, 0.15, 0.2, 0.3]], undefined);
+  });
+
+  test('a signed Order says that saving them asks for the signatures again', async () => {
+    const tree = await render([incomplete({ signatures: [{ role: 'AirlineRepresentative', signerName: 'Ana Pérez',
+      signedAt: '2026-10-05T15:00:00Z' }] })]);
+    expect(textOf(rowWarning(tree))).toBe('Faltan los pasajeros que llegan y el MTOW en la Orden. Si los guardas ahora ' +
+      'en «Datos del vuelo», hay que volver a firmarla.');
+    await openSheet(tree, 'AVIAM · Responsable');
+    expect(textOf(warningIn(scroll(tree)))).toBe(textOf(rowWarning(tree)));
+  });
+
+  test('0 passengers is a value: only the missing MTOW is said', async () => {
+    const tree = await render([serviceOrderWith({ passengersIn: 0, passengersOut: 0, mtowKg: null })]);
+    expect(textOf(rowWarning(tree))).toBe('Falta el MTOW en la Orden. Escríbelo en «Datos del vuelo» antes de firmar.');
+  });
+
+  test('flight data saved on the device is on its way, not to be written again', async () => {
+    const tree = await render([incomplete()], { items: [{ idempotencyKey: '91000000-0000-4000-8000-000000000010',
+      state: 'pending', attempts: 0, createdAt: '2026-10-05T15:00:00.000Z', command: { kind: 'flightData',
+        operationId: OPERATION_ID, passengersIn: 142, passengersOut: 138, mtowKg: 78000, aircraftRegistration: null } }] });
+    expect(textOf(rowWarning(tree))).toBe('Faltan los pasajeros que llegan y el MTOW en la Orden. Lo que guardaste en ' +
+      '«Datos del vuelo» llega a la Orden cuando se envíe a ELEVANT.');
+  });
+
+  test('after the hand-off it only says what is missing', async () => {
+    const tree = await render([incomplete()], { executionOpen: false });
+    expect(textOf(rowWarning(tree))).toBe('Faltan los pasajeros que llegan y el MTOW en la Orden.');
+  });
+
+  test('only the Order warns; complete data or a form read without its summary say nothing', async () => {
+    let tree = await render([flightReport({ summary: { ...serviceOrder().summary, passengersIn: null, mtowKg: null } })]);
+    expect(warningIn(tree.root)).toBeUndefined();
+    tree = await render([serviceOrder()]);
+    expect(warningIn(tree.root)).toBeUndefined();
+    const bare = serviceOrder();
+    delete bare.summary;
+    tree = await render([bare]);
+    expect(warningIn(tree.root)).toBeUndefined();
+    expect(signButtons(documentRow(tree, 'Orden de Servicio'))).toHaveLength(2);
   });
 });
 

@@ -449,6 +449,39 @@ Details, se explica en español y espera en «Sincronización» a que el agente 
 revise. La pantalla de la operación muestra lo que espera en la cola aplicado
 sobre la vista de ELEVANT o su copia guardada, marcado «En el dispositivo».
 
+Desde el hallazgo S1 de la corrida del VPS del 16 de noviembre, «Datos del
+vuelo» lee cada campo tal como se escribió (`src/utils/flight-data.ts`), con los
+límites de ELEVANT (`RampExecutionPolicy.HasValidFlightData`):
+
+- `parseWholeNumber` acepta solo dígitos ASCII, con miles separados por coma,
+  espacio o espacio de no separación en grupos de tres («351,500», «1 000»). Un
+  punto, un signo, decimales, un exponente o dígitos no ASCII son un error:
+  «1.5» ya no se lee como 15, ni «-5» como 5, ni un texto como NaN. Un campo
+  vacío no es 0: viaja como null, también cuando borra un valor confirmado.
+- `validateFlightDataDraft` da un mensaje por campo, con su rango: pasajeros de
+  0 a 999, MTOW de 1,000 a 700,000 kg y matrícula de 2 a 10 letras, números o
+  guiones. Un MTOW de 1 a 999 pregunta «¿Toneladas?» y dice cuántos kg serían.
+  Mientras haya un error no se guarda nada: el campo se marca en rojo, su
+  mensaje va debajo y en `accessibilityHint`, un resumen acompaña al botón y el
+  foco va al primer campo con error.
+- Los campos muestran el rango y la unidad («0 a 999», «1,000 a 700,000 kg»),
+  admiten 4 caracteres en pasajeros y 9 en el MTOW, y la tecla «Siguiente» pasa
+  al campo que sigue.
+- Un campo que el agente no tocó muestra siempre lo guardado. Los datos que
+  esperan en la cola aparecen aunque la cola se lea después de abrir la
+  pantalla, sin pisar lo que el agente ya escribió, y un guardado aceptado
+  vuelve a mostrar lo guardado. La respuesta de ELEVANT manda sobre la operación
+  leída antes, también cuando dice que un valor se borró.
+- «Faltan: …» dice qué les falta todavía a los formularios y «Sin guardar», que
+  hay algo escrito sin guardar. La insignia sigue diciendo dónde está lo
+  guardado: con un solo valor también dice «Confirmado».
+- Faltar pasajeros o el MTOW solo avisa (D-S1): 0 pasajeros es un valor, la
+  Orden de Servicio se firma igual, también después del push-back, y el servidor
+  no tiene una regla nueva. La fila de la Orden y el principio de su hoja de
+  firma dicen qué falta y qué hacer: escribirlo antes de firmar; si la Orden ya
+  tiene una firma, que guardarlo obliga a firmarla de nuevo, y si los datos
+  esperan en la cola, que llegan a la Orden al enviarse.
+
 La entrega final a OCC sigue reservando su payload y su clave antes de tocar la
 red y requiere conexión, checklist enviado, servicios terminados y cola de
 incidencias sincronizada. Desde el hueco 3-N06 la tablet vacía antes su cola y
@@ -467,8 +500,9 @@ comprueba todos los requisitos de la entrega, no solo la firma:
 
 - `handoffRequirements` (`src/features/assigned-operations/handoff.ts`) da, en
   orden, «Servicios terminados», «Checklist enviado», «Incidencias enviadas»,
-  «Orden de Servicio firmada» y «Registros enviados a ELEVANT», cada uno con su
-  estado (listo, falta, por confirmar o aviso) y si bloquea. La tarjeta de
+  «Datos del vuelo completos», «Orden de Servicio firmada» y «Registros
+  enviados a ELEVANT», cada uno con su estado (listo, falta, por confirmar o
+  aviso) y si bloquea. La tarjeta de
   entrega los muestra con un icono y una frase
   (`src/components/handoff-requirements.tsx`), y lo que falta ofrece su salida:
   ABRIR CHECKLIST, ABRIR INCIDENCIAS o ABRIR SINCRONIZACIÓN. El ABRIR CHECKLIST
@@ -478,6 +512,12 @@ comprueba todos los requisitos de la entrega, no solo la firma:
   los formularios aún sin leer quedan «por confirmar» y no bloquean: el servicio
   los vuelve a comprobar antes de enviar. Un envío del checklist que espera en
   la cola lo cubre el requisito de la cola.
+- «Datos del vuelo completos» (hallazgo S1, D-S1) es un aviso que nunca
+  bloquea. Lee el resumen de la Orden de Servicio: si le faltan los pasajeros o
+  el MTOW, lo dice y, con la Orden firmada, añade que se puede entregar sin
+  ellos y que guardarlos ahora obliga a firmarla de nuevo. Si los datos esperan
+  en la cola (`flightDataQueuedFor`), dice que llegan a la Orden al enviarse;
+  sin el resumen, queda «por confirmar». El servicio de entrega no lo comprueba.
 - La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
   actualizar a mano y tras abrir la corrección, nunca con cada recarga del feed;
   una lectura que encuentra la sesión terminada lleva al acceso. Cuenta las

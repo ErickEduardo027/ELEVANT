@@ -338,8 +338,9 @@ describe('the close lists and checks every requirement (N1)', () => {
   const CHECKLIST_ID = '72000000-0000-4000-8000-000000000001';
   const read = (status, fromCache = false) => ({ operationId, fromCache, checklist: { id: CHECKLIST_ID, status } });
   const signedOrder = { [operationId]: { operationId, damageMarks: [], documents: [
-    { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [] }] } };
-  const ROW = /^(Servicios terminados|Checklist enviado|Incidencias enviadas|Orden de Servicio firmada|Registros enviados a ELEVANT): /;
+    { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [],
+      summary: { passengersIn: 142, passengersOut: 138, mtowKg: 78000 } }] } };
+  const ROW = /^(Servicios terminados|Checklist enviado|Incidencias enviadas|Datos del vuelo completos|Orden de Servicio firmada|Registros enviados a ELEVANT): /;
 
   /** What each requirement row says to a screen reader: «label: state[. detail]». */
   const rows = scope => scope.findAll(node => node.type === 'View' && node.props.accessible === true &&
@@ -393,7 +394,8 @@ describe('the close lists and checks every requirement (N1)', () => {
     mockQueue = { revisions: {}, items: [], documents: signedOrder };
     const tree = await render();
     expect(rows(tree.root)).toEqual(['Servicios terminados: listo', 'Checklist enviado: listo',
-      'Incidencias enviadas: listo', 'Orden de Servicio firmada: listo', 'Registros enviados a ELEVANT: listo']);
+      'Incidencias enviadas: listo', 'Datos del vuelo completos: listo', 'Orden de Servicio firmada: listo',
+      'Registros enviados a ELEVANT: listo']);
     expect(button(tree, 'ENTREGAR A OCC').props.disabled).toBe(false);
     await renderer.act(async () => tree.unmount());
   });
@@ -409,7 +411,7 @@ describe('the close lists and checks every requirement (N1)', () => {
       expect(submission().submitRampOperation).not.toHaveBeenCalled();
       // The sheet lists what the tablet checked and says the execution closes.
       const sheet = modal(tree);
-      expect(rows(sheet)).toHaveLength(5);
+      expect(rows(sheet)).toHaveLength(6);
       expect(missing(sheet)).toEqual([]);
       expect(textOf(sheet)).toContain('Al entregar, la ejecución queda cerrada para la revisión de OCC: ya no podrás ' +
         'cambiar los servicios, los cargos ni el checklist.');
@@ -595,5 +597,65 @@ describe('the close lists and checks every requirement (N1)', () => {
     const tree = await render();
     expect(tree.root.findByType(RampOperationChargesCard).props.executionClosed).toBe(executionClosed);
     await renderer.act(async () => tree.unmount());
+  });
+
+  // S1 (D-S1): the Service Order was handed off with «Pasajeros —» and «MTOW —» and nothing warned. The close now says
+  // so in its own row, a warning that never holds the hand-off; the server keeps its rule.
+  describe('missing flight data warns before the hand-off and never holds it (S1, D-S1)', () => {
+    const FLIGHT_ROW = /^Datos del vuelo completos: /;
+    const flightRow = scope => rows(scope).filter(label => FLIGHT_ROW.test(label));
+    const orderWith = (summary, extra = {}) => ({ [operationId]: { operationId, damageMarks: [], documents: [
+      { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [], ...(summary ? { summary } : {}), ...extra }] } });
+    const WARNING = 'Datos del vuelo completos: revisar. Faltan los pasajeros que llegan y el MTOW en la Orden. Puedes ' +
+      'entregar sin ellos; si los guardas ahora, hay que volver a firmarla.';
+
+    test('a signed Order without passengers or MTOW warns that it would be signed again, and ENTREGAR stays on',
+      async () => {
+        mockGetAssigned.mockResolvedValue(ready());
+        mockQueue = { revisions: {}, items: [], documents: orderWith({ passengersIn: null, passengersOut: 138, mtowKg: null }) };
+        const tree = await render();
+        expect(flightRow(tree.root)).toEqual([WARNING]);
+        expect(missing(tree.root)).toEqual([]);
+        expect(button(tree, 'ENTREGAR A OCC').props.disabled).toBe(false);
+        // The sheet lists it before the agent hands off, and still hands off.
+        await press(button(tree, 'ENTREGAR A OCC'));
+        expect(flightRow(modal(tree))).toEqual([WARNING]);
+        expect(sheetButton(tree, 'ENTREGAR A OCC').props.disabled).toBe(false);
+        await press(sheetButton(tree, 'ENTREGAR A OCC'));
+        expect(submission().submitRampOperation).toHaveBeenCalledTimes(1);
+        await renderer.act(async () => tree.unmount());
+      });
+
+    test('flight data still in the queue is on its way; the queue is what holds the hand-off', async () => {
+      mockGetAssigned.mockResolvedValue(ready());
+      mockQueue = { revisions: {}, documents: orderWith({ passengersIn: 142, passengersOut: 138, mtowKg: null }),
+        items: [{ idempotencyKey: '91000000-0000-4000-8000-000000000004', state: 'pending', attempts: 0,
+          createdAt: '2026-10-05T14:30:00.000Z', command: { kind: 'flightData', operationId, passengersIn: 142,
+            passengersOut: 138, mtowKg: 78000, aircraftRegistration: null } }] };
+      const tree = await render();
+      expect(flightRow(tree.root)).toEqual(['Datos del vuelo completos: revisar. Falta el MTOW en la Orden. Lo que ' +
+        'guardaste en «Datos del vuelo» llega a la Orden cuando se envíe a ELEVANT.']);
+      expect(missing(tree.root)).toEqual([
+        'Registros enviados a ELEVANT: falta. Falta 1 registro por enviar a ELEVANT: abre Sincronización.']);
+      await renderer.act(async () => tree.unmount());
+    });
+
+    test('0 passengers and the MTOW are complete', async () => {
+      mockGetAssigned.mockResolvedValue(ready());
+      mockQueue = { revisions: {}, items: [], documents: orderWith({ passengersIn: 0, passengersOut: 0, mtowKg: 70000 }) };
+      const tree = await render();
+      expect(flightRow(tree.root)).toEqual(['Datos del vuelo completos: listo']);
+      await renderer.act(async () => tree.unmount());
+    });
+
+    test('an Order read without its summary does not break the close: the flight data is to confirm', async () => {
+      mockGetAssigned.mockResolvedValue(ready());
+      mockQueue = { revisions: {}, items: [], documents: orderWith(null) };
+      const tree = await render();
+      expect(flightRow(tree.root)).toEqual(['Datos del vuelo completos: por confirmar. La tablet aún no leyó los datos ' +
+        'de la Orden de Servicio.']);
+      expect(button(tree, 'ENTREGAR A OCC').props.disabled).toBe(false);
+      await renderer.act(async () => tree.unmount());
+    });
   });
 });

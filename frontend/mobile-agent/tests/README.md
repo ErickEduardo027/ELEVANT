@@ -202,5 +202,26 @@ moverse la cola, nunca con el feed. `flight-screen-notices.test.js` confirma la
 entrega en la hoja. Las demás pruebas que montan el manifiesto simulan los dos
 servicios nuevos.
 
+`flight-data.test.js` fija la lectura de los datos del vuelo (S1, D-S1):
+`parseWholeNumber` con los bordes 0, 999, 1000, «1 000» y 700000, los miles
+con coma, espacio o espacio de no separación, y el rechazo de «1.500», «78.5»,
+«78,00», «-0», «1e5» y los dígitos no ASCII; un campo vacío es null, nunca 0.
+`validateFlightDataDraft` da un mensaje por campo con su rango y pregunta
+«¿Toneladas?» con un MTOW de 1 a 999; también fija «Faltan: …» y los avisos de
+la Orden. `flight-data-card.test.js` monta la tarjeta con una cola simulada que
+anuncia lo guardado antes de resolver, como el servicio: «142138» pasajeros y un
+MTOW de 78 dan un mensaje cada uno, no guardan nada y llevan el foco a
+«Pasajeros que llegan» (el contexto de `TextInput.prototype.focus`); «-5»,
+«1.5» y «abc» se rechazan; `maxLength` se comprueba por prop, porque
+react-test-renderer no lo aplica; «351,500» se guarda como 351500; 0 pasajeros
+vale; borrar un valor confirmado envía null; la cola que llega después del
+primer render se ve sin pisar lo escrito, y «Faltan» y «Sin guardar» no cambian
+la insignia. `handoff-requirements.test.js` fija el requisito «Datos del vuelo
+completos», que avisa y nunca bloquea, `operation-offline-queue.test.js` lo
+recorre en el cierre y en su hoja, y `operation-documents-sheet.test.js`
+comprueba el aviso en la fila de la Orden y al principio de su hoja sin apagar
+FIRMAR. En las tres, una Orden firmada menciona volver a firmar y un formulario
+sin `summary` no falla.
+
 Siguen pendientes las pruebas de integración en dispositivo para conectividad,
 permisos y la futura sincronización de comandos.

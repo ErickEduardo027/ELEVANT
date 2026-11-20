@@ -7,7 +7,7 @@ import {
 } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   recordMilestone,
@@ -23,6 +23,18 @@ import { EVIDENCE_CLOCK_TOLERANCE_MS, serverNow } from '../../synchronization/se
 import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
 import { formatStationDate, formatStationTime } from '../../utils/date-format';
+import {
+  FLIGHT_DATA_FIELDS,
+  FLIGHT_DATA_LABELS,
+  FLIGHT_DATA_PLACEHOLDERS,
+  missingFlightData,
+  missingFlightDataLine,
+  refusedFlightDataSummary,
+  validateFlightDataDraft,
+  type FlightDataDraft,
+  type FlightDataField,
+  type FlightDataValues,
+} from '../../utils/flight-data';
 import { PrimaryButton } from '../ui';
 
 type Operation = RampAssignedOperationResponse;
@@ -263,7 +275,26 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
   );
 }
 
-const toInt = (text: string) => (text.trim() === '' ? null : Number.parseInt(text.replace(/\D/g, ''), 10));
+/** S1: what each field takes; a passenger count fits in 4 characters and the MTOW in 9 («700,000» with room to spare). */
+const FIELD_LENGTH: Readonly<Record<FlightDataField, number>> = {
+  passengersIn: 4, passengersOut: 4, mtowKg: 9, aircraftRegistration: 10,
+};
+
+/** What a screen reader says of a field without an error: its range, as its placeholder shows it. */
+const FIELD_HINTS: Readonly<Record<FlightDataField, string>> = {
+  passengersIn: `De ${FLIGHT_DATA_PLACEHOLDERS.passengersIn}`,
+  passengersOut: `De ${FLIGHT_DATA_PLACEHOLDERS.passengersOut}`,
+  mtowKg: `De ${FLIGHT_DATA_PLACEHOLDERS.mtowKg}`,
+  aircraftRegistration: 'De 2 a 10 letras, números o guiones',
+};
+
+/** The saved flight data as its fields show it. */
+const fieldsOf = (saved: FlightDataValues): FlightDataDraft => ({
+  passengersIn: saved.passengersIn?.toString() ?? '',
+  passengersOut: saved.passengersOut?.toString() ?? '',
+  mtowKg: saved.mtowKg?.toString() ?? '',
+  aircraftRegistration: saved.aircraftRegistration ?? '',
+});
 
 /** The active aircraft types of ELEVANT; without them (no signal and no copy, an older server) the type is read-only. */
 function useAircraftTypeCatalog() {
@@ -282,28 +313,44 @@ function useAircraftTypeCatalog() {
  * Passengers, MTOW, registration and aircraft type, typed once; every AVIAM form takes them from here. The type (3-B)
  * is chosen from ELEVANT's catalog only while the operation runs: the ground-time allowance and the package-exceeded
  * surcharge read it. Leaving it untouched keeps the current one.
+ * S1: each field is read exactly (`validateFlightDataDraft`) and says its own error with its range; the first wrong
+ * one takes the focus and nothing is saved. A field the agent has not touched shows the saved data, so the queue read
+ * after the first render, or a save, shows at once, and what the agent typed is never overwritten. «Faltan…» says what
+ * the forms still lack and «Sin guardar» what is not saved yet; the chip keeps saying where the saved data stands.
  */
 export function FlightDataCard({ operation, editable }: { operation: Operation; editable: boolean }) {
   const snapshot = useFlightReport();
   const catalog = useAircraftTypeCatalog();
   const confirmed = snapshot?.confirmed[operation.operation.id];
   const pending = pendingFor(snapshot?.items ?? [], operation.operation.id).flightData;
-  const source = pending?.command.kind === 'flightData' ? pending.command : {
-    passengersIn: confirmed?.passengersIn ?? operation.operation.passengersIn ?? null,
-    passengersOut: confirmed?.passengersOut ?? operation.operation.passengersOut ?? null,
-    mtowKg: confirmed?.mtowKg ?? operation.operation.mtowKg ?? null,
-    aircraftRegistration: confirmed?.aircraftRegistration ?? operation.turnaround.aircraft?.registration ?? null,
+  // ELEVANT's last answer wins over the operation as last read, also when it says that a value was cleared.
+  const source: FlightDataValues = pending?.command.kind === 'flightData' ? pending.command : confirmed ? {
+    passengersIn: confirmed.passengersIn ?? null,
+    passengersOut: confirmed.passengersOut ?? null,
+    mtowKg: confirmed.mtowKg ?? null,
+    aircraftRegistration: confirmed.aircraftRegistration ?? operation.turnaround.aircraft?.registration ?? null,
+  } : {
+    passengersIn: operation.operation.passengersIn ?? null,
+    passengersOut: operation.operation.passengersOut ?? null,
+    mtowKg: operation.operation.mtowKg ?? null,
+    aircraftRegistration: operation.turnaround.aircraft?.registration ?? null,
   };
-  const [draft, setDraft] = useState({
-    passengersIn: source.passengersIn?.toString() ?? '', passengersOut: source.passengersOut?.toString() ?? '',
-    mtowKg: source.mtowKg?.toString() ?? '', aircraftRegistration: source.aircraftRegistration ?? '',
-  });
+  // What the agent typed, field by field, over the saved data; a field leaves it once a save of its text is accepted.
+  const [edits, setEdits] = useState<Partial<Record<FlightDataField, string>>>({});
+  const draft: FlightDataDraft = { ...fieldsOf(source), ...(editable ? edits : {}) };
   // Undefined: untouched here, so the type still waiting on the device (or none, which keeps the flight's) applies.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
   const waitingType = pending?.command.kind === 'flightData' ? pending.command.aircraftTypeId ?? null : null;
-  const aircraftTypeId = picked !== undefined ? picked : waitingType;
+  const aircraftTypeId = editable && picked !== undefined ? picked : waitingType;
   const [picking, setPicking] = useState(false);
-  const [error, setError] = useState('');
+  // A save refused for its fields: their errors show, and follow what the agent types, until a save is accepted.
+  const [checked, setChecked] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const inputs = useRef<Partial<Record<FlightDataField, TextInput | null>>>({});
+  const { values, errors } = validateFlightDataDraft(draft);
+  const refused = refusedFlightDataSummary(checked ? FLIGHT_DATA_FIELDS.filter(field => errors[field]) : []);
+  const dirty = editable && (Object.keys(edits).length > 0 || picked !== undefined);
+  const missingLine = missingFlightDataLine(missingFlightData(source) ?? []);
   const tone: Tone = pending ? (pending.state === 'blocked' ? 'blocked' : 'device') :
     (source.passengersIn ?? source.passengersOut ?? source.mtowKg) !== null ? 'confirmed' : 'empty';
   const currentType = operation.turnaround.aircraft;
@@ -314,28 +361,45 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
   const canPick = editable && Boolean(catalog?.available) && (catalog?.types.length ?? 0) > 0;
 
   const save = () => {
-    const values = { passengersIn: toInt(draft.passengersIn), passengersOut: toInt(draft.passengersOut), mtowKg: toInt(draft.mtowKg),
-      aircraftRegistration: draft.aircraftRegistration.trim().toUpperCase() || null,
-      ...(aircraftTypeId ? { aircraftTypeId } : {}) };
-    if ([values.passengersIn, values.passengersOut].some(value => value !== null && (value < 0 || value > 999)) ||
-        (values.mtowKg !== null && (values.mtowKg < 1000 || values.mtowKg > 700000)) ||
-        (values.aircraftRegistration && !/^[A-Z0-9-]{2,10}$/.test(values.aircraftRegistration))) {
-      setError('Revisa los datos: pasajeros de 0 a 999, MTOW en kg y matrícula como HI1055.');
+    setSaveError('');
+    const wrong = FLIGHT_DATA_FIELDS.filter(field => errors[field]);
+    if (wrong.length > 0) {
+      setChecked(true);
+      inputs.current[wrong[0]]?.focus();
       return;
     }
-    setError('');
+    setChecked(false);
     haptic();
-    saveFlightData(operation.operation.id, values)
-      .catch(failure => setError(localSaveError(failure, FLIGHT_DATA_NOT_SAVED)));
+    const sent = draft;
+    const sentType = picked;
+    saveFlightData(operation.operation.id, { ...values, ...(aircraftTypeId ? { aircraftTypeId } : {}) })
+      .then(() => {
+        // Accepted: the fields show the saved data again, except one the agent typed again meanwhile.
+        setEdits(current => Object.fromEntries(Object.entries(current)
+          .filter(([key, text]) => text !== sent[key as FlightDataField])));
+        setPicked(current => (current === sentType ? undefined : current));
+      })
+      .catch(failure => setSaveError(localSaveError(failure, FLIGHT_DATA_NOT_SAVED)));
   };
-  const field = (key: keyof typeof draft, label: string, numeric = true) => (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput accessibilityLabel={label} editable={editable} keyboardType={numeric ? 'number-pad' : 'default'}
-        autoCapitalize="characters" maxLength={numeric ? 6 : 10} value={draft[key]} style={styles.input}
-        onChangeText={text => setDraft(value => ({ ...value, [key]: text }))} />
-    </View>
-  );
+  const field = (key: FlightDataField) => {
+    const label = FLIGHT_DATA_LABELS[key];
+    const error = checked ? errors[key] : undefined;
+    const next: FlightDataField | undefined = FLIGHT_DATA_FIELDS[FLIGHT_DATA_FIELDS.indexOf(key) + 1];
+    return (
+      <View key={key} style={[styles.field, key === 'mtowKg' && styles.fieldWide]}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <TextInput ref={input => { inputs.current[key] = input; }} accessibilityLabel={label}
+          accessibilityHint={error ?? FIELD_HINTS[key]} editable={editable}
+          keyboardType={key === 'aircraftRegistration' ? 'default' : 'number-pad'} autoCapitalize="characters"
+          autoCorrect={false} maxLength={FIELD_LENGTH[key]} placeholder={FLIGHT_DATA_PLACEHOLDERS[key]}
+          placeholderTextColor={colors.muted} returnKeyType={next ? 'next' : 'done'}
+          submitBehavior={next ? 'submit' : 'blurAndSubmit'} onSubmitEditing={() => { if (next) inputs.current[next]?.focus(); }}
+          value={draft[key]} style={[styles.input, error ? styles.inputInvalid : null]}
+          onChangeText={text => setEdits(current => ({ ...current, [key]: text }))} />
+        {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      </View>
+    );
+  };
   return (
     <View style={styles.panel} accessibilityLabel="Datos del vuelo">
       <View style={styles.panelHeader}>
@@ -347,11 +411,15 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
         </View>
       </View>
       <Text style={styles.hint}>Se escriben una vez: la Orden de Servicio y el Reporte de Vuelo los toman de aquí.</Text>
+      {/* S1 (D-S1): what the forms still lack; it warns, the Order can be signed and handed off without it. */}
+      {missingLine ? (
+        <View style={styles.dataNote}>
+          <Ionicons name="warning-outline" size={18} color={colors.warning} />
+          <Text style={styles.dataMissingText}>{missingLine}</Text>
+        </View>
+      ) : null}
       <View style={styles.fields}>
-        {field('passengersIn', 'Pasajeros que llegan')}
-        {field('passengersOut', 'Pasajeros que salen')}
-        {field('mtowKg', 'MTOW (kg)')}
-        {field('aircraftRegistration', 'Matrícula', false)}
+        {FLIGHT_DATA_FIELDS.map(key => field(key))}
       </View>
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Tipo de avión</Text>
@@ -368,7 +436,14 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
         {catalog && !catalog.available && editable
           ? <Text style={styles.hint}>Sin la lista de tipos de ELEVANT el tipo no se puede cambiar desde la tablet.</Text> : null}
       </View>
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {dirty ? (
+        <View style={styles.dataNote}>
+          <Ionicons name="create-outline" size={18} color={colors.navy} />
+          <Text style={styles.unsavedText}>Sin guardar</Text>
+        </View>
+      ) : null}
+      {refused ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refused}</Text> : null}
+      {saveError ? <Text accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
       <PrimaryButton disabled={!editable} icon="save-outline" title="GUARDAR DATOS DEL VUELO" onPress={save} />
       <Modal animationType="slide" visible={picking} onRequestClose={() => setPicking(false)}>
         <View style={styles.deviationScreen}>
@@ -378,7 +453,7 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
               const selected = (aircraftTypeId ?? currentType?.id) === item.id;
               return (
                 <Pressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={aircraftTypeLabel(item)}
-                  onPress={() => { setPicked(item.id === currentType?.id ? null : item.id); setPicking(false); setError(''); }}
+                  onPress={() => { setPicked(item.id === currentType?.id ? null : item.id); setPicking(false); setSaveError(''); }}
                   style={[styles.code, selected && styles.codeSelected]}>
                   <Text style={[styles.codeNumber, selected && styles.codeSelectedText]}>{item.icaoCode}</Text>
                   <Text style={[styles.codeLabel, selected && styles.codeSelectedText]}>{item.manufacturer} {item.model}</Text>
@@ -491,8 +566,17 @@ const styles = StyleSheet.create({
   syncText: { fontSize: 12, fontWeight: '800' },
   fields: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
   field: { flexGrow: 1, flexBasis: 140, gap: 4 },
+  // S1: room for its placeholder, «1,000 a 700,000 kg», at the input's 18 pt.
+  fieldWide: { flexBasis: 200 },
   fieldLabel: { ...type.caption, color: colors.muted },
   input: { minHeight: touch.min, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: space.md, fontSize: 18, fontWeight: '700', color: colors.ink, backgroundColor: colors.white },
+  // S1: a wrong field has a red edge and its message under it (danger on white is 5.3:1).
+  inputInvalid: { borderColor: colors.danger, borderWidth: 2 },
+  fieldError: { ...type.body, fontSize: 14, fontWeight: '700', color: colors.danger },
+  dataNote: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  // Warning on white is 6.6:1.
+  dataMissingText: { ...type.body, color: colors.warning, flex: 1 },
+  unsavedText: { ...type.label, color: colors.navy, flex: 1 },
   deviation: { minHeight: touch.large, flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.lg, padding: space.lg, backgroundColor: colors.danger },
   deviationCopy: { flex: 1 },
   deviationTitle: { ...type.title, color: colors.white },

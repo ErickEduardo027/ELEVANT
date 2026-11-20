@@ -1,5 +1,6 @@
 import type { OperationDocumentKind } from '@elevant/api-client';
 import type { FlightReportOutboxItem } from '../../synchronization/flight-report-outbox';
+import { missingFlightData, orderFlightDataWarning, type FlightDataNumbers } from '../../utils/flight-data';
 
 /**
  * The tablet's own reasons not to hand an operation off to OCC yet (3-N06, N1), as Problem Details style codes so the
@@ -39,7 +40,15 @@ export function isOptionalForHandoff(kind: string) {
   return OPTIONAL_FOR_HANDOFF.has(kind);
 }
 
-type DocumentSignatures = Readonly<{ kind: string; isFullySigned: boolean; staleRoles: readonly string[] }>;
+type DocumentSignatures = Readonly<{
+  kind: string;
+  isFullySigned: boolean;
+  staleRoles: readonly string[];
+  /** The signatures on the current content. */
+  signatures?: readonly unknown[];
+  /** The flight data the form prints (S1); a form read without it is tolerated. */
+  summary?: FlightDataNumbers | null;
+}>;
 type OperationForms = Readonly<{ documents: readonly DocumentSignatures[] }>;
 
 /** Whether the operation's Service Order carries every signature it needs on its current content. */
@@ -62,6 +71,15 @@ export function checklistQueuedFor(items: readonly FlightReportOutboxItem[], ope
     item.command.operationId.toLowerCase() === operationId.toLowerCase());
 }
 
+/**
+ * Whether flight data the agent saved waits in the device's queue (S1): the Service Order shows it once it reaches
+ * ELEVANT. Data ELEVANT refused is not on its way; the card asks to correct it.
+ */
+export function flightDataQueuedFor(items: readonly FlightReportOutboxItem[], operationId: string) {
+  return items.some(item => item.state === 'pending' && item.command.kind === 'flightData' &&
+    item.command.operationId.toLowerCase() === operationId.toLowerCase());
+}
+
 /** The last read of the operation's checklist: from ELEVANT, or the copy the device saved when it had no signal. */
 export type HandoffChecklistRead = Readonly<{ status: string; fromCache: boolean }>;
 
@@ -79,7 +97,7 @@ export function checklistStanding(read: HandoffChecklistRead | null, queued: boo
   return 'not-submitted';
 }
 
-export type HandoffRequirementKind = 'services' | 'checklist' | 'incidents' | 'serviceOrder' | 'queue';
+export type HandoffRequirementKind = 'services' | 'checklist' | 'incidents' | 'flightData' | 'serviceOrder' | 'queue';
 
 /**
  * - `ok`: met.
@@ -111,6 +129,8 @@ export type HandoffRequirementsInput = Readonly<{
   unsentIncidents: number | null;
   /** The last forms read for the operation; undefined before they are read. */
   documents: OperationForms | undefined;
+  /** Flight data the agent saved still waits in the device's queue (`flightDataQueuedFor`). */
+  flightDataQueued?: boolean;
   /** What of the operation is still in the device's queue, waiting or refused. */
   waitingRecords: number;
 }>;
@@ -119,8 +139,9 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 
 /**
  * Everything a new hand-off to OCC needs, in the order the close lists it (N1): the services, the checklist, the
- * incident reports, the signed Service Order and the records still in the device's queue. A submission of the checklist
- * that waits in the queue is covered by the queue's requirement, and nothing the tablet cannot tell holds the hand-off.
+ * incident reports, the flight data on the Service Order (S1), the signed Service Order and the records still in the
+ * device's queue. A submission of the checklist that waits in the queue is covered by the queue's requirement, and
+ * nothing the tablet cannot tell holds the hand-off. Missing flight data only warns (D-S1): it never holds.
  */
 export function handoffRequirements(input: HandoffRequirementsInput): HandoffRequirement[] {
   const unfinished = input.services.filter(service => !isServiceFinished(service.status)).length;
@@ -148,6 +169,24 @@ export function handoffRequirements(input: HandoffRequirementsInput): HandoffReq
         HANDOFF_PENDING_INCIDENTS)
       : met('incidents', incidentsLabel);
 
+  // S1 (D-S1): what the Service Order prints of the flight data, as ELEVANT has it. A warning at most: the Order is
+  // signed and handed off without the data when that is what the flight has, and the server has no rule for it.
+  const flightDataLabel = 'Datos del vuelo completos';
+  const order = input.documents?.documents.find(item => item.kind === HANDOFF_REQUIRED_FORM);
+  const missingData = missingFlightData(order?.summary);
+  const flightWarning = order && missingData ? orderFlightDataWarning(missingData, {
+    signed: order.isFullySigned || (order.signatures?.length ?? 0) > 0,
+    queued: input.flightDataQueued ?? false,
+    // The close lists it only while the operation is in progress, when the card can still save the data.
+    editable: true,
+    handoff: true,
+  }) : null;
+  const flightData: HandoffRequirement = missingData === null
+    ? unknown('flightData', flightDataLabel, 'La tablet aún no leyó los datos de la Orden de Servicio.')
+    : flightWarning
+      ? warning('flightData', flightDataLabel, flightWarning)
+      : met('flightData', flightDataLabel);
+
   const orderLabel = 'Orden de Servicio firmada';
   const serviceOrder: HandoffRequirement = !input.documents
     ? unknown('serviceOrder', orderLabel, 'La tablet aún no leyó los formularios; la comprueba al entregar.')
@@ -163,7 +202,7 @@ export function handoffRequirements(input: HandoffRequirementsInput): HandoffReq
       'Sincronización.', HANDOFF_PENDING_QUEUE)
     : met('queue', 'Registros enviados a ELEVANT');
 
-  return [services, checklist, incidents, serviceOrder, queue];
+  return [services, checklist, incidents, flightData, serviceOrder, queue];
 }
 
 /** What holds a new hand-off now, in the order the close lists it. */
@@ -181,4 +220,8 @@ function missing(kind: HandoffRequirementKind, label: string, detail: string, pr
 
 function unknown(kind: HandoffRequirementKind, label: string, detail: string): HandoffRequirement {
   return { kind, label, state: 'unknown', blocking: false, detail };
+}
+
+function warning(kind: HandoffRequirementKind, label: string, detail: string): HandoffRequirement {
+  return { kind, label, state: 'warning', blocking: false, detail };
 }

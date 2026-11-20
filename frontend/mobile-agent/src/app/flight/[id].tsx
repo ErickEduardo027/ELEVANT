@@ -56,6 +56,7 @@ import {
 import {
   checklistQueuedFor,
   checklistStanding,
+  flightDataQueuedFor,
   handoffHoldsFor,
   handoffRequirements,
   isHandoffHold,
@@ -692,7 +693,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const executionClosed: ChargesExecutionClosed | undefined = shown.operation.status === 'Returned'
     ? 'returned' : !executing && !notStarted ? 'closed' : undefined;
   // N1: where the checklist stands, and everything a new hand-off needs (3-N06): the services as the agent left them,
-  // the checklist, the incident reports still on the device, the signed Service Order and the queue.
+  // the checklist, the incident reports still on the device, the flight data on the Service Order (S1, a warning only),
+  // the signed Service Order and the queue.
   const checklist = checklistStanding(
     checklistRead && checklistRead.operationId === id ? checklistRead.read : null,
     checklistQueuedFor(queueItems, operation.operation.id),
@@ -702,6 +704,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     checklist,
     unsentIncidents: unsentIncidents?.operationId === operation.operation.id ? unsentIncidents.count : null,
     documents,
+    flightDataQueued: flightDataQueuedFor(queueItems, operation.operation.id),
     waitingRecords: projection.pending + projection.blocked,
   });
   const openChecklist = () => router.push({ pathname: '/checklist/[id]', params: { id: operation.operation.id } });

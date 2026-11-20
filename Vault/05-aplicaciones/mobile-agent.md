@@ -426,8 +426,8 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
   solo pedía la firma, y un diálogo nativo pedía al agente confirmar lo que la
   tablet puede comprobar.
   - La tarjeta de entrega lista, en orden, «Servicios terminados», «Checklist
-    enviado», «Incidencias enviadas», «Orden de Servicio firmada» y «Registros
-    enviados a ELEVANT», cada uno con su estado
+    enviado», «Incidencias enviadas», «Datos del vuelo completos», «Orden de
+    Servicio firmada» y «Registros enviados a ELEVANT», cada uno con su estado
     ([requisitos](../../frontend/mobile-agent/src/features/assigned-operations/handoff.ts),
     [lista y hoja](../../frontend/mobile-agent/src/components/handoff-requirements.tsx)).
     Lo que falta apaga ENTREGAR A OCC y ofrece su salida: ABRIR CHECKLIST, ABRIR
@@ -436,6 +436,11 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
     checklist no enviado, los formularios aún sin leer) queda «por confirmar» y
     no bloquea: el servicio lo vuelve a comprobar antes de enviar. Un envío del
     checklist que espera en la cola lo cubre el requisito de la cola.
+  - «Datos del vuelo completos» (hallazgo S1, D-S1) solo avisa y nunca bloquea:
+    lee el resumen de la Orden de Servicio y dice si le faltan los pasajeros o
+    el MTOW. Con la Orden firmada, añade que se puede entregar sin ellos y que
+    guardarlos ahora obliga a firmarla de nuevo; con los datos en la cola, que
+    llegan a la Orden al enviarse. El servicio de entrega no lo comprueba.
   - La pantalla lee el checklist al enfocarse, cuando la cola cambia, al
     actualizar a mano y tras abrir la corrección, nunca con cada recarga del
     feed, y cuenta las incidencias que siguen en la tablet en cada carga.
@@ -463,6 +468,24 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
 - **Datos del vuelo y charter.** «Datos del vuelo» captura el tipo de avión de
   la lista de ELEVANT, fijo desde la primera entrega. En un charter con el
   prepago confirmado, la tarjeta oculta «AGREGAR» y lo explica.
+  - Posterior a la fase 3 (hallazgo S1 de la corrida del VPS del 16 de
+    noviembre): la Orden de Servicio se firmó con «Pasajeros —» y «MTOW —». Un
+    error genérico no decía qué campo fallaba ni su rango, «1.5» se leía como 15
+    y la tarjeta se sembraba una sola vez, antes de que llegara la cola.
+  - Cada campo se lee tal como se escribió
+    ([datos del vuelo](../../frontend/mobile-agent/src/utils/flight-data.ts)):
+    números enteros con miles separados por coma o espacio, nunca un punto, un
+    signo ni decimales, y un campo vacío no es 0. Cada campo con error dice su
+    rango y se marca en rojo, el primero recibe el foco y no se guarda nada; un
+    MTOW de 1 a 999 pregunta «¿Toneladas?».
+  - La tarjeta muestra lo que espera en la cola aunque llegue después de
+    abrirla, sin pisar lo que el agente escribió. Dice «Faltan: …» y «Sin
+    guardar», y la insignia sigue diciendo dónde está lo guardado.
+  - Faltar pasajeros o el MTOW solo avisa (D-S1): 0 pasajeros es un valor, la
+    Orden se firma y se entrega igual, también después del push-back, y el
+    servidor no cambia. La fila de la Orden y el principio de su hoja de firma
+    lo dicen antes de firmar.
+  - La APK instalada conserva la tarjeta anterior hasta que se instale la nueva.
 - **Códigos en español.** Los rechazos se explican por su código, como
   «Contrato no vigente», y cada estado de incidencia sale en español.
 - **APK desplegada.** Sigue funcionando: ninguna respuesta que lee ganó claves y

@@ -11,7 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Polygon, Text as SvgText } from 'react-native-svg';
-import { isOptionalForHandoff } from '../../features/assigned-operations/handoff';
+import { flightDataQueuedFor, isOptionalForHandoff } from '../../features/assigned-operations/handoff';
 import { getMobileSessionRequestContext } from '../../services/mobile-auth';
 import {
   loadOperationDocuments,
@@ -27,6 +27,7 @@ import { SheetFrame } from '../sheet-frame';
 import { PrimaryButton } from '../ui';
 import { SignaturePad, type Strokes } from './signature-pad';
 import { billingUnitAbbreviation } from '../../utils/billing-units';
+import { missingFlightData, orderFlightDataWarning } from '../../utils/flight-data';
 import { isValidSignerIdentification, normalizeSignerIdentification } from '../../utils/signer-identification';
 
 const TITLES: Record<OperationDocumentKind, string> = {
@@ -67,6 +68,22 @@ function money(amount: number | null | undefined, currency: string | null | unde
 }
 
 /**
+ * S1 (D-S1): what the Service Order lacks of the flight data, said on its row and at the top of its signature sheet. It
+ * never holds the signature: 0 passengers is a value and a missing MTOW only warns. Null for the other forms, for
+ * complete data and for a form read without its summary.
+ */
+function flightDataWarningFor(document: OperationDocumentResponse,
+  situation: Readonly<{ queued: boolean; executionOpen: boolean }>) {
+  if (document.kind !== 'ServiceOrder') return null;
+  const missing = missingFlightData(document.summary);
+  return missing && orderFlightDataWarning(missing, {
+    signed: (document.signatures?.length ?? 0) > 0,
+    queued: situation.queued,
+    editable: situation.executionOpen,
+  });
+}
+
+/**
  * «Formularios y firmas» (ADR-0032): the AVIAM forms of the operation, generated from what was
  * already captured. Each shows who still has to sign; a signature is saved on the device and sent
  * with signal, and a form that changed after signing asks only for its own signatures again.
@@ -87,6 +104,7 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
   const charterFlight = documents?.documents.some(item => item.kind === 'CharterServiceRequest') ?? false;
   const queued = pendingOf(snapshot?.items ?? [], operationId);
   const syncedCount = queued.length;
+  const flightData = { queued: flightDataQueuedFor(snapshot?.items ?? [], operationId), executionOpen };
 
   useEffect(() => {
     let alive = true;
@@ -117,11 +135,13 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
       )}
       {documents?.documents.map(document => (
         <DocumentRow key={document.kind} document={document} queued={queued} editable={editable}
-          executionOpen={executionOpen} onSign={role => setSigning({ document, role })} />
+          executionOpen={executionOpen} flightDataWarning={flightDataWarningFor(document, flightData)}
+          onSign={role => setSigning({ document, role })} />
       ))}
       {signing && (
         <SignSheet document={signing.document} role={signing.role} defaultName={AVIAM_ROLES.has(signing.role) ? agentName : ''}
-          charterFlight={charterFlight} onClose={() => setSigning(null)}
+          charterFlight={charterFlight} flightDataWarning={flightDataWarningFor(signing.document, flightData)}
+          onClose={() => setSigning(null)}
           onSign={(name, strokes, identification) => {
             void signDocument(operationId, signing.document.kind as OperationDocumentKind, signing.role, name,
               signing.document.contentSha256, strokes, identification);
@@ -133,8 +153,10 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
   );
 }
 
-function DocumentRow({ document, queued, editable, executionOpen, onSign }: {
+function DocumentRow({ document, queued, editable, executionOpen, flightDataWarning, onSign }: {
   document: OperationDocumentResponse; queued: readonly FlightReportOutboxItem[]; editable: boolean; executionOpen: boolean;
+  /** S1: what the Service Order lacks of the flight data; it warns and never holds the signature. */
+  flightDataWarning: string | null;
   onSign: (role: OperationSignatureRole) => void;
 }) {
   const kind = document.kind as OperationDocumentKind;
@@ -160,6 +182,7 @@ function DocumentRow({ document, queued, editable, executionOpen, onSign }: {
         </View>
         {document.isFullySigned && <Text style={styles.doneChip}>Firmado</Text>}
       </View>
+      {flightDataWarning && <FlightDataWarning text={flightDataWarning} />}
       {notNeeded && (
         <View style={styles.notNeeded}>
           <Ionicons name="information-circle-outline" size={20} color={colors.muted} />
@@ -186,7 +209,7 @@ function DocumentRow({ document, queued, editable, executionOpen, onSign }: {
               </View>
             ) : (
               <Pressable accessibilityRole="button" accessibilityLabel={`Firmar: ${ROLES[role]}`}
-                accessibilityHint={notNeeded ? NOT_NEEDED_FOR_HANDOFF : undefined} disabled={!editable}
+                accessibilityHint={notNeeded ? NOT_NEEDED_FOR_HANDOFF : flightDataWarning ?? undefined} disabled={!editable}
                 onPress={() => onSign(role)}
                 style={({ pressed }) => [styles.signButton, optional && styles.signButtonSecondary,
                   !editable && styles.disabled, pressed && styles.pressed]}>
@@ -201,10 +224,12 @@ function DocumentRow({ document, queued, editable, executionOpen, onSign }: {
   );
 }
 
-function SignSheet({ document, role, defaultName, charterFlight, onClose, onSign }: {
+function SignSheet({ document, role, defaultName, charterFlight, flightDataWarning, onClose, onSign }: {
   document: OperationDocumentResponse; role: OperationSignatureRole; defaultName: string;
   /** The flight is a charter (ADR-0033): no contract prices its forms. */
   charterFlight: boolean;
+  /** S1: what the Service Order lacks of the flight data, said before anything else; FIRMAR is never held by it. */
+  flightDataWarning: string | null;
   onClose: () => void; onSign: (name: string, strokes: Strokes, identification?: string) => void;
 }) {
   const [name, setName] = useState(defaultName);
@@ -237,6 +262,8 @@ function SignSheet({ document, role, defaultName, charterFlight, onClose, onSign
             onPress={() => onSign(name.trim(), strokes, asksIdentification ? normalizedId : undefined)} />
         </>
       )}>
+      {/* S1 (D-S1): the warning goes first, before the signer reads the data or signs. */}
+      {flightDataWarning && <FlightDataWarning text={flightDataWarning} />}
       {/* Who signs comes first, where the fixed footer never covers the fields. */}
       <Text style={styles.fieldLabel}>Nombre de quien firma</Text>
       <TextInput accessibilityLabel="Nombre de quien firma" value={name} onChangeText={setName} maxLength={120}
@@ -285,6 +312,16 @@ function SignSheet({ document, role, defaultName, charterFlight, onClose, onSign
       )}
       <SignaturePad value={strokes} onChange={setStrokes} onDrawing={setDrawing} />
     </SheetFrame>
+  );
+}
+
+/** S1: a Service Order that lacks flight data, with a shape besides its colour (ADR-0031); 5.96:1 on pale orange. */
+function FlightDataWarning({ text }: { text: string }) {
+  return (
+    <View style={styles.notice}>
+      <Ionicons name="warning-outline" size={20} color={colors.warning} />
+      <Text style={styles.noticeText}>{text}</Text>
+    </View>
   );
 }
 
