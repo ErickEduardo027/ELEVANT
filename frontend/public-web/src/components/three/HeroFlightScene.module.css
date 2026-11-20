@@ -245,41 +245,6 @@
   font-size: 0.58rem;
 }
 
-.tierBadge {
-  position: absolute;
-  z-index: 4;
-  top: clamp(6.35rem, 11vh, 8rem);
-  right: clamp(1rem, 3vw, 3rem);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.48rem;
-  padding: 0.48rem 0.68rem;
-  border: 1px solid rgb(99 221 255 / 24%);
-  border-radius: 999px;
-  background: rgb(2 7 18 / 58%);
-  box-shadow:
-    inset 0 0 1rem rgb(99 221 255 / 4%),
-    0 0.5rem 2rem rgb(2 7 18 / 24%);
-  color: rgb(210 239 252 / 72%);
-  font-family: "DM Mono", ui-monospace, monospace;
-  font-size: 0.56rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  backdrop-filter: blur(0.65rem);
-  pointer-events: none;
-}
-
-.tierBadge::before {
-  width: 0.34rem;
-  height: 0.34rem;
-  border-radius: 50%;
-  background: var(--scene-cyan);
-  box-shadow: 0 0 0.65rem rgb(99 221 255 / 84%);
-  content: "";
-}
-
 @media (max-width: 63.9375rem) {
   .posterGlobe {
     right: -21%;
@@ -318,11 +283,6 @@
 
   .telemetry {
     display: none;
-  }
-
-  .tierBadge {
-    top: 5.8rem;
-    right: 1rem;
   }
 }
 

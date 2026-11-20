@@ -43,7 +43,7 @@ function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }) {
     {!detail && !snapshot.failed && <p role="status">Cargando factura…</p>}
     {!detail && snapshot.failed && <div role="alert">
       <p>{snapshot.error instanceof ElevantApiError && snapshot.error.status === 404
-        ? "La factura no está disponible para esta cuenta." : "No se pudo consultar la factura. Inténtalo de nuevo."}</p>
+        ? "La factura no está disponible para esta cuenta." : "No se pudo consultar la factura. Inténtelo de nuevo."}</p>
       <button type="button" className={styles.loadMore} onClick={snapshot.retry}>Reintentar</button></div>}
     <LiveSnapshotNotice snapshot={snapshot} />
     {detail && <>
@@ -114,7 +114,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Cuenta financiera · {airlineName}</span>
       <h1>Facturas</h1>
-      <p>Facturas emitidas por AVIAM por las operaciones completadas, con su vencimiento y saldo, y el estado de cuenta de tu aerolínea.</p>
+      <p>Facturas emitidas por AVIAM por las operaciones completadas, con su vencimiento y saldo, y el estado de cuenta de su aerolínea.</p>
     </header>
     <div className={styles.viewSwitch} role="group" aria-label="Vista de la cuenta financiera">
       <button type="button" aria-pressed={view === "invoices"} onClick={() => setView("invoices")}>Facturas</button>

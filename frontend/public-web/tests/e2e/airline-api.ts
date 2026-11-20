@@ -51,6 +51,10 @@ const document = { contractId: "60000000-0000-7000-8000-000000000002", versionId
   contractStatus: "Active", airlineName: "Demo Airlines", airlineCode: "ZZ", airlineLegalName: null, versionNumber: 1,
   versionStatus: "Approved", validFrom: "2026-01-01", validTo: "2099-12-31", currencyCode: "USD", stations: ["PUJ · Punta Cana"],
   rates: [], terms: null, signedOn: "2026-01-01", signatures: [], contentSha256: "a".repeat(64), signableBy: null };
+/** N18: the same version once Contratos fixed its validity, waiting for the airline's signature. */
+export const signableContract = { versionId, document: { ...document, signedOn: null, signableBy: "Airline",
+  validity: { renewalMode: "Automatic", renewalTermMonths: 12, renewalNoticeDays: 30, terminationNoticeDays: 60,
+    terminationTerms: null, confirmedAt: "2026-11-03T12:00:00Z" } } };
 const timeline = { contractId: document.contractId, contractCode: "DEV-CONTRACT-0001", status: "Active", entries: [
   { at: "2026-01-01T12:00:00Z", kind: "status", title: "Contrato activo", detail: "Aprobado por Finanzas, firmado por ambas partes.", actor: null }] };
 const permit = { id: "63000000-0000-7000-8000-000000000001", airlineId: "20000000-0000-7000-8000-000000000001",

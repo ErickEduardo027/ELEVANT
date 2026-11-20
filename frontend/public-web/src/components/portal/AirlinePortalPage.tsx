@@ -12,7 +12,7 @@ import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { billingUnitLabel } from "@/lib/billing-units";
 import { BUSINESS_TIME_ZONE, formatLocalDateTime } from "@/lib/business-day";
-import { standingNotice } from "@/lib/contract-status";
+import { standingNotice, stationsInForce } from "@/lib/contract-status";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
@@ -37,6 +37,11 @@ type PortalStation = { id: string; code: string; ianaTimeZone: string };
  */
 function stationTime(value: string, timeZone: string, stationCode: string) {
   return `${formatLocalDateTime(value, timeZone)} (hora local ${stationCode})`;
+}
+
+/** A count with its noun in the singular or the plural: «1 operación», «0 operaciones» (N14). */
+function counted(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function Operation({ operation }: { operation: AirlinePortalBootstrapResponse["currentOperations"][number] }) {
@@ -315,7 +320,7 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
     <header className={styles.requestHeading}>
       <div><span className={styles.kicker}>Canal de servicio · {airlineName}</span>
         <h1>Solicitudes con estado visible.</h1>
-        <p>Consulta las solicitudes operativas registradas para tu aerolínea. La creación y cancelación todavía no están habilitadas.</p></div>
+        <p>Consulte las solicitudes operativas registradas para su aerolínea. La creación y cancelación todavía no están habilitadas.</p></div>
       <button type="button" disabled title="La creación de solicitudes aún no está disponible">Nueva solicitud</button>
     </header>
     <div className={styles.metrics} aria-label="Estado de las solicitudes cargadas">
@@ -357,6 +362,8 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
   const { currentOperations: operations, stations } = bootstrap;
   // 2-N32: a suspended or expired contract keeps its stations as history instead of «0 estaciones».
   const standingData = standing.status === "ready" ? standing.data : null;
+  // N14: the stations in force come from the standing once it is read, as in the portal's top bar.
+  const inForce = stationsInForce(standingData, stations);
   const history = standingData?.stations.filter(station => !station.current) ?? [];
   const notice = standingNotice(standingData);
   const countStatus = (...statuses: string[]) => operations.filter((operation) =>
@@ -364,9 +371,12 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
 
   if (view === "overview") return <div className={styles.page}>
     <header className={styles.hero}>
-      <span className={styles.kicker}>Operación autorizada</span><h1>{bootstrap.name}</h1>
-      <p>{operations.length} operaciones reales en la ventana actual · {stations.length} estación(es) en vigor{history.length
-        ? ` · ${history.length} con historial` : ""} · {bootstrap.iataCode || bootstrap.icaoCode}</p>
+      {/* N14: a neutral kicker; the notice below and the portal's badge name the standing. */}
+      <span className={styles.kicker}>Resumen de la aerolínea</span><h1>{bootstrap.name}</h1>
+      {/* The bootstrap lists the operations of today and the next 7 days at the stations in force. */}
+      <p>{counted(operations.length, "operación", "operaciones")} de hoy y los próximos 7 días · {counted(inForce.length,
+        "estación en vigor", "estaciones en vigor")}{history.length ? ` · ${counted(history.length,
+        "estación con historial", "estaciones con historial")}` : ""} · {bootstrap.iataCode || bootstrap.icaoCode}</p>
     </header>
     {standing.status === "loading" && <p className={styles.note} role="status">Consultando el estado del contrato…</p>}
     {standing.status === "error" && <section className={styles.panel} role="alert">
@@ -387,7 +397,7 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
       {operations.length ? <ul className={styles.operations}>{operations.slice(0, 5).map((operation) => <Operation key={operation.id} operation={operation} />)}</ul>
         : <p className={styles.empty}>{standingData?.readOnly
           ? "No hay operaciones en curso: ningún contrato está en vigor hoy. El historial sigue en Vuelos."
-          : "No hay operaciones en la ventana actual para esta aerolínea."}</p>}
+          : "No hay operaciones de hoy ni de los próximos 7 días para esta aerolínea."}</p>}
     </section>
   </div>;
 

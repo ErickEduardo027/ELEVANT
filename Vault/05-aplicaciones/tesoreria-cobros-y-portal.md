@@ -128,6 +128,17 @@ disponible, con la etiqueta «Simulación — sin validez fiscal», y descargar 
 recibo con «Preparando recibo…» y un error recuperable
 ([pago](../../frontend/public-web/src/components/portal/CardPaymentPanel.tsx)).
 
+*Posterior al commit verificado de esta nota (hallazgo S4 de la corrida del VPS
+del 16 de noviembre de 2026):* el vencimiento de la tarjeta se acepta con o sin
+barra («1228», «12 28», «12-28», «12/2028» o «1/28») y el campo lo muestra como
+MM/AA mientras se escribe. Antes de llamar a la API, el portal aplica la regla
+de `CardPaymentPolicy`: mes de 01 a 12, año entre 2000 y 2099 y tarjeta vigente
+hasta el último día de su mes según el día hábil de Santo Domingo. Si no la
+cumple, no envía el pago, retira la respuesta anterior del servidor y explica
+el motivo bajo el campo, que recibe el foco
+([vencimiento](../../frontend/public-web/src/lib/card-expiry.ts)). La API sigue
+validando la tarjeta y es la autoridad.
+
 ## Avisos y revalidación
 
 Cada mutación de cartera publica `airline_treasury` dentro de su transacción,

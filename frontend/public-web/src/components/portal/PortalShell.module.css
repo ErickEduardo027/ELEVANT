@@ -31,6 +31,14 @@
   display: none;
 }
 
+/* N18: the dark navigation draws a dark, thin scrollbar, not the light one of the page. */
+.sidebar,
+.drawerPanel {
+  color-scheme: dark;
+  scrollbar-color: rgb(145 178 224 / 32%) transparent;
+  scrollbar-width: thin;
+}
+
 .workspace {
   min-width: 0;
   min-height: 100dvh;
@@ -119,6 +127,8 @@
 
 .topbarContext {
   min-width: 4.25rem;
+  /* On phones «Sin estación en vigor» wraps in two lines instead of hiding the page title. */
+  max-width: 7.5rem;
   padding-left: 0.75rem;
   border-left: 1px solid rgb(7 18 36 / 12%);
   text-align: right;
@@ -129,10 +139,12 @@
 }
 
 .topbarContext strong {
+  display: block;
   color: var(--intelligence);
   font-family: var(--font-data);
   font-size: 0.78rem;
   letter-spacing: 0.06em;
+  line-height: 1.25;
 }
 
 .topbarUser {
@@ -160,7 +172,7 @@
   color: #8296b2;
 }
 
-.environmentBadge {
+.standingBadge {
   display: flex;
   width: fit-content;
   align-items: center;
@@ -173,12 +185,28 @@
   text-transform: uppercase;
 }
 
-.environmentBadge span {
+/* N14: the dot takes the tone of the airline's standing; only a contract in force glows green. */
+.standingBadge span {
   width: 0.42rem;
   height: 0.42rem;
+  flex: 0 0 auto;
   border-radius: 50%;
+  background: #6f85a2;
+}
+
+.standingBadge[data-tone="ok"] span {
   background: var(--success);
   box-shadow: 0 0 0.7rem rgb(123 229 187 / 65%);
+}
+
+.standingBadge[data-tone="pending"] span {
+  background: #f5c451;
+  box-shadow: 0 0 0.6rem rgb(245 196 81 / 45%);
+}
+
+.standingBadge[data-tone="warning"] span {
+  background: var(--error);
+  box-shadow: 0 0 0.6rem rgb(255 140 107 / 45%);
 }
 
 .navigation {
@@ -538,6 +566,7 @@
 
   .topbarContext {
     min-width: 7rem;
+    max-width: none;
     text-align: left;
   }
 

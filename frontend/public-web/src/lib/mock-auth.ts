@@ -111,12 +111,13 @@ export function validateSignIn(
   };
   const fieldErrors: MockSignInFieldErrors = {};
 
+  // N19: the real login shows these messages too, so they address the airline as usted.
   if (!value.email) {
-    fieldErrors.email = "Ingresa tu correo corporativo.";
+    fieldErrors.email = "Ingrese su correo corporativo.";
   } else if (value.email.length > 254 || !EMAIL_PATTERN.test(value.email)) {
-    fieldErrors.email = "Ingresa un correo corporativo válido.";
+    fieldErrors.email = "Ingrese un correo corporativo válido.";
   }
-  if (!value.password) fieldErrors.password = "Ingresa tu contraseña.";
+  if (!value.password) fieldErrors.password = "Ingrese su contraseña.";
 
   const firstInvalidField = MOCK_SIGN_IN_FIELDS.find(
     (field) => fieldErrors[field] !== undefined,
@@ -363,7 +364,7 @@ export class MockAuthGateway {
     if (!validation.ok) {
       return {
         ok: false,
-        message: "Revisa los campos indicados.",
+        message: "Revise los campos indicados.",
         fieldErrors: validation.fieldErrors,
         firstInvalidField: validation.firstInvalidField,
       };
@@ -386,7 +387,7 @@ export class MockAuthGateway {
       return {
         ok: false,
         message:
-          "Este navegador no permitió guardar la sesión. Habilita el almacenamiento local e inténtalo de nuevo.",
+          "Este navegador no permitió guardar la sesión. Habilite el almacenamiento local e inténtelo de nuevo.",
       };
     }
     return { ok: true, session };
