@@ -11,7 +11,8 @@ import {
 import { isConflict } from '../../services/problemMessages';
 import { standDisplayCode } from '../../services/standCodes';
 import {
-  clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationStatusLabel, phaseLabel, serverClockOffset,
+  clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationOpenAfterDeparture, operationStatusLabel,
+  phaseLabel, serverClockOffset,
 } from './demoFlightStatus';
 import { reasonsSentence, standReasonText } from './demoStandReasons';
 
@@ -435,19 +436,23 @@ const STATE_TONE = Object.freeze({ Approach: 'info', TaxiIn: 'info', Parked: 'ac
 
 /**
  * One flight of «Vuelos demo de hoy», where its aircraft is at the server's time `serverNow`; its stand by the code the
- * map draws (N27).
+ * map draws (N27). An imported flight whose operation is still open more than an hour after its aircraft left takes the
+ * warning tone and says so, as OCC's «Pendientes de la jornada» does (N30).
  */
 function DemoFlightRow({ flight, serverNow, busy, onAction }) {
   const phase = demoFlightPhase(flight, serverNow);
   const action = demoFlightAction(flight, serverNow);
   const route = [flight.originIata || '—', flight.stationCode, flight.destinationIata || '—'].join(' → ');
-  const tone = flight.state === 'Active' ? STATE_TONE[phase] ?? 'neutral' : 'neutral';
+  const openAfterDeparture = operationOpenAfterDeparture(flight, serverNow);
+  let tone = flight.state === 'Active' ? STATE_TONE[phase] ?? 'neutral' : 'neutral';
+  if (openAfterDeparture) tone = 'warning';
   const stand = flight.standCode ? standDisplayCode(flight.standCode) : null;
   const suggested = flight.suggestedStandCode ? standDisplayCode(flight.suggestedStandCode) : null;
   const occ = flight.imported
     ? `Importado por OCC · ${flight.operationCode} · ${stand ? `Posición ${stand}` : 'Sin posición asignada'}`
     : `OCC aún no lo importa${suggested ? ` · Posición sugerida ${suggested}` : ''}`;
-  const operation = operationStatusLabel(flight.operationStatus);
+  const status = operationStatusLabel(flight.operationStatus);
+  const operation = status && openAfterDeparture ? `${status}, abierta tras la salida` : status;
   return (
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">

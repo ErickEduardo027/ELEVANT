@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import {
-  createAirPicture, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON, trafficInstant,
+  createAirPicture, createDemoBlock, createDemoFlights, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON,
+  trafficInstant,
 } from '../../maps/testing/trafficFixtures';
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import { readSelection, writeSelection } from '../../maps/core/mapSelection';
@@ -318,6 +319,56 @@ describe('boardModel', () => {
     expect(demoVisit(NOW)).toMatchObject({ onStand: false, arrival: { status: { key: 'approaching' } } });
     expect(demoVisit(NOW + 6 * MINUTE)).toMatchObject({ onStand: true, arrival: { status: { key: 'onStand' } },
       departure: { status: { key: 'onStand' } } });
+  });
+
+  it('says what operation each visit has and when its aircraft left its stand (N30)', () => {
+    const visitOf = (board, turnaroundId) => board.visits.find(item => item.turnaroundId === turnaroundId);
+    const id700 = legOf(TRAFFIC_FLIGHT_KEY.departed).turnaroundId;
+    const board = buildBoard({ flights: FLIGHTS, nowMs: NOW, t });
+    // ZZ700 pushed back 14 minutes ago and took off 8 minutes ago: the first evidence, its PUSHBACK, says when it left.
+    expect(visitOf(board, id700)).toMatchObject({ operationStatus: 'PendingReview', departedAt: NOW - 14 * MINUTE,
+      ended: true });
+    // Without its PUSHBACK, its take-off.
+    const takeoffOnly = FLIGHTS.map(flight => (flight.turnaroundId === id700 ? { ...flight, milestones: [] } : flight));
+    expect(visitOf(buildBoard({ flights: takeoffOnly, nowMs: NOW, t }), id700).departedAt).toBe(NOW - 8 * MINUTE);
+    // ZZ300 is still on A2, its operation in progress; ZZ500 has no operation yet. Neither left.
+    expect(visitOf(board, legOf(TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId))
+      .toMatchObject({ operationStatus: 'InProgress', departedAt: null, onStand: true });
+    expect(visitOf(board, legOf(TRAFFIC_FLIGHT_KEY.noFix).turnaroundId))
+      .toMatchObject({ operationStatus: null, departedAt: null });
+    // A diverted or a cancelled arrival ends its visit without leaving the stand.
+    const id161 = legOf(TRAFFIC_FLIGHT_KEY.arrival).turnaroundId;
+    for (const phase of ['diverted', 'cancelled']) {
+      const flights = FLIGHTS.map(flight => (flight.flightKey === TRAFFIC_FLIGHT_KEY.arrival ? { ...flight, phase } : flight));
+      expect(visitOf(buildBoard({ flights, nowMs: NOW, t }), id161), phase).toMatchObject({ ended: true, departedAt: null });
+    }
+
+    // A demo flight OCC imported: the server's clock took its aircraft off the stand 82 minutes ago (its off-block,
+    // 30 minutes after its on-block), with neither a PUSHBACK nor a take-off time on its legs.
+    const left = createDemoFlights(createDemoBlock({ imported: true, offBlockAfterMin: 30,
+      appearAt: NOW - 120 * MINUTE }), { imported: true });
+    const demoId = left.flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.demoArrival).turnaroundId;
+    expect(visitOf(buildBoard({ flights: left.flights, nowMs: NOW, t }), demoId))
+      .toMatchObject({ operationStatus: 'Assigned', departedAt: NOW - 82 * MINUTE, ended: true });
+    // An off-block the clock already decided is no departure while the timeline keeps the aircraft parked.
+    const parked = createDemoFlights(createDemoBlock({ imported: true, offBlockAfterMin: 30,
+      appearAt: NOW - 20 * MINUTE }), { imported: true });
+    expect(visitOf(buildBoard({ flights: parked.flights, nowMs: NOW, t }), demoId))
+      .toMatchObject({ departedAt: null, onStand: true });
+
+    // A turnaround the map's window leaves out: the planning snapshot's departure time and operation.
+    const morning = planTurnaround('5d000000-0000-4000-8000-000000000050', {
+      departure: { id: 'leg-51', flightNumber: 'ZZ51', origin: { iataCode: 'PUJ' }, destination: { iataCode: 'SDQ' },
+        scheduledAt: '2026-11-13T07:00:00Z', estimatedAt: null, actualAt: '2026-11-13T07:04:00Z' },
+      operation: { id: 'op-50', status: 'InProgress' } });
+    expect(visitOf(buildBoard({ flights: FLIGHTS, planningTurnarounds: [morning], nowMs: NOW, t }), morning.id))
+      .toMatchObject({ source: 'planning', operationStatus: 'InProgress', departedAt: Date.parse('2026-11-13T07:04:00Z') });
+    expect(visitOf(buildBoard({ flights: FLIGHTS, planningTurnarounds: [planTurnaround(morning.id)], nowMs: NOW, t }),
+      morning.id)).toMatchObject({ operationStatus: null, departedAt: null });
+    // The map flights are fresher than the snapshot: ZZ700's operation is theirs.
+    const stale = planTurnaround(id700, { operation: { id: 'op-700', status: 'InProgress' } });
+    expect(visitOf(buildBoard({ flights: FLIGHTS, planningTurnarounds: [stale], nowMs: NOW, t }), id700).operationStatus)
+      .toBe('PendingReview');
   });
 
   it('names a proposed arrival as the board names its phase, never in the provider’s words (N22)', () => {

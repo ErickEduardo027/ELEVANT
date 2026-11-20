@@ -127,6 +127,72 @@ describe('buildPending', () => {
       .toEqual([['toImport', 'attention', 'ZZ9001 por importar, aterrizó hace 2 min']]);
   });
 
+  it('an operation still open more than an hour after its aircraft left is pending, amber and with no action (N30)', () => {
+    const noon = Date.parse(TRAFFIC_NOON);
+    const { flights } = createMapFlights();
+    const id700 = flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.departed).turnaroundId;
+    // ZZ700 pushed back 14 minutes before noon and took off 6 minutes later; `operationStatus` is its operation's.
+    const withOperation = operationStatus => flights.map(flight => (flight.turnaroundId !== id700 ? flight
+      : { ...flight, turnaround: { ...flight.turnaround, operationStatus } }));
+    const open = (operationStatus, nowMs, translate = t) => buildPending({
+      board: buildBoard({ flights: withOperation(operationStatus), nowMs, t: translate }), nowMs, t: translate,
+    }).filter(item => item.kind === 'openAfterDeparture');
+    const pushback = noon - 14 * 60_000;
+
+    // Within the hour of D-N30 the agent may still hand it off: nothing yet, even exactly an hour after the push-back.
+    expect(open('InProgress', pushback + 59 * 60_000)).toEqual([]);
+    expect(open('InProgress', pushback + 60 * 60_000)).toEqual([]);
+    // Past the hour: amber, at its push-back, with no action of its own (the console selects its flight).
+    const [item] = open('InProgress', pushback + 61 * 60_000);
+    expect(summary([item])).toEqual([['openAfterDeparture', 'attention',
+      'ZZ700 con la operación abierta, salió hace 1 h 1 min']]);
+    expect(item).toMatchObject({ id: `openAfterDeparture:t:${id700}`, action: null, at: pushback,
+      flightKey: TRAFFIC_FLIGHT_KEY.departed, turnaroundId: id700 });
+    expect(open('InProgress', pushback + 61 * 60_000, createTranslator(consoleMessages, 'en'))[0].label)
+      .toBe('ZZ700 with its operation still open, departed 1 h 1 min ago');
+
+    // Returned to the agent to correct it, or assigned and never started: still on the agent's side.
+    expect(open('Returned', pushback + 2 * 60 * 60_000).map(entry => entry.label))
+      .toEqual(['ZZ700 con la operación abierta, salió hace 2 h']);
+    expect(open('Assigned', pushback + 2 * 60 * 60_000).map(entry => entry.priority)).toEqual(['attention']);
+    // Handed off to OCC (pending or in review) or approved: nothing is open, however long ago it left.
+    for (const status of ['PendingReview', 'InReview', 'Approved']) {
+      expect(open(status, pushback + 8 * 60 * 60_000), status).toEqual([]);
+    }
+  });
+
+  it('an aircraft still on its stand stays overdue, and a turnaround out of the map window keeps its warning (N30)', () => {
+    const noon = Date.parse(TRAFFIC_NOON);
+    const { flights } = createMapFlights();
+    // ZZ300 is still on A2 three hours after its departure time, its operation in progress: it has not left, so it is
+    // overdue, never open after a departure it did not make.
+    const late = noon + 3 * 60 * 60_000;
+    const id300 = flights.find(flight => flight.flightKey === TRAFFIC_FLIGHT_KEY.parkedArrival).turnaroundId;
+    const parked = buildPending({ board: buildBoard({ flights, nowMs: late, t }), nowMs: late, t })
+      .filter(item => item.turnaroundId === id300);
+    expect(summary(parked)).toEqual([['overdue', 'attention', 'ZZ301 pasó su hora de salida']]);
+
+    // Eight hours after its take-off the map's window has left the visit out: the planning snapshot still says when it
+    // left and that its operation is in progress, as when an agent never handed it off.
+    const turnaround = { id: 't-8h', operationCode: 'DEV-T8H', operationDate: '2026-11-13', status: 'Confirmed',
+      airline: { id: 'airline-1', iataCode: 'ZZ', icaoCode: 'ZZZ', name: 'Zeta Air de prueba' }, aircraft: null,
+      stand: { id: 'stand-a6', code: 'A06', terminal: null },
+      arrival: { id: 'leg-8h-a', flightNumber: 'ZZ80', origin: { iataCode: 'MIA' }, destination: { iataCode: 'PUJ' },
+        scheduledAt: '2026-11-13T05:00:00Z', estimatedAt: null, actualAt: '2026-11-13T05:02:00Z' },
+      departure: { id: 'leg-8h-d', flightNumber: 'ZZ81', origin: { iataCode: 'PUJ' }, destination: { iataCode: 'MIA' },
+        scheduledAt: '2026-11-13T06:50:00Z', estimatedAt: null, actualAt: '2026-11-13T07:00:00Z' },
+      operation: { id: 'op-8h', status: 'InProgress' },
+      agents: [{ assignmentId: 'assignment-8h', agentId: 'agent-1', displayName: 'Agente de prueba' }],
+      equipment: [], services: [] };
+    const board = buildBoard({ flights: [], planningTurnarounds: [turnaround], nowMs: noon, t });
+    const pending = buildPending({ board, nowMs: noon, t });
+    expect(summary(pending)).toEqual([['openAfterDeparture', 'attention', 'ZZ81 con la operación abierta, salió hace 8 h']]);
+    expect(pending[0]).toMatchObject({ flightKey: null, turnaroundId: 't-8h', at: Date.parse('2026-11-13T07:00:00Z'),
+      action: null });
+    // Without the board (the map flights have not answered) there is nothing to tell it from.
+    expect(buildPending({ nowMs: noon, t })).toEqual([]);
+  });
+
   it('a readiness mark becomes agentCannotOperate', () => {
     const flight = createPlanningFlight();
     const readiness = { stationId: 'station', date: '2026-08-19',
@@ -171,7 +237,8 @@ describe('buildPending', () => {
   });
 
   it('orders by priority then time', () => {
-    expect(PENDING_KINDS).toEqual(['noStand', 'noAgent', 'agentCannotOperate', 'toImport', 'toReview', 'overdue']);
+    expect(PENDING_KINDS).toEqual(['noStand', 'noAgent', 'agentCannotOperate', 'toImport', 'toReview', 'overdue',
+      'openAfterDeparture']);
     const soon = createPlanningFlight({ assignedAgents: [], agents: [] });
     const landed = flightAt('t-landed', 'ZZ200', '11:30', { stand: null });
     landed.arrival.actualAt = '2026-08-19T11:25:00-04:00';

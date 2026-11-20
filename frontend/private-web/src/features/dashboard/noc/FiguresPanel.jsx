@@ -8,16 +8,25 @@ import { consoleMessages } from './consoleMessages';
 
 // «Cifras de la jornada» (contratos 2.5, design D.1): the six figures of the day over the top centre of the map
 // (consoleModel.js: buildFigures). A figure whose read has not answered shows «—», never a zero nobody counted; only
-// «Sin recursos» asks for attention, and only above zero («cabina oscura»: normal figures carry no hue).
+// «Sin recursos» asks for attention, and only above zero («cabina oscura»: normal figures carry no hue). «En operación»
+// keeps counting an operation still open an hour after its aircraft left, and says how many are, on a line of their own
+// with the amber triangle (N30, D-N30): «1 abierta tras la salida».
 
 const FIGURES = Object.freeze([
   { id: 'turnarounds', tone: 'neutral', href: '/admin-occ/planning' },
-  { id: 'inOperation', tone: 'neutral' },
+  { id: 'inOperation', tone: 'neutral', detail: 'openAfterDeparture', detailTone: 'attention' },
   { id: 'arriving60', tone: 'neutral' },
   { id: 'needsResources', tone: 'attention', href: '/admin-occ/planning' },
   { id: 'toReview', tone: 'neutral', href: '/admin-occ/review' },
   { id: 'completed', tone: 'neutral' },
 ]);
+
+/** The line a figure says of its count `figures[figure.detail]`, once it is above zero; `null` otherwise. */
+function detailOf(figure, figures, t) {
+  const count = figure.detail ? figures?.[figure.detail] : null;
+  if (!Number.isFinite(count) || count <= 0) return null;
+  return t(count === 1 ? `figures.${figure.detail}One` : `figures.${figure.detail}`, { count });
+}
 
 /**
  * The figures panel. `figures` is buildFigures' model and `state` the remote state of the planning snapshot, which most
@@ -39,7 +48,8 @@ export default function FiguresPanel({
           {FIGURES.map(figure => (
             <OccStatTile key={figure.id} label={t(`figures.${figure.id}`)} hint={t(`figures.${figure.id}Hint`)}
               value={figures?.[figure.id] ?? null} tone={figure.tone} href={figure.href}
-              isLowerBound={figure.id === 'toReview' && figures?.toReviewIsLowerBound === true} />
+              isLowerBound={figure.id === 'toReview' && figures?.toReviewIsLowerBound === true}
+              detail={detailOf(figure, figures, t)} detailTone={figure.detailTone} />
           ))}
         </OccStatList>
       </OccRemoteView>

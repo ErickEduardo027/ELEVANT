@@ -9,8 +9,8 @@ import { expect, test } from '../support/test.mjs';
 // METAR of IEM answered by a route of this spec. Photographed for review at 1920 × 1080 and 1440 × 900, the laptop the
 // console is presented on (owner decision 11): the panels open and folded, a flight and a stand selected, the fallback
 // without a map engine, the pill of a demo flight already on its way when the console opens with the board's legend,
-// the pill of a new demo arrival, and a strip chosen beside a folded «Alertas». Each test opens the console as a later
-// OCC entry of its tab, so the OCC boot screen (PR U4) never covers it.
+// an operation still open after its departure (N30), the pill of a new demo arrival, and a strip chosen beside a folded
+// «Alertas». Each test opens the console as a later OCC entry of its tab, so the OCC boot screen (PR U4) never covers it.
 
 const PAGE = '/admin-occ/dashboard';
 const SIZES = Object.freeze([{ width: 1920, height: 1080 }, { width: 1440, height: 900 }]);
@@ -20,8 +20,8 @@ const PANELS = Object.freeze(['Tablero', 'Alertas', 'Cifras de la jornada', 'Pos
 const panel = (page, name) => page.getByRole('region', { name, exact: true });
 const foldButton = (page, name) => panel(page, name).getByRole('button', { name, exact: true });
 
-async function openConsole(page, isolation, query = '', { demo = false } = {}) {
-  const api = createConsoleApi({ demo });
+async function openConsole(page, isolation, query = '', { demo = false, openAfterDeparture = false } = {}) {
+  const api = createConsoleApi({ demo, openAfterDeparture });
   isolation.setApi(api.handle);
   // Today's METAR, without leaving the machine: registered after the isolation, this route answers first.
   await page.route(IEM, route => route.fulfill({
@@ -144,6 +144,28 @@ test.describe('the OCC console on the map engine', () => {
         await expect(legend).toContainText('Simulado para la demostración');
         await expect(map).toHaveAttribute('data-occ-settled', 'true');
         await shoot(page, testInfo, `u3-consola-llegada-al-abrir-${size.width}`);
+      });
+
+    // N30: ZZ800 left A4 80 minutes ago and its agent never handed the operation off (fixtures/consoleApi.mjs).
+    test(`an operation still open an hour after its departure at ${size.width}×${size.height}`,
+      async ({ page, isolation }, testInfo) => {
+        await page.setViewportSize(size);
+        const { map } = await openConsole(page, isolation, '', { openAfterDeparture: true });
+        await settled(page, map);
+        // «Pendientes de la jornada» lists it in amber, with no action of its own.
+        const pending = panel(page, 'Alertas').getByRole('region', { name: 'Pendientes de la jornada' });
+        const item = pending.locator('[data-pending="openAfterDeparture"]');
+        await expect(item).toHaveText(/Atención: ZZ801 con la operación abierta, salió hace 1 h 2\d min/);
+        await expect(item.locator('[data-occ-glyph="attention"]')).toBeVisible();
+        await expect(item.getByRole('button', { name: /Elegir posición|Asignar agente|Revisar|Importar/ })).toHaveCount(0);
+        // «En operación» keeps counting it, with ZZ300, and says so under its figure.
+        await setOpen(page, 'Cifras de la jornada', true);
+        const working = panel(page, 'Cifras de la jornada').locator('[data-occ-stat]').filter({ hasText: 'En operación' });
+        await expect(working.locator('dd').first()).toHaveText('2');
+        await expect(working.locator('[data-occ-stat-detail]')).toHaveText('Atención: 1 abierta tras la salida');
+        await item.scrollIntoViewIfNeeded();
+        await expect(map).toHaveAttribute('data-occ-settled', 'true');
+        await shoot(page, testInfo, `n30-consola-abierta-tras-la-salida-${size.width}`);
       });
 
     test(`the fallback without a map engine at ${size.width}×${size.height}`, async ({ page, isolation }, testInfo) => {

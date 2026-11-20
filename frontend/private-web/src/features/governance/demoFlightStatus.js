@@ -1,5 +1,6 @@
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { OPERATION_STATUS_LABELS, operationStatusLabel as sharedOperationStatusLabel } from '../operations/operationLabels';
+import { isOpenAfterDeparture } from '../operations/openAfterDeparture';
 
 /**
  * Where a demo flight is (ADR-0041), computed in the browser between two reads of «Vuelos demo de hoy». The server owns
@@ -140,6 +141,15 @@ export function countdownText(flight, nowMs, timeZone) {
     default:
       return `Terminó a las ${at(flight.vanishAt)}`;
   }
+}
+
+/**
+ * Whether OCC's operation of an imported flight is still on the agent's side (assigned, in progress or returned) more
+ * than an hour after its aircraft left the stand at its off-block (N30, D-N30), at `nowMs` (the server's clock): OCC's
+ * «Pendientes de la jornada» lists the same operation. Never for a flight whose departure is not decided or not reached.
+ */
+export function operationOpenAfterDeparture(flight, nowMs) {
+  return isOpenAfterDeparture(flight.operationStatus, instant(flight.offBlockAt), nowMs);
 }
 
 /**

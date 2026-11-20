@@ -345,6 +345,48 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     expect(cancelDemoFlight).not.toHaveBeenCalled();
   });
 
+  it('draws in the warning tone an imported flight whose operation is still open an hour after it left (N30)', async () => {
+    // At 12:09 in Punta Cana (16:09Z). Each aircraft left its stand at `offBlockAt`, took off 5 minutes later and was
+    // gone 10 minutes after that.
+    const left = (id, numbers, offBlockAt, extra = {}) => {
+      const offBlock = at(offBlockAt);
+      return imported({ id, arrivalFlightNumber: numbers[0], departureFlightNumber: numbers[1], state: 'Finished',
+        phase: 'Gone', offBlockAt, takeoffAt: iso(offBlock + 5 * 60_000), vanishAt: iso(offBlock + 15 * 60_000),
+        operationStatus: 'InProgress', ...extra });
+    };
+    clock = at('2026-11-12T16:09:00Z');
+    listDemoFlights.mockResolvedValue(list([
+      // Left B22 at 11:08, 61 minutes ago, and its agent never handed the operation off.
+      left('70000000-0000-7000-8000-000000000011', ['ZZ9011', 'ZZ9012'], '2026-11-12T15:08:00.000Z'),
+      // Left at 11:30: the agent still has time to hand it off.
+      left('70000000-0000-7000-8000-000000000013', ['ZZ9013', 'ZZ9014'], '2026-11-12T15:30:00.000Z'),
+      // Handed off to OCC after it left at 10:30.
+      left('70000000-0000-7000-8000-000000000015', ['ZZ9015', 'ZZ9016'], '2026-11-12T14:30:00.000Z',
+        { operationStatus: 'PendingReview' }),
+      // Returned to its agent, who has not sent it again since it left at 10:30.
+      left('70000000-0000-7000-8000-000000000017', ['ZZ9017', 'ZZ9018'], '2026-11-12T14:30:00.000Z',
+        { operationStatus: 'Returned' }),
+    ], '2026-11-12T16:09:00+00:00'));
+    renderPanel();
+    const [open, recent, handedOff, returned] = within(await screen.findByRole('list', { name: 'Vuelos demo de hoy' }))
+      .getAllByRole('listitem');
+
+    const dot = row => within(row).getByTestId('status-dot');
+    expect(open).toHaveTextContent(
+      'Importado por OCC · PUJ-20261112-003 · Posición B22 · Operación en curso, abierta tras la salida');
+    expect(open).toHaveTextContent('Terminado');
+    expect(dot(open)).toHaveClass('bg-status-warning');
+    expect(returned).toHaveTextContent('Operación devuelta, abierta tras la salida');
+    expect(dot(returned)).toHaveClass('bg-status-warning');
+    // Within the hour, or once handed off, the row stays as it was.
+    for (const row of [recent, handedOff]) {
+      expect(row).not.toHaveTextContent('abierta tras la salida');
+      expect(dot(row)).toHaveClass('bg-status-neutral');
+    }
+    expect(recent).toHaveTextContent('Operación en curso');
+    expect(handedOff).toHaveTextContent('Operación pendiente de revisión');
+  });
+
   it('shows the loading, empty, unauthorized and recoverable error states', async () => {
     let answer;
     loadDemoFlightOptions.mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));

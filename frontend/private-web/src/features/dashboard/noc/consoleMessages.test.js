@@ -174,6 +174,28 @@ describe('consoleMessages', () => {
     expect(es.board.legend).toBe('Leyenda del tablero');
   });
 
+  it('says an operation still open after its departure, in Pendientes and under «En operación» (N30)', () => {
+    for (const language of ['es', 'en']) {
+      const { pending, figures } = consoleMessages[language];
+      expect(placeholdersOf(String(pending.openAfterDeparture ?? '')), `${language}: pending`).toEqual(['flight']);
+      expect(placeholdersOf(String(figures.openAfterDeparture ?? '')), `${language}: figures`).toEqual(['count']);
+      expect(placeholdersOf(String(figures.openAfterDepartureOne ?? 'x{count}')), `${language}: one`).toEqual([]);
+    }
+    const es = createTranslator(consoleMessages, 'es');
+    const en = createTranslator(consoleMessages, 'en');
+    expect(es('figures.openAfterDepartureOne')).toBe('1 abierta tras la salida');
+    expect(es('figures.openAfterDeparture', { count: 2 })).toBe('2 abiertas tras la salida');
+    expect(en('figures.openAfterDepartureOne')).toBe('1 open after departure');
+    expect(en('figures.openAfterDeparture', { count: 2 })).toBe('2 open after departure');
+    // The pending item says when it left with the words of a departure that happened.
+    expect(es('pending.withWhen', { what: es('pending.openAfterDeparture', { flight: 'ZZ9002' }),
+      when: es('pending.when.departsPast', { duration: '1 h 5 min' }) }))
+      .toBe('ZZ9002 con la operación abierta, salió hace 1 h 5 min');
+    expect(en('pending.withWhen', { what: en('pending.openAfterDeparture', { flight: 'ZZ9002' }),
+      when: en('pending.when.departsPast', { duration: '1 h 5 min' }) }))
+      .toBe('ZZ9002 with its operation still open, departed 1 h 5 min ago');
+  });
+
   it('says the signals of a stand with the map words and counts with the words of occTime', () => {
     for (const language of ['es', 'en']) {
       for (const reason of ['conflict', 'uncovered', 'overdue']) {

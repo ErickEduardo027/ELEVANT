@@ -24,15 +24,23 @@ const FIGURE_LINK = 'rounded-sm underline decoration-occ-line-strong decoration-
  * - `loading` (or no `value` yet) shows «—», read as «Cargando»: never a zero that nobody counted.
  * - `isLowerBound` writes «≥3», read as «al menos 3», for a count the read cut short.
  * - `href` makes the figure a link to where the counted items are.
- * `data-occ-stat` marks the tile and `data-tone` the tone it shows. An unknown tone throws.
+ * - `detail` says more of the figure on a line under it, on screen («1 abierta tras la salida», N30), and only once
+ *   the figure is counted. `detailTone` `attention` or `urgent` puts that signal's glyph before it, with its word for
+ *   assistive technology; the label and the figure keep the tile's own tone.
+ * `data-occ-stat` marks the tile, `data-tone` the tone it shows and `data-occ-stat-detail` its line. An unknown tone
+ * throws.
  */
 export default function OccStatTile({
-  label, value, hint, tone = 'neutral', isLowerBound = false, href, loading = false, className = '',
+  label, value, hint, tone = 'neutral', isLowerBound = false, href, loading = false, detail, detailTone = 'neutral',
+  className = '',
 }) {
   const { t, language } = useTranslation(occUiMessages);
   if (!OCC_STAT_TONES.includes(tone)) throw new RangeError(`Unknown OCC stat tone: ${String(tone)}`);
+  if (!OCC_STAT_TONES.includes(detailTone)) throw new RangeError(`Unknown OCC stat tone: ${String(detailTone)}`);
   const pending = loading || value === null || value === undefined;
   const lit = !pending && tone !== 'neutral' && Number(value) > 0;
+  const said = !pending && detail !== undefined && detail !== null && detail !== '';
+  const signalled = said && detailTone !== 'neutral';
 
   let figure;
   if (pending) {
@@ -53,6 +61,14 @@ export default function OccStatTile({
       <dd className={`mt-0.5 ${FIGURE}`}>
         {href && !pending ? <Link href={href} className={FIGURE_LINK}>{figure}</Link> : figure}
       </dd>
+      {said ? (
+        <dd data-occ-stat-detail="" className={`mt-0.5 flex items-start gap-1 text-xs ${
+          signalled ? 'text-occ-text' : 'text-occ-muted'}`}>
+          {signalled ? <OccGlyph name={detailTone} /> : null}
+          {signalled ? <span className="sr-only">{`${SIGNALS[detailTone][language]}: `}</span> : null}
+          <span className="min-w-0">{detail}</span>
+        </dd>
+      ) : null}
       {hint ? <dd className="sr-only">{hint}</dd> : null}
     </div>
   );

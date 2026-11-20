@@ -750,7 +750,7 @@ Posterior al commit verificado de esta nota: esta sección describe el código d
 
 | Pantalla | Comportamiento |
 | --- | --- |
-| Superadministración → Configuración | El panel «Vuelo demo», encima de «Correo del sistema», dice si el entorno lo permite. «Disparar vuelo demo» pide estación, aerolínea con contrato vigente hoy, origen, destino («El mismo aeropuerto» por defecto), tipo de avión, «Sin posición» o una posición libre, «Llega a la posición en (minutos)» (de 2 a 30, con atajos de 3, 5, 8 y 15) y «Tiempo en tierra (minutos)» (de 20 a 240, 60 por defecto). «Vuelos demo de hoy» muestra cada vuelo con su fase («En aproximación», «Aterrizó, rueda a la posición», «En posición», «Saliendo», «Despegó», «Terminado» o «Cancelado») y su cuenta regresiva, calculadas en el navegador con el reloj del servidor; si OCC ya lo importó, con qué código y en qué posición, y «Cancelar vuelo» antes de tocar pista o «Terminar demo» después, con su confirmación y su `Idempotency-Key`. Se relee cada 5 segundos mientras un avión se mueve y cada 20 si no, nunca con la pestaña oculta. Las opciones del formulario cambian con la hora (el aviso `crosses_local_midnight`, las aerolíneas con contrato vigente hoy y las posiciones libres): se releen con la lista cuando tienen 5 minutos, y al volver a la pestaña o a su ventana (al recuperar el foco) el panel relee las opciones y la lista enseguida. Cada código se explica en español; apagado, el panel dice que los vuelos demo solo funcionan en el entorno de desarrollo. |
+| Superadministración → Configuración | El panel «Vuelo demo», encima de «Correo del sistema», dice si el entorno lo permite. «Disparar vuelo demo» pide estación, aerolínea con contrato vigente hoy, origen, destino («El mismo aeropuerto» por defecto), tipo de avión, «Sin posición» o una posición libre, «Llega a la posición en (minutos)» (de 2 a 30, con atajos de 3, 5, 8 y 15) y «Tiempo en tierra (minutos)» (de 20 a 240, 60 por defecto). «Vuelos demo de hoy» muestra cada vuelo con su fase («En aproximación», «Aterrizó, rueda a la posición», «En posición», «Saliendo», «Despegó», «Terminado» o «Cancelado») y su cuenta regresiva, calculadas en el navegador con el reloj del servidor; si OCC ya lo importó, con qué código y en qué posición, y «Cancelar vuelo» antes de tocar pista o «Terminar demo» después, con su confirmación y su `Idempotency-Key`. Se relee cada 5 segundos mientras un avión se mueve y cada 20 si no, nunca con la pestaña oculta. Las opciones del formulario cambian con la hora (el aviso `crosses_local_midnight`, las aerolíneas con contrato vigente hoy y las posiciones libres): se releen con la lista cuando tienen 5 minutos, y al volver a la pestaña o a su ventana (al recuperar el foco) el panel relee las opciones y la lista enseguida. Cada código se explica en español; apagado, el panel dice que los vuelos demo solo funcionan en el entorno de desarrollo. *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* un vuelo importado cuya operación sigue asignada, en curso o devuelta más de una hora después de que su avión dejó la posición lleva el punto de aviso y dice «Operación en curso, abierta tras la salida», como el pendiente del Panorama ([estado](../../frontend/private-web/src/features/governance/demoFlightStatus.js)). |
 | OCC → Planificación → «Importar vuelos» | Los tramos de un vuelo demo llevan la etiqueta «Demo». El diálogo relee con `occ_planning` sin perder lo elegido; la posición cuyo código normalizado coincide con la puerta de la llegada demo viene preseleccionada («Posición (sugerida)»: `A01` es `A1`), y las posiciones van en orden natural (A1, A2, A10). Un vuelo demo no necesita «Actualizar ahora». |
 | OCC → Planificación, Mapa de posiciones y Panorama | La tarjeta del vuelo, el cajón de la posición y la fila del tablero muestran «Demo» cuando la API marca la escala con `isDemo`: la palabra sobre rayas a 45°, sin color ([etiqueta](../../frontend/private-web/src/features/occ-ui/DemoTag.jsx)). |
 
@@ -1861,6 +1861,22 @@ tampoco.
   *Posterior al commit verificado (hallazgo N23, 19 de noviembre de 2026):* una
   llegada cuya hora es la de pista dice «WN9001 sin agente, aterrizó hace 8 min»,
   nunca «llegó hace»; con la hora de «Registrar llegada» sigue «llegó hace».
+  *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* una
+  operación que sigue asignada, en curso o devuelta al agente más de una hora
+  después de que su avión dejó la posición es un pendiente ámbar y sin acción
+  propia (D-N30): «ZZ9002 con la operación abierta, salió hace 1 h 5 min». La
+  salida es lo primero que la registra en los vuelos del mapa (el `PUSHBACK`, la
+  hora real de una salida que despegó o el desbloqueo del reloj del vuelo demo)
+  y, para una escala que ya quedó fuera de su ventana, la hora real de salida de
+  la planificación. Una operación entregada (pendiente de revisión o en
+  revisión) o aprobada no es un pendiente, y un avión que sigue en la posición
+  sigue diciendo «pasó su hora de salida». La entrega el agente en la tablet o,
+  si no puede, OCC la pasa a otro agente; el servidor no la barre ni avisa por
+  su cuenta
+  ([regla](../../frontend/private-web/src/features/operations/openAfterDeparture.js)).
+  Una escala que OCC planificó a mano no recibe hora real de salida: cuando sus
+  vuelos salen de la ventana de dos horas del mapa, su `PUSHBACK` deja de verse
+  y el pendiente desaparece.
   Esos pendientes salen de cuatro lecturas (la planificación, la disponibilidad
   de los agentes, los vuelos del mapa y la cola de revisión), y cada una apaga
   solo lo suyo: la que no respondió, falló, fue rechazada o muestra datos
@@ -1876,6 +1892,13 @@ tampoco.
   puede leer dice «No tienes permiso para ver esta información.»; solo la
   planificación, que lee el día de la estación, dice «No hay una estación OCC
   autorizada para consultar este panorama.».
+  *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* «En
+  operación» sigue contando la operación abierta tras la salida y lo dice debajo
+  de la cifra, con el triángulo ámbar: «1 abierta tras la salida» o «2 abiertas
+  tras la salida»
+  ([cifras](../../frontend/private-web/src/features/dashboard/noc/FiguresPanel.jsx)).
+  Esa línea solo cuenta las que la cifra cuenta: una operación asignada que nunca
+  empezó sale en «Pendientes de la jornada», pero no ahí.
 - **Posiciones.** Plegado, dice las escalas del día, las que están en operación
   y cuántas posiciones hay en cada estado. Abierto, la banda de las posiciones en
   el tiempo, una fila por posición con sus escalas bajo la línea «ahora», con

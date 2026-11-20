@@ -98,6 +98,9 @@ export const consoleMessages = {
       turnaroundsHint: 'Escalas planificadas para la fecha operacional.',
       inOperation: 'En operación',
       inOperationHint: 'Escalas en curso, también las devueltas al agente para corregir.',
+      // N30: of those, the ones still open more than an hour after their aircraft left.
+      openAfterDeparture: '{count} abiertas tras la salida',
+      openAfterDepartureOne: '1 abierta tras la salida',
       arriving60: 'Llegan en 60 min',
       arriving60Hint: 'Llegadas que aún no aterrizan, con su mejor hora en los próximos 60 minutos.',
       needsResources: 'Sin recursos',
@@ -115,6 +118,8 @@ export const consoleMessages = {
       toImport: '{flight} por importar',
       toReview: '{code} por revisar',
       overdue: '{flight} pasó su hora de salida',
+      // N30: an operation still on the agent's side an hour after its aircraft left, with «salió hace…».
+      openAfterDeparture: '{flight} con la operación abierta',
       withWhen: '{what}, {when}',
       when: {
         arrives: 'llega en {duration}',
@@ -396,6 +401,8 @@ export const consoleMessages = {
       turnaroundsHint: 'Turnarounds planned for the operational date.',
       inOperation: 'In operation',
       inOperationHint: 'Turnarounds under way, including those returned to the agent for corrections.',
+      openAfterDeparture: '{count} open after departure',
+      openAfterDepartureOne: '1 open after departure',
       arriving60: 'Arriving in 60 min',
       arriving60Hint: 'Arrivals not landed yet whose best time falls in the next 60 minutes.',
       needsResources: 'Missing resources',
@@ -413,6 +420,7 @@ export const consoleMessages = {
       toImport: '{flight} to import',
       toReview: '{code} to review',
       overdue: '{flight} is past its departure time',
+      openAfterDeparture: '{flight} with its operation still open',
       withWhen: '{what}, {when}',
       when: {
         arrives: 'arrives in {duration}',

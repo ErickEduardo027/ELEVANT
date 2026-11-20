@@ -80,6 +80,47 @@ describe('OccStatTile', () => {
     }
   });
 
+  it('says more of its figure on a line under it, with the glyph and word of a signal when it carries one', () => {
+    render(figures(
+      <>
+        <OccStatTile label="En operación" value={3} hint="Escalas en curso." detail="1 abierta tras la salida"
+          detailTone="attention" />
+        <OccStatTile label="Escalas" value={18} detail="2 demo" />
+        <OccStatTile label="Completadas" value={null} detail="1 abierta tras la salida" detailTone="attention" />
+        <OccStatTile label="Por revisar" value={2} detail="" detailTone="attention" />
+      </>,
+    ));
+    const working = tileOf('En operación');
+    // The figure, then the line on screen, then the hint for assistive technology.
+    const [figure, detail, hint] = within(working).getAllByRole('definition');
+    expect(figure).toHaveTextContent(/^3$/);
+    expect(detail).toHaveAttribute('data-occ-stat-detail');
+    expect(detail).not.toHaveClass('sr-only');
+    expect(detail).toHaveTextContent(/^Atención: 1 abierta tras la salida$/);
+    expect(detail.querySelector('[data-occ-glyph]')).toHaveAttribute('data-shape', 'triangle');
+    expect(within(detail).getByText('Atención:', { exact: false })).toHaveClass('sr-only');
+    expect(hint).toHaveClass('sr-only');
+    // The line asks for attention; the figure and its label do not, so the tile keeps its own tone.
+    expect(working).toHaveAttribute('data-tone', 'neutral');
+    expect(working.querySelector('dt [data-occ-glyph]')).toBeNull();
+    expect(classesOf(figure).filter(name => /occ-(?:warn|danger|accent)/.test(name))).toEqual([]);
+
+    // A plain line has no glyph and no word.
+    const plain = tileOf('Escalas').querySelector('[data-occ-stat-detail]');
+    expect(plain).toHaveTextContent(/^2 demo$/);
+    expect(plain.querySelector('[data-occ-glyph]')).toBeNull();
+    // Nothing to say while the figure loads, nor without words.
+    expect(tileOf('Completadas').querySelector('[data-occ-stat-detail]')).toBeNull();
+    expect(tileOf('Por revisar').querySelector('[data-occ-stat-detail]')).toBeNull();
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<OccStatTile label="Escalas" value={1} detail="x" detailTone="critical" />)).toThrow(RangeError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('shows a dash while loading and never asserts zero; writes a lower bound as «≥3»; links its figure when given href', () => {
     const { rerender } = render(figures(
       <>

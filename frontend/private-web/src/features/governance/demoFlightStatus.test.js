@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationStatusLabel, phaseLabel, serverClockOffset,
+  clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationOpenAfterDeparture, operationStatusLabel,
+  phaseLabel, serverClockOffset,
 } from './demoFlightStatus';
 
 // A flight triggered at 10:00 in Punta Cana (14:00Z) to park in 8 minutes with 60 on the ground, as the server's clock
@@ -76,6 +77,27 @@ describe('demo flight status (ADR-0041)', () => {
     expect(operationStatusLabel(null)).toBe('');
     // A state this screen does not know is named, never shown alone as an English word.
     expect(operationStatusLabel('Paused')).toBe('Operación: Otro (Paused)');
+  });
+
+  it('says when OCC’s operation is still open more than an hour after the aircraft left its stand (N30)', () => {
+    // The agent pushed back at 11:08 (15:08Z); OCC's «Pendientes de la jornada» says the same from 12:08 on.
+    const pushedBack = waiting({ offBlockAt: '2026-11-12T15:08:00+00:00', takeoffAt: '2026-11-12T15:13:00+00:00',
+      vanishAt: '2026-11-12T15:23:00+00:00', operationStatus: 'InProgress' });
+    expect(operationOpenAfterDeparture(pushedBack, at('2026-11-12T16:08:00Z'))).toBe(false);
+    expect(operationOpenAfterDeparture(pushedBack, at('2026-11-12T16:08:00.001Z'))).toBe(true);
+    expect(operationOpenAfterDeparture({ ...pushedBack, state: 'Finished' }, at('2026-11-12T23:00:00Z'))).toBe(true);
+    for (const operationStatus of ['Assigned', 'Returned']) {
+      expect(operationOpenAfterDeparture({ ...pushedBack, operationStatus }, at('2026-11-12T17:00:00Z')), operationStatus)
+        .toBe(true);
+    }
+    for (const operationStatus of ['PendingReview', 'InReview', 'Approved', 'Cancelled', null]) {
+      expect(operationOpenAfterDeparture({ ...pushedBack, operationStatus }, at('2026-11-12T17:00:00Z')),
+        String(operationStatus)).toBe(false);
+    }
+    // Still waiting on its stand (no departure decided), nobody imported it, or cancelled before it landed: nothing open.
+    expect(operationOpenAfterDeparture(waiting({ operationStatus: 'InProgress' }), at('2026-11-12T23:00:00Z'))).toBe(false);
+    expect(operationOpenAfterDeparture(flight(), at('2026-11-12T23:00:00Z'))).toBe(false);
+    expect(operationOpenAfterDeparture(cancelled, at('2026-11-12T23:00:00Z'))).toBe(false);
   });
 
   it('an aircraft moves only in approach, taxi-in and taxi-out', () => {
