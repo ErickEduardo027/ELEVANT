@@ -700,7 +700,11 @@ tenía cabecera. Ahora la hoja usa el
 - un pie fijo con la huella, CANCELAR y FIRMAR, en fila desde 600 dp y apilado
   en compact;
 - el área segura, que deja la cabecera y el pie fuera de las barras del
-  sistema, y las cuatro orientaciones también en iOS.
+  sistema, y las cuatro orientaciones también en iOS;
+- con el teclado abierto, el pie sube por encima del teclado y el cuerpo se
+  acorta, porque la ventana del modal no se encoge: Android la dibuja de borde
+  a borde e iOS nunca redimensiona un modal. Sigue pendiente de comprobar en
+  una tablet.
 
 Un desplazamiento que empezaba sobre el pad dejaba un trazo suelto y bloqueaba
 el desplazamiento de la hoja.

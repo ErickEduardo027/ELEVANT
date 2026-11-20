@@ -165,8 +165,12 @@ el detalle pasa el día de la operación a la tarjeta.
 de firma con el FIRMAR de la fila del rol (S2, D-S2). Comprueba que FIRMAR,
 CANCELAR y la huella quedan en el pie fijo, fuera del `ScrollView`, también en
 compact; que el pie va en fila desde medium; que la hoja sigue la orientación y
-usa el área segura; que «Cerrar sin firmar» y el botón atrás cierran sin firmar,
-y que el nombre va antes de los datos y del pad. Con el `PanResponder` real y
+usa el área segura; que el cuerpo y el pie van dentro de un
+`KeyboardAvoidingView` con `padding` en iOS y en Android, que con eventos de
+teclado simulados deja el pie sobre el teclado y vuelve a 0 al cerrarlo; que
+«Cerrar sin firmar» y el botón atrás cierran sin firmar, y que el nombre va
+antes de los datos y del pad. Si los eventos del teclado llegan al modal de
+Android solo se puede ver en una tablet. Con el `PanResponder` real y
 eventos de toque simulados, comprueba que un trazo que termina en
 `onResponderTerminate` (el `ScrollView` se queda con el gesto) devuelve el
 desplazamiento y no deja trazo, que los trazos ya hechos se conservan, que

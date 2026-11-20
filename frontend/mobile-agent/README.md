@@ -221,6 +221,12 @@ contiene secretos.
     El marco sigue la orientación también en iOS (`supportedOrientations`) y
     deja la cabecera y el pie fuera de las barras del sistema (`SafeAreaView`),
     que un modal de Android cubre de borde a borde.
+  - Con el teclado abierto, el marco sube el pie por encima del teclado y
+    acorta el cuerpo (`KeyboardAvoidingView` con `padding`, en Android y en
+    iOS), porque la ventana del modal no se encoge: con `edgeToEdgeEnabled`,
+    RN 0.81 la dibuja de borde a borde y `adjustResize` no hace nada, e iOS
+    nunca redimensiona un modal. Sigue pendiente de comprobar en una tablet
+    Android 11 o posterior en horizontal y en un iPad.
   - La hoja de firma lleva en el pie la huella del documento, CANCELAR y
     FIRMAR. El nombre y la cédula van al principio del cuerpo, donde el pie no
     los tapa; después vienen los datos y, al final, el pad. Empezar un trazo no

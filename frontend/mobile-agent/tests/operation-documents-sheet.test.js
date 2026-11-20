@@ -1,6 +1,6 @@
 // The signature sheet (S2, D-S2). FIRMAR, CANCELAR and the document's fingerprint sit in a fixed footer, below a body
 // that scrolls and a fixed header that closes the sheet without signing, so in landscape the buttons are never below
-// the fold. A scroll that starts on the pad and takes the gesture away (Android's scroll view terminates the pad's
+// the fold, and the keyboard lifts that footer instead of covering it. A scroll that starts on the pad and takes the gesture away (Android's scroll view terminates the pad's
 // responder; it never releases it) drops the stroke in progress and gives the scroll back; the strokes already kept stay.
 // The Service Order's total says it is a contract-price subtotal without ITBIS (N4, D-N4), and the forms whose
 // signatures the hand-off to OCC does not wait for say so and use a secondary button (N3, D-N3). A Service Order that
@@ -45,7 +45,7 @@ jest.mock('../src/services/flight-report', () => ({
 }));
 jest.mock('../src/utils/layout-class', () => ({ useLayoutClass: () => mockLayout }));
 
-const { Keyboard, ScrollView, StyleSheet } = require('react-native');
+const { DeviceEventEmitter, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } = require('react-native');
 const { DocumentsPanel } = require('../src/components/documents/operation-documents');
 const { SignaturePad } = require('../src/components/documents/signature-pad');
 const { colors } = require('../src/theme/colors');
@@ -251,6 +251,45 @@ describe('the sheet’s frame (S2, D-S2)', () => {
     expect(safe.props.edges).toEqual(expect.arrayContaining(['top', 'bottom', 'left', 'right']));
     for (const node of [closeButton(tree), scroll(tree), sheetButton(tree, 'FIRMAR')]) expect(contains(safe, node)).toBe(true);
   });
+
+  // The modal's window does not shrink for the keyboard: Android draws it edge to edge (RN 0.81 with
+  // edgeToEdgeEnabled) and iOS never resizes a modal. While the signer types the name or the ID, the frame pads itself
+  // from the keyboard's own events, on both platforms, so the footer rises above the keyboard and the body shortens.
+  test.each([['ios', 'keyboardWillShow', 'keyboardWillHide'], ['android', 'keyboardDidShow', 'keyboardDidHide']])(
+    'on %s the keyboard lifts the footer: body and footer sit in a KeyboardAvoidingView that pads by the keyboard',
+    async (os, shown, hidden) => {
+      const platform = jest.replaceProperty(Platform, 'OS', os);
+      try {
+        const tree = await render();
+        await openSheet(tree);
+        const avoiding = modal(tree).findAll(node => node.type === KeyboardAvoidingView);
+        expect(avoiding).toHaveLength(1);
+        expect(avoiding[0].props.behavior).toBe('padding');
+        for (const node of [scroll(tree), sheetButton(tree, 'FIRMAR'), sheetButton(tree, 'CANCELAR'), fingerprint(tree)]) {
+          expect(contains(avoiding[0], node)).toBe(true);
+        }
+        // A 1280 × 800 dp tablet in landscape: the frame runs from under the 24 dp status bar to above the 24 dp
+        // navigation bar, and the keyboard covers the bottom 324 dp, so the frame pads its bottom by 300 dp.
+        const box = () => avoiding[0].findAll(node => node.type === 'View' && typeof node.props.onLayout === 'function')[0];
+        const padding = () => StyleSheet.flatten(box().props.style).paddingBottom ?? 0;
+        const keyboard = async (event, screenY, height) => {
+          await renderer.act(async () => {
+            DeviceEventEmitter.emit(event, { endCoordinates: { screenX: 0, screenY, width: 1280, height } });
+            await new Promise(resolve => setTimeout(resolve, 0));
+          });
+        };
+        await renderer.act(async () => {
+          await box().props.onLayout({ persist() {}, nativeEvent: { layout: { x: 0, y: 24, width: 1280, height: 752 } } });
+        });
+        expect(padding()).toBe(0);
+        await keyboard(shown, 476, 324);
+        expect(padding()).toBe(300);
+        await keyboard(hidden, 800, 0);
+        expect(padding()).toBe(0);
+      } finally {
+        platform.restore();
+      }
+    });
 
   test('«Cerrar sin firmar» in the fixed header and Android’s back button close the sheet without signing', async () => {
     const tree = await render();

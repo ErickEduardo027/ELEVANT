@@ -1,6 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, type ModalProps } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ModalProps,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { radius, space, touch, type } from '../theme/tokens';
@@ -16,7 +25,7 @@ const ORIENTATIONS: NonNullable<ModalProps['supportedOrientations']> = [
  * sheet beside the button that closes it; only the body scrolls; the footer is fixed and holds the actions, so they
  * stay within reach in landscape and below a long body. From the medium width the footer puts its note and its
  * actions in one row; in compact it stacks them. The safe area keeps header and footer clear of the system bars,
- * which a modal draws under on Android (edge to edge).
+ * which a modal draws under on Android (edge to edge). The keyboard lifts the footer and shortens the body.
  */
 export function SheetFrame({ eyebrow, title, closeLabel, onClose, scrollEnabled = true, footerNote, actions, children }: {
   /** A short line above the title, such as the role that signs. */
@@ -39,28 +48,33 @@ export function SheetFrame({ eyebrow, title, closeLabel, onClose, scrollEnabled 
     <Modal animationType="slide" visible onRequestClose={onClose} supportedOrientations={ORIENTATIONS}>
       <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe} accessibilityViewIsModal
         onAccessibilityEscape={onClose}>
-        <View style={styles.headerBar}>
-          <View style={[styles.column, styles.header]}>
-            <View style={styles.heading}>
-              {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-              <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+        {/* The modal's window does not shrink for the keyboard: with edgeToEdgeEnabled RN 0.81 draws it edge to edge,
+            where adjustResize does nothing, and iOS never resizes a modal. Padding from the keyboard's own events, on
+            both platforms, keeps the footer above the keyboard while the signer types (S2). */}
+        <KeyboardAvoidingView behavior="padding" style={styles.avoid}>
+          <View style={styles.headerBar}>
+            <View style={[styles.column, styles.header]}>
+              <View style={styles.heading}>
+                {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
+                <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+              </View>
+              <Pressable accessibilityLabel={closeLabel} accessibilityRole="button" hitSlop={10} onPress={onClose}
+                style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
+                <Ionicons name="close" size={26} color={colors.navy} />
+              </Pressable>
             </View>
-            <Pressable accessibilityLabel={closeLabel} accessibilityRole="button" hitSlop={10} onPress={onClose}
-              style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
-              <Ionicons name="close" size={26} color={colors.navy} />
-            </Pressable>
           </View>
-        </View>
-        <ScrollView style={styles.body} contentContainerStyle={[styles.column, styles.content]}
-          scrollEnabled={scrollEnabled} keyboardShouldPersistTaps="handled">
-          {children}
-        </ScrollView>
-        <View style={styles.footerBar}>
-          <View style={[styles.column, styles.footer, inRow && styles.footerRow]}>
-            {footerNote ? <View style={inRow ? styles.noteInRow : undefined}>{footerNote}</View> : null}
-            <View style={[styles.actions, inRow && styles.actionsInRow]}>{actions}</View>
+          <ScrollView style={styles.body} contentContainerStyle={[styles.column, styles.content]}
+            scrollEnabled={scrollEnabled} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
+          <View style={styles.footerBar}>
+            <View style={[styles.column, styles.footer, inRow && styles.footerRow]}>
+              {footerNote ? <View style={inRow ? styles.noteInRow : undefined}>{footerNote}</View> : null}
+              <View style={[styles.actions, inRow && styles.actionsInRow]}>{actions}</View>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -68,6 +82,7 @@ export function SheetFrame({ eyebrow, title, closeLabel, onClose, scrollEnabled 
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.white },
+  avoid: { flex: 1 },
   // The same width as the operation's manifest, so a landscape tablet does not stretch the lines.
   column: { width: '100%', maxWidth: 960, alignSelf: 'center' },
   headerBar: { backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.border },
