@@ -29,9 +29,9 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
     }).catch(error => {
       if (active) setState({ status: error?.status === 401 ? 'unauthorized' :
         error?.status === 403 ? 'forbidden' : 'error', result: null,
-        error: error?.status === 401 ? 'La sesión expiró. Vuelva a iniciar sesión.' :
-          error?.status === 403 ? 'No tiene permiso para consultar acuerdos.' :
-            'No se pudieron consultar los acuerdos. Intente de nuevo.' });
+        error: error?.status === 401 ? 'La sesión expiró. Vuelve a iniciar sesión.' :
+          error?.status === 403 ? 'No tienes permiso para consultar acuerdos.' :
+            'No se pudieron consultar los acuerdos. Intenta de nuevo.' });
     });
     return () => { active = false; };
   }, [page, revision]);

@@ -18,7 +18,7 @@ import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftP
 import { afterFinanceApproval } from '../approvalEffect';
 import { contractCodeLabel } from '../requests/requestLabels';
 
-const LOAD_FAILED = 'No se pudieron cargar los borradores. Revise la conexión e intente de nuevo.';
+const LOAD_FAILED = 'No se pudieron cargar los borradores. Revisa la conexión e intenta de nuevo.';
 // Comments, scope and discards (contract_drafts) and Finance decisions (contract_approvals) re-read the list.
 const RELOAD_ON = ['contract_draft_comments', 'contract_drafts', 'contract_approvals'];
 const fieldClass = 'mt-1 block w-full rounded border p-1.5 text-xs dark:bg-surface-dark';
@@ -99,9 +99,9 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
   const drafts = view.drafts;
   const selected = drafts.find(item => item.id === selectedId) ?? null;
   const retry = <button type="button" onClick={() => { void reload(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button>;
-  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5"><header className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Versiones</p><h1 className="mt-1 text-2xl font-bold">Borradores</h1><p className="mt-1 text-sm text-text-secondary-light">Revise las observaciones de la aerolínea, configure alcance, condiciones y tarifas y envíe el contrato a Finanzas para su aprobación.</p></div><button type="button" onClick={() => { void reload(); }} className="rounded-lg border px-4 py-2 text-sm">Actualizar</button></header>
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5"><header className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Versiones</p><h1 className="mt-1 text-2xl font-bold">Borradores</h1><p className="mt-1 text-sm text-text-secondary-light">Revisa las observaciones de la aerolínea, configura alcance, condiciones y tarifas y envía el contrato a Finanzas para su aprobación.</p></div><button type="button" onClick={() => { void reload(); }} className="rounded-lg border px-4 py-2 text-sm">Actualizar</button></header>
     {notice && <p role={notice.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${notice.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{notice.text}</p>}
-    {view.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-8 text-center text-sm dark:bg-surface-dark-card">No tiene permiso para ver los borradores de contrato. Pida acceso al administrador de Contratos.</p> : <>
+    {view.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-8 text-center text-sm dark:bg-surface-dark-card">No tienes permiso para ver los borradores de contrato. Pide acceso al administrador de Contratos.</p> : <>
       {view.status === 'ready' && view.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{view.error}</span>{retry}</div>}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_500px]"><section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Versiones pendientes</h2>
         {view.status === 'loading' ? <p className="mt-5 text-sm">Cargando…</p>
@@ -111,7 +111,7 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
               return <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span title={code.title} className="text-xs text-text-secondary-light">{code.text} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>;
             })}</div>
               : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
-        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
+        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Selecciona un borrador para revisarlo.</p>}</section></div>
     </>}
   </div>;
 }
@@ -265,7 +265,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
           <label className="text-xs font-semibold">Hasta (opcional)<input type="date" value={form.validTo} onChange={event => updateForm({ validTo: event.target.value })} className="mt-1 block w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
           <label className="text-xs font-semibold">Moneda<select value={form.currencyCode} onChange={event => updateForm({ currencyCode: event.target.value })} className="mt-1 block w-full rounded-lg border p-2 text-sm dark:bg-surface-dark"><option>USD</option><option>DOP</option></select></label>
         </div>
-        {currencyChanged && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">Al cambiar la moneda todas las tarifas quedarán sin confirmar: revíselas y confírmelas de nuevo. {repriced.length > 0 ? `Los cargos con importe negociado (${repriced.join(', ')}) volverán a la tarifa base de Finanzas en ${form.currencyCode}: negócielos de nuevo después de guardar. ` : ''}Las exclusiones y los porcentajes negociados se conservan. Los paquetes vinculados deben existir en la nueva moneda.</p>}
+        {currencyChanged && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">Al cambiar la moneda todas las tarifas quedarán sin confirmar: revísalas y confírmalas de nuevo. {repriced.length > 0 ? `Los cargos con importe negociado (${repriced.join(', ')}) volverán a la tarifa base de Finanzas en ${form.currencyCode}: negócialos de nuevo después de guardar. ` : ''}Las exclusiones y los porcentajes negociados se conservan. Los paquetes vinculados deben existir en la nueva moneda.</p>}
         <div><h3 className="text-sm font-bold">Tarifas</h3>
           <p className="text-xs text-text-secondary-light">Parten de la tarifa base de Finanzas en {draft.currencyCode}; Finanzas revisa las diferencias antes de aprobar.</p>
           {form.rates.map((rate, index) => {
@@ -274,7 +274,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
             return <div key={rate.id} className="mt-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
               <div className="flex flex-wrap items-baseline justify-between gap-2"><strong className="text-sm">{rate.serviceName}{retiredRates.has(rate.id) && <span className="ml-2 rounded-full bg-status-danger/10 px-2 py-0.5 text-[11px] font-semibold text-status-danger">Retirado</span>}</strong>
                 <dl className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-text-secondary-light"><dt className="font-semibold">Tarifa base</dt><dd className="tabular-nums">{noBase(rate.basePrice) ? 'Sin importe' : formatMoney(rate.basePrice, draft.currencyCode)}{diff !== null && <span className={diff < 0 ? 'text-status-danger' : 'text-status-success'}> · {diff > 0 ? '+' : ''}{diff} %</span>}</dd></dl></div>
-              {retiredRates.has(rate.id) && <p className="mt-1 text-xs text-status-danger">Servicio dado de baja del catálogo: quítelo del alcance antes de enviar a Finanzas.</p>}
+              {retiredRates.has(rate.id) && <p className="mt-1 text-xs text-status-danger">Servicio dado de baja del catálogo: quítalo del alcance antes de enviar a Finanzas.</p>}
               <div className="mt-2 grid grid-cols-1 gap-2 min-[400px]:grid-cols-3">
                 <label className="text-[11px]">Unidad<select required value={rate.billingUnit} onChange={event => updateRate(index, { billingUnit: event.target.value })} className={fieldClass}>
                   {units.map(unit => <option key={unit.code} value={unit.code}>{unit.name}</option>)}
@@ -296,12 +296,12 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
       </fieldset>
       {editable && <button disabled={locked} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Guardar borrador</button>}
     </form>}
-    {draft.version ? <ContractPackagesPanel draft={draft} canEdit={canEdit} disabled={Boolean(busy) || dirty} onSaved={async () => { if (!await onChanged()) throw new Error('No se pudo actualizar el borrador.'); }} onBusyChange={setPackagesBusy} onDirtyChange={setPackagesDirty} /> : <p className="mt-5 text-xs text-text-secondary-light">Actualice el borrador para consultar sus paquetes y obtener su versión vigente.</p>}
+    {draft.version ? <ContractPackagesPanel draft={draft} canEdit={canEdit} disabled={Boolean(busy) || dirty} onSaved={async () => { if (!await onChanged()) throw new Error('No se pudo actualizar el borrador.'); }} onBusyChange={setPackagesBusy} onDirtyChange={setPackagesDirty} /> : <p className="mt-5 text-xs text-text-secondary-light">Actualiza el borrador para consultar sus paquetes y obtener su versión vigente.</p>}
     {canActivate && !pending && <div className="mt-6 border-t border-black/10 pt-4 dark:border-white/10">
       <Readiness readiness={readiness} onRetry={() => setRefresh(value => value + 1)} />
-      {dirty && <p className="mt-2 text-xs text-status-warning">Guarde los cambios del borrador antes de enviarlo a Finanzas.</p>}
+      {dirty && <p className="mt-2 text-xs text-status-warning">Guarda los cambios del borrador antes de enviarlo a Finanzas.</p>}
       <button type="button" disabled={!canSubmit} onClick={() => setConfirmSubmit(true)} className="mt-3 rounded-lg border border-status-success px-4 py-2 text-sm font-semibold text-status-success disabled:opacity-50">Enviar a Finanzas</button></div>}
-    {pending && <p className="mt-6 rounded-lg bg-status-warning/10 p-3 text-sm">En revisión por Finanzas. Si lo devuelve, podrá editarlo de nuevo.</p>}
+    {pending && <p className="mt-6 rounded-lg bg-status-warning/10 p-3 text-sm">En revisión por Finanzas. Si lo devuelve, podrás editarlo de nuevo.</p>}
     {canDiscard && <DiscardSection draft={draft} busy={busy === 'discard'} locked={locked} onDiscard={discard} />}
     <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draftPhrase(code)} a Finanzas para aprobar los precios? ${afterFinance}`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
   </div>;
@@ -310,7 +310,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
 /** «Listo para Finanzas»: the server's causes, the same codes the submission answers (1-D, 1-N14). */
 function Readiness({ readiness, onRetry }) {
   if (!readiness.data) {
-    if (readiness.error) return <p role="alert" className="text-xs text-status-danger">{draftProblemMessage(readiness.error, { fallback: 'No se pudo comprobar si el borrador está listo. Revise la conexión e intente de nuevo.', forbidden: 'No tiene permiso para comprobar si el borrador está listo.' })} <button type="button" onClick={onRetry} className="font-semibold underline">Reintentar</button></p>;
+    if (readiness.error) return <p role="alert" className="text-xs text-status-danger">{draftProblemMessage(readiness.error, { fallback: 'No se pudo comprobar si el borrador está listo. Revisa la conexión e intenta de nuevo.', forbidden: 'No tienes permiso para comprobar si el borrador está listo.' })} <button type="button" onClick={onRetry} className="font-semibold underline">Reintentar</button></p>;
     return <p role="status" className="text-xs">Comprobando si el borrador está listo para Finanzas…</p>;
   }
   const issues = new Map(readiness.data.issues.map(issue => [issue.code, issue.subjects]));
@@ -345,10 +345,10 @@ function ScopeEditor({ scope, editable, locked, busy, onSave, onRetry }) {
   const disabled = !editable || locked || busy;
   return <section aria-label="Alcance del contrato" className="mt-5 rounded-lg border border-black/10 p-4 dark:border-white/10"><h3 className="text-sm font-bold">Servicios y estaciones</h3>
     {!data ? scope.error
-      ? <p role="alert" className="mt-2 text-xs text-status-danger">{draftProblemMessage(scope.error, { fallback: 'No se pudo cargar el alcance del borrador. Revise la conexión e intente de nuevo.', forbidden: 'No tiene permiso para ver el alcance del borrador.' })} <button type="button" onClick={onRetry} className="font-semibold underline">Reintentar</button></p>
+      ? <p role="alert" className="mt-2 text-xs text-status-danger">{draftProblemMessage(scope.error, { fallback: 'No se pudo cargar el alcance del borrador. Revisa la conexión e intenta de nuevo.', forbidden: 'No tienes permiso para ver el alcance del borrador.' })} <button type="button" onClick={onRetry} className="font-semibold underline">Reintentar</button></p>
       : <p role="status" className="mt-2 text-xs">Cargando el alcance del borrador…</p>
       : <>
-        {editable && <p className="mt-1 text-xs text-text-secondary-light">Agregue servicios activos del catálogo o quítelos, y fije las estaciones. Los servicios nuevos parten de la tarifa base de Finanzas sin confirmar.</p>}
+        {editable && <p className="mt-1 text-xs text-text-secondary-light">Agrega servicios activos del catálogo o quítalos, y fija las estaciones. Los servicios nuevos parten de la tarifa base de Finanzas sin confirmar.</p>}
         {scope.error && <p role="alert" className="mt-1 text-xs text-status-danger">{draftProblemMessage(scope.error)} <button type="button" onClick={onRetry} className="font-semibold underline">Reintentar</button></p>}
         <fieldset disabled={disabled} className="mt-3"><legend className="text-xs font-semibold">Servicios</legend>
           {data.services.map(service => <label key={service.serviceId} className="mt-1 flex flex-wrap items-center gap-2 text-xs"><input type="checkbox" checked={selection.services.includes(service.serviceId)} disabled={service.coveredByPackage} onChange={event => toggle('services', service.serviceId, event.target.checked)} />{service.code} · {service.name}{!service.isActive && <span className="rounded-full bg-status-danger/10 px-2 py-0.5 text-[11px] font-semibold text-status-danger">Retirado</span>}{service.coveredByPackage && <span className="text-text-secondary-light">(en un paquete vinculado)</span>}</label>)}
@@ -356,7 +356,7 @@ function ScopeEditor({ scope, editable, locked, busy, onSave, onRetry }) {
         <fieldset disabled={disabled} className="mt-3"><legend className="text-xs font-semibold">Estaciones</legend>
           {data.stations.map(station => <label key={station.stationId} className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={selection.stations.includes(station.stationId)} onChange={event => toggle('stations', station.stationId, event.target.checked)} />{station.code} · {station.name}{!station.isActive && <span className="text-status-danger"> (inactiva)</span>}</label>)}
         </fieldset>
-        {editable && locked && <p className="mt-2 text-xs text-text-secondary-light">Para cambiar el alcance, guarde antes los cambios del borrador y de los paquetes.</p>}
+        {editable && locked && <p className="mt-2 text-xs text-text-secondary-light">Para cambiar el alcance, guarda antes los cambios del borrador y de los paquetes.</p>}
         {editable && <button type="button" disabled={disabled || !changed || selection.services.length === 0 || selection.stations.length === 0} onClick={() => { void onSave({ expectedVersion: data.version, serviceIds: selection.services, stationIds: selection.stations }); }} className={`${buttonClass} mt-3 border-accent-600 text-accent-600`}>{busy ? 'Guardando…' : 'Guardar alcance'}</button>}
       </>}
   </section>;

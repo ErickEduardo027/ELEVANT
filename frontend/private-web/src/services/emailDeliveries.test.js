@@ -18,6 +18,14 @@ describe('email purposes of the outbox', () => {
     expect(purposeLabel('Unknown')).toBe('Correo del sistema');
   });
 
+  it('points a lost reset link to the airline portal, the only sign-in that sends one (N19, N36)', () => {
+    // Only portal accounts receive a reset email (EfAccountEmailStore.RequestPasswordResetAsync); AVIAM Web's
+    // «¿Olvidaste tu contraseña?» sends nothing, so the hint names the portal's link as it now reads.
+    expect(EMAIL_RECOVERY.PasswordReset)
+      .toBe('El usuario puede pedir otro enlace con «¿Olvidó su contraseña?» en el portal de la aerolínea.');
+    expect(EMAIL_RECOVERY.PasswordReset).not.toMatch(/Olvidaste/);
+  });
+
   it('tells what to do when an airline notice did not go out, without claiming it was sent', () => {
     for (const purpose of ['ContractReadyToSign', 'PermitRejected', 'PermitRevoked', 'PermitExpiring', 'ContractExpiring',
       'ContractSuspended', 'PortalUserChanged', 'AdjustmentNoteIssued', 'InvoiceOverdue']) {

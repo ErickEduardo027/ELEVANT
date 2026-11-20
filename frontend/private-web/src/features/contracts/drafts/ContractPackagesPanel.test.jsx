@@ -82,6 +82,12 @@ describe('ContractPackagesPanel', () => {
       .toBeInTheDocument();
   });
 
+  it('tells Contratos as tú how to choose the packages (N36)', async () => {
+    mount();
+    expect(await screen.findByText('Selecciona la versión vigente al inicio y con cobertura durante todo el contrato. Cada '
+      + 'servicio puede estar cubierto por un solo paquete.')).toBeInTheDocument();
+  });
+
   it.each([
     ['2026-12-31', 'Seleccionar GPU v1', 'Seleccionar GPU v2', 'gpu-v1'],
     ['2027-01-01', 'Seleccionar GPU v2', 'Seleccionar GPU v1', 'gpu-v2'],
@@ -131,7 +137,8 @@ describe('ContractPackagesPanel', () => {
     const oldBox = await screen.findByRole('checkbox', { name: 'Seleccionar GPU v1' });
     expect(oldBox).toBeChecked();
     expect(within(screen.getByRole('group', { name: 'Paquete GPU v1' })).getByText(/Reemplazada · USD 450.00/)).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('no es elegible');
+    expect(screen.getByRole('alert')).toHaveTextContent('Un paquete seleccionado ya no es elegible. Quita esa selección y elige '
+      + 'una versión vigente en la moneda del contrato antes de guardar.');
     await userEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar GPU v2' }));
     expect(screen.getByRole('button', { name: 'Guardar paquetes' })).toBeDisabled();
     await userEvent.click(oldBox);
@@ -266,7 +273,7 @@ describe('ContractPackagesPanel', () => {
   it('requires a contract rowversion before allowing a mutation', async () => {
     currentDraft = draft({ version: '' }); mount();
     expect(await screen.findByRole('checkbox', { name: 'Seleccionar BASIC v2' })).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('obtener su versión vigente');
+    expect(screen.getByRole('alert')).toHaveTextContent('Actualiza el borrador para obtener su versión vigente.');
   });
 
   it('retains bound definitions if the catalog fails and recovers through refresh', async () => {
@@ -275,7 +282,7 @@ describe('ContractPackagesPanel', () => {
     commercialApi.mockImplementation((path, options) => path === '/finance/packages' && failCatalog
       ? Promise.reject(failure(403)) : adapter(path, options));
     mount(); await screen.findByText('BASIC · v2 · Rampa básica');
-    expect(screen.getByRole('alert')).toHaveTextContent('No tiene permiso');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso para realizar esta operación de paquetes.');
     expect(screen.getByRole('button', { name: 'Guardar paquetes' })).toBeDisabled();
     failCatalog = false; await userEvent.click(screen.getByRole('button', { name: 'Actualizar paquetes' }));
     await screen.findByRole('checkbox', { name: 'Seleccionar BAGS v2' });
@@ -293,7 +300,8 @@ describe('ContractPackagesPanel', () => {
     mount({ onSaved: async () => { throw new Error('Refresh failed'); } });
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Seleccionar BASIC v2' }));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar paquetes' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Los paquetes se guardaron. Actualice el borrador');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Los paquetes se guardaron. Actualiza el borrador para obtener su versión vigente antes de continuar.');
     expect(screen.getByRole('button', { name: 'Actualizar paquetes' })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'Seleccionar BAGS v2' })).toBeDisabled();
   });
@@ -330,7 +338,8 @@ describe('ManagedDraftsPage package integration', () => {
     // 1-N27: retiring the current publication never makes the previous one assignable again.
     expect(screen.queryByRole('checkbox', { name: 'Seleccionar GPU v1' })).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Seleccionar BAGS v2' })).toBeEnabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('no es elegible');
+    expect(screen.getByRole('alert')).toHaveTextContent('Un paquete seleccionado ya no es elegible. Quita esa selección y elige '
+      + 'una versión vigente en la moneda del contrato antes de guardar.');
     expect(screen.getByRole('button', { name: 'Guardar paquetes' })).toBeDisabled();
     await userEvent.click(within(group).getByRole('checkbox'));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar paquetes' }));
@@ -353,7 +362,7 @@ describe('ManagedDraftsPage package integration', () => {
     await screen.findByRole('checkbox', { name: 'Seleccionar BASIC v2' });
     await userEvent.type(screen.getByLabelText('Condiciones del contrato'), ' revised');
     expect(screen.getByRole('checkbox', { name: 'Seleccionar BASIC v2' })).toBeDisabled();
-    expect(screen.getByText(/Guarde primero los cambios/)).toBeInTheDocument();
+    expect(screen.getByText('Guarda primero los cambios del borrador para seleccionar paquetes.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
     await waitFor(() => expect(updateManagedDraft).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Seleccionar BASIC v2' })).toBeEnabled());

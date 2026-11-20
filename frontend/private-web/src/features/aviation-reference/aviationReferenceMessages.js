@@ -43,7 +43,9 @@ export const aviationReferenceMessages = {
       sample: 'Tipos en una muestra de {count}',
       noType: 'sin tipo',
       none: 'Sin flota registrada en AeroDataBox',
-      noneHint: 'Advertencia, no bloquea: revise que la aerolínea opere aviones propios o arrendados.',
+      // Contratos (tú) and the airline catalog of Superadministración (usted until converted) share it: no form of
+      // address (D-N36).
+      noneHint: 'Advertencia, no bloquea: conviene comprobar que la aerolínea opere aviones propios o arrendados.',
       noCode: 'Sin código OACI ni IATA para consultar la flota',
       check: 'Consultar flota',
     },

@@ -86,7 +86,7 @@ it('shows a recoverable error instead of an empty inbox, and the unauthorized st
   getCommercialRequestInbox.mockRejectedValueOnce(failure(503));
   render(<CommercialIntakePage />);
   const alert = await screen.findByRole('alert');
-  expect(alert).toHaveTextContent('No se pudieron cargar las solicitudes. Revise la conexión e intente de nuevo.');
+  expect(alert).toHaveTextContent('No se pudieron cargar las solicitudes. Revisa la conexión e intenta de nuevo.');
   expect(alert).not.toHaveTextContent('Server title');
   expect(screen.queryByText('No hay solicitudes con este filtro.')).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
@@ -95,7 +95,8 @@ it('shows a recoverable error instead of an empty inbox, and the unauthorized st
 
   getCommercialRequestInbox.mockRejectedValueOnce(failure(403));
   render(<CommercialIntakePage />);
-  expect(await screen.findByRole('alert')).toHaveTextContent('No tiene permiso para ver las solicitudes comerciales.');
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'No tienes permiso para ver las solicitudes comerciales. Pide acceso al administrador de Contratos.');
   cleanup();
 
   getCommercialRequestInbox.mockResolvedValueOnce(inboxOf([]));
@@ -110,7 +111,7 @@ it('records the representative confirmation and retries an uncertain answer with
   expect(approve).toBeDisabled();
   await userEvent.type(within(review).getByRole('textbox', { name: 'Cómo se confirmó' }), 'Llamada a la central de Copa.');
   await userEvent.click(within(review).getByRole('button', { name: 'Registrar confirmación' }));
-  expect(await within(review).findByRole('alert')).toHaveTextContent('Revise la conexión e intente de nuevo.');
+  expect(await within(review).findByRole('alert')).toHaveTextContent('Revisa la conexión e intenta de nuevo.');
   await userEvent.click(within(review).getByRole('button', { name: 'Registrar confirmación' }));
   expect(await screen.findByRole('status')).toHaveTextContent('Confirmación del representante registrada.');
   const [first, second] = confirmCommercialRepresentative.mock.calls;
@@ -137,7 +138,8 @@ it('approves with the version on screen and explains a second affiliation in Spa
 it('warns that the airline already operates and keeps the approval closed', async () => {
   const review = await open({ ...base, existingCustomer: true, airlineVerified: true,
     representativeConfirmation: { confirmedAt: '2026-11-05T13:00:00Z', confirmedBy: 'Carla', note: 'Llamada.' } });
-  expect(within(review).getByRole('note')).toHaveTextContent('No admite una segunda afiliación');
+  expect(within(review).getByRole('note')).toHaveTextContent('No admite una segunda afiliación: amplía los servicios con una '
+    + 'enmienda o una renovación de su contrato, o cancela esta solicitud.');
   await userEvent.click(within(review).getByRole('checkbox', { name: /PUJ/ }));
   expect(within(review).getByRole('button', { name: 'Aprobar y crear borrador' })).toBeDisabled();
 });
@@ -223,14 +225,14 @@ it('explains an identity it cannot send field by field instead of blaming the co
   verifyCommercialRequestAirline.mockResolvedValue({ id: 'req-1' });
   const review = await open(proposal);
   const source = within(review).getByRole('textbox', { name: 'Fuente HTTPS' });
-  const sourceMessage = 'Escriba la dirección completa de la fuente oficial, que empiece por https://.';
+  const sourceMessage = 'Escribe la dirección completa de la fuente oficial, que empiece por https://.';
   await userEvent.type(within(review).getByRole('textbox', { name: 'Razón social' }), 'Caribe Cargo Express S.R.L.');
   await userEvent.type(source, 'www.caribecargo.example.com');
   await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
   expect(source).toHaveAttribute('aria-invalid', 'true');
   expect(source).toHaveAccessibleDescription(sourceMessage);
   expect(source).toHaveFocus();
-  expect(within(review).queryByText(/Revise la conexión/)).not.toBeInTheDocument();
+  expect(within(review).queryByText(/Revisa la conexión/)).not.toBeInTheDocument();
   expect(verifyCommercialRequestAirline).not.toHaveBeenCalled();
 
   // A plain HTTP source and a one-letter country are explained too; the first one in the form gets the focus.
@@ -239,7 +241,7 @@ it('explains an identity it cannot send field by field instead of blaming the co
   const country = within(review).getByRole('textbox', { name: 'País (2 letras)' });
   await userEvent.clear(country);
   await userEvent.type(country, 'd');
-  expect(country).toHaveAccessibleDescription('Escriba el país con su código ISO de 2 letras, por ejemplo DO.');
+  expect(country).toHaveAccessibleDescription('Escribe el país con su código ISO de 2 letras, por ejemplo DO.');
   await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
   expect(country).toHaveFocus();
   expect(source).toHaveAccessibleDescription(sourceMessage);
@@ -263,8 +265,8 @@ it('explains a coded refusal of the identity, also when it never left the browse
   const review = await open();
   await userEvent.type(within(review).getByRole('textbox', { name: 'Fuente HTTPS' }), 'https://www.copaair.com/');
   await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
-  expect(await within(review).findByRole('alert')).toHaveTextContent('Revise la razón social, el país, los códigos');
-  expect(within(review).getByRole('alert')).not.toHaveTextContent('Revise la conexión');
+  expect(await within(review).findByRole('alert')).toHaveTextContent('Revisa la razón social, el país, los códigos');
+  expect(within(review).getByRole('alert')).not.toHaveTextContent('Revisa la conexión');
 });
 
 it('says when the catalog has nothing to link and goes back to creating the profile (1-N25)', async () => {
@@ -274,7 +276,7 @@ it('says when the catalog has nothing to link and goes back to creating the prof
   const review = await open(proposal);
   await userEvent.click(within(review).getByRole('radio', { name: 'Vincular a una ficha existente' }));
   expect(await within(review).findByRole('status')).toHaveTextContent(
-    'No hay fichas publicadas en el catálogo para vincular. Cree una ficha verificada');
+    'No hay fichas publicadas en el catálogo para vincular. Crea una ficha verificada');
   expect(within(review).getByRole('radio', { name: 'Vincular a una ficha existente' })).toBeDisabled();
   expect(within(review).getByRole('radio', { name: 'Crear ficha verificada' })).toBeChecked();
   expect(within(review).queryByRole('combobox', { name: 'Ficha del catálogo' })).not.toBeInTheDocument();
@@ -287,7 +289,7 @@ it('explains why the approval stays closed while no station is active or chosen'
     representativeConfirmation: { confirmedAt: '2026-11-05T13:00:00Z', confirmedBy: 'Carla Contratos', note: 'Llamada.' } };
   getCommercialStations.mockResolvedValue([]);
   const review = await open(ready);
-  expect(within(review).getByText('No hay estaciones activas para el borrador. Pida a Operaciones que active una.'))
+  expect(within(review).getByText('No hay estaciones activas para el borrador. Pide a Operaciones que active una.'))
     .toBeInTheDocument();
   expect(within(review).getByText('○ Al menos una estación elegida')).toBeInTheDocument();
   expect(within(review).getByRole('button', { name: 'Aprobar y crear borrador' })).toBeDisabled();
@@ -308,7 +310,8 @@ it('shows the RNC and the registry verdict in Spanish and points to the Superadm
   const review = await open(blocked);
   expect(within(review).getByText('RNC 1-31-23456-9')).toBeInTheDocument();
   expect(within(review).getByText('No encontrada en registros públicos')).toBeInTheDocument();
-  expect(within(review).getByText(/Superadministración debe verificarla a mano/)).toBeInTheDocument();
+  expect(within(review).getByText(/Superadministración debe verificarla a mano/))
+    .toHaveTextContent(/; luego actualiza esta solicitud y apruébala\.$/);
   expect(within(review).getByText(/○ Confirmada en registros públicos/)).toBeInTheDocument();
   cleanup();
 
@@ -440,6 +443,55 @@ it('says a decided request created a draft without a prefix of its id, and promi
   expect(within(review).queryByText(/7f3e2d1c/)).not.toBeInTheDocument();
   expect(within(review).getByText('No se consultó a los registros públicos.')).toBeInTheDocument();
   expect(within(review).queryByText(/Se comprobará/)).not.toBeInTheDocument();
+});
+
+it('addresses Contratos as tú in the inbox and in the review (N36)', async () => {
+  render(<CommercialIntakePage />);
+  expect(await screen.findByText('Verifica aerolínea y representante antes de aceptar los servicios. La aprobación crea un '
+    + 'borrador.')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: 'Selecciona una solicitud' })).toBeInTheDocument();
+  expect(screen.getByText('Aquí verás la aerolínea, el representante y los servicios solicitados.')).toBeInTheDocument();
+  cleanup();
+
+  // A proposed airline, a representative writing from another domain and registries that did not answer.
+  const proposal = { ...base, airline: 'Caribe Cargo Express', airlineProfileId: null, legalName: null, countryCode: 'DO',
+    iataCode: null, icaoCode: 'CCX', airlineWebsiteUrl: 'https://caribecargo.example.com', representativeEmail: 'ops@gmail.com',
+    proposedAirline: { name: 'Caribe Cargo Express', countryCode: 'DO', iataCode: null, icaoCode: 'CCX',
+      websiteUrl: 'https://caribecargo.example.com' },
+    registryCheck: { status: 'Unavailable', source: null, checkedAt: '2026-11-05T12:01:00Z', detail: null, fromCatalog: false } };
+  getPublishedAirlineProfiles.mockResolvedValue([{ id: 'profile-9', name: 'CARIBE CARGO', region: 'Caribe', icaoCode: 'CCX',
+    isVerified: false }]);
+  const review = await open(proposal);
+  expect(within(review).getByText('No figuraba en el catálogo público. Verifícala con una fuente oficial: crea su ficha o '
+    + 'vincúlala a una existente.')).toBeInTheDocument();
+  expect(within(review).getByText(/^Completa los datos con una fuente oficial\./)).toBeInTheDocument();
+  expect(within(review).getByText(/Confirma al representante por un canal oficial de la aerolínea antes de aprobar\.$/))
+    .toBeInTheDocument();
+  expect(within(review).getByText('Ningún registro público respondió. Puedes aprobar, pero confirma la aerolínea con su '
+    + 'fuente oficial.')).toBeInTheDocument();
+  expect(within(review).getByText(/^Confírmalo por un canal oficial de la aerolínea .* y anota quién respondió y cómo\./))
+    .toBeInTheDocument();
+  await userEvent.click(within(review).getByRole('radio', { name: 'Vincular a una ficha existente' }));
+  const profiles = await within(review).findByRole('combobox', { name: 'Ficha del catálogo' });
+  expect(within(profiles).getByRole('option', { name: 'Selecciona la aerolínea' })).toBeInTheDocument();
+});
+
+it('says as tú that the airline catalog could not be read (N36)', async () => {
+  getPublishedAirlineProfiles.mockRejectedValueOnce(new TypeError('offline'));
+  const review = await open({ ...base, airlineProfileId: null, proposedAirline: { name: 'Copa Airlines', countryCode: 'PA',
+    iataCode: 'CM', icaoCode: 'CMP', websiteUrl: 'https://www.copaair.com/' } });
+  await userEvent.click(within(review).getByRole('radio', { name: 'Vincular a una ficha existente' }));
+  expect(await within(review).findByRole('alert'))
+    .toHaveTextContent('No se pudo cargar el catálogo de aerolíneas. Revisa la conexión e intenta de nuevo.');
+});
+
+it('asks as tú for the country of the tax identifier, which the api-client words as usted for the portal (N36)', async () => {
+  const review = await open({ ...base, taxRegistration: { number: '131234569', countryCode: 'DO', display: 'RNC 1-31-23456-9' } });
+  await userEvent.clear(within(review).getByRole('textbox', { name: 'País del identificador fiscal (2 letras)' }));
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  expect(within(review).getByRole('textbox', { name: 'Identificador fiscal' }))
+    .toHaveAccessibleDescription('Elige el país que emitió el identificador fiscal.');
+  expect(verifyCommercialRequestAirline).not.toHaveBeenCalled();
 });
 
 it('wraps the email only before its @ and writes the phone as people read it (N35)', async () => {

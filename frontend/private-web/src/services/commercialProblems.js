@@ -4,28 +4,31 @@ import { problemMessage } from './problemMessages';
  * Spanish explanation of each Problem Details code of the commercial requests (Contratos) and of
  * the provisioning and airline catalog screens of Superadministración. The screens never show the
  * server title; codes they do not list fall back to the shared messages by status.
+ *
+ * Contratos addresses its users as tú (D-N36), and so do its messages and their shared fallbacks
+ * (`register: 'tu'`). Superadministración keeps usted until its screens are converted.
  */
 export const COMMERCIAL_REQUEST_MESSAGES = Object.freeze({
-  request_closed: 'La solicitud ya fue decidida o cancelada. Actualice la bandeja.',
-  airline_unverified: 'Verifique la identidad de la aerolínea con una fuente oficial antes de aprobar.',
-  representative_unconfirmed: 'Registre la confirmación del representante antes de aprobar.',
-  representative_already_confirmed: 'La confirmación del representante ya estaba registrada. Actualice la solicitud.',
-  airline_already_contracted: 'La aerolínea ya tiene un contrato vigente o en curso. Amplíe los servicios con una enmienda o una renovación de ese contrato.',
-  airline_has_portal_account: 'La aerolínea ya tiene cuentas activas en el portal. Amplíe los servicios con una enmienda o una renovación de su contrato.',
-  airline_code_in_use: 'El código IATA o ICAO ya pertenece a otra aerolínea que opera con AVIAM. Si es la misma, enmiende o renueve su contrato.',
-  airline_profile_conflict: 'Otra ficha verificada ya usa ese código IATA o ICAO. Vincule la solicitud a esa ficha.',
+  request_closed: 'La solicitud ya fue decidida o cancelada. Actualiza la bandeja.',
+  airline_unverified: 'Verifica la identidad de la aerolínea con una fuente oficial antes de aprobar.',
+  representative_unconfirmed: 'Registra la confirmación del representante antes de aprobar.',
+  representative_already_confirmed: 'La confirmación del representante ya estaba registrada. Actualiza la solicitud.',
+  airline_already_contracted: 'La aerolínea ya tiene un contrato vigente o en curso. Amplía los servicios con una enmienda o una renovación de ese contrato.',
+  airline_has_portal_account: 'La aerolínea ya tiene cuentas activas en el portal. Amplía los servicios con una enmienda o una renovación de su contrato.',
+  airline_code_in_use: 'El código IATA o ICAO ya pertenece a otra aerolínea que opera con AVIAM. Si es la misma, enmienda o renueva su contrato.',
+  airline_profile_conflict: 'Otra ficha verificada ya usa ese código IATA o ICAO. Vincula la solicitud a esa ficha.',
   airline_identity_locked: 'La identidad de esta aerolínea ya está en contratos y facturas: no puede cambiarse desde aquí.',
-  airline_already_linked: 'La solicitud ya está vinculada a una ficha de aerolínea. Actualice la solicitud.',
-  profile_not_found: 'La ficha elegida ya no existe. Actualice el listado de aerolíneas.',
-  invalid_airline: 'Revise la razón social, el país, los códigos (ICAO obligatorio; IATA solo si la aerolínea lo tiene) y la fuente HTTPS.',
-  stations_invalid: 'Elija entre 1 y 30 estaciones activas.',
-  confirmation_note_required: 'Describa cómo confirmó al representante (entre 5 y 1000 caracteres).',
-  reason_required: 'Indique el motivo (entre 5 y 1000 caracteres).',
-  invalid_commercial_request: 'Revise los datos de la decisión e intente de nuevo.',
+  airline_already_linked: 'La solicitud ya está vinculada a una ficha de aerolínea. Actualiza la solicitud.',
+  profile_not_found: 'La ficha elegida ya no existe. Actualiza el listado de aerolíneas.',
+  invalid_airline: 'Revisa la razón social, el país, los códigos (ICAO obligatorio; IATA solo si la aerolínea lo tiene) y la fuente HTTPS.',
+  stations_invalid: 'Elige entre 1 y 30 estaciones activas.',
+  confirmation_note_required: 'Describe cómo confirmaste al representante (entre 5 y 1000 caracteres).',
+  reason_required: 'Indica el motivo (entre 5 y 1000 caracteres).',
+  invalid_commercial_request: 'Revisa los datos de la decisión e intenta de nuevo.',
   invalid_inbox_query: 'El filtro de la bandeja no es válido.',
-  version_conflict: 'La solicitud cambió mientras la revisaba. Se actualizó; revise los datos e intente de nuevo.',
-  invalid_tax_registration: 'Revise el identificador fiscal: una aerolínea dominicana indica su RNC (9 dígitos con su dígito verificador); otra, su identificador de 3 a 32 caracteres con su país.',
-  airline_not_in_public_registry: 'La aerolínea no figura en los registros públicos (o figura inactiva o con otros datos). Pida a Superadministración que la verifique a mano con una fuente oficial en Superadministración › Aerolíneas; luego actualice y apruebe.',
+  version_conflict: 'La solicitud cambió mientras la revisabas. Se actualizó; revisa los datos e intenta de nuevo.',
+  invalid_tax_registration: 'Revisa el identificador fiscal: una aerolínea dominicana indica su RNC (9 dígitos con su dígito verificador); otra, su identificador de 3 a 32 caracteres con su país.',
+  airline_not_in_public_registry: 'La aerolínea no figura en los registros públicos (o figura inactiva o con otros datos). Pide a Superadministración que la verifique a mano con una fuente oficial en Superadministración › Aerolíneas; luego actualiza y aprueba.',
 });
 
 export const COMMERCIAL_GOVERNANCE_MESSAGES = Object.freeze({
@@ -134,25 +137,27 @@ export const AIRLINE_PERMIT_MESSAGES = Object.freeze({
   not_found: 'El permiso ya no existe; se volvió a cargar la lista.',
 });
 
+// The screens of Contratos address their users as tú (D-N36), the shared fallbacks included.
+
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const airlinePermitMessage = (error, options) =>
-  problemMessage(error, AIRLINE_PERMIT_MESSAGES, options);
+  problemMessage(error, AIRLINE_PERMIT_MESSAGES, { register: 'tu', ...options });
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const contractLifecycleMessage = (error, options) =>
-  problemMessage(error, CONTRACT_LIFECYCLE_MESSAGES, options);
+  problemMessage(error, CONTRACT_LIFECYCLE_MESSAGES, { register: 'tu', ...options });
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const contractDocumentMessage = (error, options) =>
-  problemMessage(error, CONTRACT_DOCUMENT_MESSAGES, options);
+  problemMessage(error, CONTRACT_DOCUMENT_MESSAGES, { register: 'tu', ...options });
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const contractValidityMessage = (error, options) =>
-  problemMessage(error, CONTRACT_VALIDITY_MESSAGES, options);
+  problemMessage(error, CONTRACT_VALIDITY_MESSAGES, { register: 'tu', ...options });
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const commercialRequestMessage = (error, options) =>
-  problemMessage(error, COMMERCIAL_REQUEST_MESSAGES, options);
+  problemMessage(error, COMMERCIAL_REQUEST_MESSAGES, { register: 'tu', ...options });
 
 /**
  * Provisioning and linking a request's account (1-N13) answer `email_in_use` only for an email that is not a portal

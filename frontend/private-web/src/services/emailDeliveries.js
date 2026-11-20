@@ -57,7 +57,9 @@ export const EMAIL_REFERENCE_KINDS = Object.freeze({
 export const EMAIL_RECOVERY = Object.freeze({
   Activation: 'Para un enlace nuevo use «Reenviar invitación» en Clientes, o asigne una contraseña temporal.',
   LoginCode: 'El usuario puede pedir un código nuevo al iniciar sesión.',
-  PasswordReset: 'El usuario puede pedir otro enlace con «¿Olvidaste tu contraseña?».',
+  // Only an active airline portal account gets a reset link (EfAccountEmailStore.RequestPasswordResetAsync); AVIAM
+  // Web's «¿Olvidaste tu contraseña?» sends none, so the hint names the portal's link as it reads (N19).
+  PasswordReset: 'El usuario puede pedir otro enlace con «¿Olvidó su contraseña?» en el portal de la aerolínea.',
   ContractActivated: 'El contrato firmado sigue disponible en el portal; entréguelo por otro canal si hace falta.',
   InvoiceIssued: 'Descargue el PDF de la factura y entréguelo por otro canal.',
   PaymentReceived: 'El recibo sigue disponible en el portal de la aerolínea.',

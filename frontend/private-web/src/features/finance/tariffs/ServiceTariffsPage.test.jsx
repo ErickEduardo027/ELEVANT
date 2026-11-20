@@ -85,6 +85,8 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
     saveServiceTariffDraft.mockResolvedValue({ id: 'tv-2' });
     renderPage();
     await screen.findByLabelText('Precio de BAGGAGE');
+    // N36: the list of services to add starts with «Selecciona…».
+    expect(within(await screen.findByLabelText('Añadir servicio')).getByRole('option', { name: 'Selecciona…' })).toBeInTheDocument();
     await userEvent.selectOptions(await screen.findByLabelText('Añadir servicio'), 's-2');
     expect(screen.getByLabelText('Unidad de RAMP-CARGO')).toHaveValue('operation');
     expect(within(screen.getByLabelText('Unidad de RAMP-CARGO')).queryByRole('option', { name: /no activa/ })).not.toBeInTheDocument();
@@ -96,7 +98,7 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
 
   it.each([
     ['billing_unit_unknown', 400, /La unidad de cobro no existe o está inactiva/],
-    ['tariff_start_not_after_current', 409, /debe empezar después de la versión vigente/],
+    ['tariff_start_not_after_current', 409, /debe empezar después de la versión vigente\. Cambia «Vigente desde» y guarda\./],
   ])('explains %s in Spanish instead of the server title', async (code, status, text) => {
     listServiceTariffs.mockResolvedValue([summary('v1')]);
     getServiceTariff.mockResolvedValue(detail('v1'));
@@ -116,10 +118,19 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
     listFinanceServices.mockResolvedValue([]);
     listBillingUnits.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText(/No se pudieron cargar las tarifas/)).toBeInTheDocument();
+    expect(await screen.findByText('No se pudieron cargar las tarifas. Revisa la conexión e intenta de nuevo.')).toBeInTheDocument();
     expect(screen.queryByText('Sin tarifa base')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByLabelText('Precio de BAGGAGE')).toBeInTheDocument();
+  });
+
+  it('says as tú that the account cannot read the base tariff, without «Reintentar» (N36)', async () => {
+    listServiceTariffs.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByText('No tienes permiso para consultar la tarifa base.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
 });
 
@@ -140,10 +151,10 @@ describe('ServiceTariffsPage dates (N36)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Publicar' }));
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('La versión pasará a ser la vigente en USD desde el 8 de octubre de 2026; la anterior '
-      + 'quedará como histórica.');
+      + 'quedará como histórica. Guarda antes los cambios pendientes.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Publicar' }));
     expect(await screen.findByText('La vigencia debe empezar después del 1 de noviembre de 2026, inicio de la última versión '
-      + 'publicada. Cambie «Vigente desde» y guarde.')).toBeInTheDocument();
+      + 'publicada. Cambia «Vigente desde» y guarda.')).toBeInTheDocument();
     expect(publishServiceTariff).not.toHaveBeenCalled();
     expect(screen.queryByText(/2026-10-08|2026-11-01|2026-12-31/)).not.toBeInTheDocument();
   });

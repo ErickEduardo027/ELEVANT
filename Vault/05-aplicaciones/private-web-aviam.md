@@ -167,6 +167,54 @@ de una frase, «del 3 de noviembre de 2026 al 2 de noviembre de 2027» o «desde
 3 de noviembre de 2026, sin vencimiento». Un conteo va en singular solo para 1:
 «1 versión publicada», «1 tarifa pactada», «1 mes», «1 día».
 
+*Posterior al commit verificado (hallazgo N36 y decisión D-N36, 20 de noviembre
+de 2026).* AVIAM Web trata de tú a su personal. La prueba del VPS del 16 de
+noviembre encontró los dos tratos en las mismas pantallas: «Confirme al
+representante…» en Solicitudes y «después de tu aprobación» en la aprobación de
+precios. La regla:
+
+- **Trato.** Tú en las instrucciones, los avisos y los errores: «Selecciona una
+  solicitud», «Revisa la conexión e intenta de nuevo», «No tienes permiso para
+  ver los borradores de contrato. Pide acceso al administrador de Contratos.»,
+  «La sesión expiró. Vuelve a iniciar sesión.». Lo que describe a un tercero
+  sigue en tercera persona («Contratos fija la vigencia», «¿Puede operar?»).
+- **Dónde ya rige.** Contratos: Inicio, Solicitudes, Borradores con sus
+  paquetes, Contratos con su detalle, su ciclo y la enmienda, Servicios pactados,
+  Reportes y Permisos de aerolíneas. Finanzas: Aprobación de contratos, Tarifario
+  de servicios (con «Tarifas por contrato») y Tarifario de cargos. Gestión
+  Humana: Agentes de rampa, Habilitaciones y certificaciones, y Carnets y
+  permisos aeroportuarios, que ya tuteaban. También la campana de esos tres
+  departamentos. El panel de Agentes de rampa es también la pestaña «Perfiles
+  operativos» de los usuarios del OCC, así que esa pestaña ya tutea.
+- **Mensajes compartidos.** Los errores comunes (sesión vencida, permiso,
+  conflicto, conexión) salen de
+  [`problemMessage`](../../frontend/private-web/src/services/problemMessages.js):
+  en usted por defecto y en tú cuando la pantalla lo pide con `register: 'tu'`,
+  como hacen los mensajes de las pantallas de la lista anterior. Unidades de
+  cobro, Tasas de cambio y Paquetes de Finanzas siguen en usted, así que los
+  tarifarios y los paquetes de un borrador tienen sus propios mensajes
+  ([tarifarios](../../frontend/private-web/src/services/financeErrors.js),
+  [paquetes](../../frontend/private-web/src/services/financePackagesService.js)).
+- **Textos que vienen de otras pantallas.** El aviso de flota de AeroDataBox,
+  que también sale en el catálogo de aerolíneas de Superadministración, se
+  escribe sin trato: «Advertencia, no bloquea: conviene comprobar que la
+  aerolínea opere aviones propios o arrendados.». Los avisos del identificador
+  fiscal, que el cliente compartido escribe en usted para el portal, se leen en
+  tú en Solicitudes: «Elige el país que emitió el identificador fiscal.»
+  ([identidad](../../frontend/private-web/src/features/contracts/requests/airlineIdentity.js)).
+
+El resto de AVIAM Web sigue en usted o mezcla los dos tratos: el OCC,
+Superadministración, Servicios y sus clausuras en Contratos, las demás pantallas
+de Finanzas y de Gestión Humana, «Usuarios del departamento» y el aviso «Sin
+módulos asignados» que comparten los cuatro departamentos. Se convertirán por
+módulo en otros PR. El portal de la aerolínea trata de usted (D-N19,
+[Tratamiento](public-web-portal.md#tratamiento)). La bandeja de correos de
+Superadministración remite un enlace de recuperación perdido a «¿Olvidó su
+contraseña?» del portal: solo una cuenta del portal recibe ese enlace
+([servidor](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfAccountEmailStore.cs)),
+y «¿Olvidaste tu contraseña?» de AVIAM Web solo explica que la recuperación en
+línea aún no está disponible.
+
 ## Ficha de frontera
 
 | Dimensión | Estado verificado |

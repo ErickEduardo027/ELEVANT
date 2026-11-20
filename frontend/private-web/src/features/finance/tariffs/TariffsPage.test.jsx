@@ -47,6 +47,13 @@ it('shows published contract rates without a fake mutation action', async () => 
   expect(screen.queryByRole('button', { name: 'Programar cambio' })).not.toBeInTheDocument();
 });
 
+it('asks as tú to sign in again when the session expired (N36)', async () => {
+  vi.mocked(getFinanceTariffs).mockRejectedValueOnce(Object.assign(new Error('expired'), { status: 401 }));
+  render(<TariffsPage initialStationId={stationId} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.');
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+});
+
 it('writes the validity of each rate dd/mm/aaaa (N36)', async () => {
   vi.mocked(getFinanceTariffs).mockResolvedValue({ stationId, page: 1, limit: 20, hasMore: false,
     tariffs: [{ ...tariff, validTo: '2026-12-31' }] });

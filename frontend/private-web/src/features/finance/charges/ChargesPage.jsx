@@ -11,7 +11,7 @@ import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import { latestPublishedStart, tariffCommandKeys, VersionFacts, VersionList } from '../tariffs/ServiceTariffsPage';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
-import { financeTariffMessage } from '../../../services/financeErrors';
+import { tariffBookMessage } from '../../../services/financeErrors';
 import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
   listCharges, listChargeTariffs, listFinanceServices, publishChargeTariff, saveCharge, saveChargeTariffDraft,
@@ -67,9 +67,9 @@ function ChargeDrawer({ open, charge, services, units, onClose, onSaved }) {
     try {
       // The same key goes with a retry of the same charge after an uncertain result (1-E).
       await saveKeys.current.run('save', { id: id ?? null, ...values }, key => saveCharge(id, values, key));
-      onSaved(charge ? 'Cargo actualizado.' : 'Cargo creado. Asígnele un importe en el tarifario de cargos.');
+      onSaved(charge ? 'Cargo actualizado.' : 'Cargo creado. Asígnale un importe en el tarifario de cargos.');
     } catch (failure) {
-      setError(financeTariffMessage(failure, { fallback: 'No se pudo guardar el cargo. Intente de nuevo.' }));
+      setError(tariffBookMessage(failure, { fallback: 'No se pudo guardar el cargo. Intenta de nuevo.' }));
     } finally {
       setBusy(false);
     }
@@ -142,9 +142,9 @@ function Catalog({ perms }) {
   const load = useCallback(async () => {
     try { setCharges(await listCharges()); setLoadError(null); }
     catch (failure) {
-      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
-        fallback: 'No se pudieron cargar los cargos. Revise la conexión e intente de nuevo.',
-        forbidden: 'No tiene permiso para consultar los cargos.' })));
+      setLoadError(loadFailure(failure, tariffBookMessage(failure, {
+        fallback: 'No se pudieron cargar los cargos. Revisa la conexión e intenta de nuevo.',
+        forbidden: 'No tienes permiso para consultar los cargos.' })));
     }
   }, []);
   useEffect(() => {
@@ -160,7 +160,7 @@ function Catalog({ perms }) {
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       <LoadFailure failure={loadError} onRetry={() => { void load(); }} />
       {!charges ? !loadError && <p role="status" className="text-sm">Cargando cargos…</p> : charges.length === 0 ? (
-        <EmptyState icon={TariffIcon} title="Sin cargos" description="Cree los cargos y recargos que los agentes podrán aplicar." />
+        <EmptyState icon={TariffIcon} title="Sin cargos" description="Crea los cargos y recargos que los agentes podrán aplicar." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
           <table className="table-stack w-full min-w-[720px] text-left text-sm">
@@ -211,9 +211,9 @@ function ChargeTariff({ perms }) {
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null);
     } catch (failure) {
       setVersions(null);
-      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
-        fallback: 'No se pudo cargar el tarifario de cargos. Revise la conexión e intente de nuevo.',
-        forbidden: 'No tiene permiso para consultar el tarifario de cargos.' })));
+      setLoadError(loadFailure(failure, tariffBookMessage(failure, {
+        fallback: 'No se pudo cargar el tarifario de cargos. Revisa la conexión e intenta de nuevo.',
+        forbidden: 'No tienes permiso para consultar el tarifario de cargos.' })));
     }
   }, [currency]);
   useEffect(() => { void load(); }, [load]);
@@ -226,8 +226,8 @@ function ChargeTariff({ perms }) {
       setDetail(result);
       setRates(result.rates);
       setValidFrom(result.summary.validFrom);
-    }).catch(failure => active && setMessage({ tone: 'error', text: financeTariffMessage(failure, {
-      fallback: 'No se pudo cargar la versión. Revise la conexión e intente de nuevo.' }) }));
+    }).catch(failure => active && setMessage({ tone: 'error', text: tariffBookMessage(failure, {
+      fallback: 'No se pudo cargar la versión. Revisa la conexión e intenta de nuevo.' }) }));
     return () => { active = false; };
   }, [selectedId, reloads]);
 
@@ -246,7 +246,7 @@ function ChargeTariff({ perms }) {
       setMessage({ tone: 'success', text: success });
       await load(result?.id ?? selectedId);
     } catch (failure) {
-      setMessage({ tone: 'error', text: financeTariffMessage(failure) });
+      setMessage({ tone: 'error', text: tariffBookMessage(failure) });
       await load(selectedId);
     } finally {
       setBusy(false);
@@ -331,13 +331,13 @@ function ChargeTariff({ perms }) {
           )}
         </div>
       )}
-      <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifario de cargos" description="La versión pasa a ser la vigente y la anterior queda como histórica. Guarde antes los cambios pendientes."
+      <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifario de cargos" description="La versión pasa a ser la vigente y la anterior queda como histórica. Guarda antes los cambios pendientes."
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
         onConfirm={async () => {
           setConfirm(null);
           const latest = latestPublishedStart(versions);
           if (latest && detail.summary.validFrom <= latest) {
-            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambia «Vigente desde» y guarda.` });
             return;
           }
           await publish();

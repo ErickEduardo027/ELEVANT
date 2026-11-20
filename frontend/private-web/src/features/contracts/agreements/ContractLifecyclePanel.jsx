@@ -158,7 +158,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
     try {
       await amendKeys.current.run('amend', { versionId, ...command }, key => createContractAmendment(versionId, command, key));
       setAmending(false); setAmendFrom(''); setAmended(true);
-      setMessage(succeeded('Se creó la enmienda como borrador, con las tarifas sin confirmar. Revísela en Borradores y envíela a Finanzas.'));
+      setMessage(succeeded('Se creó la enmienda como borrador, con las tarifas sin confirmar. Revísala en Borradores y envíala a Finanzas.'));
       await load();
     } catch (failure) {
       const text = amendmentProblemMessage(failure);

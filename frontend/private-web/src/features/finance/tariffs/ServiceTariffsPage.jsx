@@ -15,14 +15,14 @@ import {
   createServiceTariffDraft, deleteServiceTariffDraft, FINANCE_CURRENCIES, formatMoney, getServiceTariff, listFinanceServices,
   listBillingUnits, listServiceTariffs, publishServiceTariff, saveServiceTariffDraft,
 } from '../../../services/financeBookService';
-import { financeTariffMessage } from '../../../services/financeErrors';
+import { tariffBookMessage } from '../../../services/financeErrors';
 import { isConflict } from '../../../services/problemMessages';
 import { statusMeta, TARIFF_VERSION_STATUS } from '../financeLabels';
 import { businessToday, formatBusinessDate } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const VERSION_STATUS = TARIFF_VERSION_STATUS;
-const LOAD_FAILED = 'No se pudieron cargar las tarifas. Revise la conexión e intente de nuevo.';
+const LOAD_FAILED = 'No se pudieron cargar las tarifas. Revisa la conexión e intenta de nuevo.';
 
 export function VersionList({ versions, selectedId, onSelect }) {
   return (
@@ -114,8 +114,8 @@ function BaseTariff() {
       setSelectedId(target);
     } catch (error) {
       setVersions(null);
-      setLoadError(loadFailure(error, financeTariffMessage(error, { fallback: LOAD_FAILED,
-        forbidden: 'No tiene permiso para consultar la tarifa base.' })));
+      setLoadError(loadFailure(error, tariffBookMessage(error, { fallback: LOAD_FAILED,
+        forbidden: 'No tienes permiso para consultar la tarifa base.' })));
     }
   }, [currency]);
 
@@ -138,7 +138,7 @@ function BaseTariff() {
       setDetail(result);
       setRates(result.rates.map(rate => ({ ...rate, key: `${rate.serviceId}:${rate.stationId ?? '*'}` })));
       setMeta({ validFrom: result.summary.validFrom, validTo: result.summary.validTo ?? '', note: result.summary.note ?? '' });
-    }).catch(error => active && setMessage({ tone: 'error', text: financeTariffMessage(error, { fallback: LOAD_FAILED }) }));
+    }).catch(error => active && setMessage({ tone: 'error', text: tariffBookMessage(error, { fallback: LOAD_FAILED }) }));
     return () => { active = false; };
   }, [selectedId, reloads]);
 
@@ -163,7 +163,7 @@ function BaseTariff() {
       await load(result?.id ?? selectedId);
       return true;
     } catch (error) {
-      setMessage({ tone: 'error', text: financeTariffMessage(error) });
+      setMessage({ tone: 'error', text: tariffBookMessage(error) });
       if (isConflict(error)) await load(selectedId);
       return false;
     } finally {
@@ -184,7 +184,7 @@ function BaseTariff() {
   async function publish() {
     const latest = latestPublishedStart(versions);
     if (latest && detail.summary.validFrom <= latest) {
-      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${formatBusinessDate(latest, { style: 'long' })}, inicio de la última versión publicada. Cambia «Vigente desde» y guarda.` });
       return;
     }
     const { id, version } = detail.summary;
@@ -269,7 +269,7 @@ function BaseTariff() {
                       serviceName: service.name, stationId: null, stationCode: null, billingUnit: proposedBillingUnit(service.defaultBillingUnit, units),
                       unitPrice: 0, minimumBillableQuantity: 0 }]);
                   }} className={fieldClass}>
-                    <option value="">Seleccione…</option>
+                    <option value="">Selecciona…</option>
                     {missingServices.map(service => <option key={service.id} value={service.id}>{service.code} · {service.name}</option>)}
                   </select>
                 </label>
@@ -286,7 +286,7 @@ function BaseTariff() {
         </div>
       )}
       <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifa base"
-        description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde el ${formatBusinessDate(meta.validFrom, { style: 'long' })}; la anterior quedará como histórica. Guarde antes los cambios pendientes.`}
+        description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde el ${formatBusinessDate(meta.validFrom, { style: 'long' })}; la anterior quedará como histórica. Guarda antes los cambios pendientes.`}
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
         onConfirm={async () => { setConfirm(null); await publish(); }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador y sus precios se eliminarán."

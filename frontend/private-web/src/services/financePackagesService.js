@@ -25,7 +25,7 @@ export function createPackageCommand() {
   };
 }
 
-/** Spanish explanation of each package code (Finance and the packages of a contract draft). */
+/** Spanish explanation of each package code of Finanzas › Paquetes, as usted until Finance converts it. */
 export const FINANCE_PACKAGE_MESSAGES = Object.freeze({
   version_conflict: 'La versión cambió. Actualice la vista y revise los datos antes de guardar de nuevo.',
   idempotency_conflict: 'La solicitud ya se utilizó con otros datos. Actualice la vista antes de continuar.',
@@ -51,5 +51,27 @@ export const FINANCE_PACKAGE_MESSAGES = Object.freeze({
 export const financePackageError = (error, options) => problemMessage(error, FINANCE_PACKAGE_MESSAGES, {
   fallback: 'No se pudo completar la operación de paquetes. Intente de nuevo.',
   forbidden: 'No tiene permiso para realizar esta operación de paquetes.',
+  ...options,
+});
+
+/**
+ * The packages of a contract draft in Contratos › Borradores, as tú (D-N36): the codes of the package reads and
+ * of the selection (EfFinancePackageStore.SetContractPackagesAsync).
+ */
+export const CONTRACT_PACKAGE_MESSAGES = Object.freeze({
+  version_conflict: 'La versión cambió. Actualiza la vista y revisa los datos antes de guardar de nuevo.',
+  idempotency_conflict: 'La solicitud ya se utilizó con otros datos. Actualiza la vista antes de continuar.',
+  ambiguous_package_coverage: 'Hay servicios cubiertos por más de un paquete. Selecciona una sola cobertura por servicio.',
+  package_not_eligible: 'Selecciona versiones publicadas en la moneda del contrato y vigentes durante todo el contrato.',
+  package_retired: 'Finanzas retiró ese paquete: ya no se puede asignar. Quita esa selección y elige otro.',
+  package_service_not_in_contract: 'Todos los servicios del paquete deben formar parte del contrato.',
+  not_found: 'La versión ya no está disponible. Actualiza la vista.',
+});
+
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const contractPackageError = (error, options) => problemMessage(error, CONTRACT_PACKAGE_MESSAGES, {
+  register: 'tu',
+  fallback: 'No se pudo completar la operación de paquetes. Intenta de nuevo.',
+  forbidden: 'No tienes permiso para realizar esta operación de paquetes.',
   ...options,
 });

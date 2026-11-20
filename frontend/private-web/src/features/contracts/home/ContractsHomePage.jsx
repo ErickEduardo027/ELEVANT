@@ -24,8 +24,8 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
   if (status === 'error') return <div role="alert" className="rounded-2xl border border-status-danger/30 bg-white/70 p-6 dark:bg-surface-dark-card">
     <p className="font-semibold text-status-danger">No se pudo cargar el resumen contractual.</p>
     <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{commercialRequestMessage(error, {
-      fallback: 'Revise la conexión e intente nuevamente.',
-      forbidden: 'No tiene permiso para ver las solicitudes o los borradores.',
+      fallback: 'Revisa la conexión e intenta nuevamente.',
+      forbidden: 'No tienes permiso para ver las solicitudes o los borradores.',
     })}</p>
     <button type="button" onClick={onRetry} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Reintentar</button>
   </div>;

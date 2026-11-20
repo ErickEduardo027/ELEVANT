@@ -14,9 +14,9 @@ const KINDS = {
   commercial_request: { title: 'Nueva solicitud comercial', target: { moduleId: CONTRACT_MODULE_IDS.REQUESTS } },
   draft_comment: { title: 'La aerolínea comentó un borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
   // 1-N14: Contratos learns when it can move a draft forward.
-  portal_account_ready: { title: 'La cuenta del portal de la aerolínea está lista: ya puede enviar el borrador a Finanzas', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
+  portal_account_ready: { title: 'La cuenta del portal de la aerolínea está lista: ya puedes enviar el borrador a Finanzas', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
   contract_returned: { title: 'Finanzas devolvió un borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
-  contract_approved: { title: 'Finanzas aprobó los precios de un contrato: fije la vigencia y gestione las firmas', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  contract_approved: { title: 'Finanzas aprobó los precios de un contrato: fija la vigencia y gestiona las firmas', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   service_closure: { title: 'Solicitud de clausura de servicio', target: { moduleId: CONTRACT_MODULE_IDS.CATALOG } },
   contract_signed: { title: 'La aerolínea firmó un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   permit_submitted: { title: 'La aerolínea envió un permiso para verificar', target: { moduleId: CONTRACT_MODULE_IDS.PERMITS } },
@@ -30,7 +30,7 @@ const KINDS = {
   contract_lifecycle: { title: 'Cambio en el ciclo de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   // 2-N29 (phase 2, block B): kinds the server already sent without a title or a destination.
   contract_validity: { title: 'Se fijó la vigencia de un contrato: ya puede firmarse', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
-  contract_renewal_started: { title: 'Empezó la renovación automática de un contrato: complete el borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
+  contract_renewal_started: { title: 'Empezó la renovación automática de un contrato: completa el borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
   // Phase 2, block A: a termination with notice (2-N14), the withdrawal of an unsigned version (2-N10) and an
   // automatic renewal that could not start (2-N27).
   contract_termination_scheduled: { title: 'Se programó la terminación de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
@@ -42,7 +42,7 @@ const KINDS = {
   // 4-A: the airline no longer accepts or disputes preinvoices; Finance corrects an invoice with its adjustment notes.
   invoice_paid: { title: 'La aerolínea pagó una factura con tarjeta', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   // 3-A (phase 3, block A): OCC cancelled a charter with a prepayment; the refund follows Cobros, never automatic.
-  charter_cancelled: { title: 'OCC canceló un charter con prepago: revise la devolución', target: { moduleId: FINANCE_MODULE_IDS.CHARTERS } },
+  charter_cancelled: { title: 'OCC canceló un charter con prepago: revisa la devolución', target: { moduleId: FINANCE_MODULE_IDS.CHARTERS } },
   // 4-N26 (phase 4, block A): one alert per airline, station and business day when OCC approves billable operations.
   operation_ready_to_invoice: { title: 'OCC aprobó operaciones listas para facturar', target: { moduleId: FINANCE_MODULE_IDS.TO_INVOICE } },
 };

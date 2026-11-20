@@ -70,13 +70,17 @@ it('writes the validity of each version dd/mm/aaaa in the lists (N36)', async ()
 it('distinguishes permission denial from a recoverable transport failure', async () => {
   getManagedContracts.mockRejectedValueOnce({ status: 403 });
   const view = render(<ManagedAgreementsPage mode="reports" />);
-  expect(await screen.findByRole('alert')).toHaveTextContent('No tiene permiso');
+  expect(await screen.findByRole('alert')).toHaveTextContent('No tienes permiso para consultar acuerdos.');
   expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   view.unmount();
   getManagedContracts.mockRejectedValueOnce(new Error('network'));
-  render(<ManagedAgreementsPage mode="reports" />);
-  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron consultar');
+  const failed = render(<ManagedAgreementsPage mode="reports" />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron consultar los acuerdos. Intenta de nuevo.');
   expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+  failed.unmount();
+  getManagedContracts.mockRejectedValueOnce({ status: 401 });
+  render(<ManagedAgreementsPage mode="reports" />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.');
 });
 it('shows the contract status and the billing unit in Spanish, never their codes (2-N26)', async () => {
   getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false,

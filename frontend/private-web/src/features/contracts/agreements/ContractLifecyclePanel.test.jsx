@@ -136,14 +136,17 @@ it('creates an amendment from «Vigente desde» with the status on screen and op
   await userEvent.type(start, '2026-09-01');
   await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
   // An uncertain result stays inside the dialog as an alert, so the same intent is retried from there.
-  expect(await within(dialog).findByRole('alert')).toHaveTextContent(/No se pudo completar la acción/);
+  expect(await within(dialog).findByRole('alert'))
+    .toHaveTextContent('No se pudo completar la acción. Revisa la conexión e intenta de nuevo.');
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   // The retry of the same intent keeps the date and the Idempotency-Key.
   expect(within(dialog).getByLabelText('Vigente desde')).toHaveValue('2026-09-01');
   await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
   expect(await screen.findByText(/Se creó la enmienda como borrador/)).toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(screen.getByRole('status')).toHaveTextContent(/Se creó la enmienda como borrador/);
+  // N36: the notice addresses Contratos as tú, like the rest of the panel.
+  expect(screen.getByRole('status')).toHaveTextContent('Se creó la enmienda como borrador, con las tarifas sin confirmar. '
+    + 'Revísala en Borradores y envíala a Finanzas.');
   const [first, second] = createContractAmendment.mock.calls;
   expect(first.slice(0, 2)).toEqual(['v-1', { expectedStatus: 'Active', validFrom: '2026-09-01' }]);
   expect(second[2]).toBe(first[2]);
@@ -156,7 +159,7 @@ it('creates an amendment from «Vigente desde» with the status on screen and op
 it.each([
   ['valid_from_not_after_current', 409, /debe empezar después del inicio de la versión aprobada vigente/],
   ['valid_from_after_current_end', 409, /no puede empezar después del fin de la versión aprobada vigente/],
-  ['invalid_amendment', 400, /Indique la fecha de inicio de la enmienda/],
+  ['invalid_amendment', 400, /Indica la fecha de inicio de la enmienda/],
 ])('keeps the amendment dialog open with %s next to «Vigente desde» (1-C)', async (code, status, text) => {
   getContractTimeline.mockResolvedValue(timeline('Active'));
   createContractAmendment.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status, code }))

@@ -104,14 +104,30 @@ describe('ContractApprovalsPage', () => {
   it('shows a recoverable error or the unauthorized state instead of an empty inbox', async () => {
     listContractApprovals.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce([]);
     const { unmount } = renderWith(<ContractApprovalsPage />);
-    expect(await screen.findByText(/No se pudieron cargar los contratos por aprobar/)).toBeInTheDocument();
+    expect(await screen.findByText('No se pudieron cargar los contratos por aprobar. Revisa la conexión e intenta de nuevo.'))
+      .toBeInTheDocument();
     expect(screen.queryByText('Sin contratos por aprobar')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByText('Sin contratos por aprobar')).toBeInTheDocument();
     unmount();
     listContractApprovals.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
     renderWith(<ContractApprovalsPage />);
-    expect(await screen.findByText('No tiene permiso para ver las aprobaciones de contratos.')).toBeInTheDocument();
+    expect(await screen.findByText('No tienes permiso para ver las aprobaciones de contratos.')).toBeInTheDocument();
+  });
+
+  it('asks Finanzas as tú to compare each price, and explains a blocked approval as tú (N36)', async () => {
+    listContractApprovals.mockResolvedValue([summary]);
+    getContractApproval.mockResolvedValue({ summary, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
+    decideContractApproval.mockRejectedValue(Object.assign(new Error('Finance record conflicts with current state.'),
+      { status: 409, code: 'package_retired' }));
+    renderWith(<ContractApprovalsPage />);
+    expect(await screen.findByText('Versiones que envía Contratos. Compara cada precio con la tarifa base antes de aprobarlos.'))
+      .toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprobar precios' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Aprobar precios' }));
+    expect(await screen.findByText('Finanzas retiró un paquete que el contrato incluye. Devuélvelo a Contratos para que lo quite.'))
+      .toBeInTheDocument();
   });
 
   it('hides decisions from accounts that can only read', async () => {
@@ -180,7 +196,7 @@ describe('ContractApprovalsPage', () => {
     expect(screen.queryByRole('heading', { name: 'Demo Airlines · QA-1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
     failOther(new TypeError('offline'));
-    expect(await screen.findByText('No se pudo cargar el contrato. Revise la conexión e intente de nuevo.')).toBeInTheDocument();
+    expect(await screen.findByText('No se pudo cargar el contrato. Revisa la conexión e intenta de nuevo.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
     getContractApproval.mockResolvedValue({ summary: other, terms: null, stations: ['SDQ'], history: [], rates: [], charges: [] });
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
@@ -193,7 +209,8 @@ describe('ContractApprovalsPage', () => {
     getContractApproval.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
     renderWith(<ContractApprovalsPage />);
     await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
-    expect(await screen.findByText(/No tiene permiso para ver este contrato/)).toBeInTheDocument();
+    expect(await screen.findByText('No tienes permiso para ver este contrato: alguna de sus estaciones no está en tu alcance.'))
+      .toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
@@ -328,9 +345,9 @@ describe('ChargesPage', () => {
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Código' }), 'night');
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Nombre' }), 'Nocturno');
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cargo' }));
-    expect(await within(drawer).findByRole('alert')).toHaveTextContent('No se pudo guardar el cargo. Intente de nuevo.');
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('No se pudo guardar el cargo. Intenta de nuevo.');
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cargo' }));
-    expect(await screen.findByText(/^Cargo creado\./)).toBeInTheDocument();
+    expect(await screen.findByText('Cargo creado. Asígnale un importe en el tarifario de cargos.')).toBeInTheDocument();
     const [first, second] = saveCharge.mock.calls;
     expect(second[1]).toEqual(first[1]);
     expect(second[2]).toBe(first[2]);
@@ -352,9 +369,11 @@ describe('ChargesPage tariff dates (N36)', () => {
     expect(await screen.findByText('USD · desde 15/09/2026')).toBeInTheDocument();
     expect(screen.getByText('USD · desde 01/10/2026')).toBeInTheDocument();
     await userEvent.click(await screen.findByRole('button', { name: 'Publicar' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('La versión pasa a ser la vigente y la anterior queda como '
+      + 'histórica. Guarda antes los cambios pendientes.');
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Publicar' }));
     expect(await screen.findByText('La vigencia debe empezar después del 1 de octubre de 2026, inicio de la última versión '
-      + 'publicada. Cambie «Vigente desde» y guarde.')).toBeInTheDocument();
+      + 'publicada. Cambia «Vigente desde» y guarda.')).toBeInTheDocument();
     expect(publishChargeTariff).not.toHaveBeenCalled();
     expect(getChargeTariff).toHaveBeenCalledWith('ct-2');
   });
@@ -432,10 +451,32 @@ describe('Finance list errors (1-E)', () => {
     listFinanceServices.mockResolvedValue([]);
     listBillingUnits.mockResolvedValue([]);
     renderWith(<ChargesPage />);
-    expect(await screen.findByText(/No se pudieron cargar los cargos/)).toBeInTheDocument();
+    expect(await screen.findByText('No se pudieron cargar los cargos. Revisa la conexión e intenta de nuevo.')).toBeInTheDocument();
     expect(screen.queryByText('Sin cargos')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByText('Sin cargos')).toBeInTheDocument();
+    // N36: the empty catalog tells Finanzas what to do as tú.
+    expect(screen.getByText('Crea los cargos y recargos que los agentes podrán aplicar.')).toBeInTheDocument();
+  });
+
+  it('says as tú that the account cannot read the charges or their amounts (N36)', async () => {
+    listCharges.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 })).mockResolvedValue([]);
+    listChargeTariffs.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    renderWith(<ChargesPage />);
+    expect(await screen.findByText('No tienes permiso para consultar los cargos.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Importes' }));
+    expect(await screen.findByText('No tienes permiso para consultar el tarifario de cargos.')).toBeInTheDocument();
+  });
+
+  it('asks as tú to sign in again when the session of the charge catalog expired (N36)', async () => {
+    listCharges.mockRejectedValueOnce(Object.assign(new Error('Expired'), { status: 401 }));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    renderWith(<ChargesPage />);
+    expect(await screen.findByText('La sesión expiró. Vuelve a iniciar sesión.')).toBeInTheDocument();
   });
 
   it('shows a failed period of exchange rates as an error and a duplicate rate by its code', async () => {

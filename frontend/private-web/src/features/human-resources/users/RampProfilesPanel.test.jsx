@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import RampProfilesPanel from './RampProfilesPanel';
+import { rampProfilesPanelMessages } from './rampProfilesPanelMessages';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { getRampProfiles, saveRampProfile } from '../../../services/commercialGovernanceApi';
@@ -268,7 +269,7 @@ it('re-reads a profile that changed meanwhile and saves it again with its new ve
   await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(
-    'El perfil cambió mientras lo editaba. Cargamos sus datos actuales: revíselos y guarde de nuevo.');
+    'El perfil cambió mientras lo editabas. Cargamos sus datos actuales: revísalos y guarda de nuevo.');
   expect(screen.queryByText('El registro cambió.')).not.toBeInTheDocument();
   // The form now shows the profile as it is, active again: the user decides on the current data.
   expect(screen.getByRole('textbox', { name: 'Categoría' })).toHaveValue('Agente líder');
@@ -292,9 +293,46 @@ it('explains a refused supervisor by its code and keeps the edit', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
   await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('El supervisor elegido depende de este agente. Elija otro.');
+  expect(await screen.findByRole('alert')).toHaveTextContent('El supervisor elegido depende de este agente. Elige otro.');
   expect(getRampProfiles).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
+});
+
+it('tells as tú why a profile cannot be saved (N36)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [{ ...agent, stations: [] }], availableStations: [
+    { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
+  ] });
+  saveRampProfile.mockRejectedValueOnce(Object.assign(new Error('Los datos no son válidos.'), { status: 400, code: 'stations_invalid' }))
+    .mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }))
+    .mockRejectedValueOnce(Object.assign(new Error('Expired'), { status: 401 }));
+  render(<RampProfilesPanel canEdit />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Selecciona al menos una estación.');
+  expect(saveRampProfile).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('checkbox', { name: /PUJ/ }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+    'Alguna estación ya no está activa o no está bajo tu alcance. Actualiza la lista y elige de nuevo.'));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso para guardar este perfil.'));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.'));
+});
+
+it('words the other refusals of a profile as tú too (N36)', () => {
+  expect(rampProfilesPanelMessages.es.errors).toMatchObject({
+    noTerminal: 'Selecciona al menos una terminal de las estaciones autorizadas.',
+    recordChanged: 'El expediente del empleado cambió mientras editabas el perfil. Cargamos los datos actuales: revísalos y '
+      + 'guarda de nuevo.',
+    employeeNumberInUse: 'El número de empleado ya pertenece a otro agente. Corrígelo en el expediente de Gestión Humana.',
+    terminalsInvalid: 'Alguna terminal ya no está activa o no pertenece a las estaciones elegidas. Actualiza la lista y elige '
+      + 'de nuevo.',
+    supervisorInvalid: 'El supervisor elegido ya no es un agente activo. Elige otro.',
+    avatarInvalid: 'La foto ya no está disponible; vuelve a cargarla.',
+    invalid: 'Revisa los datos del perfil e intenta de nuevo.',
+  });
 });
 
 it('follows the English choice inside a language scope', async () => {

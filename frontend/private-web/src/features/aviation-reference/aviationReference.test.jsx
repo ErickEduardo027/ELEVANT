@@ -220,6 +220,15 @@ describe('the airline fleet', () => {
     expect(await screen.findByText('Sin flota registrada en AeroDataBox')).toBeTruthy();
     expect(service.calls.map(call => call.airlineCode)).toEqual(['Z9']);
   });
+
+  it('words the warning without a form of address, since Contratos uses tú and the catalog still usted (D-N36)', async () => {
+    const { wrap } = withService({ fleet: fleetAnswer({ status: 'NotFound', totalAircraft: null, sampledAircraft: 0, types: [],
+      retrievedAt: null }) });
+    const { container } = render(wrap(<AirlineFleetFacts icaoCode="ZZA" auto />));
+    await screen.findByText('Sin flota registrada en AeroDataBox');
+    expect(container.querySelector('[data-airline-fleet="none"]').textContent).toBe('Sin flota registrada en AeroDataBox. '
+      + 'Advertencia, no bloquea: conviene comprobar que la aerolínea opere aviones propios o arrendados.');
+  });
 });
 
 describe('the airport delays', () => {

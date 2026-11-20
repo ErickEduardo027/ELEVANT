@@ -49,11 +49,13 @@ describe('ContractsHomePage', () => {
     // The server title or exception text never reaches the screen.
     rerender(<ContractsHomePage status="error" error={Object.assign(new Error('Internal failure'), { status: 503 })}
       onRetry={onRetry} onNavigate={() => {}} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Revise la conexión e intente nuevamente.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Revisa la conexión e intenta nuevamente.');
     expect(screen.getByRole('alert')).not.toHaveTextContent('Internal failure');
     await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalledOnce();
     rerender(<ContractsHomePage status="error" error={{ status: 403 }} onRetry={onRetry} onNavigate={() => {}} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('No tiene permiso para ver las solicitudes o los borradores.');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso para ver las solicitudes o los borradores.');
+    rerender(<ContractsHomePage status="error" error={{ status: 401 }} onRetry={onRetry} onNavigate={() => {}} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('La sesión expiró. Vuelve a iniciar sesión.');
   });
 });

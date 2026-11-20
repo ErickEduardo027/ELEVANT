@@ -19,9 +19,9 @@ import { CONTRACT_APPROVAL_STATUS, packageScopeLabel, statusMeta } from '../fina
 import { financeApprovalEffect } from '../../contracts/approvalEffect';
 import { contractCodeLabel } from '../../contracts/requests/requestLabels';
 
-const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
-const DETAIL_FAILED = 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.';
-const DETAIL_FORBIDDEN = 'No tiene permiso para ver este contrato: alguna de sus estaciones no está en su alcance.';
+const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revisa la conexión e intenta de nuevo.';
+const DETAIL_FAILED = 'No se pudo cargar el contrato. Revisa la conexión e intenta de nuevo.';
+const DETAIL_FORBIDDEN = 'No tienes permiso para ver este contrato: alguna de sus estaciones no está en tu alcance.';
 /** No contract read yet: the detail of a new selection starts here, so the previous one is never shown. */
 const NO_DETAIL = Object.freeze({ versionId: null, detail: null, error: null });
 
@@ -155,10 +155,10 @@ export default function ContractApprovalsPage() {
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Finanzas" title="Aprobación de contratos"
-        description="Versiones que envía Contratos. Compare cada precio con la tarifa base antes de aprobarlos." />
+        description="Versiones que envía Contratos. Compara cada precio con la tarifa base antes de aprobarlos." />
       <label className="flex min-h-[40px] items-center gap-2 text-sm"><input type="checkbox" checked={!pendingOnly} onChange={event => setPendingOnly(!event.target.checked)} />Ver también decididos en los últimos 90 días</label>
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
-      {loadState.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">No tiene permiso para ver las aprobaciones de contratos.</p>
+      {loadState.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">No tienes permiso para ver las aprobaciones de contratos.</p>
         : loadState.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{loadState.error}</span><button type="button" onClick={() => { void load(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
       {loadState.status === 'forbidden' || loadState.status === 'error' ? null : !items ? <p role="status" className="text-sm">Cargando contratos…</p> : items.length === 0 ? (
         <EmptyState icon={ApprovedServicesIcon} title="Sin contratos por aprobar" description="Los contratos que Contratos envíe aparecerán aquí." />
