@@ -596,6 +596,33 @@ Las [pruebas](../../frontend/mobile-agent/tests/flight-report.test.js) cubren cu
 
 Las fotos del walk-around no estaban en ese bloque; llegan en el bloque 4.
 
+**El push-back con el vuelo a medio registrar se confirma.** Posterior al commit
+verificado de esta nota (hallazgo N2 de la corrida del VPS del 16 de noviembre,
+D-N2): un push-back registrado con un toque, con «En posición» en 0/13, «Salida»
+en 0/4 y los servicios planificados, liberó la posición en OCC, cerró el tiempo
+en tierra y fijó la hora de salida de la Orden.
+
+- El primer toque del push-back, fuera de una ronda de corrección y sin otro
+  push-back en la cola, abre la hoja «¿Registrar el push-back ahora?» cuando hay
+  algún motivo ([motivos](../../frontend/mobile-agent/src/features/assigned-operations/pushback.ts),
+  [hoja](../../frontend/mobile-agent/src/components/flight-report/pushback-sheet.tsx),
+  sobre el [marco de hoja](../../frontend/mobile-agent/src/components/sheet-frame.tsx)):
+  - falta el bloqueo;
+  - «En posición» o «Salida» no tienen ningún hito;
+  - ningún servicio salió de planificado, solo si la operación tiene servicios;
+  - la Orden de Servicio ya tiene una firma, en ELEVANT o en la cola, y el
+    push-back obliga a repetirla.
+- La hoja dice el efecto: libera la posición en OCC, cierra el tiempo en tierra
+  y fija la hora de salida de la Orden, y corregir la hora después no vuelve a
+  ocupar la posición. REGISTRAR PUSH-BACK lo graba con la hora de ELEVANT del
+  momento en que el agente confirma; VOLVER, el botón de la cabecera y el botón
+  atrás cierran sin grabar.
+- Sin motivos sigue siendo un toque. Un push-back ya registrado o en la cola
+  abre el ajuste, y en una corrección el hito vacío abre el ajuste como antes.
+- Solo avisa: el servidor no cambia, y la APK instalada sigue grabándolo con un
+  toque hasta que se instale la nueva. La revisión de OCC señala esa secuencia
+  ([nota de AVIAM Web](private-web-aviam.md)).
+
 ## Fase 3, bloque 4: formularios, firmas y walk-around
 
 En la rama de la fase 3 ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)), la pantalla de operación suma dos tarjetas.

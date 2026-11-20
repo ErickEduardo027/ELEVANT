@@ -436,6 +436,33 @@ primera entrega. Los daños del walk-around, las incidencias y las desviaciones
 se registran con la hora actual, sin selector, y ELEVANT también los acepta
 durante la corrección.
 
+Desde el hallazgo N2 de la corrida del VPS del 16 de noviembre (D-N2), el
+primer toque del push-back pregunta antes de grabar cuando el vuelo no está
+registrado como debería, porque el push-back libera la posición en OCC
+(ADR-0041, decisión 23), cierra el tiempo en tierra y fija la hora de salida de
+la Orden de Servicio:
+
+- `pushbackConcerns` (`src/features/assigned-operations/pushback.ts`) da los
+  motivos, en el orden del vuelo: falta el bloqueo; «En posición» o «Salida» no
+  tienen ningún hito; ningún servicio salió de planificado, solo si la operación
+  tiene servicios (uno no realizado o con excepción cuenta como atendido), y la
+  Orden de Servicio ya tiene una firma, en ELEVANT o esperando en la cola, que
+  el push-back obliga a repetir.
+- Con algún motivo, la hoja «¿Registrar el push-back ahora?»
+  (`src/components/flight-report/pushback-sheet.tsx`, sobre `sheet-frame`) los
+  lista con el efecto: registrarlo libera la posición, cierra el tiempo en
+  tierra y fija la hora de salida de la Orden, y corregir la hora después no
+  vuelve a ocupar la posición. REGISTRAR PUSH-BACK lo graba con la hora de
+  ELEVANT del momento en que el agente confirma; VOLVER, el botón de la cabecera
+  («Cerrar sin registrar») y el botón atrás cierran sin grabar.
+- Sin motivos sigue siendo un toque. Un push-back ya registrado, o que espera en
+  la cola, abre el ajuste, y en una ronda de corrección el hito vacío abre el
+  ajuste como siempre, sin la hoja.
+- Solo avisa: el servidor sigue aceptando el push-back sin otros hitos (solo
+  exige que el bloqueo no vaya después), y la APK instalada lo graba con un
+  toque hasta que se instale la nueva. La revisión de OCC señala esa secuencia
+  en «Cierre de la operación».
+
 La cola se vacía al abrir la app, al recuperar señal, al volver a primer plano
 y cada minuto mientras quede algo pendiente; después salen las incidencias
 guardadas. Sin señal o con la sesión revocada se detiene; una foto que ELEVANT

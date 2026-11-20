@@ -43,6 +43,20 @@ tablet no pudo guardar se explican sin «payload» ni «Desbloquea».
 `flight-report-panel.test.js` comprueba que los hitos y los datos del vuelo
 distinguen la sesión terminada de un fallo del almacenamiento.
 
+`flight-report-panel.test.js` fija también el aviso del push-back (N2, D-N2,
+describe «push-back (decisión 23)»), con un catálogo simulado de cuatro fases:
+dos hitos en «En posición» y uno en «Salida». La hoja lista los motivos en el
+orden del vuelo y el efecto con la posición, sin grabar nada; VOLVER, «Cerrar
+sin registrar» y el botón atrás cierran sin grabar; REGISTRAR PUSH-BACK graba
+con la hora de ELEVANT del momento en que el agente confirma, con el reloj del
+equipo adelantado; sin servicios no hay motivo de servicios, y sin posición el
+efecto no habla de liberarla. La Orden con una firma, también la que espera en
+la cola, es un motivo; una firma rechazada o desactualizada no lo es. Un
+push-back en la cola abre el ajuste, una corrección lo graba desde el ajuste
+sin la hoja y una secuencia completa lo graba con un toque. También fija
+`pushbackConcerns`: cada motivo una vez, y un servicio iniciado, no realizado o
+con excepción quita el de los servicios.
+
 `login-screen.test.js` monta la pantalla de acceso con el almacenamiento y la
 sesión reales y un doble de ELEVANT con dos cuentas (N7). `useLocalSearchParams`
 es mutable, así que el aviso de la ruta cambia con la pantalla montada. Comprueba

@@ -10,6 +10,13 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
+  PUSHBACK_MILESTONE,
+  pushbackConcerns,
+  pushbackEffect,
+  serviceOrderHasSignature,
+  type PushbackConcern,
+} from '../../features/assigned-operations/pushback';
+import {
   recordMilestone,
   saveFlightData,
   subscribeFlightReport,
@@ -36,6 +43,7 @@ import {
   type FlightDataValues,
 } from '../../utils/flight-data';
 import { PrimaryButton } from '../ui';
+import { PushbackSheet } from './pushback-sheet';
 
 type Operation = RampAssignedOperationResponse;
 type Tone = keyof typeof syncTone;
@@ -66,6 +74,9 @@ export function clampMilestoneTime(value: Date, opensAt: Date | null, now: Date)
 
 /** Whole-minute steps of the adjustment; an hour at a time reaches a correction days later (3-N09). */
 const SHIFTS = [-60, -10, -5, -1, 1, 5, 60] as const;
+
+/** N2: the push-back sheet names the phase the push-back belongs to, as its tab does. */
+const PUSHBACK_PHASE_LABEL = FLIGHT_REPORT_PHASES.find(phase => phase.id === 'pushback')?.label ?? 'Retroempuje';
 
 function haptic() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -217,6 +228,8 @@ function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, 
  * records the time on the device, with a vibration; the queue sends it when there is signal.
  * In a correction round (OCC returned the operation) the facts of the flight already happened: an empty milestone
  * opens the adjustment at the last recorded time instead of recording «AHORA» (3-N09).
+ * The push-back releases the stand in OCC for good (decision 23), so its first tap asks first when the flight is not
+ * recorded as it should be (N2, D-N2): a sheet lists the reasons and what recording it does.
  */
 export function FlightReportPanel({ operation, timeZone, editable }: { operation: Operation; timeZone: string; editable: boolean }) {
   const snapshot = useFlightReport();
@@ -229,6 +242,8 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
   const firstOpen = FLIGHT_REPORT_PHASES.find(phase => done[phase.id][0] < done[phase.id][1])?.id ?? 'pushback';
   const [phase, setPhase] = useState<FlightReportPhase>(firstOpen);
   const [editing, setEditing] = useState<{ code: string; label: string; at: Date } | null>(null);
+  // N2: the reasons the push-back sheet lists, as they stood at the tap; null while it is closed.
+  const [pushbackAsk, setPushbackAsk] = useState<readonly PushbackConcern[] | null>(null);
   const [error, setError] = useState('');
   const correction = editable && operation.review?.status === 'Returned';
   const opensAt = evidenceWindowOpens(operation);
@@ -246,6 +261,26 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
     recordMilestone(operation.operation.id, code, at, timeZone)
       .catch(failure => setError(localSaveError(failure, MILESTONE_NOT_SAVED)));
   };
+  /**
+   * An empty milestone's tap outside a correction: it records now, except a push-back whose flight is not recorded as
+   * it should be, which asks first (N2). A push-back already recorded, or waiting in the queue, opens the adjustment.
+   */
+  const recordNow = (code: string) => {
+    if (code === PUSHBACK_MILESTONE) {
+      const id = operation.operation.id;
+      const concerns = pushbackConcerns({
+        recorded: new Set(FLIGHT_REPORT_MILESTONES.filter(item => states.get(item.code)?.at).map(item => item.code)),
+        services: operation.services,
+        orderSigned: serviceOrderHasSignature(snapshot?.documents[id] ?? snapshot?.documents[id.toLowerCase()],
+          snapshot?.items ?? [], id),
+      });
+      if (concerns.length > 0) {
+        setPushbackAsk(concerns);
+        return;
+      }
+    }
+    record(code, serverNow());
+  };
 
   return (
     <View style={styles.panel} accessibilityLabel="Reporte de vuelo">
@@ -260,7 +295,7 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
           <MilestoneButton key={item.code} label={item.label} state={states.get(item.code)!} timeZone={timeZone}
             disabled={!editable} correction={correction}
             onNow={() => (correction ? setEditing({ code: item.code, label: item.label, at: lastRecorded() })
-              : record(item.code, serverNow()))}
+              : recordNow(item.code))}
             onEdit={() => setEditing({ code: item.code, label: item.label, at: new Date(states.get(item.code)!.at!) })} />
         ))}
       </View>
@@ -271,6 +306,12 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
       {editing && <TimeSheet label={editing.label} initial={editing.at} opensAt={opensAt} correction={correction}
         timeZone={timeZone} onClose={() => setEditing(null)}
         onSave={value => { record(editing.code, value); setEditing(null); }} />}
+      {/* N2: «ahora» is when the agent confirms, by ELEVANT's clock; nothing is recorded while the sheet is open. */}
+      {pushbackAsk && editable && !correction ? (
+        <PushbackSheet eyebrow={PUSHBACK_PHASE_LABEL} concerns={pushbackAsk}
+          effect={pushbackEffect(operation.turnaround.stand?.code)} onClose={() => setPushbackAsk(null)}
+          onConfirm={() => { setPushbackAsk(null); record(PUSHBACK_MILESTONE, serverNow()); }} />
+      ) : null}
     </View>
   );
 }
