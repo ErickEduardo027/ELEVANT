@@ -1736,11 +1736,16 @@ cambia.
   (`deriveDisplayStatus`) las lee al minuto del reloj de las posiciones cuando
   la fecha del tablero es la de hoy. Las iniciales del rótulo, la ficha, el
   anillo del mismo agente, la lista y «Cubre …» del cajón nombran a quien la
-  cubre en ese minuto (`standCoverageNames`), un refuerzo incluido; «Agente» de
-  la escala nombra a quien cubre el avión que está en la posición y, para el
-  que viene, a quien la cubre a la hora de sus calzos (`visitCoverageNames`).
+  cubre en ese minuto (`standCoverageNames`), un refuerzo incluido; los dos
+  «Agente» del cajón, el de la escala y el de los datos del vuelo, nombran a
+  quien cubre el avión que está en la posición y, para el que viene, a quien la
+  cubre a la hora de sus calzos (`visitCoverageNames`).
   «Sin agente que la cubra» se evalúa igual: ahora para el avión en la posición
-  y a la hora de los calzos para el que viene (D-N26). El cajón dice, atenuado,
+  y a la hora de los calzos para el que viene (D-N26). El tablero de una fecha
+  solo trae las ventanas de esa fecha, así que, pasada su medianoche, que nadie
+  esté en ellas no dice nada: un vuelo de la fecha que llega después sin una
+  ventana que lo cubra solo da la señal si nadie cubre la posición ese día, como
+  antes de N26, y su «Agente» es quien la cubre ahora. El cajón dice, atenuado,
   «La cobertura de … terminó a las 17:00» y «La cobertura de … empieza a las
   …». En otra fecha (Planificación de otro día) el cajón lista cada ventana,
   «Cubre … de 05:00 a 17:00», sin decir quién cubre ahora, y lo demás sigue con

@@ -770,14 +770,35 @@ describe('who covers a stand, from the coverage windows of its date (N26)', () =
     // The aircraft on the stand at 23:50, and a flight of the 16th delayed to 00:20.
     expect(signalsAt(a5With([night], [parkedAt(late)]), late)).toEqual([]);
     expect(signalsAt(a5With([night], [dueAt(late, 30)]), late)).toEqual([]);
-    // A coverage that ends at midnight leaves the flight due at 00:10 without an agent.
-    expect(signalsAt(a5With([cover(elena, local(16), local(0, 0, 1))], [dueAt(late, 20)]), late)).toEqual([uncovered]);
+    // A coverage that ends at midnight says nothing of the flight due at 00:10: the board of the 16th never brings a
+    // window that starts at midnight, so the names of the day decide, as before N26.
+    expect(signalsAt(a5With([cover(elena, local(16), local(0, 0, 1))], [dueAt(late, 20)]), late)).toEqual([]);
     // At 00:30 the board of the 17th brings the same night window, which covers the stand then.
     const after = local(0, 30, 1);
     const tomorrow = a5With([night], [parkedAt(after)], '2026-11-17');
     expect(deriveDisplayStatus(tomorrow, { nowMs: after })).toMatchObject({
       signals: [], coverage: { live: true, now: [{ name: luis, isReinforcement: false }] },
     });
+  });
+
+  it('past the board\'s midnight nobody in its windows says nothing: the names of the day decide', () => {
+    // At 23:25 on the 16th, WN303 of the 16th is due on A5 at 00:15 on the 17th. The board of the 16th brings the
+    // windows of its day, 08:00 to 16:00 and 16:00 to 24:00; the one from 00:00 on the 17th is never among them.
+    const at2325 = local(23, 25);
+    const day = [cover(elena, local(8), local(16)), cover(luis, local(16), local(0, 0, 1))];
+    const late = a5With(day, [dueAt(at2325, 50)]);
+    const shown = deriveDisplayStatus(late, { nowMs: at2325 });
+    expect(shown).toMatchObject({ state: 'planned', signals: [] });
+    // Who covers it then is unknown: its «Agente» is who covers the stand now.
+    expect(shown.coverage).toMatchObject({ live: true, now: [{ name: luis, isReinforcement: false }], visit: null });
+    expect(visitCoverageNames(shownAt(late, at2325))).toEqual([luis]);
+    // A window of the day that runs past midnight still names who covers it then.
+    const night = a5With([cover(marta, local(22), local(6, 0, 1))], [dueAt(at2325, 50)]);
+    expect(deriveDisplayStatus(night, { nowMs: at2325 }).coverage.visit).toEqual([{ name: marta, isReinforcement: false }]);
+    // Before midnight the windows still judge it: due at 23:55 on a stand nobody covers from 16:00.
+    expect(signalsAt(a5With([cover(elena, local(8), local(16))], [dueAt(at2325, 30)]), at2325)).toEqual([uncovered]);
+    // And a stand nobody covers that day still raises it past midnight, as the names of the day said before N26.
+    expect(signalsAt(a5With([], [dueAt(at2325, 50)]), at2325)).toEqual([uncovered]);
   });
 
   it('another date: the windows are listed and never judged against the clock', () => {
