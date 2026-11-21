@@ -4,7 +4,8 @@ import { adjustmentNoteTitle, applyTreasuryReceipt, downloadAdjustmentNoteDocume
     isFiscalNoteNumber, issueTreasuryAdjustment, listTreasuryReceipts, noteDocumentError, parseTreasuryAmount, recordTreasuryReceipt,
     refundTreasuryReceipt, reverseTreasuryReceipt, treasuryError, treasuryIntent, treasuryToday } from './financeTreasuryService';
 vi.mock('./commercialGovernanceApi', () => ({ commercialApi: vi.fn() }));
-const noteApi = vi.hoisted(() => ({ getFinanceAdjustmentNoteDocument: vi.fn(), unauthorized: vi.fn() }));
+const noteApi = vi.hoisted(() => ({ getFinanceAdjustmentNoteDocument: vi.fn(), getFinanceTreasuryReceiptDocument: vi.fn(),
+    exportFinanceStatement: vi.fn(), unauthorized: vi.fn() }));
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => noteApi }));
 vi.mock('../features/auth/authService', () => ({ readSession: () => ({ token: 'synthetic-token' }),
     handleUnauthorizedResponse: noteApi.unauthorized }));
@@ -81,4 +82,29 @@ it('downloads a note PDF with the session token and explains a failure by its co
     expect(noteDocumentError({ status: 404, code: 'not_found' })).toBe('El documento no está disponible en su estación o aerolínea.');
     expect(noteDocumentError({ status: 403 })).toBe('No tiene permiso para descargar las notas de ajuste de esta estación.');
     expect(noteDocumentError(new TypeError('Failed to fetch'))).toBe('No se pudo descargar el PDF de la nota. Intente de nuevo.');
+});
+
+it('downloads the PDF of a treasury receipt named by its reference', async () => {
+    const { downloadTreasuryReceiptDocument, receiptFileName } = await import('./financeTreasuryService');
+    const createObjectURL = vi.fn(() => 'blob:receipt');
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    noteApi.getFinanceTreasuryReceiptDocument.mockResolvedValueOnce(new Blob(['%PDF-1.7'], { type: 'application/pdf' }));
+    await downloadTreasuryReceiptDocument({ id: 'r-1', reference: 'RC 2026/11-01' });
+    expect(noteApi.getFinanceTreasuryReceiptDocument).toHaveBeenCalledWith('r-1', { cache: 'no-store' });
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(receiptFileName({ id: 'r-1', reference: 'RC 2026/11-01' })).toBe('elevant-recibo-RC-2026-11-01.pdf');
+    expect(receiptFileName({ id: 'r-1', reference: '' })).toBe('elevant-recibo-r-1.pdf');
+    const expired = Object.assign(new Error('Unauthorized'), { status: 401 });
+    noteApi.getFinanceTreasuryReceiptDocument.mockRejectedValueOnce(expired);
+    await expect(downloadTreasuryReceiptDocument({ id: 'r-1', reference: 'RC-1' })).rejects.toBe(expired);
+    expect(noteApi.unauthorized).toHaveBeenCalledWith({ status: 401 });
+});
+
+it('exports the consolidated statement of every airline without airlineId', async () => {
+    const { exportFinanceStatement, statementFileName } = await import('./financeTreasuryService');
+    noteApi.exportFinanceStatement.mockResolvedValueOnce(new Blob(['x']));
+    await exportFinanceStatement({ asOf: '2026-11-21', stationId: 's-1', airlineId: '' }, 'pdf');
+    expect(noteApi.exportFinanceStatement).toHaveBeenCalledWith({ asOf: '2026-11-21', stationId: 's-1' }, 'pdf', { cache: 'no-store' });
+    expect(statementFileName({ asOf: '2026-11-21', airlineId: '' }, 'pdf')).toBe('elevant-estado-de-cuenta-consolidado-2026-11-21.pdf');
+    expect(statementFileName({ asOf: '2026-11-21', airlineId: 'a-1' }, 'xlsx')).toBe('elevant-estado-de-cuenta-2026-11-21.xlsx');
 });

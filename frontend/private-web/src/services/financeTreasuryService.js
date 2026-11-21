@@ -57,8 +57,28 @@ export async function exportFinanceStatement(filters, format) {
   }
 }
 
-/** «elevant-estado-de-cuenta-2026-11-21.pdf». */
-export const statementFileName = (filters, format) => `elevant-estado-de-cuenta-${filters.asOf}.${format}`;
+/** «elevant-estado-de-cuenta-2026-11-21.pdf»; without an airline, the consolidated one of every airline. */
+export const statementFileName = (filters, format) =>
+  `elevant-estado-de-cuenta-${filters.airlineId ? '' : 'consolidado-'}${filters.asOf}.${format}`;
+
+/** «elevant-recibo-RC-2026-11-01.pdf»: the receipt's reference made safe for a file name, or its id. */
+export function receiptFileName(receipt) {
+  const reference = String(receipt?.reference ?? '').trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return `elevant-recibo-${reference || receipt?.id}.pdf`;
+}
+
+/** The PDF of a treasury receipt (`GET finance/receipts/{id}/document`), saved with the single downloadFile. */
+export async function downloadTreasuryReceiptDocument(receipt) {
+  let blob;
+  try {
+    blob = await createPrivateWebApiClient({ getAccessToken: () => readSession()?.token })
+      .getFinanceTreasuryReceiptDocument(receipt.id, { cache: 'no-store' });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+  downloadFile(blob, receiptFileName(receipt));
+}
 
 /**
  * 4-N17: saves the PDF of a credit or debit note with a readable name: its e-NCF E34/E33 when it modifies an E31
