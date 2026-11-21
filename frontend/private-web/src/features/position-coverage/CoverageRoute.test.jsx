@@ -44,7 +44,7 @@ function InFrame({ children }) {
 const render = ui => renderView(ui, { wrapper: InFrame });
 
 it('assigns stands to an agent and explains every broken rule in Spanish', async () => {
-  loadOccCoverage.mockResolvedValue(board);
+  loadOccCoverage.mockResolvedValueOnce(board);
   createOccCoverage.mockRejectedValueOnce(Object.assign(new Error('La cobertura no cumple las reglas de asignación.'),
     { status: 422, reasons: ['mentor_required'] }));
   render(<CoverageRoute />);
@@ -63,9 +63,12 @@ it('assigns stands to an agent and explains every broken rule in Spanish', async
       stands: [{ standId: 's-A01', code: 'A01' }], startsAt: '2026-08-19T10:00:00Z', endsAt: '2026-08-19T18:00:00Z',
       mentorAgentId: null, mentorName: null, vehicleCode: null, isReinforcement: false }] };
   createOccCoverage.mockResolvedValueOnce(covered);
+  // G1: after the command the board is read again, with who assigned the new coverage and when.
+  loadOccCoverage.mockResolvedValue(covered);
   fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
   const day = await screen.findByRole('region', { name: 'Coberturas del día' });
   expect(await within(day).findByText('Riley Ramp')).toBeInTheDocument();
+  await waitFor(() => expect(loadOccCoverage).toHaveBeenCalledTimes(2));
   releaseOccCoverage.mockResolvedValueOnce(board);
   fireEvent.click(within(day).getByRole('button', { name: 'Liberar' }));
   expect(releaseOccCoverage).toHaveBeenCalledWith('cv-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
@@ -272,11 +275,11 @@ it('shows the board as a table and the day coverages as a list', async () => {
       vehicleCode: 'VH-07', isReinforcement: true }] });
   render(<CoverageRoute />);
 
-  // The terminal's stands: a table of four columns, none of them called «Puente».
+  // The terminal's stands: a table of six columns, none of them called «Puente».
   const standsRegion = await screen.findByRole('region', { name: 'Posiciones de la terminal' });
   const table = within(standsRegion).getByRole('table', { name: 'Posiciones de la terminal' });
   expect(within(table).getAllByRole('columnheader').map(header => header.textContent))
-    .toEqual(['Posición', 'Atributos', 'Cubierta por', 'Estado']);
+    .toEqual(['Posición', 'Atributos', 'Cubierta por', 'Cubre', 'Asignada', 'Estado']);
   const rowOf = code => within(table).getByText(code).closest('tr');
   expect(rowOf('A1').querySelector('[data-occ-plate="stand"]').textContent).toBe('A1');
   expect(rowOf('A1')).toHaveTextContent('Riley Ramp');
@@ -401,7 +404,7 @@ describe('CoverageRoute in English', () => {
     const standsRegion = screen.getByRole('region', { name: 'Terminal stands' });
     const table = within(standsRegion).getByRole('table');
     expect(within(table).getAllByRole('columnheader').map(header => header.textContent))
-      .toEqual(['Stand', 'Attributes', 'Covered by', 'State']);
+      .toEqual(['Stand', 'Attributes', 'Covered by', 'Covers', 'Assigned', 'State']);
     expect(within(table).getAllByText('No agent')).toHaveLength(2);
     // The legends speak English too, with the pills' own words.
     expect(within(within(standsRegion).getByRole('list', { name: 'Attributes and state' })).getAllByRole('listitem')
@@ -419,6 +422,124 @@ describe('CoverageRoute in English', () => {
     expect(screen.getByRole('region', { name: 'Stand attributes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save rules' })).toBeInTheDocument();
     expect(screen.queryByText('Cobertura de posiciones')).toBeNull();
+  });
+});
+
+// G1 (the professor's review, 2:09-2:13): beside «Cubierta por», for when the coverage is («Cubre») and when and by
+// whom OCC assigned it («Asignada»), in the station's time and on 24 hours.
+const assignedCoverage = (id, agentName, code, startsAt, endsAt, assignment = {}) => ({ id, agentId: `ag-${id}`, agentName,
+  terminalId: 't-a', terminalCode: 'A', stands: [{ standId: `s-${code}`, code }], startsAt, endsAt, mentorAgentId: null,
+  mentorName: null, vehicleCode: null, isReinforcement: false, ...assignment });
+const riley = assignedCoverage('cv-1', 'Riley Ramp', 'A01', '2026-08-19T10:00:00Z', '2026-08-19T18:00:00Z',
+  { assignedAt: '2026-08-19T13:41:00Z', assignedByName: 'Alex Operations' });
+const mateo = assignedCoverage('cv-2', 'Mateo Ramp', 'A02', '2026-08-19T14:00:00Z', '2026-08-19T22:00:00Z',
+  { assignedAt: '2026-08-19T14:05:00Z', assignedByName: 'Sam Supervisor' });
+const assignedBoard = { ...board, coverages: [riley, mateo],
+  stands: [stand('A01', 't-a', { coveredBy: ['Riley Ramp'] }), stand('A02', 't-a', { coveredBy: ['Mateo Ramp'] }),
+    ...board.stands.slice(2)] };
+
+describe('when each coverage was assigned and what it covers (G1)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const table = () => screen.getByRole('table', { name: 'Posiciones de la terminal' });
+  const rowOf = code => within(table()).getByText(code).closest('tr');
+  const standOrder = () => [...table().querySelectorAll('[data-occ-plate="stand"]')].map(plate => plate.textContent);
+  const dayItems = () => within(within(screen.getByRole('region', { name: 'Coberturas del día' }))
+    .getByRole('list', { name: 'Coberturas del día' })).getAllByRole('listitem');
+
+  it('shows «Cubre» and «Asignada» beside «Cubierta por» and in the coverages of the day', async () => {
+    loadOccCoverage.mockResolvedValue(assignedBoard);
+    render(<CoverageRoute />);
+    await screen.findByRole('table', { name: 'Posiciones de la terminal' });
+    expect(within(table()).getAllByRole('columnheader').map(header => header.textContent))
+      .toEqual(['Posición', 'Atributos', 'Cubierta por', 'Cubre', 'Asignada', 'Estado']);
+    // Santo Domingo is UTC−4: 10:00Z is 06:00 at the station.
+    expect(rowOf('A1')).toHaveTextContent('Riley Ramp');
+    expect(rowOf('A1')).toHaveTextContent('19/08 06:00–14:00');
+    expect(rowOf('A1')).toHaveTextContent('19/08/2026 09:41 · Alex Operations');
+    expect(rowOf('A2')).toHaveTextContent('19/08 10:00–18:00');
+    expect(rowOf('A2')).toHaveTextContent('19/08/2026 10:05 · Sam Supervisor');
+    // The read always asks who assigned each coverage; the released ones stay out until asked.
+    expect(loadOccCoverage).toHaveBeenCalledWith(stationId, expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      expect.objectContaining({ includeReleased: false }));
+
+    const [first] = dayItems();
+    expect(first).toHaveTextContent('Riley Ramp');
+    expect(within(first).getByText('06:00–14:00')).toBeInTheDocument();
+    expect(first).toHaveTextContent('19/08/2026 09:41 · Alex Operations');
+  });
+
+  it('sorts by stand or by the most recent assignment, so a new coverage does not fall to the bottom', async () => {
+    loadOccCoverage.mockResolvedValue(assignedBoard);
+    render(<CoverageRoute />);
+    await screen.findByRole('table', { name: 'Posiciones de la terminal' });
+    const order = screen.getByRole('group', { name: 'Ordenar' });
+    expect(within(order).getByRole('button', { name: 'Posición' })).toHaveAttribute('aria-pressed', 'true');
+    expect(standOrder()).toEqual(['A1', 'A2']);
+    expect(dayItems().map(item => item.querySelector('strong').textContent)).toEqual(['Riley Ramp', 'Mateo Ramp']);
+
+    fireEvent.click(within(order).getByRole('button', { name: 'Asignación más reciente' }));
+    expect(within(order).getByRole('button', { name: 'Asignación más reciente' })).toHaveAttribute('aria-pressed', 'true');
+    // Mateo was assigned at 10:05, after Riley at 09:41: his stand and his coverage go first.
+    expect(standOrder()).toEqual(['A2', 'A1']);
+    expect(dayItems().map(item => item.querySelector('strong').textContent)).toEqual(['Mateo Ramp', 'Riley Ramp']);
+    // Choosing the order reads nothing again.
+    expect(loadOccCoverage).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the new coverage «Recién asignada» for a few seconds and reads its assignment again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { assignedAt: _at, assignedByName: _by, ...answered } = riley;
+    // The command's board does not say who assigned it; the read that follows does.
+    const fresh = { ...board, coverages: [answered], stands: [stand('A01', 't-a', { coveredBy: ['Riley Ramp'] }),
+      ...board.stands.slice(1)] };
+    const reread = { ...fresh, coverages: [riley] };
+    loadOccCoverage.mockResolvedValueOnce(board).mockResolvedValue(reread);
+    createOccCoverage.mockResolvedValueOnce(fresh);
+    render(<CoverageRoute />);
+    const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+    fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'A1' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+
+    await waitFor(() => expect(rowOf('A1')).toHaveTextContent('Recién asignada'));
+    expect(within(rowOf('A1')).getByText('Recién asignada').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'active');
+    expect(dayItems()[0]).toHaveTextContent('Recién asignada');
+    await waitFor(() => expect(rowOf('A1')).toHaveTextContent('19/08/2026 09:41 · Alex Operations'));
+    expect(loadOccCoverage).toHaveBeenCalledTimes(2);
+    expect(rowOf('A2')).not.toHaveTextContent('Recién asignada');
+
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(rowOf('A1')).not.toHaveTextContent('Recién asignada');
+    expect(rowOf('A1')).toHaveTextContent('19/08/2026 09:41 · Alex Operations');
+  });
+
+  it('shows the released coverages of the day with when and by whom, when asked', async () => {
+    const released = { ...assignedCoverage('cv-0', 'Pedro Guzmán', 'A02', '2026-08-19T10:00:00Z', '2026-08-19T18:00:00Z',
+      { assignedAt: '2026-08-19T12:30:00Z', assignedByName: 'Alex Operations' }),
+    releasedAt: '2026-08-19T14:02:00Z', releasedByName: 'Sam Supervisor' };
+    loadOccCoverage.mockImplementation((_station, _date, options) => Promise.resolve(options?.includeReleased
+      ? { ...assignedBoard, releasedCoverages: [released] } : assignedBoard));
+    render(<CoverageRoute />);
+    await screen.findByRole('table', { name: 'Posiciones de la terminal' });
+    expect(dayItems()).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Mostrar liberadas' }));
+    await waitFor(() => expect(dayItems()).toHaveLength(3));
+    expect(loadOccCoverage).toHaveBeenLastCalledWith(stationId, expect.any(String),
+      expect.objectContaining({ includeReleased: true }));
+    const item = dayItems().find(row => row.textContent.includes('Pedro Guzmán'));
+    expect(item).toHaveTextContent('Liberada el 19/08/2026 10:02 por Sam Supervisor');
+    expect(item).toHaveTextContent('19/08/2026 08:30 · Alex Operations');
+    expect(within(item).getByText('Liberada').closest('[data-occ-status]')).toHaveAttribute('data-tone', 'muted');
+    // A released coverage is history: it is not released again and covers no stand.
+    expect(within(item).queryByRole('button', { name: 'Liberar' })).toBeNull();
+    expect(rowOf('A2')).not.toHaveTextContent('Pedro Guzmán');
+    expect(within(screen.getByRole('list', { name: 'Tipo de cobertura' })).getAllByRole('listitem')
+      .map(entry => entry.textContent)).toEqual(['Refuerzo', 'Liberada']);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Mostrar liberadas' }));
+    await waitFor(() => expect(dayItems()).toHaveLength(2));
   });
 });
 
