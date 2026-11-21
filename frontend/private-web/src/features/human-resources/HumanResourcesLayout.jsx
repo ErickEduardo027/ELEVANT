@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import AppShell from '../shell/AppShell';
-import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_MODULE_IDS } from './navigation';
+import { HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_MODULE_IDS } from './navigation';
 import { CURRENT_USER_MOCK } from './mockData';
 import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../../config/hrDemoMode';
 import { allowedNavigation, useDepartmentAccess } from '../access/DepartmentAccessContext';
@@ -48,7 +48,8 @@ export default function HumanResourcesLayout({
     [access, dashboardReadOnlyDemo]
   );
 
-  const { permitted, empty } = useNavigationGuard(HUMAN_RESOURCES_NAVIGATION, navigation);
+  const { permitted, empty } = useNavigationGuard(HUMAN_RESOURCES_NAVIGATION, navigation,
+    { homePath: `${HUMAN_RESOURCES_BASE_PATH}/dashboard`, basePath: HUMAN_RESOURCES_BASE_PATH });
 
   return (
     <AppShell

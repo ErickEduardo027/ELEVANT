@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import HumanResourcesLayout from './HumanResourcesLayout';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
@@ -10,7 +10,7 @@ let shellProps;
 vi.mock('../shell/AppShell', () => ({
   default: props => {
     shellProps = props;
-    return <div data-testid="app-shell" />;
+    return <div data-testid="app-shell">{props.children}</div>;
   },
 }));
 
@@ -77,5 +77,27 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
       canManageDepartmentUsers: false, canValidateAccessRequests: true }}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
 
     expect(shellProps.navigation.map(item => item.id)).toEqual(['access-requests']);
+  });
+
+  it('opens Dashboard at the HR entry for an account that may read it', async () => {
+    window.history.replaceState({}, '', '/gestion-humana');
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', DepartmentPermissionCodes.humanResources)}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
+    await waitFor(() => expect(window.location.pathname).toBe('/gestion-humana/dashboard'));
+  });
+
+  it('sends an account without the dashboard grant to its first permitted module', async () => {
+    window.history.replaceState({}, '', '/gestion-humana/dashboard');
+    render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Member', department: 'human-resources',
+      permissions: ['human_resources.reports.read', 'human_resources.access_requests.read'], stations: [],
+      canManageDepartmentUsers: false, canValidateAccessRequests: true }}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
+    await waitFor(() => expect(window.location.pathname).toBe('/gestion-humana/reports'));
+  });
+
+  it('shows the no-modules notice to an account without HR modules', async () => {
+    window.history.replaceState({}, '', '/gestion-humana/dashboard');
+    render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Member', department: 'human-resources',
+      permissions: [], stations: [], canManageDepartmentUsers: false, canValidateAccessRequests: false }}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
+    expect(await screen.findByText('Sin módulos asignados')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/gestion-humana/dashboard');
   });
 });
