@@ -329,10 +329,10 @@ it("lists invoices with their e-NCF, status and balance, without preinvoice deci
     ecfInvoice({ id: "74000000-0000-7000-8000-000000000029", fiscalNumber: null, number: "NF-OLD", daysOverdue: 12 }),
   ]));
   render(<AirlinePortalPage view="finance" />);
-  expect(await screen.findByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
-  expect(screen.getByRole("region", { name: "Factura E310000000001" })).toHaveTextContent("PUJ · Pendiente");
-  expect(screen.getByRole("region", { name: "Factura E310000000002" })).toHaveTextContent("Pagada");
-  expect(screen.getByRole("region", { name: "Factura NF-OLD" })).toHaveTextContent("Vencida");
+  expect(await screen.findByRole("link", { name: "E310000000001" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /E310000000001/ })).toHaveTextContent(/PUJ.*Pendiente/);
+  expect(screen.getByRole("row", { name: /E310000000002/ })).toHaveTextContent("Pagada");
+  expect(screen.getByRole("row", { name: /NF-OLD/ })).toHaveTextContent("Vencida");
   expect(screen.getByLabelText("Resumen de facturas")).toHaveTextContent("USD 296.18");
   expect(screen.queryByRole("button", { name: /Aceptar prefactura|Disputar prefactura/ })).not.toBeInTheDocument();
 });
@@ -345,13 +345,19 @@ it("opens an invoice detail and downloads its PDF by invoice id", async () => {
       unitPrice: 125.5, amount: 148.09, reason: null }] }));
   const createObjectURL = vi.fn(() => "blob:invoice");
   Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Ver detalle" }));
+  render(<AirlinePortalPage view="invoiceDetail" invoiceId="74000000-0000-7000-8000-000000000009" />);
   const detail = await screen.findByRole("region", { name: "Detalle de factura" });
-  expect(await within(detail).findByText(/Servicio · DEV-TAT-0021 · Ground power/)).toBeInTheDocument();
+  const line = await within(detail).findByRole("row", { name: /DEV-TAT-0021/ });
+  expect(line).toHaveTextContent(/Servicio · Ground power/);
+  expect(line).toHaveTextContent("148.09");
+  expect(within(detail).getByRole("heading", { level: 1, name: "Factura E310000000001" })).toBeInTheDocument();
+  expect(within(detail).getByText("Vence el 05/12/2026")).toBeInTheDocument();
   expect(within(detail).getByText(/sin validez fiscal/)).toBeInTheDocument();
   expect(getTreasuryInvoice).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000009", expect.any(AbortSignal));
-  fireEvent.click(within(detail).getByRole("button", { name: "Descargar PDF de Factura E310000000001" }));
+  // The only primary action is the card payment; the PDF is secondary and the way back is a link.
+  expect(await within(detail).findByRole("button", { name: "Pagar con tarjeta USD 148.09" })).toHaveAttribute("data-variant", "primary");
+  expect(screen.getByRole("link", { name: "← Volver a facturas" })).toHaveAttribute("href", "/portal/finanzas");
+  fireEvent.click(within(detail).getByRole("button", { name: "Descargar factura (PDF)" }));
   await waitFor(() => expect(getInvoiceDocument).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000009"));
   await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
 });
@@ -368,7 +374,8 @@ it("shows honest empty and recoverable states for invoices", async () => {
 it("lists invoice PDFs in documents by invoice id", async () => {
   getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
   render(<AirlinePortalPage view="documents" />);
-  expect(await screen.findByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
+  expect(await screen.findByRole("link", { name: "E310000000001" })).toHaveAttribute("href",
+    "/portal/finanzas/facturas/74000000-0000-7000-8000-000000000009");
   fireEvent.click(screen.getByRole("button", { name: "Descargar PDF de Factura E310000000001" }));
   await waitFor(() => expect(getInvoiceDocument).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000009"));
 });
@@ -376,13 +383,16 @@ it("lists invoice PDFs in documents by invoice id", async () => {
 it("reports operations and invoices returned by the API, hiding stale data while revalidating", async () => {
   getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
   const page = render(<AirlinePortalPage view="reports" />);
-  expect(await screen.findByText(/Factura E310000000001 · USD 148\.09/)).toBeInTheDocument();
+  const reported = await screen.findByRole("row", { name: /E310000000001/ });
+  expect(reported).toHaveTextContent("USD 148.09");
   expect(screen.getByText("DEV-TAT-0002")).toBeInTheDocument();
+  // No export button until the API serves the portal's PDF and Excel.
+  expect(screen.queryByRole("button", { name: /Descargar (PDF|Excel)/ })).not.toBeInTheDocument();
   let finish!: (value: AirlineTreasuryStatement) => void;
   getTreasuryStatement.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   financeRevision += 1;
   page.rerender(<AirlinePortalPage view="reports" />);
-  expect(screen.queryByText(/Factura E310000000001/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/E310000000001/)).not.toBeInTheDocument();
   await act(async () => finish({ airlineId: bootstrap.airlineId, asOf: "2026-11-05", invoices: [], receipts: [], movements: [], aging: [] }));
   expect(await screen.findByText(/No hay facturas emitidas/)).toBeInTheDocument();
 });
@@ -396,8 +406,7 @@ const attemptOf = (status: string, overrides: Record<string, unknown> = {}) => (
 async function openCardForm() {
   getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
   getTreasuryInvoice.mockImplementation(async () => ({ invoice: ecfInvoice(), movements: [], notes: [], lines: [] }));
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Ver detalle" }));
+  render(<AirlinePortalPage view="invoiceDetail" invoiceId="74000000-0000-7000-8000-000000000009" />);
   fireEvent.click(await screen.findByRole("button", { name: "Pagar con tarjeta USD 148.09" }));
   const form = screen.getByRole("form", { name: "Datos de la tarjeta" });
   fireEvent.change(within(form).getByLabelText("Titular de la tarjeta"), { target: { value: "Casey Airline" } });
@@ -445,8 +454,9 @@ it("explains a card rejected before the gateway and lists every attempt", async 
     attempts: [attemptOf("Error"), attemptOf("Declined")] });
   payInvoiceByCard.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 400, reasons: ["card_number_invalid"] }));
   const form = await openCardForm();
-  expect(await screen.findByText(/Error del procesador · Visa •••• 1111/)).toBeInTheDocument();
-  expect(screen.getByText(/Rechazado · Visa •••• 1111/)).toBeInTheDocument();
+  const attempts = await screen.findByRole("table", { name: "Intentos de pago con tarjeta" });
+  const rows = await within(attempts).findAllByRole("row", { name: /Visa •••• 1111/ });
+  expect(rows.map(row => row.textContent)).toEqual([expect.stringMatching(/Error del procesador/), expect.stringMatching(/Rechazado/)]);
   fireEvent.click(within(form).getByRole("button", { name: "Pagar USD 148.09" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("El número de tarjeta no es válido.");
 });
@@ -465,6 +475,6 @@ it("addresses the airline as usted in requests, documents and reports (N19)", as
   expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo descargar el PDF. Inténtelo de nuevo.");
 
   page.rerender(<AirlinePortalPage view="reports" />);
-  expect(screen.getByText("Consulte las operaciones y facturas de su aerolínea. Esta vista muestra la primera página de "
-    + "cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.")).toBeInTheDocument();
+  expect(screen.getByText(/^Consulte las operaciones y facturas de su aerolínea\. Las operaciones muestran la primera página/))
+    .toBeInTheDocument();
 });
