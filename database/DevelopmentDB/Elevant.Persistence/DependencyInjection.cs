@@ -179,6 +179,7 @@ public static class DependencyInjection
         services.AddScoped<IFinanceReportExportAudit, EfFinanceReportExportAudit>();
         // ADR-0048, «Reportes nuevos»: the tabular reports of Contratos, Gestión Humana and the portal, and their audit.
         services.AddScoped<IContractsReportStore, EfContractsReportStore>();
+        services.AddScoped<IAirlinePortalReportStore, EfAirlinePortalReportStore>();
         services.AddScoped<Elevant.Application.Abstractions.Documents.IReportExportAudit, Elevant.Persistence.Reports.EfReportExportAudit>();
         // ADR-0035, block 3: the internal draft and its invoice exist only inside the issuance of «Por facturar».
         services.AddScoped<EfPreinvoiceDraftStore>();
