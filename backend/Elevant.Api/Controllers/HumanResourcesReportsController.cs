@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
+using Elevant.Application.Abstractions.Documents;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
 using Elevant.Contracts.Identity;
@@ -23,10 +24,25 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/human-resources/reports")]
 public sealed class HumanResourcesReportsController(
     IHumanResourcesReportStore store,
-    IHumanResourcesReportPdfRenderer pdf,
-    IHumanResourcesReportXlsxRenderer xlsx) : ControllerBase
+    IReportRenderer renderer) : ControllerBase
 {
     private const int MaxExportRows = 5000;
+
+    /// <summary>
+    /// The four reports with their typed columns and whether each is «a una fecha de corte» (ADR-0048): then the screen
+    /// asks only for the date and hides «Desde».
+    /// </summary>
+    [HttpGet(Name = "ListHumanResourcesReports")]
+    [ProducesResponseType<HumanResourcesReportCatalogResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    public ActionResult<HumanResourcesReportCatalogResponse> List()
+    {
+        if (!TryAccount(out _)) return UnauthorizedCatalog();
+        return Ok(new HumanResourcesReportCatalogResponse(HumanResourcesReportCatalog.All
+            .Select(item => new HumanResourcesReportDefinitionResponse(item.Key, item.Title, item.Description,
+                item.Columns.Select(column => column.Label).ToArray(), ReportResponses.Types(item.Columns), item.AsOfDate))
+            .ToArray(), HumanResourcesReportPolicy.MaxRangeDays));
+    }
 
     [HttpGet("expirations", Name = "ListHumanResourcesExpirations")]
     [ProducesResponseType<HumanResourcesReportPageResponse<HumanResourcesExpirationResponse>>(200)]
@@ -106,7 +122,7 @@ public sealed class HumanResourcesReportsController(
             from, to, page, limit, cancellationToken);
         return Page(result, row => new HumanResourcesQualificationCoverageResponse(
             row.EquipmentTypeId, row.EquipmentCode, row.EquipmentName,
-            row.EligibleAgents, row.QualifiedAgents));
+            row.EligibleAgents, row.QualifiedAgents) { StationAgents = row.StationAgents });
     }
 
     [HttpGet("{kind}/export", Name = "ExportHumanResourcesReport")]
@@ -133,13 +149,15 @@ public sealed class HumanResourcesReportsController(
             !HumanResourcesReportPolicy.ValidExpirationFilters(reportKind,
                 documentKind, validity))
             return ReportProblems.InvalidQuery(this);
+        // ADR-0048: «Exportar» is checked before anything is read or rendered.
+        if (await store.AuthorizeExportAsync(actorId, stationId, cancellationToken) is { } refused)
+            return FailureResult(refused);
         var result = await store.ReadSnapshotAsync(actorId, stationId, reportKind,
             from, to, MaxExportRows, documentKind, validity, cancellationToken);
         if (result.Failure is { } failure) return FailureResult(failure);
         var snapshot = result.Snapshot!;
-        var data = format == "pdf"
-            ? pdf.Render(snapshot, snapshot.StationCode)
-            : xlsx.Render(snapshot, snapshot.StationCode);
+        var document = HumanResourcesReportCatalog.ToDocument(snapshot);
+        var data = format == "pdf" ? renderer.RenderPdf(document) : renderer.RenderXlsx(document);
         var auditFailure = await store.RecordExportAsync(actorId, stationId,
             reportKind, from, to, format, snapshot.RowCount, documentKind,
             validity, cancellationToken);
@@ -196,6 +214,12 @@ public sealed class HumanResourcesReportsController(
     {
         Response.Headers.WWWAuthenticate = "Bearer";
         return ProblemPage<T>(401, "Authentication failed.");
+    }
+
+    private ActionResult<HumanResourcesReportCatalogResponse> UnauthorizedCatalog()
+    {
+        Response.Headers.WWWAuthenticate = "Bearer";
+        return ProblemResult(401, "Authentication failed.");
     }
 
     private ObjectResult UnauthorizedResult()

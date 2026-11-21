@@ -42,20 +42,18 @@ public sealed record HumanResourcesReportSnapshot(
 
     /// <summary>The station's IANA zone: «Generado» is written in its local time. Null is AVIAM's calendar.</summary>
     public string? TimeZone { get; init; }
+
+    public string? StationName { get; init; }
+
+    /// <summary>The name of who exports, for «Generado el … por …».</summary>
+    public string? GeneratedBy { get; init; }
+
+    /// <summary>Active agents of the station at the cut-off (qualification coverage), the context of its figures.</summary>
+    public int? StationAgents { get; init; }
 }
 
 public sealed record HumanResourcesReportSnapshotResult(
     HumanResourcesReportSnapshot? Snapshot, HumanResourcesReportFailure? Failure);
-
-public interface IHumanResourcesReportPdfRenderer
-{
-    byte[] Render(HumanResourcesReportSnapshot snapshot, string stationCode);
-}
-
-public interface IHumanResourcesReportXlsxRenderer
-{
-    byte[] Render(HumanResourcesReportSnapshot snapshot, string stationCode);
-}
 
 public sealed record HumanResourcesExpirationRow(
     Guid Id, Guid RampProfileId, string AgentName, string EmployeeNumber,
@@ -68,7 +66,11 @@ public sealed record HumanResourcesStaffDistributionRow(
 
 public sealed record HumanResourcesQualificationCoverageRow(
     Guid EquipmentTypeId, string EquipmentCode, string EquipmentName,
-    int EligibleAgents, int QualifiedAgents);
+    int EligibleAgents, int QualifiedAgents)
+{
+    /// <summary>Active agents of the station at the cut-off date, whatever their training.</summary>
+    public int StationAgents { get; init; }
+}
 
 public sealed record HumanResourcesAccountMovementRow(
     Guid Id, Guid AccountId, Guid RampProfileId,
@@ -108,6 +110,13 @@ public interface IHumanResourcesReportStore
         Guid actorId, Guid stationId, HumanResourcesReportKind kind,
         DateOnly startDate, DateOnly endDate, int maxRows,
         string? documentKind = null, string? validity = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether the actor may export from the station («Exportar» on top of «Ver»), checked before anything is read or
+    /// rendered; null when allowed.
+    /// </summary>
+    Task<HumanResourcesReportFailure?> AuthorizeExportAsync(Guid actorId, Guid stationId,
         CancellationToken cancellationToken = default);
 
     Task<HumanResourcesReportFailure?> RecordExportAsync(
