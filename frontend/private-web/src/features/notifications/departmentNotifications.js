@@ -6,7 +6,8 @@ import { HUMAN_RESOURCES_BASE_PATH } from '../human-resources/navigation';
 // sends the kind and a short subject; the source is re-read under current permissions.
 const KINDS = {
   access_request: { title: 'Nueva solicitud de acceso', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/access-requests` } },
-  requisition: { title: 'Nueva requisición de personal', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/requisitions` } },
+  // ADR-0047: requisitions left the version 1 interface; an older alert opens the employee records it was about.
+  requisition: { title: 'Nueva requisición de personal', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/employees` } },
   availability_request: { title: 'Solicitud de disponibilidad por decidir', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/schedules` } },
   // 2-N25 (phase 2, block D): the daily sweep warns HumanResources:DocumentExpiryNoticeDays before a current document ends.
   agent_document_expiring: { title: 'Un carnet o una licencia de rampa está por vencer', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/permits` } },

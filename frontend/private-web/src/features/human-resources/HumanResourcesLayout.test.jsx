@@ -3,7 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import HumanResourcesLayout from './HumanResourcesLayout';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
-import { getHumanResourcesUnreadNotificationsCount } from '../../services/humanResourcesNotificationsService';
 
 let shellProps;
 
@@ -14,61 +13,47 @@ vi.mock('../shell/AppShell', () => ({
   },
 }));
 
-vi.mock('../../services/humanResourcesNotificationsService', () => ({
-  getHumanResourcesUnreadNotificationsCount: vi.fn(),
-  subscribeHumanResourcesNotifications: vi.fn(() => () => {}),
-}));
+// Each entry of the menu with the ids of its modules.
+const menu = navigation => navigation.map(item => (item.children ? [item.label, item.children.map(child => child.id)] : item.id));
+const ADMIN_MENU = [
+  ['Personal', ['dashboard', 'employees']],
+  ['Operación de rampa', ['users', 'certifications', 'permits', 'schedules', 'attendance']],
+  ['Seguimiento', ['reports', 'audit']],
+  ['Accesos', ['access-requests', 'department-users']],
+  'settings',
+];
+const child = id => shellProps.navigation.flatMap(item => item.children ?? [item]).find(item => item.id === id);
 
 describe('HumanResourcesLayout dashboard-only demo', () => {
   beforeEach(() => {
     shellProps = undefined;
     vi.clearAllMocks();
-    getHumanResourcesUnreadNotificationsCount.mockResolvedValue(2);
   });
 
   it('exposes connected HR reads without a synthetic qualification badge', () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', DepartmentPermissionCodes.humanResources)}><HumanResourcesLayout dashboardReadOnlyDemo /></DepartmentAccessProvider>);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard', 'employees', 'positions', 'requisitions',
-      'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports', 'audit', 'notifications',
-      'access-requests', 'department-users', 'settings']);
-    expect(shellProps.navigation.find(item => item.id === 'certifications').badge).toBeNull();
-    expect(shellProps.navigation.find(item => item.id === 'permits').badge).toBeNull();
-    expect(shellProps.navigation.find(item => item.id === 'schedules').badge).toBeNull();
-    expect(shellProps.navigation.find(item => item.id === 'reports').badge).toBeNull();
+    // ADR-0045: the Development VPS runs this demo mode, and Configuración is real data, so it stays.
+    expect(menu(shellProps.navigation)).toEqual(ADMIN_MENU);
+    expect(child('certifications').badge).toBeNull();
+    expect(child('permits').badge).toBeNull();
+    expect(child('schedules').badge).toBeNull();
+    expect(child('reports').badge).toBeNull();
     // Department alerts are real data, so the read-only demo keeps the bell.
     expect(shellProps.notificationsSource).toBe('department');
     expect(shellProps.notificationsEnabled).toBe(true);
     expect(shellProps.profileActionsEnabled).toBe(false);
-    expect(getHumanResourcesUnreadNotificationsCount).not.toHaveBeenCalled();
   });
 
-  it('retains the full HR navigation and notifications when the demo flag is absent', async () => {
+  it('retains the full HR navigation and the bell when the demo flag is absent', async () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', DepartmentPermissionCodes.humanResources)}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual([
-      'dashboard',
-      'employees',
-      'positions',
-      'requisitions',
-      'users',
-      'certifications',
-      'permits',
-      'schedules',
-      'attendance',
-      'reports',
-      'audit',
-      'notifications',
-      'access-requests',
-      'department-users',
-      'settings',
-    ]);
+    expect(menu(shellProps.navigation)).toEqual(ADMIN_MENU);
     expect(shellProps.notificationsSource).toBe('department');
     expect(shellProps.notificationsEnabled).toBe(true);
     expect(shellProps.profileActionsEnabled).toBe(true);
-    // The prototype feed is no longer read; the bell shows the real department count.
-    expect(getHumanResourcesUnreadNotificationsCount).not.toHaveBeenCalled();
-    expect(shellProps.navigation.find(item => item.id === 'notifications').badge).toBeNull();
+    // The page Notificaciones is gone; the bell stays, governed by human_resources.notifications.read.
+    expect(child('notifications')).toBeUndefined();
   });
 
   it('shows a member only the modules its permissions open', () => {
@@ -76,7 +61,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
       permissions: ['human_resources.access_requests.read', 'human_resources.access_requests.validate'], stations: [],
       canManageDepartmentUsers: false, canValidateAccessRequests: true }}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['access-requests']);
+    expect(menu(shellProps.navigation)).toEqual([['Accesos', ['access-requests']]]);
   });
 
   it('opens Dashboard at the HR entry for an account that may read it', async () => {

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import EmptyState from '../../components/EmptyState';
 import Modal from '../../components/Modal';
-import PageHeader from '../../components/PageHeader';
 import StackedTable from '../../components/StackedTable';
 import StatusBadge from '../../components/StatusBadge';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
@@ -10,7 +9,7 @@ import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../services/departmentGoverna
 import { governanceMessage, listPositions, savePosition } from '../../services/humanResourcesEmployeesService';
 import { fieldClass } from './EmployeeForms';
 
-/** Organisational positions per department; Human Resources owns the organigram. */
+/** Organisational positions per department, a tab of Empleados (ADR-0047); Human Resources owns the organigram. */
 export default function PositionsPage() {
   const access = useOptionalDepartmentAccess();
   const canCreate = Boolean(access?.can('human_resources.positions.create'));
@@ -43,17 +42,18 @@ export default function PositionsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] space-y-5">
-      <PageHeader eyebrow="Gestión Humana" title="Puestos"
-        description="Cargos del organigrama de cada departamento. Cada departamento decide qué perfil de acceso sugiere para sus puestos."
-        actions={canCreate && <button type="button" onClick={() => { setError(''); setForm({ department: department || DEPARTMENTS.OPERATIONS, name: '', description: '', isRampPosition: false, isActive: true }); }}
-          className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo puesto</button>} />
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-text-secondary-light">Cargos del organigrama de cada departamento. Cada departamento decide qué perfil de acceso sugiere para sus puestos.</p>
+        {canCreate && <button type="button" onClick={() => { setError(''); setForm({ department: department || DEPARTMENTS.OPERATIONS, name: '', description: '', isRampPosition: false, isActive: true }); }}
+          className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo puesto</button>}
+      </div>
       <label className="block max-w-xs text-xs font-semibold">Departamento<select value={department} onChange={event => setDepartment(event.target.value)} className={fieldClass}>
         <option value="">Todos</option>{Object.values(DEPARTMENTS).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       {error && !form && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
       {!positions ? <p role="status" className="text-sm">Cargando puestos…</p> : positions.length === 0 ? (
-        <EmptyState icon={BriefcaseIcon} title="Sin puestos" description="Cree los cargos del organigrama." />
+        <EmptyState icon={BriefcaseIcon} title="Sin puestos" description="Crea los cargos del organigrama." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
           <table className="table-stack w-full min-w-[720px] text-left text-sm">
@@ -91,6 +91,6 @@ export default function PositionsPage() {
           </form>
         )}
       </Modal>
-    </div>
+    </section>
   );
 }

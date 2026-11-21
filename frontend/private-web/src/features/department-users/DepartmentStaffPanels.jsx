@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import EmptyState from '../../components/EmptyState';
-import Modal from '../../components/Modal';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { BriefcaseIcon } from '../shell/components/icons';
 import ActivityPanel from '../employees/ActivityPanel';
-import { RequisitionCard } from '../employees/RequisitionsPage';
 import {
-  cancelRequisition, createRequisition, governanceMessage, listDepartmentActivity, listDepartmentPositions,
-  listDepartmentRequisitions, setSuggestedProfile,
+  governanceMessage, listDepartmentActivity, listDepartmentPositions, setSuggestedProfile,
 } from '../../services/humanResourcesEmployeesService';
 import { departmentUsersMessages } from './departmentUsersMessages';
-import { newRequestId } from './useDepartmentGovernance';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -67,95 +63,6 @@ export function DepartmentPositionsPanel({ department, profiles }) {
           ))}
         </ul>
       )}
-    </section>
-  );
-}
-
-/** The department asks Human Resources for people in one of its positions. */
-export function DepartmentRequisitionsPanel({ department, stations }) {
-  const { t } = useTranslation(departmentUsersMessages);
-  const [items, setItems] = useState(null);
-  const [positions, setPositions] = useState([]);
-  const [form, setForm] = useState(null);
-  const [cancelling, setCancelling] = useState(null);
-  const [reason, setReason] = useState('');
-  const [message, setMessage] = useState({ tone: '', text: '' });
-  const requestId = useRef(newRequestId());
-  const load = useCallback(async () => {
-    try { setItems(await listDepartmentRequisitions(department)); }
-    catch (failure) { setItems([]); setMessage({ tone: 'error', text: governanceMessage(failure) }); }
-  }, [department]);
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => { listDepartmentPositions(department).then(setPositions).catch(() => setPositions([])); }, [department]);
-
-  async function submit(event) {
-    event.preventDefault();
-    try {
-      await createRequisition(department, { requestId: requestId.current, positionId: form.positionId, quantity: Number(form.quantity),
-        reason: form.reason.trim(), stationId: form.stationId || null, desiredStartOn: form.desiredStartOn || null });
-      setForm(null);
-      setMessage({ tone: 'success', text: t('requisitions.sent') });
-      await load();
-    } catch (failure) {
-      setMessage({ tone: 'error', text: governanceMessage(failure) });
-    }
-  }
-
-  async function cancel(event) {
-    event.preventDefault();
-    try {
-      await cancelRequisition(cancelling.id, { reason: reason.trim(), expectedVersion: cancelling.version });
-      setCancelling(null);
-      setMessage({ tone: 'success', text: t('requisitions.cancelled') });
-    } catch (failure) {
-      setMessage({ tone: 'error', text: governanceMessage(failure) });
-    }
-    await load();
-  }
-
-  return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-text-secondary-light">{t('requisitions.intro')}</p>
-        <button type="button" onClick={() => { requestId.current = newRequestId(); setForm({ positionId: '', quantity: 1, reason: '', stationId: '', desiredStartOn: '' }); }}
-          className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">{t('requisitions.requestStaff')}</button>
-      </div>
-      <Notice message={message} />
-      {!items ? <p role="status" className="text-sm">{t('requisitions.loading')}</p> : items.length === 0 ? (
-        <EmptyState icon={BriefcaseIcon} title={t('requisitions.emptyTitle')} description={t('requisitions.emptyDescription')} />
-      ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {items.map(item => (
-            <RequisitionCard key={item.id} requisition={item} actions={(item.status === 'Open' || item.status === 'InProgress') && (
-              <button type="button" onClick={() => { setReason(''); setCancelling(item); }} className="min-h-[36px] rounded-lg border border-status-danger/40 px-3 text-xs font-semibold text-status-danger">{t('requisitions.cancel')}</button>
-            )} />
-          ))}
-        </div>
-      )}
-      <Modal open={Boolean(form)} onClose={() => setForm(null)} title={t('requisitions.requestStaff')}
-        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setForm(null)} className="rounded-lg border px-4 py-2 text-sm">{t('common.cancel')}</button>
-          <button type="submit" form="requisition-form" className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{t('common.sendToHumanResources')}</button></div>}>
-        {form && (
-          <form id="requisition-form" onSubmit={submit} className="space-y-3">
-            <label className="block text-xs font-semibold">{t('requisitions.position')}<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
-              <option value="">{t('requisitions.choose')}</option>{positions.filter(position => position.isActive).map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <label className="text-xs font-semibold">{t('requisitions.quantity')}<input required type="number" min="1" max="50" value={form.quantity} onChange={event => setForm(current => ({ ...current, quantity: event.target.value }))} className={fieldClass} /></label>
-              <label className="text-xs font-semibold">{t('requisitions.station')}<select value={form.stationId} onChange={event => setForm(current => ({ ...current, stationId: event.target.value }))} className={fieldClass}>
-                <option value="">{t('requisitions.anyStation')}</option>{(stations ?? []).map(station => <option key={station.id} value={station.id}>{station.code}</option>)}</select></label>
-              <label className="text-xs font-semibold">{t('requisitions.from')}<input type="date" min={new Date().toISOString().slice(0, 10)} value={form.desiredStartOn} onChange={event => setForm(current => ({ ...current, desiredStartOn: event.target.value }))} className={fieldClass} /></label>
-            </div>
-            <label className="block text-xs font-semibold">{t('common.reason')}<textarea required minLength={3} maxLength={1000} rows={3} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
-          </form>
-        )}
-      </Modal>
-      <Modal open={Boolean(cancelling)} tone="danger" onClose={() => setCancelling(null)} title={t('requisitions.cancel')}
-        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setCancelling(null)} className="rounded-lg border px-4 py-2 text-sm">{t('common.back')}</button>
-          <button type="submit" form="cancel-requisition" className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white">{t('requisitions.cancel')}</button></div>}>
-        <form id="cancel-requisition" onSubmit={cancel}>
-          <label className="block text-xs font-semibold">{t('common.reason')}<textarea required minLength={3} maxLength={500} rows={3} value={reason} onChange={event => setReason(event.target.value)} className={fieldClass} /></label>
-        </form>
-      </Modal>
     </section>
   );
 }

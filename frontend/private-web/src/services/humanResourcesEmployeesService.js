@@ -44,24 +44,14 @@ export const listPositions = department => commercialApi(`${hr}/positions${query
 export const savePosition = (id, values) =>
   commercialApi(id ? `${hr}/positions/${id}` : `${hr}/positions`, json(id ? 'PUT' : 'POST', values));
 
-export const listRequisitions = (filters = {}) => commercialApi(`${hr}/requisitions${query(filters)}`);
-export const changeRequisitionStatus = (id, values) =>
-  commercialApi(`${hr}/requisitions/${id}/status`, json('POST', values));
-
 export const listAudit = (filters = {}) => commercialApi(`${hr}/audit${query({ limit: 50, ...filters })}`);
 
-// Department side: candidates, suggested profile of positions, requisitions and activity.
+// Department side: candidates, suggested profile of positions and activity.
 export const listAccessCandidates = (department, search) =>
   commercialApi(`${dept(department)}/access-candidates${query({ search })}`);
 export const listDepartmentPositions = department => commercialApi(`${dept(department)}/positions`);
 export const setSuggestedProfile = (department, positionId, values) =>
   commercialApi(`${dept(department)}/positions/${positionId}/suggested-access-profile`, json('PUT', values));
-export const listDepartmentRequisitions = (department, status) =>
-  commercialApi(`${dept(department)}/requisitions${query({ status })}`);
-export const createRequisition = (department, values) =>
-  commercialApi(`${dept(department)}/requisitions`, json('POST', values));
-export const cancelRequisition = (id, values) =>
-  commercialApi(`/governance/requisitions/${id}/cancel`, json('POST', values));
 export const listDepartmentActivity = (department, filters = {}) =>
   commercialApi(`${dept(department)}/activity${query({ limit: 50, ...filters })}`);
 

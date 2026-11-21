@@ -118,9 +118,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
   'src/features/human-resources/users/RampProfilesPanel.jsx': site({ mode: 'shared-page', screen: 'users',
     movesIn: null, resources: ['ramp_profiles', 'department_users'], pollMs: 25_000, readsPerRefresh: 1,
     mountedWhen: 'the ramp profiles tab of Usuarios' }),
-  'src/features/employees/RequisitionsPage.jsx': site({ mode: 'import-only', screen: 'users', movesIn: null,
-    resources: ['requisitions'], pollMs: null, readsPerRefresh: 1,
-    offBy: 'the OCC mounts only its RequisitionCard export, inside the requisitions tab of Usuarios' }),
 });
 
 /** Other periodic reads the OCC screens send today, outside any observer (file and pace read from the code). */

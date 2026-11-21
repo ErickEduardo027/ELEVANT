@@ -97,6 +97,14 @@ describe('DepartmentUsersPage', () => {
     expect(await screen.findByText(/Gestión Humana la validará/)).toBeInTheDocument();
   });
 
+  it.each(['contracts', 'finance', 'operations', 'human-resources'])('offers no requisitions nor «Pedir personal» in %s (ADR-0047)', async department => {
+    renderWith({ ...admin, department }, <DepartmentUsersPage department={department} />);
+    const tabs = await screen.findByRole('tablist');
+    expect(within(tabs).queryByRole('tab', { name: /Requisiciones/ })).not.toBeInTheDocument();
+    expect(within(tabs).getByRole('tab', { name: 'Puestos' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pedir personal' })).not.toBeInTheDocument();
+  });
+
   it('lets only the super administrator name an administrator from an employee', async () => {
     createDepartmentAdministrator.mockResolvedValue({ id: 'acc-9' });
     renderWith({ ...admin, kind: 'SuperAdministrator', department: null }, <DepartmentUsersPage department="contracts" />);
