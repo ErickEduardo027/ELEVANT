@@ -17,6 +17,10 @@ import { createPublicWebApiClient } from "@/lib/elevant-api";
 import type { CardPaymentAvailabilityResponse, CardPaymentListResponse, CardPaymentResponse, PayInvoiceByCardBody } from "@elevant/api-client";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
+/** The reports of the airline portal the session can download (ADR-0048, «Reportes nuevos»). */
+export type AirlineReportKey = "operations" | "invoices" | "statement";
+export type AirlineReportQuery = { from?: string; to?: string; stationId?: string; status?: string };
+
 export const AIRLINE_SESSION_STORAGE_KEY = "elevant-airline-session-v1";
 
 export interface AirlineSessionData {
@@ -125,6 +129,11 @@ interface AirlineSessionContextValue {
   payInvoiceByCard(invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string): Promise<CardPaymentResponse>;
   getInvoiceCardPayments(invoiceId: string): Promise<CardPaymentListResponse>;
   getCardPaymentReceipt(attemptId: string): Promise<Blob>;
+  /**
+   * ADR-0048, «Reportes nuevos»: the PDF or Excel of a report of the airline («operations», «invoices», «statement»),
+   * always of the session's airline; `query` carries the period (`from`, `to`) and the station.
+   */
+  exportAirlineReport(key: AirlineReportKey, query: AirlineReportQuery, format: "pdf" | "xlsx"): Promise<Blob>;
   /** 4-N17: the PDF of a credit or debit note of the airline's own invoice, with its e-NCF E34/E33 when it has one. */
   getAdjustmentNoteDocument(noteId: string): Promise<Blob>;
   /**
@@ -740,6 +749,8 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     portalCall(client => client.getAirlineInvoiceCardPayments(invoiceId, { cache: "no-store" })), [portalCall]);
   const getCardPaymentReceipt = useCallback((attemptId: string) =>
     portalCall(client => client.getAirlineCardPaymentReceipt(attemptId, { cache: "no-store" })), [portalCall]);
+  const exportAirlineReport = useCallback((key: AirlineReportKey, query: AirlineReportQuery, format: "pdf" | "xlsx") =>
+    portalCall(client => client.exportAirlinePortalReport(key, query, format, { cache: "no-store" })), [portalCall]);
   const getAdjustmentNoteDocument = useCallback((noteId: string) =>
     portalCall(client => client.getAirlineAdjustmentNoteDocument(noteId, { cache: "no-store" })), [portalCall]);
   // The gateway of an environment does not change during a session; a failed read is not kept.
@@ -801,7 +812,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [withContractClient]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getAdjustmentNoteDocument, getCardPaymentAvailability, getPaymentReceipt, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, exportAirlineReport, getAdjustmentNoteDocument, getCardPaymentAvailability, getPaymentReceipt, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

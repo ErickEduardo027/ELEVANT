@@ -79,6 +79,8 @@ const getInvoiceStatement = vi.fn(async (invoiceId: string) => statementOf(invoi
 const getInvoiceDocument = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
 const getPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
 
+const exportAirlineReport = vi.fn(async (_key: string, _query: Record<string, string>, format: "pdf" | "xlsx") =>
+  new Blob(["%PDF-"], { type: format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 const getTreasuryStatement = vi.fn<(asOf: string, stationId?: string, signal?: AbortSignal) => Promise<AirlineTreasuryStatement>>(async asOf => ({ airlineId: bootstrap.airlineId, asOf, invoices: [], receipts: [], movements: [], aging: [] }));
 const getTreasuryInvoice = vi.fn(async (id: string): Promise<AirlineTreasuryInvoiceDetail> => ({ invoice: { id, preinvoiceId: internalDraftId,
   number: "NF-74000000000070008000000000000009", stationId: bootstrap.stations[0].id, stationCode: "PUJ", currencyCode: "USD",
@@ -99,7 +101,7 @@ const getPortalUsers = vi.fn(async () => ({
 }));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getCardPaymentAvailability, getPaymentReceipt, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getCardPaymentAvailability, getPaymentReceipt, exportAirlineReport, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
@@ -392,8 +394,14 @@ it("reports operations and invoices returned by the API, hiding stale data while
   const reported = await screen.findByRole("row", { name: /E310000000001/ });
   expect(reported).toHaveTextContent("USD 148.09");
   expect(screen.getByText("DEV-TAT-0002")).toBeInTheDocument();
-  // No export button until the API serves the portal's PDF and Excel.
-  expect(screen.queryByRole("button", { name: /Descargar (PDF|Excel)/ })).not.toBeInTheDocument();
+  // ADR-0048, «Reportes nuevos»: each table downloads the server's report with the filters on screen.
+  const operationsExport = screen.getByRole("group", { name: "Exportar operaciones y servicios" });
+  expect(within(operationsExport).getByRole("button", { name: "Descargar PDF" })).toBeInTheDocument();
+  URL.createObjectURL = vi.fn(() => "blob:report");
+  URL.revokeObjectURL = vi.fn();
+  fireEvent.click(within(screen.getByRole("group", { name: "Exportar facturas y pagos" })).getByRole("button", { name: "Descargar Excel" }));
+  await waitFor(() => expect(exportAirlineReport).toHaveBeenCalledWith("invoices",
+    expect.objectContaining({ from: expect.any(String), to: expect.any(String) }), "xlsx"));
   let finish!: (value: AirlineTreasuryStatement) => void;
   getTreasuryStatement.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   financeRevision += 1;

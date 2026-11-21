@@ -35,6 +35,10 @@ import {
 } from "./financeInvoicing";
 import { isFinanceHomeResponse } from "./financeHome";
 import {
+  financeStatementParams, isTabularReportCatalog, isTabularReportKey, isTabularReportPage, tabularReportParams,
+  type FinanceStatementExportFilters, type TabularReportArea, type TabularReportFormat, type TabularReportQuery,
+} from "./tabularReports";
+import {
   AIRCRAFT_SIZE_CATEGORIES,
   CHARGE_MARK_SOURCES,
   isFinanceCloseRulesResponse,
@@ -397,6 +401,16 @@ import {
   getExportHumanResourcesReportUrl,
   getListHumanResourcesReportsUrl,
   getListOccReportsUrl,
+  getListContractsReportsUrl,
+  getGetContractsReportUrl,
+  getExportContractsReportUrl,
+  getListHumanResourcesTableReportsUrl,
+  getGetHumanResourcesTableReportUrl,
+  getExportHumanResourcesTableReportUrl,
+  getListAirlinePortalReportsUrl,
+  getGetAirlinePortalReportUrl,
+  getExportAirlinePortalReportUrl,
+  getExportFinanceStatementUrl,
   getGetOccPositionsUrl,
   getGetOccCoverageUrl,
   getCreateOccCoverageUrl,
@@ -757,6 +771,8 @@ import {
   type StartRampOperationRequest,
   type SystemPingResponse,
   type TransitionRampOperationServiceRequest,
+  type TabularReportCatalogResponse,
+  type TabularReportPageResponse,
 } from "../generated/elevant-api";
 import { ELEVANT_API_ERROR_CODES, ElevantApiError, type ElevantApiErrorCode } from "./errors";
 import { checkTaxRegistration, normalizeIdentityDocument, normalizePhone } from "./validation";
@@ -1858,6 +1874,27 @@ export interface ElevantApiClient {
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
   exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** ADR-0048, «Reportes nuevos»: the Contratos reports (contracts and validity, rates, requests, permits). */
+  listContractReports(options?: GetHumanResourcesReportOptions): Promise<TabularReportCatalogResponse>;
+  getContractReport(key: string, query: TabularReportQuery,
+    options?: GetHumanResourcesReportOptions): Promise<TabularReportPageResponse>;
+  exportContractReport(key: string, query: TabularReportQuery, format: TabularReportFormat,
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** «Plantilla de personal» and «Trazabilidad y auditoría» of Gestión Humana. */
+  listHumanResourcesTableReports(options?: GetHumanResourcesReportOptions): Promise<TabularReportCatalogResponse>;
+  getHumanResourcesTableReport(key: string, query: TabularReportQuery,
+    options?: GetHumanResourcesReportOptions): Promise<TabularReportPageResponse>;
+  exportHumanResourcesTableReport(key: string, query: TabularReportQuery, format: TabularReportFormat,
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** The reports of the airline portal, always of the airline of the session. */
+  listAirlinePortalReports(options?: GetHumanResourcesReportOptions): Promise<TabularReportCatalogResponse>;
+  getAirlinePortalReport(key: string, query: TabularReportQuery,
+    options?: GetHumanResourcesReportOptions): Promise<TabularReportPageResponse>;
+  exportAirlinePortalReport(key: string, query: TabularReportQuery, format: TabularReportFormat,
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** The statement of account of an airline at a cut-off as PDF (printable document) or Excel. */
+  exportFinanceStatement(filters: FinanceStatementExportFilters, format: "pdf" | "xlsx",
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
   validateHumanResourcesAttendance(
     assignmentId: string,
@@ -5962,6 +5999,26 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: "application/pdf" });
   };
 
+  /** ADR-0048, «Reportes nuevos»: the catalog, a page and an export of a tabular report, validated strictly. */
+  const tabularCatalog = async (path: string, options?: GetHumanResourcesReportOptions) => {
+    const result = await execute(path, { ...options, method: "GET" }, true);
+    if (!isTabularReportCatalog(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+  const tabularPage = async (key: string, url: (key: string, params: Record<string, string | number>) => string,
+    area: TabularReportArea, query: TabularReportQuery, options?: GetHumanResourcesReportOptions) => {
+    if (!isTabularReportKey(key)) throw new TypeError("The report key is invalid.");
+    const result = await execute(url(key, tabularReportParams(area, query, false)), { ...options, method: "GET" }, true);
+    if (!isTabularReportPage(result.data, key)) throw malformedResponse(result.status);
+    return result.data;
+  };
+  const tabularExport = (key: string, url: (key: string, params: Record<string, string | number>) => string,
+    area: TabularReportArea, query: TabularReportQuery, format: TabularReportFormat,
+    options?: GetHumanResourcesReportOptions) => {
+    if (!isTabularReportKey(key) || !["pdf", "xlsx", "csv"].includes(format))
+      throw new TypeError("The report export is invalid.");
+    return executeReportDocument(url(key, { ...tabularReportParams(area, query, true), format }), format, options);
+  };
   const executeReportDocument = async (path: string, format: "pdf" | "xlsx" | "csv",
     init: ElevantRequestInit = {}): Promise<Blob> => {
     const response = await send(path, { ...init, method: "GET" }, true);
@@ -8337,6 +8394,45 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("OCC report export query is invalid.");
       return executeReportDocument(getExportOccReportUrl(key, { stationId: scope.stationId, from: scope.from,
         to: scope.to, format, ...occReportFilters(scope) }), format, options);
+    },
+    async listContractReports(options?: GetHumanResourcesReportOptions) {
+      return tabularCatalog(getListContractsReportsUrl(), options);
+    },
+    async getContractReport(key: string, query: TabularReportQuery, options?: GetHumanResourcesReportOptions) {
+      return tabularPage(key, (report, params) => getGetContractsReportUrl(report, params), "contracts", query, options);
+    },
+    exportContractReport(key: string, query: TabularReportQuery, format: TabularReportFormat,
+      options?: GetHumanResourcesReportOptions) {
+      return tabularExport(key, (report, params) => getExportContractsReportUrl(report, params), "contracts", query,
+        format, options);
+    },
+    async listHumanResourcesTableReports(options?: GetHumanResourcesReportOptions) {
+      return tabularCatalog(getListHumanResourcesTableReportsUrl(), options);
+    },
+    async getHumanResourcesTableReport(key: string, query: TabularReportQuery, options?: GetHumanResourcesReportOptions) {
+      return tabularPage(key, (report, params) => getGetHumanResourcesTableReportUrl(report, params), "humanResources",
+        query, options);
+    },
+    exportHumanResourcesTableReport(key: string, query: TabularReportQuery, format: TabularReportFormat,
+      options?: GetHumanResourcesReportOptions) {
+      return tabularExport(key, (report, params) => getExportHumanResourcesTableReportUrl(report, params),
+        "humanResources", query, format, options);
+    },
+    async listAirlinePortalReports(options?: GetHumanResourcesReportOptions) {
+      return tabularCatalog(getListAirlinePortalReportsUrl(), options);
+    },
+    async getAirlinePortalReport(key: string, query: TabularReportQuery, options?: GetHumanResourcesReportOptions) {
+      return tabularPage(key, (report, params) => getGetAirlinePortalReportUrl(report, params), "airlinePortal", query,
+        options);
+    },
+    exportAirlinePortalReport(key: string, query: TabularReportQuery, format: TabularReportFormat,
+      options?: GetHumanResourcesReportOptions) {
+      return tabularExport(key, (report, params) => getExportAirlinePortalReportUrl(report, params), "airlinePortal",
+        query, format, options);
+    },
+    exportFinanceStatement(filters: FinanceStatementExportFilters, format: "pdf" | "xlsx",
+      options?: GetHumanResourcesReportOptions) {
+      return executeReportDocument(getExportFinanceStatementUrl(financeStatementParams(filters, format)), format, options);
     },
     async validateHumanResourcesAttendance(
       assignmentId: string, stationId: string,

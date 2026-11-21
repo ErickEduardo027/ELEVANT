@@ -84,13 +84,15 @@ public sealed class FinancialDocumentPdfRendererTests
         var amount = decimal.Parse(input, System.Globalization.NumberStyles.Number,
             System.Globalization.CultureInfo.InvariantCulture);
         var money = typeof(FinancialDocumentPdfRenderer).GetMethod("Money",
-            BindingFlags.NonPublic | BindingFlags.Static);
+            BindingFlags.NonPublic | BindingFlags.Static, [typeof(decimal)]);
 
         Assert.NotNull(money);
         Assert.Equal(expected, money.Invoke(null, [amount]));
     }
 
-    /// <summary>4-N10: EMISIÓN is the business day and the frame time is Santo Domingo's, marked «hora RD».</summary>
+    /// <summary>
+    /// 4-N10: EMISIÓN is the business day and the time is Santo Domingo's, marked as such; PR E prints them dd/MM/yyyy.
+    /// </summary>
     [Fact]
     public void DocumentDatesAreTheBusinessDayAndTheLocalTimeOfSantoDomingo()
     {
@@ -99,8 +101,8 @@ public sealed class FinancialDocumentPdfRendererTests
         var stamp = typeof(FinancialDocumentPdfRenderer).GetMethod("Stamp", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(date);
         Assert.NotNull(stamp);
-        Assert.Equal("2026-11-30", date.Invoke(null, [evening]));
-        Assert.Equal("2026-11-30 21:30 hora RD", stamp.Invoke(null, [evening]));
+        Assert.Equal("30/11/2026", date.Invoke(null, [evening]));
+        Assert.Equal("30/11/2026 21:30 (hora de Santo Domingo)", stamp.Invoke(null, [evening]));
         // A late-evening invoice still renders.
         var invoice = new NonFiscalInvoiceData(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
             "DEV-NF-2026-00000000000000000000003", "USD", 118m, evening,

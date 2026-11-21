@@ -137,3 +137,66 @@ renderizadores distintos:
   conteos por equipo que repetirían agentes.
 - **Revisión visual.** `ReportSamplesHarness` genera, con `ELEVANT_REPORT_SAMPLES_DIR`, un PDF y un Excel de cada reporte
   con datos sintéticos. Las pruebas leen el PDF (`PdfFontInspector`) y el Excel (OpenXml, con `OpenXmlValidator`).
+
+## Reportes nuevos (PR C, 21 de noviembre de 2026)
+
+Para la revisión de reportes, el motor suma una batería de reportes de Contratos, Finanzas, Gestión Humana y el
+portal de aerolíneas. Depende de este ADR y del PR E (documentos imprimibles).
+
+**1. Reportes tabulares comunes (`TabularReports`, `TabularReportEndpoint`).**
+- **Definición:** cada reporte declara su clave, título, descripción, columnas tipadas, filtros con nombre
+  (`station`, `airline`, `service`, `select` con opciones o `days`) y cómo lee el calendario: `none`, `range`
+  (`from`–`to`, 366 días como máximo, 92 en la trazabilidad) o `asOf` (lee `to`, hoy sin él).
+- **Consulta:** se valida contra la definición antes de leer (400 `invalid_report_query`). Un filtro de otro reporte,
+  un id vacío o una opción desconocida se rechazan. Las pantallas envían `from` y `to` siempre: un reporte a fecha de
+  corte ignora `from`, y un reporte puede ignorar parámetros comunes del área (`IgnoredParameters`).
+- **Pantalla:** `GET …/{clave}` devuelve una página (`limit` 1–100) con `totalRows`, `totals`, `summary`,
+  `appliedFilters`, `notes`, `stationCode`/`stationName` y `generatedBy`, todos de las filas completas.
+- **Exportación:** `GET …/{clave}/export?format=pdf|xlsx|csv`.
+  - «Exportar» se comprueba antes de leer.
+  - El PDF admite 5 000 filas y el Excel y el CSV, 25 000; por encima, 422 `report_too_large`.
+  - Cada exportación queda auditada como `{área}.report.exported`, con el reporte, el formato, el período, los
+    filtros y las filas.
+- **Pie del PDF:** `ReportDocument.Audience` dice para quién es: «Uso interno» o «Documento para la aerolínea».
+
+**2. Contratos** (`ContractsReportsController`, `api/v1/contracts/reports`, permiso `contracts.reports.read`).
+Contratos no tiene una opción «Exportar», así que el mismo permiso exporta.
+- **Contratos y vigencias** (a fecha de corte): la versión que rige o la más reciente, con vigencia, días para vencer,
+  estaciones, moneda y número de tarifas. Filtros: aerolínea, estado, estación y «vence en N días».
+- **Tarifas pactadas:** las de las versiones aprobadas. Filtros: aerolínea, servicio y estación.
+- **Solicitudes comerciales** (período): recibida, estado, decidida el/por y servicios. Filtros: estado, aerolínea y
+  estación.
+- **Permisos de aerolíneas** (a fecha de corte): vigencia, revisión y revisado el/por. Filtros: revisión,
+  vencimiento y aerolínea.
+
+**3. Finanzas.**
+- **Catálogo:** «Facturas emitidas» (`invoices`, con el filtro `status`: pendiente, vencida, pagada, anulada o con
+  saldo) y «Cobros» (`receipts`: recibido, aplicado, devuelto y remanente) entran en `FinanceReports.All`, con la
+  pantalla y las exportaciones de Finanzas.
+- **Estado de cuenta:** `GET finance/statements/export?format=pdf|xlsx&asOf&airlineId&stationId&currency`, con el
+  permiso de `GET finance/statements`.
+  - **PDF:** el documento imprimible del PR E (`IStatementDocumentRenderer`), en una moneda: la pedida o la de más
+    facturas.
+  - **Excel:** sale del motor, con todas las monedas.
+  - **Contenido:** los movimientos con su saldo acumulado por moneda y la antigüedad de saldos como resumen.
+    Aplicar un cobro no mueve el saldo, porque el cobro ya se abonó.
+
+**4. Gestión Humana** (`api/v1/human-resources/table-reports`).
+- **Plantilla de personal** y **Trazabilidad y auditoría**, con las acciones en español (`AuditActionLabels`).
+- Leen por los almacenes de «Empleados» y «Trazabilidad / Auditoría», con sus mismas reglas.
+- Para leer hace falta «Reportes»; para exportar, «Exportar».
+
+**5. Portal de aerolíneas** (`api/v1/airline/portal/reports`).
+- **Reportes:** «Operaciones y servicios» (los servicios aprobados por AVIAM con cantidad y unidad), «Facturas y
+  pagos» y «Estado de cuenta» (el mismo documento de Finanzas).
+- **Alcance:** siempre de la aerolínea de la sesión y de las estaciones de sus contratos.
+  - Otra estación responde 404 `station_unavailable`.
+  - Sin el rol del portal, o con más de una aerolínea, responde 403.
+  - El portal no tiene parámetro de aerolínea.
+- **Detalle de factura:** `treasury/invoices/{id}` suma `netAmount` y `taxAmount` por línea (aditivo).
+
+**Consecuencias.** No hay migración, y el contrato HTTP solo crece. El cliente (`packages/api-client`) expone
+`listContractReports`, `getContractReport` y `exportContractReport`, sus equivalentes de Gestión Humana y del portal,
+y `exportFinanceStatement`. Las pantallas internas de AVIAM Web son de otro PR (D). El portal ya descarga sus
+reportes y el estado de cuenta.
+

@@ -17,23 +17,21 @@ namespace Elevant.Infrastructure.Documents;
 internal sealed class ReportPdfRenderer
 {
     internal const string EmptyState = "No hay datos para estos filtros.";
-    internal const string FooterText = "ELEVANT · AVIAM · Uso interno";
+    internal const string FooterText = "ELEVANT · AVIAM";
 
     private const double Margin = 36;
     private const double CellPadding = 4;
     private const double FooterHeight = 34;
 
-    private static readonly XColor Navy = XColor.FromArgb(8, 27, 58);
-    private static readonly XColor Orange = XColor.FromArgb(255, 92, 0);
-    private static readonly XColor Ink = XColor.FromArgb(30, 41, 59);
-    private static readonly XColor Muted = XColor.FromArgb(77, 93, 118);
-    private static readonly XColor Rule = XColor.FromArgb(214, 221, 231);
-    private static readonly XColor Tint = XColor.FromArgb(244, 247, 251);
-    private static readonly XColor Stripe = XColor.FromArgb(248, 250, 252);
-    private static readonly XColor TotalFill = XColor.FromArgb(226, 234, 245);
-    private static readonly XColor NoticeFill = XColor.FromArgb(255, 241, 230);
-
-    private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
+    private static readonly XColor Navy = DocumentPalette.Navy;
+    private static readonly XColor Orange = DocumentPalette.Orange;
+    private static readonly XColor Ink = DocumentPalette.Ink;
+    private static readonly XColor Muted = DocumentPalette.Muted;
+    private static readonly XColor Rule = DocumentPalette.Rule;
+    private static readonly XColor Tint = DocumentPalette.Tint;
+    private static readonly XColor Stripe = DocumentPalette.Stripe;
+    private static readonly XColor TotalFill = DocumentPalette.TotalFill;
+    private static readonly XColor NoticeFill = DocumentPalette.NoticeFill;
 
     static ReportPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 
@@ -45,7 +43,7 @@ internal sealed class ReportPdfRenderer
         using var document = new PdfDocument();
         document.Info.Title = report.StationCode is { } code ? $"{report.Title} · {code}" : report.Title;
         document.Info.Author = "ELEVANT";
-        document.Info.Subject = report.Notice is { } notice ? $"{report.Area} · {notice}" : $"{report.Area} · uso interno";
+        document.Info.Subject = report.Notice is { } notice ? $"{report.Area} · {notice}" : $"{report.Area} · {report.Audience.ToLowerInvariant()}";
         new Writer(document, report, layout).Write();
         DrawFooters(document, report);
         using var output = new MemoryStream();
@@ -64,7 +62,7 @@ internal sealed class ReportPdfRenderer
             var width = page.Width.Point - 2 * Margin;
             var top = page.Height.Point - FooterHeight + 8;
             graphics.DrawLine(new XPen(Rule, 0.6), Margin, top, Margin + width, top);
-            var footer = $"{FooterText} — Página {index + 1} de {total}";
+            var footer = $"{FooterText} · {report.Audience} — Página {index + 1} de {total}";
             graphics.DrawString(footer, small, new XSolidBrush(Muted), new XRect(Margin, top + 5, width, 10),
                 XStringFormats.TopRight);
             // The left side wraps (two short lines at most fit the footer); nothing is cut.
@@ -232,11 +230,7 @@ internal sealed class ReportPdfRenderer
             page.Size = PageSize.A4;
             if (layout.Landscape) page.Orientation = PageOrientation.Landscape;
             graphics = XGraphics.FromPdfPage(page);
-            using (var logo = XImage.FromStream(new MemoryStream(Logo.Value)))
-            {
-                var logoWidth = first ? 78d : 56d;
-                graphics.DrawImage(logo, Margin, 24, logoWidth, logoWidth * logo.PixelHeight / (double)logo.PixelWidth);
-            }
+            DocumentPalette.DrawLogo(graphics, Margin, 24, first ? 78d : 56d);
             var right = new XRect(Margin + 140, 26, Width - 140, 11);
             graphics.DrawString(report.Area.ToUpperInvariant(), smallBold, new XSolidBrush(Navy), right, XStringFormats.TopRight);
             right.Offset(0, 11);

@@ -14,9 +14,9 @@ public sealed class FinanceSimplificationTests
     private static readonly DateTimeOffset At = new(2026, 11, 5, 14, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void TheCatalogHasExactlyTheSixApprovedReports()
+    public void TheCatalogHasExactlyTheApprovedReports()
     {
-        Assert.Equal(["revenue", "receivables", "collections", "payables", "charges", "sales"],
+        Assert.Equal(["revenue", "receivables", "collections", "payables", "charges", "sales", "invoices", "receipts"],
             FinanceReports.All.Select(report => report.Key).ToArray());
         Assert.Equal("Ventas (e-CF simulado)", FinanceReports.All.Single(report => report.Key == "sales").Title);
         Assert.All(FinanceReports.All, report =>
@@ -41,7 +41,7 @@ public sealed class FinanceSimplificationTests
     /// both are framed as a simulation without fiscal validity. The legacy non-fiscal receipt keeps its own frame.
     /// </summary>
     [Fact]
-    public void SimulatedDocumentsAreFramedAsSimulationAndTheLegacyReceiptKeepsItsFrame()
+    public void SimulatedDocumentsAreFramedAsSimulationAndTheLegacyReceiptSaysWhatItIs()
     {
         var renderer = new FinancialDocumentPdfRenderer();
         var card = PdfFontInspector.Text(renderer.RenderCardReceipt(new CardPaymentReceiptData(Guid.NewGuid(),
@@ -52,9 +52,9 @@ public sealed class FinanceSimplificationTests
             [new FinanceReportMetric("Facturas e-CF", "1", "number")],
             [new FinanceReportColumn("fiscalNumber", "e-NCF", "text"), new FinanceReportColumn("total", "Total", "money")],
             [["E310000000001", "118.00"]], []), "Ana Pérez", At)));
+        Assert.Contains("SIMULACIÓN — SIN VALIDEZ FISCAL", report);
         foreach (var text in new[] { card, report })
         {
-            Assert.Contains("SIMULACIÓN — SIN VALIDEZ FISCAL", text);
             Assert.Contains(FinanceInvoicePolicy.Disclaimer, text);
             Assert.DoesNotContain("Sin NCF", text);
             Assert.DoesNotContain("DOCUMENTO NO FISCAL", text);
@@ -63,7 +63,8 @@ public sealed class FinanceSimplificationTests
 
         var legacy = PdfFontInspector.Text(renderer.RenderReceipt(
             new NonFiscalPaymentData(Guid.NewGuid(), Guid.NewGuid(), "PAGO-001", "USD", 125.5m, At), "NF-2026-0001"));
-        Assert.Contains("DOCUMENTO NO FISCAL", legacy);
-        Assert.Contains("Sin NCF", legacy);
+        // PR E: the receipt of a recorded payment says what it is, without demonstration labels.
+        Assert.Contains("No sustituye la factura ni tiene validez fiscal.", legacy);
+        Assert.DoesNotContain("de prueba", legacy);
     }
 }

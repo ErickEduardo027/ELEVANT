@@ -37,6 +37,9 @@ public static class DependencyInjection
         services.AddScoped<GetAirlinePortalStandingHandler>();
         services.AddScoped<GetAirlineContractsHandler>();
         services.AddScoped<GetAirlineOperationsHandler>();
+        // ADR-0048, «Reportes nuevos»: the reports of the airline portal and the tabular ones of Gestión Humana.
+        services.AddScoped<IAirlinePortalReportSource, AirlinePortalReports>();
+        services.AddScoped<Elevant.Application.Identity.IHumanResourcesTableReportSource, Elevant.Application.Identity.HumanResourcesTableReports>();
         services.AddScoped<GetAirlineOperationHandler>();
         services.AddScoped<GetAirlineOperationalRequestsHandler>();
         services.AddScoped<SubmitCommercialRequestHandler>();

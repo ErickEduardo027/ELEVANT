@@ -80,7 +80,9 @@ public static class DependencyInjection
         services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistryLookup,
             Elevant.Application.Commercial.AirlineRegistryLookup>();
         services.AddJwtAccessTokens(configuration);
-        services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
+        services.AddSingleton<FinancialDocumentPdfRenderer>();
+        services.AddSingleton<IFinancialDocumentPdfRenderer>(provider => provider.GetRequiredService<FinancialDocumentPdfRenderer>());
+        services.AddSingleton<IStatementDocumentRenderer>(provider => provider.GetRequiredService<FinancialDocumentPdfRenderer>());
         AddCardPayments(services, configuration, environment);
         AddDemoFlights(services, configuration, environment);
         AddAirlineCatalogEnrichment(services, configuration, environment);

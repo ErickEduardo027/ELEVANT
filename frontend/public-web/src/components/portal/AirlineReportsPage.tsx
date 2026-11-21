@@ -8,7 +8,8 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { filterInvoices, formatByCurrency, invoiceIssueDates, invoiceNumber, invoiceStatus, STATUS_TONE, sumByCurrency }
   from "@/lib/airline-invoices";
 import type { AirlineTreasuryInvoice, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
-import { businessToday } from "@/lib/business-day";
+import { addDays, businessToday } from "@/lib/business-day";
+import { downloadFile } from "@/lib/download-file";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { formatDate, formatMoney } from "@/lib/portal-format";
 import styles from "./AirlinePortalPage.module.css";
@@ -33,14 +34,33 @@ export interface ReportFilters { from: string; to: string; stationId: string }
  */
 export type ReportExports = Partial<Record<"pdf" | "excel", (filters: ReportFilters) => Promise<void>>>;
 
-export function ReportExportActions({ exports, filters }: { exports?: ReportExports; filters: ReportFilters }) {
+export function ReportExportActions({ exports, filters, label = "Exportar reporte" }: {
+  exports?: ReportExports; filters: ReportFilters; label?: string;
+}) {
   if (!exports?.pdf && !exports?.excel) return null;
-  return <ActionGroup label="Exportar reporte">
+  return <ActionGroup label={label}>
     {exports.excel && <DownloadButton text="Descargar Excel" busyText="Preparando Excel…"
       failure="No se pudo descargar el Excel. Inténtelo de nuevo." download={() => exports.excel!(filters)} />}
     {exports.pdf && <DownloadButton text="Descargar PDF" busyText="Preparando PDF…"
       failure="No se pudo descargar el PDF. Inténtelo de nuevo." download={() => exports.pdf!(filters)} />}
   </ActionGroup>;
+}
+
+/**
+ * The server's PDF and Excel of a report of the portal with the filters on screen. Without a period it takes the last
+ * year up to today (the longest the server accepts), as the tables show all the history loaded.
+ */
+export function useServerReportExports(key: "operations" | "invoices"): ReportExports {
+  const { exportAirlineReport } = useAirlineSession();
+  return useMemo(() => {
+    const run = (format: "pdf" | "xlsx") => async (filters: ReportFilters) => {
+      const to = filters.to || businessToday();
+      const from = filters.from || addDays(to, -365);
+      const blob = await exportAirlineReport(key, { from, to, ...(filters.stationId && { stationId: filters.stationId }) }, format);
+      downloadFile(blob, `elevant-portal-${key}-${from.replaceAll("-", "")}-${to.replaceAll("-", "")}.${format}`);
+    };
+    return { pdf: run("pdf"), excel: run("xlsx") };
+  }, [exportAirlineReport, key]);
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -84,6 +104,8 @@ export function AirlineReportsPage({ airlineName, exports }: { airlineName: stri
   const billed = sumByCurrency(invoices.map(item => ({ currency: item.currencyCode, value: item.total })));
   const owed = sumByCurrency(invoices.map(item => ({ currency: item.currencyCode, value: Math.max(0, item.balance) })));
   const set = (patch: Partial<ReportFilters>) => setFilters(current => ({ ...current, ...patch }));
+  const operationExports = useServerReportExports("operations");
+  const invoiceExports = useServerReportExports("invoices");
 
   return <div className={styles.page}>
     <header className={styles.billingHeader}>
@@ -91,7 +113,9 @@ export function AirlineReportsPage({ airlineName, exports }: { airlineName: stri
         <span className={styles.kicker}>Consulta autorizada · {airlineName}</span>
         <h1>Reportes operativos y financieros</h1>
         <p>Consulte las operaciones y facturas de su aerolínea. Las operaciones muestran la primera página de su historial y las
-          facturas, todas las emitidas hasta hoy; no se calcula puntualidad ni cumplimiento sin datos completos.</p>
+          facturas, todas las emitidas hasta hoy; no se calcula puntualidad ni cumplimiento sin datos completos. Las
+          descargas en PDF y Excel traen el período completo que usted filtre (sin fechas, el último año), con sus
+          totales y los servicios ejecutados.</p>
       </div>
       <ReportExportActions exports={exports} filters={filters} />
     </header>
@@ -119,7 +143,8 @@ export function AirlineReportsPage({ airlineName, exports }: { airlineName: stri
         <div><span>Saldo pendiente</span><strong>{formatByCurrency(owed)}</strong><small>de lo facturado en el filtro</small></div>
       </div>
       <section className={styles.section} aria-label="Reporte de operaciones">
-        <header><h2>Operaciones</h2><Link href="/portal/vuelos">Ver historial completo</Link></header>
+        <header><h2>Operaciones</h2><Link href="/portal/vuelos">Ver historial completo</Link>
+          <ReportExportActions exports={operationExports} filters={filters} label="Exportar operaciones y servicios" /></header>
         <DataTable<Operation> caption="Operaciones" rows={operations} rowKey={item => item.id!}
           empty={visible.operations.operations.length ? "Ninguna operación coincide con los filtros."
             : "No hay operaciones registradas para esta aerolínea."}
@@ -133,7 +158,8 @@ export function AirlineReportsPage({ airlineName, exports }: { airlineName: stri
         {visible.operations.hasMore && <p className={styles.scopeLine}>Hay más operaciones en el historial de vuelos.</p>}
       </section>
       <section className={styles.section} aria-label="Reporte de facturas">
-        <header><h2>Facturas</h2><Link href="/portal/finanzas">Ver facturas</Link></header>
+        <header><h2>Facturas</h2><Link href="/portal/finanzas">Ver facturas</Link>
+          <ReportExportActions exports={invoiceExports} filters={filters} label="Exportar facturas y pagos" /></header>
         <DataTable<AirlineTreasuryInvoice> caption="Facturas" rows={invoices} rowKey={item => item.id}
           empty={visible.statement.invoices.length ? "Ninguna factura coincide con los filtros."
             : "No hay facturas emitidas para esta aerolínea."}

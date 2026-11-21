@@ -12,7 +12,8 @@ import { businessToday } from "@/lib/business-day";
 import { formatAmount, formatDate, formatMoney } from "@/lib/portal-format";
 import styles from "./AirlinePortalPage.module.css";
 import { Amounts, FinanceTabs, invoicePath, useBillingStations } from "./AirlineFinancePage";
-import { AdjustmentNotePdfButton } from "./financeDocuments";
+import { AdjustmentNotePdfButton, DownloadButton } from "./financeDocuments";
+import { downloadFile } from "@/lib/download-file";
 import { LiveSnapshotNotice } from "./LiveSnapshotNotice";
 import { ActionGroup, Button, ButtonLink, DataTable, StatusBadge } from "./PortalUi";
 import { useLiveSnapshot } from "./useLiveSnapshot";
@@ -216,6 +217,7 @@ export function AirlineTreasuryPanel() {
         {stationOptions.map(s => <option key={s.id} value={s.id}>{s.code}</option>)}</select></label>
       <ActionGroup><Button type="submit" variant="primary">Consultar estado</Button></ActionGroup>
     </form>
+    <StatementDownloads asOf={query.asOf} stationId={query.stationId} />
     {!statement && !snapshot.failed && <p role="status">Cargando estado financiero…</p>}
     {!statement && snapshot.failed && <div role="alert" className={styles.notice} data-tone="danger">
       <p>{snapshot.error instanceof ElevantApiError && snapshot.error.status === 404
@@ -281,6 +283,23 @@ export function AirlineTreasuryPanel() {
 }
 
 /** «Estado de cuenta» on its own page (`/portal/finanzas/estado-de-cuenta`), beside «Facturas». */
+/**
+ * ADR-0048, «Reportes nuevos»: the statement at the cut-off and station on screen, as the printable PDF of AVIAM or as
+ * an Excel with every movement and its running balance.
+ */
+function StatementDownloads({ asOf, stationId }: { asOf: string; stationId: string }) {
+  const { exportAirlineReport } = useAirlineSession();
+  const download = (format: "pdf" | "xlsx") => exportAirlineReport("statement",
+    { to: asOf, ...(stationId && { stationId }) }, format)
+    .then(blob => downloadFile(blob, `estado-de-cuenta-${asOf.replaceAll("-", "")}.${format}`));
+  return <ActionGroup label="Descargar estado de cuenta">
+    <DownloadButton text="Descargar Excel" busyText="Preparando Excel…"
+      failure="No se pudo descargar el Excel. Inténtelo de nuevo." download={() => download("xlsx")} />
+    <DownloadButton text="Descargar PDF" busyText="Preparando PDF…"
+      failure="No se pudo descargar el PDF. Inténtelo de nuevo." download={() => download("pdf")} />
+  </ActionGroup>;
+}
+
 export function AirlineStatementPage({ airlineName }: { airlineName: string }) {
   return <div className={styles.page}>
     <header className={styles.billingHeader}>

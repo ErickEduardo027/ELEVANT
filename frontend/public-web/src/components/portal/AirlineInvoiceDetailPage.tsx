@@ -132,7 +132,7 @@ export function AirlineInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
                 ]} />
             </section>
           </div>
-          <CardPaymentPanel invoiceId={invoice.id} balance={invoice.balance} currencyCode={currency} onChanged={snapshot.retry} />
+          <CardPaymentPanel invoiceId={invoice.id} invoiceNumber={invoice.fiscalNumber ?? invoice.number} balance={invoice.balance} currencyCode={currency} onChanged={snapshot.retry} />
         </div>
       </>}
     </section>

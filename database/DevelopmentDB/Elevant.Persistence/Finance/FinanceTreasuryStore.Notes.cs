@@ -110,8 +110,10 @@ internal static class AdjustmentNoteDocuments
                               note.PublicId, note.Number, note.Kind, InvoiceId = invoice.PublicId, InvoiceNumber = invoice.Number,
                               invoice.FiscalNumber, note.CurrencyCode, note.Amount, note.EffectiveOn, note.CreatedAt,
                               note.Reason, organization.LegalName, organization.Code, StationCode = station.Code,
+                              invoice.CommercialSnapshotJson,
                           }).SingleOrDefaultAsync(ct);
         if (head is null) return null;
+        var tax = EfNonFiscalInvoiceReadStore.CustomerTaxRegistration(head.CommercialSnapshotJson);
         var lines = await (from entry in context.Set<FinanceTreasuryAdjustmentLine>().AsNoTracking()
                            join line in context.NonFiscalInvoiceLines.AsNoTracking() on entry.InvoiceLineId equals line.Id
                            where entry.NoteId == noteId
@@ -121,7 +123,11 @@ internal static class AdjustmentNoteDocuments
                                entry.TaxAmount, entry.TaxRate)).ToArrayAsync(ct);
         return new FinanceAdjustmentNoteDocumentData(head.PublicId, head.Number, head.Kind.ToString(), head.InvoiceId,
             head.InvoiceNumber, head.FiscalNumber, head.CurrencyCode, head.Amount, head.EffectiveOn, head.CreatedAt, head.Reason,
-            "AVIAM Ltd.", FinanceInvoicePolicy.SimulatedIssuerRnc, head.LegalName, head.Code, head.StationCode, lines);
+            "AVIAM Ltd.", FinanceInvoicePolicy.SimulatedIssuerRnc, head.LegalName, head.Code, head.StationCode, lines)
+        {
+            // PR E: the buyer's RNC frozen in the invoice the note modifies.
+            CustomerTaxRegistration = tax.Number, CustomerTaxRegistrationCountryCode = tax.CountryCode,
+        };
     }
 
     public static async Task<FinanceAdjustmentNoteDocumentData?> ReadAsync(ElevantDbContext context, Guid noteId,
@@ -133,7 +139,8 @@ internal static class AdjustmentNoteDocuments
     }
 
     /// <summary>The file name of the note's PDF.</summary>
-    public static string FileName(FinanceAdjustmentNoteDocumentData note) => $"nota-{note.Number}.pdf";
+    public static string FileName(FinanceAdjustmentNoteDocumentData note) =>
+        Elevant.Application.Documents.DocumentFileNames.AdjustmentNote(note.Kind, note.Number);
 }
 
 /// <summary>Resolves <c>adjustment-note:{publicId}</c> to the note's PDF when the email is sent (4-N23).</summary>

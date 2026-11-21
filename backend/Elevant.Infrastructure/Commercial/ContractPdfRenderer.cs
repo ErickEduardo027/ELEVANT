@@ -1,5 +1,7 @@
 using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Commercial;
+using Elevant.Infrastructure.Documents;
 using Elevant.Infrastructure.Finance;
 using Elevant.Domain.Validation;
 using PdfSharp;
@@ -13,7 +15,9 @@ namespace Elevant.Infrastructure.Commercial;
 /// for versions whose signed content includes them (pricing policy 2, 2-N04), the surcharges (3.1) and
 /// packages (3.2); numbered terms and the signature block with the SHA-256 of the signed content. Draft versions
 /// (still editable or awaiting Finance) carry a diagonal «BORRADOR» watermark and show unconfirmed
-/// prices as «Por definir»; they are for review, never for signature.
+/// prices as «Por definir»; they are for review, never for signature. Every page repeats the header (PR E) and a table
+/// cut by a page repeats its titles; a draft is named «Borrador 1cc18541» instead of its internal <c>DRAFT-{guid}</c>
+/// code; nouns agree with their number («1 mes», «30 días»); signatures and «Generado» are in AVIAM's local time.
 /// </summary>
 public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : IContractPdfRenderer
 {
@@ -27,7 +31,6 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     private static readonly XColor Rule = XColor.FromArgb(214, 221, 231);
     private static readonly XColor Tint = XColor.FromArgb(244, 247, 251);
     private static readonly XColor Success = XColor.FromArgb(21, 128, 61);
-    private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
 
     static ContractPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 
@@ -40,10 +43,12 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         ArgumentNullException.ThrowIfNull(document);
         var draft = IsDraft(document);
         using var pdf = new PdfDocument();
-        pdf.Info.Title = $"Contrato {document.ContractCode} · versión {document.VersionNumber}" + (draft ? " · borrador" : string.Empty);
+        pdf.Info.Title = $"Contrato {DisplayCode(document.ContractCode)} · versión {document.VersionNumber}" +
+            (draft ? " · borrador" : string.Empty);
         pdf.Info.Author = "ELEVANT · AVIAM";
         pdf.Info.Subject = "Contrato de servicios de asistencia en tierra";
-        var writer = new Writer(pdf);
+        var writer = new Writer(pdf, $"Contrato {DisplayCode(document.ContractCode)} · versión {document.VersionNumber}" +
+            (draft ? " · borrador" : string.Empty));
 
         writer.Header(document, draft);
         writer.Parties(document);
@@ -65,13 +70,14 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         if (document.Validity is { } validity)
         {
             writer.Paragraph(validity.RenewalMode == "Automatic"
-                ? $"Renovación automática: {validity.RenewalNoticeDays} días antes del vencimiento se inicia una nueva versión por " +
-                  $"{validity.RenewalTermMonths} meses, que requiere la aprobación de Finanzas y la firma de ambas partes."
+                ? $"Renovación automática: {DocumentText.Days(validity.RenewalNoticeDays)} antes del vencimiento se inicia una nueva versión por " +
+                  $"{(validity.RenewalTermMonths is { } term ? DocumentText.Months(term) : "el mismo período")}, que requiere la aprobación de " +
+                  "Finanzas y la firma de ambas partes."
                 : "Renovación manual: las partes acuerdan una nueva versión antes del vencimiento" +
-                  (validity.RenewalTermMonths is { } months ? $", por períodos de {months} meses." : ".") +
-                  (validity.RenewalNoticeDays > 0 ? $" AVIAM avisa con {validity.RenewalNoticeDays} días de antelación." : string.Empty));
+                  (validity.RenewalTermMonths is { } months ? $", por períodos de {DocumentText.Months(months)}." : ".") +
+                  (validity.RenewalNoticeDays > 0 ? $" AVIAM avisa con {DocumentText.Days(validity.RenewalNoticeDays)} de antelación." : string.Empty));
             writer.Paragraph($"Terminación anticipada: cualquiera de las partes puede terminar el contrato con un preaviso de " +
-                $"{validity.TerminationNoticeDays} días." +
+                $"{DocumentText.Days(validity.TerminationNoticeDays)}." +
                 (string.IsNullOrWhiteSpace(validity.TerminationTerms) ? string.Empty : " " + validity.TerminationTerms.Trim()));
         }
 
@@ -145,6 +151,14 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     private static string Date(DateOnly value) => value.ToString("d 'de' MMMM 'de' yyyy", Spanish);
 
     /// <summary>
+    /// The code a person reads: a draft still coded <c>DRAFT-{guid}</c> prints «Borrador 1cc18541» (the first eight
+    /// characters of its identifier); a contract's own code prints as it is.
+    /// </summary>
+    public static string DisplayCode(string code) => ContractValidity.IsDraftCode(code)
+        ? $"Borrador {code["DRAFT-".Length..][..Math.Min(8, code.Length - "DRAFT-".Length)].ToLowerInvariant()}"
+        : code;
+
+    /// <summary>
     /// The airline's designator as printed (N33). SQL reads a two-letter IATA code padded to the ICAO column's width
     /// («WN »), and the parties signed that stored value: the printout trims it, the fingerprint never does.
     /// </summary>
@@ -185,7 +199,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
             "ServiceQuantity" => "según la cantidad del servicio",
             _ => null,
         };
-        var grace = charge.GraceMinutes > 0 ? $"{charge.GraceMinutes} min de gracia" : null;
+        var grace = charge.GraceMinutes > 0 ? $"{DocumentText.Count(charge.GraceMinutes, "minuto", "minutos")} de gracia" : null;
         return string.Join(", ", new[] { basis, rule, grace }.Where(part => part is not null));
     }
 
@@ -204,7 +218,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
             "Departure" => "Por vuelo de salida",
             _ => "Por vuelo",
         },
-        "Period" => package.PeriodDays is { } days ? $"Por período de {days} días" : "Por período",
+        "Period" => package.PeriodDays is { } days ? $"Por período de {DocumentText.Days(days)}" : "Por período",
         _ => package.Scope,
     };
 
@@ -231,6 +245,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     {
         // 2-D: every ELEVANT PDF embeds the complete Unicode Noto Sans faces (ElevantPdfFonts).
         private readonly PdfDocument pdf;
+        private readonly string running;
         private readonly XFont body = ElevantPdfFonts.Regular(9.5);
         private readonly XFont bodyBold = ElevantPdfFonts.Bold(9.5);
         private readonly XFont small = ElevantPdfFonts.Regular(8);
@@ -244,22 +259,25 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         private XGraphics graphics = null!;
         private double y;
 
-        public Writer(PdfDocument pdf)
+        public Writer(PdfDocument pdf, string running)
         {
             this.pdf = pdf;
+            this.running = running;
             NewPage();
         }
+
+        /// <summary>The heading row of the table being drawn, repeated when a page breaks it (PR E).</summary>
+        private Action? repeatHeading;
 
         private double Width => page.Width.Point - 2 * Margin;
 
         public void Header(ContractDocumentData document, bool draft)
         {
-            using (var logo = XImage.FromStream(new MemoryStream(Logo.Value)))
-                graphics.DrawImage(logo, Margin, 34, 92, 92 * logo.PixelHeight / (double)logo.PixelWidth);
+            DocumentPalette.DrawLogo(graphics, Margin, 34, 92);
             var right = new XRect(Margin + 120, 38, Width - 120, 12);
             graphics.DrawString("CONTRATO DE SERVICIOS DE ASISTENCIA EN TIERRA", label, new XSolidBrush(Muted), right, XStringFormats.TopRight);
             right.Offset(0, 14);
-            graphics.DrawString(document.ContractCode, title, new XSolidBrush(Navy), right, XStringFormats.TopRight);
+            graphics.DrawString(DisplayCode(document.ContractCode), title, new XSolidBrush(Navy), right, XStringFormats.TopRight);
             right.Offset(0, 24);
             graphics.DrawString($"Versión {document.VersionNumber} · {VersionStatus(document.VersionStatus)}", small,
                 new XSolidBrush(draft ? Orange : Muted), right, XStringFormats.TopRight);
@@ -274,27 +292,35 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
             // The airline's tax identifier, when its organization has one: «RNC 1-31-23456-9» or «Id. fiscal … (país)».
             var tax = document.AirlineTaxRegistration is { } registration
                 ? TaxRegistrations.Display(registration.Number, registration.CountryCode) : null;
-            var height = tax is null ? 58d : 70d;
             var boxes = new[]
             {
                 ("EL PRESTADOR", "AVIAM", "Operador de servicios de asistencia en tierra", (string?)null),
                 ("LA AEROLÍNEA", document.AirlineLegalName ?? document.AirlineName,
                     $"{document.AirlineName} · código {Designator(document)}", tax),
             };
+            // Names wrap by word (PR E): nothing is cut; the taller box sets the height of both.
+            var blocks = boxes.Select(box => new[]
+            {
+                (Lines: Wrap(box.Item2, bodyBold, column - 20), Font: bodyBold, Color: Navy),
+                (Lines: Wrap(box.Item3, small, column - 20), Font: small, Color: Muted),
+                (Lines: box.Item4 is null ? [] : Wrap(box.Item4, small, column - 20), Font: small, Color: Navy),
+            }).ToArray();
+            var height = blocks.Max(block => block.Sum(part => part.Lines.Count)) * Line + 32;
             for (var index = 0; index < boxes.Length; index++)
             {
-                var (caption, name, detail, extra) = boxes[index];
                 var x = Margin + index * (column + 14);
                 graphics.DrawRectangle(new XSolidBrush(Tint), x, y, column, height);
                 graphics.DrawRectangle(new XSolidBrush(index == 0 ? Navy : Orange), x, y, 3, height);
-                graphics.DrawString(caption, label, new XSolidBrush(Muted), new XRect(x + 12, y + 9, column - 20, 10), XStringFormats.TopLeft);
-                graphics.DrawString(Fit(name, bodyBold, column - 20), bodyBold, new XSolidBrush(Navy),
-                    new XRect(x + 12, y + 22, column - 20, Line), XStringFormats.TopLeft);
-                graphics.DrawString(Fit(detail, small, column - 20), small, new XSolidBrush(Muted),
-                    new XRect(x + 12, y + 37, column - 20, Line), XStringFormats.TopLeft);
-                if (extra is not null)
-                    graphics.DrawString(Fit(extra, small, column - 20), small, new XSolidBrush(Navy),
-                        new XRect(x + 12, y + 50, column - 20, Line), XStringFormats.TopLeft);
+                graphics.DrawString(boxes[index].Item1, label, new XSolidBrush(Muted), new XRect(x + 12, y + 9, column - 20, 10),
+                    XStringFormats.TopLeft);
+                var top = y + 22;
+                foreach (var (lines, font, color) in blocks[index])
+                    foreach (var line in lines)
+                    {
+                        graphics.DrawString(line, font, new XSolidBrush(color), new XRect(x + 12, top, column - 20, Line),
+                            XStringFormats.TopLeft);
+                        top += Line;
+                    }
             }
             y += height + 12;
         }
@@ -318,7 +344,9 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 if (index > 0) x += shares[index - 1] * (Width - 3 * 10) + 10;
                 graphics.DrawRectangle(new XPen(Rule, 0.7), x, y, width, 42);
                 graphics.DrawString(cards[index].Item1, label, new XSolidBrush(Muted), new XRect(x + 9, y + 8, width - 18, 10), XStringFormats.TopLeft);
-                graphics.DrawString(Fit(cards[index].Item2, bodyBold, width - 18), bodyBold, new XSolidBrush(Navy),
+                // The value shrinks to fit its card rather than being cut (PR E).
+                var font = graphics.MeasureString(cards[index].Item2, bodyBold).Width <= width - 18 ? bodyBold : smallBold;
+                graphics.DrawString(cards[index].Item2, font, new XSolidBrush(Navy),
                     new XRect(x + 9, y + 21, width - 18, Line), XStringFormats.TopLeft);
             }
             y += 54;
@@ -404,10 +432,15 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 }
                 y += height;
             }
-            Row(columns.Select(column => column.Title).ToArray(), smallBold, XColors.White, Navy);
+            void Heading() => Row(columns.Select(column => column.Title).ToArray(), smallBold, XColors.White, Navy);
+            // The heading never stays alone at the foot of a page, and a page break repeats it (PR E).
+            Ensure(Line * 3 + 16);
+            Heading();
             if (rows.Count == 0) Paragraph("Sin tarifas pactadas en esta versión.", Muted);
+            repeatHeading = Heading;
             for (var index = 0; index < rows.Count; index++)
                 Row(rows[index], body, XColors.Black, index % 2 == 1 ? Tint : null);
+            repeatHeading = null;
             graphics.DrawLine(new XPen(Rule, 0.7), Margin, y, Margin + Width, y);
             y += 8;
         }
@@ -433,8 +466,10 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 var x = Margin + index * (column + 20);
                 var signature = document.Signatures.FirstOrDefault(item => item.Party == party);
                 graphics.DrawRectangle(new XPen(Rule, 0.8), x, top, column, 144);
-                graphics.DrawString(Fit(caption, label, column - 90), label, new XSolidBrush(Muted),
-                    new XRect(x + 10, top + 10, column - 90, 10), XStringFormats.TopLeft);
+                var captionLines = Wrap(caption, label, column - 90);
+                for (var line = 0; line < captionLines.Count; line++)
+                    graphics.DrawString(captionLines[line], label, new XSolidBrush(Muted),
+                        new XRect(x + 10, top + 6 + line * 8, column - 90, 10), XStringFormats.TopLeft);
                 var signed = signature is not null;
                 var chip = signed ? "FIRMADO" : "PENDIENTE";
                 var chipWidth = graphics.MeasureString(chip, label).Width + 14;
@@ -456,15 +491,17 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                     {
                         (signature.SignerName, Navy, bodyBold),
                         (signature.SignerTitle, XColors.Black, body),
-                        ($"{signature.SignedAt.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", Spanish)} UTC", Muted, small),
+                        ($"Firmó el {DocumentText.LocalStamp(signature.SignedAt)}", Muted, small),
                         signature.DocumentSha256 == document.ContentSha256
                             ? ("Huella coincidente con este documento.", Success, small)
                             : ("Atención: firmó un contenido distinto.", Orange, small),
                     };
                 graphics.DrawLine(new XPen(Rule, 0.6), x + 10, top + 30, x + column - 10, top + 30);
-                for (var line = 0; line < lines.Length; line++)
-                    graphics.DrawString(Fit(lines[line].Item1, lines[line].Item3, column - 20), lines[line].Item3,
-                        new XSolidBrush(lines[line].Item2), new XRect(x + 10, top + 40 + offset + line * Line, column - 20, Line), XStringFormats.TopLeft);
+                var row = 0;
+                foreach (var (text, color, font) in lines)
+                    foreach (var part in Wrap(text, font, column - 20))
+                        graphics.DrawString(part, font, new XSolidBrush(color),
+                            new XRect(x + 10, top + 40 + offset + row++ * Line, column - 20, Line), XStringFormats.TopLeft);
             }
             y = top + 156;
             // 2-N05: the date of this version's second signature, not the day the contract first activated.
@@ -476,8 +513,9 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         public void Finish(ContractDocumentData document, bool draft, DateTimeOffset generatedAt)
         {
             graphics.Dispose();
-            var stamp = $"Generado el {generatedAt.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", Spanish)} UTC";
-            var reference = $"ELEVANT · AVIAM · {document.ContractCode} v{document.VersionNumber}" + (draft ? " · BORRADOR" : string.Empty);
+            var stamp = $"Generado el {DocumentText.LocalStamp(generatedAt)}";
+            var reference = $"ELEVANT · AVIAM · {DisplayCode(document.ContractCode)} v{document.VersionNumber}" +
+                (draft ? " · BORRADOR" : string.Empty);
             for (var index = 0; index < pdf.PageCount; index++)
             {
                 var current = pdf.Pages[index];
@@ -504,8 +542,16 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         {
             if (y + height <= page.Height.Point - 60) return;
             NewPage();
+            // A table cut by the page repeats its titles on the new one (PR E).
+            if (repeatHeading is { } heading)
+            {
+                repeatHeading = null;
+                heading();
+                repeatHeading = heading;
+            }
         }
 
+        /// <summary>A new page; from the second one on, the compact header with the logo and the contract (PR E).</summary>
         private void NewPage()
         {
             graphics?.Dispose();
@@ -513,13 +559,16 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
             page.Size = PageSize.A4;
             graphics = XGraphics.FromPdfPage(page);
             y = Margin;
-        }
-
-        private string Fit(string text, XFont font, double width)
-        {
-            if (graphics.MeasureString(text, font).Width <= width) return text;
-            while (text.Length > 1 && graphics.MeasureString(text + "…", font).Width > width) text = text[..^1];
-            return text + "…";
+            if (pdf.PageCount == 1) return;
+            var logo = DocumentPalette.DrawLogo(graphics, Margin, 28, 52);
+            graphics.DrawString("CONTRATO DE SERVICIOS DE ASISTENCIA EN TIERRA", label, new XSolidBrush(Muted),
+                new XRect(Margin + 70, 30, Width - 70, 10), XStringFormats.TopRight);
+            graphics.DrawString(running, smallBold, new XSolidBrush(Navy), new XRect(Margin + 70, 41, Width - 70, 12),
+                XStringFormats.TopRight);
+            var rule = Math.Max(28 + logo, 54) + 4;
+            graphics.DrawRectangle(new XSolidBrush(Navy), Margin, rule, Width, 1.6);
+            graphics.DrawRectangle(new XSolidBrush(Orange), Margin, rule + 1.6, Width * 0.28, 1.6);
+            y = rule + 14;
         }
 
         private List<string> Wrap(string text, XFont font, double width)
