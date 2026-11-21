@@ -57,9 +57,17 @@ const pay = (form: HTMLElement) => fireEvent.click(within(form).getByRole("butto
 
 it("labels the simulated gateway next to the card form (4-N05)", async () => {
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Pagar con tarjeta USD 148.09" }));
+  const open = await screen.findByRole("button", { name: "Pagar con tarjeta USD 148.09" });
+  expect(open).toHaveAttribute("data-variant", "primary");
+  fireEvent.click(open);
   const form = screen.getByRole("form", { name: "Datos de la tarjeta" });
   expect(within(form).getByText(CARD_SIMULATION_LABEL)).toBeInTheDocument();
+  // «Pagar USD x» is the form's primary action and «Cancelar» its secondary one, grouped after the fields.
+  const actions = within(form).getAllByRole("button");
+  expect(actions.map(button => [button.textContent, button.dataset.variant])).toEqual([
+    ["Cancelar", "secondary"], ["Pagar USD 148.09", "primary"]]);
+  fireEvent.click(within(form).getByRole("button", { name: "Cancelar" }));
+  expect(screen.queryByRole("form", { name: "Datos de la tarjeta" })).not.toBeInTheDocument();
   expect(CARD_SIMULATION_LABEL).toBe("Simulación — sin validez fiscal");
 });
 
@@ -113,13 +121,15 @@ const approved = { id: "75000000-0000-7000-8000-000000000001", invoiceId, status
 it("keeps the card attempts on screen while the history is read again (4-N25)", async () => {
   getInvoiceCardPayments.mockResolvedValueOnce({ invoiceId, attempts: [approved] });
   const view = mount(0);
-  expect(await screen.findByText(/Aprobado · Visa •••• 1111/)).toBeInTheDocument();
+  const row = await screen.findByRole("row", { name: /Visa •••• 1111/ });
+  expect(row).toHaveTextContent(/Aprobado.*Autorización ABC234/);
+  expect(row).toHaveTextContent("USD 148.09");
   let fail!: (error: unknown) => void;
   getInvoiceCardPayments.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
   financeRevision += 1;
   view.rerender(<CardPaymentPanel invoiceId={invoiceId} balance={0} currencyCode="USD" onChanged={onChanged} />);
   await waitFor(() => expect(getInvoiceCardPayments).toHaveBeenCalledTimes(2));
-  expect(screen.getByText(/Aprobado · Visa •••• 1111/)).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /Visa •••• 1111/ })).toHaveTextContent("Aprobado");
   expect(screen.queryByText("Cargando pagos con tarjeta…")).not.toBeInTheDocument();
   await act(async () => fail(new TypeError("Failed to fetch")));
   expect(screen.getByRole("alert")).toHaveTextContent("No se pudo actualizar el historial de pagos con tarjeta. Mostramos los últimos datos.");
