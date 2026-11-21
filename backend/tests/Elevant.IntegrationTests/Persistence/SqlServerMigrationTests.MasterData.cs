@@ -202,7 +202,7 @@ public sealed partial class SqlServerMigrationTests
             new CreateStandInput(SeededPujStation, terminal.Value.Id, "C09", false, false, "Huge"), Guid.NewGuid(), ct))).Code);
         // The new stand reaches the coverage board and the manual flight options.
         Assert.Contains((await Run(services => services.GetRequiredService<IPositionCoverageStore>()
-            .ReadAsync(SeededOccAccount, SeededPujStation, today, ct))).Board!.Stands, item => item.Code == "C01");
+            .ReadAsync(SeededOccAccount, SeededPujStation, today, cancellationToken: ct))).Board!.Stands, item => item.Code == "C01");
         Assert.Contains((await Run(services => services.GetRequiredService<IManualTurnaroundOptionsStore>()
             .GetAsync(SeededOccAccount, SeededPujStation, today, ct)))!.Stands, item => item.Code == "C01");
 
@@ -232,7 +232,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.False(Assert.Single(reread.Terminals, item => item.Code == "C").IsActive);
         Assert.False(Assert.Single(reread.Stands, item => item.Code == "C02").IsActive);
         var coverageBoard = (await Run(services => services.GetRequiredService<IPositionCoverageStore>()
-            .ReadAsync(SeededOccAccount, SeededPujStation, today, ct))).Board!;
+            .ReadAsync(SeededOccAccount, SeededPujStation, today, cancellationToken: ct))).Board!;
         Assert.DoesNotContain(coverageBoard.Terminals, item => item.Code == "C");
 
         // The coverage configuration takes the version the board shows, the one of «Datos maestros», with its key: the key

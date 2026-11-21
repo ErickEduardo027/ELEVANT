@@ -7,9 +7,12 @@ import { sortByStandCode } from '../../services/standCodes';
  */
 export function orderCoverageBoard(board) {
   if (!board || typeof board !== 'object') return board;
+  const ordered = coverage => ({ ...coverage, stands: sortByStandCode(coverage.stands) });
   return {
     ...board,
     stands: sortByStandCode(board.stands),
-    coverages: (board.coverages ?? []).map(coverage => ({ ...coverage, stands: sortByStandCode(coverage.stands) })),
+    coverages: (board.coverages ?? []).map(ordered),
+    // G1: the released coverages of the day, when the read asked for them.
+    ...(board.releasedCoverages ? { releasedCoverages: board.releasedCoverages.map(ordered) } : {}),
   };
 }

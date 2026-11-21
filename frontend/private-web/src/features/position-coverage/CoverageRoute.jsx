@@ -17,7 +17,7 @@ import OccStatusLegend from '../occ-ui/OccStatusLegend';
 import OccStatusPill from '../occ-ui/OccStatusPill';
 import OccToolbar from '../occ-ui/OccToolbar';
 import { formatClock } from '../occ-ui/occTime';
-import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
+import { BUSINESS_TIME_ZONE, formatBusinessDate } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict } from '../../services/problemMessages';
 import { standDisplayCode } from '../../services/standCodes';
@@ -51,11 +51,65 @@ const ATTRIBUTE_KEYS = Object.freeze(['hasBoardingBridge', 'isRemote', 'maxAircr
 // The tone of each mark the boards draw, read by their pills and by their legends, so a legend shows the board's own
 // shapes: an attribute of a stand («Puente», «Estrecho») is a plain mark, the hollow circle; a deactivated stand is
 // out of service, the slashed circle; and a coverage that reinforces stands already covered is a plain mark too.
-const MARK_TONES = Object.freeze({ attribute: 'neutral', inactive: 'muted', reinforcement: 'neutral' });
+// G1: a coverage OCC has just assigned is live (the filled circle) for a few seconds; a released one is out of service.
+const MARK_TONES = Object.freeze({ attribute: 'neutral', inactive: 'muted', reinforcement: 'neutral', recent: 'active',
+  released: 'muted' });
+// How long a new coverage says «Recién asignada».
+const RECENT_MS = 8000;
 
 // An agent's shift or a coverage's window, «06:00–14:00» in the station's time.
 const shiftWindow = (start, end, locale) =>
   `${formatClock(start, locale, BUSINESS_TIME_ZONE)}–${formatClock(end, locale, BUSINESS_TIME_ZONE)}`;
+
+// G1: the dates in the station's time as AVIAM writes them (N36): «20/11/2026», and «20/11» before a window.
+const stationDay = value => formatBusinessDate(value, { timeZone: BUSINESS_TIME_ZONE });
+const stationDayMonth = value => stationDay(value).slice(0, 5);
+
+/** What a coverage covers, «20/11 06:00–14:00»; a window that ends the next day names both days. */
+function coveredWindow(t, coverage, locale) {
+  const day = stationDayMonth(coverage.startsAt);
+  const endDay = stationDayMonth(coverage.endsAt);
+  return t(endDay === day ? 'board.window' : 'board.windowOvernight', { day, endDay,
+    start: formatClock(coverage.startsAt, locale, BUSINESS_TIME_ZONE), end: formatClock(coverage.endsAt, locale, BUSINESS_TIME_ZONE) });
+}
+
+/** When and by whom OCC assigned a coverage, «20/11/2026 09:41 · Alex Operations»; null while the board does not say. */
+function assignedLine(t, coverage, locale) {
+  if (!coverage.assignedAt || !coverage.assignedByName) return null;
+  return t('board.assigned', { date: stationDay(coverage.assignedAt),
+    time: formatClock(coverage.assignedAt, locale, BUSINESS_TIME_ZONE), name: coverage.assignedByName });
+}
+
+const instantOrNone = value => {
+  const ms = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
+};
+const descending = (left, right) => (left === right ? 0 : left < right ? 1 : -1);
+
+/**
+ * «Asignación más reciente» (G1): what OCC has just assigned first, then the latest assignment; rows without one keep
+ * their order (the sort is stable), so the stands nobody covers stay in natural order at the bottom.
+ */
+const byRecentAssignment = rank => (left, right) => descending(rank(left).recent, rank(right).recent)
+  || descending(rank(left).at, rank(right).at);
+
+/**
+ * The board a command answers does not say who assigned each coverage (G1): it keeps what the last read said of the
+ * coverages it already knew, and the released ones, until the next read.
+ */
+function withKnownAssignments(next, previous) {
+  if (!next || !previous) return next;
+  const known = new Map((previous.coverages ?? []).map(item => [item.id, item]));
+  return {
+    ...next,
+    coverages: (next.coverages ?? []).map(item => {
+      const before = known.get(item.id);
+      return item.assignedAt || !before?.assignedAt ? item
+        : { ...item, assignedAt: before.assignedAt, assignedByName: before.assignedByName };
+    }),
+    releasedCoverages: next.releasedCoverages ?? previous.releasedCoverages,
+  };
+}
 
 /** What a refused command breaks: the amber slab with its triangle, the service's sentence and each broken rule. */
 function Reasons({ error }) {
@@ -201,35 +255,68 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
   );
 }
 
-/** The terminal's stands with who covers each, and the coverages of the day with their «Liberar». */
-function CoverageBoard({ board, terminal, date, onChange, onStale }) {
+/** One line per coverage of a stand, or a quiet dash when it has none. */
+function Lines({ items, render }) {
+  if (items.length === 0) return <span className="text-occ-muted">—</span>;
+  return <span className="flex flex-col gap-0.5">{items.map(item => <span key={item.id}>{render(item)}</span>)}</span>;
+}
+
+/**
+ * The terminal's stands with who covers each, for when («Cubre») and since when and by whom («Asignada», G1), and the
+ * coverages of the day with their «Liberar». `order` is «Posición» (`stand`) or «Asignación más reciente» (`recent`);
+ * `recentIds` are the coverages OCC has just assigned; with `showReleased` the released coverages of the day follow.
+ */
+function CoverageBoard({ board, terminal, date, order, onOrderChange, recentIds, showReleased, onShowReleasedChange,
+  onChange, onReleased, onStale }) {
   const { t, locale } = useTranslation(coverageMessages);
   const [error, setError] = useState(null);
   const releases = useRef(createCommandKeyHolder());
-  const coverages = board.coverages.filter(item => item.terminalId === terminal.terminalId);
-  const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId);
+  const isRecent = coverage => recentIds.has(coverage.id);
+  const rankOf = coverage => ({ recent: isRecent(coverage) ? 1 : 0, at: instantOrNone(coverage.assignedAt) });
+  // The open coverages behind each stand, by start (the board's order): the same ones as «Cubierta por».
+  const windowsByStand = new Map();
+  for (const coverage of board.coverages) {
+    for (const { standId } of coverage.stands) windowsByStand.set(standId, [...(windowsByStand.get(standId) ?? []), coverage]);
+  }
+  const windowsOf = stand => windowsByStand.get(stand.standId) ?? [];
+  // A stand ranks by its newest coverage: one OCC has just assigned, then the latest assignment.
+  const standRank = stand => {
+    const ranks = windowsOf(stand).map(rankOf);
+    return { recent: Math.max(0, ...ranks.map(rank => rank.recent)),
+      at: Math.max(Number.NEGATIVE_INFINITY, ...ranks.map(rank => rank.at)) };
+  };
+  const active = board.coverages.filter(item => item.terminalId === terminal.terminalId);
+  const standsOfTerminal = board.stands.filter(stand => stand.terminalId === terminal.terminalId);
+  const stands = order === 'recent' ? [...standsOfTerminal].sort(byRecentAssignment(standRank)) : standsOfTerminal;
+  const released = showReleased ? (board.releasedCoverages ?? []).filter(item => item.terminalId === terminal.terminalId) : [];
+  const coverages = [...(order === 'recent' ? [...active].sort(byRecentAssignment(rankOf)) : active), ...released];
   // A release retried after an uncertain answer keeps its key and answers the board again (3-J).
   const release = async coverage => {
     setError(null);
     try {
       onChange(await releases.current.run('release', [coverage.id, date],
         key => releaseOccCoverage(coverage.id, date, { idempotencyKey: key })));
+      onReleased?.();
     } catch (failure) {
       setError(failure);
       if (failure?.status === 409) onStale?.();
     }
   };
   const meta = t('terminal', { code: terminal.code });
+  const anyRecent = active.some(isRecent);
   // Each board's legend, in its header (contratos 2.4): the marks it draws, with the shape and the word of its pills.
+  // «Recién asignada» and «Liberada» are drawn only for a while or on request, and so are their entries.
   const standLegend = (
     <OccStatusLegend label={t('board.legend.label')} items={[
       { key: 'attribute', tone: MARK_TONES.attribute, label: t('board.legend.attribute') },
       { key: 'inactive', tone: MARK_TONES.inactive, label: t('board.inactive') },
+      ...(anyRecent ? [{ key: 'recent', tone: MARK_TONES.recent, label: t('board.recent') }] : []),
     ]} />
   );
   const coverageLegend = (
     <OccStatusLegend label={t('coverages.legend.label')} items={[
       { key: 'reinforcement', tone: MARK_TONES.reinforcement, label: t('coverages.reinforcement') },
+      ...(showReleased ? [{ key: 'released', tone: MARK_TONES.released, label: t('coverages.released') }] : []),
     ]} />
   );
 
@@ -254,11 +341,24 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
         return <span className="text-occ-muted">{stand.isActive ? t('board.noAgent') : '—'}</span>;
       },
     },
+    // G1: for when each coverage of the stand is, and when and by whom OCC assigned it, one line per coverage.
+    {
+      key: 'window', header: t('board.columns.window'), width: '9.5rem', mono: true,
+      render: stand => <Lines items={windowsOf(stand)}
+        render={coverage => <span className="whitespace-nowrap">{coveredWindow(t, coverage, locale)}</span>} />,
+    },
+    {
+      key: 'assigned', header: t('board.columns.assigned'),
+      render: stand => <Lines items={windowsOf(stand)} render={coverage => assignedLine(t, coverage, locale) ?? '—'} />,
+    },
     {
       key: 'state', header: t('board.columns.state'), width: '8.5rem',
-      // A normal stand carries nothing: only a deactivated one says so.
-      render: stand => (stand.isActive ? null
-        : <OccStatusPill size="sm" tone={MARK_TONES.inactive} label={t('board.inactive')} />),
+      // A normal stand carries nothing: a deactivated one says so, and one OCC has just covered for a few seconds.
+      render: stand => {
+        if (!stand.isActive) return <OccStatusPill size="sm" tone={MARK_TONES.inactive} label={t('board.inactive')} />;
+        return windowsOf(stand).some(isRecent)
+          ? <OccStatusPill size="sm" tone={MARK_TONES.recent} label={t('board.recent')} /> : null;
+      },
     },
   ];
 
@@ -270,6 +370,9 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
           <strong className="font-semibold">{item.agentName}</strong>
           {item.isReinforcement
             && <OccStatusPill size="sm" tone={MARK_TONES.reinforcement} label={t('coverages.reinforcement')} />}
+          {item.releasedAt && <OccStatusPill size="sm" tone={MARK_TONES.released} label={t('coverages.released')} />}
+          {!item.releasedAt && isRecent(item)
+            && <OccStatusPill size="sm" tone={MARK_TONES.recent} label={t('board.recent')} />}
         </span>
       ),
     },
@@ -286,6 +389,21 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
       render: item => <span className="whitespace-nowrap">{shiftWindow(item.startsAt, item.endsAt, locale)}</span>,
     },
     {
+      // G1: when and by whom OCC assigned it, and a released one when and by whom it was released.
+      key: 'assigned', header: t('coverages.columns.assigned'), width: 'minmax(0,1.3fr)',
+      render: item => (
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span>{assignedLine(t, item, locale) ?? '—'}</span>
+          {item.releasedAt && (
+            <span className="text-occ-muted">
+              {t('coverages.releasedValue', { date: stationDay(item.releasedAt),
+                time: formatClock(item.releasedAt, locale, BUSINESS_TIME_ZONE), name: item.releasedByName })}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
       key: 'support', header: t('coverages.columns.support'), width: 'minmax(0,1fr)',
       render: item => (item.mentorName || item.vehicleCode ? (
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -296,12 +414,24 @@ function CoverageBoard({ board, terminal, date, onChange, onStale }) {
     },
     ...(board.canAssign ? [{
       key: 'release', header: '', width: '6rem', align: 'end',
-      render: item => <OccButton size="sm" onClick={() => void release(item)}>{t('coverages.release')}</OccButton>,
+      // A released coverage is history: it is not released again.
+      render: item => (item.releasedAt ? null
+        : <OccButton size="sm" onClick={() => void release(item)}>{t('coverages.release')}</OccButton>),
     }] : []),
   ];
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
+      {/* G1: the order of both lists, and the released coverages of the day in the same view. */}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+        <OccSegmented label={t('view.order')} value={order} onChange={onOrderChange}
+          options={[{ id: 'stand', label: t('view.byStand') }, { id: 'recent', label: t('view.byRecent') }]} />
+        <label className={CHECK}>
+          <input type="checkbox" className={CHECKBOX} checked={showReleased}
+            onChange={event => onShowReleasedChange(event.target.checked)} />
+          {t('view.showReleased')}
+        </label>
+      </div>
       <OccPanel title={t('board.title')} meta={meta} actions={standLegend}>
         <OccDataTable caption={t('board.title')} columns={standColumns} rows={stands} getRowId={stand => stand.standId} />
       </OccPanel>
@@ -506,12 +636,19 @@ export default function CoverageRoute() {
   const [terminalCode, setTerminalCode] = useState('A');
   const [tab, setTab] = useState('coverage');
   const [attempt, setAttempt] = useState(0);
+  // G1: the order of the lists, the released coverages of the day and the coverages OCC has just assigned.
+  const [order, setOrder] = useState('stand');
+  const [showReleased, setShowReleased] = useState(false);
+  const [recentIds, setRecentIds] = useState(() => new Set());
   const live = useRef(() => {});
+  const shown = useRef(null);
+  const recentTimer = useRef(null);
+  useEffect(() => () => clearTimeout(recentTimer.current), []);
 
   useEffect(() => {
     if (!station.stationId || !date) return undefined;
     const controller = new AbortController();
-    const read = () => loadOccCoverage(station.stationId, date, { signal: controller.signal })
+    const read = () => loadOccCoverage(station.stationId, date, { signal: controller.signal, includeReleased: showReleased })
       .then(board => setState({ status: 'success', board: orderCoverageBoard(board) }))
       .catch(error => {
         if (error?.name === 'AbortError') return;
@@ -522,18 +659,36 @@ export default function CoverageRoute() {
     live.current = read;
     void read();
     return () => controller.abort();
-  }, [station.stationId, date, attempt]);
+  }, [station.stationId, date, attempt, showReleased]);
 
   // Another OCC seat, HR or the airport changes something: re-read under current permissions. The announcement comes
   // from the tab's single account-change observer, the OCC frame's (contratos 2.7): the page opens none of its own.
   useEffect(() => subscribe(['occ_planning'], () => { void live.current(); }), [subscribe]);
 
   const board = state.board;
+  useEffect(() => { shown.current = board; }, [board]);
   const terminal = useMemo(() => board?.terminals.find(item => item.code === terminalCode) ?? board?.terminals[0],
     [board, terminalCode]);
-  const onChange = useCallback(next => setState({ status: 'success', board: orderCoverageBoard(next) }), []);
+  // A command answers the board without who assigned each coverage (G1): what the last read said is kept.
+  const onChange = useCallback(next => setState(value => ({ status: 'success',
+    board: orderCoverageBoard(withKnownAssignments(next, value.board)) })), []);
   // A refused change because the data moved meanwhile reads the board again before a new attempt.
   const onStale = useCallback(() => { void live.current(); }, []);
+  // G1: the coverages a creation added say «Recién asignada» for a few seconds, and the board is read again to tell
+  // when and by whom they were assigned.
+  const onAssigned = useCallback(next => {
+    const before = new Set((shown.current?.coverages ?? []).map(item => item.id));
+    const added = (next?.coverages ?? []).map(item => item.id).filter(id => !before.has(id));
+    onChange(next);
+    if (added.length > 0) {
+      clearTimeout(recentTimer.current);
+      setRecentIds(new Set(added));
+      recentTimer.current = setTimeout(() => setRecentIds(new Set()), RECENT_MS);
+    }
+    void live.current();
+  }, [onChange]);
+  // A released coverage joins the released ones of the day on the next read, when they are shown.
+  const onReleased = useCallback(() => { if (showReleased) void live.current(); }, [showReleased]);
 
   // The read as one of the states of OccRemoteView: a station without terminals is an empty board.
   let view = 'success';
@@ -549,9 +704,11 @@ export default function CoverageRoute() {
   } else if (view === 'success') {
     body = (
       <div className={MASTER_DETAIL}>
-        <CoverageBoard board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />
-        {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date} onDone={onChange}
-          onStale={onStale} />
+        <CoverageBoard board={board} terminal={terminal} date={date} order={order} onOrderChange={setOrder}
+          recentIds={recentIds} showReleased={showReleased} onShowReleasedChange={setShowReleased} onChange={onChange}
+          onReleased={onReleased} onStale={onStale} />
+        {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date}
+          onDone={onAssigned} onStale={onStale} />
           : <p className={OCC_CLASSES.card}>{t('states.readOnly')}</p>}
       </div>
     );

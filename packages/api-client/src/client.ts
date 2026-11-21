@@ -818,6 +818,12 @@ export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "
  * start, end and whether it is a reinforcement, N26); without it the parameter stays out of the URL.
  */
 export type GetOccPositionsOptions = GetHumanResourcesReportOptions & { includeCoverage?: boolean };
+/**
+ * A coverage board read (G1). `includeAssignment` also asks when and by whom OCC assigned each coverage
+ * (`assignedAt`, `assignedByName`) and each stand's open coverages (`coverages`); `includeReleased` does the same and adds
+ * the released coverages of the date (`releasedCoverages`). Without them the parameters stay out of the URL.
+ */
+export type GetOccCoverageOptions = GetHumanResourcesReportOptions & { includeAssignment?: boolean; includeReleased?: boolean };
 
 /** A stand coverage OCC hands an agent (ADR-0030); both times null take the agent's shift. */
 export interface OccCoverageCommand {
@@ -1575,8 +1581,12 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<OccCharterAirlineResponse>;
   /** The active aircraft types the tablet offers in «Datos del vuelo» (3-B). */
   getRampAircraftTypes(options?: GetHumanResourcesReportOptions): Promise<RampAircraftTypesResponse>;
-  /** Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. */
-  getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  /**
+   * Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. G1: `options.includeAssignment`
+   * and `options.includeReleased` ask for who assigned each coverage and when, and for the released ones; only a read that
+   * asked accepts them, and an API that ignores the parameters answers without.
+   */
+  getOccCoverage(stationId: string, date: string, options?: GetOccCoverageOptions): Promise<OccCoverageBoardResponse>;
   /** With `options.idempotencyKey` a repeated attempt answers the board instead of a second coverage (3-J). */
   createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions): Promise<OccCoverageBoardResponse>;
   /** Releasing twice answers the board; `options.idempotencyKey` replays the release (3-J). */
@@ -3626,9 +3636,54 @@ export function normalizedStandAttributes(request: OccStandAttributesCommand): O
     maxAircraftSize: request.maxAircraftSize, isActive: request.isActive, expectedVersion: request.expectedVersion };
 }
 
-function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCoverageBoardResponse {
+const OCC_COVERAGE_KEYS = ["id", "agentId", "agentName", "terminalId", "terminalCode", "stands", "startsAt", "endsAt",
+  "mentorAgentId", "mentorName", "vehicleCode", "isReinforcement"];
+
+/** One open coverage of a stand (G1): the agent, a window that ends after it starts, and when and by whom it was assigned. */
+function isOccCoverageStandAssignment(value: unknown): boolean {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["agentName", "startsAt", "endsAt", "assignedAt", "assignedByName", "isReinforcement"]) &&
+    isNonEmptyString(value.agentName) && isDateTimeOffset(value.startsAt) && isDateTimeOffset(value.endsAt) &&
+    Date.parse(value.startsAt) < Date.parse(value.endsAt) && isDateTimeOffset(value.assignedAt) &&
+    isNonEmptyString(value.assignedByName) && typeof value.isReinforcement === "boolean";
+}
+
+/**
+ * A coverage of the board. `assignment` says whether the read asked for who assigned it (G1): only then may it carry
+ * `assignedAt` and `assignedByName`. A `released` one, of `releasedCoverages`, carries all four keys of G1; an open one
+ * never carries `releasedAt`.
+ */
+function isOccCoverage(item: unknown, assignment: boolean, released = false): boolean {
+  if (!isRecord(item)) return false;
+  const keys = released ? [...OCC_COVERAGE_KEYS, "assignedAt", "assignedByName", "releasedAt", "releasedByName"]
+    : assignment ? [...OCC_COVERAGE_KEYS, "assignedAt", "assignedByName"] : OCC_COVERAGE_KEYS;
+  return hasOnlyKeys(item, keys) &&
+    isUuid(item.id) && isUuid(item.agentId) && isNonEmptyString(item.agentName) && isUuid(item.terminalId) &&
+    isNonEmptyString(item.terminalCode) && Array.isArray(item.stands) && item.stands.every(stand => isRecord(stand) &&
+      hasOnlyKeys(stand, ["standId", "code"]) && isUuid(stand.standId) && isNonEmptyString(stand.code)) &&
+    isDateTimeOffset(item.startsAt) && isDateTimeOffset(item.endsAt) && isOptionalNullable(item.mentorAgentId, isUuid) &&
+    isOptionalNullable(item.mentorName, isNonEmptyString) && isOptionalNullable(item.vehicleCode, isNonEmptyString) &&
+    typeof item.isReinforcement === "boolean" &&
+    (released ? isDateTimeOffset(item.assignedAt) && isNonEmptyString(item.assignedByName) &&
+        isDateTimeOffset(item.releasedAt) && isNonEmptyString(item.releasedByName)
+      : (item.assignedAt === undefined || isDateTimeOffset(item.assignedAt)) &&
+        (item.assignedByName === undefined || isNonEmptyString(item.assignedByName)) &&
+        (item.assignedAt === undefined) === (item.assignedByName === undefined));
+}
+
+/**
+ * The coverage board. G1: `detail.assignment` and `detail.released` say what the read asked for; only then may the board
+ * carry who assigned each coverage, each stand's open coverages and the released coverages of the date. A board that did
+ * not ask, or a command's, never carries them, and an API that ignores the parameters answers without.
+ */
+function isOccCoverageBoard(value: unknown, stationId?: string,
+  detail: { assignment?: boolean | undefined; released?: boolean | undefined } = {}): value is OccCoverageBoardResponse {
+  const released = detail.released === true;
+  const assignment = released || detail.assignment === true;
   return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "date", "terminals", "stands", "constraints",
-      "agents", "coverages", "canAssign", "canConfigure"]) &&
+      "agents", "coverages", "canAssign", "canConfigure", ...(released ? ["releasedCoverages"] : [])]) &&
+    (value.releasedCoverages === undefined || (Array.isArray(value.releasedCoverages) &&
+      value.releasedCoverages.length <= 500 && value.releasedCoverages.every(item => isOccCoverage(item, true, true)))) &&
     isUuid(value.stationId) && (stationId === undefined || value.stationId.toLowerCase() === stationId) &&
     isNonEmptyString(value.stationCode) && isDateOnly(value.date) &&
     typeof value.canAssign === "boolean" && typeof value.canConfigure === "boolean" &&
@@ -3638,7 +3693,9 @@ function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCov
       Number.isInteger(item.maxStandsPerAgent) && typeof item.requiresBridgeQualification === "boolean") &&
     Array.isArray(value.stands) && value.stands.every(item => isRecord(item) &&
       hasOnlyKeys(item, ["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize", "coveredBy",
-        "version"]) &&
+        "version", ...(assignment ? ["coverages"] : [])]) &&
+      (item.coverages === undefined || (Array.isArray(item.coverages) && item.coverages.length <= 100 &&
+        item.coverages.every(isOccCoverageStandAssignment))) &&
       isUuid(item.standId) && isNonEmptyString(item.code) && isOptionalNullable(item.terminalId, isUuid) &&
       typeof item.isActive === "boolean" && typeof item.hasBoardingBridge === "boolean" && typeof item.isRemote === "boolean" &&
       (item.maxAircraftSize == null || AIRCRAFT_SIZES.has(item.maxAircraftSize as string)) && isStringList(item.coveredBy) &&
@@ -3655,15 +3712,7 @@ function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCov
       isNonEmptyString(item.terminalCode) && isDateTimeOffset(item.shiftStartsAt) && isDateTimeOffset(item.shiftEndsAt) &&
       ["isJunior", "hasAirportPermit", "hasDriverLicense", "hasBridgeQualification", "isAbsent"]
         .every(key => typeof item[key] === "boolean")) &&
-    Array.isArray(value.coverages) && value.coverages.every(item => isRecord(item) &&
-      hasOnlyKeys(item, ["id", "agentId", "agentName", "terminalId", "terminalCode", "stands", "startsAt", "endsAt",
-        "mentorAgentId", "mentorName", "vehicleCode", "isReinforcement"]) &&
-      isUuid(item.id) && isUuid(item.agentId) && isNonEmptyString(item.agentName) && isUuid(item.terminalId) &&
-      isNonEmptyString(item.terminalCode) && Array.isArray(item.stands) && item.stands.every(stand => isRecord(stand) &&
-        hasOnlyKeys(stand, ["standId", "code"]) && isUuid(stand.standId) && isNonEmptyString(stand.code)) &&
-      isDateTimeOffset(item.startsAt) && isDateTimeOffset(item.endsAt) && isOptionalNullable(item.mentorAgentId, isUuid) &&
-      isOptionalNullable(item.mentorName, isNonEmptyString) && isOptionalNullable(item.vehicleCode, isNonEmptyString) &&
-      typeof item.isReinforcement === "boolean");
+    Array.isArray(value.coverages) && value.coverages.every(item => isOccCoverage(item, assignment));
 }
 
 function isOwnRampCoverage(value: unknown): value is RampOwnCoverageListResponse {
@@ -7999,11 +8048,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return positionCommand(getLocateOccStandUrl(stand),
         { latitude, longitude, operationDate: request.operationDate }, options, "PUT");
     },
-    async getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+    async getOccCoverage(stationId: string, date: string, options?: GetOccCoverageOptions) {
       const station = validatedUuid(stationId, "stationId");
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
-      const result = await execute(getGetOccCoverageUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
-      if (!isOccCoverageBoard(result.data, station)) throw malformedResponse(result.status);
+      const { includeAssignment, includeReleased, ...init } = options ?? {};
+      if ((includeAssignment !== undefined && typeof includeAssignment !== "boolean") ||
+          (includeReleased !== undefined && typeof includeReleased !== "boolean"))
+        throw new TypeError("includeAssignment and includeReleased must be booleans.");
+      // Without them the parameters stay out of the URL, as older clients send it (G1).
+      const query = { stationId: station, date, ...(includeAssignment && { includeAssignment: true }),
+        ...(includeReleased && { includeReleased: true }) };
+      const result = await execute(getGetOccCoverageUrl(query), { ...init, method: "GET" }, true);
+      if (!isOccCoverageBoard(result.data, station, { assignment: includeAssignment, released: includeReleased }))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions) {

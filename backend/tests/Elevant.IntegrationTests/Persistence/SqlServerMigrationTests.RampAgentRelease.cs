@@ -490,7 +490,7 @@ public sealed partial class SqlServerMigrationTests
         }
         Task<CoverageResult> CoverageStore(Func<IPositionCoverageStore, Task<CoverageResult>> action) =>
             RunCoverage(provider, action);
-        var board = (await CoverageStore(store => store.ReadAsync(OperationsAdministrator, PujStation, date, ct))).Board!;
+        var board = (await CoverageStore(store => store.ReadAsync(OperationsAdministrator, PujStation, date, cancellationToken: ct))).Board!;
         var terminal = Assert.Single(board.Terminals, item => item.Code == "A");
         var stand = board.Stands.First(item => item.Code == "A01").StandId;
         var input = new CreateCoverageInput(juniorProfile, terminal.TerminalId, [stand], date, null, null, RileyProfile, null, false);

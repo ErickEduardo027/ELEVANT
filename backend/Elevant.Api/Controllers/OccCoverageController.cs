@@ -22,6 +22,14 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}")]
 public sealed class OccCoverageController(IPositionCoverageStore store) : ControllerBase
 {
+    /// <summary>
+    /// The coverage board of a station and date. G1: with <c>includeAssignment=true</c> every coverage also carries when
+    /// and by whom OCC assigned it (<c>assignedAt</c>, <c>assignedByName</c>) and every stand its open coverages
+    /// (<c>coverages</c>: agent, window, assignment); <c>includeReleased=true</c> does the same and adds the coverages of
+    /// the date OCC released (<c>releasedCoverages</c>, with <c>releasedAt</c> and <c>releasedByName</c>). Without them,
+    /// and in the board the commands answer, the keys are not written: a client deployed before them validates the
+    /// board's keys and keeps accepting it (expand).
+    /// </summary>
     [HttpGet("occ/coverage", Name = "GetOccCoverage")]
     [ProducesResponseType<OccCoverageBoardResponse>(200, "application/json")]
     [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
@@ -29,11 +37,13 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     public async Task<ActionResult<OccCoverageBoardResponse>> Get([FromQuery, BindRequired] Guid stationId,
-        [FromQuery(Name = "date"), BindRequired] DateOnly date, CancellationToken cancellationToken)
+        [FromQuery(Name = "date"), BindRequired] DateOnly date, [FromQuery] bool includeAssignment = false,
+        [FromQuery] bool includeReleased = false, CancellationToken cancellationToken = default)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<OccCoverageBoardResponse>();
         if (stationId == Guid.Empty) return Problem<OccCoverageBoardResponse>(400, "The station is required.");
-        return Map(await store.ReadAsync(actorId, stationId, date, cancellationToken));
+        return Map(await store.ReadAsync(actorId, stationId, date, includeReleased, cancellationToken),
+            includeAssignment || includeReleased, includeReleased);
     }
 
     /// <summary>
@@ -247,7 +257,10 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
 
     // A failure with a stable code carries it (version_conflict, idempotency_conflict, expected_version_required…);
     // otherwise it carries the default code of its status (3-J). A refused permission stays a bare 403 unless coded.
-    private ActionResult<OccCoverageBoardResponse> Map(CoverageResult result) => result.Failure switch
+    // G1: `assignment` says the read asked for who assigned each coverage and when, `released` for the released
+    // coverages of the date; a command's board has neither.
+    private ActionResult<OccCoverageBoardResponse> Map(CoverageResult result, bool assignment = false,
+        bool released = false) => result.Failure switch
     {
         PositionCoverageFailure.Forbidden => Problem<OccCoverageBoardResponse>(403, "Position coverage access is forbidden.",
             result.Code),
@@ -258,7 +271,7 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         PositionCoverageFailure.Conflict => Coded<OccCoverageBoardResponse>(409, "The data changed; read the board again.",
             result.Code ?? "version_conflict"),
         PositionCoverageFailure.Rejected => Rejected(result.Reasons, result.Code, result.MissingPermits),
-        _ => Ok(Board(result.Board!)),
+        _ => Ok(Board(result.Board!, assignment, released)),
     };
 
     private ActionResult<OccCoverageBoardResponse> Rejected(IReadOnlyList<string> reasons, string? code,
@@ -296,20 +309,36 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         return new ObjectResult(problem) { StatusCode = status };
     }
 
-    private static OccCoverageBoardResponse Board(CoverageBoardData board) => new(board.StationId, board.StationCode, board.Date,
+    /// <summary>
+    /// The board as the API writes it. G1: with <paramref name="assignment"/> each coverage carries who assigned it and
+    /// when, and each stand its open coverages; with <paramref name="released"/> the released coverages of the date are
+    /// written too. Without them the keys are not written (expand).
+    /// </summary>
+    private static OccCoverageBoardResponse Board(CoverageBoardData board, bool assignment, bool released) => new(
+        board.StationId, board.StationCode, board.Date,
         board.Terminals.Select(item => new OccCoverageTerminalResponse(item.TerminalId, item.Code, item.Name,
             item.MaxStandsPerAgent, item.RequiresBridgeQualification)).ToArray(),
         board.Stands.Select(item => new OccCoverageStandResponse(item.StandId, item.Code, item.TerminalId, item.IsActive,
-            item.HasBoardingBridge, item.IsRemote, item.MaxAircraftSize, item.CoveredBy, item.Version)).ToArray(),
+            item.HasBoardingBridge, item.IsRemote, item.MaxAircraftSize, item.CoveredBy, item.Version,
+            assignment
+                ? item.Coverages.Select(window => new OccCoverageStandAssignmentResponse(window.AgentName, window.StartsAt,
+                    window.EndsAt, window.AssignedAt, window.AssignedByName, window.IsReinforcement)).ToArray()
+                : null)).ToArray(),
         board.Constraints.Select(item => new OccStandConstraintResponse(item.Id, item.StandId, item.StandCode,
             item.AffectedStandId, item.AffectedStandCode, item.Kind)).ToArray(),
         board.Agents.Select(item => new OccCoverageAgentResponse(item.AgentId, item.Name, item.EmployeeNumber, item.TerminalId,
             item.TerminalCode, item.ShiftStartsAt, item.ShiftEndsAt, item.IsJunior, item.HasAirportPermit,
             item.HasDriverLicense, item.HasBridgeQualification, item.IsAbsent)).ToArray(),
-        board.Coverages.Select(item => new OccCoverageResponse(item.Id, item.AgentId, item.AgentName, item.TerminalId,
-            item.TerminalCode, item.Stands.Select(stand => new OccCoverageStandRefResponse(stand.StandId, stand.Code)).ToArray(),
-            item.StartsAt, item.EndsAt, item.MentorAgentId, item.MentorName, item.VehicleCode, item.IsReinforcement)).ToArray(),
-        board.CanAssign, board.CanConfigure);
+        board.Coverages.Select(item => Coverage(item, assignment)).ToArray(),
+        board.CanAssign, board.CanConfigure,
+        released ? board.ReleasedCoverages.Select(item => Coverage(item, true)).ToArray() : null);
+
+    private static OccCoverageResponse Coverage(CoverageData item, bool assignment) => new(item.Id, item.AgentId,
+        item.AgentName, item.TerminalId, item.TerminalCode,
+        item.Stands.Select(stand => new OccCoverageStandRefResponse(stand.StandId, stand.Code)).ToArray(),
+        item.StartsAt, item.EndsAt, item.MentorAgentId, item.MentorName, item.VehicleCode, item.IsReinforcement,
+        assignment ? item.AssignedAt : null, assignment ? item.AssignedByName : null,
+        assignment ? item.ReleasedAt : null, assignment ? item.ReleasedByName : null);
 
     private bool TryAccount(out Guid actorId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out actorId) && actorId != Guid.Empty;

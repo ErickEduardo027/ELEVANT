@@ -24546,6 +24546,7 @@
         "tags": [
           "OccCoverage"
         ],
+        "summary": "The coverage board of a station and date. G1: with `includeAssignment=true` every coverage also carries when\nand by whom OCC assigned it (`assignedAt`, `assignedByName`) and every stand its open coverages\n(`coverages`: agent, window, assignment); `includeReleased=true` does the same and adds the coverages of\nthe date OCC released (`releasedCoverages`, with `releasedAt` and `releasedByName`). Without them,\nand in the board the commands answer, the keys are not written: a client deployed before them validates the\nboard's keys and keeps accepting it (expand).",
         "operationId": "GetOccCoverage",
         "parameters": [
           {
@@ -24564,6 +24565,22 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "includeAssignment",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "includeReleased",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -52442,6 +52459,13 @@
           },
           "canConfigure": {
             "type": "boolean"
+          },
+          "releasedCoverages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageResponse"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -52504,6 +52528,59 @@
           "vehicleCode": {
             "type": "string",
             "nullable": true
+          },
+          "isReinforcement": {
+            "type": "boolean"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "assignedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "releasedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "releasedByName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCoverageStandAssignmentResponse": {
+        "required": [
+          "agentName",
+          "assignedAt",
+          "assignedByName",
+          "endsAt",
+          "isReinforcement",
+          "startsAt"
+        ],
+        "type": "object",
+        "properties": {
+          "agentName": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assignedByName": {
+            "type": "string"
           },
           "isReinforcement": {
             "type": "boolean"
@@ -52573,6 +52650,13 @@
           },
           "version": {
             "type": "string"
+          },
+          "coverages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageStandAssignmentResponse"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false

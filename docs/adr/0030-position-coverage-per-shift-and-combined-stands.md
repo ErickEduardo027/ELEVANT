@@ -90,6 +90,8 @@ Hasta ahora la asignación tenía estas limitaciones:
 
 > **Actualización (19 de noviembre de 2026, hallazgo N26).** «Quién la cubre» era la lista de nombres del día (`coveredBy`), y el mapa la leía como si fuera la de ahora. `GET occ/positions` acepta `includeCoverage=true`: entonces cada posición trae también sus ventanas de cobertura de esa fecha (`coverage`: el agente, el inicio, el fin y si es un refuerzo; vacía si nadie la cubre ese día), las mismas coberturas no liberadas que dan los nombres. Sin el parámetro, y en la respuesta de los comandos de posiciones, el tablero no cambia, clave por clave, para que un cliente desplegado antes lo siga validando. AVIAM Web las pide y dice quién cubre la posición ahora: ver la actualización de esa fecha en [ADR-0043](0043-occ-maps-one-engine.md).
 
+> **Actualización (21 de noviembre de 2026, G1).** En la revisión del 16 de noviembre se pidió ver en «Cobertura de posiciones», junto a «Cubierta por», cuándo se asignó la cobertura y para cuándo cubre. `GET occ/coverage` acepta `includeAssignment=true`: cada cobertura trae `assignedAt` y `assignedByName`, y cada posición, `coverages` (agente, horario, asignación y si es un refuerzo). `includeReleased=true` añade `releasedCoverages`, las liberadas del día con `releasedAt` y `releasedByName`. Los datos ya existían en `PositionCoverage`; no hay migración. Sin los parámetros, y en la respuesta de los comandos, el tablero no cambia, clave por clave (expand).
+
 **Módulo `operations.coverage`** («Cobertura de posiciones»):
 - `read`;
 - `assign`, para asignar posiciones;

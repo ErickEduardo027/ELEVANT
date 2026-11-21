@@ -174,6 +174,19 @@ lectura que las pidió: un tablero que no las pidió, o el de un comando, con
 tablero es el que valida el AVIAM Web desplegado antes. Una API anterior que no
 conoce el parámetro responde sin ellas, y la lectura sigue siendo válida.
 
+Tablero de cobertura (G1): `getOccCoverage(stationId, date, { includeAssignment?,
+includeReleased? })`. Con `includeAssignment: true` la URL lleva
+`includeAssignment=true`: cada cobertura trae `assignedAt` y `assignedByName`
+(cuándo la asignó OCC y el nombre visible de quien lo hizo) y cada posición trae
+`coverages`, sus coberturas abiertas por inicio (`agentName`, `startsAt`,
+`endsAt`, `assignedAt`, `assignedByName`, `isReinforcement`; vacía si nadie la
+cubre). `includeReleased: true` hace lo mismo y añade `releasedCoverages`, las
+coberturas del día que OCC liberó, con `releasedAt` y `releasedByName`. Como en
+N26, el validador solo acepta esas claves en una lectura que las pidió: un
+tablero que no las pidió, o el de un comando, que las traiga es una respuesta
+malformada. Una API anterior que no conoce los parámetros responde sin ellas y la
+lectura sigue siendo válida.
+
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,
