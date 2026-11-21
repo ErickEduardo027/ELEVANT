@@ -17,7 +17,7 @@ namespace Elevant.Infrastructure.Documents;
 internal sealed class ReportPdfRenderer
 {
     internal const string EmptyState = "No hay datos para estos filtros.";
-    internal const string FooterText = "ELEVANT · AVIAM · Uso interno";
+    internal const string FooterText = "ELEVANT · AVIAM";
 
     private const double Margin = 36;
     private const double CellPadding = 4;
@@ -45,7 +45,7 @@ internal sealed class ReportPdfRenderer
         using var document = new PdfDocument();
         document.Info.Title = report.StationCode is { } code ? $"{report.Title} · {code}" : report.Title;
         document.Info.Author = "ELEVANT";
-        document.Info.Subject = report.Notice is { } notice ? $"{report.Area} · {notice}" : $"{report.Area} · uso interno";
+        document.Info.Subject = report.Notice is { } notice ? $"{report.Area} · {notice}" : $"{report.Area} · {report.Audience.ToLowerInvariant()}";
         new Writer(document, report, layout).Write();
         DrawFooters(document, report);
         using var output = new MemoryStream();
@@ -64,7 +64,7 @@ internal sealed class ReportPdfRenderer
             var width = page.Width.Point - 2 * Margin;
             var top = page.Height.Point - FooterHeight + 8;
             graphics.DrawLine(new XPen(Rule, 0.6), Margin, top, Margin + width, top);
-            var footer = $"{FooterText} — Página {index + 1} de {total}";
+            var footer = $"{FooterText} · {report.Audience} — Página {index + 1} de {total}";
             graphics.DrawString(footer, small, new XSolidBrush(Muted), new XRect(Margin, top + 5, width, 10),
                 XStringFormats.TopRight);
             // The left side wraps (two short lines at most fit the footer); nothing is cut.

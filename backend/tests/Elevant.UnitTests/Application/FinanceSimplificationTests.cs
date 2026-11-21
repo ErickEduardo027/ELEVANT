@@ -14,9 +14,9 @@ public sealed class FinanceSimplificationTests
     private static readonly DateTimeOffset At = new(2026, 11, 5, 14, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void TheCatalogHasExactlyTheSixApprovedReports()
+    public void TheCatalogHasExactlyTheApprovedReports()
     {
-        Assert.Equal(["revenue", "receivables", "collections", "payables", "charges", "sales"],
+        Assert.Equal(["revenue", "receivables", "collections", "payables", "charges", "sales", "invoices", "receipts"],
             FinanceReports.All.Select(report => report.Key).ToArray());
         Assert.Equal("Ventas (e-CF simulado)", FinanceReports.All.Single(report => report.Key == "sales").Title);
         Assert.All(FinanceReports.All, report =>

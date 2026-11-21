@@ -44,15 +44,15 @@ public sealed class FinanceReportsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     public async Task<IActionResult> Get(string reportKey, [FromQuery, BindRequired] DateOnly from,
         [FromQuery, BindRequired] DateOnly to, [FromQuery] Guid? stationId, [FromQuery] Guid? airlineId,
-        [FromQuery] string? currency, CancellationToken cancellationToken)
+        [FromQuery] string? currency, [FromQuery] string? status, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return FinanceResults.Unauthorized(this);
         if (FinanceReports.All.All(item => item.Key != reportKey))
             return FinanceResults.Coded(this, StatusCodes.Status400BadRequest, "Unknown finance report.",
                 FinanceResults.UnknownReportCode);
-        if (!IsValidFilter(from, to, currency)) return InvalidQuery();
-        var report = await store.GetAsync(actorId, reportKey, new FinanceReportFilter(from, to, stationId, airlineId, currency),
-            cancellationToken);
+        if (!IsValidFilter(reportKey, from, to, currency, status)) return InvalidQuery();
+        var report = await store.GetAsync(actorId, reportKey,
+            new FinanceReportFilter(from, to, stationId, airlineId, currency) { Status = status }, cancellationToken);
         return report is null ? FinanceResults.Forbidden(this, "Finance report access is forbidden.") : Ok(report);
     }
 
@@ -67,7 +67,8 @@ public sealed class FinanceReportsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     public async Task<IActionResult> Export(string reportKey, [FromQuery, BindRequired] string format,
         [FromQuery, BindRequired] DateOnly from, [FromQuery, BindRequired] DateOnly to, [FromQuery] Guid? stationId,
-        [FromQuery] Guid? airlineId, [FromQuery] string? currency, CancellationToken cancellationToken)
+        [FromQuery] Guid? airlineId, [FromQuery] string? currency, [FromQuery] string? status,
+        CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return FinanceResults.Unauthorized(this);
         if (FinanceReports.All.All(item => item.Key != reportKey))
@@ -76,11 +77,11 @@ public sealed class FinanceReportsController(
         if (format is not ("csv" or "pdf" or "xlsx"))
             return FinanceResults.Coded(this, StatusCodes.Status400BadRequest, "Unknown export format.",
                 FinanceResults.InvalidExportFormatCode);
-        if (!IsValidFilter(from, to, currency)) return InvalidQuery();
+        if (!IsValidFilter(reportKey, from, to, currency, status)) return InvalidQuery();
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null || !actor.HasPermission("finance.reports.export"))
             return FinanceResults.Forbidden(this, "Finance report export is forbidden.");
-        var filter = new FinanceReportFilter(from, to, stationId, airlineId, currency);
+        var filter = new FinanceReportFilter(from, to, stationId, airlineId, currency) { Status = status };
         var report = await store.GetAsync(actorId, reportKey, filter, cancellationToken);
         if (report is null) return FinanceResults.Forbidden(this, "Finance report access is forbidden.");
         await audit.RecordAsync(actorId, reportKey, format, filter, cancellationToken);
@@ -93,10 +94,14 @@ public sealed class FinanceReportsController(
             : File(engine.RenderPdf(document), "application/pdf", $"{name}.pdf");
     }
 
-    /// <summary>An ordered period of at most two years and, when given, a currency Finance invoices in.</summary>
-    private static bool IsValidFilter(DateOnly from, DateOnly to, string? currency) =>
+    /// <summary>
+    /// An ordered period of at most two years, when given a currency Finance invoices in and, only for «Facturas
+    /// emitidas», a known invoice status.
+    /// </summary>
+    private static bool IsValidFilter(string reportKey, DateOnly from, DateOnly to, string? currency, string? status) =>
         to != DateOnly.MaxValue && to >= from && to.DayNumber - from.DayNumber <= MaxPeriodDays &&
-        currency is null or "USD" or "DOP";
+        currency is null or "USD" or "DOP" &&
+        (status is null || reportKey == "invoices" && InvoiceStatusLabels.IsKnownFilter(status));
 
     private ObjectResult InvalidQuery() => FinanceResults.Coded(this, StatusCodes.Status400BadRequest,
         "The report query is invalid.", FinanceResults.InvalidReportQueryCode);

@@ -142,6 +142,12 @@ public sealed record ReportDocument(string Area, string Title, IReadOnlyList<Rep
     /// <summary>A legend every page carries (Finance: «Simulación — sin validez fiscal»).</summary>
     public string? Notice { get; init; }
 
+    /// <summary>
+    /// Who the document is for, printed in every footer: «Uso interno» for AVIAM; a document the airline portal hands
+    /// to the airline says «Documento para la aerolínea».
+    /// </summary>
+    public string Audience { get; init; } = "Uso interno";
+
     /// <summary>Totals computed from the rows (<see cref="ReportTotals"/>); a document may bring its own.</summary>
     public IReadOnlyList<ReportTotalRow>? Totals { get; init; }
 

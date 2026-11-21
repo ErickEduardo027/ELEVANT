@@ -25,7 +25,8 @@ internal sealed partial class EfFinanceReportStore(
     {
         var definition = FinanceReports.All.SingleOrDefault(item => item.Key == reportKey);
         if (definition is null || filter is null || filter.To == DateOnly.MaxValue || filter.To < filter.From || filter.To.DayNumber - filter.From.DayNumber > 731 ||
-            filter.CurrencyCode is not (null or "USD" or "DOP"))
+            filter.CurrencyCode is not (null or "USD" or "DOP") || !InvoiceStatusLabels.IsKnownFilter(filter.Status) ||
+            filter.Status is not null && reportKey != "invoices")
             return null;
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null || !actor.HasPermission("finance.reports.read") || !actor.Memberships.Any(membership =>
@@ -50,6 +51,8 @@ internal sealed partial class EfFinanceReportStore(
             "payables" => await PayablesReportAsync(scope, cancellationToken),
             "charges" => await ChargesAsync(scope, cancellationToken),
             "sales" => await SalesAsync(scope, cancellationToken),
+            "invoices" => await IssuedInvoicesAsync(scope, cancellationToken),
+            "receipts" => await ReceiptsAsync(scope, cancellationToken),
             _ => throw new InvalidOperationException("The report catalog and its builders diverged."),
         };
         return new FinanceReportData(definition.Key, definition.Title, definition.Description, filter.From, filter.To,
@@ -80,6 +83,7 @@ internal sealed partial class EfFinanceReportStore(
                 .Select(item => item.Name).SingleOrDefaultAsync(cancellationToken) ?? "No encontrada"));
         else filters.Add(new("Aerolínea", "Todas"));
         filters.Add(new("Moneda", filter.CurrencyCode ?? "Todas"));
+        if (filter.Status is { } status) filters.Add(new("Estado", InvoiceStatusLabels.Label(status)));
         return filters;
     }
 
