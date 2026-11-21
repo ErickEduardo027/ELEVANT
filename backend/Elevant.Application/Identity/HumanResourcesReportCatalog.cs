@@ -99,9 +99,9 @@ public static class HumanResourcesReportCatalog
                 return
                 [
                     new("Documentos", ReportFormat.Integer(count),
-                        $"de {ReportFormat.Integer(rows.Select(row => row[1].Text).Distinct(StringComparer.Ordinal).Count())} agentes"),
-                    new("Ya vencidos", ReportFormat.Integer(expired), ReportFormat.OfTotal(expired, count, "documentos")),
-                    new("Vencen en 30 días", ReportFormat.Integer(soon), ReportFormat.OfTotal(soon, count, "documentos")),
+                        $"de {ReportFormat.Count(rows.Select(row => row[1].Text).Distinct(StringComparer.Ordinal).Count(), "agente", "agentes")}"),
+                    new("Ya vencidos", ReportFormat.Integer(expired), ReportFormat.OfTotal(expired, count, "documento", "documentos")),
+                    new("Vencen en 30 días", ReportFormat.Integer(soon), ReportFormat.OfTotal(soon, count, "documento", "documentos")),
                 ];
             }
             case HumanResourcesReportKind.AccountMovements:
@@ -110,21 +110,21 @@ public static class HumanResourcesReportCatalog
                 return
                 [
                     new("Movimientos", ReportFormat.Integer(count)),
-                    new("Altas", ReportFormat.Integer(Of("Alta de cuenta")), ReportFormat.OfTotal(Of("Alta de cuenta"), count, "movimientos")),
+                    new("Altas", ReportFormat.Integer(Of("Alta de cuenta")), ReportFormat.OfTotal(Of("Alta de cuenta"), count, "movimiento", "movimientos")),
                     new("Desactivaciones", ReportFormat.Integer(Of("Cuenta desactivada")),
-                        ReportFormat.OfTotal(Of("Cuenta desactivada"), count, "movimientos")),
+                        ReportFormat.OfTotal(Of("Cuenta desactivada"), count, "movimiento", "movimientos")),
                     new("Reactivaciones", ReportFormat.Integer(Of("Cuenta reactivada")),
-                        ReportFormat.OfTotal(Of("Cuenta reactivada"), count, "movimientos")),
+                        ReportFormat.OfTotal(Of("Cuenta reactivada"), count, "movimiento", "movimientos")),
                 ];
             }
             case HumanResourcesReportKind.StaffDistribution:
                 return
                 [
                     new("Turnos", ReportFormat.Integer(count),
-                        $"en {ReportFormat.Integer(rows.Select(row => row[0].Text).Distinct(StringComparer.Ordinal).Count())} días"),
+                        $"en {ReportFormat.Count(rows.Select(row => row[0].Text).Distinct(StringComparer.Ordinal).Count(), "día", "días")}"),
                     new("Agentes programados", ReportFormat.Integer(rows.Select(row => row[2].Text).Distinct(StringComparer.Ordinal).Count())),
                     new("Sin puesto asignado", ReportFormat.Integer(rows.Count(row => row[4].Text == "—")),
-                        ReportFormat.OfTotal(rows.Count(row => row[4].Text == "—"), count, "turnos")),
+                        ReportFormat.OfTotal(rows.Count(row => row[4].Text == "—"), count, "turno", "turnos")),
                 ];
             case HumanResourcesReportKind.QualificationCoverage:
             {
@@ -133,8 +133,8 @@ public static class HumanResourcesReportCatalog
                 var complete = rows.Count(row => (row[2].Number ?? 0m) > 0 && row[2].Number == row[3].Number);
                 var metrics = new List<ReportMetric>
                 {
-                    new("Equipos con cobertura completa", ReportFormat.Integer(complete), ReportFormat.OfTotal(complete, count, "equipos")),
-                    new("Habilitaciones vigentes", ReportFormat.Integer(qualified), ReportFormat.OfTotal(qualified, eligible, "elegibles")),
+                    new("Equipos con cobertura completa", ReportFormat.Integer(complete), ReportFormat.OfTotal(complete, count, "equipo", "equipos")),
+                    new("Habilitaciones vigentes", ReportFormat.Integer(qualified), ReportFormat.OfTotal(qualified, eligible, "elegible", "elegibles")),
                 };
                 if (snapshot.StationAgents is { } agents)
                     metrics.Insert(0, new("Agentes activos de la estación", ReportFormat.Integer(agents),

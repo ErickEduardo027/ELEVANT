@@ -158,10 +158,10 @@ public sealed class AirlinePortalReports(
             Summary =
             [
                 new ReportMetric("Operaciones", ReportFormat.Integer(total), "en el período"),
-                new ReportMetric("Aprobadas por AVIAM", ReportFormat.Integer(approved), ReportFormat.OfTotal(approved, total, "operaciones")),
-                new ReportMetric("Canceladas", ReportFormat.Integer(cancelled), ReportFormat.OfTotal(cancelled, total, "operaciones")),
+                new ReportMetric("Aprobadas por AVIAM", ReportFormat.Integer(approved), ReportFormat.OfTotal(approved, total, "operación", "operaciones")),
+                new ReportMetric("Canceladas", ReportFormat.Integer(cancelled), ReportFormat.OfTotal(cancelled, total, "operación", "operaciones")),
                 new ReportMetric("Servicios ejecutados", ReportFormat.Integer(services),
-                    $"en {ReportFormat.Integer(approved)} operaciones aprobadas"),
+                    $"en {ReportFormat.Count(approved, "operación aprobada", "operaciones aprobadas")}"),
             ],
             Notes =
             [
@@ -213,9 +213,9 @@ public sealed class AirlinePortalReports(
         {
             new("Facturas", ReportFormat.Integer(invoices.Length), "emitidas en el período"),
             new("Pagadas", ReportFormat.Integer(invoices.Count(item => item.Status == InvoiceStatusLabels.Paid)),
-                ReportFormat.OfTotal(invoices.Count(item => item.Status == InvoiceStatusLabels.Paid), invoices.Length, "facturas")),
+                ReportFormat.OfTotal(invoices.Count(item => item.Status == InvoiceStatusLabels.Paid), invoices.Length, "factura", "facturas")),
             new("Vencidas", ReportFormat.Integer(invoices.Count(item => item.Status == InvoiceStatusLabels.Overdue)),
-                ReportFormat.OfTotal(invoices.Count(item => item.Status == InvoiceStatusLabels.Overdue), invoices.Length, "facturas")),
+                ReportFormat.OfTotal(invoices.Count(item => item.Status == InvoiceStatusLabels.Overdue), invoices.Length, "factura", "facturas")),
         };
         foreach (var group in invoices.GroupBy(item => item.Invoice.CurrencyCode).OrderBy(group => group.Key, StringComparer.Ordinal))
         {
@@ -223,7 +223,7 @@ public sealed class AirlinePortalReports(
             summary.Add(new ReportMetric($"Pagado {group.Key}", ReportFormat.Money(group.Sum(item => item.Paid), group.Key),
                 ReportFormat.Share(group.Sum(item => item.Paid), billed) is { } share ? $"{share} de {ReportFormat.Money(billed, group.Key)} facturado" : null));
             summary.Add(new ReportMetric($"Saldo {group.Key}", ReportFormat.Money(group.Sum(item => item.Invoice.Balance), group.Key),
-                $"en {group.Count(item => item.Invoice.Balance > 0m)} facturas con saldo"));
+                $"en {ReportFormat.Count(group.Count(item => item.Invoice.Balance > 0m), "factura con saldo", "facturas con saldo")}"));
         }
         return TabularReportResult.Of(new ReportDocument(Area, definition.Title, definition.Columns, rows)
         {

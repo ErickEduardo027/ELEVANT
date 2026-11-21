@@ -41,6 +41,17 @@ public static class ReportFormat
         return Share(part, whole) is { } share ? $"{text} ({share})" : text;
     }
 
+    /// <summary>«8 de 50 facturas» with its share, the noun agreeing with the whole («de 1 factura»).</summary>
+    public static string OfTotal(decimal part, decimal whole, string singular, string plural) =>
+        OfTotal(part, whole, Noun(whole, singular, plural));
+
+    /// <summary>«1 cobro», «3 cobros»: a counted noun that agrees with its number.</summary>
+    public static string Count(decimal count, string singular, string plural) =>
+        $"{Integer(count)} {Noun(count, singular, plural)}";
+
+    /// <summary>The singular for exactly one, the plural otherwise («0 cobros»).</summary>
+    public static string Noun(decimal count, string singular, string plural) => count == 1 ? singular : plural;
+
     public static string Date(DateOnly value) => value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
 
     /// <summary>Minutes as «h:mm» («1:05» is an hour and five minutes); negatives keep their sign.</summary>

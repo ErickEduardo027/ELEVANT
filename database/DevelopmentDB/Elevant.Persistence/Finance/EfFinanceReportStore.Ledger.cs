@@ -56,14 +56,14 @@ internal sealed partial class EfFinanceReportStore
         {
             new("Facturas", Number(rows.Length), "number", null, "emitidas en el período"),
             new("Vencidas", Number(rows.Count(item => item.Status == InvoiceStatusLabels.Overdue)), "number", null,
-                $"de {rows.Length} facturas"),
+                $"de {Counted(rows.Length, "factura", "facturas")}"),
             new("Pagadas", Number(rows.Count(item => item.Status == InvoiceStatusLabels.Paid)), "number", null,
-                $"de {rows.Length} facturas"),
+                $"de {Counted(rows.Length, "factura", "facturas")}"),
         };
         foreach (var group in rows.GroupBy(item => item.Invoice.CurrencyCode).OrderBy(group => group.Key, StringComparer.Ordinal))
         {
             var billed = group.Sum(item => item.Invoice.Total);
-            summary.Add(new($"Facturado {group.Key}", Money(billed), "money", group.Key, $"en {group.Count()} facturas"));
+            summary.Add(new($"Facturado {group.Key}", Money(billed), "money", group.Key, $"en {Counted(group.Count(), "factura", "facturas")}"));
             summary.Add(new($"Saldo {group.Key}", Money(group.Sum(item => item.Balance)), "money", group.Key,
                 Share(group.Sum(item => item.Balance), billed, "de lo facturado")));
         }
@@ -142,12 +142,12 @@ internal sealed partial class EfFinanceReportStore
         {
             new("Cobros", Number(ordered.Length), "number", null, "recibidos en el período"),
             new("Con remanente sin aplicar", Number(ordered.Count(row => row.Remaining > 0m)), "number", null,
-                $"de {ordered.Length} cobros"),
+                $"de {Counted(ordered.Length, "cobro", "cobros")}"),
         };
         foreach (var group in ordered.GroupBy(row => row.Currency).OrderBy(group => group.Key, StringComparer.Ordinal))
         {
             var received = group.Sum(row => row.Received);
-            summary.Add(new($"Recibido {group.Key}", Money(received), "money", group.Key, $"en {group.Count()} cobros"));
+            summary.Add(new($"Recibido {group.Key}", Money(received), "money", group.Key, $"en {Counted(group.Count(), "cobro", "cobros")}"));
             summary.Add(new($"Aplicado {group.Key}", Money(group.Sum(row => row.Applied)), "money", group.Key,
                 Share(group.Sum(row => row.Applied), received, "de lo recibido")));
             summary.Add(new($"Remanente {group.Key}", Money(group.Sum(row => row.Remaining)), "money", group.Key,
@@ -169,4 +169,7 @@ internal sealed partial class EfFinanceReportStore
         string Reference, string Kind, decimal Received, decimal Applied, decimal Refunded, decimal Remaining);
 
     private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>«1 factura», «3 facturas»: the noun agrees with its count.</summary>
+    private static string Counted(int count, string singular, string plural) => $"{Number(count)} {(count == 1 ? singular : plural)}";
 }

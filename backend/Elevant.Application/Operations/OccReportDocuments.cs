@@ -59,7 +59,7 @@ public static class OccReportDocuments
             decimal.TryParse(row[index].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null;
         int Where(Func<IReadOnlyList<OccReportCell>, bool> predicate) => rows.Count(predicate);
         int Distinct(int index) => rows.Select(row => row[index].Value).Distinct(StringComparer.Ordinal).Count();
-        string Of(int part, int whole, string noun) => ReportFormat.OfTotal(part, whole, noun);
+        string Of(int part, int whole, string singular, string plural) => ReportFormat.OfTotal(part, whole, singular, plural);
         var approved = OperationLabels.Status(GroundOperationStatus.Approved);
         var returned = OperationLabels.Status(GroundOperationStatus.Returned);
         switch (kind)
@@ -67,13 +67,13 @@ public static class OccReportDocuments
             case OccReportKind.Operations:
                 return
                 [
-                    new("Operaciones", ReportFormat.Integer(count), $"de {ReportFormat.Integer(Distinct(2))} aerolíneas"),
+                    new("Operaciones", ReportFormat.Integer(count), $"de {ReportFormat.Count(Distinct(2), "aerolínea", "aerolíneas")}"),
                     new("Aprobadas", ReportFormat.Integer(Where(row => row[4].Value == approved)),
-                        Of(Where(row => row[4].Value == approved), count, "operaciones")),
+                        Of(Where(row => row[4].Value == approved), count, "operación", "operaciones")),
                     new("Devueltas", ReportFormat.Integer(Where(row => row[4].Value == returned)),
-                        Of(Where(row => row[4].Value == returned), count, "operaciones")),
+                        Of(Where(row => row[4].Value == returned), count, "operación", "operaciones")),
                     new("Sin agente asignado", ReportFormat.Integer(Where(row => row[9].Value == "Sin asignar")),
-                        Of(Where(row => row[9].Value == "Sin asignar"), count, "operaciones")),
+                        Of(Where(row => row[9].Value == "Sin asignar"), count, "operación", "operaciones")),
                 ];
             case OccReportKind.TurnaroundTimes:
             {
@@ -85,7 +85,7 @@ public static class OccReportDocuments
                     new("Operaciones terminadas", ReportFormat.Integer(count)),
                     new("Duración real promedio", actual.Length == 0 ? "—" : ReportFormat.Duration(actual.Average()),
                         "horas:minutos"),
-                    new("Más largas que lo planificado", ReportFormat.Integer(late), Of(late, compared.Length, "con plan")),
+                    new("Más largas que lo planificado", ReportFormat.Integer(late), Of(late, compared.Length, "con plan", "con plan")),
                 ];
             }
             case OccReportKind.ServicesByAirline:
@@ -95,7 +95,7 @@ public static class OccReportDocuments
                 return
                 [
                     new("Aerolíneas con servicios", ReportFormat.Integer(Distinct(0))),
-                    new("Servicios distintos", ReportFormat.Integer(Distinct(1)), $"en {ReportFormat.Integer(count)} filas"),
+                    new("Servicios distintos", ReportFormat.Integer(Distinct(1)), $"en {ReportFormat.Count(count, "fila", "filas")}"),
                     new("Cantidad ejecutada", ReportFormat.Decimal(executed, executed == decimal.Truncate(executed) ? 0 : 2),
                         ReportFormat.Share(executed, contracted) is { } share ? $"{share} de lo contratado" : null),
                 ];
@@ -107,9 +107,9 @@ public static class OccReportDocuments
                 return
                 [
                     new("Decisiones de revisión", ReportFormat.Integer(count),
-                        $"de {ReportFormat.Integer(Distinct(1))} operaciones"),
-                    new("Devueltas", ReportFormat.Integer(back), Of(back, count, "decisiones")),
-                    new("Con incidencias", ReportFormat.Integer(incidents), Of(incidents, count, "decisiones")),
+                        $"de {ReportFormat.Count(Distinct(1), "operación", "operaciones")}"),
+                    new("Devueltas", ReportFormat.Integer(back), Of(back, count, "decisión", "decisiones")),
+                    new("Con incidencias", ReportFormat.Integer(incidents), Of(incidents, count, "decisión", "decisiones")),
                 ];
             }
             case OccReportKind.AgentProductivity:
@@ -121,7 +121,7 @@ public static class OccReportDocuments
                 [
                     new("Agentes con trabajo", ReportFormat.Integer(count)),
                     new("Operaciones trabajadas", ReportFormat.Integer(operations), "un relevo cuenta para cada agente"),
-                    new("Aprobadas", ReportFormat.Integer(approvedWork), ReportFormat.OfTotal(approvedWork, operations, "trabajadas")),
+                    new("Aprobadas", ReportFormat.Integer(approvedWork), ReportFormat.OfTotal(approvedWork, operations, "trabajada", "trabajadas")),
                     new("Tiempo trabajado", ReportFormat.Duration(minutes), "horas:minutos"),
                 ];
             }
@@ -133,8 +133,8 @@ public static class OccReportDocuments
                 return
                 [
                     new("Operaciones", ReportFormat.Integer(count)),
-                    new("Excedieron el tiempo permitido", ReportFormat.Integer(over), Of(over, measured.Length, "medidas")),
-                    new("Con demoras IATA", ReportFormat.Integer(delayed), Of(delayed, count, "operaciones")),
+                    new("Excedieron el tiempo permitido", ReportFormat.Integer(over), Of(over, measured.Length, "medida", "medidas")),
+                    new("Con demoras IATA", ReportFormat.Integer(delayed), Of(delayed, count, "operación", "operaciones")),
                     new("Desviaciones", ReportFormat.Integer(rows.Sum(row => Number(row, 14) ?? 0m))),
                 ];
             }
@@ -144,10 +144,10 @@ public static class OccReportDocuments
                 var reinforcements = Where(row => row[10].Value == "Sí");
                 return
                 [
-                    new("Asignaciones", ReportFormat.Integer(count), $"de {ReportFormat.Integer(Distinct(3))} agentes"),
-                    new("Vigentes", ReportFormat.Integer(count - released), Of(count - released, count, "asignaciones")),
-                    new("Liberadas", ReportFormat.Integer(released), Of(released, count, "asignaciones")),
-                    new("Refuerzos", ReportFormat.Integer(reinforcements), Of(reinforcements, count, "asignaciones")),
+                    new("Asignaciones", ReportFormat.Integer(count), $"de {ReportFormat.Count(Distinct(3), "agente", "agentes")}"),
+                    new("Vigentes", ReportFormat.Integer(count - released), Of(count - released, count, "asignación", "asignaciones")),
+                    new("Liberadas", ReportFormat.Integer(released), Of(released, count, "asignación", "asignaciones")),
+                    new("Refuerzos", ReportFormat.Integer(reinforcements), Of(reinforcements, count, "asignación", "asignaciones")),
                 ];
             }
             default:

@@ -88,14 +88,14 @@ public static class AccountStatementDocuments
         var summary = new List<ReportMetric>();
         var open = input.Invoices.Count(invoice => invoice.Balance > 0m);
         summary.Add(new ReportMetric("Facturas con saldo", ReportFormat.Integer(open),
-            ReportFormat.OfTotal(open, input.Invoices.Count, "facturas emitidas")));
+            ReportFormat.OfTotal(open, input.Invoices.Count, "factura emitida", "facturas emitidas")));
         foreach (var aging in input.Aging.OrderBy(item => item.CurrencyCode, StringComparer.Ordinal))
         {
             var currency = aging.CurrencyCode;
             var overdue = aging.Days1To30 + aging.Days31To60 + aging.Days61To90 + aging.Days91Plus;
             var owed = aging.Current + overdue;
             summary.Add(new ReportMetric($"Saldo de facturas {currency}", ReportFormat.Money(aging.Balance, currency),
-                $"en {input.Invoices.Count(invoice => invoice.CurrencyCode == currency && invoice.Balance > 0m)} facturas con saldo"));
+                $"en {ReportFormat.Count(input.Invoices.Count(invoice => invoice.CurrencyCode == currency && invoice.Balance > 0m), "factura con saldo", "facturas con saldo")}"));
             summary.Add(new ReportMetric($"Vencido {currency}", ReportFormat.Money(overdue, currency), Of(overdue, owed)));
             summary.Add(new ReportMetric($"Por vencer {currency}", ReportFormat.Money(aging.Current, currency), Of(aging.Current, owed)));
             // The overdue buckets and the unapplied receipts only when they hold something: a zero adds nothing to read.
