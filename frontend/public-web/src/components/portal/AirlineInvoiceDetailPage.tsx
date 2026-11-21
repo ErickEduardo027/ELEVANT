@@ -90,18 +90,22 @@ export function AirlineInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
               <DataTable<Line> caption={`Líneas de ${invoiceTitle(invoice)}`} rows={detail.lines} rowKey={line => line.id}
                 nested={line => line.parentLineNumber !== null} empty="La factura no tiene líneas."
                 totalLabel="Total de la factura (con ITBIS)" columns={[
-                  { key: "operation", header: "Operación", cell: line => <span className={styles.cellStack}>{line.operationCode}
+                  { key: "operation", header: "Operación", nowrap: true, cell: line => <span className={styles.cellStack}>{line.operationCode}
                     <span className={styles.subtle}>{formatDate(line.operationDate)}</span></span> },
-                  { key: "service", header: "Servicio", cell: line => <span className={styles.cellStack}>
+                  { key: "service", header: "Servicio", minWidth: "15rem", cell: line => <span className={styles.cellStack}>
                     <span>{KIND[line.kind] ?? line.kind} · {line.serviceName}</span>
                     {line.reason && <span className={styles.subtle}>{line.reason}</span>}</span> },
-                  { key: "quantity", header: "Cantidad", numeric: true, cell: line => <span className={styles.cellStack}>
+                  { key: "quantity", header: "Cantidad", numeric: true, nowrap: true, cell: line => <span className={styles.cellStack}>
                     {QUANTITY.format(line.quantity)}
                     {line.billingUnit && <span className={styles.subtle}>por {billingUnitLabel(line.billingUnit)}</span>}</span> },
                   { key: "price", header: "Precio unitario", numeric: true, cell: line => formatAmount(line.unitPrice) },
-                  { key: "amount", header: `Importe (${currency})`, label: "Importe", numeric: true,
+                  { key: "amount", header: invoice.fiscalNumber ? `Total con ITBIS (${currency})` : `Importe (${currency})`,
+                    label: invoice.fiscalNumber ? "Total con ITBIS" : "Importe", numeric: true,
                     cell: line => formatAmount(line.amount), total: formatMoney(currency, invoice.total) },
                 ]} />
+              {/* The portal API gives each line's gross only; net and ITBIS per line need the backend. */}
+              {invoice.fiscalNumber && detail.lines.length > 0 && <p className={styles.subtle}>
+                El precio unitario no incluye ITBIS (18 %); el total de cada línea sí lo incluye.</p>}
             </section>
             <section className={styles.section} aria-label="Pagos de la factura">
               <h2>Pagos</h2>

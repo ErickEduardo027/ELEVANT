@@ -350,6 +350,12 @@ it("opens an invoice detail and downloads its PDF by invoice id", async () => {
   const line = await within(detail).findByRole("row", { name: /DEV-TAT-0021/ });
   expect(line).toHaveTextContent(/Servicio · Ground power/);
   expect(line).toHaveTextContent("148.09");
+  // Until the API gives net and ITBIS per line, the column says its figure includes ITBIS and a note explains it.
+  expect(within(detail).getByRole("columnheader", { name: "Total con ITBIS (USD)" })).toBeInTheDocument();
+  expect(within(detail).getByText("El precio unitario no incluye ITBIS (18 %); el total de cada línea sí lo incluye."))
+    .toBeInTheDocument();
+  expect(within(detail).getByRole("columnheader", { name: "Servicio" })).toHaveAttribute("style", "min-width: 15rem;");
+  expect(within(line).getByText("DEV-TAT-0021").closest("td")).toHaveAttribute("data-nowrap");
   expect(within(detail).getByRole("heading", { level: 1, name: "Factura E310000000001" })).toBeInTheDocument();
   expect(within(detail).getByText("Vence el 05/12/2026")).toBeInTheDocument();
   expect(within(detail).getByText(/sin validez fiscal/)).toBeInTheDocument();

@@ -187,16 +187,15 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
     {!items && !history.failed && <p role="status">Cargando pagos con tarjeta…</p>}
     {items && <DataTable<CardPaymentAttemptResponse> caption="Intentos de pago con tarjeta" rows={items} rowKey={item => item.id}
       empty="Sin pagos con tarjeta." columns={[
-        { key: "card", header: "Intento", cell: item => <span className={styles.cellStack}>
+        { key: "card", header: "Intento", nowrap: true, cell: item => <span className={styles.cellStack}>
           <span>{item.brand} •••• {item.last4}</span>
+          <span>{money(item.amount, item.currencyCode)}</span>
           <span className={styles.subtle}>{formatDateTime(item.attemptedAt)}</span></span> },
-        { key: "status", header: "Estado", cell: item => <span className={styles.cellStack}>
+        { key: "status", header: "Estado", minWidth: "9rem", cell: item => <span className={styles.cellStack}>
           <StatusBadge tone={(ATTEMPT[item.status] ?? ATTEMPT.Error).tone}>{(ATTEMPT[item.status] ?? ATTEMPT.Error).text}</StatusBadge>
           {item.authorizationCode && <span className={styles.subtle}>Autorización {item.authorizationCode}</span>}
-          {item.declineCode && <span className={styles.subtle}>{DECLINES[item.declineCode] ?? item.declineCode}</span>}</span> },
-        { key: "amount", header: "Importe", numeric: true, cell: item => <span className={styles.cellStack}>
-          {money(item.amount, item.currencyCode)}
-          {item.status === "Approved" && <ReceiptButton attempt={item} variant="ghost" />}</span> },
+          {item.declineCode && <span className={styles.subtle}>{DECLINES[item.declineCode] ?? item.declineCode}</span>}
+          {item.status === "Approved" && <span><ReceiptButton attempt={item} variant="ghost" /></span>}</span> },
       ]} />}
   </section>;
 }

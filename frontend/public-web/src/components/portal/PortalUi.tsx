@@ -45,6 +45,10 @@ export interface Column<T> {
   numeric?: boolean;
   /** The cell of the totals row. */
   total?: ReactNode;
+  /** The narrowest the column may get (a text column that should not break word by word). */
+  minWidth?: string;
+  /** Keeps the column's cells on one line, so it takes only the width it needs. */
+  nowrap?: boolean;
 }
 
 export function DataTable<T>({ caption, columns, rows, rowKey, nested, empty, totalLabel }: {
@@ -66,10 +70,11 @@ export function DataTable<T>({ caption, columns, rows, rowKey, nested, empty, to
     <table className={styles.table} data-stack="">
       <caption className={styles.visuallyHidden}>{caption}</caption>
       <thead><tr>{columns.map(column =>
-        <th key={column.key} scope="col" data-numeric={column.numeric ? "" : undefined}>{column.header}</th>)}</tr></thead>
+        <th key={column.key} scope="col" data-numeric={column.numeric ? "" : undefined}
+        style={column.minWidth ? { minWidth: column.minWidth } : undefined}>{column.header}</th>)}</tr></thead>
       <tbody>{rows.map(row => <tr key={rowKey(row)} data-nested={nested?.(row) ? "" : undefined}>
         {columns.map(column => <td key={column.key} data-label={labelOf(column)}
-          data-numeric={column.numeric ? "" : undefined}>{column.cell(row)}</td>)}
+          data-numeric={column.numeric ? "" : undefined} data-nowrap={column.nowrap ? "" : undefined}>{column.cell(row)}</td>)}
       </tr>)}</tbody>
       {totalLabel !== undefined && rows.length > 0 && <tfoot><tr>
         {columns.map((column, index) => index === 0
