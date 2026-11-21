@@ -40,6 +40,49 @@ internal sealed partial class FinanceTreasuryStore
         var row = await Receipts(actor).AsNoTracking().SingleOrDefaultAsync(r => r.Receipt.PublicId == receiptId, cancellationToken);
         return row is null ? null : await ReceiptDataAsync(row, null, cancellationToken);
     }
+    public async Task<FinanceTreasuryReceiptDocumentData?> ReceiptDocumentAsync(Guid actorId, Guid receiptId,
+        CancellationToken cancellationToken = default)
+    {
+        if (receiptId == Guid.Empty) return null;
+        var actor = await ActorAsync(actorId, "finance.receipts.read", cancellationToken);
+        if (actor is null) return null;
+        var head = await (from scope in Receipts(actor).AsNoTracking()
+                          join airline in context.Airlines.AsNoTracking() on scope.Receipt.AirlineId equals airline.Id
+                          join organization in context.Organizations.AsNoTracking() on scope.OrganizationId equals organization.Id
+                          join station in context.Stations.AsNoTracking() on scope.Receipt.StationId equals station.Id
+                          join user in context.Users.AsNoTracking() on scope.Receipt.ActorAccountId equals user.Id
+                          join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
+                          where scope.Receipt.PublicId == receiptId
+                          select new
+                          {
+                              scope.Receipt, Payer = organization.LegalName, airline.Name, organization.TaxRegistration,
+                              organization.TaxRegistrationCountryCode, StationCode = station.Code,
+                              RecordedBy = person.FirstName + " " + person.LastName,
+                          }).SingleOrDefaultAsync(cancellationToken);
+        if (head is null) return null;
+        var receipt = head.Receipt;
+        var moves = await context.Set<FinanceTreasuryMovement>().AsNoTracking().Where(m => m.ReceiptId == receipt.Id)
+            .OrderBy(m => m.EffectiveOn).ThenBy(m => m.CreatedAt).ThenBy(m => m.Id).ToArrayAsync(cancellationToken);
+        var reversedIds = moves.Where(m => m.Kind == FinanceTreasuryMovementKind.ApplicationReversal && m.ReversesMovementId != null)
+            .Select(m => m.ReversesMovementId!.Value).ToHashSet();
+        var live = moves.Where(m => m.Kind == FinanceTreasuryMovementKind.Application && m.InvoiceId != null && !reversedIds.Contains(m.Id))
+            .ToArray();
+        var invoiceKeys = live.Select(m => m.InvoiceId!.Value).Distinct().ToArray();
+        var numbers = await context.NonFiscalInvoices.AsNoTracking().Where(i => invoiceKeys.Contains(i.Id))
+            .ToDictionaryAsync(i => i.Id, i => i.FiscalNumber ?? i.Number, cancellationToken);
+        var applied = Applied(moves);
+        var refunded = moves.Where(m => m.Kind == FinanceTreasuryMovementKind.Refund).Sum(m => m.ReceiptAmount);
+        var reversed = moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal);
+        var tax = string.IsNullOrWhiteSpace(head.TaxRegistration) || string.IsNullOrWhiteSpace(head.TaxRegistrationCountryCode) ? null
+            : Elevant.Domain.Validation.TaxRegistrations.Display(head.TaxRegistration, head.TaxRegistrationCountryCode);
+        return new FinanceTreasuryReceiptDocumentData(receipt.Reference,
+            string.IsNullOrWhiteSpace(head.Payer) ? head.Name : head.Payer, tax, head.StationCode, receipt.CurrencyCode,
+            receipt.Amount, receipt.Method.ToString(), receipt.ReceivedOn, receipt.CreatedAt, head.RecordedBy.Trim(),
+            string.IsNullOrWhiteSpace(receipt.Reason) ? null : receipt.Reason, applied, refunded,
+            FinanceTreasuryRules.Available(receipt.Amount, applied, refunded, reversed), reversed,
+            live.Select(m => new FinanceTreasuryReceiptApplicationDocumentData(numbers[m.InvoiceId!.Value], m.EffectiveOn,
+                m.ReceiptAmount, m.InvoiceCurrency ?? receipt.CurrencyCode, m.InvoiceAmount, null)).ToArray());
+    }
     private async Task<FinanceTreasuryReceiptData> ReceiptDataAsync(ReceiptScope scope, DateOnly? asOf, CancellationToken ct)
     {
         var receipt = scope.Receipt;

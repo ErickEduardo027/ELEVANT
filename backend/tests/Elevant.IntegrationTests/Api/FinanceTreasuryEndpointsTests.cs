@@ -82,6 +82,21 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
         using var missing = await client.GetAsync($"/api/v1/finance/adjustment-notes/{Guid.NewGuid()}/document", ct);
         Assert.Equal((HttpStatusCode.NotFound, "not_found"), (missing.StatusCode, await CodeAsync(missing, ct)));
     }
+    /// <summary>Finance downloads the receipt of a treasury collection; an unknown or out-of-scope one is a coded 404.</summary>
+    [Fact]
+    public async Task FinanceDownloadsTheTreasuryReceipt()
+    {
+        var stub = new Stub(); await using var app = App(stub); using var client = app.CreateClient();
+        var ct = TestContext.Current.CancellationToken;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var pdf = await client.GetAsync($"/api/v1/finance/receipts/{stub.ReceiptId}/document", ct);
+        Assert.Equal((HttpStatusCode.OK, "application/pdf"), (pdf.StatusCode, pdf.Content.Headers.ContentType?.MediaType));
+        Assert.Equal("recibo-cobro-COB-PUJ-2026-000094.pdf", pdf.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        Assert.StartsWith("%PDF", System.Text.Encoding.ASCII.GetString(await pdf.Content.ReadAsByteArrayAsync(ct), 0, 4));
+        Assert.Equal(Account, stub.Actor);
+        using var missing = await client.GetAsync($"/api/v1/finance/receipts/{Guid.NewGuid()}/document", ct);
+        Assert.Equal((HttpStatusCode.NotFound, "not_found"), (missing.StatusCode, await CodeAsync(missing, ct)));
+    }
     private static async Task<string?> CodeAsync(HttpResponseMessage response, CancellationToken ct)
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
@@ -141,5 +156,11 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
             new DateOnly(2026, 10, 18), DateTimeOffset.UtcNow, "Servicio cobrado de más", "AVIAM Ltd.", "130000001", "QA Airline", "QA",
             "PUJ", [new FinanceAdjustmentNoteDocumentLineData(1, "DEV-TAT-0001", "GPU", "Ground power", 1m, 59m, 50m, 9m, 18m)]) : null); }
         public Task<AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>> PortalAdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default) => Task.FromResult(new AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>(null, FinanceTreasuryFailure.Forbidden));
+        public Guid ReceiptId { get; } = Guid.NewGuid();
+        public Task<FinanceTreasuryReceiptDocumentData?> ReceiptDocumentAsync(Guid actorId, Guid receiptId, CancellationToken cancellationToken = default)
+        { Actor = actorId; return Task.FromResult<FinanceTreasuryReceiptDocumentData?>(receiptId == ReceiptId ? new FinanceTreasuryReceiptDocumentData(
+            "COB-PUJ-2026-000094", "QA Airline", "RNC 1-31-23456-9", "PUJ", "USD", 600m, "Transfer", new DateOnly(2026, 11, 20),
+            DateTimeOffset.UtcNow, "Ana Pérez", null, 500m, 0m, 100m, false,
+            [new FinanceTreasuryReceiptApplicationDocumentData("E310000000042", new DateOnly(2026, 11, 20), 500m, "USD", 500m, null)]) : null); }
     }
 }

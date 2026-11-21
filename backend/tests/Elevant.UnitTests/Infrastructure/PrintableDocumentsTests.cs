@@ -241,6 +241,8 @@ public sealed class PrintableDocumentsTests
         Assert.Equal("factura-DEV-NF-1.pdf", DocumentFileNames.Invoice(null, "DEV-NF-1"));
         Assert.Equal("nota-credito-E340000000011.pdf", DocumentFileNames.AdjustmentNote("Credit", "E340000000011"));
         Assert.Equal("nota-debito-E330000000003.pdf", DocumentFileNames.AdjustmentNote("Debit", "E330000000003"));
+        Assert.Equal("recibo-cobro-COB-PUJ-2026-000094.pdf", DocumentFileNames.TreasuryReceipt("COB-PUJ-2026-000094"));
+        Assert.Equal("recibo-cobro-TRF-BHD-118.pdf", DocumentFileNames.TreasuryReceipt("TRF BHD/118"));
         Assert.Equal("recibo-E310000000042-TRF-BHD-2026-118842.pdf",
             DocumentFileNames.Receipt("E310000000042", "DEV-NF-1", "TRF-BHD-2026-118842"));
         Assert.Equal("recibo-E310000000042-AUTH-731904.pdf", DocumentFileNames.CardReceipt(DocumentSamples.CardReceipt()));
