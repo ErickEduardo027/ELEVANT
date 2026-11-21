@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
-import PermissionMatrix, { accessLevel, actionKind, matrixSections, setAccessLevel } from './PermissionMatrix';
+import PermissionMatrix, { accessLevel, actionKind, matrixSections, permissionLabels, setAccessLevel } from './PermissionMatrix';
 
 const action = (module, name, label, kind) => ({ code: `contracts.${module}.${name}`, action: name, label, kind });
 const catalog = {
@@ -115,4 +115,26 @@ it('understands catalogs published before actions carried a kind', () => {
   expect(actionKind({ action: 'edit' })).toBe('update');
   expect(actionKind({ action: 'retire' })).toBe('delete');
   expect(actionKind({ action: 'approve' })).toBe('other');
+});
+
+// ADR-0047: the version 1 interface has neither expenses nor requisitions; the server catalog keeps both.
+const retiredCatalog = (department, key, label) => ({
+  department, label: department, modules: [
+    { key: 'reports', label: 'Reportes', section: 'Seguimiento', parent: null,
+      actions: [{ code: `${department}.reports.read`, action: 'read', label: 'Ver', kind: 'read' }] },
+    { key, label, section: 'Seguimiento', parent: null,
+      actions: [{ code: `${department}.${key}.read`, action: 'read', label: 'Ver', kind: 'read' }] },
+  ],
+});
+
+it.each([
+  ['finance', 'expenses', 'Gastos de empleados'],
+  ['human_resources', 'requisitions', 'Requisiciones'],
+])('hides the retired %s.%s module from the template editor', (department, key, label) => {
+  const catalog = retiredCatalog(department, key, label);
+  expect(matrixSections(catalog).flatMap(section => section.rows.map(row => row.module.key))).toEqual(['reports']);
+  render(<PermissionMatrix catalog={catalog} value={[`${department}.${key}.read`]} onChange={vi.fn()} />);
+  expect(screen.getByRole('radiogroup', { name: 'Acceso: Reportes' })).toBeInTheDocument();
+  expect(screen.queryByRole('radiogroup', { name: `Acceso: ${label}` })).not.toBeInTheDocument();
+  expect(permissionLabels(catalog, [`${department}.reports.read`, `${department}.${key}.read`])).toEqual(['Reportes: ver']);
 });

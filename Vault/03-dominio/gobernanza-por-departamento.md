@@ -72,7 +72,7 @@ flowchart TD
 | Nivel | Puede | No puede |
 | --- | --- | --- |
 | Superadministrador | Ver todos los departamentos, solicitudes y actividad; nombrar administradores desde un empleado registrado sin validación; gestionar usuarios de aerolíneas; convertir roles heredados. | Transferirse ni ser duplicado (índice único filtrado). Operar Finanzas u OCC. |
-| Administrador | Todos los módulos de su departamento; pedir personal; solicitar acceso para sus empleados; elegir la plantilla sugerida de sus puestos; editar permisos y estaciones; desactivar, reactivar y restablecer claves de sus miembros; leer la actividad del departamento. | Crear administradores, personas o puestos; editar nombre o correo (son del expediente); gestionarse a sí mismo u otros administradores; conceder estaciones que no tiene el empleado o él mismo. |
+| Administrador | Todos los módulos de su departamento; solicitar acceso para sus empleados; elegir la plantilla sugerida de sus puestos; editar permisos y estaciones; desactivar, reactivar y restablecer claves de sus miembros; leer la actividad del departamento. | Crear administradores, personas o puestos; editar nombre o correo (son del expediente); gestionarse a sí mismo u otros administradores; conceder estaciones que no tiene el empleado o él mismo. |
 | Miembro | Lo que su plantilla o sus permisos explícitos conceden. | Nada fuera de su departamento. |
 
 > **Defecto abierto (6 de noviembre de 2026, posterior al commit verificado de
@@ -194,7 +194,7 @@ y [Finanzas](finanzas-tarifas-cargos-y-cobros.md)):
 
 - el menú de Finanzas queda en Inicio · Facturación (Por facturar, Facturas con
   sus pestañas Cobros y Estados de cuenta, Charters) · Cuentas por pagar
-  (Facturas de proveedores, Proveedores, Gastos de empleados, Mis gastos) ·
+  (Facturas de proveedores, Proveedores) ·
   Reportes · Configuración · Usuarios del departamento
   ([menú](../../frontend/private-web/src/features/finance/shell/modules.js));
 - se retiran los módulos de prefacturas, servicios aprobados, tratamientos
@@ -233,8 +233,11 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 
 ## Empleados, altas, traslados y bajas
 
-1. El departamento puede pedir personal con una requisición (puesto, cantidad y
-   motivo). Gestión Humana la atiende, la cubre o la rechaza con motivo.
+1. La API conserva las requisiciones de personal (puesto, cantidad y motivo),
+   pero la versión 1 de AVIAM Web no las muestra: ni el menú de Gestión Humana
+   ni «Usuarios del departamento» ofrecen «Requisiciones» o «Pedir personal», y
+   el editor de plantillas oculta `human_resources.requisitions`
+   ([ADR-0047](../../docs/adr/0047-alcance-version-1-sin-gastos-y-gestion-humana-esencial.md)).
 2. Gestión Humana registra al empleado (`employees.create`): identificación
    real normalizada y única, número de empleado único, correo corporativo,
    departamento, puesto y estaciones. Un puesto de rampa crea su `RampAgent`.
@@ -290,9 +293,12 @@ siguen el flujo de solicitud.
 ## Notificaciones
 
 Cada departamento con la opción «Notificaciones» recibe en pantalla las alertas
-de lo que debe atender:
+de lo que debe atender. En Gestión Humana la versión 1 ya no tiene página
+Notificaciones: el permiso `human_resources.notifications.read` gobierna la
+campana y su cajón (ADR-0047).
 
-- **Gestión Humana:** altas por validar, requisiciones y disponibilidad.
+- **Gestión Humana:** altas por validar, requisiciones (un aviso antiguo abre
+  Empleados) y disponibilidad.
 - **Contratos:** solicitudes comerciales, comentarios y firmas de aerolíneas,
   clausuras, permisos enviados o por vencer, y cambios del ciclo del contrato
   (activación, suspensión, vencimiento y aviso a 30 días;

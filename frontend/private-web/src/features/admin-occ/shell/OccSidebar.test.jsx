@@ -21,13 +21,13 @@ const GROUPS = {
     ['En vivo', ['Panorama', 'Monitoreo de vuelos', 'Mapa de posiciones', 'Chat interno']],
     ['Planificar', ['Planificación', 'Cobertura de posiciones', 'Contratos listos']],
     ['Revisar', ['Revisión', 'Reportes', 'Notificaciones']],
-    ['Estación', ['Datos maestros', 'Tablets', 'Usuarios', 'Mis gastos']],
+    ['Estación', ['Datos maestros', 'Tablets', 'Usuarios']],
   ],
   en: [
     ['Live', ['Overview', 'Flight monitoring', 'Positions map', 'Internal chat']],
     ['Plan', ['Planning', 'Stand coverage', 'Ready contracts']],
     ['Review', ['Review', 'Reports', 'Notifications']],
-    ['Station', ['Master data', 'Tablets', 'Users', 'My expenses']],
+    ['Station', ['Master data', 'Tablets', 'Users']],
   ],
 };
 const MODULES = GROUPS.es.flatMap(([, modules]) => modules);
@@ -81,27 +81,6 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-it.each([
-  ['es', 'Estación', 'Mis gastos', 'desktop'],
-  ['en', 'Station', 'My expenses', 'mobile'],
-])('shows OCC expenses in %s under %s', (language, section, label, breakpoint) => {
-  resetLanguageForTests(language);
-  window.history.replaceState({}, '', '/admin-occ/expenses');
-
-  render(
-    <LanguageScope>
-      <OccSidebar navigation={ADMIN_OCC_NAVIGATION} user={{ name: 'Alex Operations' }}
-        breakpoint={breakpoint} railVisible={breakpoint === 'desktop'} railExpanded
-        overlayOpen={breakpoint === 'mobile'} onToggle={vi.fn()} onCloseOverlay={vi.fn()} />
-    </LanguageScope>,
-  );
-
-  const group = screen.getByText(section).parentElement;
-  const link = within(group).getByRole('link', { name: label });
-  expect(link).toHaveAttribute('href', '/admin-occ/expenses');
-  expect(link).toHaveAttribute('aria-current', 'page');
-});
-
 describe('OCC rail', () => {
   it('shows the four groups and their modules in order in Spanish and English', () => {
     for (const language of ['es', 'en']) {
@@ -127,7 +106,7 @@ describe('OCC rail', () => {
   it('hides modules the department access does not allow and drops empty groups', () => {
     window.history.replaceState({}, '', '/admin-occ/dashboard');
     // A member who watches the operation and reads its notices: no planning, review, reports, master data, tablets or
-    // users. «Mis gastos» needs no permission.
+    // users.
     const member = buildAccess({ kind: 'Member', department: 'operations', canManageDepartmentUsers: false, permissions: [
       'operations.dashboard.read', 'operations.flight_monitoring.read', 'operations.chat.read',
       'operations.notifications.read',
@@ -138,8 +117,8 @@ describe('OCC rail', () => {
     expectGroups(nav, [
       ['En vivo', ['Panorama', 'Monitoreo de vuelos', 'Chat interno']],
       ['Revisar', ['Notificaciones']],
-      ['Estación', ['Mis gastos']],
     ]);
+    expect(within(nav).queryByText('Estación')).not.toBeInTheDocument();
     expect(within(nav).queryByText('Planificar')).not.toBeInTheDocument();
     for (const hidden of ['Mapa de posiciones', 'Planificación', 'Cobertura de posiciones', 'Contratos listos', 'Revisión',
       'Reportes', 'Datos maestros', 'Tablets', 'Usuarios']) {
@@ -149,11 +128,11 @@ describe('OCC rail', () => {
     // Collapsed, an empty group leaves no rule behind either.
     view.rerender(rail({ navigation: allowedNavigation(ADMIN_OCC_NAVIGATION, member), railExpanded: false }));
     nav = navigationOf();
-    expect(within(nav).getAllByRole('list')).toHaveLength(3);
-    expect(nav.querySelectorAll('[data-occ-group-rule]')).toHaveLength(3);
+    expect(within(nav).getAllByRole('list')).toHaveLength(2);
+    expect(nav.querySelectorAll('[data-occ-group-rule]')).toHaveLength(2);
     view.unmount();
 
-    // A department administrator sees the 14 modules, «Usuarios» included.
+    // A department administrator sees the 13 modules, «Usuarios» included.
     const administrator = buildAccess(administratorAccess('operations', DepartmentPermissionCodes.operations));
     render(rail({ navigation: allowedNavigation(ADMIN_OCC_NAVIGATION, administrator) }));
     expectGroups(navigationOf(), GROUPS.es);

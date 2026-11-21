@@ -8,8 +8,9 @@ function matches(item, pathname) {
 }
 
 /**
- * Keeps a route-based shell inside the modules the account may open: the base
- * path and any module outside `allowed` redirect to the first allowed module.
+ * Keeps a route-based shell inside the modules the account may open. The department entry (`basePath`) opens
+ * `homePath` when the account may open it; otherwise, like any module outside `allowed`, it redirects to the first
+ * allowed module. An account without modules stays where it is (`empty`) so the shell can show NoModulesNotice.
  * Returns whether the current route can render.
  */
 export function useNavigationGuard(navigation, allowed, { homePath, basePath } = {}) {
@@ -17,12 +18,12 @@ export function useNavigationGuard(navigation, allowed, { homePath, basePath } =
   const router = useRouter();
   const current = navigation.find(item => matches(item, pathname));
   const permitted = Boolean(current && allowed.some(item => item.id === current.id));
-  const homeDenied = Boolean(homePath && matches({ path: homePath }, pathname) && !permitted);
-  const fallback = pathname === basePath && homePath ? homePath : allowed[0]?.path ?? null;
+  const homeAllowed = Boolean(homePath && allowed.some(item => item.path === homePath));
+  const fallback = pathname === basePath && homeAllowed ? homePath : allowed[0]?.path ?? null;
 
   useEffect(() => {
-    if (!homeDenied && !permitted && fallback && pathname !== fallback) router.replace(fallback);
-  }, [fallback, homeDenied, pathname, permitted, router]);
+    if (!permitted && fallback && pathname !== fallback) router.replace(fallback);
+  }, [fallback, pathname, permitted, router]);
 
-  return { permitted, empty: allowed.length === 0, homeDenied };
+  return { permitted, empty: allowed.length === 0 };
 }
