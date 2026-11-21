@@ -1,4 +1,5 @@
 import KpiCard from '../../../components/KpiCard';
+import { countOf, partOf } from '../../../utils/kpiContext';
 import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { ContractIcon, RequestIcon, ArrowIcon } from '../components/icons';
 import { contractCodeLabel, requestReferenceLabel } from '../requests/requestLabels';
@@ -32,6 +33,13 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
 
   const isLoading = status === 'loading';
   const kpis = data?.kpis;
+  const total = kpis?.totalRequests ?? 0;
+  const ofRequests = count => partOf(count ?? 0, total, 'solicitud', 'solicitudes');
+  const drafts = kpis?.pendingDrafts ?? 0;
+  const latestDraft = data?.pendingDrafts?.[0]?.airline;
+  const draftContext = drafts > 0
+    ? `${countOf(drafts, 'versión en borrador', 'versiones en borrador')}${latestDraft ? ` · la más reciente de ${latestDraft}` : ''}`
+    : 'Ninguna versión espera activación';
   return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Contratos</p>
@@ -41,10 +49,14 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
       {status === 'refreshing' && <p role="status" className="mt-2 text-xs font-semibold text-accent-600">Actualizando datos…</p>}
     </div>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiCard label="Solicitudes pendientes" value={kpis?.pendingRequests ?? 0} icon={RequestIcon} loading={isLoading} />
-      <KpiCard label="Solicitudes aprobadas" value={kpis?.approvedRequests ?? 0} icon={RequestIcon} loading={isLoading} />
-      <KpiCard label="Borradores por activar" value={kpis?.pendingDrafts ?? 0} icon={ContractIcon} loading={isLoading} />
-      <KpiCard label="Solicitudes rechazadas" value={kpis?.rejectedRequests ?? 0} icon={RequestIcon} loading={isLoading} />
+      <KpiCard label="Solicitudes pendientes" value={kpis?.pendingRequests ?? 0} icon={RequestIcon} loading={isLoading}
+        subtext={ofRequests(kpis?.pendingRequests)} />
+      <KpiCard label="Solicitudes aprobadas" value={kpis?.approvedRequests ?? 0} icon={RequestIcon} loading={isLoading}
+        subtext={ofRequests(kpis?.approvedRequests)} />
+      <KpiCard label="Borradores por activar" value={drafts} icon={ContractIcon} loading={isLoading}
+        subtext={draftContext} />
+      <KpiCard label="Solicitudes rechazadas" value={kpis?.rejectedRequests ?? 0} icon={RequestIcon} loading={isLoading}
+        subtext={ofRequests(kpis?.rejectedRequests)} />
     </div>
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <SectionCard title="Solicitudes recientes" actionLabel="Ver solicitudes" onAction={() => onNavigate('contracts-requests')}>

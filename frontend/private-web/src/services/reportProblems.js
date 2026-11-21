@@ -17,9 +17,10 @@ export const OCC_REPORT_PROBLEMS = Object.freeze({
   invalid_report_query: 'Revise el período: la fecha final no puede ser anterior a la inicial y el máximo es un año.',
 });
 
-/** Gestión Humana reports: up to 30 dates and 5 000 rows in both formats. */
+/** Gestión Humana reports: the period the catalog allows (a year with ADR-0048) and 5 000 rows in both formats. */
 export const HUMAN_RESOURCES_REPORT_PROBLEMS = Object.freeze({
   ...REPORT_PROBLEMS,
   report_too_large: 'El reporte supera las 5 000 filas exportables. Acote el intervalo o los filtros antes de exportar.',
-  invalid_report_query: 'Revise el intervalo: la fecha final no puede ser anterior a la inicial y el máximo son 30 fechas.',
+  invalid_report_query:
+    'Revise el intervalo: la fecha final no puede ser anterior a la inicial ni superar el máximo permitido.',
 });

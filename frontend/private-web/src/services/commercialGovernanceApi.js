@@ -1,5 +1,6 @@
 import { normalizedAirlineVerification } from '@elevant/api-client';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { downloadFile } from '../utils/downloadFile';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 
 const origin = String(process.env.NEXT_PUBLIC_ELEVANT_API_URL || '').replace(/\/$/, '');
@@ -97,11 +98,11 @@ export const decideServiceClosure = (id, command, idempotencyKey) =>
 /** Republishes the service its approved closure hid: `{ reason, serviceVersion }`; a retired service is refused. */
 export const reopenService = (serviceId, command, idempotencyKey) =>
   contractCall(() => contractClient().reopenService(serviceId, command, idempotencyKey));
-export async function getManagedContracts(page = 1) {
+export async function getManagedContracts(page = 1, limit = 20) {
   try {
     return await createPrivateWebApiClient({
       getAccessToken: () => readSession()?.token,
-    }).getManagedContracts({ page, limit: 20 });
+    }).getManagedContracts({ page, limit });
   } catch (error) {
     if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
     throw error;
@@ -226,13 +227,7 @@ export const loadContractPdf = (versionId, { draft = false } = {}) => contractCa
   : contractClient().downloadContractDocument(versionId));
 
 export async function downloadContractDocument(versionId, fileName) {
-  const blob = await loadContractPdf(versionId);
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(await loadContractPdf(versionId), fileName);
 }
 
 export const signContractVersion = (versionId, request, idempotencyKey) =>

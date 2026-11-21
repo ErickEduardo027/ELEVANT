@@ -1,5 +1,6 @@
 import { commercialApi } from './commercialGovernanceApi';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { downloadFile } from '../utils/downloadFile';
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
 const query = values => {
@@ -63,7 +64,6 @@ export async function uploadPayablesAttachment(kind, id, { requestId, expectedVe
 }
 export async function downloadPayablesAttachment(kind, id, attachmentId) {
   const response = await privateFileRequest(kindPath(kind) + '/' + idPath(id) + '/attachments/' + idPath(attachmentId));
-  const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = 'comprobante.' + ({ 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' }[blob.type] ?? 'bin');
-  document.body.append(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const blob = await response.blob();
+  downloadFile(blob, 'comprobante.' + ({ 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' }[blob.type] ?? 'bin'));
 }

@@ -273,7 +273,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
                 : 'No hay operaciones aprobadas pendientes de facturar.'}</p>}
         </section>}
       {data.status === 'success' && data.totalPending > 0 && <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary-light">
-        <p role="status">Mostrando {data.totalLoaded} de {data.totalPending} pendientes.</p>
+        <p role="status">Mostrando {data.totalLoaded} de {data.totalPending} {data.totalPending === 1 ? 'pendiente' : 'pendientes'}.</p>
         {data.hasMore && <button type="button" className={chip} onClick={data.loadMore} disabled={data.more === 'loading'}>
           {data.more === 'loading' ? 'Cargando…' : 'Cargar más'}</button>}
         {data.more === 'error' && <span role="alert" className="text-status-danger">No se pudieron cargar más operaciones.{' '}

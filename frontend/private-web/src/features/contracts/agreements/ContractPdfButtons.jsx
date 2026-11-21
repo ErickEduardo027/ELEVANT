@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadContractPdf } from '../../../services/commercialGovernanceApi';
+import { downloadFile } from '../../../utils/downloadFile';
 
 function problem(failure) {
   if (failure?.status === 403) return 'No tienes permiso para descargar este documento.';
@@ -23,15 +24,12 @@ export default function ContractPdfButtons({ versionId, fileName, draft = false,
     setBusy(kind);
     setError('');
     try {
-      const url = URL.createObjectURL(await loadContractPdf(versionId, { draft }));
+      const blob = await loadContractPdf(versionId, { draft });
       if (kind === 'download') {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        downloadFile(blob, fileName);
         return;
       }
+      const url = URL.createObjectURL(blob);
       frame.current?.remove();
       const iframe = document.createElement('iframe');
       iframe.title = `Impresión de ${fileName}`;

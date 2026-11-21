@@ -22,6 +22,8 @@ export default function DataTable({
   onRowClick,
   pageSize = 10,
   minWidthClassName = 'min-w-[720px]',
+  caption,
+  footerRows,
 }) {
   const [page, setPage] = useState(0);
 
@@ -39,6 +41,7 @@ export default function DataTable({
     <div className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <StackedTable>
         <table className={`table-stack w-full text-left text-sm ${minWidthClassName}`}>
+          {caption && <caption className="sr-only">{caption}</caption>}
           <thead>
             <tr className="border-b border-black/5 text-xs font-medium uppercase tracking-wide text-text-secondary-light dark:border-white/5 dark:text-text-secondary-dark">
               {selectable && (
@@ -114,6 +117,21 @@ export default function DataTable({
               })
             )}
           </tbody>
+          {/* A totals row of the whole set (reports): it never pages and keeps the columns' alignment. */}
+          {!loading && footerRows?.length > 0 && (
+            <tfoot className="border-t-2 border-black/10 font-semibold dark:border-white/10">
+              {footerRows.map(row => (
+                <tr key={row.id}>
+                  {selectable && <td className="px-4 py-3" />}
+                  {columns.map((column, index) => (
+                    <td key={column.key} className={`px-4 py-3 ${column.className ?? ''}`} data-label={column.label}>
+                      {row.cells[index]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tfoot>
+          )}
         </table>
       </StackedTable>
 

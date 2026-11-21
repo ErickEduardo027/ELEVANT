@@ -1,155 +1,72 @@
-import { useEffect, useState } from 'react';
-import EmptyState from '../../../components/EmptyState';
-import FilterBar from '../../../components/FilterBar';
+import { useEffect, useMemo, useState } from 'react';
 import PageHeader from '../../../components/PageHeader';
-import StackedTable from '../../../components/StackedTable';
+import ReportFilterBar, { ReportSelectFilter } from '../../../components/reports/ReportFilterBar';
+import ServerReportResult from '../../../components/reports/ServerReportResult';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
-import { ReportIcon } from '../components/icons';
-import { downloadFinanceReport, formatMoney, getFinanceReport } from '../../../services/financeBookService';
 import { businessToday } from '../../../services/businessDay';
-import { financeReportMessage } from '../../../services/financeErrors';
+import { FINANCE_CURRENCIES } from '../../../services/financeBookService';
+import { getTreasuryOptions } from '../../../services/financeTreasuryService';
+import { useServerReport } from '../../reports/useServerReport';
+import { createFinanceReportSource } from './financeReportSource';
 
-const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
-
-/**
- * The six reports of the simplified Finance (4-A, 4-N19, 4-N20), with the titles the server gives them. The
- * preinvoice, dispute and fiscal-simulation reports left with their modules.
- */
-export const FINANCE_REPORTS = [
-  { key: 'revenue', label: 'Ingresos por período' },
-  { key: 'receivables', label: 'Cuentas por cobrar y antigüedad' },
-  { key: 'collections', label: 'Cobranza' },
-  { key: 'payables', label: 'Cuentas por pagar' },
-  { key: 'charges', label: 'Recargos' },
-  { key: 'sales', label: 'Ventas (e-CF simulado)' },
-];
-
-// 4-N10: the period starts on the first business day of the month in Santo Domingo.
-const monthStart = isoDay => `${isoDay.slice(0, 8)}01`;
-
-/** Formats an invariant report cell by its column type; money uses the row's currency column when present. */
-export function formatCell(value, column, row, columns) {
-  if (value === null || value === undefined || value === '') return '—';
-  if (column.type === 'money') {
-    const currencyIndex = columns.findIndex(item => item.key === (column.key === 'invoiceAmount' ? 'invoiceCurrency' : 'currency'));
-    const currency = column.key === 'usd' ? 'USD' : column.key === 'dop' ? 'DOP' : currencyIndex >= 0 ? row[currencyIndex] : '';
-    return formatMoney(value, currency);
-  }
-  if (column.type === 'percent') return `${Number(value).toLocaleString('es-DO')} %`;
-  if (column.type === 'number') return Number(value).toLocaleString('es-DO');
-  return value;
+/** The airlines Finance invoices, for the «Aerolínea» filter; `null` when the account cannot read them. */
+function useFinanceAirlines() {
+  const [airlines, setAirlines] = useState(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    getTreasuryOptions({ signal: controller.signal })
+      .then(options => {
+        if (!controller.signal.aborted) setAirlines((options?.airlines ?? []).map(airline => ({ value: airline.id, label: airline.name })));
+      })
+      .catch(() => { if (!controller.signal.aborted) setAirlines(null); });
+    return () => controller.abort();
+  }, []);
+  return airlines;
 }
 
+/**
+ * Finanzas › Reportes (4-A, 4-N19, 4-N20; ADR-0048, PR D): the six server reports on the common skin, with the period
+ * shortcuts, station, airline and currency, the cut-off reports by their date, the figures with their context, the
+ * totals of each column that adds up and the whole period in PDF or Excel.
+ */
 export default function FinanceReportsPage({ initialStationId }) {
   const { access } = useDepartmentAccess();
   const canExport = Boolean(access?.can('finance.reports.export'));
-  const stations = (readSession()?.stationScopes ?? []).filter(scope => scope?.stationId);
-  const today = businessToday();
-  const [reportKey, setReportKey] = useState('revenue');
-  const [filters, setFilters] = useState({
-    from: monthStart(today), to: today,
-    stationId: initialStationId ?? '', currency: '',
+  const session = readSession();
+  const stations = useMemo(() => (session?.stationScopes ?? []).filter(scope => scope?.stationId), [session?.stationScopes]);
+  const airlines = useFinanceAirlines();
+  const [today] = useState(() => businessToday());
+  const source = useMemo(() => createFinanceReportSource(), []);
+  const initialValues = useMemo(() => ({ stationId: initialStationId ?? '' }), [initialStationId]);
+  const report = useServerReport({
+    source, initialKey: 'revenue', today, initialValues, autoGenerate: true,
+    describe: query => [
+      { label: 'Estación', base: true, value: query.stationId
+        ? stations.find(station => station.stationId === query.stationId)?.stationCode ?? 'Elegida' : 'Todas tus estaciones' },
+      { label: 'Aerolínea', value: query.airlineId ? airlines?.find(item => item.value === query.airlineId)?.label : '' },
+      { label: 'Moneda', value: query.currency ?? '' },
+    ],
   });
-  const [state, setState] = useState({ status: 'loading', report: null, error: '' });
-  const [exporting, setExporting] = useState('');
-  const [revision, setRevision] = useState(0);
+  const { draft, setValue } = report;
 
-  useEffect(() => {
-    let active = true;
-    setState(current => ({ ...current, status: 'loading', error: '' }));
-    getFinanceReport(reportKey, filters).then(report => {
-      if (active) setState({ status: 'ready', report, error: '' });
-    }).catch(failure => {
-      // 403 is the unauthorized state; any other refusal is explained by its code and can be retried.
-      if (active) setState({ status: failure?.status === 403 ? 'forbidden' : 'error', report: null,
-        error: financeReportMessage(failure) });
-    });
-    return () => { active = false; };
-  }, [reportKey, filters, revision]);
-
-  async function exportAs(format) {
-    if (state.status !== 'ready' || state.report?.key !== reportKey || exporting) return;
-    setExporting(format);
-    try { await downloadFinanceReport(reportKey, format, filters); }
-    catch (failure) {
-      setState(current => ({ ...current, error: financeReportMessage(failure, {
-        forbidden: 'No tiene permiso para exportar este reporte.',
-        fallback: 'No se pudo generar la exportación. Revise la conexión e intente de nuevo.',
-      }) }));
-    }
-    finally { setExporting(''); }
-  }
-
-  const report = state.status === 'ready' && state.report?.key === reportKey ? state.report : null;
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
-      <PageHeader eyebrow="Finanzas" title="Reportes financieros" description={report?.description ?? 'Reportes calculados en el servidor sobre sus estaciones.'}
-        actions={canExport && (
-          <>
-            <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('csv')} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-60 dark:border-white/10">{exporting === 'csv' ? 'Generando…' : 'Exportar CSV'}</button>
-            <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('xlsx')} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-60 dark:border-white/10">{exporting === 'xlsx' ? 'Generando…' : 'Exportar Excel'}</button>
-            <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('pdf')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{exporting === 'pdf' ? 'Generando…' : 'Exportar PDF'}</button>
-          </>
-        )} />
-      <div role="tablist" aria-label="Reportes" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
-        {FINANCE_REPORTS.map(item => (
-          <button key={item.key} type="button" role="tab" aria-selected={reportKey === item.key} onClick={() => setReportKey(item.key)}
-            className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${reportKey === item.key ? 'bg-accent-600 text-white' : 'text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5'}`}>
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <FilterBar>
-        <label className="text-xs font-semibold">Desde<input type="date" value={filters.from} max={filters.to} onChange={event => setFilters(current => ({ ...current, from: event.target.value }))} className={fieldClass} /></label>
-        <label className="text-xs font-semibold">Hasta<input type="date" value={filters.to} min={filters.from} onChange={event => setFilters(current => ({ ...current, to: event.target.value }))} className={fieldClass} /></label>
-        {stations.length > 1 && <label className="text-xs font-semibold">Estación<select value={filters.stationId} onChange={event => setFilters(current => ({ ...current, stationId: event.target.value }))} className={fieldClass}>
-          <option value="">Todas</option>{stations.map(station => <option key={station.stationId} value={station.stationId}>{station.stationCode}</option>)}</select></label>}
-        <label className="text-xs font-semibold">Moneda<select value={filters.currency} onChange={event => setFilters(current => ({ ...current, currency: event.target.value }))} className={fieldClass}>
-          <option value="">Todas</option><option>USD</option><option>DOP</option></select></label>
-      </FilterBar>
-      {state.status === 'loading' && !report && <p role="status" className="text-sm">Calculando reporte…</p>}
-      {state.error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">
-        <span className="min-w-0 flex-1">{state.error}</span>
-        {state.status === 'error' && <button type="button" className="font-semibold underline" onClick={() => setRevision(value => value + 1)}>Reintentar</button>}
-      </div>}
-      {report && (
-        <>
-          {report.summary.length > 0 && (
-            <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-              {report.summary.map(metric => (
-                <div key={metric.label} className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
-                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary-light">{metric.label}</dt>
-                  <dd className="mt-1 text-xl font-bold tabular-nums text-accent-600">
-                    {metric.type === 'money' ? formatMoney(metric.value, metric.currencyCode) : metric.type === 'percent' ? `${metric.value} %` : Number(metric.value).toLocaleString('es-DO')}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          {report.rows.length === 0 ? (
-            <EmptyState icon={ReportIcon} title="Sin datos" description="No hay movimientos para los filtros elegidos." />
-          ) : (
-            <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
-              <table className="table-stack w-full min-w-[720px] text-left text-sm">
-                <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]">
-                  <tr>{report.columns.map(column => <th key={column.key} className={`p-3 ${['money', 'number', 'percent'].includes(column.type) ? 'text-right' : ''}`}>{column.label}</th>)}</tr>
-                </thead>
-                <tbody>{report.rows.map((row, index) => (
-                  <tr key={index} className="border-t border-black/5 dark:border-white/5">
-                    {report.columns.map((column, cell) => (
-                      <td key={column.key} className={`p-3 ${['money', 'number', 'percent'].includes(column.type) ? 'text-right tabular-nums' : ''}`}>
-                        {formatCell(row[cell], column, row, report.columns)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}</tbody>
-              </table>
-            </StackedTable>
-          )}
-          {report.notes.map(note => <p key={note} className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{note}</p>)}
-        </>
-      )}
+      <PageHeader eyebrow="Finanzas" title="Reportes financieros"
+        description="Reportes calculados en el servidor sobre tus estaciones, con sus filtros y totales, en PDF o en Excel." />
+      <ReportFilterBar report={report}>
+        {stations.length > 1 && (
+          <ReportSelectFilter label="Estación" value={draft.values.stationId} onChange={value => setValue('stationId', value)}
+            options={stations.map(station => ({ value: station.stationId, label: station.stationCode }))} />
+        )}
+        {airlines?.length > 0 && (
+          <ReportSelectFilter label="Aerolínea" value={draft.values.airlineId} onChange={value => setValue('airlineId', value)}
+            options={airlines} />
+        )}
+        <ReportSelectFilter label="Moneda" value={draft.values.currency} onChange={value => setValue('currency', value)}
+          options={FINANCE_CURRENCIES.map(code => ({ value: code, label: code }))} />
+      </ReportFilterBar>
+      <ServerReportResult report={report} canExport={canExport} generatedBy={session?.name ?? ''} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { downloadFile } from '../utils/downloadFile';
 import { INVOICING_PROBLEM_MESSAGES } from './financeErrors';
 import { problemMessage } from './problemMessages';
 
@@ -44,13 +45,7 @@ export const getInvoiceDocument = invoiceId =>
 
 /** Saves the invoice PDF with a readable file name. */
 export async function downloadInvoiceDocument(invoiceId, fileName) {
-  const blob = await getInvoiceDocument(invoiceId);
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(await getInvoiceDocument(invoiceId), fileName);
 }
 
 /** The code of a failure, or the first reason an older server sent instead. */

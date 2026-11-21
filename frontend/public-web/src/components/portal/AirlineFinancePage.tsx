@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
@@ -9,6 +10,7 @@ import { filterInvoices, formatByCurrency, invoiceIssueDates, invoiceNumber, inv
   STATUS_TONE, sumByCurrency, type CurrencyAmount, type InvoiceFilters, type InvoiceStatusFilter } from "@/lib/airline-invoices";
 import type { AirlineTreasuryInvoice, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 import { businessToday } from "@/lib/business-day";
+import { invoiceFilterQuery, parseInvoiceFilterParams } from "@/lib/invoice-filter-params";
 import { formatDate, formatMoney } from "@/lib/portal-format";
 import styles from "./AirlinePortalPage.module.css";
 import { InvoicePdfButton } from "./financeDocuments";
@@ -62,8 +64,18 @@ const STATUS_OPTIONS: { value: InvoiceStatusFilter; label: string }[] = [
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const { getTreasuryStatement, financeRevision } = useAirlineSession();
   const stations = useBillingStations();
-  const [stationId, setStationId] = useState("");
-  const [filters, setFilters] = useState<InvoiceFilters>({});
+  // The filters open as the address says (`?estado=vencidas&estacion=…`) and every change is written back to it.
+  const searchParams = useSearchParams();
+  const [initial] = useState(() => parseInvoiceFilterParams(searchParams));
+  const [stationId, setStationId] = useState(initial.stationId);
+  const [filters, setFilters] = useState<InvoiceFilters>(initial.filters);
+  useEffect(() => {
+    const { pathname, search, hash } = window.location;
+    const query = invoiceFilterQuery(new URLSearchParams(search), filters, stationId);
+    // replaceState (Next 16 syncs it with useSearchParams): a filter is not a new page in the history.
+    if (`?${query}` !== search && !(query === "" && search === ""))
+      window.history.replaceState(null, "", `${pathname}${query ? `?${query}` : ""}${hash}`);
+  }, [filters, stationId]);
   const read = useCallback((signal: AbortSignal) => getTreasuryStatement(today(), stationId || undefined, signal),
     [getTreasuryStatement, stationId]);
   // 4-N25: the list stays on screen while a live change or the focus reads it again.
@@ -113,12 +125,16 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     {!statement && !snapshot.failed && <p role="status">Cargando facturas autorizadas…</p>}
     {!statement && snapshot.failed && <div role="alert" className={styles.notice} data-tone="danger">
       <p>No se pudieron consultar las facturas.</p>
-      <ActionGroup><Button onClick={snapshot.retry}>Reintentar</Button></ActionGroup></div>}
+      <ActionGroup><Button onClick={snapshot.retry}>Reintentar</Button>
+        {/* A shared address may name a station this account no longer has: the way out is to drop the filters. */}
+        {stationId && <Button variant="ghost" onClick={() => { setFilters({}); setStationId(""); }}>Limpiar filtros</Button>}
+      </ActionGroup></div>}
     <LiveSnapshotNotice snapshot={snapshot} />
     {statement && <>
       <div className={styles.kpis} aria-label="Resumen de facturas" role="group">
         <div><span>Facturas con saldo</span><strong>{summary.open} de {summary.count}</strong>
-          <small>{summary.open === 0 ? "Todas sus facturas están saldadas." : "facturas pendientes de pago"}</small></div>
+          <small>{summary.open === 0 ? "Todas sus facturas están saldadas."
+            : summary.count === 1 ? "factura pendiente de pago" : "facturas pendientes de pago"}</small></div>
         <div><span>Saldo pendiente</span><strong>{formatByCurrency(summary.outstanding)}</strong>
           <small>{billedOf}</small></div>
         <div data-tone={summary.overdue > 0 ? "danger" : undefined}><span>Vencido</span>

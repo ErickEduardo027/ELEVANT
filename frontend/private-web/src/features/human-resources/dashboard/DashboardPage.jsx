@@ -1,5 +1,6 @@
 import { useRouter } from 'next/navigation';
 import KpiCard from '../../../components/KpiCard';
+import { partOf } from '../../../utils/kpiContext';
 import { UsersIcon, RefreshCwIcon } from '../../shell/components/icons';
 import { useHumanResourcesDashboardData } from './useHumanResourcesDashboardData';
 import PendingAccountsList from './components/PendingAccountsList';
@@ -33,6 +34,10 @@ export default function DashboardPage() {
   }
 
   const pendingAccounts = data?.pendingAccounts ?? [];
+  const active = data?.activeStaffTotal ?? 0;
+  const activeContext = Number.isInteger(data?.profilesTotal)
+    ? partOf(active, data.profilesTotal, 'perfil registrado', 'perfiles registrados') : 'Perfiles operativos activos';
+  const unlinkedContext = partOf(pendingAccounts.length, active, 'agente activo', 'agentes activos');
   return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div>
@@ -49,8 +54,8 @@ export default function DashboardPage() {
     </div>
 
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <KpiCard label="Agentes de rampa activos" value={data?.activeStaffTotal} icon={UsersIcon} loading={isLoading} subtext="Perfiles operativos activos" />
-      <KpiCard label="Perfiles sin cuenta vinculada" value={pendingAccounts.length} icon={UsersIcon} tone={pendingAccounts.length ? 'signal' : 'default'} loading={isLoading} action={{ label: 'Revisar perfiles', onClick: () => router.push('/gestion-humana/users') }} />
+      <KpiCard label="Agentes de rampa activos" value={data?.activeStaffTotal} icon={UsersIcon} loading={isLoading} subtext={activeContext} />
+      <KpiCard label="Perfiles sin cuenta vinculada" value={pendingAccounts.length} icon={UsersIcon} tone={pendingAccounts.length ? 'signal' : 'default'} loading={isLoading} subtext={unlinkedContext} action={{ label: 'Revisar perfiles', onClick: () => router.push('/gestion-humana/users') }} />
     </div>
     <PendingAccountsList accounts={pendingAccounts} loading={isLoading} />
   </div>;

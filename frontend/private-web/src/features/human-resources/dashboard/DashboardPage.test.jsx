@@ -87,3 +87,19 @@ it('offers a retry when the authorized read fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('No fue posible cargar el resumen.');
   expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
 });
+
+it('counts each indicator against its whole with the right plural', async () => {
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockResolvedValue({ activeStaffTotal: 2, profilesTotal: 3,
+    pendingAccounts: [{ id: 'agent-2', name: 'Luis Vega', role: 'Rampa' }] });
+  render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+  expect(await screen.findByText('de 3 perfiles registrados · 66.7 %')).toBeInTheDocument();
+  expect(screen.getByText('de 2 agentes activos · 50 %')).toBeInTheDocument();
+});
+
+it('agrees in the singular when there is a single profile', async () => {
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockResolvedValue({ activeStaffTotal: 1, profilesTotal: 1,
+    pendingAccounts: [] });
+  render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+  expect(await screen.findByText('de 1 perfil registrado · 100 %')).toBeInTheDocument();
+  expect(screen.getByText('de 1 agente activo · 0 %')).toBeInTheDocument();
+});

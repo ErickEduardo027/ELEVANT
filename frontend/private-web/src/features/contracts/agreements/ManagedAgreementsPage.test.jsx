@@ -5,6 +5,7 @@ import ManagedAgreementsPage from './ManagedAgreementsPage';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({ getManagedContracts: vi.fn() }));
+vi.mock('../../../services/contractsReportsService', () => ({ exportContractsList: vi.fn() }));
 vi.mock('../../../hooks/useCommercialRevalidation', () => ({ useCommercialRevalidation: vi.fn() }));
 
 const agreement = {
@@ -148,4 +149,17 @@ it('names a new contract «Borrador 1cc18541…» as Solicitudes does, whole in 
   expect(await screen.findByText('Borrador 1cc18541…')).toHaveAttribute('title', draftCode);
   expect(screen.getByText('CTR-2026-0001')).not.toHaveAttribute('title');
   expect(screen.queryByText(/DRAFT-/)).not.toBeInTheDocument();
+});
+
+it('offers the list as PDF and Excel only for contracts, next to its count', async () => {
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false, contracts: [agreement] });
+  render(<ManagedAgreementsPage mode="contracts" />);
+  const group = await screen.findByRole('group', { name: 'Descargas del listado de contratos' });
+  expect(group).toHaveTextContent('Descargar PDF');
+  expect(group).toHaveTextContent('Descargar Excel');
+  expect(screen.getByText(/1 contrato en la página 1/)).toBeInTheDocument();
+  cleanup();
+  render(<ManagedAgreementsPage mode="services" />);
+  await screen.findByText('Unidad de potencia');
+  expect(screen.queryByRole('group', { name: 'Descargas del listado de contratos' })).not.toBeInTheDocument();
 });

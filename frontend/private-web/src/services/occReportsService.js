@@ -33,15 +33,11 @@ export const getOccReport = (key, query, { signal } = {}) =>
   guarded(() => client().getOccReport(key, query, { signal }));
 
 /**
- * Downloads the server-generated file; the name carries report, station and period. The file is the whole period:
- * over its row limit the server refuses it (`report_too_large`) and nothing is downloaded.
+ * The server-generated file of the whole period, with the same filters as the page: over its row limit the server
+ * refuses it (`report_too_large`) and nothing is downloaded. The screen saves it with `occReportFileName`.
  */
-export async function downloadOccReport(key, query, format, stationCode) {
-  const blob = await guarded(() => client().exportOccReport(key, query, format));
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `elevant-occ-${key}-${stationCode}-${query.from.replaceAll('-', '')}-${query.to.replaceAll('-', '')}.${format}`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
+export const exportOccReport = (key, query, format) => guarded(() => client().exportOccReport(key, query, format));
+
+/** «elevant-occ-operations-PUJ-20261101-20261121.pdf»: report, station and period. */
+export const occReportFileName = (key, query, format, stationCode) =>
+  `elevant-occ-${key}-${stationCode}-${query.from.replaceAll('-', '')}-${query.to.replaceAll('-', '')}.${format}`;
