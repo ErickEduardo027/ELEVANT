@@ -8,7 +8,7 @@ import StackedTable from '../../../components/StackedTable';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { applyTreasuryReceipt, formatTreasuryMoney as money, getTreasuryOptions, getTreasuryReceipt,
+import { applyTreasuryReceipt, downloadTreasuryReceiptDocument, formatTreasuryMoney as money, getTreasuryOptions, getTreasuryReceipt,
   getTreasuryStatement, listTreasuryReceipts, parseTreasuryAmount, recordTreasuryReceipt, refundTreasuryReceipt,
   reverseTreasuryReceipt, treasuryError, treasuryIntent, treasuryToday } from '../../../services/financeTreasuryService';
 import { invoiceLabel } from '../financeLabels';
@@ -20,6 +20,23 @@ const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', 
 // A card receipt only comes from the airline portal (ADR-0036): it is shown, never recorded by hand.
 const METHOD_LABELS = { ...METHODS, Card: 'Tarjeta' };
 const KINDS = { Application: 'Aplicación', ApplicationReversal: 'Reverso de aplicación', ReceiptReversal: 'Reverso de cobro', Refund: 'Devolución' };
+
+/** «Descargar recibo»: the PDF the server renders for the receipt. */
+function ReceiptDownload({ receipt }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function download() {
+    setBusy(true); setError('');
+    try { await downloadTreasuryReceiptDocument(receipt); }
+    catch (failure) { setError(`No se pudo descargar el recibo: ${treasuryError(failure)}`); }
+    finally { setBusy(false); }
+  }
+  return <>
+    <button type="button" className={secondary} disabled={busy} aria-busy={busy || undefined} onClick={() => void download()}>
+      {busy ? 'Preparando recibo…' : 'Descargar recibo'}</button>
+    {error && <p role="alert" className="basis-full text-sm text-status-danger">{error}</p>}
+  </>;
+}
 
 function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferredInvoiceId }) {
   const { access } = useDepartmentAccess();
@@ -94,6 +111,7 @@ function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferre
     <p className="text-sm">{receipt.reason}</p>
     {card && <p role="note" className="rounded-lg bg-black/[.03] p-3 text-sm dark:bg-white/[.04]">Cobro con tarjeta desde el portal de la aerolínea: no se revierte ni se devuelve. Para corregirlo, emita una nota de crédito en la factura.</p>}
     <div className="flex flex-wrap gap-2">
+      <ReceiptDownload receipt={receipt} />
       {canApply && <button type="button" className={primary} onClick={() => void open('apply')}>Aplicar a facturas</button>}
       {canRefund && <button type="button" className={secondary} onClick={() => void open('refund')}>Devolver remanente</button>}
       {canReverse && receipt.applied === 0 && receipt.refunded === 0 && <button type="button" className={secondary} onClick={() => void open('reverse')}>Revertir cobro</button>}

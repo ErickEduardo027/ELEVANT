@@ -9,7 +9,7 @@ import * as api from '../../../services/financeTreasuryService';
 vi.mock('../../../services/financeTreasuryService', async original => ({ ...(await original()),
     getTreasuryOptions: vi.fn(), listTreasuryReceipts: vi.fn(), getTreasuryReceipt: vi.fn(), recordTreasuryReceipt: vi.fn(),
     getTreasuryStatement: vi.fn(), applyTreasuryReceipt: vi.fn(), reverseTreasuryReceipt: vi.fn(), refundTreasuryReceipt: vi.fn(),
-    getTreasuryAdjustments: vi.fn(), issueTreasuryAdjustment: vi.fn(),
+    getTreasuryAdjustments: vi.fn(), issueTreasuryAdjustment: vi.fn(), downloadTreasuryReceiptDocument: vi.fn(),
 }));
 vi.mock('../../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 's-1', stationCode: 'PUJ' }] }) }));
 vi.mock('../../../services/accountChangeObserver', () => ({ createPrivateWebAccountChangeObserver: () => ({ start: vi.fn(), stop: vi.fn() }) }));
@@ -167,4 +167,21 @@ it('names the invoices of «Aplicar cobro» and of the statement by their e-NCF 
   const cutOff = await screen.findByRole('heading', { name: 'Facturas al corte' });
   expect(cutOff.parentElement).toHaveTextContent('E310000000017');
   expect(cutOff.parentElement).not.toHaveTextContent('NF-0193f4c2');
+});
+
+it('downloads the receipt PDF from its detail and explains a failure', async () => {
+    const user = userEvent.setup(); view(<TreasuryPage initialStationId="s-1" />);
+    await user.click(await screen.findByRole('button', { name: 'Ver RC-1' }));
+    vi.mocked(api.downloadTreasuryReceiptDocument).mockResolvedValueOnce(undefined);
+    await user.click(await screen.findByRole('button', { name: 'Descargar recibo' }));
+    expect(api.downloadTreasuryReceiptDocument).toHaveBeenCalledWith(expect.objectContaining({ id: 'r-1', reference: 'RC-1' }));
+    vi.mocked(api.downloadTreasuryReceiptDocument).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 403 }));
+    await user.click(screen.getByRole('button', { name: 'Descargar recibo' }));
+    expect(await screen.findByText(/No se pudo descargar el recibo/)).toBeInTheDocument();
+});
+
+it('offers the consolidated statement of every airline', async () => {
+    view(<StatementPage initialStationId="s-1" />);
+    const airline = await screen.findByRole('combobox', { name: 'Aerolínea' });
+    expect(within(airline).getByRole('option', { name: 'Todas las aerolíneas' })).toHaveValue('');
 });

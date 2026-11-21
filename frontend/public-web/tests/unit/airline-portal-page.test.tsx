@@ -44,6 +44,7 @@ let approvedEvidence = emptyEvidence;
 const getApprovedEvidence = vi.fn(async () => approvedEvidence);
 const getServiceOrder = vi.fn(async (): Promise<never> => { throw new ElevantApiError({ kind: "http", status: 404 }); });
 const downloadServiceOrder = vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+const downloadFlightReport = vi.fn<(operationId: string) => Promise<Blob>>(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
 const initialRequestPage: AirlineOperationalRequestPageResponse = {
   page: 1, limit: 20, hasMore: false,
   requests: [{ id: "73000000-0000-7000-8000-000000000001",
@@ -101,7 +102,7 @@ const getPortalUsers = vi.fn(async () => ({
 }));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getCardPaymentAvailability, getPaymentReceipt, exportAirlineReport, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, downloadFlightReport, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getCardPaymentAvailability, getPaymentReceipt, exportAirlineReport, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
@@ -491,4 +492,27 @@ it("addresses the airline as usted in requests, documents and reports (N19)", as
   page.rerender(<AirlinePortalPage view="reports" />);
   expect(screen.getByText(/^Consulte las operaciones y facturas de su aerolínea\. Las operaciones muestran la primera página/))
     .toBeInTheDocument();
+});
+
+it("downloads the Flight Report of an operation approved by OCC", async () => {
+  detailOperation = { ...bootstrap.currentOperations[0], status: "Approved" };
+  const createObjectURL = vi.fn(() => "blob:flight-report");
+  Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+  render(<AirlinePortalPage view="flightDetail" operationId={detailOperation.id} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Descargar Reporte de vuelo" }));
+  await waitFor(() => expect(downloadFlightReport).toHaveBeenCalledWith(detailOperation.id));
+  expect(createObjectURL).toHaveBeenCalled();
+
+  downloadFlightReport.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 409 }));
+  fireEvent.click(screen.getByRole("button", { name: "Descargar Reporte de vuelo" }));
+  expect(await screen.findByText("No se pudo descargar el Reporte de vuelo. Intente nuevamente.")).toBeInTheDocument();
+});
+
+it("offers no Flight Report while OCC has not approved the operation", async () => {
+  downloadFlightReport.mockClear();
+  render(<AirlinePortalPage view="flightDetail" operationId={detailOperation.id} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Descargar Reporte de vuelo" })).not.toBeInTheDocument();
+  expect(screen.getByText(/El Reporte de vuelo estará disponible cuando OCC apruebe la operación/)).toBeInTheDocument();
+  expect(downloadFlightReport).not.toHaveBeenCalled();
 });
