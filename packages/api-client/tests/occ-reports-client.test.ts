@@ -50,3 +50,32 @@ describe("OCC reports client", () => {
     await expect(client.getOccReport("operations", query)).rejects.toMatchObject({ kind: "malformed-response" });
   });
 });
+
+describe("OCC report filters and summary (ADR-0048)", () => {
+  it("sends the filters to the page and the export and accepts the new fields", async () => {
+    const urls: string[] = [];
+    const airlineId = "30000000-0000-7000-8000-000000000001";
+    const enriched = { ...page, key: "coverage-assignments", stationName: "Punta Cana", columnTypes: ["date", "text"],
+      appliedFilters: [{ label: "Aerolínea", value: "Arajet" }], totalRows: 1, generatedBy: "Ana Pérez",
+      summary: [{ label: "Asignaciones", value: "1", context: "de 1 agentes" }],
+      totals: [{ label: "Total", cells: [{ value: "Total", type: "text" }, { value: "", type: "text" }] }] };
+    const answers: Response[] = [
+      Response.json({ maxRangeDays: 366, reports: [{ key: "coverage-assignments", title: "Asignaciones", description: "Detalle",
+        columns: ["Fecha"], columnTypes: ["date"], asOfDate: false,
+        filters: [{ key: "agent", label: "Agente", parameter: "agentId", options: [] }] }] }),
+      Response.json(enriched),
+      new Response(new TextEncoder().encode("%PDF-1.7 %%EOF"), { status: 200, headers: { "content-type": "application/pdf" } }),
+    ];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async input => { urls.push(String(input)); return answers.shift()!; } });
+    await expect(client.listOccReports()).resolves.toMatchObject({ maxRangeDays: 366 });
+    await expect(client.getOccReport("coverage-assignments", { ...query, airlineId, status: "Approved" }))
+      .resolves.toMatchObject({ generatedBy: "Ana Pérez" });
+    expect(urls[1]).toContain(`airlineId=${airlineId}`);
+    expect(urls[1]).toContain("status=Approved");
+    await client.exportOccReport("coverage-assignments", { ...query, airlineId }, "pdf");
+    expect(urls[2]).toContain(`airlineId=${airlineId}`);
+    await expect(client.getOccReport("operations", { ...query, agentId: "no-uuid" })).rejects.toThrow(TypeError);
+    await expect(client.getOccReport("operations", { ...query, status: "Aprobada ya" })).rejects.toThrow(TypeError);
+  });
+});

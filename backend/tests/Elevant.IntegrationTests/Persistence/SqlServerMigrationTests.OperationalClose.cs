@@ -148,7 +148,7 @@ public sealed partial class SqlServerMigrationTests
 
         // 4. The day's operational close.
         var report = await Run(services => services.GetRequiredService<IOccReportStore>().ReadAsync(occ,
-            OccReportKind.DailyClose, station, new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18), 1, 50, ct));
+            OccReportKind.DailyClose, station, new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18), 1, 50, OccReportFilters.None, ct));
         Assert.Null(report.Failure);
         var row = Assert.Single(report.Table!.Rows, cells => cells[1].Value == "DEV-TAT-0001");
         Assert.Equal(report.Table.Definition.Columns.Count, row.Count);

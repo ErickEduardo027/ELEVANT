@@ -23,4 +23,18 @@ public sealed record HumanResourcesStaffDistributionResponse(
 
 public sealed record HumanResourcesQualificationCoverageResponse(
     Guid EquipmentTypeId, string EquipmentCode, string EquipmentName,
-    int EligibleAgents, int QualifiedAgents);
+    int EligibleAgents, int QualifiedAgents)
+{
+    /// <summary>Active agents of the station at the cut-off date, the context of «Elegibles» and «Habilitados».</summary>
+    public int StationAgents { get; init; }
+}
+
+/// <summary>
+/// A Gestión Humana report (ADR-0048): its route key, Spanish title, columns with their types (text, number, percent,
+/// date, datetime, time) and whether it is «a una fecha de corte» (only <c>to</c> matters; the screen hides «Desde»).
+/// </summary>
+public sealed record HumanResourcesReportDefinitionResponse(string Key, string Title, string Description,
+    IReadOnlyList<string> Columns, IReadOnlyList<string> ColumnTypes, bool AsOfDate);
+
+public sealed record HumanResourcesReportCatalogResponse(IReadOnlyList<HumanResourcesReportDefinitionResponse> Reports,
+    int MaxRangeDays);

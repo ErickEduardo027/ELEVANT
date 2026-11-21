@@ -14679,6 +14679,12 @@
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
@@ -14691,6 +14697,11 @@
                 }
               },
               "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -14709,6 +14720,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
               }
             }
           },
@@ -14721,6 +14737,11 @@
                 }
               },
               "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -20987,6 +21008,42 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/reports": {
+      "get": {
+        "tags": [
+          "HumanResourcesReports"
+        ],
+        "summary": "The four reports with their typed columns and whether each is «a una fecha de corte» (ADR-0048): then the screen\nasks only for the date and hides «Desde».",
+        "operationId": "ListHumanResourcesReports",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesReportCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -28317,6 +28374,37 @@
               "format": "int32",
               "default": 25
             }
+          },
+          {
+            "name": "airlineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "terminalId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -28426,6 +28514,37 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "airlineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "terminalId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -45321,6 +45440,22 @@
         },
         "additionalProperties": false
       },
+      "FinanceReportAppliedFilter": {
+        "required": [
+          "label",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "FinanceReportColumn": {
         "required": [
           "key",
@@ -45345,6 +45480,7 @@
         "required": [
           "columns",
           "description",
+          "filters",
           "from",
           "key",
           "notes",
@@ -45402,12 +45538,19 @@
             "items": {
               "type": "string"
             }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceReportAppliedFilter"
+            }
           }
         },
         "additionalProperties": false
       },
       "FinanceReportDefinition": {
         "required": [
+          "asOfDate",
           "description",
           "key",
           "title"
@@ -45422,6 +45565,9 @@
           },
           "description": {
             "type": "string"
+          },
+          "asOfDate": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -45444,6 +45590,10 @@
             "type": "string"
           },
           "currencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "context": {
             "type": "string",
             "nullable": true
           }
@@ -47601,7 +47751,8 @@
           "equipmentCode",
           "equipmentName",
           "equipmentTypeId",
-          "qualifiedAgents"
+          "qualifiedAgents",
+          "stationAgents"
         ],
         "type": "object",
         "properties": {
@@ -47620,6 +47771,10 @@
             "format": "int32"
           },
           "qualifiedAgents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stationAgents": {
             "type": "integer",
             "format": "int32"
           }
@@ -47926,6 +48081,64 @@
           "cycleNumber": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesReportCatalogResponse": {
+        "required": [
+          "maxRangeDays",
+          "reports"
+        ],
+        "type": "object",
+        "properties": {
+          "reports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesReportDefinitionResponse"
+            }
+          },
+          "maxRangeDays": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesReportDefinitionResponse": {
+        "required": [
+          "asOfDate",
+          "columns",
+          "columnTypes",
+          "description",
+          "key",
+          "title"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columnTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "asOfDate": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -52882,8 +53095,11 @@
       },
       "OccReportDefinitionResponse": {
         "required": [
+          "asOfDate",
           "columns",
+          "columnTypes",
           "description",
+          "filters",
           "key",
           "title"
         ],
@@ -52903,14 +53119,74 @@
             "items": {
               "type": "string"
             }
+          },
+          "columnTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReportFilterDefinitionResponse"
+            }
+          },
+          "asOfDate": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReportFilterDefinitionResponse": {
+        "required": [
+          "key",
+          "label",
+          "options",
+          "parameter"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReportFilterOptionResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReportFilterOptionResponse": {
+        "required": [
+          "code",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
           }
         },
         "additionalProperties": false
       },
       "OccReportPageResponse": {
         "required": [
+          "appliedFilters",
           "asOf",
           "columns",
+          "columnTypes",
           "from",
           "hasMore",
           "key",
@@ -52919,8 +53195,11 @@
           "rows",
           "stationCode",
           "stationId",
+          "summary",
           "title",
-          "to"
+          "to",
+          "totalRows",
+          "totals"
         ],
         "type": "object",
         "properties": {
@@ -52974,6 +53253,61 @@
           },
           "hasMore": {
             "type": "boolean"
+          },
+          "stationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "columnTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appliedFilters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportAppliedFilterResponse"
+            }
+          },
+          "totalRows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "summary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportMetricResponse"
+            }
+          },
+          "totals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReportTotalRowResponse"
+            }
+          },
+          "generatedBy": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReportTotalRowResponse": {
+        "required": [
+          "cells",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReportCellResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -57422,6 +57756,42 @@
           },
           "body": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReportAppliedFilterResponse": {
+        "required": [
+          "label",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReportMetricResponse": {
+        "required": [
+          "label",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

@@ -5,8 +5,9 @@ using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Finance;
 using Elevant.Infrastructure.Commercial;
 using Elevant.Infrastructure.Finance;
-using Elevant.Infrastructure.Identity;
-using Elevant.Infrastructure.Operations;
+using Elevant.Application.Identity;
+using Elevant.Application.Operations;
+using Elevant.Infrastructure.Documents;
 
 namespace Elevant.UnitTests.Application;
 
@@ -34,20 +35,21 @@ public sealed class ElevantPdfFontsTests
         "card-receipt" => new FinancialDocumentPdfRenderer().RenderCardReceipt(new CardPaymentReceiptData(Guid.NewGuid(),
             "Aerolínea Demo", "DEV-NF-2026-00000000000000000000001", "E310000000001", "Visa", "4242", "ABC123", 118m, "USD",
             At, "REC-0001")),
-        "finance-report" => new FinancialDocumentPdfRenderer().RenderReport(new FinanceReportData("aging", "Antigüedad",
+        "finance-report" => new ReportRenderer().RenderPdf(FinanceReportDocuments.ToDocument(new FinanceReportData("aging", "Antigüedad",
             "Saldos por antigüedad", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 5), null,
             [new FinanceReportMetric("Facturas", "1", "number")],
             [new FinanceReportColumn("airline", "Aerolínea", "text"), new FinanceReportColumn("balance", "Saldo", "money")],
-            [["Aerolínea Demo", "118.00"]], ["Simulación sin validez fiscal."]), "Estación: PUJ"),
-        "hr-report" => new HumanResourcesReportPdfRenderer().Render(new HumanResourcesReportSnapshot(
-            HumanResourcesReportKind.StaffDistribution, Guid.NewGuid(), new DateOnly(2026, 11, 5), new DateOnly(2026, 11, 5), At,
-            ["Agente", "Aerolínea"],
-            [(IReadOnlyList<HumanResourcesReportCell>)[new("Ana Pérez", HumanResourcesReportCellType.Text),
-                new("Aerolínea Demo", HumanResourcesReportCellType.Text)]]), "PUJ"),
-        "occ-report" => new OccReportRenderer().RenderPdf(new OccReportTable(OccReportCatalog.Find("services-by-airline")!,
+            [["Aerolínea Demo", "118.00"]], ["Simulación sin validez fiscal."]), "Ana Pérez", At)),
+        "hr-report" => new ReportRenderer().RenderPdf(HumanResourcesReportCatalog.ToDocument(new HumanResourcesReportSnapshot(
+            HumanResourcesReportKind.AccountMovements, Guid.NewGuid(), new DateOnly(2026, 11, 5), new DateOnly(2026, 11, 5), At,
+            ["Fecha y hora local", "Agente", "Empleado", "Movimiento"],
+            [(IReadOnlyList<HumanResourcesReportCell>)[new("05/11/2026 10:00", HumanResourcesReportCellType.DateTime),
+                new("Ana Pérez", HumanResourcesReportCellType.Text), new("DEV-001", HumanResourcesReportCellType.Text),
+                new("Aerolínea Demo", HumanResourcesReportCellType.Text)]]) { StationCode = "PUJ" })),
+        "occ-report" => new ReportRenderer().RenderPdf(OccReportDocuments.ToDocument(new OccReportTable(OccReportCatalog.Find("services-by-airline")!,
             Guid.NewGuid(), "PUJ", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 5), At,
             [[new("Aerolínea Demo"), new("Asistencia en rampa"), new("operación"), OccReportCell.Number(2),
-                OccReportCell.Number(2), OccReportCell.Number(2)]], 1, 50, false)),
+                OccReportCell.Number(2), OccReportCell.Number(2)]], 1, 50, false))),
         _ => new ContractPdfRenderer(new FixedTime(At)).Render(Contract()),
     };
 

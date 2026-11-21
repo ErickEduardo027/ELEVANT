@@ -53,11 +53,42 @@ internal sealed partial class EfFinanceReportStore(
             _ => throw new InvalidOperationException("The report catalog and its builders diverged."),
         };
         return new FinanceReportData(definition.Key, definition.Title, definition.Description, filter.From, filter.To,
-            reportKey is "revenue" or "receivables" or "collections" ? Consolidation : null, summary, columns, rows, notes);
+            reportKey is "revenue" or "receivables" or "collections" ? Consolidation : null, summary, columns, rows, notes)
+        {
+            Filters = await AppliedFiltersAsync(filter, cancellationToken),
+        };
+    }
+
+    /// <summary>
+    /// The filters by name (ADR-0048): the station «PUJ · Punta Cana» (or every authorized one), the airline and the
+    /// currency. The period is printed apart.
+    /// </summary>
+    private async Task<IReadOnlyList<FinanceReportAppliedFilter>> AppliedFiltersAsync(FinanceReportFilter filter,
+        CancellationToken cancellationToken)
+    {
+        var filters = new List<FinanceReportAppliedFilter>();
+        if (filter.StationId is { } stationId)
+        {
+            var station = await context.Stations.AsNoTracking().Where(item => item.PublicId == stationId)
+                .Select(item => new { item.Code, item.Name }).SingleOrDefaultAsync(cancellationToken);
+            filters.Add(new("Estación", station is null ? "No encontrada"
+                : string.IsNullOrWhiteSpace(station.Name) || station.Name == station.Code ? station.Code : $"{station.Code} · {station.Name}"));
+        }
+        else filters.Add(new("Estación", "Todas las estaciones autorizadas"));
+        if (filter.AirlineId is { } airlineId)
+            filters.Add(new("Aerolínea", await context.Airlines.AsNoTracking().Where(item => item.PublicId == airlineId)
+                .Select(item => item.Name).SingleOrDefaultAsync(cancellationToken) ?? "No encontrada"));
+        else filters.Add(new("Aerolínea", "Todas"));
+        filters.Add(new("Moneda", filter.CurrencyCode ?? "Todas"));
+        return filters;
     }
 
     private static string Money(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero)
         .ToString("0.00", CultureInfo.InvariantCulture);
+
+    /// <summary>«12.5 % del saldo», or null over a zero whole.</summary>
+    private static string? Share(decimal part, decimal whole, string of) =>
+        whole == 0 ? null : $"{Number(Math.Round(part / whole * 100m, 1))} % {of}";
 
     private static string Number(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
 
@@ -250,9 +281,11 @@ internal sealed partial class EfFinanceReportStore(
         var summary = open.GroupBy(item => item.invoice.CurrencyCode)
             .SelectMany(group => new[]
             {
-                new FinanceReportMetric($"Por cobrar {group.Key}", Money(group.Sum(item => item.Balance)), "money", group.Key),
+                new FinanceReportMetric($"Por cobrar {group.Key}", Money(group.Sum(item => item.Balance)), "money", group.Key,
+                    $"en {group.Count()} facturas abiertas de {group.Select(item => item.invoice.Airline).Distinct().Count()} aerolíneas"),
                 new FinanceReportMetric($"Vencido {group.Key}", Money(group.Where(item => item.Days > 0).Sum(item => item.Balance)),
-                    "money", group.Key),
+                    "money", group.Key, Share(group.Where(item => item.Days > 0).Sum(item => item.Balance), group.Sum(item => item.Balance),
+                        "del saldo por cobrar")),
             }).ToArray();
         return (summary,
             [Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("invoices", "Facturas abiertas", "number"),

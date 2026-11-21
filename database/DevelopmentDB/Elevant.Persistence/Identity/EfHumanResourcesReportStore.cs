@@ -95,22 +95,12 @@ internal sealed class EfHumanResourcesReportStore(
             // the first page, in the order the pages check them (role, then station).
             var station = await context.Stations.AsNoTracking()
                 .Where(item => item.PublicId == stationId && item.IsActive)
-                .Select(item => new { item.Code, item.IanaTimeZone })
+                .Select(item => new { item.Id, item.Code, item.Name, item.IanaTimeZone })
                 .SingleOrDefaultAsync(cancellationToken);
             var zone = BusinessCalendar.Zone(station?.IanaTimeZone);
             var rows = new List<IReadOnlyList<HumanResourcesReportCell>>();
-            IReadOnlyList<string> columns = kind switch
-            {
-                HumanResourcesReportKind.Expirations =>
-                    ["Agente", "Empleado", "Clase", "Documento", "Vence"],
-                HumanResourcesReportKind.AccountMovements =>
-                    ["Fecha y hora local", "Agente", "Empleado", "Movimiento"],
-                HumanResourcesReportKind.StaffDistribution =>
-                    ["Fecha", "Agente", "Empleado", "Terminal", "Puesto", "Inicio", "Fin"],
-                HumanResourcesReportKind.QualificationCoverage =>
-                    ["Equipo", "Nombre", "Elegibles", "Habilitados"],
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-            };
+            IReadOnlyList<string> columns = HumanResourcesReportCatalog.Find(kind).Columns
+                .Select(column => column.Label).ToArray();
             var page = 1;
             while (true)
             {
@@ -189,6 +179,10 @@ internal sealed class EfHumanResourcesReportStore(
                                     HumanResourcesReportCellType.Number),
                                 new(item.QualifiedAgents.ToString(CultureInfo.InvariantCulture),
                                     HumanResourcesReportCellType.Number),
+                                new((item.EligibleAgents - item.QualifiedAgents).ToString(CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Number),
+                                new(item.EligibleAgents == 0 ? "—" : Math.Round(item.QualifiedAgents * 100m / item.EligibleAgents, 1)
+                                    .ToString(CultureInfo.InvariantCulture), HumanResourcesReportCellType.Number),
                             ]).ToArray() ?? [];
                         break;
                     }
@@ -205,12 +199,19 @@ internal sealed class EfHumanResourcesReportStore(
             }
 
             // The first page found the station active inside this serializable transaction.
+            var generatedBy = (await actors.ResolveAsync(actorId, cancellationToken))?.DisplayName;
+            int? stationAgents = kind == HumanResourcesReportKind.QualificationCoverage
+                ? await StationAgents(station!.Id, endDate).CountAsync(cancellationToken)
+                : null;
             await transaction.CommitAsync(cancellationToken);
             return new HumanResourcesReportSnapshotResult(
                 new HumanResourcesReportSnapshot(kind, stationId, startDate,
                     endDate, asOf, columns, rows)
                 {
                     StationCode = station!.Code,
+                    StationName = station.Name,
+                    GeneratedBy = generatedBy,
+                    StationAgents = stationAgents,
                     DocumentKind = documentKind,
                     Validity = validity,
                     TimeZone = station.IanaTimeZone,
@@ -425,11 +426,10 @@ internal sealed class EfHumanResourcesReportStore(
         if (stationInternalId is null)
             return new(null, HumanResourcesReportFailure.ForbiddenStation);
 
-        var eligibleAgents = context.RampAgents.AsNoTracking().Where(agent =>
-            agent.IsActive && context.Set<RampAgentStationScope>().Any(scope =>
-                scope.RampAgentId == agent.Id && scope.StationId == stationInternalId &&
-                scope.ValidFrom <= reportDate &&
-                (scope.ValidTo == null || scope.ValidTo >= reportDate)));
+        // ADR-0048: «Elegibles» are the station's active agents trained on that equipment (a current cycle obtained by
+        // the cut-off date, expired or not), so it differs by equipment; «Habilitados» are those whose cycle is still in
+        // force. The station's whole roster travels apart (StationAgents) as the context of both figures.
+        var stationAgents = StationAgents(stationInternalId.Value, reportDate);
         var rows = await context.EquipmentTypes.AsNoTracking()
             .Where(equipment => equipment.IsActive && equipment.RequiresQualification)
             .OrderBy(equipment => equipment.Code).ThenBy(equipment => equipment.Id)
@@ -438,22 +438,48 @@ internal sealed class EfHumanResourcesReportStore(
                 EquipmentTypeId = equipment.PublicId,
                 EquipmentCode = equipment.Code,
                 EquipmentName = equipment.Name,
-                EligibleAgents = eligibleAgents.Count(),
+                EligibleAgents = context.QualificationCycles.AsNoTracking()
+                    .Where(cycle => cycle.EquipmentTypeId == equipment.Id &&
+                        cycle.IsCurrent && cycle.ObtainedOn <= reportDate &&
+                        stationAgents.Any(agent => agent.Id == cycle.RampAgentId))
+                    .Select(cycle => cycle.RampAgentId).Distinct().Count(),
                 QualifiedAgents = context.QualificationCycles.AsNoTracking()
                     .Where(cycle => cycle.EquipmentTypeId == equipment.Id &&
                         cycle.IsCurrent && cycle.ObtainedOn <= reportDate &&
                         cycle.ExpiresOn >= reportDate &&
-                        eligibleAgents.Any(agent => agent.Id == cycle.RampAgentId))
+                        stationAgents.Any(agent => agent.Id == cycle.RampAgentId))
                     .Select(cycle => cycle.RampAgentId).Distinct().Count(),
             }).Skip((page - 1) * limit).Take(limit + 1)
             .ToArrayAsync(cancellationToken);
+        var roster = await stationAgents.CountAsync(cancellationToken);
 
         return new(new HumanResourcesReportPage<HumanResourcesQualificationCoverageRow>(
             stationId, startDate, reportDate, page, limit, rows.Length > limit,
             timeProvider.GetUtcNow(), rows.Take(limit).Select(item =>
                 new HumanResourcesQualificationCoverageRow(item.EquipmentTypeId,
                     item.EquipmentCode, item.EquipmentName,
-                    item.EligibleAgents, item.QualifiedAgents)).ToArray()), null);
+                    item.EligibleAgents, item.QualifiedAgents) { StationAgents = roster }).ToArray()), null);
+    }
+
+    /// <summary>The station's active agents with a station scope in force at <paramref name="date"/>.</summary>
+    private IQueryable<RampAgent> StationAgents(long stationKey, DateOnly date) =>
+        context.RampAgents.AsNoTracking().Where(agent =>
+            agent.IsActive && context.Set<RampAgentStationScope>().Any(scope =>
+                scope.RampAgentId == agent.Id && scope.StationId == stationKey &&
+                scope.ValidFrom <= date && (scope.ValidTo == null || scope.ValidTo >= date)));
+
+    public async Task<HumanResourcesReportFailure?> AuthorizeExportAsync(Guid actorId, Guid stationId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (actor is null ||
+            !actor.HasPermission("human_resources.reports.export") ||
+            !actor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff))
+            return HumanResourcesReportFailure.ForbiddenRole;
+        return actor.StationScopes.Any(scope => scope.StationId == stationId)
+            ? null : HumanResourcesReportFailure.ForbiddenStation;
     }
 
     public async Task<HumanResourcesReportReadResult<HumanResourcesAccountMovementRow>>
