@@ -80,9 +80,10 @@ internal sealed partial class EfFinanceReportStore
             var collected = cash.Where(r => r.Currency == currency).Sum(r => r.Cash);
             var byCard = cash.Where(r => r.Currency == currency && r.Method == PaymentMethod.Card).Sum(r => r.Cash);
             return new[] { new FinanceReportMetric($"Facturado {currency}", Money(invoiced), "money", currency),
-                new FinanceReportMetric($"Cobrado {currency}", Money(collected), "money", currency),
+                new FinanceReportMetric($"Cobrado {currency}", Money(collected), "money", currency,
+                    invoiced == 0 ? null : $"{Number(Math.Round(collected / invoiced * 100m, 1))} % de lo facturado"),
                 new FinanceReportMetric($"Cobrado con tarjeta {currency}", Money(byCard), "money", currency),
-                new FinanceReportMetric($"Cobro sobre facturado {currency}", invoiced == 0 ? "0" : Number(collected / invoiced * 100m), "percent") };
+                new FinanceReportMetric($"Cobro sobre facturado {currency}", invoiced == 0 ? "0" : Number(Math.Round(collected / invoiced * 100m, 1)), "percent") };
         }).ToArray();
         return (summary, [Col("month", "Mes"), Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("method", "Método"),
             Col("payments", "Movimientos", "number"), Col("amount", "Efectivo neto", "money"), Col("kind", "Origen")], rows,
