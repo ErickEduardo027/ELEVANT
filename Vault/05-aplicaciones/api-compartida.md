@@ -200,6 +200,43 @@ y nada se guarda en SQL. Un reinicio la vacía, y una segunda instancia tendría
 su propia imagen y duplicaría las lecturas de la red
 ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)).
 
+## Motor común de reportes
+
+*Posterior al commit verificado de esta nota (PR B del plan de reportería, 21 de
+noviembre de 2026):* los reportes de OCC, Gestión Humana y Finanzas se exportan
+en PDF y Excel con un solo motor
+([ADR-0048](../../docs/adr/0048-motor-comun-de-reportes.md)).
+
+- **Qué lleva cada documento.**
+  [`ReportDocument`](../../backend/Elevant.Application/Documents/ReportDocument.cs)
+  reúne:
+  - el área, la estación con su nombre y el período, o la fecha de corte;
+  - los filtros aplicados con su nombre legible;
+  - «Generado el … (hora local de la estación) por …»;
+  - las columnas tipadas, la fila de totales (una por moneda si se mezclan) y
+    el resumen con contexto («de 40 operaciones (7.5 %)»).
+- **Cómo se renderiza.** Lo hacen
+  [`ReportPdfRenderer` y `ReportXlsxRenderer`](../../backend/Elevant.Infrastructure/Documents/):
+  - **PDF:** membrete con logo, ajuste por palabra sin «...», encabezado
+    repetido, cifras a la derecha con miles, orientación automática y «Página X
+    de Y»;
+  - **Excel:** encabezado navy congelado, autofiltro, formatos reales de
+    importe, fecha, hora y porcentaje, totales `SUBTOTAL(109, …)` y una hoja
+    «Filtros».
+- **CSV.** Se conserva el de cada área.
+- **Filtros y catálogos nuevos.** Son aditivos:
+  - **OCC:** `airlineId`, `status`, `agentId` y `terminalId` según el reporte.
+    `ListOccReports` publica los filtros, los tipos de columna y `asOfDate`, y
+    hay un reporte nuevo, «Asignaciones de cobertura» (`coverage-assignments`).
+  - **Gestión Humana:** el rango llega a 366 días y se añade
+    `GET human-resources/reports`. «Exportar» se comprueba antes de leer o
+    renderizar.
+  - **Finanzas:** `filters`, el `context` de los indicadores y `asOfDate` en
+    cuentas por cobrar y por pagar.
+- **Corrección de «Elegibles».** En la cobertura de habilitaciones, «Elegibles»
+  cuenta los agentes formados en cada equipo, con la plantilla de la estación
+  aparte (`stationAgents`).
+
 ## Validación local
 
 Los comandos de restauración, compilación, pruebas y deriva del modelo EF

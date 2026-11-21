@@ -380,7 +380,13 @@ son seis, calculados en el servidor: Ingresos por período (neto de notas, con
 ITBIS y consolidado en USD con la tasa registrada), Cuentas por cobrar y
 antigüedad, Cobranza, Cuentas por pagar, Recargos y Ventas (e-CF simulado). Se
 exportan en CSV, XLSX o PDF con permiso y auditoría, y los PDF llevan el marco
-«Simulación — sin validez fiscal». Inicio (`GET finance/home`) muestra los
+«Simulación — sin validez fiscal». *Posterior al commit verificado:* el PDF y el
+Excel salen del motor común ([ADR-0048](../../docs/adr/0048-motor-comun-de-reportes.md)):
+los filtros nombran la estación, la aerolínea y la moneda (ya no «Estación
+filtrada»), los totales van por moneda, el cobro sobre lo facturado lleva un
+decimal y los indicadores de cobro, antigüedad y cuentas por pagar traen su
+contexto; cuentas por cobrar y por pagar son reportes a fecha de corte
+(`asOfDate`). Inicio (`GET finance/home`) muestra los
 indicadores de la estación que el servidor calcula, cada sección según el
 permiso de su módulo.
 
