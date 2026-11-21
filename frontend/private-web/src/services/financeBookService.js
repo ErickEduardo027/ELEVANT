@@ -1,6 +1,5 @@
 import { commercialApi } from './commercialGovernanceApi';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
-import { downloadFile } from '../utils/downloadFile';
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
 const query = params => {
@@ -91,10 +90,11 @@ export const listFinanceReports = () => commercialApi('/finance/reports');
 export const getFinanceReport = (key, filters) => commercialApi(`/finance/reports/${key}${query(filters)}`);
 
 /**
- * Downloads an export with the session token; the browser saves it with the server's file name. A refusal carries
- * its Problem Details `code` (`unknown_finance_report`, `invalid_report_export_format`…) for the screen to explain.
+ * The file of a report export, read with the session token; the screen saves it (`downloadFile`) as
+ * `financeReportFileName`. A refusal carries its Problem Details `code` (`unknown_finance_report`,
+ * `invalid_report_export_format`…) for the screen to explain.
  */
-export async function downloadFinanceReport(key, format, filters) {
+export async function exportFinanceReport(key, format, filters) {
   const origin = String(process.env.NEXT_PUBLIC_ELEVANT_API_URL || '').replace(/\/$/, '');
   const token = readSession()?.token;
   if (!origin || !token) throw Object.assign(new Error('La sesión expiró. Vuelva a iniciar sesión.'), { status: 401 });
@@ -113,9 +113,11 @@ export async function downloadFinanceReport(key, format, filters) {
       ? 'No tiene permiso para exportar este reporte.' : 'No se pudo generar la exportación.'), {
       status: response.status, code: typeof problem?.code === 'string' ? problem.code : undefined });
   }
-  const blob = await response.blob();
-  downloadFile(blob, `elevant-${key}-${filters.from}-${filters.to}.${format}`);
+  return response.blob();
 }
+
+/** «elevant-revenue-2026-11-01-2026-11-21.pdf»: report and period. */
+export const financeReportFileName = (key, filters, format) => `elevant-${key}-${filters.from}-${filters.to}.${format}`;
 
 export function newRequestId() {
   return globalThis.crypto?.randomUUID?.() ??

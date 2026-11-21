@@ -75,10 +75,10 @@ it('keeps the Problem Details code of a refused report export', async () => {
   const book = await import('./financeBookService');
   fetch.mockImplementationOnce(async () => new Response(JSON.stringify({ title: 'Unknown export format.', code: 'invalid_report_export_format' }),
     { status: 400, headers: { 'content-type': 'application/problem+json' } }));
-  await expect(book.downloadFinanceReport('sales', 'docx', { from: '2026-11-01', to: '2026-11-08' }))
+  await expect(book.exportFinanceReport('sales', 'docx', { from: '2026-11-01', to: '2026-11-08' }))
     .rejects.toMatchObject({ status: 400, code: 'invalid_report_export_format', message: 'No se pudo generar la exportación.' });
   fetch.mockImplementationOnce(async () => new Response('not json', { status: 500 }));
-  await expect(book.downloadFinanceReport('sales', 'csv', { from: '2026-11-01', to: '2026-11-08' }))
+  await expect(book.exportFinanceReport('sales', 'csv', { from: '2026-11-01', to: '2026-11-08' }))
     .rejects.toMatchObject({ status: 500, code: undefined });
 });
 
