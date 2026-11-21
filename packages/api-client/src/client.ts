@@ -339,6 +339,7 @@ import {
   getGetFinanceInvoiceDocumentByIdUrl,
   getGetAirlineInvoiceDocumentByIdUrl,
   getGetFinanceAdjustmentNoteDocumentUrl,
+  getGetFinanceTreasuryReceiptDocumentUrl,
   getGetAirlineAdjustmentNoteDocumentUrl,
   getGetAirlinePaymentByInvoiceUrl,
   getGetAirlineInvoiceStatementUrl,
@@ -521,6 +522,7 @@ import {
   getGetOccDamagePhotoUrl,
   getGetAirlineServiceOrderUrl,
   getGetAirlineServiceOrderPdfUrl,
+  getGetAirlineFlightReportPdfUrl,
   getGetRampCharterUrl,
   getAddOccReviewChargeUrl,
   getRemoveOccReviewChargeUrl,
@@ -1283,6 +1285,8 @@ export interface ElevantApiClient {
   getFinanceAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
   /** 4-N17: the PDF of a credit or debit note of the airline's own invoice, within the portal's scope. */
   getAirlineAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
+  /** The PDF receipt of a treasury collection of Finance's stations, with its live applications to invoices. */
+  getFinanceTreasuryReceiptDocument(receiptId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
   /** ADR-0036: pays the whole balance with a simulated card; the same key and body replay the attempt. */
   payAirlineInvoiceByCard(
     invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string,
@@ -1962,6 +1966,8 @@ export interface ElevantApiClient {
   /** Airline portal: the latest Service Order its representative signed. */
   getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<AirlineServiceOrderResponse>;
   downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** The Flight Report of an operation OCC approved, of the session's airline at a station its contracts cover. */
+  downloadAirlineFlightReport(operationId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** A charter on the tablet (ADR-0033): carrier data and the services it can add at the base tariff. */
   getRampCharter(operationId: string, options?: ReportRampIncidentOptions): Promise<RampCharterResponse>;
   addRampCharterService(operationId: string, command: AddCharterServiceCommand, installationId: string,
@@ -6919,6 +6925,9 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     getAirlineAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions) {
       return executePdf(getGetAirlineAdjustmentNoteDocumentUrl(validatedUuid(noteId, "noteId")), options);
     },
+    getFinanceTreasuryReceiptDocument(receiptId: string, options?: GetFinancialDocumentOptions) {
+      return executePdf(getGetFinanceTreasuryReceiptDocumentUrl(validatedUuid(receiptId, "receiptId")), options);
+    },
     getFinancePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
       return executePdf(getGetFinancePaymentReceiptUrl(id), options);
@@ -8547,6 +8556,10 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     },
     downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions) {
       return executeReportDocument(getGetAirlineServiceOrderPdfUrl(validatedUuid(operationId, "operationId")), "pdf",
+        options);
+    },
+    downloadAirlineFlightReport(operationId: string, options?: GetHumanResourcesReportOptions) {
+      return executeReportDocument(getGetAirlineFlightReportPdfUrl(validatedUuid(operationId, "operationId")), "pdf",
         options);
     },
     async getRampCharter(operationId: string, options?: ReportRampIncidentOptions) {

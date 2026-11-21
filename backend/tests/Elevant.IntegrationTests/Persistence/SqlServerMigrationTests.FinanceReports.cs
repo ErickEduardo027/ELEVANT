@@ -139,6 +139,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(("Reversado", "80.00", "0.00", "0.00", "0.00"), byReference["REVERSED-REPORT"]);
         Assert.Equal(("Pago heredado", "100.00", "100.00", "0.00", "0.00"), byReference["LEGACY-REPORT"]);
         Assert.Equal("700.00", Assert.Single(receipts.Summary, m => m.Label == "Remanente USD").Value);
+        // A reversed receipt stays listed with its state but no longer adds to «Recibido».
+        var received = Assert.Single(receipts.Summary, m => m.Label == "Recibido USD");
+        Assert.Equal(("1100.00", "en 2 cobros"), (received.Value, received.Context));
 
         var supplier = new Supplier { PublicId = Guid.NewGuid(), ScopeStationId = station.Id, Code = "REPORT-SUPPLIER", Name = "Synthetic supplier", CreatedByAccountId = user.Id, CreatedAt = early, UpdatedAt = early };
         db.Add(supplier); await db.SaveChangesAsync(ct);

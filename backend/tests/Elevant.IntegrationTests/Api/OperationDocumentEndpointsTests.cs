@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
@@ -100,6 +101,45 @@ public sealed class OperationDocumentEndpointsTests(ElevantApiFactory factory) :
         Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
     }
 
+    private static readonly Guid AirlineOrganization = Guid.Parse("10000000-0000-7000-8000-000000000042");
+
+    private static OperationDocumentContent FlightReport() => new(OperationDocumentRules.SchemaVersion,
+        OperationDocumentKind.FlightReport, "AV-OPS-FR", "1", "Reporte de vuelo", "PUJ000000005",
+        new DocumentFlightHeader("PUJ", "Punta Cana", "America/Santo_Domingo", "DEV-TAT-0005", new DateOnly(2026, 11, 4),
+            "Arajet", "DM", "DM101", "SDQ", null, "DM102", "MIA", null, "B738", "HI1099", "A3", 150, 148, 78000, "Riley Ramp"),
+        [], [], null, null, "Contract", [], [], [], [], []);
+
+    /// <summary>
+    /// The airline downloads the Flight Report of its own approved operation, read with its organization and the stations
+    /// its contracts cover; any other operation is a 404.
+    /// </summary>
+    [Fact]
+    public async Task TheAirlineDownloadsTheFlightReportOfItsOwnOperation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var state = new State
+        {
+            Actor = new ActorContext(AccountId, "ops@arajet.test", "Laura Gómez",
+                [new ActorRole(Guid.NewGuid(), "AIRLINE_CLIENT", "Aerolínea", PortalKind.AirlinePortal, "airline")],
+                [new ActorMembership(Guid.NewGuid(), AirlineOrganization, "DM", "Arajet", OrganizationType.AirlineCustomer,
+                    MembershipKind.AirlineClient)], []),
+            AirlineFlightReport = new SignedOperationDocument(FlightReport(), Sha, []),
+        };
+        await using var application = Create(state);
+        using var client = Authenticated(application);
+        using var pdf = await client.GetAsync($"/api/v1/airline/portal/operations/{OperationId:D}/flight-report/pdf", ct);
+        Assert.Equal((HttpStatusCode.OK, "application/pdf"), (pdf.StatusCode, pdf.Content.Headers.ContentType?.MediaType));
+        Assert.Equal("reporte-de-vuelo-PUJ000000005.pdf", pdf.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        Assert.Equal(AirlineOrganization, state.FlightReportOrganization);
+        Assert.Equal([StationId], state.FlightReportStations!);
+        using var other = await client.GetAsync($"/api/v1/airline/portal/operations/{Guid.NewGuid():D}/flight-report/pdf", ct);
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+
+        state.Actor = null;
+        using var internalStaff = await client.GetAsync($"/api/v1/airline/portal/operations/{OperationId:D}/flight-report/pdf", ct);
+        Assert.Equal(HttpStatusCode.Forbidden, internalStaff.StatusCode);
+    }
+
     private WebApplicationFactory<Program> Create(State state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -108,6 +148,13 @@ public sealed class OperationDocumentEndpointsTests(ElevantApiFactory factory) :
             services.AddSingleton(state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IOperationDocumentStore>(_ => state);
+            services.RemoveAll<IAirlinePortalReportStore>();
+            services.AddSingleton(InterfaceStub.Create<IAirlinePortalReportStore>((name, _) => name switch
+            {
+                nameof(IAirlinePortalReportStore.ProfileAsync) => Task.FromResult<AirlinePortalReportProfile?>(
+                    new("Arajet", [new AirlinePortalReportStation(StationId, "PUJ", "Punta Cana")])),
+                _ => throw new NotSupportedException(name),
+            }));
         }));
 
     private static HttpRequestMessage Json(HttpMethod method, string path, string json)
@@ -148,11 +195,23 @@ public sealed class OperationDocumentEndpointsTests(ElevantApiFactory factory) :
         public DamageMarkWriteRequest? Mark { get; private set; }
         public DamagePhotoWriteRequest? Photo { get; private set; }
         public bool Unavailable { get; set; }
+        public ActorContext? Actor { get; set; }
+        public SignedOperationDocument? AirlineFlightReport { get; set; }
+        public Guid? FlightReportOrganization { get; private set; }
+        public IReadOnlyCollection<Guid>? FlightReportStations { get; private set; }
+
+        public Task<SignedOperationDocument?> ReadApprovedFlightReportForAirlineAsync(Guid organizationId,
+            IReadOnlyCollection<Guid> stations, Guid operationId, CancellationToken cancellationToken = default)
+        {
+            FlightReportOrganization = organizationId;
+            FlightReportStations = stations.ToArray();
+            return Task.FromResult(operationId == OperationId ? AirlineFlightReport : null);
+        }
 
         private static OperationDocumentsView View => new(OperationId, [], []);
 
         public Task<ActorContext?> ResolveAsync(Guid accountId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<ActorContext?>(new ActorContext(AccountId, "ramp.agent@dev.elevant.test", "Riley Ramp",
+            Task.FromResult<ActorContext?>(Actor ?? new ActorContext(AccountId, "ramp.agent@dev.elevant.test", "Riley Ramp",
                 [new ActorRole(Guid.Parse("41000000-0000-7000-8000-000000000002"), "RAMP_AGENT", "Ramp Agent",
                     PortalKind.RampMobileApp, "ramp_agent")],
                 [new ActorMembership(Guid.Parse("42000000-0000-7000-8000-000000000002"),

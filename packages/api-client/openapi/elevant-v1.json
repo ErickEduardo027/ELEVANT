@@ -1772,6 +1772,74 @@
         ]
       }
     },
+    "/api/v1/airline/portal/operations/{operationId}/flight-report/pdf": {
+      "get": {
+        "tags": [
+          "AirlineServiceOrder"
+        ],
+        "summary": "The Flight Report of an operation OCC approved, of the session's airline at a station its contracts cover; any\nother operation is a 404.",
+        "operationId": "GetAirlineFlightReportPdf",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/treasury/statements": {
       "get": {
         "tags": [
@@ -15547,7 +15615,6 @@
           {
             "name": "airlineId",
             "in": "query",
-            "required": true,
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -18730,6 +18797,94 @@
         "parameters": [
           {
             "name": "noteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/receipts/{receiptId}/document": {
+      "get": {
+        "tags": [
+          "FinanceTreasury"
+        ],
+        "summary": "The PDF receipt of a treasury collection of the actor's stations (finance.receipts.read): payer, amount, method and\nits live applications to invoices, «Simulación — sin validez fiscal». An unknown or out-of-scope one is a 404.",
+        "operationId": "GetFinanceTreasuryReceiptDocument",
+        "parameters": [
+          {
+            "name": "receiptId",
             "in": "path",
             "required": true,
             "schema": {

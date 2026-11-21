@@ -1,3 +1,4 @@
+using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Commercial;
 using Elevant.Application.Documents;
@@ -80,7 +81,7 @@ public sealed partial class SqlServerMigrationTests
         var firstRequest = await db.ServiceRequests.OrderBy(item => item.SubmittedAt).Select(item => item.SubmittedAt).FirstOrDefaultAsync(ct);
         var day = Elevant.Application.Common.BusinessCalendar.Today(firstRequest == default ? DateTimeOffset.UtcNow : firstRequest);
         var requests = (await store.ReadAsync(ContractsAccount, catalog.Find("requests")!, NewReportsQuery(catalog.Find("requests")!,
-            day.AddDays(-1).ToString("yyyy-MM-dd"), day.AddDays(300).ToString("yyyy-MM-dd")), ct)).Document!;
+            day.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), day.AddDays(300).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ct)).Document!;
         Assert.Equal(await db.ServiceRequests.CountAsync(item =>
             item.SubmittedAt >= Elevant.Application.Common.BusinessCalendar.StartOfDay(day.AddDays(-1), null) &&
             item.SubmittedAt < Elevant.Application.Common.BusinessCalendar.StartOfDay(day.AddDays(301), null), ct), requests.Rows.Count);
@@ -140,12 +141,12 @@ public sealed partial class SqlServerMigrationTests
         var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var invoices = AirlinePortalReports.All.Find("invoices")!;
         var invoiceReport = await reports.ReadAsync(NewReportsAirlineAccount, invoices,
-            NewReportsQuery(invoices, today.AddDays(-365).ToString("yyyy-MM-dd"), today.ToString("yyyy-MM-dd")), ct);
+            NewReportsQuery(invoices, today.AddDays(-365).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ct);
         Assert.Null(invoiceReport.Failure);
         invoiceReport.Document!.Validate();
         var statement = AirlinePortalReports.All.Find("statement")!;
         var statementReport = await reports.ReadAsync(NewReportsAirlineAccount, statement,
-            NewReportsQuery(statement, to: today.ToString("yyyy-MM-dd")), ct);
+            NewReportsQuery(statement, to: today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ct);
         Assert.Contains(new ReportFilter("Aerolínea", airline.Name), statementReport.Document!.Filters);
         Assert.Equal("Documento para la aerolínea", statementReport.Document.Audience);
     }
@@ -175,7 +176,7 @@ public sealed partial class SqlServerMigrationTests
         var trail = Elevant.Application.Identity.HumanResourcesTableReports.All.Find("audit-trail")!;
         var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var audit = await reports.ReadAsync(HumanResourcesAccount, trail,
-            NewReportsQuery(trail, today.AddDays(-30).ToString("yyyy-MM-dd"), today.ToString("yyyy-MM-dd")), ct);
+            NewReportsQuery(trail, today.AddDays(-30).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ct);
         Assert.Null(audit.Failure);
         Assert.All(audit.Document!.Rows, row => Assert.DoesNotContain('.', row[2].Text));
     }

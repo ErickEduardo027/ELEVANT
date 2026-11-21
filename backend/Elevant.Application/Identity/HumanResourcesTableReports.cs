@@ -136,11 +136,11 @@ public sealed class HumanResourcesTableReports(
             Summary =
             [
                 new ReportMetric("Empleados", ReportFormat.Integer(selected.Length), "en la plantilla filtrada"),
-                new ReportMetric("Activos", ReportFormat.Integer(active), ReportFormat.OfTotal(active, selected.Length, "empleados")),
+                new ReportMetric("Activos", ReportFormat.Integer(active), ReportFormat.OfTotal(active, selected.Length, "empleado", "empleados")),
                 new ReportMetric("Con cuenta de acceso", ReportFormat.Integer(withAccount),
-                    ReportFormat.OfTotal(withAccount, selected.Length, "empleados")),
-                new ReportMetric("Agentes de rampa", ReportFormat.Integer(ramp), ReportFormat.OfTotal(ramp, selected.Length, "empleados")),
-                new ReportMetric("Ingresos este mes", ReportFormat.Integer(hired), $"de {ReportFormat.Integer(selected.Length)} empleados"),
+                    ReportFormat.OfTotal(withAccount, selected.Length, "empleado", "empleados")),
+                new ReportMetric("Agentes de rampa", ReportFormat.Integer(ramp), ReportFormat.OfTotal(ramp, selected.Length, "empleado", "empleados")),
+                new ReportMetric("Ingresos este mes", ReportFormat.Integer(hired), $"de {ReportFormat.Count(selected.Length, "empleado", "empleados")}"),
             ],
             Notes = ["Estaciones vigentes de cada empleado. «Cuenta» es el estado de su acceso a ELEVANT."],
         });
@@ -196,10 +196,10 @@ public sealed class HumanResourcesTableReports(
             Filters = TabularReports.Applied(definition, query, (_, _) => null),
             Summary =
             [
-                new ReportMetric("Movimientos", ReportFormat.Integer(ordered.Length), $"de {ReportFormat.Integer(actorsCount)} personas o procesos"),
-                new ReportMetric("Inicios de sesión", ReportFormat.Integer(logins), ReportFormat.OfTotal(logins, ordered.Length, "movimientos")),
+                new ReportMetric("Movimientos", ReportFormat.Integer(ordered.Length), $"de {ReportFormat.Count(actorsCount, "persona o proceso", "personas o procesos")}"),
+                new ReportMetric("Inicios de sesión", ReportFormat.Integer(logins), ReportFormat.OfTotal(logins, ordered.Length, "movimiento", "movimientos")),
                 new ReportMetric("Usuarios y accesos", ReportFormat.Integer(governanceCount),
-                    ReportFormat.OfTotal(governanceCount, ordered.Length, "movimientos")),
+                    ReportFormat.OfTotal(governanceCount, ordered.Length, "movimiento", "movimientos")),
             ],
             Notes = ["Lo que la cuenta puede ver en «Trazabilidad / Auditoría»; hora de Santo Domingo. El detalle es el motivo registrado."],
         });

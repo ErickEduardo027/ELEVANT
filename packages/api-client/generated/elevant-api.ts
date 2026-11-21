@@ -7485,7 +7485,7 @@ status?: string;
 export type ExportFinanceStatementParams = {
 format: string;
 asOf: string;
-airlineId: string;
+airlineId?: string;
 stationId?: string;
 currency?: string;
 };
@@ -8625,6 +8625,37 @@ export const getGetAirlineServiceOrderPdfUrl = (operationId: string,) => {
 export const getAirlineServiceOrderPdf = async (operationId: string, options?: RequestInit): Promise<Blob> => {
 
   const res = await fetch(getGetAirlineServiceOrderPdfUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlineFlightReportPdfUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}/flight-report/pdf`
+}
+
+/**
+ * @summary The Flight Report of an operation OCC approved, of the session's airline at a station its contracts cover; any
+other operation is a 404.
+ */
+export const getAirlineFlightReportPdf = async (operationId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineFlightReportPdfUrl(operationId),
   {
     ...options,
     method: 'GET'
@@ -15825,6 +15856,37 @@ e-NCF E34/E33 of a note on an E31 invoice and its frozen ITBIS, «Simulación �
 export const getFinanceAdjustmentNoteDocument = async (noteId: string, options?: RequestInit): Promise<Blob> => {
 
   const res = await fetch(getGetFinanceAdjustmentNoteDocumentUrl(noteId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetFinanceTreasuryReceiptDocumentUrl = (receiptId: string,) => {
+
+
+
+
+  return `/api/v1/finance/receipts/${receiptId}/document`
+}
+
+/**
+ * @summary The PDF receipt of a treasury collection of the actor's stations (finance.receipts.read): payer, amount, method and
+its live applications to invoices, «Simulación — sin validez fiscal». An unknown or out-of-scope one is a 404.
+ */
+export const getFinanceTreasuryReceiptDocument = async (receiptId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinanceTreasuryReceiptDocumentUrl(receiptId),
   {
     ...options,
     method: 'GET'

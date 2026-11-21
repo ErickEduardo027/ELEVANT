@@ -19,6 +19,9 @@ public static class DocumentFileNames
     public static string Receipt(string? invoiceFiscalNumber, string invoiceNumber, string reference) =>
         Clean($"recibo-{invoiceFiscalNumber ?? invoiceNumber}-{reference}") + ".pdf";
 
+    /// <summary>The file of a treasury collection receipt, which may settle several invoices: <c>recibo-cobro-{referencia}.pdf</c>.</summary>
+    public static string TreasuryReceipt(string reference) => Clean($"recibo-cobro-{reference}") + ".pdf";
+
     public static string CardReceipt(CardPaymentReceiptData receipt)
     {
         ArgumentNullException.ThrowIfNull(receipt);

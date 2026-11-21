@@ -92,6 +92,17 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(100m, receipt.Refunded);
         Assert.Null(await RunAsync(s => s.GetAsync(Guid.NewGuid(), receiptId, ct)));
         Assert.Null(await RunAsync(s => s.GetAsync(ContractsAccount, receiptId, ct)));
+        // The printable receipt: the payer, the live applications (the reversed one is left out) and what remains.
+        var document = (await RunAsync(s => s.ReceiptDocumentAsync(FinanceAccount, receiptId, ct)))!;
+        Assert.Equal(("SYNTHETIC-TREASURY", "PUJ", "USD", 1000m, "Transfer"),
+            (document.Reference, document.StationCode, document.CurrencyCode, document.Amount, document.Method));
+        Assert.Equal((800m, 100m, 100m, false), (document.Applied, document.Refunded, document.Available, document.Reversed));
+        Assert.Equal([(invoice.Number, 300m), (invoice.Number, 500m)],
+            document.Applications.Select(item => (item.InvoiceNumber, item.ReceiptAmount)).ToArray());
+        Assert.False(string.IsNullOrWhiteSpace(document.PayerName));
+        Assert.False(string.IsNullOrWhiteSpace(document.RecordedBy));
+        Assert.Null(await RunAsync(s => s.ReceiptDocumentAsync(ContractsAccount, receiptId, ct)));
+        Assert.Null(await RunAsync(s => s.ReceiptDocumentAsync(FinanceAccount, Guid.NewGuid(), ct)));
         var before = (await RunAsync(s => s.StatementAsync(FinanceAccount, today.AddDays(-1), station.PublicId, airline.PublicId, ct)))!;
         Assert.Empty(before.Invoices); Assert.Empty(before.Receipts);
         // Reject a whole batch atomically if any invoice belongs outside this receipt's scope.

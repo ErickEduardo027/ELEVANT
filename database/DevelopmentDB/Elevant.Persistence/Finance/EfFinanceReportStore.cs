@@ -286,7 +286,7 @@ internal sealed partial class EfFinanceReportStore(
             .SelectMany(group => new[]
             {
                 new FinanceReportMetric($"Por cobrar {group.Key}", Money(group.Sum(item => item.Balance)), "money", group.Key,
-                    $"en {group.Count()} facturas abiertas de {group.Select(item => item.invoice.Airline).Distinct().Count()} aerolíneas"),
+                    $"en {Counted(group.Count(), "factura abierta", "facturas abiertas")} de {Counted(group.Select(item => item.invoice.Airline).Distinct().Count(), "aerolínea", "aerolíneas")}"),
                 new FinanceReportMetric($"Vencido {group.Key}", Money(group.Where(item => item.Days > 0).Sum(item => item.Balance)),
                     "money", group.Key, Share(group.Where(item => item.Days > 0).Sum(item => item.Balance), group.Sum(item => item.Balance),
                         "del saldo por cobrar")),

@@ -96,6 +96,7 @@ public sealed class AirlineTreasuryEndpointsTests(ElevantApiFactory factory) : I
         public Task<FinanceTreasuryStatementData?> StatementAsync(Guid actorId, DateOnly asOf, Guid? stationId, Guid? airlineId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Guid NoteId { get; } = Guid.NewGuid();
         public Task<FinanceAdjustmentNoteDocumentData?> AdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceTreasuryReceiptDocumentData?> ReceiptDocumentAsync(Guid actorId, Guid receiptId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>> PortalAdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default)
         {
             Actor = actorId;

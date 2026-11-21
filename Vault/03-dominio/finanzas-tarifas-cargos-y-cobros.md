@@ -399,6 +399,21 @@ contexto; cuentas por cobrar y por pagar son reportes a fecha de corte
 devuelto y remanente), y el estado de cuenta de una aerolínea a una fecha de corte
 se descarga en PDF (documento imprimible) y Excel con
 `GET finance/statements/export`; el portal descarga el mismo de su aerolínea.
+*Pulido de reportes (posterior al commit verificado, 21 de noviembre de 2026):*
+`airlineId` es opcional en `GET finance/statements/export` (cambio aditivo). Sin
+él, el estado de cuenta es «Todas las aerolíneas»: los movimientos de cada
+aerolínea que el servidor deja leer, agrupados por aerolínea con la columna
+Aerolínea, el saldo acumulado propio de cada aerolínea y moneda y la antigüedad
+de todas ellas; ese PDF sale del motor común y no del documento imprimible de
+una sola aerolínea. El permiso sigue siendo `finance.receipts.read` y el alcance
+de estaciones lo resuelve el servidor. En el reporte «Cobros», un recibo
+reversado sigue listado con su estado «Reversado», pero no suma al KPI
+«Recibido» ni al conteo de cobros que lo acompaña. Los resúmenes de todos los
+reportes concuerdan en número («de 1 factura», «en 1 cobro», «de 1 aerolínea»).
+El recibo de un cobro de Tesorería se descarga en PDF con
+`GET finance/receipts/{receiptId}/document` (`finance.receipts.read`, estaciones
+del actor): pagador, importe, método y sus aplicaciones vigentes (las revertidas
+no se imprimen); el archivo es `recibo-cobro-{referencia}.pdf`.
 Inicio (`GET finance/home`) muestra los
 indicadores de la estación que el servidor calcula, cada sección según el
 permiso de su módulo.

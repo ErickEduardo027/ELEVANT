@@ -137,20 +137,24 @@ export function isTabularReportPage(value: unknown, key: string): value is Tabul
     (value.notes === undefined || Array.isArray(value.notes) && value.notes.every(note => typeof note === "string"));
 }
 
-/** The filters of the statement of account export: the cut-off, the airline and optionally the station and currency. */
+/**
+ * The filters of the statement of account export: the cut-off and optionally the airline (without one, «Todas las
+ * aerolíneas»: the consolidated statement grouped by airline), the station and the currency.
+ */
 export type FinanceStatementExportFilters = {
-  asOf: string; airlineId: string; stationId?: string | null; currency?: "USD" | "DOP" | null;
+  asOf: string; airlineId?: string | null; stationId?: string | null; currency?: "USD" | "DOP" | null;
 };
 
 export function financeStatementParams(filters: FinanceStatementExportFilters, format: "pdf" | "xlsx") {
-  if (!isRecord(filters) || !isDate(filters.asOf) || typeof filters.airlineId !== "string" || !UUID.test(filters.airlineId) ||
+  if (!isRecord(filters) || !isDate(filters.asOf) || (filters.airlineId != null && (typeof filters.airlineId !== "string" || !UUID.test(filters.airlineId))) ||
       (filters.stationId != null && filters.stationId !== "" && !UUID.test(filters.stationId)) ||
       (filters.currency != null && filters.currency !== "USD" && filters.currency !== "DOP") ||
       (format !== "pdf" && format !== "xlsx") ||
       Object.keys(filters).some(key => !["asOf", "airlineId", "stationId", "currency"].includes(key)))
     throw new TypeError("The statement export filters are invalid.");
   return {
-    format, asOf: filters.asOf, airlineId: filters.airlineId,
+    format, asOf: filters.asOf,
+    ...(filters.airlineId ? { airlineId: filters.airlineId } : {}),
     ...(filters.stationId ? { stationId: filters.stationId } : {}),
     ...(filters.currency ? { currency: filters.currency } : {}),
   };

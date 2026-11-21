@@ -188,6 +188,11 @@ public sealed class ReportDocumentsTests
         Assert.Equal("1:05", ReportFormat.Duration(65));
         Assert.Equal("de 50 facturas (16.0 %)", ReportFormat.OfTotal(8, 50, "facturas"));
         Assert.Equal("de 0", ReportFormat.OfTotal(0, 0));
+        Assert.Equal("de 1 factura (100.0 %)", ReportFormat.OfTotal(1, 1, "factura", "facturas"));
+        Assert.Equal("de 2 facturas (50.0 %)", ReportFormat.OfTotal(1, 2, "factura", "facturas"));
+        Assert.Equal("1 cobro", ReportFormat.Count(1, "cobro", "cobros"));
+        Assert.Equal("0 cobros", ReportFormat.Count(0, "cobro", "cobros"));
+        Assert.Equal("1,234 cobros", ReportFormat.Count(1234, "cobro", "cobros"));
         var column = ReportColumn.Number("Cantidad");
         Assert.Equal(1, ReportFormat.DecimalsOf(column, [ReportCell.Value(1m), ReportCell.Value(2.5000m)]));
         Assert.Equal(ReportCell.Empty, ReportFormat.Parse(ReportColumnType.Date, " "));

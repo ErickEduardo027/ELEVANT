@@ -143,6 +143,24 @@ public sealed class FinanceTreasuryController(IFinanceTreasuryStore treasury, IF
         return note is null ? Error<object>(404, "Adjustment note was not found.").Result!
             : File(renderer.RenderAdjustmentNote(note), "application/pdf", Elevant.Application.Documents.DocumentFileNames.AdjustmentNote(note.Kind, note.Number));
     }
+    /// <summary>
+    /// The PDF receipt of a treasury collection of the actor's stations (finance.receipts.read): payer, amount, method and
+    /// its live applications to invoices, «Simulación — sin validez fiscal». An unknown or out-of-scope one is a 404.
+    /// </summary>
+    [HttpGet("receipts/{receiptId:guid}/document", Name = "GetFinanceTreasuryReceiptDocument")]
+    [Produces("application/pdf")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<IActionResult> ReceiptDocument(Guid receiptId, CancellationToken cancellationToken)
+    {
+        if (!Actor(out var actor)) return Error<object>(401, "Authentication failed.").Result!;
+        var receipt = await treasury.ReceiptDocumentAsync(actor, receiptId, cancellationToken);
+        return receipt is null ? Error<object>(404, "Receipt was not found.").Result!
+            : File(renderer.RenderTreasuryReceipt(receipt), "application/pdf",
+                Elevant.Application.Documents.DocumentFileNames.TreasuryReceipt(receipt.Reference));
+    }
     [HttpGet("statements", Name = "GetFinanceTreasuryStatement")]
     [ProducesResponseType<FinanceTreasuryStatementResponse>(200)]
     public async Task<ActionResult<FinanceTreasuryStatementResponse>> Statement([FromQuery] DateOnly asOf, [FromQuery] Guid? stationId,

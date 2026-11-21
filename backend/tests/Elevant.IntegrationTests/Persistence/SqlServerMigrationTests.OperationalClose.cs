@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -152,7 +153,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Null(report.Failure);
         var row = Assert.Single(report.Table!.Rows, cells => cells[1].Value == "DEV-TAT-0001");
         Assert.Equal(report.Table.Definition.Columns.Count, row.Count);
-        Assert.Equal(TimeZoneInfo.ConvertTime(blockOn.AddMinutes(90), zone).ToString("HH:mm"), row[7].Value);
+        Assert.Equal(TimeZoneInfo.ConvertTime(blockOn.AddMinutes(90), zone).ToString("HH:mm", CultureInfo.InvariantCulture), row[7].Value);
         Assert.Equal(("90", "60"), (row[11].Value, row[12].Value));
         Assert.Equal(OccReportCellType.Number, row[11].Type);
     }

@@ -73,4 +73,29 @@ public sealed class AccountStatementDocumentsTests
         Assert.True(InvoiceStatusLabels.Matches(null, code));
         Assert.Equal(code is "pending" or "overdue", InvoiceStatusLabels.Matches("open", code));
     }
+    [Fact]
+    public void TheConsolidatedStatementGroupsEveryAirlineWithItsOwnRunningBalance()
+    {
+        var other = Guid.NewGuid();
+        var input = new AccountStatementInput(AccountStatementDocuments.AllAirlines, null, new DateOnly(2026, 11, 20),
+            [
+                new AccountStatementInvoice(Invoice, "NF-1", "E310000000001", "USD", 1000m, 1000m, new DateOnly(2026, 10, 1)),
+                new AccountStatementInvoice(other, "NF-9", "E310000000009", "USD", 200m, 200m, new DateOnly(2026, 10, 2)),
+            ],
+            [
+                new AccountStatementMovement("Invoice", other, "USD", 200m, new DateOnly(2026, 9, 2), "E310000000009") { Airline = "JetBlue" },
+                new AccountStatementMovement("Invoice", Invoice, "USD", 1000m, new DateOnly(2026, 9, 1), "E310000000001") { Airline = "Arajet" },
+                new AccountStatementMovement("Receipt", null, "USD", 300m, new DateOnly(2026, 9, 5), "TR-1") { Airline = "Arajet" },
+            ],
+            [new FinanceTreasuryAgingData("USD", 1200m, 0m, 0m, 1200m, 0m, 0m, 0m, 0m)]);
+        var document = AccountStatementDocuments.ToConsolidatedDocument(input);
+        document.Validate();
+        Assert.Equal("Aerolínea", document.Columns[0].Label);
+        Assert.Equal([("Arajet", 1000m), ("Arajet", 700m), ("JetBlue", 200m)],
+            document.Rows.Select(row => (row[0].Text!, row[9].Number!.Value)));
+        Assert.Contains(new ReportFilter("Aerolínea", "Todas las aerolíneas"), document.Filters);
+        Assert.Equal(("2", "de 2 facturas emitidas (100.0 %)"),
+            (Assert.Single(document.Summary, metric => metric.Label == "Aerolíneas").Value,
+                Assert.Single(document.Summary, metric => metric.Label == "Facturas con saldo").Context));
+    }
 }

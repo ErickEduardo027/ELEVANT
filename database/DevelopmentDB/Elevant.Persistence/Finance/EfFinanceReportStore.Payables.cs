@@ -47,7 +47,7 @@ internal sealed partial class EfFinanceReportStore
         var documents = await ApprovedPayablesAsync(scope, ct);
         var summary = documents.GroupBy(d => d.Currency).SelectMany(g => new[] {
             new FinanceReportMetric($"Por pagar {g.Key}", Money(g.Sum(d => d.Total - d.Applied)), "money", g.Key,
-                $"en {g.Count()} documentos de proveedores"),
+                $"en {Counted(g.Count(), "documento de proveedor", "documentos de proveedores")}"),
             new FinanceReportMetric($"Vencido {g.Key}", Money(g.Where(d => d.Due < scope.Filter.To).Sum(d => d.Total - d.Applied)), "money", g.Key,
                 Share(g.Where(d => d.Due < scope.Filter.To).Sum(d => d.Total - d.Applied), g.Sum(d => d.Total - d.Applied), "del saldo por pagar")),
         }).ToList();

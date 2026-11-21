@@ -165,10 +165,10 @@ internal sealed class EfContractsReportStore(
         var airlines = selected.Select(item => item.Contract.Airline).Distinct(StringComparer.Ordinal).Count();
         return (rows,
         [
-            new ReportMetric("Contratos", ReportFormat.Integer(total), $"de {ReportFormat.Integer(airlines)} aerolíneas"),
-            new ReportMetric("Activos", ReportFormat.Integer(active), ReportFormat.OfTotal(active, total, "contratos")),
+            new ReportMetric("Contratos", ReportFormat.Integer(total), $"de {ReportFormat.Count(airlines, "aerolínea", "aerolíneas")}"),
+            new ReportMetric("Activos", ReportFormat.Integer(active), ReportFormat.OfTotal(active, total, "contrato", "contratos")),
             new ReportMetric("Activos que vencen en 30 días", ReportFormat.Integer(expiring),
-                ReportFormat.OfTotal(expiring, active, "activos")),
+                ReportFormat.OfTotal(expiring, active, "activo", "activos")),
         ],
         ["La versión es la aprobada que rige hoy o, si no hay, la más reciente sin descartar. «Días para vencer» cuenta hasta el fin de su vigencia (negativo si ya venció)."]);
     }
@@ -208,9 +208,9 @@ internal sealed class EfContractsReportStore(
         var services = rates.Select(rate => rate.Code).Distinct(StringComparer.Ordinal).Count();
         return (rows,
         [
-            new ReportMetric("Tarifas", ReportFormat.Integer(rates.Length), $"en {ReportFormat.Integer(contracts)} contratos"),
+            new ReportMetric("Tarifas", ReportFormat.Integer(rates.Length), $"en {ReportFormat.Count(contracts, "contrato", "contratos")}"),
             new ReportMetric("Servicios con tarifa", ReportFormat.Integer(services),
-                $"de {ReportFormat.Integer(await context.ServiceDefinitions.CountAsync(service => service.IsActive, cancellationToken))} servicios activos del catálogo"),
+                $"de {ReportFormat.Count(await context.ServiceDefinitions.CountAsync(service => service.IsActive, cancellationToken), "servicio activo del catálogo", "servicios activos del catálogo")}"),
         ],
         ["Solo versiones aprobadas (vigentes o programadas). El precio va en la moneda del contrato y no se suma entre tarifas."]);
     }
@@ -269,10 +269,10 @@ internal sealed class EfContractsReportStore(
         [
             new ReportMetric("Recibidas", ReportFormat.Integer(total), "en el período"),
             new ReportMetric("Aprobadas", ReportFormat.Integer(Count(CommercialRequestStatus.Approved)),
-                ReportFormat.OfTotal(Count(CommercialRequestStatus.Approved), total, "recibidas")),
+                ReportFormat.OfTotal(Count(CommercialRequestStatus.Approved), total, "recibida", "recibidas")),
             new ReportMetric("Rechazadas", ReportFormat.Integer(Count(CommercialRequestStatus.Rejected)),
-                ReportFormat.OfTotal(Count(CommercialRequestStatus.Rejected), total, "recibidas")),
-            new ReportMetric("Sin decidir", ReportFormat.Integer(open), ReportFormat.OfTotal(open, total, "recibidas")),
+                ReportFormat.OfTotal(Count(CommercialRequestStatus.Rejected), total, "recibida", "recibidas")),
+            new ReportMetric("Sin decidir", ReportFormat.Integer(open), ReportFormat.OfTotal(open, total, "recibida", "recibidas")),
         ],
         ["Recibida, en hora de Santo Domingo. «Decidida el/por» es la aprobación o el rechazo de Contratos; una cancelada muestra cuándo se canceló."]);
     }
@@ -314,11 +314,11 @@ internal sealed class EfContractsReportStore(
         return (rows,
         [
             new ReportMetric("Permisos", ReportFormat.Integer(total),
-                $"de {ReportFormat.Integer(permits.Select(permit => permit.Airline).Distinct(StringComparer.Ordinal).Count())} aerolíneas"),
-            new ReportMetric("Verificados", ReportFormat.Integer(verified), ReportFormat.OfTotal(verified, total, "permisos")),
-            new ReportMetric("Pendientes de revisión", ReportFormat.Integer(pending), ReportFormat.OfTotal(pending, total, "permisos")),
-            new ReportMetric("Vencen en 30 días", ReportFormat.Integer(expiring), ReportFormat.OfTotal(expiring, total, "permisos")),
-            new ReportMetric("Vencidos", ReportFormat.Integer(expired), ReportFormat.OfTotal(expired, total, "permisos")),
+                $"de {ReportFormat.Count(permits.Select(permit => permit.Airline).Distinct(StringComparer.Ordinal).Count(), "aerolínea", "aerolíneas")}"),
+            new ReportMetric("Verificados", ReportFormat.Integer(verified), ReportFormat.OfTotal(verified, total, "permiso", "permisos")),
+            new ReportMetric("Pendientes de revisión", ReportFormat.Integer(pending), ReportFormat.OfTotal(pending, total, "permiso", "permisos")),
+            new ReportMetric("Vencen en 30 días", ReportFormat.Integer(expiring), ReportFormat.OfTotal(expiring, total, "permiso", "permisos")),
+            new ReportMetric("Vencidos", ReportFormat.Integer(expired), ReportFormat.OfTotal(expired, total, "permiso", "permisos")),
         ],
         [$"Vigencia calculada al {ReportFormat.Date(today)}: «Vence en 30 días» si vence en {ContractsReportCatalog.ExpiringDays} días o menos."]);
     }

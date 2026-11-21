@@ -76,6 +76,7 @@ public static class DependencyInjection
             Elevant.Application.Finance.CardPaymentAvailability.Disabled);
         services.AddScoped<Elevant.Application.Finance.FinanceCloseRulesHandler>();
         services.AddScoped<AirlineServiceOrderHandler>();
+        services.AddScoped<AirlineFlightReportHandler>();
         services.AddScoped<RampServiceChargesHandler>();
         services.AddScoped<RampIncidentHandler>();
         services.AddScoped<RampOperationSubmissionHandler>();

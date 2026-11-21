@@ -56,14 +56,14 @@ internal sealed partial class EfFinanceReportStore
         {
             new("Facturas", Number(rows.Length), "number", null, "emitidas en el período"),
             new("Vencidas", Number(rows.Count(item => item.Status == InvoiceStatusLabels.Overdue)), "number", null,
-                $"de {rows.Length} facturas"),
+                $"de {Counted(rows.Length, "factura", "facturas")}"),
             new("Pagadas", Number(rows.Count(item => item.Status == InvoiceStatusLabels.Paid)), "number", null,
-                $"de {rows.Length} facturas"),
+                $"de {Counted(rows.Length, "factura", "facturas")}"),
         };
         foreach (var group in rows.GroupBy(item => item.Invoice.CurrencyCode).OrderBy(group => group.Key, StringComparer.Ordinal))
         {
             var billed = group.Sum(item => item.Invoice.Total);
-            summary.Add(new($"Facturado {group.Key}", Money(billed), "money", group.Key, $"en {group.Count()} facturas"));
+            summary.Add(new($"Facturado {group.Key}", Money(billed), "money", group.Key, $"en {Counted(group.Count(), "factura", "facturas")}"));
             summary.Add(new($"Saldo {group.Key}", Money(group.Sum(item => item.Balance)), "money", group.Key,
                 Share(group.Sum(item => item.Balance), billed, "de lo facturado")));
         }
@@ -118,7 +118,7 @@ internal sealed partial class EfFinanceReportStore
             var reversed = own.Any(move => move.Kind == FinanceTreasuryMovementKind.ReceiptReversal);
             return new CollectionRow(receipt.ReceivedOn, receipt.Airline, receipt.Station, receipt.CurrencyCode, receipt.Method,
                 receipt.Reference, reversed ? "Reversado" : refunded > 0m ? "Recibo con devolución" : "Recibo", receipt.Amount,
-                applied, refunded, FinanceTreasuryRules.Available(receipt.Amount, applied, refunded, reversed));
+                applied, refunded, FinanceTreasuryRules.Available(receipt.Amount, applied, refunded, reversed), reversed);
         }).ToList();
         var invoices = (await InvoicesAsync(scope with { Filter = scope.Filter with { CurrencyCode = null } }, false, cancellationToken))
             .ToDictionary(invoice => invoice.Id);
@@ -142,12 +142,14 @@ internal sealed partial class EfFinanceReportStore
         {
             new("Cobros", Number(ordered.Length), "number", null, "recibidos en el período"),
             new("Con remanente sin aplicar", Number(ordered.Count(row => row.Remaining > 0m)), "number", null,
-                $"de {ordered.Length} cobros"),
+                $"de {Counted(ordered.Length, "cobro", "cobros")}"),
         };
         foreach (var group in ordered.GroupBy(row => row.Currency).OrderBy(group => group.Key, StringComparer.Ordinal))
         {
-            var received = group.Sum(row => row.Received);
-            summary.Add(new($"Recibido {group.Key}", Money(received), "money", group.Key, $"en {group.Count()} cobros"));
+            // A reversed receipt is listed with its state, but the money it recorded was never received.
+            var effective = group.Where(row => !row.Reversed).ToArray();
+            var received = effective.Sum(row => row.Received);
+            summary.Add(new($"Recibido {group.Key}", Money(received), "money", group.Key, $"en {Counted(effective.Length, "cobro", "cobros")}"));
             summary.Add(new($"Aplicado {group.Key}", Money(group.Sum(row => row.Applied)), "money", group.Key,
                 Share(group.Sum(row => row.Applied), received, "de lo recibido")));
             summary.Add(new($"Remanente {group.Key}", Money(group.Sum(row => row.Remaining)), "money", group.Key,
@@ -162,11 +164,14 @@ internal sealed partial class EfFinanceReportStore
                 DateText(row.Date), row.Airline, row.Station, row.Currency, FinanceLabels.PaymentMethod(row.Method),
                 row.Reference, row.Kind, Money(row.Received), Money(row.Applied), Money(row.Refunded), Money(row.Remaining),
             ]).ToArray(),
-            [$"Aplicado, devuelto y remanente al {last:dd/MM/yyyy}, en la moneda del cobro. Un cobro reversado no deja remanente. No constituye confirmación bancaria."]);
+            [$"Aplicado, devuelto y remanente al {last:dd/MM/yyyy}, en la moneda del cobro. Un cobro reversado se lista con su estado, no deja remanente y no suma a «Recibido». No constituye confirmación bancaria."]);
     }
 
     private sealed record CollectionRow(DateOnly Date, string Airline, string Station, string Currency, PaymentMethod Method,
-        string Reference, string Kind, decimal Received, decimal Applied, decimal Refunded, decimal Remaining);
+        string Reference, string Kind, decimal Received, decimal Applied, decimal Refunded, decimal Remaining, bool Reversed = false);
 
     private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>«1 factura», «3 facturas»: the noun agrees with its count.</summary>
+    private static string Counted(int count, string singular, string plural) => $"{Number(count)} {(count == 1 ? singular : plural)}";
 }
