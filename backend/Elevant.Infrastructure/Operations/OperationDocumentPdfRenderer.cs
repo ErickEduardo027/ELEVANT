@@ -2,6 +2,7 @@ using System.Globalization;
 using Elevant.Application.Common;
 using Elevant.Application.Operations;
 using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Documents;
 using Elevant.Infrastructure.Finance;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
@@ -14,7 +15,8 @@ namespace Elevant.Infrastructure.Operations;
 /// and revisions as the paper; signatures are the strokes drawn on the tablet, and the footer
 /// prints the SHA-256 of the content they signed. A Service Order OCC corrected after the signature
 /// (3-N02) prints its corrections and the version its signatures were drawn on. Times are the
-/// station's local time (BusinessCalendar).
+/// station's local time (BusinessCalendar). PR E: the ELEVANT logo beside AVIAM's name, text that wraps instead of being
+/// cut, «No registrado» for a field the record does not keep, and «Página X de Y» next to the form code.
 /// </summary>
 public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = null) : IOperationDocumentPdfRenderer
 {
@@ -26,6 +28,9 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
     private static readonly XColor Rule = XColor.FromArgb(120, 130, 145);
     private static readonly XColor Tint = XColor.FromArgb(244, 247, 251);
     private static readonly XColor Mark = XColor.FromArgb(200, 30, 30);
+
+    /// <summary>What a form prints for a field the operation's record does not keep (PR E).</summary>
+    internal const string NotRecorded = "No registrado";
 
     static OperationDocumentPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 
@@ -92,7 +97,7 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         }
 
         private double Width => page.Width.Point - 2 * Margin;
-        private double Bottom => page.Height.Point - 52;
+        private double Bottom => page.Height.Point - 60;
         private DocumentFlightHeader Flight => content.Flight;
 
         // ───────────────────────── Orden de Servicio ─────────────────────────
@@ -123,7 +128,7 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                     ($"Total ({currency})", 0.17, true)],
                 content.Services.Select(line => (IReadOnlyList<string>)
                 [
-                    $"{line.Name} ({line.Code})", $"{line.Quantity.ToString("0.##", Spanish)} {Unit(line.Unit)}",
+                    $"{line.Name} ({line.Code})", $"{line.Quantity.ToString("0.##", Spanish)} {Unit(line.Unit, line.Quantity)}",
                     line.UnitPrice?.ToString("N2", Spanish) ?? "—", line.Amount?.ToString("N2", Spanish) ?? "—",
                 ]).ToArray(), "Sin servicios registrados.");
             if (content.Surcharges.Count > 0)
@@ -177,7 +182,7 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             var at = content.Milestones.ToDictionary(item => item.Code, item => item.At);
             Grid([
                 ("Fecha", Flight.OperationDate.ToString("dd/MM/yyyy", Spanish)), ("Posición", Flight.Position),
-                ("Aerolínea", Airline()), ("Supervisor", null),
+                ("Aerolínea", Airline()), ("Supervisor", NotRecorded),
                 ("Vuelo", Flights()), ("Encargado", Flight.AgentName),
                 ("Tipo de Aeronave", Flight.AircraftType), ("Inicio Inspección", Clock(at, "WALKAROUND_START")),
                 ("Matrícula", Flight.Registration), ("Término Inspección", Clock(at, "WALKAROUND_END")),
@@ -204,15 +209,20 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         public void CharterServiceRequest(IReadOnlyList<OperationDocumentSignatureData> signatures)
         {
             var charter = content.Charter;
-            graphics.DrawString("AVIAM", brand, new XSolidBrush(Navy), Margin, y + 22);
-            graphics.DrawString("Ltd.", small, new XSolidBrush(Navy), Margin + 86, y + 22);
-            foreach (var (line, offset) in new[]
+            var brandWidth = Brand();
+            var headTop = y + 2;
+            foreach (var line in new[]
             {
-                ("SOLICITUD DE SERVICIO Y DESCARGO DE RESPONSABILIDAD E INDEMNIZACION /", 4.0),
-                ("SERVICE REQUEST AND RELEASE AND WAIVER OF LIABILITY AND INDEMNITY", 16.0),
+                "SOLICITUD DE SERVICIO Y DESCARGO DE RESPONSABILIDAD E INDEMNIZACION /",
+                "SERVICE REQUEST AND RELEASE AND WAIVER OF LIABILITY AND INDEMNITY",
             })
-                Fit(line, bold, new XSolidBrush(Navy), Margin + 130, y + offset, Width - 130);
-            y += 34;
+                foreach (var part in Wrap(line, bold, Width - brandWidth))
+                {
+                    graphics.DrawString(part, bold, new XSolidBrush(Navy), new XRect(Margin + brandWidth, headTop, Width - brandWidth, 11),
+                        XStringFormats.TopRight);
+                    headTop += 11;
+                }
+            y = Math.Max(y + 36, headTop + 4);
             graphics.DrawLine(new XPen(Rule, 0.8), Margin, y, Margin + Width, y);
             y += 10;
             Band("INFORMACION GENERAL/GENERAL INFORMATION");
@@ -262,7 +272,10 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             var others = content.Services.Where(line => !matched.Contains(line.Code.ToUpperInvariant()))
                 .Select(line => line.Name).ToArray();
             const double rowHeight = 12;
-            var rows = Math.Max(left.Length, right.Length + 1);
+            // «Otro» lists every other service in full: it takes the rows it needs below the right column.
+            var otherLabel = "Otro/Other " + (others.Length == 0 ? "______________________" : string.Join(", ", others));
+            var otherRows = Math.Max(1, (int)Math.Ceiling(Wrap(otherLabel, tiny, Width / 2 - 24).Count() * (tiny.Size + 0.6) / rowHeight));
+            var rows = Math.Max(left.Length, right.Length + otherRows);
             Ensure(rows * rowHeight + 8);
             var top = y + 4;
             graphics.DrawRectangle(new XPen(Rule, 0.5), Margin, y, Width, rows * rowHeight + 8);
@@ -271,27 +284,29 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             {
                 graphics.DrawRectangle(new XPen(Navy, 0.7), x, rowTop + 1.5, 7, 7);
                 if (ticked) graphics.DrawString("X", smallBold, new XSolidBrush(Navy), x + 1.2, rowTop + 7.8);
-                // The form prints every service in full; a long one uses a smaller size rather than an ellipsis.
+                // The form prints every service in full; a long one uses a smaller size and, if still long, two lines.
                 var font = graphics.MeasureString(label, small).Width <= Width / 2 - 30 ? small : tiny;
-                Fit(label, font, XBrushes.Black, x + 12, rowTop + (font == small ? 0 : 0.6), Width / 2 - 24);
+                var lines = Wrap(label, font, Width / 2 - 24).ToList();
+                for (var line = 0; line < lines.Count; line++)
+                    graphics.DrawString(lines[line], font, XBrushes.Black, x + 12,
+                        rowTop + (font == small ? 0 : 0.6) + font.Size - 1 + line * (font.Size + 0.6));
             }
             for (var index = 0; index < left.Length; index++)
                 Box(Margin + 8, top + index * rowHeight, left[index].Label, left[index].Ticked);
             for (var index = 0; index < right.Length; index++)
                 Box(Margin + Width / 2 + 8, top + index * rowHeight, right[index].Label, right[index].Ticked);
-            Box(Margin + Width / 2 + 8, top + right.Length * rowHeight,
-                "Otro/Other " + (others.Length == 0 ? "______________________" : string.Join(", ", others)), others.Length > 0);
+            Box(Margin + Width / 2 + 8, top + right.Length * rowHeight, otherLabel, others.Length > 0);
             y += rows * rowHeight + 12;
             foreach (var clause in new[]
             {
                 "El firmante, actuando en nombre y representación de la Aerolínea antes citada, por este medio certifica que la " +
                 "Aerolínea reconoce y acepta todos los términos y condiciones de responsabilidad e indemnización establecidas en el " +
                 "Acuerdo Estándar de IATA 2018, con modificaciones, utilizado por AVIAM, LTD., para la prestación de los servicios " +
-                "de rampa. Véase página 2.",
+                "de rampa. Véase la página 2.",
                 "The undersigned, acting on behalf and in representation of the above referenced Carrier, hereby certifies that " +
                 "the Carrier recognizes and accepts the terms and conditions of liability and indemnity as provided in the 2018 " +
                 "IATA Standard Ground Handling Agreement, with modifications, with AVIAM, LTD. for ground handling services. " +
-                "See page 3.",
+                "See page 2.",
             })
             {
                 Lines(clause, small);
@@ -304,19 +319,30 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         /// <summary>Cells as on the charter form: the label on top, the value below across the cell.</summary>
         private void StackedGrid(IReadOnlyList<(string Label, string? Value)> cells)
         {
-            const double height = 24;
+            var cellWidth = Width / 2;
             for (var index = 0; index < cells.Count; index += 2)
             {
+                var row = cells.Skip(index).Take(2).Select(cell => (Label: Wrap(cell.Label, small, cellWidth - 6).ToList(),
+                    Value: Wrap(string.IsNullOrWhiteSpace(cell.Value) ? string.Empty : cell.Value, bold, cellWidth - 10).ToList())).ToArray();
+                var height = row.Max(cell => cell.Label.Count * 8.5 + Math.Max(1, cell.Value.Count) * 10.5) + 4;
                 Ensure(height);
-                for (var column = 0; column < 2 && index + column < cells.Count; column++)
+                for (var column = 0; column < row.Length; column++)
                 {
-                    var (label, value) = cells[index + column];
-                    var x = Margin + column * Width / 2;
-                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, Width / 2, height);
-                    Fit(label, small, XBrushes.Black, x + 3, y + 2, Width / 2 - 6);
-                    graphics.DrawRectangle(new XSolidBrush(Tint), x + 3, y + 11, Width / 2 - 6, 11);
-                    Fit(string.IsNullOrWhiteSpace(value) ? string.Empty : value, bold, new XSolidBrush(Navy), x + 5, y + 12,
-                        Width / 2 - 10);
+                    var x = Margin + column * cellWidth;
+                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, cellWidth, height);
+                    var top = y + 1.5;
+                    foreach (var line in row[column].Label)
+                    {
+                        graphics.DrawString(line, small, XBrushes.Black, x + 3, top + small.Size - 0.5);
+                        top += 8.5;
+                    }
+                    var valueHeight = Math.Max(1, row[column].Value.Count) * 10.5;
+                    graphics.DrawRectangle(new XSolidBrush(Tint), x + 3, top, cellWidth - 6, valueHeight);
+                    foreach (var line in row[column].Value)
+                    {
+                        graphics.DrawString(line, bold, new XSolidBrush(Navy), x + 5, top + bold.Size);
+                        top += 10.5;
+                    }
                 }
                 y += height;
             }
@@ -387,7 +413,8 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                         top += 8.5;
                     }
                     graphics.DrawRectangle(new XSolidBrush(Tint), x, top + 1, columnWidth, 12);
-                    graphics.DrawString(value ?? string.Empty, bold, new XSolidBrush(Navy), x + 3, top + 10);
+                    var font = graphics.MeasureString(value ?? string.Empty, bold).Width <= columnWidth - 6 ? bold : smallBold;
+                    graphics.DrawString(value ?? string.Empty, font, new XSolidBrush(Navy), x + 3, top + 10);
                     top += 15;
                 }
                 graphics.DrawString(column.SealLabel, smallBold, XBrushes.Black, x, top + 8);
@@ -401,21 +428,23 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
 
         /// <summary>
         /// Pages 2 and 3 of the paper form carry the 2018 IATA SGHA terms with AVIAM's modifications.
-        /// Their text was not available; ELEVANT states what they are and never invents them (ADR-0033).
+        /// Their text was not available; ELEVANT states what they are and never invents them (ADR-0033). In the
+        /// generated document they are page 2, and page 1 points there in both languages (PR E).
         /// </summary>
         private void TermsNote()
         {
             NewPage();
-            Band("PÁGINAS 2 Y 3 · TÉRMINOS Y CONDICIONES / PAGES 2 AND 3 · TERMS AND CONDITIONS");
+            Band("PÁGINA 2 · TÉRMINOS Y CONDICIONES / PAGE 2 · TERMS AND CONDITIONS");
             y += 6;
             Lines("Los términos y condiciones de responsabilidad e indemnización a los que se refiere la página 1 son los del " +
                 "Acuerdo Estándar de Servicios en Tierra de IATA 2018 (SGHA), con las modificaciones utilizadas por AVIAM, Ltd. " +
-                "Su texto completo forma parte de este acuerdo en la versión vigente de AVIAM y no se reproduce en este documento " +
-                "generado.", body);
+                "Su texto completo forma parte de este acuerdo en la versión vigente de AVIAM (páginas 2 y 3 del formulario en " +
+                "papel) y no se reproduce en este documento generado.", body);
             y += 4;
             Lines("The terms and conditions of liability and indemnity referred to on page 1 are those of the 2018 IATA Standard " +
                 "Ground Handling Agreement (SGHA), with the modifications used by AVIAM, Ltd. Their full text is part of this " +
-                "agreement in AVIAM's current version and is not reproduced in this generated document.", body);
+                "agreement in AVIAM's current version (pages 2 and 3 of the paper form) and is not reproduced in this generated " +
+                "document.", body);
         }
 
         private void DrawStrokes(OperationDocumentSignatureData signature, XRect area)
@@ -432,21 +461,8 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             }
         }
 
-        private IEnumerable<string> Wrap(string text, XFont font, double width)
-        {
-            var line = string.Empty;
-            foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var candidate = line.Length == 0 ? word : line + " " + word;
-                if (graphics.MeasureString(candidate, font).Width > width && line.Length > 0)
-                {
-                    yield return line;
-                    line = word;
-                }
-                else line = candidate;
-            }
-            if (line.Length > 0) yield return line;
-        }
+        private IEnumerable<string> Wrap(string text, XFont font, double width) =>
+            PdfTextLayout.Wrap(graphics, text, font, width).Where((line, index) => index == 0 || line.Length > 0);
 
         private string? ActualTime(string code) => content.Milestones.FirstOrDefault(item => item.Code == code) is { } milestone
             ? Time(milestone.At) : null;
@@ -457,7 +473,7 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                 [("Puente No.", Flight.Position ?? "—"), ("No. de vuelo", Flights())]);
             Grid([
                 ("Línea Aérea", Airline()), ("Destino", Flight.Destination),
-                ("Fecha", Flight.OperationDate.ToString("dd/MM/yyyy", Spanish)), ("Llave recibida de", null),
+                ("Fecha", Flight.OperationDate.ToString("dd/MM/yyyy", Spanish)), ("Llave recibida de", NotRecorded),
             ]);
             Lines("Leyenda: OK Ok · NA No Aplica · NO No Opera", small);
             foreach (var section in content.Checklist.GroupBy(item => item.Section))
@@ -476,68 +492,103 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             {
                 using var footer = XGraphics.FromPdfPage(pdf.Pages[index], XGraphicsPdfPageOptions.Append);
                 var pageWidth = pdf.Pages[index].Width.Point;
-                var top = pdf.Pages[index].Height.Point - 44;
+                var top = pdf.Pages[index].Height.Point - 52;
+                var width = pageWidth - 2 * Margin;
                 footer.DrawLine(new XPen(Rule, 0.5), Margin, top, pageWidth - Margin, top);
-                footer.DrawString($"{content.FormRevision}", small, new XSolidBrush(Muted), Margin, top + 11);
+                // The revision on the left, the form code with «Página X de Y» on the right, the confidentiality notice
+                // under them and the SHA-256 line last: nothing overlaps (PR E).
+                footer.DrawString(content.FormRevision, small, new XSolidBrush(Muted), new XRect(Margin, top + 4, width, 10),
+                    XStringFormats.TopLeft);
+                footer.DrawString($"{content.FormCode} · Página {index + 1} de {total}", smallBold, new XSolidBrush(Navy),
+                    new XRect(Margin, top + 4, width, 10), XStringFormats.TopRight);
                 footer.DrawString("Documento confidencial. Su reproducción y/o distribución debe(n) ser autorizada(s) por AVIAM.",
-                    small, new XSolidBrush(Muted), new XRect(Margin, top + 4, pageWidth - 2 * Margin, 10), XStringFormats.TopCenter);
-                footer.DrawString($"{content.FormCode}  {index + 1}/{total}", smallBold, new XSolidBrush(Navy),
-                    new XRect(Margin, top + 4, pageWidth - 2 * Margin, 10), XStringFormats.TopRight);
+                    small, new XSolidBrush(Muted), new XRect(Margin, top + 13, width, 10), XStringFormats.TopCenter);
+                var signed = DocumentText.Count(signatures.Count, "firma", "firmas");
                 var state = signatures.Count == 0 ? "sin firmas"
-                    : corrected ? $"{signatures.Count} firma(s) sobre la versión firmada · corregida por OCC"
-                    : $"{signatures.Count} firma(s) sobre esta huella";
-                footer.DrawString($"SHA-256 {sha256} · {state} · generado por ELEVANT el " +
-                    $"{TimeZoneInfo.ConvertTime(generatedAt, zone).ToString("dd/MM/yyyy HH:mm", Spanish)}",
-                    small, new XSolidBrush(Muted), Margin, top + 24);
+                    : corrected ? $"{signed} sobre la versión firmada · corregida por OCC"
+                    : $"{signed} sobre esta huella";
+                var lines = PdfTextLayout.Wrap(footer, $"SHA-256 {sha256} · {state} · generado por ELEVANT el " +
+                    $"{TimeZoneInfo.ConvertTime(generatedAt, zone).ToString("dd/MM/yyyy HH:mm", Spanish)} (hora de la estación)",
+                    small, width);
+                for (var line = 0; line < lines.Count; line++)
+                    footer.DrawString(lines[line], small, new XSolidBrush(Muted), new XRect(Margin, top + 22 + line * 8.5, width, 10),
+                        XStringFormats.TopLeft);
             }
+        }
+
+        /// <summary>The ELEVANT logo and AVIAM's name, as every form starts; returns the width they take.</summary>
+        private double Brand()
+        {
+            DocumentPalette.DrawLogo(graphics, Margin, y, 46);
+            graphics.DrawString("AVIAM", brand, new XSolidBrush(Navy), Margin + 54, y + 22);
+            graphics.DrawString("Ltd.", small, new XSolidBrush(Navy), Margin + 140, y + 22);
+            return 164;
         }
 
         private void Header(string formTitle, IReadOnlyList<(string Label, string Value)> boxes)
         {
-            graphics.DrawString("AVIAM", brand, new XSolidBrush(Navy), Margin, y + 22);
-            graphics.DrawString("Ltd.", small, new XSolidBrush(Navy), Margin + 86, y + 22);
-            graphics.DrawString(formTitle, title, new XSolidBrush(Navy),
-                new XRect(Margin + 110, y + 4, Width - 110, 16), XStringFormats.TopRight);
-            var top = y + 24;
+            var left = Brand();
+            var top = y + 4;
+            foreach (var line in Wrap(formTitle, title, Width - left))
+            {
+                graphics.DrawString(line, title, new XSolidBrush(Navy), new XRect(Margin + left, top, Width - left, 16),
+                    XStringFormats.TopRight);
+                top += 16;
+            }
+            top += 4;
             foreach (var (label, value) in boxes)
             {
                 graphics.DrawString($"{label}: ", smallBold, new XSolidBrush(Muted),
-                    new XRect(Margin, top, Width - 150, 10), XStringFormats.TopRight);
-                graphics.DrawString(value, bold, new XSolidBrush(Navy), new XRect(Margin + Width - 148, top - 1, 148, 11),
-                    XStringFormats.TopLeft);
-                top += 12;
+                    new XRect(Margin, top, Width - 170, 10), XStringFormats.TopRight);
+                var lines = Wrap(value, bold, 168).ToList();
+                foreach (var line in lines)
+                {
+                    graphics.DrawString(line, bold, new XSolidBrush(Navy), new XRect(Margin + Width - 168, top - 1, 168, 11),
+                        XStringFormats.TopLeft);
+                    top += 11;
+                }
+                top += 1;
             }
             y = Math.Max(y + 44, top + 4);
         }
 
         private void Band(string text)
         {
-            Ensure(18);
-            graphics.DrawRectangle(new XSolidBrush(Orange), Margin, y, Width, 13);
-            // A long bilingual heading shrinks instead of overflowing the band.
+            // A long bilingual heading shrinks and, if still long, takes a second line (never overflows the band).
             var font = graphics.MeasureString(text, band).Width <= Width - 8 ? band : smallBold;
-            graphics.DrawString(text, font, XBrushes.White, new XRect(Margin, y + (font == band ? 1.5 : 2.5), Width, 11),
-                XStringFormats.TopCenter);
-            y += 13;
+            var lines = Wrap(text, font, Width - 8).ToList();
+            var height = 13 + (lines.Count - 1) * (font.Size + 2);
+            Ensure(height + 5);
+            graphics.DrawRectangle(new XSolidBrush(Orange), Margin, y, Width, height);
+            for (var line = 0; line < lines.Count; line++)
+                graphics.DrawString(lines[line], font, XBrushes.White,
+                    new XRect(Margin, y + (font == band ? 1.5 : 2.5) + line * (font.Size + 2), Width, 11), XStringFormats.TopCenter);
+            y += height;
         }
 
-        /// <summary>Label/value cells two per row, as on the paper's «Información General».</summary>
+        /// <summary>Label/value cells two per row, as on the paper's «Información General»; both wrap, the row grows.</summary>
         private void Grid(IReadOnlyList<(string Label, string? Value)> cells)
         {
-            const double height = 15;
+            var labelWidth = Width / 2 * 0.62;
+            var valueWidth = Width / 2 - labelWidth;
             for (var index = 0; index < cells.Count; index += 2)
             {
+                var row = cells.Skip(index).Take(2).Select(cell => (Label: Wrap(cell.Label, small, labelWidth - 6).ToList(),
+                    Value: Wrap(string.IsNullOrWhiteSpace(cell.Value) ? "—" : cell.Value, bold, valueWidth - 6).ToList(),
+                    Muted: cell.Value == NotRecorded)).ToArray();
+                var height = Math.Max(15, row.Max(cell => Math.Max(cell.Label.Count * 8.5, cell.Value.Count * 10.5)) + 5);
                 Ensure(height);
-                for (var column = 0; column < 2 && index + column < cells.Count; column++)
+                for (var column = 0; column < row.Length; column++)
                 {
-                    var (label, value) = cells[index + column];
                     var x = Margin + column * Width / 2;
-                    var labelWidth = Width / 2 * 0.62;
                     graphics.DrawRectangle(new XPen(Rule, 0.5), new XSolidBrush(Tint), x, y, labelWidth, height);
-                    graphics.DrawRectangle(new XPen(Rule, 0.5), x + labelWidth, y, Width / 2 - labelWidth, height);
-                    Fit(label, small, XBrushes.Black, x + 3, y + 4, labelWidth - 6);
-                    Fit(string.IsNullOrWhiteSpace(value) ? "—" : value, bold, new XSolidBrush(Navy), x + labelWidth + 3, y + 3.5,
-                        Width / 2 - labelWidth - 6);
+                    graphics.DrawRectangle(new XPen(Rule, 0.5), x + labelWidth, y, valueWidth, height);
+                    for (var line = 0; line < row[column].Label.Count; line++)
+                        graphics.DrawString(row[column].Label[line], small, XBrushes.Black, x + 3, y + 3 + small.Size + line * 8.5);
+                    var font = row[column].Muted ? body : bold;
+                    for (var line = 0; line < row[column].Value.Count; line++)
+                        graphics.DrawString(row[column].Value[line], font, new XSolidBrush(row[column].Muted ? Muted : Navy),
+                            x + labelWidth + 3, y + 2.5 + bold.Size + line * 10.5);
                 }
                 y += height;
             }
@@ -545,14 +596,17 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
 
         private void Row(IReadOnlyList<(string Text, double Share)> cells, bool highlight = false)
         {
-            const double height = 15;
+            var font = highlight ? bold : body;
+            var wrapped = cells.Select(cell => Wrap(cell.Text, font, Width * cell.Share - 6).ToList()).ToArray();
+            var height = Math.Max(15, wrapped.Max(lines => lines.Count) * 10.5 + 4.5);
             Ensure(height);
             var x = Margin;
-            foreach (var (text, share) in cells)
+            for (var index = 0; index < cells.Count; index++)
             {
-                var width = Width * share;
+                var width = Width * cells[index].Share;
                 graphics.DrawRectangle(new XPen(Rule, 0.5), highlight ? new XSolidBrush(Tint) : XBrushes.White, x, y, width, height);
-                Fit(text, highlight ? bold : body, new XSolidBrush(Navy), x + 3, y + 3.5, width - 6);
+                for (var line = 0; line < wrapped[index].Count; line++)
+                    graphics.DrawString(wrapped[index][line], font, new XSolidBrush(Navy), x + 3, y + 2.5 + font.Size + line * 10.5);
                 x += width;
             }
             y += height;
@@ -579,19 +633,22 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             if (rows.Count == 0) { Row([(empty, 1)]); return; }
             foreach (var row in rows)
             {
-                if (y + height > Bottom) { NewPage(); Head(); }
+                var wrapped = columns.Select((column, index) => column.Right
+                    ? [row[index]] : Wrap(row[index], body, Width * column.Share - 6).ToList()).ToArray();
+                var rowHeight = Math.Max(height, wrapped.Max(lines => lines.Count) * 10.5 + 3.5);
+                if (y + rowHeight > Bottom) { NewPage(); Head(); }
                 var x = Margin;
                 for (var index = 0; index < columns.Count; index++)
                 {
                     var (_, share, right) = columns[index];
-                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, Width * share, height);
-                    if (right)
-                        graphics.DrawString(row[index], body, XBrushes.Black, new XRect(x + 3, y + 3, Width * share - 6, 10),
-                            XStringFormats.TopRight);
-                    else Fit(row[index], body, XBrushes.Black, x + 3, y + 3, Width * share - 6);
+                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, Width * share, rowHeight);
+                    for (var line = 0; line < wrapped[index].Count; line++)
+                        graphics.DrawString(wrapped[index][line], body, XBrushes.Black,
+                            new XRect(x + 3, y + 3 + line * 10.5, Width * share - 6, 10),
+                            right ? XStringFormats.TopRight : XStringFormats.TopLeft);
                     x += Width * share;
                 }
-                y += height;
+                y += rowHeight;
             }
         }
 
@@ -615,10 +672,13 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             foreach (var item in rows)
             {
                 number++;
-                Ensure(height);
-                graphics.DrawRectangle(new XPen(Rule, 0.5), Margin, y, labelWidth, height);
-                Fit($"{(bridge ? number.ToString("00", Spanish) + "-" : ItemNumber(item.ItemCode))} {item.Label}", body, XBrushes.Black,
-                    Margin + 3, y + 2.5, labelWidth - 6);
+                var labels = Wrap($"{(bridge ? number.ToString("00", Spanish) + "-" : ItemNumber(item.ItemCode))} {item.Label}", body,
+                    labelWidth - 6).ToList();
+                var rowHeight = Math.Max(height, labels.Count * 10.5 + 2.5);
+                Ensure(rowHeight);
+                graphics.DrawRectangle(new XPen(Rule, 0.5), Margin, y, labelWidth, rowHeight);
+                for (var line = 0; line < labels.Count; line++)
+                    graphics.DrawString(labels[line], body, XBrushes.Black, Margin + 3, y + 1.5 + body.Size + line * 10.5);
                 var selected = item.Value switch
                 {
                     "Ok" => 0,
@@ -629,14 +689,14 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                 for (var index = 0; index < answers.Length; index++)
                 {
                     var x = Margin + labelWidth + index * answerWidth;
-                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, answerWidth, height);
+                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, answerWidth, rowHeight);
                     if (index == selected)
                         graphics.DrawString("X", bold, new XSolidBrush(Navy), new XRect(x, y + 2, answerWidth, 10), XStringFormats.TopCenter);
                 }
                 if (!bridge && item.Value == "NotApplicable")
                     graphics.DrawString("N/A", small, new XSolidBrush(Muted),
                         new XRect(Margin + labelWidth, y + 3, answers.Length * answerWidth, 10), XStringFormats.TopCenter);
-                y += height;
+                y += rowHeight;
             }
         }
 
@@ -678,7 +738,9 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                 var rowY = y + row * height;
                 graphics.DrawRectangle(new XPen(Rule, 0.5), x, rowY, columnWidth * 0.68, height);
                 graphics.DrawRectangle(new XPen(Rule, 0.5), x + columnWidth * 0.68, rowY, columnWidth * 0.32, height);
-                Fit(milestones[index].Label.ToUpper(Spanish), smallBold, XBrushes.Black, x + 2, rowY + 2.5, columnWidth * 0.68 - 4);
+                var label = milestones[index].Label.ToUpper(Spanish);
+                var labelFont = graphics.MeasureString(label, smallBold).Width <= columnWidth * 0.68 - 4 ? smallBold : tiny;
+                graphics.DrawString(label, labelFont, XBrushes.Black, x + 2, rowY + 2.5 + labelFont.Size - 1);
                 graphics.DrawString(Clock(at, milestones[index].Code) ?? string.Empty, bold, new XSolidBrush(Navy),
                     new XRect(x + columnWidth * 0.68, rowY + 1.5, columnWidth * 0.32, 10), XStringFormats.TopCenter);
             }
@@ -699,7 +761,9 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                 var signature = signatures.FirstOrDefault(item => item.Role == role);
                 graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, width - 6, height);
                 graphics.DrawString(caption, smallBold, XBrushes.Black, x + 4, y + 10);
-                graphics.DrawString("Nombre / Name: " + (signature?.SignerName ?? string.Empty), body, new XSolidBrush(Navy), x + 4, y + 22);
+                var name = "Nombre / Name: " + (signature?.SignerName ?? string.Empty);
+                var nameFont = graphics.MeasureString(name, body).Width <= width - 14 ? body : small;
+                graphics.DrawString(name, nameFont, new XSolidBrush(Navy), x + 4, y + 22);
                 var area = new XRect(x + 4, y + 26, width - 14, 32);
                 if (signature is not null)
                 {
@@ -776,15 +840,6 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             y += height;
         }
 
-        /// <summary>Draws text cut with an ellipsis so a long value never overflows its cell.</summary>
-        private void Fit(string text, XFont font, XBrush brush, double x, double top, double width)
-        {
-            var value = text;
-            while (value.Length > 1 && graphics.MeasureString(value, font).Width > width)
-                value = value[..^2] + "…";
-            graphics.DrawString(value, font, brush, x, top + font.Size - 1);
-        }
-
         private void Ensure(double height)
         {
             if (y + height > Bottom) NewPage();
@@ -821,12 +876,14 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         private static string ItemNumber(string code) => code[(code.IndexOf('-') + 1)..].TrimStart('0') is { Length: > 0 } number
             ? number : code;
 
-        private static string Unit(string unit) => unit.ToLowerInvariant() switch
+        private static string Unit(string unit, decimal quantity) => unit.ToLowerInvariant() switch
         {
             "perhour" or "hour" or "hours" => "h",
             "perservice" or "service" or "peroperation" or "operation" or "turnaround" => "serv.",
             "unit" or "perunit" or "each" => "unid.",
-            var other => other,
+            "passenger" or "perpassenger" => "pax",
+            "minute" or "perminute" => "min",
+            _ => DocumentText.Unit(unit, quantity),
         };
     }
 }
