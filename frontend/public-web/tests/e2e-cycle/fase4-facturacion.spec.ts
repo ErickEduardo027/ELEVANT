@@ -125,10 +125,12 @@ test("La aerolínea paga la factura con tarjeta en su portal: una rechazada y un
   await loginPortal(page, (run.representative as { email: string }).email);
   await page.getByRole("link", { name: "Facturas", exact: true }).first().click();
   await expect(page.getByRole("heading", { level: 1, name: "Facturas" })).toBeVisible();
-  const card = page.getByRole("region", { name: `Factura ${invoice.fiscalNumber}` });
+  // PR F: each invoice is a row of the table and opens on its own page.
+  const card = page.getByRole("row", { name: new RegExp(invoice.fiscalNumber) });
   await expect(card).toBeVisible();
   if (!(await card.innerText()).includes("Pagada")) {
-    await card.getByRole("button", { name: "Ver detalle" }).click();
+    await card.getByRole("link", { name: `Ver detalle de Factura ${invoice.fiscalNumber}` }).click();
+    await expect(page).toHaveURL(/\/portal\/finanzas\/facturas\/[0-9a-f-]+$/);
     const detail = page.getByRole("region", { name: "Detalle de factura" });
     await detail.getByRole("button", { name: /^Pagar con tarjeta/ }).click();
     const form = page.getByRole("form", { name: "Datos de la tarjeta" });
@@ -260,7 +262,7 @@ test("El portal muestra la nota y el saldo a favor en «Estado de cuenta» y no 
   await loginPortal(page, (run.representative as { email: string }).email);
   await page.getByRole("link", { name: "Facturas", exact: true }).first().click();
   await expect(page.getByRole("heading", { level: 1, name: "Facturas" })).toBeVisible();
-  const card = page.getByRole("region", { name: `Factura ${invoice.fiscalNumber}` });
+  const card = page.getByRole("row", { name: new RegExp(invoice.fiscalNumber) });
   // 4-N24: paid by card and credited afterwards, it is «Pagada», never «Anulada».
   await expect(card).toContainText("Pagada");
   const favour = page.getByLabel("Resumen de facturas").getByText("Saldo a favor", { exact: true })
@@ -278,15 +280,17 @@ test("El portal muestra la nota y el saldo a favor en «Estado de cuenta» y no 
   await expect(invoicePdf).toBeVisible();
   await expect(page.getByText("Cargando facturas autorizadas…")).toHaveCount(0);
 
-  // 4-N30: «Estado de cuenta» is a view of the same page, with the credit in the airline's favour.
-  await page.getByRole("button", { name: "Estado de cuenta" }).click();
+  // 4-N30: «Estado de cuenta» has its own page beside «Facturas», with the credit in the airline's favour.
+  await page.getByRole("link", { name: "Estado de cuenta" }).click();
+  await expect(page).toHaveURL(/\/portal\/finanzas\/estado-de-cuenta$/);
   const statement = page.getByRole("region", { name: "Estado de cuenta de aerolínea" });
   const credit = statement.getByText("Crédito a favor", { exact: true }).first().locator("xpath=following-sibling::strong[1]");
   await expect(credit).toHaveText(/^(USD|DOP) \d/);
   expect(Number((await credit.innerText()).replace(/^[A-Z]{3}\s/, "").replace(/,/g, ""))).toBeGreaterThan(0);
   await snap(page, "fase4-portal-estado-de-cuenta");
   await statement.getByRole("button", { name: `Ver factura ${invoice.fiscalNumber}` }).click();
-  const noteCard = statement.getByRole("article", { name: `Nota de crédito electrónica ${note!.number}` });
+  // The breakdown opens in a side drawer over the statement; each note is a row with its PDF.
+  const noteCard = statement.getByRole("row", { name: new RegExp(`Nota de crédito electrónica ${note!.number}`) });
   await expect(noteCard).toBeVisible();
   const download = page.waitForEvent("download");
   await noteCard.getByRole("button", { name: `Descargar PDF de Nota de crédito electrónica ${note!.number}` }).click();
@@ -302,8 +306,8 @@ test("El charter ve su factura y su prepago en el portal (4-N08, 4-N22)", async 
   test.skip(!charter, "La corrida de la fase 3 no deja un charter facturado.");
   await loginPortal(page, charter!.representativeEmail);
   await page.getByRole("link", { name: "Facturas", exact: true }).first().click();
-  await expect(page.getByRole("region", { name: `Factura ${charter!.fiscalNumber}` })).toBeVisible();
-  await page.getByRole("button", { name: "Estado de cuenta" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(charter!.fiscalNumber) })).toBeVisible();
+  await page.getByRole("link", { name: "Estado de cuenta" }).click();
   await expect(page.getByRole("region", { name: "Estado de cuenta de aerolínea" }).getByText(/^PREPAGO/).first()).toBeVisible();
 });
 

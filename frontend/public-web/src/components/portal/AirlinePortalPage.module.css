@@ -203,7 +203,10 @@
 .table td .actionGroup { flex-wrap: nowrap; }
 .table a { font-weight: 720; }
 .cellStack { display: grid; gap: .15rem; }
-@container portal (max-width: 47.99rem) {
+.cellStack > .badge { justify-self: start; }
+.table [data-numeric] .cellStack { justify-items: end; }
+.table tfoot th { white-space: nowrap; }
+@container portal (max-width: 59.99rem) {
   .tableWrap { overflow: visible; border: 0; background: transparent; }
   .table[data-stack] thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .table[data-stack], .table[data-stack] tbody, .table[data-stack] tfoot, .table[data-stack] tr { display: block; width: 100%; }
@@ -220,7 +223,7 @@
 /* An invoice: its body and, beside it on wide screens, its payment. */
 .invoiceLayout { display: grid; gap: 1.25rem; }
 .invoiceLayout > * { min-width: 0; }
-@container portal (min-width: 70rem) { .invoiceLayout { grid-template-columns: minmax(0, 1fr) 24rem; align-items: start; } }
+@container portal (min-width: 64rem) { .invoiceLayout { grid-template-columns: minmax(0, 1fr) 24rem; align-items: start; } }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem 1.25rem; margin: 0; padding: 1rem 1.1rem; border: 1px solid #d5e0ec; border-radius: .75rem; background: #fff; }
 .facts dt { color: #55687d; font-size: .74rem; font-weight: 650; }
 .facts dd { margin: .2rem 0 0; color: #0b2d68; font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }

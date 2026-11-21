@@ -146,12 +146,13 @@ function BreakdownDrawer({ selection, onSelect, onClose }: {
   </dialog>;
 }
 
-function LedgerTable({ group }: { group: LedgerGroup }) {
+function LedgerTable({ group, documents }: { group: LedgerGroup; documents: ReadonlyMap<string, string> }) {
   return <DataTable<LedgerRow> caption={`Movimientos en ${group.currency}`} rows={group.rows}
     rowKey={row => `${row.movement.id}|${row.currency}`} totalLabel="Saldo al corte" columns={[
       { key: "date", header: "Fecha", cell: row => formatDate(row.movement.effectiveOn) },
       { key: "kind", header: "Movimiento", cell: row => KINDS[row.movement.kind] ?? "Movimiento" },
-      { key: "reference", header: "Documento", cell: row => row.movement.reference || "—" },
+      { key: "reference", header: "Documento", cell: row => row.movement.reference
+        || (row.movement.invoiceId ? documents.get(row.movement.invoiceId) : undefined) || "—" },
       { key: "debit", header: "Cargo", numeric: true, cell: row => row.debit ? formatAmount(row.debit) : "",
         total: formatAmount(group.debits) },
       { key: "credit", header: "Abono", numeric: true, cell: row => row.credit ? formatAmount(row.credit) : "",
@@ -182,15 +183,24 @@ export function AirlineTreasuryPanel() {
   const statement = snapshot.data;
   const ledger = useMemo(() => statement ? statementLedger(statement) : [], [statement]);
   const issued = useMemo(() => invoiceIssueDates(statement?.movements ?? []), [statement]);
+  const documents = useMemo(() => new Map((statement?.invoices ?? []).map(item => [item.id, invoiceNumber(item)])), [statement]);
   /** `trigger` is the button of the row: the focus goes back to it when the drawer closes. */
   function open(next: Selection, trigger?: HTMLElement) {
     if (trigger) opener.current = trigger;
     setSelection(next);
   }
+  // The focus goes back once the dialog is gone: closing a modal dialog restores the focus it found, which on a
+  // touch screen is not the row's button.
+  const restoreFocus = useRef(false);
   function close() {
+    restoreFocus.current = true;
     setSelection(null);
-    opener.current?.focus();
   }
+  useEffect(() => {
+    if (selection || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    opener.current?.focus();
+  }, [selection]);
 
   if (status === "loading") return <p role="status">Validando sesión financiera…</p>;
   if (status !== "ready") return <p role="alert">Inicie sesión para consultar sus documentos financieros.</p>;
@@ -230,7 +240,7 @@ export function AirlineTreasuryPanel() {
       </section>)}
       {ledger.length > 0 && <section className={styles.section} aria-label="Movimientos">
         <h3>Movimientos</h3>
-        {ledger.map(group => <LedgerTable key={group.currency} group={group} />)}
+        {ledger.map(group => <LedgerTable key={group.currency} group={group} documents={documents} />)}
       </section>}
       <section className={styles.section} aria-label="Facturas al corte">
         <h3>Facturas al corte</h3>
@@ -249,7 +259,7 @@ export function AirlineTreasuryPanel() {
             { key: "balance", header: "Saldo", numeric: true, cell: item => formatMoney(item.currencyCode, item.balance),
               total: <Amounts items={sumByCurrency(statement.invoices.map(item => ({ currency: item.currencyCode, value: item.balance })))} /> },
             { key: "open", header: <span className={styles.visuallyHidden}>Desglose</span>, label: "", cell: item =>
-              <Button variant="ghost" onClick={event => open({ kind: "invoice", id: item.id }, event.currentTarget)}>Ver factura {invoiceNumber(item)}</Button> },
+              <Button variant="ghost" onClick={event => open({ kind: "invoice", id: item.id }, event.currentTarget)}>Ver{" "}<span className={styles.visuallyHidden}>factura {invoiceNumber(item)}</span></Button> },
           ]} />
       </section>
       <section className={styles.section} aria-label="Cobros">
@@ -262,7 +272,7 @@ export function AirlineTreasuryPanel() {
             { key: "amount", header: "Recibido", numeric: true, cell: item => formatMoney(item.currencyCode, item.amount) },
             { key: "available", header: "Disponible", numeric: true, cell: item => formatMoney(item.currencyCode, item.available) },
             { key: "open", header: <span className={styles.visuallyHidden}>Desglose</span>, label: "", cell: item =>
-              <Button variant="ghost" onClick={event => open({ kind: "receipt", id: item.id }, event.currentTarget)}>Ver cobro {item.reference}</Button> },
+              <Button variant="ghost" onClick={event => open({ kind: "receipt", id: item.id }, event.currentTarget)}>Ver{" "}<span className={styles.visuallyHidden}>cobro {item.reference}</span></Button> },
           ]} />
       </section>
     </>}
