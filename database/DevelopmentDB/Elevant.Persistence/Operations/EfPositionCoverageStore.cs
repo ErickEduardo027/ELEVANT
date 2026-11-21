@@ -12,6 +12,7 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Identity;
 using Elevant.Persistence.Realtime;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -66,11 +67,12 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     private sealed record Scope(ActorContext Actor, long AccountId, long StationId, Guid StationPublicId, string StationCode,
         string TimeZone);
 
-    public async Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date,
+    public async Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date, bool includeReleased = false,
         CancellationToken cancellationToken = default)
     {
         var (scope, failure) = await ScopeAsync(actorId, stationId, ReadPermission, cancellationToken);
-        return scope is null ? CoverageResult.Fail(failure!.Value) : new(await BoardAsync(scope, date, cancellationToken), null, []);
+        return scope is null ? CoverageResult.Fail(failure!.Value)
+            : new(await BoardAsync(scope, date, cancellationToken, includeReleased), null, []);
     }
 
     public async Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,
@@ -714,7 +716,13 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
 
     // ── Board ────────────────────────────────────────────────────────────────
 
-    private async Task<CoverageBoardData> BoardAsync(Scope scope, DateOnly date, CancellationToken cancellationToken)
+    /// <summary>
+    /// The board of the date. Every coverage says when and by whom OCC assigned it, and every stand lists its open
+    /// coverages with their windows (G1). With <paramref name="includeReleased"/> the coverages of the date OCC released
+    /// are listed apart, the latest release first; a released coverage never covers a stand.
+    /// </summary>
+    private async Task<CoverageBoardData> BoardAsync(Scope scope, DateOnly date, CancellationToken cancellationToken,
+        bool includeReleased = false)
     {
         var zone = TimeZoneInfo.FindSystemTimeZoneById(scope.TimeZone);
         var dayStart = LocalToUtc(date.ToDateTime(TimeOnly.MinValue), zone);
@@ -735,14 +743,20 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             .Where(item => item.StationId == scope.StationId && item.IsActive)
             .Select(item => new { item.PublicId, item.StandId, item.AffectedStandId, item.Kind })
             .ToArrayAsync(cancellationToken);
-        var coverages = await context.Set<PositionCoverage>().AsNoTracking()
-            .Where(item => item.StationId == scope.StationId && item.ReleasedAt == null &&
+        var rows = await context.Set<PositionCoverage>().AsNoTracking()
+            .Where(item => item.StationId == scope.StationId && (includeReleased || item.ReleasedAt == null) &&
                            item.StartsAt < dayEnd && dayStart < item.EndsAt)
-            .OrderBy(item => item.StartsAt)
-            .Select(item => new { item.Id, item.PublicId, item.RampAgentId, item.MentorRampAgentId, item.TerminalId,
-                item.StartsAt, item.EndsAt, item.VehicleCode, item.IsReinforcement })
+            .OrderBy(item => item.StartsAt).ThenBy(item => item.Id)
+            .Select(item => new CoverageRow(item.Id, item.PublicId, item.RampAgentId, item.MentorRampAgentId, item.TerminalId,
+                item.StartsAt, item.EndsAt, item.VehicleCode, item.IsReinforcement, item.CreatedAt, item.AssignedByAccountId,
+                item.ReleasedAt, item.ReleasedByAccountId))
             .ToArrayAsync(cancellationToken);
-        var coverageIds = coverages.Select(item => item.Id).ToArray();
+        var coverages = rows.Where(item => item.ReleasedAt == null).ToArray();
+        var coverageIds = rows.Select(item => item.Id).ToArray();
+        // G1: the visible name of the accounts that assigned or released them.
+        var accounts = await AccountDisplayNames.OfAsync(context, rows.Select(item => item.AssignedByAccountId)
+            .Concat(rows.Select(item => item.ReleasedByAccountId).OfType<long>()).Distinct().ToArray(), cancellationToken);
+        string Account(long id) => accounts.GetValueOrDefault(id, AccountDisplayNames.Unknown);
         var coverageStands = (await context.Set<PositionCoverageStand>().AsNoTracking()
                 .Where(item => coverageIds.Contains(item.PositionCoverageId))
                 .Select(item => new { item.PositionCoverageId, item.StandId }).ToArrayAsync(cancellationToken))
@@ -759,11 +773,16 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             .ToArrayAsync(cancellationToken);
         var agentIds = shifts.Select(item => item.Id).Distinct().ToArray();
         var facts = await AgentFactsAsync(agentIds, date, cancellationToken);
-        var names = await NamesAsync(coverages.SelectMany(item => new[] { item.RampAgentId, item.MentorRampAgentId ?? 0 })
+        var names = await NamesAsync(rows.SelectMany(item => new[] { item.RampAgentId, item.MentorRampAgentId ?? 0 })
             .Where(id => id != 0).Distinct().ToArray(), cancellationToken);
 
         var coveredBy = coverages.SelectMany(item => coverageStands[item.Id].Select(standId => (standId, item.RampAgentId)))
             .ToLookup(pair => pair.standId, pair => names.GetValueOrDefault(pair.RampAgentId) ?? "—");
+        // The open coverages behind each stand's names, by start (the rows' order).
+        var standCoverages = coverages.SelectMany(item => coverageStands[item.Id].Select(standId => (standId,
+                Window: new CoverageStandAssignmentData(names.GetValueOrDefault(item.RampAgentId) ?? "—", item.StartsAt,
+                    item.EndsAt, item.CreatedAt, Account(item.AssignedByAccountId), item.IsReinforcement))))
+            .ToLookup(pair => pair.standId, pair => pair.Window);
         var agents = shifts.Where(item => terminalById.ContainsKey(item.TerminalId)).Select(item =>
         {
             var (starts, ends) = ShiftUtc(item.WorkDate, item.StartsAtLocal, item.EndsAtLocal, zone);
@@ -780,28 +799,48 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             stands.Select(item => new CoverageStandData(item.PublicId, item.Code,
                 item.TerminalId is { } terminalId && terminalById.TryGetValue(terminalId, out var terminal) ? terminal.PublicId : null,
                 item.IsActive, item.HasBoardingBridge, item.IsRemote, item.MaxAircraftSize?.ToString(),
-                coveredBy[item.Id].Distinct().ToArray(), MasterDataCommand.Version(item.RowVersion))).ToArray(),
+                coveredBy[item.Id].Distinct().ToArray(), MasterDataCommand.Version(item.RowVersion))
+            {
+                Coverages = standCoverages[item.Id].ToArray(),
+            }).ToArray(),
             constraints.Where(item => standById.ContainsKey(item.StandId) && standById.ContainsKey(item.AffectedStandId))
                 .Select(item => new StandConstraintData(item.PublicId, standById[item.StandId].PublicId,
                     standById[item.StandId].Code, standById[item.AffectedStandId].PublicId, standById[item.AffectedStandId].Code,
                     item.Kind.ToString())).ToArray(),
             agents,
-            coverages.Where(item => terminalById.ContainsKey(item.TerminalId)).Select(item =>
+            coverages.Where(item => terminalById.ContainsKey(item.TerminalId)).Select(Coverage).ToArray(),
+            Allowed(access, AssignPermission), Allowed(access, ConfigurePermission))
+        {
+            ReleasedCoverages = rows.Where(item => item.ReleasedAt != null && terminalById.ContainsKey(item.TerminalId))
+                .OrderByDescending(item => item.ReleasedAt).ThenByDescending(item => item.Id)
+                .Select(Coverage).ToArray(),
+        };
+
+        CoverageData Coverage(CoverageRow item)
+        {
+            var terminal = terminalById[item.TerminalId];
+            var mentorId = item.MentorRampAgentId;
+            return new CoverageData(item.PublicId, AgentPublicId(item.RampAgentId),
+                names.GetValueOrDefault(item.RampAgentId) ?? "—", terminal.PublicId, terminal.Code,
+                coverageStands[item.Id].Where(standById.ContainsKey)
+                    .Select(standId => new CoverageStandRefData(standById[standId].PublicId, standById[standId].Code))
+                    .OrderBy(stand => stand.Code, StringComparer.Ordinal).ToArray(),
+                item.StartsAt, item.EndsAt, mentorId is { } mentor ? AgentPublicId(mentor) : null,
+                mentorId is { } m ? names.GetValueOrDefault(m) : null, item.VehicleCode, item.IsReinforcement)
             {
-                var terminal = terminalById[item.TerminalId];
-                var mentorId = item.MentorRampAgentId;
-                return new CoverageData(item.PublicId, AgentPublicId(item.RampAgentId), names.GetValueOrDefault(item.RampAgentId) ?? "—",
-                    terminal.PublicId, terminal.Code,
-                    coverageStands[item.Id].Where(standById.ContainsKey)
-                        .Select(standId => new CoverageStandRefData(standById[standId].PublicId, standById[standId].Code))
-                        .OrderBy(stand => stand.Code, StringComparer.Ordinal).ToArray(),
-                    item.StartsAt, item.EndsAt, mentorId is { } mentor ? AgentPublicId(mentor) : null,
-                    mentorId is { } m ? names.GetValueOrDefault(m) : null, item.VehicleCode, item.IsReinforcement);
-            }).ToArray(),
-            Allowed(access, AssignPermission), Allowed(access, ConfigurePermission));
+                AssignedAt = item.CreatedAt, AssignedByName = Account(item.AssignedByAccountId), ReleasedAt = item.ReleasedAt,
+                ReleasedByName = item.ReleasedByAccountId is { } releasedBy ? Account(releasedBy)
+                    : item.ReleasedAt is null ? null : AccountDisplayNames.Unknown,
+            };
+        }
 
         Guid AgentPublicId(long id) => publicIds.GetValueOrDefault(id);
     }
+
+    /// <summary>A coverage of the board's date as the board reads it, with who assigned and released it (G1).</summary>
+    private sealed record CoverageRow(long Id, Guid PublicId, long RampAgentId, long? MentorRampAgentId, long TerminalId,
+        DateTimeOffset StartsAt, DateTimeOffset EndsAt, string? VehicleCode, bool IsReinforcement, DateTimeOffset CreatedAt,
+        long AssignedByAccountId, DateTimeOffset? ReleasedAt, long? ReleasedByAccountId);
 
     private Dictionary<long, Guid> publicIds = [];
 
