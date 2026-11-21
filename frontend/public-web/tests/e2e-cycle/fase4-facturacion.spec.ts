@@ -297,7 +297,7 @@ test("El portal muestra la nota y el saldo a favor en «Estado de cuenta» y no 
   await expect(noteCard).toBeVisible();
   const download = page.waitForEvent("download");
   await noteCard.getByRole("button", { name: `Descargar PDF de Nota de crédito electrónica ${note!.number}` }).click();
-  expect((await download).suggestedFilename()).toBe(`nota-${note!.number}.pdf`);
+  expect((await download).suggestedFilename()).toBe(`nota-credito-${note!.number}.pdf`);
   await snap(page, "fase4-portal-nota-credito");
 });
 

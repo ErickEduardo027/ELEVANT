@@ -33,6 +33,8 @@ function mount(missing = false) {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
     if (url.pathname.includes("/treasury/") && missing) return new Response(JSON.stringify({ title: "private transport detail" }), { status: 404 });
     if (url.pathname.includes("/statements") && statementGate) await statementGate;
+    if (url.pathname.includes("/portal/reports/"))
+      return new Response(new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55, 10]), { status: 200, headers: { "content-type": "application/pdf" } });
     const body = url.pathname.endsWith("/bootstrap") ? bootstrap : url.pathname.endsWith("/auth/session") ? { actor } : url.pathname.includes("/statements") ? statement : url.pathname.includes("/receipts/") ? receipt :
       { invoice, lines: [{ id: "line-own", lineNumber: 1, kind: "Service", parentLineNumber: null, operationCode: "OP-QA", operationDate: "2026-10-18", serviceCode: "RAMP", serviceName: "Rampa", quantity: 1, billingUnit: "operation", unitPrice: 1000, amount: 1000, reason: null }], movements: [{ id: "legacy-payment", kind: "LegacyPayment", currencyCode: "USD", amount: 50, reference: "LEGACY-50", effectiveOn: "2026-10-18" },
         { id: "application", receiptId: "receipt-own", invoiceId: invoice.id, kind: "Application", currencyCode: "USD", amount: 300, reference: "", effectiveOn: "2026-10-18" }],
@@ -140,6 +142,19 @@ it("offers each adjustment note's PDF in the invoice view (4-N17)", async () => 
   fireEvent.click(within(drawer).getByRole("button", { name: "Cerrar" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   expect(screen.getByRole("button", { name: "Ver factura NF-OWN" })).toHaveFocus();
+});
+
+// ADR-0048, «Reportes nuevos»: the statement on screen downloads as the printable PDF, with its cut-off and station.
+it("downloads the statement of its cut-off as PDF from the server", async () => {
+  const requests = mount();
+  expect(await screen.findByRole("heading", { name: "USD" })).toBeInTheDocument();
+  URL.createObjectURL = vi.fn(() => "blob:statement");
+  URL.revokeObjectURL = vi.fn();
+  const downloads = screen.getByRole("group", { name: "Descargar estado de cuenta" });
+  fireEvent.click(within(downloads).getByRole("button", { name: "Descargar PDF" }));
+  await waitFor(() => expect(requests.some(path =>
+    /^\/api\/v1\/airline\/portal\/reports\/statement\/export\?to=\d{4}-\d{2}-\d{2}&format=pdf$/.test(path))).toBe(true));
+  expect(within(downloads).getByRole("button", { name: "Descargar PDF" })).toBeEnabled();
 });
 
 // N19: the statement addresses the airline as usted, like the rest of the portal.

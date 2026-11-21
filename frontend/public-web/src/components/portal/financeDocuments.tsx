@@ -1,5 +1,6 @@
 "use client";
 
+import { adjustmentNoteFileName, invoiceFileName } from "@/lib/document-file-names";
 import { useState } from "react";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
@@ -53,7 +54,7 @@ export function InvoicePdfButton({ invoice, text, variant }: {
   return <DownloadButton text={text ?? "Descargar PDF"} name={text ? undefined : `Descargar PDF de ${invoiceTitle(invoice)}`}
     busyText="Preparando PDF…" failure="No se pudo descargar el PDF. Inténtelo de nuevo." variant={variant}
     download={() => getInvoiceDocument(invoice.id)
-      .then(blob => saveBlob(blob, `factura-${invoice.fiscalNumber ?? invoice.number}.pdf`))} />;
+      .then(blob => saveBlob(blob, invoiceFileName(invoice.fiscalNumber ?? invoice.number)))} />;
 }
 
 /** 4-N17: the PDF of a credit or debit note of the airline's invoice: its e-NCF, its frozen ITBIS and the simulation label. */
@@ -63,5 +64,5 @@ export function AdjustmentNotePdfButton({ note, variant = "ghost" }: {
   const { getAdjustmentNoteDocument } = useAirlineSession();
   return <DownloadButton text="Descargar PDF" name={`Descargar PDF de ${noteTitle(note)}`} busyText="Preparando PDF…"
     failure="No se pudo descargar el PDF de la nota. Inténtelo de nuevo." variant={variant}
-    download={() => getAdjustmentNoteDocument(note.id).then(blob => saveBlob(blob, `nota-${note.number}.pdf`))} />;
+    download={() => getAdjustmentNoteDocument(note.id).then(blob => saveBlob(blob, adjustmentNoteFileName(note.kind, note.number)))} />;
 }

@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 function mount(balance = 148.09) {
-  return render(<CardPaymentPanel invoiceId={invoiceId} balance={balance} currencyCode="USD" onChanged={onChanged} />);
+  return render(<CardPaymentPanel invoiceId={invoiceId} invoiceNumber="E310000000001" balance={balance} currencyCode="USD" onChanged={onChanged} />);
 }
 
 /** Fills the card form; an empty `expiry` leaves that field as it is. */
@@ -127,7 +127,7 @@ it("keeps the card attempts on screen while the history is read again (4-N25)", 
   let fail!: (error: unknown) => void;
   getInvoiceCardPayments.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
   financeRevision += 1;
-  view.rerender(<CardPaymentPanel invoiceId={invoiceId} balance={0} currencyCode="USD" onChanged={onChanged} />);
+  view.rerender(<CardPaymentPanel invoiceId={invoiceId} invoiceNumber="E310000000001" balance={0} currencyCode="USD" onChanged={onChanged} />);
   await waitFor(() => expect(getInvoiceCardPayments).toHaveBeenCalledTimes(2));
   expect(screen.getByRole("row", { name: /Visa •••• 1111/ })).toHaveTextContent("Aprobado");
   expect(screen.queryByText("Cargando pagos con tarjeta…")).not.toBeInTheDocument();
