@@ -253,7 +253,14 @@ Humana y el portal, dos de Finanzas y el estado de cuenta en PDF y Excel
   - `api/v1/airline/portal/reports`: operaciones y servicios, facturas y pagos
     y estado de cuenta, siempre de la aerolínea de la sesión.
   - `GET finance/statements/export`: el estado de cuenta. El PDF es el
-    documento imprimible del PR E y el Excel sale del motor.
+    documento imprimible del PR E y el Excel sale del motor. *Posterior:*
+    `airlineId` es opcional; sin él se exporta el consolidado «Todas las
+    aerolíneas», agrupado por aerolínea, en PDF y Excel del motor.
+  - `GET finance/receipts/{receiptId}/document`: el recibo de un cobro de
+    Tesorería en PDF, con `finance.receipts.read`.
+  - `GET airline/portal/operations/{operationId}/flight-report/pdf`: el Reporte
+    de vuelo de una operación aprobada por OCC, solo de la aerolínea de la
+    sesión y de las estaciones que cubren sus contratos; cualquier otra es 404.
   - En el catálogo de Finanzas entran «Facturas emitidas» y «Cobros».
 - **Mismo contrato.** Todos los reportes tienen:
   - catálogo con filtros y período (`none`, `range`, `asOf`);

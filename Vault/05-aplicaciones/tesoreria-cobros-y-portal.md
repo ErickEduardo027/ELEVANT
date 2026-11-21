@@ -98,6 +98,9 @@ La API publica lecturas bajo `/api/v1/airline/portal/treasury`
 | `invoices/{invoiceId}/adjustment-notes` | Notas vinculadas a esa factura, con su e-NCF cuando lo tienen. |
 
 El PDF de una nota se descarga con `GET airline/portal/adjustment-notes/{noteId}/document`.
+*Posterior al commit verificado de esta nota:* Finanzas descarga el recibo de un
+cobro con `GET finance/receipts/{receiptId}/document` (`finance.receipts.read`,
+estaciones del actor; 404 fuera de alcance), con sus aplicaciones vigentes.
 La única escritura del portal sobre su cartera es el pago con tarjeta
 (`POST airline/portal/invoices/{invoiceId}/card-payments`).
 
