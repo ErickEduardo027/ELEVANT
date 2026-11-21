@@ -81,7 +81,7 @@ public sealed partial class SqlServerMigrationTests
         var attachment = await new EfAdjustmentNoteAttachmentResolver(setup, new FinancialDocumentPdfRenderer())
             .ResolveAsync(noteEmails[0].AttachmentReference!, ct);
         Assert.NotNull(attachment);
-        Assert.Equal(($"nota-{number}.pdf", "application/pdf"), (attachment.FileName, attachment.ContentType));
+        Assert.Equal(($"nota-credito-{number}.pdf", "application/pdf"), (attachment.FileName, attachment.ContentType));
         Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(attachment.Content, 0, 5), StringComparison.Ordinal);
         Assert.Null(await new EfAdjustmentNoteAttachmentResolver(setup, new FinancialDocumentPdfRenderer())
             .ResolveAsync($"adjustment-note:{Guid.NewGuid():D}", ct));

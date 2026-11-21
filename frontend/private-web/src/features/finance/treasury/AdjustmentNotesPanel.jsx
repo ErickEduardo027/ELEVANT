@@ -17,7 +17,7 @@ function NotePdfButton({ note }) {
   async function download() {
     setState({ busy: true, error: '' });
     try {
-      await downloadAdjustmentNoteDocument(note.id, `nota-${note.number}.pdf`);
+      await downloadAdjustmentNoteDocument(note.id, `nota-${note.kind === 'Debit' ? 'debito' : 'credito'}-${note.number}.pdf`);
       setState({ busy: false, error: '' });
     } catch (failure) { setState({ busy: false, error: noteDocumentError(failure) }); }
   }

@@ -79,7 +79,7 @@ public sealed class AirlineTreasuryController(IFinanceTreasuryStore treasury, IF
         var result = await treasury.PortalAdjustmentNoteDocumentAsync(account, noteId, cancellationToken);
         if (!result.IsSuccess)
             return Error<object>(result.Failure switch { FinanceTreasuryFailure.Forbidden => 403, _ => 404 }).Result!;
-        return File(renderer.RenderAdjustmentNote(result.Data!), "application/pdf", $"nota-{result.Data!.Number}.pdf");
+        return File(renderer.RenderAdjustmentNote(result.Data!), "application/pdf", Elevant.Application.Documents.DocumentFileNames.AdjustmentNote(result.Data!.Kind, result.Data!.Number));
     }
     [HttpGet("invoices/{invoiceId:guid}/adjustment-notes", Name = "GetAirlineTreasuryAdjustmentNotes")]
     [ProducesResponseType<AirlineTreasuryAdjustmentsResponse>(200)]

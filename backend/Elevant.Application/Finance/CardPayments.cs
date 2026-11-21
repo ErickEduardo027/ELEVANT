@@ -143,10 +143,13 @@ public sealed record CardPaymentResult(CardPaymentAttemptData? Attempt, decimal?
         new(null, null, false, failure, reasons);
 }
 
-/// <summary>The simulated receipt of an approved card payment.</summary>
+/// <summary>
+/// The simulated receipt of an approved card payment, with the invoice total and the balance it had on
+/// <paramref name="BalanceOn"/> when they are known.
+/// </summary>
 public sealed record CardPaymentReceiptData(Guid AttemptId, string AirlineName, string InvoiceNumber, string? FiscalNumber,
     string Brand, string Last4, string AuthorizationCode, decimal Amount, string CurrencyCode, DateTimeOffset PaidAt,
-    string ReceiptReference);
+    string ReceiptReference, decimal? InvoiceTotal = null, decimal? Balance = null, DateOnly? BalanceOn = null);
 
 public interface ICardPaymentStore
 {

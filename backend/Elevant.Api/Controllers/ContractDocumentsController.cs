@@ -105,7 +105,7 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
         var document = result.Document!;
         Response.Headers["X-Content-Type-Options"] = "nosniff";
         return File(renderer.Render(document), "application/pdf",
-            $"contrato-{document.ContractCode}-v{document.VersionNumber}.pdf");
+            Elevant.Application.Documents.DocumentFileNames.Contract(document.ContractCode, document.VersionNumber));
     }
 
     /// <summary>Review PDF of a draft version, watermarked «BORRADOR» and never signable.</summary>
@@ -123,7 +123,7 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
         var document = result.Document!;
         Response.Headers["X-Content-Type-Options"] = "nosniff";
         return File(renderer.Render(document), "application/pdf",
-            $"borrador-{document.ContractCode}-v{document.VersionNumber}.pdf");
+            Elevant.Application.Documents.DocumentFileNames.Contract(document.ContractCode, document.VersionNumber, draft: true));
     }
 
     [HttpPost("signatures", Name = "SignContractVersion")]

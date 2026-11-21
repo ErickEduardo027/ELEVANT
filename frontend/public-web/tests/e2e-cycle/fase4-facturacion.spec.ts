@@ -79,10 +79,14 @@ test("Finanzas factura la operación aprobada (e-CF simulado)", async ({ page })
   await issued.getByRole("button", { name: "Descargar PDF" }).click();
   const pdf = await download;
   expect(pdf.suggestedFilename()).toMatch(/\.pdf$/);
-  // 4-N10: EMISIÓN is the business day of Santo Domingo, not the UTC day.
+  // 4-N10: EMISIÓN is the business day of Santo Domingo, not the UTC day, printed dd/MM/yyyy (PR E).
   const text = pdfText(fs.readFileSync(await pdf.path()));
   expect(text).toContain("EMISIÓN");
-  expect(text).toContain(businessDay());
+  expect(text).toContain(businessDay().split("-").reverse().join("/"));
+  // G2: the fiscal title, the «Otros cargos» line of the totals and the payment condition.
+  expect(text).toContain("FACTURA DE CRÉDITO FISCAL ELECTRÓNICA");
+  expect(text).toContain("Otros cargos");
+  expect(text).toMatch(/Crédito a \d+ días|Contado/);
   await snap(page, "fase4-finanzas-factura-emitida");
 
   const token = await login("finance");
@@ -237,7 +241,7 @@ test("Finanzas emite una nota de crédito E34 con su PDF y la aerolínea recibe 
   const download = page.waitForEvent("download");
   await notes.getByRole("button", { name: `Descargar PDF de Nota de crédito electrónica ${number}` }).click();
   const pdf = await download;
-  expect(pdf.suggestedFilename()).toBe(`nota-${number}.pdf`);
+  expect(pdf.suggestedFilename()).toBe(`nota-credito-${number}.pdf`);
   const text = pdfText(fs.readFileSync(await pdf.path()));
   expect(text).toContain(`e-NCF ${number}`);
   expect(text).toContain(`Modifica: ${invoice.fiscalNumber}`);
@@ -247,7 +251,7 @@ test("Finanzas emite una nota de crédito E34 con su PDF y la aerolínea recibe 
   // 4-N23: the airline is told of the note with its PDF, and the email states no balance that could contradict it.
   const email = await waitForEmail(representative.email, new RegExp(`Nota de crédito ${number}`), since);
   expect(email.subject).toContain(invoice.fiscalNumber);
-  expect(email.attachments.map(item => item.FileName)).toContain(`nota-${number}.pdf`);
+  expect(email.attachments.map(item => item.FileName)).toContain(`nota-credito-${number}.pdf`);
   expect(email.text).not.toMatch(/saldo[^.\n]*\d/i);
   expect(email.text).toMatch(/Simulaci.n . sin validez fiscal/);
   saveRun({ creditNote: { number, amount: credit } });

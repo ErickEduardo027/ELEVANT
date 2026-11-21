@@ -16,7 +16,7 @@ internal sealed class EfContractAttachmentResolver(EfContractDocumentStore docum
             !Guid.TryParse(reference[EfContractDocumentStore.AttachmentPrefix.Length..], out var versionId)) return null;
         var document = await documents.SystemDocumentAsync(versionId, cancellationToken);
         return document is null ? null
-            : new EmailAttachment($"contrato-{document.ContractCode}-v{document.VersionNumber}.pdf", "application/pdf",
+            : new EmailAttachment(Elevant.Application.Documents.DocumentFileNames.Contract(document.ContractCode, document.VersionNumber), "application/pdf",
                 renderer.Render(document));
     }
 }

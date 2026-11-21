@@ -118,3 +118,5 @@ paquetes con fecha retroactiva (ADR-0018) y la valoración de prefacturas depend
 - La migración `AddContractValidityAndDrawnSignatures` solo añade columnas y restricciones;
   no hay datos de negocio en ella.
 - `ContractVersionStatus.Rejected` sigue reservado: ningún flujo lo asigna. *Desde el 6 de noviembre de 2026 lo asignan el descarte de un borrador y la terminación de un contrato con versiones abiertas, y un contrato terminado ya no se firma ni recibe vigencia (`contract_terminated`): [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).*
+
+> **Actualización (21 de noviembre de 2026).** El PDF del contrato repite en cada página el logo y «Contrato {código} · versión n», y una tabla cortada por la página repite sus títulos. Un borrador cuyo código interno aún es `DRAFT-{guid}` se imprime como «Borrador 1cc18541» (y se descarga como `borrador-1cc18541-v{n}.pdf`). Los plazos concuerdan con su número («1 mes», «30 días») y las firmas y «Generado el …» se imprimen en hora de Santo Domingo, no en UTC. La huella SHA-256 y el contenido firmado no cambian.

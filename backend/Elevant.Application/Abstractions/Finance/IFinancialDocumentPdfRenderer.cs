@@ -12,4 +12,7 @@ public interface IFinancialDocumentPdfRenderer
 
     /// <summary>4-N17: a credit or debit note with its e-NCF E34/E33 and frozen ITBIS, «Simulación — sin validez fiscal».</summary>
     byte[] RenderAdjustmentNote(FinanceAdjustmentNoteDocumentData note) => throw new NotSupportedException();
+
+    /// <summary>PR E: the receipt of a treasury collection with its applications to invoices.</summary>
+    byte[] RenderTreasuryReceipt(FinanceTreasuryReceiptDocumentData receipt) => throw new NotSupportedException();
 }
