@@ -35,10 +35,10 @@ export function usePayablesWorkspace(kind, list, get, enabled) {
   useEffect(() => { let active = true; const invalidate = () => { generation.current++; detailGeneration.current++; }; Promise.resolve().then(() => { if (active) { selected.current = null; setDetail(null); void refresh(); } }); return () => { active = false; invalidate(); }; }, [refresh]);
   useEffect(() => {
     if (!enabled || process.env.NODE_ENV === 'test') return undefined;
-    const resources = kind === 'expenses' ? ['finance_expenses', 'finance_receipts'] : ['finance_payables', 'finance_receipts'];
+    const resources = ['finance_payables', 'finance_receipts'];
     const observer = createPrivateWebAccountChangeObserver(changes => { if (changes.some(resource => resources.includes(resource))) setChanged(true); });
     void observer.start(); return () => { void observer.stop(); };
-  }, [enabled, kind]);
+  }, [enabled]);
   const changeScope = value => { selected.current = null; setDetail(null); setOptions(null); setRows([]); setScope(value); setFilter(f => ({ ...f, skip: 0 })); };
   return { stations, scope, session, changed, filter, setFilter, rows, options, detail, setDetail, loading, detailLoading, error, refresh, open, changeScope };
 }

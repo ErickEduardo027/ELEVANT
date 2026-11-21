@@ -74,7 +74,7 @@ const site = fields => Object.freeze({ mountedWhen: null, ...fields, resources: 
  * - `screen`: a screen's own observer, kept until the PR that restyles the screen (`movesIn`) moves it onto the
  *   frame's: useOccResource, or the shell's channel (OCC_SHELL_LISTENERS). Each one costs a cursor read per
  *   announcement and its own poll.
- * - `shared-page`: a page of another department that the OCC mounts (Usuarios, Mis gastos, the services tab of
+ * - `shared-page`: a page of another department that the OCC mounts (Usuarios, the services tab of
  *   Notificaciones); it keeps its observer while mounted.
  * - `outside-shell-fallback`: uses the shell's observer inside the OCC frame and its own only outside it.
  * - `disabled-in-occ`: its observer is off in the OCC (`offBy`).
@@ -118,9 +118,6 @@ export const OCC_OBSERVER_SITES = Object.freeze({
   'src/features/human-resources/users/RampProfilesPanel.jsx': site({ mode: 'shared-page', screen: 'users',
     movesIn: null, resources: ['ramp_profiles', 'department_users'], pollMs: 25_000, readsPerRefresh: 1,
     mountedWhen: 'the ramp profiles tab of Usuarios' }),
-  // It only marks the list as changed; the user reloads it.
-  'src/features/finance/payables/usePayablesWorkspace.js': site({ mode: 'shared-page', screen: 'expenses',
-    movesIn: null, resources: ['finance_expenses', 'finance_receipts'], pollMs: null, readsPerRefresh: 0 }),
   'src/features/employees/RequisitionsPage.jsx': site({ mode: 'import-only', screen: 'users', movesIn: null,
     resources: ['requisitions'], pollMs: null, readsPerRefresh: 1,
     offBy: 'the OCC mounts only its RequisitionCard export, inside the requisitions tab of Usuarios' }),

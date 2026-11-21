@@ -31,7 +31,7 @@ describe('OCC shell messages', () => {
   });
 
   it('every OCC module and section has a label in both languages', () => {
-    expect(ADMIN_OCC_NAVIGATION).toHaveLength(14);
+    expect(ADMIN_OCC_NAVIGATION).toHaveLength(13);
     for (const language of ['es', 'en']) {
       for (const item of ADMIN_OCC_NAVIGATION) {
         expect(occShellMessages[language].nav[item.id], `${language}: nav.${item.id}`).toEqual(expect.any(String));

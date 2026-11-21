@@ -28,12 +28,10 @@ export const HUMAN_RESOURCES_MODULE_IDS = {
   NOTIFICATIONS: 'notifications',
   ACCESS_REQUESTS: 'access-requests',
   DEPARTMENT_USERS: 'department-users',
-  EXPENSES: 'expenses',
   SETTINGS: 'settings',
 };
 
 export const HUMAN_RESOURCES_NAVIGATION = [
-  { id: HUMAN_RESOURCES_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: HUMAN_RESOURCES_BASE_PATH + '/expenses', icon: BriefcaseIcon, description: 'Gastos propios y revisiones del departamento.' },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.DASHBOARD, permission: 'human_resources.dashboard.read',
     label: 'Dashboard',
