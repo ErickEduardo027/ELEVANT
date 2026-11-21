@@ -9,9 +9,25 @@ const LEVEL_TONES = {
   edit: 'bg-accent-600 text-white', full: 'bg-accent-600 text-white',
 };
 
+/**
+ * Modules the server catalog still lists but the version 1 interface no longer has (ADR-0047): «Gastos de empleados»
+ * and «Requisiciones». They are hidden on the client only; grants a template already holds are kept as they are.
+ */
+export const RETIRED_PERMISSION_MODULES = Object.freeze(['finance.expenses', 'human_resources.requisitions']);
+const retired = module => module.actions.some(action =>
+  RETIRED_PERMISSION_MODULES.some(prefix => action.code.startsWith(`${prefix}.`)));
+
+/** The catalog without the retired modules, nor the sub-windows that live inside one of them. */
+export function visibleCatalog(catalog) {
+  if (!catalog) return catalog;
+  const hidden = new Set(catalog.modules.filter(retired).map(module => module.key));
+  if (!hidden.size) return catalog;
+  return { ...catalog, modules: catalog.modules.filter(module => !hidden.has(module.key) && !hidden.has(module.parent)) };
+}
+
 export function permissionLabels(catalog, codes) {
   const labels = [];
-  catalog?.modules.forEach(module => {
+  visibleCatalog(catalog)?.modules.forEach(module => {
     const granted = module.actions.filter(action => codes.includes(action.code));
     if (granted.length) labels.push(`${module.label}: ${granted.map(action => action.label.toLowerCase()).join(', ')}`);
   });
@@ -20,7 +36,7 @@ export function permissionLabels(catalog, codes) {
 
 /** Menu options grouped by sidebar section, each followed by the functions that live inside it. */
 export function matrixSections(catalog) {
-  const modules = catalog?.modules ?? [];
+  const modules = visibleCatalog(catalog)?.modules ?? [];
   const sections = [];
   const bySection = new Map();
   for (const option of modules.filter(item => !item.parent)) {
@@ -42,8 +58,9 @@ export function matrixSections(catalog) {
  * Sin acceso · Ver · Crear · Editar · Completo (only the levels that grant something new for that option). Grants
  * that match no level read «Personalizado»; «Ver detalle» keeps every action as a checkbox, so nothing is lost.
  */
-export default function PermissionMatrix({ catalog, value, onChange, disabled = false, idPrefix = 'perm' }) {
+export default function PermissionMatrix({ catalog: fullCatalog, value, onChange, disabled = false, idPrefix = 'perm' }) {
   const { t } = useTranslation(departmentUsersMessages);
+  const catalog = visibleCatalog(fullCatalog);
   if (!catalog) return <p className="text-sm text-text-secondary-light">{t('matrix.loading')}</p>;
 
   // A sub-window cannot be reached when the screen that contains it is forbidden.
