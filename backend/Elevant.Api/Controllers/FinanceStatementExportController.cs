@@ -29,6 +29,8 @@ public sealed class FinanceStatementExportController(
     IReportRenderer renderer,
     IReportExportAudit audit,
     IActorContextResolver actors,
+    IStatementDocumentRenderer statements,
+    Elevant.Application.Abstractions.Commercial.IAirlinePortalReportStore airlines,
     TimeProvider timeProvider) : ControllerBase
 {
     [HttpGet("export", Name = "ExportFinanceStatement")]
@@ -40,7 +42,8 @@ public sealed class FinanceStatementExportController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> Export([FromQuery, BindRequired] string format, [FromQuery, BindRequired] DateOnly asOf,
-        [FromQuery, BindRequired] Guid airlineId, [FromQuery] Guid? stationId, CancellationToken cancellationToken)
+        [FromQuery, BindRequired] Guid airlineId, [FromQuery] Guid? stationId, [FromQuery] string? currency,
+        CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) || actorId == Guid.Empty)
         {
@@ -51,7 +54,7 @@ public sealed class FinanceStatementExportController(
             });
         }
         if (format is not ("pdf" or "xlsx") || airlineId == Guid.Empty || stationId == Guid.Empty ||
-            asOf == DateOnly.MinValue || asOf == DateOnly.MaxValue)
+            asOf == DateOnly.MinValue || asOf == DateOnly.MaxValue || currency is not (null or "USD" or "DOP"))
             return ReportProblems.InvalidQuery(this);
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null || !actor.HasPermission("finance.receipts.read"))
@@ -65,12 +68,23 @@ public sealed class FinanceStatementExportController(
         var airline = options.Airlines.FirstOrDefault(item => item.Id == airlineId);
         if (airline is null) return ReportProblems.NotFound(this);
         var station = stationId is { } only ? options.Stations.FirstOrDefault(item => item.Id == only)?.Code : null;
-        var document = AccountStatementDocuments.ToDocument(Input(airline.Name, station, data)) with
+        var input = Input(airline.Name, station, data);
+        var document = AccountStatementDocuments.ToDocument(input) with
         {
             GeneratedAt = timeProvider.GetUtcNow(),
             GeneratedBy = actor.DisplayName,
         };
-        var bytes = format == "pdf" ? renderer.RenderPdf(document) : renderer.RenderXlsx(document);
+        byte[] bytes;
+        if (format == "pdf")
+        {
+            // PR E: the PDF is the printable statement, in one currency; the Excel keeps every currency on the engine.
+            var customer = await airlines.CustomerAsync(airlineId, cancellationToken);
+            bytes = statements.RenderStatement(AccountStatementDocuments.ToPrintable(input,
+                AccountStatementDocuments.PrintableCurrency(input, currency),
+                new AirlineCustomerHeader(airline.Name, customer?.Code ?? "—", customer?.TaxRegistration), document.GeneratedAt,
+                actor.DisplayName));
+        }
+        else bytes = renderer.RenderXlsx(document);
         var query = new TabularReportQuery(null, asOf, new Dictionary<string, string>
         {
             ["airline"] = airlineId.ToString("D"),

@@ -11,6 +11,9 @@ public sealed record AccountStatementInvoice(Guid Id, string Number, string? Fis
 public sealed record AccountStatementMovement(string Kind, Guid? InvoiceId, string CurrencyCode, decimal Amount,
     DateOnly EffectiveOn, string Reference);
 
+/// <summary>The customer header of the printable statement: name, code and readable tax id.</summary>
+public sealed record AirlineCustomerHeader(string Name, string Code, string? TaxRegistration);
+
 /// <summary>What a statement of account prints: whose, where, at which cut-off, its invoices, movements and aging.</summary>
 public sealed record AccountStatementInput(string AirlineName, string? StationLabel, DateOnly AsOf,
     IReadOnlyList<AccountStatementInvoice> Invoices, IReadOnlyList<AccountStatementMovement> Movements,
@@ -23,8 +26,8 @@ public sealed record AccountStatementInput(string AirlineName, string? StationLa
 /// («Estado de cuenta» of <c>airline/portal/reports</c>) print the same document.
 /// </summary>
 /// <remarks>
-/// Hook for the printable document of PR E (<c>FinancialDocumentPdfRenderer</c>): when it gains a statement layout, the
-/// PDF can be rendered from this same <see cref="AccountStatementInput"/>; the Excel stays on the engine.
+/// The PDF is the printable document of PR E (<see cref="ToPrintable"/> for <see cref="IStatementDocumentRenderer"/>),
+/// in one currency; the Excel stays on the engine, with every currency.
 /// </remarks>
 public static class AccountStatementDocuments
 {
@@ -122,6 +125,57 @@ public static class AccountStatementDocuments
             ],
             Notice = FinanceInvoicePolicy.Disclaimer,
         };
+    }
+
+    /// <summary>
+    /// The currency of the printable statement (it prints one): the one asked for, else the one of most invoices
+    /// (the first in order on a tie), else USD.
+    /// </summary>
+    public static string PrintableCurrency(AccountStatementInput input, string? requested)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        if (requested is { Length: 3 }) return requested;
+        return input.Invoices.GroupBy(invoice => invoice.CurrencyCode).OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key, StringComparer.Ordinal).Select(group => group.Key).FirstOrDefault() ?? "USD";
+    }
+
+    /// <summary>
+    /// The statement in one currency for the printable document of PR E (<see cref="IStatementDocumentRenderer"/>):
+    /// every movement until the cut-off (no opening balance), each charge as a debit and each credit as a credit, so
+    /// its running balance is the same as the engine's; applications are left out because they move nothing.
+    /// </summary>
+    public static FinanceStatementDocumentData ToPrintable(AccountStatementInput input, string currency,
+        AirlineCustomerHeader customer, DateTimeOffset generatedAt, string generatedBy)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(customer);
+        var issued = input.Movements.Where(movement => movement.Kind == "Invoice" && movement.InvoiceId is not null)
+            .GroupBy(movement => movement.InvoiceId!.Value).ToDictionary(group => group.Key, group => group.Min(item => item.EffectiveOn));
+        var invoices = input.Invoices.ToDictionary(invoice => invoice.Id);
+        var aging = input.Aging.FirstOrDefault(item => item.CurrencyCode == currency);
+        var movements = input.Movements.Where(movement => movement.CurrencyCode == currency).OrderBy(movement => movement.EffectiveOn)
+            .Select(movement => (Movement: movement, Kind: Kind(movement.Kind)))
+            .Where(item => item.Kind.Sign != 0)
+            .Select(item =>
+            {
+                var invoice = item.Movement.InvoiceId is { } id ? invoices.GetValueOrDefault(id) : null;
+                var description = invoice is null || item.Movement.Kind == "Invoice" ? item.Kind.Label
+                    : $"{item.Kind.Label} · factura {invoice.FiscalNumber ?? invoice.Number}";
+                return new FinanceStatementMovementDocumentData(item.Movement.EffectiveOn, item.Movement.Reference, description,
+                    item.Kind.Sign > 0 ? item.Movement.Amount : 0m, item.Kind.Sign < 0 ? item.Movement.Amount : 0m);
+            }).ToArray();
+        var open = input.Invoices.Where(invoice => invoice.CurrencyCode == currency && invoice.Balance > 0m)
+            .OrderBy(invoice => invoice.DueDate ?? DateOnly.MaxValue)
+            .Select(invoice => new FinanceStatementInvoiceDocumentData(invoice.FiscalNumber ?? invoice.Number,
+                issued.TryGetValue(invoice.Id, out var day) ? day : input.AsOf, invoice.DueDate,
+                invoice.DueDate is { } due ? Math.Max(0, input.AsOf.DayNumber - due.DayNumber) : 0, invoice.Total, invoice.Balance))
+            .ToArray();
+        return new FinanceStatementDocumentData(customer.Name, customer.TaxRegistration, customer.Code, input.StationLabel,
+            input.AsOf, null, currency, generatedAt, generatedBy, 0m,
+            new FinanceStatementAgingDocumentData(aging?.Current ?? 0m, aging?.Days1To30 ?? 0m, aging?.Days31To60 ?? 0m,
+                aging?.Days61To90 ?? 0m, aging?.Days91Plus ?? 0m, aging?.Unallocated ?? 0m, aging?.CreditBalance ?? 0m,
+                aging?.Balance ?? 0m),
+            open, movements);
     }
 
     private static string? Of(decimal part, decimal whole) =>

@@ -10,7 +10,12 @@ using Elevant.Domain.Enumerations;
 namespace Elevant.Application.Commercial;
 
 /// <summary>The source of the airline portal's reports, for the API.</summary>
-public interface IAirlinePortalReportSource : ITabularReportSource;
+public interface IAirlinePortalReportSource : ITabularReportSource
+{
+    /// <summary>The printable statement of account (PR E) of the session's airline, for its PDF.</summary>
+    Task<(FinanceStatementDocumentData? Document, TabularReportFailure? Failure)> PrintableStatementAsync(Guid actorId,
+        TabularReportQuery query, DateTimeOffset generatedAt, string generatedBy, CancellationToken cancellationToken = default);
+}
 
 /// <summary>
 /// The reports of the airline portal (ADR-0048, «Reportes nuevos»): operations and services, invoices and payments, and
@@ -242,10 +247,43 @@ public sealed class AirlinePortalReports(
     private async Task<TabularReportResult> StatementAsync(Guid actorId, TabularReportQuery query,
         AirlinePortalReportProfile profile, AirlinePortalReportStation? station, CancellationToken cancellationToken)
     {
-        var read = await treasury.PortalStatementAsync(actorId, query.To!.Value, station?.Id, cancellationToken);
-        if (!read.IsSuccess) return TabularReportResult.Failed(Failure(read.Failure, station));
+        var (input, failure) = await StatementInputAsync(actorId, query, profile, station, cancellationToken);
+        return input is null ? TabularReportResult.Failed(failure!.Value)
+            : TabularReportResult.Of(AccountStatementDocuments.ToDocument(input));
+    }
+
+    /// <summary>
+    /// The printable statement of PR E for the PDF of «Estado de cuenta», of the session's airline only, in the currency of
+    /// most of its invoices; or why it was refused, with the same checks as <see cref="ReadAsync"/>.
+    /// </summary>
+    public async Task<(FinanceStatementDocumentData? Document, TabularReportFailure? Failure)> PrintableStatementAsync(
+        Guid actorId, TabularReportQuery query, DateTimeOffset generatedAt, string generatedBy,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var (organizationId, refused) = await OrganizationAsync(actorId, cancellationToken);
+        if (refused is { } failure) return (null, failure);
+        var profile = await store.ProfileAsync(organizationId!.Value, cancellationToken);
+        if (profile is null) return (null, TabularReportFailure.NotFound);
+        var station = query.Id("station") is { } stationId ? profile.Stations.FirstOrDefault(item => item.Id == stationId) : null;
+        if (query.Id("station") is not null && station is null) return (null, TabularReportFailure.StationUnavailable);
+        var (input, inputFailure) = await StatementInputAsync(actorId, query, profile, station, cancellationToken);
+        if (input is null) return (null, inputFailure);
+        var customer = await store.CustomerAsync(profile.AirlineId, cancellationToken);
+        return (AccountStatementDocuments.ToPrintable(input, AccountStatementDocuments.PrintableCurrency(input, null),
+            new AirlineCustomerHeader(profile.AirlineName, customer?.Code ?? "—", customer?.TaxRegistration), generatedAt,
+            generatedBy), null);
+    }
+
+    private async Task<(AccountStatementInput? Input, TabularReportFailure? Failure)> StatementInputAsync(Guid actorId,
+        TabularReportQuery query, AirlinePortalReportProfile profile, AirlinePortalReportStation? station,
+        CancellationToken cancellationToken)
+    {
+        var asOf = query.To ?? BusinessCalendar.Today(timeProvider.GetUtcNow());
+        var read = await treasury.PortalStatementAsync(actorId, asOf, station?.Id, cancellationToken);
+        if (!read.IsSuccess) return (null, Failure(read.Failure, station));
         var statement = read.Data!;
-        var document = AccountStatementDocuments.ToDocument(new AccountStatementInput(profile.AirlineName,
+        return (new AccountStatementInput(profile.AirlineName,
             station is null ? "Todas las estaciones de su contrato" : StationLabel(station), statement.AsOf,
             statement.Invoices.Select(invoice => new AccountStatementInvoice(invoice.Id, invoice.Number, invoice.FiscalNumber,
                 invoice.CurrencyCode, invoice.Total, invoice.Balance, invoice.DueDate)).ToArray(),
@@ -253,8 +291,7 @@ public sealed class AirlinePortalReports(
                 movement.CurrencyCode, movement.Amount, movement.EffectiveOn, movement.Reference)).ToArray(),
             statement.Aging.Select(aging => new FinanceTreasuryAgingData(aging.CurrencyCode, aging.Balance, aging.Current,
                 aging.Days1To30, aging.Days31To60, aging.Days61To90, aging.Days91Plus, aging.Unallocated,
-                aging.CreditBalance)).ToArray()));
-        return TabularReportResult.Of(document);
+                aging.CreditBalance)).ToArray()), null);
     }
 
     private static TabularReportFailure Failure(FinanceTreasuryFailure? failure, AirlinePortalReportStation? station) =>

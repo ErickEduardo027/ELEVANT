@@ -38,6 +38,12 @@ public sealed class NewReportSamplesHarness
             File.WriteAllBytes(Path.Combine(directory, name + ".pdf"), pdf);
             File.WriteAllBytes(Path.Combine(directory, name + ".xlsx"), xlsx);
         }
+        // The PDF of the statement is the printable document of PR E, from the same data.
+        var printable = new Elevant.Infrastructure.Finance.FinancialDocumentPdfRenderer().RenderStatement(
+            AccountStatementDocuments.ToPrintable(Statement("PUJ · Aeropuerto Internacional de Punta Cana"), "USD",
+                new AirlineCustomerHeader("Arajet", "DM", "RNC 1-31-23456-9"), At, "Ana Pérez Martínez"));
+        Assert.StartsWith("%PDF", System.Text.Encoding.ASCII.GetString(printable, 0, 4));
+        if (directory is { Length: > 0 }) File.WriteAllBytes(Path.Combine(directory, "finanzas-statement-documento.pdf"), printable);
     }
 
     private static ReportDocument Stamp(ReportDocument document) => document with

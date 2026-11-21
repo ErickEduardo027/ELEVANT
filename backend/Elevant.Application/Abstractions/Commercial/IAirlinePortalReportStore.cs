@@ -6,7 +6,14 @@ namespace Elevant.Application.Abstractions.Commercial;
 public sealed record AirlinePortalReportStation(Guid Id, string Code, string Name);
 
 /// <summary>The airline of the session and the stations its contracts cover (the scope of the portal's reports).</summary>
-public sealed record AirlinePortalReportProfile(string AirlineName, IReadOnlyList<AirlinePortalReportStation> Stations);
+public sealed record AirlinePortalReportProfile(string AirlineName, IReadOnlyList<AirlinePortalReportStation> Stations)
+{
+    /// <summary>The public id of the airline, for its customer header.</summary>
+    public Guid AirlineId { get; init; }
+}
+
+/// <summary>The customer header of a statement: name, code (IATA, else ICAO) and readable tax id («RNC 1-31-23456-9»).</summary>
+public sealed record AirlineCustomerData(string Name, string Code, string? TaxRegistration);
 
 /// <summary>A service AVIAM approved on an operation: its code, name, execution, quantity and unit.</summary>
 public sealed record AirlinePortalReportService(string Code, string Name, string Status, decimal Quantity, string Unit);
@@ -26,6 +33,9 @@ public sealed record AirlinePortalReportOperation(DateOnly OperationDate, string
 public interface IAirlinePortalReportStore
 {
     Task<AirlinePortalReportProfile?> ProfileAsync(Guid organizationId, CancellationToken cancellationToken = default);
+
+    /// <summary>The customer header of an airline by its public id; null when it does not exist.</summary>
+    Task<AirlineCustomerData?> CustomerAsync(Guid airlineId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AirlinePortalReportOperation>?> OperationsAsync(Guid organizationId, DateOnly firstDay, DateOnly lastDay,
         Guid? stationId, GroundOperationStatus? status, CancellationToken cancellationToken = default);

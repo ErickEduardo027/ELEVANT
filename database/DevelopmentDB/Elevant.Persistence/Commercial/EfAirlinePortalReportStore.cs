@@ -41,7 +41,24 @@ internal sealed class EfAirlinePortalReportStore(ElevantDbContext context) : IAi
                               select new { station.PublicId, station.Code, station.Name })
             .Distinct().ToArrayAsync(cancellationToken);
         return new AirlinePortalReportProfile(airline.Name, stations.OrderBy(station => station.Code, StringComparer.Ordinal)
-            .Select(station => new AirlinePortalReportStation(station.PublicId, station.Code, station.Name)).ToArray());
+            .Select(station => new AirlinePortalReportStation(station.PublicId, station.Code, station.Name)).ToArray())
+        {
+            AirlineId = await context.Airlines.AsNoTracking().Where(item => item.Id == airline.Id).Select(item => item.PublicId)
+                .SingleAsync(cancellationToken),
+        };
+    }
+
+    public async Task<AirlineCustomerData?> CustomerAsync(Guid airlineId, CancellationToken cancellationToken = default)
+    {
+        var row = await (from airline in context.Airlines.AsNoTracking()
+                         join organization in context.Organizations.AsNoTracking() on airline.OrganizationId equals organization.Id
+                         where airline.PublicId == airlineId
+                         select new { airline.Name, airline.IataCode, airline.IcaoCode, organization.TaxRegistration,
+                             organization.TaxRegistrationCountryCode })
+            .SingleOrDefaultAsync(cancellationToken);
+        return row is null ? null : new AirlineCustomerData(row.Name, row.IataCode ?? row.IcaoCode,
+            row.TaxRegistration is { Length: > 0 } number
+                ? Elevant.Domain.Validation.TaxRegistrations.Display(number, row.TaxRegistrationCountryCode ?? "DO") : null);
     }
 
     public async Task<IReadOnlyList<AirlinePortalReportOperation>?> OperationsAsync(Guid organizationId, DateOnly start,

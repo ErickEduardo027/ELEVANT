@@ -30,6 +30,13 @@ internal sealed class TabularReportEndpoint(
     public const int MaxPdfRows = 5000;
     public const int MaxSheetRows = 25000;
 
+    /// <summary>
+    /// A printable PDF that replaces the engine's for some reports (the statement of account of PR E); null keeps the
+    /// engine's. It receives the account, the report, the query and the stamped document.
+    /// </summary>
+    public Func<Guid, TabularReportDefinition, TabularReportQuery, ReportDocument, CancellationToken, Task<byte[]?>>? PrintablePdf
+    { get; init; }
+
     public TabularReportCatalogResponse Catalog(string areaTitle) => new(areaTitle, source.Catalog.Select(Definition).ToArray())
     {
         MaxRangeDays = source.Catalog.Max(definition => definition.MaxRangeDays),
@@ -72,9 +79,11 @@ internal sealed class TabularReportEndpoint(
         if (result.Failure is { } failure) return Failure(controller, failure);
         var document = await StampAsync(actorId, result.Document!, cancellationToken);
         if (document.Rows.Count > (format == "pdf" ? MaxPdfRows : MaxSheetRows)) return ReportProblems.TooLarge(controller);
+        var printable = format == "pdf" && PrintablePdf is { } print
+            ? await print(actorId, definition, query, document, cancellationToken) : null;
         var (data, contentType) = format switch
         {
-            "pdf" => (renderer.RenderPdf(document), "application/pdf"),
+            "pdf" => (printable ?? renderer.RenderPdf(document), "application/pdf"),
             "xlsx" => (renderer.RenderXlsx(document), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             _ => (TabularReports.Csv(document), "text/csv; charset=utf-8"),
         };

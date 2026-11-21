@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Abstractions.Documents;
+using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
 using Elevant.Contracts.Reports;
@@ -26,9 +27,20 @@ public sealed class AirlinePortalReportsController(
     IReportRenderer renderer,
     IReportExportAudit audit,
     IActorContextResolver actors,
+    IStatementDocumentRenderer statements,
     TimeProvider timeProvider) : ControllerBase
 {
-    private TabularReportEndpoint Endpoint => new(source, renderer, audit, actors, timeProvider, "airline-portal", "portal");
+    /// <summary>The PDF of «Estado de cuenta» is the printable document of PR E; the Excel and the other reports, the engine's.</summary>
+    private TabularReportEndpoint Endpoint => new(source, renderer, audit, actors, timeProvider, "airline-portal", "portal")
+    {
+        PrintablePdf = async (actorId, definition, query, document, cancellationToken) =>
+        {
+            if (definition.Key != "statement") return null;
+            var (printable, _) = await source.PrintableStatementAsync(actorId, query, document.GeneratedAt,
+                document.GeneratedBy ?? "Portal de aerolíneas", cancellationToken);
+            return printable is null ? null : statements.RenderStatement(printable);
+        },
+    };
 
     [HttpGet(Name = "ListAirlinePortalReports")]
     [ProducesResponseType<TabularReportCatalogResponse>(StatusCodes.Status200OK, "application/json")]

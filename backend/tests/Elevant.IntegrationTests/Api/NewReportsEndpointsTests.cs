@@ -84,9 +84,11 @@ public sealed class NewReportsEndpointsTests(ElevantApiFactory factory) : IClass
         });
         state.Portal ??= InterfaceStub.Create<IAirlinePortalReportStore>((name, args) =>
         {
-            state.Organizations.Add((Guid)args[0]!);
+            if (name != nameof(IAirlinePortalReportStore.CustomerAsync)) state.Organizations.Add((Guid)args[0]!);
             return name switch
             {
+                nameof(IAirlinePortalReportStore.CustomerAsync) => Task.FromResult<AirlineCustomerData?>(
+                    new("Arajet", "DM", "RNC 1-31-23456-9")),
                 nameof(IAirlinePortalReportStore.ProfileAsync) => Task.FromResult<AirlinePortalReportProfile?>(new("Arajet",
                     [new AirlinePortalReportStation(OwnStation, "PUJ", "Punta Cana")])),
                 nameof(IAirlinePortalReportStore.OperationsAsync) => Task.FromResult<IReadOnlyList<AirlinePortalReportOperation>?>(
@@ -250,7 +252,13 @@ public sealed class NewReportsEndpointsTests(ElevantApiFactory factory) : IClass
             $"/api/v1/finance/statements/export?format=xlsx&asOf=2026-10-31&airlineId={Organization}&stationId={OwnStation}", ct);
         Assert.Equal(HttpStatusCode.OK, xlsx.StatusCode);
         Assert.Equal("estado-de-cuenta-arajet-20261031.xlsx", xlsx.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
-        Assert.Equal([("finance", "statement", "xlsx")], state.Audits);
+        using var pdf = await finance.GetAsync(
+            $"/api/v1/finance/statements/export?format=pdf&asOf=2026-10-31&airlineId={Organization}&currency=USD", ct);
+        Assert.Equal((HttpStatusCode.OK, "application/pdf"), (pdf.StatusCode, pdf.Content.Headers.ContentType?.MediaType));
+        using (var euros = await finance.GetAsync(
+                   $"/api/v1/finance/statements/export?format=pdf&asOf=2026-10-31&airlineId={Organization}&currency=EUR", ct))
+            Assert.Equal(HttpStatusCode.BadRequest, euros.StatusCode);
+        Assert.Equal([("finance", "statement", "xlsx"), ("finance", "statement", "pdf")], state.Audits);
     }
 
     [Fact]
