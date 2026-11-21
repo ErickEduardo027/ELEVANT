@@ -102,6 +102,24 @@ it("downloads the PDF of a credit or debit note for Finance and the airline port
   expect(urls).toHaveLength(3);
 });
 
+it("downloads the treasury receipt for Finance and the Flight Report for the airline portal", async () => {
+  const receiptId = "10000000-0000-7000-8000-0000000000e4";
+  const operationId = "70000000-0000-7000-8000-000000000005";
+  const urls: string[] = [];
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async url => {
+    urls.push(String(url));
+    return new Response(new Blob(["%PDF-1.7"]), { headers: { "content-type": "application/pdf" } });
+  } });
+  await expect(client.getFinanceTreasuryReceiptDocument(receiptId)).resolves.toBeInstanceOf(Blob);
+  await expect(client.downloadAirlineFlightReport(operationId)).resolves.toBeInstanceOf(Blob);
+  expect(urls).toEqual([
+    `https://api.example.test/api/v1/finance/receipts/${receiptId}/document`,
+    `https://api.example.test/api/v1/airline/portal/operations/${operationId}/flight-report/pdf`,
+  ]);
+  expect(() => client.getFinanceTreasuryReceiptDocument("not-a-receipt")).toThrow(TypeError);
+  expect(() => client.downloadAirlineFlightReport("not-an-operation")).toThrow(TypeError);
+});
+
 it("pays an invoice by card with the idempotency key and accepts only brand and last four digits back", async () => {
   const key = "10000000-0000-7000-8000-00000000000b";
   const attempt = { id: "10000000-0000-7000-8000-00000000000c", invoiceId, status: "Approved", brand: "Visa", last4: "1111",

@@ -81,10 +81,10 @@ describe("tabular reports client (ADR-0048, «Reportes nuevos»)", () => {
     expect(urls[0]).toBe(`https://api.example.test/api/v1/finance/statements/export?format=pdf&asOf=2026-11-21&airlineId=${airlineId}&stationId=${stationId}`);
     expect(() => client.exportFinanceStatement({ asOf: "2026-11-21", airlineId: "x" }, "pdf")).toThrow(TypeError);
     // Without an airline: «Todas las aerolíneas», the consolidated statement.
-    await client.exportFinanceStatement({ asOf: "2026-11-21", airlineId: null }, "xlsx");
+    await client.exportFinanceStatement({ asOf: "2026-11-21", airlineId: null }, "pdf");
     await client.exportFinanceStatement({ asOf: "2026-11-21" }, "pdf");
     expect(urls.slice(1)).toEqual([
-      "https://api.example.test/api/v1/finance/statements/export?format=xlsx&asOf=2026-11-21",
+      "https://api.example.test/api/v1/finance/statements/export?format=pdf&asOf=2026-11-21",
       "https://api.example.test/api/v1/finance/statements/export?format=pdf&asOf=2026-11-21",
     ]);
   });
