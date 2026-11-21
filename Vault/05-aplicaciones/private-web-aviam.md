@@ -2758,6 +2758,28 @@ flowchart LR
 - **Pendiente.** Los reportes de Contratos y el estado de cuenta en PDF y Excel llegan con un PR posterior; hasta
   entonces sus pantallas no muestran esos controles. No hay todavía evidencia de despliegue de estas pantallas.
 
+### Pulido de reportes: listado de contratos e indicadores con contexto
+
+*Posterior al commit verificado (rama `feat/reportes-pulido-front`, 21 de noviembre de 2026, aún no desplegado).*
+
+- **Listado de Contratos.** Contratos › Contratos ofrece «Descargar PDF» y «Descargar Excel» juntos sobre la lista,
+  con el reporte del servidor «Contratos y vigencias» (`agreements`, `GET contracts/reports/agreements/export`) a la
+  fecha de corte de hoy en el día hábil de Santo Domingo. La lista no tiene filtros propios todavía, así que la
+  descarga incluye todos los contratos; el [adaptador](../../frontend/private-web/src/services/contractsReportsService.js)
+  ya pasa estación, aerolínea, estado y días para vencer si la lista los agrega. Un 401/403 se explica en español,
+  sin texto crudo del servidor.
+- **Indicadores con contexto (sin «números fríos»).** Cada KPI de Inicio dice contra qué se cuenta, con las mismas
+  lecturas que ya hacían las páginas ([utilidades](../../frontend/private-web/src/utils/kpiContext.js)):
+  - Contratos: solicitudes pendientes, aprobadas y rechazadas «de N solicitudes · %» (el total suma todos los
+    estados del buzón, canceladas incluidas); borradores con su número de versiones y la aerolínea más reciente.
+  - Gestión Humana: agentes activos «de N perfiles registrados · %» y perfiles sin cuenta «de N agentes activos · %».
+  - Finanzas: facturado del mes con «N facturas este mes · promedio», por cobrar con el porcentaje vencido del saldo,
+    vencido «N facturas vencidas de M abiertas · % del saldo por cobrar», cobro con tarjeta que «equivale al % de lo
+    facturado este mes» en la misma moneda (puede saldar facturas anteriores, por eso no se presenta como parte), y
+    aprobaciones y prepagos pendientes con su plural.
+- **Textos.** Ningún mensaje visible ofrece CSV (el formato inválido dice «Exporte en PDF o Excel») y los conteos
+  concuerdan con su número: «1 de 1 agente puede operar», «1 pendiente», «1 solicitud», «Se eligió 1 operación».
+
 ## Brechas y desconocidos
 
 - **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), la API autentica con JWT y refresh rotativo ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)) y autoriza en el servidor cada caso de uso con los permisos del departamento ([ADR-0015](../../docs/adr/0015-department-user-governance.md)) y el alcance de estaciones de la cuenta; los shells solo muestran los módulos que permite `GET governance/me/access`.
