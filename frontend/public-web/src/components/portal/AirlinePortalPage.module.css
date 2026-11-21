@@ -216,13 +216,15 @@
   .table[data-stack] td::before { content: attr(data-label); flex-shrink: 0; color: #55687d; font-size: .75rem; font-weight: 650; text-align: left; }
   .table[data-stack] td[data-label=""]::before { content: none; }
   .table[data-stack] td[data-label=""] { justify-content: flex-end; }
-  .table[data-stack] tr[data-nested] { margin-left: 1rem; border-left: 3px solid #c9d7ea; }
+  .table[data-stack] tr[data-nested] { width: auto; margin-left: 1rem; border-left: 3px solid #c9d7ea; }
   .table[data-stack] tr[data-nested] td:first-child { padding-left: 0; }
   .billingHeader .actionGroup { justify-content: flex-start; }
 }
 /* An invoice: its body and, beside it on wide screens, its payment. */
 .invoiceLayout { display: grid; gap: 1.25rem; }
 .invoiceLayout > * { min-width: 0; }
+/* On narrow screens the payment comes right after the header, not after every table. */
+@container portal (max-width: 63.99rem) { .invoiceLayout > section[aria-label="Pago con tarjeta"] { order: -1; } }
 @container portal (min-width: 64rem) { .invoiceLayout { grid-template-columns: minmax(0, 1fr) 24rem; align-items: start; } }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem 1.25rem; margin: 0; padding: 1rem 1.1rem; border: 1px solid #d5e0ec; border-radius: .75rem; background: #fff; }
 .facts dt { color: #55687d; font-size: .74rem; font-weight: 650; }
