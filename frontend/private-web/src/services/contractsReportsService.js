@@ -78,3 +78,22 @@ export function createContractReportSource() {
     fileName: (key, query, format) => `elevant-contratos-${key}-${query.from}-${query.to}.${format}`,
   };
 }
+
+/** The server report behind the list of Contratos › Contratos: each contract with the version that governs it. */
+export const CONTRACT_LIST_REPORT = 'agreements';
+const LIST_FILTERS = ['airlineId', 'stationId', 'status', 'expiresWithinDays'];
+
+/**
+ * «Descargar PDF» / «Descargar Excel» of the list of contracts: the server's «Contratos y vigencias» at today's
+ * business-day cut-off with the filters the list has applied (empty ones are left out). The server renders the file.
+ */
+export async function exportContractsList(format, filters = {}, { now = new Date() } = {}) {
+  const today = businessToday(now);
+  const query = { from: today, to: today };
+  for (const name of LIST_FILTERS) {
+    const value = filters?.[name];
+    if (value !== undefined && value !== null && value !== '') query[name] = value;
+  }
+  const blob = await client().exportContractReport(CONTRACT_LIST_REPORT, query, format);
+  return { blob, fileName: `elevant-contratos-y-vigencias-${today}.${format}` };
+}

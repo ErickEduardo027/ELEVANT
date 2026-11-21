@@ -19,6 +19,9 @@ const getCardPaymentAvailability = vi.fn(async () => ({ available: true, simulat
 const payInvoiceByCard = vi.fn();
 const getCardPaymentReceipt = vi.fn();
 
+// The address is the browser's own: the page reads its filters from it and writes them back with replaceState.
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(window.location.search) }));
+
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
   useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap }, getTreasuryStatement, getTreasuryInvoice,
     getTreasuryReceipt, getAdjustmentNoteDocument, getInvoiceDocument, getInvoiceCardPayments, getCardPaymentAvailability,
@@ -38,6 +41,7 @@ const usd = { currencyCode: "USD", balance: -18, current: 0, days1To30: 0, days3
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, "", "/");
   financeRevision = 0;
   getTreasuryStatement.mockReset();
   getTreasuryInvoice.mockReset();
@@ -181,4 +185,66 @@ it("addresses the airline as usted in its invoices and their failed reads (N19)"
   list.unmount();
   render(<AirlineInvoiceDetailPage invoiceId={invoice().id} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo consultar la factura. Inténtelo de nuevo.");
+});
+
+it("opens with the filters of the address and writes each change back to it, so the list can be reloaded or shared", async () => {
+  const pending = invoice({ id: "74000000-0000-7000-8000-000000000019", fiscalNumber: "E310000000002", applied: 0, credited: 0,
+    balance: 118 });
+  const overdue = invoice({ id: "74000000-0000-7000-8000-000000000029", fiscalNumber: "E310000000003", applied: 18, credited: 0,
+    balance: 100, daysOverdue: 9 });
+  getTreasuryStatement.mockResolvedValue(statement([invoice(), pending, overdue]));
+  bootstrap.stations = [{ id: "s1", code: "PUJ", name: "Punta Cana", ianaTimeZone: "America/Santo_Domingo" }];
+  window.history.replaceState(null, "", "/portal/finanzas?ref=correo&estado=con-saldo&estacion=s1&buscar=0003#tabla");
+  try {
+    render(<AirlineFinancePage airlineName="Demo Airlines" />);
+    const table = await screen.findByRole("table", { name: "Facturas" });
+    expect(getTreasuryStatement).toHaveBeenCalledWith(expect.any(String), "s1", expect.any(AbortSignal));
+    expect(screen.getByLabelText("Estado")).toHaveValue("open");
+    expect(screen.getByLabelText("Estación")).toHaveValue("s1");
+    expect(screen.getByLabelText("Número de factura")).toHaveValue("0003");
+    expect(within(table).getAllByRole("row").filter(row => /E31/.test(row.textContent ?? ""))).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText("Estado"), { target: { value: "Vencida" } });
+    fireEvent.change(screen.getByLabelText("Emitidas desde"), { target: { value: "2026-10-01" } });
+    await waitFor(() => expect(window.location.search)
+      .toBe("?ref=correo&estado=vencidas&desde=2026-10-01&estacion=s1&buscar=0003"));
+    expect(window.location.pathname).toBe("/portal/finanzas");
+    expect(window.location.hash).toBe("#tabla");
+
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+    await waitFor(() => expect(window.location.search).toBe("?ref=correo"));
+  } finally {
+    bootstrap.stations = [];
+  }
+});
+
+it("ignores a filter of the address it does not understand", async () => {
+  getTreasuryStatement.mockResolvedValue(statement([invoice()]));
+  window.history.replaceState(null, "", "/portal/finanzas?estado=raro&desde=no-es-fecha");
+  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  expect(await screen.findByRole("link", { name: "E310000000001" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Estado")).toHaveValue("");
+  expect(screen.getByLabelText("Emitidas desde")).toHaveValue("");
+  await waitFor(() => expect(window.location.search).toBe(""));
+});
+
+it("offers to drop the station of a shared address when its invoices cannot be read", async () => {
+  getTreasuryStatement.mockImplementation(async (_asOf, stationId) => {
+    if (stationId) throw Object.assign(new Error("forbidden"), { status: 403 });
+    return statement([invoice()]);
+  });
+  window.history.replaceState(null, "", "/portal/finanzas?estacion=otra");
+  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Limpiar filtros" }));
+  expect(await screen.findByRole("link", { name: "E310000000001" })).toBeInTheDocument();
+  await waitFor(() => expect(window.location.search).toBe(""));
+});
+
+it("agrees the invoice count in the singular: never «de 1 facturas»", async () => {
+  getTreasuryStatement.mockResolvedValue(statement([invoice({ applied: 0, credited: 0, balance: 118 })]));
+  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  const summary = await screen.findByLabelText("Resumen de facturas");
+  expect(within(summary).getByText("Facturas con saldo").parentElement).toHaveTextContent("1 de 1factura pendiente de pago");
+  expect(screen.getByText("1 factura emitida.")).toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent(/1 facturas|de 1 facturas/);
 });

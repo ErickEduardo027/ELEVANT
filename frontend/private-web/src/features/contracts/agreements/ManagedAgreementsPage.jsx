@@ -6,6 +6,10 @@ import { contractStatusLabel } from '../contractStatus';
 import { contractCodeLabel } from '../requests/requestLabels';
 import { airlineCodeLabel, countLabel, validityRange } from './agreementLabels';
 import ContractDetailDrawer from './ContractDetailDrawer';
+import ContractListDownloads from './ContractListDownloads';
+
+// The list has no filters of its own yet: its download is the whole «Contratos y vigencias» at today's cut-off.
+const LIST_FILTERS = Object.freeze({});
 
 const TITLES = {
   contracts: ['Contratos', 'Versiones aprobadas y cobertura registrada.'],
@@ -63,6 +67,12 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
     {['error', 'forbidden', 'unauthorized'].includes(state.status) ? <div role="alert" className="rounded-xl border border-status-danger/30 p-5">
       <p>{state.error}</p>{state.status === 'error' && <button type="button" onClick={refresh} className="mt-3 text-accent-600">Reintentar</button>}
     </div> : state.status === 'loading' ? <p role="status" className="rounded-xl border p-5">Cargando acuerdos…</p> : <>
+      {mode === 'contracts' && contracts.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/5 pb-3 dark:border-white/10">
+        <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          {countLabel(contracts.length, 'contrato', 'contratos')} en la página {page}{state.result?.hasMore ? ' · hay más páginas' : ''}.
+          La descarga incluye todos los contratos a la fecha de hoy.</p>
+        <ContractListDownloads filters={LIST_FILTERS} />
+      </div>}
       {mode === 'contracts' && (contracts.length ? <div className="space-y-3">{contracts.map(contract => {
         // N35: a new contract's «DRAFT-…» code reads «Borrador 1cc18541…», as in Solicitudes, whole in the title.
         const code = contractCodeLabel(contract.code);

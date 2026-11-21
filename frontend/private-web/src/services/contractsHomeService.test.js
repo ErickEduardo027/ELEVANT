@@ -26,7 +26,8 @@ describe('getContractsHomeSnapshot', () => {
     const snapshot = await getContractsHomeSnapshot();
 
     expect(getCommercialRequestInbox).toHaveBeenCalledWith({ status: 'All', page: 1, limit: 5 });
-    expect(snapshot.kpis).toEqual({ pendingRequests: 5, approvedRequests: 410, pendingDrafts: 1, rejectedRequests: 220 });
+    expect(snapshot.kpis).toEqual({ pendingRequests: 5, approvedRequests: 410, pendingDrafts: 1, rejectedRequests: 220,
+      totalRequests: 640 });
     expect(snapshot.recentRequests.map(item => item.reference)).toEqual(['SOL-1', 'SOL-2']);
     expect(snapshot.pendingDrafts.map(item => item.contractCode)).toEqual(['DRAFT-2']);
     expect(getManagedServices).not.toHaveBeenCalled();

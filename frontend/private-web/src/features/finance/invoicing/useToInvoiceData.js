@@ -247,14 +247,17 @@ export function useToInvoiceData(initialStationId) {
     const { chosen, stop } = fitting(candidates, limits);
     const airlineName = first.airlineName;
     setSelectedIds(chosen.map(item => item.id));
+    // «Se eligió 1 operación», «Se eligieron 2 operaciones».
+    const picked = chosen.length === 1 ? 'Se eligió 1' : `Se eligieron ${chosen.length}`;
+    const chosenNoun = chosen.length === 1 ? 'operación' : 'operaciones';
     if (failed)
       setNotice(`No se pudieron leer todas las operaciones pendientes de ${airlineName}: se eligieron ${chosen.length} de las cargadas. Vuelva a pulsar «Toda la aerolínea del período» para completar la selección.`);
     else if (stop && complete)
-      setNotice(`Se eligieron ${chosen.length} de ${candidates.length} operaciones de ${airlineName}: el resto no cabe en una factura. ${stop} Emita esta factura y continúe con las demás.`);
+      setNotice(`${picked} de ${candidates.length} operaciones de ${airlineName}: el resto no cabe en una factura. ${stop} Emita esta factura y continúe con las demás.`);
     else if (stop)
-      setNotice(`Se eligieron ${chosen.length} operaciones de ${airlineName}, las que caben en una factura; quedan más pendientes. ${stop} Emita esta factura y continúe con las demás.`);
+      setNotice(`${picked} ${chosenNoun} de ${airlineName}, las que caben en una factura; quedan más pendientes. ${stop} Emita esta factura y continúe con las demás.`);
     else if (!complete)
-      setNotice(`Se eligieron ${chosen.length} operaciones de ${airlineName}, pero quedan pendientes sin revisar. Emita esta factura y continúe con las demás.`);
+      setNotice(`${picked} ${chosenNoun} de ${airlineName}, pero quedan pendientes sin revisar. Emita esta factura y continúe con las demás.`);
     else setNotice(null);
   }
   const net = round2(selected.reduce((sum, item) => sum + item.estimate, 0));

@@ -16,6 +16,9 @@ export async function getContractsHomeSnapshot() {
       approvedRequests: inbox.counts.approved,
       pendingDrafts: drafts.count,
       rejectedRequests: inbox.counts.rejected,
+      // The whole the request indicators are part of: every request of every status, cancelled included.
+      totalRequests: inbox.counts.pending + inbox.counts.inReview + inbox.counts.approved + inbox.counts.rejected
+        + inbox.counts.cancelled,
     },
     recentRequests: inbox.requests,
     pendingDrafts: drafts.recent,

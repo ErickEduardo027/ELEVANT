@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse, type AirlineServiceOrderResponse,
   type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
@@ -104,7 +104,7 @@ function AirlineFlightsPage({ airlineName }: {
 
   return <div className={styles.page}>
     <div className={styles.realScope}><div><span className={styles.kicker}>{airlineName}</span><h1>Vuelos</h1>
-      <p>{operations.length} operaciones cargadas del historial autorizado.</p></div></div>
+      <p>{operations.length} {operations.length === 1 ? "operación cargada" : "operaciones cargadas"} del historial autorizado.</p></div></div>
     <label className={styles.flightSearch}>Buscar vuelo u operación
       <input type="search" value={flightQuery} onChange={event => setFlightQuery(event.target.value)}
         placeholder="Número de vuelo, operación o estación" />
@@ -436,8 +436,9 @@ export function AirlinePortalPage({ view, operationId, invoiceId }: { view: View
   if (view === "requests") return <AirlineRequestsPage
     key={actor.accountId} airlineName={bootstrap.name} />;
 
-  if (view === "finance") return <AirlineFinancePage
-    key={actor.accountId} airlineName={bootstrap.name} />;
+  // Its filters live in the address (useSearchParams), so it renders under its own Suspense boundary (Next 16).
+  if (view === "finance") return <Suspense fallback={<p role="status">Cargando facturas autorizadas…</p>}>
+    <AirlineFinancePage key={actor.accountId} airlineName={bootstrap.name} /></Suspense>;
 
   if (view === "invoiceDetail") return <AirlineInvoiceDetailPage
     key={`${actor.accountId}:${invoiceId}`} invoiceId={invoiceId ?? ""} />;
