@@ -98,12 +98,14 @@ public static class AccountStatementDocuments
                 $"en {input.Invoices.Count(invoice => invoice.CurrencyCode == currency && invoice.Balance > 0m)} facturas con saldo"));
             summary.Add(new ReportMetric($"Vencido {currency}", ReportFormat.Money(overdue, currency), Of(overdue, owed)));
             summary.Add(new ReportMetric($"Por vencer {currency}", ReportFormat.Money(aging.Current, currency), Of(aging.Current, owed)));
-            summary.Add(new ReportMetric($"1-30 días {currency}", ReportFormat.Money(aging.Days1To30, currency), Of(aging.Days1To30, owed)));
-            summary.Add(new ReportMetric($"31-60 días {currency}", ReportFormat.Money(aging.Days31To60, currency), Of(aging.Days31To60, owed)));
-            summary.Add(new ReportMetric($"61-90 días {currency}", ReportFormat.Money(aging.Days61To90, currency), Of(aging.Days61To90, owed)));
-            summary.Add(new ReportMetric($"Más de 90 días {currency}", ReportFormat.Money(aging.Days91Plus, currency), Of(aging.Days91Plus, owed)));
-            summary.Add(new ReportMetric($"Cobros sin aplicar {currency}", ReportFormat.Money(aging.Unallocated, currency),
-                "a favor de la aerolínea"));
+            // The overdue buckets and the unapplied receipts only when they hold something: a zero adds nothing to read.
+            foreach (var (label, amount) in new[] { ("1-30 días", aging.Days1To30), ("31-60 días", aging.Days31To60),
+                         ("61-90 días", aging.Days61To90), ("Más de 90 días", aging.Days91Plus) })
+                if (amount != 0m)
+                    summary.Add(new ReportMetric($"{label} {currency}", ReportFormat.Money(amount, currency), Of(amount, owed)));
+            if (aging.Unallocated != 0m)
+                summary.Add(new ReportMetric($"Cobros sin aplicar {currency}", ReportFormat.Money(aging.Unallocated, currency),
+                    "a favor de la aerolínea"));
             summary.Add(new ReportMetric($"Saldo de la cuenta {currency}",
                 ReportFormat.Money(aging.Balance - aging.Unallocated, currency), "facturas con saldo menos cobros sin aplicar"));
         }
