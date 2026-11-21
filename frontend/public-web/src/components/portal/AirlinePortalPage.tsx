@@ -11,6 +11,7 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { billingUnitLabel } from "@/lib/billing-units";
+import { downloadFile } from "@/lib/download-file";
 import { BUSINESS_TIME_ZONE, formatLocalDateTime } from "@/lib/business-day";
 import { standingNotice, stationsInForce } from "@/lib/contract-status";
 import { operationStatusLabel } from "@/lib/operation-status";
@@ -158,15 +159,7 @@ function ServiceOrderCard({ operationId, revision, timeZone, stationCode }: {
     setDownloading(true);
     setDownloadError(false);
     try {
-      const url = URL.createObjectURL(await downloadServiceOrder(operationId));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `orden-de-servicio-${number}.pdf`;
-      anchor.hidden = true;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadFile(await downloadServiceOrder(operationId), `orden-de-servicio-${number}.pdf`);
     } catch {
       setDownloadError(true);
     } finally {

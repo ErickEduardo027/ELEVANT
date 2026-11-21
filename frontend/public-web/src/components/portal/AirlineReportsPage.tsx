@@ -10,6 +10,7 @@ import { invoiceStatus, invoiceTitle } from "./financeDocuments";
 import styles from "./AirlinePortalPage.module.css";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { businessToday } from "@/lib/business-day";
+import { formatMoney } from "@/lib/portal-format";
 
 type ReportSnapshot = {
   revision: string;
@@ -17,11 +18,7 @@ type ReportSnapshot = {
   statement: AirlineTreasuryStatement;
 };
 
-function formatAmount(currency: string, value: number) {
-  return `${currency} ${new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2, maximumFractionDigits: 4,
-  }).format(value)}`;
-}
+const formatAmount = formatMoney;
 
 /** A bounded, tenant-scoped read model; it deliberately does not claim global KPIs. */
 export function AirlineReportsPage({ airlineName }: { airlineName: string }) {

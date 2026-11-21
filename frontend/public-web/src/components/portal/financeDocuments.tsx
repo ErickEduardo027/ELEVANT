@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { downloadFile } from "@/lib/download-file";
+import { formatMoney } from "@/lib/portal-format";
 import type { AirlineTreasuryInvoice, AirlineTreasuryNote } from "@/lib/airline-treasury-service";
 import styles from "./AirlinePortalPage.module.css";
 
@@ -11,8 +13,9 @@ import styles from "./AirlinePortalPage.module.css";
  * «Estado de cuenta», «Documentos» and «Reportes» share it.
  */
 
+/** «USD 1,234.50» (es-DO, 2 decimals): the one money format of the portal. */
 export function amount(currency: string, total: number) {
-  return `${currency} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(total)}`;
+  return formatMoney(currency, total);
 }
 
 /**
@@ -39,15 +42,8 @@ export function noteTitle(note: Pick<AirlineTreasuryNote, "kind" | "number">) {
   return /^E3[34]\d{10}$/.test(note.number) ? `Nota de ${kind} electrónica ${note.number}` : `Nota de ${kind} ${note.number}`;
 }
 
-/** Saves a PDF Blob with a readable name. */
-export function saveBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
+/** Saves a PDF Blob with a readable name (the shared `downloadFile`). */
+export const saveBlob = downloadFile;
 
 /** A download with its own «Preparando…» and recoverable error, so a failed PDF never hides the list it belongs to. */
 function DownloadButton({ label, busyLabel, failure, download }: {

@@ -10,10 +10,11 @@ import { LiveSnapshotNotice } from "./LiveSnapshotNotice";
 import { useLiveSnapshot } from "./useLiveSnapshot";
 import styles from "./AirlinePortalPage.module.css";
 import { businessToday } from "@/lib/business-day";
+import { formatMoney } from "@/lib/portal-format";
 
 // 4-N10: the cutoff is the business day of Santo Domingo, the one the server checks.
 const today = () => businessToday();
-const money = (value: number, currency: string) => currency + " " + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+const money = (value: number, currency: string) => formatMoney(currency, value);
 const kinds: Record<string, string> = { Receipt: "Cobro", Application: "Aplicación de cobro", ApplicationReversal: "Reverso de aplicación",
   ReceiptReversal: "Reverso de cobro", Refund: "Devolución", LegacyPayment: "Pago histórico", LegacyCredit: "Crédito histórico", Invoice: "Factura",
   Credit: "Nota de crédito", Debit: "Nota de débito" };

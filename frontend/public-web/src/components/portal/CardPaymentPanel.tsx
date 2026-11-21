@@ -5,6 +5,8 @@ import type { CardPaymentAttemptResponse, CardPaymentAvailabilityResponse, CardP
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { BILLING_PROBLEMS, cardPaymentProblem } from "@/lib/billing-problems";
+import { downloadFile } from "@/lib/download-file";
+import { formatMoney } from "@/lib/portal-format";
 import { CARD_EXPIRY_ERRORS, CARD_EXPIRY_HINT, formatCardExpiry, parseCardExpiry } from "@/lib/card-expiry";
 import styles from "./AirlinePortalPage.module.css";
 import { useLiveSnapshot } from "./useLiveSnapshot";
@@ -18,17 +20,8 @@ const DECLINES: Record<string, string> = {
 /** 4-N05: the gateway of the simulation is labelled as such next to the card form. */
 export const CARD_SIMULATION_LABEL = "Simulación — sin validez fiscal";
 
-const money = (value: number, currency: string) =>
-  `${currency} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
-
-function save(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
+const money = (value: number, currency: string) => formatMoney(currency, value);
+const save = downloadFile;
 
 /** 4-N30: the receipt of an approved attempt, with «Preparando recibo…» and a recoverable error like the invoice PDF. */
 function ReceiptButton({ attempt }: { attempt: Pick<CardPaymentAttemptResponse, "id" | "authorizationCode"> }) {
