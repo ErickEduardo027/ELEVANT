@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text.Json;
+using Elevant.Application.Common;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Audit;
@@ -213,17 +214,30 @@ internal sealed class EfCardPaymentStore(ElevantDbContext context, TimeProvider 
     internal Task<CardPaymentReceiptData?> SystemReceiptAsync(Guid attemptId, CancellationToken cancellationToken) =>
         ReceiptAsync(attemptId, null, cancellationToken);
 
-    private async Task<CardPaymentReceiptData?> ReceiptAsync(Guid attemptId, long? airlineKey, CancellationToken cancellationToken) =>
-        await (from attempt in context.Set<CardPaymentAttempt>().AsNoTracking()
+    private async Task<CardPaymentReceiptData?> ReceiptAsync(Guid attemptId, long? airlineKey, CancellationToken cancellationToken)
+    {
+        var found = await (from attempt in context.Set<CardPaymentAttempt>().AsNoTracking()
                join invoice in context.NonFiscalInvoices.AsNoTracking() on attempt.InvoiceId equals invoice.Id
                join airline in context.Airlines.AsNoTracking() on attempt.AirlineId equals airline.Id
                join receipt in context.Set<FinanceTreasuryReceipt>().AsNoTracking() on attempt.ReceiptId equals (long?)receipt.Id
                where attempt.PublicId == attemptId && attempt.Status == CardPaymentStatus.Approved &&
                    (airlineKey == null || attempt.AirlineId == airlineKey)
-               select new CardPaymentReceiptData(attempt.PublicId, airline.Name, invoice.Number, invoice.FiscalNumber,
-                   attempt.Brand, attempt.Last4, attempt.AuthorizationCode!, attempt.Amount, attempt.CurrencyCode,
-                   attempt.CreatedAt, receipt.Reference))
+               select new
+               {
+                   Receipt = new CardPaymentReceiptData(attempt.PublicId, airline.Name, invoice.Number, invoice.FiscalNumber,
+                       attempt.Brand, attempt.Last4, attempt.AuthorizationCode!, attempt.Amount, attempt.CurrencyCode,
+                       attempt.CreatedAt, receipt.Reference, null, null, null),
+                   InvoiceKey = invoice.Id, invoice.Total,
+               })
             .SingleOrDefaultAsync(cancellationToken);
+        if (found is null) return null;
+        // PR E: the receipt prints the invoice total and its balance on the day it is produced.
+        var balance = await FinanceTreasuryBalances.BalanceAsync(context, found.InvoiceKey, found.Total, cancellationToken);
+        return found.Receipt with
+        {
+            InvoiceTotal = found.Total, Balance = balance, BalanceOn = BusinessCalendar.Today(timeProvider.GetUtcNow()),
+        };
+    }
 
     private sealed record Portal(long AccountKey, string DisplayName, long OrganizationKey, long AirlineKey, Guid AirlineId,
         string AirlineName);
@@ -250,6 +264,8 @@ internal sealed class EfCardPaymentStore(ElevantDbContext context, TimeProvider 
 internal sealed class EfCardReceiptAttachmentResolver(EfCardPaymentStore store, IFinancialDocumentPdfRenderer renderer)
     : Application.Abstractions.Messaging.IEmailAttachmentResolver
 {
+    private static string CardReceiptFileName(CardPaymentReceiptData receipt) => Elevant.Application.Documents.DocumentFileNames.CardReceipt(receipt);
+
     public async Task<Application.Abstractions.Messaging.EmailAttachment?> ResolveAsync(string reference,
         CancellationToken cancellationToken = default)
     {
@@ -257,7 +273,7 @@ internal sealed class EfCardReceiptAttachmentResolver(EfCardPaymentStore store, 
             !Guid.TryParse(reference[EfCardPaymentStore.AttachmentPrefix.Length..], out var attemptId)) return null;
         var receipt = await store.SystemReceiptAsync(attemptId, cancellationToken);
         return receipt is null ? null
-            : new Application.Abstractions.Messaging.EmailAttachment($"recibo-{receipt.AuthorizationCode}.pdf", "application/pdf",
+            : new Application.Abstractions.Messaging.EmailAttachment(CardReceiptFileName(receipt), "application/pdf",
                 renderer.RenderCardReceipt(receipt));
     }
 }

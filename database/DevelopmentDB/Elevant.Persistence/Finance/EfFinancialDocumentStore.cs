@@ -29,7 +29,7 @@ internal sealed class EfFinancialDocumentStore(
             throw new FinancialDocumentUnavailableException(
                 FinancialDocumentFailureStage.SourceValidation);
         return await OpenOrCreateAsync(source.Id, null, "Invoice", invoice.Id,
-            () => renderer.RenderInvoice(invoice), $"invoice-{invoice.Id:N}.pdf",
+            () => renderer.RenderInvoice(invoice), Elevant.Application.Documents.DocumentFileNames.Invoice(invoice.Fiscal?.FiscalNumber, invoice.Number),
             cancellationToken);
     }
 
@@ -54,7 +54,7 @@ internal sealed class EfFinancialDocumentStore(
                 FinancialDocumentFailureStage.SourceValidation);
         return await OpenOrCreateAsync(source.InvoiceId, source.PaymentId, "Receipt", payment.Id,
             () => renderer.RenderReceipt(payment, invoiceNumber),
-            $"receipt-{payment.Id:N}.pdf", cancellationToken);
+            Elevant.Application.Documents.DocumentFileNames.Receipt(payment.InvoiceFiscalNumber, invoiceNumber, payment.Reference), cancellationToken);
     }
 
     private async Task<FinancialDocumentData> OpenOrCreateAsync(

@@ -141,7 +141,7 @@ public sealed class FinanceTreasuryController(IFinanceTreasuryStore treasury, IF
         if (!Actor(out var actor)) return Error<object>(401, "Authentication failed.").Result!;
         var note = await treasury.AdjustmentNoteDocumentAsync(actor, noteId, cancellationToken);
         return note is null ? Error<object>(404, "Adjustment note was not found.").Result!
-            : File(renderer.RenderAdjustmentNote(note), "application/pdf", $"nota-{note.Number}.pdf");
+            : File(renderer.RenderAdjustmentNote(note), "application/pdf", Elevant.Application.Documents.DocumentFileNames.AdjustmentNote(note.Kind, note.Number));
     }
     [HttpGet("statements", Name = "GetFinanceTreasuryStatement")]
     [ProducesResponseType<FinanceTreasuryStatementResponse>(200)]

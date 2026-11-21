@@ -63,7 +63,8 @@ public sealed record FinanceTreasuryOptionsData(IReadOnlyList<FinanceTreasuryAir
 public sealed record FinanceAdjustmentNoteDocumentData(Guid NoteId, string Number, string Kind, Guid InvoiceId,
     string InvoiceNumber, string? InvoiceFiscalNumber, string CurrencyCode, decimal Amount, DateOnly EffectiveOn,
     DateTimeOffset IssuedAt, string Reason, string IssuerName, string IssuerRnc, string CustomerName, string CustomerCode,
-    string StationCode, IReadOnlyList<FinanceAdjustmentNoteDocumentLineData> Lines);
+    string StationCode, IReadOnlyList<FinanceAdjustmentNoteDocumentLineData> Lines,
+    string? CustomerTaxRegistration = null, string? CustomerTaxRegistrationCountryCode = null);
 
 /// <summary>One line of a note: the gross adjusted and, from phase 4 on, its frozen net, ITBIS and rate.</summary>
 public sealed record FinanceAdjustmentNoteDocumentLineData(int LineNumber, string OperationCode, string ServiceCode,
