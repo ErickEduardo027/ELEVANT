@@ -1291,6 +1291,27 @@ escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
   [`standCodes.js`](../../frontend/private-web/src/services/standCodes.js), que
   también ordena Datos maestros, la «Lista de posiciones» del mapa y los
   selectores de posición de Planificación).
+  *Posterior al commit verificado (G1, revisión del profesor del 16 de
+  noviembre de 2026, 2:09-2:13):* la pantalla pide el tablero con
+  `includeAssignment=true`
+  ([servicio](../../frontend/private-web/src/services/occCoverageService.js)).
+  «Posiciones de la terminal» tiene las columnas Posición · Atributos ·
+  Cubierta por · Cubre · Asignada · Estado: «Cubre» es el horario de cada
+  cobertura de la posición («20/11 06:00–14:00»; con los dos días si termina al
+  día siguiente) y «Asignada», cuándo y quién la asignó («20/11/2026 09:41 ·
+  Alex Operations»), una línea por cobertura, en 24 h y en la hora de la
+  estación. «Coberturas del día» suma «Asignada» junto a «Horario». La cobertura
+  que se acaba de asignar dice «Recién asignada» (círculo lleno) durante unos
+  segundos en las dos listas, y la pantalla relee el tablero para saber cuándo y
+  quién la asignó, porque la respuesta del comando no lo dice; de las coberturas
+  que ya conocía conserva lo que dijo la última lectura. «Ordenar: Posición |
+  Asignación más reciente» ordena las dos listas: por posición, en orden natural,
+  o lo recién asignado primero y después la última asignación (las posiciones sin
+  cobertura quedan abajo, en orden natural). «Mostrar liberadas» relee con
+  `includeReleased=true` y añade al final de «Coberturas del día» las coberturas
+  liberadas del día, con «Liberada» (círculo tachado) y «Liberada el … por …», sin
+  «Liberar»; la leyenda nombra «Recién asignada» y «Liberada» mientras se dibujan.
+  Textos en español e inglés.
 - **Notificaciones**
   ([ruta](../../frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx)).
   El «Historial de avisos» lleva la leyenda «Prioridad» en su cabecera y los

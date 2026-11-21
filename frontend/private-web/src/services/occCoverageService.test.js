@@ -3,15 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({
   updateOccStandAttributes: vi.fn(), createOccCoverage: vi.fn(), releaseOccCoverage: vi.fn(),
   releaseOccOperationAgent: vi.fn(), getOccHandoverOptions: vi.fn(), handOverOccOperation: vi.fn(),
-  getOccAttendanceAssignments: vi.fn(),
+  getOccAttendanceAssignments: vi.fn(), getOccCoverage: vi.fn(),
 }));
 vi.mock('../features/auth/authService', () => ({ handleUnauthorizedResponse: vi.fn(), readSession: () => null }));
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => api }));
 
 import { handleUnauthorizedResponse } from '../features/auth/authService';
 import {
-  createOccCoverage, describeReasons, handOverOccOperation, loadOccAttendanceAssignments, loadOccHandoverOptions,
-  releaseOccCoverage, releaseOccOperationAgent, STAND_PROBLEM_MESSAGES, translateCoverageError, updateOccStandAttributes,
+  createOccCoverage, describeReasons, handOverOccOperation, loadOccAttendanceAssignments, loadOccCoverage,
+  loadOccHandoverOptions, releaseOccCoverage, releaseOccOperationAgent, STAND_PROBLEM_MESSAGES, translateCoverageError,
+  updateOccStandAttributes,
 } from './occCoverageService';
 
 const key = '90000000-0000-4000-8000-000000000001';
@@ -20,6 +21,19 @@ const attributes = { date: '2026-08-19', hasBoardingBridge: false, isRemote: tru
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('the coverage board read (G1)', () => {
+  it('always asks who assigned each coverage, and the released ones only when the screen shows them', async () => {
+    api.getOccCoverage.mockResolvedValue({ stationId: 's' });
+    const signal = new AbortController().signal;
+    await loadOccCoverage('s', '2026-11-20', { signal });
+    await loadOccCoverage('s', '2026-11-20', { signal, includeReleased: true });
+    expect(api.getOccCoverage.mock.calls).toEqual([
+      ['s', '2026-11-20', { signal, includeAssignment: true, includeReleased: false }],
+      ['s', '2026-11-20', { signal, includeAssignment: true, includeReleased: true }],
+    ]);
+  });
 });
 
 describe('coverage errors (ADR-0030)', () => {

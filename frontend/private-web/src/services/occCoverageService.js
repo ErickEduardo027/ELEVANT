@@ -106,8 +106,13 @@ async function guarded(request) {
   try { return await request(); } catch (error) { throw translateCoverageError(error); }
 }
 
-export const loadOccCoverage = (stationId, date, { signal } = {}) =>
-  guarded(() => client().getOccCoverage(stationId, date, { signal }));
+/**
+ * The coverage board of a station and date. G1: it always asks when and by whom OCC assigned each coverage, which the
+ * screen shows beside «Cubierta por»; `includeReleased` also asks for the coverages of the date OCC released.
+ */
+export const loadOccCoverage = (stationId, date, { signal, includeReleased = false } = {}) =>
+  guarded(() => client().getOccCoverage(stationId, date, { signal, includeAssignment: true,
+    includeReleased: includeReleased === true }));
 
 /** Hands an agent their stands; the intent's key replays a creation whose answer was lost (3-J). */
 export const createOccCoverage = (command, { idempotencyKey } = {}) =>
