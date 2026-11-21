@@ -190,6 +190,31 @@ function ServiceOrderCard({ operationId, revision, timeZone, stationCode }: {
   </div>;
 }
 
+/** «Descargar Reporte de vuelo»: the PDF the server renders once OCC approved the operation. */
+function FlightReportButton({ operationId, code }: { operationId: string; code: string }) {
+  const { downloadFlightReport } = useAirlineSession();
+  const [downloading, setDownloading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function download() {
+    setDownloading(true);
+    setFailed(false);
+    try {
+      downloadFile(await downloadFlightReport(operationId), `reporte-de-vuelo-${code}.pdf`);
+    } catch {
+      setFailed(true);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return <div>
+    <button className={styles.loadMore} type="button" disabled={downloading} onClick={() => void download()}>
+      {downloading ? "Generando PDF…" : "Descargar Reporte de vuelo"}</button>
+    {failed && <p role="alert">No se pudo descargar el Reporte de vuelo. Intente nuevamente.</p>}
+  </div>;
+}
+
 function AirlineFlightDetail({ operationId, stations }: { operationId: string; stations: readonly PortalStation[] }) {
   const { getOperation, getApprovedEvidence, operationRevision } = useAirlineSession();
   const [retryKey, setRetryKey] = useState(0);
@@ -269,6 +294,9 @@ function AirlineFlightDetail({ operationId, stations }: { operationId: string; s
             <span>{service.executedQuantity} / {service.contractedQuantity} · por {billingUnitLabel(service.billingUnit)}</span></div>
         </li>)}</ul>
       </div> : evidenceResult?.status === "ready" && <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
+      {operation.status === "Approved"
+        ? <FlightReportButton operationId={operationId} code={operation.code} />
+        : <p className={styles.note}>El Reporte de vuelo estará disponible cuando OCC apruebe la operación.</p>}
       <ServiceOrderCard operationId={operationId} revision={operationRevision} timeZone={timeZone}
         stationCode={operation.stationCode} />
     </section>}

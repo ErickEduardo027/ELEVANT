@@ -117,6 +117,8 @@ interface AirlineSessionContextValue {
   /** The Service Order the airline's representative signed on the ramp (ADR-0032). */
   getServiceOrder(operationId: string): Promise<AirlineServiceOrderResponse>;
   downloadServiceOrder(operationId: string): Promise<Blob>;
+  /** The Flight Report PDF of an operation approved by OCC (the server refuses any other). */
+  downloadFlightReport(operationId: string): Promise<Blob>;
   getRequests(page?: number): Promise<AirlineOperationalRequestPageResponse>;
   getTreasuryStatement(asOf: string, stationId?: string, signal?: AbortSignal): Promise<AirlineTreasuryStatement>;
   getTreasuryInvoice(invoiceId: string, signal?: AbortSignal): Promise<AirlineTreasuryInvoiceDetail>;
@@ -575,6 +577,8 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     withContractClient(client => client.getAirlineServiceOrder(operationId, { cache: "no-store" })), [withContractClient]);
   const downloadServiceOrder = useCallback((operationId: string) =>
     withContractClient(client => client.downloadAirlineServiceOrder(operationId, { cache: "no-store" })), [withContractClient]);
+  const downloadFlightReport = useCallback((operationId: string) =>
+    withContractClient(client => client.downloadAirlineFlightReport(operationId, { cache: "no-store" })), [withContractClient]);
   const getContractTimeline = useCallback((versionId: string) =>
     withContractClient(client => client.getContractTimeline(versionId, { cache: "no-store" })), [withContractClient]);
   const getContractPricingTerms = useCallback((versionId: string) =>
@@ -812,7 +816,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [withContractClient]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, exportAirlineReport, getAdjustmentNoteDocument, getCardPaymentAvailability, getPaymentReceipt, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, downloadFlightReport, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, exportAirlineReport, getAdjustmentNoteDocument, getCardPaymentAvailability, getPaymentReceipt, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }
