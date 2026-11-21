@@ -38,7 +38,8 @@ export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, chi
   const pathname = usePathname();
   const { access } = useDepartmentAccess();
   const navigation = useMemo(() => allowedNavigation(ADMIN_OCC_NAVIGATION, access), [access]);
-  const { permitted, empty } = useNavigationGuard(ADMIN_OCC_NAVIGATION, navigation);
+  const { permitted, empty } = useNavigationGuard(ADMIN_OCC_NAVIGATION, navigation,
+    { homePath: OCC_CONSOLE_PATH, basePath: ADMIN_OCC_BASE_PATH });
 
   return (
     <LanguageScope>

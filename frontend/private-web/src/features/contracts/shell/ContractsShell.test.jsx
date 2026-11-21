@@ -43,6 +43,12 @@ describe('ContractsShell', () => {
     expect(await screen.findByRole('heading', { name: 'Borradores' })).toBeInTheDocument();
   });
 
+  it('no longer offers «Mis gastos» (ADR-0047)', async () => {
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('contracts', DepartmentPermissionCodes.contracts)}><ContractsShell /></DepartmentAccessProvider>);
+    expect(await screen.findByRole('heading', { name: 'Resumen contractual' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation')).queryByText('Mis gastos')).not.toBeInTheDocument();
+  });
+
   it('does not expose deferred prototype departmental chat', async () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('contracts', DepartmentPermissionCodes.contracts)}><ContractsShell /></DepartmentAccessProvider>);
     expect(await screen.findByRole('heading', { name: 'Resumen contractual' })).toBeInTheDocument();

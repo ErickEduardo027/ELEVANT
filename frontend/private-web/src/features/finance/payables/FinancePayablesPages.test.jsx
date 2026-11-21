@@ -5,8 +5,6 @@ import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { commercialApi } from '../../../services/commercialGovernanceApi';
 import SuppliersPage from './SuppliersPage';
 import PayablesPage from './PayablesPage';
-import ExpensesPage from './ExpensesPage';
-import DepartmentExpensesPage from './DepartmentExpensesPage';
 vi.mock('../../../services/commercialGovernanceApi', () => ({ commercialApi: vi.fn() }));
 vi.mock('../../auth/authService', () => ({ readSession: () => ({ accountId: 'me', stationScopes: [{ stationId: 'st1', stationCode: 'PUJ' }] }), handleUnauthorizedResponse: vi.fn() }));
 const options = { stations: [{ id: 'st1', code: 'PUJ', name: 'Punta Cana' }], suppliers: [{ id: 'supplier', code: 'SP', name: 'Proveedor de rampa' }], airlines: [], services: [], turnarounds: [], currencies: ['USD', 'DOP'], employeeId: 'emp-me', department: 'Finance', canCreateOwnExpense: true, canReadOwnExpenses: true, canReviewDepartmentExpenses: true, canReadFinanceExpenses: true, canApproveFinanceExpenses: true, canPayFinanceExpenses: true };
@@ -26,12 +24,11 @@ beforeEach(() => {
     if (path.startsWith('/finance/payable-payments?')) return [{ id: 'payment', supplierId: 'supplier', scopeStationId: 'st1', reference: 'Transferencia', fx, amount: 900, applied: 100, remaining: 800, version: 'payment-v1', applications: [] }];
     if (path === '/finance/payables/bill') return invoice;
     if (path.startsWith('/finance/payables?')) return [invoice];
-    if (path.startsWith('/finance/expenses?')) return [];
     throw new Error('Unexpected path ' + path);
   });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-describe('Finance supplier, payable and expense pages', () => {
+describe('Finance supplier and payable pages', () => {
   it('creates a station-scoped supplier and retries the same command after a lost response', async () => {
     mount(<SuppliersPage />, ['finance.suppliers.read', 'finance.suppliers.create', 'finance.suppliers.update', 'finance.suppliers.delete']);
     await userEvent.click(await screen.findByRole('button', { name: 'Nuevo proveedor' }));
@@ -62,16 +59,6 @@ describe('Finance supplier, payable and expense pages', () => {
     expect(screen.queryByRole('button', { name: 'Aprobar factura' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Registrar pago' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Detalle de cuenta por pagar' })).getByText(/700/)).toBeInTheDocument();
-  });
-  it('shows own-department review and hides self approval', async () => {
-    const claim = { ...invoice, id: 'expense', employeeId: 'emp-other', employeeNumber: 'QA-2', requesterId: 'other', description: 'Traslado de rampa', expenseDate: '2026-10-18', department: 'Operations', status: 'Submitted', receipts: [], reimbursements: [] };
-    commercialApi.mockImplementation(async path => path.includes('/options') ? { ...options, department: 'Operations' } : path === '/finance/expenses/expense' ? claim : [claim]);
-    mount(<ExpensesPage />, ['finance.expenses.read'], 'operations');
-    await userEvent.click(await screen.findByRole('button', { name: /Traslado de rampa/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Aprobar departamento' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar decisión' }));
-    await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(JSON.parse(writes()[0][1].body)).toMatchObject({ decision: 'DepartmentApproved', expectedVersion: 'bill-v1' });
   });
   it('refreshes a stale bill after a 409 and requires a new review', async () => {
     invoice.status = 'Submitted';
@@ -337,79 +324,6 @@ describe('Finance supplier, payable and expense pages', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos en Facturas de proveedores antes de retirarlo.');
     expect(writes()[0][0]).toBe('/finance/suppliers/supplier');
     expect(JSON.parse(writes()[0][1].body)).toMatchObject({ decision: 'Retired', reason: 'Proveedor sin contrato', expectedVersion: 'supplier-v1' });
-  });
-  it('never offers approval or reimbursement for the current employee own claim', async () => {
-    const claim = { ...invoice, id: 'own', employeeId: 'emp-me', requesterId: 'me', employeeNumber: 'QA-1', description: 'Gasto propio', expenseDate: '2026-10-18', department: 'Finance', status: 'DepartmentApproved', receipts: [], reimbursements: [] };
-    commercialApi.mockImplementation(async path => path.includes('/options') ? options : path === '/finance/expenses/own' ? claim : [claim]);
-    mount(<ExpensesPage />, ['finance.expenses.read', 'finance.expenses.approve', 'finance.expenses.pay']);
-    await userEvent.click(await screen.findByRole('button', { name: /Gasto propio/ }));
-    await screen.findByRole('region', { name: 'Detalle de gasto' });
-    expect(screen.queryByRole('button', { name: 'Aprobar Finanzas' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Registrar reembolso' })).not.toBeInTheDocument();
-  });
-  it('records a partial employee reimbursement separately from the approved claim', async () => {
-    const claim = { ...invoice, id: 'expense-paid', employeeId: 'emp-other', requesterId: 'other', employeeNumber: 'QA-2', description: 'Traslado aprobado', expenseDate: '2026-10-18', department: 'Operations', status: 'Approved', receipts: [], reimbursements: [] };
-    commercialApi.mockImplementation(async (path, request) => {
-      if (request?.method) return { id: 'reimbursement' };
-      return path.includes('/options') ? options : path === '/finance/expenses/expense-paid' ? claim : [claim];
-    });
-    mount(<ExpensesPage />, ['finance.expenses.read', 'finance.expenses.pay']);
-    await userEvent.click(await screen.findByRole('button', { name: /Traslado aprobado/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Registrar reembolso' }));
-    await userEvent.type(screen.getByLabelText('Importe del pago'), '300');
-    await userEvent.type(screen.getByLabelText('Referencia del pago'), 'TR-300');
-    await userEvent.type(screen.getByLabelText('Tasa a DOP'), '60');
-    await userEvent.type(screen.getByLabelText('Fuente de la tasa'), 'Tasa revisada');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0][0]).toBe('/finance/expenses/expense-paid/reimbursements');
-    expect(JSON.parse(writes()[0][1].body)).toMatchObject({ expectedVersion: 'bill-v1', reference: 'TR-300', amount: 300, rateToExpense: 1, fx: { currency: 'USD', rateToDop: 60 } });
-  });
-  it('lets an ordinary department member start own expenses from server capability flags', async () => {
-    const ownOptions = { ...options, department: 'Contracts', canCreateOwnExpense: true, canReadOwnExpenses: true,
-      canReviewDepartmentExpenses: false, canReadFinanceExpenses: false, canApproveFinanceExpenses: false, canPayFinanceExpenses: false };
-    commercialApi.mockImplementation(async (path, request) => request?.method ? { id: 'own' } : path.includes('/options') ? ownOptions : []);
-    mount(<DepartmentExpensesPage />, [], 'contracts', 'Member');
-    await userEvent.click(await screen.findByRole('button', { name: 'Nuevo gasto' }));
-    expect(screen.getByRole('heading', { name: 'Mis gastos' })).toBeInTheDocument();
-    expect(commercialApi.mock.calls.some(([p]) => p.includes('/finance/expenses?') && p.includes('ownOnly=true'))).toBe(true);
-    expect(screen.queryByLabelText('Empleado')).not.toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Concepto del gasto'), 'Traslado de contratos');
-    await userEvent.type(screen.getByLabelText('Descripción de línea 1'), 'Transporte');
-    await userEvent.type(screen.getByLabelText('Precio unitario de línea 1'), '50');
-    await userEvent.type(screen.getByLabelText('Tasa a DOP'), '60');
-    await userEvent.type(screen.getByLabelText('Fuente de la tasa'), 'Tasa revisada');
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
-    await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0][0]).toBe('/finance/expenses');
-    expect(JSON.parse(writes()[0][1].body)).not.toHaveProperty('employeeId');
-  });
-  it('lets a department administrator review its queue without Finance grants', async () => {
-    const departmentOptions = { ...options, department: 'Contracts', canCreateOwnExpense: true, canReadOwnExpenses: true,
-      canReviewDepartmentExpenses: true, canReadFinanceExpenses: false, canApproveFinanceExpenses: false, canPayFinanceExpenses: false };
-    const claim = { ...invoice, id: 'dept-claim', employeeId: 'peer', employeeNumber: 'QA-2', requesterId: 'peer-account', description: 'Gasto por revisar', expenseDate: '2026-10-18', department: 'Contracts', status: 'Submitted', receipts: [], reimbursements: [] };
-    commercialApi.mockImplementation(async (path, request) => {
-      if (request?.method) return { id: 'dept-claim' };
-      if (path.includes('/options')) return departmentOptions;
-      if (path === '/finance/expenses/dept-claim') return claim;
-      return path.includes('departmentOnly=true') ? [claim] : [];
-    });
-    mount(<DepartmentExpensesPage />, [], 'contracts');
-    await userEvent.click(await screen.findByRole('button', { name: 'Revisión de departamento' }));
-    await userEvent.click(await screen.findByRole('button', { name: /Gasto por revisar/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Aprobar departamento' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar decisión' }));
-    await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(JSON.parse(writes()[0][1].body)).toMatchObject({ decision: 'DepartmentApproved', expectedVersion: 'bill-v1' });
-    expect(screen.queryByRole('button', { name: 'Aprobar Finanzas' })).not.toBeInTheDocument();
-  });
-  it('does not offer own creation when the server has no active employee', async () => {
-    const ownOptions = { ...options, employeeId: null, canCreateOwnExpense: false, canReadOwnExpenses: false,
-      canReviewDepartmentExpenses: true, canReadFinanceExpenses: false, canApproveFinanceExpenses: false, canPayFinanceExpenses: false };
-    commercialApi.mockImplementation(async path => path.includes('/options') ? ownOptions : []);
-    mount(<DepartmentExpensesPage />, [], 'contracts');
-    await screen.findByText('Sin gastos para estos filtros.');
-    expect(screen.queryByRole('button', { name: 'Nuevo gasto' })).not.toBeInTheDocument();
   });
   it('offers retry after a forbidden list without rendering private errors', async () => {
     commercialApi.mockRejectedValue(Object.assign(new Error('SQL private detail'), { status: 403 }));

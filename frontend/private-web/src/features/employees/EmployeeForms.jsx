@@ -60,15 +60,14 @@ function ErrorLine({ text }) {
   return text ? <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{text}</p> : null;
 }
 
-const blank = requisition => ({
+const blank = () => ({
   firstName: '', lastName: '', identificationType: DEFAULT_IDENTIFICATION_TYPE, identificationNumber: '', phoneNumber: '', corporateEmail: '',
-  employeeNumber: '', department: requisition?.department ?? DEPARTMENTS.OPERATIONS, positionId: requisition?.position.id ?? '',
-  stationIds: requisition?.station ? [requisition.station.id] : [], hireDate: today(), requisitionId: requisition?.id ?? '',
+  employeeNumber: '', department: DEPARTMENTS.OPERATIONS, positionId: '', stationIds: [], hireDate: today(),
 });
 
 /** Create or edit an employee record. Changing department is a transfer, so it is fixed when editing. */
-export function EmployeeDrawer({ open, employee, requisition, options, onClose, onSaved }) {
-  const [form, setForm] = useState(() => blank(requisition));
+export function EmployeeDrawer({ open, employee, options, onClose, onSaved }) {
+  const [form, setForm] = useState(blank);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const intent = useRef(createCommandKeyHolder());
@@ -82,14 +81,12 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
       phoneNumber: employee.phoneNumber ?? '', corporateEmail: employee.summary.corporateEmail ?? '',
       employeeNumber: employee.summary.employeeNumber, department: employee.summary.department,
       positionId: employee.summary.position.id, stationIds: employee.summary.stations.map(station => station.id),
-      hireDate: employee.summary.hireDate, requisitionId: '',
-    } : blank(requisition));
-  }, [open, employee, requisition]);
+      hireDate: employee.summary.hireDate,
+    } : blank());
+  }, [open, employee]);
   const set = patch => setForm(current => ({ ...current, ...patch }));
   const positions = useMemo(() => (options?.positions ?? []).filter(position =>
     position.department === form.department && (position.isActive || position.id === form.positionId)), [options, form.department, form.positionId]);
-  const requisitions = (options?.openRequisitions ?? []).filter(item =>
-    item.department === form.department && item.position.id === form.positionId);
   const emailLocked = Boolean(employee?.summary.account);
 
   async function submit(event) {
@@ -98,7 +95,8 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
     setError('');
     const values = {
       ...form, phoneNumber: form.phoneNumber.trim() || null, corporateEmail: form.corporateEmail.trim() || null,
-      requisitionId: form.requisitionId || null,
+      // Requisitions left the version 1 interface (ADR-0047): a new record never covers one.
+      requisitionId: null,
     };
     try {
       if (employee) {
@@ -141,17 +139,13 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
               ref={withRule(phoneProblem(form.phoneNumber))} value={form.phoneNumber} onChange={event => set({ phoneNumber: event.target.value })} className={fieldClass} /></label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="text-xs font-semibold">Número de empleado<input required pattern="[A-Za-z0-9\-]{2,32}" data-error="Use de 2 a 32 letras, dígitos o guiones, p. ej. QA-FIN-010." value={form.employeeNumber} onChange={event => set({ employeeNumber: event.target.value.toUpperCase() })} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Número de empleado<input required pattern="[A-Za-z0-9\-]{2,32}" data-error="Usa de 2 a 32 letras, dígitos o guiones, p. ej. QA-FIN-010." value={form.employeeNumber} onChange={event => set({ employeeNumber: event.target.value.toUpperCase() })} className={fieldClass} /></label>
             <label className="text-xs font-semibold">Fecha de ingreso<input required type="date" value={form.hireDate} onChange={event => set({ hireDate: event.target.value })} className={fieldClass} /></label>
-            <label className="text-xs font-semibold">Departamento<select disabled={Boolean(employee)} value={form.department} onChange={event => set({ department: event.target.value, positionId: '', requisitionId: '' })} className={fieldClass}>
+            <label className="text-xs font-semibold">Departamento<select disabled={Boolean(employee)} value={form.department} onChange={event => set({ department: event.target.value, positionId: '' })} className={fieldClass}>
               {Object.values(DEPARTMENTS).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
           </div>
-          <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => set({ positionId: event.target.value, requisitionId: '' })} className={fieldClass}>
-            <option value="">Seleccione…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}{position.isRampPosition ? ' · rampa' : ''}</option>)}</select></label>
-          {!employee && requisitions.length > 0 && (
-            <label className="block text-xs font-semibold">Cubre la requisición (opcional)<select value={form.requisitionId} onChange={event => set({ requisitionId: event.target.value })} className={fieldClass}>
-              <option value="">Ninguna</option>{requisitions.map(item => <option key={item.id} value={item.id}>{item.position.name} · {item.filled}/{item.quantity} · {item.reason}</option>)}</select></label>
-          )}
+          <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => set({ positionId: event.target.value })} className={fieldClass}>
+            <option value="">Selecciona…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}{position.isRampPosition ? ' · rampa' : ''}</option>)}</select></label>
           <StationChecks stations={options?.stations ?? []} value={form.stationIds} onChange={stationIds => set({ stationIds })} />
         </form>
       )}
@@ -199,9 +193,9 @@ export function TransferModal({ employee, options, onClose, onDone }) {
           una operación en curso o devuelta para corrección, el traslado no se registra hasta que el agente la envíe desde
           la tablet.</p>}
         <label className="block text-xs font-semibold">Departamento de destino<select required value={form.department} onChange={event => setForm(current => ({ ...current, department: event.target.value, positionId: '' }))} className={fieldClass}>
-          <option value="">Seleccione…</option>{Object.values(DEPARTMENTS).filter(key => key !== employee.summary.department).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
+          <option value="">Selecciona…</option>{Object.values(DEPARTMENTS).filter(key => key !== employee.summary.department).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
         <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
-          <option value="">Seleccione…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
+          <option value="">Selecciona…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
         <StationChecks stations={options?.stations ?? []} value={form.stationIds} onChange={stationIds => setForm(current => ({ ...current, stationIds }))} />
         <label className="block text-xs font-semibold">Motivo<textarea required minLength={3} maxLength={500} rows={2} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
       </form>
@@ -306,7 +300,7 @@ export function RegisterDrawer({ person, options, onClose, onSaved }) {
             <label className="text-xs font-semibold">Fecha de ingreso<input required type="date" value={form.hireDate} onChange={event => setForm(current => ({ ...current, hireDate: event.target.value }))} className={fieldClass} /></label>
           </div>
           <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
-            <option value="">Seleccione…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
+            <option value="">Selecciona…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
           <label className="block text-xs font-semibold">Teléfono<input value={form.phoneNumber} onChange={event => setForm(current => ({ ...current, phoneNumber: event.target.value }))} className={fieldClass} /></label>
           <StationChecks stations={options?.stations ?? []} value={form.stationIds ?? []} onChange={stationIds => setForm(current => ({ ...current, stationIds }))} />
         </form>

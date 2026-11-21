@@ -52,23 +52,19 @@ describe('FinanceShell', () => {
     expect(listFinanceInvoices).toHaveBeenCalled();
   });
 
-  it('opens «Mis gastos» for a member without the expenses grants (4-N28)', async () => {
+  it('no longer shows «Mis gastos» nor «Gastos de empleados» (ADR-0047)', async () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Member', department: 'finance', permissions: ['finance.home.read'],
       stations: [], canManageDepartmentUsers: false, canValidateAccessRequests: false }}><FinanceShell /></DepartmentAccessProvider>);
     const navigation = await screen.findByRole('navigation', { name: 'Navegación principal' });
-    expect(topLevel(navigation)).toEqual(['Inicio', 'Cuentas por pagar']);
-    await userEvent.click(within(navigation).getByRole('button', { name: /Cuentas por pagar/ }));
-    expect(within(navigation).queryByRole('button', { name: 'Gastos de empleados' })).not.toBeInTheDocument();
-    await userEvent.click(await within(navigation).findByRole('button', { name: 'Mis gastos' }));
-    expect(await screen.findByRole('heading', { name: 'Mis gastos' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Todos los gastos' })).not.toBeInTheDocument();
+    expect(topLevel(navigation)).toEqual(['Inicio']);
+    expect(navigation).not.toHaveTextContent('Mis gastos');
+    expect(navigation).not.toHaveTextContent('Gastos de empleados');
   });
 
   it('keeps only the groups and tabs the template allows', async () => {
     renderShell(['finance.home.read', 'finance.invoicing.read', 'finance.invoicing.issue', 'finance.reconciliation.read']);
     const navigation = await screen.findByRole('navigation', { name: 'Navegación principal' });
-    // «Mis gastos» needs no grant (4-N28), so «Cuentas por pagar» keeps it alone.
-    expect(topLevel(navigation)).toEqual(['Inicio', 'Facturación', 'Cuentas por pagar', 'Usuarios del departamento']);
+    expect(topLevel(navigation)).toEqual(['Inicio', 'Facturación', 'Usuarios del departamento']);
     await userEvent.click(within(navigation).getByRole('button', { name: /Facturación/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Facturas' }));
     expect(await screen.findByRole('heading', { name: 'Facturas' })).toBeInTheDocument();

@@ -16,7 +16,7 @@ describe('finance modules', () => {
     ]);
     const group = id => FINANCE_MODULES.find(module => module.id === id).children.map(child => child.label);
     expect(group(FINANCE_MODULE_IDS.INVOICING)).toEqual(['Por facturar', 'Facturas', 'Charters']);
-    expect(group(FINANCE_MODULE_IDS.PAYABLES_GROUP)).toEqual(['Facturas de proveedores', 'Proveedores', 'Gastos de empleados', 'Mis gastos']);
+    expect(group(FINANCE_MODULE_IDS.PAYABLES_GROUP)).toEqual(['Facturas de proveedores', 'Proveedores']);
     expect(group(FINANCE_MODULE_IDS.CONFIGURATION)).toEqual(['Tarifario de servicios', 'Tarifario de cargos', 'Paquetes',
       'Reglas de cierre', 'Aprobación de contratos', 'Tasas de cambio', 'Unidades de cobro']);
   });
@@ -45,16 +45,15 @@ describe('finance modules', () => {
     expect(financeNavigation(() => false)).toEqual([]);
   });
 
-  it('offers «Mis gastos» to every Finance member, without a Finance code (4-N28)', () => {
-    const own = FINANCE_MODULES.find(module => module.id === FINANCE_MODULE_IDS.PAYABLES_GROUP).children
-      .find(child => child.id === FINANCE_MODULE_IDS.OWN_EXPENSES);
-    expect(own).toEqual({ id: FINANCE_MODULE_IDS.OWN_EXPENSES, label: 'Mis gastos' });
-    const member = financeNavigation(item => !item.permission && !item.administratorsOnly);
-    expect(member.map(module => module.id)).toEqual([FINANCE_MODULE_IDS.PAYABLES_GROUP]);
-    expect(member[0].children.map(child => child.label)).toEqual(['Mis gastos']);
-    const permissions = selectableModules(FINANCE_MODULES).map(module => module.permission).filter(Boolean);
-    expect(permissions).not.toContain('finance.expenses.create');
-    expect(permissions).not.toContain('finance.expenses.update');
+  it('no longer offers «Mis gastos» nor «Gastos de empleados» (ADR-0047)', () => {
+    const modules = selectableModules(FINANCE_MODULES);
+    expect(modules.map(module => module.label)).not.toContain('Mis gastos');
+    expect(modules.map(module => module.label)).not.toContain('Gastos de empleados');
+    expect(modules.map(module => module.permission).filter(code => code?.startsWith('finance.expenses.'))).toEqual([]);
+    expect(FINANCE_MODULE_IDS).not.toHaveProperty('EXPENSES');
+    expect(FINANCE_MODULE_IDS).not.toHaveProperty('OWN_EXPENSES');
+    // Without the expenses entry, an account without Finance codes has nothing to open.
+    expect(financeNavigation(item => !item.permission && !item.administratorsOnly)).toEqual([]);
   });
 
   it("no longer manages the commercial catalog: Contracts owns it", () => {

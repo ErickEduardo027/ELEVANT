@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 import { call, expectCall, login } from "./support/api";
-import { goPrivate, loginPortal, loginPrivate, snap } from "./support/browser";
+import { loginPortal, loginPrivate, snap } from "./support/browser";
 import { API, loadRun, saveRun } from "./support/env";
 import { waitForEmail } from "./support/mailpit";
 import { pdfText } from "./support/pdf";
@@ -13,10 +13,9 @@ import { pdfText } from "./support/pdf";
 // gateway) and gets the receipt, and Finanzas sees the card payment. Then (block C) Treasury cannot
 // reverse that card receipt, Finanzas credits part of the invoice with an E34 note that reaches the
 // airline by email, and the portal shows the note and the credit in its favour. Finally (block D)
-// Cuentas por pagar corrects, voids and reuses an NCF under segregation of duties, and an OCC
-// expense is reviewed by escalation in Finance. Last (block E), the Vault describes this cycle as the
-// code does. The card numbers are the public test numbers of the simulated gateway; no screenshot is
-// taken while they are typed.
+// Cuentas por pagar corrects, voids and reuses an NCF under segregation of duties. The version 1 has no
+// expenses screens (ADR-0047). Last (block E), the Vault describes this cycle as the code does. The card
+// numbers are the public test numbers of the simulated gateway; no screenshot is taken while they are typed.
 
 const DECLINED = "4000 0000 0000 0002";
 const APPROVED = "4111 1111 1111 1111";
@@ -332,7 +331,7 @@ test("Finanzas sin prefacturas: menú Inicio · Facturación · Cuentas por paga
   for (const label of [/^Inicio/, /^Facturación/, /^Cuentas por pagar/, /^Reportes/, /^Configuración/, /^Usuarios/])
     await expect(navigation.getByRole("button", { name: label }).first()).toBeVisible();
   for (const retired of [/Pre-facturación/, /Servicios aprobados/, /Tratamientos tributarios/, /Documentos fiscales/,
-    /Cobros y aplicaciones/, /^Tarifarios/])
+    /Cobros y aplicaciones/, /^Tarifarios/, /Mis gastos/, /Gastos de empleados/])
     await expect(navigation.getByRole("button", { name: retired })).toHaveCount(0);
   // 4-A, 4-N02: «Inicio» shows what the server computes for the station, never «sin estación».
   await expect(page.getByRole("heading", { level: 1, name: "Resumen financiero" })).toBeVisible();
@@ -396,10 +395,9 @@ test("Finanzas sin prefacturas: menú Inicio · Facturación · Cuentas por paga
     .not.toContain("finance.reconciliation.create");
 });
 
-// Block D: Cuentas por pagar y gastos. Every code, NCF and concept carries the run id and an attempt suffix, so a resumed
+// Block D: Cuentas por pagar. Every code, NCF and concept carries the run id and an attempt suffix, so a resumed
 // run never collides with an earlier attempt. The seeded Finance account registers and submits, so it never approves
 // nor pays its own invoice (4-N14).
-const RECEIPT_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 /** Opens a child of «Cuentas por pagar»; the group is a disclosure, so it is expanded only while it is closed. */
 async function openPayables(page: Page, label: string, heading = label) {
@@ -525,82 +523,6 @@ test("Cuentas por pagar: corregir, anular y volver a usar el NCF, segregación y
   await supplier.getByRole("button", { name: "Confirmar retiro" }).click();
   await expect(page.getByRole("row", { name: new RegExp(name) })).toContainText("Inactivo");
   await snap(page, "fase4-cxp-proveedor-retirado");
-});
-
-test("Gastos: el gasto de OCC se revisa por escalamiento en Finanzas y «Mis gastos» de Finanzas descarta un borrador (4-N13, 4-N28)", async ({ page }) => {
-  const tag = attemptTag(loadRun().runId);
-  const concept = `Combustible de rampa ${tag}`;
-  const own = `Taxi de Finanzas ${tag}`;
-  const receipt = { name: "recibo.png", mimeType: "image/png", buffer: Buffer.from(RECEIPT_PNG, "base64") };
-  const detail = page.getByRole("region", { name: "Detalle de gasto" });
-  const fileExpense = async (description: string) => {
-    await page.getByRole("button", { name: "Nuevo gasto" }).click();
-    const form = page.getByRole("form", { name: "Borrador de gasto" });
-    await form.getByLabel("Concepto del gasto").fill(description);
-    await form.getByLabel("Descripción de línea 1").fill("Combustible y peaje");
-    await form.getByLabel("Precio unitario de línea 1").fill("45");
-    await form.getByLabel("Tasa a DOP").fill("60");
-    await form.getByLabel("Fuente de la tasa").fill("Tasa revisada del ciclo E2E");
-    await form.getByRole("button", { name: "Guardar borrador" }).click();
-    await expect(form).toBeHidden();
-    await page.getByRole("button", { name: new RegExp(description) }).click();
-    await expect(detail).toBeVisible();
-  };
-  const upload = async () => {
-    await detail.getByLabel("Adjuntar comprobante privado").setInputFiles(receipt);
-    await detail.getByRole("button", { name: "Subir comprobante" }).click();
-    await expect(detail.getByRole("button", { name: /Descargar comprobante 1/ })).toBeVisible();
-  };
-
-  // OCC's only administrator files its expense; a receipt uploaded by mistake is removed before submitting it.
-  await loginPrivate(page, "occ");
-  await goPrivate(page, "/admin-occ/expenses");
-  await expect(page.getByRole("heading", { level: 1, name: "Mis gastos" })).toBeVisible();
-  await fileExpense(concept);
-  await upload();
-  await detail.getByRole("button", { name: "Quitar comprobante 1" }).click();
-  await detail.getByRole("button", { name: "Sí, quitar el comprobante" }).click();
-  await expect(detail.getByText("Sin comprobantes adjuntos.")).toBeVisible();
-  await snap(page, "fase4-gastos-comprobante-quitado");
-  await upload();
-  await detail.getByRole("button", { name: "Enviar gasto al departamento" }).click();
-  await detail.getByRole("button", { name: "Confirmar decisión" }).click();
-  await expect(detail.getByText("En revisión de departamento", { exact: true })).toBeVisible();
-  await expect(detail.getByText("Sin otro administrador de su departamento en la estación: lo revisa Finanzas.")).toBeVisible();
-  await snap(page, "fase4-gastos-occ-enviado");
-  const occ = await login("occ");
-  const filed = await expectCall<Array<{ id: string; reviewRoute: string | null; receipts: unknown[] }>>(200, occ, "GET",
-    `/finance/expenses?search=${encodeURIComponent(concept)}&ownOnly=true&take=25`);
-  expect(filed.data.map(item => [item.reviewRoute, item.receipts.length])).toEqual([["Finance", 1]]);
-
-  // A Finance administrator reviews it by escalation; the final approval is left to another person of Finance.
-  await loginPrivate(page, "finance");
-  await openPayables(page, "Gastos de empleados");
-  await page.getByLabel("Buscar", { exact: true }).fill(concept);
-  await page.getByRole("button", { name: new RegExp(concept) }).click();
-  await expect(detail.getByText("Revisión por escalamiento: el departamento del gasto no tiene otro administrador en la estación.")).toBeVisible();
-  await snap(page, "fase4-gastos-escalamiento");
-  await detail.getByRole("button", { name: "Aprobar por escalamiento" }).click();
-  await detail.getByRole("button", { name: "Confirmar decisión" }).click();
-  await expect(detail.getByText("Pendiente de Finanzas", { exact: true })).toBeVisible();
-  await expect(detail.getByRole("button", { name: "Aprobar Finanzas" })).toHaveCount(0);
-  await expect(detail.getByText("Usted revisó este gasto: otra persona de Finanzas debe darle la aprobación final.")).toBeVisible();
-  const finance = await login("finance");
-  const escalated = await expectCall<{ status: string; version: string; reviews: Array<{ stage: string }> }>(200, finance, "GET",
-    `/finance/expenses/${filed.data[0].id}`);
-  expect([escalated.data.status, escalated.data.reviews[escalated.data.reviews.length - 1]?.stage]).toEqual(["DepartmentApproved", "Escalation"]);
-  const self = await expectCall<{ code?: string }>(403, finance, "POST", `/finance/expenses/${filed.data[0].id}/decisions`,
-    { requestId: randomUUID(), expectedVersion: escalated.data.version, decision: "Approved" });
-  expect(self.data.code).toBe("segregation_of_duties");
-
-  // 4-N28: «Mis gastos» needs no Finance code; a draft filed by mistake is discarded with its reason.
-  await openPayables(page, "Mis gastos");
-  await fileExpense(own);
-  await detail.getByRole("button", { name: "Descartar borrador" }).click();
-  await detail.getByLabel("Motivo de la decisión").fill("Gasto registrado por error");
-  await detail.getByRole("button", { name: "Confirmar descarte" }).click();
-  await expect(detail.getByText("Descartado", { exact: true })).toBeVisible();
-  await snap(page, "fase4-gastos-descartado");
 });
 
 /** The repository root, found from where Playwright runs (frontend/public-web) without assuming a depth. */

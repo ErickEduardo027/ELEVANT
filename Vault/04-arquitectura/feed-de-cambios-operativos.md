@@ -370,7 +370,8 @@ Las pantallas que todavía abren su propio observador lo conservan hasta el PR
 que las rehace: Panorama (U3); Monitoreo de vuelos, Mapa de posiciones y
 Planificación (U5); y Cobertura de posiciones, Datos maestros, Tablets, Chat
 interno y Notificaciones (U6). Las páginas de otros departamentos que monta el
-OCC (Usuarios, Mis gastos y la pestaña de servicios de Notificaciones)
+OCC (Usuarios y la pestaña de servicios de Notificaciones; «Mis gastos» salió
+con la versión 1, ADR-0047)
 conservan el suyo. La
 [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
 repite un minuto en reposo y otro de vuelo demo, y falla si el plan de

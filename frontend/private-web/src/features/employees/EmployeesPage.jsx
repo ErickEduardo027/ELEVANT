@@ -15,6 +15,7 @@ import {
   listUnregisteredPersons,
 } from '../../services/humanResourcesEmployeesService';
 import { EmployeeDrawer, fieldClass, RegisterDrawer, TerminateModal, TransferModal } from './EmployeeForms';
+import PositionsPage from './PositionsPage';
 
 const ACCOUNT_STATUS = { Active: { label: 'Con cuenta', tone: 'success' }, Disabled: { label: 'Cuenta inactiva', tone: 'neutral' } };
 
@@ -65,11 +66,13 @@ function EmployeeDetail({ employee, canManage, canTerminate, onEdit, onTransfer,
 }
 
 /** Human Resources employee records (ADR-0017): accounts are only issued to employees registered here. */
-export default function EmployeesPage({ initialRequisition = null, onRequisitionConsumed }) {
+export default function EmployeesPage() {
   const access = useOptionalDepartmentAccess();
   const canCreate = Boolean(access?.can('human_resources.employees.create'));
   const canUpdate = Boolean(access?.can('human_resources.employees.update'));
   const canTerminate = Boolean(access?.can('human_resources.employees.delete'));
+  // ADR-0047: Puestos is a tab of Empleados, not an entry of the menu.
+  const canReadPositions = Boolean(access?.can('human_resources.positions.read'));
   const [tab, setTab] = useState('employees');
   const [filters, setFilters] = useState({ department: '', status: 'Active', search: '' });
   const [page, setPage] = useState(null);
@@ -93,11 +96,6 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
   }, [filters]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getEmployeeOptions().then(setOptions).catch(() => setOptions(null)); }, []);
-  useEffect(() => {
-    if (!initialRequisition) return;
-    setEditing({ requisition: initialRequisition });
-    onRequisitionConsumed?.();
-  }, [initialRequisition, onRequisitionConsumed]);
   useEffect(() => {
     if (tab !== 'pending' || !canCreate) return;
     listUnregisteredPersons().then(setUnregistered).catch(failure => {
@@ -138,7 +136,11 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
       <PageHeader eyebrow="Gestión Humana" title="Empleados"
         description="Expediente de cada persona que trabaja en AVIAM. Solo los empleados registrados pueden recibir acceso a ELEVANT."
         actions={canCreate && <button type="button" onClick={() => setEditing({})} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Registrar empleado</button>} />
-      {canCreate && <Tabs activeId={tab} onChange={setTab} tabs={[{ id: 'employees', label: 'Empleados' }, { id: 'pending', label: 'Expedientes pendientes' }]} />}
+      {(canCreate || canReadPositions) && <Tabs activeId={tab} onChange={setTab} tabs={[
+        { id: 'employees', label: 'Empleados' },
+        ...(canReadPositions ? [{ id: 'positions', label: 'Puestos' }] : []),
+        ...(canCreate ? [{ id: 'pending', label: 'Expedientes pendientes' }] : []),
+      ]} />}
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
 
       {tab === 'employees' ? (
@@ -177,9 +179,11 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
             </StackedTable>
           )}
         </>
+      ) : tab === 'positions' ? (
+        <PositionsPage />
       ) : (
         <section className="space-y-3">
-          <p className="text-sm text-text-secondary-light">Cuentas y agentes creados antes de los expedientes. Registre su documento real y su puesto.</p>
+          <p className="text-sm text-text-secondary-light">Cuentas y agentes creados antes de los expedientes. Registra su documento real y su puesto.</p>
           {!unregistered ? <p role="status" className="text-sm">Cargando…</p> : unregistered.length === 0 ? (
             <EmptyState icon={UsersIcon} title="Todo registrado" description="Todas las cuentas internas tienen expediente." />
           ) : (
@@ -201,7 +205,7 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
         {detail && <EmployeeDetail employee={detail} canManage={canUpdate} canTerminate={canTerminate}
           onEdit={() => setEditing({ employee: detail })} onTransfer={() => setTransfer(detail)} onTerminate={() => setTerminate(detail)} />}
       </Drawer>
-      <EmployeeDrawer open={Boolean(editing)} employee={editing?.employee ?? null} requisition={editing?.requisition ?? null}
+      <EmployeeDrawer open={Boolean(editing)} employee={editing?.employee ?? null}
         options={options} onClose={() => setEditing(null)} onSaved={done} />
       <TransferModal employee={transfer} options={options} onClose={() => setTransfer(null)} onDone={done} />
       <TerminateModal employee={terminate} onClose={() => setTerminate(null)} onDone={done} />
