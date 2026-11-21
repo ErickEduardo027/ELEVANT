@@ -10,7 +10,6 @@ import ContractDetailDrawer from './ContractDetailDrawer';
 const TITLES = {
   contracts: ['Contratos', 'Versiones aprobadas y cobertura registrada.'],
   services: ['Servicios pactados', 'Tarifas aprobadas por contrato y estación.'],
-  reports: ['Reportes contractuales', 'Indicadores de los acuerdos publicados en esta página.'],
 };
 
 export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, canManageLifecycle = false,
@@ -94,13 +93,6 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
             <td className="p-3">{validityRange(rate.version.validFrom, rate.version.validTo)}</td>
           </tr>;
         })}</tbody></table></div> : <p className="rounded-xl border p-8 text-center">No hay servicios pactados en esta página.</p>)}
-      {mode === 'reports' && <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-surface-dark-card">
-        <p className="text-xs text-text-secondary-light">Indicadores de la página {page}, no del total histórico.</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3"><p>Contratos: <strong>{contracts.length}</strong></p>
-          <p>Activos: <strong>{contracts.filter(contract => contract.status === 'Active').length}</strong></p>
-          <p>Tarifas publicadas: <strong>{rates.length}</strong></p></div>
-        {contracts.length === 0 && <p className="mt-4">No hay acuerdos publicados en esta página.</p>}
-      </section>}
       <nav aria-label="Páginas de acuerdos" className="flex items-center justify-between text-sm">
         <button type="button" disabled={page === 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Página anterior</button>
         <span>Página {page}</span>

@@ -17,7 +17,7 @@ vi.mock('../features/auth/authService', () => ({
   handleUnauthorizedResponse: mocks.handleUnauthorizedResponse,
 }));
 
-import { downloadOccReport, getOccReport } from './occReportsService';
+import { exportOccReport, getOccReport, occReportFileName } from './occReportsService';
 
 const query = { stationId: '20000000-0000-7000-8000-000000000001', from: '2026-01-01', to: '2026-12-31' };
 const problem = (status, code) => Object.assign(new Error(`HTTP ${status}`),
@@ -34,7 +34,7 @@ beforeEach(() => {
 describe('occReportsService', () => {
   it('explains an export over its row limit by its code and never shows the server title (3-N13)', async () => {
     mocks.exportOccReport.mockRejectedValueOnce(problem(422, 'report_too_large'));
-    const error = await downloadOccReport('operations', query, 'xlsx', 'PUJ').catch(failure => failure);
+    const error = await exportOccReport('operations', query, 'xlsx').catch(failure => failure);
     expect(error).toMatchObject({ status: 422, code: 'report_too_large' });
     expect(error.message).toBe('El reporte supera el máximo de filas exportables. Acote el período o los filtros.');
     expect(error.message).not.toContain('Narrow');
@@ -67,5 +67,9 @@ describe('occReportsService', () => {
     const aborted = Object.assign(new Error('aborted'), { name: 'AbortError' });
     mocks.getOccReport.mockRejectedValueOnce(aborted);
     await expect(getOccReport('operations', query)).rejects.toBe(aborted);
+  });
+
+  it('names the file by report, station and period', () => {
+    expect(occReportFileName('operations', query, 'pdf', 'PUJ')).toBe('elevant-occ-operations-PUJ-20260101-20261231.pdf');
   });
 });

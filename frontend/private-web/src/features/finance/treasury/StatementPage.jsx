@@ -7,6 +7,7 @@ import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { formatTreasuryMoney as money, getTreasuryOptions, getTreasuryStatement, treasuryError, treasuryToday } from '../../../services/financeTreasuryService';
 import { invoiceLabel } from '../financeLabels';
+import StatementDownloads from './StatementDownloads';
 
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const button = 'min-h-[40px] rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
@@ -34,7 +35,8 @@ export default function StatementPage({ initialStationId, initialAirlineId = '',
   }
   if (!canRead) return <p role="alert">No tiene permiso para consultar estados de cuenta.</p>;
   return <div className="mx-auto max-w-[1440px] space-y-5">
-    <PageHeader eyebrow="Finanzas" title="Estado de cuenta" description="Saldos, movimientos y antigüedad a una fecha de corte, separados por moneda." />
+    <PageHeader eyebrow="Finanzas" title="Estado de cuenta" description="Saldos, movimientos y antigüedad a una fecha de corte, separados por moneda."
+      actions={data && !loading ? <StatementDownloads filters={query} /> : null} />
     <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
       <label className="text-xs font-semibold">Fecha de corte<input required type="date" value={filters.asOf} max={treasuryToday()} onChange={event => setFilters(current => ({ ...current, asOf: event.target.value }))} className={field} /></label>
       <label className="text-xs font-semibold">Estación<select value={filters.stationId} onChange={event => setFilters(current => ({ ...current, stationId: event.target.value }))} className={field}><option value="">Todas mis estaciones</option>{options?.stations?.map(s => <option key={s.id} value={s.id}>{s.code}</option>)}</select></label>

@@ -5,6 +5,7 @@ import { commercialApi } from './commercialGovernanceApi';
 import { newRequestId } from './financeBookService';
 import { TREASURY_PROBLEM_MESSAGES } from './financeErrors';
 import { problemMessage } from './problemMessages';
+import { downloadFile } from '../utils/downloadFile';
 
 const query = values => {
   const search = new URLSearchParams();
@@ -30,6 +31,35 @@ export const getTreasuryAdjustments = (invoiceId, options) => read(`/finance/inv
 export const issueTreasuryAdjustment = (invoiceId, body) => post(`/finance/invoices/${id(invoiceId)}/adjustment-notes`, body);
 export const getTreasuryStatement = (filters, options) => read(`/finance/statements${query(filters)}`, options);
 
+const STATEMENT_EXPORT = 'exportFinanceStatement';
+
+/**
+ * Whether the API client can already give the statement as PDF and Excel (a later PR adds the endpoint with the common
+ * engine). Until it can, «Estados de cuenta» shows no download button.
+ */
+export function statementExportsAvailable() {
+  try {
+    return typeof createPrivateWebApiClient({ getAccessToken: () => readSession()?.token })[STATEMENT_EXPORT] === 'function';
+  } catch {
+    return false;
+  }
+}
+
+/** The statement at its cut-off as a PDF or Excel file, with the filters on screen (`asOf`, `stationId`, `airlineId`). */
+export async function exportFinanceStatement(filters, format) {
+  try {
+    return await createPrivateWebApiClient({ getAccessToken: () => readSession()?.token })[STATEMENT_EXPORT](
+      Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== '' && value != null)), format,
+      { cache: 'no-store' });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+/** «elevant-estado-de-cuenta-2026-11-21.pdf». */
+export const statementFileName = (filters, format) => `elevant-estado-de-cuenta-${filters.asOf}.${format}`;
+
 /**
  * 4-N17: saves the PDF of a credit or debit note with a readable name: its e-NCF E34/E33 when it modifies an E31
  * invoice, the ITBIS frozen for each line and «Simulación — sin validez fiscal».
@@ -43,12 +73,7 @@ export async function downloadAdjustmentNoteDocument(noteId, fileName) {
     if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
     throw error;
   }
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(blob, fileName);
 }
 
 /** 4-N17: a note on an E31 invoice has its own simulated e-NCF: E34 credits the invoice, E33 debits it. */

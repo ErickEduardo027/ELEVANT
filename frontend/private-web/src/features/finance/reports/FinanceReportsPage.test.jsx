@@ -1,70 +1,133 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import FinanceReportsPage, { formatCell } from './FinanceReportsPage';
+import FinanceReportsPage from './FinanceReportsPage';
+import { normalizeFinanceReport } from './financeReportSource';
 import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
-import { downloadFinanceReport, getFinanceReport } from '../../../services/financeBookService';
+import { exportFinanceReport, getFinanceReport, listFinanceReports } from '../../../services/financeBookService';
+import { getTreasuryOptions } from '../../../services/financeTreasuryService';
+import { downloadFile } from '../../../utils/downloadFile';
 
 vi.mock('../../../services/financeBookService', async importOriginal => ({
   ...(await importOriginal()),
+  listFinanceReports: vi.fn(),
   getFinanceReport: vi.fn(),
-  downloadFinanceReport: vi.fn().mockResolvedValue(undefined),
+  exportFinanceReport: vi.fn(),
 }));
-vi.mock('../../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 'st-1', stationCode: 'PUJ' }] }) }));
+vi.mock('../../../services/financeTreasuryService', () => ({ getTreasuryOptions: vi.fn() }));
+vi.mock('../../../utils/downloadFile', () => ({ downloadFile: vi.fn() }));
+vi.mock('../../auth/authService', () => ({ readSession: () => ({ name: 'Marta Ruiz',
+  stationScopes: [{ stationId: 'st-1', stationCode: 'PUJ' }, { stationId: 'st-2', stationCode: 'SDQ' }] }) }));
 
+const REPORTS = [
+  { key: 'revenue', title: 'Ingresos por período', description: 'Facturado por mes.' },
+  { key: 'receivables', title: 'Cuentas por cobrar y antigüedad', description: 'Saldo pendiente.', asOfDate: true },
+  { key: 'collections', title: 'Cobranza', description: 'Cobros.' },
+  { key: 'payables', title: 'Cuentas por pagar', description: 'Proveedores.', asOfDate: true },
+  { key: 'charges', title: 'Recargos', description: 'Cargos.' },
+  { key: 'sales', title: 'Ventas (e-CF simulado)', description: 'Ventas.' },
+];
 const revenue = {
   key: 'revenue', title: 'Ingresos por período', description: 'Facturado por mes.', from: '2026-10-01', to: '2026-10-08',
-  consolidationCurrency: 'USD', summary: [{ label: 'Consolidado USD', value: '1500.00', type: 'money', currencyCode: 'USD' }],
+  consolidationCurrency: 'USD',
+  summary: [{ label: 'Facturas emitidas', value: '8', type: 'number', context: 'de 50 facturas este mes' },
+    { label: '% cobrado', value: '62.5678', type: 'percent' }],
   columns: [{ key: 'month', label: 'Mes', type: 'text' }, { key: 'currency', label: 'Moneda', type: 'text' },
-    { key: 'total', label: 'Total', type: 'money' }, { key: 'usd', label: 'Total USD', type: 'money' }],
-  rows: [['2026-10', 'DOP', '58500.00', '1000.00']], notes: ['Nota de prueba.'],
+    { key: 'invoices', label: 'Facturas', type: 'number' }, { key: 'total', label: 'Total', type: 'money' },
+    { key: 'usd', label: 'Total USD', type: 'money' }],
+  rows: [['2026-10', 'DOP', '3', '58500.00', '1000.00'], ['2026-10', 'USD', '5', '500.00', '500.00']],
+  notes: ['Nota de prueba.'],
 };
+const airlineId = '30000000-0000-7000-8000-000000000001';
 
 function renderPage(codes = DepartmentPermissionCodes.finance) {
   return render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', codes)}>
     <FinanceReportsPage initialStationId="st-1" /></DepartmentAccessProvider>);
 }
 
+beforeEach(() => {
+  listFinanceReports.mockResolvedValue(REPORTS);
+  getFinanceReport.mockResolvedValue(revenue);
+  exportFinanceReport.mockResolvedValue(new Blob(['%PDF']));
+  getTreasuryOptions.mockResolvedValue({ airlines: [{ id: airlineId, name: 'Arajet' }], stations: [] });
+});
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('FinanceReportsPage', () => {
-  it('formats money with the row currency and consolidated columns in USD', () => {
-    expect(formatCell('58500.00', revenue.columns[2], revenue.rows[0], revenue.columns)).toMatch(/^DOP 58[.,]500/);
-    expect(formatCell('1000.00', revenue.columns[3], revenue.rows[0], revenue.columns)).toMatch(/^USD 1[.,]000/);
-    expect(formatCell(null, revenue.columns[2], revenue.rows[0], revenue.columns)).toBe('—');
+  it('formats money with the row currency, consolidated columns in USD and percentages with one decimal', () => {
+    const report = normalizeFinanceReport(revenue);
+    expect(report.columns[3].currencyOf(revenue.rows[0])).toBe('DOP');
+    expect(report.columns[4].currencyOf(revenue.rows[0])).toBe('USD');
+    expect(report.summary).toEqual([{ label: 'Facturas emitidas', value: '8', context: 'de 50 facturas este mes' },
+      { label: '% cobrado', value: '62.6 %', context: null }]);
   });
 
-  it('reads the selected server report with the filters and exports it', async () => {
-    getFinanceReport.mockResolvedValue(revenue);
+  it('reads the report for the station of the shell and shows it with context, totals and both downloads', async () => {
     renderPage();
-    expect(await screen.findByText('Nota de prueba.')).toBeInTheDocument();
+    const result = await screen.findByRole('region', { name: 'Ingresos por período' });
     expect(getFinanceReport).toHaveBeenCalledWith('revenue', expect.objectContaining({ stationId: 'st-1' }));
-    expect(within(screen.getByRole('table')).getByText('2026-10')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
-    expect(downloadFinanceReport).toHaveBeenCalledWith('revenue', 'pdf', expect.objectContaining({ stationId: 'st-1' }));
-    getFinanceReport.mockResolvedValue({ ...revenue, key: 'receivables', rows: [], notes: [] });
-    await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por cobrar y antigüedad' }));
-    expect(await screen.findByText('Sin datos')).toBeInTheDocument();
-    expect(getFinanceReport).toHaveBeenLastCalledWith('receivables', expect.any(Object));
+    expect(within(result).getByText(/^Generado el .* por Marta Ruiz$/)).toBeInTheDocument();
+    expect(within(result).getByText(/^Filtros aplicados: Estación PUJ · Período /)).toBeInTheDocument();
+    expect(within(result).getByText('2 filas en el período')).toBeInTheDocument();
+    expect(within(result).getByLabelText('Resumen del reporte')).toHaveTextContent('de 50 facturas este mes');
+    const table = within(result).getByRole('table');
+    expect(within(table).getByRole('cell', { name: 'DOP 58,500.00' })).toHaveClass('text-right');
+    // «Total» mixes DOP and USD: only «Facturas» and «Total USD» add up.
+    expect([...table.querySelectorAll('tfoot td')].map(cell => cell.textContent))
+      .toEqual(['Total', '', '8', '', 'USD 1,500.00']);
+    expect(within(result).getByText('Nota de prueba.')).toBeInTheDocument();
+    await userEvent.click(within(result).getByRole('button', { name: 'Descargar PDF' }));
+    await waitFor(() => expect(exportFinanceReport).toHaveBeenCalledWith('revenue', 'pdf', expect.objectContaining({ stationId: 'st-1' })));
+    expect(downloadFile).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^elevant-revenue-.*\.pdf$/));
+    expect(screen.queryByText(/CSV/)).not.toBeInTheDocument();
   });
 
-  it('hides export without the export permission and shows a forbidden read as unauthorized, without retry', async () => {
+  it('filters by airline, station and currency, and names them as the server does', async () => {
+    getFinanceReport.mockResolvedValue({ ...revenue, filters: [{ label: 'Aerolínea', value: 'Arajet' }, { label: 'Moneda', value: 'USD' }] });
+    renderPage();
+    await screen.findByRole('region', { name: 'Ingresos por período' });
+    await userEvent.selectOptions(await screen.findByLabelText('Aerolínea'), airlineId);
+    await userEvent.selectOptions(screen.getByLabelText('Estación'), 'st-2');
+    await userEvent.selectOptions(screen.getByLabelText('Moneda'), 'USD');
+    await userEvent.click(screen.getByRole('button', { name: 'Generar' }));
+    await waitFor(() => expect(getFinanceReport).toHaveBeenLastCalledWith('revenue',
+      expect.objectContaining({ stationId: 'st-2', airlineId, currency: 'USD' })));
+    expect(await screen.findByText(/Estación SDQ · Período .* · Aerolínea Arajet · Moneda USD$/)).toBeInTheDocument();
+  });
+
+  it('leaves out the airline filter when the account cannot read the airlines', async () => {
+    getTreasuryOptions.mockRejectedValue(Object.assign(new Error('x'), { status: 403 }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Ingresos por período' });
+    expect(screen.queryByLabelText('Aerolínea')).not.toBeInTheDocument();
+  });
+
+  it('asks a cut-off report only for its date', async () => {
+    renderPage();
+    await screen.findByRole('region', { name: 'Ingresos por período' });
+    await userEvent.selectOptions(screen.getByLabelText('Reporte'), 'receivables');
+    expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
+    const date = screen.getByLabelText('Fecha de corte').value;
+    await userEvent.click(screen.getByRole('button', { name: 'Generar' }));
+    await waitFor(() => expect(getFinanceReport).toHaveBeenLastCalledWith('receivables',
+      expect.objectContaining({ from: date, to: date })));
+  });
+
+  it('offers exactly the six reports of the simplified Finance (4-A)', async () => {
+    renderPage();
+    const select = await screen.findByLabelText('Reporte');
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(6));
+    expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(REPORTS.map(item => item.title));
+  });
+
+  it('hides the downloads without the export permission and shows a refused read without retry', async () => {
     getFinanceReport.mockRejectedValue(Object.assign(new Error('Finance report access is forbidden.'), { status: 403, code: 'forbidden' }));
     renderPage(['finance.reports.read']);
     expect(await screen.findByRole('alert')).toHaveTextContent('No tiene acceso a este reporte en las estaciones elegidas.');
     expect(screen.queryByText(/forbidden/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Exportar CSV' })).not.toBeInTheDocument();
-  });
-
-  it('offers exactly the six reports of the simplified Finance (4-A)', async () => {
-    getFinanceReport.mockResolvedValue(revenue);
-    renderPage(); await screen.findByText('Nota de prueba.');
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Ingresos por período',
-      'Cuentas por cobrar y antigüedad', 'Cobranza', 'Cuentas por pagar', 'Recargos', 'Ventas (e-CF simulado)']);
-    for (const retired of ['Pipeline de facturación', 'Disputas', 'Estado fiscal', 'Simulación fiscal', 'Notas de crédito'])
-      expect(screen.queryByRole('tab', { name: retired })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Descargar/ })).not.toBeInTheDocument();
   });
 
   it('explains a refused report by its code in Spanish and retries it', async () => {
@@ -76,56 +139,32 @@ describe('FinanceReportsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByText('Nota de prueba.')).toBeInTheDocument();
     expect(getFinanceReport).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('explains a refused export by its code and keeps the report on screen', async () => {
-    getFinanceReport.mockResolvedValue(revenue);
-    downloadFinanceReport.mockRejectedValueOnce(Object.assign(new Error('Unknown export format.'), { status: 400, code: 'invalid_report_export_format' }));
-    renderPage(); await screen.findByText('Nota de prueba.');
-    await userEvent.click(screen.getByRole('button', { name: 'Exportar CSV' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Ese formato de exportación no existe. Exporte en CSV, Excel o PDF.');
+  it('explains a refused download and keeps the report on screen', async () => {
+    exportFinanceReport.mockRejectedValueOnce(Object.assign(new Error('x'), { status: 403 }));
+    renderPage();
+    await screen.findByText('Nota de prueba.');
+    await userEvent.click(screen.getByRole('button', { name: 'Descargar Excel' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo descargar el Excel: No tienes permiso para descargar este reporte.');
     expect(screen.getByText('Nota de prueba.')).toBeInTheDocument();
   });
 
-  it.each([
-    ['revenue', 'Ingresos por período'], ['receivables', 'Cuentas por cobrar y antigüedad'], ['collections', 'Cobranza'],
-    ['payables', 'Cuentas por pagar'], ['charges', 'Recargos'], ['sales', 'Ventas (e-CF simulado)'],
-  ])('loads and exports %s through the CSV, Excel and PDF pipeline', async (key, label) => {
-    getFinanceReport.mockImplementation(async selected => ({ ...revenue, key: selected }));
-    renderPage(); await screen.findByText('Nota de prueba.');
-    await userEvent.click(screen.getByRole('tab', { name: label }));
-    await waitFor(() => expect(getFinanceReport).toHaveBeenLastCalledWith(key, expect.objectContaining({ stationId: 'st-1' })));
-    await screen.findByText('Nota de prueba.');
-    for (const [format, button] of [['csv', 'Exportar CSV'], ['xlsx', 'Exportar Excel'], ['pdf', 'Exportar PDF']]) {
-      await userEvent.click(screen.getByRole('button', { name: button }));
-      expect(downloadFinanceReport).toHaveBeenLastCalledWith(key, format, expect.objectContaining({ stationId: 'st-1' }));
-    }
-  });
-
-  it('formats invoice applications in invoice currency and frozen payable totals in DOP', () => {
-    const columns = [{ key: 'currency', type: 'text' }, { key: 'invoiceCurrency', type: 'text' },
-      { key: 'invoiceAmount', type: 'money' }, { key: 'dop', type: 'money' }];
-    const row = ['USD', 'DOP', '6000', '30000'];
-    expect(formatCell(row[2], columns[2], row, columns)).toMatch(/^DOP 6[.,]000/);
-    expect(formatCell(row[3], columns[3], row, columns)).toMatch(/^DOP 30[.,]000/);
-  });
-
-  it('disables export while a report is loading and ignores stale responses', async () => {
+  it('ignores a stale answer after another report is generated', async () => {
     let resolveOld;
-    let resolveLatest;
-    getFinanceReport.mockImplementation(key => key === 'revenue' ? Promise.resolve(revenue)
+    getFinanceReport.mockImplementation(key => (key === 'revenue' ? Promise.resolve(revenue)
       : key === 'payables' ? new Promise(resolve => { resolveOld = resolve; })
-        : new Promise(resolve => { resolveLatest = resolve; }));
-    renderPage(); await screen.findByText('Nota de prueba.');
-    await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por pagar' }));
-    expect(screen.getByRole('button', { name: 'Exportar Excel' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('tab', { name: 'Ventas (e-CF simulado)' }));
+        : Promise.resolve({ ...revenue, key: 'sales', title: 'Ventas (e-CF simulado)', notes: ['Sales separate'] })));
+    renderPage();
+    await screen.findByText('Nota de prueba.');
+    await userEvent.selectOptions(screen.getByLabelText('Reporte'), 'payables');
+    await userEvent.click(screen.getByRole('button', { name: 'Generar' }));
+    await userEvent.selectOptions(screen.getByLabelText('Reporte'), 'sales');
+    await userEvent.click(screen.getByRole('button', { name: 'Generar' }));
+    expect(await screen.findByText('Sales separate')).toBeInTheDocument();
     resolveOld({ ...revenue, key: 'payables', notes: ['Stale payable response'] });
-    resolveLatest({ ...revenue, key: 'sales', notes: ['Sales separate'] });
-    await screen.findByText('Sales separate');
-    expect(screen.queryByText('Stale payable response')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
-    expect(downloadFinanceReport).toHaveBeenLastCalledWith('sales', 'xlsx', expect.any(Object));
+    await waitFor(() => expect(screen.queryByText('Stale payable response')).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Descargar Excel' }));
+    await waitFor(() => expect(exportFinanceReport).toHaveBeenLastCalledWith('sales', 'xlsx', expect.any(Object)));
   });
 });

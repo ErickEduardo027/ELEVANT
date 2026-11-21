@@ -3,10 +3,11 @@ import { SCREEN_VIEWPORTS, occRgb, openOccScreen } from './occScreen.mjs';
 import { shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
-// Reportes (PR U6, step e) in Chrome: template D of the design («Registro») with a synthetic OCC session and a stubbed
-// API (fixtures/screensApi.mjs), in the two windows of the presentation. The toolbar holds the report and its period
-// with «Generar»; while the list of reports loads, a skeleton under it says so; the generated page is a panel with its
-// export actions in the header, the dense table and the pages at its foot. Screenshots for review go to
+// Reportes (PR U6, step e; PR D) in Chrome: template D of the design («Registro») with a synthetic OCC session and a
+// stubbed API (fixtures/screensApi.mjs), in the two windows of the presentation. The toolbar holds the report, its
+// period shortcuts and dates with «Generar»; while the list of reports loads, a skeleton under it says so; the
+// generated page is a panel with «Descargar PDF» and «Descargar Excel» in the header, the dense table and the pages at
+// its foot. Screenshots for review go to
 // test-results/visual as reportes-{state}-{width}.png. No export is pressed: nothing is downloaded.
 
 const PAGE = '/admin-occ/reports';
@@ -14,7 +15,7 @@ const PAGE = '/admin-occ/reports';
 const PRIMARY_KEY = occRgb('--occ-primary');
 const TURNAROUND = `${API_PATHS.reports}/turnaround-times`;
 const REPORT = 'Tiempos de turnaround';
-const IDLE = 'Elige el reporte y el período, y pulsa «Generar».';
+const IDLE = 'Elige el reporte, el período y los filtros, y pulsa «Generar».';
 
 async function openReports(page, isolation, viewport, scenario = 'data') {
   const api = createScreensApi(scenario);
@@ -22,7 +23,7 @@ async function openReports(page, isolation, viewport, scenario = 'data') {
   await expect(main.getByRole('heading', { level: 1, name: 'Reportes operativos' })).toBeVisible();
   // The list of reports loaded: before the first report the page says what to do.
   await expect(main.getByText(IDLE)).toBeVisible();
-  return { api, main, filters: main.getByRole('toolbar', { name: 'Reporte y período' }) };
+  return { api, main, filters: main.getByRole('toolbar', { name: 'Reporte y filtros' }) };
 }
 
 /** The stub API of a scenario, whose list of reports answers only once `release()` is called. */
@@ -59,7 +60,7 @@ for (const viewport of SCREEN_VIEWPORTS) {
       const loading = main.getByRole('status').filter({ hasText: 'Cargando reportes…' });
       await expect(loading).toBeVisible();
       await expect(main.getByText(IDLE)).toHaveCount(0);
-      const filters = main.getByRole('toolbar', { name: 'Reporte y período' });
+      const filters = main.getByRole('toolbar', { name: 'Reporte y filtros' });
       await expect(filters.getByRole('combobox', { name: 'Reporte' })).toBeDisabled();
       await expect(filters.getByRole('button', { name: 'Generar' })).toBeDisabled();
       await shoot(page, testInfo, `reportes-cargando-${viewport.width}`);
@@ -90,10 +91,10 @@ for (const viewport of SCREEN_VIEWPORTS) {
       await expect(table.getByRole('columnheader', { name: 'Operación' })).toHaveCSS('text-align', 'left');
       await expect(table.getByRole('cell', { name: '—' }).first()).toHaveCSS('text-align', 'right');
       // The header says which page and when it was generated, in the station's time (15:45 UTC is 11:45), and holds
-      // the three exports.
+      // the two downloads; CSV left the interface (PR D).
       await expect(panel.getByText('Página 1, 25 filas')).toBeVisible();
-      await expect(panel.getByText('Generado 13/11/2026, 11:45')).toBeVisible();
-      await expect(panel.getByRole('button', { name: /^Exportar / })).toHaveText(['Exportar Excel', 'Exportar PDF', 'Exportar CSV']);
+      await expect(panel.getByText('Generado el 13/11/2026 11:45')).toBeVisible();
+      await expect(panel.getByRole('button', { name: /^Descargar / })).toHaveText(['Descargar PDF', 'Descargar Excel']);
       const pages = panel.getByRole('navigation', { name: 'Páginas del reporte' });
       await expect(pages.getByRole('button', { name: 'Anterior' })).toBeDisabled();
       // The rows scroll inside the panel: its pages stay in the window, and the headers stay on top of the rows.
@@ -118,12 +119,12 @@ for (const viewport of SCREEN_VIEWPORTS) {
       const { main, filters } = await openReports(page, isolation, viewport, 'empty');
       await generate(filters);
       const panel = main.getByRole('region', { name: REPORT, exact: true });
-      await expect(panel.getByText('No hay datos para este reporte en el período seleccionado.')).toBeVisible();
+      await expect(panel.getByText('No hay datos para este reporte con los filtros aplicados.')).toBeVisible();
       // The header keeps only when it was generated: the body already says there are no rows.
-      await expect(panel.getByText('Generado 13/11/2026, 11:45')).toBeVisible();
+      await expect(panel.getByText('Generado el 13/11/2026 11:45')).toBeVisible();
       await expect(panel.getByText(/^Página/)).toHaveCount(0);
       // Nothing to export, and a single page has no pages to turn.
-      for (const name of ['Exportar Excel', 'Exportar PDF', 'Exportar CSV']) {
+      for (const name of ['Descargar PDF', 'Descargar Excel']) {
         await expect(panel.getByRole('button', { name })).toBeDisabled();
       }
       await expect(panel.getByRole('navigation', { name: 'Páginas del reporte' })).toHaveCount(0);
@@ -138,7 +139,7 @@ for (const viewport of SCREEN_VIEWPORTS) {
       const panel = main.getByRole('region', { name: REPORT, exact: true });
       await expect(panel.getByRole('alert')).toHaveText('No se pudo generar el reporte. Intenta nuevamente.');
       await expect(main.getByText('Internal Server Error')).toHaveCount(0);
-      await expect(panel.getByRole('button', { name: /^Exportar/ })).toHaveCount(0);
+      await expect(panel.getByRole('button', { name: /^Descargar/ })).toHaveCount(0);
       await shoot(page, testInfo, `reportes-error-${viewport.width}`);
       const before = api.readsOf(TURNAROUND);
       await panel.getByRole('button', { name: 'Reintentar' }).click();

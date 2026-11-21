@@ -7,6 +7,7 @@ import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import ContractsHomePage from '../home/ContractsHomePage';
 import { useContractsHomeData } from '../home/useContractsHomeData';
 import ManagedAgreementsPage from '../agreements/ManagedAgreementsPage';
+import ContractsReportsPage from '../reports/ContractsReportsPage';
 import CommercialIntakePage from '../requests/CommercialIntakePage';
 import { ShellAviationReferenceProvider } from '../../aviation-reference/AviationReferenceContext';
 import CommercialCatalogPage from '../catalog/CommercialCatalogPage';
@@ -120,7 +121,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (
             <ManagedAgreementsPage mode="services" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
-            <ManagedAgreementsPage mode="reports" />
+            <ContractsReportsPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.USERS ? (
             <DepartmentUsersPage department={DEPARTMENTS.CONTRACTS} />
           ) : (

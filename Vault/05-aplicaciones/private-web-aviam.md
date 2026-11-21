@@ -558,7 +558,8 @@ ejecutarlos. La vigencia de esos alcances para atribuir auditoría usa la fecha
 UTC del evento, coherente con la fecha UTC de alta del perfil; los intervalos
 de los informes siguen usando la fecha local de la estación. La vista retira
 la información anterior si se pierde acceso,
-y relee por señal durable, foco, reconexión y sondeo visible de 25 segundos.
+y relee el reporte generado por señal durable, foco y reconexión (desde el PR D ya no sondea cada 25 segundos:
+el reporte es lo que se generó, con su «Generado el …»; ver [Pantallas comunes de reportes](#pantallas-comunes-de-reportes-pr-d)).
 No hay todavía evidencia de CI, navegador ni promoción de estos reportes al
 VPS. Desde la fase 3 del ciclo, los archivos y la tabla hablan español y
 muestran las horas locales, y el rechazo de un conjunto mayor lleva su código
@@ -598,7 +599,7 @@ Usuarios del departamento:
 | Facturación → Facturas | Páginas de 25 con una búsqueda por e-NCF, número o aerolínea; saldo, estado (también «Anulada») y PDF, y las pestañas «Cobros» y «Estados de cuenta» según los permisos. El detalle muestra los pagos con tarjeta de la aerolínea (marca •••• últimos 4, autorización o motivo de rechazo), las notas de crédito `E34` o de débito `E33` con su PDF y el estado de los correos. Un cobro con tarjeta no ofrece revertir ni devolver: se corrige con una nota de crédito. |
 | Facturación → Charters | Confirma o corrige con motivo el prepago y reabre la cotización. |
 | Cuentas por pagar | Facturas de proveedores con corrección, anulación y reverso de pagos bajo segregación de funciones, y proveedores con retiro. «Gastos de empleados» y «Mis gastos» salieron de la versión 1 (ADR-0047); la API de gastos se conserva sin pantalla. |
-| Reportes | Los seis reportes del servidor; sus PDF llevan el marco «Simulación — sin validez fiscal». |
+| Reportes | Los seis reportes del servidor en la piel común de reportes (PR D): estación, aerolínea y moneda, «Cuentas por cobrar» y «Cuentas por pagar» a una fecha de corte, totales donde suman y «Descargar PDF» / «Descargar Excel»; sus PDF llevan el marco «Simulación — sin validez fiscal». |
 | Configuración | Tarifarios de servicios y de cargos, paquetes, reglas de cierre, aprobación de contratos, tasas de cambio y unidades de cobro. |
 
 Cada error se muestra por su `code` de Problem Details traducido al español
@@ -618,7 +619,7 @@ Fuentes: [Por facturar](../../frontend/private-web/src/features/finance/invoicin
 Lo que Finanzas tenía antes está en la
 [historia de Finanzas](#historia-finanzas-antes-de-la-fase-4-retirado-del-producto).
 
-En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** comparten `GET /api/v1/contracts/agreements`, que lee versiones aprobadas y reemplazadas, estaciones y tarifas desde SQL con permiso comercial interno. La tabla diferencia los precios históricos y muestra cuatro decimales; los indicadores del reporte se limitan expresamente a la página consultada. Ya no se montan sus adaptadores `/api/contracts/*` ni botones de alta, edición y exportación auditada ficticia. La consulta no sustituye el flujo de borradores ni crea contratos; falta validación de navegador y promoción remota.
+En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** comparten `GET /api/v1/contracts/agreements`, que lee versiones aprobadas y reemplazadas, estaciones y tarifas desde SQL con permiso comercial interno. La tabla diferencia los precios históricos y muestra cuatro decimales; desde el PR D, **Reportes contractuales** ya no cuenta la página consultada: ver [Pantallas comunes de reportes](#pantallas-comunes-de-reportes-pr-d). Ya no se montan sus adaptadores `/api/contracts/*` ni botones de alta, edición y exportación auditada ficticia. La consulta no sustituye el flujo de borradores ni crea contratos; falta validación de navegador y promoción remota.
 
 ## Personal listo: turnos de Gestión Humana y «¿Puede operar?»
 
@@ -859,7 +860,7 @@ las horas locales, de
 | OCC → Planificación | Sin fecha abre el día de hoy de la estación. El detalle de la escala ofrece «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» con `operations.planning.update` y según las acciones que permite el servidor; las horas se escriben en la hora local de la estación. «Nuevo vuelo» y «Editar vuelo» explican el mismo vuelo planificado dos veces («Ese vuelo ya está planificado ese día.»), y «Nuevo vuelo» da de alta la aerolínea mínima de un charter. «Liberar agente» envía la asignación que OCC ve, y «Relevar agente» pasa una operación en curso o devuelta a otro agente elegible, con motivo. Tras el relevo vuelve a leer sus opciones y muestra al agente actual nuevo; «Asistencia compartida» incluye a los agentes relevados después del inicio, como «{nombre} (relevado)», para registrar su asistencia. Si el agente ya tiene turno ese día, «Ajustar turno del día» lo amplía hasta cubrir el vuelo. La elegibilidad explica «Ya tiene 3 operaciones simultáneas» y «necesita un mentor», y el detalle muestra las incidencias de la operación. Ya no ofrece «Crear Work Order» ni «Exportar». *Posterior al commit verificado (hallazgo N21, 19 de noviembre de 2026):* el manifiesto de «Asignar agente», aquí y en la consola, escribe el mínimo de cada servicio con su unidad en palabras, en singular solo para 1: «1 hora», «2 horas», «0.5 horas», «0 operaciones» y, en inglés, «2 operations» ([`billingUnitQuantity`](../../frontend/private-web/src/services/billingUnits.js)). Son las palabras decididas también para la tablet (D-S5). Ya no muestra el código de la unidad («1 hour»), y una unidad que la web no conoce se lee «2 × código». |
 | OCC → Mapa de posiciones | Los comandos de cada vuelo esperan su versión («Consultando la versión del vuelo…»); si no se puede leer, el vuelo ofrece «Reintentar» o explica el permiso que falta, y la llegada, la asignación y la liberación viajan siempre con su `Idempotency-Key` e `If-Match`. Registra la llegada con la hora local y el tipo de avión: sin tocar la hora, un vuelo que aún no la tiene registra la del servidor al guardar, y cambiar una hora ya informada pide «Motivo del cambio de hora». «Corregir llegada» pide motivo y aparece con `operations.positions_map.assign` aunque la cuenta no tenga Planificación. Desde la primera entrega la llegada ya no se registra ni se corrige. |
 | OCC → Revisión | La cola, el detalle y las incidencias se releen solos con `occ_review`. «Aprobar» solo se habilita con la Orden de Servicio firmada o corregida por OCC, y la etiqueta dice su estado. «Excluir de la facturación» y «Volver a facturar» piden motivo para un servicio en excepción con cantidad. Con `operations.review.reopen`, «Reabrir revisión» reabre una aprobación que no se facturó, y esa revisión ya no ofrece «Devolver». El panel «Incidencias de la operación» (`operations.incidents.*`) cambia estados con nota y reporta las de OCC en hora local, también mientras la operación sigue en rampa. Con la operación aprobada o cancelada solo ofrece resolver o cerrar, y un rechazo `operation_closed` explica que sus incidencias quedan como historia y relee la lista. Las marcas del walk-around ofrecen «Ver foto». |
-| OCC → Reportes | Exporta el período completo o nada: hasta 25 000 filas en Excel y CSV y 5 000 en PDF. Un período mayor se explica con `report_too_large` y, desde el PDF, sugiere Excel o CSV. «Generado» se muestra en hora local. |
+| OCC → Reportes | Descarga el período completo o nada: hasta 25 000 filas en Excel y 5 000 en PDF. Un período mayor se explica con `report_too_large` y, desde el PDF, sugiere Excel. «Generado el …» se muestra en hora local. Desde el PR D la interfaz ya no ofrece CSV (la API lo conserva). |
 | Gestión Humana → Horarios | «Ajustar horario» cambia con motivo las horas de un turno de hoy o de un día futuro; el servidor rechaza un horario que deje sin cubrir el trabajo del agente. |
 | Gestión Humana → Reportes de personal | Clases, documentos y movimientos en español, fechas dd/mm/aaaa y la hora de cada movimiento y de la consulta en hora local. Un conjunto de más de 5 000 filas se rechaza con `report_too_large`, nunca se recorta. |
 | Finanzas → Charters | «Reabrir cotización», con motivo, para un charter con el prepago confirmado. |
@@ -1352,11 +1353,12 @@ escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
   (n)» pliega y vuelve a abrir, y conserva «Planificar vuelos».
 - **Reportes**
   ([ruta](../../frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx)).
-  La barra «Reporte y período» lleva «Generar»; mientras llega la lista de
+  La barra «Reporte y filtros» lleva «Generar»; mientras llega la lista de
   reportes, un esqueleto bajo la barra dice «Cargando reportes…». El resultado
-  lleva «Exportar Excel», «Exportar PDF» y «Exportar CSV» en su cabecera, la
-  tabla densa y las páginas al pie. El botón de exportar, que tenía carpeta
-  propia, se borró.
+  lleva «Descargar PDF» y «Descargar Excel» en su cabecera, la tabla densa y
+  las páginas al pie. El botón de exportar, que tenía carpeta propia, se borró.
+  Desde el PR D la pantalla usa el hook común: ver
+  [Pantallas comunes de reportes](#pantallas-comunes-de-reportes-pr-d).
 - **Primitivas y guardas.** U6 suma a `src/features/occ-ui` la
   [tabla densa](../../frontend/private-web/src/features/occ-ui/OccDataTable.jsx),
   que se dibuja como tabla o como lista, con filas encendidas, filas
@@ -2708,10 +2710,58 @@ Usa [`.env.example`](../../frontend/private-web/.env.example) como forma, no com
 
 Cada feature debe consumir un endpoint versionado a través de un adaptador remoto separado de los componentes, representar carga/éxito/vacío/error/no autorizado y dejar que la API derive identidad y scopes. Los cambios incompatibles requieren una secuencia coordinada API-first; la web no debe inferir DTOs a partir de un fixture.
 
+## Pantallas comunes de reportes (PR D)
+
+*Posterior al commit verificado (PR D, 21 de noviembre de 2026).* Los reportes de OCC, Gestión Humana, Finanzas y
+Contratos comparten una sola lógica y dos pieles:
+
+```mermaid
+flowchart LR
+  H["useServerReport<br/>catálogo · filtros · Generar · páginas · totales · descargas"]
+  H --> O["OCC › Reportes<br/>occ-ui"]
+  H --> C["ReportFilterBar + ServerReportResult<br/>Gestión Humana · Finanzas · Contratos"]
+  H --> D["downloadFile<br/>PDF y Excel del servidor"]
+```
+
+- **Lógica común.** El [hook](../../frontend/private-web/src/features/reports/useServerReport.js) lee el catálogo,
+  arma la consulta solo con los filtros que admite cada reporte, valida el período antes de llamar a la API
+  («Desde» posterior a «Hasta», más días que el máximo del catálogo), pagina y descarga el período completo. Los
+  errores se explican por su código (`invalid_report_query`, `report_too_large`, `station_unavailable`); un 403 no
+  ofrece «Reintentar».
+- **Filtros.** Atajos de período en el calendario de la estación (Hoy · Últimos 7 días · Este mes · Mes anterior ·
+  Personalizado), estación, aerolínea donde aplica y los filtros propios de cada reporte. Un reporte «a una fecha
+  de corte» oculta «Desde» y envía solo la fecha. El resultado dice «Filtros aplicados: …» con los nombres que da
+  el servidor cuando los envía.
+- **Resultado.** Título, descripción, «Generado el dd/mm/aaaa hh:mm por …» (el nombre del servidor o, si no lo
+  envía, el de la sesión), los KPI con su contexto cuando llegan, el conteo («N filas en el período» si se sabe) y
+  la fila de totales del servidor. Sin ella, la pantalla suma por tipo solo cuando el período entero está en
+  pantalla y sin mezclar monedas. Las cifras se escriben como en los PDF y Excel (`1,234.50`, `7.5 %`,
+  `dd/mm/aaaa`, 24 h), con las reglas de [reportModel](../../frontend/private-web/src/features/reports/reportModel.js).
+- **Acciones.** «Descargar PDF» y «Descargar Excel» juntos en la cabecera del resultado. CSV salió de la interfaz;
+  la API lo conserva. Toda descarga de reportes y documentos usa un único
+  [`downloadFile`](../../frontend/private-web/src/utils/downloadFile.js), que revoca la URL al segundo.
+- **Por área.**
+  - OCC filtra por aerolínea, estado, agente y terminal cuando el catálogo los lista y la cuenta puede leer sus
+    opciones (las opciones de vuelo manual y el tablero de cobertura del día); si no, el filtro no aparece.
+  - Gestión Humana usa el catálogo de la API cuando su cliente lo tiene (hasta un año) y su propia lista de 30 días
+    mientras tanto. «Cobertura de habilitaciones» es a una fecha de corte, con «Sin habilitación vigente» y
+    «% habilitados».
+  - Finanzas filtra por estación, aerolínea (de las opciones de Tesorería) y moneda; los porcentajes llevan un
+    decimal.
+  - Contratos muestra indicadores con contexto y totales reales: contratos activos de los registrados, por vencer
+    en 30 días con su tabla, borradores por activar y solicitudes pendientes. Los reportes del servidor de
+    Contratos aparecen en la misma pantalla cuando el cliente de la API los tenga.
+- **Estados de cuenta.** En Facturas › «Estados de cuenta», «Descargar PDF» y «Descargar Excel» aparecen solo cuando
+  el cliente de la API puede generar el estado de cuenta; hasta entonces no hay botones.
+- **Con el motor.** Los tipos de columna, los totales, los KPI, «Generado por», el catálogo de filtros de OCC y el
+  catálogo de Gestión Humana los envía el motor común de reportes del servidor (PR B, ADR-0048), ya en Development.
+- **Pendiente.** Los reportes de Contratos y el estado de cuenta en PDF y Excel llegan con un PR posterior; hasta
+  entonces sus pantallas no muestran esos controles. No hay todavía evidencia de despliegue de estas pantallas.
+
 ## Brechas y desconocidos
 
 - **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), la API autentica con JWT y refresh rotativo ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)) y autoriza en el servidor cada caso de uso con los permisos del departamento ([ADR-0015](../../docs/adr/0015-department-user-governance.md)) y el alcance de estaciones de la cuenta; los shells solo muestran los módulos que permite `GET governance/me/access`.
-- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), las rutas de negocio que usan estas vistas están en el [snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json), que publica 400 operaciones. Solo dos adaptadores heredados conservan rutas del prototipo fuera de él: la fuente `legacy` del contador de notificaciones y `reportsService`; ninguna vista montada los usa.
+- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), las rutas de negocio que usan estas vistas están en el [snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json), que publica 400 operaciones. Solo un adaptador heredado conserva rutas del prototipo fuera de él: la fuente `legacy` del contador de notificaciones, que ninguna vista montada usa. El PR D borró `reportsService` y `utils/reportDownloads.js`.
 - **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), los hubs de operaciones y de notificaciones anuncian `ChangedV1` cuando el despachador está encendido (`true` en `appsettings.Development.json`), y la web lee el cursor de `getAccountChanges` y relee por REST lo que cambió ([feed de cambios](../04-arquitectura/feed-de-cambios-operativos.md)). Planificación importa los vuelos del feed AeroDataBox de la API, apagado por defecto y con presupuesto de unidades ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
 - **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), la API guarda en un bucket S3 privado, con metadatos y SHA-256 en SQL, los archivos que suben estas vistas (fotos y videos de servicios, logos de aerolíneas, fotos de perfil y comprobantes de Cuentas por pagar) y las fotos del walk-around que OCC abre en los documentos de la operación ([medios privados](../04-arquitectura/medios-comerciales-privados.md)). La retención y el antivirus siguen abiertos ([brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md)).
 - **Desconocido:** orden aprobado para migrar cada módulo desde el prototipo.
