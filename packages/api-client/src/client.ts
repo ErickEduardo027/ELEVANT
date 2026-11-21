@@ -395,6 +395,7 @@ import {
   getListHumanResourcesQualificationCoverageUrl,
   getListHumanResourcesScheduleWarningsUrl,
   getExportHumanResourcesReportUrl,
+  getListHumanResourcesReportsUrl,
   getListOccReportsUrl,
   getGetOccPositionsUrl,
   getGetOccCoverageUrl,
@@ -614,6 +615,7 @@ import {
   type GetHumanResourcesAttendanceParams,
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
+  type HumanResourcesReportCatalogResponse,
   type OccPositionBoardResponse,
   type OccCharterAirlineResponse,
   type OccTurnaroundDetailResponse,
@@ -865,8 +867,12 @@ export type HumanResourcesReportQuery = {
     validity?: "Current" | "Expired";
 };
 export type OccReportKey = "operations" | "turnaround-times" | "services-by-airline" | "reviews" | "agent-productivity" |
-  "daily-close";
-export type OccReportQuery = { stationId: string; from: string; to: string; page?: number; limit?: number };
+  "daily-close" | "coverage-assignments";
+/** The optional filters (ADR-0048) apply where the catalog lists them; any other is `invalid_report_query`. */
+export type OccReportQuery = {
+  stationId: string; from: string; to: string; page?: number; limit?: number;
+  airlineId?: string; status?: string; agentId?: string; terminalId?: string;
+};
 export type OccReportFormat = "csv" | "xlsx" | "pdf";
 export type HumanResourcesReportPage =
   HumanResourcesExpirationResponseHumanResourcesReportPageResponse |
@@ -1520,6 +1526,8 @@ export interface ElevantApiClient {
   exportHumanResourcesReport(kind: HumanResourcesReportKind,
     query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** The Gestión Humana reports with their typed columns and whether each is a cut-off (ADR-0048). */
+  listHumanResourcesReports(options?: GetHumanResourcesReportOptions): Promise<HumanResourcesReportCatalogResponse>;
   listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
   /**
    * The stands of a station with the turnarounds of `date`. `options.includeCoverage` also asks for each stand's
@@ -3798,30 +3806,64 @@ function validatedSignaturePng(value: unknown): string {
 }
 
 const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity",
-  "daily-close"]);
+  "daily-close", "coverage-assignments"]);
 const OCC_REPORT_FORMATS = new Set<string>(["csv", "xlsx", "pdf"]);
 
 function validatedOccReportQuery(key: OccReportKey, query: OccReportQuery): OccReportQuery {
   if (!OCC_REPORT_KEYS.has(key) || !isRecord(query) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
       query.from > query.to ||
       (query.page !== undefined && (!Number.isInteger(query.page) || query.page < 1)) ||
-      (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)))
+      (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)) ||
+      (query.status !== undefined && !/^[A-Za-z]{1,40}$/.test(query.status)))
     throw new TypeError("OCC report query is invalid.");
   return { stationId: validatedUuid(query.stationId, "stationId"), from: query.from, to: query.to,
-    ...(query.page !== undefined && { page: query.page }), ...(query.limit !== undefined && { limit: query.limit }) };
+    ...(query.page !== undefined && { page: query.page }), ...(query.limit !== undefined && { limit: query.limit }),
+    ...occReportFilters({
+      ...(query.airlineId !== undefined && { airlineId: validatedUuid(query.airlineId, "airlineId") }),
+      ...(query.status !== undefined && { status: query.status }),
+      ...(query.agentId !== undefined && { agentId: validatedUuid(query.agentId, "agentId") }),
+      ...(query.terminalId !== undefined && { terminalId: validatedUuid(query.terminalId, "terminalId") }),
+    }) };
+}
+
+/** The optional filters of an OCC report query, the same on the page and on the export. */
+function occReportFilters(scope: Pick<OccReportQuery, "airlineId" | "status" | "agentId" | "terminalId">) {
+  return { ...(scope.airlineId && { airlineId: scope.airlineId }), ...(scope.status && { status: scope.status }),
+    ...(scope.agentId && { agentId: scope.agentId }), ...(scope.terminalId && { terminalId: scope.terminalId }) };
 }
 
 function isOccReportCatalog(value: unknown): value is OccReportCatalogResponse {
   return isRecord(value) && hasOnlyKeys(value, ["reports", "maxRangeDays"]) &&
     Number.isInteger(value.maxRangeDays) && Array.isArray(value.reports) &&
-    value.reports.every(report => isRecord(report) && hasOnlyKeys(report, ["key", "title", "description", "columns"]) &&
+    value.reports.every(report => isRecord(report) &&
+      hasOnlyKeys(report, ["key", "title", "description", "columns", "columnTypes", "filters", "asOfDate"]) &&
+      (report.columnTypes === undefined || Array.isArray(report.columnTypes) && report.columnTypes.every(isNonEmptyString)) &&
+      (report.filters === undefined || Array.isArray(report.filters) && report.filters.every(filter => isRecord(filter) &&
+        isNonEmptyString(filter.key) && isNonEmptyString(filter.label) && isNonEmptyString(filter.parameter) &&
+        Array.isArray(filter.options))) &&
+      (report.asOfDate === undefined || typeof report.asOfDate === "boolean") &&
       typeof report.key === "string" && OCC_REPORT_KEYS.has(report.key) && isNonEmptyString(report.title) &&
       isNonEmptyString(report.description) && Array.isArray(report.columns) && report.columns.every(isNonEmptyString));
 }
 
+function isHumanResourcesReportCatalog(value: unknown): value is HumanResourcesReportCatalogResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["reports", "maxRangeDays"]) && Number.isInteger(value.maxRangeDays) &&
+    Array.isArray(value.reports) && value.reports.every(report => isRecord(report) &&
+      hasOnlyKeys(report, ["key", "title", "description", "columns", "columnTypes", "asOfDate"]) &&
+      ["expirations", "account-movements", "staff-distribution", "qualification-coverage"].includes(String(report.key)) &&
+      isNonEmptyString(report.title) && typeof report.description === "string" &&
+      Array.isArray(report.columns) && report.columns.every(isNonEmptyString) &&
+      Array.isArray(report.columnTypes) && report.columnTypes.length === report.columns.length &&
+      typeof report.asOfDate === "boolean");
+}
+
 function isOccReportPage(value: unknown, key: OccReportKey, query: OccReportQuery): value is OccReportPageResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["key", "title", "stationId", "stationCode", "from", "to", "asOf",
-      "columns", "rows", "page", "limit", "hasMore"]) || value.key !== key || !isNonEmptyString(value.title) ||
+      "columns", "rows", "page", "limit", "hasMore", "stationName", "columnTypes", "appliedFilters", "totalRows",
+      "summary", "totals", "generatedBy"]) ||
+      (value.appliedFilters !== undefined && !Array.isArray(value.appliedFilters)) ||
+      (value.summary !== undefined && !Array.isArray(value.summary)) ||
+      (value.totals !== undefined && !Array.isArray(value.totals)) || value.key !== key || !isNonEmptyString(value.title) ||
       !isUuid(value.stationId) || value.stationId.toLowerCase() !== query.stationId.toLowerCase() ||
       !isNonEmptyString(value.stationCode) || value.from !== query.from || value.to !== query.to ||
       !isDateTimeOffset(value.asOf) || typeof value.hasMore !== "boolean" ||
@@ -5499,8 +5541,9 @@ function validatedHumanResourcesReportQuery(
         "documentKind", "validity"]) ||
     !isUuid(query.stationId) || !isDateOnly(query.from) ||
     !isDateOnly(query.to) || query.from > query.to ||
+    // ADR-0048: up to a year (366 days counting both ends), as the API.
     (Date.parse(`${query.to}T00:00:00Z`) -
-      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 366 ||
     (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
       (query.limit !== undefined && (!isInt32(query.limit) ||
         query.limit < 1 || query.limit > 100)) ||
@@ -5631,7 +5674,8 @@ function isHumanResourcesReportPage(value: unknown, kind: HumanResourcesReportKi
         typeof row.positionCode === "string") && isDateOnly(row.workDate) &&
       typeof row.startsAtLocal === "string" && typeof row.endsAtLocal === "string";
     return hasOnlyKeys(row, ["equipmentTypeId", "equipmentCode",
-      "equipmentName", "eligibleAgents", "qualifiedAgents"]) &&
+      "equipmentName", "eligibleAgents", "qualifiedAgents", "stationAgents"]) &&
+      (row.stationAgents === undefined || isInt32(row.stationAgents)) &&
       isUuid(row.equipmentTypeId) && isNonEmptyString(row.equipmentCode) &&
       isNonEmptyString(row.equipmentName) && isInt32(row.eligibleAgents) &&
       row.eligibleAgents >= 0 && isInt32(row.qualifiedAgents) &&
@@ -8213,6 +8257,11 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccReadyContracts(result.data, station, date)) throw malformedResponse(result.status);
       return result.data;
     },
+    async listHumanResourcesReports(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListHumanResourcesReportsUrl(), { ...options, method: "GET" }, true);
+      if (!isHumanResourcesReportCatalog(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
     async listOccReports(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getListOccReportsUrl(), { ...options, method: "GET" }, true);
       if (!isOccReportCatalog(result.data)) throw malformedResponse(result.status);
@@ -8230,7 +8279,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (scope.page !== undefined || scope.limit !== undefined || !OCC_REPORT_FORMATS.has(format))
         throw new TypeError("OCC report export query is invalid.");
       return executeReportDocument(getExportOccReportUrl(key, { stationId: scope.stationId, from: scope.from,
-        to: scope.to, format }), format, options);
+        to: scope.to, format, ...occReportFilters(scope) }), format, options);
     },
     async validateHumanResourcesAttendance(
       assignmentId: string, stationId: string,

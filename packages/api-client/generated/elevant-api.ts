@@ -2945,6 +2945,11 @@ export interface FinancePendingOperationsResponse {
   totalPending: number;
 }
 
+export interface FinanceReportAppliedFilter {
+  label: string;
+  value: string;
+}
+
 export interface FinanceReportColumn {
   key: string;
   label: string;
@@ -2957,6 +2962,8 @@ export interface FinanceReportMetric {
   type: string;
   /** @nullable */
   currencyCode?: string | null;
+  /** @nullable */
+  context?: string | null;
 }
 
 export interface FinanceReportData {
@@ -2971,12 +2978,14 @@ export interface FinanceReportData {
   columns: FinanceReportColumn[];
   rows: string[][];
   notes: string[];
+  filters: FinanceReportAppliedFilter[];
 }
 
 export interface FinanceReportDefinition {
   key: string;
   title: string;
   description: string;
+  asOfDate: boolean;
 }
 
 export interface FinanceServiceOptionData {
@@ -3558,6 +3567,7 @@ export interface HumanResourcesQualificationCoverageResponse {
   equipmentName: string;
   eligibleAgents: number;
   qualifiedAgents: number;
+  stationAgents: number;
 }
 
 export interface HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse {
@@ -3637,6 +3647,20 @@ export interface HumanResourcesQualificationPage {
 export interface HumanResourcesQualificationRecorded {
   id: string;
   cycleNumber: number;
+}
+
+export interface HumanResourcesReportDefinitionResponse {
+  key: string;
+  title: string;
+  description: string;
+  columns: string[];
+  columnTypes: string[];
+  asOfDate: boolean;
+}
+
+export interface HumanResourcesReportCatalogResponse {
+  reports: HumanResourcesReportDefinitionResponse[];
+  maxRangeDays: number;
 }
 
 export interface HumanResourcesScheduleWarningEvidenceResponse {
@@ -5073,11 +5097,26 @@ export interface OccReadyContractsResponse {
   contracts: OccReadyContractResponse[];
 }
 
+export interface OccReportFilterOptionResponse {
+  code: string;
+  label: string;
+}
+
+export interface OccReportFilterDefinitionResponse {
+  key: string;
+  label: string;
+  parameter: string;
+  options: OccReportFilterOptionResponse[];
+}
+
 export interface OccReportDefinitionResponse {
   key: string;
   title: string;
   description: string;
   columns: string[];
+  columnTypes: string[];
+  filters: OccReportFilterDefinitionResponse[];
+  asOfDate: boolean;
 }
 
 export interface OccReportCatalogResponse {
@@ -5088,6 +5127,23 @@ export interface OccReportCatalogResponse {
 export interface OccReportCellResponse {
   value: string;
   type: string;
+}
+
+export interface ReportAppliedFilterResponse {
+  label: string;
+  value: string;
+}
+
+export interface ReportMetricResponse {
+  label: string;
+  value: string;
+  /** @nullable */
+  context?: string | null;
+}
+
+export interface OccReportTotalRowResponse {
+  label: string;
+  cells: OccReportCellResponse[];
 }
 
 export interface OccReportPageResponse {
@@ -5103,6 +5159,15 @@ export interface OccReportPageResponse {
   page: number;
   limit: number;
   hasMore: boolean;
+  /** @nullable */
+  stationName?: string | null;
+  columnTypes: string[];
+  appliedFilters: ReportAppliedFilterResponse[];
+  totalRows: number;
+  summary: ReportMetricResponse[];
+  totals: OccReportTotalRowResponse[];
+  /** @nullable */
+  generatedBy?: string | null;
 }
 
 export interface OccReviewBillingExclusionResponse {
@@ -7566,6 +7631,10 @@ from: string;
 to: string;
 page?: number;
 limit?: number;
+airlineId?: string;
+status?: string;
+agentId?: string;
+terminalId?: string;
 };
 
 export type ExportOccReportParams = {
@@ -7573,6 +7642,10 @@ stationId: string;
 from: string;
 to: string;
 format: string;
+airlineId?: string;
+status?: string;
+agentId?: string;
+terminalId?: string;
 };
 
 export type GetOccReviewQueueParams = {
@@ -16788,6 +16861,38 @@ const res = await fetch(getRecordHumanResourcesQualificationUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesQualificationRecorded = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesReportsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/reports`
+}
+
+/**
+ * @summary The four reports with their typed columns and whether each is «a una fecha de corte» (ADR-0048): then the screen
+asks only for the date and hides «Desde».
+ */
+export const listHumanResourcesReports = async ( options?: RequestInit): Promise<HumanResourcesReportCatalogResponse> => {
+
+  const res = await fetch(getListHumanResourcesReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesReportCatalogResponse = body ? JSON.parse(body) : {}
   return data
 }
 
