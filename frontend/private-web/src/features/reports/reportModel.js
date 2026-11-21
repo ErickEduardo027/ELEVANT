@@ -131,7 +131,7 @@ export function formatGeneratedAt(asOf, { by = '', locale = 'es-DO', timeZone = 
  * column whose rows share one currency. Percentages, durations and text never add up. The caller asks only when the
  * whole period is on screen, never for one page of many.
  *
- * @param {{ type?: string }[]} columns
+ * @param {{ type?: string, currencyOf?: (row: unknown[]) => string }[]} columns
  * @param {unknown[][]} rows the raw cell values
  * @param {{ currencyOf?: (row: unknown[], index: number) => string, label?: string }} [options]
  * @returns {{ label: string, cells: string[] } | null}
@@ -141,7 +141,9 @@ export function computeTotals(columns, rows, { currencyOf, label = 'Total' } = {
   const currencies = currencyOf ? new Set(rows.map((row, index) => currencyOf(row, index) ?? '')) : new Set(['']);
   let any = false;
   const cells = columns.map((column, index) => {
-    if (!SUMMABLE_TYPES.has(column.type) || (column.type === 'money' && currencies.size > 1)) return '';
+    const mixed = column.currencyOf ? new Set(rows.map(row => column.currencyOf(row) ?? '')).size > 1
+      : currencies.size > 1;
+    if (!SUMMABLE_TYPES.has(column.type) || (column.type === 'money' && mixed)) return '';
     let sum = 0;
     let scale = 0;
     for (const row of rows) {

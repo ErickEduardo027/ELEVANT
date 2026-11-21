@@ -13,7 +13,7 @@ const catalog = { maxRangeDays: 366, reports: [
 const page = (query, extra = {}) => ({ key: 'operations', title: 'Operaciones', asOf: '2026-11-21T12:00:00Z',
   columns: [{ label: 'Aerolínea', type: 'text' }, { label: 'Operaciones', type: 'number' }],
   rows: [['Arajet', '3'], ['JetBlue', '5']], page: query.page ?? 1, hasMore: false, totalRows: 2, summary: [],
-  appliedFilters: [], totals: null, ...extra });
+  appliedFilters: [], ...extra });
 
 let source;
 beforeEach(() => {
@@ -61,6 +61,15 @@ describe('useServerReport', () => {
     await waitFor(() => expect(result.current.report.status).toBe('success'));
     expect(result.current.totals).toEqual({ label: 'Total del período', cells: ['Total del período', '99'] });
     expect(result.current.summary.map(item => item.value)).toEqual(['PUJ', '01/11/2026 – 21/11/2026', 'Arajet (servidor)']);
+  });
+
+  it('trusts an API that says a report has no totals', async () => {
+    source.loadPage.mockImplementation(async query => page(query, { totals: null }));
+    const { result } = renderHook(() => useServerReport(options()));
+    await waitFor(() => expect(result.current.catalog.status).toBe('success'));
+    act(() => result.current.generate());
+    await waitFor(() => expect(result.current.report.status).toBe('success'));
+    expect(result.current.totals).toBeNull();
   });
 
   it('never adds a page of many: no totals without the server when more pages follow', async () => {

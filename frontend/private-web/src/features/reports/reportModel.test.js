@@ -87,6 +87,12 @@ describe('totals of a report', () => {
       .toEqual({ label: 'Total', cells: ['Total', '8', '', ''] });
   });
 
+  it('reads the currency of each money column from its rows', () => {
+    const money = [{ label: 'Aerolínea', type: 'text' }, { label: 'Total', type: 'money', currencyOf: row => row[2] }];
+    expect(computeTotals(money, [['A', '1', 'USD'], ['B', '2', 'DOP']])).toBeNull();
+    expect(computeTotals(money, [['A', '1', 'USD'], ['B', '2.5', 'USD']])).toEqual({ label: 'Total', cells: ['Total', '3.5'] });
+  });
+
   it('gives nothing when no column adds up or there are no rows', () => {
     expect(computeTotals([{ label: 'Agente', type: 'text' }], [['Ana']])).toBeNull();
     expect(computeTotals(columns, [])).toBeNull();

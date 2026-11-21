@@ -34,7 +34,8 @@ const isAbort = error => error?.name === 'AbortError';
  * - `loadCatalog({ signal })` → `{ reports: [{ key, title, description, asOfDate?, filters?: [{ key, label,
  *   parameter, options }] }], maxRangeDays? }`;
  * - `loadPage(key, query, { signal })` → `{ title, asOf, generatedBy?, columns: [{ label, type }], rows: unknown[][],
- *   page, hasMore, totalRows?, totals?, summary?, appliedFilters?, notes?, currencyOf? }`;
+ *   page, hasMore, totalRows?, totals?, summary?, appliedFilters?, notes? }`; a column may carry `currencyOf(row)`.
+ *   `totals` left out lets the screen add the whole period by type; `null` says the server has none.
  * - `exportReport(key, query, format)` → a Blob of the whole period, and `fileName(key, query, format)`;
  * - `baseParams`: the filters every report takes (station, currency…); `paramsFor(definition)` adds those of one
  *   report; the catalog's own filters always count. Other values stay in the draft but are not sent.
@@ -165,10 +166,11 @@ export function useServerReport({
 
   const totals = useMemo(() => {
     if (!data) return null;
-    if (data.totals?.cells?.length) return data.totals;
-    // Only the whole period adds up on screen: one page of many would give a false total.
+    // An API that sends `totals` decides them, also when it sends none (`null`): it knows what adds up.
+    if (data.totals !== undefined) return data.totals?.cells?.length ? data.totals : null;
+    // Otherwise only the whole period adds up on screen: one page of many would give a false total.
     const whole = !paged || (data.page === 1 && !data.hasMore);
-    return whole ? computeTotals(data.columns, data.rows, { currencyOf: data.currencyOf }) : null;
+    return whole ? computeTotals(data.columns, data.rows) : null;
   }, [data, paged]);
 
   const summary = useMemo(() => {
