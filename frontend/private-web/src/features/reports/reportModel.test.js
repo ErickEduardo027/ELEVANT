@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  computeTotals, filtersSummary, formatGeneratedAt, formatReportValue, isNumericType, matchPreset, PERIOD_PRESETS,
+  computeTotals, filtersSummary, normalizeServerPage, formatGeneratedAt, formatReportValue, isNumericType, matchPreset, PERIOD_PRESETS,
   presetRange, rangeDays, rowsCountText,
 } from './reportModel';
 
@@ -112,5 +112,30 @@ describe('what the result says about itself', () => {
     expect(rowsCountText({ rows: 25, totalRows: null, page: 2, paged: true })).toBe('Página 2 · 25 filas en esta página');
     expect(rowsCountText({ rows: 7, totalRows: null, page: 1, paged: false })).toBe('7 filas en el período');
     expect(rowsCountText({ rows: 0, totalRows: 0, page: 1, paged: true })).toBe('');
+  });
+});
+
+describe('a server page with typed cells', () => {
+  const base = { key: 'operations', title: 'Operaciones', stationCode: 'PUJ', asOf: '2026-11-21T12:00:00Z',
+    columns: ['Aerolínea', 'Minutos'], rows: [[{ value: 'Arajet', type: 'text' }, { value: '45', type: 'number' }]],
+    page: 1, hasMore: false };
+
+  it('infers the types of an older API and lets the screen add the totals', () => {
+    const page = normalizeServerPage(base);
+    expect(page.columns).toEqual([{ label: 'Aerolínea', type: 'text' }, { label: 'Minutos', type: 'number' }]);
+    expect(page.rows).toEqual([['Arajet', '45']]);
+    expect(page).not.toHaveProperty('totals');
+    expect(page).toMatchObject({ summary: [], appliedFilters: [], totalRows: null, generatedBy: '', station: 'PUJ' });
+  });
+
+  it('keeps what the engine sends: types, totals, summary, filters and who generated it', () => {
+    const page = normalizeServerPage({ ...base, stationName: 'Punta Cana', columnTypes: ['text', 'duration'], totalRows: 9,
+      generatedBy: 'Ana', summary: [{ label: 'Operaciones', value: '9', context: 'de 40' }],
+      appliedFilters: [{ label: 'Aerolínea', value: 'Arajet' }],
+      totals: [{ label: 'Total', cells: [{ value: 'Total', type: 'text' }, { value: '45', type: 'number' }] }] });
+    expect(page.columns[1].type).toBe('duration');
+    expect(page.totals).toEqual({ label: 'Total', cells: ['Total', '45'] });
+    expect(page).toMatchObject({ station: 'PUJ · Punta Cana', totalRows: 9, generatedBy: 'Ana' });
+    expect(normalizeServerPage({ ...base, totals: [] }).totals).toBeNull();
   });
 });

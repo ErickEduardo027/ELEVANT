@@ -98,11 +98,11 @@ export const decideServiceClosure = (id, command, idempotencyKey) =>
 /** Republishes the service its approved closure hid: `{ reason, serviceVersion }`; a retired service is refused. */
 export const reopenService = (serviceId, command, idempotencyKey) =>
   contractCall(() => contractClient().reopenService(serviceId, command, idempotencyKey));
-export async function getManagedContracts(page = 1) {
+export async function getManagedContracts(page = 1, limit = 20) {
   try {
     return await createPrivateWebApiClient({
       getAccessToken: () => readSession()?.token,
-    }).getManagedContracts({ page, limit: 20 });
+    }).getManagedContracts({ page, limit });
   } catch (error) {
     if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
     throw error;
