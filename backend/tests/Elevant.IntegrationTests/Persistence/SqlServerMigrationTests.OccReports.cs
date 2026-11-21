@@ -166,7 +166,7 @@ public sealed partial class SqlServerMigrationTests
 
         async Task<string[][]> RowsAsync(OccReportKind kind)
         {
-            var result = await reports.ReadAsync(occ, kind, station.PublicId, day, day, 1, 100, ct);
+            var result = await reports.ReadAsync(occ, kind, station.PublicId, day, day, 1, 100, OccReportFilters.None, ct);
             Assert.Null(result.Failure);
             // The exports write «Generado» in the station's zone (3-N26).
             Assert.Equal(station.IanaTimeZone, result.Table!.TimeZoneId);

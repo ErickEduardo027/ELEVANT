@@ -27,52 +27,178 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
         DateTimeOffset? ActualStart, DateTimeOffset? ActualEnd);
 
     public async Task<OccReportResult> ReadAsync(Guid actorId, OccReportKind kind, Guid stationId, DateOnly from,
-        DateOnly to, int page, int limit, CancellationToken cancellationToken = default)
+        DateOnly to, int page, int limit, OccReportFilters filters, CancellationToken cancellationToken = default)
     {
-        if (!Enum.IsDefined(kind) || page < 1 || limit is < 1 or > OccReportCatalog.MaxExportRows ||
-            (long)(page - 1) * limit > int.MaxValue || !OccReportCatalog.ValidRange(from, to))
+        ArgumentNullException.ThrowIfNull(filters);
+        var definition = OccReportCatalog.All.SingleOrDefault(item => item.Kind == kind);
+        if (definition is null || page < 1 || limit is < 1 or > OccReportCatalog.MaxExportRows ||
+            (long)(page - 1) * limit > int.MaxValue || !OccReportCatalog.ValidRange(from, to) ||
+            !OccReportCatalog.ValidFilters(definition, filters))
             throw new ArgumentException("The report query is invalid.");
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (!Allowed(actor, "operations.reports.read", stationId))
             return new(null, OccReportFailure.Forbidden);
         var station = await context.Stations.AsNoTracking()
             .Where(item => item.PublicId == stationId && item.IsActive)
-            .Select(item => new { item.Id, item.Code, item.IanaTimeZone })
+            .Select(item => new { item.Id, item.Code, item.Name, item.IanaTimeZone })
             .SingleOrDefaultAsync(cancellationToken);
         if (station is null) return new(null, OccReportFailure.StationNotFound);
         // The station's calendar (2-F): an unknown zone falls back to AVIAM's, never to the host's.
         var zone = BusinessCalendar.Zone(station.IanaTimeZone);
+        var applied = await FiltersAsync(station.Id, filters, cancellationToken);
 
-        var operations = await (from turnaround in context.Turnarounds.AsNoTracking()
-                                join operation in context.GroundOperations.AsNoTracking() on turnaround.Id equals operation.TurnaroundId
-                                join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
-                                where turnaround.StationId == station.Id &&
-                                      turnaround.OperationDate >= @from && turnaround.OperationDate <= to
-                                orderby turnaround.OperationDate, turnaround.OperationCode, operation.Id
-                                select new OperationRow(operation.Id, turnaround.Id, turnaround.OperationDate,
-                                    turnaround.OperationCode, airline.Name, turnaround.AircraftRegistration,
-                                    operation.CurrentStatus, operation.PlannedStartAt, operation.PlannedEndAt,
-                                    operation.ActualStartAt, operation.ActualEndAt))
-            .ToArrayAsync(cancellationToken);
-        var ids = operations.Select(item => item.Id).ToArray();
-        var rows = kind switch
+        List<IReadOnlyList<OccReportCell>> rows;
+        if (kind == OccReportKind.CoverageAssignments)
+            rows = await CoverageAssignmentsAsync(station.Id, from, to, applied, zone, cancellationToken);
+        else
         {
-            OccReportKind.Operations => await OperationsAsync(operations, ids, zone, cancellationToken),
-            OccReportKind.TurnaroundTimes => TurnaroundTimes(operations),
-            OccReportKind.ServicesByAirline => await ServicesAsync(operations, cancellationToken),
-            OccReportKind.Reviews => await ReviewsAsync(operations, ids, zone, cancellationToken),
-            OccReportKind.DailyClose => await DailyCloseAsync(operations, ids, zone, cancellationToken),
-            _ => await ProductivityAsync(operations, ids, cancellationToken),
-        };
+            var status = filters.Status is { } code ? Enum.Parse<GroundOperationStatus>(code) : (GroundOperationStatus?)null;
+            var query = from turnaround in context.Turnarounds.AsNoTracking()
+                        join operation in context.GroundOperations.AsNoTracking() on turnaround.Id equals operation.TurnaroundId
+                        join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
+                        where turnaround.StationId == station.Id &&
+                              turnaround.OperationDate >= @from && turnaround.OperationDate <= to
+                        select new { turnaround, operation, airline };
+            if (applied.AirlineKey is { } airlineKey) query = query.Where(item => item.turnaround.AirlineId == airlineKey);
+            if (status is { } wanted) query = query.Where(item => item.operation.CurrentStatus == wanted);
+            // An agent's operations are those they were assigned to, released assignments included; the productivity
+            // report keeps only that agent's own work.
+            if (applied.AgentKey is { } agentKey && kind != OccReportKind.AgentProductivity)
+                query = query.Where(item => context.OperationAgentAssignments.Any(assignment =>
+                    assignment.GroundOperationId == item.operation.Id && assignment.RampAgentId == agentKey));
+            var operations = await query
+                .OrderBy(item => item.turnaround.OperationDate).ThenBy(item => item.turnaround.OperationCode)
+                .ThenBy(item => item.operation.Id)
+                .Select(item => new OperationRow(item.operation.Id, item.turnaround.Id, item.turnaround.OperationDate,
+                    item.turnaround.OperationCode, item.airline.Name, item.turnaround.AircraftRegistration,
+                    item.operation.CurrentStatus, item.operation.PlannedStartAt, item.operation.PlannedEndAt,
+                    item.operation.ActualStartAt, item.operation.ActualEndAt))
+                .ToArrayAsync(cancellationToken);
+            var ids = operations.Select(item => item.Id).ToArray();
+            rows = kind switch
+            {
+                OccReportKind.Operations => await OperationsAsync(operations, ids, zone, cancellationToken),
+                OccReportKind.TurnaroundTimes => TurnaroundTimes(operations),
+                OccReportKind.ServicesByAirline => await ServicesAsync(operations, cancellationToken),
+                OccReportKind.Reviews => await ReviewsAsync(operations, ids, zone, cancellationToken),
+                OccReportKind.DailyClose => await DailyCloseAsync(operations, ids, zone, cancellationToken),
+                _ => await ProductivityAsync(operations, ids, applied.AgentKey, cancellationToken),
+            };
+        }
         var slice = rows.Skip((page - 1) * limit).Take(limit + 1).ToArray();
-        var definition = OccReportCatalog.All.Single(item => item.Kind == kind);
         return new(new OccReportTable(definition, stationId, station.Code, from, to, timeProvider.GetUtcNow(),
-            slice.Take(limit).ToArray(), page, limit, slice.Length > limit) { TimeZoneId = station.IanaTimeZone }, null);
+            slice.Take(limit).ToArray(), page, limit, slice.Length > limit)
+        {
+            TimeZoneId = station.IanaTimeZone,
+            StationName = station.Name,
+            GeneratedBy = actor!.DisplayName,
+            Filters = applied.Labels,
+            TotalRows = rows.Count,
+            Summary = OccReportDocuments.Summary(kind, rows),
+            Totals = OccReportDocuments.Totals(definition, rows),
+        }, null);
+    }
+
+    /// <summary>The internal keys of the filters and their readable names; an unknown id matches nothing.</summary>
+    private sealed record AppliedFilters(long? AirlineKey, long? AgentKey, long? TerminalKey,
+        IReadOnlyList<Elevant.Application.Documents.ReportFilter> Labels);
+
+    private async Task<AppliedFilters> FiltersAsync(long stationKey, OccReportFilters filters,
+        CancellationToken cancellationToken)
+    {
+        var labels = new List<Elevant.Application.Documents.ReportFilter>();
+        long? airlineKey = null, agentKey = null, terminalKey = null;
+        if (filters.AirlineId is { } airlineId)
+        {
+            var airline = await context.Airlines.AsNoTracking().Where(item => item.PublicId == airlineId)
+                .Select(item => new { item.Id, item.Name }).SingleOrDefaultAsync(cancellationToken);
+            airlineKey = airline?.Id ?? -1;
+            labels.Add(new(OccReportCatalog.FilterLabel(OccReportCatalog.AirlineFilter), airline?.Name ?? "No encontrada"));
+        }
+        if (filters.Status is { } status)
+            labels.Add(new(OccReportCatalog.FilterLabel(OccReportCatalog.StatusFilter),
+                OccReportCatalog.Statuses.Single(item => item.Code == status).Label));
+        if (filters.AgentId is { } agentId)
+        {
+            var agent = await (from item in context.RampAgents.AsNoTracking()
+                               join person in context.Persons.AsNoTracking() on item.PersonId equals person.Id
+                               where item.PublicId == agentId
+                               select new { item.Id, item.EmployeeNumber, Name = person.FirstName + " " + person.LastName })
+                .SingleOrDefaultAsync(cancellationToken);
+            agentKey = agent?.Id ?? -1;
+            labels.Add(new(OccReportCatalog.FilterLabel(OccReportCatalog.AgentFilter),
+                agent is null ? "No encontrado" : $"{agent.Name.Trim()} ({agent.EmployeeNumber})"));
+        }
+        if (filters.TerminalId is { } terminalId)
+        {
+            var terminal = await context.Terminals.AsNoTracking()
+                .Where(item => item.PublicId == terminalId && item.StationId == stationKey)
+                .Select(item => new { item.Id, item.Code, item.Name }).SingleOrDefaultAsync(cancellationToken);
+            terminalKey = terminal?.Id ?? -1;
+            labels.Add(new(OccReportCatalog.FilterLabel(OccReportCatalog.TerminalFilter),
+                terminal is null ? "No encontrada" : string.IsNullOrWhiteSpace(terminal.Name) || terminal.Name == terminal.Code
+                    ? terminal.Code : $"{terminal.Code} · {terminal.Name}"));
+        }
+        return new(airlineKey, agentKey, terminalKey, labels);
+    }
+
+    /// <summary>
+    /// «Asignaciones de cobertura»: every position coverage that starts in the period (local days of the station),
+    /// released ones included, with its stands, who assigned it and when and, once released, who released it and when.
+    /// </summary>
+    private async Task<List<IReadOnlyList<OccReportCell>>> CoverageAssignmentsAsync(long stationKey, DateOnly from,
+        DateOnly to, AppliedFilters filters, TimeZoneInfo zone, CancellationToken cancellationToken)
+    {
+        var start = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(
+            System.DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), zone));
+        var end = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(
+            System.DateTime.SpecifyKind(to.AddDays(1).ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), zone));
+        var query = context.Set<Elevant.Domain.Entities.Operations.PositionCoverage>().AsNoTracking()
+            .Where(item => item.StationId == stationKey && item.StartsAt >= start && item.StartsAt < end);
+        if (filters.TerminalKey is { } terminalKey) query = query.Where(item => item.TerminalId == terminalKey);
+        if (filters.AgentKey is { } agentKey) query = query.Where(item => item.RampAgentId == agentKey);
+        var coverages = await (from coverage in query
+                               join terminal in context.Terminals.AsNoTracking() on coverage.TerminalId equals terminal.Id
+                               join agent in context.RampAgents.AsNoTracking() on coverage.RampAgentId equals agent.Id
+                               join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+                               orderby coverage.StartsAt, terminal.Code, coverage.Id
+                               select new { coverage.Id, coverage.StartsAt, coverage.EndsAt, coverage.CreatedAt,
+                                   coverage.AssignedByAccountId, coverage.ReleasedAt, coverage.ReleasedByAccountId,
+                                   coverage.IsReinforcement, Terminal = terminal.Code,
+                                   Agent = person.FirstName + " " + person.LastName, agent.EmployeeNumber })
+            .ToArrayAsync(cancellationToken);
+        var ids = coverages.Select(item => item.Id).ToArray();
+        var stands = (await (from link in context.Set<Elevant.Domain.Entities.Operations.PositionCoverageStand>().AsNoTracking()
+                             join stand in context.Stands.AsNoTracking() on link.StandId equals stand.Id
+                             where ids.Contains(link.PositionCoverageId)
+                             select new { link.PositionCoverageId, stand.Code }).ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.PositionCoverageId, item => item.Code);
+        var accountIds = coverages.Select(item => item.AssignedByAccountId)
+            .Concat(coverages.Select(item => item.ReleasedByAccountId).OfType<long>()).Distinct().ToArray();
+        var accounts = await (from user in context.Users.AsNoTracking()
+                              join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
+                              where accountIds.Contains(user.Id)
+                              select new { user.Id, Name = person.FirstName + " " + person.LastName })
+            .ToDictionaryAsync(item => item.Id, item => item.Name.Trim(), cancellationToken);
+        string Account(long? id) => id is { } key && accounts.TryGetValue(key, out var name) && name.Length > 0 ? name : "—";
+        return coverages.Select(item => (IReadOnlyList<OccReportCell>)
+        [
+            Text(Date(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(item.StartsAt, zone).DateTime))), Text(item.Terminal),
+            Text(stands[item.Id].Any() ? string.Join(", ", stands[item.Id].Order(StringComparer.Ordinal)) : "—"),
+            Text($"{item.Agent.Trim()} ({item.EmployeeNumber})"),
+            Text(DateTime(item.StartsAt, zone)), Text(DateTime(item.EndsAt, zone)), Text(DateTime(item.CreatedAt, zone)),
+            Text(Account(item.AssignedByAccountId)),
+            Text(item.ReleasedAt is { } released ? DateTime(released, zone) : "—"),
+            Text(item.ReleasedAt is null ? "—" : Account(item.ReleasedByAccountId)),
+            Text(item.IsReinforcement ? "Sí" : "No"),
+        ]).ToList();
     }
 
     public async Task<OccReportFailure?> RecordExportAsync(Guid actorId, OccReportKind kind, Guid stationId,
-        DateOnly from, DateOnly to, string format, int rows, CancellationToken cancellationToken = default)
+        DateOnly from, DateOnly to, string format, int rows, OccReportFilters filters,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(filters);
         if (!Enum.IsDefined(kind) || format is not ("csv" or "xlsx" or "pdf") || rows < 0 ||
             !OccReportCatalog.ValidRange(from, to))
             throw new ArgumentException("The export audit is invalid.");
@@ -89,7 +215,11 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
             ActorType = AuditActorType.Account, ActorAccountId = accountKey,
             Action = "operations.report.exported", EntityType = "ops.reports", StationId = stationKey,
             Source = AuditSource.Api, CorrelationId = Guid.CreateVersion7(),
-            MetadataJson = JsonSerializer.Serialize(new { Kind = kind.ToString(), From = from, To = to, Format = format, RowCount = rows }),
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                Kind = kind.ToString(), From = from, To = to, Format = format, RowCount = rows,
+                filters.AirlineId, filters.Status, filters.AgentId, filters.TerminalId,
+            }),
         });
         await context.SaveChangesAsync(cancellationToken);
         return null;
@@ -226,6 +356,7 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
     /// released before the start counts nothing and, in a handover, each agent adds the minutes of their own stretch.
     /// </summary>
     private async Task<List<IReadOnlyList<OccReportCell>>> ProductivityAsync(OperationRow[] operations, long[] ids,
+        long? onlyAgent,
         CancellationToken cancellationToken)
     {
         var assignments = await AssignmentsAsync(ids, cancellationToken);
@@ -233,7 +364,8 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
             .ToDictionary(group => group.Key, group => (group.First().Name, group.First().EmployeeNumber));
         var byOperation = assignments.ToLookup(item => item.OperationId);
         var work = operations.SelectMany(operation => Attribution(operation, byOperation[operation.Id])
-            .Select(item => (Operation: operation, item.AgentId, item.Minutes))).ToArray();
+            .Select(item => (Operation: operation, item.AgentId, item.Minutes)))
+            .Where(item => onlyAgent is null || item.AgentId == onlyAgent).ToArray();
         return work.GroupBy(item => item.AgentId)
             .OrderBy(group => agents[group.Key].Name, StringComparer.CurrentCulture)
             .ThenBy(group => agents[group.Key].EmployeeNumber, StringComparer.Ordinal)
