@@ -97,6 +97,12 @@ public sealed partial class SqlServerMigrationTests
         var collections = await Read("collections");
         Assert.Equal("1000.00", Assert.Single(collections.Summary, m => m.Label == "Cobrado USD").Value);
         Assert.Equal("0.00", Assert.Single(collections.Summary, m => m.Label == "Cobrado con tarjeta USD").Value);
+        // ADR-0048: the filters by name (never «Estación filtrada») and a percentage with one decimal and its context.
+        Assert.Equal([new FinanceReportAppliedFilter("Estación", $"{station.Code} · {station.Name}"),
+                new FinanceReportAppliedFilter("Aerolínea", "Todas"), new FinanceReportAppliedFilter("Moneda", "USD")],
+            collections.Filters);
+        var share = Assert.Single(collections.Summary, m => m.Label == "Cobro sobre facturado USD").Value;
+        Assert.True(!share.Contains('.', StringComparison.Ordinal) || share.Length - share.IndexOf('.', StringComparison.Ordinal) <= 2);
         Assert.All(collections.Rows, row => Assert.Equal("Transferencia", row[3]));
         Assert.Equal("500.00", Cell(await Read("revenue"), "packages"));
         Assert.Equal("100.00", Cell(await Read("revenue"), "excess"));

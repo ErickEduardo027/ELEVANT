@@ -13,7 +13,18 @@ public sealed record CoverageStandRefData(Guid StandId, string Code);
 /// <param name="CoveredBy">Names of the agents covering the stand on the board's date.</param>
 /// <param name="Version">Rowversion in base64 (the one master data shows): the expected version of its next change.</param>
 public sealed record CoverageStandData(Guid StandId, string Code, Guid? TerminalId, bool IsActive, bool HasBoardingBridge,
-    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy, string Version);
+    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy, string Version)
+{
+    /// <summary>
+    /// The open coverages behind <see cref="CoveredBy"/>, by start: who covers the stand, for which window, and when and
+    /// by whom OCC assigned it (G1).
+    /// </summary>
+    public IReadOnlyList<CoverageStandAssignmentData> Coverages { get; init; } = [];
+}
+
+/// <summary>One coverage of a stand: the agent, the window it covers, and when and by whom OCC assigned it (G1).</summary>
+public sealed record CoverageStandAssignmentData(string AgentName, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    DateTimeOffset AssignedAt, string AssignedByName, bool IsReinforcement);
 
 public sealed record StandConstraintData(Guid Id, Guid StandId, string StandCode, Guid AffectedStandId,
     string AffectedStandCode, string Kind);
@@ -25,12 +36,31 @@ public sealed record CoverageAgentData(Guid AgentId, string Name, string Employe
 
 public sealed record CoverageData(Guid Id, Guid AgentId, string AgentName, Guid TerminalId, string TerminalCode,
     IReadOnlyList<CoverageStandRefData> Stands, DateTimeOffset StartsAt, DateTimeOffset EndsAt, Guid? MentorAgentId,
-    string? MentorName, string? VehicleCode, bool IsReinforcement);
+    string? MentorName, string? VehicleCode, bool IsReinforcement)
+{
+    /// <summary>When OCC assigned the coverage: its creation (G1).</summary>
+    public DateTimeOffset AssignedAt { get; init; }
+
+    /// <summary>The visible name of the account that assigned it («OCC» when unknown).</summary>
+    public string AssignedByName { get; init; } = "";
+
+    /// <summary>When OCC released it; null while it is open.</summary>
+    public DateTimeOffset? ReleasedAt { get; init; }
+
+    /// <summary>The visible name of the account that released it; null while it is open.</summary>
+    public string? ReleasedByName { get; init; }
+}
 
 public sealed record CoverageBoardData(Guid StationId, string StationCode, DateOnly Date,
     IReadOnlyList<CoverageTerminalData> Terminals, IReadOnlyList<CoverageStandData> Stands,
     IReadOnlyList<StandConstraintData> Constraints, IReadOnlyList<CoverageAgentData> Agents,
-    IReadOnlyList<CoverageData> Coverages, bool CanAssign, bool CanConfigure);
+    IReadOnlyList<CoverageData> Coverages, bool CanAssign, bool CanConfigure)
+{
+    /// <summary>
+    /// The coverages of the date OCC released, the latest release first; only a read that asks for them fills it (G1).
+    /// </summary>
+    public IReadOnlyList<CoverageData> ReleasedCoverages { get; init; } = [];
+}
 
 /// <param name="StartsAt">Null takes the start of the agent's shift that day.</param>
 public sealed record CreateCoverageInput(Guid AgentId, Guid TerminalId, IReadOnlyList<Guid> StandIds, DateOnly Date,
@@ -110,7 +140,12 @@ public sealed record OccHandoverResult<T>(T? Value, PositionCoverageFailure? Fai
 /// </summary>
 public interface IPositionCoverageStore
 {
-    Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The board of a station and date. With <paramref name="includeReleased"/> it also lists the coverages of the date
+    /// OCC released (<see cref="CoverageBoardData.ReleasedCoverages"/>, G1).
+    /// </summary>
+    Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date, bool includeReleased = false,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Creates a coverage (ADR-0030). With an Idempotency-Key (optional while older clients exist, 3-J) the same key and

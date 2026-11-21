@@ -59,6 +59,59 @@ describe("OCC position coverage client (ADR-0030)", () => {
     expect(requests[3]!.headers.get("content-type")).toBe("application/json");
   });
 
+  it("asks for who assigned each coverage, and for the released ones, only when told to (G1)", async () => {
+    const assignment = { assignedAt: "2026-08-19T13:41:00.000Z", assignedByName: "Alex Operations" };
+    const window = { agentName: "Riley Ramp", startsAt: "2026-08-19T10:00:00.000Z", endsAt: "2026-08-19T18:00:00.000Z",
+      ...assignment, isReinforcement: false };
+    const coverage = { ...board.coverages[0]!, ...assignment };
+    const released = { ...coverage, id: otherStandId, releasedAt: "2026-08-19T14:01:00.000Z", releasedByName: "Alex Operations" };
+    const detailed = { ...board, stands: [{ ...board.stands[0], coverages: [window] }], coverages: [coverage] };
+    const history = { ...detailed, releasedCoverages: [released] };
+    const urls: string[] = [];
+    const reading = (answer: unknown) => createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async input => {
+      urls.push(String(input).replace("https://api.example.test", ""));
+      return Response.json(answer);
+    } });
+    const plain = `/api/v1/occ/coverage?stationId=${stationId}&date=2026-08-19`;
+
+    await expect(reading(detailed).getOccCoverage(stationId, "2026-08-19", { includeAssignment: true }))
+      .resolves.toMatchObject({ coverages: [assignment], stands: [{ coverages: [window] }] });
+    await expect(reading(history).getOccCoverage(stationId, "2026-08-19", { includeReleased: true }))
+      .resolves.toMatchObject({ releasedCoverages: [{ releasedByName: "Alex Operations" }] });
+    // An older API that ignores the parameters answers the plain board, which stays valid.
+    await expect(reading(board).getOccCoverage(stationId, "2026-08-19", { includeAssignment: true, includeReleased: true }))
+      .resolves.toMatchObject({ stationCode: "PUJ" });
+    await reading(board).getOccCoverage(stationId, "2026-08-19", { includeAssignment: false });
+    expect(urls).toEqual([`${plain}&includeAssignment=true`, `${plain}&includeReleased=true`,
+      `${plain}&includeAssignment=true&includeReleased=true`, plain]);
+
+    // Each window and each assignment is complete and well formed.
+    for (const stands of [
+      [{ ...board.stands[0], coverages: null }], [{ ...board.stands[0], coverages: [{ ...window, assignedAt: "13:41" }] }],
+      [{ ...board.stands[0], coverages: [{ ...window, assignedByName: " " }] }],
+      [{ ...board.stands[0], coverages: [{ ...window, endsAt: window.startsAt }] }],
+      [{ ...board.stands[0], coverages: [{ ...window, vehicle: "VH-07" }] }],
+    ]) {
+      await expect(reading({ ...detailed, stands }).getOccCoverage(stationId, "2026-08-19", { includeAssignment: true }),
+        JSON.stringify(stands)).rejects.toMatchObject({ kind: "malformed-response" });
+    }
+    for (const releasedCoverages of [[{ ...released, releasedAt: null }], [coverage], "none"]) {
+      await expect(reading({ ...history, releasedCoverages }).getOccCoverage(stationId, "2026-08-19",
+        { includeReleased: true }), JSON.stringify(releasedCoverages)).rejects.toMatchObject({ kind: "malformed-response" });
+    }
+    // An open coverage is never released.
+    await expect(reading({ ...detailed, coverages: [released] }).getOccCoverage(stationId, "2026-08-19",
+      { includeReleased: true })).rejects.toMatchObject({ kind: "malformed-response" });
+    // Only a read that asked receives them: an unasked board, or a command's, that carries them is malformed.
+    await expect(reading(detailed).getOccCoverage(stationId, "2026-08-19")).rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(reading(history).getOccCoverage(stationId, "2026-08-19", { includeAssignment: true }))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(reading(detailed).releaseOccCoverage(coverageId, "2026-08-19"))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(reading(board).getOccCoverage(stationId, "2026-08-19", { includeReleased: "yes" as unknown as boolean }))
+      .rejects.toThrow(TypeError);
+  });
+
   it("needs every stand's version on the board, and the version and the key of a stand change (2-A)", async () => {
     let calls = 0;
     const { version: _version, ...withoutVersion } = board.stands[0]!;

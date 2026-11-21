@@ -99,6 +99,18 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("GPU", gpu.EquipmentCode);
         Assert.Equal(1, gpu.EligibleAgents);
         Assert.Equal(1, gpu.QualifiedAgents);
+        // ADR-0048: «Elegibles» are the agents trained on each equipment, never the station roster repeated in every
+        // row; the roster travels apart.
+        Assert.All(coverage.Page.Rows, row => Assert.True(row.QualifiedAgents <= row.EligibleAgents &&
+            row.EligibleAgents <= row.StationAgents));
+        Assert.True(gpu.StationAgents >= 1);
+        Assert.All(coverage.Page.Rows.Where(row => row.EligibleAgents == 0),
+            row => Assert.Equal(0, row.QualifiedAgents));
+        Assert.Null(await store.AuthorizeExportAsync(hrId, stationId, cancellationToken));
+        Assert.Equal(HumanResourcesReportFailure.ForbiddenRole,
+            await store.AuthorizeExportAsync(occId, stationId, cancellationToken));
+        Assert.Equal(HumanResourcesReportFailure.ForbiddenStation,
+            await store.AuthorizeExportAsync(hrId, Guid.NewGuid(), cancellationToken));
 
         var stationInternalId = await context.Stations.Where(item => item.PublicId == stationId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
@@ -201,6 +213,17 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(102, snapshot.Snapshot!.Rows.Count);
         Assert.Equal(102, snapshot.Snapshot.RowCount);
         Assert.Equal("PUJ", snapshot.Snapshot.StationCode);
+        // ADR-0048: the station by name and who exports, for «Generado el … por …».
+        Assert.False(string.IsNullOrWhiteSpace(snapshot.Snapshot.StationName));
+        Assert.False(string.IsNullOrWhiteSpace(snapshot.Snapshot.GeneratedBy));
+        var coverageSnapshot = await store.ReadSnapshotAsync(hrId, stationId,
+            HumanResourcesReportKind.QualificationCoverage, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 5000,
+            cancellationToken: cancellationToken);
+        Assert.Equal(6, coverageSnapshot.Snapshot!.Columns.Count);
+        Assert.True(coverageSnapshot.Snapshot.StationAgents >= 1);
+        var gpuCells = coverageSnapshot.Snapshot.Rows.Single(row => row[0].Value == "GPU");
+        Assert.Equal(["1", "1", "0"], gpuCells.Skip(2).Take(3).Select(cell => cell.Value).ToArray());
+        Assert.Equal(100m, decimal.Parse(gpuCells[5].Value, System.Globalization.CultureInfo.InvariantCulture));
         // 3-N16: the export reads in Spanish («Habilitación», «Carnet aeroportuario») with the date as the screen shows
         // it; the pages above keep the codes they filter by.
         var cells = snapshot.Snapshot.Rows.SelectMany(row => row.Select(cell => cell.Value)).ToHashSet();

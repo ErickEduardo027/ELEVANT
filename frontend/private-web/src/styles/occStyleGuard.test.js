@@ -390,11 +390,10 @@ describe('OCC legacy bridge', () => {
     expect(files).toEqual(expect.arrayContaining([
       'app/admin-occ/layout.jsx',
       'src/features/admin-occ/AdminOccLayout.jsx',
-      // Dynamic imports of the map screens, the shared pages Usuarios and Mis gastos, and the chat stylesheets.
+      // Dynamic imports of the map screens, the shared page Usuarios, and the chat stylesheets.
       'src/features/flight-monitoring/FlightMonitoringRoute.jsx',
       'src/features/positions-map/PositionsMapRoute.jsx',
       'src/features/department-users/DepartmentUsersPage.jsx',
-      'src/features/finance/payables/DepartmentExpensesPage.jsx',
       'src/features/chat/ChatWorkspace.module.css',
       'src/app/RoleLayout.jsx',
     ]));

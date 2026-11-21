@@ -207,7 +207,7 @@ public sealed partial class SqlServerMigrationTests
         var station = await context.Stations.SingleAsync(item => item.Code == "PUJ", ct);
         DateOnly from = new(2026, 8, 1), to = new(2026, 8, 31);
 
-        var operations = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 100, ct);
+        var operations = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 100, OccReportFilters.None, ct);
         Assert.Null(operations.Failure);
         var table = operations.Table!;
         Assert.Equal("PUJ", table.StationCode);
@@ -216,26 +216,26 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(await context.GroundOperations.CountAsync(operation => context.Turnarounds.Any(turnaround =>
             turnaround.Id == operation.TurnaroundId && turnaround.StationId == station.Id &&
             turnaround.OperationDate >= from && turnaround.OperationDate <= to), ct), table.RowCount);
-        var firstPage = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 1, ct);
+        var firstPage = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 1, OccReportFilters.None, ct);
         Assert.Equal(table.RowCount > 1, firstPage.Table!.HasMore);
         // An export reads the whole period in one page (3-N13): up to the CSV and Excel limit, never beyond it.
         var whole = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1,
-            OccReportCatalog.MaxExportRows, ct);
+            OccReportCatalog.MaxExportRows, OccReportFilters.None, ct);
         Assert.False(whole.Table!.HasMore);
         Assert.Equal(table.RowCount, whole.Table.RowCount);
         await Assert.ThrowsAsync<ArgumentException>(() => reports.ReadAsync(occ, OccReportKind.Operations,
-            station.PublicId, from, to, 1, OccReportCatalog.MaxExportRows + 1, ct));
+            station.PublicId, from, to, 1, OccReportCatalog.MaxExportRows + 1, OccReportFilters.None, ct));
         foreach (var kind in Enum.GetValues<OccReportKind>())
-            Assert.Null((await reports.ReadAsync(occ, kind, station.PublicId, from, to, 1, 100, ct)).Failure);
+            Assert.Null((await reports.ReadAsync(occ, kind, station.PublicId, from, to, 1, 100, OccReportFilters.None, ct)).Failure);
 
         // Finance has no OCC «Reportes» option.
         Assert.Equal(OccReportFailure.Forbidden,
-            (await reports.ReadAsync(FinanceAccount, OccReportKind.Operations, station.PublicId, from, to, 1, 10, ct)).Failure);
+            (await reports.ReadAsync(FinanceAccount, OccReportKind.Operations, station.PublicId, from, to, 1, 10, OccReportFilters.None, ct)).Failure);
         Assert.Null(await reports.RecordExportAsync(occ, OccReportKind.Operations, station.PublicId, from, to, "xlsx",
-            table.RowCount, ct));
+            table.RowCount, OccReportFilters.None, ct));
         Assert.True(await context.AuditEntries.AnyAsync(entry => entry.Action == "operations.report.exported", ct));
         Assert.Equal(OccReportFailure.Forbidden, await reports.RecordExportAsync(FinanceAccount, OccReportKind.Operations,
-            station.PublicId, from, to, "pdf", 0, ct));
+            station.PublicId, from, to, "pdf", 0, OccReportFilters.None, ct));
     }
 }
 

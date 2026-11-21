@@ -9,25 +9,25 @@ const railGroups = language => OCC_NAV_SECTIONS.map(section => [
 ]);
 
 describe('OCC navigation', () => {
-  it('groups the 14 OCC modules in En vivo, Planificar, Revisar and Estación, each once and in order', () => {
+  it('groups the 13 OCC modules in En vivo, Planificar, Revisar and Estación, each once and in order', () => {
     expect(OCC_NAV_SECTIONS.map(section => section.id)).toEqual(['live', 'plan', 'review', 'station']);
     expect(railGroups('es')).toEqual([
       ['En vivo', ['Panorama', 'Monitoreo de vuelos', 'Mapa de posiciones', 'Chat interno']],
       ['Planificar', ['Planificación', 'Cobertura de posiciones', 'Contratos listos']],
       ['Revisar', ['Revisión', 'Reportes', 'Notificaciones']],
-      ['Estación', ['Datos maestros', 'Tablets', 'Usuarios', 'Mis gastos']],
+      ['Estación', ['Datos maestros', 'Tablets', 'Usuarios']],
     ]);
     expect(railGroups('en')).toEqual([
       ['Live', ['Overview', 'Flight monitoring', 'Positions map', 'Internal chat']],
       ['Plan', ['Planning', 'Stand coverage', 'Ready contracts']],
       ['Review', ['Review', 'Reports', 'Notifications']],
-      ['Station', ['Master data', 'Tablets', 'Users', 'My expenses']],
+      ['Station', ['Master data', 'Tablets', 'Users']],
     ]);
 
     // Every module of the OCC is in exactly one group, and a group names only OCC modules.
     const grouped = OCC_NAV_SECTIONS.flatMap(section => section.items);
-    expect(grouped).toHaveLength(14);
-    expect(new Set(grouped).size).toBe(14);
+    expect(grouped).toHaveLength(13);
+    expect(new Set(grouped).size).toBe(13);
     expect([...grouped].sort()).toEqual(ADMIN_OCC_NAVIGATION.map(item => item.id).sort());
     // The grouping is a constant: nothing can reorder the rail at run time.
     expect(Object.isFrozen(OCC_NAV_SECTIONS)).toBe(true);
@@ -39,7 +39,6 @@ describe('OCC navigation', () => {
     // rely on.
     const access = item => item.permission ?? (item.administratorsOnly ? 'department administrators' : 'every account');
     expect(ADMIN_OCC_NAVIGATION.map(item => [item.id, item.path, access(item), item.label])).toEqual([
-      ['expenses', '/admin-occ/expenses', 'every account', 'Mis gastos'],
       ['dashboard', '/admin-occ/dashboard', 'operations.dashboard.read', 'Dashboard'],
       ['planning', '/admin-occ/planning', 'operations.planning.read', 'Planificación operativa'],
       ['coverage', '/admin-occ/position-coverage', 'operations.coverage.read', 'Cobertura de posiciones'],
@@ -54,5 +53,11 @@ describe('OCC navigation', () => {
       ['chat', '/admin-occ/chat', 'operations.chat.read', 'Chat interno'],
       ['users', '/admin-occ/users', 'department administrators', 'Usuarios del departamento'],
     ]);
+  });
+
+  it('no longer offers «Mis gastos» in the version 1 menu (ADR-0047)', () => {
+    expect(ADMIN_OCC_NAVIGATION.some(item => item.path === '/admin-occ/expenses')).toBe(false);
+    expect(occShellMessages.es.nav).not.toHaveProperty('expenses');
+    expect(occShellMessages.en.nav).not.toHaveProperty('expenses');
   });
 });

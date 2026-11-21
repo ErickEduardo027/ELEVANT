@@ -5,15 +5,14 @@ import { DepartmentAccessProvider, administratorAccess } from '../access/Departm
 import { DepartmentPermissionCodes } from '../access/testAccess';
 import EmployeesPage from './EmployeesPage';
 import PositionsPage from './PositionsPage';
-import RequisitionsPage, { RequisitionCard } from './RequisitionsPage';
 import ActivityPanel, { actionLabel } from './ActivityPanel';
 import { EmployeeDrawer, RegisterDrawer } from './EmployeeForms';
 import { joinDominicanPassport, dominicanPassportDigits } from './identityDocumentValue';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import {
-  changeRequisitionStatus, createEmployee, getEmployee, registerEmployee, getEmployeeOptions, governanceMessage, listEmployees,
-  listPositions, listRequisitions, savePosition, terminateEmployee, transferEmployee, updateEmployee,
+  createEmployee, getEmployee, registerEmployee, getEmployeeOptions, governanceMessage, listEmployees,
+  listPositions, savePosition, terminateEmployee, transferEmployee, updateEmployee,
 } from '../../services/humanResourcesEmployeesService';
 import { businessToday } from '../../services/businessDay';
 
@@ -21,7 +20,7 @@ vi.mock('../../services/humanResourcesEmployeesService', async importOriginal =>
   ...(await importOriginal()),
   listEmployees: vi.fn(), getEmployee: vi.fn(), getEmployeeOptions: vi.fn(), createEmployee: vi.fn(),
   terminateEmployee: vi.fn(), listUnregisteredPersons: vi.fn().mockResolvedValue([]), listPositions: vi.fn(),
-  savePosition: vi.fn(), listRequisitions: vi.fn(), changeRequisitionStatus: vi.fn(), updateEmployee: vi.fn(),
+  savePosition: vi.fn(), updateEmployee: vi.fn(),
   transferEmployee: vi.fn(), registerEmployee: vi.fn(),
 }));
 vi.mock('../../services/accountChangeObserver', () => ({
@@ -46,7 +45,7 @@ const summary = { id: 'emp-1', employeeNumber: 'FIN-010', firstName: 'Lucía', l
   version: 'E1' };
 
 describe('EmployeesPage', () => {
-  it('registers an employee against an open requisition', async () => {
+  it('registers an employee without offering a requisition (ADR-0047)', async () => {
     listEmployees.mockResolvedValue({ employees: [], total: 0 });
     getEmployeeOptions.mockResolvedValue(options);
     createEmployee.mockResolvedValue({ id: 'emp-2' });
@@ -60,11 +59,12 @@ describe('EmployeesPage', () => {
     await userEvent.type(within(drawer).getByRole('textbox', { name: /Número de empleado/ }), 'fin-020');
     await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: 'Departamento' }), 'finance');
     await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: 'Puesto' }), 'pos-1');
-    await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: /requisición/ }), 'req-1');
+    // Requisitions left the version 1 interface: the form never offers the open ones the server still lists.
+    expect(within(drawer).queryByRole('combobox', { name: /requisición/ })).not.toBeInTheDocument();
     await userEvent.click(within(drawer).getByRole('checkbox', { name: 'PUJ' }));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     expect(createEmployee).toHaveBeenCalledWith(expect.objectContaining({ employeeNumber: 'FIN-020', department: 'finance',
-      positionId: 'pos-1', requisitionId: 'req-1', stationIds: ['st-1'], corporateEmail: null }));
+      positionId: 'pos-1', requisitionId: null, stationIds: ['st-1'], corporateEmail: null }));
     expect(await screen.findByText('Empleado registrado.')).toBeInTheDocument();
   });
 
@@ -203,6 +203,33 @@ describe('EmployeesPage', () => {
     await screen.findByRole('button', { name: 'Lucía Prueba' });
     expect(screen.queryByRole('button', { name: 'Registrar empleado' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Expedientes pendientes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Puestos' })).not.toBeInTheDocument();
+  });
+
+  it('shows Puestos as a tab of Empleados (ADR-0047)', async () => {
+    listEmployees.mockResolvedValue({ employees: [summary], total: 1 });
+    getEmployeeOptions.mockResolvedValue(options);
+    listPositions.mockResolvedValue([analyst]);
+    renderWith(<EmployeesPage />);
+    const tabs = await screen.findByRole('tablist');
+    expect(within(tabs).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Empleados', 'Puestos', 'Expedientes pendientes']);
+    await userEvent.click(within(tabs).getByRole('tab', { name: 'Puestos' }));
+    expect(await screen.findByText(analyst.name, { selector: 'td, td *' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nuevo puesto' })).toBeInTheDocument();
+    // One page heading: the tab does not repeat its own.
+    expect(screen.getAllByRole('heading', { level: 1 }).map(heading => heading.textContent)).toEqual(['Empleados']);
+  });
+
+  it('offers the Puestos tab to a positions reader without HR writes', async () => {
+    listEmployees.mockResolvedValue({ employees: [summary], total: 1 });
+    getEmployeeOptions.mockResolvedValue(options);
+    listPositions.mockResolvedValue([analyst]);
+    renderWith(<EmployeesPage />, ['human_resources.employees.read', 'human_resources.positions.read']);
+    const tabs = await screen.findByRole('tablist');
+    expect(within(tabs).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Empleados', 'Puestos']);
+    await userEvent.click(within(tabs).getByRole('tab', { name: 'Puestos' }));
+    await screen.findByText(analyst.name, { selector: 'td, td *' });
+    expect(screen.queryByRole('button', { name: 'Nuevo puesto' })).not.toBeInTheDocument();
   });
 });
 
@@ -219,36 +246,6 @@ describe('PositionsPage', () => {
     await userEvent.type(within(modal).getByRole('textbox', { name: 'Nombre' }), 'Analista de facturación');
     await userEvent.click(within(modal).getByRole('button', { name: 'Guardar' }));
     expect(await within(modal).findByRole('alert')).toHaveTextContent('Ya existe un puesto con ese nombre');
-  });
-});
-
-describe('RequisitionsPage', () => {
-  it('attends a requisition and opens the hire form prefilled from it', async () => {
-    const requisition = { id: 'req-1', department: 'finance', position: { id: 'pos-1', name: analyst.name, isRampPosition: false },
-      quantity: 2, filled: 0, reason: 'Temporada alta', station, desiredStartOn: null, status: 'Open', requestedBy: 'Sofía',
-      requestedAt: '2026-10-01T10:00:00Z', attendedBy: null, closedBy: null, closedAt: null, closureReason: null,
-      employees: [], version: 'R1' };
-    listRequisitions.mockResolvedValue([requisition]);
-    changeRequisitionStatus.mockResolvedValue({ id: 'req-1' });
-    getEmployeeOptions.mockResolvedValue(options);
-    renderWith(<RequisitionsPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Atender' }));
-    expect(changeRequisitionStatus).toHaveBeenCalledWith('req-1', { status: 'InProgress', reason: null, expectedVersion: 'R1' });
-    await userEvent.click(screen.getByRole('button', { name: 'Registrar contratado' }));
-    const drawer = await screen.findByRole('dialog', { name: 'Registrar empleado' });
-    expect(within(drawer).getByRole('combobox', { name: 'Departamento' })).toHaveValue('finance');
-    expect(within(drawer).getByRole('combobox', { name: 'Puesto' })).toHaveValue('pos-1');
-  });
-
-  it('renders the shared requisition card in English inside a language scope', () => {
-    act(() => resetLanguageForTests('en'));
-    render(<LanguageScope><RequisitionCard requisition={{ id: 'req-2', department: 'finance',
-      position: { id: 'pos-1', name: analyst.name }, quantity: 2, filled: 1, reason: 'Temporada alta', station,
-      desiredStartOn: '2026-11-01', status: 'InProgress', requestedBy: 'Sofía', requestedAt: '2026-10-01T10:00:00Z',
-      attendedBy: 'Camila', closureReason: null, employees: [] }} /></LanguageScope>);
-    expect(screen.getByText('In progress')).toBeInTheDocument();
-    expect(screen.getByText(/Finance · PUJ · from 2026-11-01/)).toBeInTheDocument();
-    expect(screen.getByText(/1 of 2 filled · requested by Sofía on 10\/1\/2026 · handled by Camila/)).toBeInTheDocument();
   });
 });
 

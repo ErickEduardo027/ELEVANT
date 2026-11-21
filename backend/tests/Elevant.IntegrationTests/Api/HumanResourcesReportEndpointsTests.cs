@@ -96,6 +96,40 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
     }
 
     [Fact]
+    public async Task WithoutTheExportPermissionNothingIsReadOrRendered()
+    {
+        // ADR-0048: «Exportar» is checked before the snapshot is read or a file rendered.
+        var state = new StubStore { ExportFailure = HumanResourcesReportFailure.ForbiddenRole };
+        await using var app = Application(state);
+        using var client = Authenticated(app);
+        using var response = await client.GetAsync(Export("xlsx"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, state.SnapshotCount);
+        Assert.Equal(0, state.AuditCount);
+        Assert.NotEqual("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task TheCatalogMarksTheCutOffReportAndAllowsAYear()
+    {
+        await using var app = Application(new StubStore());
+        using var client = Authenticated(app);
+        var body = await client.GetFromJsonAsync<JsonElement>("/api/v1/human-resources/reports",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(366, body.GetProperty("maxRangeDays").GetInt32());
+        var reports = body.GetProperty("reports").EnumerateArray().ToArray();
+        Assert.Equal(4, reports.Length);
+        Assert.True(reports.Single(item => item.GetProperty("key").GetString() == "qualification-coverage")
+            .GetProperty("asOfDate").GetBoolean());
+        Assert.False(reports.Single(item => item.GetProperty("key").GetString() == "expirations")
+            .GetProperty("asOfDate").GetBoolean());
+        using var year = await client.GetAsync(
+            $"{Route}?stationId={StationId}&from=2025-11-01&to=2026-10-31", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, year.StatusCode);
+    }
+
+    [Fact]
     public async Task RevocationAfterSnapshotPreventsFileDelivery()
     {
         var state = new StubStore { AuditFailure = HumanResourcesReportFailure.ForbiddenRole };
@@ -110,7 +144,7 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
     }
 
     [Theory]
-    [InlineData("from=2026-10-01&to=2026-10-31")]
+    [InlineData("from=2025-10-01&to=2026-10-31")]
     [InlineData("from=2026-10-30&to=2026-10-01")]
     [InlineData("from=2026-10-01&to=2026-10-30&page=0")]
     [InlineData("from=2026-10-01&to=2026-10-30&documentKind=Unknown")]
@@ -275,6 +309,11 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
         public int ReadCount { get; private set; }
         public int AuditCount { get; private set; }
         public string? LastFilters { get; private set; }
+        public HumanResourcesReportFailure? ExportFailure { get; set; }
+        public int SnapshotCount { get; private set; }
+
+        public Task<HumanResourcesReportFailure?> AuthorizeExportAsync(Guid actorId, Guid stationId,
+            CancellationToken cancellationToken = default) => Task.FromResult(ExportFailure);
 
         public Task<HumanResourcesReportFailure?> RecordExportAsync(Guid actorId,
             Guid stationId, HumanResourcesReportKind kind, DateOnly startDate,
@@ -311,14 +350,20 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
         public Task<HumanResourcesReportSnapshotResult> ReadSnapshotAsync(Guid actorId,
             Guid stationId, HumanResourcesReportKind kind, DateOnly startDate,
             DateOnly endDate, int maxRows, string? documentKind = null,
-            string? validity = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Failure is HumanResourcesReportFailure failure
+            string? validity = null, CancellationToken cancellationToken = default)
+        {
+            SnapshotCount++;
+            return Task.FromResult(Failure is HumanResourcesReportFailure failure
                 ? new HumanResourcesReportSnapshotResult(null, failure)
                 : new HumanResourcesReportSnapshotResult(new HumanResourcesReportSnapshot(
                     kind, stationId, startDate, endDate, DateTimeOffset.UtcNow,
-                    ["Agente"], [[new("Agente de prueba", HumanResourcesReportCellType.Text)]])
+                    ["Agente", "Empleado", "Clase", "Documento", "Vence"],
+                    [[new("Agente de prueba", HumanResourcesReportCellType.Text), new("DEV-001", HumanResourcesReportCellType.Text),
+                        new("Habilitación", HumanResourcesReportCellType.Text), new("GPU", HumanResourcesReportCellType.Text),
+                        new("30/10/2026", HumanResourcesReportCellType.Date)]])
                     { StationCode = "PUJ", DocumentKind = documentKind,
-                        Validity = validity }, null));
+                        Validity = validity, GeneratedBy = "Ana Pérez" }, null));
+        }
 
         public Task<HumanResourcesReportReadResult<HumanResourcesAccountMovementRow>>
             ListAccountMovementsAsync(Guid actorId, Guid stationId, DateOnly startDate,

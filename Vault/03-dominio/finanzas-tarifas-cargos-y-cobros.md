@@ -322,6 +322,12 @@ traduce al español.
 
 ## Gastos propios y revisiones
 
+> **Versión 1 ([ADR-0047](../../docs/adr/0047-alcance-version-1-sin-gastos-y-gestion-humana-esencial.md)):**
+> AVIAM Web no muestra «Mis gastos» en ningún departamento ni «Gastos de
+> empleados» en Finanzas, y el editor de plantillas oculta `finance.expenses`.
+> La API, las tablas y las reglas que describe esta sección se conservan, pero
+> ninguna pantalla las usa.
+
 Cualquier cuenta con un empleado activo y membresía interna de AVIAM registra,
 presenta y lee sus propios gastos **sin permisos de Finanzas**; Finanzas tiene
 también «Mis gastos». El empleado se deriva de la cuenta y la petición no elige
@@ -333,16 +339,16 @@ a quién representar ([gastos](../../database/DevelopmentDB/Elevant.Persistence/
 4. Finanzas aprueba o rechaza después; nadie aprueba su propio gasto ni actúa como ambas revisoras.
 5. Finanzas registra el reembolso, parcial o total, sin pagarse a sí misma.
 
-El componente [DepartmentExpensesPage](../../frontend/private-web/src/features/finance/payables/DepartmentExpensesPage.jsx)
-sirve «Mis gastos» en cada departamento. El soporte se descarga por la API
-privada, sin URL pública ni clave de objeto elegida por el navegador.
+El soporte se descarga por la API privada, sin URL pública ni clave de objeto
+elegida por el navegador. La pantalla «Mis gastos» que lo servía en cada
+departamento se borró con la versión 1 (ADR-0047).
 
 ## Permisos, menú, auditoría y reportes
 
 El [menú de Finanzas](../../frontend/private-web/src/features/finance/shell/modules.js)
 es Inicio · Facturación (Por facturar, Facturas con sus pestañas Cobros y
 Estados de cuenta, Charters) · Cuentas por pagar (Facturas de proveedores,
-Proveedores, Gastos de empleados, Mis gastos) · Reportes · Configuración
+Proveedores) · Reportes · Configuración
 (Tarifario de servicios, Tarifario de cargos, Paquetes, Reglas de cierre,
 Aprobación de contratos, Tasas de cambio, Unidades de cobro) · Usuarios del
 departamento.
@@ -380,7 +386,13 @@ son seis, calculados en el servidor: Ingresos por período (neto de notas, con
 ITBIS y consolidado en USD con la tasa registrada), Cuentas por cobrar y
 antigüedad, Cobranza, Cuentas por pagar, Recargos y Ventas (e-CF simulado). Se
 exportan en CSV, XLSX o PDF con permiso y auditoría, y los PDF llevan el marco
-«Simulación — sin validez fiscal». Inicio (`GET finance/home`) muestra los
+«Simulación — sin validez fiscal». *Posterior al commit verificado:* el PDF y el
+Excel salen del motor común ([ADR-0048](../../docs/adr/0048-motor-comun-de-reportes.md)):
+los filtros nombran la estación, la aerolínea y la moneda (ya no «Estación
+filtrada»), los totales van por moneda, el cobro sobre lo facturado lleva un
+decimal y los indicadores de cobro, antigüedad y cuentas por pagar traen su
+contexto; cuentas por cobrar y por pagar son reportes a fecha de corte
+(`asOfDate`). Inicio (`GET finance/home`) muestra los
 indicadores de la estación que el servidor calcula, cada sección según el
 permiso de su módulo.
 

@@ -26,7 +26,7 @@ public sealed class OccReportEndpointsTests(ElevantApiFactory factory) : IClassF
         using var catalog = await client.GetAsync("/api/v1/occ/reports", ct);
         catalog.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(ct));
-        Assert.Equal(6, json.RootElement.GetProperty("reports").GetArrayLength());
+        Assert.Equal(7, json.RootElement.GetProperty("reports").GetArrayLength());
         using var unknown = await client.GetAsync($"/api/v1/occ/reports/sla?stationId={StationId}&from=2026-08-01&to=2026-08-31", ct);
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         Assert.Equal("report_not_found", await CodeAsync(unknown, ct));
@@ -116,6 +116,56 @@ public sealed class OccReportEndpointsTests(ElevantApiFactory factory) : IClassF
         Assert.Equal("application/problem+json", file.Content.Headers.ContentType!.MediaType);
     }
 
+    [Fact]
+    public async Task TheCatalogListsEachReportsFiltersAndTheNewCoverageReport()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = Client(new Stub());
+        using var catalog = await client.GetAsync("/api/v1/occ/reports", ct);
+        using var json = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(ct));
+        var reports = json.RootElement.GetProperty("reports").EnumerateArray().ToArray();
+        var operations = reports.Single(item => item.GetProperty("key").GetString() == "operations");
+        Assert.Equal(["airline", "status", "agent"], operations.GetProperty("filters").EnumerateArray()
+            .Select(item => item.GetProperty("key").GetString()).ToArray());
+        Assert.Contains(operations.GetProperty("filters")[1].GetProperty("options").EnumerateArray(),
+            option => option.GetProperty("code").GetString() == "Approved" && option.GetProperty("label").GetString() == "Aprobada");
+        Assert.Equal("date", operations.GetProperty("columnTypes")[0].GetString());
+        var coverage = reports.Single(item => item.GetProperty("key").GetString() == "coverage-assignments");
+        Assert.Equal(["terminal", "agent"], coverage.GetProperty("filters").EnumerateArray()
+            .Select(item => item.GetProperty("key").GetString()).ToArray());
+        Assert.False(coverage.GetProperty("asOfDate").GetBoolean());
+    }
+
+    [Fact]
+    public async Task FiltersReachTheStoreAndAFilterTheReportDoesNotTakeIsRefused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stub = new Stub();
+        using var client = Client(stub);
+        var airline = Guid.NewGuid();
+        using var page = await client.GetAsync(
+            $"/api/v1/occ/reports/operations?stationId={StationId}&from=2026-08-01&to=2026-08-31&airlineId={airline}&status=Approved", ct);
+        page.EnsureSuccessStatusCode();
+        Assert.Equal(new OccReportFilters(airline, "Approved"), stub.LastFilters);
+        using (var json = JsonDocument.Parse(await page.Content.ReadAsStringAsync(ct)))
+        {
+            Assert.Equal("Arajet", json.RootElement.GetProperty("appliedFilters")[0].GetProperty("value").GetString());
+            Assert.Equal("Ana Pérez", json.RootElement.GetProperty("generatedBy").GetString());
+            Assert.Equal("de 1 aerolíneas", json.RootElement.GetProperty("summary")[0].GetProperty("context").GetString());
+        }
+        using var unknownStatus = await client.GetAsync(
+            $"/api/v1/occ/reports/operations?stationId={StationId}&from=2026-08-01&to=2026-08-31&status=Flying", ct);
+        Assert.Equal("invalid_report_query", await CodeAsync(unknownStatus, ct));
+        using var notTaken = await client.GetAsync(
+            $"/api/v1/occ/reports/services-by-airline/export?stationId={StationId}&from=2026-08-01&to=2026-08-31&format=pdf&agentId={Guid.NewGuid()}", ct);
+        Assert.Equal(HttpStatusCode.BadRequest, notTaken.StatusCode);
+        Assert.Equal("invalid_report_query", await CodeAsync(notTaken, ct));
+        using var coverage = await client.GetAsync(
+            $"/api/v1/occ/reports/coverage-assignments/export?stationId={StationId}&from=2026-08-01&to=2026-08-31&format=xlsx&terminalId={airline}", ct);
+        coverage.EnsureSuccessStatusCode();
+        Assert.Equal(airline, stub.LastFilters!.TerminalId);
+    }
+
     private static async Task<string?> CodeAsync(HttpResponseMessage response, CancellationToken ct)
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
@@ -161,20 +211,27 @@ public sealed class OccReportEndpointsTests(ElevantApiFactory factory) : IClassF
         public OccReportFailure? ExportFailure { get; init; }
         public OccReportFailure? ReadFailure { get; init; }
         public bool HasMore { get; init; }
+        public OccReportFilters? LastFilters { get; private set; }
 
         public Task<OccReportResult> ReadAsync(Guid actorId, OccReportKind kind, Guid stationId, DateOnly from, DateOnly to,
-            int page, int limit, CancellationToken cancellationToken = default)
+            int page, int limit, OccReportFilters filters, CancellationToken cancellationToken = default)
         {
             LastLimit = limit;
+            LastFilters = filters;
             if (ReadFailure is { } failure) return Task.FromResult(new OccReportResult(null, failure));
             var definition = OccReportCatalog.All.Single(item => item.Kind == kind);
             IReadOnlyList<OccReportCell> row = definition.Columns.Select(column => new OccReportCell(column)).ToArray();
             return Task.FromResult(new OccReportResult(new OccReportTable(definition, stationId, "PUJ", from, to,
-                DateTimeOffset.UtcNow, [row], page, limit, HasMore), null));
+                DateTimeOffset.UtcNow, [row], page, limit, HasMore)
+            {
+                StationName = "Punta Cana", GeneratedBy = "Ana Pérez", TotalRows = 1,
+                Filters = filters.AirlineId is null ? [] : [new("Aerolínea", "Arajet")],
+                Summary = [new("Operaciones", "1", "de 1 aerolíneas")],
+            }, null));
         }
 
         public Task<OccReportFailure?> RecordExportAsync(Guid actorId, OccReportKind kind, Guid stationId, DateOnly from,
-            DateOnly to, string format, int rows, CancellationToken cancellationToken = default)
+            DateOnly to, string format, int rows, OccReportFilters filters, CancellationToken cancellationToken = default)
         {
             if (ExportFailure is null) Exported = (format, rows);
             return Task.FromResult(ExportFailure);

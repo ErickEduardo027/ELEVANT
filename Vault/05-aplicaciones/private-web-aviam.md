@@ -265,9 +265,9 @@ Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vue
 
 El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Desde el PR U4, también posterior al commit verificado, la primera entrada al OCC de cada pestaña después de iniciar sesión pasa por una pantalla de arranque: ver [Pantalla de arranque del OCC (PR U4)](#pantalla-de-arranque-del-occ-pr-u4). Desde el PR U3, también posterior, Panorama es la consola del OCC, un mapa a pantalla completa con paneles que se pliegan, y solo ella llena el espacio del marco sin margen: ver [Consola del OCC (PR U3)](#consola-del-occ-pr-u3). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
-En el árbol local posterior al commit verificado, «Estación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
+Desde la versión 1 ([ADR-0047](../../docs/adr/0047-alcance-version-1-sin-gastos-y-gestion-humana-esencial.md)), el riel OCC ya no tiene «Estación → Mis gastos» y `/admin-occ/expenses` no existe. La entrada `/admin-occ` abre Panorama si la cuenta puede leerla y, si no, el primer módulo permitido; una cuenta sin módulos ve «Sin módulos asignados». Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx) y [guarda de navegación](../../frontend/private-web/src/features/access/useNavigationGuard.js).
 
-Desde el PR U6, también posterior al commit verificado, Revisión, Cobertura de posiciones, Notificaciones, Chat interno, Datos maestros, Tablets, Contratos listos y Reportes se dibujan con las primitivas del OCC; Usuarios y Mis gastos, que comparten otros departamentos, siguen con el puente de estilos. Ver [Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6).
+Desde el PR U6, también posterior al commit verificado, Revisión, Cobertura de posiciones, Notificaciones, Chat interno, Datos maestros, Tablets, Contratos listos y Reportes se dibujan con las primitivas del OCC; Usuarios, que comparten otros departamentos, sigue con el puente de estilos. Ver [Resto de pantallas del OCC (PR U6)](#resto-de-pantallas-del-occ-pr-u6).
 
 OCC opera solo Punta Cana: todas sus rutas toman el alcance `PUJ` que trae la sesión y ya no ofrecen selector de estación. Si la cuenta no tiene ese alcance, cada módulo muestra su estado sin estación autorizada y no consulta la API; la autorización sigue en el servidor. Fuente: [alcance PUJ](../../frontend/private-web/src/features/admin-occ/useOccStation.js).
 
@@ -361,16 +361,19 @@ El superadministrador ve **Usuarios** con **Clientes** (usuarios del portal por
 aerolínea) y **Usuarios internos** (recuentos globales y por departamento).
 Cada shell muestra sólo los módulos que concede `GET governance/me/access`.
 Con ADR-0017, Gestión Humana tiene **Empleados** (expedientes, traslados,
-bajas y expedientes pendientes), **Puestos**, **Requisiciones** y una
-**Auditoría** leída de la API; los administradores solicitan el acceso eligiendo
-un empleado y cuentan con las pestañas **Puestos**, **Requisiciones** y
-**Actividad**; las contraseñas temporales pueden generarse en el navegador.
+bajas y expedientes pendientes) y una **Auditoría** leída de la API; los
+administradores solicitan el acceso eligiendo un empleado y cuentan con las
+pestañas **Puestos** y **Actividad**; las contraseñas temporales pueden
+generarse en el navegador. Desde la versión 1 ([ADR-0047](../../docs/adr/0047-alcance-version-1-sin-gastos-y-gestion-humana-esencial.md))
+**Puestos** es una pestaña de **Empleados**, y **Requisiciones** (con «Pedir
+personal») y la página **Notificaciones** salieron de la interfaz; la campana se
+queda.
 Fuentes: [gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md),
 [usuarios del departamento](../../frontend/private-web/src/features/department-users/DepartmentUsersPage.jsx),
 [validaciones](../../frontend/private-web/src/features/department-users/AccessValidationsPage.jsx)
 y [vista de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx).
 
-Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
+Bajo `/gestion-humana` existen dashboard, empleados, agentes de rampa, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, asistencia, reportes, auditoría, validaciones de acceso, usuarios del departamento y configuración. El menú las agrupa en Personal · Operación de rampa · Seguimiento · Accesos · Configuración ([navegación](../../frontend/private-web/src/features/human-resources/navigation.js)). El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
 **Habilitaciones, carnets y horarios usan siempre la API.** Antes, el
 navegador leía `NEXT_PUBLIC_HR_DEMO_MODE` como `process.env` completo. Next no
@@ -595,7 +598,7 @@ Usuarios del departamento:
 | Facturación → Por facturar | Operaciones aprobadas por OCC todavía sin factura, de la más antigua a la más reciente, con atajos de semana (domingo a sábado) y de mes, «Toda la aerolínea del período», «Cargar más» y «Mostrando N de M»; cada operación explica en español todos sus motivos de bloqueo. Emite una factura e-CF simulada para una o varias operaciones de la misma aerolínea y, si el total es 0, ofrece «Cerrar sin cargo» con motivo. |
 | Facturación → Facturas | Páginas de 25 con una búsqueda por e-NCF, número o aerolínea; saldo, estado (también «Anulada») y PDF, y las pestañas «Cobros» y «Estados de cuenta» según los permisos. El detalle muestra los pagos con tarjeta de la aerolínea (marca •••• últimos 4, autorización o motivo de rechazo), las notas de crédito `E34` o de débito `E33` con su PDF y el estado de los correos. Un cobro con tarjeta no ofrece revertir ni devolver: se corrige con una nota de crédito. |
 | Facturación → Charters | Confirma o corrige con motivo el prepago y reabre la cotización. |
-| Cuentas por pagar | Facturas de proveedores con corrección, anulación y reverso de pagos bajo segregación de funciones; proveedores con retiro; gastos de empleados con revisión por escalamiento, y «Mis gastos», que no exige un permiso de Finanzas. |
+| Cuentas por pagar | Facturas de proveedores con corrección, anulación y reverso de pagos bajo segregación de funciones, y proveedores con retiro. «Gastos de empleados» y «Mis gastos» salieron de la versión 1 (ADR-0047); la API de gastos se conserva sin pantalla. |
 | Reportes | Los seis reportes del servidor en la piel común de reportes (PR D): estación, aerolínea y moneda, «Cuentas por cobrar» y «Cuentas por pagar» a una fecha de corte, totales donde suman y «Descargar PDF» / «Descargar Excel»; sus PDF llevan el marco «Simulación — sin validez fiscal». |
 | Configuración | Tarifarios de servicios y de cargos, paquetes, reglas de cierre, aprobación de contratos, tasas de cambio y unidades de cobro. |
 
@@ -1289,6 +1292,27 @@ escriben. Las ocho y las primitivas de `occ-ui` pintan solo con los tokens
   [`standCodes.js`](../../frontend/private-web/src/services/standCodes.js), que
   también ordena Datos maestros, la «Lista de posiciones» del mapa y los
   selectores de posición de Planificación).
+  *Posterior al commit verificado (G1, revisión del profesor del 16 de
+  noviembre de 2026, 2:09-2:13):* la pantalla pide el tablero con
+  `includeAssignment=true`
+  ([servicio](../../frontend/private-web/src/services/occCoverageService.js)).
+  «Posiciones de la terminal» tiene las columnas Posición · Atributos ·
+  Cubierta por · Cubre · Asignada · Estado: «Cubre» es el horario de cada
+  cobertura de la posición («20/11 06:00–14:00»; con los dos días si termina al
+  día siguiente) y «Asignada», cuándo y quién la asignó («20/11/2026 09:41 ·
+  Alex Operations»), una línea por cobertura, en 24 h y en la hora de la
+  estación. «Coberturas del día» suma «Asignada» junto a «Horario». La cobertura
+  que se acaba de asignar dice «Recién asignada» (círculo lleno) durante unos
+  segundos en las dos listas, y la pantalla relee el tablero para saber cuándo y
+  quién la asignó, porque la respuesta del comando no lo dice; de las coberturas
+  que ya conocía conserva lo que dijo la última lectura. «Ordenar: Posición |
+  Asignación más reciente» ordena las dos listas: por posición, en orden natural,
+  o lo recién asignado primero y después la última asignación (las posiciones sin
+  cobertura quedan abajo, en orden natural). «Mostrar liberadas» relee con
+  `includeReleased=true` y añade al final de «Coberturas del día» las coberturas
+  liberadas del día, con «Liberada» (círculo tachado) y «Liberada el … por …», sin
+  «Liberar»; la leyenda nombra «Recién asignada» y «Liberada» mientras se dibujan.
+  Textos en español e inglés.
 - **Notificaciones**
   ([ruta](../../frontend/private-web/src/features/notifications/CanonicalNotificationsRoute.jsx)).
   El «Historial de avisos» lleva la leyenda «Prioridad» en su cabecera y los
@@ -2729,10 +2753,10 @@ flowchart LR
     Contratos aparecen en la misma pantalla cuando el cliente de la API los tenga.
 - **Estados de cuenta.** En Facturas › «Estados de cuenta», «Descargar PDF» y «Descargar Excel» aparecen solo cuando
   el cliente de la API puede generar el estado de cuenta; hasta entonces no hay botones.
-- **Pendiente.** Los tipos de columna, los totales, los KPI, «Generado por», el catálogo de filtros de OCC y el
-  catálogo de Gestión Humana llegan con el motor común de reportes del servidor (PR B, ADR-0048). Los reportes de
-  Contratos y el estado de cuenta en PDF y Excel llegan con un PR posterior. Sin ellos las pantallas funcionan con
-  lo que la API ya envía. No hay todavía evidencia de navegador ni de despliegue de estas pantallas.
+- **Con el motor.** Los tipos de columna, los totales, los KPI, «Generado por», el catálogo de filtros de OCC y el
+  catálogo de Gestión Humana los envía el motor común de reportes del servidor (PR B, ADR-0048), ya en Development.
+- **Pendiente.** Los reportes de Contratos y el estado de cuenta en PDF y Excel llegan con un PR posterior; hasta
+  entonces sus pantallas no muestran esos controles. No hay todavía evidencia de despliegue de estas pantallas.
 
 ## Brechas y desconocidos
 

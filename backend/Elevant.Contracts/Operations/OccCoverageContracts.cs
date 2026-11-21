@@ -6,11 +6,23 @@ public sealed record OccCoverageTerminalResponse(Guid TerminalId, string Code, s
     bool RequiresBridgeQualification);
 
 /// <summary>
+/// One open coverage of a stand (G1): the agent, the window it covers («Cubre») and when and by whom OCC assigned it
+/// («Asignada»).
+/// </summary>
+public sealed record OccCoverageStandAssignmentResponse(string AgentName, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    DateTimeOffset AssignedAt, string AssignedByName, bool IsReinforcement);
+
+/// <summary>
 /// A stand of the board. <paramref name="Version"/> is its rowversion in base64, the same one «Datos maestros» shows:
-/// the expected version of the next change of its attributes (2-A).
+/// the expected version of the next change of its attributes (2-A). <paramref name="Coverages"/> are the open coverages
+/// behind <paramref name="CoveredBy"/>, by start (G1): the key is written only to a read with
+/// <c>includeAssignment=true</c> (or <c>includeReleased=true</c>), empty when nobody covers the stand, so a client
+/// deployed before it keeps validating the board (expand).
 /// </summary>
 public sealed record OccCoverageStandResponse(Guid StandId, string Code, Guid? TerminalId, bool IsActive, bool HasBoardingBridge,
-    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy, string Version);
+    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy, string Version,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<OccCoverageStandAssignmentResponse>? Coverages = null);
 
 public sealed record OccStandConstraintResponse(Guid Id, Guid StandId, string StandCode, Guid AffectedStandId,
     string AffectedStandCode, string Kind);
@@ -21,15 +33,31 @@ public sealed record OccCoverageAgentResponse(Guid AgentId, string Name, string 
 
 public sealed record OccCoverageStandRefResponse(Guid StandId, string Code);
 
+/// <summary>
+/// A coverage of the board. G1: <paramref name="AssignedAt"/>, when OCC assigned it, and <paramref name="AssignedByName"/>,
+/// the visible name of the account that did, are written only to a read with <c>includeAssignment=true</c> or
+/// <c>includeReleased=true</c> (expand); <paramref name="ReleasedAt"/> and <paramref name="ReleasedByName"/> only in
+/// <c>releasedCoverages</c>.
+/// </summary>
 public sealed record OccCoverageResponse(Guid Id, Guid AgentId, string AgentName, Guid TerminalId, string TerminalCode,
     IReadOnlyList<OccCoverageStandRefResponse> Stands, DateTimeOffset StartsAt, DateTimeOffset EndsAt, Guid? MentorAgentId,
-    string? MentorName, string? VehicleCode, bool IsReinforcement);
+    string? MentorName, string? VehicleCode, bool IsReinforcement,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? AssignedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AssignedByName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? ReleasedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ReleasedByName = null);
 
-/// <summary>Position coverage per shift of one station and date (ADR-0030).</summary>
+/// <summary>
+/// Position coverage per shift of one station and date (ADR-0030). <paramref name="ReleasedCoverages"/> are the coverages
+/// of the date OCC released, the latest release first (G1): the key is written only to a read with
+/// <c>includeReleased=true</c>; a command's board never has it.
+/// </summary>
 public sealed record OccCoverageBoardResponse(Guid StationId, string StationCode, DateOnly Date,
     IReadOnlyList<OccCoverageTerminalResponse> Terminals, IReadOnlyList<OccCoverageStandResponse> Stands,
     IReadOnlyList<OccStandConstraintResponse> Constraints, IReadOnlyList<OccCoverageAgentResponse> Agents,
-    IReadOnlyList<OccCoverageResponse> Coverages, bool CanAssign, bool CanConfigure);
+    IReadOnlyList<OccCoverageResponse> Coverages, bool CanAssign, bool CanConfigure,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<OccCoverageResponse>? ReleasedCoverages = null);
 
 /// <summary>Both times null take the agent's shift that day.</summary>
 public sealed record CreateOccCoverageRequest(Guid StationId, DateOnly Date, Guid AgentId, Guid TerminalId,

@@ -20,7 +20,6 @@ import { getServiceClosures } from '../../../services/commercialGovernanceApi';
 import { allowedNavigation, useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import NoModulesNotice from '../../access/NoModulesNotice';
 import DepartmentUsersPage from '../../department-users/DepartmentUsersPage';
-import DepartmentExpensesPage from '../../finance/payables/DepartmentExpensesPage';
 import { DEPARTMENTS } from '../../../services/departmentGovernanceService';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
@@ -123,8 +122,6 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
             <ManagedAgreementsPage mode="services" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
             <ContractsReportsPage />
-          ) : activeModule.id === CONTRACT_MODULE_IDS.EXPENSES ? (
-            <DepartmentExpensesPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.USERS ? (
             <DepartmentUsersPage department={DEPARTMENTS.CONTRACTS} />
           ) : (

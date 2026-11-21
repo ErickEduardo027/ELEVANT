@@ -23,7 +23,7 @@ describe("G.H. verified reports API client", () => {
           headers: { "content-type": "application/json" } });
       } });
     await expect(client.getHumanResourcesReport("expirations",
-      { ...query, to: "2026-10-31" })).rejects.toThrow(TypeError);
+      { ...query, from: "2025-10-01", to: "2026-10-31" })).rejects.toThrow(TypeError);
     expect(requests).toBe(0);
     await expect(client.getHumanResourcesReport("expirations", query)).resolves.toEqual(page);
     expect(new URL(path).pathname).toBe("/api/v1/human-resources/reports/expirations");
@@ -41,7 +41,7 @@ describe("G.H. verified reports API client", () => {
   it("accepts a coverage page for the requested interval", async () => {
     const coverage = { ...page, rows: [{ equipmentTypeId: rowId,
       equipmentCode: "GPU", equipmentName: "GPU de prueba",
-      eligibleAgents: 2, qualifiedAgents: 1 }] };
+      eligibleAgents: 2, qualifiedAgents: 1, stationAgents: 50 }] };
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => new Response(JSON.stringify(coverage), { status: 200,
         headers: { "content-type": "application/json" } }) });
@@ -105,5 +105,17 @@ describe("G.H. verified reports API client", () => {
         headers: { "content-type": "application/json" } }) });
     await expect(malformed.exportHumanResourcesReport("expirations", exportQuery, "pdf"))
       .rejects.toMatchObject({ kind: "malformed-response", status: 200 });
+  });
+});
+
+describe("G.H. report catalog (ADR-0048)", () => {
+  it("reads the catalog with the cut-off mark and allows a year", async () => {
+    const catalog = { maxRangeDays: 366, reports: [{ key: "qualification-coverage", title: "Cobertura de habilitaciones",
+      description: "Por equipo.", columns: ["Equipo", "% habilitados"], columnTypes: ["text", "percent"], asOfDate: true }] };
+    const answers = [Response.json(catalog), Response.json({ ...page, from: "2025-11-01", to: "2026-10-31" })];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async () => answers.shift()! });
+    await expect(client.listHumanResourcesReports()).resolves.toEqual(catalog);
+    await expect(client.getHumanResourcesReport("expirations", { ...query, from: "2025-11-01", to: "2026-10-31" }))
+      .resolves.toMatchObject({ from: "2025-11-01" });
   });
 });

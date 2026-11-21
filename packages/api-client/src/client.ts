@@ -395,6 +395,7 @@ import {
   getListHumanResourcesQualificationCoverageUrl,
   getListHumanResourcesScheduleWarningsUrl,
   getExportHumanResourcesReportUrl,
+  getListHumanResourcesReportsUrl,
   getListOccReportsUrl,
   getGetOccPositionsUrl,
   getGetOccCoverageUrl,
@@ -614,6 +615,7 @@ import {
   type GetHumanResourcesAttendanceParams,
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
+  type HumanResourcesReportCatalogResponse,
   type OccPositionBoardResponse,
   type OccCharterAirlineResponse,
   type OccTurnaroundDetailResponse,
@@ -800,6 +802,12 @@ export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "
  * start, end and whether it is a reinforcement, N26); without it the parameter stays out of the URL.
  */
 export type GetOccPositionsOptions = GetHumanResourcesReportOptions & { includeCoverage?: boolean };
+/**
+ * A coverage board read (G1). `includeAssignment` also asks when and by whom OCC assigned each coverage
+ * (`assignedAt`, `assignedByName`) and each stand's open coverages (`coverages`); `includeReleased` does the same and adds
+ * the released coverages of the date (`releasedCoverages`). Without them the parameters stay out of the URL.
+ */
+export type GetOccCoverageOptions = GetHumanResourcesReportOptions & { includeAssignment?: boolean; includeReleased?: boolean };
 
 /** A stand coverage OCC hands an agent (ADR-0030); both times null take the agent's shift. */
 export interface OccCoverageCommand {
@@ -865,8 +873,12 @@ export type HumanResourcesReportQuery = {
     validity?: "Current" | "Expired";
 };
 export type OccReportKey = "operations" | "turnaround-times" | "services-by-airline" | "reviews" | "agent-productivity" |
-  "daily-close";
-export type OccReportQuery = { stationId: string; from: string; to: string; page?: number; limit?: number };
+  "daily-close" | "coverage-assignments";
+/** The optional filters (ADR-0048) apply where the catalog lists them; any other is `invalid_report_query`. */
+export type OccReportQuery = {
+  stationId: string; from: string; to: string; page?: number; limit?: number;
+  airlineId?: string; status?: string; agentId?: string; terminalId?: string;
+};
 export type OccReportFormat = "csv" | "xlsx" | "pdf";
 export type HumanResourcesReportPage =
   HumanResourcesExpirationResponseHumanResourcesReportPageResponse |
@@ -1520,6 +1532,8 @@ export interface ElevantApiClient {
   exportHumanResourcesReport(kind: HumanResourcesReportKind,
     query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** The Gestión Humana reports with their typed columns and whether each is a cut-off (ADR-0048). */
+  listHumanResourcesReports(options?: GetHumanResourcesReportOptions): Promise<HumanResourcesReportCatalogResponse>;
   listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
   /**
    * The stands of a station with the turnarounds of `date`. `options.includeCoverage` also asks for each stand's
@@ -1551,8 +1565,12 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<OccCharterAirlineResponse>;
   /** The active aircraft types the tablet offers in «Datos del vuelo» (3-B). */
   getRampAircraftTypes(options?: GetHumanResourcesReportOptions): Promise<RampAircraftTypesResponse>;
-  /** Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. */
-  getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  /**
+   * Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. G1: `options.includeAssignment`
+   * and `options.includeReleased` ask for who assigned each coverage and when, and for the released ones; only a read that
+   * asked accepts them, and an API that ignores the parameters answers without.
+   */
+  getOccCoverage(stationId: string, date: string, options?: GetOccCoverageOptions): Promise<OccCoverageBoardResponse>;
   /** With `options.idempotencyKey` a repeated attempt answers the board instead of a second coverage (3-J). */
   createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions): Promise<OccCoverageBoardResponse>;
   /** Releasing twice answers the board; `options.idempotencyKey` replays the release (3-J). */
@@ -3581,9 +3599,54 @@ export function normalizedStandAttributes(request: OccStandAttributesCommand): O
     maxAircraftSize: request.maxAircraftSize, isActive: request.isActive, expectedVersion: request.expectedVersion };
 }
 
-function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCoverageBoardResponse {
+const OCC_COVERAGE_KEYS = ["id", "agentId", "agentName", "terminalId", "terminalCode", "stands", "startsAt", "endsAt",
+  "mentorAgentId", "mentorName", "vehicleCode", "isReinforcement"];
+
+/** One open coverage of a stand (G1): the agent, a window that ends after it starts, and when and by whom it was assigned. */
+function isOccCoverageStandAssignment(value: unknown): boolean {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["agentName", "startsAt", "endsAt", "assignedAt", "assignedByName", "isReinforcement"]) &&
+    isNonEmptyString(value.agentName) && isDateTimeOffset(value.startsAt) && isDateTimeOffset(value.endsAt) &&
+    Date.parse(value.startsAt) < Date.parse(value.endsAt) && isDateTimeOffset(value.assignedAt) &&
+    isNonEmptyString(value.assignedByName) && typeof value.isReinforcement === "boolean";
+}
+
+/**
+ * A coverage of the board. `assignment` says whether the read asked for who assigned it (G1): only then may it carry
+ * `assignedAt` and `assignedByName`. A `released` one, of `releasedCoverages`, carries all four keys of G1; an open one
+ * never carries `releasedAt`.
+ */
+function isOccCoverage(item: unknown, assignment: boolean, released = false): boolean {
+  if (!isRecord(item)) return false;
+  const keys = released ? [...OCC_COVERAGE_KEYS, "assignedAt", "assignedByName", "releasedAt", "releasedByName"]
+    : assignment ? [...OCC_COVERAGE_KEYS, "assignedAt", "assignedByName"] : OCC_COVERAGE_KEYS;
+  return hasOnlyKeys(item, keys) &&
+    isUuid(item.id) && isUuid(item.agentId) && isNonEmptyString(item.agentName) && isUuid(item.terminalId) &&
+    isNonEmptyString(item.terminalCode) && Array.isArray(item.stands) && item.stands.every(stand => isRecord(stand) &&
+      hasOnlyKeys(stand, ["standId", "code"]) && isUuid(stand.standId) && isNonEmptyString(stand.code)) &&
+    isDateTimeOffset(item.startsAt) && isDateTimeOffset(item.endsAt) && isOptionalNullable(item.mentorAgentId, isUuid) &&
+    isOptionalNullable(item.mentorName, isNonEmptyString) && isOptionalNullable(item.vehicleCode, isNonEmptyString) &&
+    typeof item.isReinforcement === "boolean" &&
+    (released ? isDateTimeOffset(item.assignedAt) && isNonEmptyString(item.assignedByName) &&
+        isDateTimeOffset(item.releasedAt) && isNonEmptyString(item.releasedByName)
+      : (item.assignedAt === undefined || isDateTimeOffset(item.assignedAt)) &&
+        (item.assignedByName === undefined || isNonEmptyString(item.assignedByName)) &&
+        (item.assignedAt === undefined) === (item.assignedByName === undefined));
+}
+
+/**
+ * The coverage board. G1: `detail.assignment` and `detail.released` say what the read asked for; only then may the board
+ * carry who assigned each coverage, each stand's open coverages and the released coverages of the date. A board that did
+ * not ask, or a command's, never carries them, and an API that ignores the parameters answers without.
+ */
+function isOccCoverageBoard(value: unknown, stationId?: string,
+  detail: { assignment?: boolean | undefined; released?: boolean | undefined } = {}): value is OccCoverageBoardResponse {
+  const released = detail.released === true;
+  const assignment = released || detail.assignment === true;
   return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "date", "terminals", "stands", "constraints",
-      "agents", "coverages", "canAssign", "canConfigure"]) &&
+      "agents", "coverages", "canAssign", "canConfigure", ...(released ? ["releasedCoverages"] : [])]) &&
+    (value.releasedCoverages === undefined || (Array.isArray(value.releasedCoverages) &&
+      value.releasedCoverages.length <= 500 && value.releasedCoverages.every(item => isOccCoverage(item, true, true)))) &&
     isUuid(value.stationId) && (stationId === undefined || value.stationId.toLowerCase() === stationId) &&
     isNonEmptyString(value.stationCode) && isDateOnly(value.date) &&
     typeof value.canAssign === "boolean" && typeof value.canConfigure === "boolean" &&
@@ -3593,7 +3656,9 @@ function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCov
       Number.isInteger(item.maxStandsPerAgent) && typeof item.requiresBridgeQualification === "boolean") &&
     Array.isArray(value.stands) && value.stands.every(item => isRecord(item) &&
       hasOnlyKeys(item, ["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize", "coveredBy",
-        "version"]) &&
+        "version", ...(assignment ? ["coverages"] : [])]) &&
+      (item.coverages === undefined || (Array.isArray(item.coverages) && item.coverages.length <= 100 &&
+        item.coverages.every(isOccCoverageStandAssignment))) &&
       isUuid(item.standId) && isNonEmptyString(item.code) && isOptionalNullable(item.terminalId, isUuid) &&
       typeof item.isActive === "boolean" && typeof item.hasBoardingBridge === "boolean" && typeof item.isRemote === "boolean" &&
       (item.maxAircraftSize == null || AIRCRAFT_SIZES.has(item.maxAircraftSize as string)) && isStringList(item.coveredBy) &&
@@ -3610,15 +3675,7 @@ function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCov
       isNonEmptyString(item.terminalCode) && isDateTimeOffset(item.shiftStartsAt) && isDateTimeOffset(item.shiftEndsAt) &&
       ["isJunior", "hasAirportPermit", "hasDriverLicense", "hasBridgeQualification", "isAbsent"]
         .every(key => typeof item[key] === "boolean")) &&
-    Array.isArray(value.coverages) && value.coverages.every(item => isRecord(item) &&
-      hasOnlyKeys(item, ["id", "agentId", "agentName", "terminalId", "terminalCode", "stands", "startsAt", "endsAt",
-        "mentorAgentId", "mentorName", "vehicleCode", "isReinforcement"]) &&
-      isUuid(item.id) && isUuid(item.agentId) && isNonEmptyString(item.agentName) && isUuid(item.terminalId) &&
-      isNonEmptyString(item.terminalCode) && Array.isArray(item.stands) && item.stands.every(stand => isRecord(stand) &&
-        hasOnlyKeys(stand, ["standId", "code"]) && isUuid(stand.standId) && isNonEmptyString(stand.code)) &&
-      isDateTimeOffset(item.startsAt) && isDateTimeOffset(item.endsAt) && isOptionalNullable(item.mentorAgentId, isUuid) &&
-      isOptionalNullable(item.mentorName, isNonEmptyString) && isOptionalNullable(item.vehicleCode, isNonEmptyString) &&
-      typeof item.isReinforcement === "boolean");
+    Array.isArray(value.coverages) && value.coverages.every(item => isOccCoverage(item, assignment));
 }
 
 function isOwnRampCoverage(value: unknown): value is RampOwnCoverageListResponse {
@@ -3798,30 +3855,64 @@ function validatedSignaturePng(value: unknown): string {
 }
 
 const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity",
-  "daily-close"]);
+  "daily-close", "coverage-assignments"]);
 const OCC_REPORT_FORMATS = new Set<string>(["csv", "xlsx", "pdf"]);
 
 function validatedOccReportQuery(key: OccReportKey, query: OccReportQuery): OccReportQuery {
   if (!OCC_REPORT_KEYS.has(key) || !isRecord(query) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
       query.from > query.to ||
       (query.page !== undefined && (!Number.isInteger(query.page) || query.page < 1)) ||
-      (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)))
+      (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)) ||
+      (query.status !== undefined && !/^[A-Za-z]{1,40}$/.test(query.status)))
     throw new TypeError("OCC report query is invalid.");
   return { stationId: validatedUuid(query.stationId, "stationId"), from: query.from, to: query.to,
-    ...(query.page !== undefined && { page: query.page }), ...(query.limit !== undefined && { limit: query.limit }) };
+    ...(query.page !== undefined && { page: query.page }), ...(query.limit !== undefined && { limit: query.limit }),
+    ...occReportFilters({
+      ...(query.airlineId !== undefined && { airlineId: validatedUuid(query.airlineId, "airlineId") }),
+      ...(query.status !== undefined && { status: query.status }),
+      ...(query.agentId !== undefined && { agentId: validatedUuid(query.agentId, "agentId") }),
+      ...(query.terminalId !== undefined && { terminalId: validatedUuid(query.terminalId, "terminalId") }),
+    }) };
+}
+
+/** The optional filters of an OCC report query, the same on the page and on the export. */
+function occReportFilters(scope: Pick<OccReportQuery, "airlineId" | "status" | "agentId" | "terminalId">) {
+  return { ...(scope.airlineId && { airlineId: scope.airlineId }), ...(scope.status && { status: scope.status }),
+    ...(scope.agentId && { agentId: scope.agentId }), ...(scope.terminalId && { terminalId: scope.terminalId }) };
 }
 
 function isOccReportCatalog(value: unknown): value is OccReportCatalogResponse {
   return isRecord(value) && hasOnlyKeys(value, ["reports", "maxRangeDays"]) &&
     Number.isInteger(value.maxRangeDays) && Array.isArray(value.reports) &&
-    value.reports.every(report => isRecord(report) && hasOnlyKeys(report, ["key", "title", "description", "columns"]) &&
+    value.reports.every(report => isRecord(report) &&
+      hasOnlyKeys(report, ["key", "title", "description", "columns", "columnTypes", "filters", "asOfDate"]) &&
+      (report.columnTypes === undefined || Array.isArray(report.columnTypes) && report.columnTypes.every(isNonEmptyString)) &&
+      (report.filters === undefined || Array.isArray(report.filters) && report.filters.every(filter => isRecord(filter) &&
+        isNonEmptyString(filter.key) && isNonEmptyString(filter.label) && isNonEmptyString(filter.parameter) &&
+        Array.isArray(filter.options))) &&
+      (report.asOfDate === undefined || typeof report.asOfDate === "boolean") &&
       typeof report.key === "string" && OCC_REPORT_KEYS.has(report.key) && isNonEmptyString(report.title) &&
       isNonEmptyString(report.description) && Array.isArray(report.columns) && report.columns.every(isNonEmptyString));
 }
 
+function isHumanResourcesReportCatalog(value: unknown): value is HumanResourcesReportCatalogResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["reports", "maxRangeDays"]) && Number.isInteger(value.maxRangeDays) &&
+    Array.isArray(value.reports) && value.reports.every(report => isRecord(report) &&
+      hasOnlyKeys(report, ["key", "title", "description", "columns", "columnTypes", "asOfDate"]) &&
+      ["expirations", "account-movements", "staff-distribution", "qualification-coverage"].includes(String(report.key)) &&
+      isNonEmptyString(report.title) && typeof report.description === "string" &&
+      Array.isArray(report.columns) && report.columns.every(isNonEmptyString) &&
+      Array.isArray(report.columnTypes) && report.columnTypes.length === report.columns.length &&
+      typeof report.asOfDate === "boolean");
+}
+
 function isOccReportPage(value: unknown, key: OccReportKey, query: OccReportQuery): value is OccReportPageResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["key", "title", "stationId", "stationCode", "from", "to", "asOf",
-      "columns", "rows", "page", "limit", "hasMore"]) || value.key !== key || !isNonEmptyString(value.title) ||
+      "columns", "rows", "page", "limit", "hasMore", "stationName", "columnTypes", "appliedFilters", "totalRows",
+      "summary", "totals", "generatedBy"]) ||
+      (value.appliedFilters !== undefined && !Array.isArray(value.appliedFilters)) ||
+      (value.summary !== undefined && !Array.isArray(value.summary)) ||
+      (value.totals !== undefined && !Array.isArray(value.totals)) || value.key !== key || !isNonEmptyString(value.title) ||
       !isUuid(value.stationId) || value.stationId.toLowerCase() !== query.stationId.toLowerCase() ||
       !isNonEmptyString(value.stationCode) || value.from !== query.from || value.to !== query.to ||
       !isDateTimeOffset(value.asOf) || typeof value.hasMore !== "boolean" ||
@@ -5499,8 +5590,9 @@ function validatedHumanResourcesReportQuery(
         "documentKind", "validity"]) ||
     !isUuid(query.stationId) || !isDateOnly(query.from) ||
     !isDateOnly(query.to) || query.from > query.to ||
+    // ADR-0048: up to a year (366 days counting both ends), as the API.
     (Date.parse(`${query.to}T00:00:00Z`) -
-      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 366 ||
     (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
       (query.limit !== undefined && (!isInt32(query.limit) ||
         query.limit < 1 || query.limit > 100)) ||
@@ -5631,7 +5723,8 @@ function isHumanResourcesReportPage(value: unknown, kind: HumanResourcesReportKi
         typeof row.positionCode === "string") && isDateOnly(row.workDate) &&
       typeof row.startsAtLocal === "string" && typeof row.endsAtLocal === "string";
     return hasOnlyKeys(row, ["equipmentTypeId", "equipmentCode",
-      "equipmentName", "eligibleAgents", "qualifiedAgents"]) &&
+      "equipmentName", "eligibleAgents", "qualifiedAgents", "stationAgents"]) &&
+      (row.stationAgents === undefined || isInt32(row.stationAgents)) &&
       isUuid(row.equipmentTypeId) && isNonEmptyString(row.equipmentCode) &&
       isNonEmptyString(row.equipmentName) && isInt32(row.eligibleAgents) &&
       row.eligibleAgents >= 0 && isInt32(row.qualifiedAgents) &&
@@ -7898,11 +7991,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return positionCommand(getLocateOccStandUrl(stand),
         { latitude, longitude, operationDate: request.operationDate }, options, "PUT");
     },
-    async getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+    async getOccCoverage(stationId: string, date: string, options?: GetOccCoverageOptions) {
       const station = validatedUuid(stationId, "stationId");
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
-      const result = await execute(getGetOccCoverageUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
-      if (!isOccCoverageBoard(result.data, station)) throw malformedResponse(result.status);
+      const { includeAssignment, includeReleased, ...init } = options ?? {};
+      if ((includeAssignment !== undefined && typeof includeAssignment !== "boolean") ||
+          (includeReleased !== undefined && typeof includeReleased !== "boolean"))
+        throw new TypeError("includeAssignment and includeReleased must be booleans.");
+      // Without them the parameters stay out of the URL, as older clients send it (G1).
+      const query = { stationId: station, date, ...(includeAssignment && { includeAssignment: true }),
+        ...(includeReleased && { includeReleased: true }) };
+      const result = await execute(getGetOccCoverageUrl(query), { ...init, method: "GET" }, true);
+      if (!isOccCoverageBoard(result.data, station, { assignment: includeAssignment, released: includeReleased }))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions) {
@@ -8213,6 +8314,11 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccReadyContracts(result.data, station, date)) throw malformedResponse(result.status);
       return result.data;
     },
+    async listHumanResourcesReports(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListHumanResourcesReportsUrl(), { ...options, method: "GET" }, true);
+      if (!isHumanResourcesReportCatalog(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
     async listOccReports(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getListOccReportsUrl(), { ...options, method: "GET" }, true);
       if (!isOccReportCatalog(result.data)) throw malformedResponse(result.status);
@@ -8230,7 +8336,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (scope.page !== undefined || scope.limit !== undefined || !OCC_REPORT_FORMATS.has(format))
         throw new TypeError("OCC report export query is invalid.");
       return executeReportDocument(getExportOccReportUrl(key, { stationId: scope.stationId, from: scope.from,
-        to: scope.to, format }), format, options);
+        to: scope.to, format, ...occReportFilters(scope) }), format, options);
     },
     async validateHumanResourcesAttendance(
       assignmentId: string, stationId: string,

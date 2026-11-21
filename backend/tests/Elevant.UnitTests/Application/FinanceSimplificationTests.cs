@@ -46,11 +46,12 @@ public sealed class FinanceSimplificationTests
         var renderer = new FinancialDocumentPdfRenderer();
         var card = PdfFontInspector.Text(renderer.RenderCardReceipt(new CardPaymentReceiptData(Guid.NewGuid(),
             "Aerolínea Demo", "NF-0193f4c2", "E310000000001", "Visa", "4242", "ABC123", 118m, "USD", At, "REC-0001")));
-        var report = PdfFontInspector.Text(renderer.RenderReport(new FinanceReportData("sales", "Ventas (e-CF simulado)",
+        var report = PdfFontInspector.Text(new Elevant.Infrastructure.Documents.ReportRenderer().RenderPdf(
+            FinanceReportDocuments.ToDocument(new FinanceReportData("sales", "Ventas (e-CF simulado)",
             "Facturas e-CF del período.", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 5), null,
             [new FinanceReportMetric("Facturas e-CF", "1", "number")],
             [new FinanceReportColumn("fiscalNumber", "e-NCF", "text"), new FinanceReportColumn("total", "Total", "money")],
-            [["E310000000001", "118.00"]], []), "Período 2026-11-01 a 2026-11-05"));
+            [["E310000000001", "118.00"]], []), "Ana Pérez", At)));
         foreach (var text in new[] { card, report })
         {
             Assert.Contains("SIMULACIÓN — SIN VALIDEZ FISCAL", text);

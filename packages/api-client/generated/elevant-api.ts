@@ -2945,6 +2945,11 @@ export interface FinancePendingOperationsResponse {
   totalPending: number;
 }
 
+export interface FinanceReportAppliedFilter {
+  label: string;
+  value: string;
+}
+
 export interface FinanceReportColumn {
   key: string;
   label: string;
@@ -2957,6 +2962,8 @@ export interface FinanceReportMetric {
   type: string;
   /** @nullable */
   currencyCode?: string | null;
+  /** @nullable */
+  context?: string | null;
 }
 
 export interface FinanceReportData {
@@ -2971,12 +2978,14 @@ export interface FinanceReportData {
   columns: FinanceReportColumn[];
   rows: string[][];
   notes: string[];
+  filters: FinanceReportAppliedFilter[];
 }
 
 export interface FinanceReportDefinition {
   key: string;
   title: string;
   description: string;
+  asOfDate: boolean;
 }
 
 export interface FinanceServiceOptionData {
@@ -3558,6 +3567,7 @@ export interface HumanResourcesQualificationCoverageResponse {
   equipmentName: string;
   eligibleAgents: number;
   qualifiedAgents: number;
+  stationAgents: number;
 }
 
 export interface HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse {
@@ -3637,6 +3647,20 @@ export interface HumanResourcesQualificationPage {
 export interface HumanResourcesQualificationRecorded {
   id: string;
   cycleNumber: number;
+}
+
+export interface HumanResourcesReportDefinitionResponse {
+  key: string;
+  title: string;
+  description: string;
+  columns: string[];
+  columnTypes: string[];
+  asOfDate: boolean;
+}
+
+export interface HumanResourcesReportCatalogResponse {
+  reports: HumanResourcesReportDefinitionResponse[];
+  maxRangeDays: number;
 }
 
 export interface HumanResourcesScheduleWarningEvidenceResponse {
@@ -4555,6 +4579,15 @@ export interface OccCoverageTerminalResponse {
   requiresBridgeQualification: boolean;
 }
 
+export interface OccCoverageStandAssignmentResponse {
+  agentName: string;
+  startsAt: string;
+  endsAt: string;
+  assignedAt: string;
+  assignedByName: string;
+  isReinforcement: boolean;
+}
+
 export interface OccCoverageStandResponse {
   standId: string;
   code: string;
@@ -4567,6 +4600,8 @@ export interface OccCoverageStandResponse {
   maxAircraftSize?: string | null;
   coveredBy: string[];
   version: string;
+  /** @nullable */
+  coverages?: OccCoverageStandAssignmentResponse[] | null;
 }
 
 export interface OccStandConstraintResponse {
@@ -4599,6 +4634,14 @@ export interface OccCoverageResponse {
   /** @nullable */
   vehicleCode?: string | null;
   isReinforcement: boolean;
+  /** @nullable */
+  assignedAt?: string | null;
+  /** @nullable */
+  assignedByName?: string | null;
+  /** @nullable */
+  releasedAt?: string | null;
+  /** @nullable */
+  releasedByName?: string | null;
 }
 
 export interface OccCoverageBoardResponse {
@@ -4612,6 +4655,8 @@ export interface OccCoverageBoardResponse {
   coverages: OccCoverageResponse[];
   canAssign: boolean;
   canConfigure: boolean;
+  /** @nullable */
+  releasedCoverages?: OccCoverageResponse[] | null;
 }
 
 export interface OccFlightFeedBudgetResponse {
@@ -5073,11 +5118,26 @@ export interface OccReadyContractsResponse {
   contracts: OccReadyContractResponse[];
 }
 
+export interface OccReportFilterOptionResponse {
+  code: string;
+  label: string;
+}
+
+export interface OccReportFilterDefinitionResponse {
+  key: string;
+  label: string;
+  parameter: string;
+  options: OccReportFilterOptionResponse[];
+}
+
 export interface OccReportDefinitionResponse {
   key: string;
   title: string;
   description: string;
   columns: string[];
+  columnTypes: string[];
+  filters: OccReportFilterDefinitionResponse[];
+  asOfDate: boolean;
 }
 
 export interface OccReportCatalogResponse {
@@ -5088,6 +5148,23 @@ export interface OccReportCatalogResponse {
 export interface OccReportCellResponse {
   value: string;
   type: string;
+}
+
+export interface ReportAppliedFilterResponse {
+  label: string;
+  value: string;
+}
+
+export interface ReportMetricResponse {
+  label: string;
+  value: string;
+  /** @nullable */
+  context?: string | null;
+}
+
+export interface OccReportTotalRowResponse {
+  label: string;
+  cells: OccReportCellResponse[];
 }
 
 export interface OccReportPageResponse {
@@ -5103,6 +5180,15 @@ export interface OccReportPageResponse {
   page: number;
   limit: number;
   hasMore: boolean;
+  /** @nullable */
+  stationName?: string | null;
+  columnTypes: string[];
+  appliedFilters: ReportAppliedFilterResponse[];
+  totalRows: number;
+  summary: ReportMetricResponse[];
+  totals: OccReportTotalRowResponse[];
+  /** @nullable */
+  generatedBy?: string | null;
 }
 
 export interface OccReviewBillingExclusionResponse {
@@ -7492,6 +7578,8 @@ airport?: string;
 export type GetOccCoverageParams = {
 stationId: string;
 date: string;
+includeAssignment?: boolean;
+includeReleased?: boolean;
 };
 
 export type ReleaseOccCoverageParams = {
@@ -7566,6 +7654,10 @@ from: string;
 to: string;
 page?: number;
 limit?: number;
+airlineId?: string;
+status?: string;
+agentId?: string;
+terminalId?: string;
 };
 
 export type ExportOccReportParams = {
@@ -7573,6 +7665,10 @@ stationId: string;
 from: string;
 to: string;
 format: string;
+airlineId?: string;
+status?: string;
+agentId?: string;
+terminalId?: string;
 };
 
 export type GetOccReviewQueueParams = {
@@ -16793,6 +16889,38 @@ const res = await fetch(getRecordHumanResourcesQualificationUrl(id),
 
 
 
+export const getListHumanResourcesReportsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/reports`
+}
+
+/**
+ * @summary The four reports with their typed columns and whether each is «a una fecha de corte» (ADR-0048): then the screen
+asks only for the date and hides «Desde».
+ */
+export const listHumanResourcesReports = async ( options?: RequestInit): Promise<HumanResourcesReportCatalogResponse> => {
+
+  const res = await fetch(getListHumanResourcesReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesReportCatalogResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListHumanResourcesExpirationsUrl = (params: ListHumanResourcesExpirationsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -17668,6 +17796,14 @@ export const getGetOccCoverageUrl = (params: GetOccCoverageParams,) => {
   return stringifiedParams.length > 0 ? `/api/v1/occ/coverage?${stringifiedParams}` : `/api/v1/occ/coverage`
 }
 
+/**
+ * @summary The coverage board of a station and date. G1: with `includeAssignment=true` every coverage also carries when
+and by whom OCC assigned it (`assignedAt`, `assignedByName`) and every stand its open coverages
+(`coverages`: agent, window, assignment); `includeReleased=true` does the same and adds the coverages of
+the date OCC released (`releasedCoverages`, with `releasedAt` and `releasedByName`). Without them,
+and in the board the commands answer, the keys are not written: a client deployed before them validates the
+board's keys and keeps accepting it (expand).
+ */
 export const getOccCoverage = async (params: GetOccCoverageParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
   const res = await fetch(getGetOccCoverageUrl(params),

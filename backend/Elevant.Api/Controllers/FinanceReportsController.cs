@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
+using Elevant.Application.Abstractions.Documents;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Finance;
@@ -23,10 +24,10 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/finance/reports")]
 public sealed class FinanceReportsController(
     IFinanceReportStore store,
-    IFinancialDocumentPdfRenderer renderer,
-    IFinanceReportXlsxRenderer xlsx,
+    IReportRenderer engine,
     IActorContextResolver actors,
-    IFinanceReportExportAudit audit) : ControllerBase
+    IFinanceReportExportAudit audit,
+    TimeProvider timeProvider) : ControllerBase
 {
     /// <summary>Longest period a report covers, in days.</summary>
     private const int MaxPeriodDays = 731;
@@ -58,8 +59,9 @@ public sealed class FinanceReportsController(
     /// <summary>Exports a report as CSV (UTF-8 with BOM), XLSX or PDF; every export is audited.</summary>
     [HttpGet("{reportKey}/export", Name = "ExportFinanceReport")]
     [FinanceQueryProblem(FinanceResults.InvalidReportQueryCode)]
-    [Produces("text/csv", "application/pdf")]
-    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "text/csv", "application/pdf")]
+    [Produces("text/csv", "application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "text/csv", "application/pdf",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
@@ -83,14 +85,12 @@ public sealed class FinanceReportsController(
         if (report is null) return FinanceResults.Forbidden(this, "Finance report access is forbidden.");
         await audit.RecordAsync(actorId, reportKey, format, filter, cancellationToken);
         var name = $"elevant-{reportKey}-{from:yyyyMMdd}-{to:yyyyMMdd}";
-        var filters = $"Período {from:yyyy-MM-dd} a {to:yyyy-MM-dd}" +
-            (currency is null ? string.Empty : $" · Moneda {currency}") +
-            (stationId is null ? " · Todas las estaciones autorizadas" : " · Estación filtrada") +
-            (airlineId is null ? string.Empty : " · Aerolínea filtrada");
-        if (format == "xlsx") return File(xlsx.Render(report, filters), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{name}.xlsx");
-        return format == "csv"
-            ? File(FinanceReportCsv.Render(report), "text/csv; charset=utf-8", $"{name}.csv")
-            : File(renderer.RenderReport(report, filters), "application/pdf", $"{name}.pdf");
+        if (format == "csv") return File(FinanceReportCsv.Render(report), "text/csv; charset=utf-8", $"{name}.csv");
+        // ADR-0048: the common engine, with the filters by name and «Generado el … por …».
+        var document = FinanceReportDocuments.ToDocument(report, actor.DisplayName, timeProvider.GetUtcNow());
+        return format == "xlsx"
+            ? File(engine.RenderXlsx(document), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{name}.xlsx")
+            : File(engine.RenderPdf(document), "application/pdf", $"{name}.pdf");
     }
 
     /// <summary>An ordered period of at most two years and, when given, a currency Finance invoices in.</summary>

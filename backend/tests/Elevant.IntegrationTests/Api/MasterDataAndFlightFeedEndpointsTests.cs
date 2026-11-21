@@ -470,7 +470,7 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
                     input.MaxAircraftSize, [], "AAAAAAAAB9F=")], [], [], [], true, true), null, []));
         }
 
-        public Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date,
+        public Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date, bool includeReleased = false,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,

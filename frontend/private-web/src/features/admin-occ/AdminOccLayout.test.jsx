@@ -93,3 +93,33 @@ it('the console route fills main without padding; other modules keep scrolling',
     other.unmount();
   }
 });
+
+function renderWithAccess(access) {
+  return render(
+    <DepartmentAccessProvider observe={false} initialAccess={access}>
+      <AdminOccLayout user={USER} onLogout={vi.fn()}><ShellMarker /></AdminOccLayout>
+    </DepartmentAccessProvider>,
+  );
+}
+
+it('opens Panorama at the OCC entry for an account that may read it', async () => {
+  window.history.replaceState({}, '', '/admin-occ');
+  renderWithAccess(ACCESS);
+  await vi.waitFor(() => expect(window.location.pathname).toBe('/admin-occ/dashboard'));
+});
+
+it('sends an account without the dashboard grant to its first permitted module', async () => {
+  window.history.replaceState({}, '', '/admin-occ/dashboard');
+  renderWithAccess({ kind: 'Member', department: 'operations', permissions: ['operations.reports.read'], stations: [],
+    canManageDepartmentUsers: false, canValidateAccessRequests: false });
+  await vi.waitFor(() => expect(window.location.pathname).toBe('/admin-occ/reports'));
+});
+
+it('shows the no-modules notice to an account without OCC modules', async () => {
+  window.history.replaceState({}, '', '/admin-occ/dashboard');
+  renderWithAccess({ kind: 'Member', department: 'operations', permissions: [], stations: [],
+    canManageDepartmentUsers: false, canValidateAccessRequests: false });
+  expect(await screen.findByText('Sin módulos asignados')).toBeInTheDocument();
+  expect(screen.getByText(/Tu cuenta todavía no tiene permisos en este departamento/)).toBeInTheDocument();
+  expect(window.location.pathname).toBe('/admin-occ/dashboard');
+});

@@ -23,7 +23,7 @@ import { departmentUsersMessages, enumLabel } from './departmentUsersMessages';
 import { permissionLabels } from './PermissionMatrix';
 import ProfilesPanel from './ProfilesPanel';
 import GeneratePasswordField from './GeneratePasswordField';
-import { DepartmentActivityPanel, DepartmentPositionsPanel, DepartmentRequisitionsPanel } from './DepartmentStaffPanels';
+import { DepartmentActivityPanel, DepartmentPositionsPanel } from './DepartmentStaffPanels';
 import RampProfilesPanel from '../human-resources/users/RampProfilesPanel';
 import { useDepartmentGovernance } from './useDepartmentGovernance';
 import { createCommandKeyHolder } from '../../services/commandKeys';
@@ -178,7 +178,6 @@ export default function DepartmentUsersPage({ department }) {
             { id: 'profiles', label: t('tabs.profiles'), count: data.profiles.filter(profile => profile.isActive).length },
             ...(department === DEPARTMENTS.OPERATIONS ? [{ id: 'ramp', label: t('tabs.ramp') }] : []),
             { id: 'positions', label: t('tabs.positions') },
-            { id: 'requisitions', label: t('tabs.requisitions') },
             { id: 'activity', label: t('tabs.activity') },
           ]} />
           {tab === 'users' && (
@@ -225,7 +224,6 @@ export default function DepartmentUsersPage({ department }) {
             <RampProfilesPanel canEdit embedded stationFilter={superAdministrator ? null : access?.stations.map(station => station.id)} />
           )}
           {tab === 'positions' && <DepartmentPositionsPanel department={department} profiles={data.profiles} />}
-          {tab === 'requisitions' && <DepartmentRequisitionsPanel department={department} stations={data.options?.stations} />}
           {tab === 'activity' && <DepartmentActivityPanel department={department} />}
           {tab === 'profiles' && (
             <ProfilesPanel department={department} profiles={data.profiles} catalog={data.catalog} onChanged={done} />

@@ -90,7 +90,7 @@ paginación se aplica en la vista: el endpoint sigue entregando la lista complet
 
 Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente usa Next.js App Router, React 19 y Tailwind CSS. El enrutamiento y los guards viven en `app/`; las pantallas funcionales existentes permanecen en `src/features/`.
 
-En OCC, **Estación → Mis gastos** abre `/admin-occ/expenses`. El enlace se muestra en el riel lateral y su versión móvil; la API determina qué gastos y acciones puede ver cada cuenta.
+La versión 1 no muestra «Mis gastos» en ningún departamento ni «Gastos de empleados» en Finanzas (ADR-0047): la API y las tablas de gastos se conservan, pero ninguna pantalla las usa. `/admin-occ/expenses` ya no existe.
 
 ## Ejecutar y validar
 

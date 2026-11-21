@@ -29,11 +29,9 @@ export const ADMIN_OCC_MODULE_IDS = {
   NOTIFICATIONS: 'notifications',
   CHAT: 'chat',
   DEPARTMENT_USERS: 'users',
-  EXPENSES: 'expenses',
 };
 
 export const ADMIN_OCC_NAVIGATION = [
-  { id: ADMIN_OCC_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: `${ADMIN_OCC_BASE_PATH}/expenses`, icon: BarChartIcon, description: 'Gastos propios y revisiones del departamento.' },
   { id: ADMIN_OCC_MODULE_IDS.DASHBOARD, permission: 'operations.dashboard.read', label: 'Dashboard', path: `${ADMIN_OCC_BASE_PATH}/dashboard`, icon: LayoutGridIcon, description: 'Vista general en tiempo real de vuelos, servicios, agentes y aprobaciones del día.' },
   { id: ADMIN_OCC_MODULE_IDS.PLANNING, permission: 'operations.planning.read', label: 'Planificación operativa', path: `${ADMIN_OCC_BASE_PATH}/planning`, icon: CalendarIcon, description: 'Consulta de itinerarios y asignación de agentes y posiciones para las operaciones del día.' },
   { id: ADMIN_OCC_MODULE_IDS.COVERAGE, permission: 'operations.coverage.read', label: 'Cobertura de posiciones', path: `${ADMIN_OCC_BASE_PATH}/position-coverage`, icon: UsersIcon, description: 'Qué agente cubre cada posición durante su turno, con las reglas de asignación y las posiciones combinadas.' },
@@ -56,5 +54,5 @@ export const OCC_NAV_SECTIONS = Object.freeze([
   { id: 'live', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD, ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, ADMIN_OCC_MODULE_IDS.POSITIONS_MAP, ADMIN_OCC_MODULE_IDS.CHAT] },
   { id: 'plan', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.COVERAGE, ADMIN_OCC_MODULE_IDS.READY_CONTRACTS] },
   { id: 'review', items: [ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS, ADMIN_OCC_MODULE_IDS.NOTIFICATIONS] },
-  { id: 'station', items: [ADMIN_OCC_MODULE_IDS.MASTER_DATA, ADMIN_OCC_MODULE_IDS.DEVICES, ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS, ADMIN_OCC_MODULE_IDS.EXPENSES] },
+  { id: 'station', items: [ADMIN_OCC_MODULE_IDS.MASTER_DATA, ADMIN_OCC_MODULE_IDS.DEVICES, ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS] },
 ].map(section => Object.freeze({ ...section, items: Object.freeze(section.items) })));

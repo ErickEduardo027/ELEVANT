@@ -1,7 +1,5 @@
 import {
   BarChartIcon,
-  BellIcon,
-  BriefcaseIcon,
   CalendarIcon,
   ChecklistIcon,
   IdCardIcon,
@@ -16,8 +14,6 @@ export const HUMAN_RESOURCES_BASE_PATH = '/gestion-humana';
 export const HUMAN_RESOURCES_MODULE_IDS = {
   DASHBOARD: 'dashboard',
   EMPLOYEES: 'employees',
-  POSITIONS: 'positions',
-  REQUISITIONS: 'requisitions',
   USERS: 'users',
   CERTIFICATIONS: 'certifications',
   PERMITS: 'permits',
@@ -25,15 +21,12 @@ export const HUMAN_RESOURCES_MODULE_IDS = {
   ATTENDANCE: 'attendance',
   REPORTS: 'reports',
   AUDIT: 'audit',
-  NOTIFICATIONS: 'notifications',
   ACCESS_REQUESTS: 'access-requests',
   DEPARTMENT_USERS: 'department-users',
-  EXPENSES: 'expenses',
   SETTINGS: 'settings',
 };
 
 export const HUMAN_RESOURCES_NAVIGATION = [
-  { id: HUMAN_RESOURCES_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: HUMAN_RESOURCES_BASE_PATH + '/expenses', icon: BriefcaseIcon, description: 'Gastos propios y revisiones del departamento.' },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.DASHBOARD, permission: 'human_resources.dashboard.read',
     label: 'Dashboard',
@@ -47,20 +40,6 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/employees`,
     icon: IdCardIcon,
     description: 'Expedientes del personal; solo los empleados registrados reciben acceso.',
-  },
-  {
-    id: HUMAN_RESOURCES_MODULE_IDS.POSITIONS, permission: 'human_resources.positions.read',
-    label: 'Puestos',
-    path: `${HUMAN_RESOURCES_BASE_PATH}/positions`,
-    icon: BriefcaseIcon,
-    description: 'Cargos del organigrama de cada departamento.',
-  },
-  {
-    id: HUMAN_RESOURCES_MODULE_IDS.REQUISITIONS, permission: 'human_resources.requisitions.read',
-    label: 'Requisiciones',
-    path: `${HUMAN_RESOURCES_BASE_PATH}/requisitions`,
-    icon: BriefcaseIcon,
-    description: 'Personal que piden los departamentos.',
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.USERS, permission: 'human_resources.ramp_profiles.read',
@@ -112,13 +91,6 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     description: 'Acciones críticas y cambios de acceso.',
   },
   {
-    id: HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS, permission: 'human_resources.notifications.read',
-    label: 'Notificaciones',
-    path: `${HUMAN_RESOURCES_BASE_PATH}/notifications`,
-    icon: BellIcon,
-    description: 'Historial de alertas y avisos del sistema.',
-  },
-  {
     id: HUMAN_RESOURCES_MODULE_IDS.ACCESS_REQUESTS,
     permission: 'human_resources.access_requests.read',
     label: 'Validaciones de acceso',
@@ -143,3 +115,31 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     description: 'Tipos de carnet y permiso y equipos de habilitación.',
   },
 ];
+
+/**
+ * The menu of Gestión Humana in the version 1 (ADR-0047), grouped by sections like Finanzas: Personal · Operación de
+ * rampa · Seguimiento · Accesos, and Configuración on its own. It only orders the modules `allowedNavigation` already
+ * permitted; it neither grants nor hides access. A section without a label puts its modules at the first level.
+ */
+export const HUMAN_RESOURCES_NAV_SECTIONS = Object.freeze([
+  { id: 'section-staff', label: 'Personal', icon: IdCardIcon, description: 'Resumen y expedientes del personal.',
+    items: [HUMAN_RESOURCES_MODULE_IDS.DASHBOARD, HUMAN_RESOURCES_MODULE_IDS.EMPLOYEES] },
+  { id: 'section-ramp', label: 'Operación de rampa', icon: UsersIcon,
+    description: 'Agentes de rampa, habilitaciones, carnets, horarios y asistencia.',
+    items: [HUMAN_RESOURCES_MODULE_IDS.USERS, HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS, HUMAN_RESOURCES_MODULE_IDS.PERMITS,
+      HUMAN_RESOURCES_MODULE_IDS.SCHEDULES, HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE] },
+  { id: 'section-tracking', label: 'Seguimiento', icon: BarChartIcon, description: 'Reportes y trazabilidad.',
+    items: [HUMAN_RESOURCES_MODULE_IDS.REPORTS, HUMAN_RESOURCES_MODULE_IDS.AUDIT] },
+  { id: 'section-access', label: 'Accesos', icon: ShieldCheckIcon, description: 'Validaciones de acceso y usuarios del departamento.',
+    items: [HUMAN_RESOURCES_MODULE_IDS.ACCESS_REQUESTS, HUMAN_RESOURCES_MODULE_IDS.DEPARTMENT_USERS] },
+  { id: 'section-settings', items: [HUMAN_RESOURCES_MODULE_IDS.SETTINGS] },
+].map(section => Object.freeze({ ...section, items: Object.freeze(section.items) })));
+
+/** The sidebar entries for the allowed modules: each section keeps its allowed modules and vanishes when none remain. */
+export function humanResourcesNavigation(allowed) {
+  return HUMAN_RESOURCES_NAV_SECTIONS.flatMap(({ items, ...section }) => {
+    const children = items.map(id => allowed.find(item => item.id === id)).filter(Boolean);
+    if (!section.label) return children;
+    return children.length ? [{ ...section, children }] : [];
+  });
+}

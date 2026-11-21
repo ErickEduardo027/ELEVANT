@@ -693,3 +693,40 @@
     transition: none;
   }
 }
+
+/* Only on paper: the page title and the print date (PortalShell). */
+.printHeader {
+  display: none;
+}
+
+/* Printing a portal page (Ctrl+P): no sidebar, top bar, phone bar nor drawer; the content on white with its title and date. */
+@media print {
+  .sidebar,
+  .topbar,
+  .bottomNavigation,
+  .drawer,
+  .skipLink {
+    display: none !important;
+  }
+
+  .portalShell,
+  .workspace {
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .content {
+    width: 100%;
+    min-height: 0;
+    padding: 0 !important;
+  }
+
+  .printHeader {
+    display: block;
+    margin: 0 0 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #c8d3e0;
+    color: #243b55;
+    font-size: 0.75rem;
+  }
+}

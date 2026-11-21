@@ -2,10 +2,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { AirlineFinancePage } from "@/components/portal/AirlineFinancePage";
+import { AirlineInvoiceDetailPage } from "@/components/portal/AirlineInvoiceDetailPage";
+import { AirlineStatementPage } from "@/components/portal/AirlineTreasuryPanel";
 import type { AirlineTreasuryInvoice, AirlineTreasuryInvoiceDetail, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 
 const actor = { accountId: "40000000-0000-7000-8000-000000000003" };
-const bootstrap = { stations: [] };
+const bootstrap: { stations: { id: string; code: string; name: string; ianaTimeZone: string }[] } = { stations: [] };
 let financeRevision = 0;
 const getTreasuryStatement = vi.fn<(asOf: string, stationId?: string, signal?: AbortSignal) => Promise<AirlineTreasuryStatement>>();
 const getTreasuryInvoice = vi.fn<(id: string, signal?: AbortSignal) => Promise<AirlineTreasuryInvoiceDetail>>();
@@ -45,48 +47,99 @@ afterEach(() => {
 it("keeps the invoices on screen while they are read again and after a failed read (4-N25)", async () => {
   getTreasuryStatement.mockResolvedValueOnce(statement([invoice()]));
   const page = render(<AirlineFinancePage airlineName="Demo Airlines" />);
-  expect(await screen.findByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
+  expect(await screen.findByRole("link", { name: "E310000000001" })).toBeInTheDocument();
 
   let fail!: (error: unknown) => void;
   getTreasuryStatement.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
   financeRevision += 1;
   page.rerender(<AirlineFinancePage airlineName="Demo Airlines" />);
   expect(await screen.findByRole("status")).toHaveTextContent("Actualizando…");
-  expect(screen.getByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "E310000000001" })).toBeInTheDocument();
   expect(screen.queryByText("Cargando facturas autorizadas…")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Descargar PDF de Factura E310000000001" })).toBeInTheDocument();
 
   await act(async () => fail(new TypeError("Failed to fetch")));
   const alert = screen.getByRole("alert");
   expect(alert).toHaveTextContent("No se pudo actualizar. Mostramos los últimos datos.");
-  expect(screen.getByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "E310000000001" })).toBeInTheDocument();
   expect(screen.queryByText("No se pudieron consultar las facturas.")).not.toBeInTheDocument();
 
   getTreasuryStatement.mockResolvedValueOnce(statement([invoice(), invoice({ id: "74000000-0000-7000-8000-000000000019",
     fiscalNumber: "E310000000002", balance: 50, applied: 0, credited: 0 })]));
   fireEvent.click(within(alert).getByRole("button", { name: "Reintentar" }));
-  expect(await screen.findByRole("heading", { level: 2, name: "Factura E310000000002" })).toBeInTheDocument();
+  expect(await screen.findByRole("link", { name: "E310000000002" })).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-it("shows the airline's credit in its favour and mounts the statement in the same page (4-N30)", async () => {
+it("shows the airline's credit in its favour and links the statement, which has its own page (4-N30)", async () => {
   getTreasuryStatement.mockResolvedValue(statement([invoice()], [usd]));
-  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  const page = render(<AirlineFinancePage airlineName="Demo Airlines" />);
   const summary = await screen.findByLabelText("Resumen de facturas");
   // The credit note beyond what was paid (18) and the receipt not applied yet (800).
   expect(within(summary).getByText("Saldo a favor").nextSibling).toHaveTextContent("USD 818.00");
-  expect(screen.getByRole("region", { name: "Factura E310000000001" })).toHaveTextContent("Pagada");
+  expect(screen.getByRole("row", { name: /E310000000001/ })).toHaveTextContent("Pagada");
 
-  const statementButton = screen.getByRole("button", { name: "Estado de cuenta" });
-  expect(statementButton).toHaveAttribute("aria-pressed", "false");
-  fireEvent.click(statementButton);
-  expect(statementButton).toHaveAttribute("aria-pressed", "true");
+  const views = screen.getByRole("navigation", { name: "Vista de la cuenta financiera" });
+  expect(within(views).getByRole("link", { name: "Facturas" })).toHaveAttribute("aria-current", "page");
+  expect(within(views).getByRole("link", { name: "Estado de cuenta" })).toHaveAttribute("href", "/portal/finanzas/estado-de-cuenta");
+  page.unmount();
+
+  render(<AirlineStatementPage airlineName="Demo Airlines" />);
   const panel = await screen.findByRole("region", { name: "Estado de cuenta de aerolínea" });
   expect(await within(panel).findByText("Crédito a favor")).toBeInTheDocument();
   expect(within(panel).getByText("Cobros sin aplicar")).toBeInTheDocument();
-  expect(within(panel).getByText("Factura E310000000001 · PUJ")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Facturas" }));
-  expect(await screen.findByLabelText("Resumen de facturas")).toBeInTheDocument();
+  expect(within(panel).getByRole("button", { name: "Ver factura E310000000001" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Estado de cuenta" })).toHaveAttribute("aria-current", "page");
+});
+
+it("gives each KPI its context and filters the loaded invoices by status, period and number", async () => {
+  const pending = invoice({ id: "74000000-0000-7000-8000-000000000019", fiscalNumber: "E310000000002", applied: 0, credited: 0,
+    balance: 118 });
+  const overdue = invoice({ id: "74000000-0000-7000-8000-000000000029", fiscalNumber: "E310000000003", applied: 18, credited: 0,
+    balance: 100, daysOverdue: 9 });
+  getTreasuryStatement.mockResolvedValue({ ...statement([invoice(), pending, overdue]), movements: [
+    { id: "i1", receiptId: null, invoiceId: invoice().id, kind: "Invoice", currencyCode: "USD", amount: 118, effectiveOn: "2026-10-01",
+      recordedAt: "2026-10-01T12:00:00Z", reversesId: null, reference: "E310000000001" },
+    { id: "i2", receiptId: null, invoiceId: pending.id, kind: "Invoice", currencyCode: "USD", amount: 118, effectiveOn: "2026-11-02",
+      recordedAt: "2026-11-02T12:00:00Z", reversesId: null, reference: "E310000000002" },
+    { id: "i3", receiptId: null, invoiceId: overdue.id, kind: "Invoice", currencyCode: "USD", amount: 118, effectiveOn: "2026-10-20",
+      recordedAt: "2026-10-20T12:00:00Z", reversesId: null, reference: "E310000000003" }] });
+  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  const summary = await screen.findByLabelText("Resumen de facturas");
+  expect(within(summary).getByText("Facturas con saldo").nextSibling).toHaveTextContent("2 de 3");
+  expect(within(summary).getByText("Saldo pendiente").parentElement).toHaveTextContent("USD 218.00de USD 354.00 facturado");
+  expect(within(summary).getByText("Vencido").parentElement).toHaveTextContent("USD 100.001 factura vencida de 2 con saldo");
+  expect(within(summary).getByText("Cobrado").parentElement).toHaveTextContent("USD 136.00de USD 354.00 facturado");
+
+  const table = screen.getByRole("table", { name: "Facturas" });
+  expect(within(table).getByRole("row", { name: /E310000000002/ })).toHaveTextContent("02/11/2026");
+  expect(within(table).getByRole("row", { name: /E310000000003/ })).toHaveTextContent("9 días de atraso");
+  expect(within(table).getByRole("row", { name: /^Total \(3 facturas\)/ })).toHaveTextContent("USD 354.00USD 200.00");
+  expect(screen.getByRole("link", { name: "Ver detalle de Factura E310000000002" }))
+    .toHaveAttribute("href", "/portal/finanzas/facturas/74000000-0000-7000-8000-000000000019");
+
+  fireEvent.change(screen.getByLabelText("Estado"), { target: { value: "open" } });
+  expect(within(table).queryByRole("row", { name: /E310000000001/ })).not.toBeInTheDocument();
+  expect(within(table).getByRole("row", { name: /^Total \(2 facturas\)/ })).toHaveTextContent("USD 236.00USD 218.00");
+  fireEvent.change(screen.getByLabelText("Emitidas desde"), { target: { value: "2026-11-01" } });
+  expect(within(table).getAllByRole("row").filter(row => /E31/.test(row.textContent ?? ""))).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+  fireEvent.change(screen.getByLabelText("Número de factura"), { target: { value: "0003" } });
+  expect(screen.getByText("1 factura coincide con los filtros, de 3.")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Número de factura"), { target: { value: "ZZZ" } });
+  expect(screen.getByText("Ninguna factura coincide con los filtros.")).toBeInTheDocument();
+});
+
+it("asks the API for the invoices of the station chosen", async () => {
+  getTreasuryStatement.mockResolvedValue(statement([invoice()]));
+  bootstrap.stations = [{ id: "s1", code: "PUJ", name: "Punta Cana", ianaTimeZone: "America/Santo_Domingo" }];
+  try {
+    render(<AirlineFinancePage airlineName="Demo Airlines" />);
+    fireEvent.change(await screen.findByLabelText("Estación"), { target: { value: "s1" } });
+    await waitFor(() => expect(getTreasuryStatement).toHaveBeenLastCalledWith(expect.any(String), "s1", expect.any(AbortSignal)));
+  } finally {
+    bootstrap.stations = [];
+  }
 });
 
 it("lists the invoice's credit notes by their e-NCF with a PDF that recovers from a failed download (4-N17)", async () => {
@@ -97,10 +150,9 @@ it("lists the invoice's credit notes by their e-NCF with a PDF that recovers fro
   notes: [{ id: "75000000-0000-7000-8000-000000000001", number: "E340000000001", invoiceId: invoice().id, relatedNoteId: null,
     kind: "Credit", currencyCode: "USD", amount: 18, effectiveOn: "2026-11-09", reason: "Servicio no prestado completo",
     recordedAt: "2026-11-09T15:00:00Z", lines: [] }] });
-  render(<AirlineFinancePage airlineName="Demo Airlines" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Ver detalle" }));
+  render(<AirlineInvoiceDetailPage invoiceId={invoice().id} />);
   const notes = await screen.findByRole("region", { name: "Notas de crédito y débito" });
-  expect(within(notes).getByText(/Nota de crédito electrónica E340000000001 · USD 18.00/)).toBeInTheDocument();
+  expect(within(notes).getByRole("row", { name: /Nota de crédito electrónica E340000000001/ })).toHaveTextContent("USD 18.00");
   // The note is listed with its PDF, not as a payment.
   expect(screen.getByRole("region", { name: "Pagos de la factura" })).toHaveTextContent("Sin pagos registrados.");
 
@@ -123,9 +175,10 @@ it("lists the invoice's credit notes by their e-NCF with a PDF that recovers fro
 it("addresses the airline as usted in its invoices and their failed reads (N19)", async () => {
   getTreasuryStatement.mockResolvedValue(statement([invoice()]));
   getTreasuryInvoice.mockRejectedValue(new TypeError("Failed to fetch"));
-  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  const list = render(<AirlineFinancePage airlineName="Demo Airlines" />);
   expect(screen.getByText("Facturas emitidas por AVIAM por las operaciones completadas, con su vencimiento y saldo, "
     + "y el estado de cuenta de su aerolínea.")).toBeInTheDocument();
-  fireEvent.click(await screen.findByRole("button", { name: "Ver detalle" }));
+  list.unmount();
+  render(<AirlineInvoiceDetailPage invoiceId={invoice().id} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo consultar la factura. Inténtelo de nuevo.");
 });

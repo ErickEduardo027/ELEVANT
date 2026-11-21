@@ -190,6 +190,84 @@ public sealed class OccCoverageEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.Null(stub.CoverageKey);
     }
 
+    /// <summary>
+    /// G1: the board says when and by whom each coverage was assigned and which window covers each stand only to a read
+    /// that asks (<c>includeAssignment</c>), and lists the released coverages of the date only with <c>includeReleased</c>.
+    /// Without them, and in a command's board, the keys are not written: an AVIAM Web deployed before validates the
+    /// board's keys and keeps accepting it (expand).
+    /// </summary>
+    [Fact]
+    public async Task TheBoardWritesWhoAssignedEachCoverageOnlyWhenAsked()
+    {
+        var stub = new Stub();
+        await using var application = Application(stub);
+        using var client = Authenticated(application);
+        var route = $"/api/v1/occ/coverage?stationId={StationId:D}&date=2026-11-20";
+        string[] Keys(JsonElement element) => element.EnumerateObject().Select(property => property.Name).ToArray();
+        string[] boardKeys = ["stationId", "stationCode", "date", "terminals", "stands", "constraints", "agents", "coverages",
+            "canAssign", "canConfigure"];
+        string[] standKeys = ["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize",
+            "coveredBy", "version"];
+        string[] coverageKeys = ["id", "agentId", "agentName", "terminalId", "terminalCode", "stands", "startsAt", "endsAt",
+            "mentorAgentId", "mentorName", "vehicleCode", "isReinforcement"];
+        void AssertPlain(JsonElement board)
+        {
+            Assert.Equal(boardKeys, Keys(board));
+            Assert.Equal(standKeys, Keys(board.GetProperty("stands")[0]));
+            Assert.Equal(coverageKeys, Keys(board.GetProperty("coverages")[0]));
+        }
+
+        using (var plain = await client.GetAsync(route, TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, plain.StatusCode);
+            using var json = await JsonAsync(plain);
+            AssertPlain(json.RootElement);
+        }
+        Assert.False(stub.LastIncludeReleased);
+
+        using (var detailed = await client.GetAsync($"{route}&includeAssignment=true", TestContext.Current.CancellationToken))
+        {
+            using var json = await JsonAsync(detailed);
+            Assert.Equal(boardKeys, Keys(json.RootElement));
+            var coverage = json.RootElement.GetProperty("coverages")[0];
+            Assert.Equal([.. coverageKeys, "assignedAt", "assignedByName"], Keys(coverage));
+            Assert.Equal(new DateTimeOffset(2026, 11, 20, 13, 41, 0, TimeSpan.Zero),
+                coverage.GetProperty("assignedAt").GetDateTimeOffset());
+            Assert.Equal("Alex Operations", coverage.GetProperty("assignedByName").GetString());
+            var stand = json.RootElement.GetProperty("stands")[0];
+            Assert.Equal([.. standKeys, "coverages"], Keys(stand));
+            var window = Assert.Single(stand.GetProperty("coverages").EnumerateArray());
+            Assert.Equal(["agentName", "startsAt", "endsAt", "assignedAt", "assignedByName", "isReinforcement"], Keys(window));
+            Assert.Equal("Riley Ramp", window.GetProperty("agentName").GetString());
+            Assert.Equal(new DateTimeOffset(2026, 11, 20, 18, 0, 0, TimeSpan.Zero), window.GetProperty("endsAt").GetDateTimeOffset());
+        }
+        Assert.False(stub.LastIncludeReleased);
+
+        using (var history = await client.GetAsync($"{route}&includeReleased=true", TestContext.Current.CancellationToken))
+        {
+            using var json = await JsonAsync(history);
+            Assert.Equal([.. boardKeys, "releasedCoverages"], Keys(json.RootElement));
+            var released = Assert.Single(json.RootElement.GetProperty("releasedCoverages").EnumerateArray());
+            Assert.Equal(NewAssignmentId, released.GetProperty("id").GetGuid());
+            Assert.Equal(new DateTimeOffset(2026, 11, 20, 14, 1, 0, TimeSpan.Zero),
+                released.GetProperty("releasedAt").GetDateTimeOffset());
+            Assert.Equal("Alex Operations", released.GetProperty("releasedByName").GetString());
+            Assert.Equal("Alex Operations",
+                json.RootElement.GetProperty("coverages")[0].GetProperty("assignedByName").GetString());
+        }
+        Assert.True(stub.LastIncludeReleased);
+
+        // The board a command answers keeps the keys of before.
+        using var created = await SendAsync(client, HttpMethod.Post, "/api/v1/occ/coverage", $$"""
+            {"stationId":"{{StationId:D}}","date":"2026-11-20","agentId":"{{Riley:D}}","terminalId":"{{Guid.NewGuid():D}}",
+             "standIds":["{{Guid.NewGuid():D}}"],"startsAt":null,"endsAt":null,"mentorAgentId":null,"vehicleCode":null,
+             "isReinforcement":false}
+            """, Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using (var json = await JsonAsync(created))
+            AssertPlain(json.RootElement);
+    }
+
     private WebApplicationFactory<Program> Application(Stub stub) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -262,12 +340,41 @@ public sealed class OccCoverageEndpointsTests(ElevantApiFactory factory) : IClas
         public Guid? CoverageKey { get; set; }
         public CoverageResult? CoverageFailure { get; set; }
 
-        private static CoverageBoardData Board(DateOnly date) =>
-            new(StationId, "PUJ", date, [], [], [], [], [], CanAssign: true, CanConfigure: false);
+        public bool? LastIncludeReleased { get; private set; }
 
-        public Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new CoverageResult(Board(date), null, []));
+        /// <summary>
+        /// G1: a stand Riley covers, the open coverage and a released one, with who assigned and released them; the
+        /// controller decides which of it to write.
+        /// </summary>
+        private static CoverageBoardData Board(DateOnly date)
+        {
+            var terminal = Guid.Parse("21000000-0000-7000-8000-000000000001");
+            var stand = new CoverageStandRefData(Guid.Parse("22000000-0000-7000-8000-000000000001"), "A01");
+            var starts = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+            var assigned = new DateTimeOffset(2026, 11, 20, 13, 41, 0, TimeSpan.Zero);
+            CoverageData Coverage(Guid id, DateTimeOffset? released) => new(id, Riley, "Riley Ramp", terminal, "A", [stand],
+                starts, starts.AddHours(8), null, null, null, false)
+            {
+                AssignedAt = assigned, AssignedByName = "Alex Operations", ReleasedAt = released,
+                ReleasedByName = released is null ? null : "Alex Operations",
+            };
+            return new CoverageBoardData(StationId, "PUJ", date, [], [new CoverageStandData(stand.StandId, "A01", terminal,
+                    true, false, false, null, ["Riley Ramp"], "AAAAAAAAB9F=")
+                {
+                    Coverages = [new CoverageStandAssignmentData("Riley Ramp", starts, starts.AddHours(8), assigned,
+                        "Alex Operations", false)],
+                }], [], [], [Coverage(AssignmentId, null)], CanAssign: true, CanConfigure: false)
+            {
+                ReleasedCoverages = [Coverage(NewAssignmentId, assigned.AddMinutes(20))],
+            };
+        }
+
+        public Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date, bool includeReleased = false,
+            CancellationToken cancellationToken = default)
+        {
+            LastIncludeReleased = includeReleased;
+            return Task.FromResult(new CoverageResult(Board(date), null, []));
+        }
 
         public Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,
             Guid? idempotencyKey, CancellationToken cancellationToken = default)

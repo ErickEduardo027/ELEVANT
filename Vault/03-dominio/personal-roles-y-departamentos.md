@@ -12,7 +12,6 @@ verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
 sources:
   - frontend/private-web/README.md
   - frontend/private-web/src/features/auth/roleRouting.js
-  - frontend/private-web/src/features/human-resources/users/usersMock.js
   - backend/Elevant.Domain/Entities/Workforce/RampAgent.cs
   - backend/Elevant.Domain/Entities/Workforce/ShiftAssignment.cs
   - backend/Elevant.Domain/Entities/Workforce/QualificationCycle.cs
@@ -66,7 +65,7 @@ El seeder sintético de Development prueba solamente anclas de acceso para Admin
 
 Desde ADR-0015 los cuatro departamentos son una entidad de autorización del servidor; ver [Gobernanza de usuarios por departamento](gobernanza-por-departamento.md). Los términos siguientes del prototipo siguen siendo sólo vocabulario de interfaz.
 
-El router del prototipo separa `ADMIN_OCC`, `GESTION_HUMANA`, `CONTRATOS` y `FINANZAS`. Sus mocks añaden términos como Analista OCC, Gestor de Contratos, Analista de Finanzas, Generalista de Gestión Humana, Agente de Rampa y Usuario de Aerolínea.
+El router del prototipo separa `ADMIN_OCC`, `GESTION_HUMANA`, `CONTRATOS` y `FINANZAS`. Sus mocks, ya borrados (ADR-0047), añadían términos como Analista OCC, Gestor de Contratos, Analista de Finanzas, Generalista de Gestión Humana, Agente de Rampa y Usuario de Aerolínea.
 
 Estos nombres sirven para recorridos y conversación de producto. No deben:
 
@@ -116,6 +115,5 @@ Antes de implementarlo deben decidirse, entre otros:
 
 - [Frontera y módulos de Private Web](../../frontend/private-web/README.md)
 - [Roles de navegación, sólo prototipo](../../frontend/private-web/src/features/auth/roleRouting.js)
-- [Taxonomía mock de usuarios](../../frontend/private-web/src/features/human-resources/users/usersMock.js)
 - [Entidades y restricciones de personal](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/WorkforceCommercialConfiguration.cs)
 - [Anclas sintéticas de Development](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs)

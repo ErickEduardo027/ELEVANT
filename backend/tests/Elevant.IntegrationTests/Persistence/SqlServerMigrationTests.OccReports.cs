@@ -166,7 +166,7 @@ public sealed partial class SqlServerMigrationTests
 
         async Task<string[][]> RowsAsync(OccReportKind kind)
         {
-            var result = await reports.ReadAsync(occ, kind, station.PublicId, day, day, 1, 100, ct);
+            var result = await reports.ReadAsync(occ, kind, station.PublicId, day, day, 1, 100, OccReportFilters.None, ct);
             Assert.Null(result.Failure);
             // The exports write «Generado» in the station's zone (3-N26).
             Assert.Equal(station.IanaTimeZone, result.Table!.TimeZoneId);
@@ -217,5 +217,72 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("Aprobada", operations["PUJ-20260715-901"][4]);
         Assert.Equal("Pendiente de revisión", operations["PUJ-20260715-904"][4]);
         Assert.Equal(["09:00", "10:15"], operations["PUJ-20260715-901"][7..9]);
+
+        // ADR-0048: the optional filters, by their public ids, and their readable names in the table.
+        async Task<OccReportTable> FilteredAsync(OccReportKind kind, OccReportFilters filters)
+        {
+            var result = await reports.ReadAsync(occ, kind, station.PublicId, day, day, 1, 100, filters, ct);
+            Assert.Null(result.Failure);
+            return result.Table!;
+        }
+        var charlieAgent = agents[2];
+        var byAgent = await FilteredAsync(OccReportKind.Operations, new(AgentId: charlieAgent.PublicId));
+        Assert.Equal(["PUJ-20260715-901", "PUJ-20260715-904"], byAgent.Rows.Select(row => row[1].Value).Order().ToArray());
+        Assert.Equal([new("Agente", "Reporte Charlie (DEV-RPT-003)")], byAgent.Filters);
+        var onlyCharlie = await FilteredAsync(OccReportKind.AgentProductivity, new(AgentId: charlieAgent.PublicId));
+        Assert.Equal("Reporte Charlie", Assert.Single(onlyCharlie.Rows)[0].Value);
+        var approved = await FilteredAsync(OccReportKind.Operations, new(Status: "Approved"));
+        Assert.All(approved.Rows, row => Assert.Equal("Aprobada", row[4].Value));
+        Assert.Contains(approved.Rows, row => row[1].Value == "PUJ-20260715-901");
+        Assert.Equal([new("Estado", "Aprobada")], approved.Filters);
+        var airline = await context.Airlines.SingleAsync(item => item.Id == seeded.AirlineId, ct);
+        var ofAirline = await FilteredAsync(OccReportKind.Operations, new(AirlineId: airline.PublicId));
+        Assert.Equal(operations.Count, ofAirline.RowCount);
+        Assert.Equal(airline.Name, ofAirline.Filters.Single().Value);
+        Assert.Empty((await FilteredAsync(OccReportKind.Operations, new(AirlineId: Guid.NewGuid()))).Rows);
+        // The summary and the totals cover the whole period, with who generated it.
+        var whole = await FilteredAsync(OccReportKind.AgentProductivity, OccReportFilters.None);
+        Assert.Equal(3, whole.TotalRows);
+        Assert.Equal(195m, whole.Totals.Single().Cells[5]!.Number);
+        Assert.False(string.IsNullOrWhiteSpace(whole.GeneratedBy));
+        Assert.Equal(station.Name, whole.StationName);
+
+        // «Asignaciones de cobertura» (teacher review 16-nov): who covers which stands, assigned and released by whom.
+        var terminal = await context.Terminals.FirstAsync(item => item.StationId == station.Id && item.IsActive, ct);
+        var stand = await context.Stands.FirstAsync(item => item.TerminalId == terminal.Id, ct);
+        var assigned = new PositionCoverage
+        {
+            PublicId = Guid.CreateVersion7(), StationId = station.Id, TerminalId = terminal.Id, RampAgentId = bravo,
+            StartsAt = At(10, 0), EndsAt = At(18, 0), AssignedByAccountId = occAccount, IsReinforcement = true,
+            CreatedAt = At(9, 41), UpdatedAt = At(9, 41),
+        };
+        var released = new PositionCoverage
+        {
+            PublicId = Guid.CreateVersion7(), StationId = station.Id, TerminalId = terminal.Id, RampAgentId = alfa,
+            StartsAt = At(11, 0), EndsAt = At(19, 0), AssignedByAccountId = occAccount, ReleasedAt = At(12, 5),
+            ReleasedByAccountId = occAccount, CreatedAt = At(10, 0), UpdatedAt = At(12, 5),
+        };
+        context.AddRange(assigned, released);
+        await context.SaveChangesAsync(ct);
+        context.Add(new PositionCoverageStand { PositionCoverageId = assigned.Id, StandId = stand.Id });
+        await context.SaveChangesAsync(ct);
+        var coverage = await FilteredAsync(OccReportKind.CoverageAssignments, OccReportFilters.None);
+        Assert.Equal(2, coverage.RowCount);
+        var first = coverage.Rows[0].Select(cell => cell.Value).ToArray();
+        // 10:00Z is 06:00 in Punta Cana; the assignment at 09:41Z is 05:41 local.
+        Assert.Equal(["15/07/2026", terminal.Code, stand.Code, "Reporte Bravo (DEV-RPT-002)", "15/07/2026 06:00",
+            "15/07/2026 14:00", "15/07/2026 05:41"], first[..7]);
+        Assert.False(string.IsNullOrWhiteSpace(first[7]));
+        Assert.Equal(["—", "—", "Sí"], first[8..]);
+        var second = coverage.Rows[1].Select(cell => cell.Value).ToArray();
+        Assert.Equal("15/07/2026 08:05", second[8]);
+        Assert.Equal(first[7], second[9]);
+        Assert.Equal("No", second[10]);
+        var bravoOnly = await FilteredAsync(OccReportKind.CoverageAssignments,
+            new(AgentId: agents[1].PublicId, TerminalId: terminal.PublicId));
+        Assert.Equal("Reporte Bravo (DEV-RPT-002)", Assert.Single(bravoOnly.Rows)[3].Value);
+        Assert.Contains(coverage.Summary, metric => metric.Label == "Liberadas" && metric.Value == "1");
+        await Assert.ThrowsAsync<ArgumentException>(() => reports.ReadAsync(occ, OccReportKind.CoverageAssignments,
+            station.PublicId, day, day, 1, 100, new(AirlineId: airline.PublicId), ct));
     }
 }
