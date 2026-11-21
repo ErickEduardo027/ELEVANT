@@ -2,7 +2,6 @@ using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Finance;
 using Elevant.Domain.Validation;
-using Elevant.Infrastructure.Identity;
 using PdfSharp;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
@@ -535,7 +534,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 // A single word wider than the column (a hash, a long code) is split by characters.
                 if (graphics.MeasureString(word, font).Width > width)
                 {
-                    lines.AddRange(HumanResourcesReportPdfRenderer.WrapCellText(graphics, word, font, width + 7));
+                    lines.AddRange(Documents.PdfTextLayout.WrapCharacters(graphics, word, font, width + 7));
                     current = lines[^1];
                     lines.RemoveAt(lines.Count - 1);
                 }

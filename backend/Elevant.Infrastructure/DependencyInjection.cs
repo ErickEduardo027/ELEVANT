@@ -4,7 +4,6 @@ using Elevant.Domain.Enumerations;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Infrastructure.Finance;
 using Elevant.Application.Abstractions.Identity;
-using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Operations;
 using Elevant.Infrastructure.Commercial;
 using Elevant.Application.Abstractions.Commercial;
@@ -85,14 +84,11 @@ public static class DependencyInjection
         AddCardPayments(services, configuration, environment);
         AddDemoFlights(services, configuration, environment);
         AddAirlineCatalogEnrichment(services, configuration, environment);
-        services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
-        services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
-        services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
+        services.AddSingleton<Elevant.Application.Abstractions.Documents.IReportRenderer, Documents.ReportRenderer>();
         services.Configure<Elevant.Infrastructure.Messaging.SmtpOptions>(configuration.GetSection(Elevant.Infrastructure.Messaging.SmtpOptions.SectionName));
         services.AddSingleton<Elevant.Application.Abstractions.Messaging.IEmailSender, Elevant.Infrastructure.Messaging.SmtpEmailSender>();
         services.AddSingleton<IContractPdfRenderer, ContractPdfRenderer>();
         services.AddSingleton<Elevant.Application.Operations.IOperationDocumentPdfRenderer, Operations.OperationDocumentPdfRenderer>();
-        services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
     }
