@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { flushSync } from "react-dom";
 import {
   useEffect,
   useRef,
@@ -16,6 +17,7 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { BrandMark } from "@/components/marketing/BrandMark";
 import { standingBadge, stationsInForce } from "@/lib/contract-status";
+import { formatDateTime } from "@/lib/portal-format";
 
 import {
   ChartIcon,
@@ -85,9 +87,10 @@ const NAVIGATION: NavigationItem[] = [
   },
 ];
 
+// The phone's bar keeps the daily sections and «Facturas»; «Documentos» and the rest live under «Más».
 const MOBILE_NAVIGATION = [
   ...NAVIGATION.slice(0, 3),
-  NAVIGATION.find((item) => item.href === "/portal/documentos")!,
+  NAVIGATION.find((item) => item.href === "/portal/finanzas")!,
 ];
 
 function isCurrentRoute(pathname: string, href: string) {
@@ -98,6 +101,8 @@ function isCurrentRoute(pathname: string, href: string) {
 
 function currentPageTitle(pathname: string) {
   if (/^\/portal\/vuelos\/[^/]+/.test(pathname)) return "Detalle de vuelo";
+  if (/^\/portal\/finanzas\/facturas\/[^/]+/.test(pathname)) return "Detalle de factura";
+  if (pathname.startsWith("/portal/finanzas/estado-de-cuenta")) return "Estado de cuenta";
   return NAVIGATION.find((item) => isCurrentRoute(pathname, item.href))?.label ?? "Portal";
 }
 
@@ -171,6 +176,15 @@ export function PortalShell({ children }: { children: ReactNode }) {
     if (!dialogRef.current?.open) dialogRef.current?.showModal();
     setDrawerOpen(true);
   };
+
+  // The print date is taken right before printing, in the browser (never during the server render).
+  const [printedAt, setPrintedAt] = useState("");
+  useEffect(() => {
+    // flushSync: the date must be on the page before the browser lays out the printed copy.
+    const stamp = () => flushSync(() => setPrintedAt(formatDateTime(new Date().toISOString())));
+    window.addEventListener("beforeprint", stamp);
+    return () => window.removeEventListener("beforeprint", stamp);
+  }, []);
 
   useEffect(() => {
     const closeOnDesktop = () => {
@@ -261,6 +275,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
         </header>
 
         <main className={styles.content} id="portal-content" tabIndex={-1}>
+          {/* Only on paper: the page and when it was printed, since the navigation and the top bar are hidden. */}
+          <p className={styles.printHeader} aria-hidden="true">
+            Portal de aerolíneas · {airline} · {currentPageTitle(pathname)}{printedAt ? ` · Impreso el ${printedAt}` : ""}
+          </p>
           {children}
         </main>
       </div>

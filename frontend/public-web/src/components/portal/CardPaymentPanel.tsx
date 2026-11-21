@@ -5,8 +5,11 @@ import type { CardPaymentAttemptResponse, CardPaymentAvailabilityResponse, CardP
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { BILLING_PROBLEMS, cardPaymentProblem } from "@/lib/billing-problems";
+import { downloadFile } from "@/lib/download-file";
+import { formatDateTime, formatMoney } from "@/lib/portal-format";
 import { CARD_EXPIRY_ERRORS, CARD_EXPIRY_HINT, formatCardExpiry, parseCardExpiry } from "@/lib/card-expiry";
 import styles from "./AirlinePortalPage.module.css";
+import { ActionGroup, Button, DataTable, StatusBadge, type BadgeTone, type ButtonVariant } from "./PortalUi";
 import { useLiveSnapshot } from "./useLiveSnapshot";
 
 const DECLINES: Record<string, string> = {
@@ -18,31 +21,29 @@ const DECLINES: Record<string, string> = {
 /** 4-N05: the gateway of the simulation is labelled as such next to the card form. */
 export const CARD_SIMULATION_LABEL = "Simulación — sin validez fiscal";
 
-const money = (value: number, currency: string) =>
-  `${currency} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
-
-function save(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
+const money = (value: number, currency: string) => formatMoney(currency, value);
+const save = downloadFile;
 
 /** 4-N30: the receipt of an approved attempt, with «Preparando recibo…» and a recoverable error like the invoice PDF. */
-function ReceiptButton({ attempt }: { attempt: Pick<CardPaymentAttemptResponse, "id" | "authorizationCode"> }) {
+function ReceiptButton({ attempt, variant = "secondary" }: {
+  attempt: Pick<CardPaymentAttemptResponse, "id" | "authorizationCode">; variant?: ButtonVariant;
+}) {
   const { getCardPaymentReceipt } = useAirlineSession();
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   return <>
-    <button type="button" className={styles.loadMore} disabled={state === "loading"} onClick={() => {
+    <Button variant={variant} disabled={state === "loading"} onClick={() => {
       setState("loading");
       void getCardPaymentReceipt(attempt.id).then(blob => save(blob, `recibo-${attempt.authorizationCode}.pdf`))
         .then(() => setState("idle"), () => setState("error"));
-    }}>{state === "loading" ? "Preparando recibo…" : "Descargar recibo"}</button>
-    {state === "error" && <p role="alert">No se pudo descargar el recibo. Inténtelo de nuevo.</p>}
+    }}>{state === "loading" ? "Preparando recibo…" : "Descargar recibo"}</Button>
+    {state === "error" && <p role="alert" className={styles.fieldError}>No se pudo descargar el recibo. Inténtelo de nuevo.</p>}
   </>;
 }
+
+const ATTEMPT: Record<string, { text: string; tone: BadgeTone }> = {
+  Approved: { text: "Aprobado", tone: "success" }, Declined: { text: "Rechazado", tone: "danger" },
+  Error: { text: "Error del procesador", tone: "warning" },
+};
 
 type Outcome = { kind: "approved" | "declined" | "error" | "uncertain" | "rejected"; text: string; attempt?: CardPaymentAttemptResponse };
 
@@ -132,24 +133,30 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
   const items = history.data?.attempts ?? null;
   const payable = availability.status === "ready" && availability.value.available;
   const simulated = availability.status === "ready" && availability.value.simulated;
-  return <section className={styles.preinvoiceLines} aria-label="Pago con tarjeta">
-    <h3>Pago con tarjeta</h3>
-    {outcome && <p role={outcome.kind === "approved" ? "status" : "alert"}>{outcome.text}</p>}
+  const tone = outcome?.kind === "approved" ? "success" : outcome ? "danger" : undefined;
+  return <section className={styles.paymentCard} aria-label="Pago con tarjeta">
+    <h2>Pago con tarjeta</h2>
+    {balance > 0 ? <p className={styles.note}>Saldo a pagar: <strong>{money(balance, currencyCode)}</strong></p>
+      : <p className={styles.note}>Esta factura no tiene saldo pendiente.</p>}
+    {outcome && <div role={outcome.kind === "approved" ? "status" : "alert"} className={styles.notice} data-tone={tone}>
+      <p>{outcome.text}</p>
+      {outcome.kind === "approved" && outcome.attempt && <ActionGroup><ReceiptButton attempt={outcome.attempt} /></ActionGroup>}
+    </div>}
     {balance > 0 && availability.status === "loading" && <p role="status">Consultando el pago con tarjeta…</p>}
-    {balance > 0 && availability.status === "error" && <div role="alert">
+    {balance > 0 && availability.status === "error" && <div role="alert" className={styles.notice} data-tone="danger">
       <p>No se pudo consultar si el pago con tarjeta está disponible.</p>
-      <button type="button" className={styles.loadMore} onClick={() => { setAvailability({ status: "loading" });
-        setAvailabilityRetry(value => value + 1); }}>Reintentar</button>
+      <ActionGroup><Button onClick={() => { setAvailability({ status: "loading" });
+        setAvailabilityRetry(value => value + 1); }}>Reintentar</Button></ActionGroup>
     </div>}
     {balance > 0 && availability.status === "ready" && !availability.value.available && outcome?.text !== BILLING_PROBLEMS.card_payments_unavailable &&
       <p className={styles.note}>{BILLING_PROBLEMS.card_payments_unavailable}</p>}
-    {outcome?.kind === "approved" && outcome.attempt && <ReceiptButton attempt={outcome.attempt} />}
-    {balance > 0 && payable && !open && <button type="button" className={styles.loadMore} onClick={() => { setOpen(true); setOutcome(null); }}>
-      Pagar con tarjeta {money(balance, currencyCode)}</button>}
-    {balance > 0 && payable && open && <form className={styles.disputeForm} aria-label="Datos de la tarjeta"
+    {balance > 0 && payable && !open && <ActionGroup>
+      <Button variant="primary" onClick={() => { setOpen(true); setOutcome(null); }}>
+        Pagar con tarjeta {money(balance, currencyCode)}</Button></ActionGroup>}
+    {balance > 0 && payable && open && <form className={styles.paymentForm} aria-label="Datos de la tarjeta"
       onSubmit={event => { event.preventDefault(); void submit(); }}>
-      {simulated && <p className={styles.note}><strong>{CARD_SIMULATION_LABEL}</strong></p>}
-      <p>Se paga el saldo completo: <strong>{money(balance, currencyCode)}</strong>.{simulated ? " Pago simulado: no se mueve dinero real." : ""}</p>
+      {simulated && <p className={styles.notice}><strong>{CARD_SIMULATION_LABEL}</strong></p>}
+      <p className={styles.note}>Se paga el saldo completo: <strong>{money(balance, currencyCode)}</strong>.{simulated ? " Pago simulado: no se mueve dinero real." : ""}</p>
       <label>Titular de la tarjeta<input required autoComplete="cc-name" maxLength={80} value={holder}
         onChange={event => setHolder(event.target.value)} /></label>
       <label>Número de tarjeta<input required inputMode="numeric" autoComplete="cc-number" maxLength={23} value={number}
@@ -167,19 +174,28 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
       </div>
       <label>Código de seguridad<input required type="password" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={cvv}
         onChange={event => { setCvv(event.target.value.replace(/\D/g, "")); pending.current = null; }} /></label>
-      <button type="submit" className={styles.loadMore} disabled={busy}>{busy ? "Procesando pago…" : `Pagar ${money(balance, currencyCode)}`}</button>
-      <button type="button" className={styles.loadMore} disabled={busy} onClick={() => setOpen(false)}>Cancelar</button>
+      <ActionGroup>
+        <Button disabled={busy} onClick={() => setOpen(false)}>Cancelar</Button>
+        <Button type="submit" variant="primary" disabled={busy}>{busy ? "Procesando pago…" : `Pagar ${money(balance, currencyCode)}`}</Button>
+      </ActionGroup>
     </form>}
-    {history.failed && <p role="alert">{items ? "No se pudo actualizar el historial de pagos con tarjeta. Mostramos los últimos datos."
-      : "No se pudo consultar el historial de pagos con tarjeta."}
-      <button type="button" className={styles.loadMore} onClick={history.retry}>Reintentar</button></p>}
+    <h3>Intentos de pago con tarjeta</h3>
+    {history.failed && <div role="alert" className={styles.notice} data-tone="danger">
+      <p>{items ? "No se pudo actualizar el historial de pagos con tarjeta. Mostramos los últimos datos."
+        : "No se pudo consultar el historial de pagos con tarjeta."}</p>
+      <ActionGroup><Button onClick={history.retry}>Reintentar</Button></ActionGroup></div>}
     {!items && !history.failed && <p role="status">Cargando pagos con tarjeta…</p>}
-    {items && items.length === 0 && <p>Sin pagos con tarjeta.</p>}
-    {items?.map(item => <article key={item.id} className={styles.disputeRecord} aria-label={`Intento ${item.brand} ${item.last4}`}>
-      <strong>{item.status === "Approved" ? "Aprobado" : item.status === "Declined" ? "Rechazado" : "Error del procesador"} · {item.brand} •••• {item.last4} · {money(item.amount, item.currencyCode)}</strong>
-      <p>{new Date(item.attemptedAt).toLocaleString("es-DO")}{item.authorizationCode ? ` · autorización ${item.authorizationCode}` : ""}
-        {item.declineCode ? ` · ${DECLINES[item.declineCode] ?? item.declineCode}` : ""}</p>
-      {item.status === "Approved" && <ReceiptButton attempt={item} />}
-    </article>)}
+    {items && <DataTable<CardPaymentAttemptResponse> caption="Intentos de pago con tarjeta" rows={items} rowKey={item => item.id}
+      empty="Sin pagos con tarjeta." columns={[
+        { key: "card", header: "Intento", nowrap: true, cell: item => <span className={styles.cellStack}>
+          <span>{item.brand} •••• {item.last4}</span>
+          <span>{money(item.amount, item.currencyCode)}</span>
+          <span className={styles.subtle}>{formatDateTime(item.attemptedAt)}</span></span> },
+        { key: "status", header: "Estado", minWidth: "9rem", cell: item => <span className={styles.cellStack}>
+          <StatusBadge tone={(ATTEMPT[item.status] ?? ATTEMPT.Error).tone}>{(ATTEMPT[item.status] ?? ATTEMPT.Error).text}</StatusBadge>
+          {item.authorizationCode && <span className={styles.subtle}>Autorización {item.authorizationCode}</span>}
+          {item.declineCode && <span className={styles.subtle}>{DECLINES[item.declineCode] ?? item.declineCode}</span>}
+          {item.status === "Approved" && <span><ReceiptButton attempt={item} variant="ghost" /></span>}</span> },
+      ]} />}
   </section>;
 }

@@ -4579,6 +4579,15 @@ export interface OccCoverageTerminalResponse {
   requiresBridgeQualification: boolean;
 }
 
+export interface OccCoverageStandAssignmentResponse {
+  agentName: string;
+  startsAt: string;
+  endsAt: string;
+  assignedAt: string;
+  assignedByName: string;
+  isReinforcement: boolean;
+}
+
 export interface OccCoverageStandResponse {
   standId: string;
   code: string;
@@ -4591,6 +4600,8 @@ export interface OccCoverageStandResponse {
   maxAircraftSize?: string | null;
   coveredBy: string[];
   version: string;
+  /** @nullable */
+  coverages?: OccCoverageStandAssignmentResponse[] | null;
 }
 
 export interface OccStandConstraintResponse {
@@ -4623,6 +4634,14 @@ export interface OccCoverageResponse {
   /** @nullable */
   vehicleCode?: string | null;
   isReinforcement: boolean;
+  /** @nullable */
+  assignedAt?: string | null;
+  /** @nullable */
+  assignedByName?: string | null;
+  /** @nullable */
+  releasedAt?: string | null;
+  /** @nullable */
+  releasedByName?: string | null;
 }
 
 export interface OccCoverageBoardResponse {
@@ -4636,6 +4655,8 @@ export interface OccCoverageBoardResponse {
   coverages: OccCoverageResponse[];
   canAssign: boolean;
   canConfigure: boolean;
+  /** @nullable */
+  releasedCoverages?: OccCoverageResponse[] | null;
 }
 
 export interface OccFlightFeedBudgetResponse {
@@ -7557,6 +7578,8 @@ airport?: string;
 export type GetOccCoverageParams = {
 stationId: string;
 date: string;
+includeAssignment?: boolean;
+includeReleased?: boolean;
 };
 
 export type ReleaseOccCoverageParams = {
@@ -17773,6 +17796,14 @@ export const getGetOccCoverageUrl = (params: GetOccCoverageParams,) => {
   return stringifiedParams.length > 0 ? `/api/v1/occ/coverage?${stringifiedParams}` : `/api/v1/occ/coverage`
 }
 
+/**
+ * @summary The coverage board of a station and date. G1: with `includeAssignment=true` every coverage also carries when
+and by whom OCC assigned it (`assignedAt`, `assignedByName`) and every stand its open coverages
+(`coverages`: agent, window, assignment); `includeReleased=true` does the same and adds the coverages of
+the date OCC released (`releasedCoverages`, with `releasedAt` and `releasedByName`). Without them,
+and in the board the commands answer, the keys are not written: a client deployed before them validates the
+board's keys and keeps accepting it (expand).
+ */
 export const getOccCoverage = async (params: GetOccCoverageParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
   const res = await fetch(getGetOccCoverageUrl(params),

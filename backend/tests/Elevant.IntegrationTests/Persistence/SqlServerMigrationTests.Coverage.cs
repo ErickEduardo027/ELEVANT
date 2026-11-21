@@ -39,7 +39,7 @@ public sealed partial class SqlServerMigrationTests
             Run(services => action(services.GetRequiredService<IPositionCoverageStore>()));
 
         // The board lists the shift's agent, both terminals with their rules and the bridge stands.
-        var board = (await Coverage(store => store.ReadAsync(occ, stationId, date, ct))).Board!;
+        var board = (await Coverage(store => store.ReadAsync(occ, stationId, date, cancellationToken: ct))).Board!;
         Assert.True(board.CanAssign);
         Assert.True(board.CanConfigure);
         var riley = Assert.Single(board.Agents, agent => agent.EmployeeNumber == "DEV-RA-001");
@@ -229,6 +229,80 @@ public sealed partial class SqlServerMigrationTests
 
     private static (PositionCoverageFailure? Failure, string? Code) Outcome(OperationAgentCommandResult result) =>
         (result.Failure, result.Code);
+
+    /// <summary>
+    /// G1 (the professor's review, 2:09-2:13): the coverage board tells when OCC assigned each coverage and who did it,
+    /// beside the window it covers, on the coverage and on each stand it covers. A read that asks for them lists the
+    /// coverages of the date OCC released, with when and by whom; they never cover a stand, and a plain read has none.
+    /// </summary>
+    [Fact]
+    public async Task TheCoverageBoardTellsWhenAndByWhomEachCoverageWasAssignedAndReleased()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await SeedDevelopmentAsync(database, ct);
+        var occ = SeededOccAccount;
+        var stationId = SeededPujStation;
+        var date = new DateOnly(2026, 8, 19);
+        string occName;
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var account = await (from user in context.Users
+                                 join person in context.Persons on user.PersonId equals person.Id into people
+                                 from person in people.DefaultIfEmpty()
+                                 where user.PublicId == occ
+                                 select new { user.UserName, First = person == null ? null : person.FirstName,
+                                     Last = person == null ? null : person.LastName }).SingleAsync(ct);
+            var full = $"{account.First} {account.Last}".Trim();
+            occName = full.Length > 0 ? full : account.UserName;
+        }
+        await using var provider = CreateAuthenticationProvider(database.ConnectionString, new PasswordHashCounter());
+        async Task<CoverageResult> Coverage(Func<IPositionCoverageStore, Task<CoverageResult>> action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await action(scope.ServiceProvider.GetRequiredService<IPositionCoverageStore>());
+        }
+
+        var board = (await Coverage(store => store.ReadAsync(occ, stationId, date, cancellationToken: ct))).Board!;
+        var riley = Assert.Single(board.Agents, agent => agent.EmployeeNumber == "DEV-RA-001");
+        var terminalA = Assert.Single(board.Terminals, terminal => terminal.Code == "A");
+        Guid Stand(string code) => board.Stands.Single(stand => stand.Code == code).StandId;
+        var before = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var created = await Coverage(store => store.CreateAsync(occ, stationId, new CreateCoverageInput(riley.AgentId,
+            terminalA.TerminalId, [Stand("A01")], date, null, null, null, null, false), null, ct));
+        var after = DateTimeOffset.UtcNow.AddSeconds(1);
+        Assert.Null(created.Failure);
+        var coverage = Assert.Single(created.Board!.Coverages);
+        Assert.InRange(coverage.AssignedAt, before, after);
+        Assert.Equal(occName, coverage.AssignedByName);
+        Assert.Null(coverage.ReleasedAt);
+        var window = Assert.Single(created.Board.Stands.Single(stand => stand.Code == "A01").Coverages);
+        Assert.Equal(new CoverageStandAssignmentData(riley.Name, riley.ShiftStartsAt, riley.ShiftEndsAt, coverage.AssignedAt,
+            occName, false), window);
+        Assert.Empty(created.Board.Stands.Single(stand => stand.Code == "A02").Coverages);
+        Assert.Empty(created.Board.ReleasedCoverages);
+
+        // OCC releases it and hands Riley A02 instead: the released one leaves the stands and is listed apart when asked.
+        Assert.Null((await Coverage(store => store.ReleaseAsync(occ, coverage.Id, date, null, ct))).Failure);
+        Assert.Null((await Coverage(store => store.CreateAsync(occ, stationId, new CreateCoverageInput(riley.AgentId,
+            terminalA.TerminalId, [Stand("A02")], date, null, null, null, null, false), null, ct))).Failure);
+        var history = (await Coverage(store => store.ReadAsync(occ, stationId, date, true, ct))).Board!;
+        var released = Assert.Single(history.ReleasedCoverages);
+        Assert.Equal(coverage.Id, released.Id);
+        Assert.Equal((coverage.AssignedAt, occName, occName), (released.AssignedAt, released.AssignedByName,
+            released.ReleasedByName));
+        Assert.NotNull(released.ReleasedAt);
+        Assert.True(released.ReleasedAt >= released.AssignedAt);
+        Assert.Equal(["A01"], released.Stands.Select(stand => stand.Code));
+        Assert.Empty(history.Stands.Single(stand => stand.Code == "A01").Coverages);
+        Assert.Empty(history.Stands.Single(stand => stand.Code == "A01").CoveredBy);
+        Assert.Equal(["A02"], Assert.Single(history.Coverages).Stands.Select(stand => stand.Code));
+        Assert.Equal(riley.Name, Assert.Single(history.Stands.Single(stand => stand.Code == "A02").Coverages).AgentName);
+        Assert.Empty((await Coverage(store => store.ReadAsync(occ, stationId, date, cancellationToken: ct))).Board!
+            .ReleasedCoverages);
+    }
 
     /// <summary>
     /// N26: the positions board brings, per stand, the windows of the coverages of its date (the agent, from when to when
