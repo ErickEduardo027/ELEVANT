@@ -23,8 +23,9 @@ const labelOf = (options, value) => options.find(option => option.value === valu
  */
 function HumanResourcesReports({ session, initialDate }) {
   const permitTypes = usePermitTypeCatalog();
-  const scopes = useMemo(() => (Array.isArray(session?.stationScopes) ? session.stationScopes : [])
-    .filter(scope => UUID.test(scope?.stationId ?? '') && typeof scope.stationCode === 'string'), [session?.stationScopes]);
+  const stationScopes = session?.stationScopes;
+  const scopes = useMemo(() => (Array.isArray(stationScopes) ? stationScopes : [])
+    .filter(scope => UUID.test(scope?.stationId ?? '') && typeof scope.stationCode === 'string'), [stationScopes]);
   const [today] = useState(() => businessToday(initialDate));
   const source = useMemo(() => createHrReportSource({ permitNames: permitTypes.names }), [permitTypes.names]);
   const initialValues = useMemo(() => ({ stationId: scopes[0]?.stationId ?? '' }), [scopes]);

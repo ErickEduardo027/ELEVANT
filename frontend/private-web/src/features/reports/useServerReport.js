@@ -60,7 +60,8 @@ export function useServerReport({
   const [exporting, setExporting] = useState('');
   const [exportError, setExportError] = useState(null);
   const sourceRef = useRef(source);
-  sourceRef.current = source;
+  // The latest adapter for the reads and downloads that follow, without restarting the ones on their way.
+  useEffect(() => { sourceRef.current = source; }, [source]);
   const exportVersion = useRef(0);
   const autoStarted = useRef(false);
 

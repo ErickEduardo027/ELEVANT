@@ -39,11 +39,13 @@ export function contractMetrics(data) {
 function ContractIndicators() {
   const [state, setState] = useState({ status: 'loading', data: null, error: null });
   const [revision, setRevision] = useState(0);
-  const refresh = useCallback(() => setRevision(value => value + 1), []);
+  const refresh = useCallback(() => {
+    setState(current => ({ ...current, status: current.data ? 'refreshing' : 'loading' }));
+    setRevision(value => value + 1);
+  }, []);
   useCommercialRevalidation(refresh);
   useEffect(() => {
     let active = true;
-    setState(current => ({ ...current, status: current.data ? 'refreshing' : 'loading' }));
     getContractsReportIndicators().then(data => { if (active) setState({ status: 'success', data, error: null }); })
       .catch(error => { if (active) setState({ status: 'error', data: null, error }); });
     return () => { active = false; };

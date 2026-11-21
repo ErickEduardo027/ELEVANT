@@ -41,9 +41,11 @@ export function defaultPeriod(now = new Date()) {
   return presetRange('thisMonth', businessToday(now));
 }
 
-/** The options of each filter of the chosen report: its own list (status) or the one read for it, `null` if none. */
-function useFilterOptions(filters, stationId, today) {
-  const [lookups, setLookups] = useState({});
+/**
+ * The options of each filter of the chosen report: its own list (status) or the one read for it into `lookups`
+ * (`null` when the account cannot read it).
+ */
+function useFilterOptions(filters, stationId, today, lookups, setLookups) {
   const wanted = filters.filter(filter => LOOKUP_FILTERS.has(filter.key) && !filter.options?.length)
     .map(filter => filter.key).sort().join(',');
   useEffect(() => {
@@ -55,7 +57,7 @@ function useFilterOptions(filters, stationId, today) {
         .catch(() => {});
     }
     return () => controller.abort();
-  }, [wanted, stationId, today]);
+  }, [wanted, stationId, today, setLookups]);
   return useMemo(() => filters.map(filter => ({ ...filter,
     choices: filter.options?.length ? filter.options.map(option => ({ value: option.code, label: option.label }))
       : lookups[filter.key] ?? null })), [filters, lookups]);
@@ -73,7 +75,8 @@ export default function CanonicalReportsRoute() {
   const canExport = access ? Boolean(access.can('operations.reports.export')) : true;
   const descriptionId = useId();
   const [today] = useState(() => businessToday());
-  const [optionLabels, setOptionLabels] = useState({});
+  // The options read for the airline, agent and terminal filters, by filter key.
+  const [lookups, setLookups] = useState({});
   const source = useMemo(() => createOccReportSource(station.stationCode), [station.stationCode]);
   const initialValues = useMemo(() => ({ stationId: station.stationId }), [station.stationId]);
   const report = useServerReport({
@@ -83,16 +86,13 @@ export default function CanonicalReportsRoute() {
     describe: (query, definition) => [
       { label: t('station'), value: station.stationCode, base: true },
       ...definition.filters.filter(filter => query[filter.parameter]).map(filter => ({ label: filter.label,
-        value: optionLabels[filter.parameter]?.[query[filter.parameter]] ?? query[filter.parameter] })),
+        value: filter.options?.find(option => option.code === query[filter.parameter])?.label
+          ?? lookups[filter.key]?.find(option => option.value === query[filter.parameter])?.label
+          ?? query[filter.parameter] })),
     ],
   });
   const { catalog, draft, selected, applied, setValue } = report;
-  const filters = useFilterOptions(selected?.filters ?? NO_FILTERS, station.stationId, today);
-
-  useEffect(() => {
-    setOptionLabels(current => ({ ...current, ...Object.fromEntries(filters.filter(filter => filter.choices)
-      .map(filter => [filter.parameter, Object.fromEntries(filter.choices.map(choice => [choice.value, choice.label]))])) }));
-  }, [filters]);
+  const filters = useFilterOptions(selected?.filters ?? NO_FILTERS, station.stationId, today, lookups, setLookups);
   useEffect(() => { if (station.stationId) setValue('stationId', station.stationId); }, [setValue, station.stationId]);
 
   // An English screen keeps the server's Spanish content and its own words around it.
