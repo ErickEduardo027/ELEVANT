@@ -141,6 +141,11 @@ export function useServerReport({
     setAttempt(value => value + 1);
   }, [applied]);
 
+  /** Reads the generated report again, keeping its rows on screen until the new answer replaces them. */
+  const refresh = useCallback(() => {
+    if (applied) setAttempt(value => value + 1);
+  }, [applied]);
+
   const retryCatalog = useCallback(() => {
     setCatalog({ status: 'loading', reports: [], maxRangeDays: null, error: null });
     setCatalogAttempt(value => value + 1);
@@ -199,7 +204,8 @@ export function useServerReport({
 
   return {
     catalog, retryCatalog, draft, selected, setKey, setPreset, setDate, setValue, validation, generate,
-    applied, page, paged, report, failure: report.status === 'error' ? failureOf(report.error) : null, retry, turnPage,
+    applied, page, paged, report, failure: report.status === 'error' ? failureOf(report.error) : null, retry, refresh,
+    turnPage,
     exportAs, exporting, exportError, totals, summary,
   };
 }

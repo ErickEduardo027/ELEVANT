@@ -158,6 +158,23 @@ describe('useServerReport', () => {
     expect(result.current.selected.filters).toEqual([]);
   });
 
+  it('refreshes a generated report without clearing it, and drops it when access is revoked', async () => {
+    const { result } = renderHook(() => useServerReport(options()));
+    await waitFor(() => expect(result.current.catalog.status).toBe('success'));
+    act(() => result.current.generate());
+    await waitFor(() => expect(result.current.report.status).toBe('success'));
+    let answer;
+    source.loadPage.mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
+    act(() => result.current.refresh());
+    expect(result.current.report.status).toBe('success');
+    await act(async () => answer(page({ page: 1 }, { rows: [['Arajet', '1']] })));
+    expect(result.current.report.data.rows).toEqual([['Arajet', '1']]);
+    source.loadPage.mockRejectedValueOnce(Object.assign(new Error('Sin acceso.'), { status: 403 }));
+    act(() => result.current.refresh());
+    await waitFor(() => expect(result.current.failure?.kind).toBe('forbidden'));
+    expect(result.current.report.data).toBeNull();
+  });
+
   it('shows a catalog failure and reads it again', async () => {
     source.loadCatalog.mockRejectedValueOnce(Object.assign(new Error('Sin conexión.'), { status: 503 }));
     const { result } = renderHook(() => useServerReport(options()));

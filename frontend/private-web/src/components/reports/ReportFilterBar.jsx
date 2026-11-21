@@ -70,12 +70,12 @@ export default function ReportFilterBar({ report, children, showReportSelect = t
   );
 }
 
-/** A select of the area's filters, with «Todas» or «Todos» first. */
+/** A select of the area's filters, with «Todas» or «Todos» first (`allLabel={null}` for a required choice). */
 export function ReportSelectFilter({ label, value, onChange, options, allLabel = 'Todas', disabled = false }) {
   return (
     <label className={LABEL}>{label}
       <select className={REPORT_FIELD} value={value ?? ''} disabled={disabled} onChange={event => onChange(event.target.value)}>
-        <option value="">{allLabel}</option>
+        {allLabel ? <option value="">{allLabel}</option> : null}
         {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>

@@ -54,3 +54,18 @@ export async function exportHumanResourcesReport(kind, query, format, { signal }
     throw translate(error, token);
   }
 }
+
+/**
+ * The Gestión Humana catalog with each report's cut-off mark and the longest period (ADR-0048), or `null` while the
+ * API client does not have it yet: the screen then uses its own list.
+ */
+export async function listHumanResourcesReports({ signal } = {}) {
+  const token = readSession()?.token;
+  const api = client(token);
+  if (typeof api.listHumanResourcesReports !== 'function') return null;
+  try {
+    return await api.listHumanResourcesReports({ signal });
+  } catch (error) {
+    throw translate(error, token);
+  }
+}
