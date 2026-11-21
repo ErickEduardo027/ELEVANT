@@ -14,7 +14,7 @@ public sealed class TabularReportsTests
         items.Select(item => new KeyValuePair<string, string?>(item.Name, item.Value)).ToArray();
 
     [Fact]
-    public void AReportWithoutAPeriodTakesItsFiltersAndRefusesDates()
+    public void ACutOffReportTakesItsFiltersAndReadsOnlyTo()
     {
         var airline = Guid.NewGuid().ToString("D");
         var query = TabularReports.Parse(Agreements, null, null,
@@ -23,7 +23,13 @@ public sealed class TabularReportsTests
         Assert.Equal(airline, query.Text("airline"));
         Assert.Equal("Active", query.Text("status"));
         Assert.Equal(60, query.Number("expiresWithinDays"));
-        Assert.Null(TabularReports.Parse(Agreements, "2026-10-01", "2026-10-31", []));
+        // The screens send «from» too: a cut-off ignores it.
+        var cutOff = TabularReports.Parse(Agreements, "2026-10-01", "2026-10-31", [])!;
+        Assert.Equal((null, new DateOnly(2026, 10, 31)), (cutOff.From, cutOff.To));
+        Assert.Null(TabularReports.Parse(Agreements, null, null, [])!.To);
+        // «Permisos de aerolíneas» takes no station, but the area's screen may send one: it is ignored, not refused.
+        var permits = ContractsReportCatalog.All.Find("permits")!;
+        Assert.Empty(TabularReports.Parse(permits, null, null, Parameters(("stationId", Guid.NewGuid().ToString("D"))))!.Values);
     }
 
     [Theory]

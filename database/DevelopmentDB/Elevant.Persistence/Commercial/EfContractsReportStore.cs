@@ -30,7 +30,8 @@ internal sealed class EfContractsReportStore(
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(query);
         if (!await AllowedAsync(actorId, cancellationToken)) return TabularReportResult.Failed(TabularReportFailure.Forbidden);
-        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
+        // A cut-off report reads at «to» (today without it): the validity and the days to expire.
+        var today = query.To ?? BusinessCalendar.Today(timeProvider.GetUtcNow());
         var names = await NamesAsync(query, cancellationToken);
         var (rows, summary, notes) = definition.Key switch
         {
@@ -44,7 +45,7 @@ internal sealed class EfContractsReportStore(
         {
             Description = definition.Description,
             From = query.From,
-            To = query.To ?? (definition.Period == ReportPeriod.None ? today : null),
+            To = definition.Period == ReportPeriod.Range ? query.To : today,
             AsOfDate = definition.Period != ReportPeriod.Range,
             StationScope = "Todas las aerolíneas",
             Filters = TabularReports.Applied(definition, query, (filter, value) => names.GetValueOrDefault((filter.Key, value))),
@@ -178,6 +179,7 @@ internal sealed class EfContractsReportStore(
     {
         var airlineKey = await AirlineKeyAsync(query, cancellationToken);
         var serviceId = query.Id("service");
+        var stationId = query.Id("station");
         var rates = await (from rate in context.ContractServiceRates.AsNoTracking()
                            join version in context.ContractVersions.AsNoTracking() on rate.ContractVersionId equals version.Id
                            join contract in context.Contracts.AsNoTracking() on version.ContractId equals contract.Id
@@ -185,7 +187,11 @@ internal sealed class EfContractsReportStore(
                            join service in context.ServiceDefinitions.AsNoTracking() on rate.ServiceDefinitionId equals service.Id
                            where version.Status == ContractVersionStatus.Approved &&
                                  (airlineKey == null || contract.AirlineId == airlineKey) &&
-                                 (serviceId == null || service.PublicId == serviceId)
+                                 (serviceId == null || service.PublicId == serviceId) &&
+                                 (stationId == null || (from link in context.Set<ContractVersionStation>()
+                                     join station in context.Stations on link.StationId equals station.Id
+                                     where link.ContractVersionId == version.Id && station.PublicId == stationId
+                                     select link.StationId).Any())
                            orderby airline.Name, contract.ContractCode, version.VersionNumber, service.Code
                            select new { contract.ContractCode, Airline = airline.Name, version.VersionNumber, service.Code,
                                service.Name, rate.BillingUnit, version.CurrencyCode, rate.UnitPrice, rate.MinimumQuantity,
@@ -215,6 +221,7 @@ internal sealed class EfContractsReportStore(
     {
         var airlineKey = await AirlineKeyAsync(query, cancellationToken);
         CommercialRequestStatus? status = query.Text("status") is { } code ? Enum.Parse<CommercialRequestStatus>(code) : null;
+        var stationId = query.Id("station");
         var start = BusinessCalendar.StartOfDay(query.From!.Value);
         var end = BusinessCalendar.StartOfDay(query.To!.Value.AddDays(1));
         var requests = await (from request in context.ServiceRequests.AsNoTracking()
@@ -222,7 +229,11 @@ internal sealed class EfContractsReportStore(
                               from airline in linked.DefaultIfEmpty()
                               where request.SubmittedAt >= start && request.SubmittedAt < end &&
                                     (airlineKey == null || request.AirlineId == airlineKey) &&
-                                    (status == null || request.Status == status)
+                                    (status == null || request.Status == status) &&
+                                    (stationId == null || (from link in context.Set<ServiceRequestStation>()
+                                        join station in context.Stations on link.StationId equals station.Id
+                                        where link.ServiceRequestId == request.Id && station.PublicId == stationId
+                                        select link.StationId).Any())
                               orderby request.SubmittedAt, request.RequestCode
                               select new { request.Id, request.RequestCode, Airline = airline != null ? airline.Name : request.RequestedAirlineName,
                                   request.ContactName, request.SubmittedAt, request.Status, request.ReviewedAt,

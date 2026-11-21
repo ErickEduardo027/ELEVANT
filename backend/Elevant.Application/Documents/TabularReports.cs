@@ -59,6 +59,12 @@ public sealed record TabularReportDefinition(string Key, string Title, string De
 {
     /// <summary>Longest range a report covers, in days.</summary>
     public int MaxRangeDays { get; init; } = TabularReports.DefaultMaxRangeDays;
+
+    /// <summary>
+    /// Parameters a screen may send to every report of its area that this one does not use (the station of
+    /// «Permisos de aerolíneas»): they are ignored instead of refused.
+    /// </summary>
+    public IReadOnlyList<string> IgnoredParameters { get; init; } = [];
 }
 
 /// <summary>The period and the filters a report was asked for, already validated against its definition.</summary>
@@ -126,9 +132,9 @@ public static class TabularReports
 
     /// <summary>
     /// The query of a report, or null when it is not valid: a range needs <c>from</c> ≤ <c>to</c> within
-    /// <see cref="TabularReportDefinition.MaxRangeDays"/>, a cut-off needs <c>to</c> and no <c>from</c>, and a report
-    /// without a period takes neither. A filter of another report, an empty or malformed id, an unknown option or a
-    /// number of days outside 1–3650 is refused.
+    /// <see cref="TabularReportDefinition.MaxRangeDays"/>; a cut-off reads <c>to</c> (today without it) and ignores
+    /// <c>from</c>, as the screens send both; a report without a period ignores both. A filter of another report, an
+    /// empty or malformed id, an unknown option or a number of days outside 1–3650 is refused.
     /// </summary>
     public static TabularReportQuery? Parse(TabularReportDefinition definition, string? from, string? to,
         IEnumerable<KeyValuePair<string, string?>> parameters)
@@ -138,10 +144,14 @@ public static class TabularReports
         if (!TryDate(from, out start) || !TryDate(to, out end)) return null;
         switch (definition.Period)
         {
-            case ReportPeriod.None when start is not null || end is not null:
+            case ReportPeriod.None:
+                (start, end) = (null, null);
+                break;
+            case ReportPeriod.AsOf when end == DateOnly.MaxValue:
                 return null;
-            case ReportPeriod.AsOf when start is not null || end is null || end == DateOnly.MaxValue:
-                return null;
+            case ReportPeriod.AsOf:
+                start = null;
+                break;
             case ReportPeriod.Range when start is null || end is null || end < start || end == DateOnly.MaxValue ||
                 end.Value.DayNumber - start.Value.DayNumber >= definition.MaxRangeDays:
                 return null;
@@ -149,7 +159,8 @@ public static class TabularReports
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (name, raw) in parameters)
         {
-            if (CommonParameters.Contains(name)) continue;
+            if (CommonParameters.Contains(name) ||
+                definition.IgnoredParameters.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
             var filter = definition.Filters.FirstOrDefault(item =>
                 string.Equals(item.Parameter, name, StringComparison.OrdinalIgnoreCase));
             if (filter is null || values.ContainsKey(filter.Key)) return null;

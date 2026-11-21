@@ -37,14 +37,14 @@ public static class ContractsReportCatalog
     public static IReadOnlyList<TabularReportDefinition> All { get; } =
     [
         new("agreements", "Contratos y vigencias",
-            "Cada contrato con la versión que lo rige (o la más reciente), su vigencia, los días para vencer, las " +
+            "Cada contrato con la versión que lo rige a la fecha de corte (o la más reciente), su vigencia, los días para vencer, las " +
             "estaciones que cubre, la moneda y cuántas tarifas pacta.",
             [ReportColumn.Text("Aerolínea"), ReportColumn.Text("Código"), ReportColumn.Number("Versión"),
                 ReportColumn.Text("Estado"), ReportColumn.Text("Estado de la versión"), new("Vigente desde", ReportColumnType.Date),
                 new("Vigente hasta", ReportColumnType.Date), ReportColumn.Number("Días para vencer"),
                 ReportColumn.Text("Estaciones"), ReportColumn.Text("Moneda"), ReportColumn.Number("Tarifas", summable: true),
                 new("Creado", ReportColumnType.Date)],
-            ReportPeriod.None,
+            ReportPeriod.AsOf,
             [ReportFilterDefinition.Airline(), ContractStatus, ReportFilterDefinition.Station(), ExpiresWithin]),
         new("rates", "Tarifas pactadas",
             "Las tarifas de las versiones aprobadas de cada contrato: servicio, unidad de cobro, precio, cantidad mínima " +
@@ -55,7 +55,7 @@ public static class ContractsReportCatalog
                 ReportColumn.Number("Mínimo"), new("Vigente desde", ReportColumnType.Date),
                 new("Vigente hasta", ReportColumnType.Date)],
             ReportPeriod.None,
-            [ReportFilterDefinition.Airline(), ReportFilterDefinition.Service()]),
+            [ReportFilterDefinition.Airline(), ReportFilterDefinition.Service(), ReportFilterDefinition.Station()]),
         new("requests", "Solicitudes comerciales",
             "Las solicitudes de servicio recibidas en el período (hora de Santo Domingo): referencia, aerolínea, " +
             "representante, estado, quién y cuándo decidió, y los servicios pedidos.",
@@ -64,7 +64,7 @@ public static class ContractsReportCatalog
                 new("Decidida el", ReportColumnType.DateTime), ReportColumn.Text("Decidida por"),
                 ReportColumn.Text("Servicios")],
             ReportPeriod.Range,
-            [RequestStatus, ReportFilterDefinition.Airline()]),
+            [RequestStatus, ReportFilterDefinition.Airline(), ReportFilterDefinition.Station()]),
         new("permits", "Permisos de aerolíneas",
             "Los permisos y certificados que las aerolíneas presentaron: tipo, número, emisor, vigencia, revisión de " +
             "Contratos y quién la hizo.",
@@ -72,8 +72,11 @@ public static class ContractsReportCatalog
                 ReportColumn.Text("Emisor"), new("Emitido", ReportColumnType.Date), new("Vence", ReportColumnType.Date),
                 ReportColumn.Text("Vigencia"), ReportColumn.Text("Revisión"), new("Revisado el", ReportColumnType.DateTime),
                 ReportColumn.Text("Revisado por"), new("Presentado", ReportColumnType.DateTime)],
-            ReportPeriod.None,
-            [PermitReview, PermitValidity, ReportFilterDefinition.Airline()]),
+            ReportPeriod.AsOf,
+            [PermitReview, PermitValidity, ReportFilterDefinition.Airline()])
+        {
+            IgnoredParameters = ["stationId"],
+        },
     ];
 
     public static string Status(ContractStatus status) => status switch

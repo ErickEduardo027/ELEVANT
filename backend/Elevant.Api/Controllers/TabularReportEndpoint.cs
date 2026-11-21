@@ -30,14 +30,20 @@ internal sealed class TabularReportEndpoint(
     public const int MaxPdfRows = 5000;
     public const int MaxSheetRows = 25000;
 
-    public TabularReportCatalogResponse Catalog(string areaTitle) => new(areaTitle, source.Catalog.Select(Definition).ToArray());
+    public TabularReportCatalogResponse Catalog(string areaTitle) => new(areaTitle, source.Catalog.Select(Definition).ToArray())
+    {
+        MaxRangeDays = source.Catalog.Max(definition => definition.MaxRangeDays),
+    };
 
     public static TabularReportDefinitionResponse Definition(TabularReportDefinition definition) => new(definition.Key,
         definition.Title, definition.Description, definition.Columns.Select(column => column.Heading).ToArray(),
         ReportResponses.Types(definition.Columns), definition.Filters.Select(filter => new TabularReportFilterResponse(
             filter.Key, filter.Label, filter.Parameter, Kind(filter.Kind),
             filter.Options.Select(option => new TabularReportFilterOptionResponse(option.Code, option.Label)).ToArray()))
-            .ToArray(), Period(definition.Period), definition.MaxRangeDays);
+            .ToArray(), Period(definition.Period), definition.MaxRangeDays)
+    {
+        AsOfDate = definition.Period != ReportPeriod.Range,
+    };
 
     public async Task<IActionResult> PageAsync(ControllerBase controller, string reportKey, int page, int limit,
         CancellationToken cancellationToken)
@@ -110,6 +116,8 @@ internal sealed class TabularReportEndpoint(
         {
             Description = document.Description,
             Station = document.StationLabel,
+            StationCode = document.StationCode,
+            StationName = document.StationName,
             AppliedFilters = ReportResponses.Filters(document.Filters),
             Summary = ReportResponses.Summary(document.Summary),
             Totals = document.EffectiveTotals.Select(total => new TabularReportTotalRowResponse(total.Label,

@@ -20,9 +20,17 @@ public sealed record TabularReportFilterResponse(string Key, string Label, strin
 /// </summary>
 public sealed record TabularReportDefinitionResponse(string Key, string Title, string Description,
     IReadOnlyList<string> Columns, IReadOnlyList<string> ColumnTypes, IReadOnlyList<TabularReportFilterResponse> Filters,
-    string Period, int MaxRangeDays);
+    string Period, int MaxRangeDays)
+{
+    /// <summary>Whether the screen asks only for the date (<c>to</c>) and hides «Desde»: every period but a range.</summary>
+    public bool AsOfDate { get; init; }
+}
 
-public sealed record TabularReportCatalogResponse(string Area, IReadOnlyList<TabularReportDefinitionResponse> Reports);
+/// <summary>The reports of an area and the longest range any of them covers.</summary>
+public sealed record TabularReportCatalogResponse(string Area, IReadOnlyList<TabularReportDefinitionResponse> Reports)
+{
+    public int MaxRangeDays { get; init; }
+}
 
 /// <summary>
 /// A cell with its invariant value: numbers with a dot («1234.5»), dates <c>yyyy-MM-dd</c>, date and time
@@ -47,6 +55,11 @@ public sealed record TabularReportPageResponse(string Key, string Title, string 
 
     /// <summary>«PUJ · Aeropuerto Internacional de Punta Cana», or «Todas las estaciones autorizadas».</summary>
     public string? Station { get; init; }
+
+    /// <summary>The code of the station filtered, when there is one, as the OCC page sends it.</summary>
+    public string? StationCode { get; init; }
+
+    public string? StationName { get; init; }
 
     public IReadOnlyList<ReportAppliedFilterResponse> AppliedFilters { get; init; } = [];
 

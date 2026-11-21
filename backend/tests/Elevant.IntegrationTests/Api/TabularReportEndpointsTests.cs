@@ -40,7 +40,10 @@ public sealed class TabularReportEndpointsTests(ElevantApiFactory factory) : ICl
         var reports = json.RootElement.GetProperty("reports").EnumerateArray().ToArray();
         Assert.Equal(["agreements", "rates", "requests", "permits"], reports.Select(item => item.GetProperty("key").GetString()));
         var agreements = reports[0];
-        Assert.Equal("none", agreements.GetProperty("period").GetString());
+        Assert.Equal("asOf", agreements.GetProperty("period").GetString());
+        Assert.True(agreements.GetProperty("asOfDate").GetBoolean());
+        Assert.False(reports[2].GetProperty("asOfDate").GetBoolean());
+        Assert.Equal(366, json.RootElement.GetProperty("maxRangeDays").GetInt32());
         Assert.Equal(["airline", "status", "station", "expiresWithinDays"],
             agreements.GetProperty("filters").EnumerateArray().Select(item => item.GetProperty("key").GetString()));
         Assert.Equal("range", reports[2].GetProperty("period").GetString());
@@ -78,7 +81,7 @@ public sealed class TabularReportEndpointsTests(ElevantApiFactory factory) : ICl
     [InlineData("/agreements?status=Unknown")]
     [InlineData("/agreements?airlineId=00000000-0000-0000-0000-000000000000")]
     [InlineData("/agreements?airlineId=abc")]
-    [InlineData("/agreements?from=2026-10-01&to=2026-10-31")]
+    [InlineData("/agreements?to=2026-13-01")]
     [InlineData("/agreements?expiresWithinDays=0")]
     [InlineData("/agreements?page=0")]
     [InlineData("/agreements?limit=101")]
@@ -129,7 +132,7 @@ public sealed class TabularReportEndpointsTests(ElevantApiFactory factory) : ICl
         using var export = await client.GetAsync($"{Route}/permits/export?format=xlsx", ct);
         Assert.Equal(HttpStatusCode.Forbidden, export.StatusCode);
         Assert.Equal(1, stub.Reads);
-        Assert.Equal(0, stub.Audits.Count);
+        Assert.Empty(stub.Audits);
     }
 
     [Theory]
