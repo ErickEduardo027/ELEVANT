@@ -94,7 +94,7 @@ internal sealed class EfInvoiceAttachmentResolver(EfNonFiscalInvoiceReadStore in
             !Guid.TryParse(reference[InvoiceEmails.AttachmentPrefix.Length..], out var invoiceId)) return null;
         var invoice = await invoices.SystemReadAsync(invoiceId, cancellationToken);
         return invoice is null ? null
-            : new EmailAttachment($"factura-{invoice.Fiscal?.FiscalNumber ?? invoice.Number}.pdf", "application/pdf",
+            : new EmailAttachment(Elevant.Application.Documents.DocumentFileNames.Invoice(invoice.Fiscal?.FiscalNumber, invoice.Number), "application/pdf",
                 renderer.RenderInvoice(invoice));
     }
 }

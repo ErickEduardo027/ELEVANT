@@ -32,7 +32,7 @@ it('names a note on an E31 invoice by its e-NCF and downloads its PDF (4-N17)', 
     // A note of an invoice without e-NCF keeps its internal number.
     expect(screen.getByText(/^Nota de crédito TC-QA · USD/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Descargar PDF de Nota de crédito electrónica E340000000001' }));
-    expect(api.downloadAdjustmentNoteDocument).toHaveBeenCalledWith('n-34', 'nota-E340000000001.pdf');
+    expect(api.downloadAdjustmentNoteDocument).toHaveBeenCalledWith('n-34', 'nota-credito-E340000000001.pdf');
 });
 
 it('explains by its code a note PDF that could not be downloaded and tries it again (4-N17)', async () => {

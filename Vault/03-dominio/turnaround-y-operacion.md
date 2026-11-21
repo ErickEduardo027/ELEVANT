@@ -207,7 +207,7 @@ Los formularios de AVIAM ya no se transcriben: se generan desde el registro de l
 - Solo se guarda la versión firmada (`ops.operation_document_versions`, inmutable). Las firmas (`ops.operation_document_signatures`) son de solo inserción, una por rol y versión.
 - Si cambia un dato facturable, ese formulario tiene otra huella y pide firmar de nuevo; los demás conservan sus firmas.
 
-**PDF.** El [renderizador](../../backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs) dibuja cada hoja como el papel, con la firma en trazos y la huella en el pie. OCC los descarga desde la revisión; la aerolínea ve y descarga en su portal solo la última Orden de Servicio firmada por completo.
+**PDF.** El [renderizador](../../backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs) dibuja cada hoja como el papel, con la firma en trazos y la huella en el pie. OCC los descarga desde la revisión; la aerolínea ve y descarga en su portal solo la última Orden de Servicio firmada por completo. Desde el 21 de noviembre de 2026 (PR E) cada hoja lleva el logo de ELEVANT junto al nombre de AVIAM, los textos largos ajustan por palabra en lugar de cortarse, el pie dice «{código} · Página X de Y», «Supervisor» y «Llave recibida de» imprimen «No registrado» (el registro no guarda ese dato) y la Solicitud de Servicio del charter remite a la página 2 en ambos idiomas.
 
 **Walk-around.** `ops.operation_damage_marks` guarda la posición en la silueta (0–1), la nota y, opcionalmente, una foto JPEG o PNG en almacenamiento privado con su SHA-256. Las fotos no entran en la huella: se anexan al PDF del Reporte de Vuelo.
 

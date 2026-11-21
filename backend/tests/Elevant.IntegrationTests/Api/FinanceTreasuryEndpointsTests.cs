@@ -77,7 +77,7 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
         using var pdf = await client.GetAsync($"/api/v1/finance/adjustment-notes/{stub.NoteId}/document", ct);
         Assert.Equal((HttpStatusCode.OK, "application/pdf"), (pdf.StatusCode, pdf.Content.Headers.ContentType?.MediaType));
-        Assert.Equal("nota-E340000000001.pdf", pdf.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        Assert.Equal("nota-credito-E340000000001.pdf", pdf.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
         Assert.Equal(Account, stub.Actor);
         using var missing = await client.GetAsync($"/api/v1/finance/adjustment-notes/{Guid.NewGuid()}/document", ct);
         Assert.Equal((HttpStatusCode.NotFound, "not_found"), (missing.StatusCode, await CodeAsync(missing, ct)));

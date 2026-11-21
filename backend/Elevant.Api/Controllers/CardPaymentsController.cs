@@ -117,7 +117,7 @@ public sealed class CardPaymentsController(PayInvoiceByCardHandler handler, ICar
         if (!TryAccountId(out var accountId)) return ProblemResult(401, "Authentication failed.");
         var receipt = await store.AirlineReceiptAsync(accountId, attemptId, cancellationToken);
         return receipt is null ? ProblemResult(404, "Receipt was not found.", code: "not_found")
-            : File(renderer.RenderCardReceipt(receipt), "application/pdf", $"recibo-{receipt.AuthorizationCode}.pdf");
+            : File(renderer.RenderCardReceipt(receipt), "application/pdf", Elevant.Application.Documents.DocumentFileNames.CardReceipt(receipt));
     }
 
     private static CardPaymentAttemptResponse Map(CardPaymentAttemptData item) => new(item.Id, item.InvoiceId, item.Status,

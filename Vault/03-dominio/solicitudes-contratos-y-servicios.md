@@ -150,6 +150,13 @@ imprime cada firma y la sección de renovación. Al activarse el contrato (o al
 completarse la firma de una renovación de un contrato activo) se envía el PDF
 firmado por correo a la aerolínea y a los firmantes de AVIAM.
 
+Desde el 21 de noviembre de 2026 (PR E) el PDF repite en cada página el logo y
+«Contrato {código} · versión n», repite los títulos de una tabla cortada por la
+página, imprime un borrador `DRAFT-…` como «Borrador 1cc18541», concuerda los
+plazos con su número («1 mes», «30 días») y pone las firmas y «Generado el …»
+en hora de Santo Domingo. Se descarga como `contrato-{código}-v{n}.pdf` o
+`borrador-{8 primeros}-v{n}.pdf`.
+
 La renovación automática crea sola la versión siguiente los días de aviso antes
 del fin; esa versión vuelve a pasar por Finanzas, la vigencia y las firmas.
 Nada se prorroga sin firmas. Fuentes:

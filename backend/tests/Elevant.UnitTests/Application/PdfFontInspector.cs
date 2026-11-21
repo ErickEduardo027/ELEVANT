@@ -62,6 +62,43 @@ internal static partial class PdfFontInspector
         return text.ToString();
     }
 
+    /// <summary>Every string the pages draw with the size of the font it is drawn in (PR E: legibility checks).</summary>
+    public static IReadOnlyList<(double Size, string Text)> Runs(byte[] pdf)
+    {
+        using var document = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Import);
+        var runs = new List<(double, string)>();
+        foreach (var page in document.Pages)
+        {
+            var maps = PageFonts(page).ToDictionary(item => item.Name, item => ToUnicode(item.Font));
+            IReadOnlyDictionary<int, string>? current = null;
+            var size = 0d;
+            foreach (var item in ContentReader.ReadContent(page))
+            {
+                if (item is not COperator operation) continue;
+                switch (operation.OpCode.Name)
+                {
+                    case "Tf" when operation.Operands.Count > 1 && operation.Operands[0] is CName name:
+                        current = maps.GetValueOrDefault(name.Name);
+                        size = operation.Operands[1] switch
+                        {
+                            CReal real => real.Value,
+                            CInteger integer => integer.Value,
+                            _ => 0,
+                        };
+                        break;
+                    case "Tj" or "'" or "\"" when operation.Operands.Count > 0 &&
+                        operation.Operands[^1] is CString shown:
+                        runs.Add((size, Decode(shown, current)));
+                        break;
+                    case "TJ" when operation.Operands.Count > 0 && operation.Operands[0] is CArray array:
+                        runs.Add((size, string.Concat(array.OfType<CString>().Select(part => Decode(part, current)))));
+                        break;
+                }
+            }
+        }
+        return runs;
+    }
+
     private static IEnumerable<(string Name, PdfDictionary Font)> PageFonts(PdfPage page)
     {
         var fonts = page.Resources.Elements.GetDictionary("/Font");

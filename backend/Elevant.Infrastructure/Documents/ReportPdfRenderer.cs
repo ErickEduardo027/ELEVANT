@@ -23,17 +23,15 @@ internal sealed class ReportPdfRenderer
     private const double CellPadding = 4;
     private const double FooterHeight = 34;
 
-    private static readonly XColor Navy = XColor.FromArgb(8, 27, 58);
-    private static readonly XColor Orange = XColor.FromArgb(255, 92, 0);
-    private static readonly XColor Ink = XColor.FromArgb(30, 41, 59);
-    private static readonly XColor Muted = XColor.FromArgb(77, 93, 118);
-    private static readonly XColor Rule = XColor.FromArgb(214, 221, 231);
-    private static readonly XColor Tint = XColor.FromArgb(244, 247, 251);
-    private static readonly XColor Stripe = XColor.FromArgb(248, 250, 252);
-    private static readonly XColor TotalFill = XColor.FromArgb(226, 234, 245);
-    private static readonly XColor NoticeFill = XColor.FromArgb(255, 241, 230);
-
-    private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
+    private static readonly XColor Navy = DocumentPalette.Navy;
+    private static readonly XColor Orange = DocumentPalette.Orange;
+    private static readonly XColor Ink = DocumentPalette.Ink;
+    private static readonly XColor Muted = DocumentPalette.Muted;
+    private static readonly XColor Rule = DocumentPalette.Rule;
+    private static readonly XColor Tint = DocumentPalette.Tint;
+    private static readonly XColor Stripe = DocumentPalette.Stripe;
+    private static readonly XColor TotalFill = DocumentPalette.TotalFill;
+    private static readonly XColor NoticeFill = DocumentPalette.NoticeFill;
 
     static ReportPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 
@@ -232,11 +230,7 @@ internal sealed class ReportPdfRenderer
             page.Size = PageSize.A4;
             if (layout.Landscape) page.Orientation = PageOrientation.Landscape;
             graphics = XGraphics.FromPdfPage(page);
-            using (var logo = XImage.FromStream(new MemoryStream(Logo.Value)))
-            {
-                var logoWidth = first ? 78d : 56d;
-                graphics.DrawImage(logo, Margin, 24, logoWidth, logoWidth * logo.PixelHeight / (double)logo.PixelWidth);
-            }
+            DocumentPalette.DrawLogo(graphics, Margin, 24, first ? 78d : 56d);
             var right = new XRect(Margin + 140, 26, Width - 140, 11);
             graphics.DrawString(report.Area.ToUpperInvariant(), smallBold, new XSolidBrush(Navy), right, XStringFormats.TopRight);
             right.Offset(0, 11);

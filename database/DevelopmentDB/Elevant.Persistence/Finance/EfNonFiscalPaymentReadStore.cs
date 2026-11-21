@@ -66,8 +66,23 @@ internal sealed class EfNonFiscalPaymentReadStore(
             .Where(item => item.InvoiceId == internalInvoiceId)
             .OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.Id)
             .Select(item => new NonFiscalPaymentData(item.PublicId, invoiceId,
-                item.Reference, item.CurrencyCode, item.Amount, item.CreatedAt))
+                item.Reference, item.CurrencyCode, item.Amount, item.CreatedAt, null, item.Method.ToString(), item.PaidOn,
+                null, null, null, null))
             .FirstOrDefaultAsync(cancellationToken);
-        return new NonFiscalPaymentLookupData(invoiceId, payment, invoiceNumber);
+        if (payment is null) return new NonFiscalPaymentLookupData(invoiceId, null, invoiceNumber);
+        // PR E: what the receipt prints besides the payment: the payer, the invoice's e-NCF and total, and its balance
+        // on the day the receipt is produced (the receipt is stored once, with that date).
+        var invoice = await (from item in context.NonFiscalInvoices.AsNoTracking()
+                             join airline in context.Airlines.AsNoTracking() on item.AirlineId equals airline.Id
+                             join organization in context.Organizations.AsNoTracking() on airline.OrganizationId equals organization.Id
+                             where item.Id == internalInvoiceId
+                             select new { item.FiscalNumber, item.Total, organization.LegalName })
+            .SingleAsync(cancellationToken);
+        var balance = await FinanceTreasuryBalances.BalanceAsync(context, internalInvoiceId, invoice.Total, cancellationToken);
+        return new NonFiscalPaymentLookupData(invoiceId, payment with
+        {
+            PayerName = invoice.LegalName, InvoiceFiscalNumber = invoice.FiscalNumber, InvoiceTotal = invoice.Total,
+            Balance = balance, BalanceOn = Application.Common.BusinessCalendar.Today(timeProvider.GetUtcNow()),
+        }, invoiceNumber);
     }
 }
