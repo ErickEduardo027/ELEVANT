@@ -23,6 +23,7 @@ export * from "./mobileDevices";
 export * from "./airlinePortalUsers";
 export * from "./financeInvoicing";
 export * from "./financeHome";
+export * from "./tabularReports";
 export {
   createElevantApiClient,
   normalizedStandAttributes,

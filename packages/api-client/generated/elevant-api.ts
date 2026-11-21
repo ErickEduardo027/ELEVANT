@@ -716,6 +716,10 @@ export interface AirlineTreasuryInvoiceLineResponse {
   amount: number;
   /** @nullable */
   reason?: string | null;
+  /** @nullable */
+  netAmount?: number | null;
+  /** @nullable */
+  taxAmount?: number | null;
 }
 
 export interface AirlineTreasuryMovementResponse {
@@ -2981,11 +2985,17 @@ export interface FinanceReportData {
   filters: FinanceReportAppliedFilter[];
 }
 
+export interface FinanceReportFilterOption {
+  code: string;
+  label: string;
+}
+
 export interface FinanceReportDefinition {
   key: string;
   title: string;
   description: string;
   asOfDate: boolean;
+  statuses: FinanceReportFilterOption[];
 }
 
 export interface FinanceServiceOptionData {
@@ -6902,6 +6912,79 @@ export interface SystemPingResponse {
   timestampUtc: string;
 }
 
+export interface TabularReportFilterOptionResponse {
+  code: string;
+  label: string;
+}
+
+export interface TabularReportFilterResponse {
+  key: string;
+  label: string;
+  parameter: string;
+  kind: string;
+  options: TabularReportFilterOptionResponse[];
+}
+
+export interface TabularReportDefinitionResponse {
+  key: string;
+  title: string;
+  description: string;
+  columns: string[];
+  columnTypes: string[];
+  filters: TabularReportFilterResponse[];
+  period: string;
+  maxRangeDays: number;
+  asOfDate: boolean;
+}
+
+export interface TabularReportCatalogResponse {
+  area: string;
+  reports: TabularReportDefinitionResponse[];
+  maxRangeDays: number;
+}
+
+export interface TabularReportCellResponse {
+  value: string;
+  type: string;
+}
+
+export interface TabularReportTotalRowResponse {
+  label: string;
+  cells: TabularReportCellResponse[];
+}
+
+export interface TabularReportPageResponse {
+  key: string;
+  title: string;
+  area: string;
+  /** @nullable */
+  from?: string | null;
+  /** @nullable */
+  to?: string | null;
+  asOf: string;
+  columns: string[];
+  columnTypes: string[];
+  rows: TabularReportCellResponse[][];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  totalRows: number;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  station?: string | null;
+  /** @nullable */
+  stationCode?: string | null;
+  /** @nullable */
+  stationName?: string | null;
+  appliedFilters: ReportAppliedFilterResponse[];
+  summary: ReportMetricResponse[];
+  totals: TabularReportTotalRowResponse[];
+  notes: string[];
+  /** @nullable */
+  generatedBy?: string | null;
+}
+
 export interface TerminateEmployeeInput {
   terminatedOn: string;
   reason: string;
@@ -7154,6 +7237,23 @@ page?: number;
 limit?: number;
 };
 
+export type GetAirlinePortalReportParams = {
+from?: string;
+to?: string;
+stationId?: string;
+status?: string;
+page?: number;
+limit?: number;
+};
+
+export type ExportAirlinePortalReportParams = {
+format?: string;
+from?: string;
+to?: string;
+stationId?: string;
+status?: string;
+};
+
 export type GetAirlineTreasuryStatementParams = {
 asOf?: string;
 stationId?: string;
@@ -7181,6 +7281,33 @@ limit?: number;
 
 export type GetContractsAirlinePermitsParams = {
 review?: string;
+};
+
+export type GetContractsReportParams = {
+from?: string;
+to?: string;
+airlineId?: string;
+stationId?: string;
+serviceId?: string;
+status?: string;
+review?: string;
+validity?: string;
+expiresWithinDays?: number;
+page?: number;
+limit?: number;
+};
+
+export type ExportContractsReportParams = {
+format?: string;
+from?: string;
+to?: string;
+airlineId?: string;
+stationId?: string;
+serviceId?: string;
+status?: string;
+review?: string;
+validity?: string;
+expiresWithinDays?: number;
 };
 
 export type GetDemoFlightOptionsParams = {
@@ -7321,6 +7448,7 @@ to: string;
 stationId?: string;
 airlineId?: string;
 currency?: string;
+status?: string;
 };
 
 export type ExportFinanceReportParams = {
@@ -7329,6 +7457,15 @@ from: string;
 to: string;
 stationId?: string;
 airlineId?: string;
+currency?: string;
+status?: string;
+};
+
+export type ExportFinanceStatementParams = {
+format: string;
+asOf: string;
+airlineId: string;
+stationId?: string;
 currency?: string;
 };
 
@@ -7528,6 +7665,31 @@ limit?: number;
 
 export type RemoveHumanResourcesShiftParams = {
 version?: string;
+};
+
+export type GetHumanResourcesTableReportParams = {
+from?: string;
+to?: string;
+department?: string;
+status?: string;
+stationId?: string;
+account?: string;
+category?: string;
+action?: string;
+page?: number;
+limit?: number;
+};
+
+export type ExportHumanResourcesTableReportParams = {
+format?: string;
+from?: string;
+to?: string;
+department?: string;
+status?: string;
+stationId?: string;
+account?: string;
+category?: string;
+action?: string;
 };
 
 export type ListManagedContractsParams = {
@@ -8148,6 +8310,113 @@ export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListAirlinePortalReportsUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/reports`
+}
+
+export const listAirlinePortalReports = async ( options?: RequestInit): Promise<TabularReportCatalogResponse> => {
+
+  const res = await fetch(getListAirlinePortalReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: TabularReportCatalogResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePortalReportUrl = (reportKey: string,
+    params?: GetAirlinePortalReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/reports/${reportKey}?${stringifiedParams}` : `/api/v1/airline/portal/reports/${reportKey}`
+}
+
+/**
+ * @summary A page of a report (`limit` 1–100) with the totals, summary and filters of every row.
+ */
+export const getAirlinePortalReport = async (reportKey: string,
+    params?: GetAirlinePortalReportParams, options?: RequestInit): Promise<TabularReportPageResponse> => {
+
+  const res = await fetch(getGetAirlinePortalReportUrl(reportKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: TabularReportPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getExportAirlinePortalReportUrl = (reportKey: string,
+    params?: ExportAirlinePortalReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/reports/${reportKey}/export?${stringifiedParams}` : `/api/v1/airline/portal/reports/${reportKey}/export`
+}
+
+/**
+ * @summary The whole report as PDF (5 000 rows at most), Excel or CSV (25 000).
+ */
+export const exportAirlinePortalReport = async (reportKey: string,
+    params?: ExportAirlinePortalReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportAirlinePortalReportUrl(reportKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 
@@ -10761,6 +11030,113 @@ const res = await fetch(getApplyContractLifecycleUrl(versionId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ContractLifecycleResult = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListContractsReportsUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/reports`
+}
+
+export const listContractsReports = async ( options?: RequestInit): Promise<TabularReportCatalogResponse> => {
+
+  const res = await fetch(getListContractsReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: TabularReportCatalogResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetContractsReportUrl = (reportKey: string,
+    params?: GetContractsReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/reports/${reportKey}?${stringifiedParams}` : `/api/v1/contracts/reports/${reportKey}`
+}
+
+/**
+ * @summary A page of a report (`limit` 1–100) with the totals, summary and filters of every row.
+ */
+export const getContractsReport = async (reportKey: string,
+    params?: GetContractsReportParams, options?: RequestInit): Promise<TabularReportPageResponse> => {
+
+  const res = await fetch(getGetContractsReportUrl(reportKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: TabularReportPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getExportContractsReportUrl = (reportKey: string,
+    params?: ExportContractsReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/reports/${reportKey}/export?${stringifiedParams}` : `/api/v1/contracts/reports/${reportKey}/export`
+}
+
+/**
+ * @summary The whole report as PDF (5 000 rows at most), Excel or CSV (25 000).
+ */
+export const exportContractsReport = async (reportKey: string,
+    params?: ExportContractsReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportContractsReportUrl(reportKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 
@@ -14212,6 +14588,40 @@ export const exportFinanceReport = async (reportKey: string,
 
 
 
+export const getExportFinanceStatementUrl = (params: ExportFinanceStatementParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/statements/export?${stringifiedParams}` : `/api/v1/finance/statements/export`
+}
+
+export const exportFinanceStatement = async (params: ExportFinanceStatementParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportFinanceStatementUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getListFinanceServiceOptionsUrl = () => {
 
 
@@ -17487,6 +17897,113 @@ const res = await fetch(getAdjustHumanResourcesShiftUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesShiftAdjusted = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesTableReportsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/table-reports`
+}
+
+export const listHumanResourcesTableReports = async ( options?: RequestInit): Promise<TabularReportCatalogResponse> => {
+
+  const res = await fetch(getListHumanResourcesTableReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: TabularReportCatalogResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetHumanResourcesTableReportUrl = (reportKey: string,
+    params?: GetHumanResourcesTableReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/table-reports/${reportKey}?${stringifiedParams}` : `/api/v1/human-resources/table-reports/${reportKey}`
+}
+
+/**
+ * @summary A page of a report (`limit` 1–100) with the summary and filters of every row.
+ */
+export const getHumanResourcesTableReport = async (reportKey: string,
+    params?: GetHumanResourcesTableReportParams, options?: RequestInit): Promise<TabularReportPageResponse> => {
+
+  const res = await fetch(getGetHumanResourcesTableReportUrl(reportKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: TabularReportPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getExportHumanResourcesTableReportUrl = (reportKey: string,
+    params?: ExportHumanResourcesTableReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/table-reports/${reportKey}/export?${stringifiedParams}` : `/api/v1/human-resources/table-reports/${reportKey}/export`
+}
+
+/**
+ * @summary The whole report as PDF (5 000 rows at most), Excel or CSV (25 000).
+ */
+export const exportHumanResourcesTableReport = async (reportKey: string,
+    params?: ExportHumanResourcesTableReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportHumanResourcesTableReportUrl(reportKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 
