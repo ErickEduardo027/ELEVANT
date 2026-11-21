@@ -1,5 +1,6 @@
 import { normalizedAirlineVerification } from '@elevant/api-client';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { downloadFile } from '../utils/downloadFile';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 
 const origin = String(process.env.NEXT_PUBLIC_ELEVANT_API_URL || '').replace(/\/$/, '');
@@ -226,13 +227,7 @@ export const loadContractPdf = (versionId, { draft = false } = {}) => contractCa
   : contractClient().downloadContractDocument(versionId));
 
 export async function downloadContractDocument(versionId, fileName) {
-  const blob = await loadContractPdf(versionId);
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(await loadContractPdf(versionId), fileName);
 }
 
 export const signContractVersion = (versionId, request, idempotencyKey) =>

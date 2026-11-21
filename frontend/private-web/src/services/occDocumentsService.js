@@ -1,5 +1,6 @@
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { downloadFile } from '../utils/downloadFile';
 
 function client() {
   return createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
@@ -56,11 +57,6 @@ export const getOccDamagePhoto = (operationId, markId, { signal } = {}) =>
 /** Downloads the PDF generated from the operation's record, with its signatures and fingerprint. */
 export async function downloadOccOperationDocument(operationId, document) {
   const blob = await guarded(() => client().downloadOccOperationDocument(operationId, document.kind));
-  const url = URL.createObjectURL(blob);
-  const link = window.document.createElement('a');
-  link.href = url;
-  link.download = `${document.kind === 'ServiceOrder' ? 'orden-de-servicio' : document.kind === 'FlightReport'
-    ? 'reporte-de-vuelo' : 'checklist-puente'}-${document.number}.pdf`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(blob, `${document.kind === 'ServiceOrder' ? 'orden-de-servicio' : document.kind === 'FlightReport'
+    ? 'reporte-de-vuelo' : 'checklist-puente'}-${document.number}.pdf`);
 }

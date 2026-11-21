@@ -5,6 +5,7 @@ import { commercialApi } from './commercialGovernanceApi';
 import { newRequestId } from './financeBookService';
 import { TREASURY_PROBLEM_MESSAGES } from './financeErrors';
 import { problemMessage } from './problemMessages';
+import { downloadFile } from '../utils/downloadFile';
 
 const query = values => {
   const search = new URLSearchParams();
@@ -43,12 +44,7 @@ export async function downloadAdjustmentNoteDocument(noteId, fileName) {
     if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
     throw error;
   }
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(blob, fileName);
 }
 
 /** 4-N17: a note on an E31 invoice has its own simulated e-NCF: E34 credits the invoice, E33 debits it. */

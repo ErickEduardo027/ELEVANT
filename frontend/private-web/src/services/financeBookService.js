@@ -1,5 +1,6 @@
 import { commercialApi } from './commercialGovernanceApi';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { downloadFile } from '../utils/downloadFile';
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
 const query = params => {
@@ -113,15 +114,7 @@ export async function downloadFinanceReport(key, format, filters) {
       status: response.status, code: typeof problem?.code === 'string' ? problem.code : undefined });
   }
   const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `elevant-${key}-${filters.from}-${filters.to}.${format}`;
-  anchor.hidden = true;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadFile(blob, `elevant-${key}-${filters.from}-${filters.to}.${format}`);
 }
 
 export function newRequestId() {

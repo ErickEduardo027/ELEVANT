@@ -2,6 +2,7 @@ import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 import { problemMessage } from './problemMessages';
 import { OCC_REPORT_PROBLEMS } from './reportProblems';
+import { downloadFile } from '../utils/downloadFile';
 
 function client() {
   return createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
@@ -38,10 +39,5 @@ export const getOccReport = (key, query, { signal } = {}) =>
  */
 export async function downloadOccReport(key, query, format, stationCode) {
   const blob = await guarded(() => client().exportOccReport(key, query, format));
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `elevant-occ-${key}-${stationCode}-${query.from.replaceAll('-', '')}-${query.to.replaceAll('-', '')}.${format}`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(blob, `elevant-occ-${key}-${stationCode}-${query.from.replaceAll('-', '')}-${query.to.replaceAll('-', '')}.${format}`);
 }
