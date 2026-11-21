@@ -16,7 +16,9 @@ namespace Elevant.Api.Controllers;
 /// <summary>
 /// The statement of account of an airline at a cut-off as PDF or Excel (ADR-0048, «Reportes nuevos»): the same data as
 /// <c>GET finance/statements</c> under the same permission, with the running balance and the aging of the balances.
-/// Every export is audited (<c>finance.report.exported</c>, report <c>statement</c>).
+/// Without <c>airlineId</c> it is the consolidated statement of every airline the actor may read («Todas las
+/// aerolíneas»), grouped by airline and always on the engine. Every export is audited (<c>finance.report.exported</c>,
+/// report <c>statement</c>).
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
@@ -42,7 +44,7 @@ public sealed class FinanceStatementExportController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> Export([FromQuery, BindRequired] string format, [FromQuery, BindRequired] DateOnly asOf,
-        [FromQuery, BindRequired] Guid airlineId, [FromQuery] Guid? stationId, [FromQuery] string? currency,
+        [FromQuery] Guid? airlineId, [FromQuery] Guid? stationId, [FromQuery] string? currency,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) || actorId == Guid.Empty)
@@ -65,35 +67,36 @@ public sealed class FinanceStatementExportController(
         var data = await treasury.StatementAsync(actorId, asOf, stationId, airlineId, cancellationToken);
         var options = await treasury.OptionsAsync(actorId, cancellationToken);
         if (data is null || options is null) return ReportProblems.StationUnavailable(this);
-        var airline = options.Airlines.FirstOrDefault(item => item.Id == airlineId);
-        if (airline is null) return ReportProblems.NotFound(this);
+        var airline = airlineId is { } selected ? options.Airlines.FirstOrDefault(item => item.Id == selected) : null;
+        if (airlineId is not null && airline is null) return ReportProblems.NotFound(this);
         var station = stationId is { } only ? options.Stations.FirstOrDefault(item => item.Id == only)?.Code : null;
-        var input = Input(airline.Name, station, data);
-        var document = AccountStatementDocuments.ToDocument(input) with
+        var input = airline is null ? ConsolidatedInput(station, data, options) : Input(airline.Name, station, data);
+        var document = (airline is null ? AccountStatementDocuments.ToConsolidatedDocument(input)
+            : AccountStatementDocuments.ToDocument(input)) with
         {
             GeneratedAt = timeProvider.GetUtcNow(),
             GeneratedBy = actor.DisplayName,
         };
         byte[] bytes;
-        if (format == "pdf")
+        if (format == "pdf" && airline is null) bytes = renderer.RenderPdf(document);
+        else if (format == "pdf")
         {
             // PR E: the PDF is the printable statement, in one currency; the Excel keeps every currency on the engine.
-            var customer = await airlines.CustomerAsync(airlineId, cancellationToken);
+            var customer = await airlines.CustomerAsync(airline.Id, cancellationToken);
             bytes = statements.RenderStatement(AccountStatementDocuments.ToPrintable(input,
                 AccountStatementDocuments.PrintableCurrency(input, currency),
                 new AirlineCustomerHeader(airline.Name, customer?.Code ?? "—", customer?.TaxRegistration), document.GeneratedAt,
                 actor.DisplayName));
         }
         else bytes = renderer.RenderXlsx(document);
-        var query = new TabularReportQuery(null, asOf, new Dictionary<string, string>
-        {
-            ["airline"] = airlineId.ToString("D"),
-        }.Concat(stationId is { } id ? [new KeyValuePair<string, string>("station", id.ToString("D"))] : [])
-            .ToDictionary(item => item.Key, item => item.Value));
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (airline is not null) parameters["airline"] = airline.Id.ToString("D");
+        if (stationId is { } id) parameters["station"] = id.ToString("D");
+        var query = new TabularReportQuery(null, asOf, parameters);
         await audit.RecordAsync(actorId, "finance", "statement", format, query, document.Rows.Count, cancellationToken);
         Response.Headers["X-Content-Type-Options"] = "nosniff";
         return File(bytes, format == "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"estado-de-cuenta-{Slug(airline.Name)}-{asOf:yyyyMMdd}.{format}");
+            $"estado-de-cuenta-{Slug(airline?.Name ?? AccountStatementDocuments.AllAirlines)}-{asOf:yyyyMMdd}.{format}");
     }
 
     internal static AccountStatementInput Input(string airline, string? station, FinanceTreasuryStatementData data) =>
@@ -103,6 +106,28 @@ public sealed class FinanceStatementExportController(
             data.Movements.Select(movement => new AccountStatementMovement(movement.Kind, movement.InvoiceId,
                 movement.CurrencyCode, movement.Amount, movement.EffectiveOn, movement.Reference)).ToArray(),
             data.Aging);
+
+    /// <summary>
+    /// The statement of every airline: each movement takes the airline of its invoice or of its receipt; the aging is
+    /// already that of every airline in scope.
+    /// </summary>
+    internal static AccountStatementInput ConsolidatedInput(string? station, FinanceTreasuryStatementData data,
+        FinanceTreasuryOptionsData options)
+    {
+        var names = options.Airlines.ToDictionary(item => item.Id, item => item.Name);
+        var byInvoice = data.Invoices.ToDictionary(invoice => invoice.Id, invoice => invoice.AirlineId);
+        var byReceipt = data.Receipts.ToDictionary(receipt => receipt.Id, receipt => receipt.AirlineId);
+        string? NameOf(FinanceTreasuryStatementMovementData movement) =>
+            (movement.InvoiceId is { } invoice && byInvoice.TryGetValue(invoice, out var fromInvoice) ? fromInvoice
+                : movement.ReceiptId is { } receipt && byReceipt.TryGetValue(receipt, out var fromReceipt) ? fromReceipt
+                : (Guid?)null) is { } airline ? names.GetValueOrDefault(airline) : null;
+        var input = Input(AccountStatementDocuments.AllAirlines, station, data);
+        return input with
+        {
+            Movements = data.Movements.Select((movement, index) => input.Movements[index] with { Airline = NameOf(movement) })
+                .ToArray(),
+        };
+    }
 
     /// <summary>«arajet», «jetblue-airways»: a file name without accents, spaces or symbols.</summary>
     internal static string Slug(string name)

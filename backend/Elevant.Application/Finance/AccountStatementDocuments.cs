@@ -9,7 +9,11 @@ public sealed record AccountStatementInvoice(Guid Id, string Number, string? Fis
 
 /// <summary>A movement of a statement (the kinds of <c>GET finance/statements</c>), in its currency.</summary>
 public sealed record AccountStatementMovement(string Kind, Guid? InvoiceId, string CurrencyCode, decimal Amount,
-    DateOnly EffectiveOn, string Reference);
+    DateOnly EffectiveOn, string Reference)
+{
+    /// <summary>The airline of the movement; only the consolidated statement of every airline needs it.</summary>
+    public string? Airline { get; init; }
+}
 
 /// <summary>The customer header of the printable statement: name, code and readable tax id.</summary>
 public sealed record AirlineCustomerHeader(string Name, string Code, string? TaxRegistration);
@@ -32,6 +36,9 @@ public sealed record AccountStatementInput(string AirlineName, string? StationLa
 public static class AccountStatementDocuments
 {
     public const string Title = "Estado de cuenta";
+
+    /// <summary>The airline label of the consolidated statement, without an <c>airlineId</c>.</summary>
+    public const string AllAirlines = "Todas las aerolíneas";
 
     /// <summary>The columns: date, movement, document, invoice, due date, currency, charge, credit and balance.</summary>
     public static IReadOnlyList<ReportColumn> Columns { get; } =
@@ -62,13 +69,47 @@ public static class AccountStatementDocuments
         _ => (kind, 0),
     };
 
+    /// <summary>The columns of the consolidated statement: the airline, then those of <see cref="Columns"/>.</summary>
+    public static IReadOnlyList<ReportColumn> ConsolidatedColumns { get; } =
+    [
+        ReportColumn.Text("Aerolínea"), new("Fecha", ReportColumnType.Date), ReportColumn.Text("Movimiento"),
+        ReportColumn.Text("Documento"), ReportColumn.Text("Factura"), new("Vence", ReportColumnType.Date),
+        ReportColumn.Text("Moneda"), ReportColumn.Money("Cargo", currencyColumn: 6), ReportColumn.Money("Abono", currencyColumn: 6),
+        new("Saldo", ReportColumnType.Money) { CurrencyColumn = 6 },
+    ];
+
+    /// <summary>
+    /// The statement of every airline the actor may read at a cut-off (no <c>airlineId</c>): the movements grouped by
+    /// airline, each with the running balance of its airline and currency, and the aging of all of them as the summary.
+    /// </summary>
+    public static ReportDocument ToConsolidatedDocument(AccountStatementInput input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var airlines = input.Movements.GroupBy(movement => movement.Airline ?? "—")
+            .OrderBy(group => group.Key, StringComparer.Ordinal).ToArray();
+        var rows = airlines.SelectMany(group => Rows(input, group).Select(row =>
+            (IReadOnlyList<ReportCell>)[ReportCell.Of(group.Key), .. row])).ToList();
+        var summary = Summary(input);
+        summary.Insert(0, new ReportMetric("Aerolíneas", ReportFormat.Integer(airlines.Length), "con movimientos hasta el corte"));
+        return Document(input, ConsolidatedColumns, rows, summary) with
+        {
+            Description = $"Movimientos de la cuenta de cada aerolínea hasta el {ReportFormat.Date(input.AsOf)}, agrupados por " +
+                "aerolínea con el saldo acumulado de cada moneda, y la antigüedad de los saldos de todas ellas.",
+        };
+    }
+
     public static ReportDocument ToDocument(AccountStatementInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
+        return Document(input, Columns, Rows(input, input.Movements), Summary(input));
+    }
+
+    private static List<IReadOnlyList<ReportCell>> Rows(AccountStatementInput input, IEnumerable<AccountStatementMovement> movements)
+    {
         var invoices = input.Invoices.ToDictionary(invoice => invoice.Id);
         var balances = new Dictionary<string, decimal>(StringComparer.Ordinal);
         var rows = new List<IReadOnlyList<ReportCell>>();
-        foreach (var movement in input.Movements.OrderBy(item => item.EffectiveOn))
+        foreach (var movement in movements.OrderBy(item => item.EffectiveOn))
         {
             var (label, sign) = Kind(movement.Kind);
             var invoice = movement.InvoiceId is { } id ? invoices.GetValueOrDefault(id) : null;
@@ -85,6 +126,11 @@ public static class AccountStatementDocuments
                 ReportCell.Value(balance),
             ]);
         }
+        return rows;
+    }
+
+    private static List<ReportMetric> Summary(AccountStatementInput input)
+    {
         var summary = new List<ReportMetric>();
         var open = input.Invoices.Count(invoice => invoice.Balance > 0m);
         summary.Add(new ReportMetric("Facturas con saldo", ReportFormat.Integer(open),
@@ -109,7 +155,12 @@ public static class AccountStatementDocuments
             summary.Add(new ReportMetric($"Saldo de la cuenta {currency}",
                 ReportFormat.Money(aging.Balance - aging.Unallocated, currency), "facturas con saldo menos cobros sin aplicar"));
         }
-        return new ReportDocument(FinanceReportDocuments.Area, Title, Columns, rows)
+        return summary;
+    }
+
+    private static ReportDocument Document(AccountStatementInput input, IReadOnlyList<ReportColumn> columns,
+        IReadOnlyList<IReadOnlyList<ReportCell>> rows, IReadOnlyList<ReportMetric> summary) =>
+        new(FinanceReportDocuments.Area, Title, columns, rows)
         {
             Description = $"Movimientos de la cuenta de {input.AirlineName} hasta el {ReportFormat.Date(input.AsOf)}, con el " +
                 "saldo acumulado de cada moneda y la antigüedad de los saldos.",
@@ -127,7 +178,6 @@ public static class AccountStatementDocuments
             ],
             Notice = FinanceInvoicePolicy.Disclaimer,
         };
-    }
 
     /// <summary>
     /// The currency of the printable statement (it prints one): the one asked for, else the one of most invoices

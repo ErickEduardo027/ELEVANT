@@ -226,7 +226,7 @@ public sealed class NewReportsEndpointsTests(ElevantApiFactory factory) : IClass
     }
 
     [Fact]
-    public async Task TheFinanceStatementNeedsItsPermissionAndAnAirline()
+    public async Task TheFinanceStatementNeedsItsPermissionAndConsolidatesEveryAirlineWithoutOne()
     {
         var ct = TestContext.Current.CancellationToken;
         var refused = new State { Actor = InternalActor(Department.Finance, "finance.reports.read") };
@@ -241,8 +241,14 @@ public sealed class NewReportsEndpointsTests(ElevantApiFactory factory) : IClass
         var state = new State { Actor = InternalActor(Department.Finance, "finance.receipts.read", "finance.statements.read") };
         await using var allowed = App(state);
         using var finance = Authorized(allowed);
-        using (var missing = await finance.GetAsync("/api/v1/finance/statements/export?format=pdf&asOf=2026-10-31", ct))
-            Assert.Equal((HttpStatusCode.BadRequest, "invalid_report_query"), (missing.StatusCode, await CodeAsync(missing, ct)));
+        // Without an airline: «Todas las aerolíneas», the consolidated statement of every airline the actor may read.
+        using (var all = await finance.GetAsync("/api/v1/finance/statements/export?format=pdf&asOf=2026-10-31", ct))
+        {
+            Assert.Equal((HttpStatusCode.OK, "application/pdf"), (all.StatusCode, all.Content.Headers.ContentType?.MediaType));
+            Assert.Equal("estado-de-cuenta-todas-las-aerolineas-20261031.pdf", all.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        }
+        using (var empty = await finance.GetAsync($"/api/v1/finance/statements/export?format=pdf&asOf=2026-10-31&airlineId={Guid.Empty}", ct))
+            Assert.Equal((HttpStatusCode.BadRequest, "invalid_report_query"), (empty.StatusCode, await CodeAsync(empty, ct)));
         using (var word = await finance.GetAsync($"/api/v1/finance/statements/export?format=docx&asOf=2026-10-31&airlineId={Organization}", ct))
             Assert.Equal(HttpStatusCode.BadRequest, word.StatusCode);
         using (var foreign = await finance.GetAsync(
@@ -258,7 +264,7 @@ public sealed class NewReportsEndpointsTests(ElevantApiFactory factory) : IClass
         using (var euros = await finance.GetAsync(
                    $"/api/v1/finance/statements/export?format=pdf&asOf=2026-10-31&airlineId={Organization}&currency=EUR", ct))
             Assert.Equal(HttpStatusCode.BadRequest, euros.StatusCode);
-        Assert.Equal([("finance", "statement", "xlsx"), ("finance", "statement", "pdf")], state.Audits);
+        Assert.Equal([("finance", "statement", "pdf"), ("finance", "statement", "xlsx"), ("finance", "statement", "pdf")], state.Audits);
     }
 
     [Fact]
