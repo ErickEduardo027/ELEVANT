@@ -114,3 +114,32 @@ it('keeps the indicators on screen while it revalidates and when a revalidation 
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(onRetry).toHaveBeenCalledOnce();
 });
+
+it('gives every figure its context: average, share overdue, share of the month and plurals (no «números fríos»)', () => {
+  render(page({ data: { ...data,
+    invoicedThisMonth: [{ currencyCode: 'USD', count: 2, amount: 236 }, { currencyCode: 'DOP', count: 1, amount: 11800 }],
+    cardCollectionsThisMonth: [{ currencyCode: 'DOP', count: 1, amount: 5900 }, { currencyCode: 'USD', count: 2, amount: 50 }],
+    pendingContractApprovals: 2, chartersAwaitingPrepayment: 1 } }));
+  expect(screen.getByRole('article', { name: 'Facturado este mes' }))
+    .toHaveTextContent(/2 facturas este mes · promedio US\$118\.00.*1 factura este mes · promedio/);
+  expect(screen.getByRole('article', { name: 'Por cobrar' })).toHaveTextContent('2 facturas abiertas · 50 % vencido');
+  expect(screen.getByRole('article', { name: 'Vencido' })).toHaveTextContent('1 factura vencida de 2 abiertas · 50 % del saldo por cobrar');
+  const card = screen.getByRole('article', { name: 'Cobrado con tarjeta este mes' });
+  expect(card).toHaveTextContent('1 pago · equivale al 50 % de lo facturado este mes');
+  expect(card).toHaveTextContent('2 pagos · equivale al 21.2 % de lo facturado este mes');
+  expect(screen.getByRole('article', { name: 'Contratos por aprobar' })).toHaveTextContent('2 versiones esperan la aprobación de precios');
+  expect(screen.getByRole('article', { name: 'Charters con prepago pendiente' })).toHaveTextContent('1 charter espera su prepago');
+});
+
+it('says what an empty figure means and compares nothing against an empty month', () => {
+  render(page({ data: { ...data, invoicedThisMonth: [],
+    receivables: [{ currencyCode: 'USD', openInvoices: 1, open: 100, overdueInvoices: 0, overdue: 0 }],
+    pendingContractApprovals: 0, chartersAwaitingPrepayment: 0 } }));
+  expect(screen.getByRole('article', { name: 'Por cobrar' })).toHaveTextContent('1 factura abierta');
+  expect(screen.getByRole('article', { name: 'Por cobrar' })).not.toHaveTextContent('vencido');
+  const card = screen.getByRole('article', { name: 'Cobrado con tarjeta este mes' });
+  expect(card).toHaveTextContent('1 pago');
+  expect(card).not.toHaveTextContent('equivale');
+  expect(screen.getByRole('article', { name: 'Contratos por aprobar' })).toHaveTextContent('Ninguna versión espera la aprobación de precios');
+  expect(screen.getByRole('article', { name: 'Charters con prepago pendiente' })).toHaveTextContent('Ningún charter espera su prepago');
+});

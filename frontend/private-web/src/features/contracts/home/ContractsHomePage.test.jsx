@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import ContractsHomePage from './ContractsHomePage';
 
 const DATA = {
-  kpis: { pendingRequests: 1, approvedRequests: 1, pendingDrafts: 1, rejectedRequests: 2 },
+  kpis: { pendingRequests: 1, approvedRequests: 1, pendingDrafts: 1, rejectedRequests: 2, totalRequests: 5 },
   recentRequests: [{ id: 'one', reference: 'SOL-1', airline: 'Sky High', status: 'Pending', submittedAt: '2026-09-27T10:00:00Z' }],
   pendingDrafts: [{ id: 'two', contractCode: 'DRAFT-2', airline: 'Arajet', comments: [] }],
 };
@@ -17,6 +17,21 @@ describe('ContractsHomePage', () => {
     expect(screen.getByText('Arajet')).toBeInTheDocument();
     expect(screen.getByText('Sky High')).toBeInTheDocument();
     expect(screen.queryByText(/Datos sintéticos/)).not.toBeInTheDocument();
+  });
+
+  it('puts every indicator against its whole, with the right plural (no «números fríos»)', () => {
+    render(<ContractsHomePage status="success" data={DATA} onRetry={() => {}} onNavigate={() => {}} />);
+    expect(screen.getAllByText('de 5 solicitudes · 20 %')).toHaveLength(2);
+    expect(screen.getByText('de 5 solicitudes · 40 %')).toBeInTheDocument();
+    expect(screen.getByText('1 versión en borrador · la más reciente de Arajet')).toBeInTheDocument();
+  });
+
+  it('says so when there is nothing to compare with', () => {
+    render(<ContractsHomePage status="success" onRetry={() => {}} onNavigate={() => {}} data={{ ...DATA,
+      kpis: { pendingRequests: 0, approvedRequests: 0, pendingDrafts: 0, rejectedRequests: 0, totalRequests: 0 },
+      recentRequests: [], pendingDrafts: [] }} />);
+    expect(screen.getAllByText('de 0 solicitudes')).toHaveLength(3);
+    expect(screen.getByText('Ninguna versión espera activación')).toBeInTheDocument();
   });
 
   it('shortens a GUID reference and names a new contract «Borrador», each whole in its title (N35)', () => {

@@ -1,6 +1,7 @@
 import EmptyState from '../../../components/EmptyState';
 import { AlertIcon, ArrowIcon, HomeIcon, PreInvoiceIcon, ReconciliationIcon, ReportIcon, TariffIcon } from '../components/icons';
 import { FINANCE_MODULE_IDS } from '../shell/modules';
+import { percentOf } from '../../../utils/kpiContext';
 
 function formatDay(value) {
   if (!value) return '—';
@@ -15,6 +16,16 @@ function formatMoney(amount, currency) {
 }
 
 const plural = (count, one, many) => `${count.toLocaleString('es-DO')} ${count === 1 ? one : many}`;
+
+/** «2 versiones esperan…», «1 charter espera…», or what none means. */
+const waiting = (count, { none, one, many }) => (count === 0 ? none
+  : `${count.toLocaleString('es-DO')} ${count === 1 ? one : many}`);
+
+/** The share of `part` in the amount of the same currency in `items`, when that amount is not zero. */
+function shareIn(items, currencyCode, part) {
+  const whole = items?.find(item => item.currencyCode === currencyCode)?.amount;
+  return percentOf(part, whole);
+}
 
 /** One indicator of «Inicio»: its figure, what it counts and, when the account may open it, its module. */
 function HomeCard({ label, icon: Icon, tone = 'default', children, detail, action }) {
@@ -115,29 +126,41 @@ export default function FinanceHomePage({ status, data, error = '', refreshing =
       {data.invoicedThisMonth && <HomeCard label="Facturado este mes" icon={ReportIcon}
         action={open(FINANCE_MODULE_IDS.RECONCILIATION, 'Ver facturas')}>
         <PerCurrency items={data.invoicedThisMonth} amount={item => item.amount}
-          count={item => plural(item.count, 'factura', 'facturas')} empty="Sin facturas este mes." />
+          count={item => `${plural(item.count, 'factura', 'facturas')} este mes${item.count > 0
+            ? ` · promedio ${formatMoney(item.amount / item.count, item.currencyCode)}` : ''}`} empty="Sin facturas este mes." />
       </HomeCard>}
       {data.receivables && <HomeCard label="Por cobrar" icon={ReconciliationIcon}
         action={open(FINANCE_MODULE_IDS.RECONCILIATION, 'Ver facturas')}>
         <PerCurrency items={data.receivables} amount={item => item.open}
-          count={item => plural(item.openInvoices, 'factura abierta', 'facturas abiertas')} empty="No hay saldos pendientes." />
+          count={item => `${plural(item.openInvoices, 'factura abierta', 'facturas abiertas')}${item.overdue > 0
+            ? ` · ${percentOf(item.overdue, item.open)} vencido` : ''}`} empty="No hay saldos pendientes." />
       </HomeCard>}
       {data.receivables && <HomeCard label="Vencido" icon={AlertIcon}
         tone={data.receivables.some(item => item.overdue > 0) ? 'danger' : 'default'}
         action={open(FINANCE_MODULE_IDS.RECONCILIATION, 'Ver facturas vencidas')}>
         <PerCurrency items={data.receivables.filter(item => item.overdueInvoices > 0)} amount={item => item.overdue}
-          count={item => plural(item.overdueInvoices, 'factura vencida', 'facturas vencidas')} empty="Nada vencido." />
+          count={item => `${plural(item.overdueInvoices, 'factura vencida', 'facturas vencidas')} de ${
+            plural(item.openInvoices, 'abierta', 'abiertas')}${percentOf(item.overdue, item.open)
+            ? ` · ${percentOf(item.overdue, item.open)} del saldo por cobrar` : ''}`} empty="Nada vencido." />
       </HomeCard>}
       {data.cardCollectionsThisMonth && <HomeCard label="Cobrado con tarjeta este mes" icon={ReconciliationIcon}
         action={open(FINANCE_MODULE_IDS.RECONCILIATION, 'Ver facturas')}>
         <PerCurrency items={data.cardCollectionsThisMonth} amount={item => item.amount}
-          count={item => plural(item.count, 'pago', 'pagos')} empty="Sin pagos con tarjeta este mes." />
+          count={item => {
+            // Card payments of the month may settle older invoices: «equivale» compares two figures, it is not a part.
+            const share = shareIn(data.invoicedThisMonth, item.currencyCode, item.amount);
+            return `${plural(item.count, 'pago', 'pagos')}${share ? ` · equivale al ${share} de lo facturado este mes` : ''}`;
+          }} empty="Sin pagos con tarjeta este mes." />
       </HomeCard>}
       {data.pendingContractApprovals !== null && <HomeCard label="Contratos por aprobar" icon={TariffIcon}
+        detail={waiting(data.pendingContractApprovals, { none: 'Ninguna versión espera la aprobación de precios',
+          one: 'versión espera la aprobación de precios', many: 'versiones esperan la aprobación de precios' })}
         action={open(FINANCE_MODULE_IDS.CONTRACT_APPROVALS, 'Ver aprobaciones')}>
         <p className="text-3xl">{data.pendingContractApprovals.toLocaleString('es-DO')}</p>
       </HomeCard>}
       {data.chartersAwaitingPrepayment !== null && <HomeCard label="Charters con prepago pendiente" icon={PreInvoiceIcon}
+        detail={waiting(data.chartersAwaitingPrepayment, { none: 'Ningún charter espera su prepago',
+          one: 'charter espera su prepago', many: 'charters esperan su prepago' })}
         action={open(FINANCE_MODULE_IDS.CHARTERS, 'Ver charters')}>
         <p className="text-3xl">{data.chartersAwaitingPrepayment.toLocaleString('es-DO')}</p>
       </HomeCard>}

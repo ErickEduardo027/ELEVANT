@@ -21,6 +21,7 @@ it('derives active staff and unlinked accounts from the authorized ramp profiles
 
   expect(await getHumanResourcesDashboardSnapshot()).toEqual({
     activeStaffTotal: 2,
+    profilesTotal: 3,
     pendingAccounts: [{ id: 'agent-2', name: 'Luis Vega', role: 'Rampa' }],
   });
 });
