@@ -60,13 +60,6 @@ export const EMPLOYEE_STATUS = {
   Active: { label: 'Activo', tone: 'success' },
   Terminated: { label: 'Baja', tone: 'neutral' },
 };
-export const REQUISITION_STATUS = {
-  Open: { label: 'Abierta', tone: 'warning' },
-  InProgress: { label: 'En proceso', tone: 'info' },
-  Fulfilled: { label: 'Cubierta', tone: 'success' },
-  Rejected: { label: 'Rechazada', tone: 'danger' },
-  Cancelled: { label: 'Cancelada', tone: 'neutral' },
-};
 
 const MESSAGES = {
   identification_invalid: 'La identificación no tiene el formato real de su tipo (cédula o residencia con dígito verificador, o pasaporte).',
