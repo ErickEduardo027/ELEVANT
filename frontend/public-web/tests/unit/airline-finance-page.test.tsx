@@ -239,3 +239,12 @@ it("offers to drop the station of a shared address when its invoices cannot be r
   expect(await screen.findByRole("link", { name: "E310000000001" })).toBeInTheDocument();
   await waitFor(() => expect(window.location.search).toBe(""));
 });
+
+it("agrees the invoice count in the singular: never «de 1 facturas»", async () => {
+  getTreasuryStatement.mockResolvedValue(statement([invoice({ applied: 0, credited: 0, balance: 118 })]));
+  render(<AirlineFinancePage airlineName="Demo Airlines" />);
+  const summary = await screen.findByLabelText("Resumen de facturas");
+  expect(within(summary).getByText("Facturas con saldo").parentElement).toHaveTextContent("1 de 1factura pendiente de pago");
+  expect(screen.getByText("1 factura emitida.")).toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent(/1 facturas|de 1 facturas/);
+});

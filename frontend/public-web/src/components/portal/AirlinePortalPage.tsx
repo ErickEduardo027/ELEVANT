@@ -104,7 +104,7 @@ function AirlineFlightsPage({ airlineName }: {
 
   return <div className={styles.page}>
     <div className={styles.realScope}><div><span className={styles.kicker}>{airlineName}</span><h1>Vuelos</h1>
-      <p>{operations.length} operaciones cargadas del historial autorizado.</p></div></div>
+      <p>{operations.length} {operations.length === 1 ? "operación cargada" : "operaciones cargadas"} del historial autorizado.</p></div></div>
     <label className={styles.flightSearch}>Buscar vuelo u operación
       <input type="search" value={flightQuery} onChange={event => setFlightQuery(event.target.value)}
         placeholder="Número de vuelo, operación o estación" />

@@ -129,7 +129,8 @@ describe('the simplified Finance of phase 4 (block B)', () => {
 
   it('explains the reports, «Facturas» and «Inicio» by their codes (4-A, 4-N21)', () => {
     expect(financeReportMessage(failure(400, 'unknown_finance_report'))).toMatch(/Ese reporte ya no existe/);
-    expect(financeReportMessage(failure(400, 'invalid_report_export_format'))).toMatch(/CSV, Excel o PDF/);
+    expect(financeReportMessage(failure(400, 'invalid_report_export_format'))).toMatch(/PDF o Excel/);
+    expect(financeReportMessage(failure(400, 'invalid_report_export_format'))).not.toMatch(/CSV/);
     expect(financeReportMessage(failure(400, 'invalid_report_query'))).toMatch(/máximo son dos años/);
     expect(financeReportMessage(failure(403, 'forbidden'))).toBe('No tiene acceso a este reporte en las estaciones elegidas.');
     expect(invoiceListMessage(failure(400, 'invalid_invoice_query'))).toMatch(/hasta 40 caracteres/);

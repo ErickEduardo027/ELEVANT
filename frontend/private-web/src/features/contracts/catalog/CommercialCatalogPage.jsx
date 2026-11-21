@@ -262,7 +262,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       })}</div>}
       {status === 'ready' && services.length === 0 && <p className="mt-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">No hay servicios en el catálogo.</p>}
       {status === 'ready' && <nav aria-label="Paginación de servicios" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4 text-sm dark:border-white/10">
-        <p className="text-text-secondary-light dark:text-text-secondary-dark">Mostrando {services.length ? pageStart + 1 : 0}–{Math.min(pageStart + PAGE_SIZE, services.length)} de {services.length} servicios</p>
+        <p className="text-text-secondary-light dark:text-text-secondary-dark">Mostrando {services.length ? pageStart + 1 : 0}–{Math.min(pageStart + PAGE_SIZE, services.length)} de {services.length} {services.length === 1 ? 'servicio' : 'servicios'}</p>
         <div className="flex items-center gap-3"><button type="button" disabled={currentPage === 1} onClick={() => setPage(current => current - 1)} className="min-h-10 rounded-lg border border-black/10 px-3 font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10">Anterior</button><span>Página {currentPage} de {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(current => current + 1)} className="min-h-10 rounded-lg border border-black/10 px-3 font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10">Siguiente</button></div>
       </nav>}
     </section>

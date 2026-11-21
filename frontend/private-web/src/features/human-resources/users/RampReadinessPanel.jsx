@@ -55,7 +55,8 @@ export default function RampReadinessPanel() {
       {state.status === 'success' && (state.rows.length === 0
         ? <p className="text-sm">No hay agentes de rampa activos.</p>
         : <>
-          <p className="text-sm">{state.rows.filter(row => row.ready).length} de {state.rows.length} agentes pueden operar.</p>
+          <p className="text-sm">{state.rows.filter(row => row.ready).length} de {state.rows.length} {state.rows.length === 1
+            ? 'agente puede operar' : 'agentes pueden operar'}.</p>
           <ul className="divide-y divide-black/5 dark:divide-white/5">
             {state.rows.map(row => {
               const missing = row.items.filter(item => item.status === 'Missing');

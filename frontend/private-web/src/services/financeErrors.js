@@ -166,7 +166,7 @@ export const FINANCE_HOME_MESSAGES = Object.freeze({
 /** The six Finance reports (phase 4, block B, 4-A, 4-N19 and 4-N20) and their exports. */
 export const FINANCE_REPORT_MESSAGES = Object.freeze({
   unknown_finance_report: 'Ese reporte ya no existe en Finanzas. Elija uno de la lista.',
-  invalid_report_export_format: 'Ese formato de exportación no existe. Exporte en CSV, Excel o PDF.',
+  invalid_report_export_format: 'Ese formato de exportación no existe. Exporte en PDF o Excel.',
   invalid_report_query: 'Revise el período: la fecha final no puede ser anterior a la inicial, el máximo son dos años y la moneda es USD o DOP.',
   ...FINANCE_LEGACY_MESSAGES,
 });

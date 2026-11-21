@@ -32,3 +32,10 @@ it('stays hidden for accounts without access', async () => {
   const { container } = render(<RampReadinessPanel />);
   await vi.waitFor(() => expect(container).toBeEmptyDOMElement());
 });
+
+it('agrees with a single agent', async () => {
+  listRampAgentReadiness.mockResolvedValue([ready]);
+  render(<RampReadinessPanel />);
+  const panel = await screen.findByRole('region', { name: '¿Puede operar?' });
+  expect(within(panel).getByText('1 de 1 agente puede operar.')).toBeInTheDocument();
+});

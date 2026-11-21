@@ -133,7 +133,8 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     {statement && <>
       <div className={styles.kpis} aria-label="Resumen de facturas" role="group">
         <div><span>Facturas con saldo</span><strong>{summary.open} de {summary.count}</strong>
-          <small>{summary.open === 0 ? "Todas sus facturas están saldadas." : "facturas pendientes de pago"}</small></div>
+          <small>{summary.open === 0 ? "Todas sus facturas están saldadas."
+            : summary.count === 1 ? "factura pendiente de pago" : "facturas pendientes de pago"}</small></div>
         <div><span>Saldo pendiente</span><strong>{formatByCurrency(summary.outstanding)}</strong>
           <small>{billedOf}</small></div>
         <div data-tone={summary.overdue > 0 ? "danger" : undefined}><span>Vencido</span>
