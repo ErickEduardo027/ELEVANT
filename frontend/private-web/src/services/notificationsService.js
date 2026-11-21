@@ -37,7 +37,7 @@ async function notificationsApi(path, options = {}) {
 //   GET  /notifications/preferences
 //   PUT  /notifications/preferences
 
-// PUJ / Atlantic Standard Time — mismo criterio que reviewService.js/reportsService.js.
+// PUJ / Atlantic Standard Time — mismo criterio que reviewService.js.
 const STATION_UTC_OFFSET_MS = 4 * 60 * 60 * 1000;
 
 function getStationDate(daysAgo = 0) {
