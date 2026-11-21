@@ -104,7 +104,8 @@ internal sealed partial class FinanceTreasuryStore
             var preinvoiceId = await context.Preinvoices.AsNoTracking().Where(p => p.Id == row.Invoice.PreinvoiceId).Select(p => p.PublicId).SingleAsync(ct);
             var lines = await context.Set<NonFiscalInvoiceLine>().AsNoTracking().Where(l => l.InvoiceId == row.Invoice.Id).OrderBy(l => l.LineNumber)
                 .Select(l => new AirlineTreasuryInvoiceLineData(l.PublicId, l.LineNumber, l.Kind.ToString(), l.ParentLineNumber, l.OperationCode,
-                    l.OperationDate, l.ServiceCode, l.ServiceName, l.ExecutedQuantity, l.BillingUnit, l.UnitPrice, l.Amount, l.Reason)).ToArrayAsync(ct);
+                    l.OperationDate, l.ServiceCode, l.ServiceName, l.ExecutedQuantity, l.BillingUnit, l.UnitPrice, l.Amount, l.Reason)
+                    { NetAmount = l.NetAmount, TaxAmount = l.TaxAmount }).ToArrayAsync(ct);
             var notes = await AdjustmentDataAsync(row.Invoice, ct);
             return new(PortalInvoice(summary, preinvoiceId, row.Invoice.FiscalNumber, scope), lines,
                 statement.Movements.Where(m => m.InvoiceId == invoiceId).Select(PortalMovement).ToArray(), notes.Notes.Select(PortalNote).ToArray());

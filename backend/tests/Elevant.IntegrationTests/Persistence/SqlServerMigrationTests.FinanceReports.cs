@@ -119,6 +119,26 @@ public sealed partial class SqlServerMigrationTests
         var sales = await Read("sales");
         Assert.Empty(sales.Rows);
         Assert.Equal("0", Assert.Single(sales.Summary, m => m.Label == "Facturas e-CF").Value);
+        // «Facturas emitidas» (ADR-0048, «Reportes nuevos»): one row per invoice with what was paid and its balance at the
+        // cut-off, the same balance as «Cuentas por cobrar»; the status filter keeps only that status.
+        var issuedReport = await Read("invoices");
+        Assert.Equal([("Vencida", "1000.00", "300.00", "570.00")],
+            issuedReport.Rows.Select(row => (row[7], row[10], row[11], row[12])).ToArray());
+        Assert.Equal(invoice.Number, Cell(issuedReport, "number"));
+        Assert.Empty((await reports.GetAsync(FinanceAccount, "invoices", filter with { Status = "paid" }, ct))!.Rows);
+        Assert.Single((await reports.GetAsync(FinanceAccount, "invoices", filter with { Status = "open" }, ct))!.Rows);
+        Assert.Contains(new FinanceReportAppliedFilter("Estado", "Con saldo"),
+            (await reports.GetAsync(FinanceAccount, "invoices", filter with { Status = "open" }, ct))!.Filters);
+        Assert.Null(await reports.GetAsync(FinanceAccount, "invoices", filter with { Status = "unknown" }, ct));
+        Assert.Null(await reports.GetAsync(FinanceAccount, "receipts", filter with { Status = "open" }, ct));
+        // «Cobros»: each receipt with what it applied, refunded and what remains; a reversed one remains at zero and a
+        // legacy payment counts as applied in full.
+        var receipts = await Read("receipts");
+        var byReference = receipts.Rows.ToDictionary(row => row[5]!, row => (row[6], row[7], row[8], row[9], row[10]));
+        Assert.Equal(("Recibo con devolución", "1000.00", "200.00", "100.00", "700.00"), byReference["RECEIPT-REPORT"]);
+        Assert.Equal(("Reversado", "80.00", "0.00", "0.00", "0.00"), byReference["REVERSED-REPORT"]);
+        Assert.Equal(("Pago heredado", "100.00", "100.00", "0.00", "0.00"), byReference["LEGACY-REPORT"]);
+        Assert.Equal("700.00", Assert.Single(receipts.Summary, m => m.Label == "Remanente USD").Value);
 
         var supplier = new Supplier { PublicId = Guid.NewGuid(), ScopeStationId = station.Id, Code = "REPORT-SUPPLIER", Name = "Synthetic supplier", CreatedByAccountId = user.Id, CreatedAt = early, UpdatedAt = early };
         db.Add(supplier); await db.SaveChangesAsync(ct);

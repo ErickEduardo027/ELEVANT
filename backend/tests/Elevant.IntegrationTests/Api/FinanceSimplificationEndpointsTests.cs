@@ -182,7 +182,7 @@ public sealed class FinanceSimplificationEndpointsTests(ElevantApiFactory factor
         using (var list = await client.GetAsync("/api/v1/finance/reports", ct))
         {
             using var json = JsonDocument.Parse(await list.Content.ReadAsStringAsync(ct));
-            Assert.Equal(["revenue", "receivables", "collections", "payables", "charges", "sales"],
+            Assert.Equal(["revenue", "receivables", "collections", "payables", "charges", "sales", "invoices", "receipts"],
                 json.RootElement.EnumerateArray().Select(item => item.GetProperty("key").GetString()!).ToArray());
         }
         const string period = "from=2026-11-01&to=2026-11-05";

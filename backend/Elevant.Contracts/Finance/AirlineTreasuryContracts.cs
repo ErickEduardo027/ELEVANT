@@ -17,7 +17,14 @@ public sealed record AirlineTreasuryAdjustmentResponse(Guid Id, string Number, G
 public sealed record AirlineTreasuryAdjustmentsResponse(Guid InvoiceId, string Number, string CurrencyCode,
     decimal LegacyCredited, IReadOnlyList<AirlineTreasuryAdjustmentResponse> Notes);
 public sealed record AirlineTreasuryInvoiceLineResponse(Guid Id, int LineNumber, string Kind, int? ParentLineNumber, string OperationCode,
-    DateOnly OperationDate, string ServiceCode, string ServiceName, decimal Quantity, string BillingUnit, decimal UnitPrice, decimal Amount, string? Reason);
+    DateOnly OperationDate, string ServiceCode, string ServiceName, decimal Quantity, string BillingUnit, decimal UnitPrice, decimal Amount, string? Reason)
+{
+    /// <summary>The line's net before ITBIS, frozen at issuance; null on a line issued before the breakdown (additive).</summary>
+    public decimal? NetAmount { get; init; }
+
+    /// <summary>The line's ITBIS, frozen at issuance; null on a line issued before the breakdown (additive).</summary>
+    public decimal? TaxAmount { get; init; }
+}
 public sealed record AirlineTreasuryInvoiceDetailResponse(AirlineTreasuryInvoiceResponse Invoice,
     IReadOnlyList<AirlineTreasuryInvoiceLineResponse> Lines, IReadOnlyList<AirlineTreasuryMovementResponse> Movements,
     IReadOnlyList<AirlineTreasuryAdjustmentResponse> Notes);

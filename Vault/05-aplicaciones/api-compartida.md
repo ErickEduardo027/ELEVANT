@@ -237,6 +237,32 @@ en PDF y Excel con un solo motor
   cuenta los agentes formados en cada equipo, con la plantilla de la estación
   aparte (`stationAgents`).
 
+## Reportes nuevos
+
+*Posterior al commit verificado de esta nota (PR C del plan de reportería, 21 de
+noviembre de 2026):* el motor suma reportes tabulares de Contratos, Gestión
+Humana y el portal, dos de Finanzas y el estado de cuenta en PDF y Excel
+([ADR-0048, «Reportes nuevos»](../../docs/adr/0048-motor-comun-de-reportes.md)).
+
+- **Rutas.**
+  - `api/v1/contracts/reports`: contratos y vigencias, tarifas pactadas,
+    solicitudes comerciales y permisos de aerolíneas, con
+    `contracts.reports.read`.
+  - `api/v1/human-resources/table-reports`: plantilla de personal y
+    trazabilidad y auditoría.
+  - `api/v1/airline/portal/reports`: operaciones y servicios, facturas y pagos
+    y estado de cuenta, siempre de la aerolínea de la sesión.
+  - `GET finance/statements/export`: el estado de cuenta. El PDF es el
+    documento imprimible del PR E y el Excel sale del motor.
+  - En el catálogo de Finanzas entran «Facturas emitidas» y «Cobros».
+- **Mismo contrato.** Todos los reportes tienen:
+  - catálogo con filtros y período (`none`, `range`, `asOf`);
+  - página con totales, resumen, filtros y «generado por»;
+  - exportación PDF, Excel o CSV con límites de filas, «Exportar» comprobado
+    antes de leer y auditoría `{área}.report.exported`.
+- **Pendiente.** Las pantallas internas de AVIAM Web para estos reportes son de
+  otro PR. El portal ya descarga sus reportes y el estado de cuenta.
+
 ## Validación local
 
 Los comandos de restauración, compilación, pruebas y deriva del modelo EF

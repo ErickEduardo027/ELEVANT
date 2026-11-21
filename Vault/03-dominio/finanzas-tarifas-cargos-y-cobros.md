@@ -394,7 +394,12 @@ los filtros nombran la estación, la aerolínea y la moneda (ya no «Estación
 filtrada»), los totales van por moneda, el cobro sobre lo facturado lleva un
 decimal y los indicadores de cobro, antigüedad y cuentas por pagar traen su
 contexto; cuentas por cobrar y por pagar son reportes a fecha de corte
-(`asOfDate`). Inicio (`GET finance/home`) muestra los
+(`asOfDate`). *Reportes nuevos (posterior al commit verificado):* se suman
+«Facturas emitidas» (con filtro de estado) y «Cobros» (recibido, aplicado,
+devuelto y remanente), y el estado de cuenta de una aerolínea a una fecha de corte
+se descarga en PDF (documento imprimible) y Excel con
+`GET finance/statements/export`; el portal descarga el mismo de su aerolínea.
+Inicio (`GET finance/home`) muestra los
 indicadores de la estación que el servidor calcula, cada sección según el
 permiso de su módulo.
 

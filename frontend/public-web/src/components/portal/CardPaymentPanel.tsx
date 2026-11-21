@@ -1,5 +1,6 @@
 "use client";
 
+import { receiptFileName } from "@/lib/document-file-names";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { CardPaymentAttemptResponse, CardPaymentAvailabilityResponse, CardPaymentListResponse } from "@elevant/api-client";
 
@@ -25,15 +26,15 @@ const money = (value: number, currency: string) => formatMoney(currency, value);
 const save = downloadFile;
 
 /** 4-N30: the receipt of an approved attempt, with «Preparando recibo…» and a recoverable error like the invoice PDF. */
-function ReceiptButton({ attempt, variant = "secondary" }: {
-  attempt: Pick<CardPaymentAttemptResponse, "id" | "authorizationCode">; variant?: ButtonVariant;
+function ReceiptButton({ attempt, invoiceNumber, variant = "secondary" }: {
+  attempt: Pick<CardPaymentAttemptResponse, "id" | "authorizationCode">; invoiceNumber: string; variant?: ButtonVariant;
 }) {
   const { getCardPaymentReceipt } = useAirlineSession();
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   return <>
     <Button variant={variant} disabled={state === "loading"} onClick={() => {
       setState("loading");
-      void getCardPaymentReceipt(attempt.id).then(blob => save(blob, `recibo-${attempt.authorizationCode}.pdf`))
+      void getCardPaymentReceipt(attempt.id).then(blob => save(blob, receiptFileName(invoiceNumber, attempt.authorizationCode ?? attempt.id)))
         .then(() => setState("idle"), () => setState("error"));
     }}>{state === "loading" ? "Preparando recibo…" : "Descargar recibo"}</Button>
     {state === "error" && <p role="alert" className={styles.fieldError}>No se pudo descargar el recibo. Inténtelo de nuevo.</p>}
@@ -53,8 +54,9 @@ type Availability = { status: "loading" | "error" } | { status: "ready"; value: 
  * ADR-0036: pays the whole balance with a simulated card and shows every attempt with its receipt. 4-N05: the form is
  * offered only when the environment has a card gateway; the simulated one is labelled «Simulación — sin validez fiscal».
  */
-export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }: {
-  invoiceId: string; balance: number; currencyCode: string; onChanged: () => void;
+export function CardPaymentPanel({ invoiceId, invoiceNumber, balance, currencyCode, onChanged }: {
+  /** The e-NCF of the invoice (its number before ADR-0035): it names the receipt's file, as the API does. */
+  invoiceId: string; invoiceNumber: string; balance: number; currencyCode: string; onChanged: () => void;
 }) {
   const { payInvoiceByCard, getInvoiceCardPayments, getCardPaymentAvailability, financeRevision } = useAirlineSession();
   const [availability, setAvailability] = useState<Availability>({ status: "loading" });
@@ -140,7 +142,7 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
       : <p className={styles.note}>Esta factura no tiene saldo pendiente.</p>}
     {outcome && <div role={outcome.kind === "approved" ? "status" : "alert"} className={styles.notice} data-tone={tone}>
       <p>{outcome.text}</p>
-      {outcome.kind === "approved" && outcome.attempt && <ActionGroup><ReceiptButton attempt={outcome.attempt} /></ActionGroup>}
+      {outcome.kind === "approved" && outcome.attempt && <ActionGroup><ReceiptButton invoiceNumber={invoiceNumber} attempt={outcome.attempt} /></ActionGroup>}
     </div>}
     {balance > 0 && availability.status === "loading" && <p role="status">Consultando el pago con tarjeta…</p>}
     {balance > 0 && availability.status === "error" && <div role="alert" className={styles.notice} data-tone="danger">
@@ -195,7 +197,7 @@ export function CardPaymentPanel({ invoiceId, balance, currencyCode, onChanged }
           <StatusBadge tone={(ATTEMPT[item.status] ?? ATTEMPT.Error).tone}>{(ATTEMPT[item.status] ?? ATTEMPT.Error).text}</StatusBadge>
           {item.authorizationCode && <span className={styles.subtle}>Autorización {item.authorizationCode}</span>}
           {item.declineCode && <span className={styles.subtle}>{DECLINES[item.declineCode] ?? item.declineCode}</span>}
-          {item.status === "Approved" && <span><ReceiptButton attempt={item} variant="ghost" /></span>}</span> },
+          {item.status === "Approved" && <span><ReceiptButton invoiceNumber={invoiceNumber} attempt={item} variant="ghost" /></span>}</span> },
       ]} />}
   </section>;
 }
