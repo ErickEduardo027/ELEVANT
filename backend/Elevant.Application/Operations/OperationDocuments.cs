@@ -146,6 +146,13 @@ public interface IOperationDocumentStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The Flight Report of an operation OCC approved, when it belongs to an airline of the organization and to one of
+    /// <paramref name="stations"/> (those its contracts cover); null otherwise.
+    /// </summary>
+    Task<SignedOperationDocument?> ReadApprovedFlightReportForAirlineAsync(Guid organizationId,
+        IReadOnlyCollection<Guid> stations, Guid operationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 3-N02: the current Service Order of an operation of OCC's stations when OCC corrected it after the signature,
     /// with the signatures of the version it corrects and its corrections; null when it is not corrected.
     /// </summary>

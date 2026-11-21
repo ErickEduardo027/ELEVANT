@@ -232,6 +232,28 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
         return null;
     }
 
+    public async Task<SignedOperationDocument?> ReadApprovedFlightReportForAirlineAsync(Guid organizationId,
+        IReadOnlyCollection<Guid> stations, Guid operationId, CancellationToken cancellationToken = default)
+    {
+        var allowed = stations.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (organizationId == Guid.Empty || operationId == Guid.Empty || allowed.Length == 0) return null;
+        var operationInternalId = await (
+                from organization in context.Organizations.AsNoTracking()
+                join airline in context.Airlines.AsNoTracking() on organization.Id equals airline.OrganizationId
+                join turnaround in context.Turnarounds.AsNoTracking() on airline.Id equals turnaround.AirlineId
+                join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+                join operation in context.GroundOperations.AsNoTracking() on turnaround.Id equals operation.TurnaroundId
+                where organization.PublicId == organizationId && organization.Type == OrganizationType.AirlineCustomer &&
+                      organization.Status == OrganizationStatus.Active && airline.IsActive &&
+                      allowed.Contains(station.PublicId) && operation.PublicId == operationId &&
+                      operation.CurrentStatus == GroundOperationStatus.Approved
+                select (long?)operation.Id).SingleOrDefaultAsync(cancellationToken);
+        if (operationInternalId is null) return null;
+        var view = await ViewAsync(operationInternalId.Value, operationId, cancellationToken);
+        var report = view.Documents.SingleOrDefault(item => item.Content.Kind == OperationDocumentKind.FlightReport);
+        return report is null ? null : new SignedOperationDocument(report.Content, report.ContentSha256, report.Signatures);
+    }
+
     public async Task<SignedOperationDocument?> ReadCorrectedServiceOrderForOccAsync(IReadOnlyCollection<Guid> stations,
         Guid operationId, CancellationToken cancellationToken = default)
     {

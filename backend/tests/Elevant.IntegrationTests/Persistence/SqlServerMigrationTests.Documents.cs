@@ -115,6 +115,18 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(order.ContentSha256, portal!.ContentSha256);
         Assert.Equal(2, portal.Signatures.Count);
         Assert.Null(await Documents(store => store.ReadSignedServiceOrderForAirlineAsync(Guid.NewGuid(), operationId, ct)));
+        // The portal's Flight Report: only once OCC approved the operation, of its own airline and contracted stations.
+        Assert.Null(await Documents(store => store.ReadApprovedFlightReportForAirlineAsync(organization, [station], operationId, ct)));
+        var approvedOperation = await check.GroundOperations.SingleAsync(item => item.PublicId == operationId, ct);
+        var statusBefore = approvedOperation.CurrentStatus;
+        approvedOperation.CurrentStatus = GroundOperationStatus.Approved;
+        await check.SaveChangesAsync(ct);
+        var flightReport = await Documents(store => store.ReadApprovedFlightReportForAirlineAsync(organization, [station], operationId, ct));
+        Assert.Equal(OperationDocumentKind.FlightReport, flightReport!.Content.Kind);
+        Assert.Null(await Documents(store => store.ReadApprovedFlightReportForAirlineAsync(organization, [Guid.NewGuid()], operationId, ct)));
+        Assert.Null(await Documents(store => store.ReadApprovedFlightReportForAirlineAsync(Guid.NewGuid(), [station], operationId, ct)));
+        approvedOperation.CurrentStatus = statusBefore;
+        await check.SaveChangesAsync(ct);
 
         // A billable change (passengers) yields a new content: both roles must sign again, only this form.
         Assert.True((await Run(provider => provider.GetRequiredService<IRampExecutionCommandStore>().UpdateFlightDataAsync(
