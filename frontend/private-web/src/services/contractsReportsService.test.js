@@ -38,3 +38,15 @@ it('says whether the API client has the Contratos reports yet', () => {
   factory.create.mockImplementation(() => { throw new Error('no API URL'); });
   expect(contractReportsAvailable()).toBe(false);
 });
+
+it('downloads «Contratos y vigencias» at today\'s cut-off with the filters of the list', async () => {
+  const { exportContractsList } = await import('./contractsReportsService');
+  const blob = new Blob(['x']);
+  const exportContractReport = vi.fn().mockResolvedValue(blob);
+  factory.create.mockReturnValue({ exportContractReport });
+  const result = await exportContractsList('xlsx', { status: 'Active', airlineId: '' },
+    { now: new Date('2026-11-21T15:00:00Z') });
+  expect(exportContractReport).toHaveBeenCalledWith('agreements',
+    { from: '2026-11-21', to: '2026-11-21', status: 'Active' }, 'xlsx');
+  expect(result).toEqual({ blob, fileName: 'elevant-contratos-y-vigencias-2026-11-21.xlsx' });
+});
