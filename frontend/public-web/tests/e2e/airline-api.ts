@@ -137,3 +137,74 @@ export async function stubAirlineApi(page: Page, options: { forbidden?: boolean;
   });
   return paths;
 }
+
+const puj = bootstrap.stations[0].id;
+const financeInvoice = (id: string, fiscalNumber: string, total: number, paid: number, dueDate: string, daysOverdue: number) => ({
+  id, preinvoiceId: `74100000-0000-7000-8000-00000000000${id.slice(-1)}`, number: `NF-${id.slice(-4)}`, fiscalNumber,
+  stationId: puj, stationCode: "PUJ", currencyCode: "USD", total, legacyPaid: 0, legacyCredited: 0, applied: paid, credited: 0,
+  debited: 0, balance: Math.round((total - paid) * 100) / 100, dueDate, daysOverdue,
+  agingBucket: daysOverdue === 0 ? "Current" : daysOverdue <= 30 ? "1-30" : "31-60" });
+/** PR F: four invoices of the synthetic airline (pending, paid, partly paid and overdue) and one bank receipt. */
+export const financeInvoices = [
+  financeInvoice("74000000-0000-7000-8000-000000000001", "E310000000101", 1480.9, 0, "2026-12-05", 0),
+  financeInvoice("74000000-0000-7000-8000-000000000002", "E310000000102", 2360, 2360, "2026-11-10", 0),
+  financeInvoice("74000000-0000-7000-8000-000000000003", "E310000000103", 845.5, 300, "2026-11-01", 20),
+  financeInvoice("74000000-0000-7000-8000-000000000004", "E310000000104", 12500, 0, "2026-10-05", 47),
+];
+const receiptId = "75000000-0000-7000-8000-000000000001";
+const financeMovements = [
+  ...financeInvoices.map((item, index) => ({ id: `76000000-0000-7000-8000-00000000000${index}`, receiptId: null,
+    invoiceId: item.id, kind: "Invoice", currencyCode: "USD", amount: item.total,
+    effectiveOn: ["2026-11-05", "2026-10-11", "2026-10-02", "2026-09-05"][index], recordedAt: "2026-11-05T12:00:00Z",
+    reversesId: null, reference: item.fiscalNumber })),
+  { id: receiptId, receiptId, invoiceId: null, kind: "Receipt", currencyCode: "USD", amount: 3000, effectiveOn: "2026-11-09",
+    recordedAt: "2026-11-09T12:00:00Z", reversesId: null, reference: "BANK-2026-1109" },
+  { id: "77000000-0000-7000-8000-000000000001", receiptId, invoiceId: financeInvoices[1].id, kind: "Application",
+    currencyCode: "USD", amount: 2360, effectiveOn: "2026-11-09", recordedAt: "2026-11-09T12:01:00Z", reversesId: null, reference: "" },
+  { id: "77000000-0000-7000-8000-000000000002", receiptId, invoiceId: financeInvoices[2].id, kind: "Application",
+    currencyCode: "USD", amount: 300, effectiveOn: "2026-11-09", recordedAt: "2026-11-09T12:02:00Z", reversesId: null, reference: "" },
+].sort((a, b) => a.effectiveOn.localeCompare(b.effectiveOn));
+const financeReceipt = { id: receiptId, stationId: puj, stationCode: "PUJ", reference: "BANK-2026-1109", currencyCode: "USD",
+  amount: 3000, applied: 2660, refunded: 0, available: 340, reversed: false, method: "Transfer", receivedOn: "2026-11-09", movements: [
+    { id: "77000000-0000-7000-8000-000000000001", kind: "Application", invoiceId: financeInvoices[1].id, reversesId: null,
+      effectiveOn: "2026-11-09", receiptAmount: 2360, invoiceAmount: 2360, receiptCurrency: "USD", invoiceCurrency: "USD",
+      exchangeRate: 1, exchangeRateOn: "2026-11-09", reference: "", reason: "Pago de factura", recordedAt: "2026-11-09T12:01:00Z" }] };
+const financeStatement = { airlineId: bootstrap.airlineId, asOf: "2026-11-21", invoices: financeInvoices, receipts: [financeReceipt],
+  movements: financeMovements, aging: [{ currencyCode: "USD", balance: 14526.4, current: 1480.9, days1To30: 545.5,
+    days31To60: 12500, days61To90: 0, days91Plus: 0, unallocated: 340, creditBalance: 0 }] };
+const financeLine = (id: number, kind: string, parent: number | null, serviceCode: string, serviceName: string, quantity: number,
+  billingUnit: string, unitPrice: number, amount: number, reason: string | null = null) => ({
+  id: `78000000-0000-7000-8000-00000000000${id}`, lineNumber: id, kind, parentLineNumber: parent, operationCode: "DEV-TAT-0021",
+  operationDate: "2026-11-04", serviceCode, serviceName, quantity, billingUnit, unitPrice, amount, reason });
+const invoiceDetail = (invoice: typeof financeInvoices[number]) => ({ invoice,
+  movements: financeMovements.filter(item => item.invoiceId === invoice.id), notes: [], lines: [
+    financeLine(1, "Service", null, "GPU", "Planta eléctrica (GPU)", 2, "hour", 300, 708),
+    financeLine(2, "Service", null, "BAG", "Manejo de equipaje", 1, "operation", 550, 649),
+    financeLine(3, "Charge", 1, "NIGHT", "Recargo nocturno", 1, "operation", 105, 123.9, "Servicio entre 22:00 y 06:00")] });
+
+/** Serves the portal's treasury and card payment reads with the synthetic invoices above. */
+export async function stubAirlineFinance(page: Page) {
+  const headers = { "content-type": "application/json", "access-control-allow-origin": "*" };
+  await page.route("**/api/v1/airline/portal/**", async (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS") { await route.fallback(); return; }
+    const path = new URL(request.url()).pathname;
+    const invoiceId = /\/(?:treasury\/invoices|invoices)\/([^/]+)/.exec(path)?.[1];
+    const invoice = financeInvoices.find(item => item.id === invoiceId);
+    const body = path.endsWith("/treasury/statements") ? financeStatement
+      : path.includes("/treasury/invoices/") ? invoice ? invoiceDetail(invoice) : undefined
+      : path.includes("/treasury/receipts/") ? financeReceipt
+      : path.endsWith("/card-payments/availability") ? { available: true, simulated: true }
+      : path.endsWith("/card-payments") && invoice ? { invoiceId: invoice.id, attempts: [{
+        id: "79000000-0000-7000-8000-000000000001", invoiceId: invoice.id, status: "Declined", brand: "Visa", last4: "0002",
+        amount: invoice.balance || 1, currencyCode: "USD", authorizationCode: null, declineCode: "insufficient_funds",
+        receiptId: null, attemptedAt: "2026-11-20T15:30:00Z" }] }
+      : null;
+    if (body === null) { await route.fallback(); return; }
+    if (body === undefined) {
+      await route.fulfill({ status: 404, headers, body: JSON.stringify({ status: 404, title: "Not Found" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, headers, body: JSON.stringify(body) });
+  });
+}

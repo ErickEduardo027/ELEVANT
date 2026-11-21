@@ -11,17 +11,20 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { billingUnitLabel } from "@/lib/billing-units";
+import { downloadFile } from "@/lib/download-file";
 import { BUSINESS_TIME_ZONE, formatLocalDateTime } from "@/lib/business-day";
 import { standingNotice, stationsInForce } from "@/lib/contract-status";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
+import { AirlineInvoiceDetailPage } from "./AirlineInvoiceDetailPage";
+import { AirlineStatementPage } from "./AirlineTreasuryPanel";
 import { AirlineReportsPage } from "./AirlineReportsPage";
 import { AirlinePortalUsersSection } from "./AirlinePortalUsersSection";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
-  | "documents" | "finance" | "reports" | "profile";
+  | "documents" | "finance" | "invoiceDetail" | "statement" | "reports" | "profile";
 
 const REQUEST_STATUS_LABELS: Record<string, string> = {
   Submitted: "Recibida", InReview: "En revisión", Accepted: "Aceptada",
@@ -158,15 +161,7 @@ function ServiceOrderCard({ operationId, revision, timeZone, stationCode }: {
     setDownloading(true);
     setDownloadError(false);
     try {
-      const url = URL.createObjectURL(await downloadServiceOrder(operationId));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `orden-de-servicio-${number}.pdf`;
-      anchor.hidden = true;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadFile(await downloadServiceOrder(operationId), `orden-de-servicio-${number}.pdf`);
     } catch {
       setDownloadError(true);
     } finally {
@@ -354,7 +349,7 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
   </div>;
 }
 
-export function AirlinePortalPage({ view, operationId }: { view: View; operationId?: string }) {
+export function AirlinePortalPage({ view, operationId, invoiceId }: { view: View; operationId?: string; invoiceId?: string }) {
   const { session } = useAirlineSession();
   const { standing, retry: retryStanding } = useAirlineStanding();
   if (!session) return null;
@@ -442,6 +437,12 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     key={actor.accountId} airlineName={bootstrap.name} />;
 
   if (view === "finance") return <AirlineFinancePage
+    key={actor.accountId} airlineName={bootstrap.name} />;
+
+  if (view === "invoiceDetail") return <AirlineInvoiceDetailPage
+    key={`${actor.accountId}:${invoiceId}`} invoiceId={invoiceId ?? ""} />;
+
+  if (view === "statement") return <AirlineStatementPage
     key={actor.accountId} airlineName={bootstrap.name} />;
 
   if (view === "documents") return <AirlineDocumentsPage key={actor.accountId} />;

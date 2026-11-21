@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator } from "@playwright/test";
-import { signableContract, stubAirlineApi } from "./airline-api";
+import { financeInvoices, signableContract, stubAirlineApi, stubAirlineFinance } from "./airline-api";
 import { expectNoHorizontalOverflow } from "./layout";
 
 /** The computed value of each CSS property, by its name. */
@@ -147,4 +147,59 @@ test("portal has no horizontal overflow or serious accessibility blockers", asyn
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
   expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? "")))
     .toEqual([]);
+});
+
+/** Serious or critical axe violations inside the portal's content. */
+async function seriousViolations(page: import("@playwright/test").Page) {
+  const axePage = page as unknown as ConstructorParameters<typeof AxeBuilder>[0]["page"];
+  const results = await new AxeBuilder({ page: axePage }).include("#portal-content")
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+  return results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? "")).map((item) => item.id);
+}
+
+// PR F: the billing reads as a conventional one: invoices in a table, each with its own page that survives Back and
+// a reload, one primary action, and the statement on its own page with the breakdown in a drawer.
+test("billing: invoice table, invoice page with its URL and statement without overflow", async ({ page }) => {
+  await stubAirlineFinance(page);
+  const [pending] = financeInvoices;
+  await page.goto("/portal/finanzas");
+  const table = page.getByRole("table", { name: "Facturas" });
+  await expect(table.getByRole("row", { name: /E310000000104/ })).toContainText("47 días de atraso");
+  await expect(page.getByLabel("Resumen de facturas")).toContainText("3 de 4");
+  await expect(table.getByRole("row", { name: /^Total \(4 facturas\)/ })).toContainText("USD 17,186.40");
+  await expectNoHorizontalOverflow(page, "/portal/finanzas con facturas");
+  expect(await seriousViolations(page), "/portal/finanzas").toEqual([]);
+
+  await table.getByRole("link", { name: "Ver detalle de Factura E310000000101" }).click();
+  await expect(page).toHaveURL(new RegExp(`/portal/finanzas/facturas/${pending.id}$`));
+  const detail = page.getByRole("region", { name: "Detalle de factura" });
+  await expect(detail.getByRole("heading", { level: 1, name: "Factura E310000000101" })).toBeVisible();
+  await expect(detail.getByText("Emitida el 05/11/2026")).toBeVisible();
+  await expect(detail.getByRole("row", { name: /Manejo de equipaje/ })).toContainText("649.00");
+  // One primary action: the card payment.
+  await expect(page.locator("#portal-content [data-variant=primary]")).toHaveCount(1);
+  await expect(detail.getByRole("button", { name: "Pagar con tarjeta USD 1,480.90" })).toBeVisible();
+  await expectNoHorizontalOverflow(page, "detalle de factura");
+  expect(await seriousViolations(page), "detalle de factura").toEqual([]);
+
+  await page.reload();
+  await expect(detail.getByRole("heading", { level: 1, name: "Factura E310000000101" })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/portal\/finanzas$/);
+  await expect(table).toBeVisible();
+
+  await page.getByRole("link", { name: "Estado de cuenta" }).click();
+  await expect(page).toHaveURL(/\/portal\/finanzas\/estado-de-cuenta$/);
+  const statement = page.getByRole("region", { name: "Estado de cuenta de aerolínea" });
+  await expect(statement.getByRole("table", { name: "Movimientos en USD" }).getByRole("row", { name: /^Saldo al corte/ }))
+    .toContainText("USD 14,186.40");
+  await expectNoHorizontalOverflow(page, "estado de cuenta");
+  expect(await seriousViolations(page), "estado de cuenta").toEqual([]);
+  const opener = statement.getByRole("button", { name: "Ver cobro BANK-2026-1109" });
+  await opener.click();
+  const drawer = page.getByRole("dialog", { name: "BANK-2026-1109 · PUJ" });
+  await expect(drawer.getByText("Pago de factura")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await expect(opener).toBeFocused();
 });

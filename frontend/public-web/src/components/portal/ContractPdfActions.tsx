@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ElevantApiError } from "@elevant/api-client";
+import { downloadFile } from "@/lib/download-file";
 import styles from "./AirlinePortalPage.module.css";
 
 function problem(error: unknown) {
@@ -29,10 +30,7 @@ export function ContractPdfActions({ load, fileName, label }: {
   async function download() {
     setBusy("download"); setMessage("");
     try {
-      const url = URL.createObjectURL(await load());
-      const link = window.document.createElement("a");
-      link.href = url; link.download = fileName; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadFile(await load(), fileName);
     } catch (error) { setMessage(problem(error)); }
     finally { setBusy(""); }
   }

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { SessionResponse, AirlinePortalBootstrapResponse } from "@elevant/api-client";
 import { AirlineSessionProvider, AIRLINE_SESSION_STORAGE_KEY } from "@/components/auth/AirlineSessionProvider";
 import { AirlineTreasuryPanel } from "@/components/portal/AirlineTreasuryPanel";
@@ -25,7 +25,7 @@ const receipt = { id: "receipt-own", stationId: "s1", stationCode: "PUJ", refere
 const statement = { airlineId: "44000000-0000-7000-8000-000000000001", asOf: "2026-10-18", invoices: [invoice], receipts: [], movements: [], aging: [
   { currencyCode: "USD", balance: 550, current: 550, days1To30: 0, days31To60: 0, days61To90: 0, days91Plus: 0, unallocated: 700, creditBalance: 0 },
   { currencyCode: "DOP", balance: 6050, current: 6050, days1To30: 0, days31To60: 0, days61To90: 0, days91Plus: 0, unallocated: 0, creditBalance: 0 }] };
-function mount(invoiceId?: string, missing = false) {
+function mount(missing = false) {
   sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({ accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z" }));
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
@@ -39,7 +39,7 @@ function mount(invoiceId?: string, missing = false) {
         notes: [{ id: "note-own", invoiceId: invoice.id, number: "TC-OWN", kind: "Credit", currencyCode: "USD", amount: 100, reason: "Service correction", effectiveOn: "2026-10-18", lines: [{ invoiceLineId: "line-own", quantity: 0.1, amount: 100 }] }] };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   }));
-  render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel invoiceId={invoiceId} /></AirlineSessionProvider>);
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel /></AirlineSessionProvider>);
   return requests;
 }
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); statementGate = null; observer.onChanges = null; });
@@ -73,8 +73,14 @@ it("cuts the statement on the business day of Santo Domingo, not the UTC day (4-
     vi.useRealTimers();
   }
 });
+/** The breakdown of the statement's only invoice, in its side drawer. */
+async function openInvoice() {
+  fireEvent.click(await screen.findByRole("button", { name: "Ver factura NF-OWN" }));
+  return screen.findByRole("dialog", { name: "Factura NF-OWN · PUJ" });
+}
 it("shows combined balance, partial applications, historical payment and new adjustment note", async () => {
-  mount("invoice-own");
+  mount();
+  await openInvoice();
   expect(await screen.findByText(/TC-OWN/)).toBeInTheDocument();
   expect(screen.getByText(/LEGACY-50/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Ver cobro/ })).toBeInTheDocument();
@@ -82,22 +88,24 @@ it("shows combined balance, partial applications, historical payment and new adj
   expect(screen.getAllByText(/550.00/).length).toBeGreaterThan(0);
 });
 it("hides inaccessible IDs with a sanitized missing-document state", async () => {
-  mount("foreign-invoice", true);
+  mount(true);
   expect(await screen.findByRole("alert")).toHaveTextContent(/no está disponible/i);
   expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
   expect(screen.queryByText(/TC-OWN/)).not.toBeInTheDocument();
 });
 
 it("links an adjustment to its invoice line with the credited quantity and amount", async () => {
-  mount("invoice-own");
+  mount();
+  await openInvoice();
   const link = await screen.findByRole("link", { name: /Línea 1 · Rampa/ });
   expect(link).toHaveAttribute("href", expect.stringContaining("-line-line-own"));
   expect(link.parentElement).toHaveTextContent(/0.1.*USD 100.00/);
 });
 it("navigates a partial application to the real receipt and its recorded exchange rate", async () => {
-  const requests = mount("invoice-own");
+  const requests = mount();
+  await openInvoice();
   fireEvent.click(await screen.findByRole("button", { name: "Ver cobro vinculado" }));
-  expect(await screen.findByRole("heading", { name: /BANK-OWN/ })).toBeInTheDocument();
+  expect(await screen.findByRole("dialog", { name: "BANK-OWN · PUJ" })).toBeInTheDocument();
   expect(screen.getByText(/Tasa registrada 1/)).toBeInTheDocument();
   expect(requests).toContain("/api/v1/airline/portal/treasury/receipts/receipt-own");
   fireEvent.click(screen.getByRole("button", { name: "Ver factura vinculada" }));
@@ -106,8 +114,8 @@ it("navigates a partial application to the real receipt and its recorded exchang
 
 it("keeps the statement on screen while a treasury notice reads it again, naming each invoice (4-N25, 4-N30)", async () => {
   const requests = mount();
-  expect(await screen.findByText("Factura NF-OWN · PUJ")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Ver factura NF-OWN" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Ver factura NF-OWN" })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /NF-OWN.*PUJ/ })).toHaveTextContent("USD 550.00");
   await waitFor(() => expect(observer.onChanges).not.toBeNull());
   let release!: () => void;
   statementGate = new Promise(resolve => { release = resolve; });
@@ -115,17 +123,23 @@ it("keeps the statement on screen while a treasury notice reads it again, naming
   act(() => observer.onChanges!(["airline_treasury"]));
   await waitFor(() => expect(requests.filter(path => path.includes("/statements")).length).toBe(before + 1));
   expect(await screen.findByText("Actualizando…")).toBeInTheDocument();
-  expect(screen.getByText("Factura NF-OWN · PUJ")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ver factura NF-OWN" })).toBeInTheDocument();
   expect(screen.queryByText("Cargando estado financiero…")).not.toBeInTheDocument();
   await act(async () => { release(); await statementGate; });
   await waitFor(() => expect(screen.queryByText("Actualizando…")).not.toBeInTheDocument());
-  expect(screen.getByText("Factura NF-OWN · PUJ")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ver factura NF-OWN" })).toBeInTheDocument();
 });
 
 it("offers each adjustment note's PDF in the invoice view (4-N17)", async () => {
-  mount("invoice-own");
-  expect(await screen.findByRole("button", { name: "Descargar PDF de Nota de crédito TC-OWN" })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Factura NF-OWN · PUJ" })).toBeInTheDocument();
+  mount();
+  const drawer = await openInvoice();
+  expect(await within(drawer).findByRole("button", { name: "Descargar PDF de Nota de crédito TC-OWN" })).toBeInTheDocument();
+  expect(within(drawer).getByRole("heading", { name: "Factura NF-OWN · PUJ" })).toBeInTheDocument();
+  // The drawer links the invoice's own page and gives the focus back to the row that opened it.
+  expect(within(drawer).getByRole("link", { name: "Abrir la factura" })).toHaveAttribute("href", "/portal/finanzas/facturas/invoice-own");
+  fireEvent.click(within(drawer).getByRole("button", { name: "Cerrar" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(screen.getByRole("button", { name: "Ver factura NF-OWN" })).toHaveFocus();
 });
 
 // N19: the statement addresses the airline as usted, like the rest of the portal.
