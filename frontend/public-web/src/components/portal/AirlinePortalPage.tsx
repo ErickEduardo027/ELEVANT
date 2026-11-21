@@ -17,12 +17,14 @@ import { standingNotice, stationsInForce } from "@/lib/contract-status";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
+import { AirlineInvoiceDetailPage } from "./AirlineInvoiceDetailPage";
+import { AirlineStatementPage } from "./AirlineTreasuryPanel";
 import { AirlineReportsPage } from "./AirlineReportsPage";
 import { AirlinePortalUsersSection } from "./AirlinePortalUsersSection";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
-  | "documents" | "finance" | "reports" | "profile";
+  | "documents" | "finance" | "invoiceDetail" | "statement" | "reports" | "profile";
 
 const REQUEST_STATUS_LABELS: Record<string, string> = {
   Submitted: "Recibida", InReview: "En revisión", Accepted: "Aceptada",
@@ -347,7 +349,7 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
   </div>;
 }
 
-export function AirlinePortalPage({ view, operationId }: { view: View; operationId?: string }) {
+export function AirlinePortalPage({ view, operationId, invoiceId }: { view: View; operationId?: string; invoiceId?: string }) {
   const { session } = useAirlineSession();
   const { standing, retry: retryStanding } = useAirlineStanding();
   if (!session) return null;
@@ -435,6 +437,12 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     key={actor.accountId} airlineName={bootstrap.name} />;
 
   if (view === "finance") return <AirlineFinancePage
+    key={actor.accountId} airlineName={bootstrap.name} />;
+
+  if (view === "invoiceDetail") return <AirlineInvoiceDetailPage
+    key={`${actor.accountId}:${invoiceId}`} invoiceId={invoiceId ?? ""} />;
+
+  if (view === "statement") return <AirlineStatementPage
     key={actor.accountId} airlineName={bootstrap.name} />;
 
   if (view === "documents") return <AirlineDocumentsPage key={actor.accountId} />;

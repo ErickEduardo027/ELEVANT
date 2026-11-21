@@ -3,75 +3,65 @@
 import { useState } from "react";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { invoiceTitle, noteTitle } from "@/lib/airline-invoices";
+import type { AirlineTreasuryInvoice, AirlineTreasuryNote } from "@/lib/airline-treasury-service";
 import { downloadFile } from "@/lib/download-file";
 import { formatMoney } from "@/lib/portal-format";
-import type { AirlineTreasuryInvoice, AirlineTreasuryNote } from "@/lib/airline-treasury-service";
 import styles from "./AirlinePortalPage.module.css";
+import { Button, type ButtonVariant } from "./PortalUi";
 
 /**
  * How the portal names and downloads the airline's invoices and the credit and debit notes that modify them. «Facturas»,
  * «Estado de cuenta», «Documentos» and «Reportes» share it.
  */
+export { invoiceStatus, invoiceTitle, noteTitle } from "@/lib/airline-invoices";
 
 /** «USD 1,234.50» (es-DO, 2 decimals): the one money format of the portal. */
 export function amount(currency: string, total: number) {
   return formatMoney(currency, total);
 }
 
-/**
- * Pagada when nothing is owed, Vencida past its due date, Pendiente otherwise (ADR-0035). 4-N24: an invoice that
- * nobody paid and that credit notes brought to zero is «Anulada», never «Pagada».
- */
-export function invoiceStatus(invoice: Pick<AirlineTreasuryInvoice, "balance" | "daysOverdue" | "applied" | "legacyPaid" |
-  "credited" | "legacyCredited" | "debited">) {
-  if (invoice.balance <= 0) {
-    const paid = invoice.applied + invoice.legacyPaid;
-    const credited = invoice.credited + invoice.legacyCredited - invoice.debited;
-    return paid <= 0 && credited > 0 ? "Anulada" : "Pagada";
-  }
-  return invoice.daysOverdue > 0 ? "Vencida" : "Pendiente";
-}
-
-export function invoiceTitle(invoice: Pick<AirlineTreasuryInvoice, "fiscalNumber" | "number">) {
-  return invoice.fiscalNumber ? `Factura ${invoice.fiscalNumber}` : `Factura ${invoice.number}`;
-}
-
-/** 4-N17: a note on an E31 invoice carries its own simulated e-NCF: E34 credits the invoice, E33 debits it. */
-export function noteTitle(note: Pick<AirlineTreasuryNote, "kind" | "number">) {
-  const kind = note.kind === "Credit" ? "crédito" : "débito";
-  return /^E3[34]\d{10}$/.test(note.number) ? `Nota de ${kind} electrónica ${note.number}` : `Nota de ${kind} ${note.number}`;
-}
-
 /** Saves a PDF Blob with a readable name (the shared `downloadFile`). */
 export const saveBlob = downloadFile;
 
-/** A download with its own «Preparando…» and recoverable error, so a failed PDF never hides the list it belongs to. */
-function DownloadButton({ label, busyLabel, failure, download }: {
-  label: string; busyLabel: string; failure: string; download: () => Promise<void>;
+/**
+ * A download with its own «Preparando…» and recoverable error, so a failed PDF never hides the list it belongs to.
+ * `name` gives the button its full accessible name when the visible text alone does not say which document it is.
+ */
+export function DownloadButton({ text, name, busyText, failure, download, variant = "secondary" }: {
+  text: string; name?: string; busyText: string; failure: string; download: () => Promise<void>; variant?: ButtonVariant;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   return <>
-    <button type="button" className={styles.loadMore} disabled={state === "loading"} aria-label={label}
+    <Button variant={variant} disabled={state === "loading"} aria-label={name}
       onClick={() => {
         setState("loading");
         void download().then(() => setState("idle"), () => setState("error"));
-      }}>{state === "loading" ? busyLabel : "Descargar PDF"}</button>
-    {state === "error" && <p role="alert">{failure}</p>}
+      }}>{state === "loading" ? busyText : text}</Button>
+    {state === "error" && <p role="alert" className={styles.fieldError}>{failure}</p>}
   </>;
 }
 
-export function InvoicePdfButton({ invoice }: { invoice: Pick<AirlineTreasuryInvoice, "id" | "fiscalNumber" | "number"> }) {
+/**
+ * The invoice's PDF. In a list its name says which invoice («Descargar PDF de Factura E31…»); on the invoice's own page
+ * `text` reads «Descargar factura (PDF)».
+ */
+export function InvoicePdfButton({ invoice, text, variant }: {
+  invoice: Pick<AirlineTreasuryInvoice, "id" | "fiscalNumber" | "number">; text?: string; variant?: ButtonVariant;
+}) {
   const { getInvoiceDocument } = useAirlineSession();
-  return <DownloadButton label={`Descargar PDF de ${invoiceTitle(invoice)}`} busyLabel="Preparando PDF…"
-    failure="No se pudo descargar el PDF. Inténtelo de nuevo."
+  return <DownloadButton text={text ?? "Descargar PDF"} name={text ? undefined : `Descargar PDF de ${invoiceTitle(invoice)}`}
+    busyText="Preparando PDF…" failure="No se pudo descargar el PDF. Inténtelo de nuevo." variant={variant}
     download={() => getInvoiceDocument(invoice.id)
       .then(blob => saveBlob(blob, `factura-${invoice.fiscalNumber ?? invoice.number}.pdf`))} />;
 }
 
 /** 4-N17: the PDF of a credit or debit note of the airline's invoice: its e-NCF, its frozen ITBIS and the simulation label. */
-export function AdjustmentNotePdfButton({ note }: { note: Pick<AirlineTreasuryNote, "id" | "kind" | "number"> }) {
+export function AdjustmentNotePdfButton({ note, variant = "ghost" }: {
+  note: Pick<AirlineTreasuryNote, "id" | "kind" | "number">; variant?: ButtonVariant;
+}) {
   const { getAdjustmentNoteDocument } = useAirlineSession();
-  return <DownloadButton label={`Descargar PDF de ${noteTitle(note)}`} busyLabel="Preparando PDF…"
-    failure="No se pudo descargar el PDF de la nota. Inténtelo de nuevo."
+  return <DownloadButton text="Descargar PDF" name={`Descargar PDF de ${noteTitle(note)}`} busyText="Preparando PDF…"
+    failure="No se pudo descargar el PDF de la nota. Inténtelo de nuevo." variant={variant}
     download={() => getAdjustmentNoteDocument(note.id).then(blob => saveBlob(blob, `nota-${note.number}.pdf`))} />;
 }
