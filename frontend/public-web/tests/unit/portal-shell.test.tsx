@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import type { AirlinePortalBootstrapResponse, AirlinePortalStandingResponse,
   SessionActorResponse } from "@elevant/api-client";
 
@@ -7,7 +7,8 @@ import type { AirlineStandingState } from "@/components/auth/AirlineSessionProvi
 import { PortalShell } from "@/components/portal/PortalShell";
 
 // N14: the shell names the airline's standing and its stations in force, never «autorizado» without a contract.
-vi.mock("next/navigation", () => ({ usePathname: () => "/portal" }));
+let pathname = "/portal";
+vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
 
 const organizationId = "10000000-0000-7000-8000-000000000002";
 const contractId = "60000000-0000-7000-8000-000000000002";
@@ -44,6 +45,7 @@ function mountShell() {
 
 afterEach(() => {
   cleanup();
+  pathname = "/portal";
   bootstrapStations = [puj];
   standing = { status: "loading", data: null };
   requestStanding.mockClear();
@@ -116,5 +118,31 @@ describe("portal shell standing (N14)", () => {
     const { sidebar, topbar } = mountShell();
     expect(within(sidebar).getByText("Pendiente de activación")).toHaveAttribute("data-tone", "pending");
     expect(within(topbar).getByText("Sin estación en vigor")).toBeInTheDocument();
+  });
+});
+
+describe("portal shell billing (PR F)", () => {
+  it("keeps «Facturas» in the phone's bar and names the invoice and statement pages in the top bar", () => {
+    pathname = "/portal/finanzas/facturas/74000000-0000-7000-8000-000000000009";
+    const { topbar } = mountShell();
+    const phone = screen.getByRole("navigation", { name: "Navegación móvil" });
+    expect(within(phone).getAllByRole("link").map(link => link.textContent))
+      .toEqual(["Inicio", "Vuelos", "Solicitudes", "Facturas"]);
+    expect(within(phone).getByRole("link", { name: "Facturas" })).toHaveAttribute("aria-current", "page");
+    expect(within(topbar).getByText("Detalle de factura")).toBeInTheDocument();
+    cleanup();
+
+    pathname = "/portal/finanzas/estado-de-cuenta";
+    expect(within(mountShell().topbar).getByText("Estado de cuenta")).toBeInTheDocument();
+  });
+
+  it("prints the page with its title and the moment it was printed, never on screen", () => {
+    pathname = "/portal/finanzas";
+    mountShell();
+    const header = screen.getByText(/^Portal de aerolíneas · Demo Airlines · Facturas/, { selector: "p" });
+    expect(header).toHaveAttribute("aria-hidden", "true");
+    expect(header).not.toHaveTextContent("Impreso");
+    act(() => { window.dispatchEvent(new Event("beforeprint")); });
+    expect(header).toHaveTextContent(/Impreso el \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
   });
 });

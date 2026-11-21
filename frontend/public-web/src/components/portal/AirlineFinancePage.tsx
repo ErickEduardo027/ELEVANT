@@ -1,150 +1,156 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { ElevantApiError } from "@elevant/api-client";
+import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
-import type { AirlineTreasuryInvoice, AirlineTreasuryInvoiceDetail, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
-import styles from "./AirlinePortalPage.module.css";
-import { AirlineTreasuryPanel } from "./AirlineTreasuryPanel";
-import { CardPaymentPanel } from "./CardPaymentPanel";
-import { AdjustmentNotePdfButton, amount, InvoicePdfButton, invoiceStatus, invoiceTitle, noteTitle } from "./financeDocuments";
-import { LiveSnapshotNotice } from "./LiveSnapshotNotice";
-import { useLiveSnapshot } from "./useLiveSnapshot";
+import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
+import { filterInvoices, formatByCurrency, invoiceIssueDates, invoiceNumber, invoiceStatus, invoiceSummary, invoiceTitle,
+  STATUS_TONE, sumByCurrency, type CurrencyAmount, type InvoiceFilters, type InvoiceStatusFilter } from "@/lib/airline-invoices";
+import type { AirlineTreasuryInvoice, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 import { businessToday } from "@/lib/business-day";
+import { formatDate, formatMoney } from "@/lib/portal-format";
+import styles from "./AirlinePortalPage.module.css";
+import { InvoicePdfButton } from "./financeDocuments";
+import { LiveSnapshotNotice } from "./LiveSnapshotNotice";
+import { ActionGroup, Button, ButtonLink, DataTable, StatusBadge, type Column } from "./PortalUi";
+import { useLiveSnapshot } from "./useLiveSnapshot";
 
 export { amount, InvoicePdfButton, invoiceStatus, invoiceTitle, saveBlob } from "./financeDocuments";
 
 // 4-N10: the cutoff is the business day of Santo Domingo, the one the server checks.
 const today = () => businessToday();
 
-const KIND: Record<string, string> = {
-  Service: "Servicio", Charge: "Cargo", Adjustment: "Ajuste", Package: "Paquete", Excess: "Exceso", Minimum: "Mínimo",
-};
-const MOVEMENT: Record<string, string> = {
-  Application: "Pago aplicado", ApplicationReversal: "Reverso de pago", LegacyPayment: "Pago histórico",
-  LegacyCredit: "Crédito histórico",
-};
-/** The notes of the invoice have their own section, with their PDF. */
-const NOTE_MOVEMENTS = new Set(["Invoice", "Credit", "Debit"]);
+export const INVOICES_PATH = "/portal/finanzas";
+export const STATEMENT_PATH = "/portal/finanzas/estado-de-cuenta";
+export const invoicePath = (id: string) => `${INVOICES_PATH}/facturas/${encodeURIComponent(id)}`;
 
-function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { getTreasuryInvoice, financeRevision } = useAirlineSession();
-  const read = useCallback((signal: AbortSignal) => getTreasuryInvoice(id, signal), [getTreasuryInvoice, id]);
-  // 4-N25: while a payment or a live change reloads it, the detail on screen stays.
-  const snapshot = useLiveSnapshot<AirlineTreasuryInvoiceDetail>(id, financeRevision, read);
-  const detail = snapshot.data;
-  const payments = detail?.movements.filter(item => !NOTE_MOVEMENTS.has(item.kind)) ?? [];
-  return <section className={styles.panel} aria-label="Detalle de factura">
-    <div className={styles.requestCardHeading}>
-      <h2>{detail ? invoiceTitle(detail.invoice) : "Factura"}</h2>
-      <button type="button" className={styles.loadMore} onClick={onBack}>Volver a facturas</button>
-    </div>
-    {!detail && !snapshot.failed && <p role="status">Cargando factura…</p>}
-    {!detail && snapshot.failed && <div role="alert">
-      <p>{snapshot.error instanceof ElevantApiError && snapshot.error.status === 404
-        ? "La factura no está disponible para esta cuenta." : "No se pudo consultar la factura. Inténtelo de nuevo."}</p>
-      <button type="button" className={styles.loadMore} onClick={snapshot.retry}>Reintentar</button></div>}
-    <LiveSnapshotNotice snapshot={snapshot} />
-    {detail && <>
-      <p className={styles.note}>{detail.invoice.stationCode} · Interno {detail.invoice.number}
-        {detail.invoice.dueDate ? ` · Vence el ${detail.invoice.dueDate}` : ""} · {invoiceStatus(detail.invoice)}</p>
-      <div className={styles.metrics}>
-        <div><span>Total con ITBIS</span><strong>{amount(detail.invoice.currencyCode, detail.invoice.total)}</strong></div>
-        <div><span>Pagado</span><strong>{amount(detail.invoice.currencyCode, detail.invoice.applied + detail.invoice.legacyPaid)}</strong></div>
-        <div><span>Saldo</span><strong>{amount(detail.invoice.currencyCode, detail.invoice.balance)}</strong></div>
-      </div>
-      <InvoicePdfButton invoice={detail.invoice} />
-      <CardPaymentPanel invoiceId={detail.invoice.id} balance={detail.invoice.balance} currencyCode={detail.invoice.currencyCode}
-        onChanged={snapshot.retry} />
-      {detail.invoice.fiscalNumber && <p className={styles.note}>Factura de crédito fiscal electrónica simulada. Simulación — sin validez fiscal.</p>}
-      <section className={styles.preinvoiceLines} aria-label="Líneas de factura"><h3>Líneas</h3>
-        {detail.lines.map(line => <p key={line.id} className={line.parentLineNumber ? styles.nestedLine : undefined}>
-          {KIND[line.kind] ?? line.kind} · {line.operationCode} · {line.serviceName} · {amount(detail.invoice.currencyCode, line.amount)}
-          {line.reason ? ` · ${line.reason}` : ""}
-        </p>)}
-      </section>
-      <section className={styles.preinvoiceLines} aria-label="Pagos de la factura"><h3>Pagos</h3>
-        {payments.length === 0 && <p>Sin pagos registrados.</p>}
-        {payments.map(item => <p key={item.id}>
-          {MOVEMENT[item.kind] ?? "Movimiento"} · {item.effectiveOn} · {item.reference} · {amount(item.currencyCode, item.amount)}
-        </p>)}
-      </section>
-      {/* 4-N17: each credit or debit note with its e-NCF and its PDF. */}
-      <section className={styles.preinvoiceLines} aria-label="Notas de crédito y débito"><h3>Notas de crédito y débito</h3>
-        {detail.notes.length === 0 && <p>Sin notas de crédito ni de débito.</p>}
-        {detail.notes.map(note => <article key={note.id} className={styles.disputeRecord} aria-label={noteTitle(note)}>
-          <strong>{noteTitle(note)} · {amount(note.currencyCode, note.amount)}</strong>
-          <p>{note.effectiveOn} · {note.reason}</p>
-          <AdjustmentNotePdfButton note={note} />
-        </article>)}
-      </section>
-    </>}
-  </section>;
+/** «Facturas | Estado de cuenta»: two pages of the airline's financial account, each with its own URL. */
+export function FinanceTabs({ current }: { current: "invoices" | "statement" }) {
+  return <nav className={styles.tabs} aria-label="Vista de la cuenta financiera">
+    <Link href={INVOICES_PATH} prefetch={false} aria-current={current === "invoices" ? "page" : undefined}>Facturas</Link>
+    <Link href={STATEMENT_PATH} prefetch={false} aria-current={current === "statement" ? "page" : undefined}>Estado de cuenta</Link>
+  </nav>;
 }
 
-/** The amounts of `items` by currency, or «—» when there are none. */
-function byCurrency(items: { currency: string; value: number }[]) {
-  return [...new Set(items.map(item => item.currency))]
-    .map(currency => amount(currency, items.filter(item => item.currency === currency).reduce((sum, item) => sum + item.value, 0)))
-    .join(" · ") || "—";
+/** 2-N32: invoices keep their stations after a contract is suspended or expires; the filters offer them all. */
+export function useBillingStations() {
+  const { session } = useAirlineSession();
+  const { standing } = useAirlineStanding();
+  return standing.status === "ready" ? standing.data.stations : session?.bootstrap.stations ?? [];
 }
+
+/** One amount per currency, each on its own line, for a table cell. */
+export function Amounts({ items }: { items: readonly CurrencyAmount[] }) {
+  if (items.length <= 1) return <>{formatByCurrency(items)}</>;
+  return <span className={styles.cellStack}>{items.map(item =>
+    <span key={item.currency}>{formatMoney(item.currency, item.value)}</span>)}</span>;
+}
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+const STATUS_OPTIONS: { value: InvoiceStatusFilter; label: string }[] = [
+  { value: "", label: "Todas" }, { value: "open", label: "Con saldo (pendientes y vencidas)" },
+  { value: "Pendiente", label: "Pendientes" }, { value: "Vencida", label: "Vencidas" }, { value: "Pagada", label: "Pagadas" },
+  { value: "Anulada", label: "Anuladas" },
+];
 
 /**
- * «Facturas»: the airline's invoices with status, due date, balance and PDF (ADR-0035), and its «Estado de cuenta»
- * (4-N30): the aging, the receipts not applied yet and the credit in its favour.
+ * «Facturas»: the airline's invoices in one table, with their status, issue and due dates, total and balance (ADR-0035),
+ * KPI with their context and filters. Each invoice opens on its own page; «Estado de cuenta» (4-N30) has its own too.
  */
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const { getTreasuryStatement, financeRevision } = useAirlineSession();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [view, setView] = useState<"invoices" | "statement">("invoices");
-  const read = useCallback((signal: AbortSignal) => getTreasuryStatement(today(), undefined, signal), [getTreasuryStatement]);
+  const stations = useBillingStations();
+  const [stationId, setStationId] = useState("");
+  const [filters, setFilters] = useState<InvoiceFilters>({});
+  const read = useCallback((signal: AbortSignal) => getTreasuryStatement(today(), stationId || undefined, signal),
+    [getTreasuryStatement, stationId]);
   // 4-N25: the list stays on screen while a live change or the focus reads it again.
-  const snapshot = useLiveSnapshot<AirlineTreasuryStatement>("invoices", financeRevision, read);
+  const snapshot = useLiveSnapshot<AirlineTreasuryStatement>(`invoices|${stationId}`, financeRevision, read);
   const statement = snapshot.data;
-  const invoices = statement?.invoices ?? [];
-  const owed = invoices.filter(item => item.balance > 0);
-  const balance = (items: AirlineTreasuryInvoice[]) => byCurrency(items.map(item => ({ currency: item.currencyCode, value: item.balance })));
+  const invoices = useMemo(() => statement?.invoices ?? [], [statement]);
+  const issued = useMemo(() => invoiceIssueDates(statement?.movements ?? []), [statement]);
+  const shown = useMemo(() => filterInvoices(invoices, filters, issued), [filters, invoices, issued]);
+  const summary = invoiceSummary(invoices);
   // 4-N30: credit notes beyond what was owed and receipts not applied yet (a charter's prepayment over its invoice).
-  const credit = byCurrency((statement?.aging ?? []).map(item => ({ currency: item.currencyCode,
-    value: item.creditBalance + item.unallocated })).filter(item => item.value > 0));
+  const credit = sumByCurrency((statement?.aging ?? []).map(item => ({ currency: item.currencyCode,
+    value: item.creditBalance + item.unallocated }))).filter(item => item.value > 0);
+  const billedOf = summary.count ? `de ${formatByCurrency(summary.billed)} facturado` : "Sin facturas emitidas.";
+  const filtered = Boolean(filters.status || filters.from || filters.to || filters.search?.trim());
+  const set = (patch: InvoiceFilters) => setFilters(current => ({ ...current, ...patch }));
 
-  if (selected) return <div className={styles.page}><InvoiceDetail id={selected} onBack={() => setSelected(null)} /></div>;
+  const columns: Column<AirlineTreasuryInvoice>[] = [
+    { key: "number", header: "e-NCF", cell: item => <span className={styles.cellStack}>
+      <Link href={invoicePath(item.id)} prefetch={false}>{invoiceNumber(item)}</Link>
+      {item.fiscalNumber && <span className={styles.subtle}>Interno {item.number}</span>}</span> },
+    { key: "station", header: "Estación", cell: item => item.stationCode },
+    { key: "issued", header: "Emisión", cell: item => formatDate(issued.get(item.id)) },
+    { key: "due", header: "Vencimiento", cell: item => <span className={styles.cellStack}>{formatDate(item.dueDate)}
+      {item.daysOverdue > 0 && item.balance > 0 && <span className={styles.subtle}>{plural(item.daysOverdue, "día", "días")} de atraso</span>}</span> },
+    { key: "status", header: "Estado", cell: item => { const status = invoiceStatus(item);
+      return <StatusBadge tone={STATUS_TONE[status]}>{status}</StatusBadge>; } },
+    { key: "total", header: "Total", numeric: true, cell: item => formatMoney(item.currencyCode, item.total),
+      total: <Amounts items={sumByCurrency(shown.map(item => ({ currency: item.currencyCode, value: item.total })))} /> },
+    { key: "balance", header: "Saldo", numeric: true, cell: item => formatMoney(item.currencyCode, item.balance),
+      total: <Amounts items={sumByCurrency(shown.map(item => ({ currency: item.currencyCode, value: item.balance })))} /> },
+    { key: "actions", header: <span className={styles.visuallyHidden}>Acciones</span>, label: "", cell: item =>
+      <ActionGroup>
+        <ButtonLink variant="ghost" href={invoicePath(item.id)} aria-label={`Ver detalle de ${invoiceTitle(item)}`}>Ver detalle</ButtonLink>
+        <InvoicePdfButton invoice={item} variant="ghost" />
+      </ActionGroup> },
+  ];
+
   return <div className={styles.page}>
-    <header className={styles.pageHeader}>
-      <span className={styles.kicker}>Cuenta financiera · {airlineName}</span>
-      <h1>Facturas</h1>
-      <p>Facturas emitidas por AVIAM por las operaciones completadas, con su vencimiento y saldo, y el estado de cuenta de su aerolínea.</p>
+    <header className={styles.billingHeader}>
+      <div>
+        <span className={styles.kicker}>Cuenta financiera · {airlineName}</span>
+        <h1>Facturas</h1>
+        <p>Facturas emitidas por AVIAM por las operaciones completadas, con su vencimiento y saldo, y el estado de cuenta de su aerolínea.</p>
+      </div>
     </header>
-    <div className={styles.viewSwitch} role="group" aria-label="Vista de la cuenta financiera">
-      <button type="button" aria-pressed={view === "invoices"} onClick={() => setView("invoices")}>Facturas</button>
-      <button type="button" aria-pressed={view === "statement"} onClick={() => setView("statement")}>Estado de cuenta</button>
-    </div>
-    {view === "statement" ? <AirlineTreasuryPanel /> : <>
-      {!statement && !snapshot.failed && <p role="status">Cargando facturas autorizadas…</p>}
-      {!statement && snapshot.failed && <div role="alert"><p>No se pudieron consultar las facturas.</p>
-        <button type="button" className={styles.loadMore} onClick={snapshot.retry}>Reintentar</button></div>}
-      <LiveSnapshotNotice snapshot={snapshot} />
-      {statement && <>
-        <div className={styles.metrics} aria-label="Resumen de facturas">
-          <div><span>Facturas</span><strong>{invoices.length}</strong></div>
-          <div><span>Pendientes</span><strong>{owed.filter(item => item.daysOverdue === 0).length}</strong></div>
-          <div><span>Vencidas</span><strong>{owed.filter(item => item.daysOverdue > 0).length}</strong></div>
-          <div><span>Saldo pendiente</span><strong>{balance(owed)}</strong></div>
-          <div><span>Saldo a favor</span><strong>{credit}</strong></div>
-        </div>
-        {invoices.length === 0 && <p className={styles.empty}>No hay facturas emitidas para esta aerolínea.</p>}
-        {invoices.map(item => <section key={item.id} className={styles.panel} aria-label={invoiceTitle(item)}>
-          <span className={styles.kicker}>{item.stationCode} · {invoiceStatus(item)}</span>
-          <div className={styles.requestCardHeading}>
-            <h2>{invoiceTitle(item)}</h2>
-            <strong>Saldo {amount(item.currencyCode, item.balance)}</strong>
-          </div>
-          <p className={styles.note}>Total {amount(item.currencyCode, item.total)}{item.dueDate ? ` · Vence el ${item.dueDate}` : ""}
-            {item.daysOverdue > 0 ? ` · ${item.daysOverdue} días de atraso` : ""}</p>
-          <button type="button" className={styles.loadMore} onClick={() => setSelected(item.id)}>Ver detalle</button>
-          <InvoicePdfButton invoice={item} />
-        </section>)}
+    <FinanceTabs current="invoices" />
+    {!statement && !snapshot.failed && <p role="status">Cargando facturas autorizadas…</p>}
+    {!statement && snapshot.failed && <div role="alert" className={styles.notice} data-tone="danger">
+      <p>No se pudieron consultar las facturas.</p>
+      <ActionGroup><Button onClick={snapshot.retry}>Reintentar</Button></ActionGroup></div>}
+    <LiveSnapshotNotice snapshot={snapshot} />
+    {statement && <>
+      <div className={styles.kpis} aria-label="Resumen de facturas" role="group">
+        <div><span>Facturas con saldo</span><strong>{summary.open} de {summary.count}</strong>
+          <small>{summary.open === 0 ? "Todas sus facturas están saldadas." : "facturas pendientes de pago"}</small></div>
+        <div><span>Saldo pendiente</span><strong>{formatByCurrency(summary.outstanding)}</strong>
+          <small>{billedOf}</small></div>
+        <div data-tone={summary.overdue > 0 ? "danger" : undefined}><span>Vencido</span>
+          <strong>{formatByCurrency(summary.overdueBalance)}</strong>
+          <small>{summary.overdue === 0 ? "Ninguna factura vencida." : `${plural(summary.overdue, "factura vencida", "facturas vencidas")} de ${summary.open} con saldo`}</small></div>
+        <div><span>Cobrado</span><strong>{formatByCurrency(summary.collected)}</strong>
+          <small>{billedOf}</small></div>
+        <div><span>Saldo a favor</span><strong>{formatByCurrency(credit)}</strong>
+          <small>Notas de crédito y cobros sin aplicar</small></div>
+      </div>
+      <form className={styles.filters} role="search" aria-label="Filtrar facturas" onSubmit={event => event.preventDefault()}>
+        <label>Estado<select value={filters.status ?? ""} onChange={event => set({ status: event.target.value as InvoiceStatusFilter })}>
+          {STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <label>Emitidas desde<input type="date" value={filters.from ?? ""} max={filters.to || undefined}
+          onChange={event => set({ from: event.target.value })} /></label>
+        <label>Emitidas hasta<input type="date" value={filters.to ?? ""} min={filters.from || undefined}
+          onChange={event => set({ to: event.target.value })} /></label>
+        <label>Estación<select value={stationId} onChange={event => setStationId(event.target.value)}>
+          <option value="">Todas las estaciones</option>
+          {stations.map(station => <option key={station.id} value={station.id}>{station.code}</option>)}</select></label>
+        <label>Número de factura<input type="search" value={filters.search ?? ""} placeholder="e-NCF o número interno"
+          onChange={event => set({ search: event.target.value })} /></label>
+        {(filtered || stationId) && <ActionGroup><Button variant="ghost" onClick={() => { setFilters({}); setStationId(""); }}>
+          Limpiar filtros</Button></ActionGroup>}
+      </form>
+      {invoices.length === 0 ? <p className={styles.empty}>No hay facturas emitidas para esta aerolínea.</p> : <>
+        <p className={styles.subtle}>{filtered
+          ? `${plural(shown.length, "factura coincide", "facturas coinciden")} con los filtros, de ${invoices.length}.`
+          : `${plural(invoices.length, "factura emitida", "facturas emitidas")}.`}</p>
+        <DataTable caption="Facturas" rows={shown} rowKey={item => item.id} columns={columns}
+          totalLabel={`Total (${plural(shown.length, "factura", "facturas")})`}
+          empty="Ninguna factura coincide con los filtros." />
       </>}
     </>}
   </div>;

@@ -2,6 +2,7 @@
 
 import type { LiveSnapshot } from "./useLiveSnapshot";
 import styles from "./AirlinePortalPage.module.css";
+import { ActionGroup, Button } from "./PortalUi";
 
 /**
  * 4-N25: how a portal view that already shows its data tells that it is being read again, or that the last read failed
@@ -9,9 +10,9 @@ import styles from "./AirlinePortalPage.module.css";
  */
 export function LiveSnapshotNotice({ snapshot }: { snapshot: LiveSnapshot<unknown> }) {
   if (snapshot.data === null) return null;
-  if (snapshot.failed) return <div role="alert" className={styles.note}>
+  if (snapshot.failed) return <div role="alert" className={styles.notice} data-tone="danger">
     <p>No se pudo actualizar. Mostramos los últimos datos.</p>
-    <button type="button" className={styles.loadMore} onClick={snapshot.retry}>Reintentar</button>
+    <ActionGroup><Button onClick={snapshot.retry}>Reintentar</Button></ActionGroup>
   </div>;
   return snapshot.refreshing ? <p role="status" className={styles.note}>Actualizando…</p> : null;
 }
