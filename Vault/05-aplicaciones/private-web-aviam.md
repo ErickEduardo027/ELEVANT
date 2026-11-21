@@ -2779,6 +2779,11 @@ flowchart LR
     aprobaciones y prepagos pendientes con su plural.
 - **Textos.** Ningún mensaje visible ofrece CSV (el formato inválido dice «Exporte en PDF o Excel») y los conteos
   concuerdan con su número: «1 de 1 agente puede operar», «1 pendiente», «1 solicitud», «Se eligió 1 operación».
+- **Recibo y consolidado** (rama `feat/reportes-pulido-botones`, aún no desplegado). El detalle de un cobro de
+  Tesorería ofrece «Descargar recibo» (PDF de `GET finance/receipts/{receiptId}/document`, archivo
+  `elevant-recibo-<referencia>.pdf`). En el estado de cuenta, «Todas las aerolíneas» exporta el consolidado sin
+  `airlineId` (`elevant-estado-de-cuenta-consolidado-<corte>`); el servidor sigue limitando a las estaciones de la
+  cuenta. Ambos usan el `downloadFile` único.
 
 ## Brechas y desconocidos
 
