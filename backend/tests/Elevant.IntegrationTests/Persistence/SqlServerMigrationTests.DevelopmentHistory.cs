@@ -104,6 +104,40 @@ public sealed partial class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task DevelopmentHistoryRunsOnABaseWhoseAircraftTypesPredateTheSizeColumn()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        // Like the shared VPS: its A320/A333 were seeded before ref.aircraft_types had a size, and the insert-only
+        // seeder never fills it in.
+        await using (var admin = CreateContext(database.ConnectionString))
+            Assert.True(await admin.AircraftTypes.ExecuteUpdateAsync(
+                setters => setters.SetProperty(item => item.SizeCategory, (AircraftSizeCategory?)null), ct) >= 2);
+
+        long lastBaseTurnaround;
+        await using (var before = CreateContext(database.ConnectionString))
+            lastBaseTurnaround = await before.Turnarounds.AsNoTracking().MaxAsync(item => (long?)item.Id, ct) ?? 0;
+
+        var options = DevelopmentHistoryOptions.Small;
+        Assert.Equal(HistoryChunkRegistry.Build(options).Select(chunk => chunk.Name),
+            await SeedHistoryAsSeederAsync(database, options, ct));
+
+        // Only sized types fly: the unsized base ones stay untouched and unused by the history.
+        await using var verify = CreateContext(database.ConnectionString);
+        var unsized = await verify.AircraftTypes.AsNoTracking().Where(item => item.SizeCategory == null)
+            .Select(item => item.Id).ToArrayAsync(ct);
+        Assert.NotEmpty(unsized);
+        var flown = await verify.Turnarounds.AsNoTracking()
+            .Where(item => item.Id > lastBaseTurnaround && item.AircraftTypeId != null)
+            .Select(item => item.AircraftTypeId!.Value).Distinct().ToArrayAsync(ct);
+        Assert.NotEmpty(flown);
+        Assert.DoesNotContain(flown, unsized.Contains);
+    }
+
+    [Fact]
     public async Task DevelopmentHistoryContractsGovernOncePerDateCarryTheSignedHashAndFeedTheContractsReports()
     {
         var ct = TestContext.Current.CancellationToken;
