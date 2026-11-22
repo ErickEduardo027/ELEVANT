@@ -22,11 +22,35 @@ internal static class OperationsHistory
 {
     public const string ChunkPrefix = "ops:";
 
+    /// <summary>Prefix of the monthly chunks of extra operations (NIGHT and OVERTIME surcharges).</summary>
+    public const string ExtraChunkPrefix = "ops-extra:";
+
     public static IEnumerable<HistoryChunk> Chunks(DevelopmentHistoryOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         foreach (var week in options.IsoWeeks())
-            yield return HistoryChunk.Create(ChunkPrefix + week.Name, (chunk, ct) => RunWeekAsync(chunk, week, ct));
+            yield return HistoryChunk.Create(ChunkPrefix + week.Name,
+                (chunk, ct) => RunPeriodAsync(chunk, week, static (schedule, day) => schedule.PlanDay(day), ct));
+    }
+
+    /// <summary>
+    /// Chunks <c>ops-extra:&lt;month&gt;</c>, registered after the payables: the extra operations of each month up to the
+    /// last invoiced day (<see cref="OperationsSchedule.PlanExtras"/>) — dawn arrivals that bill NIGHT and turnarounds
+    /// past their ground-time allowance that bill OVERTIME, which the regular day never reaches. They come after the
+    /// regular history so a database that already holds it (the shared VPS) only adds them;
+    /// <see cref="FinanceHistory.ExtraChunks"/> invoices them.
+    /// </summary>
+    public static IEnumerable<HistoryChunk> ExtraChunks(DevelopmentHistoryOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var through = FinanceHistory.InvoicedThrough(options);
+        foreach (var month in options.Months())
+        {
+            if (month.From > through) yield break;
+            var period = new HistoryPeriod(month.Name, month.From, month.To < through ? month.To : through);
+            yield return HistoryChunk.Create(ExtraChunkPrefix + period.Name,
+                (chunk, ct) => RunPeriodAsync(chunk, period, static (schedule, day) => schedule.PlanExtras(day), ct));
+        }
     }
 
     /// <summary>The rows of one operation, layer by layer (generated keys stay on the objects).</summary>
@@ -42,8 +66,8 @@ internal static class OperationsHistory
         public List<OperationSubmission> Submissions { get; } = [];
     }
 
-    private static async Task RunWeekAsync(HistoryChunkContext chunk, HistoryPeriod week,
-        CancellationToken cancellationToken)
+    private static async Task RunPeriodAsync(HistoryChunkContext chunk, HistoryPeriod week,
+        Func<OperationsSchedule, DateOnly, IReadOnlyList<PlannedOperation>> planDay, CancellationToken cancellationToken)
     {
         var reference = await OperationsReference.EnsureAsync(chunk, cancellationToken);
         var schedule = new OperationsSchedule(chunk, reference);
@@ -51,7 +75,7 @@ internal static class OperationsHistory
         var all = new List<Rows>();
         for (var day = week.From; day <= week.To; day = day.AddDays(1))
         {
-            var planned = schedule.PlanDay(day);
+            var planned = planDay(schedule, day);
             if (planned.Count == 0) continue;
             // 3-N27: numbered per station and local day after the codes already issued, read like the app does.
             var prefix = OperationCodeFormat.Prefix(stationCode, day);

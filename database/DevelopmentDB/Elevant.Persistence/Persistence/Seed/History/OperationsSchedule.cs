@@ -97,6 +97,26 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
     private const int LatestDeparture = 21 * 60 + 45;
     private const int LatestPushback = 21 * 60 + 40;
     private const int LatestHandOff = 22 * 60;
+
+    /// <summary>
+    /// Where an operation may fall, in minutes after local midnight. <c>CrewFrom</c> is the minute the crew is looked up
+    /// from when the operation starts before any shift (the dawn arrivals: the morning crew comes in early).
+    /// </summary>
+    private sealed record Bounds(int FirstArrival, int LastArrival, int LatestDeparture, int LatestPushback,
+        int LatestHandOff, int EarliestStart, int? CrewFrom = null);
+
+    private static readonly Bounds DayBounds =
+        new(FirstArrival, LastArrival, LatestDeparture, LatestPushback, LatestHandOff, 6 * 60);
+
+    /// <summary>
+    /// Dawn arrivals: block-on between 05:40 and 05:59, so the operation starts inside the operating day (from 05:30)
+    /// and before 06:00, which the Service Order bills as NIGHT. The morning crew (06:00) is called in early.
+    /// </summary>
+    private static readonly Bounds DawnBounds = new(5 * 60 + 35, 5 * 60 + 50, LatestDeparture, LatestPushback,
+        LatestHandOff, 5 * 60 + 30, 6 * 60);
+
+    /// <summary>First slot of the extra operations, far above any regular slot of a day.</summary>
+    public const int ExtraSlotBase = 80;
     private const int MaxSimultaneous = 2;
     private const string PassengerBridge = "PASSENGER-BRIDGE";
 
@@ -173,7 +193,15 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
     private readonly DateTimeOffset _windowEnd = chunk.Clock.ToUtc(chunk.Options.WindowEnd, HistoryClock.DayEnd);
 
     /// <summary>The operations of <paramref name="date"/>, in scheduled-arrival order.</summary>
-    public IReadOnlyList<PlannedOperation> PlanDay(DateOnly date)
+    public IReadOnlyList<PlannedOperation> PlanDay(DateOnly date) => PlanCore(date).Planned;
+
+    /// <summary>The day's plan and what it leaves booked: stands, crews and the airlines flying that day.</summary>
+    private sealed record DayState(IReadOnlyList<PlannedOperation> Planned,
+        Dictionary<long, List<(int From, int To)>> Stands,
+        Dictionary<long, List<(DateTimeOffset From, DateTimeOffset To)>> AgentBusy, Dictionary<long, int> AgentLoad,
+        (HistoryAirline Airline, HistoryContractVersion Version)[] Today);
+
+    private DayState PlanCore(DateOnly date)
     {
         var options = chunk.Options;
         var catalog = chunk.Catalog;
@@ -219,7 +247,7 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
         var planned = new List<PlannedOperation>();
         foreach (var draft in drafts)
         {
-            var operation = Schedule(draft, stands, agentBusy, agentLoad);
+            var operation = Schedule(draft, stands, agentBusy, agentLoad, DayBounds);
             if (operation is not null) planned.Add(operation);
         }
 
@@ -230,6 +258,60 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
             if (open is not null) open.Outcome = OperationOutcome.ReturnedOpen;
         }
         foreach (var operation in planned) CapToWindow(operation);
+        return new DayState(planned.OrderBy(item => item.ScheduledArrival).ThenBy(item => item.Slot).ToArray(),
+            stands, agentBusy, agentLoad, today.Select(item => (item.Airline, item.Version!)).ToArray());
+    }
+
+    /// <summary>
+    /// The extra operations of <paramref name="date"/> that bill the surcharges the regular day never reaches, fitted
+    /// around the day's regular plan (same stands and crews, no overlap): about every other day a dawn arrival
+    /// (block-on 05:40–05:59, NIGHT) and one or two daytime turnarounds that stay on the ground past Finance's
+    /// allowance plus the OVERTIME grace. All of them are approved, so Finance invoices them.
+    /// </summary>
+    public IReadOnlyList<PlannedOperation> PlanExtras(DateOnly date)
+    {
+        var state = PlanCore(date);
+        var history = state.Today.Where(item => item.Airline.IsHistory).ToArray();
+        if (history.Length == 0) return [];
+        var random = Stream(date, "extra");
+        var overtimeGrace = chunk.Anchors.Charges.FirstOrDefault(charge =>
+            charge.Code == Elevant.Application.Operations.AutomaticSurchargeCodes.Overtime)?.GraceMinutes ?? 15;
+        var extras = new List<(DraftOperation Draft, Bounds Bounds)>();
+        var slot = ExtraSlotBase;
+        if (random.Chance(0.5))
+        {
+            var (airline, version) = random.Pick(history);
+            var draft = Draft(date, slot, airline, version, 4 + slot - ExtraSlotBase);
+            extras.Add((draft with
+            {
+                BaseArrival = random.Between(DawnBounds.FirstArrival, DawnBounds.LastArrival), Delay = random.Between(0, 8),
+                Preparation = random.Between(5, 8), DelayCode = null, Outcome = OperationOutcome.Approved,
+            }, DawnBounds));
+            slot++;
+        }
+        for (var count = 1 + (random.Chance(0.35) ? 1 : 0); count > 0; count--, slot++)
+        {
+            var (airline, version) = random.Pick(history);
+            var draft = Draft(date, slot, airline, version, 4 + slot - ExtraSlotBase);
+            var size = draft.Aircraft.Size;
+            var allowed = chunk.Anchors.GroundTimeAllowances.TryGetValue(size, out var minutes)
+                ? minutes
+                : size == AircraftSizeCategory.Widebody ? 135 : 75;
+            // Past the allowance and its grace by 5–50 minutes; the schedule keeps the planned departure.
+            extras.Add((draft with
+            {
+                GroundActual = allowed + overtimeGrace + random.Between(5, 50), Outcome = OperationOutcome.Approved,
+            }, DayBounds));
+        }
+
+        var planned = new List<PlannedOperation>();
+        foreach (var (draft, bounds) in extras)
+        {
+            var operation = Schedule(draft, state.Stands, state.AgentBusy, state.AgentLoad, bounds);
+            if (operation is null) continue;
+            CapToWindow(operation);
+            planned.Add(operation);
+        }
         return planned.OrderBy(item => item.ScheduledArrival).ThenBy(item => item.Slot).ToArray();
     }
 
@@ -305,7 +387,8 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
     }
 
     private PlannedOperation? Schedule(DraftOperation draft, Dictionary<long, List<(int From, int To)>> stands,
-        Dictionary<long, List<(DateTimeOffset From, DateTimeOffset To)>> agentBusy, Dictionary<long, int> agentLoad)
+        Dictionary<long, List<(DateTimeOffset From, DateTimeOffset To)>> agentBusy, Dictionary<long, int> agentLoad,
+        Bounds bounds)
     {
         var date = draft.Date;
         // Offsets tried in order: as planned, then 15-minute steps either side up to three hours.
@@ -314,13 +397,14 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
         foreach (var offset in offsets)
         {
             var arrival = draft.BaseArrival + offset;
-            if (arrival < FirstArrival || arrival > LastArrival) continue;
+            if (arrival < bounds.FirstArrival || arrival > bounds.LastArrival) continue;
             var departure = arrival + draft.GroundPlanned;
             var blockOn = arrival + draft.Delay;
             var pushback = blockOn + draft.GroundActual;
             var start = blockOn - draft.Preparation;
             var handOff = pushback + draft.HandOffDelay;
-            if (departure > LatestDeparture || pushback > LatestPushback || handOff > LatestHandOff || start < 6 * 60)
+            if (departure > bounds.LatestDeparture || pushback > bounds.LatestPushback ||
+                handOff > bounds.LatestHandOff || start < bounds.EarliestStart)
                 continue;
             var standFrom = Math.Min(arrival, start) - 10;
             var standTo = Math.Max(departure, pushback) + 10;
@@ -333,7 +417,8 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
             IReadOnlyList<(HistoryAgent, string)> crew = [];
             if (draft.Outcome != OperationOutcome.Cancelled)
             {
-                crew = PickCrew(draft, stand, startAt, handOffAt, agentBusy, agentLoad);
+                var crewFrom = bounds.CrewFrom is { } early ? At(date, Math.Max(start, early)) : startAt;
+                crew = PickCrew(draft, stand, startAt, handOffAt, agentBusy, agentLoad, crewFrom);
                 if (crew.Count < 2) continue;
                 if (!stands.TryGetValue(stand.Id, out var busy)) stands[stand.Id] = busy = [];
                 busy.Add((standFrom, standTo));
@@ -502,7 +587,7 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
 
     private (HistoryAgent, string)[] PickCrew(DraftOperation draft, StandAnchor stand,
         DateTimeOffset from, DateTimeOffset to, Dictionary<long, List<(DateTimeOffset From, DateTimeOffset To)>> busy,
-        Dictionary<long, int> load)
+        Dictionary<long, int> load, DateTimeOffset eligibleFrom)
     {
         (HistoryAgent Agent, string Role)[] Free(IReadOnlyList<HistoryAgent> candidates) => candidates
             .Where(agent => agent.RampAgentId != chunk.Anchors.BaseRampAgentId)
@@ -510,10 +595,10 @@ internal sealed class OperationsSchedule(HistoryChunkContext chunk, OperationsRe
                 spans.Count(span => span.From < to && from < span.To) < MaxSimultaneous)
             .Select(agent => (agent, string.Empty)).ToArray();
         // Agents scoped to the stand's terminal first; when too few, any eligible agent of the station.
-        var eligible = Free(chunk.Catalog.EligibleAt(draft.Date, from, to, stand.TerminalId)).Select(item => item.Agent)
-            .ToArray();
+        var eligible = Free(chunk.Catalog.EligibleAt(draft.Date, eligibleFrom, to, stand.TerminalId))
+            .Select(item => item.Agent).ToArray();
         if (eligible.Length < 2)
-            eligible = Free(chunk.Catalog.EligibleAt(draft.Date, from, to)).Select(item => item.Agent).ToArray();
+            eligible = Free(chunk.Catalog.EligibleAt(draft.Date, eligibleFrom, to)).Select(item => item.Agent).ToArray();
         if (eligible.Length < 2) return [];
         var covering = chunk.Catalog.CoveringAgents(stand.Id, from, to).Select(agent => agent.RampAgentId).ToHashSet();
         var tieBreak = Stream(draft.Date, $"{draft.Slot:00}:crew");

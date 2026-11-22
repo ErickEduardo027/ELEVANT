@@ -73,13 +73,21 @@ seeder base un `DevelopmentHistorySeeder` (`Persistence/Seed/History/`):
     el resto a inicios del mes siguiente, así cada mes tiene facturas
     emitidas) con cobros, atrasos y notas de crédito; los últimos seis días
     quedan en «Por facturar»;
-  - cuentas por pagar.
+  - cuentas por pagar;
+  - operaciones extra para que «Recargos» muestre todos los recargos automáticos
+    que el día normal nunca alcanza: casi un día sí y otro no, una llegada de
+    madrugada (calzos entre las 05:40 y las 05:59, recargo NIGHT; la atiende el
+    turno de mañana, que entra antes), y una o dos operaciones al día que pasan
+    del tiempo en tierra permitido más la gracia (OVERTIME). Se facturan en
+    e-CF propios, emitidos después de las facturas normales de cada quincena.
 - **Cómo inserta:** solo agrega filas, ya en su estado final, porque el login
   del seeder no puede hacer UPDATE ni escribir auditoría. Cada tramo (comercial,
   Gestión Humana, tasas, una semana de operaciones, un mes de facturación,
   cuentas por pagar) se confirma en su propia transacción junto con una fila
   centinela. Si el CD falla a mitad, `--retry` continúa desde el tramo
-  pendiente.
+  pendiente. Los tramos `ops-extra:<mes>` y `finance-extra:<mes>` van al final:
+  en una base que ya tenía el resto del historial, como la del VPS, solo se
+  agregan ellos.
 - **Qué no toca:** no modifica datos existentes; omite las aerolíneas que ya
   están en `ref.airlines`.
 - **Cuándo no corre:** con el centinela final presente no hace nada.
