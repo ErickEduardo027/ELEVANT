@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Infrastructure.Persistence.Seed.History;
 
 /// <summary>
-/// Chunks <c>finance:&lt;month&gt;</c> (part D): Finance invoices the approved operations of each month at PUJ the way
+/// Chunks <c>finance:&lt;month&gt;</c> (part D): Finance invoices the approved operations of each fortnight at PUJ the way
 /// «Por facturar» issues them (<c>EfInvoiceIssuanceStore</c>): per airline, the billable services of the approved
 /// deliveries are valued from their frozen evidence (minimums and charges, <see cref="FinanceChargeValuation"/>), kept
 /// in an internal draft that is invoiced on the spot (ITBIS 18 % by <see cref="FinanceInvoicePolicy.ApplyItbis"/>), and
@@ -38,15 +38,35 @@ internal static class FinanceHistory
         foreach (var month in options.Months())
         {
             if (month.From > through) yield break;
-            var partial = month.To > through;
-            var period = new HistoryPeriod(partial ? month.Name + "a" : month.Name, month.From, partial ? through : month.To);
-            // A closed month is issued from its next month's third business day; the open one three days after its cut.
-            var issueFrom = partial
-                ? through.AddDays(3)
-                : BusinessDay(new DateOnly(month.To.Year, month.To.Month, 1).AddMonths(1), 3);
-            yield return HistoryChunk.Create(ChunkPrefix + period.Name,
-                (chunk, ct) => RunMonthAsync(chunk, period, issueFrom, partial, ct), IsolationLevel.Serializable);
+            if (month.To > through)
+            {
+                // The open month: what operated up to the cut, issued three days after it.
+                var open = new HistoryPeriod(month.Name + "a", month.From, through);
+                yield return HistoryChunk.Create(ChunkPrefix + open.Name,
+                    (chunk, ct) => RunMonthAsync(chunk, open, through.AddDays(3), true, true, ct), IsolationLevel.Serializable);
+                yield break;
+            }
+            // A closed month is invoiced by fortnight, so every month of the window has invoices issued in it: days
+            // 1–15 from the third business day after the 15th, the rest from the next month's third business day.
+            var halves = Fortnights(month).ToArray();
+            yield return HistoryChunk.Create(ChunkPrefix + month.Name, async (chunk, ct) =>
+            {
+                for (var index = 0; index < halves.Length; index++)
+                    await RunMonthAsync(chunk, halves[index].Period, halves[index].IssueFrom, false, index == 0, ct);
+            }, IsolationLevel.Serializable);
         }
+    }
+
+    /// <summary>The fortnights of a closed month inside the window (<c>2026-06a</c>, <c>2026-06b</c>) and their issue days.</summary>
+    private static IEnumerable<(HistoryPeriod Period, DateOnly IssueFrom)> Fortnights(HistoryPeriod month)
+    {
+        var fifteenth = new DateOnly(month.To.Year, month.To.Month, 15);
+        if (month.From <= fifteenth)
+            yield return (new HistoryPeriod(month.Name + "a", month.From, fifteenth), BusinessDay(fifteenth.AddDays(1), 3));
+        var second = month.From > fifteenth ? month.From : fifteenth.AddDays(1);
+        if (second <= month.To)
+            yield return (new HistoryPeriod(month.Name + "b", second, month.To),
+                BusinessDay(new DateOnly(month.To.Year, month.To.Month, 1).AddMonths(1), 3));
     }
 
     /// <summary>The <paramref name="number"/>-th business day (Monday–Friday) from <paramref name="first"/> on.</summary>
@@ -83,7 +103,7 @@ internal static class FinanceHistory
     }
 
     private static async Task RunMonthAsync(HistoryChunkContext chunk, HistoryPeriod period, DateOnly issueFrom,
-        bool partial, CancellationToken cancellationToken)
+        bool partial, bool firstOfChunk, CancellationToken cancellationToken)
     {
         var db = chunk.Db;
         var clock = chunk.Clock;
@@ -160,7 +180,7 @@ internal static class FinanceHistory
         await chunk.InsertAsync(issues.SelectMany(issue => issue.InvoiceLines), cancellationToken);
 
         // Layer 5+: what the airlines paid, the credit notes and the treasury account of each invoice.
-        await FinanceHistoryCollections.InsertAsync(chunk, period, issues, cancellationToken);
+        await FinanceHistoryCollections.InsertAsync(chunk, period, issues, firstOfChunk, cancellationToken);
     }
 
     private static Task<List<SourceRow>> SourceRowsAsync(HistoryChunkContext chunk, long[] airlineIds,

@@ -69,7 +69,10 @@ seeder base un `DevelopmentHistorySeeder` (`Persistence/Seed/History/`):
   - 10 aerolíneas con contratos firmados, sus solicitudes y sus permisos;
   - 25 agentes con habilitaciones, permisos, turnos y coberturas;
   - unas 4.300 operaciones aprobadas con evidencia y decisiones de OCC;
-  - facturas e-CF mensuales con cobros, atrasos y notas de crédito;
+  - facturas e-CF quincenales (los días 1–15 se facturan después del 15 y
+    el resto a inicios del mes siguiente, así cada mes tiene facturas
+    emitidas) con cobros, atrasos y notas de crédito; los últimos seis días
+    quedan en «Por facturar»;
   - cuentas por pagar.
 - **Cómo inserta:** solo agrega filas, ya en su estado final, porque el login
   del seeder no puede hacer UPDATE ni escribir auditoría. Cada tramo (comercial,

@@ -129,7 +129,7 @@ public sealed partial class SqlServerMigrationTests
     /// (UTC−4 all year) falls outside 05:30–22:30, by table and column.
     /// </summary>
     private static async Task<List<string>> InstantsOutsideTheOperatingDayAsync(string connectionString,
-        IReadOnlyDictionary<string, long> baseline, CancellationToken ct)
+        Dictionary<string, long> baseline, CancellationToken ct)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(ct);
@@ -372,22 +372,27 @@ public sealed partial class SqlServerMigrationTests
                 Assert.Null(report.Failure);
                 cells.Add(report.Document!.Rows.Count);
             }
+            // «Vencimientos» lists the current documents by their expiry date: one that expired in a past month was
+            // renewed (the old cycle is no longer current), so only the recent months can have rows; checked below.
             for (var index = 0; index < cells.Count; index++)
-                if (cells[index] == 0) empty.Add($"{month.Name} {header[index + 1]}");
+                if (cells[index] == 0 && header[index + 1] != "hr.expirations") empty.Add($"{month.Name} {header[index + 1]}");
             table.Add([month.Name, .. cells.Select(cell => cell.ToString(CultureInfo.InvariantCulture))]);
         }
         Log("Report rows per month:");
         foreach (var column in Enumerable.Range(0, header.Count))
-            Log("  " + string.Join(" | ", table.Select(row => row[column].PadLeft(column == 0 ? 26 : 7))));
+            Log("  " + string.Join(" | ", table.Select((row, index) => index == 0 ? row[column].PadRight(24) : row[column].PadLeft(7))));
 
         // Expired and expiring documents at «today»; CxC aging at 2026-11-21 in several buckets with overdue invoices.
-        var expired = await hr.ListExpirationsAsync(hrAccount, station, new DateOnly(2026, 1, 1), new DateOnly(2027, 12, 31), 1, 100,
+        var expired = await hr.ListExpirationsAsync(hrAccount, station, new DateOnly(2026, 1, 1), new DateOnly(2026, 11, 21), 1, 100,
             validity: "Expired", cancellationToken: ct);
         Assert.NotEmpty(expired.Page!.Rows);
         var expiring = await hr.ListExpirationsAsync(hrAccount, station, new DateOnly(2026, 11, 22), new DateOnly(2026, 12, 22), 1, 100,
             cancellationToken: ct);
         Assert.NotEmpty(expiring.Page!.Rows);
-        Log($"HR: expired {expired.Page.Rows.Count}{(expired.Page.HasMore ? "+" : "")}, expiring in 30 days {expiring.Page.Rows.Count}");
+        var nextYear = await hr.ListExpirationsAsync(hrAccount, station, new DateOnly(2026, 11, 22), new DateOnly(2027, 11, 21), 1, 100,
+            cancellationToken: ct);
+        Log($"HR: expired {expired.Page.Rows.Count}, expiring in 30 days {expiring.Page.Rows.Count}, " +
+            $"expiring within a year {nextYear.Page!.Rows.Count}{(nextYear.Page.HasMore ? "+" : "")}");
         var cutoff = new DateOnly(2026, 11, 21);
         var aging = await finance.GetAsync(FinanceAccount, "receivables", new FinanceReportFilter(cutoff, cutoff, null, null, null), ct);
         Assert.NotNull(aging);

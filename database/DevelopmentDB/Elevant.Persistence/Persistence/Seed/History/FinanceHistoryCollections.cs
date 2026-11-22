@@ -33,16 +33,17 @@ internal static class FinanceHistoryCollections
     private sealed record Payment(DateOnly Day, DateTimeOffset At, decimal Amount, decimal Extra, PaymentMethod Method);
 
     public static async Task InsertAsync(HistoryChunkContext chunk, HistoryPeriod period, IReadOnlyList<FinanceHistory.Issue> issues,
-        CancellationToken cancellationToken)
+        bool firstOfChunk, CancellationToken cancellationToken)
     {
         var db = chunk.Db;
         var clock = chunk.Clock;
         var finance = chunk.Anchors.Finance.Id;
         var lastDay = chunk.Options.WindowEnd;
         var cap = clock.ToUtc(lastDay, HistoryClock.DayEnd);
-        // The first finance chunk keeps two receipts larger than their invoice: a credit of the airline.
-        var withRemainder = string.Equals(FinanceHistory.Chunks(chunk.Options).First().Name, chunk.ChunkName,
-            StringComparison.Ordinal) ? 2 : 0;
+        // The first invoicing of the first finance chunk keeps two receipts larger than their invoice: a credit of the
+        // airline.
+        var withRemainder = firstOfChunk && string.Equals(FinanceHistory.Chunks(chunk.Options).First().Name,
+            chunk.ChunkName, StringComparison.Ordinal) ? 2 : 0;
 
         var highestNote = await db.Set<FinanceTreasuryAdjustmentNote>()
             .FromSqlRaw("SELECT * FROM [commercial].[finance_treasury_adjustment_notes] WITH (UPDLOCK, HOLDLOCK)")
