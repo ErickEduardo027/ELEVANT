@@ -80,4 +80,12 @@ public static class ContractValidity
     }
 
     public static bool IsDraftCode(string code) => code.StartsWith("DRAFT-", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The code a person reads: a draft still coded <c>DRAFT-{guid}</c> reads «Borrador 1cc18541» (the first eight
+    /// characters of its identifier); a contract's own code reads as it is.
+    /// </summary>
+    public static string DisplayCode(string code) => IsDraftCode(code)
+        ? $"Borrador {code["DRAFT-".Length..][..Math.Min(8, code.Length - "DRAFT-".Length)].ToLowerInvariant()}"
+        : code;
 }

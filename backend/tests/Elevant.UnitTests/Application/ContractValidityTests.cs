@@ -143,6 +143,13 @@ public sealed class ContractValidityTests
         Assert.Equal(("contrato-CTR-2026-0007-v1.pdf", "application/pdf"), (attachment.Name, attachment.ContentType.MediaType));
     }
 
+    [Fact]
+    public void DisplayCode_reads_a_draft_by_the_start_of_its_identifier_and_a_contract_as_it_is()
+    {
+        Assert.Equal("Borrador ea62e144", ContractValidity.DisplayCode("DRAFT-EA62E14453B34183B5F7EEB20A6A8BC2"));
+        Assert.Equal("CTR-2026-0001", ContractValidity.DisplayCode("CTR-2026-0001"));
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

@@ -47,7 +47,8 @@ internal sealed class EfContractsReportStore(
             From = query.From,
             To = definition.Period == ReportPeriod.Range ? query.To : today,
             AsOfDate = definition.Period != ReportPeriod.Range,
-            StationScope = "Todas las aerolíneas",
+            StationScope = query.Id("station") is { } stationId && names.TryGetValue(("station", stationId.ToString("D")), out var stationName)
+                ? stationName : "Todas las estaciones",
             Filters = TabularReports.Applied(definition, query, (filter, value) => names.GetValueOrDefault((filter.Key, value))),
             Summary = summary,
             Notes = notes,
@@ -146,7 +147,7 @@ internal sealed class EfContractsReportStore(
             int? days = version?.ValidTo is { } end ? end.DayNumber - today.DayNumber : null;
             return (IReadOnlyList<ReportCell>)
             [
-                ReportCell.Of(item.Contract.Airline), ReportCell.Of(item.Contract.ContractCode),
+                ReportCell.Of(item.Contract.Airline), ReportCell.Of(ContractValidity.DisplayCode(item.Contract.ContractCode)),
                 version is null ? ReportCell.Empty : ReportCell.Value(version.VersionNumber),
                 ReportCell.Of(ContractsReportCatalog.Status(item.Contract.Status)),
                 version is null ? ReportCell.Empty : ReportCell.Of(ContractsReportCatalog.VersionStatus(version.Status)),
@@ -199,7 +200,7 @@ internal sealed class EfContractsReportStore(
             .ToArrayAsync(cancellationToken);
         var rows = rates.Select(rate => (IReadOnlyList<ReportCell>)
         [
-            ReportCell.Of(rate.ContractCode), ReportCell.Of(rate.Airline), ReportCell.Value(rate.VersionNumber),
+            ReportCell.Of(ContractValidity.DisplayCode(rate.ContractCode)), ReportCell.Of(rate.Airline), ReportCell.Value(rate.VersionNumber),
             ReportCell.Of($"{rate.Code} · {rate.Name}"), ReportCell.Of(Elevant.Application.Operations.OperationLabels.BillingUnit(rate.BillingUnit)),
             ReportCell.Of(rate.CurrencyCode), ReportCell.Value(rate.UnitPrice), ReportCell.Value(rate.MinimumQuantity),
             ReportCell.Date(rate.ValidFrom), ReportCell.Date(rate.ValidTo),

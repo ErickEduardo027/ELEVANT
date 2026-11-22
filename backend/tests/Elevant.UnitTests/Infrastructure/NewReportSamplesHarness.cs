@@ -64,7 +64,7 @@ public sealed class NewReportSamplesHarness
             From = from,
             To = to ?? new DateOnly(2026, 11, 21),
             AsOfDate = definition.Period != ReportPeriod.Range,
-            StationScope = area == ContractsReportCatalog.Area ? "Todas las aerolíneas" : "Todas las estaciones",
+            StationScope = "Todas las estaciones",
             Filters = filters,
             Summary = summary,
             Notes = notes is null ? [] : [notes],

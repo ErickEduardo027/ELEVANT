@@ -154,9 +154,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     /// The code a person reads: a draft still coded <c>DRAFT-{guid}</c> prints «Borrador 1cc18541» (the first eight
     /// characters of its identifier); a contract's own code prints as it is.
     /// </summary>
-    public static string DisplayCode(string code) => ContractValidity.IsDraftCode(code)
-        ? $"Borrador {code["DRAFT-".Length..][..Math.Min(8, code.Length - "DRAFT-".Length)].ToLowerInvariant()}"
-        : code;
+    public static string DisplayCode(string code) => ContractValidity.DisplayCode(code);
 
     /// <summary>
     /// The airline's designator as printed (N33). SQL reads a two-letter IATA code padded to the ICAO column's width
