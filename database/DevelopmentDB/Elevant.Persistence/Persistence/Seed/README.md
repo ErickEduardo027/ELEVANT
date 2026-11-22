@@ -26,3 +26,17 @@ serializable transaction fails closed on a conflicting shift, overlapping stand
 window, contract outside its signed/termination dates, missing anchor or
 non-Development marker. CD does not run
 this command automatically.
+
+`seed-development` then runs `History/DevelopmentHistorySeeder` on a fresh
+context (5-minute command timeout, change detection off) unless
+`ELEVANT_DEV_HISTORY=off`. It adds synthetic PUJ history for 2026-06-01 →
+2026-11-21 so every report has data, using the same seeder login: insert-only,
+no audit, outbox or email. The work is split into ordered chunks
+(`History/HistoryChunkRegistry`: commercial, workforce, fx, weekly operations,
+monthly finance, payables); each commits in its own transaction together with a
+sentinel receipt in `commercial.finance_pricing_commands` keyed by
+`elevant-development-history-v1:chunk:<name>`. A run whose last chunk sentinel
+exists returns immediately; an interrupted run resumes with the missing chunks.
+Public ids and random choices derive from SHA-256 keys and SplitMix64 streams,
+never from the clock. The history airlines (`AIR-HIST-*`) have one disabled
+signer account each, without password, and no billing email.

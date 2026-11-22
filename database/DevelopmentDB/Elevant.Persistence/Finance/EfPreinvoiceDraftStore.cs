@@ -235,7 +235,7 @@ internal sealed class EfPreinvoiceDraftStore(
                 Amount = serviceAmount,
                 ComputedQuantity = row.ExecutedQuantity, ComputedAmount = serviceAmount,
                 AdjustmentReason = package is null ? null : "Cubierto por paquete " + package.Code,
-                CalculationJson = package?.CalculationJson ?? JsonSerializer.Serialize(new { row.ServicePublicId, row.ContractServiceRateId, row.ExecutedQuantity, row.BillingUnitSnapshot, row.UnitPriceSnapshot, row.CurrencyCodeSnapshot, amount = serviceAmount }),
+                CalculationJson = package?.CalculationJson ?? PreinvoiceLineCalculation.Serialize(row.ServicePublicId, row.ContractServiceRateId, row.ExecutedQuantity, row.BillingUnitSnapshot, row.UnitPriceSnapshot, row.CurrencyCodeSnapshot, serviceAmount),
                 CreatedAt = now, UpdatedAt = now,
             };
             serviceLine.LineNumber = ++lineNumber;
@@ -303,7 +303,7 @@ internal sealed class EfPreinvoiceDraftStore(
         return PreinvoiceDraftResult.Success(draft.PublicId, false);
     }
 
-    private static string HashRequest(CreatePreinvoiceDraftCommand request)
+    internal static string HashRequest(CreatePreinvoiceDraftCommand request)
     {
         var source = $"{request.AccountId:D}|{request.StationId:D}|{request.From:yyyy-MM-dd}|" +
             $"{request.To:yyyy-MM-dd}|{string.Join(',', request.ServiceIds.Order())}";

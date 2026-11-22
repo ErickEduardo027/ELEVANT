@@ -1720,7 +1720,14 @@ IF EXISTS (
     Invoke-SqlClient -User 'elevant_dev_seeder' -Password $passwords.Seeder -Database 'ElevantDevelopmentDb' -Query @'
 IF (SELECT COUNT_BIG(*) FROM [ops].[turnarounds] WHERE [operation_code] IN (N'DEV-CYCLE-20260928', N'DEV-CYCLE-20260929')) <> 2
     THROW 53030, 'Scenario command did not create exactly two idempotent turnarounds.', 1;
-IF (SELECT COUNT_BIG(*) FROM [hr].[shift_assignments] WHERE [work_date] IN (CONVERT(date, N'2026-09-28'), CONVERT(date, N'2026-09-29'))) <> 2
+-- Scoped to the scenario's agent: the synthetic history also schedules its own agents on these days.
+IF (
+    SELECT COUNT_BIG(*)
+    FROM [hr].[shift_assignments] AS [shift]
+    INNER JOIN [hr].[ramp_agents] AS [agent] ON [agent].[id] = [shift].[ramp_agent_id]
+    WHERE [agent].[employee_number] = N'DEV-RA-001'
+      AND [shift].[work_date] IN (CONVERT(date, N'2026-09-28'), CONVERT(date, N'2026-09-29'))
+) <> 2
     THROW 53031, 'Scenario command did not create exactly two covering shifts.', 1;
 '@
     Invoke-Ops -Command verify-development

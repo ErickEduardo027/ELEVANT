@@ -252,7 +252,9 @@ def _development_seed_fingerprint(
     if not development_seed.is_file():
         _fail(f"Required source file is missing: {development_seed}")
 
-    seed_sources = sorted(development_seed.parent.glob("*.cs"))
+    # Recursive: the synthetic history seeder lives in Seed/History/ and is part of what the seeder container runs.
+    seed_root = development_seed.parent
+    seed_sources = sorted(seed_root.rglob("*.cs"), key=lambda path: path.relative_to(seed_root).as_posix())
     if development_seed not in seed_sources:
         _fail("The configured Development seed entry point must be a C# source file.")
 
@@ -263,7 +265,8 @@ def _development_seed_fingerprint(
             source_file,
             f"Development seed source {source_file.name}",
         )
-        digest.update(source_file.name.encode("utf-8"))
+        # A file directly in Seed/ keeps its bare name, so the fingerprint of a flat seed is unchanged.
+        digest.update(source_file.relative_to(seed_root).as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(source_file.read_bytes())
         digest.update(b"\0")

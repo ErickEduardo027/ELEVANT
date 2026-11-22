@@ -1535,7 +1535,7 @@
       },
       {
         "path": "database/DevelopmentDB/scripts/deployment/database_release_manifest.py",
-        "sha256": "dbb9e1da22cdad7b724ab079dc45a77e6b0e4e8f98e5267ae2255763fa89c023"
+        "sha256": "95cdaf0e3b8e45dae7f5389a87ca441febecf37acbf843444220471e3012b39e"
       },
       {
         "path": "frontend/scripts/deployment/web_release_manifest.py",

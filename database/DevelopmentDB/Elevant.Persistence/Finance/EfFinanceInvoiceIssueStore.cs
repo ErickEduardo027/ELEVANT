@@ -1,5 +1,4 @@
 using Elevant.Application.Common;
-using System.Text.Json;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
@@ -99,16 +98,16 @@ internal sealed class EfFinanceInvoiceIssueStore(
             m.Kind == MembershipKind.InternalStaff).Select(m => m.OrganizationId).Distinct().ToArray();
         if (issuerIds.Length != 1) return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict);
         var issuer = await context.Organizations.AsNoTracking().Where(o => o.PublicId == issuerIds[0])
-            .Select(o => new { o.PublicId, o.Code, o.LegalName, o.DisplayName }).SingleOrDefaultAsync(cancellationToken);
+            .Select(o => new FinanceInvoiceSnapshot.Party(o.PublicId, o.Code, o.LegalName, o.DisplayName)).SingleOrDefaultAsync(cancellationToken);
         var customer = await context.Organizations.AsNoTracking().Where(o => o.Id == scope.AirlineOrganizationId)
-            .Select(o => new { o.PublicId, o.Code, o.LegalName, o.DisplayName }).SingleAsync(cancellationToken);
+            .Select(o => new FinanceInvoiceSnapshot.Party(o.PublicId, o.Code, o.LegalName, o.DisplayName)).SingleAsync(cancellationToken);
         // The buyer's tax identifier (RNC or foreign id) as its organization has it at issue: frozen in the snapshot.
         var customerTax = await context.Organizations.AsNoTracking().Where(o => o.Id == scope.AirlineOrganizationId)
             .Select(o => new { o.TaxRegistration, o.TaxRegistrationCountryCode }).SingleAsync(cancellationToken);
         var airlineIdentity = await context.Airlines.AsNoTracking().Where(a => a.Id == scope.AirlineId)
-            .Select(a => new { a.PublicId, a.Name, a.IataCode, a.IcaoCode }).SingleAsync(cancellationToken);
+            .Select(a => new FinanceInvoiceSnapshot.AirlineIdentity(a.PublicId, a.Name, a.IataCode, a.IcaoCode)).SingleAsync(cancellationToken);
         var stationIdentity = await context.Stations.AsNoTracking().Where(s => s.Id == scope.StationId)
-            .Select(s => new { s.PublicId, s.Code, s.Name }).SingleAsync(cancellationToken);
+            .Select(s => new FinanceInvoiceSnapshot.StationIdentity(s.PublicId, s.Code, s.Name)).SingleAsync(cancellationToken);
 
         var updated = await context.Preinvoices
             .Where(item => item.Id == scope.Id && item.Status == PreinvoiceStatus.Accepted)
@@ -136,17 +135,8 @@ internal sealed class EfFinanceInvoiceIssueStore(
         invoice.DiscountTotal = lines.Sum(l => l.DiscountAmount ?? 0);
         invoice.TaxTreatmentsConfigured = lines.All(FinanceTaxCalculator.IsConfigured);
         invoice.TaxTotal = invoice.TaxTreatmentsConfigured ? lines.Sum(l => l.TaxAmount ?? 0) : null;
-        invoice.CommercialSnapshotJson = JsonSerializer.Serialize(new
-        {
-            version = 1, capturedAt = now, issuer, customer, airline = airlineIdentity, station = stationIdentity,
-            invoice.CurrencyCode, invoice.PaymentTermDays, invoice.DueDate,
-            net = invoice.NetTotal, discount = invoice.DiscountTotal, tax = invoice.TaxTotal, gross = invoice.Total,
-            treatmentsConfigured = invoice.TaxTreatmentsConfigured,
-            issuerTaxRegistration = FinanceInvoicePolicy.SimulatedIssuerRnc,
-            customerTaxRegistration = customerTax.TaxRegistration,
-            customerTaxRegistrationCountryCode = customerTax.TaxRegistrationCountryCode?.Trim(),
-            fiscalDisclaimer = FinanceInvoicePolicy.Disclaimer,
-        });
+        invoice.CommercialSnapshotJson = FinanceInvoiceSnapshot.Serialize(invoice, now, issuer, customer, airlineIdentity,
+            stationIdentity, customerTax.TaxRegistration, customerTax.TaxRegistrationCountryCode);
         // ADR-0035: every new invoice gets the next simulated e-NCF; the serializable transaction and
         // the unique index keep the sequence gap-free and unique.
         var highest = await context.NonFiscalInvoices
@@ -159,23 +149,8 @@ internal sealed class EfFinanceInvoiceIssueStore(
         context.NonFiscalInvoices.Add(invoice);
         await context.SaveChangesAsync(cancellationToken);
         foreach (var line in lines)
-            context.NonFiscalInvoiceLines.Add(new NonFiscalInvoiceLine
-            {
-                PublicId = Guid.CreateVersion7(), InvoiceId = invoice.Id,
-                PreinvoiceLineId = line.Id, LineNumber = line.LineNumber,
-                OperationCode = line.OperationCode, OperationDate = line.OperationDate,
-                ServiceCode = line.ServiceCode, ServiceName = line.ServiceName,
-                ExecutedQuantity = line.ExecutedQuantity, BillingUnit = line.BillingUnit,
-                UnitPrice = line.UnitPrice, CurrencyCode = line.CurrencyCode,
-                Amount = line.Amount, Kind = line.Kind,
-                TaxPolicyPublicId = line.TaxPolicyPublicId, TaxTreatment = line.TaxTreatment,
-                TaxRate = line.TaxRate, TaxBasis = line.TaxBasis, NetAmount = line.NetAmount,
-                DiscountAmount = line.DiscountAmount, TaxAmount = line.TaxAmount,
-                GrossAmount = line.GrossAmount, TaxCapturedAt = line.TaxCapturedAt,
-                ParentLineNumber = line.ParentLineId is { } parent ? lineNumbers[parent] : null,
-                Reason = line.Kind == Elevant.Domain.Enumerations.PreinvoiceLineKind.Service ? null : line.AdjustmentReason,
-                CreatedAt = now, UpdatedAt = now,
-            });
+            context.NonFiscalInvoiceLines.Add(NonFiscalInvoiceLines.From(line, invoice.Id,
+                line.ParentLineId is { } parent ? lineNumbers[parent] : null, Guid.CreateVersion7(), now));
         context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(), OccurredAt = now,
