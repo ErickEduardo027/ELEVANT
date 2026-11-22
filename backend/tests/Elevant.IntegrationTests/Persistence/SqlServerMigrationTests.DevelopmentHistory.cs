@@ -96,7 +96,7 @@ public sealed partial class SqlServerMigrationTests
 
         // Insert-only: every base row is still there, and only the expected tables grew.
         Assert.All(baseCounts, pair => Assert.True(complete[pair.Key] >= pair.Value, pair.Key));
-        Assert.Equal(baseCounts["[ops].[turnarounds]"], complete["[ops].[turnarounds]"]);
+        Assert.True(complete["[ops].[turnarounds]"] > baseCounts["[ops].[turnarounds]"], "The ops chunks add operations.");
         Assert.Equal(baseCounts["[hr].[ramp_agents]"] + options.AgentCount, complete["[hr].[ramp_agents]"]);
         await using var verify = CreateContext(database.ConnectionString);
         Assert.Equal(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero), await verify.Contracts.AsNoTracking()
