@@ -326,6 +326,20 @@ class DatabaseReleaseManifestTests(unittest.TestCase):
                 repository_root=self.repository_root,
             )
 
+    def test_detects_development_seed_subfolder_drift(self) -> None:
+        nested = CANONICAL_SOURCE_PATHS.development_seed.parent / "History" / "DevelopmentHistorySeeder.cs"
+        self._write_at(nested, "// history seeder\n")
+        document = self._generate()
+        self._write_at(nested, "// changed history seeder\n")
+
+        with self.assertRaisesRegex(
+            release_manifest.ManifestError, "Database fingerprints"
+        ):
+            release_manifest.validate_manifest(
+                document,
+                repository_root=self.repository_root,
+            )
+
     def test_migration_source_content_changes_fingerprint(self) -> None:
         original = self._generate()
         self._write(
