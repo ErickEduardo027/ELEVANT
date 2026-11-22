@@ -1,6 +1,7 @@
 using System.Globalization;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
+using Elevant.Infrastructure.Persistence.Seed.History;
 using Microsoft.EntityFrameworkCore;
 
 const string connectionVariable = "ConnectionStrings__ElevantDatabase";
@@ -12,6 +13,7 @@ const string contractsPasswordVariable = "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD
 const string financePasswordVariable = "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD";
 const string superAdminPasswordVariable = "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD";
 const string scenarioDateVariable = "ELEVANT_DEV_SCENARIO_DATE";
+const string historyVariable = "ELEVANT_DEV_HISTORY";
 
 if (args.Length != 1 || args[0] is not ("verify-target" or "seed-development" or
     "seed-development-scenario" or "rotate-development-human-resources"))
@@ -82,6 +84,26 @@ try
 
     await new DevelopmentDataSeeder(context).SeedAsync(passwords);
     Console.WriteLine("Synthetic Development fixtures are present.");
+
+    // Six months of synthetic history at PUJ, insert-only and resumable by chunk. ELEVANT_DEV_HISTORY=off skips it.
+    if (string.Equals(Environment.GetEnvironmentVariable(historyVariable), "off", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"Synthetic Development history skipped ({historyVariable}=off).");
+        return 0;
+    }
+    var historyOptions = new DbContextOptionsBuilder<ElevantDbContext>()
+        .UseSqlServer(connectionString, sql =>
+        {
+            ElevantSqlServerOptions.Configure(sql);
+            sql.CommandTimeout(300);
+        })
+        .Options;
+    await using var historyContext = new ElevantDbContext(historyOptions);
+    historyContext.ChangeTracker.AutoDetectChangesEnabled = false;
+    var chunks = await new DevelopmentHistorySeeder(historyContext, Console.Out).SeedAsync();
+    Console.WriteLine(chunks.Count == 0
+        ? "Synthetic Development history is present."
+        : $"Synthetic Development history is present ({chunks.Count} chunks added).");
     return 0;
 }
 catch (Exception exception)
