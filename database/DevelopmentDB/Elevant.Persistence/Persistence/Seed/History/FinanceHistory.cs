@@ -22,6 +22,9 @@ internal static class FinanceHistory
 {
     public const string ChunkPrefix = "finance:";
 
+    /// <summary>Prefix of the chunks that invoice the extra operations (<see cref="OperationsHistory.ExtraChunks"/>).</summary>
+    public const string ExtraChunkPrefix = "finance-extra:";
+
     /// <summary>
     /// Services per invoice: the app takes up to 500 billable services and then refuses more than 500 lines after the
     /// valuation adds minimums and charges, so the history keeps room for them.
@@ -31,7 +34,17 @@ internal static class FinanceHistory
     /// <summary>The operations after this date (the last six days of the window) are never invoiced.</summary>
     public static DateOnly InvoicedThrough(DevelopmentHistoryOptions options) => options.WindowEnd.AddDays(-6);
 
-    public static IEnumerable<HistoryChunk> Chunks(DevelopmentHistoryOptions options)
+    public static IEnumerable<HistoryChunk> Chunks(DevelopmentHistoryOptions options) => ChunksFor(options, ChunkPrefix);
+
+    /// <summary>
+    /// Chunks <c>finance-extra:&lt;month&gt;</c>, the last of the history: the same fortnights invoiced again, which only
+    /// finds what no invoice holds yet — the extra operations — and issues them as invoices of their own with the next
+    /// E31 numbers, on the fortnight's issue days.
+    /// </summary>
+    public static IEnumerable<HistoryChunk> ExtraChunks(DevelopmentHistoryOptions options) =>
+        ChunksFor(options, ExtraChunkPrefix);
+
+    private static IEnumerable<HistoryChunk> ChunksFor(DevelopmentHistoryOptions options, string prefix)
     {
         ArgumentNullException.ThrowIfNull(options);
         var through = InvoicedThrough(options);
@@ -42,17 +55,18 @@ internal static class FinanceHistory
             {
                 // The open month: what operated up to the cut, issued three days after it.
                 var open = new HistoryPeriod(month.Name + "a", month.From, through);
-                yield return HistoryChunk.Create(ChunkPrefix + open.Name,
-                    (chunk, ct) => RunMonthAsync(chunk, open, through.AddDays(3), true, true, ct), IsolationLevel.Serializable);
+                yield return HistoryChunk.Create(prefix + open.Name,
+                    (chunk, ct) => RunMonthAsync(chunk, prefix, open, through.AddDays(3), true, true, ct),
+                    IsolationLevel.Serializable);
                 yield break;
             }
             // A closed month is invoiced by fortnight, so every month of the window has invoices issued in it: days
             // 1–15 from the third business day after the 15th, the rest from the next month's third business day.
             var halves = Fortnights(month).ToArray();
-            yield return HistoryChunk.Create(ChunkPrefix + month.Name, async (chunk, ct) =>
+            yield return HistoryChunk.Create(prefix + month.Name, async (chunk, ct) =>
             {
                 for (var index = 0; index < halves.Length; index++)
-                    await RunMonthAsync(chunk, halves[index].Period, halves[index].IssueFrom, false, index == 0, ct);
+                    await RunMonthAsync(chunk, prefix, halves[index].Period, halves[index].IssueFrom, false, index == 0, ct);
             }, IsolationLevel.Serializable);
         }
     }
@@ -102,8 +116,9 @@ internal static class FinanceHistory
         public List<NonFiscalInvoiceLine> InvoiceLines { get; } = [];
     }
 
-    private static async Task RunMonthAsync(HistoryChunkContext chunk, HistoryPeriod period, DateOnly issueFrom,
-        bool partial, bool firstOfChunk, CancellationToken cancellationToken)
+    /// <param name="prefix">Chunk prefix; it also names every key of the invoices, so each pass has its own.</param>
+    private static async Task RunMonthAsync(HistoryChunkContext chunk, string prefix, HistoryPeriod period,
+        DateOnly issueFrom, bool partial, bool firstOfChunk, CancellationToken cancellationToken)
     {
         var db = chunk.Db;
         var clock = chunk.Clock;
@@ -114,9 +129,12 @@ internal static class FinanceHistory
         var issueAt = new Dictionary<long, DateTimeOffset>();
         foreach (var airline in airlines.Values)
         {
-            var random = HistoryRandom.For($"{ChunkPrefix}{period.Name}:{airline.Designator}:issue");
-            var day = partial ? issueFrom : BusinessDay(issueFrom, 1 + random.Next(3));
-            issueAt[airline.Id] = clock.At(day, new TimeOnly(9, 30).AddMinutes(random.Between(0, 90)));
+            var random = HistoryRandom.For($"{prefix}{period.Name}:{airline.Designator}:issue");
+            // The extra invoices come after the regular ones of the same fortnight: the fourth business day (the open
+            // month: its afternoon), so each pass keeps its E31 in issue order.
+            var extra = !string.Equals(prefix, ChunkPrefix, StringComparison.Ordinal);
+            var day = partial ? issueFrom : BusinessDay(issueFrom, extra ? 4 : 1 + random.Next(3));
+            issueAt[airline.Id] = clock.At(day, new TimeOnly(extra ? 15 : 9, extra ? 0 : 30).AddMinutes(random.Between(0, 90)));
         }
 
         var rows = await SourceRowsAsync(chunk, airlines.Keys.ToArray(), period, cancellationToken);
@@ -140,7 +158,7 @@ internal static class FinanceHistory
                     current.Rows.Count + services.Count > MaxServicesPerInvoice)
                 {
                     index++;
-                    current = new Issue($"{ChunkPrefix}{period.Name}:{airline.Designator}:{index}", airline,
+                    current = new Issue($"{prefix}{period.Name}:{airline.Designator}:{index}", airline,
                         issueAt[airline.Id].AddMinutes(7 * (index - 1)));
                     issues.Add(current);
                     count = 0;

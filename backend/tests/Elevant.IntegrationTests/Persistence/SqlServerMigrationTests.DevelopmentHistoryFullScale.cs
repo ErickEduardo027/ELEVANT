@@ -274,12 +274,35 @@ public sealed partial class SqlServerMigrationTests
         Assert.False(await db.Turnarounds.AnyAsync(item => item.AirlineId == preexistingAirline, ct));
         Assert.False(await db.NonFiscalInvoices.AnyAsync(item => item.AirlineId == preexistingAirline, ct));
 
-        // E31: contiguous after the pre-existing invoice, in issue order.
-        var e31 = await db.NonFiscalInvoices.AsNoTracking().Where(item => item.Id > baseline["[commercial].[non_fiscal_invoices]"])
-            .Select(item => new { item.FiscalNumber, item.CreatedAt, item.DueDate, item.Total }).ToArrayAsync(ct);
+        // E31: contiguous after the pre-existing invoice, in issue order within each pass: the invoices of the extra
+        // operations (finance-extra, issued by a later chunk) are numbered after every regular one.
+        var extraKeys = options.Days().SelectMany(day => Enumerable.Range(OperationsSchedule.ExtraSlotBase, 10).Select(slot =>
+            HistoryKeys.Key(string.Create(CultureInfo.InvariantCulture, $"ops:{day:yyyy-MM-dd}:{slot:00}:turnaround"))))
+            .ToArray();
+        var extraCodes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var page in extraKeys.Chunk(1000))
+            extraCodes.UnionWith(await db.Turnarounds.AsNoTracking().Where(item => page.Contains(item.PublicId))
+                .Select(item => item.OperationCode).ToArrayAsync(ct));
+        Assert.NotEmpty(extraCodes);
+        var invoiceRows = await db.NonFiscalInvoices.AsNoTracking()
+            .Where(item => item.Id > baseline["[commercial].[non_fiscal_invoices]"])
+            .Select(item => new { item.Id, item.FiscalNumber, item.CreatedAt, item.DueDate, item.Total }).ToArrayAsync(ct);
+        var invoiceIds = invoiceRows.Select(item => item.Id).ToArray();
+        var codesByInvoice = (await db.NonFiscalInvoiceLines.AsNoTracking().Where(line => invoiceIds.Contains(line.InvoiceId))
+                .Select(line => new { line.InvoiceId, line.OperationCode }).ToArrayAsync(ct))
+            .ToLookup(line => line.InvoiceId, line => line.OperationCode);
+        var e31 = invoiceRows.Select(item => new
+        {
+            item.FiscalNumber, item.CreatedAt, item.DueDate, item.Total,
+            Extra = codesByInvoice[item.Id].Any(code => code is not null && extraCodes.Contains(code)),
+        }).ToArray();
         Assert.NotEmpty(e31);
+        // An extra invoice holds only extra operations.
+        Assert.All(invoiceRows.Where(item => codesByInvoice[item.Id].Any(code => code is not null && extraCodes.Contains(code))),
+            item => Assert.All(codesByInvoice[item.Id].OfType<string>(), code => Assert.Contains(code, extraCodes)));
         var first = long.Parse(prior[3..], CultureInfo.InvariantCulture) + 1;
-        var ordered = e31.OrderBy(item => item.CreatedAt).ThenBy(item => item.FiscalNumber, StringComparer.Ordinal).ToArray();
+        var ordered = e31.OrderBy(item => item.Extra).ThenBy(item => item.CreatedAt)
+            .ThenBy(item => item.FiscalNumber, StringComparer.Ordinal).ToArray();
         for (var index = 0; index < ordered.Length; index++)
             Assert.Equal(FinanceInvoicePolicy.FormatFiscalNumber(first + index), ordered[index].FiscalNumber);
         Log($"E31: {ordered[0].FiscalNumber} … {ordered[^1].FiscalNumber} ({ordered.Length}) after {prior}");

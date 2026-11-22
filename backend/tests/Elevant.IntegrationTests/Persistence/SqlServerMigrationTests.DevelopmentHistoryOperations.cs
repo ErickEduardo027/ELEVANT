@@ -4,6 +4,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Commercial;
 using Elevant.Application.Documents;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -124,7 +125,11 @@ public sealed partial class SqlServerMigrationTests
             {
                 Assert.NotEqual(anchors.BaseRampAgentId, item.RampAgentId);
                 var shift = agents[item.RampAgentId].Shifts[date];
-                Assert.True(shift.StartsAt <= operation.ActualStartAt && operation.ActualEndAt <= shift.EndsAt,
+                // A dawn arrival (NIGHT) starts before 06:00: the morning crew is called in early for it.
+                var startsBy = clock.LocalTime(operation.ActualStartAt!.Value) < new TimeOnly(6, 0)
+                    ? clock.At(date, new TimeOnly(6, 0))
+                    : operation.ActualStartAt.Value;
+                Assert.True(shift.StartsAt <= startsBy && operation.ActualEndAt <= shift.EndsAt,
                     $"{item.RampAgentId} works {operation.ActualStartAt:O}–{operation.ActualEndAt:O} outside its shift.");
                 Assert.Equal(operation.CurrentStatus == GroundOperationStatus.Approved, item.ReleasedAt is not null);
             });
@@ -198,6 +203,12 @@ public sealed partial class SqlServerMigrationTests
         var charges = await db.OperationServiceCharges.AsNoTracking()
             .Where(item => services.Select(service => service.Id).Contains(item.OperationServiceId)).ToArrayAsync(ct);
         Assert.Contains(charges, charge => charge.Source == ChargeMarkSource.Automatic);
+        // The extra operations bill what the regular day never reaches: NIGHT (dawn arrivals) and OVERTIME.
+        var chargeCodes = await db.ChargeDefinitions.AsNoTracking()
+            .Where(item => charges.Select(charge => charge.ChargeDefinitionId).Contains(item.Id))
+            .Select(item => item.Code).ToArrayAsync(ct);
+        Assert.Contains(AutomaticSurchargeCodes.Night, chargeCodes);
+        Assert.Contains(AutomaticSurchargeCodes.Overtime, chargeCodes);
 
         // Nothing happens between 22:30 and 05:30 local.
         var instants = new List<DateTimeOffset>();

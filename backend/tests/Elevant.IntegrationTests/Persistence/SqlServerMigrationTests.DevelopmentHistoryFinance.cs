@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Finance;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -199,8 +200,13 @@ public sealed partial class SqlServerMigrationTests
             Assert.True(report.Rows.Count > 0, $"{key} has no rows.");
             return report;
         }
-        foreach (var key in new[] { "revenue", "receivables", "collections", "payables", "charges", "sales", "receipts" })
+        foreach (var key in new[] { "revenue", "receivables", "collections", "payables", "sales", "receipts" })
             await ReportAsync(key);
+        // «Recargos» shows NIGHT and OVERTIME too: the extra operations are invoiced by the finance-extra chunks.
+        var surcharges = await ReportAsync("charges");
+        var concept = Column(surcharges, "concept");
+        Assert.Contains(surcharges.Rows, row => row[concept]!.StartsWith(AutomaticSurchargeCodes.Night + " ", StringComparison.Ordinal));
+        Assert.Contains(surcharges.Rows, row => row[concept]!.StartsWith(AutomaticSurchargeCodes.Overtime + " ", StringComparison.Ordinal));
         var issued = await ReportAsync("invoices");
         var (fiscal, status, balance) = (Column(issued, "fiscalNumber"), Column(issued, "status"),
             Column(issued, "balance"));
