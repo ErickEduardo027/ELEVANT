@@ -7,7 +7,7 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
+last_verified: "2026-11-22"
 verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
 sources:
   - AGENTS.md
@@ -59,6 +59,36 @@ un comando separado del CD, sin compartir credenciales en el repositorio.
 Inserta solo datos sintéticos de operaciones planificadas y turnos; se puede
 repetir sin restablecer filas trabajadas y nunca se usa en Production. Los
 prerrequisitos y límites están en el [README de DevelopmentDB](../../database/DevelopmentDB/README.md).
+
+### Historial sintético de seis meses
+
+Para que los reportes tengan datos, `seed-development` ejecuta después del
+seeder base un `DevelopmentHistorySeeder` (`Persistence/Seed/History/`):
+
+- **Qué genera:** del 01/06 al 21/11/2026 en PUJ:
+  - 10 aerolíneas con contratos firmados, sus solicitudes y sus permisos;
+  - 25 agentes con habilitaciones, permisos, turnos y coberturas;
+  - unas 4.300 operaciones aprobadas con evidencia y decisiones de OCC;
+  - facturas e-CF mensuales con cobros, atrasos y notas de crédito;
+  - cuentas por pagar.
+- **Cómo inserta:** solo agrega filas, ya en su estado final, porque el login
+  del seeder no puede hacer UPDATE ni escribir auditoría. Cada tramo (comercial,
+  Gestión Humana, tasas, una semana de operaciones, un mes de facturación,
+  cuentas por pagar) se confirma en su propia transacción junto con una fila
+  centinela. Si el CD falla a mitad, `--retry` continúa desde el tramo
+  pendiente.
+- **Qué no toca:** no modifica datos existentes; omite las aerolíneas que ya
+  están en `ref.airlines`.
+- **Cuándo no corre:** con el centinela final presente no hace nada.
+  `ELEVANT_DEV_HISTORY=off` lo omite en local.
+- **Cuentas:** las cuentas de esas aerolíneas quedan deshabilitadas y sin
+  correo de facturación, para que los avisos automáticos no envíen nada.
+- **Numeración no cronológica:** los e-NCF y los códigos de contrato se
+  numeran a partir de los existentes en el momento de sembrar, así que la
+  historia de junio puede llevar números posteriores a facturas reales de
+  noviembre.
+- **Límites:** «Movimientos de cuenta» de Gestión Humana sigue vacío porque sale
+  de la auditoría, y las operaciones históricas no tienen documentos firmados.
 
 ## Infraestructura local
 
