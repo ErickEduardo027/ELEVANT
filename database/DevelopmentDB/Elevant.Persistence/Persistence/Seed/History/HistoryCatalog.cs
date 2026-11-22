@@ -178,7 +178,9 @@ internal sealed partial class HistoryCatalog
         var usdToDop = await context.ExchangeRates.AsNoTracking()
             .Where(item => item.IsCurrent && item.FromCurrency == "USD" && item.ToCurrency == "DOP")
             .ToDictionaryAsync(item => item.RateDate, item => item.Rate, cancellationToken);
-        return new HistoryCatalog(context, airlines, usdToDop);
+        var catalog = new HistoryCatalog(context, airlines, usdToDop);
+        await catalog.LoadWorkforceAsync(anchors, cancellationToken);
+        return catalog;
     }
 }
 

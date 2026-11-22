@@ -66,7 +66,7 @@ public sealed partial class SqlServerMigrationTests
         var baseCounts = await HistoryTableCountsAsync(database.ConnectionString, ct);
         var options = DevelopmentHistoryOptions.Small;
         var registered = HistoryChunkRegistry.Build(options).Select(chunk => chunk.Name).ToArray();
-        Assert.Equal(["commercial", "fx"], registered.Take(2));
+        Assert.Equal(["commercial", WorkforceHistory.ChunkName, WorkforceHistory.CoverageChunkName, "fx"], registered.Take(4));
 
         // Interrupted right after the first chunk committed: a consistent prefix with its sentinel, nothing more.
         var interrupted = await Assert.ThrowsAsync<DevelopmentHistoryInterruptedException>(() =>
@@ -97,7 +97,7 @@ public sealed partial class SqlServerMigrationTests
         // Insert-only: every base row is still there, and only the expected tables grew.
         Assert.All(baseCounts, pair => Assert.True(complete[pair.Key] >= pair.Value, pair.Key));
         Assert.Equal(baseCounts["[ops].[turnarounds]"], complete["[ops].[turnarounds]"]);
-        Assert.Equal(baseCounts["[hr].[ramp_agents]"], complete["[hr].[ramp_agents]"]);
+        Assert.Equal(baseCounts["[hr].[ramp_agents]"] + options.AgentCount, complete["[hr].[ramp_agents]"]);
         await using var verify = CreateContext(database.ConnectionString);
         Assert.Equal(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero), await verify.Contracts.AsNoTracking()
             .Where(item => item.ContractCode == "DEV-CONTRACT-0001").Select(item => item.UpdatedAt).SingleAsync(ct));
