@@ -65,7 +65,10 @@ internal sealed partial class HistoryAnchors
     /// <summary>Active equipment types: code → id (GPU, BOARDING-BRIDGE…).</summary>
     public required IReadOnlyDictionary<string, long> EquipmentTypes { get; init; }
 
-    /// <summary>Active aircraft types (A320 narrow-body, A333 wide-body in the base seed).</summary>
+    /// <summary>
+    /// Active aircraft types as they are. Not required: a database seeded before the size column existed keeps its
+    /// A320/A333 without a size (the seeder cannot update them), and the operations chunks add their own sized types.
+    /// </summary>
     public required IReadOnlyList<AircraftTypeAnchor> AircraftTypes { get; init; }
 
     /// <summary>Minutes of ground time Finance allows per size before «package exceeded».</summary>
@@ -162,7 +165,6 @@ internal sealed partial class HistoryAnchors
         var aircraft = await context.AircraftTypes.AsNoTracking().Where(item => item.IsActive).OrderBy(item => item.IcaoCode)
             .Select(item => new AircraftTypeAnchor(item.Id, item.IcaoCode, item.IataCode, item.SizeCategory))
             .ToArrayAsync(cancellationToken);
-        if (!aircraft.Any(item => item.SizeCategory == AircraftSizeCategory.Narrowbody)) missing.Add("narrow-body aircraft type");
         var allowances = await context.GroundTimeAllowances.AsNoTracking()
             .ToDictionaryAsync(item => item.SizeCategory, item => item.AllowedMinutes, cancellationToken);
         if (allowances.Count == 0) missing.Add("ground-time allowances");

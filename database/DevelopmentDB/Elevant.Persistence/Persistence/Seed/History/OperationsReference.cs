@@ -92,6 +92,11 @@ internal static class OperationsReference
                 .OrderBy(item => item.IcaoCode)
                 .Select(item => new { item.Id, item.IcaoCode, item.SizeCategory }).ToArrayAsync(cancellationToken))
             .Select(item => new Aircraft(item.Id, item.IcaoCode.Trim(), item.SizeCategory!.Value)).ToArray();
+        // Types without a size (legacy rows, or ones created in OCC without it) are not flown: ground time and charges
+        // depend on the size. The types above are inserted with one, so this only fails if all of them pre-exist unsized.
+        if (aircraft.Length == 0)
+            throw new InvalidOperationException(
+                "The Development history needs at least one active aircraft type with a size category.");
         return new Loaded(byIata, aircraft);
     }
 }
