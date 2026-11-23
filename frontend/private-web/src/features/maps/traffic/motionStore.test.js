@@ -666,4 +666,66 @@ describe('motion store (design F4, contracts 2.3)', () => {
       flights: flightsOf({ ...base, flights: [] }) });
     expect(other.nextChangeAt(NOON)).toBeNull();
   });
+
+  it('landed flights without a stand the map knows are not piled up at the apron hold for good', { timeout: 30_000 }, () => {
+    // 2026-11-23 at PUJ: WN782, TS398, WS3006 and DA3852, «est.» and «GND», all drawn on one spot between A7/A8 and AN5
+    // (terminal A's apron hold, ah-a). Each landed hours before with a runway time and has no stand the layout knows:
+    // proposals nobody imported, an imported flight OCC gave no stand, and one whose stand is not on the plan.
+    const landed = (number, minutesAgo, fields = {}) => ({
+      flightKey: `p:landed-${number}`, visitKey: `p:landed-${number}`, legId: null, turnaroundId: null,
+      direction: 'Arrival', flightNumber: number, callsign: null,
+      airline: { id: 'a', name: 'Prueba', iataCode: 'ZZ', icaoCode: 'ZZZ' },
+      counterpart: { iataCode: 'MIA', icaoCode: 'KMIA', name: 'Miami', latitude: 25.7932, longitude: -80.2906 },
+      scheduledAt: trafficInstant(-minutesAgo * 60 - 600), estimatedAt: null, actualAt: trafficInstant(-minutesAgo * 60),
+      actualKind: 'Runway', phase: 'landed', providerStatus: 'Arrived',
+      aircraft: { registration: null, typeIcaoCode: 'B38M', model: '737 MAX 8', sizeCategory: 'Narrowbody' },
+      imported: false, turnaround: null, stand: null, suggestedStandCode: null, milestones: [], isDemo: false, demo: null,
+      ...fields,
+    });
+    const rows = [
+      landed('WN782', 180),
+      landed('TS398', 95),
+      landed('WS3006', 60, { imported: true, turnaroundId: 't-3006', legId: 'l-3006' }),
+      landed('DA3852', 45, { imported: true, turnaroundId: 't-3852', legId: 'l-3852', stand: { id: 's', code: 'E2E-X-1', terminalCode: 'A' } }),
+    ];
+    const store = createMotionStore();
+    store.ingest({ picture: DISABLED, flights: noFlights(0, { flights: rows }) });
+    // None of them is drawn at noon, at the hold or anywhere else: nothing says where they are.
+    expect(store.estimatesAt(at(0)).map(item => item.flightKey)).toEqual([]);
+    // A flight that just landed without a stand still taxis to the hold and waits there for one, for a while.
+    const fresh = createMotionStore();
+    fresh.ingest({ picture: DISABLED, flights: noFlights(0, { flights: [landed('ZZ1', 1)] }) });
+    const taxiing = fresh.estimatesAt(at(0)).find(item => item.flightKey === 'p:landed-ZZ1');
+    expect(taxiing).toMatchObject({ onGround: true });
+    const wait = fresh.trajectoryOf('p:landed-ZZ1').legs.at(-1);
+    expect(wait.phase).toBe('holding');
+    const holding = fresh.estimatesAt(wait.t0Ms + 60_000).find(item => item.flightKey === 'p:landed-ZZ1');
+    expect(holding).toMatchObject({ statusKey: 'awaitingStandNotImported', gsMs: 0 });
+    expect(MDPC_LAYOUT.apronHolds.some(hold => haversineM(point(holding), hold.p) < 0.5)).toBe(true);
+    // It is gone once it would have had time to reach a stand, and nextChangeAt says when.
+    const end = fresh.trajectoryOf('p:landed-ZZ1').endMs;
+    expect(Number.isFinite(end)).toBe(true);
+    expect(fresh.estimatesAt(end + 1_000)).toEqual([]);
+  });
+
+  it('a demo imported with the database code «A01» continues from the hold to the plan\'s A1', { timeout: 30_000 }, () => {
+    // 2026-11-23: «Disparar vuelo demo» for A01 in 3 minutes. Nobody imported it before its on-block, so it waited at
+    // terminal A's hold (ADR-0043: «Esperando posición · sin importar»); OCC then imports it with the stand the server
+    // stores as «A01» (terminal «A»). From that read on it taxis to the plan's A1 and parks there.
+    const appearAt = at(-300);
+    const block = createDemoBlock({ appearAt, minutes: 3 });
+    const store = createMotionStore();
+    store.ingest({ picture: DISABLED, flights: demoOnly(block, { standCode: 'A01' }) });
+    const waiting = demoEstimate(store, at(0));
+    expect(waiting).toMatchObject({ statusKey: 'awaitingStandNotImported', gsMs: 0 });
+    expect(haversineM(point(waiting), holdOf('ah-a').p)).toBeLessThan(0.5);
+    store.ingest({
+      picture: DISABLED,
+      flights: demoOnly(createDemoBlock({ appearAt, minutes: 3, imported: true }), { imported: true, standCode: 'A01' }),
+    });
+    expect(haversineM(point(demoEstimate(store, at(0))), point(waiting))).toBeLessThan(0.01);
+    const parked = demoEstimate(store, at(600));
+    expect(haversineM(point(parked), standOf('A1').center)).toBeLessThan(0.5);
+    expect(parked).toMatchObject({ statusKey: null, gsMs: 0 });
+  });
 });
