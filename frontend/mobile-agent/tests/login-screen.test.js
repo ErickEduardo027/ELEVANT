@@ -54,7 +54,7 @@ jest.mock('../src/config/elevant-api', () => ({
   isMobileAgentNetworkError: jest.fn(() => false),
 }));
 jest.mock('expo-router', () => ({
-  router: { dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
+  router: { canDismiss: jest.fn(() => true), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
   useLocalSearchParams: () => (mockNotice ? { notice: mockNotice } : {}),
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));

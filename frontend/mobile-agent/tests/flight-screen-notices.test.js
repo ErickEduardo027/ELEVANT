@@ -20,7 +20,7 @@ jest.mock('../src/storage/mobile-session', () => ({
   MobileSessionStorageError: class MobileSessionStorageError extends Error {},
 }));
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), replace: jest.fn(), dismissAll: jest.fn() },
+  router: { push: jest.fn(), replace: jest.fn(), canDismiss: jest.fn(() => true), dismissAll: jest.fn() },
   useLocalSearchParams: () => ({ id: '70000000-0000-4000-8000-000000000005' }),
   useFocusEffect: callback => require('react').useEffect(callback, [callback]),
 }));
