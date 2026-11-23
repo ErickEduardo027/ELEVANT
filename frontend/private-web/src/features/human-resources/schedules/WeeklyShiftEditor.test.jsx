@@ -177,3 +177,29 @@ it('reads the week again when the shift changed meanwhile (3-E)', async () => {
   await vi.waitFor(() => expect(getAllHumanResourcesShifts).toHaveBeenCalledTimes(2));
 });
 
+
+it('a refresh of the same week keeps the grid and the open form on screen while it re-reads them', async () => {
+  const { rerender } = render(<WeeklyShiftEditor weekStart={weekStart} revision={0} />);
+  await screen.findByRole('region', { name: 'Editor semanal de turnos' });
+  await userEvent.click(screen.getByRole('button', { name: 'Asignar turno a Ana Ramp el 2099-01-05' }));
+  await screen.findByRole('form', { name: 'Asignar turno' });
+
+  let release;
+  getAllHumanResourcesShifts.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve([existing]); }));
+  rerender(<WeeklyShiftEditor weekStart={weekStart} revision={1} />);
+  // While the refresh is in flight nothing is replaced by «Cargando la semana…».
+  expect(screen.queryByText('Cargando la semana…')).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Editor semanal de turnos' })).toBeInTheDocument();
+  expect(screen.getByRole('form', { name: 'Asignar turno' })).toBeInTheDocument();
+  release();
+  expect(await screen.findByRole('form', { name: 'Asignar turno' })).toBeInTheDocument();
+  expect(getAllHumanResourcesShifts).toHaveBeenCalledTimes(2);
+});
+
+it('another week starts loading again', async () => {
+  const { rerender } = render(<WeeklyShiftEditor weekStart={weekStart} revision={0} />);
+  await screen.findByRole('region', { name: 'Editor semanal de turnos' });
+  getAllHumanResourcesShifts.mockImplementationOnce(() => new Promise(() => {}));
+  rerender(<WeeklyShiftEditor weekStart={new Date(2099, 0, 12)} revision={0} />);
+  expect(await screen.findByText('Cargando la semana…')).toBeInTheDocument();
+});
