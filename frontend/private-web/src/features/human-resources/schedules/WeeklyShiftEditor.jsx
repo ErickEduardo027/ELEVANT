@@ -85,15 +85,17 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
+    const range = `${from}|${to}`;
+    // A refresh of the same week keeps the grid (and an open form) on screen; another week starts loading.
+    setState(current => current.status === 'success' && current.range === range ? current : { status: 'loading' });
     load(controller.signal)
-      .then(data => { if (!controller.signal.aborted) setState({ status: 'success', ...data }); })
+      .then(data => { if (!controller.signal.aborted) setState({ status: 'success', range, ...data }); })
       .catch(error => {
         if (controller.signal.aborted || error?.name === 'AbortError') return;
         setState({ status: error?.status === 401 ? 'unauthorized' : error?.status === 403 ? 'forbidden' : 'error' });
       });
     return () => controller.abort();
-  }, [load, revision, localRevision]);
+  }, [load, from, to, revision, localRevision]);
 
   async function openCell(agent, date) {
     setNotice('');

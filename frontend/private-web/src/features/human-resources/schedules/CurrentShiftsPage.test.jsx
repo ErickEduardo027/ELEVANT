@@ -74,7 +74,7 @@ it('removes a former account roster before its pending read completes', async ()
 it('preserves warning station, dates and page across roster refresh channels', async () => {
   let poll;
   const interval = vi.spyOn(window, 'setInterval').mockImplementation((callback, delay) => {
-    if (delay === 25_000) poll = callback;
+    if (delay === 60_000) poll = callback;
     return 77;
   });
   const clear = vi.spyOn(window, 'clearInterval').mockImplementation(() => {});

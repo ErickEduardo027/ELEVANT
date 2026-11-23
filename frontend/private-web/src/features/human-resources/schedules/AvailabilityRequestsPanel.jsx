@@ -46,6 +46,7 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
   const [amending, setAmending] = useState(null);
   const [localRevision, setLocalRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
+
   const [formOpen, setFormOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
@@ -76,7 +77,10 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
   useEffect(() => {
     const controller = new AbortController();
     const version = ++requestVersion.current;
-    setState({ status: 'loading', data: null });
+    const key = `${from}|${to}|${page}`;
+    // A refresh of the same week and page keeps the list (and an open form) while it re-reads it.
+    setState(current => current.status === 'success' && current.key === key
+      ? current : { status: 'loading', data: null });
     getHumanResourcesAvailabilityRequests({ from, to, page, limit: PAGE_LIMIT },
       { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted && version === requestVersion.current) {
@@ -85,7 +89,7 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
           const refreshed = data.requests.find(item => item.id === current.id);
           return refreshed && refreshed.status !== 'Pending' ? null : current;
         });
-        setState({ status: 'success', data });
+        setState({ status: 'success', key, data });
       }
     }).catch(error => {
       if (controller.signal.aborted || version !== requestVersion.current ||

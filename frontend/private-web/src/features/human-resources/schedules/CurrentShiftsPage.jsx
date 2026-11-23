@@ -10,6 +10,10 @@ import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContex
 import WeeklyShiftEditor from './WeeklyShiftEditor';
 
 const PAGE_LIMIT = 20;
+/** Background refresh: the account-change feed is the main signal; this only backs it up. */
+const POLL_MS = 60_000;
+/** Focus, polls and change notices that arrive together count as one refresh. */
+const COALESCE_MS = 800;
 const BLOCK_LABELS = { Morning: 'Mañana', Afternoon: 'Tarde', Night: 'Noche' };
 const VIEWS = [
   { mode: 'week', label: 'Semana' },
@@ -35,7 +39,8 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   const grantKey = Array.isArray(session?.stationScopes)
     ? session.stationScopes.map(scope => scope.stationId).sort().join(',') : '';
   const authorizationKey = `${session?.token ?? ''}|${grantKey}`;
-  const queryKey = `${authorizationKey}|${from}|${to}|${page}|${revision}`;
+  // The revision is not part of the key: a background refresh keeps the period on screen while it re-reads it.
+  const queryKey = `${authorizationKey}|${from}|${to}|${page}`;
   const shown = state.key === queryKey ? state :
     { key: queryKey, status: 'loading', data: null };
   const requestsAuthorized = Boolean(session?.token) &&
@@ -44,7 +49,8 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   useEffect(() => {
     const controller = new AbortController();
     const version = ++requestVersion.current;
-    setState({ key: queryKey, status: 'loading', data: null });
+    setState(current => current.key === queryKey && current.status === 'success'
+      ? current : { key: queryKey, status: 'loading', data: null });
     getHumanResourcesShifts({ from, to, page, limit: PAGE_LIMIT }, { signal: controller.signal })
       .then(data => {
         if (!controller.signal.aborted && version === requestVersion.current) {
@@ -57,6 +63,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
             error?.name === 'AbortError') return;
         if (error?.status === 401 || error?.status === 403)
           setRequestsAuthorizedKey(null);
+        // A failed refresh hides what the screen showed: those rows may no longer be visible to this account.
         setState({ key: queryKey, status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', data: null });
       });
@@ -64,7 +71,11 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   }, [from, to, page, revision, queryKey, authorizationKey]);
 
   useEffect(() => {
-    const refresh = () => setRevision(value => value + 1);
+    let pending = null;
+    const refresh = () => {
+      if (pending !== null) return;
+      pending = window.setTimeout(() => { pending = null; setRevision(value => value + 1); }, COALESCE_MS);
+    };
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('hr_shifts') || resources.includes('hr_absences')) refresh();
     });
@@ -73,9 +84,10 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     window.addEventListener('online', refresh);
     const poll = window.setInterval(() => {
       if (document.visibilityState === 'visible') refresh();
-    }, 25_000);
+    }, POLL_MS);
     return () => {
       window.clearInterval(poll);
+      if (pending !== null) window.clearTimeout(pending);
       window.removeEventListener('focus', refresh);
       window.removeEventListener('online', refresh);
       void observer.stop();

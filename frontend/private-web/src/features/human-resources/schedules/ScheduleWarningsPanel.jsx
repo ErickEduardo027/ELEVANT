@@ -58,7 +58,8 @@ export default function ScheduleWarningsPanel({ from: rosterFrom, to: rosterTo,
   const stationId = scopes.some(scope => scope.stationId === stationChoice)
     ? stationChoice : scopes[0]?.stationId ?? '';
   const rangeAllowed = dateRangeValid(from, to);
-  const queryKey = `${session?.token ?? ''}|${stationId}|${from}|${to}|${page}|${revision}|${localRevision}`;
+  // Revisions are not part of the key: a refresh keeps the alerts on screen while it re-reads them.
+  const queryKey = `${session?.token ?? ''}|${stationId}|${from}|${to}|${page}`;
   const shown = state.key === queryKey ? state : { status: 'loading', data: null };
 
   useEffect(() => {
@@ -75,7 +76,8 @@ export default function ScheduleWarningsPanel({ from: rosterFrom, to: rosterTo,
     const controller = new AbortController();
     const version = ++requestVersion.current;
     if (!session?.token || !stationId || !rangeAllowed) return () => controller.abort();
-    setState({ key: queryKey, status: 'loading', data: null });
+    setState(current => current.key === queryKey && current.status === 'success'
+      ? current : { key: queryKey, status: 'loading', data: null });
     getHumanResourcesScheduleWarnings({ stationId, from, to, page, limit: PAGE_LIMIT, includeReadiness: true },
       { signal: controller.signal })
       .then(data => {
