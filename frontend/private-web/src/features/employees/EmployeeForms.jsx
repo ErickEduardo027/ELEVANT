@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { checkIdentityDocument, DOMINICAN_PASSPORT_PREFIX, normalizePhone } from '@elevant/api-client';
 import Drawer from '../../components/Drawer';
 import Modal from '../../components/Modal';
 import IdentityDocumentFields from './IdentityDocumentFields';
-import { DEFAULT_IDENTIFICATION_TYPE } from './identityDocumentValue';
+import { DEFAULT_IDENTIFICATION_TYPE, identificationForSubmit } from './identityDocumentValue';
+import { formatPhone } from '../../components/inputMasks';
+import { trimmedLengthProblem, withRule } from '../../components/formValidation';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../services/departmentGovernanceService';
 import {
   createEmployee, EMPLOYEE_MESSAGES, governanceMessage, registerEmployee, terminateEmployee,
   transferEmployee, updateEmployee,
 } from '../../services/humanResourcesEmployeesService';
-import { businessToday } from '../../services/businessDay';
+import { addDays, businessToday } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { problemMessage } from '../../services/problemMessages';
 
@@ -36,22 +38,65 @@ export function phoneProblem(phone) {
     ? 'Use un teléfono dominicano de 10 dígitos (809, 829 o 849) o uno extranjero con su prefijo (+ o 00).' : '';
 }
 
-/** Keeps the browser's constraint validation in sync with a rule the form computes itself. */
-const withRule = (problem) => (element) => element?.setCustomValidity(problem);
+/** Stations an employee, a transfer or a registered record may have: the server takes 1 to 20. */
+export const MAX_STATIONS = 20;
 
-function StationChecks({ stations, value, onChange }) {
+/** Message for a station selection outside 1 to 20, or ''. */
+export function stationsProblem(stationIds) {
+  const count = stationIds?.length ?? 0;
+  if (count === 0) return 'Marca al menos una estación.';
+  if (count > MAX_STATIONS) return `Máximo ${MAX_STATIONS} estaciones.`;
+  return '';
+}
+
+/** Oldest hire date the server takes, and the message of the range ending 30 days after AVIAM's today. */
+export const EARLIEST_HIRE_DATE = '1950-01-01';
+export const latestHireDate = () => addDays(today(), 30);
+const formatDay = iso => iso.split('-').reverse().join('/');
+const hireDateError = () => `La fecha de ingreso va del 01/01/1950 al ${formatDay(latestHireDate())} (hasta 30 días después de hoy).`;
+
+/** Reason of a transfer or a termination: 3 to 500 characters after trimming, like the server. */
+export const reasonProblem = reason => trimmedLengthProblem(reason, 3, 500);
+
+/** The phone input of a record: tel keyboard and autofill, the Dominican mask and the normalizePhone rule. */
+function PhoneInput({ value, onChange }) {
+  return <input type="tel" inputMode="tel" autoComplete="tel" maxLength={32} placeholder="809-555-0100"
+    ref={withRule(phoneProblem(value ?? ''))} value={value ?? ''} onChange={event => onChange(formatPhone(event.target.value))}
+    className={fieldClass} />;
+}
+
+function HireDateInput({ value, onChange }) {
+  return <input required type="date" min={EARLIEST_HIRE_DATE} max={latestHireDate()} data-error={hireDateError()}
+    ref={withRule(value && (value < EARLIEST_HIRE_DATE || value > latestHireDate()) ? hireDateError() : '')}
+    value={value} onChange={event => onChange(event.target.value)} className={fieldClass} />;
+}
+
+/**
+ * The stations of a record. The server takes 1 to 20: more than 20 is said at once, none once the person unmarked the
+ * last one or tried to save (`attempted`), next to the group.
+ */
+function StationChecks({ stations, value, onChange, attempted = false }) {
+  const [touched, setTouched] = useState(false);
+  const messageId = useId();
+  const problem = stationsProblem(value);
+  const visible = problem && (touched || attempted || value.length > MAX_STATIONS);
   return (
-    <fieldset>
+    <fieldset aria-describedby={visible ? messageId : undefined}>
       <legend className="text-xs font-semibold">Estaciones donde trabaja</legend>
       <div className="mt-1 flex flex-wrap gap-2">
         {stations.map(station => (
           <label key={station.id} className="flex min-h-[36px] items-center gap-2 rounded-lg border border-black/10 px-3 text-sm dark:border-white/10">
-            <input type="checkbox" checked={value.includes(station.id)}
-              onChange={() => onChange(value.includes(station.id) ? value.filter(id => id !== station.id) : [...value, station.id])} />
+            <input type="checkbox" checked={value.includes(station.id)} aria-invalid={visible ? true : undefined}
+              onChange={() => {
+                setTouched(true);
+                onChange(value.includes(station.id) ? value.filter(id => id !== station.id) : [...value, station.id]);
+              }} />
             {station.code}
           </label>
         ))}
       </div>
+      {/* Never the layer's `form-validation-message` class: its observer removes messages that no field of its own names. */}
+      {visible && <p id={messageId} role="alert" className="mt-1 text-xs font-medium text-status-danger">{problem}</p>}
     </fieldset>
   );
 }
@@ -70,10 +115,12 @@ export function EmployeeDrawer({ open, employee, options, onClose, onSaved }) {
   const [form, setForm] = useState(blank);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const intent = useRef(createCommandKeyHolder());
   useEffect(() => {
     if (!open) return;
     setError('');
+    setAttempted(false);
     setForm(employee ? {
       firstName: employee.summary.firstName, lastName: employee.summary.lastName,
       identificationType: employee.identificationIsPlaceholder ? DEFAULT_IDENTIFICATION_TYPE : employee.identificationType,
@@ -91,10 +138,13 @@ export function EmployeeDrawer({ open, employee, options, onClose, onSaved }) {
 
   async function submit(event) {
     event.preventDefault();
+    setAttempted(true);
+    if (stationsProblem(form.stationIds)) return;
     setBusy(true);
     setError('');
     const values = {
-      ...form, phoneNumber: form.phoneNumber.trim() || null, corporateEmail: form.corporateEmail.trim() || null,
+      ...form, identificationNumber: identificationForSubmit(form.identificationType, form.identificationNumber),
+      phoneNumber: form.phoneNumber.trim() || null, corporateEmail: form.corporateEmail.trim() || null,
       // Requisitions left the version 1 interface (ADR-0047): a new record never covers one.
       requisitionId: null,
     };
@@ -135,18 +185,17 @@ export function EmployeeDrawer({ open, employee, options, onClose, onSaved }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold">Correo corporativo{emailLocked ? ' (bloqueado: tiene cuenta)' : ' (necesario para dar acceso)'}
               <input type="email" maxLength={256} disabled={emailLocked} value={form.corporateEmail} onChange={event => set({ corporateEmail: event.target.value })} className={fieldClass} /></label>
-            <label className="text-xs font-semibold">Teléfono<input type="tel" maxLength={32} placeholder="809-555-0100"
-              ref={withRule(phoneProblem(form.phoneNumber))} value={form.phoneNumber} onChange={event => set({ phoneNumber: event.target.value })} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Teléfono<PhoneInput value={form.phoneNumber} onChange={phoneNumber => set({ phoneNumber })} /></label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="text-xs font-semibold">Número de empleado<input required pattern="[A-Za-z0-9\-]{2,32}" data-error="Usa de 2 a 32 letras, dígitos o guiones, p. ej. QA-FIN-010." value={form.employeeNumber} onChange={event => set({ employeeNumber: event.target.value.toUpperCase() })} className={fieldClass} /></label>
-            <label className="text-xs font-semibold">Fecha de ingreso<input required type="date" value={form.hireDate} onChange={event => set({ hireDate: event.target.value })} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Fecha de ingreso<HireDateInput value={form.hireDate} onChange={hireDate => set({ hireDate })} /></label>
             <label className="text-xs font-semibold">Departamento<select disabled={Boolean(employee)} value={form.department} onChange={event => set({ department: event.target.value, positionId: '' })} className={fieldClass}>
               {Object.values(DEPARTMENTS).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
           </div>
           <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => set({ positionId: event.target.value })} className={fieldClass}>
             <option value="">Selecciona…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}{position.isRampPosition ? ' · rampa' : ''}</option>)}</select></label>
-          <StationChecks stations={options?.stations ?? []} value={form.stationIds} onChange={stationIds => set({ stationIds })} />
+          <StationChecks stations={options?.stations ?? []} value={form.stationIds} attempted={attempted} onChange={stationIds => set({ stationIds })} />
         </form>
       )}
     </Drawer>
@@ -158,15 +207,19 @@ export function TransferModal({ employee, options, onClose, onDone }) {
   const [form, setForm] = useState({ department: '', positionId: '', stationIds: [], reason: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const intent = useRef(createCommandKeyHolder());
   useEffect(() => {
     if (employee) setForm({ department: '', positionId: '', stationIds: employee.summary.stations.map(station => station.id), reason: '' });
     setError('');
+    setAttempted(false);
   }, [employee]);
   if (!employee) return null;
   const positions = (options?.positions ?? []).filter(position => position.department === form.department && position.isActive);
   async function submit(event) {
     event.preventDefault();
+    setAttempted(true);
+    if (stationsProblem(form.stationIds) || reasonProblem(form.reason)) return;
     setBusy(true);
     try {
       const body = { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version };
@@ -196,8 +249,8 @@ export function TransferModal({ employee, options, onClose, onDone }) {
           <option value="">Selecciona…</option>{Object.values(DEPARTMENTS).filter(key => key !== employee.summary.department).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
         <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
           <option value="">Selecciona…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
-        <StationChecks stations={options?.stations ?? []} value={form.stationIds} onChange={stationIds => setForm(current => ({ ...current, stationIds }))} />
-        <label className="block text-xs font-semibold">Motivo<textarea required minLength={3} maxLength={500} rows={2} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
+        <StationChecks stations={options?.stations ?? []} value={form.stationIds} attempted={attempted} onChange={stationIds => setForm(current => ({ ...current, stationIds }))} />
+        <label className="block text-xs font-semibold">Motivo<textarea required minLength={3} maxLength={500} rows={2} ref={withRule(reasonProblem(form.reason))} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
       </form>
     </Modal>
   );
@@ -214,6 +267,7 @@ export function TerminateModal({ employee, onClose, onDone }) {
   const account = employee.summary.account;
   async function submit(event) {
     event.preventDefault();
+    if (reasonProblem(form.reason)) return;
     setBusy(true);
     try {
       const body = { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version };
@@ -247,7 +301,7 @@ export function TerminateModal({ employee, onClose, onDone }) {
           <li>La baja es definitiva: la cuenta no podrá reactivarse.</li>
         </ul>
         <label className="block text-xs font-semibold">Fecha de baja<input required type="date" max={today()} min={employee.summary.hireDate} value={form.terminatedOn} onChange={event => setForm(current => ({ ...current, terminatedOn: event.target.value }))} className={fieldClass} /></label>
-        <label className="block text-xs font-semibold">Motivo<textarea required minLength={3} maxLength={500} rows={2} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
+        <label className="block text-xs font-semibold">Motivo<textarea required minLength={3} maxLength={500} rows={2} ref={withRule(reasonProblem(form.reason))} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
       </form>
     </Modal>
   );
@@ -258,9 +312,11 @@ export function RegisterDrawer({ person, options, onClose, onSaved }) {
   const [form, setForm] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   useEffect(() => {
     if (!person) return;
     setError('');
+    setAttempted(false);
     setForm({ identificationType: DEFAULT_IDENTIFICATION_TYPE, identificationNumber: '', employeeNumber: person.employeeNumber ?? '',
       positionId: '', hireDate: today(), phoneNumber: '', stationIds: person.stations.map(station => station.id) });
   }, [person]);
@@ -268,9 +324,13 @@ export function RegisterDrawer({ person, options, onClose, onSaved }) {
     position.isActive && (!person?.rampAgentId || position.isRampPosition));
   async function submit(event) {
     event.preventDefault();
+    setAttempted(true);
+    if (stationsProblem(form.stationIds)) return;
     setBusy(true);
     try {
-      await registerEmployee({ ...form, phoneNumber: form.phoneNumber?.trim() || null,
+      await registerEmployee({ ...form,
+        identificationNumber: identificationForSubmit(form.identificationType, form.identificationNumber),
+        phoneNumber: form.phoneNumber?.trim() || null,
         accountId: person.accountId ?? null, rampAgentId: person.accountId ? null : person.rampAgentId });
       onSaved('Expediente registrado.');
     } catch (failure) {
@@ -296,13 +356,14 @@ export function RegisterDrawer({ person, options, onClose, onSaved }) {
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="text-xs font-semibold">Número de empleado<input required disabled={Boolean(person.employeeNumber)} value={form.employeeNumber} onChange={event => setForm(current => ({ ...current, employeeNumber: event.target.value.toUpperCase() }))} className={fieldClass} /></label>
-            <label className="text-xs font-semibold">Fecha de ingreso<input required type="date" value={form.hireDate} onChange={event => setForm(current => ({ ...current, hireDate: event.target.value }))} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Número de empleado<input required disabled={Boolean(person.employeeNumber)} pattern="[A-Za-z0-9\-]{2,32}"
+              data-error="Usa de 2 a 32 letras, dígitos o guiones, p. ej. QA-FIN-010." value={form.employeeNumber} onChange={event => setForm(current => ({ ...current, employeeNumber: event.target.value.toUpperCase() }))} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Fecha de ingreso<HireDateInput value={form.hireDate} onChange={hireDate => setForm(current => ({ ...current, hireDate }))} /></label>
           </div>
           <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
             <option value="">Selecciona…</option>{positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}</select></label>
-          <label className="block text-xs font-semibold">Teléfono<input value={form.phoneNumber} onChange={event => setForm(current => ({ ...current, phoneNumber: event.target.value }))} className={fieldClass} /></label>
-          <StationChecks stations={options?.stations ?? []} value={form.stationIds ?? []} onChange={stationIds => setForm(current => ({ ...current, stationIds }))} />
+          <label className="block text-xs font-semibold">Teléfono<PhoneInput value={form.phoneNumber} onChange={phoneNumber => setForm(current => ({ ...current, phoneNumber }))} /></label>
+          <StationChecks stations={options?.stations ?? []} value={form.stationIds ?? []} attempted={attempted} onChange={stationIds => setForm(current => ({ ...current, stationIds }))} />
         </form>
       )}
     </Drawer>

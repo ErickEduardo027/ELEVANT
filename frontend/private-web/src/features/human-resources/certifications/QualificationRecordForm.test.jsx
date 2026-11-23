@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import QualificationRecordForm from './QualificationRecordForm';
+import QualificationRecordForm, { qualificationFailureMessage } from './QualificationRecordForm';
+import { installFormValidation } from '../../../components/formValidation';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { getHumanResourcesQualificationEquipmentTypes, getHumanResourcesQualifications,
   recordHumanResourcesQualification } from '../../../services/humanResourcesQualificationsReadService';
@@ -59,6 +60,39 @@ it('records the first real cycle only after an exact empty lookup', async () => 
     rampProfileId: agentId, equipmentTypeId: equipmentId },
   expect.objectContaining({ signal: expect.any(AbortSignal) }));
   await waitFor(() => expect(onRecorded).toHaveBeenCalledWith({ id, cycleNumber: 1 }));
+});
+
+it('bounds each date by the obtención and says the rule next to the field', async () => {
+  catalogs();
+  getHumanResourcesQualifications.mockResolvedValue({ page: 1, limit: 1, hasMore: false, qualifications: [current] });
+  const uninstall = installFormValidation(document);
+  try {
+    const user = userEvent.setup();
+    render(<QualificationRecordForm initialQualification={current} onRecorded={vi.fn()} onClose={vi.fn()} onDenied={vi.fn()} />);
+    expect(await screen.findByText(/Renovará el ciclo 1/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^Fecha de obtención/), '2026-01-03');
+    expect(screen.getByLabelText(/^Fecha de formación/)).toHaveAttribute('max', '2026-01-03');
+    expect(screen.getByLabelText(/^Fecha de vencimiento/)).toHaveAttribute('min', '2026-01-03');
+    await user.type(screen.getByLabelText(/^Fecha de formación/), '2026-01-04');
+    await user.type(screen.getByLabelText(/^Fecha de vencimiento/), '2026-01-02');
+    await user.type(screen.getByLabelText(/^Entidad certificadora/), 'Synthetic Training Center');
+    await user.type(screen.getByLabelText(/^Instructor/), 'Development Instructor');
+    await user.click(screen.getByRole('button', { name: 'Guardar renovación' }));
+    expect(recordHumanResourcesQualification).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^Fecha de formación/)).toHaveAccessibleDescription(
+      'La formación debe ser igual o anterior a la obtención (03/01/2026).');
+    expect(screen.getByLabelText(/^Fecha de vencimiento/)).toHaveAccessibleDescription(
+      'El vencimiento debe ser igual o posterior a la obtención (03/01/2026).');
+    // The server accepts the same day: equal dates are valid.
+    await user.clear(screen.getByLabelText(/^Fecha de vencimiento/));
+    await user.type(screen.getByLabelText(/^Fecha de vencimiento/), '2026-01-03');
+    expect(screen.getByLabelText(/^Fecha de vencimiento/)).toBeValid();
+  } finally { uninstall(); }
+});
+
+it('explains a refused record by its status instead of one generic sentence', () => {
+  expect(qualificationFailureMessage({ status: 404 })).toMatch(/agente o el equipo ya no existe/);
+  expect(qualificationFailureMessage({ status: 400 })).toMatch(/formación ≤ obtención ≤ vencimiento/);
 });
 
 it('renews the observed cycle and reuses its UUID after an uncertain response', async () => {

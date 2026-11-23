@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import PermitRecordForm from './PermitRecordForm';
+import PermitRecordForm, { permitFailureMessage } from './PermitRecordForm';
+import { installFormValidation } from '../../../components/formValidation';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { getHumanResourcesPermits, recordHumanResourcesPermit } from
   '../../../services/humanResourcesPermitsReadService';
@@ -50,6 +51,36 @@ it('records a first permit only after the exact agent and type lookup is empty',
     rampProfileId: agentId, documentType: 'AirportId' },
   expect.objectContaining({ signal: expect.any(AbortSignal) }));
   await waitFor(() => expect(onRecorded).toHaveBeenCalledWith({ id, cycleNumber: 1 }));
+});
+
+it('keeps the expiry on or after the issue next to its field and accepts the same day', async () => {
+  catalog();
+  getHumanResourcesPermits.mockResolvedValue({ page: 1, limit: 1, hasMore: false, permits: [current] });
+  const uninstall = installFormValidation(document);
+  try {
+    const user = userEvent.setup();
+    render(<PermitRecordForm initialPermit={current} onRecorded={vi.fn()} onClose={vi.fn()} onDenied={vi.fn()} />);
+    expect(await screen.findByText(/Renovará el ciclo 1/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^Número de documento/), '  A  ');
+    await user.type(screen.getByLabelText(/^Fecha de emisión/), '2026-02-01');
+    expect(screen.getByLabelText(/^Fecha de vencimiento/)).toHaveAttribute('min', '2026-02-01');
+    await user.type(screen.getByLabelText(/^Fecha de vencimiento/), '2026-01-31');
+    await user.click(screen.getByRole('button', { name: 'Guardar renovación' }));
+    expect(recordHumanResourcesPermit).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^Fecha de vencimiento/)).toHaveAccessibleDescription(
+      'El vencimiento debe ser igual o posterior a la emisión (01/02/2026).');
+    // The number counts without its outer spaces, like the server (2 to 64).
+    expect(screen.getByLabelText(/^Número de documento/)).toHaveAccessibleDescription(
+      'Escribe al menos 2 caracteres sin contar los espacios de los extremos (ahora tiene 1).');
+    await user.clear(screen.getByLabelText(/^Fecha de vencimiento/));
+    await user.type(screen.getByLabelText(/^Fecha de vencimiento/), '2026-02-01');
+    expect(screen.getByLabelText(/^Fecha de vencimiento/)).toBeValid();
+  } finally { uninstall(); }
+});
+
+it('explains a refused permit by its status and says «igual o posterior»', () => {
+  expect(permitFailureMessage({ status: 404 })).toMatch(/agente ya no existe/);
+  expect(permitFailureMessage({ status: 400 })).toMatch(/vencimiento igual o posterior/);
 });
 
 it('renews the observed permit and retries an uncertain response with the same UUID', async () => {

@@ -4,6 +4,20 @@ import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { getHumanResourcesPermits, recordHumanResourcesPermit } from
   '../../../services/humanResourcesPermitsReadService';
 import usePermitTypeCatalog from './usePermitTypeCatalog';
+import { trimmedLengthProblem, withRule } from '../../../components/formValidation';
+
+const day = iso => iso.split('-').reverse().join('/');
+
+/** The expiry rule next to its field: the same day as the issue or later, like the server, or ''. */
+export const permitExpiryProblem = ({ issuedOn, expiresOn }) => (expiresOn && issuedOn && expiresOn < issuedOn
+  ? `El vencimiento debe ser igual o posterior a la emisión (${day(issuedOn)}).` : '');
+
+/** What a refused record says by status: the server sends no Problem Details code for these rules. */
+export function permitFailureMessage(failure) {
+  return failure?.status === 404
+    ? 'El agente ya no existe o dejó de estar activo, o el tipo de documento no está disponible. Revisa la selección.'
+    : 'No se pudo guardar. Revisa el número (2 a 64 caracteres) y las fechas: emisión no futura y vencimiento igual o posterior.';
+}
 
 export default function PermitRecordForm({ initialPermit, onRecorded, onClose, onDenied }) {
   const [rampProfileId, setRampProfileId] = useState(initialPermit?.rampProfileId ?? '');
@@ -83,7 +97,7 @@ export default function PermitRecordForm({ initialPermit, onRecorded, onClose, o
     if (!fields.documentNumber.trim() || fields.documentNumber.trim().length < 2 ||
         fields.documentNumber.trim().length > 64 || !fields.issuedOn || !fields.expiresOn ||
         fields.issuedOn > today || fields.issuedOn > fields.expiresOn) {
-      setError('Revisa el número y las fechas: emisión no futura y vencimiento posterior.');
+      setError('Revisa el número y las fechas: emisión no futura y vencimiento igual o posterior.');
       return;
     }
     const request = { rampProfileId, documentType,
@@ -111,7 +125,7 @@ export default function PermitRecordForm({ initialPermit, onRecorded, onClose, o
         setPending(null);
         setLookup({ status: 'loading', current: null });
         setLookupRevision(value => value + 1);
-        setError('No se pudo guardar. Revisa las fechas y que el agente siga activo.');
+        setError(permitFailureMessage(failure));
       } else {
         setError('No pudimos confirmar el resultado. Reintenta el mismo registro sin modificarlo para evitar duplicados.');
       }
@@ -165,12 +179,15 @@ export default function PermitRecordForm({ initialPermit, onRecorded, onClose, o
       </p>}
       <label className="text-sm font-semibold">Número de documento
         <input required minLength={2} maxLength={64} value={fields.documentNumber}
+          ref={withRule(trimmedLengthProblem(fields.documentNumber, 2, 64))}
           onChange={event => changeField('documentNumber', event.target.value)}
           className="mt-1 w-full rounded-lg border p-2 dark:bg-surface-dark" />
       </label>
       {[['issuedOn', 'Fecha de emisión'], ['expiresOn', 'Fecha de vencimiento']].map(([name, label]) =>
         <label key={name} className="text-sm font-semibold">{label}
           <input required type="date" max={name === 'issuedOn' ? today : undefined}
+            min={name === 'expiresOn' ? fields.issuedOn || undefined : undefined}
+            ref={withRule(name === 'expiresOn' ? permitExpiryProblem(fields) : '')}
             value={fields[name]} onChange={event => changeField(name, event.target.value)}
             className="mt-1 w-full rounded-lg border p-2 dark:bg-surface-dark" />
         </label>)}

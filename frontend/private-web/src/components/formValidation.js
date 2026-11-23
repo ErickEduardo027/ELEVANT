@@ -78,6 +78,35 @@ function clear(field) {
   else field.removeAttribute('aria-describedby');
 }
 
+/**
+ * Applies a rule the form computes itself (`problem`, or '' when it holds) as the field's custom validity, and keeps a
+ * message already under the field in step: the layer reacts to the edit before React re-renders with the new rule.
+ */
+export function applyRule(field, problem) {
+  if (!field?.setCustomValidity) return;
+  field.setCustomValidity(problem || '');
+  const id = field.dataset?.validationId;
+  if (!id || !field.ownerDocument.getElementById(id)) return;
+  if (field.validity.valid) clear(field);
+  else show(field);
+}
+
+/** A callback ref that applies `problem` to its field (see applyRule). */
+export const withRule = problem => field => applyRule(field, problem);
+
+/**
+ * Message for a text the server bounds after trimming (a reason, a note), or ''. An empty value is left to `required`,
+ * so the field says «Complete este campo.» rather than counting characters.
+ */
+export function trimmedLengthProblem(value, min, max) {
+  const raw = value ?? '';
+  if (!raw) return '';
+  const length = raw.trim().length;
+  if (length < min) return `Escribe al menos ${min} caracteres sin contar los espacios de los extremos (ahora tiene ${length}).`;
+  if (length > max) return `Usa como máximo ${max} caracteres (ahora tiene ${length}).`;
+  return '';
+}
+
 const optedOut = field => Boolean(field.closest?.('[data-native-validation]'));
 
 /** Installs the handlers on a document; returns a function that removes them. */

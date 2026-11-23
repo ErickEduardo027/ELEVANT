@@ -2,6 +2,40 @@ import { useEffect, useRef, useState } from 'react';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { recordHumanResourcesAvailabilityRequest } from
   '../../../services/humanResourcesAvailabilityService';
+import { addDays } from '../../../services/businessDay';
+import { HUMAN_RESOURCES_PROBLEMS } from '../../../services/humanResourcesProblems';
+import { problemMessage } from '../../../services/problemMessages';
+import { withRule } from '../../../components/formValidation';
+
+/** Longest interval the server takes: «Hasta» at most 30 days after «Desde» (31 dates). */
+export const MAX_AVAILABILITY_SPAN_DAYS = 30;
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const day = iso => iso.split('-').reverse().join('/');
+
+/** The latest «Hasta» for a «Desde», or undefined while «Desde» is not a date. */
+export const latestEnd = startsOn => (ISO.test(startsOn ?? '') ? addDays(startsOn, MAX_AVAILABILITY_SPAN_DAYS) : undefined);
+
+/** The rule of «Hasta» next to its field (on or after «Desde», at most 30 days later), or ''. */
+export function availabilityEndProblem(startsOn, endsOn) {
+  if (!ISO.test(startsOn ?? '') || !ISO.test(endsOn ?? '')) return '';
+  if (endsOn < startsOn) return `«Hasta» debe ser igual o posterior a «Desde» (${day(startsOn)}).`;
+  const latest = latestEnd(startsOn);
+  return endsOn > latest ? `Una solicitud abarca como máximo 31 fechas: «Hasta» llega al ${day(latest)}.` : '';
+}
+
+/** What «Registrar solicitud» says, by the server's Problem Details code (the shared Gestión Humana ones). */
+const RECORD_PROBLEMS = Object.freeze({
+  ...HUMAN_RESOURCES_PROBLEMS,
+  invalid_availability_request: 'Revisa el agente, el tipo, las fechas (hasta 31 fechas, «Hasta» igual o posterior a «Desde») y el motivo (máximo 1000 caracteres).',
+  agent_unavailable: 'El agente ya no está activo en rampa. Elige otro agente.',
+});
+
+const knownCode = failure => typeof failure?.code === 'string' && Object.hasOwn(RECORD_PROBLEMS, failure.code);
+
+export function availabilityRecordMessage(failure) {
+  return problemMessage(failure, RECORD_PROBLEMS, { register: 'tu',
+    fallback: 'No pudimos confirmar el resultado. Reintenta la misma solicitud sin modificarla.' });
+}
 
 function validDates(start, end) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) ||
@@ -86,10 +120,12 @@ export default function AvailabilityRequestForm({ initialDate, canWrite = true,
       } else if (failure?.status === 409) {
         setPending(null);
         onConflict();
-        setError('La solicitud cambió o se solapa con otra. Revisa la lista actualizada.');
+        setError(knownCode(failure) ? availabilityRecordMessage(failure)
+          : 'La solicitud cambió o se solapa con otra. Revisa la lista actualizada.');
       } else if (failure?.status === 400 || failure?.status === 404) {
         setPending(null);
-        setError('No se pudo registrar. Comprueba el agente, las fechas y el motivo.');
+        setError(knownCode(failure) ? availabilityRecordMessage(failure)
+          : 'No se pudo registrar. Comprueba el agente, las fechas y el motivo.');
       } else {
         setError('No pudimos confirmar el resultado. Reintenta la misma solicitud sin modificarla.');
       }
@@ -137,6 +173,8 @@ export default function AvailabilityRequestForm({ initialDate, canWrite = true,
       </label>
       <label className="text-sm font-semibold">Hasta
         <input required type="date" value={endsOn} disabled={busy || !!pending}
+          min={ISO.test(startsOn ?? '') ? startsOn : undefined} max={latestEnd(startsOn)}
+          ref={withRule(availabilityEndProblem(startsOn, endsOn))}
           onChange={event => change(setEndsOn, event.target.value)}
           className="mt-1 w-full rounded-lg border p-2 dark:bg-surface-dark" />
       </label>

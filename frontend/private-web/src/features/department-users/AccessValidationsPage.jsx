@@ -18,6 +18,10 @@ import AccessRequestCard from './AccessRequestCard';
 import { departmentUsersMessages } from './departmentUsersMessages';
 import GeneratePasswordField from './GeneratePasswordField';
 import { governanceMessage } from '../../services/humanResourcesEmployeesService';
+import { withRule } from '../../components/formValidation';
+
+// The server takes 3 to 500 characters after trimming; maxLength already caps the typed text at 500.
+const rejectReasonShort = reason => reason !== '' && reason.trim().length < 3;
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -83,6 +87,7 @@ export default function AccessValidationsPage() {
   async function decide(event) {
     event.preventDefault();
     const { request, kind } = deciding;
+    if (kind === 'reject' && reason.trim().length < 3) return;
     setBusy(true);
     setError('');
     try {
@@ -161,7 +166,9 @@ export default function AccessValidationsPage() {
             </>
           ) : (
             <label className="block text-sm font-semibold">{t('validations.rejectReason')}
-              <textarea required minLength={3} maxLength={500} rows={3} value={reason} onChange={event => setReason(event.target.value)} className={fieldClass} />
+              <textarea required minLength={3} maxLength={500} rows={3} value={reason}
+                ref={withRule(rejectReasonShort(reason) ? t('validations.rejectReasonShort', { count: reason.trim().length }) : '')}
+                onChange={event => setReason(event.target.value)} className={fieldClass} />
             </label>
           )}
         </form>

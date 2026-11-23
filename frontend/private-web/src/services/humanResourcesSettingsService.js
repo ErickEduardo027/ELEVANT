@@ -33,7 +33,7 @@ export function permitTypeName(code, names = SYSTEM_PERMIT_TYPE_NAMES) {
 
 /** Spanish explanation of each Problem Details code of «Configuración». */
 export const SETTINGS_PROBLEM_MESSAGES = Object.freeze({
-  invalid_settings: 'Revisa los datos: código de 2 a 32 letras mayúsculas, dígitos o guiones y nombre de 2 a 160 caracteres.',
+  invalid_settings: 'Revisa los datos: el código lleva letras, dígitos o guiones y empieza por letra o dígito (de 2 a 32 en carnets y permisos, de 2 a 40 en equipos); el nombre, de 2 a 160 caracteres, y la descripción, hasta 500.',
   code_taken: 'Ese código ya existe (los del sistema también están reservados). Usa otro.',
   code_in_use: 'Está en uso: no se puede cambiar su código ni desactivarlo mientras una posición lo exige.',
   system_type_locked: 'Lo define el sistema: no se puede cambiar su código ni desactivarlo.',

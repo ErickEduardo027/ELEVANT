@@ -22,6 +22,17 @@ export function joinDominicanPassport(typed) {
   return digits ? `${DOMINICAN_PASSPORT_PREFIX}${digits}` : '';
 }
 
+/** Types the form types as ###-#######-#: the cédula and the residence card share its 11 digits. */
+export const isMaskedDocument = type => type === 'CEDULA' || type === 'RESIDENCIA';
+
+/**
+ * The number the form sends: a cédula or residence card as its 11 digits (the server also drops the dashes), any
+ * other type as typed. checkIdentityDocument accepts both shapes.
+ */
+export function identificationForSubmit(type, number) {
+  return isMaskedDocument(type) ? (number ?? '').replace(/\D/g, '') : number;
+}
+
 /** Whether a stored passport must open as foreign (has a number and it is not Dominican). */
 export function opensAsForeignPassport(type, number) {
   return type === 'PASAPORTE' && Boolean(compact(number)) && !isDominicanPassport(number);

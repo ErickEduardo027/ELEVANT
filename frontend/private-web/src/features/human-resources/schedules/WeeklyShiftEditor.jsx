@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import ReasonField, { validReason } from '../../../components/ReasonField';
 import {
   adjustHumanResourcesShift, getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions,
   listRampAgentReadiness, recordHumanResourcesShift, removeHumanResourcesShift,
@@ -333,15 +334,43 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
   );
 }
 
+/** Longest shift the server takes (ShiftAdjustmentRules.MaxDuration), in minutes. */
+export const MAX_SHIFT_MINUTES = 16 * 60;
+
+const toMinutes = value => {
+  const match = /^(\d{2}):(\d{2})/.exec(value ?? '');
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+
+/** Minutes from the local start to the end; an end at or before the start finishes the next day. Null if incomplete. */
+export function shiftDurationMinutes(startsAtLocal, endsAtLocal) {
+  const start = toMinutes(startsAtLocal);
+  const end = toMinutes(endsAtLocal);
+  if (start === null || end === null) return null;
+  return end > start ? end - start : end - start + 24 * 60;
+}
+
+/** Why the new hours are refused like the server would (equal times, more than 16 hours), or ''. */
+export function shiftDurationProblem(startsAtLocal, endsAtLocal) {
+  const minutes = shiftDurationMinutes(startsAtLocal, endsAtLocal);
+  if (minutes === null) return '';
+  if (minutes === 24 * 60) return 'El inicio y el fin no pueden coincidir.';
+  if (minutes <= MAX_SHIFT_MINUTES) return '';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `El turno dura como máximo 16 horas; así duraría ${hours} h${rest ? ` ${rest} min` : ''}.`;
+}
+
 /**
  * «Ajustar horario» of one shift (3-E): the new local start and end (an end before the start finishes the next day)
  * and the reason the audit keeps.
  */
 function ShiftAdjustmentForm({ adjusting, busy, onSubmit, onChange, onCancel }) {
   const { shift, startsAtLocal, endsAtLocal } = adjusting;
-  const reason = adjusting.reason.trim();
-  const valid = Boolean(startsAtLocal && endsAtLocal) && startsAtLocal !== endsAtLocal && reason.length >= 5 &&
-    reason.length <= 500;
+  const durationId = useId();
+  const minutes = shiftDurationMinutes(startsAtLocal, endsAtLocal);
+  const durationProblem = shiftDurationProblem(startsAtLocal, endsAtLocal);
+  const valid = Boolean(startsAtLocal && endsAtLocal) && !durationProblem && validReason(adjusting.reason);
   return (
     <form onSubmit={onSubmit} aria-label="Ajustar horario"
       className="grid gap-2 rounded-xl border border-accent-600/30 p-3 sm:grid-cols-4">
@@ -351,15 +380,18 @@ function ShiftAdjustmentForm({ adjusting, busy, onSubmit, onChange, onCancel }) 
         <input type="time" step="60" required value={startsAtLocal}
           onChange={event => onChange({ startsAtLocal: event.target.value })} className="rounded-lg border px-2 py-2" /></label>
       <label className="grid gap-1 text-sm">Fin
-        <input type="time" step="60" required value={endsAtLocal}
+        <input type="time" step="60" required value={endsAtLocal} aria-invalid={durationProblem ? true : undefined}
+          aria-describedby={durationProblem ? durationId : undefined}
           onChange={event => onChange({ endsAtLocal: event.target.value })} className="rounded-lg border px-2 py-2" /></label>
-      <label className="grid gap-1 text-sm sm:col-span-2">Motivo del ajuste
-        <input type="text" maxLength={500} required value={adjusting.reason}
-          onChange={event => onChange({ reason: event.target.value })} className="rounded-lg border px-2 py-2" /></label>
-      {startsAtLocal && endsAtLocal && startsAtLocal > endsAtLocal &&
+      <div className="sm:col-span-2">
+        <ReasonField label="Motivo del ajuste" value={adjusting.reason} onChange={reason => onChange({ reason })}
+          hint="Queda en la auditoría." />
+      </div>
+      {durationProblem && <p id={durationId} role="alert" className="sm:col-span-4 text-xs font-medium text-status-danger">{durationProblem}</p>}
+      {!durationProblem && minutes !== null && startsAtLocal > endsAtLocal &&
         <p className="sm:col-span-4 text-xs text-text-secondary-light">Termina al día siguiente, hora local de la estación.</p>}
       <p className="sm:col-span-4 text-xs text-text-secondary-light">El nuevo horario debe seguir cubriendo las posiciones
-        y operaciones del agente. El motivo, de 5 a 500 caracteres, queda en la auditoría.</p>
+        y operaciones del agente y dura como máximo 16 horas.</p>
       <div className="flex items-end gap-2 sm:col-span-4">
         <button type="submit" disabled={busy || !valid}
           className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Guardar horario</button>

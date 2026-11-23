@@ -242,6 +242,18 @@ describe('AccessValidationsPage', () => {
     expect(await screen.findByText(/ya fue resuelta/)).toBeInTheDocument();
   });
 
+  it('counts the rejection reason without the spaces at its ends, like the server (3 to 500)', async () => {
+    renderWith(validator, <AccessValidationsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Rechazar' }));
+    const reason = screen.getByRole('textbox', { name: 'Motivo del rechazo' });
+    await userEvent.type(reason, '   ab   ');
+    expect(reason.validationMessage).toBe('Escriba al menos 3 caracteres sin contar los espacios de los extremos (ahora tiene 2).');
+    await userEvent.click(screen.getByRole('button', { name: 'Rechazar solicitud' }));
+    expect(rejectAccessRequest).not.toHaveBeenCalled();
+    await userEvent.type(reason, 'c');
+    expect(reason.validity.valid).toBe(true);
+  });
+
   it('explains a request whose administrator left the department and re-reads the queue (2-N33)', async () => {
     validateAccessRequest.mockRejectedValue(Object.assign(new Error('Raw server title'),
       { status: 409, code: 'requester_no_longer_administrator' }));

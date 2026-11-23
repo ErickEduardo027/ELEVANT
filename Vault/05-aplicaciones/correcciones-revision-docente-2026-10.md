@@ -13,6 +13,10 @@ sources:
   - docs/adr/0019-menu-option-permissions-and-department-notifications.md
   - backend/Elevant.Domain/Validation/PhoneNumbers.cs
   - backend/Elevant.Domain/Validation/IdentityDocuments.cs
+  - backend/Elevant.Application/Identity/ShiftAdjustmentRules.cs
+  - frontend/private-web/src/components/inputMasks.js
+  - frontend/private-web/src/components/formValidation.js
+  - frontend/private-web/src/features/employees/EmployeeForms.jsx
   - backend/Elevant.Domain/Validation/AirlineCodes.cs
   - backend/Elevant.Domain/Reference/DominicanTerritory.cs
   - scripts/geo/generate-do-territory.mjs
@@ -61,9 +65,9 @@ publique.
 
 | Punto | Comportamiento actual |
 | --- | --- |
-| Teléfono | Se acepta `849-246-3371`, `(809) 555 0100` o `+1 849…`, y se guarda en E.164 (`+18492463371`). Un número internacional exige `+` o `00`. Mismo resultado en la API, en el cliente compartido y en los formularios. |
-| Documentos | Cada tipo tiene su propia regla: <ul><li>**Cédula:** 11 dígitos con dígito verificador (Luhn).</li><li>**Pasaporte dominicano:** 2 letras y 7 dígitos.</li><li>**Pasaporte extranjero:** 6 a 9 caracteres alfanuméricos.</li><li>**Residencia:** formato de cédula.</li><li>**RNC:** 9 dígitos con módulo 11.</li></ul>Cada error explica el formato esperado con un ejemplo. Lo ya guardado no se vuelve a validar.<br>En la solicitud de acceso de Public Web, la cédula se formatea como `###-#######-#` mientras se escribe. Debajo del número, una lista de requisitos (`identityDocumentRequirements` del cliente compartido, con las mismas reglas) pasa cada punto a verde al cumplirse. |
-| Mensajes | Los formularios de Private Web y Public Web muestran sus propios mensajes en español, debajo de cada campo, en lugar de las burbujas del navegador. |
+| Teléfono | Se acepta `849-246-3371`, `(809) 555 0100` o `+1 849…`, y se guarda en E.164 (`+18492463371`). Un número internacional exige `+` o `00`. Mismo resultado en la API, en el cliente compartido y en los formularios.<br>En los expedientes de Gestión Humana de Private Web («Registrar empleado», «Editar expediente» y «Registrar expediente») el campo es `type=tel` y toma la forma `809-555-0100` mientras se escribe; un número que empieza por `+` o `00` conserva su prefijo. La máscara solo da forma: la validez sigue siendo `normalizePhone`. |
+| Documentos | Cada tipo tiene su propia regla: <ul><li>**Cédula:** 11 dígitos con dígito verificador (Luhn).</li><li>**Pasaporte dominicano:** 2 letras y 7 dígitos.</li><li>**Pasaporte extranjero:** 6 a 9 caracteres alfanuméricos.</li><li>**Residencia:** formato de cédula.</li><li>**RNC:** 9 dígitos con módulo 11.</li></ul>Cada error explica el formato esperado con un ejemplo. Lo ya guardado no se vuelve a validar.<br>En la solicitud de acceso de Public Web, la cédula se formatea como `###-#######-#` mientras se escribe. Debajo del número, una lista de requisitos (`identityDocumentRequirements` del cliente compartido, con las mismas reglas) pasa cada punto a verde al cumplirse.<br>En los expedientes de Gestión Humana de Private Web, la cédula y la residencia usan la misma máscara (`###-#######-#`, teclado numérico) y se envían como sus 11 dígitos; el pasaporte dominicano conserva su «RD» fijo. |
+| Mensajes | Los formularios de Private Web y Public Web muestran sus propios mensajes en español, debajo de cada campo, en lugar de las burbujas del navegador.<br>En Gestión Humana, las reglas que dependen de otro campo también se explican junto al campo que falla, y nunca son más estrictas que el servidor: <ul><li>estaciones de 1 a 20, junto al grupo;</li><li>fecha de ingreso del 01/01/1950 a hoy + 30 días;</li><li>formación ≤ obtención ≤ vencimiento en habilitaciones;</li><li>vencimiento igual o posterior a la emisión en permisos;</li><li>«Hasta» igual o posterior a «Desde», con 31 fechas como máximo, en disponibilidad;</li><li>turno ajustado de hasta 16 horas (un fin anterior al inicio termina al día siguiente), con motivo de 5 a 500 caracteres;</li><li>motivos de traslado, baja y rechazo de acceso de 3 a 500 caracteres sin contar los espacios de los extremos.</li></ul> |
 | Geografía | Las 32 provincias, 158 municipios y 238 distritos municipales salen del XSD e-CF de la DGII, con los ajustes de la ONE de 2021 (`scripts/geo/generate-do-territory.mjs`). La API rechaza un municipio que no pertenece a su provincia. Ejemplo: El Seibo → Miches, con Pedro Sánchez como distrito de El Seibo. |
 | Aerolínea real | Los códigos IATA y ICAO se validan contra los códigos reservados y de prueba. Dos aerolíneas verificadas no pueden compartir código: hay índices únicos filtrados. |
 

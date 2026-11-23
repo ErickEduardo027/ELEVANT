@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { installFormValidation } from '../../components/formValidation';
 import userEvent from '@testing-library/user-event';
 import { DepartmentAccessProvider, administratorAccess } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
@@ -14,7 +15,7 @@ import {
   createEmployee, getEmployee, registerEmployee, getEmployeeOptions, governanceMessage, listEmployees,
   listPositions, savePosition, terminateEmployee, transferEmployee, updateEmployee,
 } from '../../services/humanResourcesEmployeesService';
-import { businessToday } from '../../services/businessDay';
+import { addDays, businessToday } from '../../services/businessDay';
 
 vi.mock('../../services/humanResourcesEmployeesService', async importOriginal => ({
   ...(await importOriginal()),
@@ -290,6 +291,140 @@ describe('employee identification and phone rules', () => {
   });
 });
 
+describe('masks and inline rules of the employee forms', () => {
+  let uninstall;
+  beforeEach(() => { uninstall = installFormValidation(document); });
+  afterEach(() => uninstall());
+  const documentInput = () => screen.getByRole('textbox', { name: 'Número de documento' });
+  const messageOf = field => document.getElementById(field.getAttribute('aria-describedby') ?? '')?.textContent;
+  const fillEmployee = async () => {
+    await userEvent.type(screen.getByRole('textbox', { name: 'Nombre' }), 'Valeria');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Apellido' }), 'Nueva');
+    await userEvent.type(screen.getByRole('textbox', { name: /Número de empleado/ }), 'fin-020');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Departamento' }), 'finance');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Puesto' }), 'pos-1');
+  };
+
+  it('masks a cédula as ###-#######-# and sends its 11 digits', async () => {
+    createEmployee.mockResolvedValue({ id: 'emp-2' });
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Documento' }), 'CEDULA');
+    await userEvent.type(documentInput(), '00100000017999');
+    expect(documentInput()).toHaveValue('001-0000001-7');
+    expect(documentInput()).toHaveAttribute('inputmode', 'numeric');
+    expect(documentInput()).toHaveAttribute('autocomplete', 'off');
+    expect(documentInput()).toHaveAttribute('maxlength', '13');
+    await fillEmployee();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'PUJ' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(createEmployee).toHaveBeenCalledWith(expect.objectContaining({ identificationType: 'CEDULA',
+      identificationNumber: '00100000017' }));
+  }, 15_000);
+
+  it('masks a residence card and shows a stored cédula with its dashes', async () => {
+    const detail = { summary, identificationType: 'RESIDENCIA', identificationNumber: '00100000017',
+      identificationIsPlaceholder: false, phoneNumber: '+18095550100' };
+    render(<EmployeeDrawer open employee={detail} options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(documentInput()).toHaveValue('001-0000001-7');
+    // A stored E.164 phone opens as it is: the international shape keeps its +.
+    expect(screen.getByRole('textbox', { name: 'Teléfono' })).toHaveValue('+18095550100');
+  });
+
+  it('formats a Dominican phone while typing and explains one that is not valid under the field', async () => {
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const phone = screen.getByRole('textbox', { name: 'Teléfono' });
+    expect(phone).toHaveAttribute('type', 'tel');
+    expect(phone).toHaveAttribute('inputmode', 'tel');
+    expect(phone).toHaveAttribute('autocomplete', 'tel');
+    await userEvent.type(phone, '8095550100');
+    expect(phone).toHaveValue('809-555-0100');
+    expect(phone.validity.valid).toBe(true);
+    await userEvent.clear(phone);
+    await userEvent.type(phone, '5550100');
+    expect(phone).toHaveValue('555-010-0');
+    await fillEmployee();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'PUJ' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(createEmployee).not.toHaveBeenCalled();
+    expect(messageOf(phone)).toMatch(/10 dígitos \(809, 829 o 849\)/);
+  }, 15_000);
+
+  it('asks for at least one station next to the group and blocks the save', async () => {
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.type(documentInput(), '1234567');
+    await fillEmployee();
+    expect(screen.queryByText('Marca al menos una estación.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(createEmployee).not.toHaveBeenCalled();
+    const message = screen.getByText('Marca al menos una estación.');
+    expect(message).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('group', { name: 'Estaciones donde trabaja' })).toHaveAttribute('aria-describedby', message.id);
+    await userEvent.click(screen.getByRole('checkbox', { name: 'PUJ' }));
+    expect(screen.queryByText('Marca al menos una estación.')).not.toBeInTheDocument();
+  }, 15_000);
+
+  it('says at once that more than 20 stations is too many', async () => {
+    const many = Array.from({ length: 21 }, (_, index) => ({ id: `st-${index}`, code: `S${String(index).padStart(2, '0')}` }));
+    render(<EmployeeDrawer open options={{ ...options, stations: many }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    for (const item of many) await userEvent.click(screen.getByRole('checkbox', { name: item.code }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Máximo 20 estaciones.');
+  }, 20_000);
+
+  it('bounds the hire date like the server: from 1950 to 30 days after today', async () => {
+    render(<EmployeeDrawer open options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const hireDate = screen.getByLabelText('Fecha de ingreso');
+    expect(hireDate).toHaveAttribute('min', '1950-01-01');
+    expect(hireDate).toHaveAttribute('max', addDays(businessToday(), 30));
+    fireEvent.change(hireDate, { target: { value: '1949-12-31' } });
+    expect(hireDate.validationMessage).toMatch(/^La fecha de ingreso va del 01\/01\/1950 al \d{2}\/\d{2}\/\d{4} \(hasta 30 días después de hoy\)\.$/);
+    fireEvent.change(hireDate, { target: { value: businessToday() } });
+    expect(hireDate.validity.valid).toBe(true);
+  });
+
+  it('gives «Registrar expediente» the employee number rule, the phone mask and the station check', async () => {
+    const person = { accountId: 'acc-9', firstName: 'Ana', lastName: 'Sin', department: 'finance', employeeNumber: null, stations: [] };
+    render(<RegisterDrawer person={person} options={options} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const number = screen.getByRole('textbox', { name: 'Número de empleado' });
+    expect(number).toHaveAttribute('pattern', '[A-Za-z0-9\\-]{2,32}');
+    await userEvent.type(number, 'x');
+    expect(number).toHaveValue('X');
+    const phone = screen.getByRole('textbox', { name: 'Teléfono' });
+    expect(phone).toHaveAttribute('type', 'tel');
+    await userEvent.type(phone, '8295550100');
+    expect(phone).toHaveValue('829-555-0100');
+    await userEvent.type(documentInput(), '1234567');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Puesto' }), 'pos-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar' }));
+    expect(registerEmployee).not.toHaveBeenCalled();
+    expect(messageOf(number)).toBe('Usa de 2 a 32 letras, dígitos o guiones, p. ej. QA-FIN-010.');
+    await userEvent.type(number, '-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar' }));
+    expect(registerEmployee).not.toHaveBeenCalled();
+    expect(screen.getByText('Marca al menos una estación.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'PUJ' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar' }));
+    expect(registerEmployee).toHaveBeenCalledWith(expect.objectContaining({ employeeNumber: 'X-1', phoneNumber: '829-555-0100',
+      stationIds: ['st-1'] }));
+  }, 20_000);
+
+  it('counts a transfer or termination reason without its outer spaces (3 to 500, like the server)', async () => {
+    listEmployees.mockResolvedValue({ employees: [summary], total: 1 });
+    getEmployeeOptions.mockResolvedValue(options);
+    getEmployee.mockResolvedValue({ summary, identificationType: 'CEDULA', identificationNumber: '00100000011',
+      identificationIsPlaceholder: false, phoneNumber: null, terminatedOn: null, terminationReason: null, futureShifts: 0,
+      pendingAccessRequests: 0, assignments: [] });
+    renderWith(<EmployeesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lucía Prueba' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Dar de baja' }));
+    const modal = screen.getByRole('alertdialog');
+    const reason = within(modal).getByRole('textbox', { name: 'Motivo' });
+    await userEvent.type(reason, '   ok   ');
+    await userEvent.click(within(modal).getByRole('button', { name: 'Dar de baja' }));
+    expect(terminateEmployee).not.toHaveBeenCalled();
+    expect(messageOf(reason)).toBe('Escribe al menos 3 caracteres sin contar los espacios de los extremos (ahora tiene 2).');
+  });
+});
+
 describe('Dominican passport by default', () => {
   // These tests type a whole form key by key: a loaded full run needs more than the default 5 s.
   const documentInput = () => screen.getByRole('textbox', { name: 'Número de documento' });
@@ -299,6 +434,8 @@ describe('Dominican passport by default', () => {
     await userEvent.type(screen.getByRole('textbox', { name: /Número de empleado/ }), 'fin-020');
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Departamento' }), 'finance');
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Puesto' }), 'pos-1');
+    // The server takes 1 to 20 stations: the form no longer sends a record without one.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'PUJ' }));
   };
 
   it('joins and splits the RD prefix without doubling a pasted one', () => {

@@ -1,7 +1,10 @@
 import { useId, useState } from 'react';
 import { DOMINICAN_PASSPORT_PREFIX, identityDocumentExample } from '@elevant/api-client';
 import { IDENTIFICATION_LABELS } from '../../services/humanResourcesEmployeesService';
-import { dominicanPassportDigits, joinDominicanPassport, opensAsForeignPassport } from './identityDocumentValue';
+import { CEDULA_MASK_LENGTH, formatCedula } from '../../components/inputMasks';
+import {
+  dominicanPassportDigits, isMaskedDocument, joinDominicanPassport, opensAsForeignPassport,
+} from './identityDocumentValue';
 
 const DOCUMENT_KINDS = { CEDULA: 'Cedula', RESIDENCIA: 'Residence', PASAPORTE: 'Passport' };
 
@@ -25,7 +28,9 @@ export default function IdentityDocumentFields({
     // Leaving a Dominican passport keeps what was typed, never the «RD» the form wrote.
     const typed = dominican ? dominicanPassportDigits(number) : number;
     const nextDominican = nextType === 'PASAPORTE' && !foreign;
-    onChange({ identificationType: nextType, identificationNumber: nextDominican ? joinDominicanPassport(typed) : typed });
+    // A cédula or residence card keeps only the digits typed so far, in its ###-#######-# mask.
+    const next = nextDominican ? joinDominicanPassport(typed) : isMaskedDocument(nextType) ? formatCedula(typed) : typed;
+    onChange({ identificationType: nextType, identificationNumber: next });
   }
 
   function changeForeign(checked) {
@@ -33,12 +38,21 @@ export default function IdentityDocumentFields({
     onChange({ identificationNumber: checked ? dominicanPassportDigits(number) : joinDominicanPassport(number) });
   }
 
+  const masked = isMaskedDocument(type);
+  const shown = dominican ? dominicanPassportDigits(number) : masked ? formatCedula(number) : number;
+  function changeNumber(typed) {
+    if (dominican) onChange({ identificationNumber: joinDominicanPassport(typed) });
+    else onChange({ identificationNumber: masked ? formatCedula(typed) : typed });
+  }
+
   const input = (
-    <input id={inputId} required={required} maxLength={dominican ? maxLength - DOMINICAN_PASSPORT_PREFIX.length : maxLength}
-      ref={inputRef} aria-invalid={invalid || undefined} inputMode={dominican ? 'numeric' : undefined}
-      placeholder={dominican ? '1234567' : identityDocumentExample(DOCUMENT_KINDS[type] ?? 'Cedula')}
-      value={dominican ? dominicanPassportDigits(number) : number}
-      onChange={event => onChange({ identificationNumber: dominican ? joinDominicanPassport(event.target.value) : event.target.value })}
+    <input id={inputId} required={required}
+      maxLength={dominican ? maxLength - DOMINICAN_PASSPORT_PREFIX.length : masked ? CEDULA_MASK_LENGTH : maxLength}
+      ref={inputRef} aria-invalid={invalid || undefined} inputMode={dominican || masked ? 'numeric' : undefined}
+      autoComplete={masked ? 'off' : undefined}
+      placeholder={dominican ? '1234567' : masked ? '001-1234567-8' : identityDocumentExample(DOCUMENT_KINDS[type] ?? 'Cedula')}
+      value={shown}
+      onChange={event => changeNumber(event.target.value)}
       className={dominican ? `${fieldClass} !mt-0 min-w-0 !rounded-l-none` : fieldClass} />
   );
 

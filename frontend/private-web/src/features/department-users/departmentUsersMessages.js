@@ -266,6 +266,7 @@ export const departmentUsersMessages = {
       createsRamp: 'La cuenta se crea con acceso a la app móvil de rampa y su perfil operativo. El usuario deberá cambiar la contraseña en su primer ingreso.',
       createsWeb: 'La cuenta se crea con los permisos solicitados. El usuario deberá cambiar la contraseña en su primer ingreso.',
       rejectReason: 'Motivo del rechazo',
+      rejectReasonShort: 'Escriba al menos 3 caracteres sin contar los espacios de los extremos (ahora tiene {count}).',
     },
   },
   en: {
@@ -533,6 +534,7 @@ export const departmentUsersMessages = {
       createsRamp: 'The account is created with access to the ramp mobile app and its operational profile. The user must change the password at first sign-in.',
       createsWeb: 'The account is created with the requested permissions. The user must change the password at first sign-in.',
       rejectReason: 'Rejection reason',
+      rejectReasonShort: 'Write at least 3 characters, not counting leading or trailing spaces (it has {count}).',
     },
   },
 };
