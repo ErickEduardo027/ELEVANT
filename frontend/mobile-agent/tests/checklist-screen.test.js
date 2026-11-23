@@ -77,7 +77,7 @@ jest.mock('expo-router', () => {
   Stack.Screen = () => null;
   return {
     Stack,
-    router: { back: jest.fn(), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
+    router: { back: jest.fn(), canDismiss: jest.fn(() => true), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
     usePathname: () => '/checklist/70000000-0000-4000-8000-000000000001',
     useLocalSearchParams: () => ({ id: '70000000-0000-4000-8000-000000000001' }),
     useFocusEffect: callback => require('react').useEffect(callback, [callback]),

@@ -56,7 +56,7 @@ jest.mock('expo-router', () => {
   return {
     Stack,
     usePathname: () => mockPathname,
-    router: { back: jest.fn(), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
+    router: { back: jest.fn(), canDismiss: jest.fn(() => true), dismissAll: jest.fn(), push: jest.fn(), replace: jest.fn() },
   };
 });
 jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
