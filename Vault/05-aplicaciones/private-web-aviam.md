@@ -2199,7 +2199,11 @@ lecturas de M5: la API no cambia.
   proveedor dice que está en el aire, que aterrizó o que llegó a su posición, y
   una salida importada solo deja su posición con el `PUSHBACK` o con señal
   real que la muestre en movimiento: un avión parado en su posición se queda en
-  ella aunque su señal envejezca. El vuelo demo siempre se dibuja. Los vuelos
+  ella aunque su señal envejezca. Una llegada real sin una posición que el
+  plano conozca rueda a la espera de plataforma y espera allí 10 minutos como
+  máximo (`AWAITING_STAND_MAX_MS` en `kinematics/estimator.js`); después ya no
+  se dibuja, para que las llegadas aterrizadas sin posición no se apilen en ese
+  punto. El vuelo demo siempre se dibuja. Los vuelos
   reales usan la pista de las llegadas en vivo vistas en final en la última
   media hora y, si no hay, la 08; el bloque dice «Pista 26 (por el tráfico)» o
   «Pista 08 (habitual)». El viento del METAR llega con M8.

@@ -303,7 +303,17 @@ const statusFor = (toStand, imported) => {
   return imported ? 'awaitingStand' : 'awaitingStandNotImported';
 };
 
-/** The wait that ends an arrival: parked at the stand on its heading, or holding at the apron hold, without end. */
+/**
+ * How long a real arrival without a stand the map knows waits at the apron hold before it is no longer drawn. Past it
+ * the aircraft has had time to reach a stand nobody can place (Decision F-1: an arrival on its stand without one is not
+ * drawn), so it is not left on the hold: every landed flight without a stand there would pile up on that one point.
+ */
+export const AWAITING_STAND_MAX_MS = 10 * 60_000;
+
+/**
+ * The wait that ends an arrival: parked at the stand on its heading, without end, or holding at the apron hold for
+ * AWAITING_STAND_MAX_MS at most.
+ */
 function endWait({ stand, path, legs, statusKey, groundAltM }) {
   if (stand) {
     return waitLeg({
@@ -313,7 +323,7 @@ function endWait({ stand, path, legs, statusKey, groundAltM }) {
   const last = legs[legs.length - 1];
   const heading = last?.kind === 'wait' ? last.heading : (last?.tangentsDeg?.[last.tangentsDeg.length - 1] ?? 0);
   return waitLeg({
-    phase: 'holding', point: path.coords[path.coords.length - 1], nominalS: Infinity, heading,
+    phase: 'holding', point: path.coords[path.coords.length - 1], nominalS: AWAITING_STAND_MAX_MS / 1000, heading,
     alt: groundAltM, part: 'parked', statusKey,
   });
 }
@@ -372,7 +382,8 @@ function groundTarget(layout, { point, headingDeg, stand, apronHold }) {
  *   2 kt) inside the stand's box has it parked there, where the fix is, until the PUSHBACK of `times` (Decision F-1: a
  *   fix that does not show it moving starts nothing; after the PUSHBACK the aircraft has left and the arrival places
  *   it nowhere: `null`); stopped anywhere else it taxis on to its stand or apron hold.
- * Either way it ends parked at the stand or holding, without end. `meta.anchor` says which.
+ * Either way it ends parked at the stand, without end, or holding at the apron hold for AWAITING_STAND_MAX_MS, after
+ * which it is not drawn. `meta.anchor` says which.
  */
 export function buildArrivalTrajectory({
   times, origin = null, layout, runwayEnd, stand = null, apronHold = null, perf, anchor = SCHEDULE, imported = true,

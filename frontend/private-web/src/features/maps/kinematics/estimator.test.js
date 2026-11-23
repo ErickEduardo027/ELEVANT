@@ -5,6 +5,7 @@ import { runwayEnd } from '../airport/runwayInUse.js';
 import { createKinematicsLayout } from './kinematicsFixtures.js';
 import {
   TRAJECTORY_PHASES,
+  AWAITING_STAND_MAX_MS,
   alongAt,
   arrivalAnchors,
   buildArrivalTrajectory,
@@ -312,6 +313,14 @@ describe('estimated trajectories', () => {
     expect(waiting.phase).toBe('holding');
     expect(waiting.statusKey).toBe('awaitingStand');
     expect(MDPC_LAYOUT.apronHolds.map(item => item.id)).toContain(holding.meta.apronHoldId);
+    // For AWAITING_STAND_MAX_MS at most: then nothing places it, so it is not left piled up on the hold.
+    const held = holding.legs[holding.legs.length - 1];
+    expect(held.phase).toBe('holding');
+    expect(held.durationMs).toBe(AWAITING_STAND_MAX_MS);
+    expect(holding.endMs).toBe(held.t0Ms + AWAITING_STAND_MAX_MS);
+    expect(sampleTrajectory(holding, holding.endMs + 1)).toBeNull();
+    // With a stand it stays parked there without end.
+    expect(landed('A5', 480).endMs).toBe(Infinity);
     // The anchors on their own: BLOCK_ON first, then an on-block actual time, the estimate and the schedule.
     expect(arrivalAnchors({ blockOnAtMs: 5, actualKind: 'OnBlock', actualAtMs: 6, estimatedAtMs: 7, scheduledAtMs: 8 }).onBlockMs).toBe(5);
     expect(arrivalAnchors({ actualKind: 'OnBlock', actualAtMs: 6, estimatedAtMs: 7, scheduledAtMs: 8 }).onBlockMs).toBe(6);
