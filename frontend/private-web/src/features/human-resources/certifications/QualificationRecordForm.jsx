@@ -3,6 +3,27 @@ import { businessToday } from '../../../services/businessDay';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { getHumanResourcesQualificationEquipmentTypes, getHumanResourcesQualifications,
   recordHumanResourcesQualification } from '../../../services/humanResourcesQualificationsReadService';
+import { withRule } from '../../../components/formValidation';
+
+const day = iso => iso.split('-').reverse().join('/');
+
+/** The cross-field date rule of each field (formación ≤ obtención ≤ vencimiento, like the server), or ''. */
+export function qualificationDateProblems({ trainingDate, obtainedOn, expiresOn }) {
+  return {
+    trainingDate: trainingDate && obtainedOn && trainingDate > obtainedOn
+      ? `La formación debe ser igual o anterior a la obtención (${day(obtainedOn)}).` : '',
+    obtainedOn: '',
+    expiresOn: expiresOn && obtainedOn && expiresOn < obtainedOn
+      ? `El vencimiento debe ser igual o posterior a la obtención (${day(obtainedOn)}).` : '',
+  };
+}
+
+/** What a refused record says by status: the server sends no Problem Details code for these rules. */
+export function qualificationFailureMessage(failure) {
+  return failure?.status === 404
+    ? 'El agente o el equipo ya no existe o dejó de estar activo. Revisa la selección.'
+    : 'No se pudo guardar. Revisa las fechas (formación ≤ obtención ≤ vencimiento, obtención no futura), la entidad y el instructor.';
+}
 
 const blankFields = () => ({ trainingDate: '', obtainedOn: '', expiresOn: '',
   certifyingEntity: '', instructorName: '', notes: '' });
@@ -103,7 +124,7 @@ export default function QualificationRecordForm({ initialQualification, onRecord
         setPending(null);
         setLookup({ status: 'loading', current: null });
         setLookupRevision(value => value + 1);
-        setError('No se pudo guardar. Revisa las fechas y que el agente y equipo sigan activos.');
+        setError(qualificationFailureMessage(failure));
       } else {
         setError('No pudimos confirmar el resultado. Reintenta el mismo registro sin modificarlo para evitar duplicados.');
       }
@@ -112,6 +133,7 @@ export default function QualificationRecordForm({ initialQualification, onRecord
     }
   }
 
+  const dateProblems = qualificationDateProblems(fields);
   const canSubmit = catalog.status === 'ready' && lookup.status === 'ready' &&
     lookup.rampProfileId === rampProfileId && lookup.equipmentTypeId === equipmentTypeId &&
     !!rampProfileId && !!equipmentTypeId && !busy;
@@ -158,7 +180,9 @@ export default function QualificationRecordForm({ initialQualification, onRecord
       {[['trainingDate', 'Fecha de formación'], ['obtainedOn', 'Fecha de obtención'],
         ['expiresOn', 'Fecha de vencimiento']].map(([name, label]) =>
         <label key={name} className="text-sm font-semibold">{label}
-          <input required type="date" max={name === 'obtainedOn' ? today : undefined}
+          <input required type="date" ref={withRule(dateProblems[name])}
+            max={name === 'obtainedOn' ? today : name === 'trainingDate' ? fields.obtainedOn || undefined : undefined}
+            min={name === 'expiresOn' ? fields.obtainedOn || undefined : undefined}
             value={fields[name]} onChange={event => updateField(name, event.target.value)}
             className="mt-1 w-full rounded-lg border p-2 dark:bg-surface-dark" />
         </label>)}

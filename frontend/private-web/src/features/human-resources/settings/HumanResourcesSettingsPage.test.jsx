@@ -3,8 +3,9 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import HumanResourcesSettingsPage from './HumanResourcesSettingsPage';
 import {
-  listEquipmentTypes, listPermitTypes, saveEquipmentType, savePermitType,
+  listEquipmentTypes, listPermitTypes, saveEquipmentType, savePermitType, SETTINGS_PROBLEM_MESSAGES,
 } from '../../../services/humanResourcesSettingsService';
+import { installFormValidation } from '../../../components/formValidation';
 
 vi.mock('../../../services/humanResourcesSettingsService', async importOriginal => ({
   ...(await importOriginal()),
@@ -81,6 +82,33 @@ it('shows the unauthorized state without retry, a recoverable error with retry, 
   const dialog = screen.getByRole('dialog', { name: 'Editar «Puente de abordaje»' });
   expect(within(dialog).getByRole('textbox', { name: /Código/ })).toBeDisabled();
   expect(within(dialog).getByRole('checkbox', { name: 'Activo' })).toBeDisabled();
+});
+
+it('explains the code format of each catalog under its field and in the server refusal', async () => {
+  listPermitTypes.mockResolvedValue({ permitTypes: system, canCreate: true, canUpdate: true });
+  listEquipmentTypes.mockResolvedValue({ equipmentTypes: [], canCreate: true, canUpdate: true });
+  const uninstall = installFormValidation(document);
+  try {
+    const user = userEvent.setup();
+    render(<HumanResourcesSettingsPage />);
+    await user.click(await screen.findByRole('button', { name: 'Nuevo tipo de carnet' }));
+    let dialog = screen.getByRole('dialog', { name: 'Nuevo tipo de carnet' });
+    await user.type(within(dialog).getByRole('textbox', { name: /Nombre/ }), 'Carnet de zona');
+    await user.type(within(dialog).getByRole('textbox', { name: /Código/ }), '-zona');
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    expect(savePermitType).not.toHaveBeenCalled();
+    expect(within(dialog).getByRole('textbox', { name: /Código/ })).toHaveAccessibleDescription(
+      'Usa de 2 a 32 letras, dígitos o guiones, empezando por letra o dígito; p. ej. ZONA-RESTRINGIDA.');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+
+    await user.click(screen.getByRole('tab', { name: 'Equipos de habilitación' }));
+    await user.click(await screen.findByRole('button', { name: 'Nuevo equipo' }));
+    dialog = screen.getByRole('dialog', { name: 'Nuevo equipo de habilitación' });
+    const code = within(dialog).getByRole('textbox', { name: /Código/ });
+    expect(code).toHaveAttribute('maxlength', '40');
+    expect(code).toHaveAttribute('data-error', 'Usa de 2 a 40 letras, dígitos o guiones, empezando por letra o dígito; p. ej. TUG.');
+  } finally { uninstall(); }
+  expect(SETTINGS_PROBLEM_MESSAGES.invalid_settings).toMatch(/de 2 a 32 en carnets y permisos, de 2 a 40 en equipos/);
 });
 
 it('shows the empty state of the equipment tab', async () => {

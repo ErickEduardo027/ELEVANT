@@ -12,6 +12,10 @@ import {
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const CODE_PATTERN = '[A-Za-z0-9][A-Za-z0-9\\-]{1,31}';
+const EQUIPMENT_CODE_PATTERN = '[A-Za-z0-9][A-Za-z0-9\\-]{1,39}';
+/** What a code outside its pattern says under the field (the server's rule of each catalog). */
+export const PERMIT_CODE_ERROR = 'Usa de 2 a 32 letras, dígitos o guiones, empezando por letra o dígito; p. ej. ZONA-RESTRINGIDA.';
+export const EQUIPMENT_CODE_ERROR = 'Usa de 2 a 40 letras, dígitos o guiones, empezando por letra o dígito; p. ej. TUG.';
 
 export const SETTINGS_TABS = [
   { id: 'permits', label: 'Carnets y permisos' },
@@ -131,7 +135,7 @@ function PermitTypesTab() {
             <label className="block text-xs font-semibold">Nombre<input required minLength={2} maxLength={160} value={form.name}
               onChange={event => setForm(current => ({ ...current, name: event.target.value }))}
               placeholder="Carnet de zona restringida" className={fieldClass} /></label>
-            <label className="block text-xs font-semibold">Código<input required pattern={CODE_PATTERN} maxLength={32}
+            <label className="block text-xs font-semibold">Código<input required pattern={CODE_PATTERN} maxLength={32} data-error={PERMIT_CODE_ERROR}
               disabled={Boolean(form.id && form.inUse)} value={form.code}
               onChange={event => setForm(current => ({ ...current, code: event.target.value.toUpperCase() }))}
               placeholder="ZONA-RESTRINGIDA" className={fieldClass} />
@@ -218,7 +222,7 @@ function EquipmentTypesTab() {
             {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
             <label className="block text-xs font-semibold">Nombre<input required minLength={2} maxLength={160} value={form.name}
               onChange={event => setForm(current => ({ ...current, name: event.target.value }))} placeholder="Tractor de remolque" className={fieldClass} /></label>
-            <label className="block text-xs font-semibold">Código<input required pattern="[A-Za-z0-9][A-Za-z0-9\-]{1,39}" maxLength={40}
+            <label className="block text-xs font-semibold">Código<input required pattern={EQUIPMENT_CODE_PATTERN} maxLength={40} data-error={EQUIPMENT_CODE_ERROR}
               disabled={Boolean(form.id && (form.inUse || form.isLocked))} value={form.code}
               onChange={event => setForm(current => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="TUG" className={fieldClass} />
               {form.id && (form.inUse || form.isLocked) && <span className="mt-1 block font-normal text-text-secondary-light">

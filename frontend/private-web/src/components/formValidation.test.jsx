@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { installFormValidation, validationMessageFor } from './formValidation';
+import {
+  applyRule, installFormValidation, trimmedLengthProblem, validationMessageFor, withRule,
+} from './formValidation';
 
 let uninstall;
 beforeEach(() => { uninstall = installFormValidation(document); });
@@ -48,6 +50,27 @@ it('uses the field text for patterns and explains lengths and ranges', () => {
   expect(validationMessageFor(document.getElementById('code'))).toBe('Use tres letras mayúsculas.');
   expect(validationMessageFor(document.getElementById('date'))).toBe('La fecha debe ser el 01/10/2026 o posterior.');
   expect(validationMessageFor(document.getElementById('pick'))).toBe('Seleccione una opción de la lista.');
+});
+
+it('keeps a message already on screen in step with a rule the form computes itself', () => {
+  render('<form><input id="end" type="date"></form>');
+  const end = document.getElementById('end');
+  applyRule(end, 'El vencimiento debe ser igual o posterior a la obtención (03/01/2026).');
+  end.dispatchEvent(new Event('invalid', { cancelable: true }));
+  expect(document.getElementById(end.getAttribute('aria-describedby')))
+    .toHaveTextContent('El vencimiento debe ser igual o posterior a la obtención (03/01/2026).');
+  // The re-render that brings the new rule clears the message the edit left behind.
+  withRule('')(end);
+  expect(end.validity.valid).toBe(true);
+  expect(end).not.toHaveAttribute('aria-invalid');
+  expect(document.querySelector('.form-validation-message')).toBeNull();
+});
+
+it('counts a bounded text after trimming and leaves an empty one to required', () => {
+  expect(trimmedLengthProblem('', 3, 500)).toBe('');
+  expect(trimmedLengthProblem('  ab  ', 3, 500)).toBe('Escribe al menos 3 caracteres sin contar los espacios de los extremos (ahora tiene 2).');
+  expect(trimmedLengthProblem(' abc ', 3, 500)).toBe('');
+  expect(trimmedLengthProblem('x'.repeat(501), 3, 500)).toBe('Usa como máximo 500 caracteres (ahora tiene 501).');
 });
 
 it('leaves forms that opt out untouched', () => {

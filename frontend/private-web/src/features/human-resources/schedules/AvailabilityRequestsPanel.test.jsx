@@ -9,6 +9,8 @@ import { amendHumanResourcesAvailabilityRequest, getHumanResourcesAvailabilityRe
 import { addDays, businessToday } from '../../../services/businessDay';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
+import { installFormValidation } from '../../../components/formValidation';
+import { HUMAN_RESOURCES_PROBLEMS } from '../../../services/humanResourcesProblems';
 
 vi.mock('../../../services/humanResourcesAvailabilityService', () => ({
   amendHumanResourcesAvailabilityRequest: vi.fn(),
@@ -84,6 +86,45 @@ it('records and decides a request, then re-reads the authoritative page', async 
   expect(approved).not.toHaveTextContent(/OCC recibió el aviso/);
   expect(await screen.findByText('Aprobada')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
+});
+
+it('bounds «Hasta» by «Desde» and 31 dates, and explains each refusal by its code', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [{ id: agentId, firstName: 'Riley',
+    lastName: 'Ramp', employeeNumber: 'DEV-RA-001', isActive: true }] });
+  getHumanResourcesAvailabilityRequests.mockResolvedValue(page([]));
+  recordHumanResourcesAvailabilityRequest
+    .mockRejectedValueOnce({ status: 409, code: 'availability_overlap' })
+    .mockRejectedValueOnce({ status: 409, code: 'agent_unavailable' })
+    .mockRejectedValueOnce({ status: 400, code: 'invalid_availability_request' });
+  const uninstall = installFormValidation(document);
+  try {
+    const user = userEvent.setup();
+    render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+    await screen.findByText(/No hay solicitudes en esta semana/);
+    await user.click(screen.getByRole('button', { name: 'Nueva solicitud' }));
+    await user.selectOptions(await screen.findByLabelText('Agente'), agentId);
+    const until = screen.getByLabelText('Hasta');
+    expect(until).toHaveAttribute('min', from);
+    expect(until).toHaveAttribute('max', addDays(from, 30));
+    await user.clear(until);
+    await user.type(until, '2026-10-04');
+    await user.type(screen.getByLabelText('Motivo'), 'Synthetic planned leave');
+    await user.click(screen.getByRole('button', { name: 'Registrar solicitud' }));
+    expect(recordHumanResourcesAvailabilityRequest).not.toHaveBeenCalled();
+    expect(until).toHaveAccessibleDescription('«Hasta» debe ser igual o posterior a «Desde» (05/10/2026).');
+    await user.clear(until);
+    await user.type(until, '2026-11-05');
+    expect(until.validationMessage).toBe('Una solicitud abarca como máximo 31 fechas: «Hasta» llega al 04/11/2026.');
+    await user.clear(until);
+    await user.type(until, '2026-11-04');
+    expect(until).toBeValid();
+    await user.click(screen.getByRole('button', { name: 'Registrar solicitud' }));
+    expect(await screen.findByText(HUMAN_RESOURCES_PROBLEMS.availability_overlap)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Registrar solicitud' }));
+    expect(await screen.findByText(/El agente ya no está activo en rampa\. Elige otro agente\./)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Registrar solicitud' }));
+    expect(await screen.findByText(/hasta 31 fechas, «Hasta» igual o posterior a «Desde»/)).toBeInTheDocument();
+  } finally { uninstall(); }
 });
 
 it('hides stale private rows and error details after a failed revalidation', async () => {

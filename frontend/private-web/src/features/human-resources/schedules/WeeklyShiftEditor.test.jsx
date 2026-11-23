@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import WeeklyShiftEditor from './WeeklyShiftEditor';
+import WeeklyShiftEditor, { shiftDurationMinutes, shiftDurationProblem } from './WeeklyShiftEditor';
 import {
   adjustHumanResourcesShift, getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions,
   listRampAgentReadiness, recordHumanResourcesShift, removeHumanResourcesShift,
@@ -160,6 +160,42 @@ it('adjusts the hours of a future shift with a reason, its version and the inten
   expect(adjustHumanResourcesShift).toHaveBeenNthCalledWith(2, 'sh-1', command, '00000000-0000-4000-8000-000000000001');
   expect(onChanged).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('form', { name: 'Ajustar horario' })).not.toBeInTheDocument();
+});
+
+it('refuses more than 16 hours on the client, crossing midnight, and counts the reason live (3-E)', async () => {
+  render(<WeeklyShiftEditor weekStart={weekStart} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Ajustar horario de Ana Ramp el 2099-01-06' }));
+  const form = await screen.findByRole('form', { name: 'Ajustar horario' });
+  const save = within(form).getByRole('button', { name: 'Guardar horario' });
+  const reason = within(form).getByLabelText('Motivo del ajuste');
+  expect(reason.tagName).toBe('TEXTAREA');
+  expect(within(form).getByText('Faltan 5 caracteres.')).toBeInTheDocument();
+  await userEvent.type(reason, 'Refuerzo');
+  expect(within(form).getByText('8 de 500.')).toBeInTheDocument();
+  // 20:00 to 13:00 ends the next day: 17 hours, one more than the server takes.
+  await userEvent.clear(within(form).getByLabelText('Inicio'));
+  await userEvent.type(within(form).getByLabelText('Inicio'), '20:00');
+  await userEvent.clear(within(form).getByLabelText('Fin'));
+  await userEvent.type(within(form).getByLabelText('Fin'), '13:00');
+  expect(within(form).getByRole('alert')).toHaveTextContent('El turno dura como máximo 16 horas; así duraría 17 h.');
+  expect(within(form).getByLabelText('Fin')).toHaveAttribute('aria-invalid', 'true');
+  expect(save).toBeDisabled();
+  // 20:00 to 12:00 is exactly 16 hours: allowed, and it says it finishes the next day.
+  await userEvent.clear(within(form).getByLabelText('Fin'));
+  await userEvent.type(within(form).getByLabelText('Fin'), '12:00');
+  expect(within(form).queryByRole('alert')).not.toBeInTheDocument();
+  expect(within(form).getByText('Termina al día siguiente, hora local de la estación.')).toBeInTheDocument();
+  expect(save).toBeEnabled();
+  expect(adjustHumanResourcesShift).not.toHaveBeenCalled();
+});
+
+it('measures a shift like ShiftAdjustmentRules: equal times and over 16 hours are refused', () => {
+  expect(shiftDurationMinutes('07:00', '16:00')).toBe(540);
+  expect(shiftDurationMinutes('22:00', '06:00')).toBe(480);
+  expect(shiftDurationProblem('08:00', '08:00')).toBe('El inicio y el fin no pueden coincidir.');
+  expect(shiftDurationProblem('06:00', '22:00')).toBe('');
+  expect(shiftDurationProblem('06:00', '22:30')).toBe('El turno dura como máximo 16 horas; así duraría 16 h 30 min.');
+  expect(shiftDurationProblem('', '22:30')).toBe('');
 });
 
 it('reads the week again when the shift changed meanwhile (3-E)', async () => {
